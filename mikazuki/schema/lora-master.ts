@@ -4,7 +4,7 @@ Schema.intersect([
             model_train_type: Schema.union(["sd-lora", "sdxl-lora", "anima-lora"]).default("sd-lora").description("训练种类"),
             pretrained_model_name_or_path: Schema.string().role('filepicker', { type: "model-file" }).default("./sd-models/model.safetensors").description("底模文件路径"),
             resume: Schema.string().role('filepicker', { type: "folder" }).description("从某个 `save_state` 保存的中断状态继续训练，填写文件路径"),
-            vae: Schema.string().role('filepicker', { type: "model-file" }).description("(可选) VAE 模型文件路径，使用外置 VAE 文件覆盖模型内本身的"),
+            vae: Schema.string().role('filepicker', { type: "model-file" }).description("VAE 模型文件路径，使用外置 VAE 覆盖模型本身（SD/SDXL 可选；Anima 训练时必须指定）"),
         }).description("训练用模型"),
 
         // Anima 专用模型路径
@@ -18,6 +18,7 @@ Schema.intersect([
             Schema.object({}),
         ]),
 
+        // SD1.5/2.0 专用
         Schema.union([
             Schema.object({
                 model_train_type: Schema.const("sd-lora"),
@@ -40,31 +41,24 @@ Schema.intersect([
     // 数据集设置
     Schema.object(
         UpdateSchema(SHARED_SCHEMAS.RAW.DATASET_SETTINGS, {
-            resolution: Schema.string().default("1024,1024").description("训练图片分辨率，宽x高。支持非正方形，但必须是 64 倍数。"),
+            resolution: Schema.string().default("1024,1024").description("训练图片分辨率，宽x高。SD/SDXL 需为 64 倍数；Anima 需为 16 倍数。"),
             min_bucket_reso: Schema.number().default(256).description("arb 桶最小分辨率"),
             max_bucket_reso: Schema.number().default(2048).description("arb 桶最大分辨率"),
+            bucket_reso_steps: Schema.number().default(64).description("arb 桶分辨率划分单位（SD/SDXL 默认 64；Anima 必须设为 16）"),
         })
     ).description("数据集设置"),
-
-    // Anima 专用分桶步长覆盖（Anima VAE 要求 16 的倍数）
-    Schema.union([
-        Schema.object({
-            model_train_type: Schema.const("anima-lora").required(),
-            bucket_reso_steps: Schema.number().step(16).default(16).description("arb 桶分辨率划分单位（Anima 必须为 16 的倍数）"),
-        }).description(""),
-        Schema.object({}),
-    ]),
 
     // 保存设置
     SHARED_SCHEMAS.SAVE_SETTINGS,
 
+    // 训练相关参数
     Schema.object({
         max_train_epochs: Schema.number().min(1).default(10).description("最大训练 epoch（轮数）"),
         max_train_steps: Schema.number().min(1).description("最大训练步数（设置后将覆盖 epoch 限制）"),
         train_batch_size: Schema.number().min(1).default(1).description("批量大小, 越高显存占用越高"),
         gradient_checkpointing: Schema.boolean().default(false).description("梯度检查点（用时间换显存，DiT 模型推荐开启）"),
         gradient_accumulation_steps: Schema.number().min(1).description("梯度累加步数（等效增大 batch size，不增加显存）"),
-        network_train_unet_only: Schema.boolean().default(false).description("仅训练 U-Net 训练SDXL Lora时推荐开启"),
+        network_train_unet_only: Schema.boolean().default(false).description("仅训练 U-Net / DiT（SDXL Lora 推荐开启；Anima 默认关闭）"),
         network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器"),
         cpu_offload_checkpointing: Schema.boolean().default(false).description("[实验性] 梯度检查点时将张量卸载到 CPU（降显存，DiT 模型支持）"),
     }).description("训练相关参数"),
@@ -100,24 +94,21 @@ Schema.intersect([
 
     Schema.intersect([
         Schema.object({
-            network_module: Schema.union(["networks.lora", "networks.dylora", "networks.oft", "lycoris.kohya"]).default("networks.lora").description("训练网络模块"),
+            network_module: Schema.union(["networks.lora", "networks.lora_anima", "networks.dylora", "networks.oft", "lycoris.kohya"]).default("networks.lora").description("训练网络模块（SD/SDXL 选 networks.lora；Anima 选 networks.lora_anima）"),
             network_weights: Schema.string().role('filepicker').description("从已有的 LoRA 模型上继续训练，填写路径"),
             network_dim: Schema.number().min(1).default(32).description("网络维度，常用 4~128，不是越大越好, 低dim可以降低显存占用"),
-            network_alpha: Schema.number().min(1).default(32).description("常用值：等于 network_dim 或 network_dim*1/2 或 1。使用较小的 alpha 需要提升学习率"),
+            network_alpha: Schema.number().min(1).default(32).description("常用值：等于 network_dim 或 network_dim*1/2 或 1。使用较小的 alpha 需要提升学习率。（Anima 建议 16）"),
             network_dropout: Schema.number().step(0.01).default(0).description('dropout 概率 （与 lycoris 不兼容，需要用 lycoris 自带的）'),
             scale_weight_norms: Schema.number().step(0.01).min(0).description("最大范数正则化。如果使用，推荐为 1"),
             network_args_custom: Schema.array(String).role('table').description('自定义 network_args，一行一个'),
-            enable_block_weights: Schema.boolean().default(false).description('启用分层学习率训练（只支持网络模块 networks.lora）'),
+            enable_block_weights: Schema.boolean().default(false).description('启用分层学习率训练（只支持 U-Net 架构的 networks.lora，Anima 不可用）'),
             enable_base_weight: Schema.boolean().default(false).description('启用基础权重（差异炼丹）'),
         }).description("网络设置"),
 
-        // Anima 专用网络模块
+        // Anima 专用网络参数（仅 Anima 独有的字段；通用字段已在上面）
         Schema.union([
             Schema.object({
                 model_train_type: Schema.const("anima-lora").required(),
-                network_module: Schema.union(["networks.lora_anima", "lycoris.kohya"]).default("networks.lora_anima").description("训练网络模块（Anima 推荐 networks.lora_anima）"),
-                network_dim: Schema.number().min(1).default(32).description("网络维度，常用 4~128，不是越大越好"),
-                network_alpha: Schema.number().min(1).default(16).description("常用值：等于 network_dim 或 network_dim*1/2 或 1。"),
                 dim_from_weights: Schema.boolean().default(false).description("从已有 LoRA 权重文件自动推断 dim（开启后上方 network_dim 失效）"),
             }),
             Schema.object({}),
@@ -152,17 +143,26 @@ Schema.intersect([
     SHARED_SCHEMAS.DATA_ENCHANCEMENT,
 
     // 其他选项
-    SHARED_SCHEMAS.OTHER,
+    Schema.object({
+        seed: Schema.number().default(1337).description("随机种子"),
+        clip_skip: Schema.number().role("slider").min(0).max(12).step(1).default(2).description("CLIP 跳过层数 *玄学*（仅 SD/SDXL 有效，Anima 忽略）"),
+        ui_custom_params: Schema.string().role('textarea').description("**危险** 自定义参数，请输入 TOML 格式，将会直接覆盖当前界面内任何参数。实时更新，推荐写完后再粘贴过来"),
+    }).description("其他设置"),
 
     // 速度优化选项
-    Schema.object(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH).description("速度优化选项"),
+    Schema.object(
+        UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
+            xformers: Schema.boolean().default(true).description("启用 xformers（Anima 请使用上方 attn_mode 代替）"),
+            cache_latents: Schema.boolean().default(true).description("缓存图像 latent, 缓存 VAE 输出以减少 VRAM 使用"),
+            cache_text_encoder_outputs: Schema.boolean().description("缓存文本编码器的输出，减少显存使用。使用时需要关闭 shuffle_caption（Anima 推荐开启）"),
+            cache_text_encoder_outputs_to_disk: Schema.boolean().description("缓存文本编码器的输出到磁盘（Anima 推荐开启）"),
+        })
+    ).description("速度优化选项"),
 
     // Anima 显存优化 & 高级选项
     Schema.union([
         Schema.object({
             model_train_type: Schema.const("anima-lora").required(),
-            cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存文本编码器的输出，减少显存使用（Anima 推荐开启）"),
-            cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("缓存文本编码器的输出到磁盘"),
             text_encoder_batch_size: Schema.number().min(1).description("文本编码器批量大小（留空使用数据集 batch size）"),
             blocks_to_swap: Schema.number().min(0).description("[实验性] 前向/反向传播时交换到 CPU 的 Transformer block 数量，降低显存但增加训练时间"),
             unsloth_offload_checkpointing: Schema.boolean().default(false).description("使用 Unsloth 异步卸载梯度检查点（不可与 blocks_to_swap 同时使用）"),
