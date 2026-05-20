@@ -4,7 +4,7 @@ Schema.intersect([
             model_train_type: Schema.union(["sd-lora", "sdxl-lora", "anima-lora"]).default("sd-lora").description("训练种类"),
             pretrained_model_name_or_path: Schema.string().role('filepicker', { type: "model-file" }).default("./sd-models/model.safetensors").description("底模文件路径"),
             resume: Schema.string().role('filepicker', { type: "folder" }).description("从某个 `save_state` 保存的中断状态继续训练，填写文件路径"),
-            vae: Schema.string().role('filepicker', { type: "model-file" }).description("VAE 模型文件路径，使用外置 VAE 覆盖模型本身（SD/SDXL 可选；Anima 训练时必须指定）"),
+            vae: Schema.string().role('filepicker', { type: "model-file" }).description("VAE 模型文件路径（SD/SDXL 可选；Anima 必须指定 QwenImage VAE）"),
         }).description("训练用模型"),
 
         // Anima 专用模型路径
@@ -44,7 +44,7 @@ Schema.intersect([
             resolution: Schema.string().default("1024,1024").description("训练图片分辨率，宽x高。SD/SDXL 需为 64 倍数；Anima 需为 16 倍数。"),
             min_bucket_reso: Schema.number().default(256).description("arb 桶最小分辨率"),
             max_bucket_reso: Schema.number().default(2048).description("arb 桶最大分辨率"),
-            bucket_reso_steps: Schema.number().default(64).description("arb 桶分辨率划分单位（SD/SDXL 默认 64；Anima 必须设为 16）"),
+            bucket_reso_steps: Schema.number().step(16).default(64).description("arb 桶分辨率划分单位（SD 默认 64；SDXL 可用 32；Anima 需为 16 的倍数）"),
         })
     ).description("数据集设置"),
 
@@ -58,7 +58,7 @@ Schema.intersect([
         train_batch_size: Schema.number().min(1).default(1).description("批量大小, 越高显存占用越高"),
         gradient_checkpointing: Schema.boolean().default(false).description("梯度检查点（用时间换显存，DiT 模型推荐开启）"),
         gradient_accumulation_steps: Schema.number().min(1).description("梯度累加步数（等效增大 batch size，不增加显存）"),
-        network_train_unet_only: Schema.boolean().default(false).description("仅训练 U-Net / DiT（SDXL Lora 推荐开启；Anima 默认关闭）"),
+        network_train_unet_only: Schema.boolean().default(false).description("仅训练主干网络（LoRA 训练推荐开启；选 Anima 时自动切换为开启）"),
         network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器"),
         cpu_offload_checkpointing: Schema.boolean().default(false).description("[实验性] 梯度检查点时将张量卸载到 CPU（降显存，DiT 模型支持）"),
     }).description("训练相关参数"),
