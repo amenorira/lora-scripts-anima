@@ -1,39 +1,42 @@
 <div align="center">
 
-<img src="https://github.com/Akegarasu/lora-scripts/assets/36563862/3b177f4a-d92a-4da4-85c8-a0d163061a40" width="200" height="200" alt="SD-Trainer" style="border-radius: 25px">
+# SD-Trainer (lora-scripts-anima)
 
-# SD-Trainer
+_✨ Anima + Stable Diffusion 训练 GUI ✨_
 
-_✨ 享受 Stable Diffusion 训练！ ✨_
+基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 的修改版，新增 **Anima 模型支持**，并使用最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)。
 
 </div>
 
 <p align="center">
-  <a href="https://github.com/Akegarasu/lora-scripts" style="margin: 2px;">
-    <img alt="GitHub 仓库星标" src="https://img.shields.io/github/stars/Akegarasu/lora-scripts">
+  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub 仓库星标" src="https://img.shields.io/github/stars/ameyukisora/lora-scripts-anima">
   </a>
-  <a href="https://github.com/Akegarasu/lora-scripts" style="margin: 2px;">
-    <img alt="GitHub 仓库分支" src="https://img.shields.io/github/forks/Akegarasu/lora-scripts">
+  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub 仓库分支" src="https://img.shields.io/github/forks/ameyukisora/lora-scripts-anima">
   </a>
-  <a href="https://raw.githubusercontent.com/Akegarasu/lora-scripts/master/LICENSE" style="margin: 2px;">
-    <img src="https://img.shields.io/github/license/Akegarasu/lora-scripts" alt="许可证">
-  </a>
-  <a href="https://github.com/Akegarasu/lora-scripts/releases" style="margin: 2px;">
-    <img src="https://img.shields.io/github/v/release/Akegarasu/lora-scripts?color=blueviolet&include_prereleases" alt="发布版本">
+  <a href="https://raw.githubusercontent.com/ameyukisora/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
+    <img src="https://img.shields.io/github/license/ameyukisora/lora-scripts-anima" alt="许可证">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Akegarasu/lora-scripts/releases">下载</a>
+  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README.md">英文README</a>
   ·
-  <a href="https://github.com/Akegarasu/lora-scripts/blob/main/README.md">文档</a>
-  ·
-  <a href="https://github.com/Akegarasu/lora-scripts/blob/main/README-zh.md">中文README</a>
+  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-zh.md">中文README</a>
 </p>
 
-LoRA-scripts（又名 SD-Trainer）
+LoRA & Dreambooth 训练图形界面，新增 **Anima 模型支持**，基于最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)。
 
-LoRA & Dreambooth 训练图形界面 & 脚本预设 & 一键训练环境，用于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)
+### 支持的模型类型
+
+| 训练类型 | 底模 |
+|---------|------|
+| LoRA / Dreambooth | SD 1.5 / SD 2.x |
+| LoRA / 微调 | SDXL |
+| LoRA | SD3 |
+| LoRA / 微调 | FLUX（含 Chroma） |
+| **LoRA** 🆕 | **Anima** |
 
 ## ✨新特性: 训练 WebUI
 
@@ -54,13 +57,25 @@ Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 
 Python 3.10 和 Git
 
-### 克隆带子模块的仓库
+### 克隆仓库
 
 ```sh
-git clone --recurse-submodules https://github.com/Akegarasu/lora-scripts
+git clone https://github.com/ameyukisora/lora-scripts-anima.git
 ```
 
 ## ✨ SD-Trainer GUI
+
+### 更新 kohya-ss/sd-scripts
+
+将训练脚本更新到最新版：
+
+| 平台 | 脚本 |
+|------|------|
+| Windows (CMD) | `update-scripts.bat` |
+| Windows (PowerShell) | `update-scripts.ps1` |
+| Linux | `bash update-scripts.bash` |
+
+这将用最新版 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 替换 `scripts/` 目录。
 
 ### Windows
 
@@ -88,17 +103,15 @@ git clone --recurse-submodules https://github.com/Akegarasu/lora-scripts
 
 ```bash
 # 国内镜像优化版本
-# 其中 akegarasu_lora-scripts:latest 为镜像及其 tag 名，根据镜像托管服务商实际进行修改
-docker build -t akegarasu_lora-scripts:latest -f Dockfile-for-Mainland-China .
-docker push akegarasu_lora-scripts:latest
+# 其中 lora-scripts-anima:latest 为镜像及其 tag 名，根据镜像托管服务商实际进行修改
+docker build -t lora-scripts-anima:latest -f Dockerfile-for-Mainland-China .
+docker push lora-scripts-anima:latest
 ```
 
 #### 使用镜像
 
-> 提供一个本人已打包好并推送到 `aliyuncs` 上的镜像，此镜像压缩归档大小约 `10G` 左右，请耐心等待拉取。
-
 ```bash
-docker run --gpus all -p 28000:28000 -p 6006:6006 registry.cn-hangzhou.aliyuncs.com/go-to-mirror/akegarasu_lora-scripts:latest 
+docker run --gpus all -p 28000:28000 -p 6006:6006 lora-scripts-anima:latest 
 ```
 
 或者使用 `docker-compose.yaml` 。
@@ -106,21 +119,14 @@ docker run --gpus all -p 28000:28000 -p 6006:6006 registry.cn-hangzhou.aliyuncs.
 ```yaml
 services:
   lora-scripts:
-    container_name: lora-scripts
+    container_name: lora-scripts-anima
     build:
       context: .
       dockerfile: Dockerfile-for-Mainland-China
-    image: "registry.cn-hangzhou.aliyuncs.com/go-to-mirror/akegarasu_lora-scripts:latest"
+    image: "lora-scripts-anima:latest"
     ports:
       - "28000:28000"
       - "6006:6006"  
-    # 共享本地文件夹（请根据实际修改）
-    #volumes:
-      # - "/data/srv/lora-scripts:/app/lora-scripts"
-      # 共享 comfyui 大模型
-      # - "/data/srv/comfyui/models/checkpoints:/app/lora-scripts/sd-models/comfyui"
-      # 共享 sd-webui 大模型
-      # - "/data/srv/stable-diffusion-webui/models/Stable-diffusion:/app/lora-scripts/sd-models/sd-webui"
     environment:
       - HF_HOME=huggingface
       - PYTHONUTF8=1

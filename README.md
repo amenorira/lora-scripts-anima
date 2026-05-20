@@ -1,39 +1,42 @@
 <div align="center">
 
-<img src="https://github.com/Akegarasu/lora-scripts/assets/36563862/3b177f4a-d92a-4da4-85c8-a0d163061a40" width="200" height="200" alt="SD-Trainer" style="border-radius: 25px">
+# SD-Trainer (lora-scripts-anima)
 
-# SD-Trainer
+_✨ Anima + Stable Diffusion Training GUI ✨_
 
-_✨ Enjoy Stable Diffusion Train！ ✨_
+A fork of [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) with **Anima model support**, updated to the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
 
 </div>
 
 <p align="center">
-  <a href="https://github.com/Akegarasu/lora-scripts" style="margin: 2px;">
-    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/Akegarasu/lora-scripts">
+  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/ameyukisora/lora-scripts-anima">
   </a>
-  <a href="https://github.com/Akegarasu/lora-scripts" style="margin: 2px;">
-    <img alt="GitHub forks" src="https://img.shields.io/github/forks/Akegarasu/lora-scripts">
+  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/ameyukisora/lora-scripts-anima">
   </a>
-  <a href="https://raw.githubusercontent.com/Akegarasu/lora-scripts/master/LICENSE" style="margin: 2px;">
-    <img src="https://img.shields.io/github/license/Akegarasu/lora-scripts" alt="license">
-  </a>
-  <a href="https://github.com/Akegarasu/lora-scripts/releases" style="margin: 2px;">
-    <img src="https://img.shields.io/github/v/release/Akegarasu/lora-scripts?color=blueviolet&include_prereleases" alt="release">
+  <a href="https://raw.githubusercontent.com/ameyukisora/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
+    <img src="https://img.shields.io/github/license/ameyukisora/lora-scripts-anima" alt="license">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Akegarasu/lora-scripts/releases">Download</a>
+  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README.md">Documents</a>
   ·
-  <a href="https://github.com/Akegarasu/lora-scripts/blob/main/README.md">Documents</a>
-  ·
-  <a href="https://github.com/Akegarasu/lora-scripts/blob/main/README-zh.md">中文README</a>
+  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-zh.md">中文README</a>
 </p>
 
-LoRA-scripts (a.k.a SD-Trainer)
+LoRA & Dreambooth training GUI with **Anima model support**, powered by the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git).
 
-LoRA & Dreambooth training GUI & scripts preset & one key training environment for [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)
+### Supported Model Types
+
+| Training Type | Base Model |
+|---------------|------------|
+| LoRA / Dreambooth | SD 1.5 / SD 2.x |
+| LoRA / Finetune | SDXL |
+| LoRA | SD3 |
+| LoRA / Finetune | FLUX (including Chroma) |
+| **LoRA** 🆕 | **Anima** |
 
 ## ✨NEW: Train WebUI
 
@@ -54,13 +57,25 @@ Follow the installation guide below to install the GUI, then run `run_gui.ps1`(w
 
 Python 3.10 and Git
 
-### Clone repo with submodules
+### Clone
 
 ```sh
-git clone --recurse-submodules https://github.com/Akegarasu/lora-scripts
+git clone https://github.com/ameyukisora/lora-scripts-anima.git
 ```
 
 ## ✨ SD-Trainer GUI
+
+### Update kohya-ss/sd-scripts
+
+To update the training scripts to the latest version:
+
+| Platform | Script |
+|----------|--------|
+| Windows (CMD) | `update-scripts.bat` |
+| Windows (PowerShell) | `update-scripts.ps1` |
+| Linux | `bash update-scripts.bash` |
+
+This will replace the `scripts/` directory with the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
 
 ### Windows
 
