@@ -20,10 +20,19 @@ class ModelType(Enum):
     SD3 = 4
     FLUX = 5
     LUMINA = 6
+    ANIMA = 7
     LoRA = 10
 
 
 MODEL_SIGNATURE = [
+    {
+        "type": ModelType.ANIMA,
+        "signature": [
+            "llm_adapter.out_proj.weight",
+            "t_embedding_norm.scale",
+            "blocks.0.adaln_modulation.1.weight",
+        ]
+    },
     {
         "type": ModelType.LUMINA,
         "signature": [
@@ -151,8 +160,8 @@ def validate_model(model_name: str, training_type: str = "sd-lora"):
         if model_type == ModelType.UNKNOWN:
             log.error(f"Can't match model type from {model_name}")
 
-        if model_type not in [ModelType.SD15, ModelType.SD2, ModelType.SD3, ModelType.SDXL, ModelType.FLUX, ModelType.LUMINA]:
-            return False, "Pretrained model is not a Stable Diffusion, Flux or Lumina checkpoint / 校验失败：底模不是 Stable Diffusion, Flux 或 Lumina 模型"
+        if model_type not in [ModelType.SD15, ModelType.SD2, ModelType.SD3, ModelType.SDXL, ModelType.FLUX, ModelType.LUMINA, ModelType.ANIMA]:
+            return False, "Pretrained model is not a Stable Diffusion, Flux, Lumina or Anima checkpoint / 校验失败：底模不是支持的模型类型"
 
         if model_type == ModelType.SDXL and training_type == "sd-lora":
             return False, "Pretrained model is SDXL, but you are training with SD1.5 LoRA / 校验失败：你选择的是 SD1.5 LoRA 训练，但预训练模型是 SDXL。请前往专家模式选择正确的模型种类。"

@@ -50,6 +50,8 @@ trainer_mapping = {
     "sd3-lora": "./scripts/sd3_train_network.py",
     "flux-lora": "./scripts/flux_train_network.py",
     "flux-finetune": "./scripts/flux_train.py",
+
+    "anima-lora": "./scripts/anima_train_network.py",
 }
 
 
