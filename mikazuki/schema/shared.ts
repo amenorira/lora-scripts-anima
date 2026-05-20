@@ -157,7 +157,7 @@
                     "pytorch_optimizer.CAME"
                 ]).default("AdamW8bit").description("优化器设置"),
                 min_snr_gamma: Schema.number().step(0.1).description("最小信噪比伽马值, 如果启用推荐为 5"),
-                weight_decay: Schema.number().step(0.001).default(0.01).description("权重衰减（L2 正则化），通过对权重施加衰减惩罚来防止过拟合，提升模型泛化能力"),
+                weight_decay: Schema.number().step(0.001).description("权重衰减，每次更新后按比例缩小权重，防止过拟合。推荐 0.01~0.1，留空则不启用"),
             }),
 
             Schema.union([

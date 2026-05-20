@@ -58,9 +58,8 @@ Schema.intersect([
         train_batch_size: Schema.number().min(1).default(1).description("批量大小, 越高显存占用越高"),
         gradient_checkpointing: Schema.boolean().default(false).description("梯度检查点（用时间换显存，DiT 模型推荐开启）"),
         gradient_accumulation_steps: Schema.number().min(1).description("梯度累加步数（等效增大 batch size，不增加显存）"),
-        network_train_unet_only: Schema.boolean().default(false).description("仅训练主干网络（LoRA 训练推荐开启；选 Anima 时自动切换为开启）"),
+        network_train_unet_only: Schema.boolean().default(false).description("仅训练主干网络（LoRA 训练推荐开启）"),
         network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器"),
-        cpu_offload_checkpointing: Schema.boolean().default(false).description("[实验性] 梯度检查点时将张量卸载到 CPU（降显存，DiT 模型支持）"),
     }).description("训练相关参数"),
 
     // Anima 专用训练参数
@@ -79,12 +78,6 @@ Schema.intersect([
             attn_mode: Schema.union(["torch", "xformers", "flash"]).default("torch").description("注意力实现方式（torch=原生, xformers=省显存, flash=FlashAttention最快但需硬件支持）"),
             split_attn: Schema.boolean().default(false).description("拆分注意力计算以降低显存占用（使用 xformers 时必须开启）"),
             torch_compile: Schema.boolean().default(false).description("使用 torch.compile 加速训练（需 PyTorch 2.0+，首次编译较慢）"),
-            dynamo_backend: Schema.union(["inductor", "eager", "aot_eager", "cudagraphs"]).default("inductor").description("torch.compile 后端（默认 inductor，cudagraphs 最快但可能不稳定）"),
-            self_attn_lr: Schema.string().description("Self-Attention 层学习率（留空=跟随总学习率，填 0=冻结该组件）"),
-            cross_attn_lr: Schema.string().description("Cross-Attention 层学习率"),
-            mlp_lr: Schema.string().description("MLP 层学习率"),
-            mod_lr: Schema.string().description("AdaLN 调制层学习率（注意：LoRA 默认不训练 mod 层）"),
-            llm_adapter_lr: Schema.string().description("LLM Adapter 学习率（留空=跟随总学习率，填 0=冻结）"),
         }).description("Anima 专用参数"),
         Schema.object({}),
     ]),
