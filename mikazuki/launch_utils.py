@@ -65,9 +65,14 @@ def prepare_submodules():
 
 def git_tag(path: str) -> str:
     try:
-        return subprocess.check_output(["git", "-C", path, "describe", "--tags"]).strip().decode("utf-8")
-    except Exception as e:
-        return "<none>"
+        tag = subprocess.check_output(["git", "-C", path, "describe", "--tags"]).strip().decode("utf-8")
+        return tag
+    except Exception:
+        try:
+            commit = subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"]).strip().decode("utf-8")
+            return f"commit {commit}"
+        except Exception:
+            return "<none>"
 
 
 def check_dirs(dirs: List):
