@@ -46,6 +46,15 @@ Schema.intersect([
         })
     ).description("数据集设置"),
 
+    // Anima 专用分桶步长覆盖（Anima VAE 要求 16 的倍数）
+    Schema.union([
+        Schema.object({
+            model_train_type: Schema.const("anima-lora").required(),
+            bucket_reso_steps: Schema.number().step(16).default(16).description("arb 桶分辨率划分单位（Anima 必须为 16 的倍数）"),
+        }).description(""),
+        Schema.object({}),
+    ]),
+
     // 保存设置
     SHARED_SCHEMAS.SAVE_SETTINGS,
 
@@ -82,7 +91,7 @@ Schema.intersect([
             mlp_lr: Schema.string().description("MLP 层学习率"),
             mod_lr: Schema.string().description("AdaLN 调制层学习率（注意：LoRA 默认不训练 mod 层）"),
             llm_adapter_lr: Schema.string().description("LLM Adapter 学习率（留空=跟随总学习率，填 0=冻结）"),
-        }).description("Anima 专用参数 \u26a0\ufe0f 分桶步长需为16的倍数"),
+        }).description("Anima 专用参数"),
         Schema.object({}),
     ]),
 
