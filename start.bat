@@ -5,29 +5,12 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo   SD-Trainer (Anima) 一键启动
+echo   Anima LoRA Trainer - 启动
 echo ============================================
 echo.
 
-REM 检查 git 是否可用
-where git >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [警告] 未找到 Git，将跳过仓库更新。
-    echo.
-    goto :check_venv
-)
-
-echo [更新] 拉取本仓库最新代码...
-echo       已排除 logs/ output/ sd-models/ venv/ config/autosave/ 等本地文件
-git pull --ff-only origin main
-if %errorlevel% neq 0 (
-    echo [警告] 更新失败（可能有本地修改冲突），继续使用当前版本。
-)
-echo.
-
-:check_venv
 REM 检查虚拟环境
-if exist "venv\Scripts\activate" (
+if exist "venv\Scripts\activate.bat" (
     goto :run
 )
 
@@ -50,18 +33,21 @@ if "%choice%"=="1" (
     echo [完成] 安装完成，开始启动...
     echo.
     goto :run
-) else (
-    echo 已取消。
-    pause
-    exit /b 0
 )
+echo 已取消。
+pause
+exit /b 0
 
 :run
 echo [启动] 激活虚拟环境并启动 GUI ...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
-
 call "venv\Scripts\activate.bat"
-python gui.py %*
 
+REM RTX 50 系 / Hopper+ 推荐 flash-attn
+echo [提示] RTX 4090/5090 建议安装 flash-attn 以获得最佳性能
+echo        pip install flash-attn --no-build-isolation
+echo.
+
+python gui.py %*
 pause

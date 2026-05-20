@@ -58,7 +58,7 @@ Schema.intersect([
         train_batch_size: Schema.number().min(1).default(1).description("批量大小, 越高显存占用越高"),
         gradient_checkpointing: Schema.boolean().default(false).description("梯度检查点（用时间换显存，DiT 模型推荐开启）"),
         gradient_accumulation_steps: Schema.number().min(1).description("梯度累加步数（等效增大 batch size，不增加显存）"),
-        network_train_unet_only: Schema.boolean().default(false).description("仅训练主干网络（LoRA 训练推荐开启）"),
+        network_train_unet_only: Schema.boolean().default(false).description("仅训练主干网络（LoRA 训练推荐开启；Anima 官方推荐开启）"),
         network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器"),
     }).description("训练相关参数"),
 
@@ -75,7 +75,7 @@ Schema.intersect([
             mode_scale: Schema.number().step(0.01).default(1.29).description("Mode 加权缩放（仅 weighting_scheme=mode 时生效）"),
             qwen3_max_token_length: Schema.number().step(1).default(512).description("Qwen3 最大 token 长度"),
             t5_max_token_length: Schema.number().step(1).default(512).description("T5 最大 token 长度"),
-            attn_mode: Schema.union(["torch", "xformers", "flash"]).default("torch").description("注意力实现方式（torch=原生, xformers=省显存, flash=FlashAttention最快但需硬件支持）"),
+            attn_mode: Schema.union(["torch", "xformers", "flash"]).default("torch").description("注意力实现方式（torch=原生兼容最好；xformers=省显存需开启 split_attn；flash=FlashAttention 最快，RTX 40/50 系推荐，需 pip install flash-attn）"),
             split_attn: Schema.boolean().default(false).description("拆分注意力计算以降低显存占用（使用 xformers 时必须开启）"),
             torch_compile: Schema.boolean().default(false).description("使用 torch.compile 加速训练（需 PyTorch 2.0+，首次编译较慢）"),
         }).description("Anima 专用参数"),
@@ -87,7 +87,7 @@ Schema.intersect([
 
     Schema.intersect([
         Schema.object({
-            network_module: Schema.union(["networks.lora", "networks.lora_anima", "networks.dylora", "networks.oft", "lycoris.kohya"]).default("networks.lora").description("训练网络模块（SD/SDXL 选 networks.lora；Anima 选 networks.lora_anima）"),
+            network_module: Schema.union(["networks.lora", "networks.lora_anima", "lycoris.kohya"]).default("networks.lora").description("训练网络模块（SD/SDXL 选 networks.lora；Anima 选 networks.lora_anima；lycoris.kohya 通用）"),
             network_weights: Schema.string().role('filepicker').description("从已有的 LoRA 模型上继续训练，填写路径"),
             network_dim: Schema.number().min(1).default(32).description("网络维度，常用 4~128，不是越大越好, 低dim可以降低显存占用"),
             network_alpha: Schema.number().min(1).default(32).description("常用值：等于 network_dim 或 network_dim*1/2 或 1。使用较小的 alpha 需要提升学习率。（Anima 建议 16）"),
@@ -110,9 +110,6 @@ Schema.intersect([
         // lycoris 参数
         SHARED_SCHEMAS.LYCORIS_MAIN,
         SHARED_SCHEMAS.LYCORIS_LOKR,
-
-        // dylora 参数
-        SHARED_SCHEMAS.NETWORK_OPTION_DYLORA,
 
         // 分层学习率参数
         SHARED_SCHEMAS.NETWORK_OPTION_BLOCK_WEIGHTS,
@@ -152,16 +149,12 @@ Schema.intersect([
         })
     ).description("速度优化选项"),
 
-    // Anima 显存优化 & 高级选项
+    // Anima 显存优化
     Schema.union([
         Schema.object({
             model_train_type: Schema.const("anima-lora").required(),
             text_encoder_batch_size: Schema.number().min(1).description("文本编码器批量大小（留空使用数据集 batch size）"),
-            blocks_to_swap: Schema.number().min(0).description("[实验性] 前向/反向传播时交换到 CPU 的 Transformer block 数量，降低显存但增加训练时间"),
-            unsloth_offload_checkpointing: Schema.boolean().default(false).description("使用 Unsloth 异步卸载梯度检查点（不可与 blocks_to_swap 同时使用）"),
-            disable_mmap_load_safetensors: Schema.boolean().default(false).description("禁用 safetensors 的 mmap 加载（WSL 环境下可加速）"),
-            vae_chunk_size: Schema.number().step(1).description("VAE 编码空间分块大小（偶数），用于降低显存，留空关闭"),
-            vae_disable_cache: Schema.boolean().default(false).description("禁用 VAE 内部缓存以降低显存"),
+            unsloth_offload_checkpointing: Schema.boolean().default(false).description("使用 Unsloth 异步卸载梯度检查点，降低显存占用"),
         }).description("Anima 显存优化"),
         Schema.object({}),
     ]),
@@ -176,6 +169,17 @@ Schema.intersect([
             validate_every_n_epochs: Schema.number().min(1).description("每 N 个 epoch 执行一次验证（留空=每个 epoch 都验证）"),
             max_validation_steps: Schema.number().min(1).description("验证时最多处理的样本数（留空=全量验证）"),
         }).description("Anima 验证设置"),
+        Schema.object({}),
+    ]),
+
+    // Anima 预览图设置
+    Schema.union([
+        Schema.object({
+            model_train_type: Schema.const("anima-lora").required(),
+            sample_prompts: Schema.string().role('textarea').description("预览图 Prompt，每行一个（格式：`--w 宽 --h 高 --l CFG --s 步数 --d 种子 prompt文本`）。也可填写 txt 文件路径"),
+            sample_every_n_epochs: Schema.number().min(1).description("每 N 个 epoch 生成一次预览图"),
+            sample_every_n_steps: Schema.number().min(1).description("每 N 步生成一次预览图（与 epoch 二选一）"),
+        }).description("Anima 预览图设置"),
         Schema.object({}),
     ]),
 

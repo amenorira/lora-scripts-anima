@@ -37,6 +37,11 @@ numpy
 # for cuda 12.1(default 11.8)
 # onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
 
+# RTX 40/50 系推荐（RTX 5090 需 >= 2.7.0）
+# 安装: pip install flash-attn   （Linux 通常有预编译 wheel，秒装）
+# Windows 预编译版: https://github.com/bdashore3/flash-attention/releases
+# flash-attn
+
 # this is for onnx: 
 # protobuf==3.20.3
 # open clip for SDXL
