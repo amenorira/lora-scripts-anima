@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA 训练</title>
+<link rel="stylesheet" href="pico.min.css">
+<style>
+:root { --pico-font-size: 14px; }
+body { max-width: 1400px; margin: 0 auto; padding: 1rem; }
+.layout { display: flex; gap: 1rem; height: calc(100vh - 2rem); }
+.form-panel { flex: 1; overflow-y: auto; padding-right: 0.5rem; }
+.preview-panel { width: 380px; display: flex; flex-direction: column; gap: 0.5rem; }
+.preview-panel pre { flex: 1; overflow-y: auto; font-size: 12px; margin: 0; padding: 0.5rem; border-radius: 4px; background: var(--pico-code-background-color); }
+.field-group { margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--pico-muted-border-color); border-radius: 6px; }
+.field-group legend { font-weight: 600; font-size: 0.85rem; color: var(--pico-muted-color); margin-bottom: 0.5rem; }
+.field-row { margin-bottom: 0.5rem; }
+.field-row label { display: block; font-size: 0.8rem; margin-bottom: 0.15rem; }
+.field-row label .desc { font-weight: normal; color: var(--pico-muted-color); font-size: 0.75rem; }
+.field-row input, .field-row select, .field-row textarea { width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
+.field-row textarea { min-height: 60px; }
+.field-row input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
+.field-row input[type="range"] { height: 1.2rem; }
+.btn-bar { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.btn-bar button, .btn-bar .btn { font-size: 0.8rem; padding: 0.3rem 0.7rem; }
+.toast { position: fixed; top: 1rem; right: 1rem; z-index: 999; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; animation: fadeIn 0.2s; }
+.toast.success { background: #2e7d32; color: #fff; }
+.toast.error { background: #c62828; color: #fff; }
+.toast.warning { background: #ef6c00; color: #fff; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-box { background: var(--pico-card-background-color); border-radius: 8px; padding: 1.5rem; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.hidden { display: none !important; }
+.warn-block { font-size: 0.8rem; margin-bottom: 0.5rem; padding: 0.4rem 0.6rem; border-radius: 4px; }
+.warn-block.warn { background: #fff3e0; color: #e65100; }
+.warn-block.err { background: #ffebee; color: #b71c1c; }
+.table-input { width: 100%; border-collapse: collapse; }
+.table-input td { padding: 0.15rem; }
+.table-input input { width: 100%; font-size: 0.8rem; padding: 0.2rem 0.3rem; }
+.table-input button { font-size: 0.7rem; padding: 0.1rem 0.4rem; }
+.file-row { display: flex; gap: 0.3rem; }
+.file-row input { flex: 1; }
+.file-row button { font-size: 0.75rem; padding: 0.2rem 0.5rem; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="form-panel" id="formPanel">
+    <div class="btn-bar">
+      <select id="trainType" style="width:auto;font-size:0.85rem;">
+        <option value="lora-master">LoRA (SD/SDXL/Anima)</option>
+        <option value="lora-basic">LoRA Basic</option>
+        <option value="dreambooth">DreamBooth</option>
+        <option value="flux-lora">FLUX LoRA</option>
+        <option value="sd3-lora">SD3 LoRA</option>
+        <option value="lumina2-lora">Lumina2 LoRA</option>
+      </select>
+      <button id="btnReset" class="secondary">全部重置</button>
+      <button id="btnSave" class="secondary">保存参数</button>
+      <button id="btnLoad" class="secondary">读取参数</button>
+      <button id="btnExport">导出 TOML</button>
+      <button id="btnImport" class="secondary">导入 TOML</button>
+      <button id="btnPresets" class="secondary">加载预设</button>
+      <button id="btnHistory" class="secondary">历史记录</button>
+      <button id="btnTrain" style="background:#2e7d32;border-color:#2e7d32;">开始训练</button>
+      <button id="btnStop" class="secondary" style="color:#c62828;">停止训练</button>
+    </div>
+    <form id="mainForm"></form>
+  </div>
+
+  <div class="preview-panel">
+    <div id="warnings"></div>
+    <pre id="tomlPreview">Loading...</pre>
+  </div>
+</div>
+
+<!-- Modals -->
+<div class="modal-overlay hidden" id="modalHistory"><div class="modal-box">
+  <h5>历史参数</h5>
+  <div id="historyList"></div>
+  <button class="secondary" onclick="closeModal('modalHistory')">关闭</button>
+</div></div>
+
+<div class="modal-overlay hidden" id="modalPresets"><div class="modal-box">
+  <h5>训练预设</h5>
+  <div id="presetsList"></div>
+  <button class="secondary" onclick="closeModal('modalPresets')">关闭</button>
+</div></div>
+
+<div class="modal-overlay hidden" id="modalPreview"><div class="modal-box">
+  <h5>参数预览</h5>
+  <pre id="modalPreviewContent"></pre>
+  <button class="secondary" onclick="closeModal('modalPreview')">关闭</button>
+</div></div>
+
+<input type="file" id="fileImport" accept=".toml" style="display:none">
+
+<script type="module">
+// ═══════════════════════════════════════
+// Schema Polyfill
+// ═══════════════════════════════════════
+let _refId = 0;
+const refs = {};
+
+function newRef(type, props = {}) {
+  const id = `ref${++_refId}`;
+  refs[id] = { type, ...props };
+  const handler = {
+    get(_, key) {
+      if (key === 'toJSON') return () => ({ refs: { ...refs } });
+      if (key === '_id') return id;
+      if (key === '_refs') return refs;
+      return (...args) => {
+        if (key === 'default') refs[id].default = args[0];
+        else if (key === 'description') refs[id].description = args[0];
+        else if (key === 'step') refs[id].step = args[0];
+        else if (key === 'min') refs[id].min = args[0];
+        else if (key === 'max') refs[id].max = args[0];
+        else if (key === 'required') refs[id].required = true;
+        else if (key === 'role') {
+          refs[id].role = args[0];
+          if (args[1]) refs[id].roleConfig = args[1];
+        }
+        else if (key === 'pattern') refs[id].pattern = args[0];
+        return new Proxy(() => {}, handler);
+      };
+    },
+    apply(_, __, args) {
+      if (type === 'const') refs[id].value = args[0];
+      if (type === 'union') refs[id].options = args;
+      if (type === 'array') refs[id].items = args[0];
+      if (type === 'transform') refs[id].transform = args[0];
+      return new Proxy(() => {}, handler);
+    }
+  };
+  return new Proxy(() => {}, handler);
+}
+
+// Schema static methods
+function SchemaObject(fields) {
+  const id = `ref${++_refId}`;
+  const dict = {};
+  for (const [k, v] of Object.entries(fields)) {
+    dict[k] = v._id || (typeof v === 'function' ? null : null);
+  }
+  refs[id] = { type: 'object', dict };
+  // Store field refs
+  for (const [k, v] of Object.entries(fields)) {
+    if (v._id) refs[id]._fieldRefs = refs[id]._fieldRefs || {};
+    if (v._id) refs[id]._fieldRefs[k] = v._id;
+  }
+  const handler = {
+    get(_, key) {
+      if (key === 'toJSON') return () => ({ refs: { ...refs } });
+      if (key === '_id') return id;
+      return (...args) => {
+        if (key === 'description') refs[id].description = args[0];
+        return new Proxy(() => {}, handler);
+      };
+    }
+  };
+  return new Proxy(() => {}, handler);
+}
+
+function SchemaIntersect(items) {
+  const id = `ref${++_refId}`;
+  refs[id] = { type: 'intersect', items: items.map(i => i._id).filter(Boolean) };
+  const handler = {
+    get(_, key) {
+      if (key === 'toJSON') return () => ({ refs: { ...refs } });
+      if (key === '_id') return id;
+      return (...args) => {
+        if (key === 'description') refs[id].description = args[0];
+        return new Proxy(() => {}, handler);
+      };
+    }
+  };
+  return new Proxy(() => {}, handler);
+}
+
+function SchemaUnion(items) {
+  const id = `ref${++_refId}`;
+  refs[id] = { type: 'union', items: items.map(i => i._id).filter(Boolean) };
+  const handler = {
+    get(_, key) {
+      if (key === 'toJSON') return () => ({ refs: { ...refs } });
+      if (key === '_id') return id;
+      return (...args) => {
+        if (key === 'description') refs[id].description = args[0];
+        return new Proxy(() => {}, handler);
+      };
+    }
+  };
+  return new Proxy(() => {}, handler);
+}
+
+const Schema = {
+  string: () => newRef('string'),
+  number: () => newRef('number'),
+  boolean: () => newRef('boolean'),
+  array: (item) => newRef('array', { items: item._id }),
+  object: SchemaObject,
+  const: (v) => newRef('const', { value: v }),
+  union: SchemaUnion,
+  intersect: SchemaIntersect,
+  transform: (fn) => newRef('transform'),
+};
+
+// ═══════════════════════════════════════
+// Global state
+// ═══════════════════════════════════════
+let SHARED_SCHEMAS = {};
+let currentSchema = null;
+let formData = {};
+let currentTrainType = 'lora-master';
+
+// ═══════════════════════════════════════
+// Toast
+// ═══════════════════════════════════════
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ═══════════════════════════════════════
+// Modal helpers
+// ═══════════════════════════════════════
+window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+
+// ═══════════════════════════════════════
+// Schema loading
+// ═══════════════════════════════════════
+async function loadSchemas() {
+  const res = await fetch('/api/schemas/all');
+  const data = await res.json();
+  if (data.status !== 'success') throw new Error('Failed to load schemas');
+
+  // First load shared schema
+  const shared = data.data.schemas.find(s => s.name === 'shared');
+  if (shared) {
+    _refId = 0;
+    for (const k of Object.keys(refs)) delete refs[k];
+    // shared.ts is an IIFE: (function(){...return data})()
+    // Capture its return value as SHARED_SCHEMAS
+    const fn = new Function('Schema', 'UpdateSchema', `
+      const SHARED_SCHEMAS = ${shared.schema};
+      return SHARED_SCHEMAS;
+    `);
+    SHARED_SCHEMAS = fn(Schema, (base, overrides, removeKeys) => {
+      const merged = { ...base, ...overrides };
+      if (removeKeys) for (const k of removeKeys) delete merged[k];
+      return merged;
+    }) || {};
+  }
+
+  return data.data.schemas;
+}
+
+async function loadTargetSchema(name) {
+  const schemas = await loadSchemas();
+  const target = schemas.find(s => s.name === name);
+  if (!target) throw new Error(`Schema not found: ${name}`);
+
+  // Keep shared refs, add target refs
+  const fn = new Function('Schema', 'SHARED_SCHEMAS', 'UpdateSchema', `
+    ${target.schema}
+  `);
+  fn(Schema, SHARED_SCHEMAS, (base, overrides, removeKeys) => {
+    const merged = { ...base, ...overrides };
+    if (removeKeys) for (const k of removeKeys) delete merged[k];
+    return merged;
+  });
+
+  return { refs: { ...refs } };
+}
+
+// ═══════════════════════════════════════
+// Form renderer
+// ═══════════════════════════════════════
+function resolveRefs(schemaJson) {
+  // Flatten intersect/union/object into field list
+  const allFields = [];
+  const allConditions = [];
+
+  function walkRef(refId, parentCondition = null) {
+    const ref = schemaJson.refs[refId];
+    if (!ref) return;
+
+    if (ref.type === 'object') {
+      if (ref.dict) {
+        for (const [key, fieldRefId] of Object.entries(ref.dict)) {
+          if (!fieldRefId || !schemaJson.refs[fieldRefId]) continue;
+          const fieldRef = schemaJson.refs[fieldRefId];
+
+          if (fieldRef.type === 'const') {
+            // This is a condition key
+            const cond = { key, value: fieldRef.value };
+            parentCondition = cond;
+            continue;
+          }
+
+          allFields.push({
+            key,
+            ...fieldRef,
+            condition: parentCondition ? { ...parentCondition } : null,
+            section: ref.description || ''
+          });
+        }
+      }
+    }
+
+    if (ref.type === 'intersect' && ref.items) {
+      for (const itemId of ref.items) {
+        walkRef(itemId, parentCondition);
+      }
+    }
+
+    if (ref.type === 'union' && ref.items) {
+      for (const itemId of ref.items) {
+        const itemRef = schemaJson.refs[itemId];
+        if (itemRef && itemRef.type === 'object' && itemRef.dict) {
+          // Check if this branch has a const condition
+          let branchCond = parentCondition;
+          for (const [k, fid] of Object.entries(itemRef.dict)) {
+            const fr = schemaJson.refs[fid];
+            if (fr && fr.type === 'const') {
+              branchCond = { ...(branchCond || {}), [k]: fr.value };
+            }
+          }
+          walkRef(itemId, branchCond);
+        }
+      }
+    }
+  }
+
+  // Find root intersect
+  for (const [refId, ref] of Object.entries(schemaJson.refs)) {
+    if (ref.type === 'intersect' && ref.items && ref.items.length > 5) {
+      walkRef(refId, null);
+      break;
+    }
+  }
+
+  // If no root found, walk everything
+  if (allFields.length === 0) {
+    for (const [refId, ref] of Object.entries(schemaJson.refs)) {
+      if (ref.type === 'intersect') {
+        walkRef(refId, null);
+        break;
+      }
+    }
+  }
+
+  // Deduplicate by key
+  const seen = new Map();
+  const deduped = [];
+  for (const f of allFields) {
+    const ck = f.key + '|' + JSON.stringify(f.condition || {});
+    if (!seen.has(ck)) {
+      seen.set(ck, true);
+      deduped.push(f);
+    }
+  }
+
+  return deduped;
+}
+
+function groupBySection(fields) {
+  const groups = [];
+  const noSection = [];
+
+  for (const f of fields) {
+    if (f.section) {
+      let group = groups.find(g => g.name === f.section);
+      if (!group) {
+        group = { name: f.section, fields: [] };
+        groups.push(group);
+      }
+      group.fields.push(f);
+    } else {
+      noSection.push(f);
+    }
+  }
+
+  if (noSection.length > 0) {
+    groups.unshift({ name: '基础设置', fields: noSection });
+  }
+
+  return groups;
+}
+
+function buildForm(fields) {
+  const form = document.getElementById('mainForm');
+  form.innerHTML = '';
+
+  const groups = groupBySection(fields);
+
+  for (const group of groups) {
+    const fs = document.createElement('fieldset');
+    fs.className = 'field-group';
+
+    const legend = document.createElement('legend');
+    legend.textContent = group.name;
+    fs.appendChild(legend);
+
+    for (const f of group.fields) {
+      const row = createFieldRow(f);
+      fs.appendChild(row);
+    }
+
+    form.appendChild(fs);
+  }
+
+  // Sync form → formData
+  form.addEventListener('input', () => {
+    syncFormToData(fields);
+    updatePreview();
+  });
+  form.addEventListener('change', () => {
+    syncFormToData(fields);
+    updateConditionalVisibility(fields);
+    updatePreview();
+  });
+
+  // Initial sync
+  syncDataToForm(fields);
+  updateConditionalVisibility(fields);
+  updatePreview();
+}
+
+function createFieldRow(f) {
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.dataset.fieldKey = f.key;
+  if (f.condition) {
+    row.dataset.condition = JSON.stringify(f.condition);
+  }
+
+  // Label
+  const label = document.createElement('label');
+  label.innerHTML = f.key + (f.description ? ` <span class="desc">— ${f.description}</span>` : '');
+  row.appendChild(label);
+
+  // Input
+  const type = f.type;
+  const role = f.role || '';
+
+  if (type === 'boolean') {
+    const wrap = document.createElement('label');
+    wrap.style.display = 'flex'; wrap.style.alignItems = 'center'; wrap.style.gap = '0.3rem';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.key = f.key;
+    wrap.appendChild(cb);
+    wrap.appendChild(document.createTextNode(f.description || f.key));
+    row.appendChild(wrap);
+  } else if (type === 'union' && f.options) {
+    const sel = document.createElement('select');
+    sel.dataset.key = f.key;
+    for (const opt of f.options) {
+      const o = document.createElement('option');
+      o.value = opt; o.textContent = opt;
+      sel.appendChild(o);
+    }
+    row.appendChild(sel);
+  } else if (role === 'textarea') {
+    const ta = document.createElement('textarea');
+    ta.dataset.key = f.key;
+    row.appendChild(ta);
+  } else if (role === 'filepicker') {
+    const wrap = document.createElement('div');
+    wrap.className = 'file-row';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.dataset.key = f.key;
+    wrap.appendChild(inp);
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = '选择';
+    btn.className = 'secondary';
+    btn.onclick = async () => {
+      try {
+        const pickerType = (f.roleConfig && f.roleConfig.type) || 'model-file';
+        const res = await fetch(`/api/pick_file?picker_type=${pickerType}`);
+        const data = await res.json();
+        if (data.status === 'success' && data.data.path) {
+          inp.value = data.data.path;
+          inp.dispatchEvent(new Event('input'));
+        }
+      } catch (e) { toast('选择文件失败', 'error'); }
+    };
+    wrap.appendChild(btn);
+    row.appendChild(wrap);
+  } else if (role === 'table') {
+    const container = document.createElement('div');
+    container.dataset.key = f.key;
+    container.dataset.table = 'true';
+    container.innerHTML = '<div class="table-rows"></div><button type="button" class="secondary table-add-btn" style="font-size:0.75rem;margin-top:0.2rem;">+ 添加行</button>';
+    row.appendChild(container);
+  } else if (type === 'number') {
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.dataset.key = f.key;
+    if (f.step != null) inp.step = f.step;
+    if (f.min != null) inp.min = f.min;
+    if (f.max != null) inp.max = f.max;
+    row.appendChild(inp);
+  } else {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.dataset.key = f.key;
+    row.appendChild(inp);
+  }
+
+  return row;
+}
+
+function syncDataToForm(fields) {
+  for (const f of fields) {
+    if (f.type === 'boolean') {
+      const cb = document.querySelector(`input[type="checkbox"][data-key="${f.key}"]`);
+      if (cb) cb.checked = !!formData[f.key];
+    } else if (f.role === 'table') {
+      const container = document.querySelector(`[data-table="true"][data-key="${f.key}"]`);
+      if (container) renderTableField(container, f);
+    } else {
+      const el = document.querySelector(`[data-key="${f.key}"]`);
+      if (el && el.type !== 'checkbox') {
+        el.value = formData[f.key] != null ? formData[f.key] : (f.default != null ? f.default : '');
+      }
+    }
+    // Set defaults
+    if (formData[f.key] == null && f.default != null) {
+      formData[f.key] = f.default;
+    }
+  }
+}
+
+function syncFormToData(fields) {
+  for (const f of fields) {
+    if (f.type === 'boolean') {
+      const cb = document.querySelector(`input[type="checkbox"][data-key="${f.key}"]`);
+      if (cb) formData[f.key] = cb.checked;
+    } else if (f.role === 'table') {
+      const container = document.querySelector(`[data-table="true"][data-key="${f.key}"]`);
+      if (container) {
+        const inputs = container.querySelectorAll('.table-rows input');
+        formData[f.key] = Array.from(inputs).map(inp => inp.value).filter(v => v !== '');
+      }
+    } else {
+      const el = document.querySelector(`[data-key="${f.key}"]`);
+      if (el && el.type !== 'checkbox') {
+        const val = el.value;
+        if (f.type === 'number') {
+          formData[f.key] = val === '' ? null : parseFloat(val);
+        } else {
+          formData[f.key] = val;
+        }
+      }
+    }
+  }
+}
+
+function renderTableField(container, f) {
+  const rows = container.querySelector('.table-rows');
+  rows.innerHTML = '';
+  const values = formData[f.key] || [];
+  for (const v of values) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = v;
+    inp.addEventListener('input', () => syncFormToData([f]));
+    rows.appendChild(inp);
+  }
+  if (values.length === 0) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.addEventListener('input', () => syncFormToData([f]));
+    rows.appendChild(inp);
+  }
+  const addBtn = container.querySelector('.table-add-btn');
+  if (addBtn) {
+    addBtn.onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.addEventListener('input', () => syncFormToData([f]));
+      rows.appendChild(inp);
+      syncFormToData([f]);
+    };
+  }
+}
+
+function updateConditionalVisibility(fields) {
+  for (const f of fields) {
+    if (!f.condition) continue;
+    const row = document.querySelector(`[data-field-key="${f.key}"]`);
+    if (!row) continue;
+
+    let visible = true;
+    for (const [condKey, condVal] of Object.entries(f.condition)) {
+      const currentVal = formData[condKey];
+      if (String(currentVal) !== String(condVal)) {
+        visible = false;
+        break;
+      }
+    }
+    row.style.display = visible ? '' : 'none';
+  }
+}
+
+// ═══════════════════════════════════════
+// TOML preview & params logic
+// ═══════════════════════════════════════
+const floatParmas = ["learning_rate","unet_lr","text_encoder_lr","learning_rate_te","learning_rate_te1","learning_rate_te2","sigmoid_scale","guidance_scale","discrete_flow_shift","logit_mean","logit_std","mode_scale","weight_decay"];
+const needDeleteParams = ["lycoris_algo","conv_dim","conv_alpha","dropout","dylora_unit","lokr_factor","train_norm","down_lr_weight","mid_lr_weight","up_lr_weight","block_lr_zero_threshold","enable_block_weights","enable_preview","network_args_custom","optimizer_args_custom","enable_base_weight","prodigy_d0","prodigy_d_coef","weight_decay","ui_custom_params"];
+const testNoneParams = ["vae","reg_data_dir","network_weights","noise_offset","multires_noise_iterations","multires_noise_discount","caption_dropout_rate","network_dropout","scale_weight_norms","gpu_ids"];
+const sd12ExclusiveParams = ["v2","v_parameterization","scale_v_pred_loss_like_noise_pred","clip_skip","learning_rate_te","stop_text_encoder_training"];
+const sdxlExclusiveParams = ["learning_rate_te1","learning_rate_te2"];
+const conflictParams = [["cache_text_encoder_outputs","shuffle_caption"],["noise_offset","multires_noise_iterations"],["cache_latents","color_aug"],["cache_latents","random_crop"]];
+
+function isSDXLModel(d) { return d.model_train_type && d.model_train_type.startsWith('sdxl'); }
+function isAnimaModel(d) { return d.model_train_type && d.model_train_type.startsWith('anima'); }
+
+function checkParams(d) {
+  const warnings = [], errors = [];
+  const r = v => !!v;
+
+  if (d.optimizer_type && d.optimizer_type.startsWith('DAdapt') && d.lr_scheduler !== 'constant')
+    warnings.push('您使用了 DAdaptation 系列优化器，若想利用它获得学习率，请将 lr_scheduler 设置为 constant');
+  if (d.optimizer_type && d.optimizer_type.toLowerCase().startsWith('prodigy') && (d.unet_lr != 1 || d.text_encoder_lr != 1))
+    warnings.push('您使用了 prodigy 优化器，若想利用它获得学习率，请将 unet_lr、text_encoder_lr 设置为 1');
+  if (d.network_module === 'networks.oft' && d.model_train_type !== 'sdxl-lora')
+    errors.push('OFT 目前仅对 SDXL 可用');
+  if (d.network_module === 'networks.lora_anima' && d.enable_block_weights)
+    warnings.push('分层学习率目前仅支持 networks.lora，Anima 模型使用 networks.lora_anima 时不可用');
+
+  for (const [a, b] of conflictParams) {
+    if (r(d[a]) && r(d[b]))
+      errors.push(`参数 ${a} 与 ${b} 冲突，请只启用其中一个`);
+  }
+
+  return { warnings, errors };
+}
+
+function parseParams(d) {
+  d = { ...d };
+  d.network_args = [];
+  d.optimizer_args = [];
+
+  // Handle model type exclusive params
+  if (isSDXLModel(d)) {
+    for (const k of sd12ExclusiveParams) delete d[k];
+  } else if (isAnimaModel(d)) {
+    for (const k of sd12ExclusiveParams) delete d[k];
+    for (const k of sdxlExclusiveParams) delete d[k];
+  } else {
+    for (const k of sdxlExclusiveParams) delete d[k];
+  }
+
+  // LyCORIS
+  if (d.network_module === 'lycoris.kohya') {
+    d.network_args.push('conv_dim=' + (d.conv_dim || 0));
+    d.network_args.push('conv_alpha=' + (d.conv_alpha || 0));
+    d.network_args.push('dropout=' + (d.dropout || 0));
+    d.network_args.push('algo=' + (d.lycoris_algo || 'lora'));
+    if (d.lokr_factor) d.network_args.push('factor=' + d.lokr_factor);
+    if (d.train_norm) d.network_args.push('train_norm=True');
+  }
+
+  // DyLoRA
+  if (d.network_module === 'networks.dylora') {
+    d.network_args.push('unit=' + (d.dylora_unit || 1));
+  }
+
+  // DAdapt optimizers
+  if (d.optimizer_type && d.optimizer_type.toLowerCase().startsWith('dada')) {
+    if (d.optimizer_type === 'DAdaptation' || d.optimizer_type === 'DAdaptAdam') {
+      d.optimizer_args = ['decouple=True', 'weight_decay=0.01'];
+    }
+    d.learning_rate = 1;
+    d.unet_lr = 1;
+    d.text_encoder_lr = 1;
+  }
+
+  // Prodigy
+  if (d.optimizer_type && d.optimizer_type.toLowerCase() === 'prodigy') {
+    d.optimizer_args = ['decouple=True', 'weight_decay=0.01', 'use_bias_correction=True', 'd_coef=' + (d.prodigy_d_coef || 2.0)];
+    if (d.lr_warmup_steps) d.optimizer_args.push('safeguard_warmup=True');
+    if (d.prodigy_d0) d.optimizer_args.push('d0=' + d.prodigy_d0);
+  }
+
+  // Weight decay standalone
+  if (d.weight_decay != null) {
+    d.optimizer_args.push('weight_decay=' + d.weight_decay);
+  }
+
+  // Block weights
+  if (d.enable_block_weights) {
+    d.network_args.push('down_lr_weight=' + (d.down_lr_weight || 1));
+    d.network_args.push('mid_lr_weight=' + (d.mid_lr_weight || 1));
+    d.network_args.push('up_lr_weight=' + (d.up_lr_weight || 1));
+    d.network_args.push('block_lr_zero_threshold=' + (d.block_lr_zero_threshold || 0));
+  }
+
+  // Base weight
+  if (d.enable_base_weight && d.base_weights) {
+    d.base_weights = d.base_weights.split('\n').map(v => parseFloat(v));
+  }
+
+  // Custom args
+  if (d.network_args_custom && d.network_args_custom.length > 0) {
+    d.network_args = [...d.network_args, ...d.network_args_custom];
+  }
+  if (d.optimizer_args_custom && d.optimizer_args_custom.length > 0) {
+    d.optimizer_args = [...d.optimizer_args, ...d.optimizer_args_custom];
+  }
+
+  // Float formatting
+  for (const k of floatParmas) {
+    if (d[k] != null) {
+      const n = parseFloat(d[k]);
+      d[k] = Number.isNaN(n) ? 0 : n;
+    }
+  }
+
+  // Test none params
+  for (const k of testNoneParams) {
+    if (d[k] === 0 || d[k] === '' || (Array.isArray(d[k]) && d[k].length === 0)) {
+      delete d[k];
+    }
+  }
+
+  // Clean up
+  for (const k of needDeleteParams) {
+    if (d.hasOwnProperty(k)) delete d[k];
+  }
+
+  if (d.network_args.length === 0) delete d.network_args;
+  if (d.optimizer_args.length === 0) delete d.optimizer_args;
+
+  return d;
+}
+
+function toTOML(d) {
+  const lines = [];
+  for (const [k, v] of Object.entries(d)) {
+    if (v == null || v === '') continue;
+    if (Array.isArray(v)) {
+      lines.push(`${k} = [${v.map(x => `"${x}"`).join(', ')}]`);
+    } else if (typeof v === 'boolean') {
+      lines.push(`${k} = ${v}`);
+    } else if (typeof v === 'number') {
+      lines.push(`${k} = ${v}`);
+    } else {
+      lines.push(`${k} = "${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function updatePreview() {
+  const tomlEl = document.getElementById('tomlPreview');
+  const warnEl = document.getElementById('warnings');
+  try {
+    const d = { ...formData };
+    const parsed = parseParams(d);
+    const { warnings, errors } = checkParams(parsed);
+    warnEl.innerHTML = '';
+    for (const w of warnings) {
+      warnEl.innerHTML += `<div class="warn-block warn">⚠ ${w}</div>`;
+    }
+    for (const e of errors) {
+      warnEl.innerHTML += `<div class="warn-block err">❌ ${e}</div>`;
+    }
+    tomlEl.textContent = toTOML(parsed);
+  } catch (e) {
+    tomlEl.textContent = 'Error generating preview';
+    console.error(e);
+  }
+}
+
+// ═══════════════════════════════════════
+// History (localStorage)
+// ═══════════════════════════════════════
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(`configs-${currentTrainType}`) || '[]');
+  } catch { return []; }
+}
+
+function saveHistory(entry) {
+  const h = getHistory();
+  if (!entry.name && entry.value && entry.value.output_name) {
+    entry.name = entry.value.output_name;
+  }
+  h.push(entry);
+  localStorage.setItem(`configs-${currentTrainType}`, JSON.stringify(h));
+}
+
+// ═══════════════════════════════════════
+// Auto-save
+// ═══════════════════════════════════════
+function autoSave() {
+  localStorage.setItem(`configs-${currentTrainType}-autosave`, JSON.stringify(formData));
+}
+
+function autoLoad() {
+  try {
+    const saved = localStorage.getItem(`configs-${currentTrainType}-autosave`);
+    if (saved && saved !== 'null') {
+      const data = JSON.parse(saved);
+      if (data && Object.keys(data).length > 0) {
+        formData = data;
+        toast('已自动加载历史参数');
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+window.addEventListener('beforeunload', autoSave);
+setInterval(autoSave, 5000);
+
+// ═══════════════════════════════════════
+// Init
+// ═══════════════════════════════════════
+async function init(trainType) {
+  currentTrainType = trainType;
+  document.getElementById('mainForm').innerHTML = '<p>加载中...</p>';
+  document.getElementById('tomlPreview').textContent = 'Loading...';
+
+  try {
+    const schemaJson = await loadTargetSchema(trainType);
+    const fields = resolveRefs(schemaJson);
+
+    // Load saved data or use defaults
+    if (!autoLoad()) {
+      formData = {};
+      for (const f of fields) {
+        if (f.default != null) formData[f.key] = f.default;
+      }
+    }
+
+    // Set model_train_type from URL or default
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('type')) {
+      formData.model_train_type = urlParams.get('type');
+    }
+
+    buildForm(fields);
+
+    // Listen for train type changes
+    document.getElementById('trainType').value = trainType;
+
+  } catch (e) {
+    document.getElementById('mainForm').innerHTML = `<p style="color:red">加载失败: ${e.message}</p>`;
+    console.error(e);
+  }
+}
+
+// ═══════════════════════════════════════
+// Button handlers
+// ═══════════════════════════════════════
+document.getElementById('trainType').addEventListener('change', (e) => {
+  init(e.target.value);
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  if (confirm('确定要重置所有参数吗？')) {
+    formData = {};
+    init(currentTrainType);
+    toast('已全部重置');
+  }
+});
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  const entry = {
+    time: new Date().toLocaleString(),
+    name: formData.output_name || '',
+    value: { ...formData }
+  };
+  saveHistory(entry);
+  toast('已保存参数');
+});
+
+document.getElementById('btnLoad').addEventListener('click', () => {
+  const history = getHistory();
+  if (history.length === 0) { toast('没有历史记录', 'warning'); return; }
+  const list = document.getElementById('historyList');
+  list.innerHTML = history.map((h, i) => `
+    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--pico-muted-border-color)">
+      <span style="flex:1">${h.name || h.time} — ${h.time}</span>
+      <button class="secondary" data-idx="${i}" data-action="apply">使用</button>
+      <button class="secondary" data-idx="${i}" data-action="preview">预览</button>
+      <button class="secondary" data-idx="${i}" data-action="delete" style="color:#c62828">删除</button>
+    </div>
+  `).join('');
+  list.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const action = btn.dataset.action;
+      const h = getHistory();
+      if (action === 'apply') {
+        formData = { ...h[idx].value };
+        init(currentTrainType);
+        closeModal('modalHistory');
+        toast('已应用历史参数');
+      } else if (action === 'preview') {
+        const parsed = parseParams({ ...h[idx].value });
+        document.getElementById('modalPreviewContent').textContent = toTOML(parsed);
+        openModal('modalPreview');
+      } else if (action === 'delete') {
+        if (confirm('确定删除这条记录？')) {
+          h.splice(idx, 1);
+          localStorage.setItem(`configs-${currentTrainType}`, JSON.stringify(h));
+          document.getElementById('btnLoad').click(); // refresh
+          toast('已删除');
+        }
+      }
+    });
+  });
+  openModal('modalHistory');
+});
+
+document.getElementById('btnHistory').addEventListener('click', () => {
+  document.getElementById('btnLoad').click();
+});
+
+document.getElementById('btnExport').addEventListener('click', () => {
+  const parsed = parseParams({ ...formData });
+  const toml = toTOML(parsed);
+  const blob = new Blob([toml], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${formData.output_name || 'config'}_${Date.now()}.toml`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('已导出 TOML');
+});
+
+document.getElementById('btnImport').addEventListener('click', () => {
+  document.getElementById('fileImport').click();
+});
+
+document.getElementById('fileImport').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      // Use TOML parser (bundled from old frontend)
+      const parsed = parseSimpleTOML(reader.result);
+      if (parsed) {
+        formData = { ...formData, ...parsed };
+        init(currentTrainType);
+        toast('导入成功');
+      } else {
+        toast('TOML 解析失败', 'error');
+      }
+    } catch (err) {
+      toast('导入失败: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+document.getElementById('btnPresets').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    const presets = data.data.presets || [];
+    const list = document.getElementById('presetsList');
+    if (presets.length === 0) {
+      list.innerHTML = '<p>暂无预设文件</p>';
+    } else {
+      list.innerHTML = presets.map((p, i) => `
+        <div style="display:flex;gap:0.5rem;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--pico-muted-border-color)">
+          <span style="flex:1"><strong>${p.metadata?.name || '预设 '+(i+1)}</strong> — ${p.metadata?.description || ''}</span>
+          <button class="secondary" data-idx="${i}" data-action="applyPreset">使用</button>
+          <button class="secondary" data-idx="${i}" data-action="previewPreset">预览</button>
+        </div>
+      `).join('');
+      list.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx);
+          const action = btn.dataset.action;
+          const preset = presets[idx];
+          if (action === 'applyPreset') {
+            formData = { ...formData, ...preset.data };
+            init(currentTrainType);
+            closeModal('modalPresets');
+            toast('已应用预设');
+          } else {
+            const parsed = parseParams({ ...preset.data });
+            document.getElementById('modalPreviewContent').textContent = toTOML(parsed);
+            openModal('modalPreview');
+          }
+        });
+      });
+    }
+    openModal('modalPresets');
+  } catch (e) {
+    toast('加载预设失败', 'error');
+  }
+});
+
+document.getElementById('btnTrain').addEventListener('click', async () => {
+  const parsed = parseParams({ ...formData });
+  if (parsed.optimizer_type === 'DAdaptation') {
+    toast('DAdaptation 训练时，所有学习率将被设置为 1。并且学习率调度器将被设置为 constant。', 'warning');
+  }
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsed)
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      toast('训练任务已提交成功：' + data.message);
+    } else {
+      toast('训练任务提交失败：' + data.message, 'error');
+    }
+  } catch (e) {
+    toast('无法连接到训练端', 'error');
+  }
+});
+
+document.getElementById('btnStop').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/tasks');
+    const data = await res.json();
+    const running = (data.data?.tasks || []).filter(t => t.status === 'RUNNING');
+    if (running.length === 0) {
+      toast('当前没有正在运行的训练任务', 'warning');
+      return;
+    }
+    const task = running[0];
+    if (!confirm(`确定要停止任务 ${task.id} 吗？`)) return;
+    const stopRes = await fetch(`/api/tasks/terminate/${task.id}`);
+    const stopData = await stopRes.json();
+    if (stopData.status === 'success') {
+      toast('停止任务成功');
+    } else {
+      toast('停止任务失败：' + stopData.message, 'error');
+    }
+  } catch (e) {
+    toast('无法连接到训练端', 'error');
+  }
+});
+
+// ═══════════════════════════════════════
+// Simple TOML parser (basic key=value support)
+// ═══════════════════════════════════════
+function parseSimpleTOML(text) {
+  const result = {};
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('[')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.substring(0, eqIdx).trim();
+    let value = trimmed.substring(eqIdx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (value === 'true') { result[key] = true; continue; }
+    if (value === 'false') { result[key] = false; continue; }
+    const num = Number(value);
+    if (!isNaN(num) && value !== '') { result[key] = num; continue; }
+    if (value.startsWith('[') && value.endsWith(']')) {
+      result[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1'));
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════
+// Startup
+// ═══════════════════════════════════════
+init('lora-master');
+</script>
+</body>
+</html>
