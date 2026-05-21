@@ -1,9 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Anima Trainer</title>
+  <!-- Blocking script: set theme BEFORE any rendering to avoid flash -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('anima-theme') || 'auto';
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      else if (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
   <link rel="stylesheet" href="/anima-ui/css/app.css">
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
   <script src="/anima-ui/js/i18n.js"></script>
