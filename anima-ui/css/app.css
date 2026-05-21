@@ -132,6 +132,7 @@ a:hover { text-decoration: underline; }
 
 /* ── Modern Scrollbar ────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-button { display: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: transparent;

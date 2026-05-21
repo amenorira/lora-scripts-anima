@@ -342,9 +342,14 @@ document.addEventListener('alpine:init', () => {
       this.theme = t;
       this.showThemeDropdown = false;
       document.documentElement.classList.add('theme-transitioning');
+      void document.documentElement.offsetHeight;
       this.resolveTheme();
       localStorage.setItem('anima-theme', t);
       setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
+    },
+
+    toggleTheme() {
+      this.setTheme(this.resolvedTheme === 'dark' ? 'light' : 'dark');
     },
 
     themeLabel() {
@@ -425,12 +430,14 @@ document.addEventListener('alpine:init', () => {
       this.renderTrainingForm(allSections);
       this.updateToml();
 
-      // Watch for changes
+      // Watch for changes + interval fallback for real-time TOML
       const self = this;
       this.$watch('form', () => {
         self.updateToml();
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
       });
+      const fb = setInterval(() => { self.updateToml(); if (self.tomlRaw && !self.tomlRaw.startsWith('#')) clearInterval(fb); }, 300);
+      setTimeout(() => clearInterval(fb), 3000);
     },
 
     renderTrainingForm(sections) {
