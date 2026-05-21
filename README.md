@@ -97,6 +97,36 @@ bash run_gui.sh
 | ------------ | ------------ | ------------ |
 | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
 
+## 手动运行脚本（高级用户）
+
+传统方式，直接编辑并运行训练脚本。
+
+### Windows
+
+```sh
+# 安装
+.\install.ps1              # 国际版
+.\install-cn.ps1           # 国内镜像版
+
+# 训练 — 编辑 train.ps1 后运行
+.\train.ps1
+```
+
+### Linux
+
+```sh
+# 安装
+bash install.bash
+
+# 训练 — 先激活 venv，编辑 train.sh 后运行
+source venv/bin/activate
+bash train.sh
+```
+
+#### TensorBoard
+
+运行 `.\tensorboard.ps1` 将在 http://localhost:6006/ 启动 TensorBoard。
+
 ## 程序参数
 
 | 参数名称                     | 类型  | 默认值       | 描述                                            |

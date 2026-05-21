@@ -93,6 +93,36 @@ Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
 bash run_gui.sh
 ```
 
+## Manual Scripts (Advanced)
+
+Traditional workflow: edit and run training scripts directly.
+
+### Windows
+
+```sh
+# Install
+.\install.ps1              # International
+.\install-cn.ps1           # China mirror
+
+# Train — edit train.ps1 then run
+.\train.ps1
+```
+
+### Linux
+
+```sh
+# Install
+bash install.bash
+
+# Train — activate venv first, edit train.sh then run
+source venv/bin/activate
+bash train.sh
+```
+
+#### TensorBoard
+
+Run `.\tensorboard.ps1` to start TensorBoard at http://localhost:6006/.
+
 ## Program arguments
 
 | Parameter Name                | Type  | Default Value | Description                                      |
