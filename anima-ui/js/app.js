@@ -253,6 +253,15 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────
     async init() {
+      // Set route IMMEDIATELY to avoid flash of wrong page
+      let route = (window.location.hash || '#home').replace('#', '');
+      if (!ROUTE_CONFIG[route]) route = 'home';
+      this.currentRoute = route;
+      const cfg = ROUTE_CONFIG[route];
+      this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
+      this.pageSubtitle = cfg.subtitleKey ? (this.t(cfg.subtitleKey) || cfg.subtitle || '') : (cfg.subtitle || '');
+      document.title = this.pageTitle + ' | Anima Trainer';
+
       // Git version
       try {
         const r = await fetch('/api/version');
