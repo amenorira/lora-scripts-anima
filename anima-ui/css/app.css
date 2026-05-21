@@ -486,6 +486,7 @@ input:focus, select:focus, textarea:focus {
 
 input[type="number"] {
   font-family: var(--font-mono);
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 
