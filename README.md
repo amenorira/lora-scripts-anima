@@ -53,81 +53,49 @@ Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 
 ### 必要依赖
 
-Python 3.10 和 Git
+Python 3.10+ 和 Git
 
 ### 克隆仓库
 
 ```sh
 git clone https://github.com/ameyukisora/lora-scripts-anima.git
+cd lora-scripts-anima
 ```
+
+### 快速开始
+
+| 平台 | 安装 | 启动 |
+|------|------|------|
+| Windows | `.\install-cn.ps1` | `.\start.bat` |
+| Linux | `bash install.bash` | `bash start.sh` |
+
+启动后 GUI 自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)。
+
+> **RTX 40/50 系显卡用户**：启动脚本会自动检测 flash_attn 状态。
+> 如显示 ❌ 未安装，运行 `.\install-flash-attn.bat` (Windows) 或 `bash install-flash-attn.sh` (Linux) 一键安装。
+
+### 更新
+
+| 操作 | 脚本 |
+|------|------|
+| 更新本仓库 | `update-repo.bat` / `bash update-repo.sh` |
+| 更新训练脚本 (sd-scripts) | `update-scripts.bat` / `bash update-scripts.bash` |
 
 ## ✨ SD-Trainer GUI
 
-### 更新 kohya-ss/sd-scripts
-
-将训练脚本更新到最新版：
-
-| 平台 | 脚本 |
-|------|------|
-| Windows (CMD) | `update-scripts.bat` |
-| Windows (PowerShell) | `update-scripts.ps1` |
-| Linux | `bash update-scripts.bash` |
-
-这将用最新版 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 替换 `sd-scripts/` 目录。
-
-### Windows
-
-#### 安装
-
-运行 `install-cn.ps1` 将自动为您创建虚拟环境并安装必要的依赖。 
-
-#### 训练
-
-运行 `run_gui.ps1`，程序将自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)
-
-### Linux
-
-#### 安装
-
-运行 `install.bash` 将创建虚拟环境并安装必要的依赖。
-
-#### 训练
-
-运行 `bash run_gui.sh`，程序将自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)
-
-## 通过手动运行脚本的传统训练方式
-
-### Windows
-
-#### 安装
-
-运行 `install.ps1` 将自动为您创建虚拟环境并安装必要的依赖。
-
-#### 训练
-
-编辑 `train.ps1`，然后运行它。
-
-### Linux
-
-#### 安装
-
-运行 `install.bash` 将创建虚拟环境并安装必要的依赖。
-
-#### 训练
-
-训练
-
-脚本 `train.sh` **不会** 为您激活虚拟环境。您应该先激活虚拟环境。
+训练 WebUI，集成 TensorBoard、WD14 标签器、标签编辑器。
 
 ```sh
-source venv/bin/activate
+# Windows
+.\run_gui.ps1
+
+# Linux
+bash run_gui.sh
 ```
 
-编辑 `train.sh`，然后运行它。
-
-#### TensorBoard
-
-运行 `tensorboard.ps1` 将在 http://localhost:6006/ 启动 TensorBoard
+| Tensorboard | WD 1.4 标签器 | 标签编辑器 |
+| ------------ | ------------ | ------------ |
+| ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
 
 ## 程序参数
 
@@ -144,23 +112,35 @@ source venv/bin/activate
 | `--localization`             | str   |              | 界面的本地化设置                                |
 | `--dev`                      | bool  | false        | 开发者模式，用于禁用某些检查                     |
 
-## Flash Attention 自动安装
+## Flash Attention 加速
 
-本项目的 `tools/install_flash_attn.py` 提供了智能 wheel 匹配安装功能：
+RTX 40/50 系显卡推荐安装 flash_attn 以获得最佳训练和推理性能。
 
-- 自动检测当前 Python / PyTorch / CUDA / 平台环境
-- 从 GitHub Releases 动态拉取候选 prebuilt wheel 列表
-- 按匹配精度评分，自动选择最优 wheel 安装
+### 一键安装
 
 ```sh
-# 自动匹配安装
-python tools/install_flash_attn.py
+# Windows
+.\install-flash-attn.bat
 
-# 预览环境与候选（不安装）
-python tools/install_flash_attn.py --dry-run
+# Linux
+bash install-flash-attn.sh
+```
 
-# 手动指定 wheel URL
-python tools/install_flash_attn.py --url <URL>
+### 功能特性
+
+- **自动环境检测**：Python / PyTorch / CUDA ABI / 平台
+- **智能匹配**：从 GitHub Releases 动态拉取候选 prebuilt wheel，评分排序
+- **交互式选择**：展示所有候选及兼容性说明，数字键选择版本
+- **内建修复**：已装版本 ABI 不匹配时自动卸载并重新安装正确版本
+- **安装后验证**：完成后自动 import + CUDA forward 测试
+
+### 手动使用
+
+```sh
+python tools/install_flash_attn.py              # 交互式安装
+python tools/install_flash_attn.py --dry-run    # 仅预览环境与候选
+python tools/install_flash_attn.py --url URL    # 手动指定 wheel
+python tools/install_flash_attn.py --yes        # 非交互自动安装
 ```
 
 ## 致谢

@@ -16,9 +16,12 @@ if [ -f "venv/bin/activate" ]; then
     export PYTHONUTF8=1
     source "venv/bin/activate"
 
-    # RTX 50 系 / Hopper+ 推荐 flash-attn
-    echo "[提示] RTX 4090/5090 建议安装 flash-attn 以获得最佳性能"
-    echo "       pip install flash-attn --no-build-isolation"
+    # 检测 flash-attn 状态
+    if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
+        echo "[flash_attn] ✅ 已启用 (版本 $FA_VER)"
+    else
+        echo "[flash_attn] ❌ 未安装 — RTX 40/50 系建议安装: bash install-flash-attn.sh"
+    fi
     echo ""
 
     python gui.py "$@"

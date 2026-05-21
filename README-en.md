@@ -51,82 +51,47 @@ Follow the installation guide below to install the GUI, then run `run_gui.ps1`(w
 
 # Usage
 
-### Required Dependencies
+### Prerequisites
 
-Python 3.10 and Git
+Python 3.10+ and Git
 
 ### Clone
 
 ```sh
 git clone https://github.com/ameyukisora/lora-scripts-anima.git
+cd lora-scripts-anima
 ```
+
+### Quick Start
+
+| Platform | Install | Launch |
+|----------|---------|--------|
+| Windows | `.\install-cn.ps1` | `.\start.bat` |
+| Linux | `bash install.bash` | `bash start.sh` |
+
+The GUI opens automatically at [http://127.0.0.1:28000](http://127.0.0.1:28000).
+
+> **RTX 40/50 users**: the startup script detects flash_attn status.
+> If ❌ not installed, run `.\install-flash-attn.bat` (Windows) or `bash install-flash-attn.sh` (Linux).
+
+### Updates
+
+| Operation | Script |
+|-----------|--------|
+| Update this repo | `update-repo.bat` / `bash update-repo.sh` |
+| Update training scripts (sd-scripts) | `update-scripts.bat` / `bash update-scripts.bash` |
 
 ## ✨ SD-Trainer GUI
 
-### Update kohya-ss/sd-scripts
-
-To update the training scripts to the latest version:
-
-| Platform | Script |
-|----------|--------|
-| Windows (CMD) | `update-scripts.bat` |
-| Windows (PowerShell) | `update-scripts.ps1` |
-| Linux | `bash update-scripts.bash` |
-
-This will replace the `sd-scripts/` directory with the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
-
-### Windows
-
-#### Installation
-
-Run `install.ps1` will automatically create a venv for you and install necessary deps. 
-If you are in China mainland, please use `install-cn.ps1`
-
-#### Train
-
-run `run_gui.ps1`, then program will open [http://127.0.0.1:28000](http://127.0.0.1:28000) automanticlly
-
-### Linux
-
-#### Installation
-
-Run `install.bash` will create a venv and install necessary deps. 
-
-#### Train
-
-run `bash run_gui.sh`, then program will open [http://127.0.0.1:28000](http://127.0.0.1:28000) automanticlly
-
-## Legacy training through run script manually
-
-### Windows
-
-#### Installation
-
-Run `install.ps1` will automatically create a venv for you and install necessary deps.
-
-#### Train
-
-Edit `train.ps1`, and run it.
-
-### Linux
-
-#### Installation
-
-Run `install.bash` will create a venv and install necessary deps.
-
-#### Train
-
-Training script `train.sh` **will not** activate venv for you. You should activate venv first.
+Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
 
 ```sh
-source venv/bin/activate
+# Windows
+.\run_gui.ps1
+
+# Linux
+bash run_gui.sh
 ```
-
-Edit `train.sh`, and run it.
-
-#### TensorBoard
-
-Run `tensorboard.ps1` will start TensorBoard at http://localhost:6006/
 
 ## Program arguments
 
@@ -143,23 +108,35 @@ Run `tensorboard.ps1` will start TensorBoard at http://localhost:6006/
 | `--localization`              | str   |               | Localization settings for the interface          |
 | `--dev`                       | bool  | false         | Developer mode to disale some checks             |
 
-## Flash Attention Auto-Install
+## Flash Attention Acceleration
 
-The `tools/install_flash_attn.py` script provides smart prebuilt wheel matching and installation:
+Recommended for RTX 40/50 series GPUs for optimal training and inference performance.
 
-- Auto-detects your Python / PyTorch / CUDA / platform environment
-- Fetches candidate prebuilt wheels from GitHub Releases dynamically
-- Scores candidates by match precision and picks the optimal one
+### One-Click Install
 
 ```sh
-# Auto-match and install
-python tools/install_flash_attn.py
+# Windows
+.\install-flash-attn.bat
 
-# Preview environment & candidates (no install)
-python tools/install_flash_attn.py --dry-run
+# Linux
+bash install-flash-attn.sh
+```
 
-# Manual wheel URL
-python tools/install_flash_attn.py --url <URL>
+### Features
+
+- **Auto-detection**: Python / PyTorch / CUDA ABI / platform
+- **Smart matching**: fetches candidates from GitHub Releases, scored & ranked
+- **Interactive selection**: numbered list with compatibility notes, pick by key
+- **Built-in repair**: auto-uninstalls mismatched versions and reinstalls the correct one
+- **Post-install verification**: auto import + CUDA forward test
+
+### Manual Usage
+
+```sh
+python tools/install_flash_attn.py              # Interactive install
+python tools/install_flash_attn.py --dry-run    # Preview only
+python tools/install_flash_attn.py --url URL    # Manual wheel URL
+python tools/install_flash_attn.py --yes        # Non-interactive auto
 ```
 
 ## Acknowledgements

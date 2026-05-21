@@ -44,9 +44,14 @@ set HF_HOME=huggingface
 set PYTHONUTF8=1
 call "venv\Scripts\activate.bat"
 
-REM RTX 50 系 / Hopper+ 推荐 flash-attn
-echo [提示] RTX 4090/5090 建议安装 flash-attn 以获得最佳性能
-echo        pip install flash-attn --no-build-isolation
+REM 检测 flash-attn 状态
+python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>nul
+if %errorlevel% equ 0 (
+    for /f %%i in ('python -c "from importlib.metadata import version; print(version('flash_attn'))" 2^>nul') do set FA_VER=%%i
+    echo [flash_attn] ✅ 已启用 (版本 !FA_VER!)
+) else (
+    echo [flash_attn] ❌ 未安装 — RTX 40/50 系建议安装: .\install-flash-attn.bat
+)
 echo.
 
 python gui.py %*
