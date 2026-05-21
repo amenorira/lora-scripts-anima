@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException
 from mikazuki.app.config import app_config
 from mikazuki.app.api import load_schemas, load_presets
 from mikazuki.app.api import router as api_router
+from mikazuki.app.ui_v2 import router as ui_v2_router
 # from mikazuki.app.ipc import router as ipc_router
 from mikazuki.app.proxy import router as proxy_router
 from mikazuki.utils.devices import check_torch_gpu
@@ -77,6 +78,10 @@ async def add_cache_control_header(request, call_next):
 
 app.include_router(api_router, prefix="/api")
 # app.include_router(ipc_router, prefix="/ipc")
+
+# New v2 frontend — mount static files BEFORE SPA catch-all
+app.mount("/static", StaticFiles(directory="frontend/static"), name="v2static")
+app.include_router(ui_v2_router)
 
 
 @app.get("/")

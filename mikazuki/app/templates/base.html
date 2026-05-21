@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Anima Trainer{% endblock %}</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/alpine.min.js" defer></script>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span style="font-size:22px">🎯</span> Anima Trainer
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">LoRA 训练</div>
+      <a href="/v2/train/basic" class="sidebar-link {% if active_page == 'lora-basic' %}active{% endif %}">
+        <span class="icon">🎓</span> 新手 (SD1.5)
+      </a>
+      <a href="/v2/train/master" class="sidebar-link {% if active_page == 'lora-master' %}active{% endif %}">
+        <span class="icon">⚡</span> 专家
+      </a>
+      <a href="/v2/train/anima" class="sidebar-link {% if active_page == 'anima-lora' %}active{% endif %}">
+        <span class="icon">🎨</span> Anima LoRA
+      </a>
+      <a href="/v2/train/flux" class="sidebar-link {% if active_page == 'flux-lora' %}active{% endif %}">
+        <span class="icon">🔥</span> Flux
+      </a>
+      <a href="/v2/train/sd3" class="sidebar-link {% if active_page == 'sd3-lora' %}active{% endif %}">
+        <span class="icon">🌌</span> SD3.5
+      </a>
+      <a href="/v2/tools" class="sidebar-link {% if active_page == 'tools' %}active{% endif %}">
+        <span class="icon">🔧</span> 工具
+      </a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">其他</div>
+      <a href="/v2/tensorboard" class="sidebar-link {% if active_page == 'tensorboard' %}active{% endif %}">
+        <span class="icon">📊</span> Tensorboard
+      </a>
+      <a href="/v2/tagger" class="sidebar-link {% if active_page == 'tagger' %}active{% endif %}">
+        <span class="icon">🏷</span> Tagger 标签器
+      </a>
+    </div>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">
+      {{ app_version }} · <a href="/" style="color:#6b7280">经典界面</a>
+    </div>
+  </nav>
+
+  <!-- ── Center: Main content ─────────────────────────────── -->
+  <main class="main-content" id="main-content"
+        hx-history="false">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ── Right: Panel (TOML preview / buttons) ────────────── -->
+  {% block right_panel %}{% endblock %}
+
+</div>
+</body>
+</html>
