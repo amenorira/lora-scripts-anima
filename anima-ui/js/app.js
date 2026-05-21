@@ -1,5 +1,5 @@
 /* ================================================================
-   Anima Trainer UI — Application Core
+   Anima Trainer UI �?Application Core
    SPA router · Theme engine (diffusion) · Training forms · API
    ================================================================ */
 
@@ -286,7 +286,15 @@ document.addEventListener('alpine:init', () => {
       window.addEventListener('hashchange', () => this.handleRoute());
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
-        this.handleRoute();
+        // Force full rebuild: sidebar x-text + page title + route content
+        const r = this.currentRoute;
+        const cfg = ROUTE_CONFIG[r] || {};
+        if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
+        else this.pageTitle = cfg.title || r;
+        if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
+        else this.pageSubtitle = cfg.subtitle || '';
+        document.title = this.pageTitle + ' | Anima Trainer';
+        this.buildRouteContent();
       });
 
       // Close dropdowns when clicking outside
@@ -546,7 +554,7 @@ document.addEventListener('alpine:init', () => {
       this.formHistoryIdx = 0;
       this.updateToml();
       this.rebuildForm();
-      this.toast(this.t('common.allReset'), 'info');
+      this.toast(this.t('common.allReset'));
     },
 
     pushHistory(state) {
@@ -593,7 +601,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     copyToml() {
-      navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied'), 'success'));
+      navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
     },
 
     // ── Training ───────────────────────────────────────────
@@ -608,9 +616,9 @@ document.addEventListener('alpine:init', () => {
       try {
         const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         const data = await resp.json();
-        if (data.status !== 'success') { this.toast(data.message||'Failed','error'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
-        else { this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted'),'success'); }
-      } catch(e) { this.toast('Request failed: '+e.message,'error'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+        if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+        else { this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted')); }
+      } catch(e) { this.toast('Request failed: '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
     },
 
     async stopTraining() {
@@ -618,8 +626,8 @@ document.addEventListener('alpine:init', () => {
       try {
         if (this.taskId) await fetch('/api/tasks/terminate/'+this.taskId);
         this.isTraining = false; this.statusText = 'Idle';
-        this.toast(this.t('common.trainingStopped'), 'info');
-      } catch(e) { this.toast('Failed: '+e.message,'error'); }
+        this.toast(this.t('common.trainingStopped'));
+      } catch(e) { this.toast('Failed: '+e.message); }
     },
 
     // ── Param Save/Load ────────────────────────────────────
@@ -630,7 +638,7 @@ document.addEventListener('alpine:init', () => {
       configs.push({ name, date: new Date().toLocaleString(), data: {...this.form} });
       localStorage.setItem('anima-saved-configs', JSON.stringify(configs));
       this.savedConfigs = configs;
-      this.toast(this.t('common.saved'), 'success');
+      this.toast(this.t('common.saved'));
     },
 
     loadParamsFromBrowser(idx) {
@@ -642,7 +650,7 @@ document.addEventListener('alpine:init', () => {
       this.formHistoryIdx = 0;
       this.updateToml();
       this.rebuildForm();
-      this.toast(this.t('common.loaded'), 'success');
+      this.toast(this.t('common.loaded'));
     },
 
     deleteSavedConfig(idx) {
@@ -661,7 +669,7 @@ document.addEventListener('alpine:init', () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = (this.form.output_name||'config')+'.toml'; a.click();
-      URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'),'success');
+      URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'));
     },
 
     importConfigFile() { document.getElementById('configFileInput').click(); },
@@ -673,13 +681,13 @@ document.addEventListener('alpine:init', () => {
       reader.onload = (e) => {
         try {
           const parsed = this.parseToml(e.target.result);
-          if (Object.keys(parsed).length===0) { this.toast('No valid TOML keys','error'); return; }
+          if (Object.keys(parsed).length===0) { this.toast('No valid TOML keys'); return; }
           this.form = { ...this.formDefaults, ...parsed };
           this.formDefaults = { ...this.form };
           this.formHistory = [this.formDefaults]; this.formHistoryIdx = 0;
           this.updateToml(); this.rebuildForm();
-          this.toast(this.t('common.imported'),'success');
-        } catch(err) { this.toast('Parse error: '+err.message,'error'); }
+          this.toast(this.t('common.imported'));
+        } catch(err) { this.toast('Parse error: '+err.message); }
       };
       reader.readAsText(file);
       event.target.value = '';
@@ -705,7 +713,7 @@ document.addEventListener('alpine:init', () => {
 
     autoLoadLastParams() {
       if (!this.autoLoadHistory || !this.currentRoute.startsWith('train-')) return;
-      this.toast(this.t('common.autoLoadedHistory'), 'info');
+      this.toast(this.t('common.autoLoadedHistory'));
     },
 
     // ── File Pickers ───────────────────────────────────────
@@ -716,7 +724,7 @@ document.addEventListener('alpine:init', () => {
         const r = await fetch('/api/pick_file?picker_type='+type);
         const d = await r.json();
         if (d.status==='success'&&d.data&&d.data.path) this.setField(key, d.data.path);
-      } catch(e) { this.toast('Local picker not available','error'); }
+      } catch(e) { this.toast('Local picker not available'); }
     },
 
     async builtinFilePicker(key, role) {
@@ -729,7 +737,7 @@ document.addEventListener('alpine:init', () => {
         const d = await r.json();
         const files = (d.status==='success'&&d.data) ? (d.data.files||d.data) : [];
         this.showFilePickerModal(key, Array.isArray(files)?files:[]);
-      } catch(e) { this.toast('File browser failed','error'); }
+      } catch(e) { this.toast('File browser failed'); }
     },
 
     showFilePickerModal(key, files) {
@@ -769,7 +777,7 @@ document.addEventListener('alpine:init', () => {
       const threshold = parseFloat(document.getElementById('tagger-threshold').value);
       const additional = document.getElementById('tagger-additional').value;
       const exclude = document.getElementById('tagger-exclude').value;
-      if (!path) { this.toast('Specify directory','error'); return; }
+      if (!path) { this.toast('Specify directory'); return; }
       this.taggerRunning = true; document.getElementById('tagger-stop-btn').disabled = false;
       const out = document.getElementById('tagger-output'); out.style.display='block'; out.textContent=this.t('tagger.running');
       try {
@@ -777,11 +785,11 @@ document.addEventListener('alpine:init', () => {
         const d = await r.json();
         out.textContent = d.status==='success' ? this.t('tagger.completed') : ('Error: '+(d.message||'Unknown'));
         this.toast(d.status==='success'?this.t('tagger.completed'):(d.message||'Failed'),d.status==='success'?'success':'error');
-      } catch(e) { out.textContent='Error: '+e.message; this.toast('Failed: '+e.message,'error'); }
+      } catch(e) { out.textContent='Error: '+e.message; this.toast('Failed: '+e.message); }
       this.taggerRunning=false; document.getElementById('tagger-stop-btn').disabled=true;
     },
 
-    stopTagger() { this.taggerRunning=false; this.toast(this.t('tagger.stop'),'info'); },
+    stopTagger() { this.taggerRunning=false; this.toast(this.t('tagger.stop')); },
 
     localFilePickerTagger(inputId) {
       fetch('/api/pick_file?picker_type=folder').then(r=>r.json()).then(d=>{if(d.status==='success'&&d.data&&d.data.path) document.getElementById(inputId).value=d.data.path;}).catch(()=>{});
@@ -804,7 +812,7 @@ document.addEventListener('alpine:init', () => {
     saveUISettings() {
       localStorage.setItem('anima-ui-settings', JSON.stringify({theme:this.theme,autoLoadHistory:this.autoLoadHistory,tbUrl:this.settingsTbUrl}));
       this.resolveTheme();
-      this.toast(this.t('common.saved'),'success');
+      this.toast(this.t('common.saved'));
     },
 
     onLocaleChange() {
@@ -812,17 +820,24 @@ document.addEventListener('alpine:init', () => {
       this.showLangDropdown = false;
     },
 
-    // ── Toast (top, spring) ────────────────────────────────
-    toast(message, type='info') {
+    // ── Toast (top, spring, auto-dismiss) ──────────────────
+    toast(message) {
       const c = document.getElementById('toastContainer');
+      while (c.firstChild) c.firstChild.remove();
       const el = document.createElement('div');
-      el.className = 'toast '+type;
+      el.className = 'toast';
       el.textContent = message;
       c.appendChild(el);
-      setTimeout(()=>{el.classList.add('out');el.addEventListener('animationend',()=>el.remove());},2800);
+      setTimeout(() => {
+        el.classList.add('out');
+        setTimeout(() => { if (el.parentNode) el.remove(); }, 350);
+      }, 2400);
     },
 
-    t(key, fallback) { return window.t ? window.t(key, fallback) : (fallback||key); },
+    t(key, fallback) {
+      void this.locale;
+      return window.t ? window.t(key, fallback) : (fallback||key);
+    },
 
   }));
 });
