@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   SD-Trainer - 更新 kohya-ss/sd-scripts 脚本
+echo   Anima Trainer - 更新 kohya-ss/sd-scripts 脚本
 echo ============================================
 echo.
 
