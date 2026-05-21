@@ -1,5 +1,5 @@
 /* ================================================================
-   Anima Trainer UI �?Application Core
+   Anima Trainer UI �?Application Core
    SPA router · Theme engine (diffusion) · Training forms · API
    ================================================================ */
 
@@ -820,17 +820,16 @@ document.addEventListener('alpine:init', () => {
       this.showLangDropdown = false;
     },
 
-    // ── Toast (top, spring, auto-dismiss) ──────────────────
+    // ── Toast (top center, stackable, fade in/out only) ────
     toast(message) {
       const c = document.getElementById('toastContainer');
-      while (c.firstChild) c.firstChild.remove();
       const el = document.createElement('div');
       el.className = 'toast';
       el.textContent = message;
       c.appendChild(el);
       setTimeout(() => {
         el.classList.add('out');
-        setTimeout(() => { if (el.parentNode) el.remove(); }, 350);
+        setTimeout(() => { if (el.parentNode) el.remove(); }, 300);
       }, 2400);
     },
 

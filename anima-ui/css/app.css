@@ -528,14 +528,12 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 .toast.out { animation: toast-out var(--duration-normal) var(--ease-in-out) forwards; }
 
 @keyframes toast-in {
-  0% { opacity: 0; transform: translateX(-50%) translateY(-24px) scale(0.88); }
-  55% { opacity: 1; transform: translateX(-50%) translateY(5px) scale(1.03); }
-  75% { transform: translateX(-50%) translateY(-2px) scale(0.99); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  0% { opacity: 0; transform: translateY(-16px) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes toast-out {
-  from { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-  to { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.94); }
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* ── Modal ───────────────────────────────────────────────── */
