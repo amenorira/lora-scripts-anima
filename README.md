@@ -1,10 +1,10 @@
 <div align="center">
 
-# SD-Trainer (lora-scripts-anima)
+# Anima LoRA Trainer
 
-_✨ Anima + Stable Diffusion Training GUI ✨_
+_✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 
-A fork of [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) with **Anima model support**, updated to the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
+基于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 和 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 的训练 GUI，重点扩展 **Anima 模型** 的 LoRA 训练支持，同时兼容 SD 1.5 / SDXL / SD3 / FLUX 等模型。
 
 </div>
 
@@ -26,7 +26,7 @@ A fork of [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) wi
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-zh.md">中文README</a>
 </p>
 
-LoRA & Dreambooth training GUI with **Anima model support**, powered by the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git).
+Anima LoRA training GUI, powered by the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git). Also supports SD 1.5 / SDXL / SD3 / FLUX.
 
 ### Supported Model Types
 

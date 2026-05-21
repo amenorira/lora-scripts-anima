@@ -1,10 +1,10 @@
 <div align="center">
 
-# SD-Trainer (lora-scripts-anima)
+# Anima LoRA Trainer
 
-_✨ Anima + Stable Diffusion 训练 GUI ✨_
+_✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 
-基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 的修改版，新增 **Anima 模型支持**，并使用最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)。
+基于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 和 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 的训练 GUI，重点扩展 **Anima 模型** 的 LoRA 训练支持，同时兼容 SD 1.5 / SDXL / SD3 / FLUX 等模型。
 
 </div>
 
@@ -26,7 +26,7 @@ _✨ Anima + Stable Diffusion 训练 GUI ✨_
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-zh.md">中文README</a>
 </p>
 
-LoRA & Dreambooth 训练图形界面，新增 **Anima 模型支持**，基于最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)。
+Anima LoRA 训练图形界面，基于最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)。同时兼容 SD 1.5 / SDXL / SD3 / FLUX。
 
 ### 支持的模型类型
 
@@ -96,53 +96,6 @@ git clone https://github.com/ameyukisora/lora-scripts-anima.git
 #### 训练
 
 运行 `bash run_gui.sh`，程序将自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)
-
-### Docker
-
-#### 编译镜像
-
-```bash
-# 国内镜像优化版本
-# 其中 lora-scripts-anima:latest 为镜像及其 tag 名，根据镜像托管服务商实际进行修改
-docker build -t lora-scripts-anima:latest -f Dockerfile-for-Mainland-China .
-docker push lora-scripts-anima:latest
-```
-
-#### 使用镜像
-
-```bash
-docker run --gpus all -p 28000:28000 -p 6006:6006 lora-scripts-anima:latest 
-```
-
-或者使用 `docker-compose.yaml` 。
-
-```yaml
-services:
-  lora-scripts:
-    container_name: lora-scripts-anima
-    build:
-      context: .
-      dockerfile: Dockerfile-for-Mainland-China
-    image: "lora-scripts-anima:latest"
-    ports:
-      - "28000:28000"
-      - "6006:6006"  
-    environment:
-      - HF_HOME=huggingface
-      - PYTHONUTF8=1
-    security_opt:
-      - "label=type:nvidia_container_t"
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['0']
-              capabilities: [gpu]
-```
- 
-关于容器使用 GPU 相关依赖安装问题，请自行搜索查阅资料解决。
 
 ## 通过手动运行脚本的传统训练方式
 
