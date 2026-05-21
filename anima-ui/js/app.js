@@ -276,13 +276,15 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────
     async init() {
-      // Detect & apply theme
-      const saved = localStorage.getItem('anima-theme') || 'auto';
-      this.theme = saved;
+      // Load saved theme preference
+      const savedTheme = localStorage.getItem('anima-theme') || 'auto';
+      this.theme = savedTheme;
+
+      // Apply theme
       this.resolveTheme();
 
-      // Load locale
-      await I18N.init(this.locale);
+      // Init locale synchronously (messages embedded in i18n.js)
+      I18N.init(this.locale);
       this.locale = I18N.getLocale();
       this.i18nReady = true;
 
