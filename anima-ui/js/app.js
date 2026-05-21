@@ -277,7 +277,15 @@ document.addEventListener('alpine:init', () => {
       window.addEventListener('hashchange', () => this.handleRoute());
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
-        this.buildRouteContent();
+        this.handleRoute();
+      });
+
+      // Close dropdowns when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.sidebar-dropdown')) {
+          this.showThemeDropdown = false;
+          this.showLangDropdown = false;
+        }
       });
 
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

@@ -134,18 +134,20 @@
       <!-- Theme dropdown -->
       <div class="sidebar-dropdown" :class="{ open: showThemeDropdown }">
         <button class="bottom-btn" @click="showThemeDropdown = !showThemeDropdown; showLangDropdown = false">
-          <svg x-show="resolvedTheme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          <svg x-show="resolvedTheme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <!-- Show current state: sun for light, moon for dark -->
+          <svg x-show="resolvedTheme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg x-show="resolvedTheme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
         <div class="sidebar-dropdown-menu">
-          <button :class="{ active: theme === 'light' }" @click="setTheme('light')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg> Light</button>
+          <button :class="{ active: theme === 'light' }" @click="setTheme('light')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><circle cx="12" cy="12" r="5"/></svg> Light</button>
           <button :class="{ active: theme === 'dark' }" @click="setTheme('dark')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark</button>
-          <button :class="{ active: theme === 'auto' }" @click="setTheme('auto')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/></svg> Auto</button>
+          <button :class="{ active: theme === 'auto' }" @click="setTheme('auto')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M12 2v20M2 12h20"/></svg> Auto</button>
         </div>
       </div>
       <!-- Language dropdown -->
       <div class="sidebar-dropdown" :class="{ open: showLangDropdown }">
         <button class="bottom-btn" @click="showLangDropdown = !showLangDropdown; showThemeDropdown = false">
+          <!-- Language globe icon -->
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
         </button>
         <div class="sidebar-dropdown-menu">
@@ -214,20 +216,8 @@
       </div>
 
       <!-- Route: Tag Editor -->
-      <div x-show="currentRoute === 'tagEditor'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('tagEditor.title')">Tag Editor</h1>
-          <p class="page-subtitle" x-text="t('tagEditor.subtitle')">Edit image tags and captions</p>
-        </div>
-        <div class="card">
-          <div style="text-align:center;padding:30px">
-            <p style="color:var(--text-secondary);margin-bottom:16px">Dataset Tag Editor</p>
-            <button class="btn btn-primary" @click="openTagEditor()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              <span x-text="t('tagEditor.openEditor')">Open Tag Editor</span>
-            </button>
-          </div>
-        </div>
+      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;inset:0">
+        <iframe class="iframe-full" src="/proxy/tageditor" id="tageditorIframe"></iframe>
       </div>
 
       <!-- Route: Tools -->
