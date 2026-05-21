@@ -483,7 +483,6 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 }
 .panel-preview {
   flex: 1; padding: 14px 16px;
-  background: var(--bg-preview);
   font-family: var(--font-mono); font-size: 13px;
   line-height: 1.6; color: var(--text-primary);
   overflow-y: auto; white-space: pre-wrap; word-break: break-all;
