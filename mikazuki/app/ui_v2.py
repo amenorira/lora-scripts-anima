@@ -1,10 +1,11 @@
-"""New htmx + Alpine + Pico CSS frontend routes.
+"""New SPA frontend routes (Anima UI).
 
-Mounts at /v2/ — coexists with the old VuePress frontend at /.
+Mounts at /v2/ — serves the client-side SPA at anima-ui/index.html.
+The legacy HTMX/Alpine templates remain at /v2/legacy/ for backward compat.
 """
 import os
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
@@ -12,6 +13,7 @@ router = APIRouter(prefix="/v2")
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+ANIMA_UI_INDEX = Path(__file__).parents[2] / "anima-ui" / "index.html"
 
 
 def _version() -> str:
@@ -25,7 +27,21 @@ def _version() -> str:
         return "dev"
 
 
-# ── Training pages ──────────────────────────────────────────
+# ── New SPA: catch-all serves anima-ui/index.html ────────────
+
+@router.get("/", response_class=HTMLResponse)
+@router.get("/{rest:path}", response_class=HTMLResponse)
+async def spa_catchall(request: Request, rest: str = ""):
+    """Serve the new SPA for all /v2/* routes. Client-side hash routing handles navigation."""
+    if ANIMA_UI_INDEX.exists():
+        return FileResponse(str(ANIMA_UI_INDEX))
+    # Fallback to legacy index
+    return templates.TemplateResponse("index.html", {
+        "request": request, "active_page": "index", "app_version": _version(),
+    })
+
+
+# ── Legacy template routes (for backward compat) ────────────
 
 TRAIN_CFG = {
     "basic":  ("LoRA 训练 · 新手模式",     "SD1.5 LoRA — 改底模和数据集即可开始", "sd-lora",     "lora-basic"),
@@ -36,7 +52,7 @@ TRAIN_CFG = {
 }
 
 
-@router.get("/train/{name}", response_class=HTMLResponse)
+@router.get("/legacy/train/{name}", response_class=HTMLResponse)
 async def train_page(request: Request, name: str):
     if name not in TRAIN_CFG:
         return HTMLResponse("<h2>未知训练页面</h2>", status_code=404)
@@ -45,38 +61,4 @@ async def train_page(request: Request, name: str):
         "request": request, "title": title, "subtitle": subtitle,
         "train_type": train_type, "active_page": active,
         "app_version": _version(),
-    })
-
-
-# ── Other pages ─────────────────────────────────────────────
-
-@router.get("/", response_class=HTMLResponse)
-@router.get("/index", response_class=HTMLResponse)
-async def index_page(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request, "active_page": "index", "app_version": _version(),
-    })
-
-
-@router.get("/tensorboard", response_class=HTMLResponse)
-async def tensorboard_page(request: Request):
-    return templates.TemplateResponse("tensorboard.html", {
-        "request": request, "active_page": "tensorboard",
-        "app_version": _version(),
-        "tb_host": os.environ.get("MIKAZUKI_TENSORBOARD_HOST", "127.0.0.1"),
-        "tb_port": os.environ.get("MIKAZUKI_TENSORBOARD_PORT", "6006"),
-    })
-
-
-@router.get("/tagger", response_class=HTMLResponse)
-async def tagger_page(request: Request):
-    return templates.TemplateResponse("tagger.html", {
-        "request": request, "active_page": "tagger", "app_version": _version(),
-    })
-
-
-@router.get("/tools", response_class=HTMLResponse)
-async def tools_page(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request, "active_page": "tools", "app_version": _version(),
     })

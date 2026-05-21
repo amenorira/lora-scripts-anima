@@ -224,6 +224,18 @@ async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: Backg
     return APIResponseSuccess()
 
 
+@router.get("/tagger/models")
+async def list_tagger_models():
+    """List available tagger/interrogator models."""
+    models = []
+    for key, interrogator in available_interrogators.items():
+        models.append({
+            "id": key,
+            "name": key
+        })
+    return APIResponseSuccess(data=models)
+
+
 @router.get("/pick_file")
 async def pick_file(picker_type: str):
     if picker_type == "folder":

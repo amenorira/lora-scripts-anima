@@ -79,9 +79,12 @@ async def add_cache_control_header(request, call_next):
 app.include_router(api_router, prefix="/api")
 # app.include_router(ipc_router, prefix="/ipc")
 
-# New v2 frontend — mount static files BEFORE SPA catch-all
+# New v2 frontend (legacy HTMX/Alpine) — kept for backward compat
 app.mount("/static", StaticFiles(directory="frontend/static"), name="v2static")
 app.include_router(ui_v2_router)
+
+# Anima UI (new SPA frontend) — static assets
+app.mount("/anima-ui", StaticFiles(directory="anima-ui", html=True), name="anima-ui")
 
 
 @app.get("/")

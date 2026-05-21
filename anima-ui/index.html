@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anima Trainer</title>
+  <link rel="stylesheet" href="/anima-ui/css/app.css">
+  <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
+  <script src="/anima-ui/js/i18n.js"></script>
+  <script src="/anima-ui/js/app.js" defer></script>
+</head>
+<body x-data="animaApp()" x-init="init()" x-cloak>
+
+<!-- ============================================================
+     App Layout: Sidebar | Main Content | Right Panel
+     ============================================================ -->
+
+<div class="app-layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+          <line x1="12" y1="22" x2="12" y2="15.5"/>
+          <polyline points="22 8.5 12 15.5 2 8.5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-text">Anima Trainer</div>
+        <div class="version" x-text="'v' + version"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav" id="sidebarNav">
+      <!-- Home -->
+      <a class="sidebar-item" :class="{ active: currentRoute === 'home' }"
+         @click="navigate('home')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </span>
+        <span x-text="t('nav.home')">Home</span>
+      </a>
+
+      <!-- LoRA Training group -->
+      <div class="sidebar-section-label" x-text="t('nav.loraTraining')">LoRA Training</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'train-basic' }"
+         @click="navigate('train-basic')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </span>
+        <span x-text="t('nav.basic')">Beginner (SD1.5)</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'train-master' }"
+         @click="navigate('train-master')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </span>
+        <span x-text="t('nav.master')">Expert</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'train-anima' }"
+         @click="navigate('train-anima')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </span>
+        <span x-text="t('nav.anima')">Anima LoRA</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'train-flux' }"
+         @click="navigate('train-flux')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </span>
+        <span x-text="t('nav.flux')">Flux</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'train-sd3' }"
+         @click="navigate('train-sd3')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        </span>
+        <span x-text="t('nav.sd3')">SD3.5</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'tool-params' }"
+         @click="navigate('tool-params')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </span>
+        <span x-text="t('nav.paramRef')">Parameter Reference</span>
+      </a>
+
+      <!-- Tools -->
+      <div class="sidebar-section-label" x-text="t('nav.tools')">Tools</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'tensorboard' }"
+         @click="navigate('tensorboard')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </span>
+        <span x-text="t('nav.tensorboard')">TensorBoard</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'tagger' }"
+         @click="navigate('tagger')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        </span>
+        <span x-text="t('nav.tagger')">Tagger</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'tagEditor' }"
+         @click="navigate('tagEditor')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </span>
+        <span x-text="t('nav.tagEditor')">Tag Editor</span>
+      </a>
+
+      <!-- Other -->
+      <div class="sidebar-section-label" x-text="t('nav.other')">Other</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'settings' }"
+         @click="navigate('settings')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </span>
+        <span x-text="t('nav.uiSettings')">UI Settings</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'about' }"
+         @click="navigate('about')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </span>
+        <span x-text="t('nav.about')">About</span>
+      </a>
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="bottom-btn" @click="toggleTheme()" :title="themeLabel()">
+        <!-- Sun icon (shown in dark mode → click to go light) -->
+        <svg x-show="resolvedTheme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <!-- Moon icon (shown in light mode → click to go dark) -->
+        <svg x-show="resolvedTheme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <div class="divider"></div>
+      <a class="bottom-btn" href="https://github.com/Akegarasu/lora-scripts" target="_blank" rel="noopener" title="GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.475 2 2 6.475 2 12a9.994 9.994 0 0 0 6.838 9.488c.5.087.687-.213.687-.476 0-.237-.013-1.024-.013-1.862-2.512.463-3.162-.612-3.362-1.175-.113-.288-.6-1.175-1.025-1.413-.35-.187-.85-.65-.013-.662.788-.013 1.35.725 1.538 1.025.9 1.512 2.338 1.087 2.912.825.088-.65.35-1.087.638-1.337-2.225-.25-4.55-1.113-4.55-4.938 0-1.088.387-1.987 1.025-2.688-.1-.25-.45-1.275.1-2.65 0 0 .837-.262 2.75 1.026a9.28 9.28 0 0 1 2.5-.338c.85 0 1.7.112 2.5.337 1.912-1.3 2.75-1.024 2.75-1.024.55 1.375.2 2.4.1 2.65.637.7 1.025 1.587 1.025 2.687 0 3.838-2.337 4.688-4.562 4.938.362.312.675.912.675 1.85 0 1.337-.013 2.412-.013 2.75 0 .262.188.574.688.474A10.016 10.016 0 0 0 22 12c0-5.525-4.475-10-10-10z"/>
+        </svg>
+      </a>
+      <span class="bottom-label" x-text="'v' + version"></span>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ─────────────────────────────────────── -->
+  <div class="main-area">
+    <main class="main-content" id="mainContent"
+          @scroll="onContentScroll()"
+          @mouseenter="showMainScroll = true"
+          @mouseleave="showMainScroll = false"
+          :class="{ 'scroll-visible': showMainScroll }">
+
+      <!-- Route: Home -->
+      <div x-show="currentRoute === 'home'" x-cloak>
+        <div style="text-align:center;padding:60px 20px">
+          <div style="width:100px;height:100px;border-radius:24px;background:linear-gradient(135deg,var(--accent),#a855f7);margin:0 auto 20px;display:flex;align-items:center;justify-content:center">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#fff" stroke-width="1.5">
+              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+              <line x1="12" y1="22" x2="12" y2="15.5"/>
+              <polyline points="22 8.5 12 15.5 2 8.5"/>
+            </svg>
+          </div>
+          <h1 style="font-size:26px;font-weight:700;color:var(--text-primary)">Anima Trainer</h1>
+          <p style="color:var(--text-secondary);margin-top:8px;font-size:14px" x-text="t('about.subtitle')">Anima Trainer</p>
+          <p style="color:var(--text-tertiary);margin-top:4px;font-size:13px">
+            <span x-text="t('about.basedOn')">Based on original work by</span>
+            <a href="https://space.bilibili.com/12566101" target="_blank" rel="noopener">Akegarasu</a>
+            &middot; <span x-text="t('about.modifiedBy')">Modified by</span> ameyukisora
+          </p>
+          <div style="margin-top:32px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            <a class="btn btn-primary" @click="navigate('train-basic')" href="javascript:void(0)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span x-text="t('nav.basic')">Beginner (SD1.5)</span>
+            </a>
+            <a class="btn btn-ghost" @click="navigate('train-master')" href="javascript:void(0)">
+              <span x-text="t('nav.master')">Expert</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Training pages (basic/master/anima/flux/sd3) -->
+      <div x-show="currentRoute && currentRoute.startsWith('train-')" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="pageTitle">Training</h1>
+          <p class="page-subtitle" x-text="pageSubtitle"></p>
+        </div>
+
+        <form @submit.prevent="" id="trainForm">
+          <!-- Sections rendered dynamically by JS -->
+          <div id="trainFormContent"></div>
+        </form>
+      </div>
+
+      <!-- Route: TensorBoard -->
+      <div x-show="currentRoute === 'tensorboard'" x-cloak>
+        <iframe class="iframe-full"
+                :src="tensorboardUrl"
+                id="tensorboardIframe">
+        </iframe>
+      </div>
+
+      <!-- Route: Tagger -->
+      <div x-show="currentRoute === 'tagger'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('tagger.title')">Tagger</h1>
+          <p class="page-subtitle" x-text="t('tagger.subtitle')">Auto-tag images using WD14 models</p>
+        </div>
+        <div class="card" id="taggerForm"></div>
+      </div>
+
+      <!-- Route: Tag Editor -->
+      <div x-show="currentRoute === 'tagEditor'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('tagEditor.title')">Tag Editor</h1>
+          <p class="page-subtitle" x-text="t('tagEditor.subtitle')">Edit image tags and captions</p>
+        </div>
+        <div class="card">
+          <div style="text-align:center;padding:30px">
+            <p style="color:var(--text-secondary);margin-bottom:16px">Dataset Tag Editor</p>
+            <button class="btn btn-primary" @click="openTagEditor()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span x-text="t('tagEditor.openEditor')">Open Tag Editor</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Tools -->
+      <div x-show="currentRoute === 'tools'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('tools.title')">Tools</h1>
+          <p class="page-subtitle" x-text="t('tools.subtitle')">LoRA extraction, merging, conversion utilities</p>
+        </div>
+        <div class="card">
+          <div style="text-align:center;padding:30px">
+            <p style="color:var(--text-secondary);margin-bottom:16px">LoRA Tools</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Parameter Reference -->
+      <div x-show="currentRoute === 'tool-params'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title">Parameters</h1>
+          <p class="page-subtitle">Parameter reference for LoRA training</p>
+        </div>
+        <div class="card">
+          <p style="color:var(--text-secondary)">Refer to the schema documentation for full parameter explanations. Key parameters:</p>
+          <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <p><strong>pretrained_model_name_or_path</strong>: Base model file path (.safetensors for SD/SDXL; directory for DiT models).</p>
+            <p><strong>train_data_dir</strong>: Training dataset directory containing image subfolders with caption .txt files.</p>
+            <p><strong>resolution</strong>: Training image resolution (width,height). Must be a multiple of 64 for SD/SDXL, 16 for Anima.</p>
+            <p><strong>max_train_epochs</strong>: Maximum number of training epochs.</p>
+            <p><strong>train_batch_size</strong>: Number of images processed simultaneously. Higher values use more VRAM.</p>
+            <p><strong>learning_rate</strong>: Overall learning rate. Common values: 1e-4 for SD, 5e-5 for SDXL, 1e-4 for Flux.</p>
+            <p><strong>network_dim</strong>: LoRA rank / network dimension. Common range: 4-128. Lower values use less VRAM.</p>
+            <p><strong>network_alpha</strong>: Scaling factor. Typically equal to or half of network_dim.</p>
+            <p><strong>optimizer_type</strong>: Optimizer selection. AdamW8bit is a good default for most use cases.</p>
+            <p><strong>mixed_precision</strong>: Training precision. bf16 recommended for RTX 30+ series.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: Settings -->
+      <div x-show="currentRoute === 'settings'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
+          <p class="page-subtitle" x-text="t('settings.subtitle')">Customize your training UI experience</p>
+        </div>
+        <div class="card">
+          <!-- Theme setting -->
+          <div class="field">
+            <div class="field-left">
+              <div class="field-label" x-text="t('settings.theme')">Theme</div>
+              <div class="field-desc" x-text="t('settings.themeDesc')">Choose your preferred appearance</div>
+            </div>
+            <div class="field-right">
+              <select x-model="theme" @change="applyTheme()">
+                <option value="light" x-text="t('common.themeLight')">Light</option>
+                <option value="dark" x-text="t('common.themeDark')">Dark</option>
+                <option value="auto" x-text="t('common.themeAuto')">Auto</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Language setting -->
+          <div class="field">
+            <div class="field-left">
+              <div class="field-label" x-text="t('settings.language')">Language</div>
+              <div class="field-desc" x-text="t('settings.languageDesc')">Interface display language</div>
+            </div>
+            <div class="field-right">
+              <select x-model="locale" @change="onLocaleChange()">
+                <option value="zh-CN">中文</option>
+                <option value="en-US">English</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Auto-load history -->
+          <div class="field">
+            <div class="field-left">
+              <div class="field-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>
+              <div class="field-desc" x-text="t('settings.autoLoadHistoryDesc')">Automatically restore last training parameters on startup</div>
+            </div>
+            <div class="field-right">
+              <label class="toggle">
+                <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- TensorBoard URL override -->
+          <div class="field">
+            <div class="field-left">
+              <div class="field-label" x-text="t('settings.tensorboardUrl')">TensorBoard URL</div>
+              <div class="field-desc" x-text="t('settings.tensorboardUrlDesc')">Override the default TensorBoard address</div>
+            </div>
+            <div class="field-right">
+              <input type="text" x-model="settingsTbUrl" @change="saveUISettings()" placeholder="http://127.0.0.1:6006">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Route: About -->
+      <div x-show="currentRoute === 'about'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('about.title')">About</h1>
+          <p class="page-subtitle" x-text="t('about.subtitle')">Anima Trainer</p>
+        </div>
+        <div class="card">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field">
+              <div class="field-left"><div class="field-label" x-text="t('about.version')">Version</div></div>
+              <div class="field-right"><span style="font-family:var(--font-mono);font-size:13px" x-text="'v' + version"></span></div>
+            </div>
+            <div class="field">
+              <div class="field-left"><div class="field-label" x-text="t('about.description')">Description</div></div>
+              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">A modern web UI for Stable Diffusion LoRA / Dreambooth training.</span></div>
+            </div>
+            <div class="field">
+              <div class="field-left"><div class="field-label" x-text="t('about.github')">GitHub</div></div>
+              <div class="field-right"><a href="https://github.com/Akegarasu/lora-scripts" target="_blank" rel="noopener" style="font-family:var(--font-mono);font-size:13px">Akegarasu/lora-scripts</a></div>
+            </div>
+            <div class="field">
+              <div class="field-left"><div class="field-label">Frontend</div></div>
+              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">Anima UI v2.0</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
+    <div class="right-panel" id="rightPanel" x-show="showRightPanel()">
+      <div class="panel-header">TOML Preview</div>
+      <div class="panel-preview" id="tomlPreview"
+           @mouseenter="showPanelScroll = true"
+           @mouseleave="showPanelScroll = false"
+           :class="{ 'scroll-visible': showPanelScroll }">
+        <span x-html="tomlHighlighted"></span>
+      </div>
+      <div class="panel-actions">
+        <div class="btn-row">
+          <button class="btn btn-primary" style="flex:1" @click="startTraining()"
+                  :disabled="isTraining" x-text="isTraining ? t('common.training') : t('common.startTraining')">
+            Start Training
+          </button>
+          <button class="btn btn-danger" style="flex:1" @click="stopTraining()"
+                  :disabled="!isTraining" x-text="t('common.stopTraining')">
+            Stop Training
+          </button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost btn-sm" @click="saveParamsToBrowser()" x-text="t('common.save')">Save</button>
+          <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.import')">Load</button>
+          <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
+          <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost btn-sm" style="flex:1" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
+        </div>
+      </div>
+      <div class="panel-status">
+        <div class="status-indicator" :class="{ running: isTraining, stopped: !isTraining && !isIdle }"></div>
+        <span x-text="statusText">Idle</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Container ──────────────────────────────────── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── Hidden file input for importing config ───────────── -->
+<input type="file" id="configFileInput" accept=".toml,.json" style="display:none" @change="handleConfigFileImport($event)">
+
+<!-- ── Load Config Modal ────────────────────────────────── -->
+<div class="modal-overlay" x-show="showLoadModal" @click.self="showLoadModal = false" x-cloak>
+  <div class="modal">
+    <div class="modal-header">
+      <span>Load Configuration</span>
+      <button class="btn-icon" @click="showLoadModal = false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="savedConfigsList">
+      <p class="text-muted text-sm" x-show="savedConfigs.length === 0">No saved configurations</p>
+      <template x-for="(cfg, idx) in savedConfigs" :key="idx">
+        <div class="config-list-item" @click="loadParamsFromBrowser(idx); showLoadModal = false">
+          <span class="config-name" x-text="cfg.name"></span>
+          <div>
+            <span class="config-date text-sm" x-text="cfg.date"></span>
+            <button class="btn-icon" @click.stop="deleteSavedConfig(idx)" style="margin-left:4px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="showLoadModal = false" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
