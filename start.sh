@@ -28,15 +28,15 @@ if [ -f "venv/bin/activate" ]; then
 else
     echo "[提示] 未检测到虚拟环境 (venv)。"
     echo ""
-    echo "   [1] 安装（运行 install.bash）"
+    echo "   [1] 安装（运行 install.sh）"
     echo "   [2] 退出"
     echo ""
     read -p "请输入选项 (1/2): " choice
 
     if [ "$choice" = "1" ]; then
         echo ""
-        echo "[安装] 开始运行 install.bash ..."
-        bash "$SCRIPT_DIR/install.bash"
+        echo "[安装] 开始运行 install.sh ..."
+        bash "$SCRIPT_DIR/install.sh"
         if [ $? -ne 0 ]; then
             echo "[错误] 安装失败"
             exit 1

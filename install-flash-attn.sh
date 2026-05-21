@@ -11,7 +11,7 @@ echo ""
 
 # 检查 venv
 if [ ! -f "venv/bin/activate" ]; then
-    echo "[错误] 未找到虚拟环境，请先运行 install.bash"
+    echo "[错误] 未找到虚拟环境，请先运行 install.sh"
     exit 1
 fi
 

@@ -67,7 +67,7 @@ cd lora-scripts-anima
 | Platform | Install | Launch |
 |----------|---------|--------|
 | Windows | `.\install-cn.ps1` | `.\start.bat` |
-| Linux | `bash install.bash` | `bash start.sh` |
+| Linux | `bash install.sh` | `bash start.sh` |
 
 The GUI opens automatically at [http://127.0.0.1:28000](http://127.0.0.1:28000).
 
@@ -79,7 +79,7 @@ The GUI opens automatically at [http://127.0.0.1:28000](http://127.0.0.1:28000).
 | Operation | Script |
 |-----------|--------|
 | Update this repo | `update-repo.bat` / `bash update-repo.sh` |
-| Update training scripts (sd-scripts) | `update-scripts.bat` / `bash update-scripts.bash` |
+| Update training scripts (sd-scripts) | `update-scripts.bat` / `bash update-scripts.sh` |
 
 ## ✨ SD-Trainer GUI
 
@@ -112,7 +112,7 @@ Traditional workflow: edit and run training scripts directly.
 
 ```sh
 # Install
-bash install.bash
+bash install.sh
 
 # Train — activate venv first, edit train.sh then run
 source venv/bin/activate

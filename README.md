@@ -67,7 +67,7 @@ cd lora-scripts-anima
 | 平台 | 安装 | 启动 |
 |------|------|------|
 | Windows | `.\install-cn.ps1` | `.\start.bat` |
-| Linux | `bash install.bash` | `bash start.sh` |
+| Linux | `bash install.sh` | `bash start.sh` |
 
 启动后 GUI 自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)。
 
@@ -79,7 +79,7 @@ cd lora-scripts-anima
 | 操作 | 脚本 |
 |------|------|
 | 更新本仓库 | `update-repo.bat` / `bash update-repo.sh` |
-| 更新训练脚本 (sd-scripts) | `update-scripts.bat` / `bash update-scripts.bash` |
+| 更新训练脚本 (sd-scripts) | `update-scripts.bat` / `bash update-scripts.sh` |
 
 ## ✨ SD-Trainer GUI
 
@@ -116,7 +116,7 @@ bash run_gui.sh
 
 ```sh
 # 安装
-bash install.bash
+bash install.sh
 
 # 训练 — 先激活 venv，编辑 train.sh 后运行
 source venv/bin/activate
