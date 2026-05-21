@@ -274,8 +274,8 @@ document.addEventListener('alpine:init', () => {
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();
 
-      // Locale
-      I18N.init(this.locale);
+      // Locale — read from localStorage
+      I18N.init();
       this.locale = I18N.getLocale();
 
       // UI settings
@@ -627,7 +627,7 @@ document.addEventListener('alpine:init', () => {
         const data = await resp.json();
         if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
         else { this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted')); }
-      } catch(e) { this.toast('Request failed: '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+      } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
     },
 
     async stopTraining() {
@@ -636,7 +636,7 @@ document.addEventListener('alpine:init', () => {
         if (this.taskId) await fetch('/api/tasks/terminate/'+this.taskId);
         this.isTraining = false; this.statusText = 'Idle';
         this.toast(this.t('common.trainingStopped'));
-      } catch(e) { this.toast('Failed: '+e.message); }
+      } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
     },
 
     // ── Param Save/Load ────────────────────────────────────
@@ -690,13 +690,13 @@ document.addEventListener('alpine:init', () => {
       reader.onload = (e) => {
         try {
           const parsed = this.parseToml(e.target.result);
-          if (Object.keys(parsed).length===0) { this.toast('No valid TOML keys'); return; }
+          if (Object.keys(parsed).length===0) { this.toast(this.t('common.invalidToml')); return; }
           this.form = { ...this.formDefaults, ...parsed };
           this.formDefaults = { ...this.form };
           this.formHistory = [this.formDefaults]; this.formHistoryIdx = 0;
           this.updateToml(); this.rebuildForm();
           this.toast(this.t('common.imported'));
-        } catch(err) { this.toast('Parse error: '+err.message); }
+        } catch(err) { this.toast(this.t('common.parseError')+': '+err.message); }
       };
       reader.readAsText(file);
       event.target.value = '';
@@ -735,7 +735,7 @@ document.addEventListener('alpine:init', () => {
         const r = await fetch('/api/pick_file?picker_type='+type);
         const d = await r.json();
         if (d.status==='success'&&d.data&&d.data.path) this.setField(key, d.data.path);
-      } catch(e) { this.toast('Local picker not available'); }
+      } catch(e) { this.toast(this.t('common.localPickerNA')); }
     },
 
     async builtinFilePicker(key, role) {
@@ -748,7 +748,7 @@ document.addEventListener('alpine:init', () => {
         const d = await r.json();
         const files = (d.status==='success'&&d.data) ? (d.data.files||d.data) : [];
         this.showFilePickerModal(key, Array.isArray(files)?files:[]);
-      } catch(e) { this.toast('File browser failed'); }
+      } catch(e) { this.toast(this.t('common.fileBrowserFailed')); }
     },
 
     showFilePickerModal(key, files) {
@@ -788,15 +788,15 @@ document.addEventListener('alpine:init', () => {
       const threshold = parseFloat(document.getElementById('tagger-threshold').value);
       const additional = document.getElementById('tagger-additional').value;
       const exclude = document.getElementById('tagger-exclude').value;
-      if (!path) { this.toast('Specify directory'); return; }
+      if (!path) { this.toast(this.t('common.specifyDir')); return; }
       this.taggerRunning = true; document.getElementById('tagger-stop-btn').disabled = false;
       const out = document.getElementById('tagger-output'); out.style.display='block'; out.textContent=this.t('tagger.running');
       try {
         const r = await fetch('/api/interrogate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,interrogator_model:model,threshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:'ignore',add_rating_tag:false,add_model_tag:false,escape_tag:false,character_threshold:0})});
         const d = await r.json();
         out.textContent = d.status==='success' ? this.t('tagger.completed') : ('Error: '+(d.message||'Unknown'));
-        this.toast(d.status==='success' ? this.t('tagger.completed') : (d.message||'Failed'));
-      } catch(e) { out.textContent='Error: '+e.message; this.toast('Failed: '+e.message); }
+        this.toast(d.status==='success' ? this.t('tagger.completed') : (d.message||this.t('common.failed')));
+      } catch(e) { out.textContent='Error: '+e.message; this.toast(this.t('common.failed')+': '+e.message); }
       this.taggerRunning=false; document.getElementById('tagger-stop-btn').disabled=true;
     },
 

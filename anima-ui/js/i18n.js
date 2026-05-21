@@ -131,7 +131,11 @@ const MESSAGES = {
       themeLight: '浅色模式', themeDark: '深色模式', themeAuto: '跟随系统',
       autoLoadedHistory: '已自动加载历史参数',
       enterConfigName: '请输入配置名称', noConfigs: '暂无保存的配置',
-      tomlPreview: '参数预览'
+      tomlPreview: '参数预览',
+      requestFailed: '请求失败', failed: '失败',
+      invalidToml: '无有效TOML配置', parseError: '解析错误',
+      localPickerNA: '本地文件选择不可用', fileBrowserFailed: '文件浏览失败',
+      specifyDir: '请指定目录'
     },
     tagger: {
       title: 'Tagger 标注工具', subtitle: '使用 WD14 模型自动为图片打标',
@@ -282,7 +286,11 @@ const MESSAGES = {
       close: 'Close', themeLight: 'Light Mode', themeDark: 'Dark Mode', themeAuto: 'Auto',
       autoLoadedHistory: 'Auto-loaded previous parameters',
       enterConfigName: 'Enter configuration name', noConfigs: 'No saved configurations',
-      tomlPreview: 'Parameter Preview'
+      tomlPreview: 'Parameter Preview',
+      requestFailed: 'Request failed', failed: 'Failed',
+      invalidToml: 'No valid TOML keys', parseError: 'Parse error',
+      localPickerNA: 'Local picker unavailable', fileBrowserFailed: 'File browser failed',
+      specifyDir: 'Please specify a directory'
     },
     tagger: {
       title: 'Tagger', subtitle: 'Auto-tag images using WD14 models',
