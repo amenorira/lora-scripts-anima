@@ -65,7 +65,10 @@ def prepare_submodules():
 
 def git_tag(path: str) -> str:
     try:
-        tag = subprocess.check_output(["git", "-C", path, "describe", "--tags"]).strip().decode("utf-8")
+        tag = subprocess.check_output(
+            ["git", "-C", path, "describe", "--tags"],
+            stderr=subprocess.DEVNULL,
+        ).strip().decode("utf-8")
         return tag
     except Exception:
         try:
