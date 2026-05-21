@@ -30,6 +30,22 @@ from mikazuki.utils.tk_window import (open_directory_selector,
 
 router = APIRouter()
 
+
+def _git_version() -> str:
+    try:
+        import subprocess
+        r = subprocess.run(["git", "describe", "--tags", "--always"],
+                          capture_output=True, text=True,
+                          cwd=Path(__file__).parents[2])
+        return r.stdout.strip() or "dev"
+    except Exception:
+        return "dev"
+
+
+@router.get("/version")
+async def get_version():
+    return APIResponseSuccess(data={"version": _git_version()})
+
 avaliable_scripts = [
     "networks/extract_lora_from_models.py",
     "networks/extract_lora_from_dylora.py",
