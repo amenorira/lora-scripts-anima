@@ -75,7 +75,7 @@ To update the training scripts to the latest version:
 | Windows (PowerShell) | `update-scripts.ps1` |
 | Linux | `bash update-scripts.bash` |
 
-This will replace the `scripts/` directory with the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
+This will replace the `sd-scripts/` directory with the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts).
 
 ### Windows
 

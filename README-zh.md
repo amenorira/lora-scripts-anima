@@ -75,7 +75,7 @@ git clone https://github.com/ameyukisora/lora-scripts-anima.git
 | Windows (PowerShell) | `update-scripts.ps1` |
 | Linux | `bash update-scripts.bash` |
 
-这将用最新版 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 替换 `scripts/` 目录。
+这将用最新版 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 替换 `sd-scripts/` 目录。
 
 ### Windows
 

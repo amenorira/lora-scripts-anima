@@ -24,21 +24,21 @@ git clone --depth 1 https://github.com/kohya-ss/sd-scripts.git "$TEMP_DIR"
 echo "[OK] 克隆完成"
 
 # [2/4] 删除旧版目录
-echo "[2/4] 正在删除旧版 scripts/stable 和 scripts/dev ..."
-rm -rf "${SCRIPT_DIR}/scripts/stable"
-echo "[OK] 已删除 scripts/stable"
-rm -rf "${SCRIPT_DIR}/scripts/dev"
-echo "[OK] 已删除 scripts/dev"
+echo "[2/4] 正在删除旧版 sd-scripts/stable 和 sd-scripts/dev ..."
+rm -rf "${SCRIPT_DIR}/sd-scripts/stable"
+echo "[OK] 已删除 sd-scripts/stable"
+rm -rf "${SCRIPT_DIR}/sd-scripts/dev"
+echo "[OK] 已删除 sd-scripts/dev"
 
 # [3/4] 复制新版
-echo "[3/4] 正在复制新版脚本到 scripts/ ..."
-# 复制所有文件到 scripts/，但排除 .git 目录
-rsync -a "$TEMP_DIR/" "${SCRIPT_DIR}/scripts/" --exclude='.git' --exclude='.gitignore' --exclude='.github' 2>/dev/null || \
-    cp -rf "$TEMP_DIR"/* "${SCRIPT_DIR}/scripts/" 2>/dev/null
+echo "[3/4] 正在复制新版脚本到 sd-scripts/ ..."
+# 复制所有文件到 sd-scripts/，但排除 .git 目录
+rsync -a "$TEMP_DIR/" "${SCRIPT_DIR}/sd-scripts/" --exclude='.git' --exclude='.gitignore' --exclude='.github' 2>/dev/null || \
+    cp -rf "$TEMP_DIR"/* "${SCRIPT_DIR}/sd-scripts/" 2>/dev/null
 # 如果 rsync 不可用，用 cp + 手动清理
-rm -rf "${SCRIPT_DIR}/scripts/.git" 2>/dev/null || true
-rm -f "${SCRIPT_DIR}/scripts/.gitignore" 2>/dev/null || true
-rm -rf "${SCRIPT_DIR}/scripts/.github" 2>/dev/null || true
+rm -rf "${SCRIPT_DIR}/sd-scripts/.git" 2>/dev/null || true
+rm -f "${SCRIPT_DIR}/sd-scripts/.gitignore" 2>/dev/null || true
+rm -rf "${SCRIPT_DIR}/sd-scripts/.github" 2>/dev/null || true
 echo "[OK] 复制完成"
 
 # [4/4] 清理
@@ -49,7 +49,7 @@ echo "[OK] 清理完成"
 echo ""
 echo "============================================"
 echo "  更新完成！"
-echo "  scripts/ 目录现在是单一版本的最新 sd-scripts"
+echo "  sd-scripts/ 目录现在是单一版本的最新 sd-scripts"
 echo "  mikazuki/app/api.py 及其他脚本的路径已同步更新"
 echo "============================================"
 echo ""

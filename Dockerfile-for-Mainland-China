@@ -19,12 +19,8 @@ RUN pip config set global.index-url 'https://pypi.tuna.tsinghua.edu.cn/simple' &
 # 初次安装依赖
 RUN pip install xformers==0.0.27.post2 --no-deps && pip install -r requirements.txt
 
-# 更新 训练程序 stable 版本依赖
-WORKDIR /app/lora-scripts/scripts/stable
-RUN pip install -r requirements.txt
-
-# 更新 训练程序 dev 版本依赖
-WORKDIR /app/lora-scripts/scripts/dev
+# 安装 sd-scripts 依赖
+WORKDIR /app/lora-scripts/sd-scripts
 RUN pip install -r requirements.txt
 
 WORKDIR /app/lora-scripts

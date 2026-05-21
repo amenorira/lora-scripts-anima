@@ -1,12 +1,12 @@
 # LoRA train script by @Akegarasu
 
-$config_file = "./config/default.toml"		 # config file | Ê¹ÓÃ toml ÎÄ¼þÖ¸¶¨ÑµÁ·²ÎÊý
-$sample_prompts = "./config/sample_prompts.txt"		 # prompt file for sample | ²ÉÑù prompts ÎÄ¼þ, Áô¿ÕÔò²»ÆôÓÃ²ÉÑù¹¦ÄÜ
+$config_file = "./config/default.toml"		 # config file | Ê¹ï¿½ï¿½ toml ï¿½Ä¼ï¿½Ö¸ï¿½ï¿½Ñµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+$sample_prompts = "./config/sample_prompts.txt"		 # prompt file for sample | ï¿½ï¿½ï¿½ï¿½ prompts ï¿½Ä¼ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-$sdxl = 0        # train sdxl LoRA | ÑµÁ· SDXL LoRA
-$multi_gpu = 0		 # multi gpu | ¶àÏÔ¿¨ÑµÁ· ¸Ã²ÎÊý½öÏÞÔÚÏÔ¿¨Êý >= 2 Ê¹ÓÃ
+$sdxl = 0        # train sdxl LoRA | Ñµï¿½ï¿½ SDXL LoRA
+$multi_gpu = 0		 # multi gpu | ï¿½ï¿½ï¿½Ô¿ï¿½Ñµï¿½ï¿½ ï¿½Ã²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¿ï¿½ï¿½ï¿½ >= 2 Ê¹ï¿½ï¿½
 
-# ============= DO NOT MODIFY CONTENTS BELOW | ÇëÎðÐÞ¸ÄÏÂ·½ÄÚÈÝ =====================
+# ============= DO NOT MODIFY CONTENTS BELOW | ï¿½ï¿½ï¿½ï¿½ï¿½Þ¸ï¿½ï¿½Â·ï¿½ï¿½ï¿½ï¿½ï¿½ =====================
 
 # Activate python venv
 .\venv\Scripts\activate
@@ -24,7 +24,7 @@ if ($multi_gpu) {
 
 # run train
 $script_name = if ($sdxl) { "sdxl_train_network.py" } else { "train_network.py" }
-python -m accelerate.commands.launch $launch_args --num_cpu_threads_per_process=8 "./scripts/$script_name" `
+python -m accelerate.commands.launch $launch_args --num_cpu_threads_per_process=8 "./sd-scripts/$script_name" `
   --config_file=$config_file `
   --sample_prompts=$sample_prompts `
   $ext_args

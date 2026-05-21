@@ -31,21 +31,21 @@ if ($LASTEXITCODE -ne 0) {
 Write-Output "[OK] Clone complete"
 
 # [2/4] Remove old versions
-Write-Output "[2/4] Removing old scripts/stable and scripts/dev ..."
-$StableDir = Join-Path $ScriptDir "scripts\stable"
-$DevDir = Join-Path $ScriptDir "scripts\dev"
+Write-Output "[2/4] Removing old sd-scripts/stable and sd-scripts/dev ..."
+$StableDir = Join-Path $ScriptDir "sd-scripts\stable"
+$DevDir = Join-Path $ScriptDir "sd-scripts\dev"
 if (Test-Path $StableDir) {
     Remove-Item -Recurse -Force $StableDir
-    Write-Output "[OK] Removed scripts/stable"
+    Write-Output "[OK] Removed sd-scripts/stable"
 }
 if (Test-Path $DevDir) {
     Remove-Item -Recurse -Force $DevDir
-    Write-Output "[OK] Removed scripts/dev"
+    Write-Output "[OK] Removed sd-scripts/dev"
 }
 
 # [3/4] Copy new scripts
-Write-Output "[3/4] Copying new scripts to scripts/ ..."
-$TargetDir = Join-Path $ScriptDir "scripts"
+Write-Output "[3/4] Copying new scripts to sd-scripts/ ..."
+$TargetDir = Join-Path $ScriptDir "sd-scripts"
 Copy-Item -Path "$TempDir\*" -Destination $TargetDir -Recurse -Force
 
 # Remove .git files
@@ -65,7 +65,7 @@ Write-Output "[OK] Cleanup complete"
 Write-Output ""
 Write-Output "============================================"
 Write-Output "  Update complete!"
-Write-Output "  scripts/ now uses the latest single-version sd-scripts"
+Write-Output "  sd-scripts/ now uses the latest single-version sd-scripts"
 Write-Output "  All script paths have been updated"
 Write-Output "============================================"
 Write-Output ""
