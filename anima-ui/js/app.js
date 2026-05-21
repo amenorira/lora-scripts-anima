@@ -812,12 +812,10 @@ document.addEventListener('alpine:init', () => {
     loadUISettings() {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
-        if (s.theme) this.theme = s.theme;
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
         if (s.tbUrl) this.settingsTbUrl = s.tbUrl;
         this.refreshSavedConfigs();
       } catch(e){}
-      this.resolveTheme();
     },
 
     saveUISettings() {
