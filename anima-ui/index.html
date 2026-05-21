@@ -325,19 +325,19 @@
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field">
               <div class="field-left"><div class="field-label" x-text="t('about.version')">Version</div></div>
-              <div class="field-right"><span style="font-family:var(--font-mono);font-size:13px" x-text="'v' + version"></span></div>
+              <div class="field-right"><span style="font-family:var(--font-mono);font-size:13px" x-text="version"></span></div>
             </div>
             <div class="field">
               <div class="field-left"><div class="field-label" x-text="t('about.description')">Description</div></div>
-              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">A modern web UI for Stable Diffusion LoRA / Dreambooth training.</span></div>
+              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)" x-text="t('about.descriptionText')">Training UI</span></div>
             </div>
             <div class="field">
               <div class="field-left"><div class="field-label" x-text="t('about.github')">GitHub</div></div>
-              <div class="field-right"><a href="https://github.com/Akegarasu/lora-scripts" target="_blank" rel="noopener" style="font-family:var(--font-mono);font-size:13px">Akegarasu/lora-scripts</a></div>
+              <div class="field-right"><a href="https://github.com/ameyukisora/lora-scripts-anima" target="_blank" rel="noopener" style="font-family:var(--font-mono);font-size:13px">ameyukisora/lora-scripts-anima</a></div>
             </div>
             <div class="field">
-              <div class="field-left"><div class="field-label">Frontend</div></div>
-              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">Anima UI v2.0</span></div>
+              <div class="field-left"><div class="field-label" x-text="t('about.frontend')">Frontend</div></div>
+              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">Anima UI</span></div>
             </div>
           </div>
         </div>
