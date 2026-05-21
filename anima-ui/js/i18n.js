@@ -130,7 +130,8 @@ const MESSAGES = {
       downloaded: '已下载', imported: '已导入', close: '关闭',
       themeLight: '浅色模式', themeDark: '深色模式', themeAuto: '跟随系统',
       autoLoadedHistory: '已自动加载历史参数',
-      enterConfigName: '请输入配置名称', noConfigs: '暂无保存的配置'
+      enterConfigName: '请输入配置名称', noConfigs: '暂无保存的配置',
+      tomlPreview: '参数预览'
     },
     tagger: {
       title: 'Tagger 标注工具', subtitle: '使用 WD14 模型自动为图片打标',
@@ -280,7 +281,8 @@ const MESSAGES = {
       loaded: 'Loaded successfully', downloaded: 'Downloaded', imported: 'Imported',
       close: 'Close', themeLight: 'Light Mode', themeDark: 'Dark Mode', themeAuto: 'Auto',
       autoLoadedHistory: 'Auto-loaded previous parameters',
-      enterConfigName: 'Enter configuration name', noConfigs: 'No saved configurations'
+      enterConfigName: 'Enter configuration name', noConfigs: 'No saved configurations',
+      tomlPreview: 'Parameter Preview'
     },
     tagger: {
       title: 'Tagger', subtitle: 'Auto-tag images using WD14 models',

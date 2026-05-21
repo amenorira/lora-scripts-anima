@@ -584,14 +584,16 @@ document.addEventListener('alpine:init', () => {
         else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
       }
       this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
-      // Generate highlighted HTML
+      // Generate highlighted HTML: key | = | value (num or str)
       const highlighted = lines.map(line => {
         if (line.startsWith('#')) return `<span class="toml-comment">${this.esc(line)}</span>`;
         const eq = line.indexOf('=');
         if (eq === -1) return this.esc(line);
         const key = line.substring(0, eq).trim();
         const val = line.substring(eq + 1).trim();
-        return `<span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> <span class="toml-val">${this.esc(val)}</span>`;
+        // Distinguish: quoted strings vs unquoted numbers/booleans
+        const valCls = (val.startsWith('"') || val.startsWith("'")) ? 'toml-str' : 'toml-num';
+        return `<span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> <span class="${valCls}">${this.esc(val)}</span>`;
       }).join('\n');
       const preview = document.getElementById('tomlPreview');
       if (preview) {

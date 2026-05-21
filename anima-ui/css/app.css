@@ -29,9 +29,10 @@
   --text-sidebar-muted: #78716c;
   --text-sidebar-active: #1c1917;
   --text-preview: #1c1917;
-  --text-preview-key: #52525b;
-  --text-preview-eq: #059669;
-  --text-preview-val: #d97706;
+  --text-preview-key: rgb(133, 99, 193);
+  --text-preview-eq: #78716c;
+  --text-preview-num: rgb(255, 158, 100);
+  --text-preview-str: rgb(133, 99, 193);
   --text-preview-comment: #a8a29e;
   --text-preview-key: #89b4fa;
   --text-preview-comment: #6c7086;
@@ -82,10 +83,11 @@
   --border-default: #292929;
   --border-input: #2e2e2f;
 
-  --text-preview: #a7c7a0;
-  --text-preview-key: #89b4fa;
-  --text-preview-eq: #94e2d5;
-  --text-preview-val: #f9e2af;
+  --text-preview: #e4e4e1;
+  --text-preview-key: rgb(187, 154, 247);
+  --text-preview-eq: #6b6b66;
+  --text-preview-num: rgb(187, 154, 247);
+  --text-preview-str: rgb(187, 154, 247);
   --text-preview-comment: #6c7086;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.18);
@@ -489,7 +491,8 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 }
 .panel-preview .toml-key { color: var(--text-preview-key); }
 .panel-preview .toml-eq { color: var(--text-preview-eq); }
-.panel-preview .toml-val { color: var(--text-preview-val); }
+.panel-preview .toml-num { color: var(--text-preview-num); }
+.panel-preview .toml-str { color: var(--text-preview-str); }
 .panel-preview .toml-comment { color: var(--text-preview-comment); font-style: italic; }
 
 .panel-actions {

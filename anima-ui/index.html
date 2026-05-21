@@ -37,7 +37,6 @@
       </div>
       <div>
         <div class="brand-text">Anima Trainer</div>
-        <div class="version" x-text="'v' + version"></div>
       </div>
     </div>
 
@@ -377,7 +376,7 @@
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()">
-      <div class="panel-header">TOML Preview</div>
+      <div class="panel-header" x-text="t('common.tomlPreview')">TOML Preview</div>
       <div class="panel-preview" id="tomlPreview"># Parameters will appear here</div>
       <div class="panel-actions">
         <div class="btn-row">
