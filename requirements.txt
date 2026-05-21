@@ -24,7 +24,7 @@ huggingface-hub>=0.24.5  # skip_verify
 # for Image utils
 imagesize==1.4.1
 # for T5XXL tokenizer (SD3/FLUX)
-sentencepiece==0.2.0
+sentencepiece==0.2.0  # skip_verify
 # for ui
 rich>=13.7.0  # skip_verify
 pandas
