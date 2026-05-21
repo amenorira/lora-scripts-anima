@@ -721,7 +721,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     autoLoadLastParams() {
+      if (this._autoLoaded) return;
       if (!this.autoLoadHistory || !this.currentRoute.startsWith('train-')) return;
+      this._autoLoaded = true;
       this.toast(this.t('common.autoLoadedHistory'));
     },
 
@@ -793,7 +795,7 @@ document.addEventListener('alpine:init', () => {
         const r = await fetch('/api/interrogate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,interrogator_model:model,threshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:'ignore',add_rating_tag:false,add_model_tag:false,escape_tag:false,character_threshold:0})});
         const d = await r.json();
         out.textContent = d.status==='success' ? this.t('tagger.completed') : ('Error: '+(d.message||'Unknown'));
-        this.toast(d.status==='success'?this.t('tagger.completed'):(d.message||'Failed'),d.status==='success'?'success':'error');
+        this.toast(d.status==='success' ? this.t('tagger.completed') : (d.message||'Failed'));
       } catch(e) { out.textContent='Error: '+e.message; this.toast('Failed: '+e.message); }
       this.taggerRunning=false; document.getElementById('tagger-stop-btn').disabled=true;
     },

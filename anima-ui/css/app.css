@@ -30,7 +30,7 @@
   --text-sidebar-active: #1c1917;
   --text-preview: #1c1917;
   --text-preview-key: rgb(133, 99, 193);
-  --text-preview-eq: #78716c;
+  --text-preview-eq: rgb(133, 99, 193);
   --text-preview-num: rgb(255, 158, 100);
   --text-preview-str: rgb(133, 99, 193);
   --text-preview-comment: #a8a29e;
@@ -85,8 +85,8 @@
 
   --text-preview: #e4e4e1;
   --text-preview-key: rgb(187, 154, 247);
-  --text-preview-eq: #6b6b66;
-  --text-preview-num: rgb(187, 154, 247);
+  --text-preview-eq: rgb(187, 154, 247);
+  --text-preview-num: rgb(255, 190, 130);
   --text-preview-str: rgb(187, 154, 247);
   --text-preview-comment: #6c7086;
 
