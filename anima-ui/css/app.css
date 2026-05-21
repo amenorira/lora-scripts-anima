@@ -86,8 +86,8 @@
   --text-preview: #e4e4e1;
   --text-preview-key: rgb(187, 154, 247);
   --text-preview-eq: rgb(187, 154, 247);
-  --text-preview-num: rgb(187, 154, 247);
-  --text-preview-str: rgb(187, 154, 247);
+  --text-preview-num: rgb(255, 158, 100);
+  --text-preview-str: rgb(158, 206, 106);
   --text-preview-comment: #6c7086;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.18);
