@@ -173,7 +173,7 @@
           @scroll="onContentScroll()"
           @mouseenter="showMainScroll = true"
           @mouseleave="showMainScroll = false"
-          :class="{ 'scroll-visible': showMainScroll }">
+          :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tensorboard' || currentRoute === 'tagEditor' }">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
@@ -207,7 +207,7 @@
       </div>
 
       <!-- Route: TensorBoard -->
-      <div x-show="currentRoute === 'tensorboard'" x-cloak style="position:absolute;top:-24px;left:-28px;right:-28px;bottom:0">
+      <div x-show="currentRoute === 'tensorboard'" x-cloak style="position:absolute;inset:0">
         <iframe class="iframe-full" :src="tensorboardUrl" id="tensorboardIframe"></iframe>
       </div>
 
@@ -221,7 +221,7 @@
       </div>
 
       <!-- Route: Tag Editor -->
-      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;top:-24px;left:-28px;right:-28px;bottom:0">
+      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;inset:0">
         <iframe class="iframe-full" src="/proxy/tageditor" id="tageditorIframe"></iframe>
       </div>
 

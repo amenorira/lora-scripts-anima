@@ -305,6 +305,12 @@ a:hover { text-decoration: underline; }
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
 
+/* Fullscreen routes: remove padding so iframe fills edge-to-edge */
+.main-fullscreen {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
 .page-header { margin-bottom: 20px; }
 .page-title { font-size: 21px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
 .page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }

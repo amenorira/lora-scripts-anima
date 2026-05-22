@@ -80,5 +80,8 @@ const I18N = (() => {
   return { init, t, getLocale, setLocale, getAvailableLocales };
 })();
 
+// ── Activate immediately so _messages is ready before Alpine renders ─
+I18N.init();
+
 window.I18N = I18N;
 window.t = (key, fallback) => I18N.t(key, fallback);
