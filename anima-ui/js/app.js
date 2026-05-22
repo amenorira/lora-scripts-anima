@@ -1,5 +1,5 @@
 /* ================================================================
-   Anima Trainer UI �?Application Core
+   lora-scripts-anima UI — Application Core
    SPA router · Theme engine (diffusion) · Training forms · API
    ================================================================ */
 
@@ -251,7 +251,7 @@ const TRAIN_SECTIONS_ANIMA = [
 ];
 
 const ROUTE_CONFIG = {
-  'home': { title: 'Anima Trainer', subtitle: '' },
+  'home': { title: 'lora-scripts-anima', subtitle: '' },
   'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
@@ -419,7 +419,7 @@ document.addEventListener('alpine:init', () => {
     theme: 'auto',
     resolvedTheme: 'light',
     currentRoute: 'home',
-    pageTitle: 'Anima Trainer',
+    pageTitle: 'lora-scripts-anima',
     pageSubtitle: '',
     locale: 'zh-CN',
     i18nReady: true,
@@ -472,7 +472,7 @@ document.addEventListener('alpine:init', () => {
       const cfg = ROUTE_CONFIG[route];
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
       this.pageSubtitle = cfg.subtitleKey ? (this.t(cfg.subtitleKey) || cfg.subtitle || '') : (cfg.subtitle || '');
-      document.title = this.pageTitle + ' | Anima Trainer';
+      document.title = this.pageTitle + ' | lora-scripts-anima';
 
       // Git version
       try {
@@ -505,7 +505,7 @@ document.addEventListener('alpine:init', () => {
         else this.pageTitle = cfg.title || r;
         if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
         else this.pageSubtitle = cfg.subtitle || '';
-        document.title = this.pageTitle + ' | Anima Trainer';
+        document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
       });
 
@@ -527,7 +527,7 @@ document.addEventListener('alpine:init', () => {
         setTimeout(() => this.autoLoadLastParams(), 500);
       }
 
-      document.title = this.pageTitle + ' | Anima Trainer';
+      document.title = this.pageTitle + ' | lora-scripts-anima';
     },
 
     // ── Theme with diffusion animation ──────────────────────
@@ -595,7 +595,7 @@ document.addEventListener('alpine:init', () => {
       else this.pageTitle = cfg.title || route;
       if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
       else this.pageSubtitle = cfg.subtitle || '';
-      document.title = this.pageTitle + ' | Anima Trainer';
+      document.title = this.pageTitle + ' | lora-scripts-anima';
 
       if (route !== prev) {
         this.buildRouteContent();

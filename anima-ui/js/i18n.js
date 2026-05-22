@@ -1,5 +1,5 @@
 /* ================================================================
-   Anima Trainer UI — I18n System v3
+   lora-scripts-anima UI — I18n System v3
    Preloads ALL locale JSON files synchronously at script execution
    time (before Alpine boots), so t() always has data available.
    To add a new language: drop a JSON file in i18n/ and add its

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Anima LoRA Trainer
+# lora-scripts-anima
 
 _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 

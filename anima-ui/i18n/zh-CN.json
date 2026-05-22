@@ -259,7 +259,7 @@
   },
   "about": {
     "title": "关于",
-    "subtitle": "Anima Trainer",
+    "subtitle": "lora-scripts-anima",
     "version": "版本",
     "description": "描述",
     "descriptionText": "Stable Diffusion LoRA / Dreambooth 训练的现代化 Web UI",

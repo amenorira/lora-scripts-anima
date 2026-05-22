@@ -51,7 +51,7 @@ def run_tag_editor():
 
 
 def launch():
-    log.info("Starting Anima Trainer GUI...")
+    log.info("Starting lora-scripts-anima GUI...")
     log.info(f"Base directory: {base_dir_path()}, Working directory: {os.getcwd()}")
     log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
 
@@ -65,7 +65,7 @@ def launch():
         else:
             log.error("port finding fallback error")
 
-    log.info(f"Anima Trainer Version: {git_tag(base_dir_path())}")
+    log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
 
     # 检测 flash-attn 状态
     try:

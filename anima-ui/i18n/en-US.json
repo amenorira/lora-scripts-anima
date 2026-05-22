@@ -259,7 +259,7 @@
   },
   "about": {
     "title": "About",
-    "subtitle": "Anima Trainer",
+    "subtitle": "lora-scripts-anima",
     "version": "Version",
     "description": "Description",
     "descriptionText": "A modern web UI for Stable Diffusion LoRA / Dreambooth training.",
