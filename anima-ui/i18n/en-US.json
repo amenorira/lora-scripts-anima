@@ -9,7 +9,6 @@
     "anima": "Anima LoRA",
     "history": "History",
     "tools": "Tools",
-    "tensorboard": "TensorBoard",
     "tagger": "Tagger",
     "tagEditor": "Tag Editor",
     "other": "Other",
@@ -272,8 +271,6 @@
     "languageDesc": "Interface display language",
     "autoLoadHistory": "Auto-load History",
     "autoLoadHistoryDesc": "Automatically restore last training parameters on startup",
-    "tensorboardUrl": "TensorBoard URL",
-    "tensorboardUrlDesc": "Custom TensorBoard address override",
     "localeChanged": "Language changed, re-rendering..."
   },
   "about": {

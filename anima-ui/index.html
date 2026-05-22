@@ -87,13 +87,6 @@
 
       <!-- Tools -->
       <div class="sidebar-section-label" x-text="t('nav.tools')">Tools</div>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'tensorboard' }"
-         @click="navigate('tensorboard')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        </span>
-        <span x-text="t('nav.tensorboard')">TensorBoard</span>
-      </a>
       <a class="sidebar-item" :class="{ active: currentRoute === 'tagger' }"
          @click="navigate('tagger')" href="javascript:void(0)">
         <span class="nav-icon">
@@ -163,7 +156,7 @@
           @scroll="onContentScroll()"
           @mouseenter="showMainScroll = true"
           @mouseleave="showMainScroll = false"
-          :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tensorboard' || currentRoute === 'tagEditor' }">
+          :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tagEditor' }">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
@@ -219,11 +212,6 @@
           <!-- Sections rendered dynamically by JS -->
           <div id="trainFormContent"></div>
         </form>
-      </div>
-
-      <!-- Route: TensorBoard -->
-      <div x-show="currentRoute === 'tensorboard'" x-cloak style="position:absolute;inset:0">
-        <iframe class="iframe-full" :src="tensorboardUrl" id="tensorboardIframe"></iframe>
       </div>
 
       <!-- Route: Tagger -->
@@ -285,16 +273,6 @@
             </div>
           </div>
 
-          <!-- TensorBoard URL override -->
-          <div class="field">
-            <div class="field-left">
-              <div class="field-label" x-text="t('settings.tensorboardUrl')">TensorBoard URL</div>
-              <div class="field-desc" x-text="t('settings.tensorboardUrlDesc')">Override the default TensorBoard address</div>
-            </div>
-            <div class="field-right">
-              <input type="text" x-model="settingsTbUrl" @change="saveUISettings()" placeholder="http://127.0.0.1:6006">
-            </div>
-          </div>
         </div>
       </div>
 

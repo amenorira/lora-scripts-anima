@@ -240,6 +240,7 @@ a:hover { text-decoration: underline; }
   padding: 8px 8px;
   border-top: 1px solid var(--border-default);
   display: flex; align-items: center; gap: 4px;
+  overflow: hidden;
 }
 
 .sidebar-bottom .bottom-btn {
@@ -666,6 +667,7 @@ input[type="range"]::-webkit-slider-thumb {
 .monitor-dashboard { padding: 4px 0; }
 .monitor-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .monitor-row .card { flex: 1; min-width: 260px; }
+.dashboard-empty { text-align: center; padding: 24px; color: var(--text-secondary); font-size: 13px; font-family: var(--font-sans); }
 
 .param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 16px; padding: 4px 0; }
 .param-item { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border-color); }

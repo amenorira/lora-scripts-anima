@@ -9,7 +9,6 @@
     "anima": "Anima LoRA",
     "history": "历史记录",
     "tools": "工具",
-    "tensorboard": "TensorBoard",
     "tagger": "Tagger 打标器",
     "tagEditor": "标签编辑器",
     "other": "其他",
@@ -272,8 +271,6 @@
     "languageDesc": "界面显示语言（更多语言敬请期待）",
     "autoLoadHistory": "自动加载历史参数",
     "autoLoadHistoryDesc": "启动时自动恢复上次的训练参数",
-    "tensorboardUrl": "TensorBoard 地址",
-    "tensorboardUrlDesc": "自定义 TensorBoard 访问地址",
     "localeChanged": "语言已切换，正在重新渲染..."
   },
   "about": {

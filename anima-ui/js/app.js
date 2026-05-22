@@ -247,7 +247,6 @@ const ROUTE_CONFIG = {
   'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
-  'tensorboard': { titleKey: 'nav.tensorboard', subtitle: '' },
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
@@ -434,13 +433,9 @@ document.addEventListener('alpine:init', () => {
 
     // UI Settings
     autoLoadHistory: true,
-    settingsTbUrl: '',
+
     showLoadModal: false,
     savedConfigs: [],
-
-    // TB
-    tbHost: '127.0.0.1',
-    tbPort: '6006',
 
     // Tagger
     taggerRunning: false,
@@ -465,13 +460,6 @@ document.addEventListener('alpine:init', () => {
     logAutoScroll: true,
     logLines: [],
     logMaxLines: 5000,
-
-    get tensorboardUrl() {
-      let url = `http://${this.tbHost}:${this.tbPort}`;
-      // Pass dark mode preference to TensorBoard's own UI
-      if (this.resolvedTheme === 'dark') url += '?darkMode=true';
-      return url;
-    },
 
     // ── Init ───────────────────────────────────────────────
     async init() {
@@ -626,8 +614,6 @@ document.addEventListener('alpine:init', () => {
       if (!r.startsWith('monitor-')) this.stopMonitorPolling();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
-      } else if (r === 'tensorboard') {
-        this.loadTbConfig();
       } else if (r === 'tagger') {
         this.buildTaggerForm();
       } else if (r === 'tagEditor') {
@@ -711,7 +697,7 @@ document.addEventListener('alpine:init', () => {
         });
         html += '</div>';
       } else {
-        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', 'Start training to see data') + '</div>';
+        html += '<div class="dashboard-empty">' + t('noTrainingHint', 'Start training to see data') + '</div>';
       }
       html += '</div>';
 
@@ -739,7 +725,7 @@ document.addEventListener('alpine:init', () => {
         });
         html += '</div>';
       } else {
-        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', 'Start training to see data') + '</div>';
+        html += '<div class="dashboard-empty">' + t('noTrainingHint', 'Start training to see data') + '</div>';
       }
       html += '</div>';
 
@@ -775,7 +761,7 @@ document.addEventListener('alpine:init', () => {
       const vramColor = vramPct > 90 ? 'var(--danger)' : vramPct > 70 ? 'var(--warning)' : 'var(--success)';
       const loadPct = gpu.gpu_load_pct || 0;
       const loadColor = loadPct > 80 ? 'var(--danger)' : loadPct > 50 ? 'var(--warning)' : 'var(--success)';
-      let html = `<div class="card flex-1" style="margin-left:12px">
+      let html = `<div class="card flex-1">
         <div class="card-header">${t('gpu', 'GPU')}</div>
         <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'GPU'}</div>`;
       html += `<div style="font-size:12px">${t('vramUsed', 'VRAM')}: <b style="color:${vramColor}">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div>`;
@@ -791,7 +777,7 @@ document.addEventListener('alpine:init', () => {
     _systemCard(sys, t) {
       const cpuColor = sys.cpu_pct > 80 ? 'var(--danger)' : sys.cpu_pct > 50 ? 'var(--warning)' : 'var(--success)';
       const ramColor = sys.ram_pct > 80 ? 'var(--danger)' : sys.ram_pct > 50 ? 'var(--warning)' : 'var(--success)';
-      let html = `<div class="card flex-1" style="margin-left:12px">
+      let html = `<div class="card flex-1">
         <div class="card-header">${t('system', 'System')}</div>`;
       if (sys.cpu_name) html += `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${sys.cpu_name}</div>`;
       html += `<div style="font-size:12px;margin:4px 0">${t('cpu', 'CPU')}: <b style="color:${cpuColor}">${sys.cpu_pct}%</b></div>`;
@@ -860,7 +846,7 @@ document.addEventListener('alpine:init', () => {
       if (!el) return;
       const t = (k, fb) => this.t('monitor.' + k) || fb || k;
       if (!this.logLines.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
+        el.innerHTML = '<div class="dashboard-empty" style="padding:40px"><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
         return;
       }
       let html = '<div class="log-lines">';
@@ -910,7 +896,7 @@ document.addEventListener('alpine:init', () => {
       if (!el) return;
       const t = (k, fb) => this.t('monitor.' + k) || fb || k;
       if (!this.historyItems.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('historyNoRecords','No training history')+'</p><p style="font-size:12px">'+t('historyWillAppear','Records will appear after training')+'</p></div>';
+        el.innerHTML = '<div class="dashboard-empty" style="padding:40px"><p>'+t('historyNoRecords','No training history')+'</p><p style="font-size:12px;color:var(--text-tertiary);margin-top:4px">'+t('historyWillAppear','Records will appear after training')+'</p></div>';
         return;
       }
       let html = '<div class="history-grid">';
@@ -1657,11 +1643,6 @@ document.addEventListener('alpine:init', () => {
       if (modalBody) { modalBody.innerHTML = `<p class="text-sm text-muted mb-2">Select:</p>${listHtml}`; this.showLoadModal = true; }
     },
 
-    // ── TB ─────────────────────────────────────────────────
-    loadTbConfig() {
-      try { const s = localStorage.getItem('anima-tb-url'); if(s){ const p=s.replace('http://','').split(':'); this.tbHost=p[0]||'127.0.0.1'; this.tbPort=p[1]||'6006'; } } catch(e){}
-    },
-
     // ── Tagger ─────────────────────────────────────────────
     async buildTaggerForm() {
       const container = document.getElementById('taggerForm');
@@ -1729,13 +1710,13 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
-        if (s.tbUrl) this.settingsTbUrl = s.tbUrl;
+
         this.refreshSavedConfigs();
       } catch(e){}
     },
 
     saveUISettings() {
-      localStorage.setItem('anima-ui-settings', JSON.stringify({theme:this.theme,autoLoadHistory:this.autoLoadHistory,tbUrl:this.settingsTbUrl}));
+      localStorage.setItem('anima-ui-settings', JSON.stringify({theme:this.theme,autoLoadHistory:this.autoLoadHistory}));
       this.resolveTheme();
       this.toast(this.t('common.saved'));
     },
