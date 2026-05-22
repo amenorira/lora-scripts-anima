@@ -690,3 +690,315 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .sidebar-dropdown-menu button { color: var(--text-sidebar); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: rgba(255,255,255,0.08); color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
+
+/* ================================================================
+   Anima Custom Select — 2026-style dropdown
+   Replaces native <select> with a polished custom component
+   ================================================================ */
+
+/* ── Wrapper ─────────────────────────────────────────────── */
+.anima-select {
+  position: relative;
+  width: 100%;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  user-select: none;
+}
+
+/* ── Trigger button ──────────────────────────────────────── */
+.anima-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px 7px 11px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+  text-align: left;
+  line-height: 1.4;
+}
+
+.anima-select-trigger:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-surface-raised);
+}
+
+.anima-select-trigger:focus-visible,
+.anima-select-trigger.focused {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.anima-select-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Chevron ─────────────────────────────────────────────── */
+.anima-select-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.anima-select-chevron.open {
+  transform: rotate(180deg);
+  color: var(--text-primary);
+}
+
+/* ── Dropdown Menu ───────────────────────────────────────── */
+.anima-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+}
+
+/* ── Option group ────────────────────────────────────────── */
+.anima-select-group + .anima-select-group {
+  margin-top: 2px;
+}
+
+.anima-select-group-label {
+  padding: 6px 10px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+/* First group label doesn't need top padding if no previous group */
+.anima-select-group:first-child .anima-select-group-label {
+  padding-top: 4px;
+}
+
+/* ── Option item ─────────────────────────────────────────── */
+.anima-select-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.anima-select-option:hover {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.anima-select-option.active {
+  background: var(--accent-muted);
+  font-weight: 550;
+  color: var(--accent);
+}
+
+/* ── Checkmark ───────────────────────────────────────────── */
+.anima-select-check {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* ── Menu scrollbar ──────────────────────────────────────── */
+.anima-select-menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.anima-select-menu::-webkit-scrollbar-thumb {
+  background: var(--border-input);
+  border-radius: 2px;
+}
+
+.anima-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ================================================================
+   Anima Tooltip — bubble with arrow
+   ================================================================ */
+
+.anima-tooltip {
+  position: absolute;
+  z-index: 100;
+  background: #2d2d30;
+  color: #e4e4e1;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  max-width: 260px;
+  min-width: 60px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.06);
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+
+/* Dark mode tooltip: slightly lighter bg for contrast on dark bg */
+[data-theme="dark"] .anima-tooltip {
+  background: #3a3a40;
+  color: #f0f0ee;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+/* ── Tooltip arrow (shared) ──────────────────────────────── */
+.anima-tooltip-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 7px solid transparent;
+  pointer-events: none;
+}
+
+/* ── Tooltip: below the trigger (closed state) ───────────── */
+.anima-tooltip-below {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.anima-tooltip-below .anima-tooltip-arrow {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: #2d2d30;
+}
+
+[data-theme="dark"] .anima-tooltip-below .anima-tooltip-arrow {
+  border-bottom-color: #3a3a40;
+}
+
+/* ── Tooltip: right of hovered option (open state) ───────── */
+.anima-tooltip-right {
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.anima-tooltip-right .anima-tooltip-arrow {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: #2d2d30;
+}
+
+[data-theme="dark"] .anima-tooltip-right .anima-tooltip-arrow {
+  border-right-color: #3a3a40;
+}
+
+/* ── Tooltip: left of hovered option (fallback for edge) ─── */
+.anima-tooltip-left {
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.anima-tooltip-left .anima-tooltip-arrow {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: #2d2d30;
+}
+
+[data-theme="dark"] .anima-tooltip-left .anima-tooltip-arrow {
+  border-left-color: #3a3a40;
+}
+
+/* ── Tooltip transitions ─────────────────────────────────── */
+.anima-tooltip-enter {
+  opacity: 0;
+  transform: translateY(-50%) scale(0.92);
+}
+
+.anima-tooltip-enter.anima-tooltip-below {
+  transform: translateX(-50%) scale(0.92);
+}
+
+.anima-tooltip-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out);
+}
+
+.anima-tooltip-enter-to {
+  opacity: 1;
+}
+
+.anima-tooltip-enter-to.anima-tooltip-right,
+.anima-tooltip-enter-to.anima-tooltip-left {
+  transform: translateY(-50%) scale(1);
+}
+
+.anima-tooltip-enter-to.anima-tooltip-below {
+  transform: translateX(-50%) scale(1);
+}
+
+.anima-tooltip-leave {
+  opacity: 1;
+}
+
+.anima-tooltip-leave-active {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.anima-tooltip-leave-to {
+  opacity: 0;
+}
+
+/* ── Responsive: on narrow screens, move right tooltip above ── */
+@media (max-width: 600px) {
+  .anima-tooltip-right {
+    left: 50%;
+    top: auto;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+  }
+  .anima-tooltip-right .anima-tooltip-arrow {
+    right: auto;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-right-color: transparent;
+    border-top-color: #2d2d30;
+  }
+  [data-theme="dark"] .anima-tooltip-right .anima-tooltip-arrow {
+    border-top-color: #3a3a40;
+  }
+}

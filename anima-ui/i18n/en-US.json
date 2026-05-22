@@ -267,6 +267,86 @@
     "basedOn": "Based on",
     "modifiedBy": "Modified by",
     "frontend": "Frontend"
+  },
+  "opt": {
+    "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",
+    "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
+    "model_train_type_anima-lora": "Anima (QwenImage) DiT model LoRA training",
+    "model_train_type_flux-lora": "Flux DiT model LoRA training",
+    "model_train_type_sd3-lora": "Stable Diffusion 3.5 model LoRA training",
+
+    "save_model_as_safetensors": "SafeTensors format, safe and fast to load, recommended",
+    "save_model_as_pt": "PyTorch native format, good compatibility",
+    "save_model_as_ckpt": "Legacy Checkpoint format, not recommended",
+
+    "save_precision_fp16": "Half-precision float (16-bit), small file size, recommended",
+    "save_precision_bf16": "Brain Float 16, wider numeric range, suitable for training",
+    "save_precision_float": "Full-precision float (32-bit), largest file but highest precision",
+
+    "lr_scheduler_cosine_with_restarts": "Cosine annealing with periodic restarts, recommended for most training",
+    "lr_scheduler_cosine": "Cosine annealing, smoothly reduces learning rate",
+    "lr_scheduler_linear": "Linear learning rate decay",
+    "lr_scheduler_polynomial": "Polynomial learning rate decay",
+    "lr_scheduler_constant": "Keep learning rate constant",
+    "lr_scheduler_constant_with_warmup": "Constant learning rate after warmup",
+
+    "optimizer_type_AdamW": "Standard AdamW optimizer, higher VRAM usage",
+    "optimizer_type_AdamW8bit": "8-bit AdamW, saves VRAM, recommended for general training",
+    "optimizer_type_PagedAdamW8bit": "Paged 8-bit AdamW, for tight VRAM scenarios",
+    "optimizer_type_Lion": "Lion optimizer (EvoLved Sign Momentum), fast convergence",
+    "optimizer_type_Lion8bit": "8-bit Lion, saves VRAM",
+    "optimizer_type_PagedLion8bit": "Paged 8-bit Lion",
+    "optimizer_type_SGDNesterov": "SGD Nesterov optimizer with momentum",
+    "optimizer_type_SGDNesterov8bit": "8-bit SGD Nesterov, saves VRAM",
+    "optimizer_type_Prodigy": "Adaptive learning rate optimizer, auto-tunes LR, recommended for beginners",
+    "optimizer_type_ProdigyPlus": "Enhanced Prodigy + Schedule-Free training",
+    "optimizer_type_AdaFactor": "Adaptive factor optimizer, saves VRAM",
+    "optimizer_type_RAdamScheduleFree": "RAdam + Schedule-Free training method",
+    "optimizer_type_DAdaptation": "D-Adaptation automatic learning rate optimizer",
+    "optimizer_type_DAdaptAdam": "D-Adaptation variant of Adam",
+    "optimizer_type_DAdaptAdaGrad": "D-Adaptation variant of AdaGrad",
+    "optimizer_type_DAdaptAdanIP": "D-Adaptation variant of AdanIP",
+    "optimizer_type_DAdaptLion": "D-Adaptation variant of Lion",
+    "optimizer_type_DAdaptSGD": "D-Adaptation variant of SGD",
+    "optimizer_type_CAME": "CAME optimizer from pytorch_optimizer library",
+
+    "loss_type_default": "Use the model's default loss function",
+    "loss_type_l1": "L1 Loss (MAE), more robust to outliers",
+    "loss_type_l2": "L2 Loss (MSE), more sensitive to large errors",
+    "loss_type_huber": "Huber Loss, combines advantages of L1 and L2",
+    "loss_type_smooth_l1": "Smooth L1 Loss, smoother near zero",
+
+    "network_module_networks.lora": "Standard LoRA network for SD/SDXL architectures",
+    "network_module_networks.lora_anima": "Anima LoRA network for DiT architectures (Anima/Flux/SD3)",
+    "network_module_lycoris.kohya": "LyCORIS network, supports LoCon/LoHa and more algorithms",
+
+    "sample_sampler_ddim": "DDIM sampler, fast with stable output",
+    "sample_sampler_euler": "Euler sampler, simple and efficient",
+    "sample_sampler_euler_a": "Euler Ancestral, fast sampler with randomness, recommended for previews",
+    "sample_sampler_heun": "Heun 2nd-order sampler, higher quality",
+    "sample_sampler_dpmsolver": "DPM-Solver, fast with good quality",
+    "sample_sampler_dpmsolver++": "DPM-Solver++, improved DPM solver",
+
+    "mixed_precision_bf16": "BFloat16 mixed precision, wide numeric range, recommended for BF16-capable GPUs",
+    "mixed_precision_fp16": "FP16 mixed precision, saves VRAM, compatible with older GPUs",
+    "mixed_precision_no": "No mixed precision (FP32), highest VRAM usage",
+
+    "timestep_sampling_sigma": "Sample timesteps based on noise sigma values",
+    "timestep_sampling_uniform": "Sample timesteps uniformly",
+    "timestep_sampling_sigmoid": "Sigmoid distribution sampling, recommended for Anima/Flux training",
+    "timestep_sampling_shift": "Shift sampling strategy",
+    "timestep_sampling_flux_shift": "Flux-specific shift sampling",
+
+    "weighting_scheme_sigma_sqrt": "Sigma square-root weighting",
+    "weighting_scheme_logit_normal": "Logit-Normal distribution weighting",
+    "weighting_scheme_mode": "Mode weighting strategy",
+    "weighting_scheme_cosmap": "Cosine Map weighting",
+    "weighting_scheme_none": "No weighting",
+    "weighting_scheme_uniform": "Uniform weighting, recommended default",
+
+    "attn_mode_torch": "PyTorch native attention (SDPA), best compatibility",
+    "attn_mode_xformers": "xFormers optimized attention, saves VRAM",
+    "attn_mode_flash": "Flash Attention, fastest but requires GPU support"
   }
 }
 

@@ -12,9 +12,11 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'vae', type: 'text', default: '', role: 'file-model', descKey: 'field.vae' },
       { key: 'resume', type: 'text', default: '', role: 'file-folder', descKey: 'field.resume' },
       { key: 'model_train_type', type: 'select', default: 'sd-lora', options: [
-        { v: 'sd-lora', l: 'SD LoRA' }, { v: 'sdxl-lora', l: 'SDXL LoRA' },
-        { v: 'anima-lora', l: 'Anima LoRA' }, { v: 'flux-lora', l: 'Flux LoRA' },
-        { v: 'sd3-lora', l: 'SD3 LoRA' }
+        { v: 'sd-lora', l: 'SD LoRA', dKey: 'opt.model_train_type_sd-lora' },
+        { v: 'sdxl-lora', l: 'SDXL LoRA', dKey: 'opt.model_train_type_sdxl-lora' },
+        { v: 'anima-lora', l: 'Anima LoRA', dKey: 'opt.model_train_type_anima-lora' },
+        { v: 'flux-lora', l: 'Flux LoRA', dKey: 'opt.model_train_type_flux-lora' },
+        { v: 'sd3-lora', l: 'SD3 LoRA', dKey: 'opt.model_train_type_sd3-lora' }
       ], descKey: 'field.model_train_type' },
     ]
   },
@@ -37,8 +39,16 @@ const TRAIN_SECTIONS_COMMON = [
     fields: [
       { key: 'output_name', type: 'text', default: 'my_lora', descKey: 'field.output_name' },
       { key: 'output_dir', type: 'text', default: './output', role: 'file-folder', descKey: 'field.output_dir' },
-      { key: 'save_model_as', type: 'select', default: 'safetensors', options: [{ v: 'safetensors', l: 'safetensors' }, { v: 'pt', l: 'pt' }, { v: 'ckpt', l: 'ckpt' }], descKey: 'field.save_model_as' },
-      { key: 'save_precision', type: 'select', default: 'fp16', options: [{ v: 'fp16', l: 'fp16' }, { v: 'bf16', l: 'bf16' }, { v: 'float', l: 'float' }], descKey: 'field.save_precision' },
+      { key: 'save_model_as', type: 'select', default: 'safetensors', options: [
+        { v: 'safetensors', l: 'safetensors', dKey: 'opt.save_model_as_safetensors' },
+        { v: 'pt', l: 'pt', dKey: 'opt.save_model_as_pt' },
+        { v: 'ckpt', l: 'ckpt', dKey: 'opt.save_model_as_ckpt' }
+      ], descKey: 'field.save_model_as' },
+      { key: 'save_precision', type: 'select', default: 'fp16', options: [
+        { v: 'fp16', l: 'fp16', dKey: 'opt.save_precision_fp16' },
+        { v: 'bf16', l: 'bf16', dKey: 'opt.save_precision_bf16' },
+        { v: 'float', l: 'float', dKey: 'opt.save_precision_float' }
+      ], descKey: 'field.save_precision' },
       { key: 'save_every_n_epochs', type: 'number', default: 2, min: 1, descKey: 'field.save_every_n_epochs' },
       { key: 'save_state', type: 'toggle', default: false, descKey: 'field.save_state' },
       { key: 'save_last_n_epochs_state', type: 'number', default: null, min: 1, descKey: 'field.save_last_n_epochs_state', showIf: { key: 'save_state', eq: true } },
@@ -63,27 +73,55 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'unet_lr', type: 'text', default: '1e-4', descKey: 'field.unet_lr' },
       { key: 'text_encoder_lr', type: 'text', default: '1e-5', descKey: 'field.text_encoder_lr' },
       { key: 'lr_scheduler', type: 'select', default: 'cosine_with_restarts', options: [
-        { v: 'cosine_with_restarts', l: 'cosine_with_restarts' }, { v: 'cosine', l: 'cosine' },
-        { v: 'linear', l: 'linear' }, { v: 'polynomial', l: 'polynomial' },
-        { v: 'constant', l: 'constant' }, { v: 'constant_with_warmup', l: 'constant_with_warmup' }
+        { v: 'cosine_with_restarts', l: 'cosine_with_restarts', dKey: 'opt.lr_scheduler_cosine_with_restarts' },
+        { v: 'cosine', l: 'cosine', dKey: 'opt.lr_scheduler_cosine' },
+        { v: 'linear', l: 'linear', dKey: 'opt.lr_scheduler_linear' },
+        { v: 'polynomial', l: 'polynomial', dKey: 'opt.lr_scheduler_polynomial' },
+        { v: 'constant', l: 'constant', dKey: 'opt.lr_scheduler_constant' },
+        { v: 'constant_with_warmup', l: 'constant_with_warmup', dKey: 'opt.lr_scheduler_constant_with_warmup' }
       ], descKey: 'field.lr_scheduler' },
       { key: 'lr_scheduler_num_cycles', type: 'number', default: 1, min: 1, descKey: 'field.lr_scheduler_num_cycles', showIf: { key: 'lr_scheduler', eq: 'cosine_with_restarts' } },
       { key: 'lr_warmup_steps', type: 'number', default: 0, min: 0, descKey: 'field.lr_warmup_steps' },
-      { key: 'optimizer_type', type: 'select', default: 'AdamW8bit', options: [
-        { v: 'AdamW', l: 'AdamW' }, { v: 'AdamW8bit', l: 'AdamW8bit' },
-        { v: 'PagedAdamW8bit', l: 'PagedAdamW8bit' },
-        { v: 'Lion', l: 'Lion' }, { v: 'Lion8bit', l: 'Lion8bit' },
-        { v: 'PagedLion8bit', l: 'PagedLion8bit' },
-        { v: 'SGDNesterov', l: 'SGDNesterov' }, { v: 'SGDNesterov8bit', l: 'SGDNesterov8bit' },
-        { v: 'Prodigy', l: 'Prodigy' }, { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlus' },
-        { v: 'AdaFactor', l: 'AdaFactor' },
-        { v: 'DAdaptation', l: 'DAdaptation' }, { v: 'DAdaptAdam', l: 'DAdaptAdam' },
-        { v: 'DAdaptAdaGrad', l: 'DAdaptAdaGrad' }, { v: 'DAdaptAdanIP', l: 'DAdaptAdanIP' },
-        { v: 'DAdaptLion', l: 'DAdaptLion' }, { v: 'DAdaptSGD', l: 'DAdaptSGD' },
-        { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree' },
-        { v: 'pytorch_optimizer.CAME', l: 'CAME' },
+      { key: 'optimizer_type', type: 'select', default: 'AdamW8bit', groups: [
+        { label: 'AdamW 系列', options: [
+          { v: 'AdamW', l: 'AdamW', dKey: 'opt.optimizer_type_AdamW' },
+          { v: 'AdamW8bit', l: 'AdamW8bit', dKey: 'opt.optimizer_type_AdamW8bit' },
+          { v: 'PagedAdamW8bit', l: 'PagedAdamW8bit', dKey: 'opt.optimizer_type_PagedAdamW8bit' },
+        ]},
+        { label: 'Lion 系列', options: [
+          { v: 'Lion', l: 'Lion', dKey: 'opt.optimizer_type_Lion' },
+          { v: 'Lion8bit', l: 'Lion8bit', dKey: 'opt.optimizer_type_Lion8bit' },
+          { v: 'PagedLion8bit', l: 'PagedLion8bit', dKey: 'opt.optimizer_type_PagedLion8bit' },
+        ]},
+        { label: 'SGD 系列', options: [
+          { v: 'SGDNesterov', l: 'SGDNesterov', dKey: 'opt.optimizer_type_SGDNesterov' },
+          { v: 'SGDNesterov8bit', l: 'SGDNesterov8bit', dKey: 'opt.optimizer_type_SGDNesterov8bit' },
+        ]},
+        { label: '自适应学习率', options: [
+          { v: 'Prodigy', l: 'Prodigy', dKey: 'opt.optimizer_type_Prodigy' },
+          { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlus', dKey: 'opt.optimizer_type_ProdigyPlus' },
+          { v: 'AdaFactor', l: 'AdaFactor', dKey: 'opt.optimizer_type_AdaFactor' },
+          { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree', dKey: 'opt.optimizer_type_RAdamScheduleFree' },
+        ]},
+        { label: 'D-Adaptation 系列', options: [
+          { v: 'DAdaptation', l: 'DAdaptation', dKey: 'opt.optimizer_type_DAdaptation' },
+          { v: 'DAdaptAdam', l: 'DAdaptAdam', dKey: 'opt.optimizer_type_DAdaptAdam' },
+          { v: 'DAdaptAdaGrad', l: 'DAdaptAdaGrad', dKey: 'opt.optimizer_type_DAdaptAdaGrad' },
+          { v: 'DAdaptAdanIP', l: 'DAdaptAdanIP', dKey: 'opt.optimizer_type_DAdaptAdanIP' },
+          { v: 'DAdaptLion', l: 'DAdaptLion', dKey: 'opt.optimizer_type_DAdaptLion' },
+          { v: 'DAdaptSGD', l: 'DAdaptSGD', dKey: 'opt.optimizer_type_DAdaptSGD' },
+        ]},
+        { label: '其他', options: [
+          { v: 'pytorch_optimizer.CAME', l: 'CAME', dKey: 'opt.optimizer_type_CAME' },
+        ]},
       ], descKey: 'field.optimizer_type' },
-      { key: 'loss_type', type: 'select', default: '', options: [{ v: '', l: 'Default' }, { v: 'l1', l: 'l1' }, { v: 'l2', l: 'l2' }, { v: 'huber', l: 'huber' }, { v: 'smooth_l1', l: 'smooth_l1' }], descKey: 'field.loss_type' },
+      { key: 'loss_type', type: 'select', default: '', options: [
+        { v: '', l: 'Default', dKey: 'opt.loss_type_default' },
+        { v: 'l1', l: 'l1', dKey: 'opt.loss_type_l1' },
+        { v: 'l2', l: 'l2', dKey: 'opt.loss_type_l2' },
+        { v: 'huber', l: 'huber', dKey: 'opt.loss_type_huber' },
+        { v: 'smooth_l1', l: 'smooth_l1', dKey: 'opt.loss_type_smooth_l1' }
+      ], descKey: 'field.loss_type' },
       { key: 'min_snr_gamma', type: 'number', default: null, step: 0.1, descKey: 'field.min_snr_gamma' },
       { key: 'weight_decay', type: 'number', default: null, step: 0.001, descKey: 'field.weight_decay' },
       { key: 'prodigy_d_coef', type: 'text', default: '2.0', descKey: 'field.prodigy_d_coef', showIf: { key: 'optimizer_type', eq: 'Prodigy' } },
@@ -95,8 +133,9 @@ const TRAIN_SECTIONS_COMMON = [
     key: 'network', titleKey: 'section.network',
     fields: [
       { key: 'network_module', type: 'select', default: 'networks.lora', options: [
-        { v: 'networks.lora', l: 'networks.lora' }, { v: 'networks.lora_anima', l: 'networks.lora_anima' },
-        { v: 'lycoris.kohya', l: 'lycoris.kohya' }
+        { v: 'networks.lora', l: 'networks.lora', dKey: 'opt.network_module_networks.lora' },
+        { v: 'networks.lora_anima', l: 'networks.lora_anima', dKey: 'opt.network_module_networks.lora_anima' },
+        { v: 'lycoris.kohya', l: 'lycoris.kohya', dKey: 'opt.network_module_lycoris.kohya' }
       ], descKey: 'field.network_module' },
       { key: 'network_dim', type: 'number', default: 32, min: 1, max: 256, step: 8, descKey: 'field.network_dim' },
       { key: 'network_alpha', type: 'number', default: 32, min: 1, descKey: 'field.network_alpha' },
@@ -132,8 +171,12 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'enable_preview', type: 'toggle', default: false, descKey: 'field.enable_preview' },
       { key: 'sample_prompts', type: 'textarea', default: '', descKey: 'field.sample_prompts', hintKey: 'field.sample_promptsHint', showIf: { key: 'enable_preview', eq: true } },
       { key: 'sample_sampler', type: 'select', default: 'euler_a', options: [
-        { v: 'ddim', l: 'ddim' }, { v: 'euler', l: 'euler' }, { v: 'euler_a', l: 'euler_a' },
-        { v: 'heun', l: 'heun' }, { v: 'dpmsolver', l: 'dpmsolver' }, { v: 'dpmsolver++', l: 'dpmsolver++' },
+        { v: 'ddim', l: 'ddim', dKey: 'opt.sample_sampler_ddim' },
+        { v: 'euler', l: 'euler', dKey: 'opt.sample_sampler_euler' },
+        { v: 'euler_a', l: 'euler_a', dKey: 'opt.sample_sampler_euler_a' },
+        { v: 'heun', l: 'heun', dKey: 'opt.sample_sampler_heun' },
+        { v: 'dpmsolver', l: 'dpmsolver', dKey: 'opt.sample_sampler_dpmsolver' },
+        { v: 'dpmsolver++', l: 'dpmsolver++', dKey: 'opt.sample_sampler_dpmsolver++' },
       ], descKey: 'field.sample_sampler', showIf: { key: 'enable_preview', eq: true } },
       { key: 'sample_every_n_epochs', type: 'number', default: 2, min: 1, descKey: 'field.sample_every_n_epochs', showIf: { key: 'enable_preview', eq: true } },
       { key: 'sample_cfg', type: 'number', default: 7, min: 1, max: 30, descKey: 'field.sample_cfg', showIf: { key: 'enable_preview', eq: true } },
@@ -142,7 +185,11 @@ const TRAIN_SECTIONS_COMMON = [
   {
     key: 'speed', titleKey: 'section.speed',
     fields: [
-      { key: 'mixed_precision', type: 'select', default: 'bf16', options: [{ v: 'bf16', l: 'bf16' }, { v: 'fp16', l: 'fp16' }, { v: 'no', l: 'no' }], descKey: 'field.mixed_precision' },
+      { key: 'mixed_precision', type: 'select', default: 'bf16', options: [
+        { v: 'bf16', l: 'bf16', dKey: 'opt.mixed_precision_bf16' },
+        { v: 'fp16', l: 'fp16', dKey: 'opt.mixed_precision_fp16' },
+        { v: 'no', l: 'no', dKey: 'opt.mixed_precision_no' }
+      ], descKey: 'field.mixed_precision' },
       { key: 'xformers', type: 'toggle', default: true, descKey: 'field.xformers' },
       { key: 'sdpa', type: 'toggle', default: false, descKey: 'field.sdpa' },
       { key: 'cache_latents', type: 'toggle', default: true, descKey: 'field.cache_latents' },
@@ -173,20 +220,29 @@ const TRAIN_SECTIONS_ANIMA = [
     fields: [
       { key: 'qwen3', type: 'text', default: '', role: 'file-model', descKey: 'field.qwen3' },
       { key: 'timestep_sampling', type: 'select', default: 'sigmoid', options: [
-        { v: 'sigma', l: 'sigma' }, { v: 'uniform', l: 'uniform' }, { v: 'sigmoid', l: 'sigmoid' },
-        { v: 'shift', l: 'shift' }, { v: 'flux_shift', l: 'flux_shift' }
+        { v: 'sigma', l: 'sigma', dKey: 'opt.timestep_sampling_sigma' },
+        { v: 'uniform', l: 'uniform', dKey: 'opt.timestep_sampling_uniform' },
+        { v: 'sigmoid', l: 'sigmoid', dKey: 'opt.timestep_sampling_sigmoid' },
+        { v: 'shift', l: 'shift', dKey: 'opt.timestep_sampling_shift' },
+        { v: 'flux_shift', l: 'flux_shift', dKey: 'opt.timestep_sampling_flux_shift' }
       ], descKey: 'field.timestep_sampling' },
       { key: 'sigmoid_scale', type: 'number', default: 1.0, step: 0.001, descKey: 'field.sigmoid_scale' },
       { key: 'weighting_scheme', type: 'select', default: 'uniform', options: [
-        { v: 'sigma_sqrt', l: 'sigma_sqrt' }, { v: 'logit_normal', l: 'logit_normal' },
-        { v: 'mode', l: 'mode' }, { v: 'cosmap', l: 'cosmap' }, { v: 'none', l: 'none' }, { v: 'uniform', l: 'uniform' }
+        { v: 'sigma_sqrt', l: 'sigma_sqrt', dKey: 'opt.weighting_scheme_sigma_sqrt' },
+        { v: 'logit_normal', l: 'logit_normal', dKey: 'opt.weighting_scheme_logit_normal' },
+        { v: 'mode', l: 'mode', dKey: 'opt.weighting_scheme_mode' },
+        { v: 'cosmap', l: 'cosmap', dKey: 'opt.weighting_scheme_cosmap' },
+        { v: 'none', l: 'none', dKey: 'opt.weighting_scheme_none' },
+        { v: 'uniform', l: 'uniform', dKey: 'opt.weighting_scheme_uniform' }
       ], descKey: 'field.weighting_scheme' },
       { key: 'logit_mean', type: 'number', default: 0.0, step: 0.01, descKey: 'field.logit_mean' },
       { key: 'logit_std', type: 'number', default: 1.0, step: 0.01, descKey: 'field.logit_std' },
       { key: 'qwen3_max_token_length', type: 'number', default: 512, step: 1, descKey: 'field.qwen3_max_token_length' },
       { key: 't5_max_token_length', type: 'number', default: 512, step: 1, descKey: 'field.t5_max_token_length' },
       { key: 'attn_mode', type: 'select', default: 'torch', options: [
-        { v: 'torch', l: 'torch' }, { v: 'xformers', l: 'xformers' }, { v: 'flash', l: 'flash' }
+        { v: 'torch', l: 'torch', dKey: 'opt.attn_mode_torch' },
+        { v: 'xformers', l: 'xformers', dKey: 'opt.attn_mode_xformers' },
+        { v: 'flash', l: 'flash', dKey: 'opt.attn_mode_flash' }
       ], descKey: 'field.attn_mode' },
       { key: 'split_attn', type: 'toggle', default: false, descKey: 'field.split_attn' },
       { key: 'torch_compile', type: 'toggle', default: false, descKey: 'field.torch_compile' },
@@ -209,6 +265,115 @@ const ROUTE_CONFIG = {
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
 };
+
+// ── Anima Custom Select Component ─────────────────────────
+// Reusable Alpine.data: replaces native <select> with a polished 2026-style dropdown.
+// Supports option groups, per-option tooltip descriptions, and trigger tooltip.
+// Usage: x-data="animaSelect(fieldConfig, initialValue)"
+Alpine.data('animaSelect', (fieldConfigJson, initialValue) => ({
+  open: false,
+  value: initialValue,
+  hoveredIdx: -1,
+  hoveredOpt: null,
+  showTriggerTip: false,
+  triggerTipTimer: null,
+
+  // Derived: uniform groups array (always produces [{label, options}, ...])
+  get displayGroups() {
+    const fc = typeof fieldConfigJson === 'string' ? JSON.parse(fieldConfigJson) : fieldConfigJson;
+    if (fc.groups && fc.groups.length) return fc.groups;
+    // Flat options → single unnamed group
+    if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
+    return [];
+  },
+
+  // Flattened list of all options (for finding selected desc, etc.)
+  get flatOptions() {
+    const result = [];
+    this.displayGroups.forEach(g => {
+      (g.options || []).forEach(o => result.push(o));
+    });
+    return result;
+  },
+
+  get selectedLabel() {
+    const opt = this.flatOptions.find(o => o.v === this.value);
+    return opt ? opt.l : String(this.value || '');
+  },
+
+  get selectedDesc() {
+    const opt = this.flatOptions.find(o => o.v === this.value);
+    return opt ? (opt.d || '') : '';
+  },
+
+  // Init: read initial value from hidden input (synced from parent x-model).
+  // Note: external form changes always trigger a re-render (rebuildForm),
+  // so the component always receives the correct initial value. No watcher needed.
+  init() {
+    // Defer to next tick so x-model has already initialized the hidden input
+    this.$nextTick(() => {
+      const input = this.$refs.modelInput;
+      if (input && input.value !== undefined) {
+        this.value = input.value;
+      }
+    });
+    // Close on Escape
+    this.$watch('open', isOpen => {
+      if (isOpen) {
+        const handler = (e) => { if (e.key === 'Escape') { this.open = false; document.removeEventListener('keydown', handler); } };
+        document.addEventListener('keydown', handler);
+      }
+    });
+  },
+
+  // Click outside to close
+  closeOnOutside() {
+    this.open = false;
+  },
+
+  select(v) {
+    this.value = v;
+    this.open = false;
+    this.syncToModel();
+    this.$dispatch('anima-select-change', { value: v });
+  },
+
+  syncToModel() {
+    const input = this.$refs.modelInput;
+    if (input) {
+      input.value = this.value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  },
+
+  onTriggerMouseEnter() {
+    this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
+  },
+
+  onTriggerMouseLeave() {
+    clearTimeout(this.triggerTipTimer);
+    this.showTriggerTip = false;
+  },
+
+  onOptionMouseEnter(idx, opt) {
+    this.hoveredIdx = idx;
+    this.hoveredOpt = opt;
+  },
+
+  onOptionMouseLeave() {
+    this.hoveredIdx = -1;
+    this.hoveredOpt = null;
+  },
+
+  // Toggle open: reset hovered when opening
+  toggle() {
+    this.open = !this.open;
+    if (!this.open) {
+      this.hoveredIdx = -1;
+      this.hoveredOpt = null;
+    }
+  },
+}));
 
 // ── Alpine App ─────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
@@ -486,11 +651,122 @@ document.addEventListener('alpine:init', () => {
       if (field.type === 'toggle') {
         inputHtml = `<label class="toggle"><input type="checkbox" x-model="form.${dataKey}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
       } else if (field.type === 'select') {
-        let opts = '';
-        (field.options || []).forEach(o => {
-          opts += `<option value="${o.v}">${o.l}</option>`;
-        });
-        inputHtml = `<select x-model="form.${dataKey}">${opts}</select>`;
+        // Build field config for animaSelect component, resolving i18n keys
+        const fc = {};
+        const self = this; // capture for nested loops
+
+        // Helper: clone an option and resolve dKey → d
+        const resolveOption = (o) => {
+          const cloned = { v: o.v, l: o.l };
+          if (o.dKey) { cloned.d = self.t(o.dKey) || ''; }
+          else if (o.d) { cloned.d = o.d; }
+          return cloned;
+        };
+
+        // Helper: check if any option in groups/options has a description (dKey or d)
+        const hasAnyDesc = (groups, options) => {
+          if (groups) {
+            for (const g of groups) {
+              for (const o of (g.options || [])) { if (o.dKey || o.d) return true; }
+            }
+          }
+          if (options) {
+            for (const o of options) { if (o.dKey || o.d) return true; }
+          }
+          return false;
+        };
+
+        if (field.groups && field.groups.length) {
+          fc.groups = field.groups.map(g => ({
+            label: g.labelKey ? (self.t(g.labelKey) || g.label) : (g.label || ''),
+            options: (g.options || []).map(o => resolveOption(o))
+          }));
+        } else if (field.options && field.options.length) {
+          fc.options = field.options.map(o => resolveOption(o));
+        } else {
+          fc.options = [];
+        }
+
+        const hasGroups = !!(fc.groups && fc.groups.length);
+        const hasOptionDescs = (fc.options || []).some(o => o.d) || (fc.groups || []).some(g => (g.options || []).some(o => o.d));
+
+        // If there are NO groups and NO option descriptions, use a slightly simpler
+        // template (no per-option tooltips), but still use the custom component.
+        // If there ARE groups or descriptions, use the full template.
+        if (hasGroups || hasOptionDescs) {
+          inputHtml = `<div class="anima-select"
+            x-data="animaSelect('${this.escJson(fc)}', '${(val || '').replace(/'/g, "\\'")}')"
+            @click.outside="closeOnOutside()"
+            @keydown.escape.window="open = false">
+            <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
+            <button type="button" class="anima-select-trigger" :class="{ focused: open }"
+              @click="toggle()"
+              @mouseenter="onTriggerMouseEnter()"
+              @mouseleave="onTriggerMouseLeave()">
+              <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+              <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="anima-tooltip anima-tooltip-right" x-show="showTriggerTip && !open && selectedDesc" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
+              <span x-text="selectedDesc"></span>
+              <div class="anima-tooltip-arrow"></div>
+            </div>
+            <div class="anima-select-menu" x-show="open" x-transition.opacity.duration.150ms>
+              <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
+                <div class="anima-select-group">
+                  <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
+                  <template x-for="(opt, oIdx) in group.options" :key="opt.v">
+                    <div class="anima-select-option"
+                      :class="{ active: opt.v === value }"
+                      @click="select(opt.v)"
+                      @mouseenter="onOptionMouseEnter(oIdx, opt)"
+                      @mouseleave="onOptionMouseLeave()">
+                      <span x-text="opt.l"></span>
+                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                      <div class="anima-tooltip anima-tooltip-right" x-show="hoveredOpt === opt && opt.d" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
+                        <span x-text="opt.d"></span>
+                        <div class="anima-tooltip-arrow"></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div>
+            </div>
+          </div>`;
+        } else {
+          // Simple flat options — no groups, no per-option descriptions
+          inputHtml = `<div class="anima-select"
+            x-data="animaSelect('${this.escJson(fc)}', '${(val || '').replace(/'/g, "\\'")}')"
+            @click.outside="closeOnOutside()"
+            @keydown.escape.window="open = false">
+            <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
+            <button type="button" class="anima-select-trigger" :class="{ focused: open }"
+              @click="toggle()"
+              @mouseenter="onTriggerMouseEnter()"
+              @mouseleave="onTriggerMouseLeave()">
+              <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+              <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="anima-tooltip anima-tooltip-right" x-show="showTriggerTip && !open && selectedDesc" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
+              <span x-text="selectedDesc"></span>
+              <div class="anima-tooltip-arrow"></div>
+            </div>
+            <div class="anima-select-menu" x-show="open" x-transition.opacity.duration.150ms>
+              <template x-for="group in displayGroups" :key="group.label">
+                <div class="anima-select-group">
+                  <template x-for="opt in group.options" :key="opt.v">
+                    <div class="anima-select-option"
+                      :class="{ active: opt.v === value }"
+                      @click="select(opt.v)">
+                      <span x-text="opt.l"></span>
+                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>`;
+        }
       } else if (field.type === 'textarea') {
         inputHtml = `<textarea x-model="form.${dataKey}" rows="3"></textarea>`;
       } else if (field.type === 'stepper') {
@@ -523,6 +799,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
+
+    // Safely stringify a JSON object for embedding in HTML attribute values (single-quoted)
+    escJson(obj) {
+      const json = JSON.stringify(obj);
+      // Escape: backslash, single-quote, angle brackets (defense-in-depth)
+      return json.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+    },
 
     setField(key, value) {
       const oldVal = this.form[key];
