@@ -346,7 +346,14 @@
 
     "attn_mode_torch": "PyTorch 原生注意力（SDPA），兼容性最好",
     "attn_mode_xformers": "xFormers 优化注意力，节省显存",
-    "attn_mode_flash": "Flash Attention，速度最快但需 GPU 支持"
+    "attn_mode_flash": "Flash Attention，速度最快但需 GPU 支持",
+
+    "group_adamw": "AdamW 系列",
+    "group_lion": "Lion 系列",
+    "group_sgd": "SGD 系列",
+    "group_adaptive": "自适应学习率",
+    "group_dadapt": "D-Adaptation 系列",
+    "group_other": "其他"
   }
 }
 

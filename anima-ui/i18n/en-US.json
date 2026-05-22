@@ -346,7 +346,14 @@
 
     "attn_mode_torch": "PyTorch native attention (SDPA), best compatibility",
     "attn_mode_xformers": "xFormers optimized attention, saves VRAM",
-    "attn_mode_flash": "Flash Attention, fastest but requires GPU support"
+    "attn_mode_flash": "Flash Attention, fastest but requires GPU support",
+
+    "group_adamw": "AdamW",
+    "group_lion": "Lion",
+    "group_sgd": "SGD",
+    "group_adaptive": "Adaptive LR",
+    "group_dadapt": "D-Adaptation",
+    "group_other": "Other"
   }
 }
 

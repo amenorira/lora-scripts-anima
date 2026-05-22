@@ -83,27 +83,27 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'lr_scheduler_num_cycles', type: 'number', default: 1, min: 1, descKey: 'field.lr_scheduler_num_cycles', showIf: { key: 'lr_scheduler', eq: 'cosine_with_restarts' } },
       { key: 'lr_warmup_steps', type: 'number', default: 0, min: 0, descKey: 'field.lr_warmup_steps' },
       { key: 'optimizer_type', type: 'select', default: 'AdamW8bit', groups: [
-        { label: 'AdamW 系列', options: [
+        { labelKey: 'opt.group_adamw', options: [
           { v: 'AdamW', l: 'AdamW', dKey: 'opt.optimizer_type_AdamW' },
           { v: 'AdamW8bit', l: 'AdamW8bit', dKey: 'opt.optimizer_type_AdamW8bit' },
           { v: 'PagedAdamW8bit', l: 'PagedAdamW8bit', dKey: 'opt.optimizer_type_PagedAdamW8bit' },
         ]},
-        { label: 'Lion 系列', options: [
+        { labelKey: 'opt.group_lion', options: [
           { v: 'Lion', l: 'Lion', dKey: 'opt.optimizer_type_Lion' },
           { v: 'Lion8bit', l: 'Lion8bit', dKey: 'opt.optimizer_type_Lion8bit' },
           { v: 'PagedLion8bit', l: 'PagedLion8bit', dKey: 'opt.optimizer_type_PagedLion8bit' },
         ]},
-        { label: 'SGD 系列', options: [
+        { labelKey: 'opt.group_sgd', options: [
           { v: 'SGDNesterov', l: 'SGDNesterov', dKey: 'opt.optimizer_type_SGDNesterov' },
           { v: 'SGDNesterov8bit', l: 'SGDNesterov8bit', dKey: 'opt.optimizer_type_SGDNesterov8bit' },
         ]},
-        { label: '自适应学习率', options: [
+        { labelKey: 'opt.group_adaptive', options: [
           { v: 'Prodigy', l: 'Prodigy', dKey: 'opt.optimizer_type_Prodigy' },
           { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlus', dKey: 'opt.optimizer_type_ProdigyPlus' },
           { v: 'AdaFactor', l: 'AdaFactor', dKey: 'opt.optimizer_type_AdaFactor' },
           { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree', dKey: 'opt.optimizer_type_RAdamScheduleFree' },
         ]},
-        { label: 'D-Adaptation 系列', options: [
+        { labelKey: 'opt.group_dadapt', options: [
           { v: 'DAdaptation', l: 'DAdaptation', dKey: 'opt.optimizer_type_DAdaptation' },
           { v: 'DAdaptAdam', l: 'DAdaptAdam', dKey: 'opt.optimizer_type_DAdaptAdam' },
           { v: 'DAdaptAdaGrad', l: 'DAdaptAdaGrad', dKey: 'opt.optimizer_type_DAdaptAdaGrad' },
@@ -111,7 +111,7 @@ const TRAIN_SECTIONS_COMMON = [
           { v: 'DAdaptLion', l: 'DAdaptLion', dKey: 'opt.optimizer_type_DAdaptLion' },
           { v: 'DAdaptSGD', l: 'DAdaptSGD', dKey: 'opt.optimizer_type_DAdaptSGD' },
         ]},
-        { label: '其他', options: [
+        { labelKey: 'opt.group_other', options: [
           { v: 'pytorch_optimizer.CAME', l: 'CAME', dKey: 'opt.optimizer_type_CAME' },
         ]},
       ], descKey: 'field.optimizer_type' },

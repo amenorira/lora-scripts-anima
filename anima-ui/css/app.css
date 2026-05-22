@@ -818,8 +818,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding: 6px 10px 3px;
   font-size: 10.5px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   color: var(--text-tertiary);
   user-select: none;
 }
