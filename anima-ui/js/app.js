@@ -541,25 +541,24 @@ document.addEventListener('alpine:init', () => {
     },
 
     setTheme(t) {
-      if (this.resolvedTheme === (t === 'auto'
-            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-            : t)) return; // no change
+      // Only skip if clicking the already-active explicit theme
+      if (this.theme === t) return;
       this.theme = t;
       this.showThemeDropdown = false;
 
       // 1) Add transition class — apply transitions to all elements
       document.documentElement.classList.add('theme-transitioning');
 
-      // 2) Double rAF: ensure the browser paints the transition-ready state
-      //    BEFORE we change data-theme, so transitions actually interpolate.
-      //    (offsetHeight alone is unreliable for this across browsers.)
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          this.resolveTheme();
-          localStorage.setItem('anima-theme', t);
-          setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
-        });
-      });
+      // 2) Force browser to compute styles WITH the transition class active.
+      //    offsetHeight forces layout; getComputedStyle forces style recalculation.
+      //    Together they create a proper "before" snapshot for CSS transitions.
+      document.documentElement.offsetHeight;
+      getComputedStyle(document.documentElement).transitionDuration;
+
+      // 3) Now change data-theme — browser interpolates from the snapshot above
+      this.resolveTheme();
+      localStorage.setItem('anima-theme', t);
+      setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
     },
 
     toggleTheme() {
