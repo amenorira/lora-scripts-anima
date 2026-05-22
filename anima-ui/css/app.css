@@ -103,7 +103,11 @@
   transition: background-color var(--duration-slow) var(--ease-out),
               color var(--duration-slow) var(--ease-out),
               border-color var(--duration-slow) var(--ease-out),
-              box-shadow var(--duration-slow) var(--ease-out) !important;
+              box-shadow var(--duration-slow) var(--ease-out),
+              fill var(--duration-slow) var(--ease-out),
+              stroke var(--duration-slow) var(--ease-out),
+              outline-color var(--duration-slow) var(--ease-out),
+              caret-color var(--duration-slow) var(--ease-out) !important;
 }
 
 /* ── Reset & Base ────────────────────────────────────────── */

@@ -540,24 +540,26 @@ document.addEventListener('alpine:init', () => {
       document.documentElement.setAttribute('data-theme', this.resolvedTheme);
     },
 
-    toggleTheme() {
-      this.theme = this.resolvedTheme === 'dark' ? 'light' : 'dark';
-      this.showThemeDropdown = false;
-      // Diffusion animation
-      document.documentElement.classList.add('theme-transitioning');
-      this.resolveTheme();
-      localStorage.setItem('anima-theme', this.theme);
-      setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
-    },
-
     setTheme(t) {
+      if (this.resolvedTheme === (t === 'auto'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : t)) return; // no change
       this.theme = t;
       this.showThemeDropdown = false;
+
+      // 1) Add transition class — apply transitions to all elements
       document.documentElement.classList.add('theme-transitioning');
-      void document.documentElement.offsetHeight;
-      this.resolveTheme();
-      localStorage.setItem('anima-theme', t);
-      setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
+
+      // 2) Double rAF: ensure the browser paints the transition-ready state
+      //    BEFORE we change data-theme, so transitions actually interpolate.
+      //    (offsetHeight alone is unreliable for this across browsers.)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          this.resolveTheme();
+          localStorage.setItem('anima-theme', t);
+          setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
+        });
+      });
     },
 
     toggleTheme() {
