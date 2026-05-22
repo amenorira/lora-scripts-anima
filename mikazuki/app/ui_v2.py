@@ -29,6 +29,7 @@ def _version() -> str:
 
 # ── New SPA: catch-all serves anima-ui/index.html ────────────
 
+@router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 @router.get("/{rest:path}", response_class=HTMLResponse)
 async def spa_catchall(request: Request, rest: str = ""):

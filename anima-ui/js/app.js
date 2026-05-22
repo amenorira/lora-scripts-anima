@@ -240,6 +240,7 @@ const TRAIN_SECTIONS_ANIMA = [
 ];
 
 const ROUTE_CONFIG = {
+  'home': { title: 'lora-scripts-anima', subtitle: '' },
   'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
   'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
   'history': { titleKey: 'nav.history', subtitle: '' },
@@ -406,7 +407,7 @@ document.addEventListener('alpine:init', () => {
     version: '...',
     theme: 'auto',
     resolvedTheme: 'light',
-    currentRoute: 'train-basic',
+    currentRoute: 'home',
     pageTitle: 'lora-scripts-anima',
     pageSubtitle: '',
     locale: 'zh-CN',
@@ -475,8 +476,8 @@ document.addEventListener('alpine:init', () => {
     // ── Init ───────────────────────────────────────────────
     async init() {
       // Set route IMMEDIATELY to avoid flash of wrong page
-      let route = (window.location.hash || '#train-basic').replace('#', '');
-      if (!ROUTE_CONFIG[route]) route = 'train-basic';
+      let route = (window.location.hash || '#home').replace('#', '');
+      if (!ROUTE_CONFIG[route]) route = 'home';
       this.currentRoute = route;
       const cfg = ROUTE_CONFIG[route];
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
@@ -593,8 +594,8 @@ document.addEventListener('alpine:init', () => {
     },
 
     handleRoute() {
-      let route = (window.location.hash || '#train-basic').replace('#', '');
-      if (!ROUTE_CONFIG[route]) route = 'train-basic';
+      let route = (window.location.hash || '#home').replace('#', '');
+      if (!ROUTE_CONFIG[route]) route = 'home';
 
       const prev = this.currentRoute;
       this.currentRoute = route;

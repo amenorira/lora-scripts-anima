@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lora-scripts-anima</title>
+  <link rel="icon" href="/favicon.ico">
   <!-- Blocking script: set theme BEFORE any rendering to avoid flash -->
   <script>
     (function(){
@@ -31,8 +32,9 @@
       <div class="logo-icon">
         <img src="/assets/favicon.ico" alt="logo" width="24" height="24">
       </div>
-      <div>
+      <div class="brand-clickable" @click="navigate('home')" title="Home">
         <div class="brand-text">lora-scripts-anima</div>
+        <div class="brand-version" x-text="version"></div>
       </div>
     </div>
 
@@ -166,6 +168,19 @@
           @mouseenter="showMainScroll = true"
           @mouseleave="showMainScroll = false"
           :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tensorboard' || currentRoute === 'tagEditor' }">
+
+      <!-- Route: Home -->
+      <div x-show="currentRoute === 'home'" x-cloak>
+        <div style="text-align:center;padding:80px 20px 40px">
+          <img src="/favicon.ico" alt="logo" width="72" height="72" style="border-radius:16px;margin-bottom:20px">
+          <h1 style="font-size:22px;font-weight:700;color:var(--text-primary);letter-spacing:-0.3px">lora-scripts-anima</h1>
+          <p style="color:var(--text-secondary);margin-top:8px;font-size:13px" x-text="version ? 'v' + version : ''"></p>
+          <p style="color:var(--text-tertiary);margin-top:20px;font-size:12px;line-height:1.7">
+            Diffusion Transformer (DiT) LoRA Training UI<br>
+            Anima model derived from NVIDIA Cosmos-Predict2-2B
+          </p>
+        </div>
+      </div>
 
       <!-- Route: Monitor Dashboard -->
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak>
