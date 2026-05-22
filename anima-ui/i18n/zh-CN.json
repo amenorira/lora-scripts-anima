@@ -187,6 +187,8 @@
     "downloaded": "已下载",
     "imported": "已导入",
     "close": "关闭",
+    "refresh": "刷新",
+    "revert": "还原",
     "themeLight": "浅色模式",
     "themeDark": "深色模式",
     "themeAuto": "跟随系统",
@@ -241,7 +243,18 @@
   "tagEditor": {
     "title": "标签编辑器",
     "subtitle": "编辑图片的标签和标注文本",
-    "openEditor": "打开标签编辑器"
+    "openEditor": "打开标签编辑器",
+    "datasetDir": "数据集目录",
+    "loadImages": "加载",
+    "noImages": "暂无图片，请先加载数据集目录",
+    "addPrefix": "添加前缀",
+    "addSuffix": "添加后缀",
+    "findReplace": "查找替换",
+    "deleteTag": "删除标签",
+    "dedup": "去重",
+    "sort": "排序",
+    "injectTrigger": "注入触发词",
+    "clickToDelete": "点击删除"
   },
   "tools": {
     "title": "工具",

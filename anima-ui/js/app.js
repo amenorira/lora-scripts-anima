@@ -868,7 +868,7 @@ document.addEventListener('alpine:init', () => {
       if (!el) return;
       const t = (k, fb) => this.t('monitor.' + k) || fb || k;
       if (!this.logLines.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>暂无日志</p></div>';
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
         return;
       }
       let html = '<div class="log-lines">';
@@ -917,7 +917,7 @@ document.addEventListener('alpine:init', () => {
       const el = document.getElementById('historyList');
       if (!el) return;
       if (!this.historyItems.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>暂无历史训练记录</p><p style="font-size:12px">启动训练后，记录将自动保存</p></div>';
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('noTrainingHint','No training history')+'</p><p style="font-size:12px">'+t('noTrainingHint','Records will appear after training')+'</p></div>';
         return;
       }
       let html = '<div class="history-grid">';
@@ -1006,40 +1006,41 @@ document.addEventListener('alpine:init', () => {
       const el = document.getElementById('tagEditorContainer');
       if (!el) return;
       const imgs = this.tagEditorImages;
+      const tt = (k, fb) => this.t('tagEditor.' + k) || fb || k;
 
       let html = '<div class="tag-editor">';
 
       // ── Dir selector ──
       html += `<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center">
-        <span style="font-size:12px;color:var(--text-secondary)">数据集:</span>
+        <span style="font-size:12px;color:var(--text-secondary)">${tt('datasetDir', '数据集')}:</span>
         <input type="text" style="flex:1" value="${this.tagEditorDir}" id="tagEditorDirInput"
           @keydown.enter="tagEditorLoad($event.target.value)">
-        <button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById('tagEditorDirInput').value)">加载</button>
-        <span style="font-size:12px;color:var(--text-tertiary)">${imgs.length} 张图片</span>
+        <button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById('tagEditorDirInput').value)">${tt('loadImages', '加载')}</button>
+        <span style="font-size:12px;color:var(--text-tertiary)">${imgs.length} images</span>
       </div></div>`;
 
       if (!imgs.length) {
-        html += '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">暂无图片，请先加载数据集目录</div>';
+        html += `<div style="text-align:center;padding:40px;color:var(--text-tertiary)">${tt('noImages', '暂无图片，请先加载数据集目录')}</div>`;
         el.innerHTML = html;
         return;
       }
 
       // ── Batch toolbar ──
       html += '<div class="card" style="margin-bottom:12px"><div class="batch-toolbar">';
-      html += '<input type="text" id="batchVal" placeholder="值" style="width:120px"><input type="text" id="batchVal2" placeholder="替换为(可选)" style="width:120px">';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'add_prefix\',{value:document.getElementById(\'batchVal\').value})">添加前缀</button>';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'add_suffix\',{value:document.getElementById(\'batchVal\').value})">添加后缀</button>';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'find_replace\',{find:document.getElementById(\'batchVal\').value,replace:document.getElementById(\'batchVal2\').value})">查找替换</button>';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'delete_tag\',{value:document.getElementById(\'batchVal\').value})">删除</button>';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'dedup\',{})">去重</button>';
-      html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'sort\',{})">排序</button>';
+      html += `<input type="text" id="batchVal" placeholder="value" style="width:120px"><input type="text" id="batchVal2" placeholder="${tt('findReplace', 'replace')}" style="width:120px">`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix',{value:document.getElementById('batchVal').value})">${tt('addPrefix', '添加前缀')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_suffix',{value:document.getElementById('batchVal').value})">${tt('addSuffix', '添加后缀')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('find_replace',{find:document.getElementById('batchVal').value,replace:document.getElementById('batchVal2').value})">${tt('findReplace', '查找替换')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('delete_tag',{value:document.getElementById('batchVal').value})">${tt('deleteTag', '删除')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup',{})">${tt('dedup', '去重')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort',{})">${tt('sort', '排序')}</button>`;
       html += '</div></div>';
 
       // ── Image grid + tag editor ──
       html += '<div class="tag-editor-grid">';
       imgs.forEach((img, idx) => {
         const tagPills = (img.tags || '').split(',').filter(t => t.trim()).map(t =>
-          `<span class="tag-pill" @click="tagEditorRemoveTag('${img.path}','${t.trim().replace(/'/g,"\\'")}')" title="点击删除">${t.trim()}</span>`
+          `<span class="tag-pill" @click="tagEditorRemoveTag('${img.path}','${t.trim().replace(/'/g,"\\'")}')" title="${tt('clickToDelete', '点击删除')}">${t.trim()}</span>`
         ).join('');
         const isModified = this.tagEditorOriginal[img.path] !== undefined && this.tagEditorOriginal[img.path] !== img.tags;
 

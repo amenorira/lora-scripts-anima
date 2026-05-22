@@ -200,7 +200,9 @@
     "parseError": "Parse error",
     "localPickerNA": "Local picker unavailable",
     "fileBrowserFailed": "File browser failed",
-    "specifyDir": "Please specify a directory"
+    "specifyDir": "Please specify a directory",
+    "refresh": "Refresh",
+    "revert": "Revert"
   },
   "tagger": {
     "title": "Tagger",
@@ -241,7 +243,18 @@
   "tagEditor": {
     "title": "Tag Editor",
     "subtitle": "Edit image tags and captions",
-    "openEditor": "Open Tag Editor"
+    "openEditor": "Open Tag Editor",
+    "datasetDir": "Dataset Directory",
+    "loadImages": "Load",
+    "noImages": "No images found, please load a dataset directory first",
+    "addPrefix": "Add Prefix",
+    "addSuffix": "Add Suffix",
+    "findReplace": "Find & Replace",
+    "deleteTag": "Delete Tag",
+    "dedup": "Dedup",
+    "sort": "Sort",
+    "injectTrigger": "Inject Trigger",
+    "clickToDelete": "Click to delete"
   },
   "tools": {
     "title": "Tools",
