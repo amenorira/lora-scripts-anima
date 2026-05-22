@@ -1130,6 +1130,17 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding: 14px 0 0; margin: 0; line-height: 1.5;
 }
 
+/* ── Confirm popover ────────────────────────────────────── */
+.env-confirm {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--bg-surface-raised); border: 1px solid var(--warning);
+  border-radius: var(--radius-md, 8px); padding: 8px 14px;
+  width: 100%;
+}
+.env-confirm-msg {
+  flex: 1; font-size: 12.5px; color: var(--text-primary); min-width: 0;
+}
+
 /* ── Dark mode ──────────────────────────────────────────── */
 [data-theme="dark"] .env-card { border-color: var(--border-default); background: var(--bg-surface); }
 [data-theme="dark"] .env-card-summary:hover { background: rgba(255,255,255,0.02); }

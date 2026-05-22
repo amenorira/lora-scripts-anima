@@ -468,6 +468,8 @@ document.addEventListener('alpine:init', () => {
     faError: null,
     faManualUrl: '',
     faCandidatesOpen: false,
+    faConfirmMsg: null,
+    faConfirmCallback: null,
 
     // ── Init ───────────────────────────────────────────────
     async init() {
@@ -930,6 +932,18 @@ document.addEventListener('alpine:init', () => {
     //  Environment — Flash Attention Management
     // ═══════════════════════════════════════════════════════
 
+    faShowConfirm(msg, callback) {
+      this.faConfirmMsg = msg;
+      this.faConfirmCallback = callback;
+      this.renderEnvironment();
+    },
+
+    faDismissConfirm() {
+      this.faConfirmMsg = null;
+      this.faConfirmCallback = null;
+      this.renderEnvironment();
+    },
+
     async buildEnvironmentPage() {
       const el = document.getElementById('environmentPage');
       if (!el) return;
@@ -957,32 +971,32 @@ document.addEventListener('alpine:init', () => {
     },
 
     async faInstall(url) {
-      const t = (k, fb) => this.t('environment.' + k) || fb || k;
-      const msg = url ? t('confirmUrlInstall', 'Install from URL?') : t('confirmAutoInstall', 'Auto-match and install Flash Attention?');
-      if (!confirm(msg)) return;
-
-      this.faBusy = true;
-      this.faError = null;
-      this.renderEnvironment();
-      try {
-        const r = await fetch('/api/flash-attention/install', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: url || null })
-        });
-        const result = await r.json();
-        if (result.success) {
-          this.faError = null;
-          await this.faRefresh();
-        } else {
-          this.faError = result.error || 'Installation failed';
-        }
-      } catch (e) {
-        this.faError = String(e);
-      } finally {
-        this.faBusy = false;
+      const T = (k, fb) => this.t('environment.' + k) || fb || k;
+      const msg = url ? T('confirmUrlInstall', '从该 URL 安装 Flash Attention？') : T('confirmAutoInstall', '自动匹配并安装 Flash Attention？');
+      this.faShowConfirm(msg, async () => {
+        this.faBusy = true;
+        this.faError = null;
         this.renderEnvironment();
-      }
+        try {
+          const r = await fetch('/api/flash-attention/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url || null })
+          });
+          const result = await r.json();
+          if (result.success) {
+            this.faError = null;
+            await this.faRefresh();
+          } else {
+            this.faError = result.error || 'Installation failed';
+          }
+        } catch (e) {
+          this.faError = String(e);
+        } finally {
+          this.faBusy = false;
+          this.renderEnvironment();
+        }
+      });
     },
 
     renderEnvironment() {
@@ -1058,20 +1072,30 @@ document.addEventListener('alpine:init', () => {
         }
 
         // ── Action bar ──
-        html += `<div class="env-actions">
-          <button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy || !canAuto ? 'disabled' : ''}
-            title="${best ? best.name : ''}">
-            ${installed ? T('reinstall', 'Reinstall') : T('autoInstall', 'Auto Install')}
-          </button>
-          <button id="fa-refresh-btn" class="btn-icon" ${this.faBusy ? 'disabled' : ''}
-            title="${T('refresh', 'Refresh')}">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          </button>
-          <span class="env-actions-spacer"></span>
-          <button id="fa-toggle-btn" class="btn btn-ghost btn-sm">
-            ${this.faCandidatesOpen ? T('hideCandidates', 'Hide list') : T('showCandidates', 'Show candidates') + ' (' + candidates.length + ')'}
-          </button>
-        </div>`;
+        if (this.faConfirmMsg) {
+          html += `<div class="env-actions">
+            <div class="env-confirm">
+              <span class="env-confirm-msg">${this.faConfirmMsg}</span>
+              <button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes', '确认')}</button>
+              <button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo', '取消')}</button>
+            </div>
+          </div>`;
+        } else {
+          html += `<div class="env-actions">
+            <button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy || !canAuto ? 'disabled' : ''}
+              title="${best ? best.name : ''}">
+              ${installed ? T('reinstall', 'Reinstall') : T('autoInstall', 'Auto Install')}
+            </button>
+            <button id="fa-refresh-btn" class="btn-icon" ${this.faBusy ? 'disabled' : ''}
+              title="${T('refresh', 'Refresh')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+            <span class="env-actions-spacer"></span>
+            <button id="fa-toggle-btn" class="btn btn-ghost btn-sm">
+              ${this.faCandidatesOpen ? T('hideCandidates', 'Hide list') : T('showCandidates', 'Show candidates') + ' (' + candidates.length + ')'}
+            </button>
+          </div>`;
+        }
 
         // ── Candidate list ──
         if (this.faCandidatesOpen && candidates.length) {
@@ -1114,6 +1138,15 @@ document.addEventListener('alpine:init', () => {
       if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
       if (refreshBtn) refreshBtn.addEventListener('click', () => a.faRefresh());
       if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
+      // Confirm popover
+      const confirmYes = el.querySelector('#fa-confirm-yes');
+      const confirmNo = el.querySelector('#fa-confirm-no');
+      if (confirmYes) confirmYes.addEventListener('click', () => {
+        const cb = a.faConfirmCallback;
+        a.faDismissConfirm();
+        if (cb) cb();
+      });
+      if (confirmNo) confirmNo.addEventListener('click', () => a.faDismissConfirm());
       el.querySelectorAll('.fa-candidate-btn').forEach(btn => {
         btn.addEventListener('click', () => a.faInstall(btn.dataset.url));
       });
