@@ -610,7 +610,7 @@ document.addEventListener('alpine:init', () => {
       const lines = [];
       for (const [k, v] of Object.entries(this.form)) {
         if (!validKeys.has(k)) continue;           // skip keys not in current form or hidden by showIf
-        if (k === 'model_train_type' || k.startsWith('_')) continue;
+        if (k.startsWith('_')) continue;
         if (k === 'sample_prompts' || k === 'optimizer_args_custom') continue;  // processed separately
         if (v === '' || v === null || v === undefined) continue;
 
