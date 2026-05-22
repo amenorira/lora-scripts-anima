@@ -274,8 +274,8 @@ document.addEventListener('alpine:init', () => {
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();
 
-      // Locale — read from localStorage (async: fetches JSON from i18n/ folder)
-      await I18N.init();
+      // Locale — read from localStorage (all locales preloaded synchronously)
+      I18N.init();
       this.locale = I18N.getLocale();
 
       // UI settings
@@ -841,7 +841,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     onLocaleChange() {
-      await I18N.setLocale(this.locale);
+      I18N.setLocale(this.locale);
       this.showLangDropdown = false;
     },
 

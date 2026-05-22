@@ -1,44 +1,46 @@
 /* ================================================================
-   Anima Trainer UI — I18n System v2
-   Loads locale data from anima-ui/i18n/{locale}.json at runtime.
-   To add a new language: just drop a new JSON file in the i18n/ folder.
-   First load is cached in memory; subsequent switches re-use cache.
+   Anima Trainer UI — I18n System v3
+   Preloads ALL locale JSON files synchronously at script execution
+   time (before Alpine boots), so t() always has data available.
+   To add a new language: drop a JSON file in i18n/ and add its
+   code to the LOCALES array below.
+   Memory: ~10 KB per locale. For 2 locales = ~20 KB. Negligible.
    ================================================================ */
 
 const I18N = (() => {
+  // ── Register available locales here ──────────────────────
+  const LOCALES = ['zh-CN', 'en-US'];
+
   let _locale = 'zh-CN';
   let _messages = null;
-  const _cache = {};  // locale → messages cache
+  const _cache = {};  // locale → messages (all preloaded)
+
+  // ── Preload ALL locales synchronously on script execution ─
+  (function preloadAll() {
+    LOCALES.forEach(loc => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/anima-ui/i18n/' + loc + '.json', false); // sync
+        xhr.send();
+        if (xhr.status === 200) {
+          _cache[loc] = JSON.parse(xhr.responseText);
+        }
+      } catch (e) {
+        console.warn('[i18n] Failed to preload locale: ' + loc, e);
+      }
+    });
+  })();
 
   /**
-   * Initialize I18N with the given locale (or from localStorage).
-   * Must be called (and awaited) once before any t() usage.
+   * Initialize I18N. Synchronous — call once, no await needed.
    */
-  async function init(locale) {
+  function init(locale) {
     _locale = locale || localStorage.getItem('anima-locale') || 'zh-CN';
-    try {
-      _messages = await _load(_locale);
-    } catch (e) {
-      console.warn('[i18n] Failed to load locale "%s", trying fallback: %s', _locale, e.message);
-      try { _messages = await _load('zh-CN'); }
-      catch (e2) { console.error('[i18n] Fallback also failed:', e2.message); _messages = null; }
-    }
+    _messages = _cache[_locale] || _cache['zh-CN'] || null;
   }
 
   /**
-   * Fetch and cache a locale JSON file from the i18n/ folder.
-   */
-  async function _load(loc) {
-    if (_cache[loc]) return _cache[loc];
-    const resp = await fetch(`/anima-ui/i18n/${loc}.json`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${loc}.json`);
-    const data = await resp.json();
-    _cache[loc] = data;
-    return data;
-  }
-
-  /**
-   * Look up a dotted key path (e.g. "tagger.imageDir") in the current locale.
+   * Look up a dotted key path (e.g. "tagger.imageDir").
    * Returns fallback or the key itself if not found.
    */
   function t(key, fallback) {
@@ -52,27 +54,30 @@ const I18N = (() => {
     return (val !== undefined && val !== null) ? val : (fallback || key);
   }
 
-  /** Return the current locale code, e.g. "zh-CN". */
+  /** Return the current locale code. */
   function getLocale() { return _locale; }
 
   /**
-   * Switch to a new locale. Persists to localStorage and dispatches
-   * a 'locale-changed' event so the Alpine app can re-render.
+   * Switch locale instantly (all data preloaded). Synchronous.
    */
-  async function setLocale(loc) {
+  function setLocale(loc) {
     if (loc === _locale) return;
     _locale = loc;
     localStorage.setItem('anima-locale', loc);
-    try {
-      _messages = await _load(loc);
-    } catch (e) {
-      console.warn('[i18n] Failed to load locale "%s": %s', loc, e.message);
-      // Keep current messages; don't break the UI
-    }
+    _messages = _cache[loc] || _cache['zh-CN'] || null;
     window.dispatchEvent(new CustomEvent('locale-changed', { detail: { locale: loc } }));
   }
 
-  return { init, t, getLocale, setLocale };
+  /**
+   * Get list of available locales for building language pickers.
+   * Returns [{ code: 'zh-CN', name: '中文' }, ...]
+   */
+  function getAvailableLocales() {
+    const names = { 'zh-CN': '中文', 'en-US': 'English' };
+    return LOCALES.filter(l => _cache[l]).map(l => ({ code: l, name: names[l] || l }));
+  }
+
+  return { init, t, getLocale, setLocale, getAvailableLocales };
 })();
 
 window.I18N = I18N;
