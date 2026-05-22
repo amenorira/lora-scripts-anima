@@ -1032,9 +1032,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 /* ── Badges ──────────────────────────────────────────────── */
 .env-badge {
   margin-left: auto; flex-shrink: 0;
-  font-size: 11px; font-weight: 500; padding: 2px 10px;
-  border-radius: 100px; line-height: 1.6;
-  font-family: var(--font-mono, monospace);
+  font-size: 11px; font-weight: 550; padding: 3px 10px;
+  border-radius: 100px; line-height: 1.5;
+  font-family: var(--font-sans);
+  letter-spacing: -0.1px;
 }
 .env-badge-ok  { background: var(--success); color: #fff; }
 .env-badge-warn { background: var(--warning); color: #fff; }
@@ -1122,6 +1123,19 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-size: 11px; color: var(--text-tertiary); text-align: center;
   padding: 14px 0 0; margin: 0; line-height: 1.5;
 }
+
+/* ── Dark mode ──────────────────────────────────────────── */
+[data-theme="dark"] .env-card { border-color: var(--border-default); background: var(--bg-surface); }
+[data-theme="dark"] .env-card-summary:hover { background: rgba(255,255,255,0.02); }
+[data-theme="dark"] .env-table { background: var(--bg-surface-raised); }
+[data-theme="dark"] .env-table tr:not(:last-child) { border-bottom-color: var(--border-default); }
+[data-theme="dark"] .env-msg-err  { background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.25); }
+[data-theme="dark"] .env-msg-warn { background: rgba(217,119,6,0.10); border-color: rgba(217,119,6,0.25); }
+[data-theme="dark"] .env-candidate-list { border-color: var(--border-default); }
+[data-theme="dark"] .env-candidate-item { border-bottom-color: var(--border-default); }
+[data-theme="dark"] .env-candidate-item:hover { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
+[data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
 /* Visible state */
 .anima-tooltip.anima-tooltip-show {

@@ -1063,8 +1063,9 @@ document.addEventListener('alpine:init', () => {
             title="${best ? best.name : ''}">
             ${installed ? T('reinstall', 'Reinstall') : T('autoInstall', 'Auto Install')}
           </button>
-          <button id="fa-refresh-btn" class="btn btn-secondary" ${this.faBusy ? 'disabled' : ''}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <button id="fa-refresh-btn" class="btn-icon" ${this.faBusy ? 'disabled' : ''}
+            title="${T('refresh', 'Refresh')}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
           <span class="env-actions-spacer"></span>
           <button id="fa-toggle-btn" class="btn btn-ghost btn-sm">
