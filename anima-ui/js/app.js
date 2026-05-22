@@ -1059,7 +1059,7 @@ document.addEventListener('alpine:init', () => {
 
         // ── Action bar ──
         html += `<div class="env-actions">
-          <button id="fa-auto-btn" class="btn btn-primary" ${this.faBusy || !canAuto ? 'disabled' : ''}
+          <button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy || !canAuto ? 'disabled' : ''}
             title="${best ? best.name : ''}">
             ${installed ? T('reinstall', 'Reinstall') : T('autoInstall', 'Auto Install')}
           </button>
@@ -1082,7 +1082,7 @@ document.addEventListener('alpine:init', () => {
               <span class="env-candidate-mark env-candidate-${mark}">${c.usable ? '&#10003;' : '&#10007;'}</span>
               <code class="env-candidate-name" title="${c.name}">${c.name}</code>
               ${c.notes.length ? `<span class="env-candidate-notes">${c.notes.join('; ')}</span>` : ''}
-              <button class="fa-candidate-btn btn btn-sm ${c.usable ? 'btn-primary' : 'btn-secondary'}"
+              <button class="fa-candidate-btn btn btn-sm ${c.usable ? 'btn-secondary' : 'btn-ghost'}"
                 data-url="${c.url.replace(/'/g,"\\'")}">
                 ${c.usable ? T('install', 'Install') : T('forceInstall', 'Force')}
               </button>
