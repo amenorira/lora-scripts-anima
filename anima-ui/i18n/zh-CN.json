@@ -318,7 +318,7 @@
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",
     "model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
-    "model_train_type_anima-lora": "Anima（QwenImage）DiT 模型 LoRA 训练",
+    "model_train_type_anima-lora": "基于 NVIDIA Cosmos-Predict2-2B 衍生的 Diffusion Transformer (DiT) 架构模型",
     "model_train_type_flux-lora": "Flux DiT 模型 LoRA 训练",
     "model_train_type_sd3-lora": "Stable Diffusion 3.5 模型 LoRA 训练",
 
@@ -346,7 +346,7 @@
     "optimizer_type_SGDNesterov": "带动量的 SGD Nesterov 优化器",
     "optimizer_type_SGDNesterov8bit": "8-bit SGD Nesterov，节省显存",
     "optimizer_type_Prodigy": "自适应学习率优化器，自动调整 LR，推荐新手使用",
-    "optimizer_type_ProdigyPlus": "Prodigy 增强版 + Schedule-Free 训练",
+    "optimizer_type_ProdigyPlus": "ProdigyPlus + Schedule-Free，免调学习率与调度器的双自动化",
     "optimizer_type_AdaFactor": "自适应因子优化器，节省显存",
     "optimizer_type_RAdamScheduleFree": "RAdam + Schedule-Free 训练方法",
     "optimizer_type_DAdaptation": "D-Adaptation 自动学习率优化器",
@@ -364,7 +364,7 @@
     "loss_type_smooth_l1": "Smooth L1 Loss，在零点附近更平滑",
 
     "network_module_networks.lora": "标准 LoRA 网络，适用于 SD/SDXL 架构",
-    "network_module_networks.lora_anima": "Anima LoRA 网络，适用于 DiT 架构（Anima/Flux/SD3）",
+    "network_module_networks.lora_anima": "Anima LoRA 网络。Anima 模型基于 NVIDIA Cosmos-Predict2-2B 衍生。",
     "network_module_lycoris.kohya": "LyCORIS 网络，支持 LoCon/LoHa 等多种算法",
 
     "sample_sampler_ddim": "DDIM 采样器，速度快，图像较稳定",

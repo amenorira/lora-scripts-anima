@@ -99,7 +99,7 @@ const TRAIN_SECTIONS_COMMON = [
         ]},
         { labelKey: 'opt.group_adaptive', options: [
           { v: 'Prodigy', l: 'Prodigy', dKey: 'opt.optimizer_type_Prodigy' },
-          { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlus', dKey: 'opt.optimizer_type_ProdigyPlus' },
+          { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlusScheduleFree', dKey: 'opt.optimizer_type_ProdigyPlus' },
           { v: 'AdaFactor', l: 'AdaFactor', dKey: 'opt.optimizer_type_AdaFactor' },
           { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree', dKey: 'opt.optimizer_type_RAdamScheduleFree' },
         ]},
