@@ -105,11 +105,26 @@ def _system_info() -> dict:
 
 def _get_cpu_name() -> str:
     """获取 CPU 型号名称"""
+    import platform
+    name = ""
     try:
-        import platform
-        return platform.processor() or ""
+        if platform.system() == "Windows":
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            name = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+            winreg.CloseKey(key)
+        else:
+            try:
+                with open("/proc/cpuinfo") as f:
+                    for line in f:
+                        if line.startswith("model name"):
+                            name = line.split(":", 1)[1].strip()
+                            break
+            except Exception:
+                pass
     except Exception:
-        return ""
+        pass
+    return name or platform.processor() or ""
 
 
 # ── TensorBoard Event 读取 ─────────────────────────────────

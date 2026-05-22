@@ -771,16 +771,19 @@ document.addEventListener('alpine:init', () => {
     },
 
     _gpuCard(gpu, t) {
-      const pct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb * 100 : 0;
-      const color = pct > 90 ? 'var(--danger)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+      const vramPct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb * 100 : 0;
+      const vramColor = vramPct > 90 ? 'var(--danger)' : vramPct > 70 ? 'var(--warning)' : 'var(--success)';
+      const loadPct = gpu.gpu_load_pct || 0;
+      const loadColor = loadPct > 80 ? 'var(--danger)' : loadPct > 50 ? 'var(--warning)' : 'var(--success)';
       let html = `<div class="card flex-1" style="margin-left:12px">
         <div class="card-header">${t('gpu', 'GPU')}</div>
         <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'GPU'}</div>`;
-      html += `<div style="font-size:12px">${t('vramUsed', 'VRAM')}: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB</div>`;
-      html += `<div style="font-size:12px">${t('gpuLoad', 'Load')}: <b>${gpu.gpu_load_pct}%</b></div>`;
-      if (gpu.temperature_c != null) html += `<div style="font-size:12px">${t('gpuTemp', 'Temp')}: <b>${gpu.temperature_c}&deg;C</b></div>`;
+      html += `<div style="font-size:12px">${t('vramUsed', 'VRAM')}: <b style="color:${vramColor}">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div>`;
+      html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${vramPct}%;height:100%;background:${vramColor};border-radius:4px;transition:width 0.5s"></div></div>`;
+      html += `<div style="font-size:12px;margin-top:8px">${t('gpuLoad', 'Load')}: <b style="color:${loadColor}">${loadPct}%</b></div>`;
+      html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${loadPct}%;height:100%;background:${loadColor};border-radius:4px;transition:width 0.5s"></div></div>`;
+      if (gpu.temperature_c != null) html += `<div style="font-size:12px;margin-top:6px">${t('gpuTemp', 'Temp')}: <b>${gpu.temperature_c}&deg;C</b></div>`;
       if (gpu.power_w != null) html += `<div style="font-size:12px">${t('gpuPower', 'Power')}: <b>${gpu.power_w}W</b></div>`;
-      html += `<div style="margin-top:6px;background:var(--bg-input);border-radius:4px;height:6px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s"></div></div>`;
       html += '</div>';
       return html;
     },
@@ -793,7 +796,7 @@ document.addEventListener('alpine:init', () => {
       if (sys.cpu_name) html += `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${sys.cpu_name}</div>`;
       html += `<div style="font-size:12px;margin:4px 0">${t('cpu', 'CPU')}: <b style="color:${cpuColor}">${sys.cpu_pct}%</b></div>`;
       html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.cpu_pct}%;height:100%;background:${cpuColor};border-radius:4px;transition:width 0.5s"></div></div>`;
-      html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', 'RAM')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB</b> / ${sys.ram_total_gb} GB</div>`;
+      html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', 'RAM')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB (${sys.ram_pct}%)</b> / ${sys.ram_total_gb} GB</div>`;
       html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.ram_pct}%;height:100%;background:${ramColor};border-radius:4px;transition:width 0.5s"></div></div>`;
       html += '</div>';
       return html;
