@@ -432,8 +432,17 @@ document.addEventListener('alpine:init', () => {
 
       this.renderTrainingForm(allSections);
 
-      // Persist form to localStorage on any change (debounced via Alpine's reactivity)
+      // Watch showIf-controlling keys — when toggled, rebuild form to show/hide conditional fields
+      const showIfKeys = new Set();
+      allSections.forEach(s => s.fields.forEach(f => {
+        if (f.showIf) showIfKeys.add(f.showIf.key);
+      }));
       const self = this;
+      showIfKeys.forEach(k => {
+        self.$watch('form.' + k, () => self.rebuildForm());
+      });
+
+      // Persist form to localStorage on any change
       const savedKeyLocal = savedKey;
       this.$watch('form', () => {
         try { localStorage.setItem(savedKeyLocal, JSON.stringify(self.form)); } catch (e) {}
@@ -524,9 +533,8 @@ document.addEventListener('alpine:init', () => {
       let newVal = current + delta;
       if (field && field.min !== undefined && newVal < field.min) newVal = field.min;
       if (field && field.max !== undefined && newVal > field.max) newVal = field.max;
-      this.setField(key, newVal);
-      const input = document.querySelector(`[data-field="${key.replace(/'/g,"\\'")}"]`);
-      if (input) input.value = newVal;
+      this.form[key] = newVal;  // x-model.number picks up the change reactively
+      this.pushHistory({ ...this.form });
     },
 
     findFieldDef(key) {
@@ -598,6 +606,10 @@ document.addEventListener('alpine:init', () => {
         if (v === '' || v === null || v === undefined) continue;
         if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
         else if (typeof v === 'number') lines.push(`${k} = ${v}`);
+        else if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
+          // Numeric string (e.g. "1e-4") → write as unquoted number for valid TOML
+          lines.push(`${k} = ${Number(v)}`);
+        }
         else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
       }
       this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
@@ -646,6 +658,12 @@ document.addEventListener('alpine:init', () => {
         if (!validKeys.has(k)) continue;
         if (v === '' || v === null || v === undefined) continue;
         payload[k] = v;
+      }
+      // Normalize numeric strings → numbers (learning_rate etc. are text-type fields)
+      for (const [k, v] of Object.entries(payload)) {
+        if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
+          payload[k] = Number(v);
+        }
       }
       try {
         const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
@@ -777,7 +795,11 @@ document.addEventListener('alpine:init', () => {
     },
 
     showFilePickerModal(key, files) {
-      const listHtml = files.map(f => `<div class="config-list-item" onclick="document.querySelector('[x-data]').__x.$data.setField('${key.replace(/'/g,"\\'")}','${f.path.replace(/'/g,"\\'")}');document.querySelector('[x-data]').__x.$data.showLoadModal=false"><span class="config-name">${f.name||''}</span><span class="config-date text-sm">${f.path||''}</span></div>`).join('');
+      const safeKey = key.replace(/'/g, "\\'");
+      const listHtml = files.map(f => {
+        const safePath = f.path.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        return `<div class="config-list-item" @click="setField('${safeKey}','${safePath}'); showLoadModal = false"><span class="config-name">${f.name||''}</span><span class="config-date text-sm">${f.path||''}</span></div>`;
+      }).join('');
       const modalBody = document.getElementById('savedConfigsList');
       if (modalBody) { modalBody.innerHTML = `<p class="text-sm text-muted mb-2">Select:</p>${listHtml}`; this.showLoadModal = true; }
     },
@@ -805,7 +827,7 @@ document.addEventListener('alpine:init', () => {
       ];
       const conflictSelect = `<select id="tagger-conflict-action">${conflictOpts.map(o=>`<option value="${o.v}" ${o.v==='copy'?'selected':''}>${o.l}</option>`).join('')}</select>`;
       container.innerHTML = `<div class="card-header">${this.t('tagger.title')}</div>
-        <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-right"><input type="text" id="tagger-path" value="./train/aki" style="flex:1"><div class="field-actions"><button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button></div></div></div>
+        <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-right"><input type="text" id="tagger-path" value="./train/aki" style="flex:1"><div class="field-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button></div></div></div>
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.model')}</div><div class="field-desc">${this.t('tagger.modelDesc')}</div></div><div class="field-right"><select id="tagger-model">${modelOpts}</select></div></div>
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.threshold')}</div><div class="field-desc">${this.t('tagger.thresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-threshold').stepDown()">-</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-threshold').stepUp()">+</button></div></div></div>
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.characterThreshold')}</div><div class="field-desc">${this.t('tagger.characterThresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepDown()">-</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepUp()">+</button></div></div></div>
@@ -817,7 +839,7 @@ document.addEventListener('alpine:init', () => {
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addRatingTag')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-rating"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addModelTag')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-model"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
         <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.conflictAction')}</div><div class="field-desc">${this.t('tagger.conflictActionDesc')}</div></div><div class="field-right">${conflictSelect}</div></div>
-        <div class="mt-4 flex gap-2"><button class="btn btn-primary" onclick="document.querySelector('[x-data]').__x.$data.runTagger()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${this.t('tagger.start')}</button><button class="btn btn-ghost" onclick="document.querySelector('[x-data]').__x.$data.stopTagger()" id="tagger-stop-btn" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> ${this.t('tagger.stop')}</button></div>
+        <div class="mt-4 flex gap-2"><button class="btn btn-primary" @click="runTagger()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${this.t('tagger.start')}</button><button class="btn btn-ghost" @click="stopTagger()" id="tagger-stop-btn" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> ${this.t('tagger.stop')}</button></div>
         <div id="tagger-output" class="mt-2" style="padding:12px;background:var(--bg-preview);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;color:var(--text-preview);min-height:40px;display:none"></div>`;
     },
 
