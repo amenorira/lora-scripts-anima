@@ -311,9 +311,9 @@
     "installUrl": "URL Install",
     "restartHint": "Flash Attention is a C extension. After install, restart the GUI for changes to take effect.",
     "manualUrl": "Manual URL",
-    "sourceDefault": "GitHub Official",
-    "sourceMirror": "ghproxy Mirror",
-    "sourceFallback": "Alt Repo"
+    "sourceDefault": "Official",
+    "sourceMirror": "Mirror",
+    "sourceFallback": "Alt"
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",

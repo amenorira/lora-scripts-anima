@@ -311,9 +311,9 @@
     "installUrl": "URL 安装",
     "restartHint": "Flash Attention 是 C 扩展，安装后需重启 GUI 才能生效。",
     "manualUrl": "手动 URL",
-    "sourceDefault": "GitHub 官方",
-    "sourceMirror": "ghproxy 国内镜像",
-    "sourceFallback": "备用仓库"
+    "sourceDefault": "官方",
+    "sourceMirror": "镜像",
+    "sourceFallback": "备用"
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",

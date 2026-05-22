@@ -1081,18 +1081,24 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .env-actions-spacer { flex: 1; }
 .env-actions .btn { padding: 7px 16px; font-size: 13px; }
-.env-source-select {
-  font-size: 11.5px; padding: 5px 24px 5px 8px; max-width: 170px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
-  background: var(--bg-input); color: var(--text-primary);
-  cursor: pointer; font-family: var(--font-sans);
-  appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 7px center;
+
+/* ── Source selector button group ───────────────────────── */
+.env-source-group {
+  display: inline-flex; gap: 0; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default); overflow: hidden;
 }
-[data-theme="dark"] .env-source-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a1a09a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+.env-source-btn {
+  padding: 4px 10px; font-size: 11px; font-family: var(--font-sans);
+  border: none; background: var(--bg-input); color: var(--text-secondary);
+  cursor: pointer; transition: all var(--duration-fast);
+  border-right: 1px solid var(--border-default);
 }
+.env-source-btn:last-child { border-right: none; }
+.env-source-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.env-source-btn.active { background: var(--accent); color: #fafaf9; font-weight: 550; }
+[data-theme="dark"] .env-source-btn { background: var(--bg-input); }
+[data-theme="dark"] .env-source-btn:hover { background: rgba(255,255,255,0.06); }
+[data-theme="dark"] .env-source-btn.active { background: var(--accent); }
 
 /* ── Candidate list ──────────────────────────────────────── */
 .env-candidate-list {

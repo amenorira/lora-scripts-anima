@@ -1093,11 +1093,11 @@ document.addEventListener('alpine:init', () => {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             </button>
             <span class="env-actions-spacer"></span>
-            <select id="fa-source-select" class="env-source-select">
-              <option value="default" ${this.faSource==='default'?'selected':''}>${T('sourceDefault', 'GitHub 官方')}</option>
-              <option value="mirror" ${this.faSource==='mirror'?'selected':''}>${T('sourceMirror', 'ghproxy 国内镜像')}</option>
-              <option value="fallback" ${this.faSource==='fallback'?'selected':''}>${T('sourceFallback', '备用仓库')}</option>
-            </select>
+            <span class="env-source-group">
+              <button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault', '官方')}</button>
+              <button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror', '镜像')}</button>
+              <button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback', '备用')}</button>
+            </span>
             <button id="fa-toggle-btn" class="btn btn-ghost btn-sm">
               ${this.faCandidatesOpen ? T('hideCandidates', 'Hide list') : T('showCandidates', 'Show candidates') + ' (' + candidates.length + ')'}
             </button>
@@ -1145,10 +1145,14 @@ document.addEventListener('alpine:init', () => {
       if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
       if (refreshBtn) refreshBtn.addEventListener('click', () => a.faRefresh());
       if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
-      const sourceSelect = el.querySelector('#fa-source-select');
-      if (sourceSelect) sourceSelect.addEventListener('change', () => {
-        a.faSource = sourceSelect.value;
-        a.faRefresh();
+      // Source selector buttons
+      el.querySelectorAll('.env-source-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.id === 'fa-src-mirror') a.faSource = 'mirror';
+          else if (btn.id === 'fa-src-fallback') a.faSource = 'fallback';
+          else a.faSource = 'default';
+          a.faRefresh();
+        });
       });
       // Confirm popover
       const confirmYes = el.querySelector('#fa-confirm-yes');
