@@ -73,9 +73,9 @@ def launch():
     try:
         from importlib.metadata import version as pkg_version
         fa_ver = pkg_version("flash_attn")
-        log.info(f"flash_attn: ✅ 已启用 (版本 {fa_ver})")
+        log.info(f"flash_attn: OK (版本 {fa_ver})")
     except Exception:
-        log.info("flash_attn: ❌ 未安装 — RTX 40/50 系建议运行 install-flash-attn 脚本")
+        log.info("flash_attn: NOT FOUND — RTX 40/50 系建议运行 install-flash-attn 脚本")
 
     os.environ["MIKAZUKI_HOST"] = args.host
     os.environ["MIKAZUKI_PORT"] = str(args.port)

@@ -969,6 +969,159 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   color: #e4e4e1;
   padding: 7px 12px;
   border-radius: 7px;
+  font-size: 12.5px;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  max-width: 300px;
+  white-space: normal;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.anima-tooltip.visible { opacity: 1; }
+
+/* ================================================================
+   Environment Page
+   ================================================================ */
+
+/* ── Loading spinner ─────────────────────────────────────── */
+.env-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 64px 20px; gap: 16px; color: var(--text-secondary); font-size: 13px;
+}
+.env-spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: env-spin 0.7s linear infinite;
+}
+@keyframes env-spin { to { transform: rotate(360deg); } }
+
+/* ── Card ────────────────────────────────────────────────── */
+.env-card {
+  border: 1px solid var(--border-default); border-radius: var(--radius-lg, 10px);
+  background: var(--bg-surface); margin-bottom: 12px; overflow: hidden;
+}
+.env-card[open] .env-chevron { transform: rotate(90deg); }
+.env-card-summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; cursor: pointer; list-style: none;
+  user-select: none;
+}
+.env-card-summary::-webkit-details-marker { display: none; }
+.env-card-summary::marker { display: none; content: none; }
+.env-chevron {
+  display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+  transition: transform var(--duration-fast);
+}
+.env-chevron::before {
+  content: ''; display: block; width: 8px; height: 8px;
+  border-right: 2px solid var(--text-tertiary);
+  border-bottom: 2px solid var(--text-tertiary);
+  transform: rotate(-45deg); margin: 2px 0 0 2px;
+}
+.env-card-title {
+  font-weight: 600; font-size: 14px; color: var(--text-primary); letter-spacing: -0.2px;
+}
+.env-card-hint {
+  font-size: 11px; color: var(--text-tertiary);
+}
+.env-card-body {
+  padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px;
+}
+
+/* ── Badges ──────────────────────────────────────────────── */
+.env-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 11px; font-weight: 500; padding: 2px 10px;
+  border-radius: 100px; line-height: 1.6;
+  font-family: var(--font-mono, monospace);
+}
+.env-badge-ok  { background: var(--success); color: #fff; }
+.env-badge-warn { background: var(--warning); color: #fff; }
+.env-badge-err  { background: var(--danger); color: #fff; }
+.env-badge-loading { background: var(--accent-soft); color: var(--text-secondary); }
+
+/* ── Environment info table ───────────────────────────────── */
+.env-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; background: var(--bg-sunken, var(--bg-surface-raised));
+  border-radius: var(--radius-md, 8px); overflow: hidden;
+}
+.env-table tr:not(:last-child) { border-bottom: 1px solid var(--border-default); }
+.env-table td { padding: 7px 12px; }
+.env-table-label {
+  color: var(--text-tertiary); font-weight: 500;
+  width: 1%; white-space: nowrap; padding-right: 20px !important;
+}
+.env-table-value {
+  color: var(--text-primary); font-family: var(--font-mono, monospace); font-size: 12.5px;
+}
+.env-text-warn { color: var(--warning); font-weight: 500; }
+.env-text-dim { color: var(--text-tertiary); }
+
+/* ── Messages ────────────────────────────────────────────── */
+.env-msg {
+  font-size: 12px; padding: 8px 12px; border-radius: var(--radius-sm, 6px);
+  line-height: 1.45;
+}
+.env-msg pre { margin: 0; white-space: pre-wrap; font-size: 11px; font-family: var(--font-mono, monospace); }
+.env-msg-err  { background: rgba(220,38,38,0.07); color: var(--danger); border: 1px solid rgba(220,38,38,0.2); }
+.env-msg-warn { background: rgba(217,119,6,0.07); color: var(--warning); border: 1px solid rgba(217,119,6,0.2); }
+
+/* ── Action bar ──────────────────────────────────────────── */
+.env-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.env-actions-spacer { flex: 1; }
+.env-actions .btn { padding: 7px 16px; font-size: 13px; }
+
+/* ── Candidate list ──────────────────────────────────────── */
+.env-candidate-list {
+  list-style: none; padding: 0; margin: 0;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 8px);
+  max-height: 320px; overflow-y: auto;
+}
+.env-candidate-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; font-size: 12px;
+  border-bottom: 1px solid var(--border-default);
+  transition: background var(--duration-fast);
+  cursor: default;
+}
+.env-candidate-item:last-child { border-bottom: none; }
+.env-candidate-item:hover { background: var(--accent-muted); }
+.env-candidate-mark {
+  flex-shrink: 0; width: 18px; text-align: center; font-weight: 700; font-size: 11px;
+}
+.env-candidate-ok  { color: var(--success); }
+.env-candidate-warn { color: var(--warning); }
+.env-candidate-name {
+  flex: 1; font-family: var(--font-mono, monospace); font-size: 11px;
+  color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.env-candidate-notes {
+  font-size: 10px; color: var(--warning); max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
+}
+.env-candidate-item .btn { flex-shrink: 0; }
+
+/* ── Manual URL ──────────────────────────────────────────── */
+.env-manual-url {
+  display: flex; gap: 8px;
+}
+.env-url-input {
+  flex: 1; font-size: 12px; padding: 7px 10px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm, 6px);
+  background: var(--bg-input, var(--bg-surface)); color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+}
+.env-url-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ── Hint text ───────────────────────────────────────────── */
+.env-hint {
+  font-size: 11px; color: var(--text-tertiary); text-align: center;
+  padding: 14px 0 0; margin: 0; line-height: 1.5;
+}
   font-size: 11.5px;
   font-weight: 400;
   line-height: 1.45;

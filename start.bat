@@ -44,7 +44,7 @@ set PYTHONUTF8=1
 call "venv\Scripts\activate.bat"
 
 REM ── 检测 flash-attn ──
-python -c "import flash_attn; print('[flash_attn] ✅ 已启用')" 2>nul || echo [flash_attn] ❌ 未安装 — RTX 40/50 系建议: .\install-flash-attn.bat
+python -c "import flash_attn; print('[flash_attn] OK')" 2>nul || echo [flash_attn] NOT FOUND — RTX 40/50 系建议: .\install-flash-attn.bat
 echo.
 
 python gui.py %*

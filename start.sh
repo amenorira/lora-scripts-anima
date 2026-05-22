@@ -18,9 +18,9 @@ if [ -f "venv/bin/activate" ]; then
 
     # 检测 flash-attn
     if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
-        echo "[flash_attn] ✅ 已启用 (版本 $FA_VER)"
+        echo "[flash_attn] OK (版本 $FA_VER)"
     else
-        echo "[flash_attn] ❌ 未安装 — RTX 40/50 系建议: bash install-flash-attn.sh"
+        echo "[flash_attn] NOT FOUND — RTX 40/50 系建议: bash install-flash-attn.sh"
     fi
     echo ""
 
