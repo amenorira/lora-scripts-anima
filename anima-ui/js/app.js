@@ -281,6 +281,9 @@ document.addEventListener('alpine:init', () => {
     showTriggerTip: false,
     triggerTipTimer: null,
     _escHandler: null,
+    _tipLeft: null,
+    _tipTop: null,
+    _tipMaxW: 260,
 
     // Derived: uniform groups array (always produces [{label, options}, ...])
     get displayGroups() {
@@ -356,12 +359,24 @@ document.addEventListener('alpine:init', () => {
     },
 
     onTriggerMouseEnter() {
-      this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
+      this.triggerTipTimer = setTimeout(() => {
+        // Capture button rect BEFORE showing tooltip, so there's no flicker
+        const btn = this.$refs.triggerBtn;
+        if (btn) {
+          const r = btn.getBoundingClientRect();
+          this._tipLeft = r.right + 10;
+          this._tipTop = r.top + r.height / 2;
+          this._tipMaxW = Math.min(260, window.innerWidth - r.right - 24);
+        }
+        this.showTriggerTip = true;
+      }, 400);
     },
 
     onTriggerMouseLeave() {
       clearTimeout(this.triggerTipTimer);
       this.showTriggerTip = false;
+      this._tipLeft = null;
+      this._tipTop = null;
     },
 
     onOptionMouseEnter(idx, opt) {
@@ -385,16 +400,13 @@ document.addEventListener('alpine:init', () => {
 
     // Fixed-position style for trigger tooltip (escapes ancestor overflow clipping)
     get triggerTipStyle() {
-      if (!this.showTriggerTip || this.open || !this.selectedDesc) return { display: 'none' };
-      const btn = this.$refs.triggerBtn;
-      if (!btn) return { display: 'none' };
-      const r = btn.getBoundingClientRect();
+      if (!this.showTriggerTip || this.open || !this.selectedDesc || !this._tipLeft) return { display: 'none' };
       return {
         position: 'fixed',
-        left: (r.right + 10) + 'px',
-        top: (r.top + r.height / 2) + 'px',
+        left: this._tipLeft + 'px',
+        top: this._tipTop + 'px',
         transform: 'translateY(-50%)',
-        maxWidth: Math.min(260, window.innerWidth - r.right - 24) + 'px',
+        maxWidth: (this._tipMaxW || 260) + 'px',
         zIndex: '9999',
       };
     },
