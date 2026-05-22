@@ -470,6 +470,7 @@ document.addEventListener('alpine:init', () => {
     faCandidatesOpen: false,
     faConfirmMsg: null,
     faConfirmCallback: null,
+    faSource: 'default',
 
     // ── Init ───────────────────────────────────────────────
     async init() {
@@ -961,7 +962,8 @@ document.addEventListener('alpine:init', () => {
     async faRefresh() {
       this.faError = null;
       try {
-        const r = await fetch('/api/flash-attention/status');
+        const src = this.faSource && this.faSource !== 'default' ? '?source=' + this.faSource : '';
+        const r = await fetch('/api/flash-attention/status' + src);
         this.faStatus = await r.json();
       } catch (e) {
         this.faError = String(e);
@@ -981,7 +983,7 @@ document.addEventListener('alpine:init', () => {
           const r = await fetch('/api/flash-attention/install', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: url || null })
+            body: JSON.stringify({ url: url || null, source: this.faSource || 'default' })
           });
           const result = await r.json();
           if (result.success) {
@@ -1091,6 +1093,11 @@ document.addEventListener('alpine:init', () => {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             </button>
             <span class="env-actions-spacer"></span>
+            <select id="fa-source-select" class="env-source-select">
+              <option value="default" ${this.faSource==='default'?'selected':''}>${T('sourceDefault', 'GitHub 官方')}</option>
+              <option value="mirror" ${this.faSource==='mirror'?'selected':''}>${T('sourceMirror', 'ghproxy 国内镜像')}</option>
+              <option value="fallback" ${this.faSource==='fallback'?'selected':''}>${T('sourceFallback', '备用仓库')}</option>
+            </select>
             <button id="fa-toggle-btn" class="btn btn-ghost btn-sm">
               ${this.faCandidatesOpen ? T('hideCandidates', 'Hide list') : T('showCandidates', 'Show candidates') + ' (' + candidates.length + ')'}
             </button>
@@ -1138,6 +1145,11 @@ document.addEventListener('alpine:init', () => {
       if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
       if (refreshBtn) refreshBtn.addEventListener('click', () => a.faRefresh());
       if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
+      const sourceSelect = el.querySelector('#fa-source-select');
+      if (sourceSelect) sourceSelect.addEventListener('change', () => {
+        a.faSource = sourceSelect.value;
+        a.faRefresh();
+      });
       // Confirm popover
       const confirmYes = el.querySelector('#fa-confirm-yes');
       const confirmNo = el.querySelector('#fa-confirm-no');

@@ -438,47 +438,87 @@ def _import_flash_attn_tool():
 
 
 @router.get("/flash-attention/status")
-async def flash_attn_status() -> dict:
-    """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。"""
+async def flash_attn_status(source: str = "") -> dict:
+    """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。
+    source: 可选 'default'|'fallback'，空则用默认源。
+    """
     import time
     detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
+    # 支持切换源
+    if source:
+        import tools.install_flash_attn as fa_tool
+        try:
+            fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
+        except Exception:
+            pass
     try:
         status = current_status()
         env = detect_env()
-        # 缓存候选列表，避免频繁请求 GitHub API（未认证限 60 次/小时）
         now = time.time()
-        if _fa_cache["candidates"] is None or (now - _fa_cache["ts"]) > _FA_CACHE_TTL:
+        cache_key = source or "default"
+        if _fa_cache.get(cache_key) is None or (now - _fa_cache[cache_key]["ts"]) > _FA_CACHE_TTL:
             candidates, fetch_error = fetch_candidates(env)
             slim = [
                 {"url": c["url"], "name": c["name"], "notes": c["notes"], "usable": c["usable"]}
                 for c in candidates[:20]
             ]
-            _fa_cache["candidates"] = slim
-            _fa_cache["fetch_error"] = fetch_error
-            _fa_cache["ts"] = now
+            _fa_cache[cache_key] = {"candidates": slim, "fetch_error": fetch_error, "ts": now}
+        c = _fa_cache[cache_key]
         return {"installed": status["installed"], "version": status["version"],
-                "env": env, "candidates": _fa_cache["candidates"], "fetch_error": _fa_cache["fetch_error"]}
+                "env": env, "candidates": c["candidates"], "fetch_error": c["fetch_error"]}
     except Exception as e:
         log.error(f"flash_attn status error: {e}")
         return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(e)}
 
 
+def _fa_source_config(source: str):
+    """切换候选源配置。
+    - default: GitHub 官方 API（国际）
+    - mirror:  ghproxy 代理（国内）
+    - fallback: 备用 GitHub 仓库
+    """
+    if source == "mirror":
+        return (
+            "https://ghproxy.com/https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
+            ["https://ghproxy.com/https://api.github.com/repos/bdashore3/flash-attention/releases"]
+        )
+    if source == "fallback":
+        return (
+            "https://api.github.com/repos/bdashore3/flash-attention/releases",
+            ["https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases"]
+        )
+    # default
+    return (
+        "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
+        ["https://api.github.com/repos/bdashore3/flash-attention/releases"]
+    )
+
+
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
-    """安装 flash_attn wheel。body: { url: string|null }。
+    """安装 flash_attn wheel。body: { url: string|null, source: string }。
     url=null 则自动从 GitHub 选最优匹配；否则用指定 URL。
-    同步 pip install，可能几分钟。
+    source='mirror' 时 wheel 下载 URL 自动走 ghproxy 代理。
     """
     detect_env, current_status, fetch_candidates, install_wheel = _import_flash_attn_tool()
     try:
         body = await request.json()
         url = body.get("url", None)
+        source = body.get("source", "default")
     except Exception:
         url = None
+        source = "default"
 
     try:
         if url is None:
             env = detect_env()
+            # 切换源获取候选
+            if source and source != "default":
+                import tools.install_flash_attn as fa_tool
+                try:
+                    fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
+                except Exception:
+                    pass
             candidates, _ = fetch_candidates(env)
             url = None
             for c in candidates:
@@ -487,6 +527,9 @@ async def flash_attn_install(request: Request) -> dict:
                     break
             if url is None:
                 return {"success": False, "error": "未找到可用 wheel，请手动指定 URL"}
+        # 国内镜像：wheel 下载走 ghproxy 代理
+        if source == "mirror" and url and not url.startswith("https://ghproxy.com/"):
+            url = "https://ghproxy.com/" + url
         result = install_wheel(url)
         return {"success": True, **result}
     except Exception as e:
