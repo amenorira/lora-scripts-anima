@@ -283,9 +283,20 @@
         <div class="card" id="taggerForm"></div>
       </div>
 
-      <!-- Route: Tag Editor -->
-      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;inset:0">
-        <iframe class="iframe-full" src="/proxy/tageditor" id="tageditorIframe"></iframe>
+      <!-- Route: Tag Editor (native) -->
+      <div x-show="currentRoute === 'tagEditor'" x-cloak>
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <h1 class="page-title" x-text="t('tagEditor.title')" style="margin-bottom:0">Tag Editor</h1>
+            <p class="page-subtitle" x-text="t('tagEditor.subtitle')">批量编辑标签</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" @click="tagEditorLoad()" x-text="t('common.refresh', '刷新')">刷新</button>
+            <button class="btn btn-sm btn-secondary" @click="tagEditorSaveAll()" :disabled="!tagEditorModified" x-text="t('common.save', '保存')">保存</button>
+            <button class="btn btn-sm btn-secondary" @click="tagEditorRevert()" :disabled="!tagEditorModified" x-text="t('common.revert', '还原')">还原</button>
+          </div>
+        </div>
+        <div id="tagEditorContainer"></div>
       </div>
 
       <!-- Route: Tools -->
