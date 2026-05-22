@@ -386,7 +386,7 @@ select {
   background: var(--bg-input); color: var(--text-primary);
   outline: none; width: 100%;
   cursor: pointer;
-  appearance: none; -webkit-appearance: none;
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
 }
@@ -549,7 +549,7 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
   animation: toast-in 0.5s var(--ease-spring) forwards;
   max-width: 440px; text-align: center; letter-spacing: -0.1px;
 }
-.toast.out { animation: toast-out var(--duration-normal) var(--ease-in-out) forwards; }
+.toast.out { animation: toast-out var(--duration-normal) var(--ease-out) forwards; }
 
 @keyframes toast-in {
   0% { opacity: 0; transform: translateY(-16px) scale(0.92); }
@@ -640,7 +640,7 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 
 /* ── Slider ──────────────────────────────────────────────── */
 input[type="range"] {
-  appearance: none; -webkit-appearance: none;
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
   width: 100%; height: 5px; border-radius: 3px;
   background: var(--border-default); outline: none;
 }
@@ -1005,46 +1005,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border-left-color: #3a3a40;
 }
 
-/* ── Tooltip transitions ─────────────────────────────────── */
-.anima-tooltip-enter {
-  opacity: 0;
-  transform: translateY(-50%) scale(0.92);
-}
-
-.anima-tooltip-enter.anima-tooltip-below {
-  transform: translateX(-50%) scale(0.92);
-}
-
-.anima-tooltip-enter-active {
-  transition: opacity var(--duration-normal) var(--ease-out),
-              transform var(--duration-normal) var(--ease-out);
-}
-
-.anima-tooltip-enter-to {
-  opacity: 1;
-}
-
-.anima-tooltip-enter-to.anima-tooltip-right,
-.anima-tooltip-enter-to.anima-tooltip-left {
-  transform: translateY(-50%) scale(1);
-}
-
-.anima-tooltip-enter-to.anima-tooltip-below {
-  transform: translateX(-50%) scale(1);
-}
-
-.anima-tooltip-leave {
-  opacity: 1;
-}
-
-.anima-tooltip-leave-active {
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.anima-tooltip-leave-to {
-  opacity: 0;
-}
-
 /* ── Responsive: on narrow screens, move right tooltip above ── */
 @media (max-width: 600px) {
   .anima-tooltip-right {
@@ -1065,3 +1025,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
     border-top-color: #3a3a40;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   End of anima-ui design system
+   ═══════════════════════════════════════════════════════════ */
