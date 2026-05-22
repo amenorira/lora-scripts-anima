@@ -461,6 +461,12 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 .btn-primary { background: var(--accent); color: #fafaf9; border-color: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
+.btn-secondary {
+  background: var(--bg-surface-raised); color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.btn-secondary:hover { background: var(--bg-surface); border-color: var(--border-input); color: var(--text-primary); }
+
 .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
 
