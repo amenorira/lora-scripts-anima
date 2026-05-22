@@ -182,7 +182,7 @@ def is_installed(package, friendly: str = None):
         return False
 
 
-def validate_requirements(requirements_file: str):
+def validate_requirements(requirements_file: str, fix: bool = True):
     with open(requirements_file, 'r', encoding='utf8') as f:
         lines = [
             line.strip()
@@ -201,10 +201,14 @@ def validate_requirements(requirements_file: str):
                 continue
 
             if not is_installed(line):
-                if index_url != "":
-                    run_pip(f"install {line} --index-url {index_url}", line, live=True)
+                if fix:
+                    if index_url != "":
+                        run_pip(f"install {line} --index-url {index_url}", line, live=True)
+                    else:
+                        run_pip(f"install {line}", line, live=True)
                 else:
-                    run_pip(f"install {line}", line, live=True)
+                    log.warning(f'[kohya-ss] 版本不匹配: {line}')
+                    log.warning(f'[kohya-ss] 训练可能因此失败。请运行 install 脚本重新安装依赖。')
 
 
 def setup_windows_bitsandbytes():
@@ -317,6 +321,7 @@ def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: b
     #     sys.exit(1)
 
     validate_requirements("requirements.txt")
+    validate_requirements("sd-scripts/requirements.txt", fix=False)
     setup_windows_bitsandbytes()
 
     if prepare_onnxruntime:
