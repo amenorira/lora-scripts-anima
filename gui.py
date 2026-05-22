@@ -94,8 +94,17 @@ def launch():
         run_tensorboard()
 
     import uvicorn
-    log.info(f"Server started at http://{args.host}:{args.port}")
-    log.info("Training monitor available in sidebar → Monitor")
+    url_new = f"http://{args.host}:{args.port}/v2"
+    url_legacy = f"http://{args.host}:{args.port}/"
+    print()
+    print("=" * 60)
+    print("  lora-scripts-anima 已启动 / Server started")
+    print("=" * 60)
+    print(f"  新前端 / New UI :  {url_new}")
+    print(f"  旧前端 / Legacy  :  {url_legacy}")
+    print("=" * 60)
+    print()
+    log.info(f"Server started at {url_new}")
     uvicorn.run("mikazuki.app:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
 
 

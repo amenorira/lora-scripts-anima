@@ -2,7 +2,6 @@ import asyncio
 import mimetypes
 import os
 import sys
-import webbrowser
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -42,9 +41,6 @@ async def app_startup():
     await load_schemas()
     await load_presets()
     await asyncio.to_thread(check_torch_gpu)
-
-    if sys.platform == "win32" and os.environ.get("MIKAZUKI_DEV", "0") != "1":
-        webbrowser.open(f'http://{os.environ["MIKAZUKI_HOST"]}:{os.environ["MIKAZUKI_PORT"]}')
 
 
 @asynccontextmanager
