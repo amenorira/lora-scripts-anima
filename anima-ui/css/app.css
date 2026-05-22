@@ -1063,8 +1063,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-table-value {
   color: var(--text-primary); font-family: var(--font-mono, monospace); font-size: 12.5px;
 }
-.env-text-warn { color: var(--warning); font-weight: 500; }
-.env-text-dim { color: var(--text-tertiary); }
+.env-text-warn { color: var(--warning); font-weight: 500; font-family: var(--font-sans); }
+.env-text-dim { color: var(--text-tertiary); font-family: var(--font-sans); }
 
 /* ── Messages ────────────────────────────────────────────── */
 .env-msg {
@@ -1108,7 +1108,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .env-candidate-notes {
   font-size: 10px; color: var(--warning); max-width: 200px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
+  flex-shrink: 0; white-space: normal; word-break: break-word;
+  line-height: 1.35;
 }
 .env-candidate-item .btn { flex-shrink: 0; }
 
