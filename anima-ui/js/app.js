@@ -216,11 +216,11 @@ document.addEventListener('alpine:init', () => {
       } else if (r === 'monitor-dashboard') {
         this.startProgress();
         this.startMonitorPolling();
-        this.renderDashboard();
+        // renderDashboard() is called by fetchMonitorStatus() when data arrives
       } else if (r === 'monitor-logs') {
         this.startProgress();
         this.startMonitorPolling();
-        this.renderLogs();
+        // renderLogs() is called by fetchMonitorStatus() when data arrives
       } else if (r === 'history') {
         this.startProgress();
         this.loadHistory();

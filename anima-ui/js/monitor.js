@@ -135,18 +135,27 @@ window.monitorMixin = {
     el.innerHTML = html;
 
     const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
-    bars.forEach(bar => {
-      const key = bar.dataset.bar;
-      const prev = firstRender ? 0 : (prevBars[key] != null ? prevBars[key] : 0);
-      bar.style.width = prev + '%';
-    });
-    requestAnimationFrame(() => {
+    if (firstRender) {
+      // First load: show actual values immediately, no animation
+      bars.forEach(bar => {
+        bar.style.transition = 'none';
+        bar.style.width = bar.dataset.target + '%';
+      });
+    } else {
+      // Subsequent poll: animate from previous value → new value
+      bars.forEach(bar => {
+        const key = bar.dataset.bar;
+        const prev = prevBars[key] != null ? prevBars[key] : 0;
+        bar.style.width = prev + '%';
+      });
       requestAnimationFrame(() => {
-        bars.forEach(bar => {
-          bar.style.width = bar.dataset.target + '%';
+        requestAnimationFrame(() => {
+          bars.forEach(bar => {
+            bar.style.width = bar.dataset.target + '%';
+          });
         });
       });
-    });
+    }
 
     setTimeout(() => this._drawCharts(), 100);
   },
