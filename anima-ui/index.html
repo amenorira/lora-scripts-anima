@@ -29,12 +29,8 @@
   <!-- ── Sidebar ──────────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <div class="logo-icon">
-        <img src="/assets/favicon.ico" alt="logo" width="24" height="24">
-      </div>
       <div class="brand-clickable" @click="navigate('home')" title="Home">
         <div class="brand-text">lora-scripts-anima</div>
-        <div class="brand-version" x-text="version"></div>
       </div>
     </div>
 
@@ -172,7 +168,6 @@
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
         <div style="text-align:center;padding:80px 20px 40px">
-          <img src="/favicon.ico" alt="logo" width="72" height="72" style="border-radius:16px;margin-bottom:20px">
           <h1 style="font-size:22px;font-weight:700;color:var(--text-primary);letter-spacing:-0.3px">lora-scripts-anima</h1>
           <p style="color:var(--text-secondary);margin-top:8px;font-size:13px" x-text="version ? 'v' + version : ''"></p>
           <p style="color:var(--text-tertiary);margin-top:20px;font-size:12px;line-height:1.7">

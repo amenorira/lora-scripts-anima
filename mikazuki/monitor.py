@@ -91,14 +91,25 @@ def _system_info() -> dict:
         import psutil
         cpu = psutil.cpu_percent(interval=0.1)
         mem = psutil.virtual_memory()
+        cpu_name = _get_cpu_name()
         return {
+            "cpu_name": cpu_name,
             "cpu_pct": cpu,
             "ram_used_gb": round(mem.used / (1024**3), 1),
             "ram_total_gb": round(mem.total / (1024**3), 1),
             "ram_pct": mem.percent,
         }
     except Exception:
-        return {"cpu_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "ram_pct": 0}
+        return {"cpu_name": "", "cpu_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "ram_pct": 0}
+
+
+def _get_cpu_name() -> str:
+    """获取 CPU 型号名称"""
+    try:
+        import platform
+        return platform.processor() or ""
+    except Exception:
+        return ""
 
 
 # ── TensorBoard Event 读取 ─────────────────────────────────

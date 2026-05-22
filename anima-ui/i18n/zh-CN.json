@@ -44,7 +44,13 @@
     "error": "训练异常",
     "logAutoScroll": "自动滚动",
     "logCopy": "复制",
-    "logClear": "清空"
+    "logClear": "清空",
+    "historyNoRecords": "暂无训练历史",
+    "historyWillAppear": "启动训练后记录将在此显示",
+    "historyModel": "模型",
+    "historyLR": "学习率",
+    "historyDim": "维度",
+    "historyEpochs": "Epochs"
   },
   "section": {
     "model": "训练用模型",

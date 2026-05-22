@@ -44,7 +44,13 @@
     "error": "Training Error",
     "logAutoScroll": "Auto-scroll",
     "logCopy": "Copy",
-    "logClear": "Clear"
+    "logClear": "Clear",
+    "historyNoRecords": "No training history",
+    "historyWillAppear": "Records will appear after training",
+    "historyModel": "Model",
+    "historyLR": "LR",
+    "historyDim": "Dim",
+    "historyEpochs": "Epochs"
   },
   "section": {
     "model": "Training Model",

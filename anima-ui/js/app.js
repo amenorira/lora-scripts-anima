@@ -790,6 +790,7 @@ document.addEventListener('alpine:init', () => {
       const ramColor = sys.ram_pct > 80 ? 'var(--danger)' : sys.ram_pct > 50 ? 'var(--warning)' : 'var(--success)';
       let html = `<div class="card flex-1" style="margin-left:12px">
         <div class="card-header">${t('system', 'System')}</div>`;
+      if (sys.cpu_name) html += `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${sys.cpu_name}</div>`;
       html += `<div style="font-size:12px;margin:4px 0">${t('cpu', 'CPU')}: <b style="color:${cpuColor}">${sys.cpu_pct}%</b></div>`;
       html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.cpu_pct}%;height:100%;background:${cpuColor};border-radius:4px;transition:width 0.5s"></div></div>`;
       html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', 'RAM')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB</b> / ${sys.ram_total_gb} GB</div>`;
@@ -904,8 +905,9 @@ document.addEventListener('alpine:init', () => {
     renderHistory() {
       const el = document.getElementById('historyList');
       if (!el) return;
+      const t = (k, fb) => this.t('monitor.' + k) || fb || k;
       if (!this.historyItems.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('noTrainingHint','No training history')+'</p><p style="font-size:12px">'+t('noTrainingHint','Records will appear after training')+'</p></div>';
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>'+t('historyNoRecords','No training history')+'</p><p style="font-size:12px">'+t('historyWillAppear','Records will appear after training')+'</p></div>';
         return;
       }
       let html = '<div class="history-grid">';
@@ -913,8 +915,8 @@ document.addEventListener('alpine:init', () => {
         html += `<div class="card history-card">
           <div class="card-header">${h.time}</div>
           <div><b>${h.name}</b></div>
-          <div style="font-size:12px;color:var(--text-secondary)">Model: ${h.model}</div>
-          <div style="font-size:12px;color:var(--text-secondary)">LR: ${h.lr} · Dim: ${h.dim} · Epochs: ${h.epochs}</div>
+          <div style="font-size:12px;color:var(--text-secondary)">${t('historyModel','Model')}: ${h.model}</div>
+          <div style="font-size:12px;color:var(--text-secondary)">${t('historyLR','LR')}: ${h.lr} · ${t('historyDim','Dim')}: ${h.dim} · ${t('historyEpochs','Epochs')}: ${h.epochs}</div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${h.config_file}</div>
         </div>`;
       });
