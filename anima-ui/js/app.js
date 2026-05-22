@@ -961,10 +961,12 @@ document.addEventListener('alpine:init', () => {
 
     async faRefresh() {
       this.faError = null;
+      this.toast(this.t('environment.refreshing') || 'Refreshing...');
       try {
         const src = this.faSource && this.faSource !== 'default' ? '?source=' + this.faSource : '';
         const r = await fetch('/api/flash-attention/status' + src);
         this.faStatus = await r.json();
+        this.toast(this.t('environment.refreshed') || 'Refreshed');
       } catch (e) {
         this.faError = String(e);
         this.faStatus = null;

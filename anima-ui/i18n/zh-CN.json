@@ -310,6 +310,8 @@
     "forceInstall": "强制安装",
     "installUrl": "URL 安装",
     "restartHint": "Flash Attention 是 C 扩展，安装后需重启 GUI 才能生效。",
+    "refreshing": "刷新中...",
+    "refreshed": "已刷新",
     "manualUrl": "手动 URL",
     "sourceDefault": "官方",
     "sourceMirror": "镜像",

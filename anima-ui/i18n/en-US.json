@@ -310,6 +310,8 @@
     "forceInstall": "Force",
     "installUrl": "URL Install",
     "restartHint": "Flash Attention is a C extension. After install, restart the GUI for changes to take effect.",
+    "refreshing": "Refreshing...",
+    "refreshed": "Refreshed",
     "manualUrl": "Manual URL",
     "sourceDefault": "Official",
     "sourceMirror": "Mirror",
