@@ -148,7 +148,7 @@ async def create_toml_file(request: Request):
     gpu_ids = config.pop("gpu_ids", None)
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
-    model_train_type = config.pop("model_train_type", "sd-lora")
+    model_train_type = config.get("model_train_type", "sd-lora")
     trainer_file = trainer_mapping[model_train_type]
 
     if model_train_type != "sdxl-finetune":

@@ -608,8 +608,15 @@ document.addEventListener('alpine:init', () => {
       }));
 
       const lines = [];
+
+      // Emit model_train_type first so it always appears at the top
+      if (validKeys.has('model_train_type') && this.form.model_train_type) {
+        lines.push(`model_train_type = "${this.form.model_train_type}"`);
+      }
+
       for (const [k, v] of Object.entries(this.form)) {
         if (!validKeys.has(k)) continue;           // skip keys not in current form or hidden by showIf
+        if (k === 'model_train_type') continue;     // already emitted at top
         if (k.startsWith('_')) continue;
         if (k === 'sample_prompts' || k === 'optimizer_args_custom') continue;  // processed separately
         if (v === '' || v === null || v === undefined) continue;
