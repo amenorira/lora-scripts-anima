@@ -425,6 +425,7 @@ document.addEventListener('alpine:init', () => {
     i18nReady: true,
     showThemeDropdown: false,
     showLangDropdown: false,
+    showMainScroll: false,
 
     // Form state
     form: {},
@@ -566,6 +567,13 @@ document.addEventListener('alpine:init', () => {
     themeLabel() {
       if (this.resolvedTheme === 'dark') return this.t('common.themeLight');
       return this.t('common.themeDark');
+    },
+
+    // ── Main content scroll (shows custom scrollbar on scroll) ──
+    onContentScroll() {
+      this.showMainScroll = true;
+      clearTimeout(this._scrollTimer);
+      this._scrollTimer = setTimeout(() => { this.showMainScroll = false; }, 1000);
     },
 
     // ── Routing ─────────────────────────────────────────────
