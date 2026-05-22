@@ -418,6 +418,10 @@ async def get_saved_params() -> APIResponse:
 #  Flash Attention 环境管理 API
 # ═══════════════════════════════════════════════════════════
 
+_fa_cache = {"candidates": None, "fetch_error": None, "ts": 0}
+_FA_CACHE_TTL = 300  # 5 分钟，避免频繁请求 GitHub API 触发限流
+
+
 def _import_flash_attn_tool():
     """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。"""
     import importlib.util
@@ -436,18 +440,24 @@ def _import_flash_attn_tool():
 @router.get("/flash-attention/status")
 async def flash_attn_status() -> dict:
     """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。"""
+    import time
     detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
     try:
         status = current_status()
         env = detect_env()
-        candidates, fetch_error = fetch_candidates(env)
-        # 精简候选列表：只保留 UI 需要的字段
-        slim = [
-            {"url": c["url"], "name": c["name"], "notes": c["notes"], "usable": c["usable"]}
-            for c in candidates[:20]
-        ]
+        # 缓存候选列表，避免频繁请求 GitHub API（未认证限 60 次/小时）
+        now = time.time()
+        if _fa_cache["candidates"] is None or (now - _fa_cache["ts"]) > _FA_CACHE_TTL:
+            candidates, fetch_error = fetch_candidates(env)
+            slim = [
+                {"url": c["url"], "name": c["name"], "notes": c["notes"], "usable": c["usable"]}
+                for c in candidates[:20]
+            ]
+            _fa_cache["candidates"] = slim
+            _fa_cache["fetch_error"] = fetch_error
+            _fa_cache["ts"] = now
         return {"installed": status["installed"], "version": status["version"],
-                "env": env, "candidates": slim, "fetch_error": fetch_error}
+                "env": env, "candidates": _fa_cache["candidates"], "fetch_error": _fa_cache["fetch_error"]}
     except Exception as e:
         log.error(f"flash_attn status error: {e}")
         return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(e)}
