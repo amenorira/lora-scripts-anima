@@ -224,7 +224,6 @@
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
-          <p class="page-subtitle">GPU &middot; Loss &middot; LR &middot; Preview</p>
         </div>
         <div id="monitorDashboard"></div>
       </div>
@@ -232,10 +231,7 @@
       <!-- Route: Monitor Logs -->
       <div x-show="currentRoute === 'monitor-logs'" x-cloak>
         <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <div>
-            <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
-            <p class="page-subtitle">Real-time logs &middot; Auto-scroll &middot; Error highlight</p>
-          </div>
+          <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
           <div style="display:flex;gap:8px">
             <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
               <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
@@ -251,7 +247,6 @@
       <div x-show="currentRoute === 'history'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
-          <p class="page-subtitle">Training history &middot; Click for details</p>
         </div>
         <div id="historyList" class="history-list"></div>
       </div>

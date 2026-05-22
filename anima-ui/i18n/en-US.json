@@ -26,6 +26,7 @@
     "training": "Training",
     "finished": "Finished",
     "terminated": "Terminated",
+    "created": "Pending",
     "gpu": "GPU Monitor",
     "system": "System Resources",
     "cpu": "CPU",

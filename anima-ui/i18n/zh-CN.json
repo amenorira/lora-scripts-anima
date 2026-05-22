@@ -26,6 +26,7 @@
     "training": "训练中",
     "finished": "已完成",
     "terminated": "已终止",
+    "created": "等待启动",
     "gpu": "GPU 监控",
     "system": "系统资源",
     "cpu": "CPU",

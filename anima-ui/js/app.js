@@ -763,8 +763,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     _statusCard(d, t) {
-      const state = d.state_label || d.state || 'IDLE';
-      const isTraining = d.state === 'RUNNING';
+      const stateCode = d.state || 'IDLE';
+      const stateLabels = { 'RUNNING': t('training','Training'), 'FINISHED': t('finished','Finished'), 'TERMINATED': t('terminated','Terminated'), 'CREATED': t('created','Pending'), 'IDLE': t('idle','Idle') };
+      const state = stateLabels[stateCode] || stateCode;
+      const isTraining = stateCode === 'RUNNING';
       const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
       let html = `<div class="card flex-1">
         <div class="card-header">${t('status', 'Training Status')}</div>
