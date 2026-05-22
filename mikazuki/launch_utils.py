@@ -11,7 +11,7 @@ from typing import List
 from pathlib import Path
 from typing import Optional
 
-import pkg_resources
+from importlib import metadata as importlib_metadata
 
 from mikazuki.log import log
 
@@ -151,14 +151,16 @@ def is_installed(package, friendly: str = None):
             else:
                 pkg_name, pkg_version = pkg.strip(), None
 
-            spec = pkg_resources.working_set.by_key.get(pkg_name, None)
-            if spec is None:
-                spec = pkg_resources.working_set.by_key.get(pkg_name.lower(), None)
-            if spec is None:
-                spec = pkg_resources.working_set.by_key.get(pkg_name.replace('_', '-'), None)
+            spec = None
+            for try_name in (pkg_name, pkg_name.lower(), pkg_name.replace('_', '-')):
+                try:
+                    spec = importlib_metadata.distribution(try_name)
+                    break
+                except importlib_metadata.PackageNotFoundError:
+                    continue
 
             if spec is not None:
-                version = pkg_resources.get_distribution(pkg_name).version
+                version = spec.metadata["Version"]
                 # log.debug(f'Package version found: {pkg_name} {version}')
 
                 if pkg_version is not None:
