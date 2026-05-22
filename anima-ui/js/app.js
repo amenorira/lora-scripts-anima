@@ -70,17 +70,25 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'lr_scheduler_num_cycles', type: 'number', default: 1, min: 1, descKey: 'field.lr_scheduler_num_cycles', showIf: { key: 'lr_scheduler', eq: 'cosine_with_restarts' } },
       { key: 'lr_warmup_steps', type: 'number', default: 0, min: 0, descKey: 'field.lr_warmup_steps' },
       { key: 'optimizer_type', type: 'select', default: 'AdamW8bit', options: [
-        { v: 'AdamW8bit', l: 'AdamW8bit' }, { v: 'AdamW', l: 'AdamW' },
+        { v: 'AdamW', l: 'AdamW' }, { v: 'AdamW8bit', l: 'AdamW8bit' },
+        { v: 'PagedAdamW8bit', l: 'PagedAdamW8bit' },
         { v: 'Lion', l: 'Lion' }, { v: 'Lion8bit', l: 'Lion8bit' },
-        { v: 'Prodigy', l: 'Prodigy' }, { v: 'AdaFactor', l: 'AdaFactor' },
-        { v: 'DAdaptation', l: 'DAdaptation' }, { v: 'DAdaptAdam', l: 'DAdaptAdam' },
-        { v: 'DAdaptLion', l: 'DAdaptLion' }, { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree' },
+        { v: 'PagedLion8bit', l: 'PagedLion8bit' },
         { v: 'SGDNesterov', l: 'SGDNesterov' }, { v: 'SGDNesterov8bit', l: 'SGDNesterov8bit' },
+        { v: 'Prodigy', l: 'Prodigy' }, { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlus' },
+        { v: 'AdaFactor', l: 'AdaFactor' },
+        { v: 'DAdaptation', l: 'DAdaptation' }, { v: 'DAdaptAdam', l: 'DAdaptAdam' },
+        { v: 'DAdaptAdaGrad', l: 'DAdaptAdaGrad' }, { v: 'DAdaptAdanIP', l: 'DAdaptAdanIP' },
+        { v: 'DAdaptLion', l: 'DAdaptLion' }, { v: 'DAdaptSGD', l: 'DAdaptSGD' },
+        { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree' },
+        { v: 'pytorch_optimizer.CAME', l: 'CAME' },
       ], descKey: 'field.optimizer_type' },
       { key: 'loss_type', type: 'select', default: '', options: [{ v: '', l: 'Default' }, { v: 'l1', l: 'l1' }, { v: 'l2', l: 'l2' }, { v: 'huber', l: 'huber' }, { v: 'smooth_l1', l: 'smooth_l1' }], descKey: 'field.loss_type' },
       { key: 'min_snr_gamma', type: 'number', default: null, step: 0.1, descKey: 'field.min_snr_gamma' },
       { key: 'weight_decay', type: 'number', default: null, step: 0.001, descKey: 'field.weight_decay' },
       { key: 'prodigy_d_coef', type: 'text', default: '2.0', descKey: 'field.prodigy_d_coef', showIf: { key: 'optimizer_type', eq: 'Prodigy' } },
+      { key: 'prodigy_d0', type: 'text', default: '', descKey: 'field.prodigy_d0', showIf: { key: 'optimizer_type', eq: 'Prodigy' } },
+      { key: 'optimizer_args_custom', type: 'textarea', default: '', descKey: 'field.optimizer_args_custom', hintKey: 'field.optimizer_args_customHint' },
     ]
   },
   {
@@ -665,6 +673,14 @@ document.addEventListener('alpine:init', () => {
           payload[k] = Number(v);
         }
       }
+
+      // Convert optimizer_args_custom (textarea, one per line) → optimizer_args (array)
+      if (payload.optimizer_args_custom && typeof payload.optimizer_args_custom === 'string') {
+        const lines = payload.optimizer_args_custom.split('\n').map(s => s.trim()).filter(s => s);
+        if (lines.length > 0) payload.optimizer_args = lines;
+        delete payload.optimizer_args_custom;
+      }
+
       try {
         const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         const data = await resp.json();
