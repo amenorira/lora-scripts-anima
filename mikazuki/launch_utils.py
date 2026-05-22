@@ -317,7 +317,6 @@ def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: b
     #     sys.exit(1)
 
     validate_requirements("requirements.txt")
-    validate_requirements("sd-scripts/requirements.txt")
     setup_windows_bitsandbytes()
 
     if prepare_onnxruntime:
