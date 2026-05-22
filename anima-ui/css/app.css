@@ -535,56 +535,89 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 .status-indicator.running { background: var(--danger); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
-/* ── Page Progress Bar (GitHub-style indeterminate) ──────── */
+/* ── Page Progress Bar (determinate 0→100%) ─────────────── */
 .page-progress {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  height: 3px;
+  height: 2px;
   z-index: 10000;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.25s ease;
+  background: transparent;
 }
-.page-progress.active {
+.page-progress.active,
+.page-progress.done {
   opacity: 1;
 }
-.page-progress::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
+
+.page-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
-  transform-origin: left center;
-}
-/* Indeterminate: sliding shimmer */
-.page-progress.active:not(.done)::before {
-  width: 50%;
-  animation: progress-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-/* Finishing: snap to 100% then fade */
-.page-progress.done::before {
-  width: 100%;
-  animation: progress-done 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+  width: 0%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
 }
 
-@keyframes progress-slide {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
+/* During active loading: smooth width transitions */
+.page-progress.active .page-progress-fill {
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes progress-done {
-  0%   { opacity: 1; transform: scaleX(0.3); }
-  40%  { opacity: 1; transform: scaleX(1); }
-  100% { opacity: 0; transform: scaleX(1); }
+/* Done: snap to 100% instantly, then fade the whole bar */
+.page-progress.done .page-progress-fill {
+  width: 100% !important;
+  transition: width 0.15s ease-out;
+}
+.page-progress.done {
+  animation: progress-fade-out 0.5s 0.4s ease-out forwards;
 }
 
-/* Dark theme: use a slightly brighter progress bar */
-[data-theme="dark"] .page-progress::before {
-  background: linear-gradient(90deg, transparent 0%, #8b8b90 50%, transparent 100%);
+@keyframes progress-fade-out {
+  to { opacity: 0; }
 }
+
+/* Dark theme: slightly softer glow */
+[data-theme="dark"] .page-progress-fill {
+  background: linear-gradient(90deg, #818cf8, #a78bfa, #c4b5fd);
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Animated Monitor Bars — spring-eased, smooth color transitions
+   ═══════════════════════════════════════════════════════════ */
+.monitor-bar-track {
+  margin-top: 4px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+.monitor-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  transition: width 0.9s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background 0.7s var(--ease-out);
+}
+/* Color grades via CSS custom property — set inline by JS */
+.monitor-bar-fill.low    { background: var(--success); }
+.monitor-bar-fill.mid    { background: var(--warning); }
+.monitor-bar-fill.high   { background: var(--danger); }
+
+/* Text labels: smooth color transitions */
+.monitor-stat {
+  font-size: 12px;
+  margin: 4px 0;
+}
+.monitor-stat b {
+  transition: color 0.7s var(--ease-out);
+}
+.monitor-stat b.low  { color: var(--success); }
+.monitor-stat b.mid  { color: var(--warning); }
+.monitor-stat b.high { color: var(--danger); }
 
 /* ── Toast (top, spring bounce, capsule) ─────────────────── */
 .toast-container {

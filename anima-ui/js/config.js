@@ -1,0 +1,256 @@
+/* ================================================================
+   config.js — Training form field definitions & route table
+   Pure data, zero dependencies
+   ================================================================ */
+
+// ── Training Form Field Definitions ────────────────────────
+window.TRAIN_SECTIONS_COMMON = [
+  {
+    key: 'model', titleKey: 'section.model',
+    fields: [
+      { key: 'pretrained_model_name_or_path', type: 'text', default: './sd-models/model.safetensors', role: 'file-model', descKey: 'field.pretrained_model_name_or_path' },
+      { key: 'vae', type: 'text', default: '', role: 'file-model', descKey: 'field.vae' },
+      { key: 'resume', type: 'text', default: '', role: 'file-folder', descKey: 'field.resume' },
+      { key: 'model_train_type', type: 'select', default: 'sd-lora', options: [
+        { v: 'sd-lora', l: 'SD LoRA', dKey: 'opt.model_train_type_sd-lora' },
+        { v: 'sdxl-lora', l: 'SDXL LoRA', dKey: 'opt.model_train_type_sdxl-lora' },
+        { v: 'anima-lora', l: 'Anima LoRA', dKey: 'opt.model_train_type_anima-lora' }
+      ], descKey: 'field.model_train_type' },
+    ]
+  },
+  {
+    key: 'dataset', titleKey: 'section.dataset',
+    fields: [
+      { key: 'train_data_dir', type: 'text', default: './train/aki', role: 'file-folder', descKey: 'field.train_data_dir' },
+      { key: 'reg_data_dir', type: 'text', default: '', role: 'file-folder', descKey: 'field.reg_data_dir' },
+      { key: 'resolution', type: 'text', default: '1024,1024', descKey: 'field.resolution', hintKey: 'field.resolutionHint' },
+      { key: 'prior_loss_weight', type: 'number', default: 1.0, step: 0.1, descKey: 'field.prior_loss_weight' },
+      { key: 'enable_bucket', type: 'toggle', default: true, descKey: 'field.enable_bucket' },
+      { key: 'bucket_no_upscale', type: 'toggle', default: true, descKey: 'field.bucket_no_upscale', showIf: { key: 'enable_bucket', eq: true } },
+      { key: 'min_bucket_reso', type: 'number', default: 256, min: 64, step: 64, descKey: 'field.min_bucket_reso', showIf: { key: 'enable_bucket', eq: true } },
+      { key: 'max_bucket_reso', type: 'number', default: 2048, min: 256, step: 64, descKey: 'field.max_bucket_reso', showIf: { key: 'enable_bucket', eq: true } },
+      { key: 'bucket_reso_steps', type: 'number', default: 64, min: 16, step: 16, descKey: 'field.bucket_reso_steps', showIf: { key: 'enable_bucket', eq: true } },
+    ]
+  },
+  {
+    key: 'save', titleKey: 'section.save',
+    fields: [
+      { key: 'output_name', type: 'text', default: 'my_lora', descKey: 'field.output_name' },
+      { key: 'output_dir', type: 'text', default: './output', role: 'file-folder', descKey: 'field.output_dir' },
+      { key: 'save_model_as', type: 'select', default: 'safetensors', options: [
+        { v: 'safetensors', l: 'safetensors', dKey: 'opt.save_model_as_safetensors' },
+        { v: 'pt', l: 'pt', dKey: 'opt.save_model_as_pt' },
+        { v: 'ckpt', l: 'ckpt', dKey: 'opt.save_model_as_ckpt' }
+      ], descKey: 'field.save_model_as' },
+      { key: 'save_precision', type: 'select', default: 'fp16', options: [
+        { v: 'fp16', l: 'fp16', dKey: 'opt.save_precision_fp16' },
+        { v: 'bf16', l: 'bf16', dKey: 'opt.save_precision_bf16' },
+        { v: 'float', l: 'float', dKey: 'opt.save_precision_float' }
+      ], descKey: 'field.save_precision' },
+      { key: 'save_every_n_epochs', type: 'number', default: 2, min: 1, descKey: 'field.save_every_n_epochs' },
+      { key: 'save_state', type: 'toggle', default: false, descKey: 'field.save_state' },
+      { key: 'save_last_n_epochs_state', type: 'number', default: null, min: 1, descKey: 'field.save_last_n_epochs_state', showIf: { key: 'save_state', eq: true } },
+    ]
+  },
+  {
+    key: 'trainParams', titleKey: 'section.trainParams',
+    fields: [
+      { key: 'max_train_epochs', type: 'number', default: 10, min: 1, descKey: 'field.max_train_epochs' },
+      { key: 'max_train_steps', type: 'number', default: null, min: 1, descKey: 'field.max_train_steps' },
+      { key: 'train_batch_size', type: 'number', default: 1, min: 1, descKey: 'field.train_batch_size' },
+      { key: 'gradient_accumulation_steps', type: 'number', default: 1, min: 1, descKey: 'field.gradient_accumulation_steps' },
+      { key: 'gradient_checkpointing', type: 'toggle', default: false, descKey: 'field.gradient_checkpointing' },
+      { key: 'network_train_unet_only', type: 'toggle', default: true, descKey: 'field.network_train_unet_only' },
+      { key: 'network_train_text_encoder_only', type: 'toggle', default: false, descKey: 'field.network_train_text_encoder_only' },
+    ]
+  },
+  {
+    key: 'lrOptimizer', titleKey: 'section.lrOptimizer',
+    fields: [
+      { key: 'learning_rate', type: 'text', default: '1e-4', descKey: 'field.learning_rate' },
+      { key: 'unet_lr', type: 'text', default: '1e-4', descKey: 'field.unet_lr' },
+      { key: 'text_encoder_lr', type: 'text', default: '1e-5', descKey: 'field.text_encoder_lr' },
+      { key: 'lr_scheduler', type: 'select', default: 'cosine_with_restarts', options: [
+        { v: 'cosine_with_restarts', l: 'cosine_with_restarts', dKey: 'opt.lr_scheduler_cosine_with_restarts' },
+        { v: 'cosine', l: 'cosine', dKey: 'opt.lr_scheduler_cosine' },
+        { v: 'linear', l: 'linear', dKey: 'opt.lr_scheduler_linear' },
+        { v: 'polynomial', l: 'polynomial', dKey: 'opt.lr_scheduler_polynomial' },
+        { v: 'constant', l: 'constant', dKey: 'opt.lr_scheduler_constant' },
+        { v: 'constant_with_warmup', l: 'constant_with_warmup', dKey: 'opt.lr_scheduler_constant_with_warmup' }
+      ], descKey: 'field.lr_scheduler' },
+      { key: 'lr_scheduler_num_cycles', type: 'number', default: 1, min: 1, descKey: 'field.lr_scheduler_num_cycles', showIf: { key: 'lr_scheduler', eq: 'cosine_with_restarts' } },
+      { key: 'lr_warmup_steps', type: 'number', default: 0, min: 0, descKey: 'field.lr_warmup_steps' },
+      { key: 'optimizer_type', type: 'select', default: 'AdamW8bit', groups: [
+        { labelKey: 'opt.group_adamw', options: [
+          { v: 'AdamW', l: 'AdamW', dKey: 'opt.optimizer_type_AdamW' },
+          { v: 'AdamW8bit', l: 'AdamW8bit', dKey: 'opt.optimizer_type_AdamW8bit' },
+          { v: 'PagedAdamW8bit', l: 'PagedAdamW8bit', dKey: 'opt.optimizer_type_PagedAdamW8bit' },
+        ]},
+        { labelKey: 'opt.group_lion', options: [
+          { v: 'Lion', l: 'Lion', dKey: 'opt.optimizer_type_Lion' },
+          { v: 'Lion8bit', l: 'Lion8bit', dKey: 'opt.optimizer_type_Lion8bit' },
+          { v: 'PagedLion8bit', l: 'PagedLion8bit', dKey: 'opt.optimizer_type_PagedLion8bit' },
+        ]},
+        { labelKey: 'opt.group_sgd', options: [
+          { v: 'SGDNesterov', l: 'SGDNesterov', dKey: 'opt.optimizer_type_SGDNesterov' },
+          { v: 'SGDNesterov8bit', l: 'SGDNesterov8bit', dKey: 'opt.optimizer_type_SGDNesterov8bit' },
+        ]},
+        { labelKey: 'opt.group_adaptive', options: [
+          { v: 'Prodigy', l: 'Prodigy', dKey: 'opt.optimizer_type_Prodigy' },
+          { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlusScheduleFree', dKey: 'opt.optimizer_type_ProdigyPlus' },
+          { v: 'AdaFactor', l: 'AdaFactor', dKey: 'opt.optimizer_type_AdaFactor' },
+          { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree', dKey: 'opt.optimizer_type_RAdamScheduleFree' },
+        ]},
+        { labelKey: 'opt.group_other', options: [
+          { v: 'pytorch_optimizer.CAME', l: 'CAME', dKey: 'opt.optimizer_type_CAME' },
+        ]},
+      ], descKey: 'field.optimizer_type' },
+      { key: 'loss_type', type: 'select', default: '', options: [
+        { v: '', l: 'Default', dKey: 'opt.loss_type_default' },
+        { v: 'l1', l: 'l1', dKey: 'opt.loss_type_l1' },
+        { v: 'l2', l: 'l2', dKey: 'opt.loss_type_l2' },
+        { v: 'huber', l: 'huber', dKey: 'opt.loss_type_huber' },
+        { v: 'smooth_l1', l: 'smooth_l1', dKey: 'opt.loss_type_smooth_l1' }
+      ], descKey: 'field.loss_type' },
+      { key: 'min_snr_gamma', type: 'number', default: null, step: 0.1, descKey: 'field.min_snr_gamma' },
+      { key: 'weight_decay', type: 'number', default: null, step: 0.001, descKey: 'field.weight_decay' },
+      { key: 'prodigy_d_coef', type: 'text', default: '2.0', descKey: 'field.prodigy_d_coef', showIf: { key: 'optimizer_type', eq: 'Prodigy' } },
+      { key: 'prodigy_d0', type: 'text', default: '', descKey: 'field.prodigy_d0', showIf: { key: 'optimizer_type', eq: 'Prodigy' } },
+      { key: 'optimizer_args_custom', type: 'textarea', default: '', descKey: 'field.optimizer_args_custom', hintKey: 'field.optimizer_args_customHint' },
+    ]
+  },
+  {
+    key: 'network', titleKey: 'section.network',
+    fields: [
+      { key: 'network_module', type: 'select', default: 'networks.lora', options: [
+        { v: 'networks.lora', l: 'networks.lora', dKey: 'opt.network_module_networks.lora' },
+        { v: 'networks.lora_anima', l: 'networks.lora_anima', dKey: 'opt.network_module_networks.lora_anima' },
+        { v: 'lycoris.kohya', l: 'lycoris.kohya', dKey: 'opt.network_module_lycoris.kohya' }
+      ], descKey: 'field.network_module' },
+      { key: 'network_dim', type: 'number', default: 32, min: 1, max: 256, step: 8, descKey: 'field.network_dim' },
+      { key: 'network_alpha', type: 'number', default: 32, min: 1, descKey: 'field.network_alpha' },
+      { key: 'network_weights', type: 'text', default: '', role: 'file-model-saved', descKey: 'field.network_weights' },
+      { key: 'network_dropout', type: 'number', default: 0, min: 0, max: 0.5, step: 0.01, descKey: 'field.network_dropout' },
+      { key: 'scale_weight_norms', type: 'number', default: null, min: 0, step: 0.01, descKey: 'field.scale_weight_norms' },
+      { key: 'enable_base_weight', type: 'toggle', default: false, descKey: 'field.enable_base_weight' },
+      { key: 'base_weights', type: 'textarea', default: '', descKey: 'field.base_weights', showIf: { key: 'enable_base_weight', eq: true } },
+      { key: 'base_weights_multiplier', type: 'textarea', default: '', descKey: 'field.base_weights_multiplier', showIf: { key: 'enable_base_weight', eq: true } },
+      { key: 'enable_block_weights', type: 'toggle', default: false, descKey: 'field.enable_block_weights' },
+      { key: 'down_lr_weight', type: 'text', default: '1,1,1,1,1,1,1,1,1,1,1,1', descKey: 'field.down_lr_weight', showIf: { key: 'enable_block_weights', eq: true } },
+      { key: 'mid_lr_weight', type: 'text', default: '1', descKey: 'field.mid_lr_weight', showIf: { key: 'enable_block_weights', eq: true } },
+      { key: 'up_lr_weight', type: 'text', default: '1,1,1,1,1,1,1,1,1,1,1,1', descKey: 'field.up_lr_weight', showIf: { key: 'enable_block_weights', eq: true } },
+      { key: 'block_lr_zero_threshold', type: 'number', default: 0, step: 0.01, descKey: 'field.block_lr_zero_threshold', showIf: { key: 'enable_block_weights', eq: true } },
+    ]
+  },
+  {
+    key: 'caption', titleKey: 'section.caption',
+    fields: [
+      { key: 'caption_extension', type: 'text', default: '.txt', descKey: 'field.caption_extension' },
+      { key: 'max_token_length', type: 'number', default: 255, min: 1, descKey: 'field.max_token_length' },
+      { key: 'keep_tokens', type: 'number', default: 0, min: 0, max: 255, descKey: 'field.keep_tokens' },
+      { key: 'shuffle_caption', type: 'toggle', default: true, descKey: 'field.shuffle_caption' },
+      { key: 'weighted_captions', type: 'toggle', default: false, descKey: 'field.weighted_captions' },
+      { key: 'caption_dropout_rate', type: 'number', default: null, min: 0, step: 0.01, descKey: 'field.caption_dropout_rate' },
+      { key: 'caption_dropout_every_n_epochs', type: 'number', default: null, min: 0, max: 100, descKey: 'field.caption_dropout_every_n_epochs' },
+      { key: 'caption_tag_dropout_rate', type: 'number', default: null, min: 0, step: 0.01, descKey: 'field.caption_tag_dropout_rate' },
+    ]
+  },
+  {
+    key: 'preview', titleKey: 'section.preview',
+    fields: [
+      { key: 'enable_preview', type: 'toggle', default: false, descKey: 'field.enable_preview' },
+      { key: 'sample_prompts', type: 'textarea', default: '', descKey: 'field.sample_prompts', hintKey: 'field.sample_promptsHint', showIf: { key: 'enable_preview', eq: true } },
+      { key: 'sample_sampler', type: 'select', default: 'euler_a', options: [
+        { v: 'ddim', l: 'ddim', dKey: 'opt.sample_sampler_ddim' },
+        { v: 'euler', l: 'euler', dKey: 'opt.sample_sampler_euler' },
+        { v: 'euler_a', l: 'euler_a', dKey: 'opt.sample_sampler_euler_a' },
+        { v: 'heun', l: 'heun', dKey: 'opt.sample_sampler_heun' },
+        { v: 'dpmsolver', l: 'dpmsolver', dKey: 'opt.sample_sampler_dpmsolver' },
+        { v: 'dpmsolver++', l: 'dpmsolver++', dKey: 'opt.sample_sampler_dpmsolver++' },
+      ], descKey: 'field.sample_sampler', showIf: { key: 'enable_preview', eq: true } },
+      { key: 'sample_every_n_epochs', type: 'number', default: 2, min: 1, descKey: 'field.sample_every_n_epochs', showIf: { key: 'enable_preview', eq: true } },
+      { key: 'sample_cfg', type: 'number', default: 7, min: 1, max: 30, descKey: 'field.sample_cfg', showIf: { key: 'enable_preview', eq: true } },
+    ]
+  },
+  {
+    key: 'speed', titleKey: 'section.speed',
+    fields: [
+      { key: 'mixed_precision', type: 'select', default: 'bf16', options: [
+        { v: 'bf16', l: 'bf16', dKey: 'opt.mixed_precision_bf16' },
+        { v: 'fp16', l: 'fp16', dKey: 'opt.mixed_precision_fp16' },
+        { v: 'no', l: 'no', dKey: 'opt.mixed_precision_no' }
+      ], descKey: 'field.mixed_precision' },
+      { key: 'xformers', type: 'toggle', default: true, descKey: 'field.xformers' },
+      { key: 'sdpa', type: 'toggle', default: false, descKey: 'field.sdpa' },
+      { key: 'cache_latents', type: 'toggle', default: true, descKey: 'field.cache_latents' },
+      { key: 'cache_latents_to_disk', type: 'toggle', default: true, descKey: 'field.cache_latents_to_disk' },
+      { key: 'cache_text_encoder_outputs', type: 'toggle', default: false, descKey: 'field.cache_text_encoder_outputs' },
+      { key: 'cache_text_encoder_outputs_to_disk', type: 'toggle', default: false, descKey: 'field.cache_text_encoder_outputs_to_disk' },
+      { key: 'no_half_vae', type: 'toggle', default: false, descKey: 'field.no_half_vae' },
+      { key: 'lowram', type: 'toggle', default: false, descKey: 'field.lowram' },
+      { key: 'full_fp16', type: 'toggle', default: false, descKey: 'field.full_fp16' },
+      { key: 'full_bf16', type: 'toggle', default: false, descKey: 'field.full_bf16' },
+      { key: 'persistent_data_loader_workers', type: 'toggle', default: true, descKey: 'field.persistent_data_loader_workers' },
+      { key: 'vae_batch_size', type: 'number', default: null, min: 1, descKey: 'field.vae_batch_size' },
+    ]
+  },
+  {
+    key: 'other', titleKey: 'section.other',
+    fields: [
+      { key: 'seed', type: 'number', default: 1337, descKey: 'field.seed' },
+      { key: 'clip_skip', type: 'stepper', default: 2, min: 0, max: 12, step: 1, descKey: 'field.clip_skip' },
+      { key: 'ui_custom_params', type: 'textarea', default: '', descKey: 'field.ui_custom_params' },
+    ]
+  },
+];
+
+window.TRAIN_SECTIONS_ANIMA = [
+  {
+    key: 'animaParams', titleKey: 'section.animaParams',
+    fields: [
+      { key: 'qwen3', type: 'text', default: '', role: 'file-model', descKey: 'field.qwen3' },
+      { key: 'timestep_sampling', type: 'select', default: 'sigmoid', options: [
+        { v: 'sigma', l: 'sigma', dKey: 'opt.timestep_sampling_sigma' },
+        { v: 'uniform', l: 'uniform', dKey: 'opt.timestep_sampling_uniform' },
+        { v: 'sigmoid', l: 'sigmoid', dKey: 'opt.timestep_sampling_sigmoid' },
+        { v: 'shift', l: 'shift', dKey: 'opt.timestep_sampling_shift' }
+      ], descKey: 'field.timestep_sampling' },
+      { key: 'sigmoid_scale', type: 'number', default: 1.0, step: 0.001, descKey: 'field.sigmoid_scale' },
+      { key: 'weighting_scheme', type: 'select', default: 'uniform', options: [
+        { v: 'sigma_sqrt', l: 'sigma_sqrt', dKey: 'opt.weighting_scheme_sigma_sqrt' },
+        { v: 'logit_normal', l: 'logit_normal', dKey: 'opt.weighting_scheme_logit_normal' },
+        { v: 'mode', l: 'mode', dKey: 'opt.weighting_scheme_mode' },
+        { v: 'cosmap', l: 'cosmap', dKey: 'opt.weighting_scheme_cosmap' },
+        { v: 'none', l: 'none', dKey: 'opt.weighting_scheme_none' },
+        { v: 'uniform', l: 'uniform', dKey: 'opt.weighting_scheme_uniform' }
+      ], descKey: 'field.weighting_scheme' },
+      { key: 'logit_mean', type: 'number', default: 0.0, step: 0.01, descKey: 'field.logit_mean' },
+      { key: 'logit_std', type: 'number', default: 1.0, step: 0.01, descKey: 'field.logit_std' },
+      { key: 'qwen3_max_token_length', type: 'number', default: 512, step: 1, descKey: 'field.qwen3_max_token_length' },
+      { key: 't5_max_token_length', type: 'number', default: 512, step: 1, descKey: 'field.t5_max_token_length' },
+      { key: 'attn_mode', type: 'select', default: 'torch', options: [
+        { v: 'torch', l: 'torch', dKey: 'opt.attn_mode_torch' },
+        { v: 'xformers', l: 'xformers', dKey: 'opt.attn_mode_xformers' },
+        { v: 'flash', l: 'flash', dKey: 'opt.attn_mode_flash' }
+      ], descKey: 'field.attn_mode' },
+      { key: 'split_attn', type: 'toggle', default: false, descKey: 'field.split_attn' },
+      { key: 'torch_compile', type: 'toggle', default: false, descKey: 'field.torch_compile' },
+    ]
+  },
+];
+
+window.ROUTE_CONFIG = {
+  'home': { title: 'lora-scripts-anima', subtitle: '' },
+  'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
+  'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
+  'history': { titleKey: 'nav.history', subtitle: '' },
+  'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
+  'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
+  'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
+  'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
+  'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
+  'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
+  'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
+  'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
+  'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
+};

@@ -16,12 +16,22 @@
   <link rel="stylesheet" href="/anima-ui/css/app.css">
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
   <script src="/anima-ui/js/i18n.js"></script>
+  <!-- Feature modules (order matters: config first, app last) -->
+  <script src="/anima-ui/js/config.js"></script>
+  <script src="/anima-ui/js/anima-select.js"></script>
+  <script src="/anima-ui/js/monitor.js"></script>
+  <script src="/anima-ui/js/environment.js"></script>
+  <script src="/anima-ui/js/training.js"></script>
+  <script src="/anima-ui/js/tagger.js"></script>
+  <script src="/anima-ui/js/tag-editor.js"></script>
   <script src="/anima-ui/js/app.js"></script>
 </head>
 <body x-data="animaApp()" x-init="init()" x-cloak>
 
-<!-- ── Top Progress Bar (GitHub-style) ─────────────────── -->
-<div class="page-progress" :class="{ active: pageLoading, done: progressPhase === 'finishing' }" role="progressbar"></div>
+<!-- ── Top Progress Bar (determinate 0→100%) ──────────── -->
+<div class="page-progress" :class="{ active: progressPercent > 0 && progressPercent < 100, done: progressPercent >= 100 }" role="progressbar">
+  <div class="page-progress-fill" :style="{ width: progressPercent + '%' }"></div>
+</div>
 
 <!-- ============================================================
      App Layout: Sidebar | Main Content | Right Panel
