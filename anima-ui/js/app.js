@@ -717,26 +717,25 @@ document.addEventListener('alpine:init', () => {
               <div class="anima-tooltip-arrow"></div>
             </div>
             <div class="anima-select-menu" x-show="open" x-transition>
-              <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
-                <div class="anima-select-group">
-                  <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
-                  <template x-for="(opt, oIdx) in group.options" :key="opt.v">
-                    <div class="anima-select-option"
-                      :class="{ active: opt.v === value }"
-                      @click="select(opt.v)"
-                      @mouseenter="onOptionMouseEnter(oIdx, opt)"
-                      @mouseleave="onOptionMouseLeave()">
-                      <span x-text="opt.l"></span>
-                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                      <div class="anima-tooltip anima-tooltip-right" x-show="hoveredOpt === opt && opt.d" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
-                        <span x-text="opt.d"></span>
-                        <div class="anima-tooltip-arrow"></div>
+              <div class="anima-select-menu-scroll">
+                <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
+                  <div class="anima-select-group">
+                    <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
+                    <template x-for="(opt, oIdx) in group.options" :key="opt.v">
+                      <div class="anima-select-option"
+                        :class="{ active: opt.v === value }"
+                        @click="select(opt.v)"
+                        @mouseenter="onOptionMouseEnter(oIdx, opt)"
+                        @mouseleave="onOptionMouseLeave()">
+                        <span x-text="opt.l" :title="opt.l"></span>
+                        <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                       </div>
-                    </div>
-                  </template>
-                </div>
-              </template>
-              <div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div>
+                    </template>
+                  </div>
+                </template>
+                <div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div>
+              </div>
+              <div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>
             </div>
           </div>`;
         } else {
@@ -757,18 +756,23 @@ document.addEventListener('alpine:init', () => {
               <div class="anima-tooltip-arrow"></div>
             </div>
             <div class="anima-select-menu" x-show="open" x-transition>
-              <template x-for="group in displayGroups" :key="group.label">
-                <div class="anima-select-group">
-                  <template x-for="opt in group.options" :key="opt.v">
-                    <div class="anima-select-option"
-                      :class="{ active: opt.v === value }"
-                      @click="select(opt.v)">
-                      <span x-text="opt.l"></span>
-                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    </div>
-                  </template>
-                </div>
-              </template>
+              <div class="anima-select-menu-scroll">
+                <template x-for="group in displayGroups" :key="group.label">
+                  <div class="anima-select-group">
+                    <template x-for="opt in group.options" :key="opt.v">
+                      <div class="anima-select-option"
+                        :class="{ active: opt.v === value }"
+                        @click="select(opt.v)"
+                        @mouseenter="onOptionMouseEnter(0, opt)"
+                        @mouseleave="onOptionMouseLeave()">
+                        <span x-text="opt.l" :title="opt.l"></span>
+                        <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>
             </div>
           </div>`;
         }
