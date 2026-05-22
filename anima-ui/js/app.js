@@ -611,7 +611,12 @@ document.addEventListener('alpine:init', () => {
       for (const [k, v] of Object.entries(this.form)) {
         if (!validKeys.has(k)) continue;           // skip keys not in current form or hidden by showIf
         if (k === 'model_train_type' || k.startsWith('_')) continue;
+        if (k === 'sample_prompts' || k === 'optimizer_args_custom') continue;  // processed separately
         if (v === '' || v === null || v === undefined) continue;
+
+        // optimizer_args: merge custom args + Prodigy-specific fields (trainer reads --optimizer_args only)
+        if (k === 'optimizer_args_custom' || k === 'prodigy_d_coef' || k === 'prodigy_d0') continue;
+
         if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
         else if (typeof v === 'number') lines.push(`${k} = ${v}`);
         else if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
@@ -620,6 +625,22 @@ document.addEventListener('alpine:init', () => {
         }
         else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
       }
+
+      // Emit merged optimizer_args (custom + Prodigy-specific)
+      const optArgsArr = [];
+      const custom = this.form.optimizer_args_custom;
+      if (custom && typeof custom === 'string') {
+        optArgsArr.push(...custom.split('\n').map(s => s.trim()).filter(s => s));
+      }
+      if (this.form.optimizer_type === 'Prodigy' || this.form.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
+        if (this.form.prodigy_d_coef && this.form.prodigy_d_coef !== '2.0') optArgsArr.push(`d_coef=${this.form.prodigy_d_coef}`);
+        if (this.form.prodigy_d0) optArgsArr.push(`d0=${this.form.prodigy_d0}`);
+      }
+      if (optArgsArr.length > 0) {
+        const quoted = optArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
+        lines.push(`optimizer_args = [${quoted}]`);
+      }
+
       this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
       // Generate highlighted HTML: key | = | value (num or str)
       const highlighted = lines.map(line => {
@@ -674,12 +695,43 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
-      // Convert optimizer_args_custom (textarea, one per line) → optimizer_args (array)
+      // Convert sample_prompts (combined text) → old-format individual fields for backend
+      if (payload.sample_prompts && typeof payload.sample_prompts === 'string') {
+        const sp = payload.sample_prompts.trim();
+        if (sp) {
+          // Parse: "positive --n negative --w 512 --h 768 --l 7 --s 24 --d 1337"
+          const nIdx = sp.indexOf(' --n ');
+          if (nIdx > 0) {
+            payload.positive_prompts = sp.substring(0, nIdx).trim();
+            const rest = sp.substring(nIdx + 5); // after " --n "
+            const wIdx = rest.indexOf(' --w '), hIdx = rest.indexOf(' --h '),
+                  lIdx = rest.indexOf(' --l '), sIdx = rest.indexOf(' --s '), dIdx = rest.indexOf(' --d ');
+            payload.negative_prompts = (wIdx > 0 ? rest.substring(0, wIdx) : rest).trim();
+            if (wIdx > 0) payload.sample_width = parseInt(rest.substring(wIdx + 5)) || 512;
+            if (hIdx > 0) payload.sample_height = parseInt(rest.substring(hIdx + 5)) || 512;
+            if (lIdx > 0) payload.sample_cfg = parseInt(rest.substring(lIdx + 5)) || 7;
+            if (sIdx > 0) payload.sample_steps = parseInt(rest.substring(sIdx + 5)) || 24;
+            if (dIdx > 0) payload.sample_seed = parseInt(rest.substring(dIdx + 5)) || 2333;
+          } else {
+            payload.positive_prompts = sp;
+          }
+        }
+        delete payload.sample_prompts;
+      }
+
+      // Convert optimizer_args_custom + Prodigy fields → optimizer_args (trainer reads this exclusively)
+      const optArgs = [];
       if (payload.optimizer_args_custom && typeof payload.optimizer_args_custom === 'string') {
-        const lines = payload.optimizer_args_custom.split('\n').map(s => s.trim()).filter(s => s);
-        if (lines.length > 0) payload.optimizer_args = lines;
+        optArgs.push(...payload.optimizer_args_custom.split('\n').map(s => s.trim()).filter(s => s));
         delete payload.optimizer_args_custom;
       }
+      if (payload.optimizer_type === 'Prodigy' || payload.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
+        if (payload.prodigy_d_coef && payload.prodigy_d_coef !== '2.0') optArgs.push(`d_coef=${payload.prodigy_d_coef}`);
+        if (payload.prodigy_d0) optArgs.push(`d0=${payload.prodigy_d0}`);
+        delete payload.prodigy_d_coef;
+        delete payload.prodigy_d0;
+      }
+      if (optArgs.length > 0) payload.optimizer_args = optArgs;
 
       try {
         const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
