@@ -464,6 +464,7 @@ document.addEventListener('alpine:init', () => {
     monitorTimer: null,
     monitorPollMs: 2000,
     gpuInfo: null,
+    sysInfo: null,
     lossSeries: [],
     trainParams: [],
     previews: [],
@@ -671,20 +672,15 @@ document.addEventListener('alpine:init', () => {
         if (j.status === 'success') {
           this.monitorData = j.data;
           this.gpuInfo = j.data.gpu;
+          this.sysInfo = j.data.system;
           this.lossSeries = j.data.tensorboard_loss || [];
           this.trainParams = j.data.train_params || [];
           this.previews = j.data.previews || [];
-          // Update active training state
           if (j.data.state === '训练中') {
-            this.isTraining = true;
-            this.isIdle = false;
-            this.statusText = j.data.state;
+            this.isTraining = true; this.isIdle = false; this.statusText = j.data.state;
           } else if (j.data.state === '空闲') {
-            this.isTraining = false;
-            this.isIdle = true;
-            this.statusText = 'Idle';
+            this.isTraining = false; this.isIdle = true; this.statusText = 'Idle';
           }
-          // Re-render dashboard if visible
           if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
         }
       } catch (e) { /* silent poll */ }
@@ -699,90 +695,110 @@ document.addEventListener('alpine:init', () => {
       if (!el) return;
       const d = this.monitorData || {};
       const gpu = this.gpuInfo;
+      const sys = this.sysInfo;
+      const t = (k, fb) => this.t('monitor.' + k) || fb || k;
 
       let html = '<div class="monitor-dashboard">';
 
-      // ── Row 1: Status + GPU ──
+      // ── Row 1: system resource cards (always visible) ──
       html += '<div class="monitor-row">';
-      html += this._statusCard(d);
-      if (gpu) html += this._gpuCard(gpu);
+      html += this._statusCard(d, t);
+      if (sys) html += this._systemCard(sys, t);
+      if (gpu) html += this._gpuCard(gpu, t);
       html += '</div>';
 
-      // ── Row 2: Training Params ──
+      // ── Row 2: Training Params (show if exists) ──
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('trainParams', '训练参数') + '</div>';
       if (this.trainParams.length) {
-        html += '<div class="card" style="margin-top:12px"><div class="card-header">⚙ 训练参数</div>';
         html += '<div class="param-grid">';
         this.trainParams.forEach(p => {
           html += `<div class="param-item"><span class="param-label">${p.label}</span><span class="param-value">${p.value}</span></div>`;
         });
-        html += '</div></div>';
+        html += '</div>';
+      } else {
+        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', '启动训练后显示') + '</div>';
       }
+      html += '</div>';
 
-      // ── Row 3: Loss / LR Charts ──
-      if (this.lossSeries.length) {
-        html += '<div class="card" style="margin-top:12px"><div class="card-header">📈 Loss / LR 曲线</div>';
-        html += '<div class="chart-grid">';
-        this.lossSeries.forEach(s => {
-          html += `<div class="chart-panel"><div class="chart-title">${s.name} <span class="chart-val">${s.latest?.toFixed(4) || '—'}</span></div>`;
-          html += `<canvas id="chart-${s.tag.replace(/[/.]/g,'-')}" width="360" height="200"></canvas></div>`;
-        });
-        html += '</div></div>';
-      }
+      // ── Row 3: Loss / LR Charts (always show panels) ──
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR 曲线') + '</div>';
+      html += '<div class="chart-grid">';
+      const chartTags = this.lossSeries.length ? this.lossSeries : [
+        { tag: 'loss/average', name: 'loss average', latest: null, points: [] },
+        { tag: 'loss/current', name: 'loss current', latest: null, points: [] },
+        { tag: 'loss/epoch_average', name: 'loss epoch average', latest: null, points: [] },
+        { tag: 'lr/unet', name: 'lr unet', latest: null, points: [] },
+      ];
+      chartTags.forEach(s => {
+        html += `<div class="chart-panel"><div class="chart-title">${s.name} <span class="chart-val">${s.latest != null ? s.latest.toFixed(4) : '--'}</span></div>`;
+        html += `<canvas id="chart-${s.tag.replace(/[/.]/g,'-')}" width="360" height="200"></canvas></div>`;
+      });
+      html += '</div></div>';
 
-      // ── Row 4: Previews ──
+      // ── Row 4: Previews (always show panel) ──
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('previewSamples', '预览样本') + '</div>';
       if (this.previews.length) {
-        html += '<div class="card" style="margin-top:12px"><div class="card-header">🖼 预览样本</div>';
         html += '<div class="preview-grid">';
         this.previews.forEach(p => {
           html += `<div class="preview-item"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')"/><span>${p.name}</span></div>`;
         });
-        html += '</div></div>';
-      }
-
-      // ── Empty state ──
-      if (!d.state || d.state === '空闲') {
-        html += '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">';
-        html += '<p style="font-size:48px;margin:0">📊</p>';
-        html += '<p>暂无训练任务运行</p><p style="font-size:12px">启动训练后，监控数据将在此显示</p>';
         html += '</div>';
+      } else {
+        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', '启动训练后显示') + '</div>';
       }
+      html += '</div>';
 
       html += '</div>';
       el.innerHTML = html;
-
-      // Draw canvas charts after DOM update
       setTimeout(() => this._drawCharts(), 100);
     },
 
-    _statusCard(d) {
-      const color = d.state === '训练中' ? 'var(--color-success)' : d.has_error ? 'var(--color-error)' : 'var(--text-secondary)';
-      return `<div class="card flex-1">
-        <div class="card-header">🎯 训练状态</div>
-        <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${d.state || '空闲'}</div>
-        ${d.step ? `<div>Step: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>` : ''}
-        ${d.loss ? `<div>Loss: <b>${d.loss}</b></div>` : ''}
-        ${d.lr ? `<div>LR: <b>${d.lr}</b></div>` : ''}
-        ${d.epoch ? `<div>Epoch: <b>${d.epoch}</b></div>` : ''}
-        ${d.speed ? `<div>速度: <b>${d.speed}</b></div>` : ''}
-        ${d.eta ? `<div>ETA: <b>${d.eta}</b></div>` : ''}
-        ${d.has_error ? `<div style="color:var(--color-error);margin-top:8px">⚠ ${d.error_msg || '训练异常'}</div>` : ''}
-      </div>`;
+    _statusCard(d, t) {
+      const state = d.state || '空闲';
+      const isTraining = state === '训练中';
+      const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
+      let html = `<div class="card flex-1">
+        <div class="card-header">${t('status', '训练状态')}</div>
+        <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
+      if (isTraining) {
+        if (d.step) html += `<div>${t('step', '步数')}: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>`;
+        if (d.loss) html += `<div>${t('loss', 'Loss')}: <b>${d.loss}</b></div>`;
+        if (d.lr) html += `<div>${t('lr', '学习率')}: <b>${d.lr}</b></div>`;
+        if (d.epoch) html += `<div>${t('epoch', 'Epoch')}: <b>${d.epoch}</b></div>`;
+        if (d.speed) html += `<div>${t('speed', '速度')}: <b>${d.speed}</b></div>`;
+        if (d.eta) html += `<div>ETA: <b>${d.eta}</b></div>`;
+      }
+      if (d.has_error) html += `<div style="color:var(--danger);margin-top:8px">${d.error_msg || t('error', '训练异常')}</div>`;
+      html += '</div>';
+      return html;
     },
 
-    _gpuCard(gpu) {
-      const pct = gpu.vram_used_mb / gpu.vram_total_mb * 100;
-      const color = pct > 90 ? 'var(--color-error)' : pct > 70 ? 'var(--color-warning)' : 'var(--color-success)';
-      return `<div class="card flex-1" style="margin-left:12px">
-        <div class="card-header">🖥 GPU</div>
-        <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'NVIDIA GPU'}</div>
-        <div style="font-size:12px">显存: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB (${pct.toFixed(1)}%)</div>
-        <div style="font-size:12px">GPU 负载: <b>${gpu.gpu_load_pct}%</b></div>
-        ${gpu.temperature_c != null ? `<div style="font-size:12px">温度: <b>${gpu.temperature_c}°C</b></div>` : ''}
-        ${gpu.power_w != null ? `<div style="font-size:12px">功耗: <b>${gpu.power_w}W</b></div>` : ''}
-        <div style="margin-top:6px;background:var(--bg-tertiary);border-radius:4px;height:6px">
-          <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s"></div>
-        </div>
-      </div>`;
+    _gpuCard(gpu, t) {
+      const pct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb * 100 : 0;
+      const color = pct > 90 ? 'var(--danger)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+      let html = `<div class="card flex-1" style="margin-left:12px">
+        <div class="card-header">${t('gpu', 'GPU 监控')}</div>
+        <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'NVIDIA GPU'}</div>`;
+      html += `<div style="font-size:12px">${t('vramUsed', '显存')}: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB</div>`;
+      html += `<div style="font-size:12px">${t('gpuLoad', '负载')}: <b>${gpu.gpu_load_pct}%</b></div>`;
+      if (gpu.temperature_c != null) html += `<div style="font-size:12px">${t('gpuTemp', '温度')}: <b>${gpu.temperature_c}°C</b></div>`;
+      if (gpu.power_w != null) html += `<div style="font-size:12px">${t('gpuPower', '功耗')}: <b>${gpu.power_w}W</b></div>`;
+      html += `<div style="margin-top:6px;background:var(--bg-input);border-radius:4px;height:6px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s"></div></div>`;
+      html += '</div>';
+      return html;
+    },
+
+    _systemCard(sys, t) {
+      const cpuColor = sys.cpu_pct > 80 ? 'var(--danger)' : sys.cpu_pct > 50 ? 'var(--warning)' : 'var(--success)';
+      const ramColor = sys.ram_pct > 80 ? 'var(--danger)' : sys.ram_pct > 50 ? 'var(--warning)' : 'var(--success)';
+      let html = `<div class="card flex-1" style="margin-left:12px">
+        <div class="card-header">${t('system', '系统资源')}</div>`;
+      html += `<div style="font-size:12px;margin:4px 0">${t('cpu', 'CPU')}: <b style="color:${cpuColor}">${sys.cpu_pct}%</b></div>`;
+      html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.cpu_pct}%;height:100%;background:${cpuColor};border-radius:4px;transition:width 0.5s"></div></div>`;
+      html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', '内存')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB</b> / ${sys.ram_total_gb} GB</div>`;
+      html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.ram_pct}%;height:100%;background:${ramColor};border-radius:4px;transition:width 0.5s"></div></div>`;
+      html += '</div>';
+      return html;
     },
 
     _drawCharts() {
@@ -841,14 +857,16 @@ document.addEventListener('alpine:init', () => {
     renderLogs() {
       const el = document.getElementById('monitorLogs');
       if (!el) return;
+      const t = (k, fb) => this.t('monitor.' + k) || fb || k;
       if (!this.logLines.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>📜</p><p>暂无日志</p></div>';
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>暂无日志</p></div>';
         return;
       }
       let html = '<div class="log-lines">';
       this.logLines.forEach(line => {
-        const cls = line.toLowerCase().includes('error') || line.toLowerCase().includes('traceback') ? 'log-error' :
-                    line.toLowerCase().includes('warning') ? 'log-warn' : '';
+        const lower = line.toLowerCase();
+        const cls = lower.includes('error') || lower.includes('traceback') ? 'log-error' :
+                    lower.includes('warning') ? 'log-warn' : '';
         html += `<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;
       });
       html += '</div>';
@@ -890,17 +908,17 @@ document.addEventListener('alpine:init', () => {
       const el = document.getElementById('historyList');
       if (!el) return;
       if (!this.historyItems.length) {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>📋</p><p>暂无历史训练记录</p><p style="font-size:12px">启动训练后，记录将自动保存</p></div>';
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>暂无历史训练记录</p><p style="font-size:12px">启动训练后，记录将自动保存</p></div>';
         return;
       }
       let html = '<div class="history-grid">';
       this.historyItems.forEach(h => {
         html += `<div class="card history-card">
-          <div class="card-header">📅 ${h.time}</div>
+          <div class="card-header">${h.time}</div>
           <div><b>${h.name}</b></div>
           <div style="font-size:12px;color:var(--text-secondary)">模型: ${h.model}</div>
           <div style="font-size:12px;color:var(--text-secondary)">LR: ${h.lr} · Dim: ${h.dim} · Epochs: ${h.epochs}</div>
-          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">配置: ${h.config_file}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${h.config_file}</div>
         </div>`;
       });
       html += '</div>';

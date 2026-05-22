@@ -690,20 +690,22 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── Monitor Logs ──────────────────────────────────────── */
 .monitor-logs-container {
-  background: #1a1a2e; color: #e0e0e0;
   font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
   font-size: 12.5px; line-height: 1.55;
   border-radius: var(--radius); padding: 12px;
   height: calc(100vh - 180px); overflow-y: auto;
   white-space: pre-wrap; word-break: break-all;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
-[data-theme="light"] .monitor-logs-container {
-  background: #f8f8f8; color: #1c1917;
+[data-theme="dark"] .monitor-logs-container {
+  background: var(--bg-surface-raised);
 }
-.log-line { padding: 1px 4px; border-radius: 2px; }
-.log-line:hover { background: rgba(255,255,255,0.04); }
-.log-error { color: #f87171; background: rgba(220,38,38,0.08); }
-.log-warn { color: #fbbf24; }
+.log-line { padding: 1px 4px; border-radius: 2px; transition: background 0.1s; }
+.log-line:hover { background: var(--accent-muted); }
+.log-error { color: var(--danger); background: rgba(220, 38, 38, 0.06); }
+.log-warn { color: var(--warning); }
 
 /* ── History ────────────────────────────────────────────── */
 .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }

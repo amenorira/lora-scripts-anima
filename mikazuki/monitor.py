@@ -20,7 +20,6 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from mikazuki.app.models import APIResponseSuccess, APIResponseFail
 from mikazuki.log import log
 from mikazuki.tasks import tm
 
@@ -83,6 +82,23 @@ def _gpu_info() -> dict | None:
         }
     except Exception:
         return None
+
+
+# ── 系统监控 (psutil) ──────────────────────────────────────
+def _system_info() -> dict:
+    """CPU / RAM 使用率"""
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.1)
+        mem = psutil.virtual_memory()
+        return {
+            "cpu_pct": cpu,
+            "ram_used_gb": round(mem.used / (1024**3), 1),
+            "ram_total_gb": round(mem.total / (1024**3), 1),
+            "ram_pct": mem.percent,
+        }
+    except Exception:
+        return {"cpu_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "ram_pct": 0}
 
 
 # ── TensorBoard Event 读取 ─────────────────────────────────
@@ -359,10 +375,11 @@ def _scan_history() -> list[dict]:
 
 @router.get("/monitor/status")
 async def monitor_status(task_id: str = Query("")):
-    """聚合监控端点：GPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
+    """聚合监控端点：GPU + CPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
     result = {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "gpu": _gpu_info(),
+        "system": _system_info(),
         "tensorboard_loss": _read_tensorboard_loss(),
         "state": "空闲",
         "step": 0,
@@ -387,7 +404,7 @@ async def monitor_status(task_id: str = Query("")):
     result["all_tasks"] = tasks
 
     if not tasks:
-        return APIResponseSuccess(data=result).model_dump() if hasattr(APIResponseSuccess, "model_dump") else {"status": "success", "data": result}
+        return {"status": "success", "data": result}
 
     active = None
     for t in reversed(tasks):
@@ -426,10 +443,10 @@ async def monitor_preview_image(path: str = Query("")):
     # 安全检查：只允许 output/ 和 logs/ 下的图片
     allowed = [OUTPUT_DIR.resolve(), LOG_DIR.resolve()]
     if not any(p == root or root in p.parents for root in allowed):
-        return APIResponseFail(message="禁止访问").model_dump() if hasattr(APIResponseFail, "model_dump") else {"status": "error", "message": "禁止访问"}
+        return {"status": "error", "message": "禁止访问"}
 
     if not p.is_file():
-        return APIResponseFail(message="文件不存在").model_dump() if hasattr(APIResponseFail, "model_dump") else {"status": "error", "message": "文件不存在"}
+        return {"status": "error", "message": "文件不存在"}
 
     import mimetypes
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"

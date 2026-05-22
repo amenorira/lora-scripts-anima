@@ -238,10 +238,10 @@
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
-              <span x-text="logAutoScroll ? '⏸ 暂停滚动' : '▶ 跟随滚动'"></span>
+              <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
             </button>
-            <button class="btn btn-sm btn-secondary" @click="copyLogs()">📋 复制</button>
-            <button class="btn btn-sm btn-secondary" @click="clearLogs()">🗑 清空</button>
+            <button class="btn btn-sm btn-secondary" @click="copyLogs()"><span x-text="t('monitor.logCopy')">Copy</span></button>
+            <button class="btn btn-sm btn-secondary" @click="clearLogs()"><span x-text="t('monitor.logClear')">Clear</span></button>
           </div>
         </div>
         <div id="monitorLogs" class="monitor-logs-container"></div>
