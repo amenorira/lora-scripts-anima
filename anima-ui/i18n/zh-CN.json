@@ -1,6 +1,5 @@
 {
   "nav": {
-    "home": "首页",
     "monitor": "训练监控",
     "monitorDashboard": "仪表盘",
     "monitorLogs": "实时日志",
@@ -8,8 +7,6 @@
     "basic": "新手 (SD1.5)",
     "master": "专家",
     "anima": "Anima LoRA",
-    "flux": "Flux",
-    "sd3": "SD3.5",
     "history": "历史记录",
     "tools": "工具",
     "tensorboard": "TensorBoard",
@@ -17,8 +14,7 @@
     "tagEditor": "标签编辑器",
     "other": "其他",
     "uiSettings": "UI 设置",
-    "about": "关于",
-    "paramRef": "参数详解"
+    "about": "关于"
   },
   "monitor": {
     "status": "训练状态",
@@ -274,36 +270,6 @@
     "tensorboardUrlDesc": "自定义 TensorBoard 访问地址",
     "localeChanged": "语言已切换，正在重新渲染..."
   },
-  "paramRef": {
-    "title": "参数详解",
-    "subtitle": "LoRA 训练全部参数参考。将鼠标悬停在训练表单的任意字段上即可查看其说明。",
-    "model": "模型",
-    "modelPretrained": "底模文件路径。SD/SDXL 填 .safetensors 文件；DiT 模型(Anima)填模型目录。",
-    "modelVae": "VAE 模型路径（可选）。SD/SDXL 可选；Anima 必须指定 QwenImage VAE。",
-    "modelResume": "从某个 save_state 保存的中断状态继续训练，填写文件夹路径。",
-    "modelTrainType": "训练种类：SD LoRA、SDXL LoRA、Anima LoRA、Flux LoRA、SD3 LoRA。",
-    "dataset": "数据集",
-    "datasetTrainDir": "训练数据集路径，内含按子文件夹分组的图片和对应的 .txt 标注文件。",
-    "datasetResolution": "训练分辨率，格式为 宽,高。SD/SDXL 需为 64 的倍数，Anima 需为 16 的倍数。",
-    "datasetBucket": "启用 ARB（宽高比分桶）以支持混合宽高比的数据集。",
-    "training": "训练参数",
-    "trainingMaxEpochs": "最大训练 epoch（轮数）。一个 epoch = 遍历整个数据集一次。",
-    "trainingBatchSize": "批量大小。每次处理的图片数，值越大显存占用越高。",
-    "trainingGradientAccum": "梯度累加步数。等效增大 batch size，不增加显存占用。",
-    "lr": "学习率",
-    "lrLearningRate": "总学习率。典型值：SD 用 1e-4，SDXL 用 5e-5，Flux 用 1e-4。",
-    "lrUnetLr": "U-Net / 主干网络学习率。与文本编码器分开设置可实现精细控制。",
-    "lrScheduler": "学习率调度器。cosine_with_restarts 是大多数情况的良好默认值。",
-    "lrOptimizer": "优化器。AdamW8bit 在速度和显存之间取得良好平衡。Prodigy 是自适应优化器。",
-    "network": "网络",
-    "networkDim": "LoRA 秩 / 网络维度。常用范围 4–128。值越小显存占用越低，但可能降低质量。",
-    "networkAlpha": "缩放因子。通常等于 network_dim 或取其一半。较小的 alpha 需要更高的学习率。",
-    "speed": "速度与显存",
-    "speedMixedPrecision": "混合精度。RTX 30+ 推荐 bf16，旧显卡用 fp16，no 用于调试。",
-    "speedXformers": "启用 xformers 内存高效注意力。推荐大多数 GPU 开启。",
-    "speedCacheLatents": "预计算 VAE latent 到磁盘，在训练期间节省显存。",
-    "footer": "详细参数说明请将鼠标悬停在训练表单的字段标签上查看。"
-  },
   "about": {
     "title": "关于",
     "subtitle": "lora-scripts-anima",
@@ -319,9 +285,6 @@
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",
     "model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
     "model_train_type_anima-lora": "基于 NVIDIA Cosmos-Predict2-2B 衍生的 Diffusion Transformer (DiT) 架构模型",
-    "model_train_type_flux-lora": "Flux DiT 模型 LoRA 训练",
-    "model_train_type_sd3-lora": "Stable Diffusion 3.5 模型 LoRA 训练",
-
     "save_model_as_safetensors": "SafeTensors 格式，安全且加载快，推荐使用",
     "save_model_as_pt": "PyTorch 原生格式，兼容性好",
     "save_model_as_ckpt": "旧版 Checkpoint 格式，不推荐",
@@ -349,12 +312,6 @@
     "optimizer_type_ProdigyPlus": "ProdigyPlus + Schedule-Free，免调学习率与调度器的双自动化",
     "optimizer_type_AdaFactor": "自适应因子优化器，节省显存",
     "optimizer_type_RAdamScheduleFree": "RAdam + Schedule-Free 训练方法",
-    "optimizer_type_DAdaptation": "D-Adaptation 自动学习率优化器",
-    "optimizer_type_DAdaptAdam": "D-Adaptation 版 Adam",
-    "optimizer_type_DAdaptAdaGrad": "D-Adaptation 版 AdaGrad",
-    "optimizer_type_DAdaptAdanIP": "D-Adaptation 版 AdanIP",
-    "optimizer_type_DAdaptLion": "D-Adaptation 版 Lion",
-    "optimizer_type_DAdaptSGD": "D-Adaptation 版 SGD",
     "optimizer_type_CAME": "CAME 优化器，来自 pytorch_optimizer 库",
 
     "loss_type_default": "使用模型默认损失函数",
@@ -380,9 +337,8 @@
 
     "timestep_sampling_sigma": "基于噪声 sigma 值采样时间步",
     "timestep_sampling_uniform": "均匀分布采样时间步",
-    "timestep_sampling_sigmoid": "Sigmoid 分布采样，推荐用于 Anima/Flux 训练",
+    "timestep_sampling_sigmoid": "Sigmoid 分布采样，推荐用于 Anima 训练",
     "timestep_sampling_shift": "Shift 采样策略",
-    "timestep_sampling_flux_shift": "Flux 专用 Shift 采样",
 
     "weighting_scheme_sigma_sqrt": "Sigma 平方根加权",
     "weighting_scheme_logit_normal": "Logit-Normal 分布加权",
@@ -399,7 +355,6 @@
     "group_lion": "Lion 系列",
     "group_sgd": "SGD 系列",
     "group_adaptive": "自适应学习率",
-    "group_dadapt": "D-Adaptation 系列",
     "group_other": "其他"
   }
 }

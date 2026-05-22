@@ -14,9 +14,7 @@ const TRAIN_SECTIONS_COMMON = [
       { key: 'model_train_type', type: 'select', default: 'sd-lora', options: [
         { v: 'sd-lora', l: 'SD LoRA', dKey: 'opt.model_train_type_sd-lora' },
         { v: 'sdxl-lora', l: 'SDXL LoRA', dKey: 'opt.model_train_type_sdxl-lora' },
-        { v: 'anima-lora', l: 'Anima LoRA', dKey: 'opt.model_train_type_anima-lora' },
-        { v: 'flux-lora', l: 'Flux LoRA', dKey: 'opt.model_train_type_flux-lora' },
-        { v: 'sd3-lora', l: 'SD3 LoRA', dKey: 'opt.model_train_type_sd3-lora' }
+        { v: 'anima-lora', l: 'Anima LoRA', dKey: 'opt.model_train_type_anima-lora' }
       ], descKey: 'field.model_train_type' },
     ]
   },
@@ -102,14 +100,6 @@ const TRAIN_SECTIONS_COMMON = [
           { v: 'prodigyplus.ProdigyPlusScheduleFree', l: 'ProdigyPlusScheduleFree', dKey: 'opt.optimizer_type_ProdigyPlus' },
           { v: 'AdaFactor', l: 'AdaFactor', dKey: 'opt.optimizer_type_AdaFactor' },
           { v: 'RAdamScheduleFree', l: 'RAdamScheduleFree', dKey: 'opt.optimizer_type_RAdamScheduleFree' },
-        ]},
-        { labelKey: 'opt.group_dadapt', options: [
-          { v: 'DAdaptation', l: 'DAdaptation', dKey: 'opt.optimizer_type_DAdaptation' },
-          { v: 'DAdaptAdam', l: 'DAdaptAdam', dKey: 'opt.optimizer_type_DAdaptAdam' },
-          { v: 'DAdaptAdaGrad', l: 'DAdaptAdaGrad', dKey: 'opt.optimizer_type_DAdaptAdaGrad' },
-          { v: 'DAdaptAdanIP', l: 'DAdaptAdanIP', dKey: 'opt.optimizer_type_DAdaptAdanIP' },
-          { v: 'DAdaptLion', l: 'DAdaptLion', dKey: 'opt.optimizer_type_DAdaptLion' },
-          { v: 'DAdaptSGD', l: 'DAdaptSGD', dKey: 'opt.optimizer_type_DAdaptSGD' },
         ]},
         { labelKey: 'opt.group_other', options: [
           { v: 'pytorch_optimizer.CAME', l: 'CAME', dKey: 'opt.optimizer_type_CAME' },
@@ -223,8 +213,7 @@ const TRAIN_SECTIONS_ANIMA = [
         { v: 'sigma', l: 'sigma', dKey: 'opt.timestep_sampling_sigma' },
         { v: 'uniform', l: 'uniform', dKey: 'opt.timestep_sampling_uniform' },
         { v: 'sigmoid', l: 'sigmoid', dKey: 'opt.timestep_sampling_sigmoid' },
-        { v: 'shift', l: 'shift', dKey: 'opt.timestep_sampling_shift' },
-        { v: 'flux_shift', l: 'flux_shift', dKey: 'opt.timestep_sampling_flux_shift' }
+        { v: 'shift', l: 'shift', dKey: 'opt.timestep_sampling_shift' }
       ], descKey: 'field.timestep_sampling' },
       { key: 'sigmoid_scale', type: 'number', default: 1.0, step: 0.001, descKey: 'field.sigmoid_scale' },
       { key: 'weighting_scheme', type: 'select', default: 'uniform', options: [
@@ -251,20 +240,16 @@ const TRAIN_SECTIONS_ANIMA = [
 ];
 
 const ROUTE_CONFIG = {
-  'home': { title: 'lora-scripts-anima', subtitle: '' },
   'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
   'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
   'history': { titleKey: 'nav.history', subtitle: '' },
   'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
-  'train-flux': { titleKey: 'nav.flux', subtitleKey: 'section.trainParams', trainType: 'flux-lora' },
-  'train-sd3': { titleKey: 'nav.sd3', subtitleKey: 'section.trainParams', trainType: 'sd3-lora' },
   'tensorboard': { titleKey: 'nav.tensorboard', subtitle: '' },
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
-  'tool-params': { titleKey: 'paramRef.title', subtitleKey: 'paramRef.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
 };
@@ -421,7 +406,7 @@ document.addEventListener('alpine:init', () => {
     version: '...',
     theme: 'auto',
     resolvedTheme: 'light',
-    currentRoute: 'home',
+    currentRoute: 'train-basic',
     pageTitle: 'lora-scripts-anima',
     pageSubtitle: '',
     locale: 'zh-CN',
@@ -490,8 +475,8 @@ document.addEventListener('alpine:init', () => {
     // ── Init ───────────────────────────────────────────────
     async init() {
       // Set route IMMEDIATELY to avoid flash of wrong page
-      let route = (window.location.hash || '#home').replace('#', '');
-      if (!ROUTE_CONFIG[route]) route = 'home';
+      let route = (window.location.hash || '#train-basic').replace('#', '');
+      if (!ROUTE_CONFIG[route]) route = 'train-basic';
       this.currentRoute = route;
       const cfg = ROUTE_CONFIG[route];
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
@@ -608,8 +593,8 @@ document.addEventListener('alpine:init', () => {
     },
 
     handleRoute() {
-      let route = (window.location.hash || '#home').replace('#', '');
-      if (!ROUTE_CONFIG[route]) route = 'home';
+      let route = (window.location.hash || '#train-basic').replace('#', '');
+      if (!ROUTE_CONFIG[route]) route = 'train-basic';
 
       const prev = this.currentRoute;
       this.currentRoute = route;
@@ -1083,8 +1068,6 @@ document.addEventListener('alpine:init', () => {
       const cfg = ROUTE_CONFIG[r] || {};
       let trainType = cfg.trainType || 'sd-lora';
       if (r === 'train-anima') trainType = 'anima-lora';
-      if (r === 'train-flux') trainType = 'flux-lora';
-      if (r === 'train-sd3') trainType = 'sd3-lora';
 
       const savedKey = 'anima-form-' + r;
       let saved = null;

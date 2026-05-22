@@ -1,6 +1,5 @@
 {
   "nav": {
-    "home": "Home",
     "monitor": "Monitor",
     "monitorDashboard": "Dashboard",
     "monitorLogs": "Real-time Logs",
@@ -8,8 +7,6 @@
     "basic": "Beginner (SD1.5)",
     "master": "Expert",
     "anima": "Anima LoRA",
-    "flux": "Flux",
-    "sd3": "SD3.5",
     "history": "History",
     "tools": "Tools",
     "tensorboard": "TensorBoard",
@@ -17,8 +14,7 @@
     "tagEditor": "Tag Editor",
     "other": "Other",
     "uiSettings": "UI Settings",
-    "about": "About",
-    "paramRef": "Parameter Ref"
+    "about": "About"
   },
   "monitor": {
     "status": "Training Status",
@@ -274,36 +270,6 @@
     "tensorboardUrlDesc": "Custom TensorBoard address override",
     "localeChanged": "Language changed, re-rendering..."
   },
-  "paramRef": {
-    "title": "Parameter Reference",
-    "subtitle": "Complete reference for all LoRA training parameters. Hover over any field in the training form to see its description.",
-    "model": "Model",
-    "modelPretrained": "Base model path. For SD/SDXL provide a .safetensors file; for DiT models (Anima) provide the model directory.",
-    "modelVae": "Optional VAE model path. Anima requires QwenImage VAE.",
-    "modelResume": "Path to a save_state checkpoint directory to resume interrupted training.",
-    "modelTrainType": "Training type: SD LoRA, SDXL LoRA, Anima LoRA, Flux LoRA, or SD3 LoRA.",
-    "dataset": "Dataset",
-    "datasetTrainDir": "Directory containing training images in subfolders, each with .txt caption files.",
-    "datasetResolution": "Training resolution as width,height. Must be a multiple of 64 for SD/SDXL, 16 for Anima.",
-    "datasetBucket": "Enable ARB (Aspect Ratio Bucketing) for mixed aspect ratio datasets.",
-    "training": "Training",
-    "trainingMaxEpochs": "Maximum number of training epochs. One epoch = one pass through the entire dataset.",
-    "trainingBatchSize": "Number of images processed simultaneously. Higher values require more VRAM.",
-    "trainingGradientAccum": "Accumulate gradients over multiple steps. Effectively increases batch size without VRAM increase.",
-    "lr": "Learning Rate",
-    "lrLearningRate": "Overall learning rate. Typical values: 1e-4 for SD, 5e-5 for SDXL, 1e-4 for Flux.",
-    "lrUnetLr": "U-Net / backbone learning rate. Set separately from text encoder for fine control.",
-    "lrScheduler": "Learning rate schedule. cosine_with_restarts is a good default for most cases.",
-    "lrOptimizer": "Optimizer. AdamW8bit offers a good balance of speed and memory. Prodigy is adaptive.",
-    "network": "Network",
-    "networkDim": "LoRA rank / network dimension. Common range: 4–128. Lower values use less VRAM but may reduce quality.",
-    "networkAlpha": "Scaling factor. Typically equal to or half of network_dim. Lower alpha needs higher learning rate.",
-    "speed": "Speed & VRAM",
-    "speedMixedPrecision": "Mixed precision. bf16 recommended for RTX 30+ GPUs. fp16 for older cards. no for debugging.",
-    "speedXformers": "Enable xformers memory-efficient attention. Recommended for most GPUs.",
-    "speedCacheLatents": "Pre-compute VAE latents to disk, saving VRAM during training.",
-    "footer": "For detailed parameter explanations, hover over any field label in the training form."
-  },
   "about": {
     "title": "About",
     "subtitle": "lora-scripts-anima",
@@ -319,9 +285,6 @@
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",
     "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
     "model_train_type_anima-lora": "Diffusion Transformer (DiT) model derived from NVIDIA Cosmos-Predict2-2B",
-    "model_train_type_flux-lora": "Flux DiT model LoRA training",
-    "model_train_type_sd3-lora": "Stable Diffusion 3.5 model LoRA training",
-
     "save_model_as_safetensors": "SafeTensors format, safe and fast to load, recommended",
     "save_model_as_pt": "PyTorch native format, good compatibility",
     "save_model_as_ckpt": "Legacy Checkpoint format, not recommended",
@@ -349,12 +312,6 @@
     "optimizer_type_ProdigyPlus": "ProdigyPlus + Schedule-Free, dual automation: no LR or scheduler tuning needed",
     "optimizer_type_AdaFactor": "Adaptive factor optimizer, saves VRAM",
     "optimizer_type_RAdamScheduleFree": "RAdam + Schedule-Free training method",
-    "optimizer_type_DAdaptation": "D-Adaptation automatic learning rate optimizer",
-    "optimizer_type_DAdaptAdam": "D-Adaptation variant of Adam",
-    "optimizer_type_DAdaptAdaGrad": "D-Adaptation variant of AdaGrad",
-    "optimizer_type_DAdaptAdanIP": "D-Adaptation variant of AdanIP",
-    "optimizer_type_DAdaptLion": "D-Adaptation variant of Lion",
-    "optimizer_type_DAdaptSGD": "D-Adaptation variant of SGD",
     "optimizer_type_CAME": "CAME optimizer from pytorch_optimizer library",
 
     "loss_type_default": "Use the model's default loss function",
@@ -380,9 +337,8 @@
 
     "timestep_sampling_sigma": "Sample timesteps based on noise sigma values",
     "timestep_sampling_uniform": "Sample timesteps uniformly",
-    "timestep_sampling_sigmoid": "Sigmoid distribution sampling, recommended for Anima/Flux training",
+    "timestep_sampling_sigmoid": "Sigmoid distribution sampling, recommended for Anima training",
     "timestep_sampling_shift": "Shift sampling strategy",
-    "timestep_sampling_flux_shift": "Flux-specific shift sampling",
 
     "weighting_scheme_sigma_sqrt": "Sigma square-root weighting",
     "weighting_scheme_logit_normal": "Logit-Normal distribution weighting",
@@ -399,7 +355,6 @@
     "group_lion": "Lion",
     "group_sgd": "SGD",
     "group_adaptive": "Adaptive LR",
-    "group_dadapt": "D-Adaptation",
     "group_other": "Other"
   }
 }

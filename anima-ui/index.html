@@ -29,11 +29,7 @@
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
-          <line x1="12" y1="22" x2="12" y2="15.5"/>
-          <polyline points="22 8.5 12 15.5 2 8.5"/>
-        </svg>
+        <img src="/assets/favicon.ico" alt="logo" width="24" height="24">
       </div>
       <div>
         <div class="brand-text">lora-scripts-anima</div>
@@ -41,15 +37,6 @@
     </div>
 
     <div class="sidebar-nav" id="sidebarNav">
-      <!-- Home -->
-      <a class="sidebar-item" :class="{ active: currentRoute === 'home' }"
-         @click="navigate('home')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        </span>
-        <span x-text="t('nav.home')">Home</span>
-      </a>
-
       <!-- Monitor group -->
       <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'monitor-dashboard' }"
@@ -90,28 +77,6 @@
         </span>
         <span x-text="t('nav.anima')">Anima LoRA</span>
       </a>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'train-flux' }"
-         @click="navigate('train-flux')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </span>
-        <span x-text="t('nav.flux')">Flux</span>
-      </a>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'train-sd3' }"
-         @click="navigate('train-sd3')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-        </span>
-        <span x-text="t('nav.sd3')">SD3.5</span>
-      </a>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'tool-params' }"
-         @click="navigate('tool-params')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        </span>
-        <span x-text="t('nav.paramRef')">Parameter Reference</span>
-      </a>
-
       <!-- History -->
       <div class="sidebar-section-label" x-text="t('nav.history')">History</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'history' }"
@@ -202,24 +167,6 @@
           @mouseleave="showMainScroll = false"
           :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tensorboard' || currentRoute === 'tagEditor' }">
 
-      <!-- Route: Home -->
-      <div x-show="currentRoute === 'home'" x-cloak>
-        <div style="text-align:center;padding:60px 20px">
-          <div style="width:90px;height:90px;border-radius:22px;background:#3f3f46;margin:0 auto 18px;display:flex;align-items:center;justify-content:center">
-            <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#d6d3d1" stroke-width="1.5">
-              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
-              <line x1="12" y1="22" x2="12" y2="15.5"/>
-              <polyline points="22 8.5 12 15.5 2 8.5"/>
-            </svg>
-          </div>
-          <h1 style="font-size:24px;font-weight:700;color:var(--text-primary)">lora-scripts-anima</h1>
-          <p style="color:var(--text-secondary);margin-top:6px;font-size:13px">Stable Diffusion LoRA / Dreambooth Training UI</p>
-          <p style="color:var(--text-tertiary);margin-top:4px;font-size:12px">
-            Based on <a href="https://github.com/Akegarasu/lora-scripts" target="_blank" rel="noopener">lora-scripts</a>
-          </p>
-        </div>
-      </div>
-
       <!-- Route: Monitor Dashboard -->
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak>
         <div class="page-header">
@@ -251,7 +198,7 @@
         <div id="historyList" class="history-list"></div>
       </div>
 
-      <!-- Route: Training pages (basic/master/anima/flux/sd3) -->
+      <!-- Route: Training pages (basic/master/anima) -->
       <div x-show="currentRoute && currentRoute.startsWith('train-')" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="pageTitle">Training</h1>
@@ -304,47 +251,6 @@
           <div style="text-align:center;padding:30px">
             <p style="color:var(--text-secondary);margin-bottom:16px">LoRA Tools</p>
           </div>
-        </div>
-      </div>
-
-      <!-- Route: Parameter Reference -->
-      <div x-show="currentRoute === 'tool-params'" x-cloak>
-        <div class="markdown-body">
-          <h1 x-text="t('paramRef.title')">参数详解</h1>
-          <p x-text="t('paramRef.subtitle')">LoRA 训练全部参数参考。将鼠标悬停在训练表单的任意字段上即可查看其说明。</p>
-
-          <h2 x-text="t('paramRef.model')">模型</h2>
-          <p><strong>pretrained_model_name_or_path</strong> — <span x-text="t('paramRef.modelPretrained')">底模文件路径</span></p>
-          <p><strong>vae</strong> — <span x-text="t('paramRef.modelVae')">VAE 模型路径</span></p>
-          <p><strong>resume</strong> — <span x-text="t('paramRef.modelResume')">中断恢复路径</span></p>
-          <p><strong>model_train_type</strong> — <span x-text="t('paramRef.modelTrainType')">训练种类</span></p>
-
-          <h2 x-text="t('paramRef.dataset')">数据集</h2>
-          <p><strong>train_data_dir</strong> — <span x-text="t('paramRef.datasetTrainDir')">训练数据集路径</span></p>
-          <p><strong>resolution</strong> — <span x-text="t('paramRef.datasetResolution')">训练分辨率</span></p>
-          <p><strong>enable_bucket</strong> — <span x-text="t('paramRef.datasetBucket')">ARB分桶</span></p>
-
-          <h2 x-text="t('paramRef.training')">训练参数</h2>
-          <p><strong>max_train_epochs</strong> — <span x-text="t('paramRef.trainingMaxEpochs')">最大训练轮数</span></p>
-          <p><strong>train_batch_size</strong> — <span x-text="t('paramRef.trainingBatchSize')">批量大小</span></p>
-          <p><strong>gradient_accumulation_steps</strong> — <span x-text="t('paramRef.trainingGradientAccum')">梯度累加步数</span></p>
-
-          <h2 x-text="t('paramRef.lr')">学习率</h2>
-          <p><strong>learning_rate</strong> — <span x-text="t('paramRef.lrLearningRate')">总学习率</span></p>
-          <p><strong>unet_lr</strong> — <span x-text="t('paramRef.lrUnetLr')">U-Net学习率</span></p>
-          <p><strong>lr_scheduler</strong> — <span x-text="t('paramRef.lrScheduler')">学习率调度器</span></p>
-          <p><strong>optimizer_type</strong> — <span x-text="t('paramRef.lrOptimizer')">优化器</span></p>
-
-          <h2 x-text="t('paramRef.network')">网络</h2>
-          <p><strong>network_dim</strong> — <span x-text="t('paramRef.networkDim')">网络维度</span></p>
-          <p><strong>network_alpha</strong> — <span x-text="t('paramRef.networkAlpha')">缩放因子</span></p>
-
-          <h2 x-text="t('paramRef.speed')">速度与显存</h2>
-          <p><strong>mixed_precision</strong> — <span x-text="t('paramRef.speedMixedPrecision')">混合精度</span></p>
-          <p><strong>xformers</strong> — <span x-text="t('paramRef.speedXformers')">xformers加速</span></p>
-          <p><strong>cache_latents</strong> — <span x-text="t('paramRef.speedCacheLatents')">缓存latent</span></p>
-
-          <blockquote x-text="t('paramRef.footer')">详细参数说明请将鼠标悬停在训练表单的字段标签上查看。</blockquote>
         </div>
       </div>
 

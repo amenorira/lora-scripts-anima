@@ -186,11 +186,10 @@ a:hover { text-decoration: underline; }
 .sidebar-header .logo-icon {
   width: 32px; height: 32px;
   border-radius: var(--radius-sm);
-  background: #d6d3d1;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+  flex-shrink: 0; overflow: hidden;
 }
-.sidebar-header .logo-icon svg { width: 18px; height: 18px; color: #1c1917; }
+.sidebar-header .logo-icon img { width: 24px; height: 24px; }
 
 .sidebar-header .brand-text { font-size: 17px; font-weight: 700; color: #1c1917; letter-spacing: -0.3px; }
 .sidebar-header .version { font-size: 11px; color: var(--text-sidebar-muted); margin-top: 1px; }
@@ -760,8 +759,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .sidebar-bottom { border-top-color: rgba(255,255,255,0.06); }
 [data-theme="dark"] .sidebar-bottom .bottom-btn:hover { background: rgba(255,255,255,0.07); }
 [data-theme="dark"] .sidebar-bottom .divider { background: rgba(255,255,255,0.08); }
-[data-theme="dark"] .sidebar-header .logo-icon { background: #3f3f46; }
-[data-theme="dark"] .sidebar-header .logo-icon svg { color: #d6d3d1; }
 [data-theme="dark"] .sidebar-header .brand-text { color: #fafaf9; }
 [data-theme="dark"] .sidebar-dropdown-menu { background: #1c1c1e; border-color: rgba(255,255,255,0.10); box-shadow: 0 8px 24px rgba(0,0,0,0.40); }
 [data-theme="dark"] .sidebar-dropdown-menu button { color: var(--text-sidebar); }
