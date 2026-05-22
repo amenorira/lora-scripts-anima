@@ -490,7 +490,7 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
   font-size: 12px; font-weight: 600;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-default);
-  text-transform: uppercase; letter-spacing: 0.4px;
+  letter-spacing: 0.4px;
   user-select: none;
 }
 .panel-preview {

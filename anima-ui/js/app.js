@@ -248,7 +248,10 @@ document.addEventListener('alpine:init', () => {
     taggerRunning: false,
 
     get tensorboardUrl() {
-      return `http://${this.tbHost}:${this.tbPort}`;
+      let url = `http://${this.tbHost}:${this.tbPort}`;
+      // Pass dark mode preference to TensorBoard's own UI
+      if (this.resolvedTheme === 'dark') url += '?darkMode=true';
+      return url;
     },
 
     // ── Init ───────────────────────────────────────────────
@@ -479,10 +482,10 @@ document.addEventListener('alpine:init', () => {
         inputHtml = `<textarea data-field="${dataKey}" rows="3" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">${this.esc(val || '')}</textarea>`;
       } else if (field.type === 'stepper') {
         const v = val || 0;
-        inputHtml = `<div class="stepper"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', -${field.step || 1})">-</button><input type="number" data-field="${dataKey}" value="${v}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}" onchange="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
+        inputHtml = `<div class="stepper"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', -${field.step || 1})">-</button><input type="number" data-field="${dataKey}" value="${v}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
       } else if (field.type === 'number') {
         const v = val !== null && val !== undefined ? val : '';
-        inputHtml = `<input type="number" data-field="${dataKey}" value="${v}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}" onchange="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">`;
+        inputHtml = `<input type="number" data-field="${dataKey}" value="${v}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">`;
       } else {
         inputHtml = `<input type="text" data-field="${dataKey}" value="${this.esc(val || '')}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">`;
       }
@@ -582,8 +585,17 @@ document.addEventListener('alpine:init', () => {
 
     // ── TOML (syntax highlighted) ──────────────────────────
     updateToml() {
+      // Build set of valid keys for the current training route
+      const validKeys = new Set();
+      const r = this.currentRoute;
+      const cfg = ROUTE_CONFIG[r] || {};
+      const allSections = [...TRAIN_SECTIONS_COMMON];
+      if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
+      allSections.forEach(s => s.fields.forEach(f => validKeys.add(f.key)));
+
       const lines = [];
       for (const [k, v] of Object.entries(this.form)) {
+        if (!validKeys.has(k)) continue;           // skip keys not in current form
         if (k === 'model_train_type' || k.startsWith('_')) continue;
         if (v === '' || v === null || v === undefined) continue;
         if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
@@ -618,9 +630,20 @@ document.addEventListener('alpine:init', () => {
       if (this.isTraining) return;
       this.isTraining = true; this.isIdle = false;
       this.statusText = this.t('common.training') + '...';
-      const payload = { ...this.form };
-      for (const k of Object.keys(payload)) {
-        if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k];
+
+      // Build set of valid keys to avoid sending stale/extra params
+      const validKeys = new Set(['model_train_type']);
+      const r = this.currentRoute;
+      const cfg = ROUTE_CONFIG[r] || {};
+      const allSections = [...TRAIN_SECTIONS_COMMON];
+      if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
+      allSections.forEach(s => s.fields.forEach(f => validKeys.add(f.key)));
+
+      const payload = {};
+      for (const [k, v] of Object.entries(this.form)) {
+        if (!validKeys.has(k)) continue;
+        if (v === '' || v === null || v === undefined) continue;
+        payload[k] = v;
       }
       try {
         const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
