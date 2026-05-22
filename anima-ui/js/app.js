@@ -250,6 +250,7 @@ const ROUTE_CONFIG = {
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
+  'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
 };
@@ -461,6 +462,13 @@ document.addEventListener('alpine:init', () => {
     logLines: [],
     logMaxLines: 5000,
 
+    // ── Environment state ────────────────────────────────
+    faStatus: null,
+    faBusy: false,
+    faError: null,
+    faManualUrl: '',
+    faCandidatesOpen: false,
+
     // ── Init ───────────────────────────────────────────────
     async init() {
       // Set route IMMEDIATELY to avoid flash of wrong page
@@ -526,6 +534,9 @@ document.addEventListener('alpine:init', () => {
       }
 
       document.title = this.pageTitle + ' | lora-scripts-anima';
+
+      // Store global ref for inline handlers in dynamic HTML
+      window.__anima = this;
     },
 
     // ── Theme with diffusion animation ──────────────────────
@@ -628,6 +639,8 @@ document.addEventListener('alpine:init', () => {
         this.renderLogs();
       } else if (r === 'history') {
         this.loadHistory();
+      } else if (r === 'environment') {
+        this.buildEnvironmentPage();
       }
     },
 
@@ -911,6 +924,205 @@ document.addEventListener('alpine:init', () => {
       });
       html += '</div>';
       el.innerHTML = html;
+    },
+
+    // ═══════════════════════════════════════════════════════
+    //  Environment — Flash Attention Management
+    // ═══════════════════════════════════════════════════════
+
+    async buildEnvironmentPage() {
+      const el = document.getElementById('environmentPage');
+      if (!el) return;
+      const t = (k, fb) => this.t('environment.' + k) || fb || k;
+
+      // Initial loading state
+      if (!this.faStatus) {
+        el.innerHTML = `<div class="card" style="text-align:center;padding:40px"><p>${t('loading', 'Loading environment info...')}</p></div>`;
+        await this.faRefresh();
+      }
+      this.renderEnvironment();
+    },
+
+    async faRefresh() {
+      this.faError = null;
+      try {
+        const r = await fetch('/api/flash-attention/status');
+        this.faStatus = await r.json();
+      } catch (e) {
+        this.faError = String(e);
+        this.faStatus = null;
+      }
+      this.renderEnvironment();
+    },
+
+    async faInstall(url) {
+      const t = (k, fb) => this.t('environment.' + k) || fb || k;
+      const msg = url ? t('confirmUrlInstall', 'Install from URL?') : t('confirmAutoInstall', 'Auto-match and install Flash Attention?');
+      if (!confirm(msg)) return;
+
+      this.faBusy = true;
+      this.faError = null;
+      this.renderEnvironment();
+      try {
+        const r = await fetch('/api/flash-attention/install', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url || null })
+        });
+        const result = await r.json();
+        if (result.success) {
+          this.faError = null;
+          await this.faRefresh();
+        } else {
+          this.faError = result.error || 'Installation failed';
+        }
+      } catch (e) {
+        this.faError = String(e);
+      } finally {
+        this.faBusy = false;
+        this.renderEnvironment();
+      }
+    },
+
+    renderEnvironment() {
+      const el = document.getElementById('environmentPage');
+      if (!el) return;
+      const t = (k, fb) => this.t('environment.' + k) || fb || k;
+      const s = this.faStatus;
+      const env = s?.env || {};
+      const candidates = s?.candidates || [];
+      const usable = candidates.filter(c => c.usable);
+      const best = usable[0] || null;
+      const canAuto = !!env.torch_tag && !!env.platform && usable.length > 0;
+      const hasIssue = !!this.faError || (s && !s.installed);
+
+      let html = '';
+
+      // ── Flash Attention Card ──
+      html += `<details id="env-flash-attn" open class="card" style="margin-bottom:12px;border-radius:8px">
+        <summary class="card-header" style="cursor:pointer;display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:var(--text-tertiary);transition:transform .2s;display:inline-block">▸</span>
+          <span style="font-weight:600">Flash Attention</span>
+          <span style="font-size:11px;color:var(--text-tertiary)">${t('trainingAccel', 'Training acceleration (optional)')}</span>
+          <span class="ml-auto" style="font-size:12px;font-family:monospace;color:${s?.installed ? 'var(--success)' : 'var(--warning)'}">${this.faError ? t('loadFailed', 'Load failed') : !s ? t('loading', 'Loading...') : s.installed ? '✅ ' + (s.version || '?') : t('notInstalled', 'Not installed')}</span>
+        </summary>
+        <div style="padding:0 16px 16px">`;
+
+      if (this.faError && !s) {
+        html += `<div style="color:var(--danger);font-size:12px;margin:8px 0">${this.faError}</div>`;
+      }
+
+      if (s) {
+        // Env info
+        const envRows = [
+          ['flash_attn', s.installed ? `✅ v${s.version || '?'}` : '❌ ' + t('notInstalled', 'Not installed')],
+          ['Python', env.python_tag || t('notDetected', 'N/A')],
+          ['CUDA', env.cuda_tag ? `${env.cuda_tag} (${env.cuda_ver || '?'})` : t('notDetected', 'N/A')],
+          ['PyTorch', env.torch_tag ? `${env.torch_tag} (${env.torch_ver || '?'})` : t('notDetected', 'N/A')],
+          ['Platform', env.platform || t('unsupported', 'Unsupported')],
+        ];
+        html += `<div style="background:var(--bg-sunken);border-radius:6px;padding:10px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:12px">`;
+        envRows.forEach(([label, value]) => {
+          html += `<span style="color:var(--text-tertiary)">${label}:</span><span style="font-family:monospace;color:var(--text-primary)">${value}</span>`;
+        });
+        html += `</div>`;
+
+        // Error message
+        if (this.faError) {
+          html += `<div style="background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px"><pre style="margin:0;white-space:pre-wrap;font-size:11px">${this.faError}</pre></div>`;
+        }
+
+        // Fetch error
+        if (s.fetch_error) {
+          html += `<div style="background:var(--warning-soft);color:var(--warning);border:1px solid var(--warning);border-radius:6px;padding:8px 12px;font-size:11px;margin-bottom:12px">${t('githubApiFail', 'GitHub API unavailable')}: ${s.fetch_error}</div>`;
+        }
+
+        // No wheel match warning
+        if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) {
+          html += `<div style="background:var(--warning-soft);color:var(--warning);border:1px solid var(--warning);border-radius:6px;padding:8px 12px;font-size:11px;margin-bottom:12px">${t('noWheel', 'No matching wheel found. You can paste a URL manually.')}</div>`;
+        }
+
+        // Action buttons
+        html += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <button id="fa-auto-btn"
+            ${this.faBusy || !canAuto ? 'disabled' : ''}
+            class="btn btn-sm btn-primary"
+            title="${best ? best.name : ''}">
+            ${this.faBusy ? t('installing', 'Installing...') : s.installed ? t('reinstall', 'Reinstall (auto-match)') : t('autoInstall', 'Auto Install')}
+          </button>
+          <button id="fa-refresh-btn"
+            ${this.faBusy ? 'disabled' : ''}
+            class="btn btn-sm" style="background:transparent;border:none;color:var(--text-tertiary);cursor:pointer">↻</button>
+          <button id="fa-toggle-btn"
+            class="btn btn-sm" style="background:transparent;border:none;color:var(--text-tertiary);cursor:pointer;font-size:11px;margin-left:auto">
+            ${this.faCandidatesOpen ? t('hideCandidates', '▲ Hide candidates') : t('showCandidates', '▼ Show candidates') + ` (${candidates.length})`}
+          </button>
+        </div>`;
+
+        // Busy indicator
+        if (this.faBusy) {
+          html += `<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">⏳ ${t('installingHint', 'Downloading & installing (2-5 min, ~150MB)...')}</div>`;
+        }
+
+        // Candidate list
+        if (this.faCandidatesOpen && candidates.length) {
+          html += `<div style="max-height:300px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:6px">
+            <ul style="list-style:none;padding:0;margin:0">`;
+          candidates.forEach(c => {
+            const mark = c.usable ? '✓' : '✗';
+            const btnClass = c.usable ? 'btn-primary' : 'btn-secondary';
+            html += `<li style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px">
+              <span style="color:${c.usable ? 'var(--success)' : 'var(--warning)'};font-weight:700">${mark}</span>
+              <code style="flex:1;word-break:break-all;color:var(--text-primary)">${c.name}</code>
+              ${c.notes.length ? `<span style="color:var(--warning);font-size:10px;max-width:200px">${c.notes.join('; ')}</span>` : ''}
+              <button class="fa-candidate-btn btn btn-sm ${btnClass}" style="flex-shrink:0;font-size:10px"
+                data-url="${c.url.replace(/'/g, "\\'")}">
+                ${c.usable ? t('install', 'Install') : t('forceInstall', 'Force')}
+              </button>
+            </li>`;
+          });
+          html += `</ul></div>`;
+        }
+
+        // Manual URL
+        html += `<div style="margin-top:12px;display:flex;gap:8px">
+          <input type="text" x-model="faManualUrl" placeholder="https://github.com/.../flash_attn-...whl"
+            style="flex:1;font-size:12px;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-primary);color:var(--text-primary)">
+          <button class="fa-url-btn btn btn-sm btn-secondary" style="flex-shrink:0"
+            :disabled="faBusy || !faManualUrl.trim()">
+            ${t('installUrl', 'URL Install')}
+          </button>
+        </div>`;
+      }
+
+      html += `</div></details>`;
+
+      // ── Restart hint ──
+      html += `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding:12px">
+        💡 ${t('restartHint', 'Flash Attention is a C extension. After install, restart the GUI for changes to take effect.')}
+      </div>`;
+
+      el.innerHTML = html;
+
+      // ── Attach event listeners (dynamic HTML, Alpine can't bind) ──
+      const a = window.__anima || this;
+      const autoBtn = el.querySelector('#fa-auto-btn');
+      const refreshBtn = el.querySelector('#fa-refresh-btn');
+      const toggleBtn = el.querySelector('#fa-toggle-btn');
+      if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
+      if (refreshBtn) refreshBtn.addEventListener('click', () => a.faRefresh());
+      if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
+      el.querySelectorAll('.fa-candidate-btn').forEach(btn => {
+        btn.addEventListener('click', () => a.faInstall(btn.dataset.url));
+      });
+      // Manual URL input + button via Alpine: use x-model for faManualUrl
+      const urlInput = el.querySelector('input[x-model="faManualUrl"]');
+      const urlBtn = el.querySelector('.fa-url-btn');
+      if (urlInput && urlBtn) {
+        urlInput.value = a.faManualUrl || '';
+        urlInput.addEventListener('input', () => { a.faManualUrl = urlInput.value; });
+        urlBtn.addEventListener('click', () => a.faInstall(a.faManualUrl));
+      }
     },
 
     // ═══════════════════════════════════════════════════════

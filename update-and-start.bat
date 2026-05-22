@@ -4,10 +4,28 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo   Anima LoRA Trainer
+echo   Anima LoRA Trainer - 更新 + 启动
 echo ============================================
 echo.
 
+REM ── 更新仓库 ──
+where git >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [警告] 未找到 Git，跳过仓库更新。
+    echo.
+    goto :check_venv
+)
+
+echo [更新] git pull --ff-only origin main ...
+git pull --ff-only origin main
+if %errorlevel% neq 0 (
+    echo [警告] 更新失败（可能有本地修改冲突），继续启动...
+) else (
+    echo [完成] 仓库已更新。
+)
+echo.
+
+:check_venv
 REM ── 检查虚拟环境 ──
 if exist "venv\Scripts\activate.bat" (
     goto :run

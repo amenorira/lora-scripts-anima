@@ -104,6 +104,13 @@
 
       <!-- Other -->
       <div class="sidebar-section-label" x-text="t('nav.other')">Other</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'environment' }"
+         @click="navigate('environment')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </span>
+        <span x-text="t('nav.environment')">Environment</span>
+      </a>
       <a class="sidebar-item" :class="{ active: currentRoute === 'settings' }"
          @click="navigate('settings')" href="javascript:void(0)">
         <span class="nav-icon">
@@ -250,6 +257,15 @@
             <p style="color:var(--text-secondary);margin-bottom:16px">LoRA Tools</p>
           </div>
         </div>
+      </div>
+
+      <!-- Route: Environment -->
+      <div x-show="currentRoute === 'environment'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('environment.title')">Environment</h1>
+          <p class="page-subtitle" x-text="t('environment.subtitle')">Manage Flash Attention & acceleration libraries</p>
+        </div>
+        <div id="environmentPage"></div>
       </div>
 
       <!-- Route: Settings -->

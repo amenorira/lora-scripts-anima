@@ -5,9 +5,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "============================================"
-echo "  Anima LoRA Trainer"
+echo "  Anima LoRA Trainer - 更新 + 启动"
 echo "============================================"
 echo ""
+
+# ── 更新仓库 ──
+if ! command -v git &>/dev/null; then
+    echo "[警告] 未找到 Git，跳过仓库更新。"
+    echo ""
+else
+    echo "[更新] git pull --ff-only origin main ..."
+    if ! git pull --ff-only origin main; then
+        echo "[警告] 更新失败（可能有本地修改冲突），继续启动..."
+    else
+        echo "[完成] 仓库已更新。"
+    fi
+    echo ""
+fi
 
 # ── 检查虚拟环境 ──
 if [ -f "venv/bin/activate" ]; then

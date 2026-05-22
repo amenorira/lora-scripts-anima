@@ -40,7 +40,7 @@ Anima LoRA 训练图形界面，基于最新的 [kohya-ss/sd-scripts](https://gi
 
 Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 
-按照下面的安装指南安装 GUI，然后运行 `run_gui.ps1`(Windows) 或 `run_gui.sh`(Linux) 来启动 GUI。
+按照下面的安装指南安装 GUI，然后运行 `start.bat`(Windows) 或 `bash start.sh`(Linux) 来启动 GUI。
 
 ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/d3fcf5ad-fb8f-4e1d-81f9-c903376c19c6)
 
@@ -64,68 +64,27 @@ cd lora-scripts-anima
 
 ### 快速开始
 
-| 平台 | 安装 | 启动 |
-|------|------|------|
-| Windows | `.\install-cn.ps1` | `.\start.bat` |
-| Linux | `bash install.sh` | `bash start.sh` |
+| 平台 | 安装 | 直接启动 | 更新仓库并启动 |
+|------|------|----------|----------------|
+| Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
+| Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
 
 启动后 GUI 自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)。
 
 > **RTX 40/50 系显卡用户**：启动脚本会自动检测 flash_attn 状态。
 > 如显示 ❌ 未安装，运行 `.\install-flash-attn.bat` (Windows) 或 `bash install-flash-attn.sh` (Linux) 一键安装。
 
-### 更新
-
-| 操作 | 脚本 |
-|------|------|
-| 更新本仓库 | `update-repo.bat` / `bash update-repo.sh` |
-| 更新训练脚本 (sd-scripts) | `update-scripts.bat` / `bash update-scripts.sh` |
-
 ## ✨ SD-Trainer GUI
 
 训练 WebUI，集成 TensorBoard、WD14 标签器、标签编辑器。
 
-```sh
-# Windows
-.\run_gui.ps1
-
-# Linux
-bash run_gui.sh
-```
+启动后即可使用，无需额外命令。
 
 | Tensorboard | WD 1.4 标签器 | 标签编辑器 |
 | ------------ | ------------ | ------------ |
 | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
 
-## 手动运行脚本（高级用户）
-
-传统方式，直接编辑并运行训练脚本。
-
-### Windows
-
-```sh
-# 安装
-.\install.ps1              # 国际版
-.\install-cn.ps1           # 国内镜像版
-
-# 训练 — 编辑 train.ps1 后运行
-.\train.ps1
-```
-
-### Linux
-
-```sh
-# 安装
-bash install.sh
-
-# 训练 — 先激活 venv，编辑 train.sh 后运行
-source venv/bin/activate
-bash train.sh
-```
-
-#### TensorBoard
-
-运行 `.\tensorboard.ps1` 将在 http://localhost:6006/ 启动 TensorBoard。
+> ℹ️ 旧版手动脚本（`train.ps1`、`tagger.ps1` 等）已归档至 `legacy-scripts/` 目录。
 
 ## 程序参数
 

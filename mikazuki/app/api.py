@@ -412,3 +412,73 @@ async def get_presets() -> APIResponse:
 async def get_saved_params() -> APIResponse:
     saved_params = app_config["saved_params"]
     return APIResponseSuccess(data=saved_params)
+
+
+# ═══════════════════════════════════════════════════════════
+#  Flash Attention 环境管理 API
+# ═══════════════════════════════════════════════════════════
+
+def _import_flash_attn_tool():
+    """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。"""
+    import importlib.util
+    import sys
+    _root = Path(__file__).parents[2]
+    _path = _root / "tools" / "install_flash_attn.py"
+    if not _path.exists():
+        raise ImportError(f"install_flash_attn.py not found at {_path}")
+    spec = importlib.util.spec_from_file_location("install_flash_attn", _path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["install_flash_attn"] = mod
+    spec.loader.exec_module(mod)
+    return mod.detect_env, mod.current_status, mod.fetch_candidates, mod.install_wheel
+
+
+@router.get("/flash-attention/status")
+async def flash_attn_status() -> dict:
+    """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。"""
+    detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
+    try:
+        status = current_status()
+        env = detect_env()
+        candidates, fetch_error = fetch_candidates(env)
+        # 精简候选列表：只保留 UI 需要的字段
+        slim = [
+            {"url": c["url"], "name": c["name"], "notes": c["notes"], "usable": c["usable"]}
+            for c in candidates[:20]
+        ]
+        return {"installed": status["installed"], "version": status["version"],
+                "env": env, "candidates": slim, "fetch_error": fetch_error}
+    except Exception as e:
+        log.error(f"flash_attn status error: {e}")
+        return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(e)}
+
+
+@router.post("/flash-attention/install")
+async def flash_attn_install(request: Request) -> dict:
+    """安装 flash_attn wheel。body: { url: string|null }。
+    url=null 则自动从 GitHub 选最优匹配；否则用指定 URL。
+    同步 pip install，可能几分钟。
+    """
+    detect_env, current_status, fetch_candidates, install_wheel = _import_flash_attn_tool()
+    try:
+        body = await request.json()
+        url = body.get("url", None)
+    except Exception:
+        url = None
+
+    try:
+        if url is None:
+            env = detect_env()
+            candidates, _ = fetch_candidates(env)
+            url = None
+            for c in candidates:
+                if c["usable"]:
+                    url = c["url"]
+                    break
+            if url is None:
+                return {"success": False, "error": "未找到可用 wheel，请手动指定 URL"}
+        result = install_wheel(url)
+        return {"success": True, **result}
+    except Exception as e:
+        log.error(f"flash_attn install error: {e}")
+        return {"success": False, "error": str(e)}

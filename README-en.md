@@ -40,7 +40,7 @@ Anima LoRA training GUI, powered by the latest [kohya-ss/sd-scripts](https://git
 
 The **REAL** Stable Diffusion Training Studio. Everything in one WebUI.
 
-Follow the installation guide below to install the GUI, then run `run_gui.ps1`(windows) or `run_gui.sh`(linux) to start the GUI.
+Follow the installation guide below to install the GUI, then run `start.bat`(Windows) or `bash start.sh`(Linux) to start the GUI.
 
 ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/d3fcf5ad-fb8f-4e1d-81f9-c903376c19c6)
 
@@ -64,60 +64,23 @@ cd lora-scripts-anima
 
 ### Quick Start
 
-| Platform | Install | Launch |
-|----------|---------|--------|
-| Windows | `.\install-cn.ps1` | `.\start.bat` |
-| Linux | `bash install.sh` | `bash start.sh` |
+| Platform | Install | Launch | Update + Launch |
+|----------|---------|--------|----------------|
+| Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
+| Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
 
 The GUI opens automatically at [http://127.0.0.1:28000](http://127.0.0.1:28000).
 
 > **RTX 40/50 users**: the startup script detects flash_attn status.
 > If ❌ not installed, run `.\install-flash-attn.bat` (Windows) or `bash install-flash-attn.sh` (Linux).
 
-### Updates
-
-| Operation | Script |
-|-----------|--------|
-| Update this repo | `update-repo.bat` / `bash update-repo.sh` |
-| Update training scripts (sd-scripts) | `update-scripts.bat` / `bash update-scripts.sh` |
-
 ## ✨ SD-Trainer GUI
 
 Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
 
-```sh
-# Windows
-.\run_gui.ps1
+Just launch and everything is available — no extra commands needed.
 
-# Linux
-bash run_gui.sh
-```
-
-## Manual Scripts (Advanced)
-
-Traditional workflow: edit and run training scripts directly.
-
-### Windows
-
-```sh
-# Install
-.\install.ps1              # International
-.\install-cn.ps1           # China mirror
-
-# Train — edit train.ps1 then run
-.\train.ps1
-```
-
-### Linux
-
-```sh
-# Install
-bash install.sh
-
-# Train — activate venv first, edit train.sh then run
-source venv/bin/activate
-bash train.sh
-```
+> ℹ️ Legacy manual scripts (`train.ps1`, `tagger.ps1`, etc.) have been archived to `legacy-scripts/`.
 
 #### TensorBoard
 
