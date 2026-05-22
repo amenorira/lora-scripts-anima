@@ -629,13 +629,17 @@ document.addEventListener('alpine:init', () => {
       this.isTraining = true; this.isIdle = false;
       this.statusText = this.t('common.training') + '...';
 
-      // Build set of valid keys to avoid sending stale/extra params
+      // Build set of valid keys: only currently-visible fields (respects showIf)
       const validKeys = new Set(['model_train_type']);
       const r = this.currentRoute;
       const cfg = ROUTE_CONFIG[r] || {};
       const allSections = [...TRAIN_SECTIONS_COMMON];
       if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
-      allSections.forEach(s => s.fields.forEach(f => validKeys.add(f.key)));
+      allSections.forEach(s => s.fields.forEach(f => {
+        if (!f.showIf || this.form[f.showIf.key] === f.showIf.eq) {
+          validKeys.add(f.key);
+        }
+      }));
 
       const payload = {};
       for (const [k, v] of Object.entries(this.form)) {
