@@ -240,7 +240,6 @@ a:hover { text-decoration: underline; }
   padding: 8px 8px;
   border-top: 1px solid var(--border-default);
   display: flex; align-items: center; gap: 4px;
-  overflow: hidden;
 }
 
 .sidebar-bottom .bottom-btn {
@@ -748,6 +747,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .sidebar-item .nav-icon { margin: 0; }
   :root { --sidebar-w: 52px; }
   .main-content { padding: 16px 14px; }
+  .sidebar-bottom { flex-wrap: wrap; justify-content: center; padding: 4px 2px; gap: 2px; }
+  .sidebar-bottom .bottom-btn { padding: 2px; }
 }
 
 /* ── Dark mode overrides for light-mode defaults ─────────── */
