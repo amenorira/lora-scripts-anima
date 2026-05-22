@@ -266,117 +266,118 @@ const ROUTE_CONFIG = {
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
 };
 
-// ── Anima Custom Select Component ─────────────────────────
-// Reusable Alpine.data: replaces native <select> with a polished 2026-style dropdown.
-// Supports option groups, per-option tooltip descriptions, and trigger tooltip.
-// Usage: x-data="animaSelect(fieldConfig, initialValue)"
-Alpine.data('animaSelect', (fieldConfigJson, initialValue) => ({
-  open: false,
-  value: initialValue,
-  hoveredIdx: -1,
-  hoveredOpt: null,
-  showTriggerTip: false,
-  triggerTipTimer: null,
-
-  // Derived: uniform groups array (always produces [{label, options}, ...])
-  get displayGroups() {
-    const fc = typeof fieldConfigJson === 'string' ? JSON.parse(fieldConfigJson) : fieldConfigJson;
-    if (fc.groups && fc.groups.length) return fc.groups;
-    // Flat options → single unnamed group
-    if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
-    return [];
-  },
-
-  // Flattened list of all options (for finding selected desc, etc.)
-  get flatOptions() {
-    const result = [];
-    this.displayGroups.forEach(g => {
-      (g.options || []).forEach(o => result.push(o));
-    });
-    return result;
-  },
-
-  get selectedLabel() {
-    const opt = this.flatOptions.find(o => o.v === this.value);
-    return opt ? opt.l : String(this.value || '');
-  },
-
-  get selectedDesc() {
-    const opt = this.flatOptions.find(o => o.v === this.value);
-    return opt ? (opt.d || '') : '';
-  },
-
-  // Init: read initial value from hidden input (synced from parent x-model).
-  // Note: external form changes always trigger a re-render (rebuildForm),
-  // so the component always receives the correct initial value. No watcher needed.
-  init() {
-    // Defer to next tick so x-model has already initialized the hidden input
-    this.$nextTick(() => {
-      const input = this.$refs.modelInput;
-      if (input && input.value !== undefined) {
-        this.value = input.value;
-      }
-    });
-    // Close on Escape
-    this.$watch('open', isOpen => {
-      if (isOpen) {
-        const handler = (e) => { if (e.key === 'Escape') { this.open = false; document.removeEventListener('keydown', handler); } };
-        document.addEventListener('keydown', handler);
-      }
-    });
-  },
-
-  // Click outside to close
-  closeOnOutside() {
-    this.open = false;
-  },
-
-  select(v) {
-    this.value = v;
-    this.open = false;
-    this.syncToModel();
-    this.$dispatch('anima-select-change', { value: v });
-  },
-
-  syncToModel() {
-    const input = this.$refs.modelInput;
-    if (input) {
-      input.value = this.value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  },
-
-  onTriggerMouseEnter() {
-    this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
-  },
-
-  onTriggerMouseLeave() {
-    clearTimeout(this.triggerTipTimer);
-    this.showTriggerTip = false;
-  },
-
-  onOptionMouseEnter(idx, opt) {
-    this.hoveredIdx = idx;
-    this.hoveredOpt = opt;
-  },
-
-  onOptionMouseLeave() {
-    this.hoveredIdx = -1;
-    this.hoveredOpt = null;
-  },
-
-  // Toggle open: reset hovered when opening
-  toggle() {
-    this.open = !this.open;
-    if (!this.open) {
-      this.hoveredIdx = -1;
-      this.hoveredOpt = null;
-    }
-  },
-}));
-
 // ── Alpine App ─────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
+
+  // ── Anima Custom Select Component ───────────────────────
+  // Reusable Alpine.data: replaces native <select> with a polished 2026-style dropdown.
+  // Supports option groups, per-option tooltip descriptions, and trigger tooltip.
+  // Usage: x-data="animaSelect(fieldConfig, initialValue)"
+  Alpine.data('animaSelect', (fieldConfigJson, initialValue) => ({
+    open: false,
+    value: initialValue,
+    hoveredIdx: -1,
+    hoveredOpt: null,
+    showTriggerTip: false,
+    triggerTipTimer: null,
+
+    // Derived: uniform groups array (always produces [{label, options}, ...])
+    get displayGroups() {
+      const fc = typeof fieldConfigJson === 'string' ? JSON.parse(fieldConfigJson) : fieldConfigJson;
+      if (fc.groups && fc.groups.length) return fc.groups;
+      // Flat options → single unnamed group
+      if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
+      return [];
+    },
+
+    // Flattened list of all options (for finding selected desc, etc.)
+    get flatOptions() {
+      const result = [];
+      this.displayGroups.forEach(g => {
+        (g.options || []).forEach(o => result.push(o));
+      });
+      return result;
+    },
+
+    get selectedLabel() {
+      const opt = this.flatOptions.find(o => o.v === this.value);
+      return opt ? opt.l : String(this.value || '');
+    },
+
+    get selectedDesc() {
+      const opt = this.flatOptions.find(o => o.v === this.value);
+      return opt ? (opt.d || '') : '';
+    },
+
+    // Init: read initial value from hidden input (synced from parent x-model).
+    // Note: external form changes always trigger a re-render (rebuildForm),
+    // so the component always receives the correct initial value. No watcher needed.
+    init() {
+      // Defer to next tick so x-model has already initialized the hidden input
+      this.$nextTick(() => {
+        const input = this.$refs.modelInput;
+        if (input && input.value !== undefined) {
+          this.value = input.value;
+        }
+      });
+      // Close on Escape
+      this.$watch('open', isOpen => {
+        if (isOpen) {
+          const handler = (e) => { if (e.key === 'Escape') { this.open = false; document.removeEventListener('keydown', handler); } };
+          document.addEventListener('keydown', handler);
+        }
+      });
+    },
+
+    // Click outside to close
+    closeOnOutside() {
+      this.open = false;
+    },
+
+    select(v) {
+      this.value = v;
+      this.open = false;
+      this.syncToModel();
+      this.$dispatch('anima-select-change', { value: v });
+    },
+
+    syncToModel() {
+      const input = this.$refs.modelInput;
+      if (input) {
+        input.value = this.value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    },
+
+    onTriggerMouseEnter() {
+      this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
+    },
+
+    onTriggerMouseLeave() {
+      clearTimeout(this.triggerTipTimer);
+      this.showTriggerTip = false;
+    },
+
+    onOptionMouseEnter(idx, opt) {
+      this.hoveredIdx = idx;
+      this.hoveredOpt = opt;
+    },
+
+    onOptionMouseLeave() {
+      this.hoveredIdx = -1;
+      this.hoveredOpt = null;
+    },
+
+    // Toggle open: reset hovered when opening
+    toggle() {
+      this.open = !this.open;
+      if (!this.open) {
+        this.hoveredIdx = -1;
+        this.hoveredOpt = null;
+      }
+    },
+  }));
+
   Alpine.data('animaApp', () => ({
 
     // ── State ──────────────────────────────────────────────
