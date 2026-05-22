@@ -844,7 +844,19 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   background: var(--accent-soft);
   font-weight: 600;
   color: var(--text-primary);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Short green accent bar for active option (matches toggle switch color) */
+.anima-select-option.active::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--success);
 }
 
 /* ── Checkmark ───────────────────────────────────────────── */
@@ -900,13 +912,21 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   box-shadow: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08);
 }
 
-/* ── Tooltip arrow (shared) ──────────────────────────────── */
+/* ── Tooltip arrow (shared, defaults to left-pointing for right-side tooltip) ── */
 .anima-tooltip-arrow {
   position: absolute;
   width: 0;
   height: 0;
   border: 7px solid transparent;
   pointer-events: none;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: #2d2d30;
+}
+
+[data-theme="dark"] .anima-tooltip-arrow {
+  border-right-color: #3a3a40;
 }
 
 /* ── Tooltip: below the trigger (closed state) ───────────── */

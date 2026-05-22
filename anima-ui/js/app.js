@@ -382,6 +382,22 @@ document.addEventListener('alpine:init', () => {
         this.hoveredOpt = null;
       }
     },
+
+    // Fixed-position style for trigger tooltip (escapes ancestor overflow clipping)
+    get triggerTipStyle() {
+      if (!this.showTriggerTip || this.open || !this.selectedDesc) return { display: 'none' };
+      const btn = this.$refs.triggerBtn;
+      if (!btn) return { display: 'none' };
+      const r = btn.getBoundingClientRect();
+      return {
+        position: 'fixed',
+        left: (r.right + 10) + 'px',
+        top: (r.top + r.height / 2) + 'px',
+        transform: 'translateY(-50%)',
+        maxWidth: Math.min(260, window.innerWidth - r.right - 24) + 'px',
+        zIndex: '9999',
+      };
+    },
   }));
 
   Alpine.data('animaApp', () => ({
@@ -706,13 +722,14 @@ document.addEventListener('alpine:init', () => {
             @click.outside="closeOnOutside()">
             <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
             <button type="button" class="anima-select-trigger" :class="{ focused: open }"
+              x-ref="triggerBtn"
               @click="toggle()"
               @mouseenter="onTriggerMouseEnter()"
               @mouseleave="onTriggerMouseLeave()">
               <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
               <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="anima-tooltip anima-tooltip-right" x-show="showTriggerTip && !open && selectedDesc" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
+            <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
@@ -745,13 +762,14 @@ document.addEventListener('alpine:init', () => {
             @click.outside="closeOnOutside()">
             <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
             <button type="button" class="anima-select-trigger" :class="{ focused: open }"
+              x-ref="triggerBtn"
               @click="toggle()"
               @mouseenter="onTriggerMouseEnter()"
               @mouseleave="onTriggerMouseLeave()">
               <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
               <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="anima-tooltip anima-tooltip-right" x-show="showTriggerTip && !open && selectedDesc" x-transition:enter="anima-tooltip-enter anima-tooltip-right anima-tooltip-enter-active" x-transition:enter-start="anima-tooltip-enter anima-tooltip-right" x-transition:enter-end="anima-tooltip-enter-to anima-tooltip-right" x-transition:leave="anima-tooltip-leave-active" x-transition:leave-start="anima-tooltip-leave" x-transition:leave-end="anima-tooltip-leave-to">
+            <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
