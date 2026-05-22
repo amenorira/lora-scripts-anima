@@ -546,19 +546,19 @@ document.addEventListener('alpine:init', () => {
       this.theme = t;
       this.showThemeDropdown = false;
 
-      // 1) Add transition class — apply transitions to all elements
-      document.documentElement.classList.add('theme-transitioning');
+      const apply = () => {
+        this.resolveTheme();
+        localStorage.setItem('anima-theme', t);
+      };
 
-      // 2) Force browser to compute styles WITH the transition class active.
-      //    offsetHeight forces layout; getComputedStyle forces style recalculation.
-      //    Together they create a proper "before" snapshot for CSS transitions.
-      document.documentElement.offsetHeight;
-      getComputedStyle(document.documentElement).transitionDuration;
-
-      // 3) Now change data-theme — browser interpolates from the snapshot above
-      this.resolveTheme();
-      localStorage.setItem('anima-theme', t);
-      setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 450);
+      // View Transition API: browser captures old/new states and crossfades.
+      // Guarantees every pixel transitions in perfect sync (Chrome 111+, Edge 111+).
+      // Falls back to instant switch on Firefox / Safari.
+      if (document.startViewTransition) {
+        document.startViewTransition(() => apply());
+      } else {
+        apply();
+      }
     },
 
     toggleTheme() {

@@ -95,19 +95,25 @@
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.30), 0 4px 6px -4px rgba(0,0,0,0.20);
 }
 
-/* ── Theme transition (diffusion) ────────────────────────── */
-.theme-transitioning,
-.theme-transitioning *,
-.theme-transitioning *::before,
-.theme-transitioning *::after {
-  transition: background-color var(--duration-slow) var(--ease-out),
-              color var(--duration-slow) var(--ease-out),
-              border-color var(--duration-slow) var(--ease-out),
-              box-shadow var(--duration-slow) var(--ease-out),
-              fill var(--duration-slow) var(--ease-out),
-              stroke var(--duration-slow) var(--ease-out),
-              outline-color var(--duration-slow) var(--ease-out),
-              caret-color var(--duration-slow) var(--ease-out) !important;
+/* ── Theme transition (View Transition API crossfade) ────── */
+/*
+ * Uses document.startViewTransition() (Chrome 111+, Edge 111+).
+ * Browser captures the old page as an image, runs the theme change,
+ * captures the new page, and crossfades between them.
+ *
+ * This replaces the previous CSS *-selector transition approach which was
+ * inherently unreliable: universal selector timing varies across elements
+ * and browsers, causing out-of-sync "flash" during theme switches.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-slow);
+}
+::view-transition-old(root) {
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-new(root) {
+  animation-timing-function: var(--ease-out);
 }
 
 /* ── Reset & Base ────────────────────────────────────────── */
