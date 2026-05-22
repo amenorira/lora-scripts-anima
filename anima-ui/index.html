@@ -208,7 +208,7 @@
       </div>
 
       <!-- Route: TensorBoard -->
-      <div x-show="currentRoute === 'tensorboard'" x-cloak style="position:absolute;inset:0">
+      <div x-show="currentRoute === 'tensorboard'" x-cloak style="position:absolute;top:-24px;left:-28px;right:-28px;bottom:0">
         <iframe class="iframe-full" :src="tensorboardUrl" id="tensorboardIframe"></iframe>
       </div>
 
@@ -222,7 +222,7 @@
       </div>
 
       <!-- Route: Tag Editor -->
-      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;inset:0">
+      <div x-show="currentRoute === 'tagEditor'" x-cloak style="position:absolute;top:-24px;left:-28px;right:-28px;bottom:0">
         <iframe class="iframe-full" src="/proxy/tageditor" id="tageditorIframe"></iframe>
       </div>
 
@@ -242,41 +242,41 @@
       <!-- Route: Parameter Reference -->
       <div x-show="currentRoute === 'tool-params'" x-cloak>
         <div class="markdown-body">
-          <h1>Parameter Reference</h1>
-          <p>Complete reference for all LoRA training parameters. Hover over any field in the training form to see its description.</p>
+          <h1 x-text="t('paramRef.title')">参数详解</h1>
+          <p x-text="t('paramRef.subtitle')">LoRA 训练全部参数参考。将鼠标悬停在训练表单的任意字段上即可查看其说明。</p>
 
-          <h2>Model</h2>
-          <p><strong>pretrained_model_name_or_path</strong> — Base model path. For SD/SDXL provide a <code>.safetensors</code> file; for DiT models (Anima) provide the model directory.</p>
-          <p><strong>vae</strong> — Optional VAE model path. Anima requires QwenImage VAE.</p>
-          <p><strong>resume</strong> — Path to a <code>save_state</code> checkpoint to resume interrupted training.</p>
-          <p><strong>model_train_type</strong> — Training type: SD LoRA, SDXL LoRA, Anima LoRA, Flux LoRA, or SD3 LoRA.</p>
+          <h2 x-text="t('paramRef.model')">模型</h2>
+          <p><strong>pretrained_model_name_or_path</strong> — <span x-text="t('paramRef.modelPretrained')">底模文件路径</span></p>
+          <p><strong>vae</strong> — <span x-text="t('paramRef.modelVae')">VAE 模型路径</span></p>
+          <p><strong>resume</strong> — <span x-text="t('paramRef.modelResume')">中断恢复路径</span></p>
+          <p><strong>model_train_type</strong> — <span x-text="t('paramRef.modelTrainType')">训练种类</span></p>
 
-          <h2>Dataset</h2>
-          <p><strong>train_data_dir</strong> — Directory containing training images in subfolders, each with <code>.txt</code> caption files.</p>
-          <p><strong>resolution</strong> — Training resolution as <code>width,height</code>. Must be a multiple of 64 for SD/SDXL, 16 for Anima.</p>
-          <p><strong>enable_bucket</strong> — Enable ARB (Aspect Ratio Bucketing) for mixed aspect ratio datasets.</p>
+          <h2 x-text="t('paramRef.dataset')">数据集</h2>
+          <p><strong>train_data_dir</strong> — <span x-text="t('paramRef.datasetTrainDir')">训练数据集路径</span></p>
+          <p><strong>resolution</strong> — <span x-text="t('paramRef.datasetResolution')">训练分辨率</span></p>
+          <p><strong>enable_bucket</strong> — <span x-text="t('paramRef.datasetBucket')">ARB分桶</span></p>
 
-          <h2>Training</h2>
-          <p><strong>max_train_epochs</strong> — Maximum number of training epochs. One epoch = one pass through the entire dataset.</p>
-          <p><strong>train_batch_size</strong> — Number of images processed simultaneously. Higher values require more VRAM.</p>
-          <p><strong>gradient_accumulation_steps</strong> — Accumulate gradients over multiple steps. Effectively increases batch size without VRAM increase.</p>
+          <h2 x-text="t('paramRef.training')">训练参数</h2>
+          <p><strong>max_train_epochs</strong> — <span x-text="t('paramRef.trainingMaxEpochs')">最大训练轮数</span></p>
+          <p><strong>train_batch_size</strong> — <span x-text="t('paramRef.trainingBatchSize')">批量大小</span></p>
+          <p><strong>gradient_accumulation_steps</strong> — <span x-text="t('paramRef.trainingGradientAccum')">梯度累加步数</span></p>
 
-          <h2>Learning Rate</h2>
-          <p><strong>learning_rate</strong> — Overall learning rate. Typical values: <code>1e-4</code> for SD, <code>5e-5</code> for SDXL, <code>1e-4</code> for Flux.</p>
-          <p><strong>unet_lr</strong> — U-Net / backbone learning rate. Set separately from text encoder for fine control.</p>
-          <p><strong>lr_scheduler</strong> — Learning rate schedule. <code>cosine_with_restarts</code> is a good default for most cases.</p>
-          <p><strong>optimizer_type</strong> — <code>AdamW8bit</code> offers a good balance of speed and memory. <code>Prodigy</code> is adaptive.</p>
+          <h2 x-text="t('paramRef.lr')">学习率</h2>
+          <p><strong>learning_rate</strong> — <span x-text="t('paramRef.lrLearningRate')">总学习率</span></p>
+          <p><strong>unet_lr</strong> — <span x-text="t('paramRef.lrUnetLr')">U-Net学习率</span></p>
+          <p><strong>lr_scheduler</strong> — <span x-text="t('paramRef.lrScheduler')">学习率调度器</span></p>
+          <p><strong>optimizer_type</strong> — <span x-text="t('paramRef.lrOptimizer')">优化器</span></p>
 
-          <h2>Network</h2>
-          <p><strong>network_dim</strong> — LoRA rank / network dimension. Common range: 4–128. Lower values use less VRAM but may reduce quality.</p>
-          <p><strong>network_alpha</strong> — Scaling factor. Typically equal to or half of <code>network_dim</code>. Lower alpha needs higher learning rate.</p>
+          <h2 x-text="t('paramRef.network')">网络</h2>
+          <p><strong>network_dim</strong> — <span x-text="t('paramRef.networkDim')">网络维度</span></p>
+          <p><strong>network_alpha</strong> — <span x-text="t('paramRef.networkAlpha')">缩放因子</span></p>
 
-          <h2>Speed & VRAM</h2>
-          <p><strong>mixed_precision</strong> — <code>bf16</code> recommended for RTX 30+ GPUs. <code>fp16</code> for older cards. <code>no</code> for debugging.</p>
-          <p><strong>xformers</strong> — Enable xformers memory-efficient attention. Recommended for most GPUs.</p>
-          <p><strong>cache_latents</strong> — Pre-compute VAE latents to disk, saving VRAM during training.</p>
+          <h2 x-text="t('paramRef.speed')">速度与显存</h2>
+          <p><strong>mixed_precision</strong> — <span x-text="t('paramRef.speedMixedPrecision')">混合精度</span></p>
+          <p><strong>xformers</strong> — <span x-text="t('paramRef.speedXformers')">xformers加速</span></p>
+          <p><strong>cache_latents</strong> — <span x-text="t('paramRef.speedCacheLatents')">缓存latent</span></p>
 
-          <blockquote>For detailed parameter explanations, hover over any field label in the training form.</blockquote>
+          <blockquote x-text="t('paramRef.footer')">详细参数说明请将鼠标悬停在训练表单的字段标签上查看。</blockquote>
         </div>
       </div>
 

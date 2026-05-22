@@ -297,6 +297,7 @@ a:hover { text-decoration: underline; }
   flex: 1; overflow-y: auto;
   padding: 24px 28px;
   scroll-behavior: smooth;
+  position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
 
 .page-header { margin-bottom: 20px; }
