@@ -280,13 +280,21 @@ document.addEventListener('alpine:init', () => {
     hoveredOpt: null,
     showTriggerTip: false,
     triggerTipTimer: null,
+    _escHandler: null,
 
     // Derived: uniform groups array (always produces [{label, options}, ...])
     get displayGroups() {
-      const fc = typeof fieldConfigJson === 'string' ? JSON.parse(fieldConfigJson) : fieldConfigJson;
-      if (fc.groups && fc.groups.length) return fc.groups;
-      // Flat options → single unnamed group
-      if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
+      try {
+        // fieldConfigJson is base64-encoded JSON (from escJson)
+        const json = typeof fieldConfigJson === 'string'
+          ? decodeURIComponent(escape(atob(fieldConfigJson)))
+          : JSON.stringify(fieldConfigJson || {});
+        const fc = typeof json === 'string' ? JSON.parse(json) : json;
+        if (fc.groups && fc.groups.length) return fc.groups;
+        if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
+      } catch (e) {
+        console.warn('[animaSelect] Failed to parse field config:', e);
+      }
       return [];
     },
 
@@ -309,24 +317,22 @@ document.addEventListener('alpine:init', () => {
       return opt ? (opt.d || '') : '';
     },
 
-    // Init: read initial value from hidden input (synced from parent x-model).
-    // Note: external form changes always trigger a re-render (rebuildForm),
-    // so the component always receives the correct initial value. No watcher needed.
+    // Init: the initialValue already carries the correct form value.
+    // The hidden input x-model syncs write-backs; external changes trigger
+    // a full form re-render, so no watcher is needed.
     init() {
-      // Defer to next tick so x-model has already initialized the hidden input
-      this.$nextTick(() => {
-        const input = this.$refs.modelInput;
-        if (input && input.value !== undefined) {
-          this.value = input.value;
-        }
-      });
-      // Close on Escape
-      this.$watch('open', isOpen => {
-        if (isOpen) {
-          const handler = (e) => { if (e.key === 'Escape') { this.open = false; document.removeEventListener('keydown', handler); } };
-          document.addEventListener('keydown', handler);
-        }
-      });
+      this._escHandler = (e) => {
+        if (e.key === 'Escape' && this.open) { this.open = false; }
+      };
+      document.addEventListener('keydown', this._escHandler);
+    },
+
+    // Alpine calls destroy() when the component is removed from DOM
+    destroy() {
+      if (this._escHandler) {
+        document.removeEventListener('keydown', this._escHandler);
+      }
+      clearTimeout(this.triggerTipTimer);
     },
 
     // Click outside to close
@@ -697,8 +703,7 @@ document.addEventListener('alpine:init', () => {
         if (hasGroups || hasOptionDescs) {
           inputHtml = `<div class="anima-select"
             x-data="animaSelect('${this.escJson(fc)}', '${(val || '').replace(/'/g, "\\'")}')"
-            @click.outside="closeOnOutside()"
-            @keydown.escape.window="open = false">
+            @click.outside="closeOnOutside()">
             <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
             <button type="button" class="anima-select-trigger" :class="{ focused: open }"
               @click="toggle()"
@@ -711,7 +716,7 @@ document.addEventListener('alpine:init', () => {
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
-            <div class="anima-select-menu" x-show="open" x-transition.opacity.duration.150ms>
+            <div class="anima-select-menu" x-show="open" x-transition>
               <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
                 <div class="anima-select-group">
                   <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
@@ -738,8 +743,7 @@ document.addEventListener('alpine:init', () => {
           // Simple flat options — no groups, no per-option descriptions
           inputHtml = `<div class="anima-select"
             x-data="animaSelect('${this.escJson(fc)}', '${(val || '').replace(/'/g, "\\'")}')"
-            @click.outside="closeOnOutside()"
-            @keydown.escape.window="open = false">
+            @click.outside="closeOnOutside()">
             <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
             <button type="button" class="anima-select-trigger" :class="{ focused: open }"
               @click="toggle()"
@@ -752,7 +756,7 @@ document.addEventListener('alpine:init', () => {
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
-            <div class="anima-select-menu" x-show="open" x-transition.opacity.duration.150ms>
+            <div class="anima-select-menu" x-show="open" x-transition>
               <template x-for="group in displayGroups" :key="group.label">
                 <div class="anima-select-group">
                   <template x-for="opt in group.options" :key="opt.v">
@@ -801,11 +805,15 @@ document.addEventListener('alpine:init', () => {
 
     esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
 
-    // Safely stringify a JSON object for embedding in HTML attribute values (single-quoted)
+    // Safely encode a JSON object for embedding in HTML attributes.
+    // Uses base64 to avoid all HTML/JS escaping issues (double quotes etc.).
     escJson(obj) {
-      const json = JSON.stringify(obj);
-      // Escape: backslash, single-quote, angle brackets (defense-in-depth)
-      return json.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+      try {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+      } catch (e) {
+        // Fallback: minimal JSON (empty options)
+        return btoa('{"options":[]}');
+      }
     },
 
     setField(key, value) {
