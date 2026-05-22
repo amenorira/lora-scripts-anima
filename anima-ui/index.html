@@ -20,6 +20,9 @@
 </head>
 <body x-data="animaApp()" x-init="init()" x-cloak>
 
+<!-- ── Top Progress Bar (GitHub-style) ─────────────────── -->
+<div class="page-progress" :class="{ active: pageLoading, done: progressPhase === 'finishing' }" role="progressbar"></div>
+
 <!-- ============================================================
      App Layout: Sidebar | Main Content | Right Panel
      ============================================================ -->

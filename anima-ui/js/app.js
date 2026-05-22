@@ -416,6 +416,11 @@ document.addEventListener('alpine:init', () => {
     showLangDropdown: false,
     showMainScroll: false,
 
+    // Progress bar
+    pageLoading: false,
+    progressPhase: 'idle', // 'idle' | 'loading' | 'finishing'
+    _progressTimer: null,
+
     // Form state
     form: {},
     formDefaults: {},
@@ -474,6 +479,9 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────
     async init() {
+      // Start progress bar immediately — covers the entire init sequence
+      this.startProgress();
+
       // Set route IMMEDIATELY to avoid flash of wrong page
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
@@ -502,11 +510,12 @@ document.addEventListener('alpine:init', () => {
       // UI settings
       this.loadUISettings();
 
-      // Route
-      this.handleRoute();
+      // Route change listener (for sidebar navigation & browser back/forward)
       window.addEventListener('hashchange', () => this.handleRoute());
+
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
+        this.startProgress();
         // Force full rebuild: sidebar x-text + page title + route content
         const r = this.currentRoute;
         const cfg = ROUTE_CONFIG[r] || {};
@@ -589,9 +598,39 @@ document.addEventListener('alpine:init', () => {
       this._scrollTimer = setTimeout(() => { this.showMainScroll = false; }, 1000);
     },
 
+    // ── Page Progress Bar ─────────────────────────────────
+    // GitHub-style indeterminate linear progress bar.
+    // Call startProgress() before any async loading; finishProgress() when done.
+    // The bar stays visible a minimum of 400ms to avoid a jarring flash on fast
+    // operations, then fades out via CSS animation.
+    startProgress() {
+      clearTimeout(this._progressTimer);
+      this._progressStartedAt = Date.now();
+      this.progressPhase = 'loading';
+      this.pageLoading = true;
+    },
+
+    finishProgress() {
+      clearTimeout(this._progressTimer);
+      const elapsed = Date.now() - (this._progressStartedAt || 0);
+      const minRemaining = Math.max(0, 400 - elapsed);
+      // Ensure the bar is visible at least minRemaining ms before finishing
+      this._progressTimer = setTimeout(() => {
+        this.progressPhase = 'finishing';
+        // After the CSS finish animation completes (~450ms), reset to idle
+        this._progressTimer = setTimeout(() => {
+          this.pageLoading = false;
+          this.progressPhase = 'idle';
+        }, 500);
+      }, minRemaining);
+    },
+
     // ── Routing ─────────────────────────────────────────────
     navigate(route) {
       window.location.hash = route;
+      // handleRoute() is called directly here (synchronous) AND later via
+      // hashchange event (async). startProgress() / finishProgress() are
+      // managed inside handleRoute() to cover both paths.
       this.handleRoute();
     },
 
@@ -600,6 +639,10 @@ document.addEventListener('alpine:init', () => {
       if (!ROUTE_CONFIG[route]) route = 'home';
 
       const prev = this.currentRoute;
+      if (route === prev) {
+        this.showLoadModal = false;
+        return; // No change — avoid redundant work and premature finishProgress
+      }
       this.currentRoute = route;
 
       const cfg = ROUTE_CONFIG[route];
@@ -609,10 +652,8 @@ document.addEventListener('alpine:init', () => {
       else this.pageSubtitle = cfg.subtitle || '';
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
-      if (route !== prev) {
-        this.buildRouteContent();
-      }
-
+      this.startProgress();
+      this.buildRouteContent();
       this.showLoadModal = false;
     },
 
@@ -628,22 +669,29 @@ document.addEventListener('alpine:init', () => {
       if (!r.startsWith('monitor-')) this.stopMonitorPolling();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
+        this.finishProgress();
       } else if (r === 'tagger') {
         this.buildTaggerForm();
+        this.finishProgress();
       } else if (r === 'tagEditor') {
-        this.tagEditorLoad();
+        this.tagEditorLoad();  // async, calls finishProgress() internally
       } else if (r === 'settings') {
         this.loadUISettings();
+        this.finishProgress();
       } else if (r === 'monitor-dashboard') {
         this.startMonitorPolling();
         this.renderDashboard();
+        // finishProgress() is called after first fetchMonitorStatus completes
       } else if (r === 'monitor-logs') {
         this.startMonitorPolling();
         this.renderLogs();
+        // finishProgress() is called after first fetchMonitorStatus completes
       } else if (r === 'history') {
-        this.loadHistory();
+        this.loadHistory();  // async, calls finishProgress() internally
       } else if (r === 'environment') {
-        this.buildEnvironmentPage();
+        this.buildEnvironmentPage();  // async, calls finishProgress() internally
+      } else {
+        this.finishProgress();
       }
     },
 
@@ -653,12 +701,14 @@ document.addEventListener('alpine:init', () => {
 
     startMonitorPolling() {
       this.stopMonitorPolling();
+      this._monitorFirstFetch = true;
       this.fetchMonitorStatus();
       this.monitorTimer = setInterval(() => this.fetchMonitorStatus(), this.monitorPollMs);
     },
 
     stopMonitorPolling() {
       if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
+      this._monitorFirstFetch = false;
     },
 
     async fetchMonitorStatus() {
@@ -679,8 +729,19 @@ document.addEventListener('alpine:init', () => {
             this.isTraining = false; this.isIdle = true; this.statusText = 'Idle';
           }
           if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+          if (this.currentRoute === 'monitor-logs') this.renderLogs();
         }
-      } catch (e) { /* silent poll */ }
+        // First fetch after navigation: finish progress bar
+        if (this._monitorFirstFetch) {
+          this._monitorFirstFetch = false;
+          this.finishProgress();
+        }
+      } catch (e) {
+        if (this._monitorFirstFetch) {
+          this._monitorFirstFetch = false;
+          this.finishProgress();
+        }
+      }
     },
 
     // ═══════════════════════════════════════════════════════
@@ -904,6 +965,8 @@ document.addEventListener('alpine:init', () => {
         }
       } catch (e) {
         console.warn('Failed to load history:', e);
+      } finally {
+        this.finishProgress();
       }
     },
 
@@ -947,7 +1010,7 @@ document.addEventListener('alpine:init', () => {
 
     async buildEnvironmentPage() {
       const el = document.getElementById('environmentPage');
-      if (!el) return;
+      if (!el) { this.finishProgress(); return; }
       // Show loading state immediately
       if (!this.faStatus) {
         el.innerHTML = `<div class="env-loading">
@@ -957,11 +1020,15 @@ document.addEventListener('alpine:init', () => {
         await this.faRefresh(true);
       }
       this.renderEnvironment();
+      this.finishProgress();
     },
 
     async faRefresh(silent) {
       this.faError = null;
-      if (!silent) this.toast(this.t('environment.refreshing') || 'Refreshing...');
+      if (!silent) {
+        this.startProgress();
+        this.toast(this.t('environment.refreshing') || 'Refreshing...');
+      }
       try {
         const src = this.faSource && this.faSource !== 'default' ? '?source=' + this.faSource : '';
         const r = await fetch('/api/flash-attention/status' + src);
@@ -972,6 +1039,7 @@ document.addEventListener('alpine:init', () => {
         this.faStatus = null;
       }
       this.renderEnvironment();
+      if (!silent) this.finishProgress();
     },
 
     async faInstall(url) {
@@ -980,6 +1048,7 @@ document.addEventListener('alpine:init', () => {
       this.faShowConfirm(msg, async () => {
         this.faBusy = true;
         this.faError = null;
+        this.startProgress();
         this.renderEnvironment();
         try {
           const r = await fetch('/api/flash-attention/install', {
@@ -998,6 +1067,7 @@ document.addEventListener('alpine:init', () => {
           this.faError = String(e);
         } finally {
           this.faBusy = false;
+          this.finishProgress();
           this.renderEnvironment();
         }
       });
@@ -1184,6 +1254,7 @@ document.addEventListener('alpine:init', () => {
     async tagEditorLoad(dir) {
       const d = dir || this.tagEditorDir || this.form?.train_data_dir || './train/aki';
       this.tagEditorDir = d;
+      this.startProgress();
       try {
         const r = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(d));
         const j = await r.json();
@@ -1199,6 +1270,7 @@ document.addEventListener('alpine:init', () => {
           this.renderTagEditor();
         }
       } catch (e) { this.tagEditorImages = []; this.renderTagEditor(); }
+      finally { this.finishProgress(); }
     },
 
     tagEditorSaveAll() {

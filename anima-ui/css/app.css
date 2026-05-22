@@ -535,6 +535,57 @@ textarea { resize: vertical; min-height: 56px; font-family: var(--font-mono); fo
 .status-indicator.running { background: var(--danger); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
+/* ── Page Progress Bar (GitHub-style indeterminate) ──────── */
+.page-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.page-progress.active {
+  opacity: 1;
+}
+.page-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+  transform-origin: left center;
+}
+/* Indeterminate: sliding shimmer */
+.page-progress.active:not(.done)::before {
+  width: 50%;
+  animation: progress-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+/* Finishing: snap to 100% then fade */
+.page-progress.done::before {
+  width: 100%;
+  animation: progress-done 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+@keyframes progress-done {
+  0%   { opacity: 1; transform: scaleX(0.3); }
+  40%  { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* Dark theme: use a slightly brighter progress bar */
+[data-theme="dark"] .page-progress::before {
+  background: linear-gradient(90deg, transparent 0%, #8b8b90 50%, transparent 100%);
+}
+
 /* ── Toast (top, spring bounce, capsule) ─────────────────── */
 .toast-container {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
@@ -670,6 +721,13 @@ input[type="range"]::-webkit-slider-thumb {
    Monitor Dashboard
    ═══════════════════════════════════════════════════════════ */
 .monitor-dashboard { padding: 4px 0; }
+/* Prevent layout flash during content swap: preserve a minimum height
+   so the container never collapses to zero while innerHTML is replaced. */
+#monitorDashboard { min-height: 200px; contain: layout style; }
+#monitorLogs { min-height: 200px; contain: layout style; }
+#historyList { min-height: 120px; contain: layout style; }
+#environmentPage { min-height: 300px; contain: layout style; }
+#trainFormContent { min-height: 400px; contain: layout style; }
 .monitor-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .monitor-row .card { flex: 1; min-width: 260px; }
 .dashboard-empty { text-align: center; padding: 24px; color: var(--text-secondary); font-size: 13px; font-family: var(--font-sans); }
