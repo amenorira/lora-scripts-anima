@@ -346,7 +346,7 @@
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()">
       <div class="panel-header" x-text="t('common.tomlPreview')">TOML Preview</div>
-      <div class="panel-preview" id="tomlPreview"># Parameters will appear here</div>
+      <div class="panel-preview" id="tomlPreview" x-effect="updateToml()"># Parameters will appear here</div>
       <div class="panel-actions">
         <div class="btn-row">
           <button class="btn btn-primary" style="flex:1" @click="startTraining()"

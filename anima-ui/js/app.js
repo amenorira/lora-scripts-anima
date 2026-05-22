@@ -431,16 +431,13 @@ document.addEventListener('alpine:init', () => {
       this.formHistoryIdx = 0;
 
       this.renderTrainingForm(allSections);
-      this.updateToml();
 
-      // Watch for changes + interval fallback for real-time TOML
+      // Persist form to localStorage on any change (debounced via Alpine's reactivity)
       const self = this;
+      const savedKeyLocal = savedKey;
       this.$watch('form', () => {
-        self.updateToml();
-        try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
+        try { localStorage.setItem(savedKeyLocal, JSON.stringify(self.form)); } catch (e) {}
       });
-      const fb = setInterval(() => { self.updateToml(); if (self.tomlRaw && !self.tomlRaw.startsWith('#')) clearInterval(fb); }, 300);
-      setTimeout(() => clearInterval(fb), 3000);
     },
 
     renderTrainingForm(sections) {
@@ -465,47 +462,44 @@ document.addEventListener('alpine:init', () => {
       const val = this.form[field.key];
       const label = this.t(field.descKey) || field.descKey || field.key;
       const hint = field.hintKey ? this.t(field.hintKey) : '';
-      const dataKey = field.key.replace(/'/g, "\\'");
+      const dataKey = field.key; // Alpine-safe key for x-model binding
 
       let inputHtml = '';
 
       if (field.type === 'toggle') {
-        const checked = val === true ? 'checked' : '';
-        inputHtml = `<label class="toggle"><input type="checkbox" data-field="${dataKey}" ${checked} onchange="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
+        inputHtml = `<label class="toggle"><input type="checkbox" x-model="form.${dataKey}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
       } else if (field.type === 'select') {
         let opts = '';
         (field.options || []).forEach(o => {
-          opts += `<option value="${o.v}" ${val === o.v ? 'selected' : ''}>${o.l}</option>`;
+          opts += `<option value="${o.v}">${o.l}</option>`;
         });
-        inputHtml = `<select data-field="${dataKey}" onchange="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">${opts}</select>`;
+        inputHtml = `<select x-model="form.${dataKey}">${opts}</select>`;
       } else if (field.type === 'textarea') {
-        inputHtml = `<textarea data-field="${dataKey}" rows="3" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">${this.esc(val || '')}</textarea>`;
+        inputHtml = `<textarea x-model="form.${dataKey}" rows="3"></textarea>`;
       } else if (field.type === 'stepper') {
-        const v = val || 0;
-        inputHtml = `<div class="stepper"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', -${field.step || 1})">-</button><input type="number" data-field="${dataKey}" value="${v}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)"><button type="button" onclick="document.querySelector('[x-data]').__x.$data.stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
+        inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${field.step || 1})">-</button><input type="number" x-model.number="form.${dataKey}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}"><button type="button" @click="stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
       } else if (field.type === 'number') {
-        const v = val !== null && val !== undefined ? val : '';
-        inputHtml = `<input type="number" data-field="${dataKey}" value="${v}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">`;
+        inputHtml = `<input type="number" x-model.number="form.${dataKey}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}">`;
       } else {
-        inputHtml = `<input type="text" data-field="${dataKey}" value="${this.esc(val || '')}" oninput="document.querySelector('[x-data]').__x.$data.setField('${dataKey}', this.value)">`;
+        inputHtml = `<input type="text" x-model="form.${dataKey}">`;
       }
 
       let actionsHtml = '';
       if (field.role && field.role.startsWith('file-')) {
         actionsHtml = `<div class="field-actions">
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.localFilePicker('${dataKey}','${field.role}')" title="Local picker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+          <button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" title="Local picker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+          <button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+          <button type="button" class="btn-icon" @click="undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+          <button type="button" class="btn-icon" @click="resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>`;
       } else if (field.type === 'text' || field.type === 'number' || field.type === 'textarea') {
         actionsHtml = `<div class="field-actions">
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
-          <button type="button" class="btn-icon" onclick="document.querySelector('[x-data]').__x.$data.resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+          <button type="button" class="btn-icon" @click="undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+          <button type="button" class="btn-icon" @click="resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>`;
       }
 
-      return `<div class="field" data-field-row="${dataKey}">
+      return `<div class="field" data-field-row="${dataKey.replace(/'/g, "\\'")}">
         <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}</div>
         <div class="field-right">${inputHtml}${actionsHtml}</div>
       </div>`;
@@ -519,7 +513,6 @@ document.addEventListener('alpine:init', () => {
       if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) value = Number(value);
       this.form[key] = value;
       this.pushHistory({ ...this.form });
-      this.updateToml();
       const needsRerender = TRAIN_SECTIONS_COMMON.some(s => s.fields.some(f => f.showIf && f.showIf.key === key));
       if (needsRerender) this.rebuildForm();
     },
@@ -585,17 +578,22 @@ document.addEventListener('alpine:init', () => {
 
     // ── TOML (syntax highlighted) ──────────────────────────
     updateToml() {
-      // Build set of valid keys for the current training route
+      // Build set of valid, currently-visible keys for the current training route
       const validKeys = new Set();
       const r = this.currentRoute;
       const cfg = ROUTE_CONFIG[r] || {};
       const allSections = [...TRAIN_SECTIONS_COMMON];
       if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
-      allSections.forEach(s => s.fields.forEach(f => validKeys.add(f.key)));
+      allSections.forEach(s => s.fields.forEach(f => {
+        // Only include if showIf condition is met (or no condition)
+        if (!f.showIf || this.form[f.showIf.key] === f.showIf.eq) {
+          validKeys.add(f.key);
+        }
+      }));
 
       const lines = [];
       for (const [k, v] of Object.entries(this.form)) {
-        if (!validKeys.has(k)) continue;           // skip keys not in current form
+        if (!validKeys.has(k)) continue;           // skip keys not in current form or hidden by showIf
         if (k === 'model_train_type' || k.startsWith('_')) continue;
         if (v === '' || v === null || v === undefined) continue;
         if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
