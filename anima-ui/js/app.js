@@ -954,19 +954,19 @@ document.addEventListener('alpine:init', () => {
           <div class="env-spinner"></div>
           <p>${this.t('environment.loading') || 'Loading environment info...'}</p>
         </div>`;
-        await this.faRefresh();
+        await this.faRefresh(true);
       }
       this.renderEnvironment();
     },
 
-    async faRefresh() {
+    async faRefresh(silent) {
       this.faError = null;
-      this.toast(this.t('environment.refreshing') || 'Refreshing...');
+      if (!silent) this.toast(this.t('environment.refreshing') || 'Refreshing...');
       try {
         const src = this.faSource && this.faSource !== 'default' ? '?source=' + this.faSource : '';
         const r = await fetch('/api/flash-attention/status' + src);
         this.faStatus = await r.json();
-        this.toast(this.t('environment.refreshed') || 'Refreshed');
+        if (!silent) this.toast(this.t('environment.refreshed') || 'Refreshed');
       } catch (e) {
         this.faError = String(e);
         this.faStatus = null;
@@ -990,7 +990,7 @@ document.addEventListener('alpine:init', () => {
           const result = await r.json();
           if (result.success) {
             this.faError = null;
-            await this.faRefresh();
+            await this.faRefresh(true);
           } else {
             this.faError = result.error || 'Installation failed';
           }
