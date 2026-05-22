@@ -749,7 +749,7 @@ document.addEventListener('alpine:init', () => {
               <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
               <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
+            <div class="anima-tooltip" :class="{ 'anima-tooltip-show': showTriggerTip && !open && selectedDesc }" :style="triggerTipStyle">
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
@@ -789,7 +789,7 @@ document.addEventListener('alpine:init', () => {
               <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
               <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
+            <div class="anima-tooltip" :class="{ 'anima-tooltip-show': showTriggerTip && !open && selectedDesc }" :style="triggerTipStyle">
               <span x-text="selectedDesc"></span>
               <div class="anima-tooltip-arrow"></div>
             </div>
