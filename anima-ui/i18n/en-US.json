@@ -1,12 +1,16 @@
 {
   "nav": {
     "home": "Home",
+    "monitor": "Monitor",
+    "monitorDashboard": "Dashboard",
+    "monitorLogs": "Real-time Logs",
     "loraTraining": "LoRA Training",
     "basic": "Beginner (SD1.5)",
     "master": "Expert",
     "anima": "Anima LoRA",
     "flux": "Flux",
     "sd3": "SD3.5",
+    "history": "History",
     "tools": "Tools",
     "tensorboard": "TensorBoard",
     "tagger": "Tagger",

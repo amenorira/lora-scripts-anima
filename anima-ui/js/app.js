@@ -252,6 +252,9 @@ const TRAIN_SECTIONS_ANIMA = [
 
 const ROUTE_CONFIG = {
   'home': { title: 'lora-scripts-anima', subtitle: '' },
+  'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
+  'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
+  'history': { titleKey: 'nav.history', subtitle: '' },
   'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
   'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
@@ -456,6 +459,19 @@ document.addEventListener('alpine:init', () => {
     // Tagger
     taggerRunning: false,
 
+    // ── Monitor state ────────────────────────────────────
+    monitorData: null,
+    monitorTimer: null,
+    monitorPollMs: 2000,
+    gpuInfo: null,
+    lossSeries: [],
+    trainParams: [],
+    previews: [],
+    historyItems: [],
+    logAutoScroll: true,
+    logLines: [],
+    logMaxLines: 5000,
+
     get tensorboardUrl() {
       let url = `http://${this.tbHost}:${this.tbPort}`;
       // Pass dark mode preference to TensorBoard's own UI
@@ -612,6 +628,8 @@ document.addEventListener('alpine:init', () => {
     // ── Route Content Builder ───────────────────────────────
     buildRouteContent() {
       const r = this.currentRoute;
+      // Stop previous monitor polling when switching away
+      if (!r.startsWith('monitor-')) this.stopMonitorPolling();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
       } else if (r === 'tensorboard') {
@@ -620,7 +638,273 @@ document.addEventListener('alpine:init', () => {
         this.buildTaggerForm();
       } else if (r === 'settings') {
         this.loadUISettings();
+      } else if (r === 'monitor-dashboard') {
+        this.startMonitorPolling();
+        this.renderDashboard();
+      } else if (r === 'monitor-logs') {
+        this.startMonitorPolling();
+        this.renderLogs();
+      } else if (r === 'history') {
+        this.loadHistory();
       }
+    },
+
+    // ═══════════════════════════════════════════════════════
+    //  Monitor — Shared
+    // ═══════════════════════════════════════════════════════
+
+    startMonitorPolling() {
+      this.stopMonitorPolling();
+      this.fetchMonitorStatus();
+      this.monitorTimer = setInterval(() => this.fetchMonitorStatus(), this.monitorPollMs);
+    },
+
+    stopMonitorPolling() {
+      if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
+    },
+
+    async fetchMonitorStatus() {
+      try {
+        const tid = this.taskId || '';
+        const r = await fetch('/api/monitor/status?task_id=' + encodeURIComponent(tid));
+        const j = await r.json();
+        if (j.status === 'success') {
+          this.monitorData = j.data;
+          this.gpuInfo = j.data.gpu;
+          this.lossSeries = j.data.tensorboard_loss || [];
+          this.trainParams = j.data.train_params || [];
+          this.previews = j.data.previews || [];
+          // Update active training state
+          if (j.data.state === '训练中') {
+            this.isTraining = true;
+            this.isIdle = false;
+            this.statusText = j.data.state;
+          } else if (j.data.state === '空闲') {
+            this.isTraining = false;
+            this.isIdle = true;
+            this.statusText = 'Idle';
+          }
+          // Re-render dashboard if visible
+          if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+        }
+      } catch (e) { /* silent poll */ }
+    },
+
+    // ═══════════════════════════════════════════════════════
+    //  Monitor — Dashboard
+    // ═══════════════════════════════════════════════════════
+
+    renderDashboard() {
+      const el = document.getElementById('monitorDashboard');
+      if (!el) return;
+      const d = this.monitorData || {};
+      const gpu = this.gpuInfo;
+
+      let html = '<div class="monitor-dashboard">';
+
+      // ── Row 1: Status + GPU ──
+      html += '<div class="monitor-row">';
+      html += this._statusCard(d);
+      if (gpu) html += this._gpuCard(gpu);
+      html += '</div>';
+
+      // ── Row 2: Training Params ──
+      if (this.trainParams.length) {
+        html += '<div class="card" style="margin-top:12px"><div class="card-header">⚙ 训练参数</div>';
+        html += '<div class="param-grid">';
+        this.trainParams.forEach(p => {
+          html += `<div class="param-item"><span class="param-label">${p.label}</span><span class="param-value">${p.value}</span></div>`;
+        });
+        html += '</div></div>';
+      }
+
+      // ── Row 3: Loss / LR Charts ──
+      if (this.lossSeries.length) {
+        html += '<div class="card" style="margin-top:12px"><div class="card-header">📈 Loss / LR 曲线</div>';
+        html += '<div class="chart-grid">';
+        this.lossSeries.forEach(s => {
+          html += `<div class="chart-panel"><div class="chart-title">${s.name} <span class="chart-val">${s.latest?.toFixed(4) || '—'}</span></div>`;
+          html += `<canvas id="chart-${s.tag.replace(/[/.]/g,'-')}" width="360" height="200"></canvas></div>`;
+        });
+        html += '</div></div>';
+      }
+
+      // ── Row 4: Previews ──
+      if (this.previews.length) {
+        html += '<div class="card" style="margin-top:12px"><div class="card-header">🖼 预览样本</div>';
+        html += '<div class="preview-grid">';
+        this.previews.forEach(p => {
+          html += `<div class="preview-item"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')"/><span>${p.name}</span></div>`;
+        });
+        html += '</div></div>';
+      }
+
+      // ── Empty state ──
+      if (!d.state || d.state === '空闲') {
+        html += '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">';
+        html += '<p style="font-size:48px;margin:0">📊</p>';
+        html += '<p>暂无训练任务运行</p><p style="font-size:12px">启动训练后，监控数据将在此显示</p>';
+        html += '</div>';
+      }
+
+      html += '</div>';
+      el.innerHTML = html;
+
+      // Draw canvas charts after DOM update
+      setTimeout(() => this._drawCharts(), 100);
+    },
+
+    _statusCard(d) {
+      const color = d.state === '训练中' ? 'var(--color-success)' : d.has_error ? 'var(--color-error)' : 'var(--text-secondary)';
+      return `<div class="card flex-1">
+        <div class="card-header">🎯 训练状态</div>
+        <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${d.state || '空闲'}</div>
+        ${d.step ? `<div>Step: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>` : ''}
+        ${d.loss ? `<div>Loss: <b>${d.loss}</b></div>` : ''}
+        ${d.lr ? `<div>LR: <b>${d.lr}</b></div>` : ''}
+        ${d.epoch ? `<div>Epoch: <b>${d.epoch}</b></div>` : ''}
+        ${d.speed ? `<div>速度: <b>${d.speed}</b></div>` : ''}
+        ${d.eta ? `<div>ETA: <b>${d.eta}</b></div>` : ''}
+        ${d.has_error ? `<div style="color:var(--color-error);margin-top:8px">⚠ ${d.error_msg || '训练异常'}</div>` : ''}
+      </div>`;
+    },
+
+    _gpuCard(gpu) {
+      const pct = gpu.vram_used_mb / gpu.vram_total_mb * 100;
+      const color = pct > 90 ? 'var(--color-error)' : pct > 70 ? 'var(--color-warning)' : 'var(--color-success)';
+      return `<div class="card flex-1" style="margin-left:12px">
+        <div class="card-header">🖥 GPU</div>
+        <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'NVIDIA GPU'}</div>
+        <div style="font-size:12px">显存: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB (${pct.toFixed(1)}%)</div>
+        <div style="font-size:12px">GPU 负载: <b>${gpu.gpu_load_pct}%</b></div>
+        ${gpu.temperature_c != null ? `<div style="font-size:12px">温度: <b>${gpu.temperature_c}°C</b></div>` : ''}
+        ${gpu.power_w != null ? `<div style="font-size:12px">功耗: <b>${gpu.power_w}W</b></div>` : ''}
+        <div style="margin-top:6px;background:var(--bg-tertiary);border-radius:4px;height:6px">
+          <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s"></div>
+        </div>
+      </div>`;
+    },
+
+    _drawCharts() {
+      this.lossSeries.forEach(s => {
+        const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
+        const c = document.getElementById(id);
+        if (!c || !s.points || s.points.length < 2) return;
+        const ctx = c.getContext('2d');
+        const W = c.width, H = c.height;
+        ctx.clearRect(0, 0, W, H);
+
+        const xs = s.points.map(p => p.step);
+        const ys = s.points.map(p => p.value);
+        const xMin = Math.min(...xs), xMax = Math.max(...xs);
+        const yMin = Math.min(...ys), yMax = Math.max(...ys);
+        const pad = { t: 16, r: 16, b: 28, l: 48 };
+        const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+
+        const sx = (x) => pad.l + (x - xMin) / (xMax - xMin || 1) * pw;
+        const sy = (y) => pad.t + (yMax - y) / (yMax - yMin || 1) * ph;
+
+        // Grid
+        ctx.strokeStyle = 'var(--border-color, #333)';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= 4; i++) {
+          const y = pad.t + i * ph / 4;
+          ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+          ctx.fillStyle = 'var(--text-tertiary, #888)';
+          ctx.font = '10px monospace';
+          ctx.fillText((yMax - i * (yMax - yMin) / 4).toFixed(4), 2, y + 3);
+        }
+
+        // Line
+        ctx.strokeStyle = '#8b5cf6';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        s.points.forEach((p, i) => {
+          const x = sx(p.step), y = sy(p.value);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Last value dot
+        const last = s.points[s.points.length - 1];
+        ctx.fillStyle = '#8b5cf6';
+        ctx.beginPath();
+        ctx.arc(sx(last.step), sy(last.value), 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════
+    //  Monitor — Logs
+    // ═══════════════════════════════════════════════════════
+
+    renderLogs() {
+      const el = document.getElementById('monitorLogs');
+      if (!el) return;
+      if (!this.logLines.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>📜</p><p>暂无日志</p></div>';
+        return;
+      }
+      let html = '<div class="log-lines">';
+      this.logLines.forEach(line => {
+        const cls = line.toLowerCase().includes('error') || line.toLowerCase().includes('traceback') ? 'log-error' :
+                    line.toLowerCase().includes('warning') ? 'log-warn' : '';
+        html += `<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;
+      });
+      html += '</div>';
+      el.innerHTML = html;
+      if (this.logAutoScroll) el.scrollTop = el.scrollHeight;
+    },
+
+    copyLogs() {
+      const text = this.logLines.join('\n');
+      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'));
+    },
+
+    clearLogs() { this.logLines = []; this.renderLogs(); },
+
+    _escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    },
+
+    // ═══════════════════════════════════════════════════════
+    //  Monitor — History
+    // ═══════════════════════════════════════════════════════
+
+    async loadHistory() {
+      try {
+        const r = await fetch('/api/monitor/history');
+        const j = await r.json();
+        if (j.status === 'success') {
+          this.historyItems = j.data || [];
+          this.renderHistory();
+        }
+      } catch (e) {
+        console.warn('Failed to load history:', e);
+      }
+    },
+
+    renderHistory() {
+      const el = document.getElementById('historyList');
+      if (!el) return;
+      if (!this.historyItems.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)"><p>📋</p><p>暂无历史训练记录</p><p style="font-size:12px">启动训练后，记录将自动保存</p></div>';
+        return;
+      }
+      let html = '<div class="history-grid">';
+      this.historyItems.forEach(h => {
+        html += `<div class="card history-card">
+          <div class="card-header">📅 ${h.time}</div>
+          <div><b>${h.name}</b></div>
+          <div style="font-size:12px;color:var(--text-secondary)">模型: ${h.model}</div>
+          <div style="font-size:12px;color:var(--text-secondary)">LR: ${h.lr} · Dim: ${h.dim} · Epochs: ${h.epochs}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">配置: ${h.config_file}</div>
+        </div>`;
+      });
+      html += '</div>';
+      el.innerHTML = html;
     },
 
     // ── Training Form ──────────────────────────────────────

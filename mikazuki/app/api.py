@@ -151,6 +151,25 @@ async def create_toml_file(request: Request):
     model_train_type = config.get("model_train_type", "sd-lora")
     trainer_file = trainer_mapping[model_train_type]
 
+    # ── 🆕 Anima Backend Adapter: 白名单过滤 + NaN 清理 + 路径规范化 ──
+    try:
+        from mikazuki.anima_backend import adapt_config, detect_attention_backend
+        adapted_config, warnings = adapt_config(config)
+        for w in warnings:
+            log.warning(f"[Adapter] {w}")
+        config = adapted_config
+
+        # 🆕 attn_mode 自动降级检测
+        if "attn_mode" in config:
+            attn_requested = config.get("attn_mode", "torch")
+            attn_actual, attn_warning = detect_attention_backend(attn_requested)
+            if attn_warning:
+                log.warning(f"[Attn] {attn_warning}")
+                config["attn_mode"] = attn_actual
+    except ImportError:
+        pass  # adapter 可选，不影响现有逻辑
+    # ──────────────────────────────────────────────────────────
+
     if model_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
             return APIResponseFail(message="训练数据集路径不存在或没有图片，请检查目录。")

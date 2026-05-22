@@ -17,6 +17,7 @@ from mikazuki.app.api import router as api_router
 from mikazuki.app.ui_v2 import router as ui_v2_router
 # from mikazuki.app.ipc import router as ipc_router
 from mikazuki.app.proxy import router as proxy_router
+from mikazuki.monitor import router as monitor_router
 from mikazuki.utils.devices import check_torch_gpu
 
 mimetypes.add_type("application/javascript", ".js")
@@ -77,6 +78,7 @@ async def add_cache_control_header(request, call_next):
     return response
 
 app.include_router(api_router, prefix="/api")
+app.include_router(monitor_router, prefix="/api")
 # app.include_router(ipc_router, prefix="/ipc")
 
 # New v2 frontend (legacy HTMX/Alpine) — kept for backward compat

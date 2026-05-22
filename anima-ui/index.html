@@ -50,6 +50,23 @@
         <span x-text="t('nav.home')">Home</span>
       </a>
 
+      <!-- Monitor group -->
+      <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'monitor-dashboard' }"
+         @click="navigate('monitor-dashboard')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        </span>
+        <span x-text="t('nav.monitorDashboard')">Dashboard</span>
+      </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'monitor-logs' }"
+         @click="navigate('monitor-logs')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </span>
+        <span x-text="t('nav.monitorLogs')">Real-time Logs</span>
+      </a>
+
       <!-- LoRA Training group -->
       <div class="sidebar-section-label" x-text="t('nav.loraTraining')">LoRA Training</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'train-basic' }"
@@ -93,6 +110,16 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </span>
         <span x-text="t('nav.paramRef')">Parameter Reference</span>
+      </a>
+
+      <!-- History -->
+      <div class="sidebar-section-label" x-text="t('nav.history')">History</div>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'history' }"
+         @click="navigate('history')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </span>
+        <span x-text="t('nav.history')">History</span>
       </a>
 
       <!-- Tools -->
@@ -191,6 +218,42 @@
             Based on <a href="https://github.com/Akegarasu/lora-scripts" target="_blank" rel="noopener">lora-scripts</a>
           </p>
         </div>
+      </div>
+
+      <!-- Route: Monitor Dashboard -->
+      <div x-show="currentRoute === 'monitor-dashboard'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
+          <p class="page-subtitle">GPU · Loss · LR · 预览样本</p>
+        </div>
+        <div id="monitorDashboard"></div>
+      </div>
+
+      <!-- Route: Monitor Logs -->
+      <div x-show="currentRoute === 'monitor-logs'" x-cloak>
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
+            <p class="page-subtitle">实时训练日志 · 自动滚动 · 错误高亮</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
+              <span x-text="logAutoScroll ? '⏸ 暂停滚动' : '▶ 跟随滚动'"></span>
+            </button>
+            <button class="btn btn-sm btn-secondary" @click="copyLogs()">📋 复制</button>
+            <button class="btn btn-sm btn-secondary" @click="clearLogs()">🗑 清空</button>
+          </div>
+        </div>
+        <div id="monitorLogs" class="monitor-logs-container"></div>
+      </div>
+
+      <!-- Route: History -->
+      <div x-show="currentRoute === 'history'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
+          <p class="page-subtitle">历史训练记录 · 点击查看详情</p>
+        </div>
+        <div id="historyList" class="history-list"></div>
       </div>
 
       <!-- Route: Training pages (basic/master/anima/flux/sd3) -->
