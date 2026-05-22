@@ -381,7 +381,8 @@ async def monitor_status(task_id: str = Query("")):
         "gpu": _gpu_info(),
         "system": _system_info(),
         "tensorboard_loss": _read_tensorboard_loss(),
-        "state": "空闲",
+        "state": "IDLE",
+        "state_label": "空闲",
         "step": 0,
         "total_steps": 0,
         "percent": 0,
@@ -415,8 +416,8 @@ async def monitor_status(task_id: str = Query("")):
         active = tasks[-1]
 
     result["active_task"] = active
-    state_map = {"RUNNING": "训练中", "FINISHED": "已完成", "TERMINATED": "已终止", "CREATED": "等待启动"}
-    result["state"] = state_map.get(active.get("status"), active.get("status", "未知"))
+    result["state"] = active.get("status", "UNKNOWN")
+    result["state_label"] = {"RUNNING": "训练中", "FINISHED": "已完成", "TERMINATED": "已终止", "CREATED": "等待启动"}.get(active.get("status"), active.get("status", "未知"))
 
     # 如果有激活任务，尝试解析日志
     # 注意：这需要访问训练进程的 stdout，当前 Task 类的 process.stdout 可用于此

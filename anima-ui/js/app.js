@@ -685,9 +685,9 @@ document.addEventListener('alpine:init', () => {
           this.lossSeries = j.data.tensorboard_loss || [];
           this.trainParams = j.data.train_params || [];
           this.previews = j.data.previews || [];
-          if (j.data.state === '训练中') {
-            this.isTraining = true; this.isIdle = false; this.statusText = j.data.state;
-          } else if (j.data.state === '空闲') {
+          if (j.data.state === 'RUNNING') {
+            this.isTraining = true; this.isIdle = false; this.statusText = j.data.state_label || j.data.state;
+          } else if (j.data.state === 'IDLE') {
             this.isTraining = false; this.isIdle = true; this.statusText = 'Idle';
           }
           if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
@@ -717,7 +717,7 @@ document.addEventListener('alpine:init', () => {
       html += '</div>';
 
       // ── Row 2: Training Params (show if exists) ──
-      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('trainParams', '训练参数') + '</div>';
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('trainParams', 'Training Parameters') + '</div>';
       if (this.trainParams.length) {
         html += '<div class="param-grid">';
         this.trainParams.forEach(p => {
@@ -725,12 +725,12 @@ document.addEventListener('alpine:init', () => {
         });
         html += '</div>';
       } else {
-        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', '启动训练后显示') + '</div>';
+        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', 'Start training to see data') + '</div>';
       }
       html += '</div>';
 
       // ── Row 3: Loss / LR Charts (always show panels) ──
-      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR 曲线') + '</div>';
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR Curves') + '</div>';
       html += '<div class="chart-grid">';
       const chartTags = this.lossSeries.length ? this.lossSeries : [
         { tag: 'loss/average', name: 'loss average', latest: null, points: [] },
@@ -745,7 +745,7 @@ document.addEventListener('alpine:init', () => {
       html += '</div></div>';
 
       // ── Row 4: Previews (always show panel) ──
-      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('previewSamples', '预览样本') + '</div>';
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
       if (this.previews.length) {
         html += '<div class="preview-grid">';
         this.previews.forEach(p => {
@@ -753,7 +753,7 @@ document.addEventListener('alpine:init', () => {
         });
         html += '</div>';
       } else {
-        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', '启动训练后显示') + '</div>';
+        html += '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">' + t('noTrainingHint', 'Start training to see data') + '</div>';
       }
       html += '</div>';
 
@@ -763,21 +763,21 @@ document.addEventListener('alpine:init', () => {
     },
 
     _statusCard(d, t) {
-      const state = d.state || '空闲';
-      const isTraining = state === '训练中';
+      const state = d.state_label || d.state || 'IDLE';
+      const isTraining = d.state === 'RUNNING';
       const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
       let html = `<div class="card flex-1">
-        <div class="card-header">${t('status', '训练状态')}</div>
+        <div class="card-header">${t('status', 'Training Status')}</div>
         <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
       if (isTraining) {
-        if (d.step) html += `<div>${t('step', '步数')}: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>`;
+        if (d.step) html += `<div>${t('step', 'Steps')}: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>`;
         if (d.loss) html += `<div>${t('loss', 'Loss')}: <b>${d.loss}</b></div>`;
-        if (d.lr) html += `<div>${t('lr', '学习率')}: <b>${d.lr}</b></div>`;
+        if (d.lr) html += `<div>${t('lr', 'LR')}: <b>${d.lr}</b></div>`;
         if (d.epoch) html += `<div>${t('epoch', 'Epoch')}: <b>${d.epoch}</b></div>`;
-        if (d.speed) html += `<div>${t('speed', '速度')}: <b>${d.speed}</b></div>`;
+        if (d.speed) html += `<div>${t('speed', 'Speed')}: <b>${d.speed}</b></div>`;
         if (d.eta) html += `<div>ETA: <b>${d.eta}</b></div>`;
       }
-      if (d.has_error) html += `<div style="color:var(--danger);margin-top:8px">${d.error_msg || t('error', '训练异常')}</div>`;
+      if (d.has_error) html += `<div style="color:var(--danger);margin-top:8px">${d.error_msg || t('error', 'Training Error')}</div>`;
       html += '</div>';
       return html;
     },
@@ -786,12 +786,12 @@ document.addEventListener('alpine:init', () => {
       const pct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb * 100 : 0;
       const color = pct > 90 ? 'var(--danger)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
       let html = `<div class="card flex-1" style="margin-left:12px">
-        <div class="card-header">${t('gpu', 'GPU 监控')}</div>
-        <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'NVIDIA GPU'}</div>`;
-      html += `<div style="font-size:12px">${t('vramUsed', '显存')}: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB</div>`;
-      html += `<div style="font-size:12px">${t('gpuLoad', '负载')}: <b>${gpu.gpu_load_pct}%</b></div>`;
-      if (gpu.temperature_c != null) html += `<div style="font-size:12px">${t('gpuTemp', '温度')}: <b>${gpu.temperature_c}°C</b></div>`;
-      if (gpu.power_w != null) html += `<div style="font-size:12px">${t('gpuPower', '功耗')}: <b>${gpu.power_w}W</b></div>`;
+        <div class="card-header">${t('gpu', 'GPU')}</div>
+        <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'GPU'}</div>`;
+      html += `<div style="font-size:12px">${t('vramUsed', 'VRAM')}: <b style="color:${color}">${gpu.vram_used_mb} MB</b> / ${gpu.vram_total_mb} MB</div>`;
+      html += `<div style="font-size:12px">${t('gpuLoad', 'Load')}: <b>${gpu.gpu_load_pct}%</b></div>`;
+      if (gpu.temperature_c != null) html += `<div style="font-size:12px">${t('gpuTemp', 'Temp')}: <b>${gpu.temperature_c}&deg;C</b></div>`;
+      if (gpu.power_w != null) html += `<div style="font-size:12px">${t('gpuPower', 'Power')}: <b>${gpu.power_w}W</b></div>`;
       html += `<div style="margin-top:6px;background:var(--bg-input);border-radius:4px;height:6px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s"></div></div>`;
       html += '</div>';
       return html;
@@ -801,10 +801,10 @@ document.addEventListener('alpine:init', () => {
       const cpuColor = sys.cpu_pct > 80 ? 'var(--danger)' : sys.cpu_pct > 50 ? 'var(--warning)' : 'var(--success)';
       const ramColor = sys.ram_pct > 80 ? 'var(--danger)' : sys.ram_pct > 50 ? 'var(--warning)' : 'var(--success)';
       let html = `<div class="card flex-1" style="margin-left:12px">
-        <div class="card-header">${t('system', '系统资源')}</div>`;
+        <div class="card-header">${t('system', 'System')}</div>`;
       html += `<div style="font-size:12px;margin:4px 0">${t('cpu', 'CPU')}: <b style="color:${cpuColor}">${sys.cpu_pct}%</b></div>`;
       html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.cpu_pct}%;height:100%;background:${cpuColor};border-radius:4px;transition:width 0.5s"></div></div>`;
-      html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', '内存')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB</b> / ${sys.ram_total_gb} GB</div>`;
+      html += `<div style="font-size:12px;margin:8px 0 4px">${t('ram', 'RAM')}: <b style="color:${ramColor}">${sys.ram_used_gb} GB</b> / ${sys.ram_total_gb} GB</div>`;
       html += `<div style="margin-top:4px;background:var(--bg-input);border-radius:4px;height:4px"><div style="width:${sys.ram_pct}%;height:100%;background:${ramColor};border-radius:4px;transition:width 0.5s"></div></div>`;
       html += '</div>';
       return html;
@@ -885,7 +885,7 @@ document.addEventListener('alpine:init', () => {
 
     copyLogs() {
       const text = this.logLines.join('\n');
-      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'));
+      navigator.clipboard.writeText(text).then(() => alert('Copied'));
     },
 
     clearLogs() { this.logLines = []; this.renderLogs(); },
@@ -925,7 +925,7 @@ document.addEventListener('alpine:init', () => {
         html += `<div class="card history-card">
           <div class="card-header">${h.time}</div>
           <div><b>${h.name}</b></div>
-          <div style="font-size:12px;color:var(--text-secondary)">模型: ${h.model}</div>
+          <div style="font-size:12px;color:var(--text-secondary)">Model: ${h.model}</div>
           <div style="font-size:12px;color:var(--text-secondary)">LR: ${h.lr} · Dim: ${h.dim} · Epochs: ${h.epochs}</div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${h.config_file}</div>
         </div>`;
@@ -992,9 +992,9 @@ document.addEventListener('alpine:init', () => {
         if (j.status === 'success') {
           this.tagEditorLoad(); // reload after batch op
         } else {
-          alert(j.message || '操作失败');
+          alert(j.message || 'Operation failed');
         }
-      } catch (e) { alert('操作失败: ' + e); }
+      } catch (e) { alert('Operation failed: ' + e); }
     },
 
     tagEditorUpdate(imgPath, newTags) {
@@ -1012,35 +1012,35 @@ document.addEventListener('alpine:init', () => {
 
       // ── Dir selector ──
       html += `<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center">
-        <span style="font-size:12px;color:var(--text-secondary)">${tt('datasetDir', '数据集')}:</span>
+        <span style="font-size:12px;color:var(--text-secondary)">${tt('datasetDir', 'Dataset')}:</span>
         <input type="text" style="flex:1" value="${this.tagEditorDir}" id="tagEditorDirInput"
           @keydown.enter="tagEditorLoad($event.target.value)">
-        <button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById('tagEditorDirInput').value)">${tt('loadImages', '加载')}</button>
+        <button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById('tagEditorDirInput').value)">${tt('loadImages', 'Load')}</button>
         <span style="font-size:12px;color:var(--text-tertiary)">${imgs.length} images</span>
       </div></div>`;
 
       if (!imgs.length) {
-        html += `<div style="text-align:center;padding:40px;color:var(--text-tertiary)">${tt('noImages', '暂无图片，请先加载数据集目录')}</div>`;
+        html += `<div style="text-align:center;padding:40px;color:var(--text-tertiary)">${tt('noImages', 'No images found, load a dataset first')}</div>`;
         el.innerHTML = html;
         return;
       }
 
       // ── Batch toolbar ──
       html += '<div class="card" style="margin-bottom:12px"><div class="batch-toolbar">';
-      html += `<input type="text" id="batchVal" placeholder="value" style="width:120px"><input type="text" id="batchVal2" placeholder="${tt('findReplace', 'replace')}" style="width:120px">`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix',{value:document.getElementById('batchVal').value})">${tt('addPrefix', '添加前缀')}</button>`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_suffix',{value:document.getElementById('batchVal').value})">${tt('addSuffix', '添加后缀')}</button>`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('find_replace',{find:document.getElementById('batchVal').value,replace:document.getElementById('batchVal2').value})">${tt('findReplace', '查找替换')}</button>`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('delete_tag',{value:document.getElementById('batchVal').value})">${tt('deleteTag', '删除')}</button>`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup',{})">${tt('dedup', '去重')}</button>`;
-      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort',{})">${tt('sort', '排序')}</button>`;
+      html += `<input type="text" id="batchVal" placeholder="value" style="width:120px"><input type="text" id="batchVal2" placeholder="${tt('findReplace', 'replace with')}" style="width:120px">`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix',{value:document.getElementById('batchVal').value})">${tt('addPrefix', 'Add Prefix')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_suffix',{value:document.getElementById('batchVal').value})">${tt('addSuffix', 'Add Suffix')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('find_replace',{find:document.getElementById('batchVal').value,replace:document.getElementById('batchVal2').value})">${tt('findReplace', 'Find & Replace')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('delete_tag',{value:document.getElementById('batchVal').value})">${tt('deleteTag', 'Delete')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup',{})">${tt('dedup', 'Dedup')}</button>`;
+      html += `<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort',{})">${tt('sort', 'Sort')}</button>`;
       html += '</div></div>';
 
       // ── Image grid + tag editor ──
       html += '<div class="tag-editor-grid">';
       imgs.forEach((img, idx) => {
         const tagPills = (img.tags || '').split(',').filter(t => t.trim()).map(t =>
-          `<span class="tag-pill" @click="tagEditorRemoveTag('${img.path}','${t.trim().replace(/'/g,"\\'")}')" title="${tt('clickToDelete', '点击删除')}">${t.trim()}</span>`
+          `<span class="tag-pill" @click="tagEditorRemoveTag('${img.path}','${t.trim().replace(/'/g,"\\'")}')" title="${tt('clickToDelete', 'Click to remove')}">${t.trim()}</span>`
         ).join('');
         const isModified = this.tagEditorOriginal[img.path] !== undefined && this.tagEditorOriginal[img.path] !== img.tags;
 
