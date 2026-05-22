@@ -196,25 +196,25 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
                     if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
                         score += 5
                         notes.append(
-                            f"⚠ PyTorch 版本不同 (wheel 编译于 {tags['torch']}, 当前 {torch_tag})"
-                            f" — PyTorch 小版本间通常 ABI 不兼容，大概率 import 失败"
+                            f"PyTorch minor mismatch (wheel={tags['torch']}, env={torch_tag})"
+                            f" — minor versions usually ABI-incompatible, likely import failure"
                         )
                     else:
                         score -= 15
                         usable = False
                         notes.append(
-                            f"✗ PyTorch 版本不同 (wheel={tags['torch']}, 当前={torch_tag})"
-                            f" — 无法使用"
+                            f"PyTorch major mismatch (wheel={tags['torch']}, env={torch_tag})"
+                            f" — incompatible"
                         )
 
-            # Python ABI: 严格匹配
+            # Python ABI: exact match required
             if python_tag:
                 if tags["python"] == python_tag:
                     score += 20
                 else:
                     usable = False
                     notes.append(
-                        f"✗ Python ABI 不兼容 (wheel={tags['python']}, 当前={python_tag})"
+                        f"Python ABI mismatch (wheel={tags['python']}, env={python_tag})"
                     )
 
             # CUDA: 精确匹配 > 同大版本 > 不兼容
@@ -224,12 +224,12 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
                 elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
                     score += 10
                     notes.append(
-                        f"CUDA 小版本差异 (wheel={tags['cuda']}, 当前={cuda_tag}, 同大版本通常兼容)"
+                        f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag}, same major usually OK)"
                     )
                 else:
                     score -= 5
                     notes.append(
-                        f"✗ CUDA 大版本不同 (wheel={tags['cuda']}, 当前={cuda_tag})"
+                        f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})"
                     )
 
             candidates.append({

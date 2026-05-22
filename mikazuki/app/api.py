@@ -526,7 +526,7 @@ async def flash_attn_install(request: Request) -> dict:
                     url = c["url"]
                     break
             if url is None:
-                return {"success": False, "error": "未找到可用 wheel，请手动指定 URL"}
+                return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
         # 国内镜像：wheel 下载走 ghproxy 代理
         if source == "mirror" and url and not url.startswith("https://ghproxy.com/"):
             url = "https://ghproxy.com/" + url
