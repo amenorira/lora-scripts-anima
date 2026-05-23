@@ -187,10 +187,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          @scroll="onContentScroll()"
-          @mouseenter="showMainScroll = true"
-          @mouseleave="showMainScroll = false"
-          :class="{ 'scroll-visible': showMainScroll, 'main-fullscreen': currentRoute === 'tagEditor' }">
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' }">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>

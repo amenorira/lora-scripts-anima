@@ -220,6 +220,8 @@
     "backendConnected": "后端已连接",
     "backendDisconnected": "后端已断开",
     "backendDisconnectedHint": "后端服务不可用，请检查是否已退出",
+    "backendDisconnectedToast": "后端连接已断开",
+    "backendReconnectedToast": "后端已重新连接",
     "disconnectedSeconds": "{n} 秒前",
     "disconnectedMinutes": "{n} 分 {s} 秒前",
     "disconnectedHours": "{n} 小时 {s} 分前"

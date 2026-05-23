@@ -220,6 +220,8 @@
     "backendConnected": "Backend connected",
     "backendDisconnected": "Backend disconnected",
     "backendDisconnectedHint": "Backend service unavailable, check if it has exited",
+    "backendDisconnectedToast": "Backend connection lost",
+    "backendReconnectedToast": "Backend reconnected",
     "disconnectedSeconds": "{n}s ago",
     "disconnectedMinutes": "{n}m {s}s ago",
     "disconnectedHours": "{n}h {s}m ago"

@@ -152,28 +152,22 @@ body {
   color: var(--text-primary);
   background: var(--bg-root);
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* ── Modern Scrollbar ────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-button { display: none; }
+/* ── Scrollbar styling ───────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-  transition: background var(--duration-slow) var(--ease-out);
+  background: rgba(120,113,108,0.22);
+  border-radius: 4px;
 }
-:hover::-webkit-scrollbar-thumb { background: rgba(120,113,108,0.30); }
-::-webkit-scrollbar-thumb:hover { background: rgba(120,113,108,0.50); }
-[data-theme="dark"] :hover::-webkit-scrollbar-thumb { background: rgba(107,107,102,0.25); }
-[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(107,107,102,0.45); }
-
-* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-*:hover { scrollbar-color: rgba(120,113,108,0.30) transparent; }
-[data-theme="dark"] *:hover { scrollbar-color: rgba(107,107,102,0.25) transparent; }
+::-webkit-scrollbar-thumb:hover { background: rgba(120,113,108,0.45); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(107,107,102,0.22); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(107,107,102,0.42); }
 
 /* ── App Layout: sidebar | main | panel ──────────────────── */
 .app-layout {
@@ -181,6 +175,7 @@ a:hover { text-decoration: underline; }
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────── */
@@ -302,9 +297,10 @@ a:hover { text-decoration: underline; }
 
 /* ── Sidebar bottom ─────────────────────────────────────── */
 .sidebar-bottom {
-  padding: 8px 8px;
+  padding: 5px 8px 8px;
   border-top: 1px solid var(--border-default);
   display: flex; align-items: center; gap: 4px;
+  flex-wrap: wrap;
   transition: padding var(--duration-slow) var(--ease-out);
 }
 
@@ -413,11 +409,14 @@ a:hover { text-decoration: underline; }
 /* ── Backend Connectivity Indicator ─────────────────────── */
 .backend-status {
   display: flex; align-items: center; gap: 7px;
-  padding: 5px 10px; margin: 0 4px 6px;
+  width: 100%; flex-basis: 100%;
+  min-height: 30px;
+  padding: 5px 10px; margin: 0 0 4px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: 11.5px;
   user-select: none;
   white-space: nowrap;
+  overflow: hidden;
   transition: background 0.3s var(--ease-out);
 }
 .backend-status.connected {
@@ -444,15 +443,33 @@ a:hover { text-decoration: underline; }
 .backend-status-label {
   font-weight: 550;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .backend-status-time {
   font-weight: 400;
   opacity: 0.75;
-  margin-left: -2px;
+  flex-shrink: 0;
 }
 @keyframes status-alert-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.75; }
+}
+
+/* Collapsed sidebar: only show dot, hide text */
+.sidebar.collapsed .backend-status {
+  width: auto;
+  flex-basis: auto;
+  min-height: auto;
+  max-width: 24px;
+  padding: 3px 6px;
+  margin: 4px auto 2px;
+  gap: 0;
+  justify-content: center;
+}
+.sidebar.collapsed .backend-status-label,
+.sidebar.collapsed .backend-status-time {
+  display: none;
 }
 
 /* ── Main Content Area ───────────────────────────────────── */
@@ -463,9 +480,8 @@ a:hover { text-decoration: underline; }
 }
 .main-content {
   flex: 1; overflow-y: auto;
-  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
   padding: 24px 28px;
-  scroll-behavior: smooth;
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
 
@@ -1015,6 +1031,27 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 @keyframes toast-out {
   from { opacity: 1; }
   to { opacity: 0; }
+}
+
+/* Toast with icon (success / error) */
+.toast.error,
+.toast.success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toast.error {
+  background: #3b1111;
+  color: #fecaca;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+.toast.success {
+  background: #0f3a25;
+  color: #bbf7d0;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.toast-icon {
+  flex-shrink: 0;
 }
 
 /* ── Modal ───────────────────────────────────────────────── */

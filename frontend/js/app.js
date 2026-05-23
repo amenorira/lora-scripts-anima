@@ -19,7 +19,6 @@ document.addEventListener('alpine:init', () => {
     i18nReady: true,
     showThemeDropdown: false,
     showLangDropdown: false,
-    showMainScroll: false,
     sidebarCollapsed: false,
 
     // Progress bar (determinate 0→100%)
@@ -148,13 +147,6 @@ document.addEventListener('alpine:init', () => {
       return this.t('common.themeDark');
     },
 
-    // ── Scroll ─────────────────────────────────────────────
-    onContentScroll() {
-      this.showMainScroll = true;
-      clearTimeout(this._scrollTimer);
-      this._scrollTimer = setTimeout(() => { this.showMainScroll = false; }, 1000);
-    },
-
     // ── Progress Bar ───────────────────────────────────────
     startProgress() {
       clearInterval(this._progressTimer);
@@ -279,16 +271,24 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Toast ──────────────────────────────────────────────
-    toast(message) {
+    toast(message, type) {
       const c = document.getElementById('toastContainer');
       const el = document.createElement('div');
       el.className = 'toast';
-      el.textContent = message;
+      if (type) {
+        el.classList.add(type);
+        const icon = type === 'error'
+          ? '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+          : '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+        el.innerHTML = icon + '<span>' + message + '</span>';
+      } else {
+        el.textContent = message;
+      }
       c.appendChild(el);
       setTimeout(() => {
         el.classList.add('out');
         setTimeout(() => { if (el.parentNode) el.remove(); }, 300);
-      }, 2400);
+      }, 2800);
     },
 
     // ── Backend Health Check ──────────────────────────────
@@ -324,6 +324,7 @@ document.addEventListener('alpine:init', () => {
             this.backendDisconnectedDuration = '';
             clearInterval(this._disconnectedTimer);
             this._disconnectedTimer = null;
+            this.toast(this.t('common.backendReconnectedToast'), 'success');
           }
         } else {
           this._markDisconnected();
@@ -339,6 +340,7 @@ document.addEventListener('alpine:init', () => {
         this.backendDisconnectedAt = Date.now();
         this._updateDisconnectedDuration();
         this._disconnectedTimer = setInterval(() => this._updateDisconnectedDuration(), 1000);
+        this.toast(this.t('common.backendDisconnectedToast'), 'error');
       }
     },
 
