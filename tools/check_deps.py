@@ -24,6 +24,9 @@ def _parse_requirements(req_path: Path) -> dict[str, tuple[str | None, str | Non
 
     for line in req_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
+        # Strip inline comments
+        if "#" in line:
+            line = line.split("#")[0].strip()
         if not line or line.startswith("#"):
             continue
 

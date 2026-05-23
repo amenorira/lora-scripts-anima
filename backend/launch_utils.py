@@ -50,10 +50,9 @@ def prepare_git():
 
 
 def prepare_submodules():
-    frontend_path = base_dir_path() / "frontend" / "dist"
     tag_editor_path = base_dir_path() / "backend" / "dataset-tag-editor" / "scripts"
 
-    if not os.path.exists(frontend_path) or not os.path.exists(tag_editor_path):
+    if not os.path.exists(tag_editor_path):
         log.info("submodule not found, try clone / 子模块未找到，尝试克隆...")
         log.info("checking git installation / 检查 Git 安装...")
         if not prepare_git():
@@ -144,12 +143,17 @@ def is_installed(package, friendly: str = None):
             ]   # get only package name if installing from URL
 
         for pkg in pkgs:
+            # Extract package name (strip all version constraints)
+            pkg_name = re.split(r'[<>=!~]', pkg)[0].strip()
+            # Extract version from >= or == constraint for comparison
             if '>=' in pkg:
-                pkg_name, pkg_version = [x.strip() for x in pkg.split('>=')]
+                pkg_version = re.findall(r'>=\s*([0-9a-zA-Z.+]+)', pkg)
+                pkg_version = pkg_version[0] if pkg_version else None
             elif '==' in pkg:
-                pkg_name, pkg_version = [x.strip() for x in pkg.split('==')]
+                pkg_version = re.findall(r'==\s*([0-9a-zA-Z.+]+)', pkg)
+                pkg_version = pkg_version[0] if pkg_version else None
             else:
-                pkg_name, pkg_version = pkg.strip(), None
+                pkg_version = None
 
             spec = None
             for try_name in (pkg_name, pkg_name.lower(), pkg_name.replace('_', '-')):
@@ -185,11 +189,11 @@ def is_installed(package, friendly: str = None):
 def validate_requirements(requirements_file: str, fix: bool = True):
     with open(requirements_file, 'r', encoding='utf8') as f:
         lines = [
-            line.strip()
+            line.strip().split("#")[0].strip()  # strip inline comments
             for line in f.readlines()
             if line.strip() != ''
-            and not line.startswith("#")
-            and not (line.startswith("-") and not line.startswith("--index-url "))
+            and not line.strip().startswith("#")
+            and not (line.strip().startswith("-") and not line.strip().startswith("--index-url "))
             and line is not None
             and "# skip_verify" not in line
         ]
