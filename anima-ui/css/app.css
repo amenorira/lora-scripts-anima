@@ -1055,11 +1055,17 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
    ================================================================ */
 
 .anima-select-desc {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 4px;
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.35;
-  margin-top: 4px;
-  padding: 0 2px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
   user-select: none;
 }
 
