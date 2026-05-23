@@ -176,7 +176,7 @@ window.monitorMixin = {
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
-    html += '<div class="card card-status flex-1">
+    let html = `<div class="card card-status flex-1">
       <div class="card-header">${t('status', 'Training Status')}</div>
       <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
     if (isTraining) {
