@@ -1,0 +1,22 @@
+# Upstream Version Tracking
+# This file records which commit of kohya-ss/sd-scripts this copy is based on.
+# Used by the Web UI environment management for update checking.
+
+[upstream]
+repo = "kohya-ss/sd-scripts"
+branch = "main"
+# TODO: Fill in the exact commit hash this copy was synced from
+commit = "UNKNOWN"
+# Approximate sync date (based on git history)
+sync_date = "2026-05-20"
+# Last checked for upstream updates
+last_check = ""
+
+[local]
+# Files/directories added locally (not from upstream)
+additions = [
+    ".upstream-version",
+    ".local-changes.md",
+]
+# Files modified from upstream
+modifications = []

@@ -80,7 +80,7 @@ def _get_trainer_script(trainer_file: str) -> Path:
 
 def run_train(
     toml_path: str,
-    trainer_file: str = "./sd-scripts/train_network.py",
+    trainer_file: str = "./vendor/sd-scripts/train_network.py",
     gpu_ids: Optional[list] = None,
     cpu_threads: int = 2,
     extra_args: Optional[list] = None,

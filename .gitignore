@@ -25,7 +25,7 @@ config/presets/test*.toml
 !sd-models/put stable diffusion model here.txt
 !logs/.keep
 
-sd-scripts/tests/
+vendor/sd-scripts/tests/
 
 huggingface/hub/models*
 huggingface/hub/version_diffusers_cache.txt

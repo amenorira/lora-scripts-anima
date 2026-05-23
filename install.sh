@@ -63,6 +63,6 @@ echo "Installing deps..."
 
 cd "$script_dir" || exit
 pip install --upgrade -r requirements.txt
-pip install -r sd-scripts/requirements.txt
+pip install -r vendor/sd-scripts/requirements.txt
 
 echo "Install completed"

@@ -57,17 +57,17 @@ avaliable_schemas = []
 avaliable_presets = []
 
 trainer_mapping = {
-    "sd-lora": "./sd-scripts/train_network.py",
-    "sdxl-lora": "./sd-scripts/sdxl_train_network.py",
+    "sd-lora": "./vendor/sd-scripts/train_network.py",
+    "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
 
-    "sd-dreambooth": "./sd-scripts/train_db.py",
-    "sdxl-finetune": "./sd-scripts/sdxl_train.py",
+    "sd-dreambooth": "./vendor/sd-scripts/train_db.py",
+    "sdxl-finetune": "./vendor/sd-scripts/sdxl_train.py",
 
-    "sd3-lora": "./sd-scripts/sd3_train_network.py",
-    "flux-lora": "./sd-scripts/flux_train_network.py",
-    "flux-finetune": "./sd-scripts/flux_train.py",
+    "sd3-lora": "./vendor/sd-scripts/sd3_train_network.py",
+    "flux-lora": "./vendor/sd-scripts/flux_train_network.py",
+    "flux-finetune": "./vendor/sd-scripts/flux_train.py",
 
-    "anima-lora": "./sd-scripts/anima_train_network.py",
+    "anima-lora": "./vendor/sd-scripts/anima_train_network.py",
 }
 
 

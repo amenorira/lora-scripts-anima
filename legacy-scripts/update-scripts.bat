@@ -32,27 +32,27 @@ if %errorlevel% neq 0 (
 echo [OK] 克隆完成
 
 echo [2/4] 正在删除旧版 sd-scripts/stable 和 sd-scripts/dev ...
-if exist "%SCRIPT_DIR%sd-scripts\stable" (
-    rmdir /s /q "%SCRIPT_DIR%sd-scripts\stable"
-    echo [OK] 已删除 sd-scripts/stable
+if exist "%SCRIPT_DIR%..\vendor\sd-scripts\stable" (
+    rmdir /s /q "%SCRIPT_DIR%..\vendor\sd-scripts\stable"
+    echo [OK] 已删除 vendor/sd-scripts/stable
 )
-if exist "%SCRIPT_DIR%sd-scripts\dev" (
-    rmdir /s /q "%SCRIPT_DIR%sd-scripts\dev"
-    echo [OK] 已删除 sd-scripts/dev
+if exist "%SCRIPT_DIR%..\vendor\sd-scripts\dev" (
+    rmdir /s /q "%SCRIPT_DIR%..\vendor\sd-scripts\dev"
+    echo [OK] 已删除 vendor/sd-scripts/dev
 )
 
 echo [3/4] 正在复制新版脚本到 sd-scripts/ ...
 REM 从克隆的仓库中复制所有文件到 sd-scripts/（排除 .git 等）
-xcopy "%TEMP_DIR%\*" "%SCRIPT_DIR%sd-scripts\" /E /Y /I /Q
+xcopy "%TEMP_DIR%\*" "%SCRIPT_DIR%..\vendor\sd-scripts\" /E /Y /I /Q
 REM 删除可能被复制过来的 .git 目录
-if exist "%SCRIPT_DIR%sd-scripts\.git" (
-    rmdir /s /q "%SCRIPT_DIR%sd-scripts\.git"
+if exist "%SCRIPT_DIR%..\vendor\sd-scripts\.git" (
+    rmdir /s /q "%SCRIPT_DIR%..\vendor\sd-scripts\.git"
 )
-if exist "%SCRIPT_DIR%sd-scripts\.gitignore" (
-    del /q "%SCRIPT_DIR%sd-scripts\.gitignore"
+if exist "%SCRIPT_DIR%..\vendor\sd-scripts\.gitignore" (
+    del /q "%SCRIPT_DIR%..\vendor\sd-scripts\.gitignore"
 )
-if exist "%SCRIPT_DIR%sd-scripts\.github" (
-    rmdir /s /q "%SCRIPT_DIR%sd-scripts\.github"
+if exist "%SCRIPT_DIR%..\vendor\sd-scripts\.github" (
+    rmdir /s /q "%SCRIPT_DIR%..\vendor\sd-scripts\.github"
 )
 echo [OK] 复制完成
 

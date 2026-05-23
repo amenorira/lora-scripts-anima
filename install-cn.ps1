@@ -45,7 +45,7 @@ if ($install_torch -eq "y" -or $install_torch -eq "Y" -or $install_torch -eq "")
 }
 
 python -m pip install --upgrade -r requirements.txt
-python -m pip install -r sd-scripts/requirements.txt
+python -m pip install -r vendor/sd-scripts/requirements.txt
 Check "ѵ������������װʧ�ܡ�"
 
 Write-Output "��װ���"

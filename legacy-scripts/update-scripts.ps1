@@ -32,8 +32,8 @@ Write-Output "[OK] Clone complete"
 
 # [2/4] Remove old versions
 Write-Output "[2/4] Removing old sd-scripts/stable and sd-scripts/dev ..."
-$StableDir = Join-Path $ScriptDir "sd-scripts\stable"
-$DevDir = Join-Path $ScriptDir "sd-scripts\dev"
+$StableDir = Join-Path $ScriptDir "..\vendor\sd-scripts\stable"
+$DevDir = Join-Path $ScriptDir "..\vendor\sd-scripts\dev"
 if (Test-Path $StableDir) {
     Remove-Item -Recurse -Force $StableDir
     Write-Output "[OK] Removed sd-scripts/stable"
@@ -45,7 +45,7 @@ if (Test-Path $DevDir) {
 
 # [3/4] Copy new scripts
 Write-Output "[3/4] Copying new scripts to sd-scripts/ ..."
-$TargetDir = Join-Path $ScriptDir "sd-scripts"
+$TargetDir = Join-Path $ScriptDir "..\vendor\sd-scripts"
 Copy-Item -Path "$TempDir\*" -Destination $TargetDir -Recurse -Force
 
 # Remove .git files
