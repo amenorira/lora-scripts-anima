@@ -52,7 +52,12 @@
     "historyModel": "模型",
     "historyLR": "学习率",
     "historyDim": "维度",
-    "historyEpochs": "Epochs"
+    "historyEpochs": "Epochs",
+    "logSearch": "搜索日志...",
+    "errorsOnly": "仅错误",
+    "noResults": "无匹配行",
+    "lastTraining": "上次训练",
+    "outputDir": "输出目录"
   },
   "section": {
     "model": "训练用模型",
@@ -357,18 +362,15 @@
     "save_model_as_safetensors": "SafeTensors 格式，安全且加载快，推荐使用",
     "save_model_as_pt": "PyTorch 原生格式，兼容性好",
     "save_model_as_ckpt": "旧版 Checkpoint 格式，不推荐",
-
     "save_precision_fp16": "半精度浮点（16-bit），文件小，推荐使用",
     "save_precision_bf16": "Brain Float 16，数值范围更大，适合训练",
     "save_precision_float": "全精度浮点（32-bit），文件大但精度最高",
-
     "lr_scheduler_cosine_with_restarts": "余弦退火 + 周期性重启，推荐大多数训练使用",
     "lr_scheduler_cosine": "余弦退火，平滑降低学习率",
     "lr_scheduler_linear": "线性衰减学习率",
     "lr_scheduler_polynomial": "多项式衰减学习率",
     "lr_scheduler_constant": "学习率保持不变",
     "lr_scheduler_constant_with_warmup": "预热后保持恒定学习率",
-
     "optimizer_type_AdamW": "标准 AdamW 优化器，显存占用较高",
     "optimizer_type_AdamW8bit": "8-bit AdamW，节省显存，推荐通用训练使用",
     "optimizer_type_PagedAdamW8bit": "分页 8-bit AdamW，适合显存紧张时使用",
@@ -382,44 +384,36 @@
     "optimizer_type_AdaFactor": "自适应因子优化器，节省显存",
     "optimizer_type_RAdamScheduleFree": "RAdam + Schedule-Free 训练方法",
     "optimizer_type_CAME": "CAME 优化器，来自 pytorch_optimizer 库",
-
     "loss_type_default": "使用模型默认损失函数",
     "loss_type_l1": "L1 Loss（MAE），对异常值更鲁棒",
     "loss_type_l2": "L2 Loss（MSE），对较大误差更敏感",
     "loss_type_huber": "Huber Loss，结合 L1 和 L2 的优点",
     "loss_type_smooth_l1": "Smooth L1 Loss，在零点附近更平滑",
-
     "network_module_networks_lora": "标准 LoRA 网络，适用于 SD/SDXL 架构",
     "network_module_networks_lora_anima": "Anima LoRA 网络。Anima 模型基于 NVIDIA Cosmos-Predict2-2B 衍生。",
     "network_module_lycoris_kohya": "LyCORIS 网络，支持 LoCon/LoHa 等多种算法",
-
     "sample_sampler_ddim": "DDIM 采样器，速度快，图像较稳定",
     "sample_sampler_euler": "Euler 采样器，简单高效",
     "sample_sampler_euler_a": "Euler Ancestral，带随机性的快速采样器，推荐预览使用",
     "sample_sampler_heun": "Heun 二阶采样器，质量较高",
     "sample_sampler_dpmsolver": "DPM-Solver，速度快质量好",
     "sample_sampler_dpmsolver++": "DPM-Solver++，改进版 DPM 求解器",
-
     "mixed_precision_bf16": "BFloat16 混合精度，数值范围大，推荐支持 BF16 的 GPU 使用",
     "mixed_precision_fp16": "FP16 混合精度，节省显存，老旧 GPU 兼容",
     "mixed_precision_no": "不使用混合精度（FP32），显存占用最大",
-
     "timestep_sampling_sigma": "基于噪声 sigma 值采样时间步",
     "timestep_sampling_uniform": "均匀分布采样时间步",
     "timestep_sampling_sigmoid": "Sigmoid 分布采样，推荐用于 Anima 训练",
     "timestep_sampling_shift": "Shift 采样策略",
-
     "weighting_scheme_sigma_sqrt": "Sigma 平方根加权",
     "weighting_scheme_logit_normal": "Logit-Normal 分布加权",
     "weighting_scheme_mode": "Mode 加权策略",
     "weighting_scheme_cosmap": "Cosine Map 加权",
     "weighting_scheme_none": "不加权",
     "weighting_scheme_uniform": "均匀加权，推荐默认使用",
-
     "attn_mode_torch": "PyTorch 原生注意力（SDPA），兼容性最好",
     "attn_mode_xformers": "xFormers 优化注意力，节省显存",
     "attn_mode_flash": "Flash Attention，速度最快但需 GPU 支持",
-
     "group_adamw": "AdamW 系列",
     "group_lion": "Lion 系列",
     "group_sgd": "SGD 系列",
@@ -427,4 +421,3 @@
     "group_other": "其他"
   }
 }
-

@@ -468,7 +468,7 @@ async def monitor_status(task_id: str = Query("")):
     result["state"] = active_status
     result["state_label"] = STATE_LABELS.get(active_status, active_status)
 
-    # 如果有激活任务，解析实时日志
+    # 如果激活任务正在运行，解析实时日志
     if active_status == "RUNNING":
         log_lines = _read_train_log(active.get("id", ""))
         if log_lines:
@@ -476,6 +476,22 @@ async def monitor_status(task_id: str = Query("")):
             for key in ("step", "total_steps", "percent", "loss", "lr", "epoch", "eta", "speed", "has_error", "error_msg"):
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
+
+    # 输出目录信息（方便前端提供下载链接）
+    if train_config.get("output_dir"):
+        result["output_dir"] = train_config["output_dir"]
+    else:
+        result["output_dir"] = str(OUTPUT_DIR)
+
+    # 空闲时返回最后一次完成的训练摘要
+    if active_status != "RUNNING" and train_config:
+        result["last_config"] = {
+            "name": train_config.get("output_name", ""),
+            "model": Path(train_config.get("pretrained_model_name_or_path", "")).name or "Unknown",
+            "lr": train_config.get("learning_rate", "?"),
+            "dim": train_config.get("network_dim", "?"),
+            "epochs": train_config.get("max_train_epochs", "?"),
+        }
 
     return {"status": "success", "data": result}
 

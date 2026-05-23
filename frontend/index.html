@@ -200,7 +200,9 @@
       <div x-show="currentRoute === 'monitor-logs'" x-cloak>
         <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" x-model="logSearch" :placeholder="t('monitor.logSearch','Search logs...')" style="width:140px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary)" @input="renderLogs()">
+            <label style="font-size:11px;cursor:pointer;display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" x-model="logErrorsOnly" @change="renderLogs()"> <span x-text="t('monitor.errorsOnly','Errors')">Errors</span></label>
             <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
               <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
             </button>

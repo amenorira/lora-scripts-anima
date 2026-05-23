@@ -18,6 +18,8 @@ window.monitorMixin = {
   logAutoScroll: true,
   logLines: [],
   logMaxLines: 5000,
+  logSearch: '',
+  logErrorsOnly: false,
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
@@ -178,12 +180,22 @@ window.monitorMixin = {
       <div class="card-header">${t('status', 'Training Status')}</div>
       <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
     if (isTraining) {
-      if (d.step) html += `<div>${t('step', 'Steps')}: <b>${d.step}</b> / ${d.total_steps} (${d.percent}%)</div>`;
+      // Progress bar
+      if (d.percent > 0) {
+        html += `<div class="monitor-bar-track" style="height:8px;margin:8px 0"><div class="monitor-bar-fill low" style="width:${d.percent}%;transition:width 1s ease"></div></div>`;
+      }
+      if (d.step) html += `<div>${t('step', 'Steps')}: <b>${d.step}</b> / ${d.total_steps || '?'} (${d.percent || 0}%)</div>`;
       if (d.loss) html += `<div>${t('loss', 'Loss')}: <b>${d.loss}</b></div>`;
       if (d.lr) html += `<div>${t('lr', 'LR')}: <b>${d.lr}</b></div>`;
       if (d.epoch) html += `<div>${t('epoch', 'Epoch')}: <b>${d.epoch}</b></div>`;
       if (d.speed) html += `<div>${t('speed', 'Speed')}: <b>${d.speed}</b></div>`;
       if (d.eta) html += `<div>ETA: <b>${d.eta}</b></div>`;
+      if (d.output_dir) html += `<div style="margin-top:8px"><a href="#" @click.prevent="navigate('files')" style="font-size:12px;color:var(--primary)">${t('outputDir','Output')}: ${d.output_dir}</a></div>`;
+    } else if (d.last_config && d.last_config.name) {
+      // Idle: show last training summary
+      const lc = d.last_config;
+      html += `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${t('lastTraining','Last training')}: <b>${lc.name}</b></div>`;
+      html += `<div style="font-size:12px;color:var(--text-tertiary)">${t('historyModel','Model')}: ${lc.model} · LR: ${lc.lr} · Dim: ${lc.dim} · Epochs: ${lc.epochs}</div>`;
     }
     if (d.has_error) html += `<div style="color:var(--danger);margin-top:8px">${d.error_msg || t('error', 'Training Error')}</div>`;
     html += '</div>';
@@ -318,13 +330,23 @@ window.monitorMixin = {
       el.innerHTML = '<div class="dashboard-empty" style="padding:40px"><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
       return;
     }
+    const search = (this.logSearch || '').toLowerCase();
+    const errorsOnly = this.logErrorsOnly;
+    let lines = this.logLines;
+    if (search) lines = lines.filter(l => l.toLowerCase().includes(search));
+    if (errorsOnly) lines = lines.filter(l => l.toLowerCase().includes('error') || l.toLowerCase().includes('traceback'));
+    
     let html = '<div class="log-lines">';
-    this.logLines.forEach(line => {
-      const lower = line.toLowerCase();
-      const cls = lower.includes('error') || lower.includes('traceback') ? 'log-error' :
-                  lower.includes('warning') ? 'log-warn' : '';
-      html += `<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;
-    });
+    if (!lines.length) {
+      html += '<div class="dashboard-empty" style="padding:20px"><p>' + t('noResults','No matching lines') + '</p></div>';
+    } else {
+      lines.forEach(line => {
+        const lower = line.toLowerCase();
+        const cls = lower.includes('error') || lower.includes('traceback') ? 'log-error' :
+                    lower.includes('warning') ? 'log-warn' : '';
+        html += `<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;
+      });
+    }
     html += '</div>';
     el.innerHTML = html;
     if (this.logAutoScroll) el.scrollTop = el.scrollHeight;
