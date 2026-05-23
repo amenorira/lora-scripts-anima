@@ -119,7 +119,6 @@ window.trainingMixin = {
             <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
             <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div class="anima-select-desc" x-show="selectedDesc" x-text="selectedDesc"></div>
           <div class="anima-select-menu" x-show="open" x-transition>
             <div class="anima-select-menu-scroll">
               <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
@@ -152,7 +151,6 @@ window.trainingMixin = {
             <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
             <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div class="anima-select-desc" x-show="selectedDesc" x-text="selectedDesc"></div>
           <div class="anima-select-menu" x-show="open" x-transition>
             <div class="anima-select-menu-scroll">
               <template x-for="group in displayGroups" :key="group.label">
