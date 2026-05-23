@@ -405,6 +405,6 @@
     "group_sgd": "SGD 系列",
     "group_adaptive": "自适应学习率",
     "group_other": "其他"
-  },
+  }
 }
 

@@ -405,6 +405,6 @@
     "group_sgd": "SGD",
     "group_adaptive": "Adaptive LR",
     "group_other": "Other"
-  },
+  }
 }
 
