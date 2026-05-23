@@ -12,9 +12,6 @@ document.addEventListener('alpine:init', () => {
     showTriggerTip: false,
     triggerTipTimer: null,
     _escHandler: null,
-    _tipLeft: undefined,
-    _tipTop: undefined,
-    _tipMaxW: 260,
 
     get displayGroups() {
       try {
@@ -82,23 +79,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     onTriggerMouseEnter() {
-      this.triggerTipTimer = setTimeout(() => {
-        const btn = this.$refs.triggerBtn;
-        if (btn) {
-          const r = btn.getBoundingClientRect();
-          this._tipLeft = r.right + 10;
-          this._tipTop = r.top + r.height / 2;
-          this._tipMaxW = Math.min(260, window.innerWidth - r.right - 24);
-          this.showTriggerTip = true;
-        }
-      }, 400);
+      this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
     },
 
     onTriggerMouseLeave() {
       clearTimeout(this.triggerTipTimer);
       this.showTriggerTip = false;
-      this._tipLeft = undefined;
-      this._tipTop = undefined;
     },
 
     onOptionMouseEnter(idx, opt) {
@@ -120,13 +106,16 @@ document.addEventListener('alpine:init', () => {
     },
 
     get triggerTipStyle() {
-      if (!this.showTriggerTip || this.open || !this.selectedDesc || this._tipLeft == null) return { display: 'none' };
+      if (!this.showTriggerTip || this.open || !this.selectedDesc) return { display: 'none' };
+      const btn = this.$refs.triggerBtn;
+      if (!btn) return { display: 'none' };
+      const r = btn.getBoundingClientRect();
       return {
         position: 'fixed',
-        left: this._tipLeft + 'px',
-        top: this._tipTop + 'px',
+        left: (r.right + 10) + 'px',
+        top: (r.top + r.height / 2) + 'px',
         transform: 'translateY(-50%)',
-        maxWidth: (this._tipMaxW || 260) + 'px',
+        maxWidth: Math.min(260, window.innerWidth - r.right - 24) + 'px',
         zIndex: '9999',
       };
     },
