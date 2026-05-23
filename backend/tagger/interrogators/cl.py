@@ -12,8 +12,8 @@ from PIL import Image
 from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 from dataclasses import dataclass
-from mikazuki.tagger import dbimutils, format
-from mikazuki.tagger.interrogators.base import Interrogator
+from backend.tagger import dbimutils, format
+from backend.tagger.interrogators.base import Interrogator
 
 
 @dataclass

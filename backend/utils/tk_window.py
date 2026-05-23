@@ -1,5 +1,5 @@
 import os
-from mikazuki.log import log
+from backend.log import log
 try:
     import tkinter
     from tkinter.filedialog import askdirectory, askopenfilename

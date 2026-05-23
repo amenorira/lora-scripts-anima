@@ -2,7 +2,7 @@
 Anima Backend — 训练进程管理器
 
 负责训练子进程的启动、环境隔离、端口检测。
-解耦 mikazuki 与 sd-scripts 的直接 import 依赖。
+解耦 backend 与 sd-scripts 的直接 import 依赖。
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from mikazuki.log import log
-from mikazuki.tasks import tm
+from backend.log import log
+from backend.tasks import tm
 
 
 def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int:

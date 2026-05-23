@@ -13,7 +13,7 @@ from typing import Optional
 
 from importlib import metadata as importlib_metadata
 
-from mikazuki.log import log
+from backend.log import log
 
 python_bin = sys.executable
 
@@ -51,7 +51,7 @@ def prepare_git():
 
 def prepare_submodules():
     frontend_path = base_dir_path() / "frontend" / "dist"
-    tag_editor_path = base_dir_path() / "mikazuki" / "dataset-tag-editor" / "scripts"
+    tag_editor_path = base_dir_path() / "backend" / "dataset-tag-editor" / "scripts"
 
     if not os.path.exists(frontend_path) or not os.path.exists(tag_editor_path):
         log.info("submodule not found, try clone...")
@@ -317,7 +317,7 @@ def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: b
 
     check_dirs(["config/autosave", "logs"])
 
-    # if not check_run("mikazuki/scripts/torch_check.py"):
+    # if not check_run("backend/scripts/torch_check.py"):
     #     sys.exit(1)
 
     validate_requirements("requirements.txt")

@@ -1,8 +1,8 @@
 """
 Anima Backend — 包初始化
 """
-from mikazuki.anima_backend.adapter import adapt_config, SUPPORTED_FIELDS, UI_ONLY_FIELDS
-from mikazuki.anima_backend.supervisor import (
+from backend.anima_backend.adapter import adapt_config, SUPPORTED_FIELDS, UI_ONLY_FIELDS
+from backend.anima_backend.supervisor import (
     run_train,
     terminate_train,
     get_train_status,

@@ -6,9 +6,9 @@ import platform
 import subprocess
 import sys
 
-from mikazuki.launch_utils import (base_dir_path, catch_exception, git_tag,
+from backend.launch_utils import (base_dir_path, catch_exception, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
-from mikazuki.log import log
+from backend.log import log
 
 # Windows: use SelectorEventLoop to avoid Proactor "ConnectionResetError" noise
 if sys.platform == "win32":
@@ -43,7 +43,7 @@ def run_tag_editor():
     log.info("Starting tageditor...")
     cmd = [
         sys.executable,
-        base_dir_path() / "mikazuki/dataset-tag-editor/scripts/launch.py",
+        base_dir_path() / "legacy/frontend/scripts/launch.py",
         "--port", "28001",
         "--shadow-gradio-output",
         "--root-path", "/proxy/tageditor"
@@ -82,11 +82,11 @@ def launch():
     except Exception:
         log.info("flash_attn: NOT FOUND / 未安装 — RTX 40/50 系建议运行 install-flash-attn 脚本")
 
-    os.environ["MIKAZUKI_HOST"] = args.host
-    os.environ["MIKAZUKI_PORT"] = str(args.port)
-    os.environ["MIKAZUKI_TENSORBOARD_HOST"] = args.tensorboard_host
-    os.environ["MIKAZUKI_TENSORBOARD_PORT"] = str(args.tensorboard_port)
-    os.environ["MIKAZUKI_DEV"] = "1" if args.dev else "0"
+    os.environ["ANIMA_HOST"] = args.host
+    os.environ["ANIMA_PORT"] = str(args.port)
+    os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host
+    os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)
+    os.environ["ANIMA_DEV"] = "1" if args.dev else "0"
 
     if args.listen:
         args.host = "0.0.0.0"
@@ -110,7 +110,7 @@ def launch():
     print("=" * 60)
     print()
     log.info(f"Server started at {url_new}")
-    uvicorn.run("mikazuki.app:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
+    uvicorn.run("backend.app:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
 
 
 if __name__ == "__main__":

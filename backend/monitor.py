@@ -20,8 +20,8 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from mikazuki.log import log
-from mikazuki.tasks import tm
+from backend.log import log
+from backend.tasks import tm
 
 router = APIRouter()
 

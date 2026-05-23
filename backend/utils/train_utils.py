@@ -7,7 +7,7 @@ import sys
 import json
 from typing import Dict
 
-from mikazuki.log import log
+from backend.log import log
 
 python_bin = sys.executable
 

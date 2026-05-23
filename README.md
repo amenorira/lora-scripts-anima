@@ -94,8 +94,9 @@ cd lora-scripts-anima
 | ------------ | ------------ | ------------ |
 | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
 
-> ℹ️ 旧版手动脚本（`train.ps1`、`tagger.ps1` 等）已归档至 `legacy-scripts/` 目录。
-> ℹ️ 前端代码位于 `anima-ui/`（Alpine.js SPA），后端位于 `mikazuki/`（FastAPI），训练引擎位于 `vendor/sd-scripts/`。
+> ℹ️ 旧版手动脚本（`train.ps1`、`tagger.ps1` 等）已归档至 `legacy/scripts/` 目录。
+> ℹ️ 前端代码位于 `frontend/`（Alpine.js SPA），后端位于 `backend/`（FastAPI），训练引擎位于 `vendor/sd-scripts/`。
+> ℹ️ 旧版前端和脚本已归档至 `legacy/`。
 
 ## 程序参数
 

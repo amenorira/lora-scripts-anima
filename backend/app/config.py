@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from mikazuki.log import log
+from backend.log import log
 
 class Config:
 

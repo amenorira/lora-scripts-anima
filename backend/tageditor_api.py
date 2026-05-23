@@ -20,7 +20,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
 
-from mikazuki.log import log
+from backend.log import log
 
 router = APIRouter()
 

@@ -13,10 +13,10 @@ from PIL import Image
 from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 
-from mikazuki.tagger import dbimutils, format
-from mikazuki.tagger.interrogators.base import Interrogator
-from mikazuki.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
-from mikazuki.tagger.interrogators.cl import CLTaggerInterrogator
+from backend.tagger import dbimutils, format
+from backend.tagger.interrogators.base import Interrogator
+from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
+from backend.tagger.interrogators.cl import CLTaggerInterrogator
 
 tag_escape_pattern = re.compile(r'([\\()])')
 

@@ -1,4 +1,4 @@
-from mikazuki.log import log
+from backend.log import log
 from packaging.version import Version
 
 available_devices = []

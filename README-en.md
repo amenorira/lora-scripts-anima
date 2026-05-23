@@ -89,8 +89,9 @@ Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
 
 Just launch and everything is available — no extra commands needed.
 
-> ℹ️ Legacy manual scripts (`train.ps1`, `tagger.ps1`, etc.) have been archived to `legacy-scripts/`.
-> ℹ️ Frontend: `anima-ui/` (Alpine.js SPA), Backend: `mikazuki/` (FastAPI), Engine: `vendor/sd-scripts/`.
+> ℹ️ Legacy manual scripts (`train.ps1`, `tagger.ps1`, etc.) have been archived to `legacy/scripts/`.
+> ℹ️ Frontend: `frontend/` (Alpine.js SPA), Backend: `backend/` (FastAPI), Engine: `vendor/sd-scripts/`.
+> ℹ️ Legacy frontend and scripts archived to `legacy/`.
 
 ## Program arguments
 

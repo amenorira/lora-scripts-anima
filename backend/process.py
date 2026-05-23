@@ -4,10 +4,10 @@ import os
 import sys
 from typing import Optional
 
-from mikazuki.app.models import APIResponse
-from mikazuki.log import log
-from mikazuki.tasks import tm
-from mikazuki.launch_utils import base_dir_path
+from backend.app.models import APIResponse
+from backend.log import log
+from backend.tasks import tm
+from backend.launch_utils import base_dir_path
 
 
 def run_train(toml_path: str,

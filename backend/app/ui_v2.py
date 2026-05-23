@@ -1,6 +1,6 @@
 """New SPA frontend routes (Anima UI).
 
-Mounts at /v2/ — serves the client-side SPA at anima-ui/index.html.
+Mounts at /v2/ — serves the client-side SPA at frontend/index.html.
 The legacy HTMX/Alpine templates remain at /v2/legacy/ for backward compat.
 """
 import os
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/v2")
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-ANIMA_UI_INDEX = Path(__file__).parents[2] / "anima-ui" / "index.html"
+ANIMA_UI_INDEX = Path(__file__).parents[2] / "frontend" / "index.html"
 
 
 def _version() -> str:
@@ -27,7 +27,7 @@ def _version() -> str:
         return "dev"
 
 
-# ── New SPA: catch-all serves anima-ui/index.html ────────────
+# ── New SPA: catch-all serves frontend/index.html ────────────
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)

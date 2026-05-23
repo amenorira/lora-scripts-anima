@@ -10,15 +10,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
-from mikazuki.app.config import app_config
-from mikazuki.app.api import load_schemas, load_presets
-from mikazuki.app.api import router as api_router
-from mikazuki.app.ui_v2 import router as ui_v2_router
-# from mikazuki.app.ipc import router as ipc_router
-from mikazuki.app.proxy import router as proxy_router
-from mikazuki.monitor import router as monitor_router
-from mikazuki.tageditor_api import router as tageditor_router
-from mikazuki.utils.devices import check_torch_gpu
+from backend.app.config import app_config
+from backend.app.state import load_schemas, load_presets
+from backend.app.api import router as api_router
+from backend.app.routes.training import router as training_router
+from backend.app.routes.presets import router as presets_router
+from backend.app.ui_v2 import router as ui_v2_router
+# from backend.app.ipc import router as ipc_router
+from backend.app.proxy import router as proxy_router
+from backend.monitor import router as monitor_router
+from backend.tageditor_api import router as tageditor_router
+from backend.utils.devices import check_torch_gpu
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -53,7 +55,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(proxy_router)
 
 
-cors_config = os.environ.get("MIKAZUKI_APP_CORS", "")
+cors_config = os.environ.get("ANIMA_APP_CORS", os.environ.get("MIKAZUKI_APP_CORS", ""))
 if cors_config != "":
     if cors_config == "1":
         cors_config = ["http://localhost:8004", "*"]
@@ -75,25 +77,27 @@ async def add_cache_control_header(request, call_next):
     return response
 
 app.include_router(api_router, prefix="/api")
+app.include_router(training_router, prefix="/api")
+app.include_router(presets_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
 app.include_router(tageditor_router, prefix="/api")
 # app.include_router(ipc_router, prefix="/ipc")
 
 # New v2 frontend (legacy HTMX/Alpine) — kept for backward compat
-app.mount("/static", StaticFiles(directory="frontend/static"), name="v2static")
+app.mount("/static", StaticFiles(directory="legacy/frontend/static"), name="v2static")
 app.include_router(ui_v2_router)
 
 # Anima UI (new SPA frontend) — static assets
-app.mount("/anima-ui", StaticFiles(directory="anima-ui", html=True), name="anima-ui")
+app.mount("/anima-ui", StaticFiles(directory="frontend", html=True), name="anima-ui")
 
 
 @app.get("/")
 async def index():
-    return FileResponse("./frontend/dist/index.html")
+    return FileResponse("./legacy/frontend/dist/index.html")
 
 
 @app.get("/favicon.ico", response_class=FileResponse)
 async def favicon():
     return FileResponse("assets/favicon.ico")
 
-app.mount("/", SPAStaticFiles(directory="frontend/dist", html=True), name="static")
+app.mount("/", SPAStaticFiles(directory="legacy/frontend/dist", html=True), name="static")

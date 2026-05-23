@@ -25,22 +25,22 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 ### Our Code (safe to modify)
 
-- `mikazuki/` — Backend (FastAPI)
-- `anima-ui/` — Frontend (Alpine.js SPA)
-- `frontend/` — Legacy frontend
+- `backend/` — Backend (FastAPI)
+- `frontend/` — Frontend (Alpine.js SPA)
+- `legacy/` — Legacy frontend + old scripts
 - `gui.py` — Entry point
 - `config/` — Training presets
-- `legacy-scripts/` — Old shell scripts
+- `legacy/` — Old shell scripts
 - Root-level scripts: `install*.ps1`, `start.bat`, etc.
 
 ## Localization
 
-All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `anima-ui/i18n/` (zh-CN.json + en-US.json, 385 keys). Never hardcode Chinese/English strings.
+All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 385 keys). Never hardcode Chinese/English strings.
 
 ## Architecture
 
-- Backend: FastAPI → `mikazuki/app/`
-- Frontend: Alpine.js SPA → `anima-ui/`
+- Backend: FastAPI → `backend/app/`
+- Frontend: Alpine.js SPA → `frontend/`
 - Training: subprocess calls to `vendor/sd-scripts/*.py` via `accelerate launch`
 - Config: TOML format, generated from UI form data
-- Schema: TypeScript form definitions → `schema/`
+- Schema: TypeScript form definitions → `backend/schema/`

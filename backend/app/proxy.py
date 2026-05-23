@@ -10,18 +10,18 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, StreamingResponse
 
-from mikazuki.log import log
+from backend.log import log
 
 router = APIRouter()
 
 
 def reverse_proxy_maker(url_type: str, full_path: bool = False):
     if url_type == "tensorboard":
-        host = os.environ.get("MIKAZUKI_TENSORBOARD_HOST", "127.0.0.1")
-        port = os.environ.get("MIKAZUKI_TENSORBOARD_PORT", "6006")
+        host = os.environ.get("ANIMA_TENSORBOARD_HOST", os.environ.get("MIKAZUKI_TENSORBOARD_HOST", "127.0.0.1"))
+        port = os.environ.get("ANIMA_TENSORBOARD_PORT", os.environ.get("MIKAZUKI_TENSORBOARD_PORT", "6006"))
     elif url_type == "tageditor":
-        host = os.environ.get("MIKAZUKI_TAGEDITOR_HOST", "127.0.0.1")
-        port = os.environ.get("MIKAZUKI_TAGEDITOR_PORT", "28001")
+        host = os.environ.get("ANIMA_TAGEDITOR_HOST", os.environ.get("MIKAZUKI_TAGEDITOR_HOST", "127.0.0.1"))
+        port = os.environ.get("ANIMA_TAGEDITOR_PORT", os.environ.get("MIKAZUKI_TAGEDITOR_PORT", "28001"))
 
     client = httpx.AsyncClient(base_url=f"http://{host}:{port}/", proxies={}, trust_env=False, timeout=360)
 

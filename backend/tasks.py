@@ -8,7 +8,7 @@ from typing import Dict, List
 from subprocess import Popen, PIPE, TimeoutExpired, CalledProcessError, CompletedProcess
 import psutil
 
-from mikazuki.log import log
+from backend.log import log
 
 try:
     import msvcrt
