@@ -254,4 +254,5 @@ window.ROUTE_CONFIG = {
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
   'presets': { titleKey: 'preset.title', subtitleKey: 'preset.subtitle' },
+  'tensorboard': { title: 'TensorBoard', subtitle: '' },
 };

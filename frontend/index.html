@@ -66,6 +66,13 @@
         </span>
         <span x-text="t('nav.monitorLogs')">Real-time Logs</span>
       </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'tensorboard' }"
+         @click="navigate('tensorboard')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </span>
+        <span>TensorBoard</span>
+      </a>
 
       <!-- Training -->
       <div class="sidebar-section-label" x-text="t('nav.training')">Training</div>
@@ -242,27 +249,13 @@
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
         </div>
         <!-- Dashboard Tabs -->
-        <div class="dashboard-tabs" style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid var(--border-default)">
-          <button class="dash-tab" :class="{ active: dashTab === 'overview' }" @click="dashTab='overview';renderDashboard()"
-                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
-                  :style="dashTab==='overview'?'color:var(--accent);border-bottom-color:var(--accent)':''">
-            <span x-text="t('monitor.overview','Overview')">Overview</span>
-          </button>
-          <button class="dash-tab" :class="{ active: dashTab === 'charts' }" @click="dashTab='charts';renderDashboard()"
-                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
-                  :style="dashTab==='charts'?'color:var(--accent);border-bottom-color:var(--accent)':''">
-            <span x-text="t('monitor.charts','Charts')">Charts</span>
-          </button>
-          <button class="dash-tab" :class="{ active: dashTab === 'samples' }" @click="dashTab='samples';renderDashboard()"
-                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
-                  :style="dashTab==='samples'?'color:var(--accent);border-bottom-color:var(--accent)':''">
-            <span x-text="t('monitor.samples','Samples')">Samples</span>
-          </button>
-          <button class="dash-tab" :class="{ active: dashTab === 'tensorboard' }" @click="dashTab='tensorboard';renderDashboard()"
-                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
-                  :style="dashTab==='tensorboard'?'color:var(--accent);border-bottom-color:var(--accent)':''">
-            TensorBoard
-          </button>
+        <div class="dash-tabs" style="display:flex;gap:4px;margin-bottom:16px">
+          <button class="dash-tab" :class="{ active: dashTab === 'overview' }" @click="dashTab='overview'; renderDashboard()"
+                  x-text="t('monitor.overview','Overview')">Overview</button>
+          <button class="dash-tab" :class="{ active: dashTab === 'charts' }" @click="dashTab='charts'; renderDashboard()"
+                  x-text="t('monitor.charts','Charts')">Charts</button>
+          <button class="dash-tab" :class="{ active: dashTab === 'samples' }" @click="dashTab='samples'; renderDashboard()"
+                  x-text="t('monitor.samples','Samples')">Samples</button>
         </div>
         <div id="monitorDashboard"></div>
       </div>
@@ -272,8 +265,11 @@
         <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" x-model="logSearch" :placeholder="t('monitor.logSearch','Search logs...')" style="width:140px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary)" @input="renderLogs()">
-            <label style="font-size:11px;cursor:pointer;display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" x-model="logErrorsOnly" @change="renderLogs()"> <span x-text="t('monitor.errorsOnly','Errors')">Errors</span></label>
+            <input type="text" x-model="logSearch" :placeholder="t('monitor.logSearch','Search...')" style="width:140px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input="renderLogs()">
+            <button class="log-level-btn" :class="{ active: logLevel === 'all' }" @click="logLevel='all'; renderLogs()">All</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'error' }" @click="logLevel='error'; renderLogs()">Error</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'warn' }" @click="logLevel='warn'; renderLogs()">Warn</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'info' }" @click="logLevel='info'; renderLogs()">Info</button>
             <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
               <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
             </button>
@@ -290,6 +286,14 @@
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
         </div>
         <div id="historyList" class="history-list"></div>
+      </div>
+
+      <!-- Route: TensorBoard -->
+      <div x-show="currentRoute === 'tensorboard'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title">TensorBoard</h1>
+        </div>
+        <div id="tensorboardFrame"></div>
       </div>
 
       <!-- Route: Training pages (basic/master/anima) -->

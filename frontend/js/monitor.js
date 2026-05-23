@@ -20,6 +20,7 @@ window.monitorMixin = {
   logMaxLines: 5000,
   logSearch: '',
   logErrorsOnly: false,
+  logLevel: 'all',  // 'all' | 'error' | 'warn' | 'info'
   chartSmoothing: 0.6,
   dashTab: 'overview',
 
@@ -455,10 +456,12 @@ window.monitorMixin = {
       return;
     }
     const search = (this.logSearch || '').toLowerCase();
-    const errorsOnly = this.logErrorsOnly;
+    const level = this.logLevel || 'all';
     let lines = this.logLines;
     if (search) lines = lines.filter(l => l.toLowerCase().includes(search));
-    if (errorsOnly) lines = lines.filter(l => l.toLowerCase().includes('error') || l.toLowerCase().includes('traceback'));
+    if (level === 'error') lines = lines.filter(l => l.toLowerCase().includes('error') || l.toLowerCase().includes('traceback'));
+    else if (level === 'warn') lines = lines.filter(l => l.toLowerCase().includes('warn'));
+    else if (level === 'info') lines = lines.filter(l => !l.toLowerCase().includes('error') && !l.toLowerCase().includes('traceback') && !l.toLowerCase().includes('warn'));
     
     let html = '<div class="log-lines">';
     if (!lines.length) {

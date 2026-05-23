@@ -235,6 +235,9 @@ document.addEventListener('alpine:init', () => {
         this.buildEnvironmentPage();
       } else if (r === 'presets') {
         this.loadPresets();
+      } else if (r === 'tensorboard') {
+        this.stopMonitorPolling();
+        this.renderTensorBoardPage();
       }
     },
 
@@ -252,6 +255,13 @@ document.addEventListener('alpine:init', () => {
       localStorage.setItem('anima-ui-settings', JSON.stringify({theme:this.theme,autoLoadHistory:this.autoLoadHistory}));
       this.resolveTheme();
       this.toast(this.t('common.saved'));
+    },
+
+    renderTensorBoardPage() {
+      const el = document.getElementById('tensorboardFrame');
+      if (!el || el.querySelector('iframe')) return;
+      el.innerHTML = `<iframe src="/proxy/tensorboard/" style="width:100%;height:calc(100vh - 120px);border:none;border-radius:var(--radius-lg)" 
+        onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s"></iframe>`;
     },
 
     onLocaleChange() {
