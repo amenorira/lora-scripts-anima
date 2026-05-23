@@ -20,6 +20,7 @@ window.monitorMixin = {
   logMaxLines: 5000,
   logSearch: '',
   logErrorsOnly: false,
+  chartSmoothing: 0.6,  // 0=none, 1=max smoothing (like TensorBoard)
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
@@ -108,8 +109,13 @@ window.monitorMixin = {
     }
     html += '</div>';
 
-    html += '<div class="card card-charts" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR Curves') + '</div>';
-    html += '<div class="chart-grid">';
+    html += '<div class="card card-charts" style="margin-top:12px"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<span>' + t('lossCurve', 'Loss / LR Curves') + '</span>';
+    html += '<label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400">';
+    html += '<span style="color:var(--text-tertiary)">Smooth</span>';
+    html += '<input type="range" min="0" max="0.95" step="0.05" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6">';
+    html += '</label></div>';
+    html += '<div class="chart-grid" style="grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));gap:12px">';
     const chartTags = this.lossSeries.length ? this.lossSeries : [
       { tag: 'loss/average', name: 'loss average', latest: null, points: [] },
       { tag: 'loss/current', name: 'loss current', latest: null, points: [] },
@@ -133,7 +139,7 @@ window.monitorMixin = {
       const p = this.previews[this.previewStep] || this.previews[0];
       html += `<div class="preview-item" style="grid-column:1/-1"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')" style="max-height:400px;object-fit:contain"/><span>${p.name}</span></div>`;
       this.previews.forEach((pv, i) => {
-        html += `<div class="preview-item" style="cursor:pointer;${i === this.previewStep ? 'border:2px solid var(--primary);' : ''}" @click="previewStep = ${i}"><img src="${pv.url}" alt="${pv.name}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;
+        html += `<div class="preview-item" style="cursor:pointer;${i === this.previewStep ? 'border:2px solid var(--accent);' : ''}" @click="previewStep = ${i}"><img src="${pv.url}" alt="${pv.name}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;
       });
       html += '</div>';
     } else {
@@ -235,87 +241,164 @@ window.monitorMixin = {
   },
 
   _drawCharts() {
-    this.lossSeries.forEach(s => {
+    const smoothing = this.chartSmoothing || 0;  // 0 = raw, 0.95 = max smooth (EMA like TensorBoard)
+    const colors = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981'];  // purple, cyan, amber, green
+
+    this.lossSeries.forEach((s, idx) => {
       const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
       const c = document.getElementById(id);
       if (!c || !s.points || s.points.length < 2) return;
       const ctx = c.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
       const W = c.width, H = c.height;
+      // Scale for HiDPI
+      c.width = W * dpr; c.height = H * dpr;
+      c.style.width = W + 'px'; c.style.height = H + 'px';
+      ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, W, H);
 
-      const xs = s.points.map(p => p.step);
-      const ys = s.points.map(p => p.value);
+      // Apply EMA smoothing (like TensorBoard)
+      let points = s.points;
+      if (smoothing > 0) {
+        points = [];
+        let ema = s.points[0].value;
+        const alpha = 1 - smoothing;
+        s.points.forEach((p, i) => {
+          if (i === 0) { ema = p.value; }
+          else { ema = alpha * p.value + (1 - alpha) * ema; }
+          points.push({ step: p.step, value: ema });
+        });
+      }
+
+      const xs = points.map(p => p.step);
+      const ys = points.map(p => p.value);
       const xMin = Math.min(...xs), xMax = Math.max(...xs);
       const yMin = Math.min(...ys), yMax = Math.max(...ys);
-      const pad = { t: 16, r: 16, b: 28, l: 48 };
+      const yRange = (yMax - yMin) || 1;
+      const pad = { t: 18, r: 20, b: 30, l: 50 };
       const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+      const color = colors[idx % colors.length];
 
       const sx = (x) => pad.l + (x - xMin) / (xMax - xMin || 1) * pw;
-      const sy = (y) => pad.t + (yMax - y) / (yMax - yMin || 1) * ph;
+      const sy = (y) => pad.t + (yMax - y) / yRange * ph;
 
       // Grid lines
-      ctx.strokeStyle = 'var(--border-color, #333)';
+      ctx.strokeStyle = 'var(--border-default, #3c3c3c)';
       ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 4]);
       for (let i = 0; i <= 4; i++) {
         const y = pad.t + i * ph / 4;
         ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+        ctx.setLineDash([]);
         ctx.fillStyle = 'var(--text-tertiary, #888)';
         ctx.font = '10px monospace';
-        ctx.fillText((yMax - i * (yMax - yMin) / 4).toFixed(4), 2, y + 3);
+        ctx.fillText((yMax - i * yRange / 4).toFixed(4), 2, y + 3);
+        ctx.setLineDash([3, 4]);
       }
+      ctx.setLineDash([]);
 
-      // Line with gradient
+      // Area fill
       const grad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
-      grad.addColorStop(0, 'rgba(139, 92, 246, 0.3)');
-      grad.addColorStop(1, 'rgba(139, 92, 246, 0.02)');
+      grad.addColorStop(0, color + '40');
+      grad.addColorStop(1, color + '05');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.moveTo(sx(xs[0]), H - pad.b);
-      s.points.forEach((p) => ctx.lineTo(sx(p.step), sy(p.value)));
+      points.forEach((p) => ctx.lineTo(sx(p.step), sy(p.value)));
       ctx.lineTo(sx(xs[xs.length - 1]), H - pad.b);
       ctx.closePath();
       ctx.fill();
 
-      // Line
-      ctx.strokeStyle = '#8b5cf6';
-      ctx.lineWidth = 1.5;
+      // Main line
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8;
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      s.points.forEach((p, i) => {
+      points.forEach((p, i) => {
         const x = sx(p.step), y = sy(p.value);
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       });
       ctx.stroke();
 
-      // Last point dot
-      const last = s.points[s.points.length - 1];
-      ctx.fillStyle = '#8b5cf6';
-      ctx.beginPath();
-      ctx.arc(sx(last.step), sy(last.value), 4, 0, Math.PI * 2);
-      ctx.fill();
+      // Raw line (faded, if smoothing is on)
+      if (smoothing > 0 && s.points.length > 2) {
+        ctx.strokeStyle = color + '30';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        s.points.forEach((p, i) => {
+          const x = sx(p.step), y = sy(p.value);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
 
-      // Store data for hover tooltip
-      c._chartData = { s, sx, sy, pad };
+      // Last point dot
+      const last = points[points.length - 1];
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(sx(last.step), sy(last.value), 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'var(--bg-surface, #fff)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Store for hover crosshair
+      c._chartData = { s, points, sx, sy, pad, W, H, color };
       c.style.cursor = 'crosshair';
       if (!c._hasHover) {
         c._hasHover = true;
-        c.addEventListener('mousemove', (ev) => {
-          const rect = c.getBoundingClientRect();
-          const mx = ev.clientX - rect.left;
-          const my = ev.clientY - rect.top;
-          const data = c._chartData;
-          if (!data || !data.s.points.length) return;
-          // Find nearest point
-          let best = data.s.points[0], bestDist = Infinity;
-          data.s.points.forEach(p => {
-            const dx = data.sx(p.step) - mx, dy = data.sy(p.value) - my;
-            const d = dx * dx + dy * dy;
-            if (d < bestDist) { bestDist = d; best = p; }
-          });
-          c.title = `Step: ${best.step}  Value: ${best.value.toFixed(6)}`;
-        });
-        c.addEventListener('mouseleave', () => { c.title = ''; });
+        c.addEventListener('mousemove', (ev) => this._onChartHover(c, ev));
+        c.addEventListener('mouseleave', (ev) => this._onChartLeave(c, ev));
       }
     });
+  },
+
+  _onChartHover(c, ev) {
+    const data = c._chartData;
+    if (!data || !data.points.length) return;
+    const rect = c.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let best = data.points[0], bestDist = Infinity;
+    data.points.forEach(p => {
+      const dx = data.sx(p.step) - mx, dy = data.sy(p.value) - my;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; best = p; }
+    });
+    const x = data.sx(best.step), y = data.sy(best.value);
+
+    // Redraw with crosshair
+    this._drawCharts();
+    const ctx = c.getContext('2d');
+    ctx.strokeStyle = data.color + '60';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, data.pad.t); ctx.lineTo(x, data.H - data.pad.b);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = data.color;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'var(--bg-surface)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // Tooltip label
+    ctx.fillStyle = 'var(--bg-surface, #1e1e1e)';
+    ctx.fillRect(x + 8, y - 20, 130, 32);
+    ctx.strokeStyle = 'var(--border-default)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 8, y - 20, 130, 32);
+    ctx.fillStyle = 'var(--text-primary)';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`Step ${best.step}`, x + 14, y - 5);
+    ctx.fillStyle = 'var(--text-secondary)';
+    ctx.fillText(`${best.value.toFixed(6)}`, x + 14, y + 9);
+
+    c.title = `Step: ${best.step}  Value: ${best.value.toFixed(6)}`;
+  },
+
+  _onChartLeave(c) {
+    c.title = '';
+    // Redraw without crosshair on next poll
   },
 
   // ═══════════════════════════════════════════════════════
