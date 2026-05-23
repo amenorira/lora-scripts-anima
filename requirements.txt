@@ -13,7 +13,8 @@ schedulefree==1.4
 pytorch-optimizer>=3.7.0  # skip_verify
 prodigy-plus-schedule-free>=1.9.0  # skip_verify
 prodigyopt==1.1.2
-tensorboard==2.10.1  # skip_verify
+tensorboard==2.20.0  # skip_verify
+setuptools<80,>=68  # keep pkg_resources available for older packages (gradio, etc.)
 safetensors>=0.4.4  # skip_verify
 # gradio==3.16.2
 altair==4.2.2

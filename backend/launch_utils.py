@@ -33,19 +33,19 @@ def prepare_git():
     if shutil.which("git"):
         return True
 
-    log.info("Finding git...")
+    log.info("Finding git / 搜索 Git...")
 
     if sys.platform == "win32":
         git_path = find_windows_git()
 
         if git_path is not None:
-            log.info(f"Git not found, but found git in {git_path}, add it to PATH")
+            log.info(f"Git not found on PATH, but found at {git_path}, adding to PATH / 未在 PATH 中找到，但发现于 {git_path}，已添加")
             os.environ["PATH"] += os.pathsep + os.path.dirname(git_path)
             return True
         else:
             return False
     else:
-        log.error("git not found, please install git first")
+        log.error("git not found, please install git first / 未找到 Git，请先安装 Git")
         return False
 
 
@@ -54,10 +54,10 @@ def prepare_submodules():
     tag_editor_path = base_dir_path() / "backend" / "dataset-tag-editor" / "scripts"
 
     if not os.path.exists(frontend_path) or not os.path.exists(tag_editor_path):
-        log.info("submodule not found, try clone...")
-        log.info("checking git installation...")
+        log.info("submodule not found, try clone / 子模块未找到，尝试克隆...")
+        log.info("checking git installation / 检查 Git 安装...")
         if not prepare_git():
-            log.error("git not found, please install git first")
+            log.error("git not found, please install git first / 未找到 Git，请先安装 Git")
             sys.exit(1)
         subprocess.run(["git", "submodule", "init"])
         subprocess.run(["git", "submodule", "update"])

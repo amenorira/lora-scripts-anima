@@ -33,14 +33,14 @@ parser.add_argument("--dev", action="store_true")
 
 @catch_exception
 def run_tensorboard():
-    log.info("Starting tensorboard...")
+    log.info("Starting tensorboard / 正在启动 TensorBoard...")
     subprocess.Popen([sys.executable, "-m", "tensorboard.main", "--logdir", "logs",
                      "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)])
 
 
 @catch_exception
 def run_tag_editor():
-    log.info("Starting tageditor...")
+    log.info("Starting tageditor / 正在启动标签编辑器...")
     cmd = [
         sys.executable,
         base_dir_path() / "legacy/frontend/scripts/launch.py",
@@ -58,8 +58,8 @@ def run_tag_editor():
 
 
 def launch():
-    log.info("Starting lora-scripts-anima GUI...")
-    log.info(f"Base directory: {base_dir_path()}, Working directory: {os.getcwd()}")
+    log.info("Starting lora-scripts-anima GUI / 正在启动...")
+    log.info(f"Base directory / 项目目录: {base_dir_path()}, Working directory / 工作目录: {os.getcwd()}")
     log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
 
     if not args.skip_prepare_environment:
@@ -74,13 +74,13 @@ def launch():
 
     log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
 
-    # 检测 flash-attn 状态
+    # flash-attn status / 检测 flash-attn 状态
     try:
         from importlib.metadata import version as pkg_version
         fa_ver = pkg_version("flash_attn")
-        log.info(f"flash_attn: OK (版本 {fa_ver})")
+        log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
     except Exception:
-        log.info("flash_attn: NOT FOUND / 未安装 — RTX 40/50 系建议运行 install-flash-attn 脚本")
+        log.info("flash_attn: NOT FOUND / 未安装 — RTX 40/50 series recommended: install-flash-attn scripts")
 
     os.environ["ANIMA_HOST"] = args.host
     os.environ["ANIMA_PORT"] = str(args.port)
@@ -109,7 +109,7 @@ def launch():
     print(f"  旧前端 / Legacy  :  {url_legacy}")
     print("=" * 60)
     print()
-    log.info(f"Server started at {url_new}")
+    log.info(f"Server started at {url_new} / 服务器已启动")
     uvicorn.run("backend.app:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
 
 
