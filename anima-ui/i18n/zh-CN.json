@@ -3,6 +3,7 @@
     "monitor": "训练监控",
     "monitorDashboard": "仪表盘",
     "monitorLogs": "实时日志",
+    "training": "训练",
     "loraTraining": "LoRA 训练",
     "basic": "新手 (SD1.5)",
     "master": "专家",
@@ -11,7 +12,8 @@
     "tools": "工具",
     "tagger": "Tagger 打标器",
     "tagEditor": "标签编辑器",
-    "other": "其他",
+    "presets": "预设管理",
+    "system": "系统",
     "environment": "环境管理",
     "uiSettings": "UI 设置",
     "about": "关于"
@@ -205,7 +207,28 @@
     "parseError": "解析错误",
     "localPickerNA": "本地文件选择不可用",
     "fileBrowserFailed": "文件浏览失败",
-    "specifyDir": "请指定目录"
+    "specifyDir": "请指定目录",
+    "cancel": "取消"
+  },
+  "preset": {
+    "title": "预设管理",
+    "subtitle": "管理和应用训练预设",
+    "current": "当前预设",
+    "none": "未使用预设",
+    "empty": "暂无可用预设",
+    "loaded": "已加载预设",
+    "cleared": "已清除预设",
+    "clear": "清除预设",
+    "delete": "删除",
+    "confirmDelete": "确定要删除预设",
+    "confirmDeleteMsg": "此操作不可撤销，将删除以下预设",
+    "saveAsPreset": "保存为预设",
+    "loadPreset": "加载预设",
+    "name": "名称",
+    "description": "描述",
+    "namePlaceholder": "输入预设名称",
+    "descPlaceholder": "简短描述（可选）",
+    "importPreset": "导入预设"
   },
   "tagger": {
     "title": "Tagger 标注工具",

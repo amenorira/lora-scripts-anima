@@ -16,7 +16,38 @@ window.trainingMixin = {
   taskId: null,
   statusText: 'Idle',
   showLoadModal: false,
-  savedConfigs: [],
+  showSaveModal: false,
+  showConfirmModal: false,
+  confirmTitle: '',
+  confirmMessage: '',
+  confirmCallback: null,
+  savePresetName: '',
+  savePresetDesc: '',
+  presets: [],
+  allPresets: [],
+  currentPreset: null,
+  currentPresetName: '',
+
+  trainTypes: [
+    { v: 'sd-lora', l: 'SD LoRA', dk: 'opt.model_train_type_sd-lora' },
+    { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
+    { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
+  ],
+  currentTrainTypeDesc: '',
+  currentTrainTypeLabel: 'SD LoRA',
+
+  switchTrainType(v) {
+    if (this.form.model_train_type === v) return;
+    this.form.model_train_type = v;
+    const tt = this.trainTypes.find(t => t.v === v);
+    this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
+    this.currentTrainTypeLabel = tt ? tt.l : '';
+    const allSections = [...TRAIN_SECTIONS_COMMON];
+    if (v === 'anima-lora') allSections.push(...TRAIN_SECTIONS_ANIMA);
+    this.renderTrainingForm(allSections);
+    this.updateToml();
+    this.loadPresets();
+  },
 
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
@@ -40,7 +71,13 @@ window.trainingMixin = {
     this.formHistory = [this.formDefaults];
     this.formHistoryIdx = 0;
 
+    const tt = this.trainTypes.find(t => t.v === this.form.model_train_type);
+    this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
+    this.currentTrainTypeLabel = tt ? tt.l : '';
+
     this.renderTrainingForm(allSections);
+
+    this.loadPresets();
 
     const showIfKeys = new Set();
     allSections.forEach(s => s.fields.forEach(f => {
@@ -48,13 +85,23 @@ window.trainingMixin = {
     }));
     const self = this;
     showIfKeys.forEach(k => {
-      self.$watch('form.' + k, () => self.rebuildForm());
+      self.$watch('form.' + k, () => self.showConditionalFields(k));
     });
 
     const savedKeyLocal = savedKey;
     this.$watch('form', () => {
       try { localStorage.setItem(savedKeyLocal, JSON.stringify(self.form)); } catch (e) {}
     });
+
+    // Re-resolve train type description on locale change
+    window.addEventListener('locale-changed', () => {
+      const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
+      self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
+    });
+  },
+
+  setupStickyTabs() {
+    // No-op: sticky banner removed
   },
 
   renderTrainingForm(sections) {
@@ -62,14 +109,12 @@ window.trainingMixin = {
     if (!container) return;
     let html = '';
     sections.forEach(section => {
-      const visibleFields = section.fields.filter(f => {
-        if (!f.showIf) return true;
-        return this.form[f.showIf.key] === f.showIf.eq;
-      });
-      if (visibleFields.length === 0) return;
       html += `<div class="card" data-section="${section.key}">`;
       html += `<div class="card-header">${this.t(section.titleKey) || section.titleKey}</div>`;
-      visibleFields.forEach(field => { html += this.renderField(field); });
+      section.fields.forEach(field => { 
+        if (field.hidden) return;
+        html += this.renderField(field); 
+      });
       html += `</div>`;
     });
     container.innerHTML = html;
@@ -197,10 +242,35 @@ window.trainingMixin = {
       </div>`;
     }
 
-    return `<div class="field" data-field-row="${dataKey.replace(/'/g, "\\'")}">
+    let condClass = '';
+    let condAttrs = '';
+    if (field.showIf) {
+      const condMet = this.form[field.showIf.key] === field.showIf.eq;
+      condAttrs = ` data-show-if-key="${field.showIf.key}" data-show-if-eq="${field.showIf.eq}"`;
+      if (!condMet) condClass = ' field-conditional field-hidden';
+      else condClass = ' field-conditional';
+    }
+
+    return `<div class="field${condClass}" data-field-row="${dataKey.replace(/'/g, "\\'")}"${condAttrs}>
       <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}</div>
       <div class="field-right">${inputHtml}${actionsHtml}</div>
     </div>`;
+  },
+
+  showConditionalFields(parentKey) {
+    const expectedVal = this.form[parentKey];
+    const rows = document.querySelectorAll(`[data-show-if-key="${parentKey}"]`);
+    rows.forEach(row => {
+      const eq = row.getAttribute('data-show-if-eq');
+      const match = String(expectedVal) === String(eq);
+      if (match) {
+        row.classList.remove('field-hidden');
+      } else {
+        row.classList.add('field-hidden');
+      }
+    });
+    // update TOML since the set of active fields changed
+    this.updateToml();
   },
 
   esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
@@ -220,7 +290,7 @@ window.trainingMixin = {
     this.form[key] = value;
     this.pushHistory({ ...this.form });
     const needsRerender = TRAIN_SECTIONS_COMMON.some(s => s.fields.some(f => f.showIf && f.showIf.key === key));
-    if (needsRerender) this.rebuildForm();
+    if (needsRerender) this.showConditionalFields(key);
   },
 
   stepField(key, delta) {
@@ -245,9 +315,11 @@ window.trainingMixin = {
   undoField(key) {
     if (this.formHistoryIdx > 0) {
       this.formHistoryIdx--;
-      this.form = { ...this.formHistory[this.formHistoryIdx] };
+      const prev = this.formHistory[this.formHistoryIdx];
+      for (const [k, v] of Object.entries(prev)) {
+        if (this.form[k] !== v) this.form[k] = v;
+      }
       this.updateToml();
-      this.rebuildForm();
     }
   },
 
@@ -432,38 +504,93 @@ window.trainingMixin = {
     } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
   },
 
-  // ── Param Save/Load ────────────────────────────────────
-  saveParamsToBrowser() {
-    const name = prompt(this.t('common.enterConfigName'), 'config-'+Date.now().toString(36));
-    if (!name) return;
-    const configs = JSON.parse(localStorage.getItem('anima-saved-configs')||'[]');
-    configs.push({ name, date: new Date().toLocaleString(), data: {...this.form} });
-    localStorage.setItem('anima-saved-configs', JSON.stringify(configs));
-    this.savedConfigs = configs;
-    this.toast(this.t('common.saved'));
+  // ── Param Save/Load (server presets) ──────────────────
+  openSavePresetModal() {
+    this.savePresetName = this.form.output_name || '';
+    this.savePresetDesc = '';
+    this.showSaveModal = true;
   },
 
-  loadParamsFromBrowser(idx) {
-    const configs = JSON.parse(localStorage.getItem('anima-saved-configs')||'[]');
-    if (!configs[idx]) return;
-    this.form = { ...configs[idx].data };
-    this.formDefaults = { ...this.form };
-    this.formHistory = [this.formDefaults];
-    this.formHistoryIdx = 0;
-    this.updateToml();
-    this.rebuildForm();
-    this.toast(this.t('common.loaded'));
+  async confirmSavePreset() {
+    const name = (this.savePresetName || '').trim();
+    if (!name) { this.toast(this.t('common.enterConfigName')); return; }
+
+    const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
+    const trainType = routeCfg.trainType || this.form.model_train_type || 'sd-lora';
+
+    try {
+      const r = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          description: this.savePresetDesc || '',
+          train_type: trainType,
+          data: { ...this.form }
+        })
+      });
+      const d = await r.json();
+      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
+
+      this.showSaveModal = false;
+      this.currentPresetName = name;
+      this.currentPreset = { metadata: { name }, data: { ...this.form } };
+      await this.loadPresets();
+      this.toast(this.t('common.saved'));
+    } catch (e) {
+      this.toast(this.t('common.failed') + ': ' + e.message);
+    }
   },
 
-  deleteSavedConfig(idx) {
-    const configs = JSON.parse(localStorage.getItem('anima-saved-configs')||'[]');
-    configs.splice(idx,1);
-    localStorage.setItem('anima-saved-configs', JSON.stringify(configs));
-    this.savedConfigs = configs;
+  cancelSavePreset() {
+    this.showSaveModal = false;
+    this.savePresetName = '';
+    this.savePresetDesc = '';
   },
 
-  refreshSavedConfigs() {
-    try { this.savedConfigs = JSON.parse(localStorage.getItem('anima-saved-configs')||'[]'); } catch(e) { this.savedConfigs = []; }
+  loadPresetFromList(preset) {
+    if (!preset) return;
+    this.applyPreset(preset);
+    this.showLoadModal = false;
+  },
+
+  // ── Confirm Modal ─────────────────────────────────────
+  openConfirm(title, message, callback) {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmCallback = callback;
+    this.showConfirmModal = true;
+  },
+  confirmAction() {
+    this.showConfirmModal = false;
+    const cb = this.confirmCallback;
+    this.confirmCallback = null;
+    if (cb) cb();
+  },
+  cancelConfirm() {
+    this.showConfirmModal = false;
+    this.confirmCallback = null;
+  },
+
+  async deletePresetFromList(preset) {
+    if (!preset || !preset.metadata || !preset.metadata.name) return;
+    const name = preset.metadata.name;
+    const self = this;
+    this.openConfirm(
+      this.t('preset.confirmDelete'),
+      this.t('preset.confirmDeleteMsg') + ': ' + name,
+      async function() {
+        try {
+          const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
+          const d = await r.json();
+          if (d.status !== 'success') { self.toast(self.t('common.failed') + ': ' + (d.message || '')); return; }
+          await self.loadPresets();
+          self.toast(d.message || self.t('preset.cleared'));
+        } catch (e) {
+          self.toast(self.t('common.failed') + ': ' + e.message);
+        }
+      }
+    );
   },
 
   downloadConfig() {
@@ -552,5 +679,67 @@ window.trainingMixin = {
     }).join('');
     const modalBody = document.getElementById('savedConfigsList');
     if (modalBody) { modalBody.innerHTML = `<p class="text-sm text-muted mb-2">Select:</p>${listHtml}`; this.showLoadModal = true; }
+  },
+
+  // ── Presets ────────────────────────────────────────────
+  async loadPresets() {
+    try {
+      const r = await fetch('/api/presets');
+      const d = await r.json();
+      if (d.status === 'success' && d.data && d.data.presets) {
+        const all = d.data.presets.filter(p => p.metadata && p.metadata.name);
+        this.allPresets = all;
+        this.presets = all.filter(p => {
+          const tt = p.metadata.train_type;
+          if (!tt) return true;
+          const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
+          const trainType = routeCfg.trainType || 'sd-lora';
+          if (this.currentRoute === 'train-anima') return tt === 'anima-lora';
+          return tt === trainType;
+        });
+      }
+    } catch (e) { this.presets = []; this.allPresets = []; }
+  },
+
+  applyPreset(preset) {
+    if (!preset || !preset.data) return;
+    this.currentPreset = preset;
+    this.currentPresetName = (preset.metadata && preset.metadata.name) || '';
+    const data = preset.data;
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue;
+      const field = this.findFieldDef(k);
+      if (field) {
+        if (field.type === 'toggle') this.form[k] = !!v;
+        else if (field.type === 'number' || field.type === 'stepper') this.form[k] = Number(v);
+        else this.form[k] = String(v);
+      } else {
+        this.form[k] = v;
+      }
+    }
+    this.formDefaults = { ...this.form };
+    this.formHistory = [this.formDefaults];
+    this.formHistoryIdx = 0;
+    this.updateToml();
+    this.rebuildForm();
+    this.toast(this.t('preset.loaded') + ': ' + (preset.metadata && preset.metadata.name || ''));
+  },
+
+  clearPreset() {
+    this.currentPreset = null;
+    this.currentPresetName = '';
+    this.resetAllParams();
+    this.toast(this.t('preset.cleared'));
+  },
+
+  applyPresetNavigate(preset) {
+    this.applyPreset(preset);
+    if (!this.currentRoute || !this.currentRoute.startsWith('train-')) {
+      const tt = preset.metadata && preset.metadata.train_type;
+      let target = 'train-basic';
+      if (tt === 'anima-lora') target = 'train-anima';
+      else if (tt === 'flux-lora') target = 'train-master';
+      this.navigate(target);
+    }
   },
 };

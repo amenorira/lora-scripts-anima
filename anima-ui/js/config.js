@@ -11,7 +11,7 @@ window.TRAIN_SECTIONS_COMMON = [
       { key: 'pretrained_model_name_or_path', type: 'text', default: './sd-models/model.safetensors', role: 'file-model', descKey: 'field.pretrained_model_name_or_path' },
       { key: 'vae', type: 'text', default: '', role: 'file-model', descKey: 'field.vae' },
       { key: 'resume', type: 'text', default: '', role: 'file-folder', descKey: 'field.resume' },
-      { key: 'model_train_type', type: 'select', default: 'sd-lora', options: [
+      { key: 'model_train_type', type: 'select', default: 'sd-lora', hidden: true, options: [
         { v: 'sd-lora', l: 'SD LoRA', dKey: 'opt.model_train_type_sd-lora' },
         { v: 'sdxl-lora', l: 'SDXL LoRA', dKey: 'opt.model_train_type_sdxl-lora' },
         { v: 'anima-lora', l: 'Anima LoRA', dKey: 'opt.model_train_type_anima-lora' }
@@ -244,13 +244,14 @@ window.ROUTE_CONFIG = {
   'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
   'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
   'history': { titleKey: 'nav.history', subtitle: '' },
-  'train-basic': { titleKey: 'nav.basic', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
-  'train-master': { titleKey: 'nav.master', subtitleKey: 'section.trainParams', trainType: 'sd-lora' },
-  'train-anima': { titleKey: 'nav.anima', subtitleKey: 'section.animaParams', trainType: 'anima-lora', extraSections: true },
+  'train-basic': { titleKey: 'nav.loraTraining', trainType: 'sd-lora' },
+  'train-master': { titleKey: 'nav.loraTraining', trainType: 'sd-lora' },
+  'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora', extraSections: true },
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
   'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
+  'presets': { titleKey: 'preset.title', subtitleKey: 'preset.subtitle' },
 };

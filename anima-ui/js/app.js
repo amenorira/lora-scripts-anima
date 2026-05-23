@@ -20,6 +20,7 @@ document.addEventListener('alpine:init', () => {
     showThemeDropdown: false,
     showLangDropdown: false,
     showMainScroll: false,
+    sidebarCollapsed: false,
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
@@ -128,6 +129,11 @@ document.addEventListener('alpine:init', () => {
       this.setTheme(this.resolvedTheme === 'dark' ? 'light' : 'dark');
     },
 
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+      localStorage.setItem('anima-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0');
+    },
+
     themeLabel() {
       if (this.resolvedTheme === 'dark') return this.t('common.themeLight');
       return this.t('common.themeDark');
@@ -227,6 +233,8 @@ document.addEventListener('alpine:init', () => {
       } else if (r === 'environment') {
         this.startProgress();
         this.buildEnvironmentPage();
+      } else if (r === 'presets') {
+        this.loadPresets();
       }
     },
 
@@ -237,6 +245,7 @@ document.addEventListener('alpine:init', () => {
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
         this.refreshSavedConfigs();
       } catch(e){}
+      this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
     },
 
     saveUISettings() {

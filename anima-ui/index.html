@@ -40,15 +40,17 @@
 <div class="app-layout">
 
   <!-- ── Sidebar ──────────────────────────────────────────── -->
-  <nav class="sidebar" id="sidebar">
+  <nav class="sidebar no-transition" id="sidebar" :class="{ collapsed: sidebarCollapsed }"
+       x-init="sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1'; $nextTick(() => $el.classList.remove('no-transition'))">
     <div class="sidebar-header">
       <div class="brand-clickable" @click="navigate('home')" title="Home">
         <div class="brand-text">lora-scripts-anima</div>
+        <div class="brand-version" x-text="version"></div>
       </div>
     </div>
 
     <div class="sidebar-nav" id="sidebarNav">
-      <!-- Monitor group -->
+      <!-- Monitor -->
       <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'monitor-dashboard' }"
          @click="navigate('monitor-dashboard')" href="javascript:void(0)">
@@ -65,31 +67,15 @@
         <span x-text="t('nav.monitorLogs')">Real-time Logs</span>
       </a>
 
-      <!-- LoRA Training group -->
-      <div class="sidebar-section-label" x-text="t('nav.loraTraining')">LoRA Training</div>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'train-basic' }"
+      <!-- Training -->
+      <div class="sidebar-section-label" x-text="t('nav.training')">Training</div>
+      <a class="sidebar-item" :class="{ active: currentRoute && currentRoute.startsWith('train-') }"
          @click="navigate('train-basic')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-        </span>
-        <span x-text="t('nav.basic')">Beginner (SD1.5)</span>
-      </a>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'train-master' }"
-         @click="navigate('train-master')" href="javascript:void(0)">
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </span>
-        <span x-text="t('nav.master')">Expert</span>
+        <span x-text="t('nav.loraTraining')">LoRA Training</span>
       </a>
-      <a class="sidebar-item" :class="{ active: currentRoute === 'train-anima' }"
-         @click="navigate('train-anima')" href="javascript:void(0)">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </span>
-        <span x-text="t('nav.anima')">Anima LoRA</span>
-      </a>
-      <!-- History -->
-      <div class="sidebar-section-label" x-text="t('nav.history')">History</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'history' }"
          @click="navigate('history')" href="javascript:void(0)">
         <span class="nav-icon">
@@ -114,9 +100,16 @@
         </span>
         <span x-text="t('nav.tagEditor')">Tag Editor</span>
       </a>
+      <a class="sidebar-item" :class="{ active: currentRoute === 'presets' }"
+         @click="navigate('presets')" href="javascript:void(0)">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </span>
+        <span x-text="t('nav.presets')">Presets</span>
+      </a>
 
-      <!-- Other -->
-      <div class="sidebar-section-label" x-text="t('nav.other')">Other</div>
+      <!-- System -->
+      <div class="sidebar-section-label" x-text="t('nav.system')">System</div>
       <a class="sidebar-item" :class="{ active: currentRoute === 'environment' }"
          @click="navigate('environment')" href="javascript:void(0)">
         <span class="nav-icon">
@@ -163,10 +156,15 @@
           <button :class="{ active: locale === 'en-US' }" @click="locale='en-US'; onLocaleChange()">English</button>
         </div>
       </div>
-      <span class="bottom-label" style="flex:1;text-align:right" x-text="version"></span>
-      <a class="bottom-btn" href="https://github.com/ameyukisora/lora-scripts-anima" target="_blank" rel="noopener" title="GitHub">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.475 2 2 6.475 2 12a9.994 9.994 0 0 0 6.838 9.488c.5.087.687-.213.687-.476 0-.237-.013-1.024-.013-1.862-2.512.463-3.162-.612-3.362-1.175-.113-.288-.6-1.175-1.025-1.413-.35-.187-.85-.65-.013-.662.788-.013 1.35.725 1.538 1.025.9 1.512 2.338 1.087 2.912.825.088-.65.35-1.087.638-1.337-2.225-.25-4.55-1.113-4.55-4.938 0-1.088.387-1.987 1.025-2.688-.1-.25-.45-1.275.1-2.65 0 0 .837-.262 2.75 1.026a9.28 9.28 0 0 1 2.5-.338c.85 0 1.7.112 2.5.337 1.912-1.3 2.75-1.024 2.75-1.024.55 1.375.2 2.4.1 2.65.637.7 1.025 1.587 1.025 2.687 0 3.838-2.337 4.688-4.562 4.938.362.312.675.912.675 1.85 0 1.337-.013 2.412-.013 2.75 0 .262.188.574.688.474A10.016 10.016 0 0 0 22 12c0-5.525-4.475-10-10-10z"/></svg>
-      </a>
+      <!-- Collapse / expand sidebar -->
+      <button class="sidebar-pin-btn" @click="toggleSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pin-icon-open">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pin-icon-closed">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
     </div>
   </nav>
 
@@ -224,12 +222,33 @@
       <!-- Route: Training pages (basic/master/anima) -->
       <div x-show="currentRoute && currentRoute.startsWith('train-')" x-cloak>
         <div class="page-header">
-          <h1 class="page-title" x-text="pageTitle">Training</h1>
-          <p class="page-subtitle" x-text="pageSubtitle"></p>
+          <div class="page-header-left">
+            <h1 class="page-title" x-text="pageTitle">Training</h1>
+            <span class="preset-badge" x-show="currentPresetName">
+              <span class="preset-badge-label" x-text="t('preset.current') + ':'"></span>
+              <strong x-text="currentPresetName"></strong>
+              <button class="preset-badge-close" @click="clearPreset()" :title="t('preset.clear')">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <!-- Tab switcher -->
+        <div class="train-tab-card">
+          <div class="train-tab-list">
+            <template x-for="tt in trainTypes" :key="tt.v">
+              <button class="train-tab-item" 
+                      :class="{ active: form.model_train_type === tt.v }"
+                      @click="switchTrainType(tt.v)">
+                <span x-text="tt.l"></span>
+              </button>
+            </template>
+          </div>
+          <p class="train-type-desc" x-text="currentTrainTypeDesc"></p>
         </div>
 
         <form @submit.prevent="" id="trainForm">
-          <!-- Sections rendered dynamically by JS -->
           <div id="trainFormContent"></div>
         </form>
       </div>
@@ -305,6 +324,31 @@
         </div>
       </div>
 
+      <!-- Route: Presets -->
+      <div x-show="currentRoute === 'presets'" x-cloak>
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <h1 class="page-title" x-text="t('preset.title')" style="margin-bottom:0">预设管理</h1>
+            <p class="page-subtitle" x-text="t('preset.subtitle')">管理和应用训练预设</p>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="importConfigFile()" x-text="t('preset.importPreset')">导入预设</button>
+        </div>
+        <div class="preset-cards" id="presetCards">
+          <template x-for="p in allPresets" :key="p.metadata.name">
+            <div class="preset-card" @click="applyPresetNavigate(p)"
+                 :class="{ active: currentPreset && currentPreset.metadata.name === p.metadata.name }">
+              <div class="preset-card-name" x-text="p.metadata.name"></div>
+              <div class="preset-card-desc" x-text="p.metadata.description"></div>
+              <div class="preset-card-meta">
+                <span x-text="p.metadata.author"></span>
+                <span x-text="'v' + p.metadata.version"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="allPresets.length === 0" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0" x-text="t('preset.empty')">暂无可用预设</div>
+        </div>
+      </div>
+
       <!-- Route: About -->
       <div x-show="currentRoute === 'about'" x-cloak>
         <div class="page-header">
@@ -341,29 +385,27 @@
       <div class="panel-preview" id="tomlPreview" x-effect="updateToml()"># Parameters will appear here</div>
       <div class="panel-actions">
         <div class="btn-row">
-          <button class="btn btn-primary" style="flex:1" @click="startTraining()"
-                  :disabled="isTraining" x-text="isTraining ? t('common.training') : t('common.startTraining')">
-            Start Training
-          </button>
-          <button class="btn btn-danger" style="flex:1" @click="stopTraining()"
-                  :disabled="!isTraining" x-text="t('common.stopTraining')">
-            Stop Training
-          </button>
+          <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
+          <button class="btn btn-ghost btn-sm" @click="openSavePresetModal()" x-text="t('common.save')">Save</button>
+          <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.load')">Load</button>
         </div>
         <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" @click="saveParamsToBrowser()" x-text="t('common.save')">Save</button>
-          <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.import')">Load</button>
           <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
           <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
         </div>
         <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" style="flex:1" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
           <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
         </div>
-      </div>
-      <div class="panel-status">
-        <div class="status-indicator" :class="{ running: isTraining, stopped: !isTraining && !isIdle }"></div>
-        <span x-text="statusText">Idle</span>
+        <div class="btn-row">
+          <button class="btn btn-start" style="flex:1" @click="startTraining()"
+                  :disabled="isTraining" x-text="isTraining ? t('common.training') : t('common.startTraining')">
+            Start Training
+          </button>
+          <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
+                  :disabled="!isTraining" x-text="t('common.stopTraining')">
+            Stop Training
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -375,31 +417,74 @@
 <!-- ── Hidden file input for importing config ───────────── -->
 <input type="file" id="configFileInput" accept=".toml,.json" style="display:none" @change="handleConfigFileImport($event)">
 
-<!-- ── Load Config Modal ────────────────────────────────── -->
+<!-- ── Save Preset Modal ────────────────────────────────── -->
+<div class="modal-overlay" x-show="showSaveModal" @click.self="cancelSavePreset()" x-cloak>
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span x-text="t('preset.saveAsPreset')">Save as Preset</span>
+      <button class="btn-icon" @click="cancelSavePreset()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-field">
+        <label class="modal-field-label" x-text="t('preset.name')">Name</label>
+        <input type="text" class="input" x-model="savePresetName" :placeholder="t('preset.namePlaceholder')">
+      </div>
+      <div class="modal-field">
+        <label class="modal-field-label" x-text="t('preset.description')">Description</label>
+        <textarea class="input" x-model="savePresetDesc" :placeholder="t('preset.descPlaceholder')" rows="3" style="resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="cancelSavePreset()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-primary btn-sm" @click="confirmSavePreset()" x-text="t('common.save')">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Load Preset Modal ────────────────────────────────── -->
 <div class="modal-overlay" x-show="showLoadModal" @click.self="showLoadModal = false" x-cloak>
   <div class="modal">
     <div class="modal-header">
-      <span>Load Configuration</span>
+      <span x-text="t('preset.loadPreset')">Load Preset</span>
       <button class="btn-icon" @click="showLoadModal = false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body" id="savedConfigsList">
-      <p class="text-muted text-sm" x-show="savedConfigs.length === 0">No saved configurations</p>
-      <template x-for="(cfg, idx) in savedConfigs" :key="idx">
-        <div class="config-list-item" @click="loadParamsFromBrowser(idx); showLoadModal = false">
-          <span class="config-name" x-text="cfg.name"></span>
-          <div>
-            <span class="config-date text-sm" x-text="cfg.date"></span>
-            <button class="btn-icon" @click.stop="deleteSavedConfig(idx)" style="margin-left:4px">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
+    <div class="modal-body">
+      <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
+      <template x-for="p in allPresets" :key="p.metadata.name">
+        <div class="config-list-item" @click="loadPresetFromList(p); showLoadModal = false" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="min-width:0">
+            <div class="config-name" x-text="p.metadata.name" style="font-weight:600"></div>
+            <div class="text-sm text-muted" x-text="p.metadata.description || ''" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
           </div>
+          <button class="btn-icon" @click.stop="deletePresetFromList(p)" :title="t('preset.delete')" style="flex-shrink:0;opacity:0.4">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
         </div>
       </template>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" @click="showLoadModal = false" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Modal ───────────────────────────────────── -->
+<div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()" x-cloak>
+  <div class="modal modal-confirm">
+    <div class="modal-body">
+      <div class="confirm-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div class="confirm-title" x-text="confirmTitle">Confirm</div>
+      <div class="confirm-message" x-text="confirmMessage">Are you sure?</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-danger btn-sm" @click="confirmAction()" x-text="t('preset.delete')">Delete</button>
     </div>
   </div>
 </div>

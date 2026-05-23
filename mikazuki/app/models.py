@@ -42,3 +42,12 @@ class APIResponseSuccess(APIResponse):
 
 class APIResponseFail(APIResponse):
     status: str = "fail"
+
+
+class PresetSaveRequest(BaseModel):
+    name: str
+    description: str = ""
+    version: str = "1.0"
+    author: str = ""
+    train_type: str = ""
+    data: Dict[str, Any] = {}
