@@ -476,6 +476,8 @@ async def monitor_status(task_id: str = Query("")):
             for key in ("step", "total_steps", "percent", "loss", "lr", "epoch", "eta", "speed", "has_error", "error_msg"):
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
+            # 将原始日志行返回前端用于实时日志展示
+            result["log_lines"] = log_lines[-300:]
 
     # 输出目录信息（方便前端提供下载链接）
     if train_config.get("output_dir"):
@@ -492,6 +494,10 @@ async def monitor_status(task_id: str = Query("")):
             "dim": train_config.get("network_dim", "?"),
             "epochs": train_config.get("max_train_epochs", "?"),
         }
+        # 如果有历史日志，也返回供查看
+        log_lines = _read_train_log(active.get("id", ""))
+        if log_lines:
+            result["log_lines"] = log_lines[-300:]
 
     return {"status": "success", "data": result}
 

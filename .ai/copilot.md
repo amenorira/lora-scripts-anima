@@ -48,3 +48,48 @@ All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rule
 - Training: subprocess calls to `vendor/sd-scripts/*.py` via `accelerate launch`
 - Config: TOML format, generated from UI form data
 - Schema: TypeScript form definitions → `backend/schema/`
+
+### Core Design: We Are a Wrapper
+
+**This project does NOT implement training logic.** The actual training is done entirely by `vendor/sd-scripts/`. Our job is two things:
+
+1. **Collect** — gather training parameters from the Web UI form
+2. **Deliver** — convert them to a TOML config file and pass it to sd-scripts
+
+The data flow:
+```
+UI form (JSON) → adapter.py (whitelist/filter) → TOML file → accelerate launch vendor/sd-scripts/train_network.py --config_file xxx.toml
+```
+
+Key implications:
+- If a training parameter exists in sd-scripts but not in our UI form, we need to add it to `SUPPORTED_FIELDS` in `adapter.py` and the schema in `schema/`
+- If our generated TOML is valid but training fails, the bug is almost certainly in sd-scripts or the user's setup (GPU/drivers/dataset), not in our code
+- Never re-implement training logic that sd-scripts already handles (loss calculation, optimizer steps, sample generation, etc.)
+
+### Source of Truth: sd-scripts
+
+**Everything related to actual training lives in `vendor/sd-scripts/`.** When you need to understand or answer questions about:
+
+- What a training parameter does → read `vendor/sd-scripts/library/train_util.py` (argument parser)
+- How loss is computed → read `vendor/sd-scripts/library/custom_train_functions.py`
+- What optimizer args are supported → read `vendor/sd-scripts/library/optimizer_utils.py`
+- How the network (LoRA) is structured → read `vendor/sd-scripts/networks/`
+- Training script CLI flags → read the training scripts in `vendor/sd-scripts/` root:
+  - `train_network.py` — LoRA training (SD 1.5 / SDXL)
+  - `train_db.py` — Dreambooth
+  - `sdxl_train_network.py`, `sdxl_train.py`, `sdxl_train_control_net.py` — SDXL variants
+  - `flux_train_network.py`, `flux_train.py` — FLUX
+  - `sd3_train_network.py`, `sd3_train.py` — SD3
+  - `lumina_train_network.py`, `lumina_train.py` — Lumina
+  - `hunyuan_image_train_network.py` — HunyuanImage
+  - `anima_train_network.py`, `anima_train.py` — Anima
+  - `train_control_net.py`, `train_textual_inversion.py`, `train_leco.py` — other methods
+  - These are the actual entry points launched by `accelerate`; their argparse defines all CLI parameters
+
+**Always consult kohya's own documentation first** — it explains the training concepts and parameters in detail:
+
+- `vendor/sd-scripts/README.md` — overview and quick start
+- `vendor/sd-scripts/docs/` — detailed per-topic docs (network configuration, dataset preparation, etc.)
+- [kohya-ss/sd-scripts on GitHub](https://github.com/kohya-ss/sd-scripts) — upstream repo, issues, and discussions
+
+Do NOT guess or invent training parameter behavior. Always trace back to the sd-scripts source code or kohya's docs.

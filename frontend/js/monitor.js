@@ -50,6 +50,7 @@ window.monitorMixin = {
         this.lossSeries = j.data.tensorboard_loss || [];
         this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
+        if (j.data.log_lines) this.logLines = j.data.log_lines;
         if (j.data.state === 'RUNNING') {
           this.isTraining = true; this.isIdle = false; this.statusText = j.data.state_label || j.data.state;
         } else if (j.data.state === 'IDLE') {
