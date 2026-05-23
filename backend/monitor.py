@@ -298,15 +298,15 @@ def _extract_train_params(config: dict) -> list[dict]:
                 pass
         params.append({"label": label, "value": str(v)})
 
-    _add("学习率", "learning_rate", "lr")
+    _add("Learning Rate / 学习率", "learning_rate", "lr")
     _add("UNet LR", "unet_lr", "lr")
-    _add("优化器", "optimizer_type")
-    _add("调度器", "lr_scheduler")
-    _add("Rank (dim)", "network_dim")
+    _add("Optimizer / 优化器", "optimizer_type")
+    _add("Scheduler / 调度器", "lr_scheduler")
+    _add("Rank (dim) / 维度", "network_dim")
     _add("Alpha", "network_alpha")
-    _add("Epochs", "max_train_epochs")
-    _add("分辨率", "resolution")
-    _add("Seed", "seed")
+    _add("Epochs / 轮数", "max_train_epochs")
+    _add("Resolution / 分辨率", "resolution")
+    _add("Seed / 种子", "seed")
 
     warmup = config.get("lr_warmup_steps", "")
     if warmup and warmup not in ("0", "0.0"):
@@ -399,6 +399,28 @@ def _scan_history() -> list[dict]:
 # API 路由
 # ═══════════════════════════════════════════════════════════
 
+STATE_LABELS = {
+    "RUNNING": "Training / 训练中",
+    "FINISHED": "Finished / 已完成",
+    "TERMINATED": "Terminated / 已终止",
+    "CREATED": "Pending / 等待启动",
+}
+
+
+def _read_train_log(task_id: str) -> list[str]:
+    """读取训练任务的实时日志"""
+    task_id_short = task_id[:8]
+    # 尝试从 output/ 读取日志
+    for log_file in sorted(OUTPUT_DIR.glob(f"train_{task_id_short}*.log"),
+                           key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            text = log_file.read_text(encoding="utf-8", errors="replace")
+            return text.split("\n")
+        except OSError:
+            continue
+    return []
+
+
 @router.get("/monitor/status")
 async def monitor_status(task_id: str = Query("")):
     """聚合监控端点：GPU + CPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
@@ -408,7 +430,7 @@ async def monitor_status(task_id: str = Query("")):
         "system": _system_info(),
         "tensorboard_loss": _read_tensorboard_loss(),
         "state": "IDLE",
-        "state_label": "空闲",
+        "state_label": "Idle / 空闲",
         "step": 0,
         "total_steps": 0,
         "percent": 0,
@@ -442,12 +464,18 @@ async def monitor_status(task_id: str = Query("")):
         active = tasks[-1]
 
     result["active_task"] = active
-    result["state"] = active.get("status", "UNKNOWN")
-    result["state_label"] = {"RUNNING": "训练中", "FINISHED": "已完成", "TERMINATED": "已终止", "CREATED": "等待启动"}.get(active.get("status"), active.get("status", "未知"))
+    active_status = active.get("status", "UNKNOWN")
+    result["state"] = active_status
+    result["state_label"] = STATE_LABELS.get(active_status, active_status)
 
-    # 如果有激活任务，尝试解析日志
-    # 注意：这需要访问训练进程的 stdout，当前 Task 类的 process.stdout 可用于此
-    # 作为轻量替代，这里返回基础信息；后续可在 api.py 中添加日志 tail 端点
+    # 如果有激活任务，解析实时日志
+    if active_status == "RUNNING":
+        log_lines = _read_train_log(active.get("id", ""))
+        if log_lines:
+            progress = _parse_log_progress(log_lines)
+            for key in ("step", "total_steps", "percent", "loss", "lr", "epoch", "eta", "speed", "has_error", "error_msg"):
+                if key in progress and progress[key] is not None:
+                    result[key] = progress[key]
 
     return {"status": "success", "data": result}
 

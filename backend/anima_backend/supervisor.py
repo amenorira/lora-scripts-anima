@@ -124,22 +124,30 @@ def run_train(
 
     task_id = task.task_id
     env["ANIMA_TASK_ID"] = task_id
+    task_id_short = task_id[:8]
+
+    # 日志文件路径
+    log_dir = Path(toml_path).parent.parent / "output"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"train_{task_id_short}.log"
 
     def _run():
         try:
-            task.execute()
-            result = task.communicate()
-            if result.returncode != 0:
-                log.error(f"Training failed / 训练失败 (task={task_id[:8]})")
-            else:
-                log.info(f"Training completed / 训练完成 (task={task_id[:8]})")
+            # 打开日志文件用于捕获 stdout
+            with open(log_file, "w", encoding="utf-8", errors="replace") as lf:
+                task.execute(stdout_file=lf)
+                result = task.communicate()
+                if result.returncode != 0:
+                    log.error(f"Training failed / 训练失败 (task={task_id_short})")
+                else:
+                    log.info(f"Training completed / 训练完成 (task={task_id_short})")
         except Exception as e:
-            log.error(f"Training exception / 训练异常 (task={task_id[:8]}): {e}")
+            log.error(f"Training exception / 训练异常 (task={task_id_short}): {e}")
 
     coro = asyncio.to_thread(_run)
     asyncio.create_task(coro)
 
-    log.info(f"Training started / 训练已启动: {task_id[:8]} ({Path(toml_path).name})")
+    log.info(f"Training started / 训练已启动: {task_id_short} ({Path(toml_path).name})")
 
     return {
         "status": "success",

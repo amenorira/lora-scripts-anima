@@ -8,6 +8,7 @@ import toml
 from fastapi import APIRouter
 
 from backend.app.models import APIResponseFail, APIResponseSuccess, PresetSaveRequest
+from backend.app.state import avaliable_presets, load_presets
 from backend.log import log
 
 router = APIRouter()

@@ -65,9 +65,13 @@ class Task:
         self.process.wait()
         self.status = TaskStatus.FINISHED
 
-    def execute(self):
+    def execute(self, stdout_file=None):
         self.status = TaskStatus.RUNNING
-        self.process = subprocess.Popen(self.command, env=self.environ)
+        kwargs = {"env": self.environ}
+        if stdout_file:
+            kwargs["stdout"] = stdout_file
+            kwargs["stderr"] = subprocess.STDOUT
+        self.process = subprocess.Popen(self.command, **kwargs)
 
     def terminate(self):
         try:

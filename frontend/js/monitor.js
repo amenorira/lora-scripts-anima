@@ -13,6 +13,7 @@ window.monitorMixin = {
   lossSeries: [],
   trainParams: [],
   previews: [],
+  previewStep: 0,
   historyItems: [],
   logAutoScroll: true,
   logLines: [],
@@ -121,9 +122,16 @@ window.monitorMixin = {
 
     html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
     if (this.previews.length) {
+      html += '<div class="preview-controls" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      html += `<button class="btn btn-sm" @click="previewStep = Math.max(0, previewStep - 1)" :disabled="previewStep <= 0">&larr; Prev</button>`;
+      html += `<span style="font-size:13px">Step <b x-text="previewStep + 1"></b> / <b>${this.previews.length}</b></span>`;
+      html += `<button class="btn btn-sm" @click="previewStep = Math.min(${this.previews.length - 1}, previewStep + 1)" :disabled="previewStep >= ${this.previews.length - 1}">Next &rarr;</button>`;
+      html += '</div>';
       html += '<div class="preview-grid">';
-      this.previews.forEach(p => {
-        html += `<div class="preview-item"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')"/><span>${p.name}</span></div>`;
+      const p = this.previews[this.previewStep] || this.previews[0];
+      html += `<div class="preview-item" style="grid-column:1/-1"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')" style="max-height:400px;object-fit:contain"/><span>${p.name}</span></div>`;
+      this.previews.forEach((pv, i) => {
+        html += `<div class="preview-item" style="cursor:pointer;${i === this.previewStep ? 'border:2px solid var(--primary);' : ''}" @click="previewStep = ${i}"><img src="${pv.url}" alt="${pv.name}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;
       });
       html += '</div>';
     } else {
@@ -233,6 +241,7 @@ window.monitorMixin = {
       const sx = (x) => pad.l + (x - xMin) / (xMax - xMin || 1) * pw;
       const sy = (y) => pad.t + (yMax - y) / (yMax - yMin || 1) * ph;
 
+      // Grid lines
       ctx.strokeStyle = 'var(--border-color, #333)';
       ctx.lineWidth = 0.5;
       for (let i = 0; i <= 4; i++) {
@@ -243,6 +252,19 @@ window.monitorMixin = {
         ctx.fillText((yMax - i * (yMax - yMin) / 4).toFixed(4), 2, y + 3);
       }
 
+      // Line with gradient
+      const grad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+      grad.addColorStop(0, 'rgba(139, 92, 246, 0.3)');
+      grad.addColorStop(1, 'rgba(139, 92, 246, 0.02)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(sx(xs[0]), H - pad.b);
+      s.points.forEach((p) => ctx.lineTo(sx(p.step), sy(p.value)));
+      ctx.lineTo(sx(xs[xs.length - 1]), H - pad.b);
+      ctx.closePath();
+      ctx.fill();
+
+      // Line
       ctx.strokeStyle = '#8b5cf6';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -252,11 +274,35 @@ window.monitorMixin = {
       });
       ctx.stroke();
 
+      // Last point dot
       const last = s.points[s.points.length - 1];
       ctx.fillStyle = '#8b5cf6';
       ctx.beginPath();
       ctx.arc(sx(last.step), sy(last.value), 4, 0, Math.PI * 2);
       ctx.fill();
+
+      // Store data for hover tooltip
+      c._chartData = { s, sx, sy, pad };
+      c.style.cursor = 'crosshair';
+      if (!c._hasHover) {
+        c._hasHover = true;
+        c.addEventListener('mousemove', (ev) => {
+          const rect = c.getBoundingClientRect();
+          const mx = ev.clientX - rect.left;
+          const my = ev.clientY - rect.top;
+          const data = c._chartData;
+          if (!data || !data.s.points.length) return;
+          // Find nearest point
+          let best = data.s.points[0], bestDist = Infinity;
+          data.s.points.forEach(p => {
+            const dx = data.sx(p.step) - mx, dy = data.sy(p.value) - my;
+            const d = dx * dx + dy * dy;
+            if (d < bestDist) { bestDist = d; best = p; }
+          });
+          c.title = `Step: ${best.step}  Value: ${best.value.toFixed(6)}`;
+        });
+        c.addEventListener('mouseleave', () => { c.title = ''; });
+      }
     });
   },
 
