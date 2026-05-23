@@ -213,7 +213,7 @@ window.environmentMixin = {
           html += `<li class="env-candidate-item">
             <span class="env-candidate-mark env-candidate-${mark}">${c.usable ? '&#10003;' : '&#10007;'}</span>
             <code class="env-candidate-name" title="${c.name}">${c.name}</code>
-            ${c.notes.length ? `<span class="env-candidate-notes">${c.notes.join('; ')}</span>` : ''}
+            ${c.notes.length ? `<span class="env-candidate-notes">${c.notes.map(n => typeof n === 'string' ? n : (T('faNote.' + n.key) || n.text || n.key)).join('; ')}</span>` : ''}
             <button class="fa-candidate-btn btn btn-sm ${c.usable ? 'btn-secondary' : 'btn-ghost'}"
               data-url="${c.url.replace(/'/g,"\\'")}">
               ${c.usable ? T('install', 'Install') : T('forceInstall', 'Force')}

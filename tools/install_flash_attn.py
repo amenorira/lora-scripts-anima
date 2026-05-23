@@ -304,21 +304,23 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
 
 def _score_candidate(
     tags: dict[str, str], env: dict[str, Any]
-) -> tuple[int, list[str], bool]:
+) -> tuple[int, list[dict[str, str]], bool]:
     """对一个已解析的 wheel tags 评分，返回 (score, notes, usable)。
 
-    评分规则（供 cached 和 fresh API 两种路径共用）：
-    - PyTorch: 精确匹配 +20，同大版本 +5（⚠ 但可尝试），不同大版本不可用
-    - Python:  精确匹配 +20，abi3 +10，否则不可用
-    - CUDA:    精确匹配 +20，同大版本 +10（通常兼容），否则 -5 但仍可用
+    notes 为结构化列表: [{"key": "faNote.torchNewer", "text": "wheel newer than env ..."}]
+    - key: 前端 i18n 查找键，CLI 回退到 text
+    - text: 人类可读文本
     """
     torch_tag = env.get("torch_tag")
     cuda_tag = env.get("cuda_tag")
     python_tag = env.get("python_tag")
 
     score = 0
-    notes: list[str] = []
+    notes: list[dict[str, str]] = []
     usable = True
+
+    def _n(key, text):
+        notes.append({"key": key, "text": text})
 
     # PyTorch
     if torch_tag:
@@ -329,35 +331,24 @@ def _score_candidate(
         else:
             wheel_tv_str = wheel_torch_clean.replace("torch", "")
             env_tv_str = torch_tag.replace("torch", "")
-            # 转为 tuple 比较大小
             def _ver(s):
                 return tuple(int(x) for x in s.split("."))
             wheel_tv = _ver(wheel_tv_str)
             env_tv = _ver(env_tv_str)
             if wheel_tv[0] != env_tv[0]:
-                # 大版本不同：绝对不兼容
                 score -= 15
                 usable = False
-                notes.append(
-                    f"[PyTorch] wheel={wheel_torch_clean}, env={torch_tag} "
-                    f"— 大版本不兼容，不可用"
-                )
+                _n("faNote.torchMajor",
+                   f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
             elif wheel_tv > env_tv:
-                # 轮子比环境新：可能用了新符号，风险高
                 score += 5
                 usable = False
-                notes.append(
-                    f"[PyTorch] wheel={wheel_torch_clean} > env={torch_tag} "
-                    f"— 轮子版本较新，可能不兼容，可尝试强制安装"
-                )
+                _n("faNote.torchNewer",
+                   f"Wheel built for newer PyTorch (wheel={wheel_torch_clean} > env={torch_tag})")
             else:
-                # 轮子比环境旧或相等：PyTorch 向后兼容，通常可用
                 score += 15
-                # usable 保持 True
-                notes.append(
-                    f"[PyTorch] wheel={wheel_torch_clean} ≤ env={torch_tag} "
-                    f"— 向后兼容，通常可用"
-                )
+                _n("faNote.torchBackward",
+                   f"Backward compatible (wheel={wheel_torch_clean} <= env={torch_tag})")
 
     # Python ABI
     if python_tag:
@@ -367,13 +358,15 @@ def _score_candidate(
         elif tags.get("python_abi") == "abi3":
             if wheel_py.startswith("cp") and python_tag.startswith("cp"):
                 score += 10
-                notes.append("[Python] abi3 稳定 ABI，跨 Python 3.x 兼容")
+                _n("faNote.pythonAbi3", "abi3 stable ABI (compatible across Python 3.x)")
             else:
                 usable = False
-                notes.append(f"[Python] wheel={wheel_py}, env={python_tag} — ABI 不兼容")
+                _n("faNote.pythonMismatch",
+                   f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
         else:
             usable = False
-            notes.append(f"[Python] wheel={wheel_py}, env={python_tag} — ABI 不兼容")
+            _n("faNote.pythonMismatch",
+               f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
 
     # CUDA
     if cuda_tag:
@@ -381,16 +374,12 @@ def _score_candidate(
             score += 20
         elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
             score += 10
-            notes.append(
-                f"[CUDA] wheel={tags['cuda']}, env={cuda_tag} "
-                f"— 同大版本通常兼容"
-            )
+            _n("faNote.cudaMinor",
+               f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag}, usually OK)")
         else:
             score -= 5
-            notes.append(
-                f"[CUDA] wheel={tags['cuda']}, env={cuda_tag} "
-                f"— 大版本不一致，可能不兼容"
-            )
+            _n("faNote.cudaMajor",
+               f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})")
 
     return score, notes, usable
 
@@ -492,7 +481,7 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
                 continue
 
             score = 0
-            notes: list[str] = []
+            notes: list[dict[str, str]] = []
             usable = True
 
             # 使用统一的评分函数
@@ -622,7 +611,8 @@ def _print_candidates(candidates: list[dict[str, Any]]) -> None:
         print(f"       文件: {c['name']}")
         if c["notes"]:
             for note in c["notes"]:
-                print(f"       ⚠ {note}")
+                text = note["text"] if isinstance(note, dict) else str(note)
+                print(f"       ⚠ {text}")
         else:
             if c["usable"]:
                 print(f"       ✓ 完全匹配当前环境")

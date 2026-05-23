@@ -396,6 +396,15 @@
     "group_sgd": "SGD",
     "group_adaptive": "Adaptive LR",
     "group_other": "Other"
+  },
+  "faNote": {
+    "torchMajor": "PyTorch major version mismatch",
+    "torchNewer": "Wheel newer than environment, may be incompatible",
+    "torchBackward": "Backward compatible",
+    "pythonAbi3": "abi3 stable ABI (Python 3.x compatible)",
+    "pythonMismatch": "Python ABI mismatch",
+    "cudaMinor": "CUDA minor mismatch (usually OK)",
+    "cudaMajor": "CUDA major version mismatch"
   }
 }
 
