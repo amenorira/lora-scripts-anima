@@ -410,6 +410,51 @@ a:hover { text-decoration: underline; }
 .sidebar-bottom .divider { width: 1px; height: 18px; background: var(--border-default); margin: 0 2px; }
 .sidebar-bottom .bottom-label { font-size: 11px; color: var(--text-sidebar-muted); margin-left: auto; }
 
+/* ── Backend Connectivity Indicator ─────────────────────── */
+.backend-status {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px; margin: 0 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  user-select: none;
+  white-space: nowrap;
+  transition: background 0.3s var(--ease-out);
+}
+.backend-status.connected {
+  color: var(--success);
+  background: transparent;
+}
+.backend-status.disconnected {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.08);
+  animation: status-alert-pulse 2s ease-in-out infinite;
+}
+.backend-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  transition: background 0.3s var(--ease-out);
+}
+.backend-status.connected .backend-status-dot {
+  box-shadow: 0 0 5px var(--success);
+}
+.backend-status.disconnected .backend-status-dot {
+  box-shadow: 0 0 6px var(--danger);
+}
+.backend-status-label {
+  font-weight: 550;
+  line-height: 1;
+}
+.backend-status-time {
+  font-weight: 400;
+  opacity: 0.75;
+  margin-left: -2px;
+}
+@keyframes status-alert-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
 /* ── Main Content Area ───────────────────────────────────── */
 .main-area {
   flex: 1; display: flex; flex-direction: row;

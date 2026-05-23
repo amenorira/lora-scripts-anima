@@ -30,6 +30,13 @@ document.addEventListener('alpine:init', () => {
     // UI Settings
     autoLoadHistory: true,
 
+    // Backend connectivity
+    backendConnected: true,
+    backendDisconnectedAt: null,
+    backendDisconnectedDuration: '',
+    _healthTimer: null,
+    _disconnectedTimer: null,
+
     // ── Mixin spread ──────────────────────────────────────
     ...(window.monitorMixin || {}),
     ...(window.environmentMixin || {}),
@@ -92,6 +99,8 @@ document.addEventListener('alpine:init', () => {
       if (this.autoLoadHistory) {
         setTimeout(() => this.autoLoadLastParams(), 500);
       }
+
+      this._startHealthCheck();
 
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
@@ -280,6 +289,62 @@ document.addEventListener('alpine:init', () => {
         el.classList.add('out');
         setTimeout(() => { if (el.parentNode) el.remove(); }, 300);
       }, 2400);
+    },
+
+    // ── Backend Health Check ──────────────────────────────
+    _updateDisconnectedDuration() {
+      if (!this.backendDisconnectedAt) {
+        this.backendDisconnectedDuration = '';
+        return;
+      }
+      const elapsed = Math.floor((Date.now() - this.backendDisconnectedAt) / 1000);
+      if (elapsed < 60) {
+        this.backendDisconnectedDuration = this.t('common.disconnectedSeconds').replace('{n}', elapsed);
+      } else if (elapsed < 3600) {
+        const m = Math.floor(elapsed / 60);
+        const s = elapsed % 60;
+        this.backendDisconnectedDuration = this.t('common.disconnectedMinutes').replace('{n}', m).replace('{s}', s);
+      } else {
+        const h = Math.floor(elapsed / 3600);
+        const m = Math.floor((elapsed % 3600) / 60);
+        this.backendDisconnectedDuration = this.t('common.disconnectedHours').replace('{n}', h).replace('{s}', m);
+      }
+    },
+
+    async checkBackendHealth() {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const r = await fetch('/api/health', { signal: controller.signal });
+        clearTimeout(timeout);
+        if (r.ok) {
+          if (!this.backendConnected) {
+            this.backendConnected = true;
+            this.backendDisconnectedAt = null;
+            this.backendDisconnectedDuration = '';
+            clearInterval(this._disconnectedTimer);
+            this._disconnectedTimer = null;
+          }
+        } else {
+          this._markDisconnected();
+        }
+      } catch (e) {
+        this._markDisconnected();
+      }
+    },
+
+    _markDisconnected() {
+      if (this.backendConnected) {
+        this.backendConnected = false;
+        this.backendDisconnectedAt = Date.now();
+        this._updateDisconnectedDuration();
+        this._disconnectedTimer = setInterval(() => this._updateDisconnectedDuration(), 1000);
+      }
+    },
+
+    _startHealthCheck() {
+      this.checkBackendHealth();
+      this._healthTimer = setInterval(() => this.checkBackendHealth(), 5000);
     },
 
     t(key, fallback) {

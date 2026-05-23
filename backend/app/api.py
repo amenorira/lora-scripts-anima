@@ -43,6 +43,12 @@ def _git_version() -> str:
         return "dev"
 
 
+@router.get("/health")
+async def health_check():
+    """Lightweight connectivity check — returns OK immediately."""
+    return {"status": "ok"}
+
+
 @router.get("/version")
 async def get_version():
     return APIResponseSuccess(data={"version": _git_version()})

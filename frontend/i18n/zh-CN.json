@@ -216,7 +216,13 @@
     "localPickerNA": "本地文件选择不可用",
     "fileBrowserFailed": "文件浏览失败",
     "specifyDir": "请指定目录",
-    "cancel": "取消"
+    "cancel": "取消",
+    "backendConnected": "后端已连接",
+    "backendDisconnected": "后端已断开",
+    "backendDisconnectedHint": "后端服务不可用，请检查是否已退出",
+    "disconnectedSeconds": "{n} 秒前",
+    "disconnectedMinutes": "{n} 分 {s} 秒前",
+    "disconnectedHours": "{n} 小时 {s} 分前"
   },
   "preset": {
     "title": "预设管理",

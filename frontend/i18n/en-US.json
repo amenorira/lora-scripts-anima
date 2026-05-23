@@ -216,7 +216,13 @@
     "specifyDir": "Please specify a directory",
     "cancel": "Cancel",
     "refresh": "Refresh",
-    "revert": "Revert"
+    "revert": "Revert",
+    "backendConnected": "Backend connected",
+    "backendDisconnected": "Backend disconnected",
+    "backendDisconnectedHint": "Backend service unavailable, check if it has exited",
+    "disconnectedSeconds": "{n}s ago",
+    "disconnectedMinutes": "{n}m {s}s ago",
+    "disconnectedHours": "{n}h {s}m ago"
   },
   "preset": {
     "title": "Preset Management",

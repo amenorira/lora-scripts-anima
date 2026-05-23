@@ -142,6 +142,14 @@
     </div>
 
     <div class="sidebar-bottom">
+      <!-- Backend connectivity indicator -->
+      <div class="backend-status" :class="{ connected: backendConnected, disconnected: !backendConnected }"
+           :title="backendConnected ? t('common.backendConnected') : t('common.backendDisconnected')">
+        <span class="backend-status-dot"></span>
+        <span class="backend-status-label" x-text="backendConnected ? t('common.backendConnected') : t('common.backendDisconnected')"></span>
+        <span class="backend-status-time" x-show="!backendConnected && backendDisconnectedDuration"
+              x-text="backendDisconnectedDuration"></span>
+      </div>
       <!-- Theme dropdown -->
       <div class="sidebar-dropdown" :class="{ open: showThemeDropdown }">
         <button class="bottom-btn" @click="showThemeDropdown = !showThemeDropdown; showLangDropdown = false">
