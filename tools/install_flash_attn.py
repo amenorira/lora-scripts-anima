@@ -302,19 +302,91 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
         return None, str(exc), False
 
 
+def _score_candidate(
+    tags: dict[str, str], env: dict[str, Any]
+) -> tuple[int, list[str], bool]:
+    """对一个已解析的 wheel tags 评分，返回 (score, notes, usable)。
+
+    评分规则（供 cached 和 fresh API 两种路径共用）：
+    - PyTorch: 精确匹配 +20，同大版本 +5（⚠ 但可尝试），不同大版本不可用
+    - Python:  精确匹配 +20，abi3 +10，否则不可用
+    - CUDA:    精确匹配 +20，同大版本 +10（通常兼容），否则 -5 但仍可用
+    """
+    torch_tag = env.get("torch_tag")
+    cuda_tag = env.get("cuda_tag")
+    python_tag = env.get("python_tag")
+
+    score = 0
+    notes: list[str] = []
+    usable = True
+
+    # PyTorch
+    if torch_tag:
+        wheel_torch = tags["torch"]
+        wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
+        if wheel_torch_clean == torch_tag:
+            score += 20
+        else:
+            wheel_tv = wheel_torch_clean.replace("torch", "")
+            env_tv = torch_tag.replace("torch", "")
+            if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
+                score += 5
+                notes.append(
+                    f"[PyTorch] wheel={wheel_torch_clean}, env={torch_tag} "
+                    f"— 大版本一致，通常可 import，建议安装后重启 GUI 验证"
+                )
+            else:
+                score -= 15
+                usable = False
+                notes.append(
+                    f"[PyTorch] wheel={wheel_torch_clean}, env={torch_tag} "
+                    f"— 大版本不兼容，不可用"
+                )
+
+    # Python ABI
+    if python_tag:
+        wheel_py = tags["python"]
+        if wheel_py == python_tag:
+            score += 20
+        elif tags.get("python_abi") == "abi3":
+            if wheel_py.startswith("cp") and python_tag.startswith("cp"):
+                score += 10
+                notes.append("[Python] abi3 稳定 ABI，跨 Python 3.x 兼容")
+            else:
+                usable = False
+                notes.append(f"[Python] wheel={wheel_py}, env={python_tag} — ABI 不兼容")
+        else:
+            usable = False
+            notes.append(f"[Python] wheel={wheel_py}, env={python_tag} — ABI 不兼容")
+
+    # CUDA
+    if cuda_tag:
+        if tags["cuda"] == cuda_tag:
+            score += 20
+        elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
+            score += 10
+            notes.append(
+                f"[CUDA] wheel={tags['cuda']}, env={cuda_tag} "
+                f"— 同大版本通常兼容"
+            )
+        else:
+            score -= 5
+            notes.append(
+                f"[CUDA] wheel={tags['cuda']}, env={cuda_tag} "
+                f"— 大版本不一致，可能不兼容"
+            )
+
+    return score, notes, usable
+
+
 def _filter_cached_for_env(
     cached: list[dict[str, Any]], env: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """对磁盘缓存的 candidates 重新解析 + 环境匹配 + 评分。
 
-    缓存只存了 {url, name, notes, usable, score}，没有 tags。
-    不同环境（platform/torch/python/cuda）需要重新过滤。
+    缓存只存了 {url, name}，不同环境需要重新过滤。
     """
     plat = env.get("platform")
-    torch_tag = env.get("torch_tag")
-    cuda_tag = env.get("cuda_tag")
-    python_tag = env.get("python_tag")
-
     result: list[dict[str, Any]] = []
     for c in cached:
         tags = _parse_wheel(c.get("name", ""))
@@ -322,57 +394,7 @@ def _filter_cached_for_env(
             continue
         if tags["platform"] != plat:
             continue
-
-        score = 0
-        notes: list[str] = []
-        usable = True
-
-        # PyTorch
-        if torch_tag:
-            wheel_torch = tags["torch"]
-            # 去掉 git hash 后缀 (如 torch2.11gite2743ab → torch2.11)
-            wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
-            if wheel_torch_clean == torch_tag:
-                score += 20
-            else:
-                wheel_tv = wheel_torch_clean.replace("torch", "")
-                env_tv = torch_tag.replace("torch", "")
-                if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
-                    score += 5
-                    notes.append(f"PyTorch minor mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
-                else:
-                    score -= 15
-                    usable = False
-                    notes.append(f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
-
-        # Python ABI
-        if python_tag:
-            wheel_py = tags["python"]
-            if wheel_py == python_tag:
-                score += 20
-            elif tags.get("python_abi") == "abi3":
-                # abi3 稳定 ABI：兼容同大版本所有 Python
-                if wheel_py.startswith("cp") and python_tag.startswith("cp"):
-                    score += 10
-                    notes.append("abi3 stable ABI (compatible across Python 3.x)")
-                else:
-                    usable = False
-                    notes.append(f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
-            else:
-                usable = False
-                notes.append(f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
-
-        # CUDA
-        if cuda_tag:
-            if tags["cuda"] == cuda_tag:
-                score += 20
-            elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
-                score += 10
-                notes.append(f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag})")
-            else:
-                score -= 5
-                notes.append(f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})")
-
+        score, notes, usable = _score_candidate(tags, env)
         result.append({
             "url": c["url"],
             "name": c["name"],
@@ -380,7 +402,6 @@ def _filter_cached_for_env(
             "notes": notes,
             "usable": usable,
         })
-
     return sorted(result, key=lambda x: -x["score"])
 
 
@@ -458,58 +479,12 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
             notes: list[str] = []
             usable = True
 
-            # PyTorch: 精确匹配 > 同大版本(高风险) > 不同大版本(不可用)
-            if torch_tag:
-                wheel_torch = tags["torch"]
-                # 去掉 git hash 后缀 (如 torch2.11gite2743ab → torch2.11)
-                wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
-                if wheel_torch_clean == torch_tag:
-                    score += 20
-                else:
-                    wheel_tv = wheel_torch_clean.replace("torch", "")
-                    env_tv = torch_tag.replace("torch", "")
-                    if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
-                        score += 5
-                        notes.append(
-                            f"PyTorch minor mismatch (wheel={wheel_torch_clean}, env={torch_tag})"
-                            f" — minor versions usually ABI-incompatible, likely import failure"
-                        )
-                    else:
-                        score -= 15
-                        usable = False
-                        notes.append(
-                            f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})"
-                            f" — incompatible"
-                        )
-
-            # Python ABI: 精确匹配 > abi3 兼容 > 不兼容
-            if python_tag:
-                if tags["python"] == python_tag:
-                    score += 20
-                elif tags.get("python_abi") == "abi3":
-                    # abi3 稳定 ABI：兼容同大版本所有 Python
-                    score += 10
-                    notes.append("abi3 stable ABI (compatible across Python 3.x)")
-                else:
-                    usable = False
-                    notes.append(
-                        f"Python ABI mismatch (wheel={tags['python']}, env={python_tag})"
-                    )
-
-            # CUDA: 精确匹配 > 同大版本 > 不兼容
-            if cuda_tag:
-                if tags["cuda"] == cuda_tag:
-                    score += 20
-                elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
-                    score += 10
-                    notes.append(
-                        f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag}, same major usually OK)"
-                    )
-                else:
-                    score -= 5
-                    notes.append(
-                        f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})"
-                    )
+            # 使用统一的评分函数
+            s, n, u = _score_candidate(tags, env)
+            score += s
+            notes.extend(n)
+            if not u:
+                usable = False
 
             candidates.append({
                 "url": asset["browser_download_url"],
@@ -650,12 +625,12 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │  flash_attn wheel 文件名格式:                              │
 │    flash_attn-{{版本}}+{{CUDA}}{{PyTorch}}-{{Python}}-{{平台}}.whl  │
 │                                                           │
-│  必须同时匹配三项才能正常 import:                            │
+│  三项匹配规则:                                              │
 │                                                           │
-│  ① PyTorch — 必须完全一致！                                 │
+│  ① PyTorch — 大版本一致即可，小版本差异通常不影响 import      │
 │     你当前: {torch_tag}                                     │
-│     ⚠ torch2.7 ≠ torch2.8，小版本间 ABI 不兼容              │
-│     如果找不到精确匹配 PyTorch 的版本 → 考虑换 PyTorch 版本   │
+│     ✓ torch2.10 ≈ torch2.9 (同大版本 2.x)                 │
+│     ✗ torch3.x ≠ torch2.x (不同大版本)                     │
 │                                                           │
 │  ② CUDA ABI — 同大版本通常兼容                              │
 │     你当前: {cuda_tag}                                      │
@@ -664,10 +639,11 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │                                                           │
 │  ③ Python ABI — 必须一致                                   │
 │     你当前: {python_tag}                                    │
+│     ✓ cp312 = cp312 (精确匹配)                             │
 │     ✗ cp312 ≠ cp310                                       │
 │                                                           │
-│  ✓ 评分最高 + 无警告 = 首选                                 │
-│  ⚠ 有 PyTorch 版本差异 = 高风险，大概率 import 失败          │
+│  ✓ 评分最高 + 精确匹配 = 首选                               │
+│  ⚠ PyTorch 小版本差异 = 可尝试，大概率正常                   │
 │  ✗ ABI 不兼容 = 装了也用不了                                │
 └───────────────────────────────────────────────────────────┘""")
 
