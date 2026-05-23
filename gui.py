@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import locale
 import os
 import platform
@@ -8,6 +9,10 @@ import sys
 from mikazuki.launch_utils import (base_dir_path, catch_exception, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
 from mikazuki.log import log
+
+# Windows: use SelectorEventLoop to avoid Proactor "ConnectionResetError" noise
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 parser = argparse.ArgumentParser(description="GUI for stable diffusion training")
 parser.add_argument("--host", type=str, default="127.0.0.1")

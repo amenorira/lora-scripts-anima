@@ -24,10 +24,6 @@
     - 支持评分排序：精确匹配 > 同大版本 > 不可用
     - 支持 --dry-run 预览模式
     - GitHub API 失败时仍可通过 --url 手动安装
-
-设计参考:
-    AnimaLoraStudio (WalkingMeatAxolotl/AnimaLoraStudio)
-    studio/services/flash_attention_setup.py (GPL-3.0)
 """
 from __future__ import annotations
 
@@ -307,9 +303,11 @@ def _score_candidate(
 ) -> tuple[int, list[dict[str, str]], bool]:
     """对一个已解析的 wheel tags 评分，返回 (score, notes, usable)。
 
-    notes 为结构化列表: [{"key": "faNote.torchNewer", "text": "wheel newer than env ..."}]
-    - key: 前端 i18n 查找键，CLI 回退到 text
-    - text: 人类可读文本
+    匹配策略：
+    - platform: 必须精确一致（上游已过滤）
+    - torch:    必须精确一致，否则直接丢弃
+    - python:   必须精确一致，否则不可用
+    - CUDA:     精确 > 同大版本 > 不同大版本
     """
     torch_tag = env.get("torch_tag")
     cuda_tag = env.get("cuda_tag")
@@ -322,53 +320,27 @@ def _score_candidate(
     def _n(key, text):
         notes.append({"key": key, "text": text})
 
-    # PyTorch
+    # PyTorch: 必须精确匹配
     if torch_tag:
         wheel_torch = tags["torch"]
         wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
-        if wheel_torch_clean == torch_tag:
-            score += 20
-        else:
-            wheel_tv_str = wheel_torch_clean.replace("torch", "")
-            env_tv_str = torch_tag.replace("torch", "")
-            def _ver(s):
-                return tuple(int(x) for x in s.split("."))
-            wheel_tv = _ver(wheel_tv_str)
-            env_tv = _ver(env_tv_str)
-            if wheel_tv[0] != env_tv[0]:
-                score -= 15
-                usable = False
-                _n("torchMajor",
-                   f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
-            elif wheel_tv > env_tv:
-                score += 5
-                usable = False
-                _n("torchNewer",
-                   f"Wheel built for newer PyTorch (wheel={wheel_torch_clean} > env={torch_tag})")
-            else:
-                score += 15
-                _n("torchBackward",
-                   f"Backward compatible (wheel={wheel_torch_clean} <= env={torch_tag})")
+        if wheel_torch_clean != torch_tag:
+            usable = False
+            _n("torchMismatch",
+               f"Torch mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
+            return score, notes, usable
+        score += 20
 
-    # Python ABI
+    # Python ABI: 必须精确匹配
     if python_tag:
-        wheel_py = tags["python"]
-        if wheel_py == python_tag:
-            score += 20
-        elif tags.get("python_abi") == "abi3":
-            if wheel_py.startswith("cp") and python_tag.startswith("cp"):
-                score += 10
-                _n("pythonAbi3", "abi3 stable ABI (compatible across Python 3.x)")
-            else:
-                usable = False
-                _n("pythonMismatch",
-                   f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
-        else:
+        if tags["python"] != python_tag:
             usable = False
             _n("pythonMismatch",
-               f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
+               f"Python mismatch (wheel={tags['python']}, env={python_tag})")
+            return score, notes, usable
+        score += 20
 
-    # CUDA
+    # CUDA: 精确 > 同大版本 > 不同
     if cuda_tag:
         if tags["cuda"] == cuda_tag:
             score += 20
@@ -633,11 +605,10 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │                                                           │
 │  三项匹配规则:                                              │
 │                                                           │
-│  ① PyTorch — 大版本一致即可，轮子 ≤ 环境版本通常兼容       │
+│  ① PyTorch — 必须精确匹配（torch2.9 ≠ torch2.10）          │
 │     你当前: {torch_tag}                                     │
-│     ✓ torch2.8 wheel + torch2.9 环境 (向后兼容)             │
-│     ⚠ torch2.10 wheel + torch2.9 环境 (轮子更新，风险)      │
-│     ✗ torch3.x ≠ torch2.x (不同大版本)                     │
+│     ✓ torch2.9 = torch2.9 (精确匹配)                        │
+│     ✗ torch2.9 ≠ torch2.10 (ABI 不兼容)                    │
 │                                                           │
 │  ② CUDA ABI — 同大版本通常兼容                              │
 │     你当前: {cuda_tag}                                      │
@@ -649,9 +620,8 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │     ✓ cp312 = cp312 (精确匹配)                             │
 │     ✗ cp312 ≠ cp310                                       │
 │                                                           │
-│  ✓ 评分最高 + 精确匹配 = 首选                               │
-│  ⚠ PyTorch 小版本差异 = 看方向：轮子≤环境 → 可用，轮子>环境 → 慎用 │
-│  ✗ ABI 不兼容 = 装了也用不了                                │
+│  ✓ 评分最高 + torch/python 精确匹配 = 首选                   │
+│  ✗ torch/python 不匹配 = 装了也用不了                        │
 └───────────────────────────────────────────────────────────┘""")
 
 

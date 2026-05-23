@@ -321,11 +321,8 @@
     "sourceMirror": "Mirror",
     "sourceFallback": "Alt",
     "faNote": {
-      "torchMajor": "PyTorch major version mismatch",
-      "torchNewer": "Wheel newer than environment, may be incompatible",
-      "torchBackward": "Backward compatible",
-      "pythonAbi3": "abi3 stable ABI (Python 3.x compatible)",
-      "pythonMismatch": "Python ABI mismatch",
+      "torchMismatch": "PyTorch version mismatch",
+      "pythonMismatch": "Python version mismatch",
       "cudaMinor": "CUDA minor mismatch (usually OK)",
       "cudaMajor": "CUDA major version mismatch"
     }

@@ -321,11 +321,8 @@
     "sourceMirror": "镜像",
     "sourceFallback": "备用",
     "faNote": {
-      "torchMajor": "PyTorch 大版本不兼容",
-      "torchNewer": "轮子版本较新，可能不兼容",
-      "torchBackward": "向后兼容，通常可用",
-      "pythonAbi3": "abi3 稳定 ABI（跨 Python 3.x 兼容）",
-      "pythonMismatch": "Python ABI 不兼容",
+      "torchMismatch": "PyTorch 版本不匹配",
+      "pythonMismatch": "Python 版本不匹配",
       "cudaMinor": "CUDA 小版本差异（通常兼容）",
       "cudaMajor": "CUDA 大版本不一致"
     }
