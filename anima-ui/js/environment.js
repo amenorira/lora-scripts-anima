@@ -150,7 +150,26 @@ window.environmentMixin = {
       html += `</tbody></table>`;
 
       if (s.fetch_error) {
-        html += `<div class="env-msg env-msg-warn">${T('githubApiFail', 'GitHub API unavailable')}: ${s.fetch_error}</div>`;
+        const isFromDisk = s.from_disk_cache;
+        const isRateLimit = /rate limit|限流/i.test(s.fetch_error);
+
+        if (isFromDisk) {
+          // 磁盘缓存兜底（透明，用户无需关心）
+          html += `<div class="env-msg env-msg-info">
+            ${T('usingCachedData', '正在使用本地缓存的候选列表。')}
+            ${T('cachedDataHint', '首次联网成功后会自动更新。')}
+          </div>`;
+        } else if (isRateLimit) {
+          html += `<div class="env-msg env-msg-warn">
+            ${T('githubApiFail', 'GitHub API 暂时不可用')}<br>
+            ${T('rateLimitHint', '稍后自动重试，你也可以手动粘贴 wheel URL 直接安装。')}
+          </div>`;
+        } else {
+          html += `<div class="env-msg env-msg-warn">
+            ${T('githubApiFail', 'GitHub API 不可用')}: ${s.fetch_error}<br>
+            ${T('manualUrlHint', '你可以手动粘贴 wheel URL 直接安装。')}
+          </div>`;
+        }
       }
 
       if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) {

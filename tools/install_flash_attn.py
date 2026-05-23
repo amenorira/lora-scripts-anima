@@ -34,10 +34,12 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import os
 import platform
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
@@ -49,6 +51,100 @@ FA_RELEASES_URL = (
 FA_FALLBACK_URLS = [
     "https://api.github.com/repos/bdashore3/flash-attention/releases",
 ]
+
+# 磁盘缓存（优先使用，API 仅用于增量更新）
+_FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "output"
+_FA_CACHE_FILE = _FA_CACHE_DIR / ".fa_wheels_cache.json"
+_FA_ETAG_FILE = _FA_CACHE_DIR / ".fa_etag.txt"       # 存 ETag，条件请求不消耗 rate limit
+
+# 缓存有效期：24 小时。wheel 发布不频繁，无需频繁刷新。
+# 即使缓存过期，ETag 条件请求也能保证不浪费 rate limit。
+_FA_CACHE_TTL = 86400  # 24 小时
+
+# 可选 GitHub Token（设置了更好，不设也能用 ETag 免限流）
+_FA_GITHUB_TOKEN = os.environ.get("FA_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+# ── 磁盘缓存（带 ETag 支持）────────────────────────────────────────────────
+
+def _load_disk_cache() -> Optional[list[dict[str, Any]]]:
+    """读取磁盘缓存。兼容旧格式（纯列表）和新格式（{ts, candidates}）。"""
+    try:
+        if _FA_CACHE_FILE.exists():
+            data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, list) and len(data) > 0:
+                return data  # 旧格式：纯列表
+            if isinstance(data, dict) and "candidates" in data:
+                return data["candidates"]  # 新格式
+    except Exception:
+        pass
+    return None
+
+
+def _save_disk_cache(candidates: list[dict[str, Any]]) -> None:
+    """保存候选列表 + 时间戳到磁盘。"""
+    try:
+        _FA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        slim = [
+            {"url": c["url"], "name": c["name"], "notes": c.get("notes", []),
+             "usable": c["usable"], "score": c.get("score", 0)}
+            for c in candidates
+        ]
+        payload = {"ts": time.time(), "candidates": slim}
+        _FA_CACHE_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def _load_etag() -> Optional[str]:
+    """读取上次 API 返回的 ETag。"""
+    try:
+        if _FA_ETAG_FILE.exists():
+            return _FA_ETAG_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return None
+
+
+def _save_etag(etag: str) -> None:
+    """保存 ETag 供下次条件请求使用。"""
+    try:
+        _FA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _FA_ETAG_FILE.write_text(etag, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _cache_is_fresh() -> bool:
+    """磁盘缓存是否在有效期内。"""
+    try:
+        if not _FA_CACHE_FILE.exists():
+            return False
+        data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+        age = time.time() - data.get("ts", 0)
+        return age < _FA_CACHE_TTL
+    except Exception:
+        return False
+
+
+def _cache_age_str() -> str:
+    """磁盘缓存的年龄描述。"""
+    try:
+        if not _FA_CACHE_FILE.exists():
+            return "无缓存"
+        data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+        age = time.time() - data.get("ts", 0)
+        if age < 60:
+            return f"{age:.0f}秒前"
+        if age < 3600:
+            return f"{age/60:.0f}分钟前"
+        if age < 86400:
+            return f"{age/3600:.1f}小时前"
+        return f"{age/86400:.1f}天前"
+    except Exception:
+        return "未知"
 
 
 # ── 环境检测 ──────────────────────────────────────────────────────────────
@@ -138,10 +234,70 @@ def _cuda_major(tag: str) -> int:
     return int(m.group(1)) // 10 if m else -1
 
 
-# ── 候选列表拉取 ──────────────────────────────────────────────────────────
+# ── 候选列表拉取（ETag 条件请求，不计入 rate limit）────────────────────
+
+def _build_request(url: str, *, etag: Optional[str] = None) -> urllib.request.Request:
+    """构建 HTTP 请求。
+
+    - 自动附加 GitHub Token（如有）提升限额
+    - 自动附加 If-None-Match（ETag），命中 304 不消耗 rate limit
+    """
+    headers = {"User-Agent": "lora-scripts/install-flash-attn"}
+    if _FA_GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {_FA_GITHUB_TOKEN}"
+    if etag:
+        headers["If-None-Match"] = etag
+    return urllib.request.Request(url, headers=headers)
+
+
+def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
+    """尝试从 GitHub API 拉取数据。
+
+    使用 ETag 条件请求：
+    - 304 Not Modified → 数据未变，不消耗 rate limit，返回 (None, None, unchanged=True)
+    - 200 → 有新数据，保存新 ETag，返回 (data, None, unchanged=False)
+    - 403/其他错误 → 返回 (None, error, unchanged=False)
+
+    Returns: (data, error, unchanged) — unchanged=True 表示缓存仍然有效
+    """
+    etag = _load_etag()
+    try:
+        req = _build_request(url + "?per_page=100", etag=etag)
+        resp = urllib.request.urlopen(req, timeout=15)
+
+        # 保存新 ETag
+        new_etag = resp.headers.get("ETag") or resp.headers.get("etag")
+        if new_etag:
+            _save_etag(new_etag)
+
+        data = json.loads(resp.read())
+        if isinstance(data, list):
+            return data, None, False
+
+        # GitHub 返回了 dict（错误消息）
+        msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+        return None, f"GitHub API: {msg}", False
+
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            # 304 Not Modified — 缓存有效，不消耗 rate limit！
+            return None, None, True
+        if exc.code in (403, 429):
+            return None, f"API 限流 (每小时60次，{_cache_age_str()}前缓存仍可用): {exc}", False
+        return None, str(exc), False
+    except Exception as exc:
+        return None, str(exc), False
+
 
 def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optional[str]]:
-    """查询 GitHub Releases，返回 (candidates, fetch_error)。"""
+    """获取候选 wheel 列表。
+
+    策略（开箱即用，无需 Token）：
+    1. 优先返回磁盘缓存（立即显示，零网络请求）
+    2. 缓存过期时，用 ETag 条件请求增量更新（304 不计入 rate limit）
+    3. API 失败时继续用缓存，不阻塞用户
+    4. 首次使用无缓存时，尝试 API + fallback URLs
+    """
     plat = env.get("platform")
     torch_tag = env.get("torch_tag")
     cuda_tag = env.get("cuda_tag")
@@ -150,31 +306,52 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     if not plat:
         return [], None
 
-    urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
-    data = None
-    last_error = None
+    # ── 第一步：加载磁盘缓存（秒级响应）──
+    cached = _load_disk_cache()
+    is_fresh = _cache_is_fresh()
 
-    for base_url in urls:
-        try:
-            req = urllib.request.Request(
-                base_url + "?per_page=100",
-                headers={"User-Agent": "lora-scripts/install-flash-attn"},
-            )
-            data = json.loads(urllib.request.urlopen(req, timeout=15).read())
-            break
-        except Exception as exc:
-            last_error = str(exc)
-            continue
+    # ── 第二步：尝试 API 刷新（ETag 条件请求）──
+    if cached and is_fresh:
+        # 缓存新鲜，静默尝试后台刷新
+        data = None
+    else:
+        # 缓存过期或不存在，尝试 API
+        urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
+        data = None
+        for url in urls:
+            data, err, unchanged = _try_fetch_api(url)
+            if unchanged:
+                # 304 Not Modified — 缓存仍然有效，刷新时间戳
+                _save_disk_cache(cached) if cached else None
+                break
+            if data is not None:
+                break
+            # 错误继续尝试下一个 URL
 
-    if data is None:
-        return [], last_error
+    # ── 第三步：解析数据 ──
+    raw_releases = data  # 可能为 None
 
-    if not isinstance(data, list):
-        msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+    if raw_releases is None:
+        # 没有新数据，使用缓存
+        if cached:
+            return cached, None  # 静默成功，不显示任何错误
+        # 无缓存且 API 失败 — 最后一次尝试
+        urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
+        for url in urls:
+            raw_releases, _err, _ = _try_fetch_api(url)
+            if raw_releases is not None:
+                break
+        if raw_releases is None:
+            return [], "无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
+
+    if not isinstance(raw_releases, list):
+        msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
+        if cached:
+            return cached, None  # API 报错但有缓存，静默回退
         return [], f"GitHub API 错误: {msg}"
 
     candidates: list[dict[str, Any]] = []
-    for release in data:
+    for release in raw_releases:
         for asset in release.get("assets", []):
             tags = _parse_wheel(asset["name"])
             if not tags:
@@ -240,7 +417,11 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
                 "usable": usable,
             })
 
-    return sorted(candidates, key=lambda x: -x["score"]), None
+    result = sorted(candidates, key=lambda x: -x["score"])
+    # 成功后写入磁盘缓存，供 API 限流时兜底
+    if result:
+        _save_disk_cache(result)
+    return result, None
 
 
 def find_best_wheel(env: dict[str, Any]) -> Optional[str]:
