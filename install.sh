@@ -36,9 +36,11 @@ echo "CUDA Version: $cuda_version"
 
 
 if (( cuda_major_version >= 12 )); then
-    echo "install torch 2.7.0+cu128"
-    pip install torch==2.7.0+cu128 torchvision==0.22.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
-    pip install --no-deps xformers==0.0.30 --extra-index-url https://download.pytorch.org/whl/cu128
+    # PyTorch 2.9.0 + CUDA 12.8 — 兼容 RTX 30/40/50 全系列
+    echo "install torch 2.9.0+cu128"
+    pip install torch==2.9.0+cu128 torchvision==0.24.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    # xformers 可选（flash-attn 已通过 install-flash-attn.sh 安装）
+    # pip install --no-deps xformers==0.0.30 --extra-index-url https://download.pytorch.org/whl/cu128
 elif (( cuda_major_version == 11 && cuda_minor_version >= 8 )); then
     echo "install torch 2.4.0+cu118"
     pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
