@@ -23,7 +23,7 @@ async def load_schemas():
         with open(os.path.join(schema_dir, schema_name), encoding="utf-8") as f:
             content = f.read()
             avaliable_schemas.append({
-                "name": schema_name.rstrip(".ts"),
+                "name": schema_name.removesuffix(".ts"),
                 "schema": content,
                 "hash": hashlib.md5(content.encode()).hexdigest(),
             })
