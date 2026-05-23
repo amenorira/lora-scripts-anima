@@ -74,7 +74,7 @@ def _get_trainer_script(trainer_file: str) -> Path:
     base = Path(__file__).parents[2]  # repo root
     script = base / trainer_file.lstrip("./")
     if not script.exists():
-        raise FileNotFoundError(f"训练脚本不存在: {script}")
+        raise FileNotFoundError(f"Training script not found / 训练脚本不存在: {script}")
     return script
 
 
@@ -120,7 +120,7 @@ def run_train(
     # 创建任务
     task = tm.create_task(args, env)
     if not task:
-        return {"status": "error", "message": "任务创建失败：已达到最大并发限制"}
+        return {"status": "error", "message": "Failed to create task / 创建任务失败: max concurrency limit reached / 已达最大并发"}
 
     task_id = task.task_id
     env["ANIMA_TASK_ID"] = task_id
@@ -130,20 +130,20 @@ def run_train(
             task.execute()
             result = task.communicate()
             if result.returncode != 0:
-                log.error(f"训练失败 (task={task_id[:8]})")
+                log.error(f"Training failed / 训练失败 (task={task_id[:8]})")
             else:
-                log.info(f"训练完成 (task={task_id[:8]})")
+                log.info(f"Training completed / 训练完成 (task={task_id[:8]})")
         except Exception as e:
-            log.error(f"训练异常 (task={task_id[:8]}): {e}")
+            log.error(f"Training exception / 训练异常 (task={task_id[:8]}): {e}")
 
     coro = asyncio.to_thread(_run)
     asyncio.create_task(coro)
 
-    log.info(f"训练已启动: {task_id[:8]} ({Path(toml_path).name})")
+    log.info(f"Training started / 训练已启动: {task_id[:8]} ({Path(toml_path).name})")
 
     return {
         "status": "success",
-        "message": f"训练已启动",
+        "message": f"Training started / 训练已启动",
         "data": {"task_id": task_id},
     }
 
@@ -154,7 +154,7 @@ def terminate_train(task_id: str) -> bool:
         tm.terminate_task(task_id)
         return True
     except Exception as e:
-        log.error(f"终止训练失败: {e}")
+        log.error(f"Failed to terminate training / 终止失败: {e}")
         return False
 
 
@@ -179,17 +179,17 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
         return requested, ""
 
     if requested == "xformers" and "torch" in available:
-        msg = f"xformers 不可用，自动降级为 torch SDPA"
+        msg = f"xformers not available / xformers 不可用; falling back to torch SDPA / 降级为 torch SDPA"
         log.warning(msg)
         return "torch", msg
 
     if requested == "flash" and "xformers" in available:
-        msg = f"flash_attn 不可用，自动降级为 xformers"
+        msg = f"flash_attn not available / flash_attn 不可用; falling back to xformers / 降级为 xformers"
         log.warning(msg)
         return "xformers", msg
 
     if requested == "flash" and "torch" in available:
-        msg = f"flash_attn/xformers 均不可用，降级为 torch SDPA"
+        msg = f"flash_attn and xformers both unavailable / 均不可用; falling back to torch SDPA / 降级为 torch SDPA"
         log.warning(msg)
         return "torch", msg
 

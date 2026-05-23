@@ -29,7 +29,7 @@ if (Test-Path -Path "python\python.exe") {
 }
 
 Write-Output "============================================"
-Write-Output "  Anima LoRA Trainer - 国内镜像安装"
+Write-Output "  lora-scripts-anima - 国内镜像安装"
 Write-Output "  pip: 清华镜像 | PyTorch: 官方 CDN"
 Write-Output "============================================"
 Write-Output ""

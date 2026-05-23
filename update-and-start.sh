@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "============================================"
-echo "  Anima LoRA Trainer - 更新 + 启动"
+echo "  lora-scripts-anima - 更新 + 启动"
 echo "============================================"
 echo ""
 

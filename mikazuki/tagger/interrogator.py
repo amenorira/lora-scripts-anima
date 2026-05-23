@@ -135,7 +135,7 @@ def on_interrogate(
 
         # check the input directory path
         if not os.path.isdir(base_dir):
-            print('input path is not a directory / 输入的路径不是文件夹，终止识别')
+            print('input path is not a directory')
             return 'input path is not a directory'
 
         # this line is moved here because some reason
@@ -236,7 +236,7 @@ def on_interrogate(
                     json.dumps(tags)
                 )
 
-        print('all done / 识别完成')
+        print('all done')
 
     if unload_model_after_running:
         interrogator.unload()

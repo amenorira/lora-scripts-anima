@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo   Anima LoRA Trainer - 更新 + 启动
+echo   lora-scripts-anima - 更新 + 启动
 echo ============================================
 echo.
 

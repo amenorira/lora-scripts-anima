@@ -3,7 +3,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ============================================
-echo   Anima LoRA Trainer - 更新本仓库
+echo   lora-scripts-anima - 更新本仓库
 echo ============================================
 echo.
 

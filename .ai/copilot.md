@@ -35,7 +35,7 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 ## Localization
 
-All user-visible UI text MUST use i18n keys (see `.ai/i18n.md` or `anima-ui/i18n/`). Never hardcode Chinese/English strings.
+All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `anima-ui/i18n/` (zh-CN.json + en-US.json, 385 keys). Never hardcode Chinese/English strings.
 
 ## Architecture
 
@@ -43,3 +43,4 @@ All user-visible UI text MUST use i18n keys (see `.ai/i18n.md` or `anima-ui/i18n
 - Frontend: Alpine.js SPA → `anima-ui/`
 - Training: subprocess calls to `vendor/sd-scripts/*.py` via `accelerate launch`
 - Config: TOML format, generated from UI form data
+- Schema: TypeScript form definitions → `schema/`

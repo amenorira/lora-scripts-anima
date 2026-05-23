@@ -207,8 +207,8 @@ def validate_requirements(requirements_file: str, fix: bool = True):
                     else:
                         run_pip(f"install {line}", line, live=True)
                 else:
-                    log.warning(f'[依赖] 版本不匹配: {line}')
-                    log.warning(f'[依赖] 训练可能因此失败。请运行 install 脚本重新安装依赖。')
+                    log.warning(f'[Deps] Version mismatch / 版本不匹配: {line}')
+                    log.warning(f'[Deps] Training may fail. Run install script to reinstall / 请运行 install 脚本重新安装依赖')
 
 
 def setup_windows_bitsandbytes():

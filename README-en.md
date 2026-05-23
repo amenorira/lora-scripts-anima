@@ -4,7 +4,7 @@
 
 _✨ LoRA Training Tool for Anima Models ✨_
 
-A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) and [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with extended **Anima model** LoRA support. Also compatible with SD 1.5 / SDXL / SD3 / FLUX.
+A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) for **Anima model** LoRA training. Also compatible with SD 1.5 / SDXL.
 
 </div>
 
@@ -24,17 +24,17 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-Anima LoRA training GUI, powered by the latest [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git). Also supports SD 1.5 / SDXL / SD3 / FLUX.
+Anima LoRA training GUI with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports LoRA training for SD / SDXL / Anima models.
 
 ### Supported Model Types
 
 | Training Type | Base Model |
 |---------------|------------|
-| LoRA / Dreambooth | SD 1.5 / SD 2.x |
-| LoRA / Finetune | SDXL |
-| LoRA | SD3 |
-| LoRA / Finetune | FLUX (including Chroma) |
-| **LoRA** 🆕 | **Anima** |
+| LoRA | SD 1.5 / SD 2.x |
+| LoRA | SDXL |
+| **LoRA** | **Anima** |
+
+> ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but these are not yet wired into the current UI.
 
 ## ✨NEW: Train WebUI
 
@@ -54,7 +54,7 @@ Follow the installation guide below to install the GUI, then run `start.bat`(Win
 ### Prerequisites
 
 - Python 3.10+ and Git
-- **PyTorch ≥ 2.9.0 + CUDA 12.8** (auto-configured by install scripts, compatible with RTX 30/40/50 series)
+- **PyTorch ≥ 2.10.0 + CUDA 12.8** (auto-configured by install scripts, compatible with RTX 30/40/50 series)
 
 | GPU Series | Min PyTorch | Recommended CUDA |
 |------------|:----------:|:----------------:|
@@ -90,10 +90,7 @@ Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
 Just launch and everything is available — no extra commands needed.
 
 > ℹ️ Legacy manual scripts (`train.ps1`, `tagger.ps1`, etc.) have been archived to `legacy-scripts/`.
-
-#### TensorBoard
-
-Run `.\tensorboard.ps1` to start TensorBoard at http://localhost:6006/.
+> ℹ️ Frontend: `anima-ui/` (Alpine.js SPA), Backend: `mikazuki/` (FastAPI), Engine: `vendor/sd-scripts/`.
 
 ## Program arguments
 

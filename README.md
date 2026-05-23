@@ -4,7 +4,7 @@
 
 _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 
-基于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 和 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 的训练 GUI，重点扩展 **Anima 模型** 的 LoRA 训练支持，同时兼容 SD 1.5 / SDXL / SD3 / FLUX 等模型。
+基于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（位于 `vendor/sd-scripts/`）的训练 GUI，为 **Anima 模型** 提供 LoRA 训练支持，同时兼容 SD 1.5 / SDXL。
 
 </div>
 
@@ -24,17 +24,17 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-Anima LoRA 训练图形界面，基于最新的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git)。同时兼容 SD 1.5 / SDXL / SD3 / FLUX。
+Anima LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。目前 UI 支持 SD / SDXL / Anima 三种模型的 LoRA 训练。
 
 ### 支持的模型类型
 
 | 训练类型 | 底模 |
 |---------|------|
-| LoRA / Dreambooth | SD 1.5 / SD 2.x |
-| LoRA / 微调 | SDXL |
-| LoRA | SD3 |
-| LoRA / 微调 | FLUX（含 Chroma） |
-| **LoRA** 🆕 | **Anima** |
+| LoRA | SD 1.5 / SD 2.x |
+| LoRA | SDXL |
+| **LoRA** | **Anima** |
+
+> ℹ️ `vendor/sd-scripts/` 训练引擎本身支持 SD3 / FLUX / HunyuanImage / Lumina 等更多模型，但当前 UI 尚未接入这些模型的训练入口。
 
 ## ✨新特性: 训练 WebUI
 
@@ -54,7 +54,7 @@ Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 ### 必要依赖
 
 - Python 3.10+ 和 Git
-- **PyTorch ≥ 2.9.0 + CUDA 12.8**（安装脚本自动配置，兼容 RTX 30/40/50 全系列）
+- **PyTorch ≥ 2.10.0 + CUDA 12.8**（安装脚本自动配置，兼容 RTX 30/40/50 全系列）
 
 | GPU 系列 | 最低 PyTorch | 推荐 CUDA |
 |----------|:----------:|:---------:|
@@ -95,6 +95,7 @@ cd lora-scripts-anima
 | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
 
 > ℹ️ 旧版手动脚本（`train.ps1`、`tagger.ps1` 等）已归档至 `legacy-scripts/` 目录。
+> ℹ️ 前端代码位于 `anima-ui/`（Alpine.js SPA），后端位于 `mikazuki/`（FastAPI），训练引擎位于 `vendor/sd-scripts/`。
 
 ## 程序参数
 

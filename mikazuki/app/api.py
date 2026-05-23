@@ -122,17 +122,17 @@ def get_sample_prompts(config: dict) -> Tuple[Optional[str], str]:
 
     if randomly_choice_prompt:
         if len(sub_dir) != 1:
-            raise ValueError('训练数据集下有多个子文件夹，无法启用随机选取 Prompt 功能')
+            raise ValueError('Multiple subdirectories found / 多子文件夹; random prompt selection requires a single subdirectory / 随机选取 Prompt 需要单一子文件夹')
 
         txt_files = glob(os.path.join(sub_dir[0], '*.txt'))
         if not txt_files:
-            raise ValueError('训练数据集路径没有 txt 文件')
+            raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
         try:
             sample_prompt_file = random.choice(txt_files)
             with open(sample_prompt_file, 'r', encoding='utf-8') as f:
                 positive_prompts = f.read()
         except IOError:
-            log.error(f"读取 {sample_prompt_file} 文件失败")
+            log.error(f"Failed to read prompt file / 读取失败: {sample_prompt_file}")
 
     return positive_prompts, f'{positive_prompts} --n {negative_prompts}  --w {sample_width} --h {sample_height} --l {sample_cfg}  --s {sample_steps}  --d {sample_seed}'
 
@@ -173,7 +173,7 @@ async def create_toml_file(request: Request):
 
     if model_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
-            return APIResponseFail(message="训练数据集路径不存在或没有图片，请检查目录。")
+            return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
     validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], model_train_type)
     if not validated:
@@ -182,7 +182,7 @@ async def create_toml_file(request: Request):
     if "prompt_file" in config and config["prompt_file"].strip() != "":
         prompt_file = config["prompt_file"].strip()
         if not os.path.exists(prompt_file):
-            return APIResponseFail(message=f"Prompt 文件 {prompt_file} 不存在，请检查路径。")
+            return APIResponseFail(message=f"Prompt file not found / 文件不存在: {prompt_file}")
         config["sample_prompts"] = prompt_file
     else:
         try:
@@ -282,7 +282,7 @@ async def pick_file(picker_type: str):
 
     result = await coro
     if result == "":
-        return APIResponseFail(message="用户取消选择")
+        return APIResponseFail(message="User cancelled / 用户取消")
 
     return APIResponseSuccess(data={
         "path": result
@@ -435,7 +435,7 @@ async def save_preset(req: PresetSaveRequest) -> APIResponse:
             f.write(toml_str)
     except OSError as e:
         log.error(f"Failed to save preset: {e}")
-        return APIResponseFail(message=f"保存预设失败: {e}")
+        return APIResponseFail(message=f"Failed to save preset / 保存失败: {e}")
 
     # Reload presets so the new one appears immediately
     await load_presets()
@@ -452,18 +452,18 @@ async def delete_preset(name: str) -> APIResponse:
     filepath = os.path.join(preset_dir, f"{safe_name}.toml")
 
     if not os.path.isfile(filepath):
-        return APIResponseFail(message="预设不存在")
+        return APIResponseFail(message="Preset not found / 预设不存在")
 
     try:
         os.remove(filepath)
     except OSError as e:
         log.error(f"Failed to delete preset: {e}")
-        return APIResponseFail(message=f"删除预设失败: {e}")
+        return APIResponseFail(message=f"Failed to delete preset / 删除失败: {e}")
 
     await load_presets()
 
     log.info(f"Preset deleted: {safe_name}")
-    return APIResponseSuccess(message=f"已删除预设: {name}")
+    return APIResponseSuccess(message=f"Preset deleted / 已删除: {name}")
 
 
 @router.get("/config/saved_params")
