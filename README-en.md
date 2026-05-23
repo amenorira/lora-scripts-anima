@@ -62,7 +62,7 @@ Follow the installation guide below to install the GUI, then run `start.bat`(Win
 | RTX 40 (Ada) | 2.6.0 | 12.8 |
 | RTX 50 (Blackwell) | **2.8.0** | **12.8** |
 
-> Install scripts default to PyTorch 2.9.0 + CUDA 12.8 — works across all GPU generations.
+> Install scripts default to PyTorch 2.10.0 + CUDA 12.8 — all GPUs, cp312 has prebuilt flash-attn.
 
 ### Clone
 

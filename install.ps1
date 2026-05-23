@@ -8,8 +8,8 @@ if (!(Test-Path -Path "venv")) {
 
 Write-Output "Installing deps..."
 
-# PyTorch 2.9.0 + CUDA 12.8 — 兼容 RTX 30/40/50 全系列
-pip install torch==2.9.0+cu128 torchvision==0.24.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+# PyTorch 2.10.0 + CUDA 12.8 — 兼容 RTX 30/40/50 全系列，cp312 有预编译 flash-attn
+pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 # xformers 可选（flash-attn 已通过 install-flash-attn.bat 安装）
 # pip install -U -I --no-deps xformers==0.0.30 --extra-index-url https://download.pytorch.org/whl/cu128
 pip install --upgrade -r requirements.txt

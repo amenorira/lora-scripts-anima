@@ -1,54 +1,57 @@
+# install-cn.ps1 — 国内镜像加速安装（清华 pip + PyTorch 官方 CDN）
 $Env:HF_HOME = "huggingface"
 $Env:PIP_DISABLE_PIP_VERSION_CHECK = 1
-$Env:PIP_NO_CACHE_DIR = 1
 $Env:PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple"
-function InstallFail {
-    Write-Output "��װʧ�ܡ�"
-    Read-Host | Out-Null ;
-    Exit
-}
 
 function Check {
-    param (
-        $ErrorInfo
-    )
+    param($ErrorInfo)
     if (!($?)) {
-        Write-Output $ErrorInfo
-        InstallFail
+        Write-Output "[ERROR] $ErrorInfo"
+        Read-Host | Out-Null
+        Exit 1
     }
 }
+
+# 检测本地 python 目录
 if (Test-Path -Path "python\python.exe") {
-    Write-Output "ʹ�� python �ļ����ڵ� python..."
+    Write-Output "[INFO] 使用本地 python 目录..."
     $py_path = (Get-Item "python").FullName
     $env:PATH = "$py_path;$env:PATH"
-}
-else {
+} else {
     if (!(Test-Path -Path "venv")) {
-        Write-Output "���ڴ������⻷��..."
+        Write-Output "[INFO] 创建虚拟环境..."
         python -m venv venv
-        Check "�������⻷��ʧ�ܣ����� python �Ƿ�װ����Լ� python �汾�Ƿ�Ϊ64λ�汾��python 3.10����python��Ŀ¼�Ƿ��ڻ�������PATH�ڡ�"
+        Check "venv 创建失败，请检查 Python 是否安装（需 3.10+ 64bit）"
     }
-    
-    Write-Output "��⵽���⻷�������Լ���..."
+    Write-Output "[INFO] 激活虚拟环境..."
     .\venv\Scripts\activate
-    Check "�������⻷��ʧ�ܡ�"
+    Check "venv 激活失败"
 }
 
-Write-Output "��װ������������ (�ѽ��й��ڼ��٣����ڹ�����޷�ʹ�ü���Դ�뻻�� install.ps1 �ű�)"
-Write-Output "�����ڹ��ڼ��پ���torch ��װ�޷�ʹ�þ���Դ����װ��Ϊ������"
-$install_torch = Read-Host "�Ƿ���Ҫ��װ Torch+xformers? [y/n] (Ĭ��Ϊ y)"
-if ($install_torch -eq "y" -or $install_torch -eq "Y" -or $install_torch -eq "") {
-    # PyTorch 2.9.0 + CUDA 12.8 — 兼容 RTX 30/40/50 全系列
-    python -m pip install torch==2.9.0+cu128 torchvision==0.24.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-    Check "torch ��װʧ�ܣ���ɾ�� venv �ļ��к��������С�"
-    # xformers 可选（flash-attn 已通过 install-flash-attn.bat 安装）
-    # python -m pip install -U -I --no-deps xformers===0.0.30 --extra-index-url https://download.pytorch.org/whl/cu128
-    Check "xformers ��װʧ�ܡ�"
-}
+Write-Output "============================================"
+Write-Output "  Anima LoRA Trainer - 国内镜像安装"
+Write-Output "  pip: 清华镜像 | PyTorch: 官方 CDN"
+Write-Output "============================================"
+Write-Output ""
 
+# PyTorch 2.10.0 + CUDA 12.8 — RTX 30/40/50 全系兼容
+Write-Output "[1/3] 安装 PyTorch 2.10.0 + CUDA 12.8 ..."
+python -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+Check "PyTorch 安装失败，请检查网络或删除 venv 后重试"
+
+# 项目依赖
+Write-Output "[2/3] 安装项目依赖 ..."
 python -m pip install --upgrade -r requirements.txt
-python -m pip install -r vendor/sd-scripts/requirements.txt
-Check "ѵ������������װʧ�ܡ�"
+Check "项目依赖安装失败"
 
-Write-Output "��װ���"
-Read-Host | Out-Null ;
+# 训练脚本依赖
+Write-Output "[3/3] 安装训练脚本依赖 ..."
+python -m pip install -r vendor/sd-scripts/requirements.txt
+Check "训练依赖安装失败"
+
+Write-Output ""
+Write-Output "============================================"
+Write-Output "  安装完成！运行 start.bat 启动训练 GUI"
+Write-Output "  RTX 40/50 系建议再运行: .\install-flash-attn.bat"
+Write-Output "============================================"
+Read-Host | Out-Null
