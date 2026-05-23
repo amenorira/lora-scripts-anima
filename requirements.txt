@@ -26,7 +26,7 @@ imagesize==1.4.1
 # for T5XXL tokenizer (SD3/FLUX)
 sentencepiece==0.2.0  # skip_verify
 # for GPU monitoring
-pynvml>=11.5.0
+nvidia-ml-py>=12.535.0
 # for ui
 rich>=13.7.0  # skip_verify
 pandas
