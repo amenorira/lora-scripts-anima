@@ -20,9 +20,9 @@ parser.add_argument("--port", type=int, default=28000, help="Port to run the ser
 parser.add_argument("--listen", action="store_true")
 parser.add_argument("--skip-prepare-environment", action="store_true")
 parser.add_argument("--skip-prepare-onnxruntime", action="store_true")
-parser.add_argument("--disable-tensorboard", action="store_true", help="Deprecated: TensorBoard is now disabled by default. Use --enable-tensorboard to re-enable.")
+parser.add_argument("--disable-tensorboard", action="store_true", help="Disable TensorBoard (port 6006). TensorBoard is enabled by default.")
 parser.add_argument("--disable-tageditor", action="store_true", help="Deprecated: Tag editor is now disabled by default. Use --enable-tageditor to re-enable.")
-parser.add_argument("--enable-tensorboard", action="store_true", help="Enable legacy TensorBoard (port 6006)")
+parser.add_argument("--enable-tensorboard", action="store_true", help="Deprecated: TensorBoard is now enabled by default. Use --disable-tensorboard to turn off.")
 parser.add_argument("--enable-tageditor", action="store_true", help="Enable legacy Gradio tag editor (port 28001)")
 parser.add_argument("--disable-auto-mirror", action="store_true")
 parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1", help="Port to run the tensorboard")
@@ -95,7 +95,7 @@ def launch():
     if args.enable_tageditor:
         run_tag_editor()
 
-    if args.enable_tensorboard:
+    if not args.disable_tensorboard:
         run_tensorboard()
 
     import uvicorn

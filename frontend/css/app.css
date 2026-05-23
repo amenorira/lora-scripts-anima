@@ -1135,10 +1135,10 @@ input[type="range"]::-webkit-slider-thumb {
 .param-value { font-weight: 600; color: var(--text-primary); text-align: right; font-family: 'Consolas', 'Menlo', monospace; }
 
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
-.chart-panel { padding: 8px; background: var(--bg-surface-raised); border-radius: var(--radius); border: 1px solid var(--border-color); }
+.chart-panel { padding: 8px; background: var(--bg-surface-raised); border-radius: var(--radius); border: 1px solid var(--border-color); position: relative; }
 .chart-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; }
 .chart-val { font-family: 'Consolas', monospace; color: var(--accent); }
-.chart-panel canvas { width: 100%; height: 200px; display: block; }
+.chart-panel canvas { width: 100% !important; height: 200px !important; display: block; }
 
 .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 4px 0; }
 .preview-item { text-align: center; }

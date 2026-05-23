@@ -128,8 +128,62 @@ def _get_cpu_name() -> str:
 
 
 # ── TensorBoard Event 读取 ─────────────────────────────────
-def _read_tensorboard_loss(limit: int = 5000) -> list[dict]:
-    """从 TensorBoard event 文件读取 Loss/LR scalar"""
+def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
+    """Largest Triangle Three Buckets 降采样，保留曲线视觉特征
+
+    Args:
+        points: [{"step": int, "value": float}, ...]
+        target: 目标输出点数（最小为 3）
+    Returns:
+        降采样后的点列表
+    """
+    n = len(points)
+    if n <= target or target < 3:
+        return points[:]
+
+    result = [points[0]]  # 始终保留首点
+
+    bucket_size = (n - 2) / (target - 2)  # -2 因为首尾已占用
+
+    a = 0  # 上一个已选点的索引
+    for i in range(target - 2):
+        # 当前桶的范围
+        bucket_start = 1 + int(i * bucket_size)
+        bucket_end = 1 + int((i + 1) * bucket_size)
+        bucket_end = min(bucket_end, n - 1)
+        avg_x = sum(p["step"] for p in points[bucket_start:bucket_end]) / max(1, bucket_end - bucket_start)
+
+        # 下一桶的平均点（用于三角形计算）
+        next_bucket_start = bucket_end
+        next_bucket_end = 1 + int((i + 2) * bucket_size)
+        next_bucket_end = min(next_bucket_end, n)
+
+        max_area = -1.0
+        max_idx = bucket_start
+
+        pa_x = points[a]["step"]
+        pa_y = points[a]["value"]
+
+        for j in range(bucket_start, bucket_end):
+            # 三角形面积 = 0.5 * |(x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)|
+            # 省去 0.5 不影响比较
+            area = abs(
+                (points[j]["step"] - pa_x) * (points[n - 1]["value"] - pa_y)
+                - (points[n - 1]["step"] - pa_x) * (points[j]["value"] - pa_y)
+            )
+            if area > max_area:
+                max_area = area
+                max_idx = j
+
+        result.append(points[max_idx])
+        a = max_idx
+
+    result.append(points[-1])  # 始终保留尾点
+    return result
+
+
+def _read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list[dict]:
+    """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:
@@ -142,7 +196,8 @@ def _read_tensorboard_loss(limit: int = 5000) -> list[dict]:
     if not event_files:
         return []
 
-    scalar_tags = ("loss/average", "loss/current", "loss/epoch_average", "lr/unet")
+    scalar_tags = ("loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
+                    "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder")
 
     for event_file in event_files[:3]:  # 最多尝试 3 个最新 run
         try:
@@ -170,6 +225,9 @@ def _read_tensorboard_loss(limit: int = 5000) -> list[dict]:
             ]
             if not points:
                 continue
+            # LTTB 降采样：控制 API 响应大小
+            if len(points) > downsample_to:
+                points = _lttb_downsample(points, downsample_to)
             values = [p["value"] for p in points]
             series_list.append({
                 "tag": tag,

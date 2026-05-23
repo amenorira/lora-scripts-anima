@@ -23,6 +23,7 @@ window.monitorMixin = {
   logLevel: 'all',  // 'all' | 'error' | 'warn' | 'info'
   chartSmoothing: 0.6,
   dashTab: 'overview',
+  _chartInstances: null,
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
@@ -36,6 +37,7 @@ window.monitorMixin = {
     if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
     this._monitorFirstFetch = false;
     this._dashboardRendered = false;
+    this._destroyCharts();
   },
 
   async fetchMonitorStatus() {
@@ -115,6 +117,7 @@ window.monitorMixin = {
     }
 
     html += '</div>';
+    this._destroyCharts();
     el.innerHTML = html;
 
     // Animate bars
@@ -173,7 +176,7 @@ window.monitorMixin = {
     html += '<span>' + t('lossCurve', 'Loss / LR Curves') + '</span>';
     html += '<label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400">';
     html += '<span style="color:var(--text-tertiary)">Smooth</span>';
-    html += '<input type="range" min="0" max="0.95" step="0.05" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6">';
+    html += '<input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6">';
     html += '</label></div>';
     html += '<div class="chart-grid" style="grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));gap:12px">';
     const chartTags = this.lossSeries.length ? this.lossSeries : [
@@ -210,6 +213,7 @@ window.monitorMixin = {
     html += '</div>';
     return html;
   },
+
 
   _renderTensorBoard() {
     return `<div class="card" style="padding:0;overflow:hidden;height:calc(100vh - 240px);min-height:500px">
@@ -283,24 +287,30 @@ window.monitorMixin = {
     return html;
   },
 
+  _destroyCharts() {
+    if (!this._chartInstances) return;
+    Object.values(this._chartInstances).forEach(c => { try { c.destroy(); } catch(e) { /* ignore */ } });
+    this._chartInstances = {};
+  },
+
   _drawCharts() {
-    const smoothing = this.chartSmoothing || 0;  // 0 = raw, 0.95 = max smooth (EMA like TensorBoard)
-    const colors = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981'];  // purple, cyan, amber, green
+    if (!this._chartInstances) this._chartInstances = {};
+
+    const isDark = this.resolvedTheme === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+    const textColor = isDark ? '#a0a0a0' : '#6b7280';
+    const smoothing = this.chartSmoothing || 0;
+    const colors = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981'];
+
+    const tooltipBg = isDark ? '#1e1e1e' : '#ffffff';
+    const tooltipBorder = isDark ? '#404040' : '#e5e7eb';
 
     this.lossSeries.forEach((s, idx) => {
       const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
-      const c = document.getElementById(id);
-      if (!c || !s.points || s.points.length < 2) return;
-      const ctx = c.getContext('2d');
-      const dpr = window.devicePixelRatio || 1;
-      const W = c.width, H = c.height;
-      // Scale for HiDPI
-      c.width = W * dpr; c.height = H * dpr;
-      c.style.width = W + 'px'; c.style.height = H + 'px';
-      ctx.scale(dpr, dpr);
-      ctx.clearRect(0, 0, W, H);
+      const canvas = document.getElementById(id);
+      if (!canvas || !s.points || s.points.length < 2) return;
 
-      // Apply EMA smoothing (like TensorBoard)
+      // Apply EMA smoothing
       let points = s.points;
       if (smoothing > 0) {
         points = [];
@@ -314,134 +324,99 @@ window.monitorMixin = {
       }
 
       const xs = points.map(p => p.step);
-      const ys = points.map(p => p.value);
-      const xMin = Math.min(...xs), xMax = Math.max(...xs);
-      const yMin = Math.min(...ys), yMax = Math.max(...ys);
-      const yRange = (yMax - yMin) || 1;
-      const pad = { t: 18, r: 20, b: 30, l: 50 };
-      const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
       const color = colors[idx % colors.length];
+      const ctx = canvas.getContext('2d');
 
-      const sx = (x) => pad.l + (x - xMin) / (xMax - xMin || 1) * pw;
-      const sy = (y) => pad.t + (yMax - y) / yRange * ph;
-
-      // Grid lines
-      ctx.strokeStyle = 'var(--border-default, #3c3c3c)';
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([3, 4]);
-      for (let i = 0; i <= 4; i++) {
-        const y = pad.t + i * ph / 4;
-        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'var(--text-tertiary, #888)';
-        ctx.font = '10px monospace';
-        ctx.fillText((yMax - i * yRange / 4).toFixed(4), 2, y + 3);
-        ctx.setLineDash([3, 4]);
+      // Destroy existing instance for this canvas
+      if (this._chartInstances[id]) {
+        try { this._chartInstances[id].destroy(); } catch(e) { /* ignore */ }
       }
-      ctx.setLineDash([]);
 
-      // Area fill
-      const grad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
-      grad.addColorStop(0, color + '40');
-      grad.addColorStop(1, color + '05');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(sx(xs[0]), H - pad.b);
-      points.forEach((p) => ctx.lineTo(sx(p.step), sy(p.value)));
-      ctx.lineTo(sx(xs[xs.length - 1]), H - pad.b);
-      ctx.closePath();
-      ctx.fill();
+      // Gradient fill plugin
+      const gradientPlugin = {
+        id: 'gradientFill' + id,
+        beforeDatasetsDraw(chart) {
+          const { ctx: gctx, chartArea } = chart;
+          if (!chartArea) return;
+          const grad = gctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          grad.addColorStop(0, color + '40');
+          grad.addColorStop(1, color + '05');
+          chart.data.datasets[0].backgroundColor = grad;
+        }
+      };
 
-      // Main line
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.8;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      points.forEach((p, i) => {
-        const x = sx(p.step), y = sy(p.value);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      this._chartInstances[id] = new Chart(ctx, {
+        type: 'line',
+        plugins: [gradientPlugin],
+        data: {
+          datasets: [{
+            label: s.name,
+            data: points.map(p => ({ x: p.step, y: p.value })),
+            borderColor: color,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHitRadius: 8,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: color,
+            borderWidth: 1.8,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: false,
+          },
+          layout: {
+            padding: { top: 4, right: 8, bottom: 0, left: 0 }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: tooltipBg,
+              titleColor: textColor,
+              bodyColor: textColor,
+              borderColor: tooltipBorder,
+              borderWidth: 1,
+              padding: 8,
+              displayColors: false,
+              callbacks: {
+                title: (items) => 'Step ' + items[0].parsed.x,
+                label: (item) => item.dataset.label + ': ' + item.parsed.y.toFixed(6),
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              min: xMin,
+              max: xMax,
+              grid: { color: gridColor },
+              ticks: {
+                color: textColor,
+                font: { size: 10 },
+                maxTicksLimit: 8,
+                callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v,
+              },
+            },
+            y: {
+              grid: { color: gridColor },
+              ticks: {
+                color: textColor,
+                font: { size: 10 },
+                maxTicksLimit: 6,
+                callback: (v) => parseFloat(v.toFixed(4)),
+              },
+            },
+          },
+        },
       });
-      ctx.stroke();
-
-      // Raw line (faded, if smoothing is on)
-      if (smoothing > 0 && s.points.length > 2) {
-        ctx.strokeStyle = color + '30';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        s.points.forEach((p, i) => {
-          const x = sx(p.step), y = sy(p.value);
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-      }
-
-      // Last point dot
-      const last = points[points.length - 1];
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(sx(last.step), sy(last.value), 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'var(--bg-surface, #fff)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Store for hover crosshair
-      c._chartData = { s, points, sx, sy, pad, W, H, color };
-      c.style.cursor = 'crosshair';
-      if (!c._hasHover) {
-        c._hasHover = true;
-        c.addEventListener('mousemove', (ev) => this._onChartHover(c, ev));
-        c.addEventListener('mouseleave', (ev) => this._onChartLeave(c, ev));
-      }
     });
-  },
-
-  _onChartHover(c, ev) {
-    const data = c._chartData;
-    if (!data || !data.points.length) return;
-    const rect = c.getBoundingClientRect();
-    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
-    let best = data.points[0], bestDist = Infinity;
-    data.points.forEach(p => {
-      const dx = data.sx(p.step) - mx, dy = data.sy(p.value) - my;
-      const d = dx * dx + dy * dy;
-      if (d < bestDist) { bestDist = d; best = p; }
-    });
-    const x = data.sx(best.step), y = data.sy(best.value);
-
-    // Redraw with crosshair
-    this._drawCharts();
-    const ctx = c.getContext('2d');
-    ctx.strokeStyle = data.color + '60';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    ctx.beginPath();
-    ctx.moveTo(x, data.pad.t); ctx.lineTo(x, data.H - data.pad.b);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.fillStyle = data.color;
-    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'var(--bg-surface)'; ctx.lineWidth = 2; ctx.stroke();
-
-    // Tooltip label
-    ctx.fillStyle = 'var(--bg-surface, #1e1e1e)';
-    ctx.fillRect(x + 8, y - 20, 130, 32);
-    ctx.strokeStyle = 'var(--border-default)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 8, y - 20, 130, 32);
-    ctx.fillStyle = 'var(--text-primary)';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(`Step ${best.step}`, x + 14, y - 5);
-    ctx.fillStyle = 'var(--text-secondary)';
-    ctx.fillText(`${best.value.toFixed(6)}`, x + 14, y + 9);
-
-    c.title = `Step: ${best.step}  Value: ${best.value.toFixed(6)}`;
-  },
-
-  _onChartLeave(c) {
-    c.title = '';
-    // Redraw without crosshair on next poll
   },
 
   // ═══════════════════════════════════════════════════════
