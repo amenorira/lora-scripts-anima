@@ -216,15 +216,28 @@ def detect_env() -> dict[str, Any]:
 # ── Wheel 文件名解析 ──────────────────────────────────────────────────────
 
 def _parse_wheel(name: str) -> Optional[dict[str, str]]:
-    """从 wheel 文件名解析 cuda / torch / python / platform 标签。"""
-    m = re.search(r"\+(cu\d+)(torch[\d.]+)-(cp\d+)-cp\d+-([\w]+)\.whl$", name)
+    """从 wheel 文件名解析 cuda / torch / python / platform 标签。
+
+    支持两种命名格式：
+    1. 标准: flash_attn-2.8.3+cu130torch2.12-cp312-cp312-linux_x86_64.whl
+    2. Windows abi3: flash_attn_3-3.0.0+cu126torch2.11gite2743ab-cp39-abi3-win_amd64.whl
+    """
+    # 统一匹配：第二个 python tag 可能是 cp\d+、cp\d+t 或 abi3
+    m = re.search(
+        r"\+(cu\d+)(torch[\d.]+(?:git\w+)?)-"  # cuda + torch (可能有 git hash)
+        r"((?:cp\d+|cp\d+t))-"                   # python tag
+        r"((?:cp\d+|cp\d+t|abi3))-"              # abi tag (abi3 = 稳定 ABI)
+        r"([\w]+)\.whl$",                        # platform
+        name
+    )
     if not m:
         return None
     return {
         "cuda": m.group(1),
         "torch": m.group(2),
-        "python": m.group(3),
-        "platform": m.group(4),
+        "python": m.group(3),       # e.g. cp312
+        "python_abi": m.group(4),   # e.g. cp312 or abi3
+        "platform": m.group(5),
     }
 
 
@@ -289,6 +302,88 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
         return None, str(exc), False
 
 
+def _filter_cached_for_env(
+    cached: list[dict[str, Any]], env: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """对磁盘缓存的 candidates 重新解析 + 环境匹配 + 评分。
+
+    缓存只存了 {url, name, notes, usable, score}，没有 tags。
+    不同环境（platform/torch/python/cuda）需要重新过滤。
+    """
+    plat = env.get("platform")
+    torch_tag = env.get("torch_tag")
+    cuda_tag = env.get("cuda_tag")
+    python_tag = env.get("python_tag")
+
+    result: list[dict[str, Any]] = []
+    for c in cached:
+        tags = _parse_wheel(c.get("name", ""))
+        if not tags:
+            continue
+        if tags["platform"] != plat:
+            continue
+
+        score = 0
+        notes: list[str] = []
+        usable = True
+
+        # PyTorch
+        if torch_tag:
+            wheel_torch = tags["torch"]
+            # 去掉 git hash 后缀 (如 torch2.11gite2743ab → torch2.11)
+            wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
+            if wheel_torch_clean == torch_tag:
+                score += 20
+            else:
+                wheel_tv = wheel_torch_clean.replace("torch", "")
+                env_tv = torch_tag.replace("torch", "")
+                if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
+                    score += 5
+                    notes.append(f"PyTorch minor mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
+                else:
+                    score -= 15
+                    usable = False
+                    notes.append(f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
+
+        # Python ABI
+        if python_tag:
+            wheel_py = tags["python"]
+            if wheel_py == python_tag:
+                score += 20
+            elif tags.get("python_abi") == "abi3":
+                # abi3 稳定 ABI：兼容同大版本所有 Python
+                if wheel_py.startswith("cp") and python_tag.startswith("cp"):
+                    score += 10
+                    notes.append("abi3 stable ABI (compatible across Python 3.x)")
+                else:
+                    usable = False
+                    notes.append(f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
+            else:
+                usable = False
+                notes.append(f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
+
+        # CUDA
+        if cuda_tag:
+            if tags["cuda"] == cuda_tag:
+                score += 20
+            elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
+                score += 10
+                notes.append(f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag})")
+            else:
+                score -= 5
+                notes.append(f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})")
+
+        result.append({
+            "url": c["url"],
+            "name": c["name"],
+            "score": score,
+            "notes": notes,
+            "usable": usable,
+        })
+
+    return sorted(result, key=lambda x: -x["score"])
+
+
 def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optional[str]]:
     """获取候选 wheel 列表。
 
@@ -332,9 +427,9 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     raw_releases = data  # 可能为 None
 
     if raw_releases is None:
-        # 没有新数据，使用缓存
+        # 没有新数据，使用缓存（重新过滤匹配当前环境）
         if cached:
-            return cached, None  # 静默成功，不显示任何错误
+            return _filter_cached_for_env(cached, env), None  # 静默成功
         # 无缓存且 API 失败 — 最后一次尝试
         urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
         for url in urls:
@@ -347,7 +442,7 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     if not isinstance(raw_releases, list):
         msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
         if cached:
-            return cached, None  # API 报错但有缓存，静默回退
+            return _filter_cached_for_env(cached, env), None  # API 报错但有缓存
         return [], f"GitHub API 错误: {msg}"
 
     candidates: list[dict[str, Any]] = []
@@ -365,29 +460,36 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
 
             # PyTorch: 精确匹配 > 同大版本(高风险) > 不同大版本(不可用)
             if torch_tag:
-                if tags["torch"] == torch_tag:
+                wheel_torch = tags["torch"]
+                # 去掉 git hash 后缀 (如 torch2.11gite2743ab → torch2.11)
+                wheel_torch_clean = re.sub(r"git\w+$", "", wheel_torch)
+                if wheel_torch_clean == torch_tag:
                     score += 20
                 else:
-                    wheel_tv = tags["torch"].replace("torch", "")
+                    wheel_tv = wheel_torch_clean.replace("torch", "")
                     env_tv = torch_tag.replace("torch", "")
                     if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
                         score += 5
                         notes.append(
-                            f"PyTorch minor mismatch (wheel={tags['torch']}, env={torch_tag})"
+                            f"PyTorch minor mismatch (wheel={wheel_torch_clean}, env={torch_tag})"
                             f" — minor versions usually ABI-incompatible, likely import failure"
                         )
                     else:
                         score -= 15
                         usable = False
                         notes.append(
-                            f"PyTorch major mismatch (wheel={tags['torch']}, env={torch_tag})"
+                            f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})"
                             f" — incompatible"
                         )
 
-            # Python ABI: exact match required
+            # Python ABI: 精确匹配 > abi3 兼容 > 不兼容
             if python_tag:
                 if tags["python"] == python_tag:
                     score += 20
+                elif tags.get("python_abi") == "abi3":
+                    # abi3 稳定 ABI：兼容同大版本所有 Python
+                    score += 10
+                    notes.append("abi3 stable ABI (compatible across Python 3.x)")
                 else:
                     usable = False
                     notes.append(
