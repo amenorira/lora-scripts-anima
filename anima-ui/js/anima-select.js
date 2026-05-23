@@ -9,8 +9,6 @@ document.addEventListener('alpine:init', () => {
     value: initialValue,
     hoveredIdx: -1,
     hoveredOpt: null,
-    showTriggerTip: false,
-    triggerTipTimer: null,
     _escHandler: null,
 
     get displayGroups() {
@@ -56,7 +54,6 @@ document.addEventListener('alpine:init', () => {
       if (this._escHandler) {
         document.removeEventListener('keydown', this._escHandler);
       }
-      clearTimeout(this.triggerTipTimer);
     },
 
     closeOnOutside() {
@@ -78,15 +75,6 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    onTriggerMouseEnter() {
-      this.triggerTipTimer = setTimeout(() => { this.showTriggerTip = true; }, 400);
-    },
-
-    onTriggerMouseLeave() {
-      clearTimeout(this.triggerTipTimer);
-      this.showTriggerTip = false;
-    },
-
     onOptionMouseEnter(idx, opt) {
       this.hoveredIdx = idx;
       this.hoveredOpt = opt;
@@ -105,19 +93,5 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    get triggerTipStyle() {
-      if (!this.showTriggerTip || this.open || !this.selectedDesc) return {};
-      const btn = this.$refs.triggerBtn;
-      if (!btn) return {};
-      const r = btn.getBoundingClientRect();
-      return {
-        position: 'fixed',
-        left: (r.right + 10) + 'px',
-        top: (r.top + r.height / 2) + 'px',
-        transform: 'translateY(-50%)',
-        maxWidth: Math.min(260, window.innerWidth - r.right - 24) + 'px',
-        zIndex: '9999',
-      };
-    },
   }));
 });

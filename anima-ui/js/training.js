@@ -115,17 +115,11 @@ window.trainingMixin = {
           @click.outside="closeOnOutside()">
           <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
           <button type="button" class="anima-select-trigger" :class="{ focused: open }"
-            x-ref="triggerBtn"
-            @click="toggle()"
-            @mouseenter="onTriggerMouseEnter()"
-            @mouseleave="onTriggerMouseLeave()">
+            @click="toggle()">
             <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
             <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
-            <span x-text="selectedDesc"></span>
-            <div class="anima-tooltip-arrow"></div>
-          </div>
+          <div class="anima-select-desc" x-show="selectedDesc" x-text="selectedDesc"></div>
           <div class="anima-select-menu" x-show="open" x-transition>
             <div class="anima-select-menu-scroll">
               <template x-for="(group, gIdx) in displayGroups" :key="gIdx">
@@ -154,17 +148,11 @@ window.trainingMixin = {
           @click.outside="closeOnOutside()">
           <input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">
           <button type="button" class="anima-select-trigger" :class="{ focused: open }"
-            x-ref="triggerBtn"
-            @click="toggle()"
-            @mouseenter="onTriggerMouseEnter()"
-            @mouseleave="onTriggerMouseLeave()">
+            @click="toggle()">
             <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
             <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div class="anima-tooltip" x-show="showTriggerTip && !open && selectedDesc" :style="triggerTipStyle" x-transition.opacity>
-            <span x-text="selectedDesc"></span>
-            <div class="anima-tooltip-arrow"></div>
-          </div>
+          <div class="anima-select-desc" x-show="selectedDesc" x-text="selectedDesc"></div>
           <div class="anima-select-menu" x-show="open" x-transition>
             <div class="anima-select-menu-scroll">
               <template x-for="group in displayGroups" :key="group.label">

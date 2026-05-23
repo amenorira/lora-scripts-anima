@@ -1051,28 +1051,17 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 
 /* ================================================================
-   Anima Tooltip — bubble with arrow
-   position:fixed by default, parked offscreen so :style binding
-   can move it to the correct spot without a visible flash.
+   Anima Select Description — always-visible selected option hint
    ================================================================ */
 
-.anima-tooltip {
-  position: fixed;
-  top: -9999px;
-  left: -9999px;
-  z-index: 9999;
-  opacity: 0;
-  background: #2d2d30;
-  color: #e4e4e1;
-  padding: 7px 12px;
-  border-radius: 7px;
-  font-size: 12.5px;
-  pointer-events: none;
-  max-width: 300px;
-  white-space: normal;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+.anima-select-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.35;
+  margin-top: 4px;
+  padding: 0 2px;
+  user-select: none;
 }
-.anima-tooltip.visible { opacity: 1; }
 
 /* ================================================================
    Environment Page
@@ -1265,110 +1254,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .env-candidate-item:hover { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
 [data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-
-/* Visible state */
-.anima-tooltip.anima-tooltip-show {
-  opacity: 1;
-}
-
-/* Dark mode tooltip: slightly lighter bg for contrast on dark bg */
-[data-theme="dark"] .anima-tooltip {
-  background: #3a3a40;
-  color: #f0f0ee;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08);
-}
-
-/* ── Tooltip arrow (shared, defaults to left-pointing for right-side tooltip) ── */
-.anima-tooltip-arrow {
-  position: absolute;
-  width: 0;
-  height: 0;
-  border: 7px solid transparent;
-  pointer-events: none;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border-right-color: #2d2d30;
-}
-
-[data-theme="dark"] .anima-tooltip-arrow {
-  border-right-color: #3a3a40;
-}
-
-/* ── Tooltip: below the trigger (closed state) ───────────── */
-.anima-tooltip-below {
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.anima-tooltip-below .anima-tooltip-arrow {
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-bottom-color: #2d2d30;
-}
-
-[data-theme="dark"] .anima-tooltip-below .anima-tooltip-arrow {
-  border-bottom-color: #3a3a40;
-}
-
-/* ── Tooltip: right of hovered option (open state) ───────── */
-.anima-tooltip-right {
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.anima-tooltip-right .anima-tooltip-arrow {
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border-right-color: #2d2d30;
-}
-
-[data-theme="dark"] .anima-tooltip-right .anima-tooltip-arrow {
-  border-right-color: #3a3a40;
-}
-
-/* ── Tooltip: left of hovered option (fallback for edge) ─── */
-.anima-tooltip-left {
-  right: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.anima-tooltip-left .anima-tooltip-arrow {
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border-left-color: #2d2d30;
-}
-
-[data-theme="dark"] .anima-tooltip-left .anima-tooltip-arrow {
-  border-left-color: #3a3a40;
-}
-
-/* ── Responsive: on narrow screens, move right tooltip above ── */
-@media (max-width: 600px) {
-  .anima-tooltip-right {
-    left: 50%;
-    top: auto;
-    bottom: calc(100% + 8px);
-    transform: translateX(-50%);
-  }
-  .anima-tooltip-right .anima-tooltip-arrow {
-    right: auto;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border-right-color: transparent;
-    border-top-color: #2d2d30;
-  }
-  [data-theme="dark"] .anima-tooltip-right .anima-tooltip-arrow {
-    border-top-color: #3a3a40;
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════
    End of anima-ui design system
