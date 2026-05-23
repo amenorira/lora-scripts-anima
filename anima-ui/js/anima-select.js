@@ -12,8 +12,8 @@ document.addEventListener('alpine:init', () => {
     showTriggerTip: false,
     triggerTipTimer: null,
     _escHandler: null,
-    _tipLeft: null,
-    _tipTop: null,
+    _tipLeft: undefined,
+    _tipTop: undefined,
     _tipMaxW: 260,
 
     get displayGroups() {
@@ -89,16 +89,16 @@ document.addEventListener('alpine:init', () => {
           this._tipLeft = r.right + 10;
           this._tipTop = r.top + r.height / 2;
           this._tipMaxW = Math.min(260, window.innerWidth - r.right - 24);
+          this.showTriggerTip = true;
         }
-        this.showTriggerTip = true;
       }, 400);
     },
 
     onTriggerMouseLeave() {
       clearTimeout(this.triggerTipTimer);
       this.showTriggerTip = false;
-      this._tipLeft = null;
-      this._tipTop = null;
+      this._tipLeft = undefined;
+      this._tipTop = undefined;
     },
 
     onOptionMouseEnter(idx, opt) {
@@ -120,7 +120,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     get triggerTipStyle() {
-      if (!this.showTriggerTip || this.open || !this.selectedDesc || !this._tipLeft) return { display: 'none' };
+      if (!this.showTriggerTip || this.open || !this.selectedDesc || this._tipLeft == null) return { display: 'none' };
       return {
         position: 'fixed',
         left: this._tipLeft + 'px',

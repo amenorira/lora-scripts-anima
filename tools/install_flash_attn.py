@@ -129,18 +129,18 @@ def _cache_age_str() -> str:
     """磁盘缓存的年龄描述。"""
     try:
         if not _FA_CACHE_FILE.exists():
-            return "无缓存"
+            return "No cache / 无缓存"
         data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
         age = time.time() - data.get("ts", 0)
         if age < 60:
-            return f"{age:.0f}秒前"
+            return f"{age:.0f}s ago / {age:.0f}秒前"
         if age < 3600:
-            return f"{age/60:.0f}分钟前"
+            return f"{age/60:.0f}min ago / {age/60:.0f}分钟前"
         if age < 86400:
-            return f"{age/3600:.1f}小时前"
-        return f"{age/86400:.1f}天前"
+            return f"{age/3600:.1f}h ago / {age/3600:.1f}小时前"
+        return f"{age/86400:.1f}d ago / {age/86400:.1f}天前"
     except Exception:
-        return "未知"
+        return "Unknown / 未知"
 
 
 # ── 环境检测 ──────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
             # 304 Not Modified — 缓存有效，不消耗 rate limit！
             return None, None, True
         if exc.code in (403, 429):
-            return None, f"API 限流 (每小时60次，{_cache_age_str()}前缓存仍可用): {exc}", False
+            return None, f"API rate limited (60/h, cache from {_cache_age_str()} still usable): {exc} / API 限流", False
         return None, str(exc), False
     except Exception as exc:
         return None, str(exc), False
@@ -435,13 +435,13 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
             if raw_releases is not None:
                 break
         if raw_releases is None:
-            return [], "无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
+            return [], "Cannot connect to GitHub. Check network, or manually paste a wheel URL. / 无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
 
     if not isinstance(raw_releases, list):
         msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
         if cached:
             return _filter_cached_for_env(cached, env), None  # API 报错但有缓存
-        return [], f"GitHub API 错误: {msg}"
+        return [], f"GitHub API error: {msg} / GitHub API 错误: {msg}"
 
     candidates: list[dict[str, Any]] = []
     for release in raw_releases:
@@ -512,19 +512,19 @@ def verify_flash_attn() -> tuple[bool, str]:
                 # 极小 tensor 测试，验证 ABI 无问题
                 q = torch.randn(1, 4, 1, 8, device="cuda", dtype=torch.float16)
                 _ = flash_attn_func(q, q, q)
-            return True, "import + CUDA forward 测试通过"
+            return True, "import + CUDA forward test passed / import + CUDA forward 测试通过"
         except Exception as e:
             # forward 失败但 import 成功 → 可能是显卡不支持或其他运行时问题
-            return True, f"import 成功，但 forward 测试未通过: {e}"
+            return True, f"import ok but forward test failed: {e} / import 成功，但 forward 测试未通过: {e}"
     except ImportError:
-        return False, "import flash_attn 失败，未安装"
+        return False, "import flash_attn failed, not installed / import flash_attn 失败，未安装"
     except Exception as e:
-        return False, f"import 异常: {e}"
+        return False, f"import exception: {e} / import 异常: {e}"
 
 
 def uninstall_flash_attn() -> bool:
     """卸载 flash_attn。返回是否成功。"""
-    print("[修复] 正在卸载当前的 flash_attn...")
+    print("[REPAIR] Uninstalling current flash_attn... / 正在卸载当前的 flash_attn...")
     r = subprocess.run(
         [sys.executable, "-m", "pip", "uninstall", "flash-attn", "-y"],
         capture_output=True, text=True,
@@ -536,8 +536,8 @@ def uninstall_flash_attn() -> bool:
 
 def install_wheel(url: str) -> dict[str, Any]:
     """pip install 指定的 wheel URL。返回安装结果。"""
-    print(f"\n[安装] pip install {url}")
-    print("       下载 + 安装可能需要 2-5 分钟（约 150-250 MB）...")
+    print(f"\n[INSTALL] pip install {url}")
+    print("       Download + install may take 2-5 min (~150-250 MB)... / 下载 + 安装可能需要 2-5 分钟（约 150-250 MB）...")
     print()
 
     r = subprocess.run(
@@ -549,7 +549,7 @@ def install_wheel(url: str) -> dict[str, Any]:
     tail = "\n".join(stdout.splitlines()[-40:])
 
     if r.returncode != 0:
-        raise RuntimeError(f"pip install 失败:\n{tail}")
+        raise RuntimeError(f"pip install failed / 失败:\n{tail}")
 
     try:
         importlib.invalidate_caches()
@@ -571,57 +571,57 @@ def install_wheel(url: str) -> dict[str, Any]:
 def _print_candidates(candidates: list[dict[str, Any]]) -> None:
     """格式化打印候选列表，带序号和兼容性说明。"""
     usable_list = [c for c in candidates if c["usable"]]
-    print(f"\n[候选] 共 {len(candidates)} 个匹配 wheel，其中 {len(usable_list)} 个可直接安装:")
+    print(f"\n[CANDIDATES] {len(candidates)} matching wheels, {len(usable_list)} directly installable / 共 {len(candidates)} 个匹配 wheel，其中 {len(usable_list)} 个可直接安装:")
     print("-" * 62)
 
     for i, c in enumerate(candidates, 1):
-        mark = "✓" if c["usable"] else "✗"
+        mark = "[OK]" if c["usable"] else "[--]"
         # 提取 flash_attn 版本号
         fa_ver = c["name"].split("+")[0].replace("flash_attn-", "")
         tags = _parse_wheel(c["name"]) or {}
-        print(f"  [{i:>2}] [{mark}] 评分={c['score']:>3d}  flash_attn {fa_ver}")
-        print(f"       文件: {c['name']}")
+        print(f"  [{i:>2}] {mark} score={c['score']:>3d}  flash_attn {fa_ver}")
+        print(f"       file: {c['name']}")
         if c["notes"]:
             for note in c["notes"]:
                 text = note["text"] if isinstance(note, dict) else str(note)
-                print(f"       ⚠ {text}")
+                print(f"       [WARN] {text}")
         else:
             if c["usable"]:
-                print(f"       ✓ 完全匹配当前环境")
+                print(f"       Perfect match / 完全匹配当前环境")
 
     print("-" * 62)
 
 
 def _print_choice_guide(env: dict[str, Any]) -> None:
     """打印选版本帮助说明。"""
-    torch_tag = env.get('torch_tag', '未知')
-    cuda_tag = env.get('cuda_tag', '未知')
-    python_tag = env.get('python_tag', '未知')
+    torch_tag = env.get('torch_tag', 'unknown / 未知')
+    cuda_tag = env.get('cuda_tag', 'unknown / 未知')
+    python_tag = env.get('python_tag', 'unknown / 未知')
     print(f"""
-┌─ 如何选择正确的版本？──────────────────────────────────────┐
+┌─ How to pick the right version? / 如何选择正确的版本？─────┐
 │                                                           │
-│  flash_attn wheel 文件名格式:                              │
-│    flash_attn-{{版本}}+{{CUDA}}{{PyTorch}}-{{Python}}-{{平台}}.whl  │
+│  flash_attn wheel filename format:                        │
+│    flash_attn-{{version}}+{{CUDA}}{{PyTorch}}-{{Python}}-{{platform}}.whl │
 │                                                           │
-│  三项匹配规则:                                              │
+│  Three matching rules / 三项匹配规则:                      │
 │                                                           │
-│  ① PyTorch — 必须精确匹配（torch2.9 ≠ torch2.10）          │
-│     你当前: {torch_tag}                                     │
-│     ✓ torch2.9 = torch2.9 (精确匹配)                        │
-│     ✗ torch2.9 ≠ torch2.10 (ABI 不兼容)                    │
+│  1. PyTorch -- must match exactly (torch2.9 != torch2.10) │
+│     Current: {torch_tag}                                  │
+│     [OK] torch2.9 = torch2.9 (exact match / 精确匹配)      │
+│     [--] torch2.9 != torch2.10 (ABI incompatible / 不兼容) │
 │                                                           │
-│  ② CUDA ABI — 同大版本通常兼容                              │
-│     你当前: {cuda_tag}                                      │
-│     ✓ cu128 ≈ cu124 (同大版本 12.x)                        │
-│     ✗ cu118 ≠ cu128 (不同大版本)                           │
+│  2. CUDA ABI -- same major version usually compatible     │
+│     Current: {cuda_tag}                                   │
+│     [OK] cu128 ~ cu124 (same major 12.x / 同大版本)        │
+│     [--] cu118 != cu128 (different major / 不同大版本)     │
 │                                                           │
-│  ③ Python ABI — 必须一致                                   │
-│     你当前: {python_tag}                                    │
-│     ✓ cp312 = cp312 (精确匹配)                             │
-│     ✗ cp312 ≠ cp310                                       │
+│  3. Python ABI -- must match                              │
+│     Current: {python_tag}                                 │
+│     [OK] cp312 = cp312 (exact match / 精确匹配)            │
+│     [--] cp312 != cp310                                   │
 │                                                           │
-│  ✓ 评分最高 + torch/python 精确匹配 = 首选                   │
-│  ✗ torch/python 不匹配 = 装了也用不了                        │
+│  [OK] Highest score + torch/python exact match = best pick │
+│  [--] torch/python mismatch = unusable                     │
 └───────────────────────────────────────────────────────────┘""")
 
 
@@ -639,7 +639,7 @@ def _interactive_select(candidates: list[dict[str, Any]], env: dict[str, Any]) -
     default_idx = candidates.index(usable_list[0]) + 1 if usable_list else 1
 
     while True:
-        print(f"输入序号选择 (1-{len(candidates)}), 直接回车=选推荐 [{default_idx}], q=退出: ", end="")
+        print(f"Enter number (1-{len(candidates)}), Enter=recommended [{default_idx}], q=quit / 输入序号选择: ", end="")
         try:
             choice = input().strip()
         except (EOFError, KeyboardInterrupt):
@@ -655,21 +655,21 @@ def _interactive_select(candidates: list[dict[str, Any]], env: dict[str, Any]) -
             try:
                 idx = int(choice)
             except ValueError:
-                print(f"  → 请输入数字 (1-{len(candidates)}) 或 q 退出")
+                print(f"  Enter a number (1-{len(candidates)}) or q to quit / 请输入数字 (1-{len(candidates)}) 或 q 退出")
                 continue
 
         if 1 <= idx <= len(candidates):
             selected = candidates[idx - 1]
-            print(f"\n  已选择: [{idx}] {selected['name']}")
+            print(f"\n  Selected: [{idx}] {selected['name']} / 已选择")
             if not selected["usable"]:
-                print(f"  ⚠ 该项标记为不兼容，强制安装可能 import 失败！")
-                confirm = input("  确认强制安装? (y/N): ").strip().lower()
+                print(f"  [WARN] Marked incompatible. Forced install may fail on import! / 该项标记为不兼容，强制安装可能 import 失败！")
+                confirm = input("  Confirm forced install? (y/N) / 确认强制安装? (y/N): ").strip().lower()
                 if confirm != "y":
-                    print("  已取消，请重新选择。")
+                    print("  Cancelled, please select again. / 已取消，请重新选择。")
                     continue
             return selected["url"]
         else:
-            print(f"  → 序号超出范围，请输入 1-{len(candidates)}")
+            print(f"  Out of range, enter 1-{len(candidates)} / 序号超出范围，请输入 1-{len(candidates)}")
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────
@@ -701,153 +701,153 @@ def main(argv: list[str] | None = None) -> int:
     # ── 打印环境信息 ──
     env = detect_env()
     print("=" * 62)
-    print("  Flash Attention 智能安装工具 (prebuilt wheel)")
+    print("  Flash Attention Smart Installer (prebuilt wheel) / 智能安装工具")
     print("=" * 62)
     print(f"  Python  ABI : {env['python_tag']}")
-    print(f"  平台         : {env['platform'] or '⚠ 不支持 (非 x86_64 Linux/Windows)'}")
-    print(f"  PyTorch      : {env['torch_tag'] or '⚠ 未检测到'}  ({env.get('torch_ver') or 'N/A'})")
+    print(f"  Platform     : {env['platform'] or 'Unsupported (non x86_64 Linux/Windows) / 不支持'}")
+    print(f"  PyTorch      : {env['torch_tag'] or 'Not detected / 未检测到'}  ({env.get('torch_ver') or 'N/A'})")
 
     cuda_tag = env['cuda_tag']
     cuda_ver = env.get('cuda_ver')
     driver_ver = env.get('driver_cuda_ver')
 
     if cuda_tag:
-        print(f"  CUDA (ABI)   : {cuda_tag}  (PyTorch 编译时绑定 = {cuda_ver})")
+        print(f"  CUDA (ABI)   : {cuda_tag}  (PyTorch build-time binding = {cuda_ver})")
     else:
-        print(f"  CUDA (ABI)   : ⚠ 未检测到 (PyTorch 可能为 CPU 版本)")
+        print(f"  CUDA (ABI)   : Not detected / 未检测到 (PyTorch may be CPU version)")
 
     if driver_ver:
         if driver_ver != cuda_ver:
-            print(f"  驱动 CUDA    : {driver_ver}  ⚡ wheel 匹配 {cuda_tag}，不匹配驱动版本!")
+            print(f"  Driver CUDA  : {driver_ver}  [WARN] wheel targets {cuda_tag}, different from driver! / wheel 目标 {cuda_tag}，与驱动版本不同!")
         else:
-            print(f"  驱动 CUDA    : {driver_ver}  (与 PyTorch ABI 一致)")
+            print(f"  Driver CUDA  : {driver_ver}  (matches PyTorch ABI / 与 PyTorch ABI 一致)")
     else:
-        print(f"  驱动 CUDA    : 未检测到 nvidia-smi")
+        print(f"  Driver CUDA  : nvidia-smi not detected / 未检测到 nvidia-smi")
 
     if cuda_tag and env['torch_tag']:
-        print(f"  → 目标 wheel : +{cuda_tag}{env['torch_tag']}-{env['python_tag']}-*-{env['platform']}.whl")
+        print(f"  Target wheel : +{cuda_tag}{env['torch_tag']}-{env['python_tag']}-*-{env['platform']}.whl")
     print()
 
     # ── 内建：检查已安装版本兼容性 ──
     status = current_status()
     needs_repair = False
     if status["installed"]:
-        print(f"[状态] ✅ flash_attn 已安装 (版本 {status['version']})")
+        print(f"[STATUS] flash_attn installed (version {status['version']}) / 已安装")
         ok, msg = verify_flash_attn()
         if ok:
-            print(f"[验证] ✓ {msg}")
+            print(f"[VERIFY] {msg}")
             if not args.force and not args.dry_run:
-                print("       一切正常，无需重装。使用 --force 可强制重装。")
+                print("       All good, no reinstall needed. Use --force to force reinstall. / 一切正常，无需重装。使用 --force 可强制重装。")
                 print()
-                input("按 Enter 退出...")
+                input("Press Enter to exit... / 按 Enter 退出...")
                 return 0
-            print("       --force 已指定，将重新安装...")
+            print("       --force specified, will reinstall... / --force 已指定，将重新安装...")
         else:
-            print(f"[验证] ❌ {msg}")
-            print("       ⚠ 当前安装的 flash_attn 不可用 (ABI 不匹配或损坏)！")
+            print(f"[VERIFY] {msg}")
+            print("       [WARN] Current flash_attn is unusable (ABI mismatch or corrupted)! / 当前安装的 flash_attn 不可用 (ABI 不匹配或损坏)!")
             needs_repair = True
     else:
-        print("[状态] ❌ flash_attn 未安装")
+        print("[STATUS] flash_attn not installed / 未安装")
 
     # ── 内建自动修复 ──
     if needs_repair:
         print()
         print("=" * 62)
-        print("  🔧 自动修复: 检测到 flash_attn 不可用，将卸载并重新安装匹配版本")
+        print("  Auto-repair: flash_attn unusable detected, will uninstall and reinstall matching version / 自动修复: 检测到 flash_attn 不可用，将卸载并重新安装匹配版本")
         print("=" * 62)
 
         # 给出原因分析
         if env['torch_tag']:
-            print(f"  PyTorch 环境: {env['torch_tag']} (CUDA {cuda_tag})")
-            print(f"  旧 flash_attn 可能是为不同 PyTorch/CUDA 编译的")
-            print(f"  将自动匹配当前环境的正确 wheel 重新安装。")
+            print(f"  PyTorch env : {env['torch_tag']} (CUDA {cuda_tag})")
+            print(f"  Old flash_attn may be compiled for different PyTorch/CUDA / 旧 flash_attn 可能是为不同 PyTorch/CUDA 编译的")
+            print(f"  Will auto-match correct wheel for current environment and reinstall. / 将自动匹配当前环境的正确 wheel 重新安装。")
         print()
 
         if not args.yes:
-            confirm = input("是否继续自动修复? (Y/n): ").strip().lower()
+            confirm = input("Continue auto-repair? (Y/n) / 是否继续自动修复? (Y/n): ").strip().lower()
             if confirm == "n":
-                print("已取消。")
-                input("按 Enter 退出...")
+                print("Cancelled. / 已取消。")
+                input("Press Enter to exit... / 按 Enter 退出...")
                 return 1
 
         if not uninstall_flash_attn():
-            print("[警告] 卸载可能失败，继续尝试覆盖安装...")
-        print("[修复] 卸载完成，开始匹配正确版本...")
+            print("[WARN] Uninstall may have failed, continuing with overwrite install... / 卸载可能失败，继续尝试覆盖安装...")
+        print("[REPAIR] Uninstall done, matching correct version... / 卸载完成，开始匹配正确版本...")
         print()
 
     # ── 平台检查 ──
     if not env["platform"]:
-        print("\n[错误] 不支持的平台。prebuilt wheel 仅支持:")
+        print("\n[ERROR] Unsupported platform. Prebuilt wheels only support: / 不支持的平台。prebuilt wheel 仅支持:")
         print("       - linux_x86_64")
         print("       - win_amd64")
-        print("       macOS / ARM Linux 用户请从源码编译: pip install flash-attn --no-build-isolation")
-        input("按 Enter 退出...")
+        print("       macOS / ARM Linux users: pip install flash-attn --no-build-isolation")
+        input("Press Enter to exit... / 按 Enter 退出...")
         return 2
 
     # ── 拉取候选列表 ──
     if not args.url:
-        print("[查询] 从 GitHub Releases 拉取候选 wheel 列表...")
+        print("[QUERY] Fetching candidate wheel list from GitHub Releases... / 从 GitHub Releases 拉取候选 wheel 列表...")
         candidates, fetch_error = fetch_candidates(env)
 
         if fetch_error:
-            print(f"\n[警告] 无法拉取候选列表: {fetch_error}")
-            print("       可手动指定 wheel URL:")
+            print(f"\n[WARN] Cannot fetch candidate list: {fetch_error} / 无法拉取候选列表")
+            print("       You can manually specify a wheel URL: / 可手动指定 wheel URL:")
             print(f"       python tools/install_flash_attn.py --url <URL>")
-            print(f"       Releases 页面: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases")
+            print(f"       Releases page: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases")
 
         if not candidates:
-            print("\n[提示] 未找到匹配当前环境的 wheel。")
-            print(f"       当前环境: Python={env['python_tag']}, CUDA={cuda_tag}, PyTorch={env['torch_tag']}")
-            print("       可能原因:")
-            print("       1. PyTorch 版本较新，prebuilt wheel 尚未发布")
-            print("       2. 检查 PyTorch 是否为 CUDA 版本: python -c \"import torch; print(torch.__version__)\"")
+            print("\n[INFO] No matching wheel found for current environment. / 未找到匹配当前环境的 wheel。")
+            print(f"       Current env: Python={env['python_tag']}, CUDA={cuda_tag}, PyTorch={env['torch_tag']}")
+            print("       Possible reasons: / 可能原因:")
+            print("       1. PyTorch version too new, prebuilt wheel not yet released / PyTorch 版本较新，prebuilt wheel 尚未发布")
+            print("       2. Check if PyTorch is CUDA version: python -c \"import torch; print(torch.__version__)\"")
             if fetch_error:
-                print("       3. 网络无法访问 GitHub API")
+                print("       3. Network cannot reach GitHub API / 网络无法访问 GitHub API")
             print()
-            print("       替代方案:")
-            print("       - 手动下载: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases")
-            print("       - 源码编译: pip install flash-attn --no-build-isolation")
-            input("按 Enter 退出...")
+            print("       Alternatives: / 替代方案:")
+            print("       - Manual download: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases")
+            print("       - Build from source: pip install flash-attn --no-build-isolation")
+            input("Press Enter to exit... / 按 Enter 退出...")
             return 2
 
         if args.dry_run:
             _print_candidates(candidates)
             _print_choice_guide(env)
-            input("按 Enter 退出...")
+            input("Press Enter to exit... / 按 Enter 退出...")
             return 0
 
         # ── 选择安装方式：交互式 或 自动 ──
         if args.yes:
             install_url = find_best_wheel(env)
             if not install_url:
-                print("\n[错误] 无可用 wheel（所有候选 Python ABI 不匹配）")
+                print("\n[ERROR] No usable wheel (all candidates have Python ABI mismatch) / 无可用 wheel（所有候选 Python ABI 不匹配）")
                 _print_candidates(candidates)
-                input("按 Enter 退出...")
+                input("Press Enter to exit... / 按 Enter 退出...")
                 return 2
-            print(f"\n[自动] 最优匹配 → {install_url}")
+            print(f"\n[AUTO] Best match: {install_url} / 最优匹配")
         else:
             # 交互式选择
             install_url = _interactive_select(candidates, env)
             if install_url is None:
-                print("\n已取消安装。")
-                input("按 Enter 退出...")
+                print("\nInstallation cancelled. / 已取消安装。")
+                input("Press Enter to exit... / 按 Enter 退出...")
                 return 0
 
     else:
         install_url = args.url
-        print(f"\n[手动] 使用指定 URL:")
+        print(f"\n[MANUAL] Using specified URL: / 使用指定 URL:")
         print(f"       {install_url}")
 
     # ── 安装 ──
     try:
         result = install_wheel(install_url)
     except RuntimeError as exc:
-        print(f"\n[错误] {exc}", file=sys.stderr)
-        print("\n[排查] 常见原因:")
-        print("       1. 网络问题 → 手动下载 .whl 后用 --url 指定本地路径")
-        print("       2. ABI 不匹配 → 重新运行本工具，选择其他候选")
-        print("       3. pip 版本过旧 → python -m pip install --upgrade pip")
-        input("按 Enter 退出...")
+        print(f"\n[ERROR] {exc}", file=sys.stderr)
+        print("\n[TROUBLESHOOT] Common causes: / 常见原因:")
+        print("       1. Network issue -> download .whl manually then use --url with local path / 网络问题 → 手动下载 .whl 后用 --url 指定本地路径")
+        print("       2. ABI mismatch -> re-run this tool and select another candidate / ABI 不匹配 → 重新运行本工具，选择其他候选")
+        print("       3. pip too old -> python -m pip install --upgrade pip")
+        input("Press Enter to exit... / 按 Enter 退出...")
         return 1
 
     # ── 安装后验证 ──
@@ -855,21 +855,21 @@ def main(argv: list[str] | None = None) -> int:
     ok, msg = verify_flash_attn()
     if ok:
         print("=" * 62)
-        print(f"  ✅ flash_attn {result['version'] or '(版本检测失败)'} 安装成功!")
-        print(f"  ✓ {msg}")
+        print(f"  flash_attn {result['version'] or '(version detection failed / 版本检测失败)'} installed successfully! / 安装成功!")
+        print(f"  {msg}")
         if result.get("restart_required"):
-            print("  ⚡ flash_attn 是 C 扩展，正在运行的训练进程需要重启才能生效。")
-        print(f"  已安装 wheel: {result['url']}")
+            print("  [INFO] flash_attn is a C extension. Running training processes need restart to take effect. / flash_attn 是 C 扩展，正在运行的训练进程需要重启才能生效。")
+        print(f"  Installed wheel: {result['url']}")
         print("=" * 62)
     else:
         print("=" * 62)
-        print(f"  ❌ 安装后验证失败: {msg}")
-        print(f"  wheel 可能 ABI 不匹配当前环境。请重新运行本工具，尝试其他候选版本。")
+        print(f"  Post-install verification failed: {msg} / 安装后验证失败")
+        print(f"  Wheel may have ABI mismatch. Please re-run this tool and try other candidates. / wheel 可能 ABI 不匹配当前环境。请重新运行本工具，尝试其他候选版本。")
         print("=" * 62)
-        input("按 Enter 退出...")
+        input("Press Enter to exit... / 按 Enter 退出...")
         return 1
 
-    input("按 Enter 退出...")
+    input("Press Enter to exit... / 按 Enter 退出...")
     return 0
 
 
