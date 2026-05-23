@@ -8,66 +8,51 @@ echo   lora-scripts-anima
 echo ============================================
 echo.
 
-REM -- Check venv / 检查虚拟环境 --
+REM ── 检查虚拟环境 ──
 if exist "venv\Scripts\activate.bat" (
     goto :run
 )
 
-echo [INFO] venv not found / 未检测到虚拟环境 (venv).
+echo [提示] 未检测到虚拟环境 (venv)。
 echo.
-echo    [1] Install / 安装 (run install.ps1)
-echo    [2] Exit / 退出
+echo    [1] 安装（运行 install.ps1）
+echo    [2] 退出
 echo.
-set /p choice=Please select / 请输入选项 (1/2):
+set /p choice=请输入选项 (1/2):
 
 if "%choice%"=="1" (
     echo.
-    echo [INSTALL] Running install.ps1 / 开始安装...
+    echo [安装] 开始运行 install.ps1 ...
     powershell -ExecutionPolicy Bypass -File "%~dp0install.ps1"
     if %errorlevel% neq 0 (
-        echo [ERROR] Install failed / 安装失败
+        echo [错误] 安装失败
         pause
         exit /b 1
     )
-    echo [OK] Install done, starting / 安装完成，开始启动...
+    echo [完成] 安装完成，开始启动...
     echo.
     goto :run
 )
-echo Cancelled / 已取消.
+echo 已取消。
 pause
 exit /b 0
 
 :run
-echo [START] Activating venv / 激活虚拟环境...
+echo [启动] 激活虚拟环境...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
 call "venv\Scripts\activate.bat"
 
-REM -- Dependency check / 依赖完整性检测 --
-echo [CHECK] Verifying Python deps / 检查 Python 依赖...
+REM ── 依赖检测 ──
 python tools\check_deps.py
 if %errorlevel% neq 0 (
-    echo.
-    echo [WARN] Dependencies incomplete / 依赖不完整.
-    echo    [1] Auto-fix / 自动修复
-    echo    [2] Skip and continue / 忽略并继续启动
-    echo.
-    set /p fix_choice=Please select / 请输入选项 (1/2):
-    if "!fix_choice!"=="1" (
-        echo [FIX] Installing missing deps / 正在安装缺失依赖...
-        python tools\check_deps.py --fix
-        if !errorlevel! neq 0 (
-            echo [ERROR] Fix failed, run install.ps1 manually / 修复失败，请手动运行 install.ps1
-            pause
-            exit /b 1
-        )
-        echo [OK] Dependencies fixed / 依赖修复完成
-    )
+    echo [提示] 依赖不完整，可运行 install.ps1 修复。
+    echo Dependencies incomplete, run install.ps1 to fix.
+    pause
 )
-echo.
 
-REM -- flash-attn check / 检测 flash-attn --
-python -c "import flash_attn; print('[flash_attn] OK')" 2>nul || echo [flash_attn] NOT FOUND / 未找到 -- RTX 40/50 series recommended: .\install-flash-attn.bat
+REM ── 检测 flash-attn ──
+python -c "import flash_attn; print('[flash_attn] OK')" 2>nul || echo [flash_attn] NOT FOUND / 未找到 — RTX 40/50 series recommended: .\install-flash-attn.bat
 echo.
 
 python gui.py %*
