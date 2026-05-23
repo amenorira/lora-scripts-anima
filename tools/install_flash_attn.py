@@ -327,20 +327,36 @@ def _score_candidate(
         if wheel_torch_clean == torch_tag:
             score += 20
         else:
-            wheel_tv = wheel_torch_clean.replace("torch", "")
-            env_tv = torch_tag.replace("torch", "")
-            if wheel_tv.split(".")[0] == env_tv.split(".")[0]:
-                score += 5
-                notes.append(
-                    f"[PyTorch] wheel={wheel_torch_clean}, env={torch_tag} "
-                    f"— 大版本一致，通常可 import，建议安装后重启 GUI 验证"
-                )
-            else:
+            wheel_tv_str = wheel_torch_clean.replace("torch", "")
+            env_tv_str = torch_tag.replace("torch", "")
+            # 转为 tuple 比较大小
+            def _ver(s):
+                return tuple(int(x) for x in s.split("."))
+            wheel_tv = _ver(wheel_tv_str)
+            env_tv = _ver(env_tv_str)
+            if wheel_tv[0] != env_tv[0]:
+                # 大版本不同：绝对不兼容
                 score -= 15
                 usable = False
                 notes.append(
                     f"[PyTorch] wheel={wheel_torch_clean}, env={torch_tag} "
                     f"— 大版本不兼容，不可用"
+                )
+            elif wheel_tv > env_tv:
+                # 轮子比环境新：可能用了新符号，风险高
+                score += 5
+                usable = False
+                notes.append(
+                    f"[PyTorch] wheel={wheel_torch_clean} > env={torch_tag} "
+                    f"— 轮子版本较新，可能不兼容，可尝试强制安装"
+                )
+            else:
+                # 轮子比环境旧或相等：PyTorch 向后兼容，通常可用
+                score += 15
+                # usable 保持 True
+                notes.append(
+                    f"[PyTorch] wheel={wheel_torch_clean} ≤ env={torch_tag} "
+                    f"— 向后兼容，通常可用"
                 )
 
     # Python ABI
@@ -627,9 +643,10 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │                                                           │
 │  三项匹配规则:                                              │
 │                                                           │
-│  ① PyTorch — 大版本一致即可，小版本差异通常不影响 import      │
+│  ① PyTorch — 大版本一致即可，轮子 ≤ 环境版本通常兼容       │
 │     你当前: {torch_tag}                                     │
-│     ✓ torch2.10 ≈ torch2.9 (同大版本 2.x)                 │
+│     ✓ torch2.8 wheel + torch2.9 环境 (向后兼容)             │
+│     ⚠ torch2.10 wheel + torch2.9 环境 (轮子更新，风险)      │
 │     ✗ torch3.x ≠ torch2.x (不同大版本)                     │
 │                                                           │
 │  ② CUDA ABI — 同大版本通常兼容                              │
@@ -643,7 +660,7 @@ def _print_choice_guide(env: dict[str, Any]) -> None:
 │     ✗ cp312 ≠ cp310                                       │
 │                                                           │
 │  ✓ 评分最高 + 精确匹配 = 首选                               │
-│  ⚠ PyTorch 小版本差异 = 可尝试，大概率正常                   │
+│  ⚠ PyTorch 小版本差异 = 看方向：轮子≤环境 → 可用，轮子>环境 → 慎用 │
 │  ✗ ABI 不兼容 = 装了也用不了                                │
 └───────────────────────────────────────────────────────────┘""")
 
