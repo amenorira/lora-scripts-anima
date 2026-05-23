@@ -338,16 +338,16 @@ def _score_candidate(
             if wheel_tv[0] != env_tv[0]:
                 score -= 15
                 usable = False
-                _n("faNote.torchMajor",
+                _n("torchMajor",
                    f"PyTorch major mismatch (wheel={wheel_torch_clean}, env={torch_tag})")
             elif wheel_tv > env_tv:
                 score += 5
                 usable = False
-                _n("faNote.torchNewer",
+                _n("torchNewer",
                    f"Wheel built for newer PyTorch (wheel={wheel_torch_clean} > env={torch_tag})")
             else:
                 score += 15
-                _n("faNote.torchBackward",
+                _n("torchBackward",
                    f"Backward compatible (wheel={wheel_torch_clean} <= env={torch_tag})")
 
     # Python ABI
@@ -358,14 +358,14 @@ def _score_candidate(
         elif tags.get("python_abi") == "abi3":
             if wheel_py.startswith("cp") and python_tag.startswith("cp"):
                 score += 10
-                _n("faNote.pythonAbi3", "abi3 stable ABI (compatible across Python 3.x)")
+                _n("pythonAbi3", "abi3 stable ABI (compatible across Python 3.x)")
             else:
                 usable = False
-                _n("faNote.pythonMismatch",
+                _n("pythonMismatch",
                    f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
         else:
             usable = False
-            _n("faNote.pythonMismatch",
+            _n("pythonMismatch",
                f"Python ABI mismatch (wheel={wheel_py}, env={python_tag})")
 
     # CUDA
@@ -374,11 +374,11 @@ def _score_candidate(
             score += 20
         elif _cuda_major(tags["cuda"]) == _cuda_major(cuda_tag):
             score += 10
-            _n("faNote.cudaMinor",
+            _n("cudaMinor",
                f"CUDA minor mismatch (wheel={tags['cuda']}, env={cuda_tag}, usually OK)")
         else:
             score -= 5
-            _n("faNote.cudaMajor",
+            _n("cudaMajor",
                f"CUDA major mismatch (wheel={tags['cuda']}, env={cuda_tag})")
 
     return score, notes, usable
