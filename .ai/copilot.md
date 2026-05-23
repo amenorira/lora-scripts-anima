@@ -4,6 +4,10 @@
 
 This is the **lora-scripts-anima** project — a Web UI (FastAPI backend + Alpine.js frontend) for Stable Diffusion LoRA training. The training engine is **sd-scripts** by kohya-ss, located in `vendor/sd-scripts/`.
 
+**Python environment**: This project uses a virtual environment at `venv/` (created by `python -m venv venv`). All `python` and `pip` commands must be run with the venv activated:
+- Windows: `venv\Scripts\Activate.ps1`
+- Linux/macOS: `source venv/bin/activate`
+
 ## CRITICAL: Protected Directory — `vendor/sd-scripts/`
 
 **`vendor/sd-scripts/` is a VENDOR dependency. DO NOT MODIFY any files inside it.**
