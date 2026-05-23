@@ -96,7 +96,7 @@ window.monitorMixin = {
     if (gpu) html += this._gpuCard(gpu, t);
     html += '</div>';
 
-    html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('trainParams', 'Training Parameters') + '</div>';
+    html += '<div class="card card-params" style="margin-top:12px"><div class="card-header">' + t('trainParams', 'Training Parameters') + '</div>';
     if (this.trainParams.length) {
       html += '<div class="param-grid">';
       this.trainParams.forEach(p => {
@@ -104,11 +104,11 @@ window.monitorMixin = {
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty">' + t('noTrainingHint', 'Start training to see data') + '</div>';
+      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + t('noTrainingHint', 'Start training to see parameters here') + '</p></div>';
     }
     html += '</div>';
 
-    html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR Curves') + '</div>';
+    html += '<div class="card card-charts" style="margin-top:12px"><div class="card-header">' + t('lossCurve', 'Loss / LR Curves') + '</div>';
     html += '<div class="chart-grid">';
     const chartTags = this.lossSeries.length ? this.lossSeries : [
       { tag: 'loss/average', name: 'loss average', latest: null, points: [] },
@@ -122,7 +122,7 @@ window.monitorMixin = {
     });
     html += '</div></div>';
 
-    html += '<div class="card" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
+    html += '<div class="card card-preview" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
     if (this.previews.length) {
       html += '<div class="preview-controls" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
       html += `<button class="btn btn-sm" @click="previewStep = Math.max(0, previewStep - 1)" :disabled="previewStep <= 0">&larr; Prev</button>`;
@@ -137,7 +137,7 @@ window.monitorMixin = {
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty">' + t('noTrainingHint', 'Start training to see data') + '</div>';
+      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>' + t('noTrainingHint', 'Preview images will appear here during training') + '</p></div>';
     }
     html += '</div>';
 
@@ -176,7 +176,7 @@ window.monitorMixin = {
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
-    let html = `<div class="card flex-1">
+    html += '<div class="card card-status flex-1">
       <div class="card-header">${t('status', 'Training Status')}</div>
       <div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
     if (isTraining) {
@@ -207,7 +207,7 @@ window.monitorMixin = {
     const vramGrade = vramPct > 90 ? 'high' : vramPct > 70 ? 'mid' : 'low';
     const loadPct = gpu.gpu_load_pct || 0;
     const loadGrade = loadPct > 80 ? 'high' : loadPct > 50 ? 'mid' : 'low';
-    let html = `<div class="card flex-1">
+    let html = `<div class="card card-gpu flex-1">
       <div class="card-header">${t('gpu', 'GPU')}</div>
       <div style="font-size:14px;font-weight:600;margin:4px 0">${gpu.name || 'GPU'}</div>`;
     html += `<div class="monitor-stat">${t('vramUsed', 'VRAM')}: <b class="${vramGrade}">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div>`;
@@ -223,7 +223,7 @@ window.monitorMixin = {
   _systemCard(sys, t) {
     const cpuGrade = sys.cpu_pct > 80 ? 'high' : sys.cpu_pct > 50 ? 'mid' : 'low';
     const ramGrade = sys.ram_pct > 80 ? 'high' : sys.ram_pct > 50 ? 'mid' : 'low';
-    let html = `<div class="card flex-1">
+    let html = `<div class="card card-system flex-1">
       <div class="card-header">${t('system', 'System')}</div>`;
     if (sys.cpu_name) html += `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${sys.cpu_name}</div>`;
     html += `<div class="monitor-stat">${t('cpu', 'CPU')}: <b class="${cpuGrade}">${sys.cpu_pct}%</b></div>`;
@@ -327,7 +327,7 @@ window.monitorMixin = {
     if (!el) return;
     const t = (k, fb) => this.t('monitor.' + k) || fb || k;
     if (!this.logLines.length) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:40px"><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
+      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','No logs yet')+'</p></div>';
       return;
     }
     const search = (this.logSearch || '').toLowerCase();
@@ -389,7 +389,7 @@ window.monitorMixin = {
     if (!el) return;
     const t = (k, fb) => this.t('monitor.' + k) || fb || k;
     if (!this.historyItems.length) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:40px"><p>'+t('historyNoRecords','No training history')+'</p><p style="font-size:12px;color:var(--text-tertiary);margin-top:4px">'+t('historyWillAppear','Records will appear after training')+'</p></div>';
+      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>'+t('historyNoRecords','No training history')+'</p><p style="font-size:12px;color:var(--text-tertiary);margin-top:4px">'+t('historyWillAppear','Records will appear after training')+'</p></div>';
       return;
     }
     let html = '<div class="history-grid">';
