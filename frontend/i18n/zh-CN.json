@@ -57,7 +57,10 @@
     "errorsOnly": "仅错误",
     "noResults": "无匹配行",
     "lastTraining": "上次训练",
-    "outputDir": "输出目录"
+    "outputDir": "输出目录",
+    "overview": "概览",
+    "charts": "图表",
+    "samples": "样本"
   },
   "section": {
     "model": "训练用模型",

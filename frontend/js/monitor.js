@@ -20,7 +20,8 @@ window.monitorMixin = {
   logMaxLines: 5000,
   logSearch: '',
   logErrorsOnly: false,
-  chartSmoothing: 0.6,  // 0=none, 1=max smoothing (like TensorBoard)
+  chartSmoothing: 0.6,
+  dashTab: 'overview',
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
@@ -81,7 +82,9 @@ window.monitorMixin = {
     const t = (k, fb) => this.t('monitor.' + k) || fb || k;
     const firstRender = !this._dashboardRendered;
     this._dashboardRendered = true;
+    const tab = this.dashTab || 'overview';
 
+    // ── System stats always visible at top ──
     const prevBars = this._prevBarValues || {};
     const vramPct = gpu ? (gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb * 100 : 0) : 0;
     const loadPct = gpu ? (gpu.gpu_load_pct || 0) : 0;
@@ -91,12 +94,55 @@ window.monitorMixin = {
 
     let html = '<div class="monitor-dashboard">';
 
-    html += '<div class="monitor-row">';
+    // Always-visible system status bar
+    html += '<div class="monitor-row" style="margin-bottom:12px">';
     html += this._statusCard(d, t);
     if (sys) html += this._systemCard(sys, t);
     if (gpu) html += this._gpuCard(gpu, t);
     html += '</div>';
 
+    // Tab content
+    if (tab === 'overview') {
+      html += this._renderOverview(d, t);
+    } else if (tab === 'charts') {
+      html += this._renderCharts(d, t);
+    } else if (tab === 'samples') {
+      html += this._renderSamples(t);
+    } else if (tab === 'tensorboard') {
+      html += this._renderTensorBoard();
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+
+    // Animate bars
+    const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
+    if (firstRender) {
+      bars.forEach(bar => {
+        bar.style.transition = 'none';
+        bar.style.width = bar.dataset.target + '%';
+      });
+    } else {
+      bars.forEach(bar => {
+        const key = bar.dataset.bar;
+        const prev = prevBars[key] != null ? prevBars[key] : 0;
+        bar.style.width = prev + '%';
+      });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          bars.forEach(bar => {
+            bar.style.width = bar.dataset.target + '%';
+          });
+        });
+      });
+    }
+
+    setTimeout(() => this._drawCharts(), 100);
+  },
+
+  _renderOverview(d, t) {
+    let html = '';
+    // Training params
     html += '<div class="card card-params" style="margin-top:12px"><div class="card-header">' + t('trainParams', 'Training Parameters') + '</div>';
     if (this.trainParams.length) {
       html += '<div class="param-grid">';
@@ -105,11 +151,23 @@ window.monitorMixin = {
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + t('noTrainingHint', 'Start training to see parameters here') + '</p></div>';
+      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + t('noTrainingHint', 'Start training to see parameters') + '</p></div>';
     }
     html += '</div>';
+    // Quick preview thumbnails
+    if (this.previews.length) {
+      html += '<div class="card card-preview" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
+      html += '<div class="preview-grid" style="grid-template-columns:repeat(auto-fill, minmax(100px, 1fr));gap:8px">';
+      this.previews.slice(0, 6).forEach(p => {
+        html += `<div class="preview-item" @click="dashTab='samples';renderDashboard()" style="cursor:pointer"><img src="${p.url}" alt="${p.name}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${p.name}</span></div>`;
+      });
+      html += '</div></div>';
+    }
+    return html;
+  },
 
-    html += '<div class="card card-charts" style="margin-top:12px"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">';
+  _renderCharts(d, t) {
+    let html = '<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">';
     html += '<span>' + t('lossCurve', 'Loss / LR Curves') + '</span>';
     html += '<label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400">';
     html += '<span style="color:var(--text-tertiary)">Smooth</span>';
@@ -127,15 +185,17 @@ window.monitorMixin = {
       html += `<canvas id="chart-${s.tag.replace(/[/.]/g,'-')}" width="360" height="200"></canvas></div>`;
     });
     html += '</div></div>';
+    return html;
+  },
 
-    html += '<div class="card card-preview" style="margin-top:12px"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
+  _renderSamples(t) {
+    let html = '<div class="card card-preview"><div class="card-header">' + t('previewSamples', 'Preview Samples') + '</div>';
     if (this.previews.length) {
       html += '<div class="preview-controls" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
       html += `<button class="btn btn-sm" @click="previewStep = Math.max(0, previewStep - 1)" :disabled="previewStep <= 0">&larr; Prev</button>`;
       html += `<span style="font-size:13px">Step <b x-text="previewStep + 1"></b> / <b>${this.previews.length}</b></span>`;
       html += `<button class="btn btn-sm" @click="previewStep = Math.min(${this.previews.length - 1}, previewStep + 1)" :disabled="previewStep >= ${this.previews.length - 1}">Next &rarr;</button>`;
-      html += '</div>';
-      html += '<div class="preview-grid">';
+      html += '</div><div class="preview-grid">';
       const p = this.previews[this.previewStep] || this.previews[0];
       html += `<div class="preview-item" style="grid-column:1/-1"><img src="${p.url}" alt="${p.name}" loading="lazy" onclick="window.open('${p.url}')" style="max-height:400px;object-fit:contain"/><span>${p.name}</span></div>`;
       this.previews.forEach((pv, i) => {
@@ -143,37 +203,18 @@ window.monitorMixin = {
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>' + t('noTrainingHint', 'Preview images will appear here during training') + '</p></div>';
+      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>' + t('noTrainingHint', 'Preview images will appear during training') + '</p></div>';
     }
     html += '</div>';
+    return html;
+  },
 
-    html += '</div>';
-    el.innerHTML = html;
-
-    const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
-    if (firstRender) {
-      // First load: show actual values immediately, no animation
-      bars.forEach(bar => {
-        bar.style.transition = 'none';
-        bar.style.width = bar.dataset.target + '%';
-      });
-    } else {
-      // Subsequent poll: animate from previous value → new value
-      bars.forEach(bar => {
-        const key = bar.dataset.bar;
-        const prev = prevBars[key] != null ? prevBars[key] : 0;
-        bar.style.width = prev + '%';
-      });
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          bars.forEach(bar => {
-            bar.style.width = bar.dataset.target + '%';
-          });
-        });
-      });
-    }
-
-    setTimeout(() => this._drawCharts(), 100);
+  _renderTensorBoard() {
+    return `<div class="card" style="padding:0;overflow:hidden;height:calc(100vh - 240px);min-height:500px">
+      <iframe src="/proxy/tensorboard/" style="width:100%;height:100%;border:none" 
+              onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s">
+      </iframe>
+    </div>`;
   },
 
   _statusCard(d, t) {

@@ -57,7 +57,10 @@
     "errorsOnly": "Errors only",
     "noResults": "No matching lines",
     "lastTraining": "Last training",
-    "outputDir": "Output"
+    "outputDir": "Output",
+    "overview": "Overview",
+    "charts": "Charts",
+    "samples": "Samples"
   },
   "section": {
     "model": "Training Model",

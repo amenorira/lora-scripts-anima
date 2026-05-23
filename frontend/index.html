@@ -241,6 +241,29 @@
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
         </div>
+        <!-- Dashboard Tabs -->
+        <div class="dashboard-tabs" style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid var(--border-default)">
+          <button class="dash-tab" :class="{ active: dashTab === 'overview' }" @click="dashTab='overview';renderDashboard()"
+                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
+                  :style="dashTab==='overview'?'color:var(--accent);border-bottom-color:var(--accent)':''">
+            <span x-text="t('monitor.overview','Overview')">Overview</span>
+          </button>
+          <button class="dash-tab" :class="{ active: dashTab === 'charts' }" @click="dashTab='charts';renderDashboard()"
+                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
+                  :style="dashTab==='charts'?'color:var(--accent);border-bottom-color:var(--accent)':''">
+            <span x-text="t('monitor.charts','Charts')">Charts</span>
+          </button>
+          <button class="dash-tab" :class="{ active: dashTab === 'samples' }" @click="dashTab='samples';renderDashboard()"
+                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
+                  :style="dashTab==='samples'?'color:var(--accent);border-bottom-color:var(--accent)':''">
+            <span x-text="t('monitor.samples','Samples')">Samples</span>
+          </button>
+          <button class="dash-tab" :class="{ active: dashTab === 'tensorboard' }" @click="dashTab='tensorboard';renderDashboard()"
+                  style="padding:8px 18px;border:none;background:none;font-size:13px;font-weight:550;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s"
+                  :style="dashTab==='tensorboard'?'color:var(--accent);border-bottom-color:var(--accent)':''">
+            TensorBoard
+          </button>
+        </div>
         <div id="monitorDashboard"></div>
       </div>
 
