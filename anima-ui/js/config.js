@@ -123,9 +123,9 @@ window.TRAIN_SECTIONS_COMMON = [
     key: 'network', titleKey: 'section.network',
     fields: [
       { key: 'network_module', type: 'select', default: 'networks.lora', options: [
-        { v: 'networks.lora', l: 'networks.lora', dKey: 'opt.network_module_networks.lora' },
-        { v: 'networks.lora_anima', l: 'networks.lora_anima', dKey: 'opt.network_module_networks.lora_anima' },
-        { v: 'lycoris.kohya', l: 'lycoris.kohya', dKey: 'opt.network_module_lycoris.kohya' }
+        { v: 'networks.lora', l: 'networks.lora', dKey: 'opt.network_module_networks_lora' },
+        { v: 'networks.lora_anima', l: 'networks.lora_anima', dKey: 'opt.network_module_networks_lora_anima' },
+        { v: 'lycoris.kohya', l: 'lycoris.kohya', dKey: 'opt.network_module_lycoris_kohya' }
       ], descKey: 'field.network_module' },
       { key: 'network_dim', type: 'number', default: 32, min: 1, max: 256, step: 8, descKey: 'field.network_dim' },
       { key: 'network_alpha', type: 'number', default: 32, min: 1, descKey: 'field.network_alpha' },

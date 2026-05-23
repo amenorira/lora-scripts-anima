@@ -366,9 +366,9 @@
     "loss_type_huber": "Huber Loss，结合 L1 和 L2 的优点",
     "loss_type_smooth_l1": "Smooth L1 Loss，在零点附近更平滑",
 
-    "network_module_networks.lora": "标准 LoRA 网络，适用于 SD/SDXL 架构",
-    "network_module_networks.lora_anima": "Anima LoRA 网络。Anima 模型基于 NVIDIA Cosmos-Predict2-2B 衍生。",
-    "network_module_lycoris.kohya": "LyCORIS 网络，支持 LoCon/LoHa 等多种算法",
+    "network_module_networks_lora": "标准 LoRA 网络，适用于 SD/SDXL 架构",
+    "network_module_networks_lora_anima": "Anima LoRA 网络。Anima 模型基于 NVIDIA Cosmos-Predict2-2B 衍生。",
+    "network_module_lycoris_kohya": "LyCORIS 网络，支持 LoCon/LoHa 等多种算法",
 
     "sample_sampler_ddim": "DDIM 采样器，速度快，图像较稳定",
     "sample_sampler_euler": "Euler 采样器，简单高效",
