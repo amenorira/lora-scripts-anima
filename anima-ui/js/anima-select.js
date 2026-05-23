@@ -106,9 +106,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     get triggerTipStyle() {
-      if (!this.showTriggerTip || this.open || !this.selectedDesc) return { display: 'none' };
+      if (!this.showTriggerTip || this.open || !this.selectedDesc) return {};
       const btn = this.$refs.triggerBtn;
-      if (!btn) return { display: 'none' };
+      if (!btn) return {};
       const r = btn.getBoundingClientRect();
       return {
         position: 'fixed',

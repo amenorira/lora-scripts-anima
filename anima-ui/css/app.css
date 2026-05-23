@@ -1068,7 +1068,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border-radius: 7px;
   font-size: 12.5px;
   pointer-events: none;
-  transition: opacity 0.15s;
   max-width: 300px;
   white-space: normal;
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
