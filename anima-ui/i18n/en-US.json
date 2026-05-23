@@ -319,7 +319,16 @@
     "manualUrl": "Manual URL",
     "sourceDefault": "Official",
     "sourceMirror": "Mirror",
-    "sourceFallback": "Alt"
+    "sourceFallback": "Alt",
+    "faNote": {
+      "torchMajor": "PyTorch major version mismatch",
+      "torchNewer": "Wheel newer than environment, may be incompatible",
+      "torchBackward": "Backward compatible",
+      "pythonAbi3": "abi3 stable ABI (Python 3.x compatible)",
+      "pythonMismatch": "Python ABI mismatch",
+      "cudaMinor": "CUDA minor mismatch (usually OK)",
+      "cudaMajor": "CUDA major version mismatch"
+    }
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",
@@ -397,14 +406,5 @@
     "group_adaptive": "Adaptive LR",
     "group_other": "Other"
   },
-  "faNote": {
-    "torchMajor": "PyTorch major version mismatch",
-    "torchNewer": "Wheel newer than environment, may be incompatible",
-    "torchBackward": "Backward compatible",
-    "pythonAbi3": "abi3 stable ABI (Python 3.x compatible)",
-    "pythonMismatch": "Python ABI mismatch",
-    "cudaMinor": "CUDA minor mismatch (usually OK)",
-    "cudaMajor": "CUDA major version mismatch"
-  }
 }
 
