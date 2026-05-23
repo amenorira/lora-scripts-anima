@@ -53,7 +53,16 @@ Follow the installation guide below to install the GUI, then run `start.bat`(Win
 
 ### Prerequisites
 
-Python 3.10+ and Git
+- Python 3.10+ and Git
+- **PyTorch ≥ 2.9.0 + CUDA 12.8** (auto-configured by install scripts, compatible with RTX 30/40/50 series)
+
+| GPU Series | Min PyTorch | Recommended CUDA |
+|------------|:----------:|:----------------:|
+| RTX 30 (Ampere) | 2.6.0 | 12.8 |
+| RTX 40 (Ada) | 2.6.0 | 12.8 |
+| RTX 50 (Blackwell) | **2.8.0** | **12.8** |
+
+> Install scripts default to PyTorch 2.9.0 + CUDA 12.8 — works across all GPU generations.
 
 ### Clone
 

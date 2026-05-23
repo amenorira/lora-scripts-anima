@@ -53,7 +53,17 @@ Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 
 ### 必要依赖
 
-Python 3.10+ 和 Git
+- Python 3.10+ 和 Git
+- **PyTorch ≥ 2.9.0 + CUDA 12.8**（安装脚本自动配置，兼容 RTX 30/40/50 全系列）
+
+| GPU 系列 | 最低 PyTorch | 推荐 CUDA |
+|----------|:----------:|:---------:|
+| RTX 30 系 (Ampere) | 2.6.0 | 12.8 |
+| RTX 40 系 (Ada) | 2.6.0 | 12.8 |
+| RTX 50 系 (Blackwell) | **2.8.0** | **12.8** |
+
+> 安装脚本默认安装 PyTorch 2.9.0 + CUDA 12.8，全系列通用。
+> 国内用户运行 `install-cn.ps1`，pip 使用清华镜像加速，PyTorch 使用官方 CDN（国内可达 15-20 MB/s）。
 
 ### 克隆仓库
 
