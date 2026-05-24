@@ -327,6 +327,8 @@
   "environment": {
     "title": "Environment",
     "subtitle": "Manage and inspect the training runtime environment & acceleration libraries",
+    "confirmYes": "Confirm",
+    "confirmNo": "Cancel",
     "trainingAccel": "Training acceleration (optional)",
     "loading": "Loading environment info...",
     "loadFailed": "Load failed",

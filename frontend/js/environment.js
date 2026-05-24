@@ -255,10 +255,12 @@ window.environmentMixin = {
         </summary>
         <div class="env-card-body">
           <div class="env-install-progress">
-            <div class="env-progress-bar"><div class="env-progress-fill"></div></div>
-            <div class="env-progress-info">
-              <span>${T('installingHint', 'Downloading & installing...')}</span>
-              <span class="env-progress-time">${elapsed}</span>
+            <div class="env-install-row">
+              <div class="env-install-spinner"></div>
+              <div class="env-progress-info">
+                <span>${T('installingHint', 'Downloading & installing...')}</span>
+                <span class="env-progress-time">${elapsed}</span>
+              </div>
             </div>
             ${log ? `<pre class="env-install-log">${log}</pre>` : ''}
           </div>
@@ -401,10 +403,12 @@ window.environmentMixin = {
         </summary>
         <div class="env-card-body">
           <div class="env-install-progress">
-            <div class="env-progress-bar"><div class="env-progress-fill"></div></div>
-            <div class="env-progress-info">
-              <span>${T('xfInstallingHint', 'Downloading & installing...')}</span>
-              <span class="env-progress-time">${elapsed}</span>
+            <div class="env-install-row">
+              <div class="env-install-spinner"></div>
+              <div class="env-progress-info">
+                <span>${T('xfInstallingHint', 'Downloading & installing...')}</span>
+                <span class="env-progress-time">${elapsed}</span>
+              </div>
             </div>
             ${log ? `<pre class="env-install-log">${log}</pre>` : ''}
           </div>

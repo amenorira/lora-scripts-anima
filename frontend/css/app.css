@@ -1514,28 +1514,24 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 @keyframes env-spin { to { transform: rotate(360deg); } }
 
-.env-install-progress { padding: 4px 0; display: flex; flex-direction: column; gap: 10px; }
-.env-progress-bar {
-  width: 100%; height: 4px; background: var(--border-default);
-  border-radius: 2px; overflow: hidden;
+.env-install-progress { display: flex; flex-direction: column; gap: 6px; }
+.env-install-row {
+  display: flex; align-items: center; gap: 10px;
 }
-.env-progress-fill {
-  height: 100%; width: 30%;
-  background: var(--accent);
-  border-radius: 2px;
-  animation: env-progress-slide 1.2s ease-in-out infinite;
-}
-@keyframes env-progress-slide {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(430%); }
+.env-install-spinner {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: env-spin 0.7s linear infinite;
 }
 .env-progress-info {
   display: flex; justify-content: space-between; align-items: center;
-  font-size: 12px; color: var(--text-secondary);
+  font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0;
 }
 .env-progress-time {
-  font-family: var(--font-mono, monospace); font-size: 12px;
-  color: var(--text-tertiary); flex-shrink: 0; margin-left: 12px;
+  font-family: var(--font-mono, monospace); font-size: 11px;
+  color: var(--text-tertiary); flex-shrink: 0; margin-left: 8px;
 }
 .env-install-log {
   margin: 0; padding: 8px 10px;

@@ -327,6 +327,8 @@
   "environment": {
     "title": "环境管理",
     "subtitle": "管理和查看训练所需的运行环境及加速库",
+    "confirmYes": "确认",
+    "confirmNo": "取消",
     "trainingAccel": "训练加速（可选）",
     "loading": "正在加载环境信息...",
     "loadFailed": "加载失败",
