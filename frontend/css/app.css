@@ -278,6 +278,11 @@ a:hover { text-decoration: underline; }
   padding-left: 13px;
 }
 
+/* Sidebar group accent colors — top to bottom: blue → green → purple → amber */
+.sidebar-item[data-group="training"].active { box-shadow: inset 3px 0 0 #10b981; }
+.sidebar-item[data-group="tools"].active    { box-shadow: inset 3px 0 0 #8b5cf6; }
+.sidebar-item[data-group="system"].active   { box-shadow: inset 3px 0 0 #f59e0b; }
+
 .sidebar-item .nav-icon {
   width: 19px; height: 19px; flex-shrink: 0;
   opacity: 0.70; display: flex; align-items: center; justify-content: center;
