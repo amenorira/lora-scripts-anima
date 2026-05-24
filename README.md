@@ -79,7 +79,7 @@ cd lora-scripts-anima
 | Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
 | Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
 
-启动后 GUI 自动打开 [http://127.0.0.1:28000](http://127.0.0.1:28000)。
+启动后 GUI 自动打开 [http://127.0.0.1:12333](http://127.0.0.1:12333)。
 
 > **RTX 40/50 系显卡用户**：启动脚本会自动检测 flash_attn 状态。
 > 如显示 ❌ 未安装，运行 `.\install-flash-attn.bat` (Windows) 或 `bash install-flash-attn.sh` (Linux) 一键安装。
@@ -103,7 +103,7 @@ cd lora-scripts-anima
 | 参数名称                     | 类型  | 默认值       | 描述                                            |
 |------------------------------|-------|--------------|-------------------------------------------------|
 | `--host`                     | str   | "127.0.0.1"  | 服务器的主机名                                  |
-| `--port`                     | int   | 28000        | 运行服务器的端口                                |
+| `--port`                     | int   | 12333        | 运行服务器的端口                                |
 | `--listen`                   | bool  | false        | 启用服务器的监听模式                            |
 | `--skip-prepare-environment` | bool  | false        | 跳过环境准备步骤                                |
 | `--disable-tensorboard`      | bool  | false        | 禁用 TensorBoard                                |

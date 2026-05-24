@@ -18,7 +18,7 @@ if sys.platform == "win32":
 
 parser = argparse.ArgumentParser(description="GUI for stable diffusion training")
 parser.add_argument("--host", type=str, default="127.0.0.1")
-parser.add_argument("--port", type=int, default=28000, help="Port to run the server on")
+parser.add_argument("--port", type=int, default=12333, help="Port to run the server on")
 parser.add_argument("--listen", action="store_true")
 parser.add_argument("--skip-prepare-environment", action="store_true")
 parser.add_argument("--skip-prepare-onnxruntime", action="store_true")

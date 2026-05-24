@@ -78,7 +78,7 @@ cd lora-scripts-anima
 | Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
 | Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
 
-The GUI opens automatically at [http://127.0.0.1:28000](http://127.0.0.1:28000).
+The GUI opens automatically at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 
 > **RTX 40/50 users**: the startup script detects flash_attn status.
 > If ❌ not installed, run `.\install-flash-attn.bat` (Windows) or `bash install-flash-attn.sh` (Linux).
@@ -98,7 +98,7 @@ Just launch and everything is available — no extra commands needed.
 | Parameter Name                | Type  | Default Value | Description                                      |
 |-------------------------------|-------|---------------|--------------------------------------------------|
 | `--host`                      | str   | "127.0.0.1"   | Hostname for the server                          |
-| `--port`                      | int   | 28000         | Port to run the server                           |
+| `--port`                      | int   | 12333         | Port to run the server                           |
 | `--listen`                    | bool  | false         | Enable listening mode for the server             |
 | `--skip-prepare-environment`  | bool  | false         | Skip the environment preparation step            |
 | `--disable-tensorboard`       | bool  | false         | Disable TensorBoard                              |
