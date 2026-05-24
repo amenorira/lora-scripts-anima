@@ -11,7 +11,7 @@ const I18N = (() => {
   // ── Register available locales here ──────────────────────
   const LOCALES = ['zh-CN', 'en-US'];
 
-  let _locale = 'zh-CN';
+  let _locale = 'en-US';
   let _messages = null;
   const _cache = {};  // locale → messages (all preloaded)
 
@@ -32,11 +32,23 @@ const I18N = (() => {
   })();
 
   /**
+   * Detect browser language from navigator.language.
+   * Returns a supported locale code, or null if not recognized.
+   */
+  function detectBrowserLocale() {
+    const lang = (navigator.language || '').toLowerCase();
+    if (lang.startsWith('zh')) return 'zh-CN';
+    if (lang.startsWith('en')) return 'en-US';
+    return null;
+  }
+
+  /**
    * Initialize I18N. Synchronous — call once, no await needed.
+   * Priority: explicit arg > localStorage > browser language > 'en-US'
    */
   function init(locale) {
-    _locale = locale || localStorage.getItem('anima-locale') || 'zh-CN';
-    _messages = _cache[_locale] || _cache['zh-CN'] || null;
+    _locale = locale || localStorage.getItem('anima-locale') || detectBrowserLocale() || 'en-US';
+    _messages = _cache[_locale] || _cache['en-US'] || null;
   }
 
   /**
@@ -65,7 +77,7 @@ const I18N = (() => {
     if (loc === _locale) return;
     _locale = loc;
     localStorage.setItem('anima-locale', loc);
-    _messages = _cache[loc] || _cache['zh-CN'] || null;
+    _messages = _cache[loc] || _cache['en-US'] || null;
     window.dispatchEvent(new CustomEvent('locale-changed', { detail: { locale: loc } }));
   }
 

@@ -15,7 +15,7 @@ document.addEventListener('alpine:init', () => {
     currentRoute: 'home',
     pageTitle: 'lora-scripts-anima',
     pageSubtitle: '',
-    locale: 'zh-CN',
+    locale: 'en-US',
     i18nReady: true,
     showThemeDropdown: false,
     showLangDropdown: false,
