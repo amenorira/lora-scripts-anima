@@ -326,7 +326,7 @@
   },
   "environment": {
     "title": "环境管理",
-    "subtitle": "管理 Flash Attention 等加速库",
+    "subtitle": "管理和查看训练所需的运行环境及加速库",
     "trainingAccel": "训练加速（可选）",
     "loading": "正在加载环境信息...",
     "loadFailed": "加载失败",
@@ -353,6 +353,7 @@
     "forceInstall": "强制安装",
     "installUrl": "URL 安装",
     "restartHint": "Flash Attention 是 C 扩展，安装后需重启 GUI 才能生效。",
+    "refresh": "刷新",
     "refreshing": "刷新中...",
     "refreshed": "已刷新",
     "manualUrl": "手动 URL",
@@ -368,7 +369,12 @@
     "xfHint": "内存高效注意力（可选）",
     "xfInstallBtn": "PyPI 安装",
     "xfInstallingHint": "正在下载并安装（约 1-3 分钟，~100MB）...",
-    "xfConfirmInstall": "将从 PyPI 安装 xformers，确认？"
+    "xfConfirmInstall": "将从 PyPI 安装 xformers，确认？",
+    "xfRestartHint": "xformers 是编译扩展，安装后需重启 GUI 才能生效。",
+    "sectionAccel": "加速库",
+    "sectionCore": "训练核心",
+    "sectionCorePlaceholder": "即将推出 — sd-scripts 版本、PyTorch、CUDA 等环境信息",
+    "xfInstallInfo": "pip install xformers，自动匹配当前环境的预编译 wheel（支持 pip 镜像加速）。"
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",

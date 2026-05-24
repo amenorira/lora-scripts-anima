@@ -13,15 +13,85 @@ window.environmentMixin = {
   faConfirmMsg: null,
   faConfirmCallback: null,
   faSource: 'default',
+  faInstallJobId: null,
+  faInstallLog: '',
+  faInstallElapsed: 0,
 
   // ── xformers State ───────────────────────────────────
   xfStatus: null,
   xfBusy: false,
   xfError: null,
-  xfConfirmMsg: null,
-  xfConfirmCallback: null,
+  xfInstallJobId: null,
+  xfInstallLog: '',
+  xfInstallElapsed: 0,
 
-  // ── Methods ────────────────────────────────────────────
+  // ── Card open/close state (persisted) ────────────────
+  faCardOpen: true,
+  xfCardOpen: true,
+
+  _envInitCardState() {
+    try {
+      const v = localStorage.getItem('anima_env_cards');
+      if (v) {
+        const s = JSON.parse(v);
+        if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
+        if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
+      }
+    } catch (_) { /* ignore */ }
+  },
+
+  _envSaveCardState() {
+    try {
+      localStorage.setItem('anima_env_cards', JSON.stringify({
+        fa: this.faCardOpen, xf: this.xfCardOpen
+      }));
+    } catch (_) { /* ignore */ }
+  },
+
+  // ── Shared install polling ──────────────────────────
+  _envPollTimer: null,
+
+  _startPolling(jobId, prefix) {
+    const a = this;
+    const logKey = prefix + 'InstallLog';
+    const elapsedKey = prefix + 'InstallElapsed';
+    a._stopPolling();
+
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/install-log/' + jobId);
+        const data = await r.json();
+        a[logKey] = data.lines || '';
+        a[elapsedKey] = data.elapsed || 0;
+        if (data.done) {
+          a._stopPolling();
+          const busyKey = prefix + 'Busy';
+          a[busyKey] = false;
+          // Refresh status after install completes
+          const refreshFn = prefix === 'fa' ? 'faRefresh' : 'xfRefresh';
+          try { await a[refreshFn](true); } catch (_) {}
+          a.finishProgress();
+          a.renderEnvironment();
+        } else {
+          a.renderEnvironment();
+          a._envPollTimer = setTimeout(tick, 1500);
+        }
+      } catch (_) {
+        a._envPollTimer = setTimeout(tick, 2000);
+      }
+    };
+    a._envPollTimer = setTimeout(tick, 500);
+  },
+
+  _stopPolling() {
+    if (this._envPollTimer) { clearTimeout(this._envPollTimer); this._envPollTimer = null; }
+  },
+
+  _formatElapsed(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  },
   faShowConfirm(msg, callback) {
     this.faConfirmMsg = msg;
     this.faConfirmCallback = callback;
@@ -37,6 +107,7 @@ window.environmentMixin = {
   async buildEnvironmentPage() {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
+    this._envInitCardState();
     const needsFa = !this.faStatus;
     const needsXf = !this.xfStatus;
     if (needsFa || needsXf) {
@@ -78,6 +149,8 @@ window.environmentMixin = {
     this.faShowConfirm(msg, async () => {
       this.faBusy = true;
       this.faError = null;
+      this.faInstallLog = '';
+      this.faInstallElapsed = 0;
       this.startProgress();
       this.renderEnvironment();
       try {
@@ -87,16 +160,18 @@ window.environmentMixin = {
           body: JSON.stringify({ url: url || null, source: this.faSource || 'default' })
         });
         const result = await r.json();
-        if (result.success) {
-          this.faError = null;
-          await this.faRefresh(true);
+        if (result.success && result.job_id) {
+          this.faInstallJobId = result.job_id;
+          this._startPolling(result.job_id, 'fa');
         } else {
+          this.faBusy = false;
           this.faError = result.error || 'Installation failed';
+          this.finishProgress();
+          this.renderEnvironment();
         }
       } catch (e) {
-        this.faError = String(e);
-      } finally {
         this.faBusy = false;
+        this.faError = String(e);
         this.finishProgress();
         this.renderEnvironment();
       }
@@ -104,18 +179,6 @@ window.environmentMixin = {
   },
 
   // ── xformers Methods ────────────────────────────────
-  xfShowConfirm(msg, callback) {
-    this.xfConfirmMsg = msg;
-    this.xfConfirmCallback = callback;
-    this.renderEnvironment();
-  },
-
-  xfDismissConfirm() {
-    this.xfConfirmMsg = null;
-    this.xfConfirmCallback = null;
-    this.renderEnvironment();
-  },
-
   async xfRefresh(silent) {
     this.xfError = null;
     try {
@@ -132,29 +195,30 @@ window.environmentMixin = {
   },
 
   async xfInstall() {
-    const T = (k, fb) => this.t('environment.' + k) || fb || k;
-    this.xfShowConfirm(T('xfConfirmInstall', '将从 PyPI 安装 xformers，确认？'), async () => {
-      this.xfBusy = true;
-      this.xfError = null;
-      this.startProgress();
-      this.renderEnvironment();
-      try {
-        const r = await fetch('/api/xformers/install', { method: 'POST' });
-        const result = await r.json();
-        if (result.success) {
-          this.xfError = null;
-          await this.xfRefresh(true);
-        } else {
-          this.xfError = result.error || 'Installation failed';
-        }
-      } catch (e) {
-        this.xfError = String(e);
-      } finally {
+    this.xfBusy = true;
+    this.xfError = null;
+    this.xfInstallLog = '';
+    this.xfInstallElapsed = 0;
+    this.startProgress();
+    this.renderEnvironment();
+    try {
+      const r = await fetch('/api/xformers/install', { method: 'POST' });
+      const result = await r.json();
+      if (result.success && result.job_id) {
+        this.xfInstallJobId = result.job_id;
+        this._startPolling(result.job_id, 'xf');
+      } else {
         this.xfBusy = false;
+        this.xfError = result.error || 'Installation failed';
         this.finishProgress();
         this.renderEnvironment();
       }
-    });
+    } catch (e) {
+      this.xfBusy = false;
+      this.xfError = String(e);
+      this.finishProgress();
+      this.renderEnvironment();
+    }
   },
 
   renderEnvironment() {
@@ -163,6 +227,11 @@ window.environmentMixin = {
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
 
     let html = '';
+
+    // ═══════════════════════════════════════════════════
+    //  Section: 加速库
+    // ═══════════════════════════════════════════════════
+    html += `<div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div>`;
 
     // ═══════════════════════════════════════════════════
     //  Flash Attention card
@@ -176,17 +245,22 @@ window.environmentMixin = {
     const faInstalled = s?.installed;
 
     if (this.faBusy) {
-      html += `<details id="env-flash-attn" open class="env-card">
+      const elapsed = this._formatElapsed(this.faInstallElapsed);
+      const log = this.faInstallLog || '';
+      html += `<details id="env-flash-attn" ${this.faCardOpen ? 'open' : ''} class="env-card">
         <summary class="env-card-summary">
           <span class="env-chevron"></span>
           <span class="env-card-title">Flash Attention</span>
           <span class="env-badge env-badge-loading">${T('installing', 'Installing...')}</span>
         </summary>
         <div class="env-card-body">
-          <div class="env-loading" style="padding:20px 0">
-            <div class="env-spinner"></div>
-            <p>${T('installingHint', 'Downloading & installing (2-5 min, ~150MB)...')}</p>
-            <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${T('installingHint2', 'Do not close this page')}</p>
+          <div class="env-install-progress">
+            <div class="env-progress-bar"><div class="env-progress-fill"></div></div>
+            <div class="env-progress-info">
+              <span>${T('installingHint', 'Downloading & installing...')}</span>
+              <span class="env-progress-time">${elapsed}</span>
+            </div>
+            ${log ? `<pre class="env-install-log">${log}</pre>` : ''}
           </div>
         </div>
       </details>`;
@@ -199,7 +273,7 @@ window.environmentMixin = {
             ? `<span class="env-badge env-badge-ok">${T('installed', 'Installed')} &middot; v${s.version || '?'}</span>`
             : `<span class="env-badge env-badge-warn">${T('notInstalled', 'Not installed')}</span>`;
 
-      html += `<details id="env-flash-attn" open class="env-card">
+      html += `<details id="env-flash-attn" ${this.faCardOpen ? 'open' : ''} class="env-card">
         <summary class="env-card-summary">
           <span class="env-chevron"></span>
           <span class="env-card-title">Flash Attention</span>
@@ -317,17 +391,22 @@ window.environmentMixin = {
     const xfInstalled = xs?.installed;
 
     if (this.xfBusy) {
-      html += `<details id="env-xformers" open class="env-card">
+      const elapsed = this._formatElapsed(this.xfInstallElapsed);
+      const log = this.xfInstallLog || '';
+      html += `<details id="env-xformers" ${this.xfCardOpen ? 'open' : ''} class="env-card">
         <summary class="env-card-summary">
           <span class="env-chevron"></span>
           <span class="env-card-title">xformers</span>
           <span class="env-badge env-badge-loading">${T('installing', 'Installing...')}</span>
         </summary>
         <div class="env-card-body">
-          <div class="env-loading" style="padding:20px 0">
-            <div class="env-spinner"></div>
-            <p>${T('xfInstallingHint', 'Downloading & installing (1-3 min, ~100MB)...')}</p>
-            <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${T('installingHint2', 'Do not close this page')}</p>
+          <div class="env-install-progress">
+            <div class="env-progress-bar"><div class="env-progress-fill"></div></div>
+            <div class="env-progress-info">
+              <span>${T('xfInstallingHint', 'Downloading & installing...')}</span>
+              <span class="env-progress-time">${elapsed}</span>
+            </div>
+            ${log ? `<pre class="env-install-log">${log}</pre>` : ''}
           </div>
         </div>
       </details>`;
@@ -340,11 +419,12 @@ window.environmentMixin = {
             ? `<span class="env-badge env-badge-ok">${T('installed', 'Installed')} &middot; v${xs.version || '?'}</span>`
             : `<span class="env-badge env-badge-warn">${T('notInstalled', 'Not installed')}</span>`;
 
-      html += `<details id="env-xformers" class="env-card">
+      html += `<details id="env-xformers" ${this.xfCardOpen ? 'open' : ''} class="env-card">
         <summary class="env-card-summary">
           <span class="env-chevron"></span>
           <span class="env-card-title">xformers</span>
           <span class="env-card-hint">${T('xfHint', 'Memory-efficient attention (optional)')}</span>
+          <span class="env-card-hint">${T('xfRestartHint', 'xformers is a compiled extension. After install, restart the GUI.')}</span>
           ${xfStatusBadge}
         </summary>
         <div class="env-card-body">`;
@@ -366,29 +446,29 @@ window.environmentMixin = {
         });
         html += `</tbody></table>`;
 
-        if (this.xfConfirmMsg) {
-          html += `<div class="env-actions">
-            <div class="env-confirm">
-              <span class="env-confirm-msg">${this.xfConfirmMsg}</span>
-              <button id="xf-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes', '确认')}</button>
-              <button id="xf-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo', '取消')}</button>
-            </div>
-          </div>`;
-        } else {
-          html += `<div class="env-actions">
-            <button id="xf-install-btn" class="btn btn-secondary" ${this.xfBusy ? 'disabled' : ''}>
-              ${xfInstalled ? T('reinstall', 'Reinstall') : T('xfInstallBtn', 'Install via PyPI')}
-            </button>
-            <button id="xf-refresh-btn" class="btn-icon" ${this.xfBusy ? 'disabled' : ''}
-              title="${T('refresh', 'Refresh')}">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            </button>
-          </div>`;
+        if (!xfInstalled) {
+          html += `<div class="env-msg env-msg-info">${T('xfInstallInfo', 'Installs the latest compatible version from PyPI, auto-matched to your environment.')}</div>`;
         }
+
+        html += `<div class="env-actions">
+          <button id="xf-install-btn" class="btn btn-secondary" ${this.xfBusy ? 'disabled' : ''}>
+            ${xfInstalled ? T('reinstall', 'Reinstall') : T('xfInstallBtn', 'Install via PyPI')}
+          </button>
+          <button id="xf-refresh-btn" class="btn-icon" ${this.xfBusy ? 'disabled' : ''}
+            title="${T('refresh', 'Refresh')}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+        </div>`;
       }
 
       html += `</div></details>`;
     }
+
+    // ═══════════════════════════════════════════════════
+    //  Section: 训练核心 (placeholder for future)
+    // ═══════════════════════════════════════════════════
+    html += `<div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
+    html += `<div class="env-section-empty">${T('sectionCorePlaceholder', 'Coming soon — sd-scripts version, PyTorch, CUDA info')}</div>`;
 
     el.innerHTML = html;
 
@@ -432,13 +512,17 @@ window.environmentMixin = {
     const xfRefreshBtn = el.querySelector('#xf-refresh-btn');
     if (xfInstallBtn) xfInstallBtn.addEventListener('click', () => a.xfInstall());
     if (xfRefreshBtn) xfRefreshBtn.addEventListener('click', () => a.xfRefresh());
-    const xfConfirmYes = el.querySelector('#xf-confirm-yes');
-    const xfConfirmNo = el.querySelector('#xf-confirm-no');
-    if (xfConfirmYes) xfConfirmYes.addEventListener('click', () => {
-      const cb = a.xfConfirmCallback;
-      a.xfDismissConfirm();
-      if (cb) cb();
+
+    // ── Persist card open/close state ────────────────────
+    const faCard = el.querySelector('#env-flash-attn');
+    const xfCard = el.querySelector('#env-xformers');
+    if (faCard) faCard.addEventListener('toggle', () => {
+      a.faCardOpen = faCard.open;
+      a._envSaveCardState();
     });
-    if (xfConfirmNo) xfConfirmNo.addEventListener('click', () => a.xfDismissConfirm());
+    if (xfCard) xfCard.addEventListener('toggle', () => {
+      a.xfCardOpen = xfCard.open;
+      a._envSaveCardState();
+    });
   },
 };

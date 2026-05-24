@@ -223,6 +223,70 @@ async def get_all_schemas() -> APIResponse:
 
 
 # ═══════════════════════════════════════════════════════════
+#  安装后台任务 & 日志轮询（Flash Attention / xformers 共用）
+# ═══════════════════════════════════════════════════════════
+
+import subprocess as _install_sp
+import tempfile as _install_tmp
+import threading as _install_thr
+import time as _install_time
+from uuid import uuid4 as _install_uuid
+
+_install_jobs: dict[str, dict] = {}
+
+def _start_install_job(cmd: list[str]) -> str:
+    """启动后台 pip install，输出写入临时日志文件。返回 job_id。"""
+    job_id = _install_uuid().hex[:12]
+    log_f = _install_tmp.NamedTemporaryFile(
+        delete=False, suffix=".log", prefix="anima_install_",
+        mode="w", encoding="utf-8",
+    )
+    log_path = log_f.name
+    _install_jobs[job_id] = {
+        "log_path": log_path, "done": False,
+        "start": _install_time.time(), "returncode": None,
+    }
+
+    def _run():
+        try:
+            proc = _install_sp.Popen(
+                cmd, stdout=log_f, stderr=_install_sp.STDOUT, text=True,
+            )
+            proc.wait()
+            _install_jobs[job_id]["returncode"] = proc.returncode
+        except Exception as e:
+            log_f.write(f"\n[ERROR] {e}\n")
+            _install_jobs[job_id]["returncode"] = -1
+        finally:
+            _install_jobs[job_id]["done"] = True
+            log_f.close()
+
+    _install_thr.Thread(target=_run, daemon=True).start()
+    return job_id
+
+
+@router.get("/install-log/{job_id}")
+async def install_log(job_id: str, tail: int = 20) -> dict:
+    """轮询安装进度。返回最新日志行 + 完成状态。"""
+    import time
+    job = _install_jobs.get(job_id)
+    if not job:
+        return {"lines": "", "done": True, "error": "Job not found / 任务不存在"}
+    try:
+        with open(job["log_path"], "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+            lines = "".join(all_lines[-tail:])
+    except Exception:
+        lines = ""
+    return {
+        "lines": lines,
+        "done": job.get("done", False),
+        "returncode": job.get("returncode"),
+        "elapsed": time.time() - job.get("start", 0),
+    }
+
+
+# ═══════════════════════════════════════════════════════════
 #  Flash Attention 环境管理 API
 # ═══════════════════════════════════════════════════════════
 
@@ -322,11 +386,8 @@ def _fa_source_config(source: str):
 
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
-    """安装 flash_attn wheel。body: { url: string|null, source: string }。
-    url=null 则自动从 GitHub 选最优匹配；否则用指定 URL。
-    source='mirror' 时 wheel 下载 URL 自动走 ghproxy 代理。
-    """
-    detect_env, current_status, fetch_candidates, install_wheel = _import_flash_attn_tool()
+    """安装 flash_attn wheel（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
+    detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
     try:
         body = await request.json()
         url = body.get("url", None)
@@ -335,32 +396,29 @@ async def flash_attn_install(request: Request) -> dict:
         url = None
         source = "default"
 
-    try:
+    if url is None:
+        env = detect_env()
+        if source and source != "default":
+            import tools.install_flash_attn as fa_tool
+            try:
+                fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
+            except Exception:
+                pass
+        candidates, _ = fetch_candidates(env)
+        url = None
+        for c in candidates:
+            if c["usable"]:
+                url = c["url"]
+                break
         if url is None:
-            env = detect_env()
-            # 切换源获取候选
-            if source and source != "default":
-                import tools.install_flash_attn as fa_tool
-                try:
-                    fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
-                except Exception:
-                    pass
-            candidates, _ = fetch_candidates(env)
-            url = None
-            for c in candidates:
-                if c["usable"]:
-                    url = c["url"]
-                    break
-            if url is None:
-                return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
-        # 国内镜像：wheel 下载走 ghproxy 代理
-        if source == "mirror" and url and not url.startswith("https://ghproxy.com/"):
-            url = "https://ghproxy.com/" + url
-        result = install_wheel(url)
-        return {"success": True, **result}
-    except Exception as e:
-        log.error(f"flash_attn install error: {e}")
-        return {"success": False, "error": str(e)}
+            return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
+
+    if source == "mirror" and url and not url.startswith("https://ghproxy.com/"):
+        url = "https://ghproxy.com/" + url
+
+    import sys
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", url])
+    return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -371,6 +429,7 @@ async def flash_attn_install(request: Request) -> dict:
 async def xformers_status() -> dict:
     """返回 xformers 安装状态 + 基础环境信息。"""
     import importlib.metadata as _imd
+    import sys
 
     try:
         ver = _imd.version("xformers")
@@ -400,26 +459,7 @@ async def xformers_status() -> dict:
 
 @router.post("/xformers/install")
 async def xformers_install() -> dict:
-    """pip install xformers（从 PyPI 安装）。"""
-    import subprocess as _sp
-    import importlib.metadata as _imd
-
-    try:
-        r = _sp.run(
-            [sys.executable, "-m", "pip", "install", "xformers"],
-            capture_output=True, text=True, timeout=300,
-        )
-        if r.returncode != 0:
-            tail = "\n".join(r.stderr.splitlines()[-10:])
-            return {"success": False, "error": f"pip install failed / 安装失败:\n{tail}"}
-
-        _imd.invalidate_caches()
-        try:
-            ver = _imd.version("xformers")
-        except Exception:
-            ver = None
-
-        return {"success": True, "installed": True, "version": ver}
-    except Exception as e:
-        log.error(f"xformers install error: {e}")
-        return {"success": False, "error": str(e)}
+    """pip install xformers（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
+    import sys
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "xformers"])
+    return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}

@@ -326,7 +326,7 @@
   },
   "environment": {
     "title": "Environment",
-    "subtitle": "Manage Flash Attention & acceleration libraries",
+    "subtitle": "Manage and inspect the training runtime environment & acceleration libraries",
     "trainingAccel": "Training acceleration (optional)",
     "loading": "Loading environment info...",
     "loadFailed": "Load failed",
@@ -353,6 +353,7 @@
     "forceInstall": "Force",
     "installUrl": "URL Install",
     "restartHint": "Flash Attention is a C extension. After install, restart the GUI for changes to take effect.",
+    "refresh": "Refresh",
     "refreshing": "Refreshing...",
     "refreshed": "Refreshed",
     "manualUrl": "Manual URL",
@@ -368,7 +369,12 @@
     "xfHint": "Memory-efficient attention (optional)",
     "xfInstallBtn": "Install via PyPI",
     "xfInstallingHint": "Downloading & installing (1-3 min, ~100MB)...",
-    "xfConfirmInstall": "Install xformers from PyPI?"
+    "xfConfirmInstall": "Install xformers from PyPI?",
+    "xfRestartHint": "xformers is a compiled extension. After install, restart the GUI for changes to take effect.",
+    "sectionAccel": "Acceleration",
+    "sectionCore": "Training Core",
+    "sectionCorePlaceholder": "Coming soon — sd-scripts version, PyTorch, CUDA & environment info",
+    "xfInstallInfo": "pip install xformers, auto-matching the correct prebuilt wheel for your environment (supports pip mirrors)."
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",
