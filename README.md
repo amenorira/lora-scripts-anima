@@ -24,6 +24,10 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
+> ⚠️ **重要提示**  
+> 本项目正在积极重构中，当前代码处于开发状态，部分功能可能尚不可用。  
+> 建议过段时间再来查看稳定版本。感谢关注！
+
 Anima LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。目前 UI 支持 SD / SDXL / Anima 三种模型的 LoRA 训练。
 
 ### 支持的模型类型

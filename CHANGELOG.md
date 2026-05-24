@@ -4,6 +4,38 @@ All notable changes to lora-scripts-anima.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.1.0-dev] — Unreleased
+
+> ⚠️ This is a development version. The project is under active restructuring.
+
+### Added
+- i18n: browser language auto-detection via `navigator.language`
+- Frontend/backend connectivity indicator with real-time disconnect duration
+- Training artifact isolated storage per run
+- Environment management: sd-scripts version info card
+
+### Changed
+- **i18n fallback changed from zh-CN to en-US** (more international default)
+- Port changed from 28000 to 12333
+- Runtime cache migrated from `output/` to `cache/` directory
+- Training records renamed for clarity
+- Sidebar group colors: blue-green-purple-yellow top-to-bottom
+- Training form de-card-ified with flattened design
+- Right panel toggle button: unified sizing, centered, icon-only
+- Install section: spinning loader + timer + live log output
+
+### Removed
+- sd-scripts update management feature (local version info only)
+- Custom scrollbar styling (unstable across browsers)
+
+### Fixed
+- Training form rendering regression after restructuring
+- Progress bar stuck at 90% after navigation
+- History page blank after refactoring
+- Encoding issues and crash-on-launch in Windows startup scripts
+
+---
+
 ## [2.0.0] — 2026-05-23
 
 ### Added

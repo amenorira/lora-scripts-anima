@@ -24,6 +24,10 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
   <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
+> ⚠️ **Important Notice**  
+> This project is under active restructuring. The code is currently in a development state and some features may not be functional yet.  
+> Please check back later for a stable release. Thanks for your interest!
+
 Anima LoRA training GUI with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports LoRA training for SD / SDXL / Anima models.
 
 ### Supported Model Types
