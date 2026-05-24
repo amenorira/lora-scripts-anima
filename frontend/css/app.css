@@ -886,12 +886,50 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 /* ── Field Actions ───────────────────────────────────────── */
 .field-actions { display: flex; gap: 1px; margin-left: 3px; flex-shrink: 0; }
 
+/* ── Training Form — Flat Design (no card boxes) ─────────── */
+#trainFormContent .card {
+  background: transparent;
+  border: none;
+  border-left: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: none;
+}
+#trainFormContent .card-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 22px 0 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-default);
+}
+#trainFormContent .card:first-child .card-header {
+  padding-top: 0;
+}
+/* Field rows: subtle background on hover */
+#trainFormContent .field {
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: 0 -8px;
+  transition: background 0.12s ease;
+}
+#trainFormContent .field:hover {
+  background: var(--hover-overlay);
+}
+#trainFormContent .field + .field {
+  border-top: none;
+}
+
 /* ── Right Panel ─────────────────────────────────────────── */
 .right-panel {
   width: var(--panel-w); min-width: var(--panel-w);
   background: var(--bg-surface);
   border-left: 1px solid var(--border-default);
-  display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: visible;
+  position: relative;
   transition: width 0.25s ease, min-width 0.25s ease, opacity 0.25s ease;
 }
 .right-panel.collapsed {
@@ -904,19 +942,37 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   border-bottom: 1px solid var(--border-default);
   letter-spacing: 0.4px;
   user-select: none;
-  display: flex; align-items: center; justify-content: space-between;
 }
-.panel-toggle-btn {
+/* Floating collapse handle — icon-only, sits outside panel's left edge */
+.panel-collapse-float {
+  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+  z-index: 51;
   display: flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border: none; border-radius: var(--radius-sm);
-  background: transparent; color: var(--text-tertiary); cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  padding: 30px 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-right: none;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  color: var(--text-secondary); cursor: pointer;
+  box-shadow: -2px 0 14px rgba(0,0,0,.08);
+  transition: background 0.2s, color 0.2s, box-shadow 0.25s, padding-right 0.2s;
 }
-.panel-toggle-btn:hover { background: var(--accent-soft); color: var(--accent); }
-.panel-toggle-chevron {
+.panel-collapse-float:hover {
+  background: var(--bg-surface-raised);
+  color: var(--accent);
+  box-shadow: -4px 0 24px rgba(77,148,255,.15);
+  padding-right: 7px;
+}
+.panel-collapse-float:active {
+  background: var(--accent-soft);
+  box-shadow: -1px 0 6px rgba(0,0,0,.06);
+}
+.panel-collapse-float svg {
   transition: transform 0.25s ease;
 }
-.panel-toggle-chevron.collapsed { transform: rotate(180deg); }
+.panel-collapse-float:hover svg {
+  transform: translateX(-2px);
+}
 .panel-preview {
   flex: 1; padding: 14px 16px;
   font-family: var(--font-mono); font-size: 13px;
@@ -943,23 +999,31 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 .right-panel-expand {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%);
   z-index: 50;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 6px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 30px 6px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-right: none;
-  border-radius: var(--radius) 0 0 var(--radius);
-  color: var(--text-tertiary); cursor: pointer;
-  box-shadow: -2px 0 12px rgba(0,0,0,.08);
-  transition: background 0.15s, color 0.15s, box-shadow 0.2s;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  color: var(--text-secondary); cursor: pointer;
+  box-shadow: -2px 0 14px rgba(0,0,0,.08);
+  transition: background 0.2s, color 0.2s, box-shadow 0.25s, padding-right 0.2s;
 }
 .right-panel-expand:hover {
-  background: var(--accent-soft); color: var(--accent);
-  box-shadow: -2px 0 20px rgba(0,0,0,.15);
+  background: var(--bg-surface-raised);
+  color: var(--accent);
+  box-shadow: -4px 0 24px rgba(77,148,255,.15);
+  padding-right: 7px;
 }
-.right-panel-expand-label {
-  writing-mode: vertical-rl; font-size: 11px; font-weight: 600;
-  letter-spacing: 1px; user-select: none;
+.right-panel-expand:active {
+  background: var(--accent-soft);
+  box-shadow: -1px 0 6px rgba(0,0,0,.06);
+}
+.right-panel-expand svg {
+  transition: transform 0.25s ease;
+}
+.right-panel-expand:hover svg {
+  transform: translateX(-2px);
 }
 .panel-actions .btn-row .btn { flex: 1; }
 .panel-status {

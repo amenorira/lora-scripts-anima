@@ -468,11 +468,12 @@
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ collapsed: rightPanelCollapsed }">
+      <!-- Floating collapse handle (on panel's left edge) -->
+      <button class="panel-collapse-float" @click="toggleRightPanel()" :title="t('common.collapsePanel')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
       <div class="panel-header">
         <span x-text="t('common.tomlPreview')">TOML Preview</span>
-        <button class="panel-toggle-btn" @click="toggleRightPanel()" :title="rightPanelCollapsed ? t('common.expand') : t('common.collapse')">
-          <svg class="panel-toggle-chevron" :class="{ collapsed: rightPanelCollapsed }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-        </button>
       </div>
       <div class="panel-preview" id="tomlPreview" x-effect="updateToml()"># Parameters will appear here</div>
       <div class="panel-actions">
@@ -504,9 +505,8 @@
     <!-- ── Right Panel Expand Trigger (visible when collapsed) ── -->
     <button class="right-panel-expand" id="rightPanelExpand"
       x-show="showRightPanel() && rightPanelCollapsed"
-      @click="toggleRightPanel()" :title="t('common.expand')">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-      <span class="right-panel-expand-label" x-text="t('common.preview')">Preview</span>
+      @click="toggleRightPanel()" :title="t('common.expandPanel')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
   </div>
 </div>
