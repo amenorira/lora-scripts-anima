@@ -16,10 +16,7 @@ window.environmentCoreMixin = {
   xfInstallJobId: null, xfInstallLog: '', xfInstallElapsed: 0,
 
   // ── sd-scripts State ────────────────────────────────
-  sdStatus: null, sdBusy: false, sdError: null,
-  sdReleasesOpen: false, sdCommitsOpen: false,
-  sdUpdateConfirmMsg: null, sdUpdateConfirmCallback: null,
-  sdUpdateJobId: null, sdInstallLog: '', sdInstallElapsed: 0,
+  sdStatus: null, sdError: null,
 
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true, xfCardOpen: true, sdCardOpen: true,
@@ -124,18 +121,5 @@ window.environmentCoreMixin = {
     try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); if (!silent) this.toast(this.t('environment.refreshed')); }
     catch (e) { this.sdError = String(e); this.sdStatus = null; }
     this.renderEnvironment(); if (!silent) this.finishProgress();
-  },
-  sdShowConfirm(msg, cb) { this.sdUpdateConfirmMsg = msg; this.sdUpdateConfirmCallback = cb; this.renderEnvironment(); },
-  sdDismissConfirm() { this.sdUpdateConfirmMsg = null; this.sdUpdateConfirmCallback = null; this.renderEnvironment(); },
-  async sdUpdate(target) {
-    const T = (k,fb) => this.t('environment.'+k)||fb||k;
-    const msg = target==='main' ? T('sdScriptsUpdateConfirmMain','Update to main?') : T('sdScriptsUpdateConfirmRelease','Update to release?');
-    this.sdShowConfirm(msg, async () => {
-      this.sdBusy = true; this.sdError = null; this.sdInstallLog = ''; this.sdInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
-      try { const r = await fetch('/api/sd-scripts/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})}); const result = await r.json();
-        if (result.success && result.job_id) { this.sdUpdateJobId = result.job_id; this._startPolling(result.job_id, 'sd'); }
-        else { this.sdBusy = false; this.sdError = result.error||'Update failed'; this.finishProgress(); this.renderEnvironment(); }
-      } catch (e) { this.sdBusy = false; this.sdError = String(e); this.finishProgress(); this.renderEnvironment(); }
-    });
   }
 };

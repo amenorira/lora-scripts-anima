@@ -29,7 +29,6 @@ window.environmentRenderMixin = {
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
     this._bindSdEvents(el);
-    this._bindReleaseToggle(el);
     this._bindCardToggle(el);
   },
 
@@ -135,50 +134,27 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
-  //  sd-scripts card render
+  //  sd-scripts card render (local version info only)
   // ═══════════════════════════════════════════════════════
   _renderSdCard(T) {
-    const sd = this.sdStatus; const sdLocal = sd?.local || {}; const sdLatest = sd?.latest_release;
-    const sdReleases = sd?.recent_releases || []; const sdCommits = sd?.recent_commits || [];
-    const sdUpdateAvail = sd?.update_available; const sdFetchErr = sd?.releases_error || sd?.commits_error;
+    const sd = this.sdStatus; const sdLocal = sd?.local || {};
     let h = '';
 
     const sdBadge = this.sdError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !sd ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : sdUpdateAvail ? `<span class="env-badge env-badge-warn">${T('sdScriptsUpdateAvailable','Update available')}</span>`
       : `<span class="env-badge env-badge-ok">${T('sdScriptsUpToDate','Up to date')}</span>`;
 
-    h+=`<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-card-hint">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${this.sdBusy?`<span class="env-badge env-badge-loading">${T('sdScriptsUpdating','Updating...')}</span>`:sdBadge}</summary><div class="env-card-body">`;
+    h+=`<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-card-hint">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${sdBadge}</summary><div class="env-card-body">`;
 
     if (this.sdError) h+=`<div class="env-msg env-msg-err"><pre>${this.sdError}</pre></div>`;
-    if (this.sdBusy) { const elapsed = this._formatElapsed(this.sdInstallElapsed);
-      h+=`<div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('sdScriptsUpdating','Updating...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${this.sdInstallLog?`<pre class="env-install-log">${this.sdInstallLog}</pre>`:''}</div>`;
-    }
 
-    if (sd && !this.sdBusy) {
+    if (sd) {
+      const repoUrl = sd.repo_url || `https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}`;
       h+=`<table class="env-table"><tbody>`;
-      [['Repo',`<a href="https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo||'kohya-ss/sd-scripts'} &#8599;</a>`],['Branch',sdLocal.local_branch||'<span class="env-text-dim">-</span>'],sdLocal.tag?['Tag',`<a href="https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a>`]:null,['Commit',sdLocal.local_commit?`<a href="https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit}</code></a>`:'<span class="env-text-dim">UNKNOWN</span>'],['Sync date',sdLocal.sync_date||'<span class="env-text-dim">-</span>']].filter(r=>r).forEach(([l,v])=>{h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`;});
+      [['Repo',`<a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo||'kohya-ss/sd-scripts'} &#8599;</a>`],['Branch',sdLocal.local_branch||'<span class="env-text-dim">-</span>'],sdLocal.tag?['Tag',`<a href="${repoUrl}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a>`]:null,['Commit',sdLocal.local_commit?`<a href="${repoUrl}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit}</code></a>`:'<span class="env-text-dim">UNKNOWN</span>'],['Sync date',sdLocal.sync_date||'<span class="env-text-dim">-</span>']].filter(r=>r).forEach(([l,v])=>{h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`;});
       h+=`</tbody></table>`;
 
-      if (sdFetchErr && !sdReleases.length && !sdCommits.length && !sdLatest) h+=`<div class="env-msg env-msg-warn">${T('sdScriptsFetchError','GitHub API fail')}: ${sdFetchErr}</div>`;
-
-      if (sdLatest) { const bodyText = sdLatest.body||''; const releaseId = 'sd-release-body-'+(sdLatest.tag_name||'latest');
-        h+=`<div class="env-subsection"><div class="env-subsection-title">${T('sdScriptsLatestRelease','Latest Release')}</div><div class="env-release-card"><div class="env-release-header"><a href="${sdLatest.html_url||'#'}" target="_blank" rel="noopener" class="env-link env-release-tag">${sdLatest.tag_name||'?'}</a>${sdLatest.prerelease?`<span class="env-badge env-badge-warn env-badge-sm">${T('sdScriptsPrerelease','Pre-release')}</span>`:''}<span class="env-text-dim">${sdLatest.published_at?new Date(sdLatest.published_at).toLocaleDateString():''}</span></div>${bodyText?`<div class="env-release-body-wrap"><pre class="env-release-body" id="${releaseId}">${bodyText}</pre>${bodyText.length>400?`<button class="btn btn-ghost btn-sm env-release-toggle" data-target="${releaseId}">${T('sdScriptsShowMore','Show more')}</button>`:''}</div>`:''}</div></div>`;
-      }
-
-      const sdMain = sd?.latest_main_commit;
-      if (sdMain && sdMain.sha) h+=`<div class="env-subsection"><div class="env-subsection-title">${T('sdScriptsMainHead','main HEAD')}</div><div class="env-release-card"><div class="env-release-header"><a href="${sdMain.html_url||'#'}" target="_blank" rel="noopener" class="env-link"><code>${sdMain.sha}</code></a><span class="env-text-dim">${sdMain.date?new Date(sdMain.date).toLocaleDateString():''}</span></div><span class="env-commit-msg">${sdMain.message||''}</span></div></div>`;
-
-      if (sdReleases.length>1) { h+=`<div class="env-actions"><button id="sd-releases-btn" class="btn btn-ghost btn-sm">${this.sdReleasesOpen?'&#9650; '+T('hideCandidates','Hide'):'&#9660; '+T('sdScriptsLatestReleaseTag','Recent')+' ('+(sdReleases.length-1)+')'}</button></div>`;
-        if (this.sdReleasesOpen) { h+=`<ul class="env-candidate-list">`; sdReleases.slice(1).forEach(rel=>{h+=`<li class="env-candidate-item"><a href="${rel.html_url||'#'}" target="_blank" rel="noopener" class="env-link">${rel.tag_name||'?'}</a>${rel.prerelease?`<span class="env-badge env-badge-warn env-badge-sm">${T('sdScriptsPrerelease','Pre-release')}</span>`:''}<span class="env-text-dim">${rel.published_at?new Date(rel.published_at).toLocaleDateString():''}</span></li>`;}); h+=`</ul>`; } }
-
-      if (sdCommits.length) { h+=`<div class="env-subsection"><div class="env-subsection-title">${T('sdScriptsRecentCommits','Recent Commits')}</div><ul class="env-commit-list">`;
-        sdCommits.slice(0,5).forEach(c=>{h+=`<li class="env-commit-item"><a href="${c.html_url||'#'}" target="_blank" rel="noopener" class="env-link"><code>${c.sha||'?'}</code></a><span class="env-commit-msg">${c.message||''}</span><span class="env-text-dim">${c.date?new Date(c.date).toLocaleDateString():''}</span></li>`;});
-        h+=`</ul></div>`; }
-
-      if (this.sdUpdateConfirmMsg) h+=`<div class="env-actions"><div class="env-confirm"><span class="env-confirm-msg">${this.sdUpdateConfirmMsg}</span><button id="sd-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="sd-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div></div>`;
-
-      h+=`<div class="env-actions"><a href="https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}" target="_blank" rel="noopener" class="btn btn-secondary">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a><button id="sd-update-release-btn" class="btn btn-sm btn-primary" ${this.sdBusy?'disabled':''} title="${T('sdScriptsUpdateToRelease','Update to latest Release')}">${T('sdScriptsUpdateToRelease','Update to Release')}</button><button id="sd-update-main-btn" class="btn btn-sm btn-secondary" ${this.sdBusy?'disabled':''} title="${T('sdScriptsUpdateToMain','Update to latest main')}">${T('sdScriptsUpdateToMain','Update to main')}</button><button id="sd-refresh-btn" class="btn-icon" title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div>`;
+      h+=`<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a><button id="sd-refresh-btn" class="btn-icon" title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div>`;
     }
     h+=`</div></details>`;
     return h;
@@ -217,21 +193,6 @@ window.environmentRenderMixin = {
   _bindSdEvents(el) {
     const a = window.__anima || this;
     const sdRefreshBtn = el.querySelector('#sd-refresh-btn'); if (sdRefreshBtn) sdRefreshBtn.addEventListener('click', () => a.sdRefresh());
-    const sdReleasesBtn = el.querySelector('#sd-releases-btn'); if (sdReleasesBtn) sdReleasesBtn.addEventListener('click', () => { a.sdReleasesOpen = !a.sdReleasesOpen; a.renderEnvironment(); });
-    const sdUpdateReleaseBtn = el.querySelector('#sd-update-release-btn'); if (sdUpdateReleaseBtn) sdUpdateReleaseBtn.addEventListener('click', () => a.sdUpdate('release'));
-    const sdUpdateMainBtn = el.querySelector('#sd-update-main-btn'); if (sdUpdateMainBtn) sdUpdateMainBtn.addEventListener('click', () => a.sdUpdate('main'));
-    const sdConfirmYes = el.querySelector('#sd-confirm-yes'), sdConfirmNo = el.querySelector('#sd-confirm-no');
-    if (sdConfirmYes) sdConfirmYes.addEventListener('click', () => { const cb = a.sdUpdateConfirmCallback; a.sdDismissConfirm(); if (cb) cb(); });
-    if (sdConfirmNo) sdConfirmNo.addEventListener('click', () => a.sdDismissConfirm());
-  },
-
-  _bindReleaseToggle(el) {
-    const a = window.__anima || this;
-    el.querySelectorAll('.env-release-toggle').forEach(btn => { btn.addEventListener('click', () => {
-      const pre = document.getElementById(btn.dataset.target); if (!pre) return;
-      const expanded = pre.classList.toggle('expanded');
-      btn.textContent = expanded ? (a.t('environment.sdScriptsShowLess')||'Collapse') : (a.t('environment.sdScriptsShowMore')||'Show more');
-    });});
   },
 
   _bindCardToggle(el) {
