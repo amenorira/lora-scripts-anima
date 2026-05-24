@@ -364,7 +364,11 @@
       "pythonMismatch": "Python version mismatch",
       "cudaMinor": "CUDA minor mismatch (usually OK)",
       "cudaMajor": "CUDA major version mismatch"
-    }
+    },
+    "xfHint": "Memory-efficient attention (optional)",
+    "xfInstallBtn": "Install via PyPI",
+    "xfInstallingHint": "Downloading & installing (1-3 min, ~100MB)...",
+    "xfConfirmInstall": "Install xformers from PyPI?"
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",

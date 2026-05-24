@@ -123,6 +123,13 @@ def launch():
     except Exception:
         log.info("flash_attn: NOT FOUND / 未安装 — RTX 40/50 series recommended: install-flash-attn scripts")
 
+    # xformers status / 检测 xformers 状态
+    try:
+        xf_ver = pkg_version("xformers")
+        log.info(f"xformers: OK (version / 版本 {xf_ver})")
+    except Exception:
+        log.info("xformers: NOT FOUND / 未安装 — pip install xformers available")
+
     os.environ["ANIMA_HOST"] = args.host
     os.environ["ANIMA_PORT"] = str(args.port)
     os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host

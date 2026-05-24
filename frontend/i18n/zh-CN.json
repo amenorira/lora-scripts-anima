@@ -364,7 +364,11 @@
       "pythonMismatch": "Python 版本不匹配",
       "cudaMinor": "CUDA 小版本差异（通常兼容）",
       "cudaMajor": "CUDA 大版本不一致"
-    }
+    },
+    "xfHint": "内存高效注意力（可选）",
+    "xfInstallBtn": "PyPI 安装",
+    "xfInstallingHint": "正在下载并安装（约 1-3 分钟，~100MB）...",
+    "xfConfirmInstall": "将从 PyPI 安装 xformers，确认？"
   },
   "opt": {
     "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",

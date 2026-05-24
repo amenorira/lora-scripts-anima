@@ -361,3 +361,65 @@ async def flash_attn_install(request: Request) -> dict:
     except Exception as e:
         log.error(f"flash_attn install error: {e}")
         return {"success": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+#  xformers 环境管理 API
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/xformers/status")
+async def xformers_status() -> dict:
+    """返回 xformers 安装状态 + 基础环境信息。"""
+    import importlib.metadata as _imd
+
+    try:
+        ver = _imd.version("xformers")
+        installed = True
+    except _imd.PackageNotFoundError:
+        ver = None
+        installed = False
+
+    env: dict[str, object] = {
+        "python_tag": f"cp{sys.version_info.major}{sys.version_info.minor}",
+        "torch_ver": None,
+        "cuda_ver": None,
+    }
+    try:
+        import torch  # noqa: F811
+        env["torch_ver"] = torch.__version__
+        m = re.search(r"\+cu(\d+)", torch.__version__)
+        if m:
+            num = m.group(1)
+            if len(num) >= 2:
+                env["cuda_ver"] = f"{num[:-1]}.{num[-1]}"
+    except ImportError:
+        pass
+
+    return {"installed": installed, "version": ver, "env": env}
+
+
+@router.post("/xformers/install")
+async def xformers_install() -> dict:
+    """pip install xformers（从 PyPI 安装）。"""
+    import subprocess as _sp
+    import importlib.metadata as _imd
+
+    try:
+        r = _sp.run(
+            [sys.executable, "-m", "pip", "install", "xformers"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if r.returncode != 0:
+            tail = "\n".join(r.stderr.splitlines()[-10:])
+            return {"success": False, "error": f"pip install failed / 安装失败:\n{tail}"}
+
+        _imd.invalidate_caches()
+        try:
+            ver = _imd.version("xformers")
+        except Exception:
+            ver = None
+
+        return {"success": True, "installed": True, "version": ver}
+    except Exception as e:
+        log.error(f"xformers install error: {e}")
+        return {"success": False, "error": str(e)}
