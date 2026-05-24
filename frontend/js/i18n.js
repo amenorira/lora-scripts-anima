@@ -44,7 +44,8 @@ const I18N = (() => {
    * Returns fallback or the key itself if not found.
    */
   function t(key, fallback) {
-    if (!_messages) return fallback || key;
+    if (!_messages) return fallback || key || '';
+    if (key == null || typeof key !== 'string') return fallback || key || '';
     const parts = key.split('.');
     let val = _messages;
     for (const p of parts) {

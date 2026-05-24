@@ -247,6 +247,39 @@ def get_ui_only_fields() -> set[str]:
     return {f["key"] for f in FIELDS if f["target"] == "ui"}
 
 
+# snake_case → camelCase key mapping for frontend
+_FIELD_KEY_MAP = {
+    "desc_key": "descKey",
+    "hint_key": "hintKey",
+    "show_if": "showIf",
+    "label_key": "labelKey",
+    "dk": "dKey",
+}
+
+
+def _to_camel(field: dict) -> dict:
+    """Convert field dict keys from snake_case to camelCase for frontend consumption."""
+    result = {}
+    for k, v in field.items():
+        if k == "target":
+            continue  # 仅后端需要
+        new_key = _FIELD_KEY_MAP.get(k, k)
+        # 递归处理嵌套的 option groups
+        if k == "groups" and isinstance(v, list):
+            result[new_key] = [
+                {
+                    "labelKey": g.get("label_key", g.get("label", "")),
+                    "options": [_to_camel(o) for o in (g.get("options") or [])],
+                }
+                for g in v
+            ]
+        elif k == "options" and isinstance(v, list):
+            result[new_key] = [_to_camel(o) for o in v]
+        else:
+            result[new_key] = v
+    return result
+
+
 def get_fields_json() -> dict:
     """返回前端可用的字段定义 JSON"""
     sections: dict[str, list[dict]] = {}
@@ -272,9 +305,7 @@ def get_fields_json() -> dict:
                 "titleKey": section_meta.get(section_name, {}).get("title_key", f"section.{section_name}"),
                 "fields": [],
             }
-        # 只传前端需要的字段
-        field_json = {k: v for k, v in f.items() if k != "target"}
-        sections[section_name]["fields"].append(field_json)
+        sections[section_name]["fields"].append(_to_camel(f))
 
     result = {
         "sections_common": [s for k, s in sections.items() if k != "animaParams"],

@@ -80,7 +80,9 @@ async def monitor_status(task_id: str = Query("")):
     result["state_label"] = STATE_LABELS.get(active_status, active_status)
 
     if active_status == "RUNNING":
-        log_lines = read_train_log(active.get("id", ""))
+        # 从运行文件夹读取日志
+        active_output_dir = train_config.get("output_dir", str(OUTPUT_DIR))
+        log_lines = read_train_log(active.get("id", ""), Path(active_output_dir) if active_output_dir else None)
         if log_lines:
             progress = parse_log_progress(log_lines)
             for key in ("step", "total_steps", "percent", "loss",
@@ -114,8 +116,34 @@ async def monitor_status(task_id: str = Query("")):
 
 @router.get("/monitor/history")
 async def monitor_history():
-    """历史训练记录"""
-    return {"status": "success", "data": scan_history()}
+    """训练记录：运行中任务 + 历史训练记录"""
+    history = scan_history()
+
+    # 获取当前运行中任务
+    running = None
+    tasks = tm.dump()
+    for t in reversed(tasks):
+        if t.get("status") == "RUNNING":
+            running = t
+            break
+    if not running and tasks:
+        running = tasks[-1]
+
+    # 如果运行中任务状态为 RUNNING，补充训练参数
+    if running and running.get("status") == "RUNNING":
+        train_config = latest_train_config()
+        params = extract_train_params(train_config)
+        running["name"] = train_config.get("output_name", "")
+        running["model"] = train_config.get("pretrained_model_name_or_path", "")
+        running["lr"] = train_config.get("learning_rate", "?")
+        running["dim"] = train_config.get("network_dim", "?")
+        running["epochs"] = train_config.get("max_train_epochs", "?")
+        running["run_dir"] = train_config.get("output_dir", "")
+        running["dataset"] = train_config.get("train_data_dir", "")
+    elif running and running.get("status") != "RUNNING":
+        running = None  # 已完成/终止的任务不算运行中
+
+    return {"status": "success", "data": {"running": running, "history": history}}
 
 
 @router.get("/monitor/preview-image")

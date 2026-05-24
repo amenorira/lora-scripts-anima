@@ -226,7 +226,6 @@ document.addEventListener('alpine:init', () => {
       } else if (r === 'tagger') {
         this.buildTaggerForm();
       } else if (r === 'tagEditor') {
-        this.startProgress();
         this.tagEditorLoad();
       } else if (r === 'settings') {
         this.loadUISettings();

@@ -140,5 +140,51 @@ window.monitorRenderMixin = {
     if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
     else lines.forEach(line=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')?'log-error':lower.includes('warning')?'log-warn':'';html+=`<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;});
     html+='</div>'; el.innerHTML=html; if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
+  },
+
+  renderHistory() {
+    const el = document.getElementById('historyList');
+    if (!el) return;
+    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    const hasRunning = this.runningTask && this.runningTask.status === 'RUNNING';
+    const hasHistory = this.historyItems && this.historyItems.length;
+
+    if (!hasRunning && !hasHistory) {
+      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + t('historyNoRecords', 'No training history') + '</p><p style="font-size:12px;color:var(--text-tertiary);margin-top:4px">' + t('historyWillAppear', 'Records will appear after training') + '</p></div>';
+      return;
+    }
+
+    let html = '';
+
+    // Running task
+    if (hasRunning) {
+      const r = this.runningTask;
+      html += '<div class="card history-card history-running" style="border-left:3px solid var(--primary)">';
+      html += '<div class="card-header">' + t('running', 'Running') + ' <span class="badge badge-running">● ' + (t('training', 'Training') || 'Training') + '</span></div>';
+      html += '<div><b>' + (r.name || r.id || '') + '</b></div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + ((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + (r.lr || '?') + ' | ' + t('historyDim', 'Dim') + ': ' + (r.dim || '?') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + (r.epochs || '?') + '</div>';
+      if (r.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('runDir', 'Folder') || 'Folder') + ': ' + r.run_dir + '</div>';
+      html += '</div>';
+    }
+
+    // History items
+    if (hasHistory) {
+      if (hasRunning) html += '<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px">' + t('pastRuns', 'Past Runs') + '</div>';
+      html += '<div class="history-grid">';
+      this.historyItems.forEach(h => {
+        html += '<div class="card history-card" @click="navigate(\'monitor-dashboard\')" style="cursor:pointer">';
+        html += '<div class="card-header">' + h.time + '</div>';
+        html += '<div><b>' + (h.name || '') + '</b></div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + (h.model || '') + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + (h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + (h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + (h.epochs || '') + '</div>';
+        if (h.dataset) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('dataset', 'Dataset') || 'Dataset') + ': ' + h.dataset + '</div>';
+        if (h.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary)">' + (t('runDir', 'Folder') || 'Folder') + ': ' + h.run_dir + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
   }
 };

@@ -85,7 +85,6 @@ def get_sample_prompts(config: dict):
 @router.post("/run")
 async def create_toml_file(request: Request):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    toml_file = os.path.join(os.getcwd(), "config", "autosave", f"{timestamp}.toml")
     json_data = await request.body()
 
     config: dict = json.loads(json_data.decode("utf-8"))
@@ -115,6 +114,23 @@ async def create_toml_file(request: Request):
         pass
     # ──────────────────────────────────────────────────────────
 
+    # ── Per-run folder: isolate each training run ──────────────
+    output_name = config.get("output_name", "my_lora")
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
+    run_dir_name = f"{safe_name}_{timestamp}"
+    is_resume = bool(config.get("resume", "").strip())
+
+    if not is_resume:
+        run_dir = os.path.join(os.getcwd(), "output", run_dir_name)
+        config["output_dir"] = run_dir
+        config["logging_dir"] = os.path.join(run_dir, "log")
+    else:
+        # 续训时保持原 output_dir，但日志也放到对应 run 目录
+        run_dir = config.get("output_dir", os.path.join(os.getcwd(), "output", run_dir_name))
+        if "logging_dir" not in config:
+            config["logging_dir"] = os.path.join(str(run_dir), "log")
+    # ──────────────────────────────────────────────────────────
+
     if model_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
             return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
@@ -133,7 +149,9 @@ async def create_toml_file(request: Request):
             positive_prompt, sample_prompts_arg = get_sample_prompts(config=config)
 
             if positive_prompt is not None and train_utils.is_promopt_like(sample_prompts_arg):
-                sample_prompts_file = os.path.join(os.getcwd(), "config", "autosave", f"{timestamp}-promopt.txt")
+                # 样本提示词也放入运行文件夹
+                os.makedirs(run_dir, exist_ok=True)
+                sample_prompts_file = os.path.join(run_dir, "prompts.txt")
                 with open(sample_prompts_file, "w", encoding="utf-8") as f:
                     f.write(sample_prompts_arg)
                 config["sample_prompts"] = sample_prompts_file
@@ -143,10 +161,21 @@ async def create_toml_file(request: Request):
             log.error(f"Error while processing prompts: {e}")
             return APIResponseFail(message=str(e))
 
+    # ── Write TOML to autosave (index) AND run folder (self-contained) ──
+    os.makedirs(os.path.join(os.getcwd(), "config", "autosave"), exist_ok=True)
+    toml_file = os.path.join(os.getcwd(), "config", "autosave", f"{timestamp}.toml")
+    toml_content = toml.dumps(config)
     with open(toml_file, "w", encoding="utf-8") as f:
-        f.write(toml.dumps(config))
+        f.write(toml_content)
 
-    result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads)
+    # Also save a copy in the run folder for self-contained records
+    if not is_resume:
+        os.makedirs(run_dir, exist_ok=True)
+    run_config_file = os.path.join(run_dir, "config.toml")
+    with open(run_config_file, "w", encoding="utf-8") as f:
+        f.write(toml_content)
+
+    result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)
     return result
 
 

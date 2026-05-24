@@ -56,40 +56,101 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
 
 # ── 历史记录 ──────────────────────────────────────────────
 
-def scan_history() -> list[dict]:
-    """扫描历史训练记录"""
-    history = []
-    if not CONFIG_AUTOSAVE.exists():
-        return history
+def _parse_toml_config(path: Path) -> dict | None:
+    """从 TOML 配置文件中提取关键参数"""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        params = {}
+        for key in ["output_name", "pretrained_model_name_or_path",
+                     "learning_rate", "network_dim", "network_alpha",
+                     "max_train_epochs", "model_train_type", "output_dir",
+                     "train_data_dir"]:
+            m = re.search(
+                rf'^{key}\s*=\s*["\']?(?P<v>[^"\'\n#]+)["\']?\s*$',
+                text, re.MULTILINE
+            )
+            if m:
+                params[key] = m.group("v").strip().strip('"').strip("'")
+        return params
+    except (OSError, Exception):
+        return None
 
-    for cfg_path in sorted(CONFIG_AUTOSAVE.glob("*.toml"),
-                           key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
-        try:
-            st = cfg_path.stat()
-            params = {}
-            text = cfg_path.read_text(encoding="utf-8", errors="replace")
-            for key in ["output_name", "pretrained_model_name_or_path",
-                         "learning_rate", "network_dim", "network_alpha",
-                         "max_train_epochs", "model_train_type"]:
-                m = re.search(
-                    rf'^{key}\s*=\s*["\']?(?P<v>[^"\'\n#]+)["\']?\s*$',
-                    text, re.MULTILINE
-                )
-                if m:
-                    params[key] = m.group("v").strip().strip('"').strip("'")
+
+def scan_history() -> list[dict]:
+    """扫描训练记录：优先从 output/*/config.toml（运行文件夹），回退到 config/autosave/"""
+    history = []
+    seen_names = set()  # 按 output_name+timestamp 去重
+
+    # ── 优先：扫描运行文件夹（每个训练一个目录） ──
+    if OUTPUT_DIR.exists():
+        for run_dir in sorted(OUTPUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not run_dir.is_dir():
+                continue
+            config_file = run_dir / "config.toml"
+            if not config_file.exists():
+                continue
+
+            params = _parse_toml_config(config_file)
+            if not params:
+                continue
+
+            st = config_file.stat()
+            key = (params.get("output_name", ""), run_dir.name)
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+
+            # 模型文件名（取 basename）
+            model_path = params.get("pretrained_model_name_or_path", "")
+            model_name = Path(model_path).name if model_path else "Unknown"
 
             history.append({
                 "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
                 "timestamp": st.st_mtime,
-                "config_file": cfg_path.name,
-                "name": params.get("output_name", cfg_path.stem),
-                "model": Path(params.get("pretrained_model_name_or_path", "")).name or "Unknown",
+                "run_dir": str(run_dir.relative_to(REPO_ROOT)).replace("\\", "/"),
+                "config_file": config_file.name,
+                "name": params.get("output_name", run_dir.name),
+                "model": model_name,
                 "lr": params.get("learning_rate", "?"),
                 "dim": params.get("network_dim", "?"),
                 "epochs": params.get("max_train_epochs", "?"),
+                "dataset": params.get("train_data_dir", ""),
             })
-        except (OSError, Exception):
-            continue
+
+    # ── 回退/补充：扫描 autosave（可能有些旧记录只有 toml 没目录） ──
+    if CONFIG_AUTOSAVE.exists():
+        for cfg_path in sorted(CONFIG_AUTOSAVE.glob("*.toml"),
+                               key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
+            # 跳过 prompt 文件
+            if cfg_path.name.endswith("-promopt.txt"):
+                continue
+
+            params = _parse_toml_config(cfg_path)
+            if not params:
+                continue
+
+            key = (params.get("output_name", ""), cfg_path.stem)
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+
+            st = cfg_path.stat()
+            model_path = params.get("pretrained_model_name_or_path", "")
+            model_name = Path(model_path).name if model_path else "Unknown"
+            run_dir = params.get("output_dir", "")
+
+            history.append({
+                "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "timestamp": st.st_mtime,
+                "run_dir": str(Path(run_dir).relative_to(REPO_ROOT)).replace("\\", "/") if run_dir else "",
+                "config_file": cfg_path.name,
+                "name": params.get("output_name", cfg_path.stem),
+                "model": model_name,
+                "lr": params.get("learning_rate", "?"),
+                "dim": params.get("network_dim", "?"),
+                "epochs": params.get("max_train_epochs", "?"),
+                "dataset": params.get("train_data_dir", ""),
+            })
 
     return history
 
@@ -97,14 +158,28 @@ def scan_history() -> list[dict]:
 # ── 训练日志读取 ──────────────────────────────────────────
 
 def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
-    """读取训练任务的实时日志"""
-    od = output_dir or OUTPUT_DIR
+    """读取训练任务的实时日志。优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
     task_id_short = task_id[:8]
-    for log_file in sorted(od.glob(f"train_{task_id_short}*.log"),
-                           key=lambda p: p.stat().st_mtime, reverse=True):
-        try:
-            text = log_file.read_text(encoding="utf-8", errors="replace")
-            return text.split("\n")
-        except OSError:
-            continue
+
+    # 先在指定目录查找
+    if output_dir and output_dir.exists():
+        for log_file in sorted(output_dir.glob(f"train_{task_id_short}*.log"),
+                               key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                return log_file.read_text(encoding="utf-8", errors="replace").split("\n")
+            except OSError:
+                continue
+
+    # 回退：扫描所有运行子目录
+    if OUTPUT_DIR.exists():
+        for run_dir in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime if p.is_dir() else 0, reverse=True):
+            if not run_dir.is_dir():
+                continue
+            for log_file in sorted(run_dir.glob(f"train_{task_id_short}*.log"),
+                                   key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    return log_file.read_text(encoding="utf-8", errors="replace").split("\n")
+                except OSError:
+                    continue
+
     return []

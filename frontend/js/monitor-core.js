@@ -7,7 +7,7 @@ window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
-  previews: [], previewStep: 0, historyItems: [],
+  previews: [], previewStep: 0, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
   chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
@@ -50,8 +50,13 @@ window.monitorCoreMixin = {
     try {
       const r = await fetch('/api/monitor/history');
       const d = await r.json();
-      if (d.status==='success') this.historyItems = d.data||[];
+      if (d.status==='success') {
+        this.runningTask = d.data.running || null;
+        this.historyItems = d.data.history || [];
+      }
+      this.renderHistory();
     } catch(e) {}
+    finally { this.finishProgress(); }
   },
 
   _destroyCharts() {

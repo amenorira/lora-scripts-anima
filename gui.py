@@ -64,7 +64,7 @@ atexit.register(_cleanup_subprocesses)
 def run_tensorboard():
     log.info("Starting tensorboard / 正在启动 TensorBoard...")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "tensorboard.main", "--logdir", "logs",
+        [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
          "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

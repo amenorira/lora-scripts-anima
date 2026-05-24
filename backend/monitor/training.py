@@ -9,6 +9,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LOG_DIR = REPO_ROOT / "logs"
+OUTPUT_DIR = REPO_ROOT / "output"
 CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
 
 
@@ -51,16 +52,29 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
 
 def read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list[dict]:
-    """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样"""
+    """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样。
+    优先扫描 output/*/log/（运行文件夹），回退到 logs/（旧格式）。"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:
         return []
 
-    event_files = sorted(
-        [p for p in LOG_DIR.rglob("events.out.tfevents.*") if p.is_file()],
-        key=lambda p: p.stat().st_mtime, reverse=True
-    )
+    # 优先扫描 per-run 文件夹，回退到旧 logs 目录
+    log_dirs = []
+    if OUTPUT_DIR.exists():
+        for run_dir in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            log_sub = run_dir / "log"
+            if log_sub.is_dir():
+                log_dirs.append(log_sub)
+    if LOG_DIR.exists():
+        log_dirs.append(LOG_DIR)
+
+    # 收集所有 event files
+    event_files = []
+    for log_dir in log_dirs:
+        for ef in sorted(log_dir.rglob("events.out.tfevents.*"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if ef.is_file():
+                event_files.append(ef)
     if not event_files:
         return []
 

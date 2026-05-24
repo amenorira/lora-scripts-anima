@@ -84,6 +84,7 @@ def run_train(
     gpu_ids: Optional[list] = None,
     cpu_threads: int = 2,
     extra_args: Optional[list] = None,
+    output_dir: str = "",
 ) -> dict:
     """
     启动训练子进程。
@@ -103,8 +104,10 @@ def run_train(
     if extra_args:
         args.extend(extra_args)
 
+    # 默认 output 目录
+    od = output_dir or str(Path(toml_path).parent.parent / "output")
     env = _build_train_env(
-        output_dir=Path(toml_path).parent.parent / "output",
+        output_dir=od,
         task_id="",
     )
 
@@ -126,8 +129,8 @@ def run_train(
     env["ANIMA_TASK_ID"] = task_id
     task_id_short = task_id[:8]
 
-    # 日志文件路径
-    log_dir = Path(toml_path).parent.parent / "output"
+    # 日志文件放在运行文件夹内
+    log_dir = Path(od)
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"train_{task_id_short}.log"
 

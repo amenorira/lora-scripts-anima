@@ -1302,6 +1302,10 @@ input[type="range"]::-webkit-slider-thumb {
 .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
 .history-card { cursor: pointer; transition: box-shadow 0.15s; }
 .history-card:hover { box-shadow: var(--shadow-md); }
+.history-running { background: var(--accent-soft); }
+
+/* ── Badge: Running ────────────────────────────────────── */
+.badge-running { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:var(--success); color:#fff; margin-left:8px; vertical-align:middle; }
 
 /* ── Tag Editor ────────────────────────────────────────── */
 .tag-editor { padding: 4px 0; }
