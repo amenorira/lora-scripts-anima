@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+import atexit
 import locale
 import os
 import platform
+import signal
 import subprocess
 import sys
 
@@ -30,12 +32,50 @@ parser.add_argument("--tensorboard-port", type=int, default=6006, help="Port to 
 parser.add_argument("--localization", type=str)
 parser.add_argument("--dev", action="store_true")
 
+# ── Subprocess tracking ──
+_subprocesses = []  # list of (Popen, name)
+
+
+def _cleanup_subprocesses():
+    """Terminate all tracked child processes."""
+    for proc, name in _subprocesses:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            log.info("%s stopped / %s 已停止", name, name)
+    _subprocesses.clear()
+
+
+def _shutdown(signum=None, frame=None):
+    """Graceful shutdown: clean up subprocesses, then exit."""
+    log.info("Shutting down / 正在关闭...")
+    _cleanup_subprocesses()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _shutdown)
+if sys.platform == "win32":
+    signal.signal(signal.SIGBREAK, _shutdown)
+atexit.register(_cleanup_subprocesses)
+
 
 @catch_exception
 def run_tensorboard():
     log.info("Starting tensorboard / 正在启动 TensorBoard...")
-    subprocess.Popen([sys.executable, "-m", "tensorboard.main", "--logdir", "logs",
-                     "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)])
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "tensorboard.main", "--logdir", "logs",
+         "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    _subprocesses.append((proc, "TensorBoard"))
+    log.info(
+        "TensorBoard started at http://%s:%s/ / TensorBoard 已启动",
+        args.tensorboard_host, args.tensorboard_port,
+    )
 
 
 @catch_exception
@@ -54,7 +94,8 @@ def run_tag_editor():
         l = locale.getdefaultlocale()[0]
         if l and l.startswith("zh"):
             cmd.extend(["--localization", "zh-Hans"])
-    subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd)
+    _subprocesses.append((proc, "tag editor"))
 
 
 def launch():
