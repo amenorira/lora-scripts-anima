@@ -49,7 +49,7 @@ FA_FALLBACK_URLS = [
 ]
 
 # 磁盘缓存（优先使用，API 仅用于增量更新）
-_FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "output"
+_FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 _FA_CACHE_FILE = _FA_CACHE_DIR / ".fa_wheels_cache.json"
 _FA_ETAG_FILE = _FA_CACHE_DIR / ".fa_etag.txt"       # 存 ETag，条件请求不消耗 rate limit
 

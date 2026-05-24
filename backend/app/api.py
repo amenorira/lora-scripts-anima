@@ -473,7 +473,7 @@ import time as _time
 import json as _json
 
 # 磁盘缓存路径（与 flash-attn 缓存同目录）
-_SD_CACHE_DIR = Path(__file__).parents[2] / "output"
+_SD_CACHE_DIR = Path(__file__).parents[2] / "cache"
 _SD_CACHE_FILE = _SD_CACHE_DIR / ".sd_scripts_cache.json"
 _SD_ETAG_RELEASES = _SD_CACHE_DIR / ".sd_etag_releases.txt"
 _SD_ETAG_COMMITS = _SD_CACHE_DIR / ".sd_etag_commits.txt"
