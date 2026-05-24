@@ -1728,6 +1728,77 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .env-msg-info { background: rgba(37,99,235,0.10); border-color: rgba(37,99,235,0.25); }
 [data-theme="dark"] .env-candidate-list { border-color: var(--border-default); }
 [data-theme="dark"] .env-candidate-item { border-bottom-color: var(--border-default); }
+
+/* ── sd-scripts: release card ───────────────────────────── */
+.env-subsection {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.env-subsection-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--text-tertiary);
+}
+.env-release-card {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 8px);
+  padding: 12px; background: var(--bg-sunken, var(--bg-surface-raised));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.env-release-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.env-release-tag {
+  font-family: var(--font-mono, monospace); font-size: 13px; font-weight: 600;
+}
+.env-release-body {
+  margin: 0; padding: 0;
+  font-size: 11px; line-height: 1.5; color: var(--text-secondary);
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-sans);
+  max-height: 200px; overflow-y: hidden;
+}
+.env-release-body.expanded {
+  max-height: none; overflow-y: visible;
+}
+.env-release-body-wrap {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.env-release-toggle {
+  align-self: flex-start; font-size: 11px;
+}
+.env-badge-sm { font-size: 10px; padding: 2px 7px; }
+
+/* ── sd-scripts: commit list ────────────────────────────── */
+.env-commit-list {
+  list-style: none; padding: 0; margin: 0;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 8px);
+}
+.env-commit-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; font-size: 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.env-commit-item:last-child { border-bottom: none; }
+.env-commit-msg {
+  flex: 1; color: var(--text-primary); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  font-size: 12px;
+}
+
+/* ── Links inside env cards ──────────────────────────────── */
+.env-link {
+  color: var(--accent); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: inherit;
+}
+.env-link:hover { text-decoration: underline; }
+.env-link code {
+  font-family: var(--font-mono, monospace); font-size: inherit;
+  background: transparent; padding: 0;
+}
+
+/* ── Dark mode additions ─────────────────────────────────── */
+[data-theme="dark"] .env-release-card { background: var(--bg-surface-raised); }
+[data-theme="dark"] .env-commit-list { border-color: var(--border-default); }
+[data-theme="dark"] .env-commit-item { border-bottom-color: var(--border-default); }
 [data-theme="dark"] .env-candidate-item:hover { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
 [data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

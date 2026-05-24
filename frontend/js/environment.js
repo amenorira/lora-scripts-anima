@@ -25,9 +25,22 @@ window.environmentMixin = {
   xfInstallLog: '',
   xfInstallElapsed: 0,
 
+  // ── sd-scripts State ────────────────────────────────
+  sdStatus: null,
+  sdBusy: false,
+  sdError: null,
+  sdReleasesOpen: false,
+  sdCommitsOpen: false,
+  sdUpdateConfirmMsg: null,
+  sdUpdateConfirmCallback: null,
+  sdUpdateJobId: null,
+  sdInstallLog: '',
+  sdInstallElapsed: 0,
+
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true,
   xfCardOpen: true,
+  sdCardOpen: true,
 
   _envInitCardState() {
     try {
@@ -36,6 +49,7 @@ window.environmentMixin = {
         const s = JSON.parse(v);
         if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
         if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
+        if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
       }
     } catch (_) { /* ignore */ }
   },
@@ -43,7 +57,7 @@ window.environmentMixin = {
   _envSaveCardState() {
     try {
       localStorage.setItem('anima_env_cards', JSON.stringify({
-        fa: this.faCardOpen, xf: this.xfCardOpen
+        fa: this.faCardOpen, xf: this.xfCardOpen, sd: this.sdCardOpen
       }));
     } catch (_) { /* ignore */ }
   },
@@ -68,8 +82,11 @@ window.environmentMixin = {
           const busyKey = prefix + 'Busy';
           a[busyKey] = false;
           // Refresh status after install completes
-          const refreshFn = prefix === 'fa' ? 'faRefresh' : 'xfRefresh';
-          try { await a[refreshFn](true); } catch (_) {}
+          const refreshMap = { fa: 'faRefresh', xf: 'xfRefresh', sd: 'sdRefresh' };
+          const refreshFn = refreshMap[prefix];
+          if (refreshFn) {
+            try { await a[refreshFn](true); } catch (_) {}
+          }
           a.finishProgress();
           a.renderEnvironment();
         } else {
@@ -110,7 +127,8 @@ window.environmentMixin = {
     this._envInitCardState();
     const needsFa = !this.faStatus;
     const needsXf = !this.xfStatus;
-    if (needsFa || needsXf) {
+    const needsSd = !this.sdStatus;
+    if (needsFa || needsXf || needsSd) {
       el.innerHTML = `<div class="env-loading">
         <div class="env-spinner"></div>
         <p>${this.t('environment.loading') || 'Loading environment info...'}</p>
@@ -118,6 +136,7 @@ window.environmentMixin = {
       const tasks = [];
       if (needsFa) tasks.push(this.faRefresh(true));
       if (needsXf) tasks.push(this.xfRefresh(true));
+      if (needsSd) tasks.push(this.sdRefresh(true));
       await Promise.all(tasks);
     }
     this.renderEnvironment();
@@ -219,6 +238,74 @@ window.environmentMixin = {
       this.finishProgress();
       this.renderEnvironment();
     }
+  },
+
+  // ── sd-scripts Methods ────────────────────────────────
+  async sdRefresh(silent) {
+    this.sdError = null;
+    if (!silent) {
+      this.startProgress();
+      this.toast(this.t('environment.refreshing') || 'Refreshing...');
+    }
+    try {
+      const r = await fetch('/api/sd-scripts/status');
+      this.sdStatus = await r.json();
+      if (!silent) this.toast(this.t('environment.refreshed') || 'Refreshed');
+    } catch (e) {
+      this.sdError = String(e);
+      this.sdStatus = null;
+    }
+    this.renderEnvironment();
+    if (!silent) this.finishProgress();
+  },
+
+  sdShowConfirm(msg, callback) {
+    this.sdUpdateConfirmMsg = msg;
+    this.sdUpdateConfirmCallback = callback;
+    this.renderEnvironment();
+  },
+
+  sdDismissConfirm() {
+    this.sdUpdateConfirmMsg = null;
+    this.sdUpdateConfirmCallback = null;
+    this.renderEnvironment();
+  },
+
+  async sdUpdate(target) {
+    const T = (k, fb) => this.t('environment.' + k) || fb || k;
+    const msg = target === 'main'
+      ? T('sdScriptsUpdateConfirmMain', 'Update sd-scripts to the latest main branch commit?')
+      : T('sdScriptsUpdateConfirmRelease', 'Update sd-scripts to the latest Release version?');
+    this.sdShowConfirm(msg, async () => {
+      this.sdBusy = true;
+      this.sdError = null;
+      this.sdInstallLog = '';
+      this.sdInstallElapsed = 0;
+      this.startProgress();
+      this.renderEnvironment();
+      try {
+        const r = await fetch('/api/sd-scripts/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: target })
+        });
+        const result = await r.json();
+        if (result.success && result.job_id) {
+          this.sdUpdateJobId = result.job_id;
+          this._startPolling(result.job_id, 'sd');
+        } else {
+          this.sdBusy = false;
+          this.sdError = result.error || 'Update failed';
+          this.finishProgress();
+          this.renderEnvironment();
+        }
+      } catch (e) {
+        this.sdBusy = false;
+        this.sdError = String(e);
+        this.finishProgress();
+        this.renderEnvironment();
+      }
+    });
   },
 
   renderEnvironment() {
@@ -469,10 +556,184 @@ window.environmentMixin = {
     }
 
     // ═══════════════════════════════════════════════════
-    //  Section: 训练核心 (placeholder for future)
+    //  Section: 训练核心 (sd-scripts)
     // ═══════════════════════════════════════════════════
     html += `<div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
-    html += `<div class="env-section-empty">${T('sectionCorePlaceholder', 'Coming soon — sd-scripts version, PyTorch, CUDA info')}</div>`;
+
+    const sd = this.sdStatus;
+    const sdLocal = sd?.local || {};
+    const sdLatest = sd?.latest_release;
+    const sdReleases = sd?.recent_releases || [];
+    const sdCommits = sd?.recent_commits || [];
+    const sdUpdateAvail = sd?.update_available;
+    const sdFetchErr = sd?.releases_error || sd?.commits_error;
+
+    const sdBadge = this.sdError
+      ? `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>`
+      : !sd
+        ? `<span class="env-badge env-badge-loading">${T('loading', 'Loading...')}</span>`
+        : sdUpdateAvail
+          ? `<span class="env-badge env-badge-warn">${T('sdScriptsUpdateAvailable', 'Update available')}</span>`
+          : `<span class="env-badge env-badge-ok">${T('sdScriptsUpToDate', 'Up to date')}</span>`;
+
+    html += `<details id="env-sdscripts" ${this.sdCardOpen ? 'open' : ''} class="env-card">
+      <summary class="env-card-summary">
+        <span class="env-chevron"></span>
+        <span class="env-card-title">${T('sdScriptsTitle', 'sd-scripts')}</span>
+        <span class="env-card-hint">${T('sdScriptsDesc', 'Training core engine (kohya-ss/sd-scripts)')}</span>
+        ${this.sdBusy ? `<span class="env-badge env-badge-loading">${T('sdScriptsUpdating', 'Updating...')}</span>` : sdBadge}
+      </summary>
+      <div class="env-card-body">`;
+
+    if (this.sdError) {
+      html += `<div class="env-msg env-msg-err"><pre>${this.sdError}</pre></div>`;
+    }
+
+    // Show update progress when busy
+    if (this.sdBusy) {
+      const elapsed = this._formatElapsed(this.sdInstallElapsed);
+      const log = this.sdInstallLog || '';
+      html += `<div class="env-install-progress">
+        <div class="env-install-row">
+          <div class="env-install-spinner"></div>
+          <div class="env-progress-info">
+            <span>${T('sdScriptsUpdating', 'Updating...')}</span>
+            <span class="env-progress-time">${elapsed}</span>
+          </div>
+        </div>
+        ${log ? `<pre class="env-install-log">${log}</pre>` : ''}
+      </div>`;
+    }
+
+    if (sd && !this.sdBusy) {
+      // Local info table
+      html += `<table class="env-table"><tbody>`;
+      const localRows = [
+        [T('sdScriptsRepo', 'Upstream repo'),
+          `<a href="https://github.com/${sdLocal.repo || 'kohya-ss/sd-scripts'}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo || 'kohya-ss/sd-scripts'} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`],
+        [T('sdScriptsBranch', 'Branch'), sdLocal.local_branch || '<span class="env-text-dim">-</span>'],
+        [sdLocal.tag ? 'Tag' : null, sdLocal.tag ? `<a href="https://github.com/${sdLocal.repo || 'kohya-ss/sd-scripts'}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a>` : null],
+        [T('sdScriptsCommit', 'Commit'),
+          sdLocal.local_commit
+            ? `<a href="https://github.com/${sdLocal.repo || 'kohya-ss/sd-scripts'}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit}</code></a>`
+            : '<span class="env-text-dim">UNKNOWN</span>'],
+        [T('sdScriptsSyncDate', 'Sync date'), sdLocal.sync_date || '<span class="env-text-dim">-</span>'],
+      ].filter(r => r[0] !== null);
+      localRows.forEach(([label, value]) => {
+        html += `<tr><td class="env-table-label">${label}</td><td class="env-table-value">${value}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+
+      // Fetch error / cache notice — 静默处理，仅在完全没有数据时提示
+      if (sdFetchErr && !sdReleases.length && !sdCommits.length && !sdLatest) {
+        html += `<div class="env-msg env-msg-warn">${T('sdScriptsFetchError', 'GitHub API 请求失败')}: ${sdFetchErr}</div>`;
+      }
+
+      // Latest release info
+      if (sdLatest) {
+        const bodyText = sdLatest.body || '';
+        const bodyLen = bodyText.length;
+        const releaseId = 'sd-release-body-' + (sdLatest.tag_name || 'latest');
+        html += `<div class="env-subsection">
+          <div class="env-subsection-title">${T('sdScriptsLatestRelease', 'Latest Release')}</div>`;
+        html += `<div class="env-release-card">
+          <div class="env-release-header">
+            <a href="${sdLatest.html_url || '#'}" target="_blank" rel="noopener" class="env-link env-release-tag">
+              ${sdLatest.tag_name || '?'}
+            </a>
+            ${sdLatest.prerelease ? `<span class="env-badge env-badge-warn env-badge-sm">${T('sdScriptsPrerelease', 'Pre-release')}</span>` : ''}
+            <span class="env-text-dim">${sdLatest.published_at ? new Date(sdLatest.published_at).toLocaleDateString() : ''}</span>
+            ${sdLatest.html_url ? `<a href="${sdLatest.html_url}" target="_blank" rel="noopener" class="env-link" style="margin-left:auto">GitHub &#8599;</a>` : ''}
+          </div>
+          ${bodyText ? `
+          <div class="env-release-body-wrap">
+            <pre class="env-release-body" id="${releaseId}">${bodyText}</pre>
+            ${bodyLen > 400 ? `<button class="btn btn-ghost btn-sm env-release-toggle" data-target="${releaseId}">${T('sdScriptsShowMore', '展开全部')}</button>` : ''}
+          </div>` : ''}
+        </div></div>`;
+      }
+
+      // Latest main branch HEAD info
+      const sdMain = sd?.latest_main_commit;
+      if (sdMain && sdMain.sha) {
+        html += `<div class="env-subsection">
+          <div class="env-subsection-title">${T('sdScriptsMainHead', 'main branch HEAD')}</div>`;
+        html += `<div class="env-release-card">
+          <div class="env-release-header">
+            <a href="${sdMain.html_url || '#'}" target="_blank" rel="noopener" class="env-link"><code>${sdMain.sha}</code></a>
+            <span class="env-text-dim">${sdMain.date ? new Date(sdMain.date).toLocaleDateString() : ''}</span>
+          </div>
+          <span class="env-commit-msg">${sdMain.message || ''}</span>
+        </div></div>`;
+      }
+
+      // Recent releases toggle
+      if (sdReleases.length > 1) {
+        html += `<div class="env-actions">
+          <button id="sd-releases-btn" class="btn btn-ghost btn-sm">
+            ${this.sdReleasesOpen ? '▲ ' + T('hideCandidates', 'Hide') : '▼ ' + T('sdScriptsLatestReleaseTag', 'Recent releases') + ' (' + (sdReleases.length - 1) + ')'}
+          </button>
+        </div>`;
+        if (this.sdReleasesOpen) {
+          html += `<ul class="env-candidate-list">`;
+          sdReleases.slice(1).forEach(rel => {
+            html += `<li class="env-candidate-item">
+              <a href="${rel.html_url || '#'}" target="_blank" rel="noopener" class="env-link">${rel.tag_name || '?'}</a>
+              ${rel.prerelease ? `<span class="env-badge env-badge-warn env-badge-sm">${T('sdScriptsPrerelease', 'Pre-release')}</span>` : ''}
+              <span class="env-text-dim">${rel.published_at ? new Date(rel.published_at).toLocaleDateString() : ''}</span>
+            </li>`;
+          });
+          html += `</ul>`;
+        }
+      }
+
+      // Recent commits
+      if (sdCommits.length) {
+        html += `<div class="env-subsection">
+          <div class="env-subsection-title">${T('sdScriptsRecentCommits', 'Recent Commits')}</div>`;
+        html += `<ul class="env-commit-list">`;
+        sdCommits.slice(0, 5).forEach(c => {
+          html += `<li class="env-commit-item">
+            <a href="${c.html_url || '#'}" target="_blank" rel="noopener" class="env-link"><code>${c.sha || '?'}</code></a>
+            <span class="env-commit-msg">${c.message || ''}</span>
+            <span class="env-text-dim">${c.date ? new Date(c.date).toLocaleDateString() : ''}</span>
+          </li>`;
+        });
+        html += `</ul></div>`;
+      }
+
+      // Confirm dialog
+      if (this.sdUpdateConfirmMsg) {
+        html += `<div class="env-actions">
+          <div class="env-confirm">
+            <span class="env-confirm-msg">${this.sdUpdateConfirmMsg}</span>
+            <button id="sd-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes', '确认')}</button>
+            <button id="sd-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo', '取消')}</button>
+          </div>
+        </div>`;
+      }
+
+      // Actions
+      html += `<div class="env-actions">
+        <a href="https://github.com/${sdLocal.repo || 'kohya-ss/sd-scripts'}" target="_blank" rel="noopener" class="btn btn-secondary">
+          ${T('sdScriptsOpenRepo', 'Open repo')} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+        <button id="sd-update-release-btn" class="btn btn-sm btn-primary" ${this.sdBusy ? 'disabled' : ''}
+          title="${T('sdScriptsUpdateToRelease', 'Update to latest Release')}">
+          ${T('sdScriptsUpdateToRelease', 'Update to latest Release')}
+        </button>
+        <button id="sd-update-main-btn" class="btn btn-sm btn-secondary" ${this.sdBusy ? 'disabled' : ''}
+          title="${T('sdScriptsUpdateToMain', 'Update to latest main')}">
+          ${T('sdScriptsUpdateToMain', 'Update to latest main')}
+        </button>
+        <button id="sd-refresh-btn" class="btn-icon"
+          title="${T('refresh', 'Refresh')}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+      </div>`;
+    }
+
+    html += `</div></details>`;
 
     el.innerHTML = html;
 
@@ -517,15 +778,54 @@ window.environmentMixin = {
     if (xfInstallBtn) xfInstallBtn.addEventListener('click', () => a.xfInstall());
     if (xfRefreshBtn) xfRefreshBtn.addEventListener('click', () => a.xfRefresh());
 
+    // ── Bind sd-scripts events ──────────────────────────
+    const sdRefreshBtn = el.querySelector('#sd-refresh-btn');
+    if (sdRefreshBtn) sdRefreshBtn.addEventListener('click', () => a.sdRefresh());
+    const sdReleasesBtn = el.querySelector('#sd-releases-btn');
+    if (sdReleasesBtn) sdReleasesBtn.addEventListener('click', () => {
+      a.sdReleasesOpen = !a.sdReleasesOpen;
+      a.renderEnvironment();
+    });
+    const sdUpdateReleaseBtn = el.querySelector('#sd-update-release-btn');
+    if (sdUpdateReleaseBtn) sdUpdateReleaseBtn.addEventListener('click', () => a.sdUpdate('release'));
+    const sdUpdateMainBtn = el.querySelector('#sd-update-main-btn');
+    if (sdUpdateMainBtn) sdUpdateMainBtn.addEventListener('click', () => a.sdUpdate('main'));
+    const sdConfirmYes = el.querySelector('#sd-confirm-yes');
+    const sdConfirmNo = el.querySelector('#sd-confirm-no');
+    if (sdConfirmYes) sdConfirmYes.addEventListener('click', () => {
+      const cb = a.sdUpdateConfirmCallback;
+      a.sdDismissConfirm();
+      if (cb) cb();
+    });
+    if (sdConfirmNo) sdConfirmNo.addEventListener('click', () => a.sdDismissConfirm());
+
+    // ── Release body toggle ─────────────────────────────
+    el.querySelectorAll('.env-release-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.dataset.target;
+        const pre = document.getElementById(targetId);
+        if (!pre) return;
+        const isExpanded = pre.classList.toggle('expanded');
+        btn.textContent = isExpanded
+          ? (a.t('environment.sdScriptsShowLess') || '收起')
+          : (a.t('environment.sdScriptsShowMore') || '展开全部');
+      });
+    });
+
     // ── Persist card open/close state ────────────────────
     const faCard = el.querySelector('#env-flash-attn');
     const xfCard = el.querySelector('#env-xformers');
+    const sdCard = el.querySelector('#env-sdscripts');
     if (faCard) faCard.addEventListener('toggle', () => {
       a.faCardOpen = faCard.open;
       a._envSaveCardState();
     });
     if (xfCard) xfCard.addEventListener('toggle', () => {
       a.xfCardOpen = xfCard.open;
+      a._envSaveCardState();
+    });
+    if (sdCard) sdCard.addEventListener('toggle', () => {
+      a.sdCardOpen = sdCard.open;
       a._envSaveCardState();
     });
   },

@@ -5,12 +5,10 @@
 [upstream]
 repo = "kohya-ss/sd-scripts"
 branch = "main"
-# TODO: Fill in the exact commit hash this copy was synced from
-commit = "UNKNOWN"
-# Approximate sync date (based on git history)
-sync_date = "2026-05-20"
-# Last checked for upstream updates
-last_check = ""
+commit = "a1b48df430a3690aeb5c9b6e7b19025afe8fb518"
+sync_date = "2026-05-08T07:55:32+09:00"
+tag = "v0.10.5"
+last_check = "2026-05-24"
 
 [local]
 # Files/directories added locally (not from upstream)
