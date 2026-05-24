@@ -50,7 +50,7 @@ def prepare_git():
 
 
 def prepare_submodules():
-    tag_editor_path = base_dir_path() / "backend" / "dataset-tag-editor" / "scripts"
+    tag_editor_path = base_dir_path() / "vendor" / "dataset-tag-editor" / "scripts"
 
     if not os.path.exists(tag_editor_path):
         log.info("submodule not found, try clone / 子模块未找到，尝试克隆...")

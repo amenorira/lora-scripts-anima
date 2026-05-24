@@ -38,9 +38,13 @@ document.addEventListener('alpine:init', () => {
     _disconnectedTimer: null,
 
     // ── Mixin spread ──────────────────────────────────────
-    ...(window.monitorMixin || {}),
-    ...(window.environmentMixin || {}),
-    ...(window.trainingMixin || {}),
+    ...(window.monitorCoreMixin || {}),
+    ...(window.monitorRenderMixin || {}),
+    ...(window.environmentCoreMixin || {}),
+    ...(window.environmentRenderMixin || {}),
+    ...(window.trainingCoreMixin || {}),
+    ...(window.trainingTomlMixin || {}),
+    ...(window.trainingPresetsMixin || {}),
     ...(window.taggerMixin || {}),
     ...(window.tagEditorMixin || {}),
 

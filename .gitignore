@@ -11,6 +11,11 @@ output/*
 cache/*
 !cache/.keep
 
+huggingface/
+
+sd-models/*
+!sd-models/.gitkeep
+
 assets/config.json
 
 py310
@@ -18,17 +23,10 @@ python
 git
 wd14_tagger_model
 
-train/*
 logs/*
-sd-models/*
-toml/autosave/*
+!logs/.keep
+
 config/autosave/*
 config/presets/test*.toml
 
-!sd-models/put stable diffusion model here.txt
-!logs/.keep
-
 vendor/sd-scripts/tests/
-
-huggingface/hub/models*
-huggingface/hub/version_diffusers_cache.txt

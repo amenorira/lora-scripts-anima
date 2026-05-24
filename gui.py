@@ -22,13 +22,11 @@ parser.add_argument("--port", type=int, default=12333, help="Port to run the ser
 parser.add_argument("--listen", action="store_true")
 parser.add_argument("--skip-prepare-environment", action="store_true")
 parser.add_argument("--skip-prepare-onnxruntime", action="store_true")
-parser.add_argument("--disable-tensorboard", action="store_true", help="Disable TensorBoard (port 6006). TensorBoard is enabled by default.")
-parser.add_argument("--disable-tageditor", action="store_true", help="Deprecated: Tag editor is now disabled by default. Use --enable-tageditor to re-enable.")
-parser.add_argument("--enable-tensorboard", action="store_true", help="Deprecated: TensorBoard is now enabled by default. Use --disable-tensorboard to turn off.")
+parser.add_argument("--disable-tensorboard", action="store_true", help="Disable TensorBoard (port 6006)")
 parser.add_argument("--enable-tageditor", action="store_true", help="Enable legacy Gradio tag editor (port 28001)")
 parser.add_argument("--disable-auto-mirror", action="store_true")
-parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1", help="Port to run the tensorboard")
-parser.add_argument("--tensorboard-port", type=int, default=6006, help="Port to run the tensorboard")
+parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
+parser.add_argument("--tensorboard-port", type=int, default=6006)
 parser.add_argument("--localization", type=str)
 parser.add_argument("--dev", action="store_true")
 
@@ -83,7 +81,7 @@ def run_tag_editor():
     log.info("Starting tageditor / 正在启动标签编辑器...")
     cmd = [
         sys.executable,
-        base_dir_path() / "legacy/frontend/scripts/launch.py",
+        base_dir_path() / "vendor/dataset-tag-editor/scripts/launch.py",
         "--port", "28001",
         "--shadow-gradio-output",
         "--root-path", "/proxy/tageditor"
@@ -107,7 +105,7 @@ def launch():
         prepare_environment(disable_auto_mirror=args.disable_auto_mirror)
 
     if not check_port_avaliable(args.port):
-        avaliable = find_avaliable_ports(30000, 30000+20)
+        avaliable = find_avaliable_ports(30000, 30000 + 20)
         if avaliable:
             args.port = avaliable
         else:
@@ -115,20 +113,20 @@ def launch():
 
     log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
 
-    # flash-attn status / 检测 flash-attn 状态
+    # flash-attn status
     try:
         from importlib.metadata import version as pkg_version
         fa_ver = pkg_version("flash_attn")
         log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
     except Exception:
-        log.info("flash_attn: NOT FOUND / 未安装 — RTX 40/50 series recommended: install-flash-attn scripts")
+        log.info("flash_attn: NOT FOUND / 未安装")
 
-    # xformers status / 检测 xformers 状态
+    # xformers status
     try:
         xf_ver = pkg_version("xformers")
         log.info(f"xformers: OK (version / 版本 {xf_ver})")
     except Exception:
-        log.info("xformers: NOT FOUND / 未安装 — pip install xformers available")
+        log.info("xformers: NOT FOUND / 未安装")
 
     os.environ["ANIMA_HOST"] = args.host
     os.environ["ANIMA_PORT"] = str(args.port)
@@ -147,18 +145,16 @@ def launch():
         run_tensorboard()
 
     import uvicorn
-    url_new = f"http://{args.host}:{args.port}/v2"
-    url_legacy = f"http://{args.host}:{args.port}/"
+    url = f"http://{args.host}:{args.port}/"
     print()
     print("=" * 60)
     print("  lora-scripts-anima 已启动 / Server started")
     print("=" * 60)
-    print(f"  新前端 / New UI :  {url_new}")
-    print(f"  旧前端 / Legacy  :  {url_legacy}")
+    print(f"  URL :  {url}")
     print("=" * 60)
     print()
-    log.info(f"Server started at {url_new} / 服务器已启动")
-    uvicorn.run("backend.app:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
+    log.info(f"Server started at {url} / 服务器已启动")
+    uvicorn.run("backend.server:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
 
 
 if __name__ == "__main__":

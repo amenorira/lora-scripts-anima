@@ -1,8 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Tensorboard | Anima Trainer{% endblock %}
-{% block content %}
-<h1 style="font-size:24px;font-weight:700;color:#111827">📊 Tensorboard</h1>
-<p style="color:#6b7280;margin:8px 0 20px">实时查看训练曲线和指标</p>
-<iframe src="http://{{ tb_host }}:{{ tb_port }}"
-        style="width:100%;height:calc(100vh-180px);border:none;border-radius:12px"></iframe>
-{% endblock %}
