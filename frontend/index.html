@@ -191,7 +191,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' }">
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' }">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
@@ -299,11 +299,8 @@
       </div>
 
       <!-- Route: TensorBoard -->
-      <div x-show="currentRoute === 'tensorboard'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title">TensorBoard</h1>
-        </div>
-        <div id="tensorboardFrame"></div>
+      <div x-show="currentRoute === 'tensorboard'" x-cloak style="height:100%">
+        <div id="tensorboardFrame" style="height:100%"></div>
       </div>
 
       <!-- Route: Training pages (basic/master/anima) -->

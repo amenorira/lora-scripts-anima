@@ -271,7 +271,7 @@ document.addEventListener('alpine:init', () => {
     renderTensorBoardPage() {
       const el = document.getElementById('tensorboardFrame');
       if (!el || el.querySelector('iframe')) return;
-      el.innerHTML = `<iframe src="/proxy/tensorboard/" style="width:100%;height:calc(100vh - 120px);border:none;border-radius:var(--radius-lg)" 
+      el.innerHTML = `<iframe src="/proxy/tensorboard/" class="iframe-full"
         onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s"></iframe>`;
     },
 
