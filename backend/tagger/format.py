@@ -1,5 +1,6 @@
 import re
 import hashlib
+from datetime import datetime
 
 from typing import Dict, Callable, NamedTuple
 from pathlib import Path
@@ -23,6 +24,14 @@ def hash(i: Info, algo='sha1') -> str:
     return hash.hexdigest()
 
 
+def ts(i: Info, fmt='%Y%m%d_%H%M%S') -> str:
+    return datetime.now().strftime(fmt)
+
+
+def date(i: Info, fmt='%Y%m%d') -> str:
+    return datetime.now().strftime(fmt)
+
+
 pattern = re.compile(r'\[([\w:]+)\]')
 
 # all function must returns string or raise TypeError or ValueError
@@ -31,6 +40,8 @@ available_formats: Dict[str, Callable] = {
     'name': lambda i: i.path.stem,
     'extension': lambda i: i.path.suffix[1:],
     'hash': hash,
+    'timestamp': ts,
+    'date': date,
 
     'output_extension': lambda i: i.output_ext
 }

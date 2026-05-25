@@ -49,7 +49,7 @@ class Interrogator:
                     ok_tags[t] = c
 
         for e in exclude_tags:
-            del ok_tags[e]
+            ok_tags.pop(e, None)
 
         if sort_by_alphabetical_order:
             ok_tags = dict(sorted(ok_tags.items()))

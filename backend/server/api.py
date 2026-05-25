@@ -63,16 +63,20 @@ async def get_fields():
 
 @router.post("/interrogate")
 async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: BackgroundTasks):
+    import uuid
+    from backend.tagger.interrogator import get_tagger_progress
+    task_id = str(uuid.uuid4())[:8]
     interrogator = available_interrogators.get(req.interrogator_model, available_interrogators["wd14-convnextv2-v2"])
     background_tasks.add_task(
         on_interrogate,
+        task_id=task_id,
         image=None,
         batch_input_glob=req.path,
         batch_input_recursive=req.batch_input_recursive,
         batch_output_dir="",
         batch_output_filename_format="[name].[output_extension]",
         batch_output_action_on_conflict=req.batch_output_action_on_conflict,
-        batch_remove_duplicated_tag=True,
+        batch_remove_duplicated_tag=req.batch_remove_duplicated_tag,
         batch_output_save_json=False,
         interrogator=interrogator,
         threshold=req.threshold,
@@ -88,7 +92,14 @@ async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: Backg
         escape_tag=req.escape_tag,
         unload_model_after_running=True
     )
-    return APIResponseSuccess()
+    return APIResponseSuccess(data={"task_id": task_id})
+
+
+@router.get("/interrogate/progress")
+async def tagger_progress(task_id: str):
+    """Poll tagger task progress."""
+    from backend.tagger.interrogator import get_tagger_progress
+    return APIResponseSuccess(data=get_tagger_progress(task_id))
 
 
 @router.get("/tagger/models")

@@ -17,8 +17,15 @@ from backend.tagger import dbimutils, format
 from backend.tagger.interrogators.base import Interrogator
 from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator
+import traceback
 
 tag_escape_pattern = re.compile(r'([\\()])')
+
+# ── Progress tracker for tagger tasks ────────────────────
+_tagger_progress: Dict[str, dict] = {}
+
+def get_tagger_progress(task_id: str) -> dict:
+    return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []})
 
 
 available_interrogators = {
@@ -73,6 +80,7 @@ def split_str(s: str, separator=',') -> List[str]:
 
 
 def on_interrogate(
+        task_id: str,
         image: Image,
         batch_input_glob: str,
         batch_input_recursive: bool,
@@ -152,90 +160,107 @@ def on_interrogate(
             if '.' + p.split('.').pop().lower() in supported_extensions
         ]
 
-        print(f'found {len(paths)} image(s)')
+        total = len(paths)
+        _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
+        print(f'found {total} image(s)')
 
-        for path in paths:
+        for idx, path in enumerate(paths):
             try:
                 image = Image.open(path)
             except UnidentifiedImageError:
-                # just in case, user has mysterious file...
-                print(f'${path} is not supported image type')
+                print(f'{path} is not supported image type')
+                _tagger_progress[task_id]["logs"].append(f'Skip (unsupported): {path.name}')
                 continue
 
-            # guess the output path
-            base_dir_last = Path(base_dir).parts[-1]
-            base_dir_last_idx = path.parts.index(base_dir_last)
-            output_dir = Path(
-                batch_output_dir) if batch_output_dir else Path(base_dir)
-            output_dir = output_dir.joinpath(
-                *path.parts[base_dir_last_idx + 1:]).parent
-
-            output_dir.mkdir(0o777, True, True)
-
-            # format output filename
-            format_info = format.Info(path, 'txt')
-
             try:
-                formatted_output_filename = format.pattern.sub(
-                    lambda m: format.format(m, format_info),
-                    batch_output_filename_format
-                )
-            except (TypeError, ValueError) as error:
-                return str(error)
+                # guess the output path
+                base_dir_last = Path(base_dir).parts[-1]
+                base_dir_last_idx = path.parts.index(base_dir_last)
+                output_dir = Path(
+                    batch_output_dir) if batch_output_dir else Path(base_dir)
+                output_dir = output_dir.joinpath(
+                    *path.parts[base_dir_last_idx + 1:]).parent
 
-            output_path = output_dir.joinpath(
-                formatted_output_filename
-            )
+                output_dir.mkdir(0o777, True, True)
 
-            output = []
+                # format output filename
+                format_info = format.Info(path, 'txt')
 
-            if output_path.is_file():
-                output.append(output_path.read_text(errors='ignore').strip())
+                try:
+                    formatted_output_filename = format.pattern.sub(
+                        lambda m: format.format(m, format_info),
+                        batch_output_filename_format
+                    )
+                except (TypeError, ValueError) as error:
+                    _tagger_progress[task_id]["status"] = "error"
+                    _tagger_progress[task_id]["logs"].append(f'Error: {error}')
+                    return str(error)
 
-                if batch_output_action_on_conflict == 'ignore':
-                    print(f'skipping {path}')
-                    continue
-
-            tags = interrogator.interrogate(image)
-            processed_tags = Interrogator.postprocess_tags(
-                tags,
-                *postprocess_opts
-            )
-
-            # TODO: switch for less print
-            print(
-                f'found {len(processed_tags)} tags out of {len(tags)} from {path}'
-            )
-
-            plain_tags = ', '.join(processed_tags)
-
-            if batch_output_action_on_conflict == 'copy':
-                output = [plain_tags]
-            elif batch_output_action_on_conflict == 'prepend':
-                output.insert(0, plain_tags)
-            else:
-                output.append(plain_tags)
-
-            if batch_remove_duplicated_tag:
-                output_path.write_text(
-                    ', '.join(
-                        OrderedDict.fromkeys(
-                            map(str.strip, ','.join(output).split(','))
-                        )
-                    ),
-                    encoding='utf-8'
-                )
-            else:
-                output_path.write_text(
-                    ', '.join(output),
-                    encoding='utf-8'
+                output_path = output_dir.joinpath(
+                    formatted_output_filename
                 )
 
-            if batch_output_save_json:
-                output_path.with_suffix('.json').write_text(
-                    json.dumps(tags)
+                output = []
+
+                if output_path.is_file():
+                    output.append(output_path.read_text(errors='ignore').strip())
+
+                    if batch_output_action_on_conflict == 'ignore':
+                        print(f'skipping {path}')
+                        _tagger_progress[task_id]["logs"].append(f'Skip (exists): {path.name}')
+                        _tagger_progress[task_id]["current"] = idx + 1
+                        _tagger_progress[task_id]["current_file"] = str(path.name)
+                        continue
+
+                tags = interrogator.interrogate(image)
+                processed_tags = Interrogator.postprocess_tags(
+                    tags,
+                    *postprocess_opts
                 )
 
+                print(
+                    f'[{idx+1}/{total}] found {len(processed_tags)} tags from {path.name}'
+                )
+
+                plain_tags = ', '.join(processed_tags)
+
+                if batch_output_action_on_conflict == 'copy':
+                    output = [plain_tags]
+                elif batch_output_action_on_conflict == 'prepend':
+                    output.insert(0, plain_tags)
+                else:
+                    output.append(plain_tags)
+
+                if batch_remove_duplicated_tag:
+                    output_path.write_text(
+                        ', '.join(
+                            OrderedDict.fromkeys(
+                                map(str.strip, ','.join(output).split(','))
+                            )
+                        ),
+                        encoding='utf-8'
+                    )
+                else:
+                    output_path.write_text(
+                        ', '.join(output),
+                        encoding='utf-8'
+                    )
+
+                if batch_output_save_json:
+                    output_path.with_suffix('.json').write_text(
+                        json.dumps(tags)
+                    )
+
+                _tagger_progress[task_id]["logs"].append(f'[{idx+1}/{total}] {path.name}: {len(processed_tags)} tags')
+            except Exception as e:
+                print(f'Error processing {path}: {e}')
+                traceback.print_exc()
+                _tagger_progress[task_id]["logs"].append(f'Error [{path.name}]: {e}')
+
+            _tagger_progress[task_id]["current"] = idx + 1
+            _tagger_progress[task_id]["current_file"] = str(path.name)
+
+        _tagger_progress[task_id]["status"] = "done"
         print('all done')
 
     if unload_model_after_running:
