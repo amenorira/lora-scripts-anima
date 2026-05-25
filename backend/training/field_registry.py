@@ -42,7 +42,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "model_train_type", "type": "select", "default": "sd-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sd-lora", "l": "SD LoRA", "dk": "opt.model_train_type_sd-lora"}, {"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./sd-models/model.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model"},
 {"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model"},
-{"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "target": "toml", "role": "file-folder"},
+{"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "target": "toml", "role": "file-folder", "advanced": True},
 {"key": "v2", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v2", "target": "toml", "group": "sd", "advanced": True},
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": "sd", "advanced": True},
 {"key": "clip_skip", "type": "stepper", "default": 2, "section": "model", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
