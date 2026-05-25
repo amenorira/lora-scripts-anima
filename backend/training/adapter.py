@@ -35,12 +35,9 @@ LYCORIS_NETWORK_ARG_MAP: dict[str, str] = {
     "use_cp": "use_cp",
     "use_scalar": "use_scalar",
     "decompose_both": "decompose_both",
-    "bypass_mode": "bypass_mode",
-    "dora_wd": "dora_wd",
     "full_matrix": "full_matrix",
     "rank_dropout": "rank_dropout",
     "module_dropout": "module_dropout",
-    "rank_dropout_scale": "rank_dropout_scale",
     "train_norm": "train_norm",
     "dropout": "dropout",
 }

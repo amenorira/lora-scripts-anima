@@ -80,28 +80,12 @@ window.trainingCoreMixin = {
     const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'sd-lora');
     let html = '';
     sections.forEach(section => {
-      const basicFields = section.fields.filter(f => !f.advanced && !f.hidden);
-      const advFields = section.fields.filter(f => f.advanced && !f.hidden);
-      const hasAdvanced = advFields.length > 0;
+      const fields = section.fields.filter(f => !f.hidden);
 
       html += `<div class="card" data-section="${section.key}">`;
       html += `<div class="card-header">${this.t(section.titleKey) || section.titleKey}</div>`;
 
-      // Basic fields
-      basicFields.forEach(field => { html += this.renderField(field); });
-
-      // Advanced fields (collapsible)
-      if (hasAdvanced) {
-        html += `<div class="field-advanced-toggle" x-data="{ open: false }">
-          <button type="button" class="btn-advanced-toggle" @click="open = !open">
-            <span x-text="open ? '收起进阶参数' : '展开进阶参数 (' + ${advFields.length} + ')'"></span>
-            <svg class="advanced-chevron" :class="{ open: open }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-        </div>`;
-        html += `<div class="field-advanced-panel" x-show="open" x-transition:enter="adv-enter" x-transition:enter-start="adv-enter-start" x-transition:enter-end="adv-enter-end" x-transition:leave="adv-leave" x-transition:leave-start="adv-leave-start" x-transition:leave-end="adv-leave-end">`;
-        advFields.forEach(field => { html += this.renderField(field); });
-        html += `</div>`;
-      }
+      fields.forEach(field => { html += this.renderField(field); });
 
       html += `</div>`;
     });
