@@ -26,6 +26,7 @@ window.trainingCoreMixin = {
     this.currentTrainTypeLabel = tt ? tt.l : '';
     this.renderTrainingForm(v);
     this.setupAutoValueWatchers();
+    this.setupShowIfWatchers();
     this.updateToml();
     this.loadPresets();
   },
@@ -57,6 +58,7 @@ window.trainingCoreMixin = {
 
     this.renderTrainingForm(trainType);
     this.setupAutoValueWatchers();
+    this.setupShowIfWatchers();
     this.loadPresets();
 
     const self = this;
@@ -249,6 +251,15 @@ window.trainingCoreMixin = {
           }
         }
       });
+    });
+  },
+
+  // ── Show If Watchers: listen for parent field changes to show/hide children ──
+  setupShowIfWatchers() {
+    const self = this;
+    this._allShowIfKeys().forEach(k => {
+      // Use a named function for clarity; Alpine re-evaluates on change
+      self.$watch('form.' + k, () => self.showConditionalFields(k));
     });
   },
 
