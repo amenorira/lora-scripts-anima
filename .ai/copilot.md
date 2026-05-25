@@ -31,23 +31,22 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 - `backend/` — Backend (FastAPI)
 - `frontend/` — Frontend (Alpine.js SPA)
-- `legacy/` — Legacy frontend + old scripts
 - `gui.py` — Entry point
 - `config/` — Training presets
-- `legacy/` — Old shell scripts
+- `.ai/` — Agent instructions (copilot.md, i18n.md)
 - Root-level scripts: `install*.ps1`, `start.bat`, etc.
 
 ## Localization
 
-All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 385 keys). Never hardcode Chinese/English strings.
+All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 439 keys). Never hardcode Chinese/English strings.
 
 ## Architecture
 
-- Backend: FastAPI → `backend/app/`
+- Backend: FastAPI → `backend/server/`
 - Frontend: Alpine.js SPA → `frontend/`
 - Training: subprocess calls to `vendor/sd-scripts/*.py` via `accelerate launch`
 - Config: TOML format, generated from UI form data
-- Schema: TypeScript form definitions → `backend/schema/`
+- Field definitions: `backend/training/field_registry.py` (single source of truth)
 
 ### Core Design: We Are a Wrapper
 
@@ -58,11 +57,11 @@ All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rule
 
 The data flow:
 ```
-UI form (JSON) → adapter.py (whitelist/filter) → TOML file → accelerate launch vendor/sd-scripts/train_network.py --config_file xxx.toml
+UI form (JSON) → field_registry.py (validation) → adapter.py (whitelist/filter) → TOML file → accelerate launch vendor/sd-scripts/train_network.py --config_file xxx.toml
 ```
 
 Key implications:
-- If a training parameter exists in sd-scripts but not in our UI form, we need to add it to `SUPPORTED_FIELDS` in `adapter.py` and the schema in `schema/`
+- If a training parameter exists in sd-scripts but not in our UI form, we need to add it to `field_registry.py`
 - If our generated TOML is valid but training fails, the bug is almost certainly in sd-scripts or the user's setup (GPU/drivers/dataset), not in our code
 - Never re-implement training logic that sd-scripts already handles (loss calculation, optimizer steps, sample generation, etc.)
 
