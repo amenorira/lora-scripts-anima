@@ -758,6 +758,14 @@ input[type="checkbox"]:focus-visible {
   overflow: hidden;
 }
 
+/* Alpine transition classes for advanced panel */
+.adv-enter { transition: max-height 0.4s var(--ease-out), opacity 0.35s var(--ease-out); }
+.adv-enter-start { max-height: 0; opacity: 0; }
+.adv-enter-end   { max-height: 6000px; opacity: 1; }
+.adv-leave       { transition: max-height 0.30s var(--ease-out), opacity 0.25s var(--ease-out); }
+.adv-leave-start { max-height: 6000px; opacity: 1; }
+.adv-leave-end   { max-height: 0; opacity: 0; }
+
 .field-left { flex: 1; min-width: 0; padding-top: 1px; }
 .field-label { font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4; }
 .field-desc { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.4; }

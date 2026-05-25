@@ -98,7 +98,7 @@ window.trainingCoreMixin = {
             <svg class="advanced-chevron" :class="{ open: open }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
         </div>`;
-        html += `<div class="field-advanced-panel" x-show="open" x-transition>`;
+        html += `<div class="field-advanced-panel" x-show="open" x-transition:enter="adv-enter" x-transition:enter-start="adv-enter-start" x-transition:enter-end="adv-enter-end" x-transition:leave="adv-leave" x-transition:leave-start="adv-leave-start" x-transition:leave-end="adv-leave-end">`;
         advFields.forEach(field => { html += this.renderField(field); });
         html += `</div>`;
       }
