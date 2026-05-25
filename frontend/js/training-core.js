@@ -24,9 +24,8 @@ window.trainingCoreMixin = {
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
-    const allSections = [...TRAIN_SECTIONS_COMMON];
-    if (v === 'anima-lora') allSections.push(...TRAIN_SECTIONS_ANIMA);
-    this.renderTrainingForm(allSections);
+    this.renderTrainingForm(v);
+    this.setupAutoValueWatchers();
     this.updateToml();
     this.loadPresets();
   },
@@ -43,8 +42,7 @@ window.trainingCoreMixin = {
     try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
 
     const defaults = {};
-    const allSections = [...TRAIN_SECTIONS_COMMON];
-    if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
+    const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => { s.fields.forEach(f => { if (f.default !== undefined) defaults[f.key] = f.default; }); });
     defaults.model_train_type = trainType;
 
@@ -57,18 +55,11 @@ window.trainingCoreMixin = {
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
-    this.renderTrainingForm(allSections);
+    this.renderTrainingForm(trainType);
+    this.setupAutoValueWatchers();
     this.loadPresets();
 
-    const showIfKeys = new Set();
-    allSections.forEach(s => s.fields.forEach(f => {
-      if (f.showIf) showIfKeys.add(f.showIf.key);
-    }));
     const self = this;
-    showIfKeys.forEach(k => {
-      self.$watch('form.' + k, () => self.showConditionalFields(k));
-    });
-
     this.$watch('form', () => {
       try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
     });
@@ -81,9 +72,10 @@ window.trainingCoreMixin = {
 
   setupStickyTabs() { /* no-op */ },
 
-  renderTrainingForm(sections) {
+  renderTrainingForm(trainType) {
     const container = document.getElementById('trainFormContent');
     if (!container) return;
+    const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'sd-lora');
     let html = '';
     sections.forEach(section => {
       html += `<div class="card" data-section="${section.key}">`;
@@ -92,6 +84,20 @@ window.trainingCoreMixin = {
       html += `</div>`;
     });
     container.innerHTML = html;
+    // Re-check all conditional fields after render
+    this._allShowIfKeys().forEach(k => this.showConditionalFields(k));
+  },
+
+  _allSections() {
+    return window.getVisibleSections(this.form.model_train_type || 'sd-lora');
+  },
+
+  _allShowIfKeys() {
+    const keys = new Set();
+    this._allSections().forEach(s => s.fields.forEach(f => {
+      if (f.showIf) keys.add(f.showIf.key);
+    }));
+    return [...keys];
   },
 
   renderField(field) {
@@ -147,8 +153,21 @@ window.trainingCoreMixin = {
     let condClass = '';
     let condAttrs = '';
     if (field.showIf) {
-      const condMet = this.form[field.showIf.key] === field.showIf.eq;
-      condAttrs = ` data-show-if-key="${field.showIf.key}" data-show-if-eq="${field.showIf.eq}"`;
+      const sf = field.showIf;
+      const parentVal = this.form[sf.key];
+      let condMet = false;
+      condAttrs = ` data-show-if-key="${sf.key}"`;
+      if (sf.eq !== undefined) {
+        condMet = String(parentVal) === String(sf.eq);
+        condAttrs += ` data-show-if-eq="${sf.eq}"`;
+        if (sf.or && Array.isArray(sf.or)) {
+          condMet = condMet || sf.or.some(function(v) { return String(parentVal) === String(v); });
+          condAttrs += ` data-show-if-or="${sf.or.join(',')}"`;
+        }
+      } else if (sf.neq !== undefined) {
+        condMet = String(parentVal) !== String(sf.neq) && parentVal !== null && parentVal !== undefined && parentVal !== '';
+        condAttrs += ` data-show-if-neq="${sf.neq}"`;
+      }
       condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
@@ -161,10 +180,56 @@ window.trainingCoreMixin = {
   showConditionalFields(parentKey) {
     const expectedVal = this.form[parentKey];
     document.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
-      const match = String(expectedVal) === String(row.getAttribute('data-show-if-eq'));
+      const eqVal = row.getAttribute('data-show-if-eq');
+      const neqVal = row.getAttribute('data-show-if-neq');
+      const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
+      let match = false;
+      if (eqVal !== null) {
+        match = String(expectedVal) === eqVal;
+        if (!match && orVals.length > 0) {
+          match = orVals.indexOf(String(expectedVal)) !== -1;
+        }
+      } else if (neqVal !== null) {
+        match = String(expectedVal) !== neqVal && String(expectedVal) !== 'null' && String(expectedVal) !== 'undefined' && String(expectedVal) !== '';
+      }
       row.classList.toggle('field-hidden', !match);
     });
     this.updateToml();
+  },
+
+  // ── Auto Value: auto-set field value when watcher field changes ──
+  _autoValueRules: null,
+  setupAutoValueWatchers() {
+    // Collect all autoValue rules from all visible fields
+    const rules = [];
+    this._allSections().forEach(s => s.fields.forEach(f => {
+      if (f.autoValue && Array.isArray(f.autoValue)) {
+        f.autoValue.forEach(r => rules.push({ target: f.key, defaultVal: f.default, watch: r.watch, when: r.when, set: r.set }));
+      }
+    }));
+    this._autoValueRules = rules;
+    if (rules.length === 0) return;
+    // Apply initial state
+    const self = this;
+    rules.forEach(r => {
+      self.$watch('form.' + r.watch, function(newVal) {
+        const rule = self._autoValueRules.find(x => x.target === r.target && x.when === newVal);
+        if (rule) {
+          // The watcher matches → set auto value
+          if (rule.set !== null && rule.set !== undefined) {
+            self.form[rule.target] = rule.set;
+          }
+        } else {
+          // Check if any rule for this target still matches
+          const anyMatch = self._autoValueRules.some(x => x.target === r.target && String(self.form[x.watch]) === String(x.when));
+          if (!anyMatch) {
+            // Restore default if no rule matches
+            const field = self.findFieldDef(r.target);
+            if (field) self.form[r.target] = field.default;
+          }
+        }
+      });
+    });
   },
 
   esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
@@ -176,8 +241,7 @@ window.trainingCoreMixin = {
     if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) value = Number(value);
     this.form[key] = value;
     this.pushHistory({ ...this.form });
-    const needsRerender = TRAIN_SECTIONS_COMMON.some(s => s.fields.some(f => f.showIf && f.showIf.key === key));
-    if (needsRerender) this.showConditionalFields(key);
+    if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
   },
 
   stepField(key, delta) {
@@ -192,7 +256,7 @@ window.trainingCoreMixin = {
   },
 
   findFieldDef(key) {
-    for (const s of [...TRAIN_SECTIONS_COMMON, ...TRAIN_SECTIONS_ANIMA]) {
+    for (const s of window.TRAIN_SECTIONS || []) {
       const f = s.fields.find(x => x.key === key);
       if (f) return f;
     }
@@ -234,10 +298,7 @@ window.trainingCoreMixin = {
   rebuildForm() {
     const r = this.currentRoute;
     if (!r || !r.startsWith('train-')) return;
-    const cfg = ROUTE_CONFIG[r] || {};
-    const allSections = [...TRAIN_SECTIONS_COMMON];
-    if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
-    this.renderTrainingForm(allSections);
+    this.renderTrainingForm(this.form.model_train_type || 'sd-lora');
   },
 
   // ── File Pickers ───────────────────────────────────────

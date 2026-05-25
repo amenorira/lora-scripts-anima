@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
-from backend.training.field_registry import get_supported_fields, get_ui_only_fields
+from backend.training.field_registry import get_supported_fields, get_ui_only_fields, FIELDS
 
 SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
+# merged 字段应由 UI 层合并进父字段（如 weight_decay→optimizer_args），adapter 不直接透传
+MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
@@ -27,10 +29,9 @@ TLORA_NETWORK_ARG_FIELDS = {
 
 # ── LyCORIS 字段映射 ─────────────────────────────────────────
 LYCORIS_NETWORK_ARG_MAP: dict[str, str] = {
-    "lycoris_algo": "algo",
-    "lokr_factor": "factor",
     "conv_dim": "conv_dim",
     "conv_alpha": "conv_alpha",
+    "lokr_factor": "factor",
     "use_cp": "use_cp",
     "use_scalar": "use_scalar",
     "decompose_both": "decompose_both",
@@ -158,8 +159,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     elif "network_args" in source:
         source.pop("network_args", None)
 
-    # ── 3. LyCORIS Anima preset 补全 ─────────────────────
-    if source.get("network_module") == "lycoris.kohya":
+    # ── 3. LyCORIS preset 补全（networks.loha / networks.lokr）──
+    if source.get("network_module") in ("networks.loha", "networks.lokr"):
         network_args = source.get("network_args")
         has_preset = isinstance(network_args, list) and any(
             isinstance(item, str) and item.strip().startswith("preset=")
@@ -175,8 +176,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                     f"preset={preset_path.as_posix()}"
                 ]
 
-    # ── 4. LyCORIS 顶层字段 → network_args ────────────────
-    if source.get("network_module") == "lycoris.kohya":
+    # ── 4. LyCORIS 顶层字段 → network_args（networks.loha / networks.lokr）──
+    if source.get("network_module") in ("networks.loha", "networks.lokr"):
         network_args = list(source.get("network_args") or [])
         for ui_field, arg_key in LYCORIS_NETWORK_ARG_MAP.items():
             value = source.pop(ui_field, None)
@@ -197,8 +198,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     for key, value in source.items():
-        # 跳过纯 UI 字段
-        if key in UI_ONLY_FIELDS or key in TLORA_NETWORK_ARG_FIELDS or key in LYCORIS_NETWORK_ARG_MAP:
+        # 跳过纯 UI 字段、合并字段、及已处理的 T-LoRA/LyCORIS 字段
+        if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in TLORA_NETWORK_ARG_FIELDS or key in LYCORIS_NETWORK_ARG_MAP:
             continue
         # 跳过空值
         if _is_empty_value(value):

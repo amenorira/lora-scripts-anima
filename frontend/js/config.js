@@ -14,26 +14,51 @@ const FALLBACK_COMMON = [{"key":"model","titleKey":"section.model","fields":[{"k
 const FALLBACK_ANIMA = [{"key":"animaParams","titleKey":"section.animaParams","fields":[{"key":"qwen3","type":"text","default":"","role":"file-model","descKey":"field.qwen3"},{"key":"timestep_sampling","type":"select","default":"sigmoid","options":[{"v":"sigma","l":"sigma","dKey":"opt.timestep_sampling_sigma"},{"v":"uniform","l":"uniform","dKey":"opt.timestep_sampling_uniform"},{"v":"sigmoid","l":"sigmoid","dKey":"opt.timestep_sampling_sigmoid"},{"v":"shift","l":"shift","dKey":"opt.timestep_sampling_shift"}],"descKey":"field.timestep_sampling"},{"key":"sigmoid_scale","type":"number","default":1.0,"step":0.001,"descKey":"field.sigmoid_scale"},{"key":"weighting_scheme","type":"select","default":"uniform","options":[{"v":"sigma_sqrt","l":"sigma_sqrt","dKey":"opt.weighting_scheme_sigma_sqrt"},{"v":"logit_normal","l":"logit_normal","dKey":"opt.weighting_scheme_logit_normal"},{"v":"mode","l":"mode","dKey":"opt.weighting_scheme_mode"},{"v":"cosmap","l":"cosmap","dKey":"opt.weighting_scheme_cosmap"},{"v":"none","l":"none","dKey":"opt.weighting_scheme_none"},{"v":"uniform","l":"uniform","dKey":"opt.weighting_scheme_uniform"}],"descKey":"field.weighting_scheme"},{"key":"logit_mean","type":"number","default":0.0,"step":0.01,"descKey":"field.logit_mean"},{"key":"logit_std","type":"number","default":1.0,"step":0.01,"descKey":"field.logit_std"},{"key":"qwen3_max_token_length","type":"number","default":512,"step":1,"descKey":"field.qwen3_max_token_length"},{"key":"t5_max_token_length","type":"number","default":512,"step":1,"descKey":"field.t5_max_token_length"},{"key":"attn_mode","type":"select","default":"torch","options":[{"v":"torch","l":"torch","dKey":"opt.attn_mode_torch"},{"v":"xformers","l":"xformers","dKey":"opt.attn_mode_xformers"},{"v":"flash","l":"flash","dKey":"opt.attn_mode_flash"}],"descKey":"field.attn_mode"},{"key":"split_attn","type":"toggle","default":false,"descKey":"field.split_attn"},{"key":"torch_compile","type":"toggle","default":false,"descKey":"field.torch_compile"}]}];
 
 // ── Runtime field definitions ─────────────────────────────
-// Loaded from API; fallback to hardcoded above
-window.TRAIN_SECTIONS_COMMON = FALLBACK_COMMON;
-window.TRAIN_SECTIONS_ANIMA = FALLBACK_ANIMA;
+// Loaded from API; fallback to hardcoded above.
+// New API returns { sections: [...] } — unified list with "group" per field.
+// Old API returned { sections_common, sections_anima } — handled for backward compat.
+window.TRAIN_SECTIONS = FALLBACK_COMMON;
 
 (async function loadFields() {
   try {
     const r = await fetch('/api/fields');
     const d = await r.json();
     if (d.status === 'success' && d.data) {
-      if (d.data.sections_common && d.data.sections_common.length) {
-        window.TRAIN_SECTIONS_COMMON = d.data.sections_common;
+      // New format: { sections: [...] }
+      if (d.data.sections && d.data.sections.length) {
+        window.TRAIN_SECTIONS = d.data.sections;
       }
-      if (d.data.sections_anima && d.data.sections_anima.length) {
-        window.TRAIN_SECTIONS_ANIMA = d.data.sections_anima;
+      // Old backward compat: { sections_common, sections_anima }
+      else if (d.data.sections_common && d.data.sections_common.length) {
+        const merged = [...d.data.sections_common];
+        if (d.data.sections_anima && d.data.sections_anima.length) merged.push(...d.data.sections_anima);
+        window.TRAIN_SECTIONS = merged;
       }
     }
   } catch (e) {
     // Offline: use fallback definitions
   }
 })();
+
+/**
+ * Get all sections with fields filtered by the given train type.
+ * @param {string} trainType - 'sd-lora' | 'sdxl-lora' | 'anima-lora'
+ * @returns {Array} sections with .fields filtered by group
+ */
+window.getVisibleSections = function(trainType) {
+  const groupMap = { 'sd-lora': 'sd', 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+  const targetGroup = groupMap[trainType] || 'all';
+  return (window.TRAIN_SECTIONS || []).map(function(section) {
+    const filteredFields = (section.fields || []).filter(function(field) {
+      var g = field.group;
+      if (!g || g === 'all') return true;
+      if (Array.isArray(g)) return g.indexOf(targetGroup) !== -1;
+      if (g === 'diT' && (targetGroup === 'sd' || targetGroup === 'sdxl')) return true;
+      return g === targetGroup;
+    });
+    return { key: section.key, titleKey: section.titleKey, fields: filteredFields };
+  }).filter(function(s) { return s.fields.length > 0; });
+};
 
 window.ROUTE_CONFIG = {
   'home': { title: 'lora-scripts-anima', subtitle: '' },
@@ -42,7 +67,7 @@ window.ROUTE_CONFIG = {
   'history': { titleKey: 'nav.history', subtitle: '' },
   'train-basic': { titleKey: 'nav.loraTraining', trainType: 'sd-lora' },
   'train-master': { titleKey: 'nav.loraTraining', trainType: 'sd-lora' },
-  'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora', extraSections: true },
+  'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },

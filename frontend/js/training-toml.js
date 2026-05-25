@@ -14,12 +14,10 @@ window.trainingTomlMixin = {
   // ── TOML ────────────────────────────────────────────────
   updateToml() {
     const validKeys = new Set();
-    const r = this.currentRoute;
-    const cfg = ROUTE_CONFIG[r] || {};
-    const allSections = [...TRAIN_SECTIONS_COMMON];
-    if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
+    const trainType = this.form.model_train_type || 'sd-lora';
+    const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => s.fields.forEach(f => {
-      if (!f.showIf || this.form[f.showIf.key] === f.showIf.eq) {
+      if (!f.showIf || this._fieldShowIfMet(f)) {
         validKeys.add(f.key);
       }
     }));
@@ -36,7 +34,7 @@ window.trainingTomlMixin = {
       if (k.startsWith('_')) continue;
       if (k === 'sample_prompts' || k === 'optimizer_args_custom') continue;
       if (v === '' || v === null || v === undefined) continue;
-      if (k === 'prodigy_d_coef' || k === 'prodigy_d0') continue;
+      if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay') continue;
 
       if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
       else if (typeof v === 'number') lines.push(`${k} = ${v}`);
@@ -50,6 +48,9 @@ window.trainingTomlMixin = {
     const custom = this.form.optimizer_args_custom;
     if (custom && typeof custom === 'string') {
       optArgsArr.push(...custom.split('\n').map(s => s.trim()).filter(s => s));
+    }
+    if (this.form.weight_decay !== undefined && this.form.weight_decay !== null && this.form.weight_decay !== '') {
+      optArgsArr.push('weight_decay=' + this.form.weight_decay);
     }
     if (this.form.optimizer_type === 'Prodigy' || this.form.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
       if (this.form.prodigy_d_coef && this.form.prodigy_d_coef !== '2.0') optArgsArr.push(`d_coef=${this.form.prodigy_d_coef}`);
@@ -77,6 +78,22 @@ window.trainingTomlMixin = {
     }
   },
 
+  // Helper: check if a field's showIf condition is met
+  _fieldShowIfMet(f) {
+    const sf = f.showIf;
+    if (!sf) return true;
+    const pv = this.form[sf.key];
+    if (sf.eq !== undefined) {
+      if (String(pv) === String(sf.eq)) return true;
+      if (sf.or && Array.isArray(sf.or)) return sf.or.some(function(v) { return String(pv) === String(v); });
+      return false;
+    }
+    if (sf.neq !== undefined) {
+      return String(pv) !== String(sf.neq) && pv !== null && pv !== undefined && pv !== '';
+    }
+    return true;
+  },
+
   copyToml() {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
   },
@@ -88,12 +105,10 @@ window.trainingTomlMixin = {
     this.statusText = this.t('common.training') + '...';
 
     const validKeys = new Set(['model_train_type']);
-    const r = this.currentRoute;
-    const cfg = ROUTE_CONFIG[r] || {};
-    const allSections = [...TRAIN_SECTIONS_COMMON];
-    if (cfg.extraSections) allSections.push(...TRAIN_SECTIONS_ANIMA);
+    const trainType = this.form.model_train_type || 'sd-lora';
+    const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => s.fields.forEach(f => {
-      if (!f.showIf || this.form[f.showIf.key] === f.showIf.eq) {
+      if (!f.showIf || this._fieldShowIfMet(f)) {
         validKeys.add(f.key);
       }
     }));
@@ -136,6 +151,10 @@ window.trainingTomlMixin = {
     if (payload.optimizer_args_custom && typeof payload.optimizer_args_custom === 'string') {
       optArgs.push(...payload.optimizer_args_custom.split('\n').map(s => s.trim()).filter(s => s));
       delete payload.optimizer_args_custom;
+    }
+    if (payload.weight_decay !== undefined && payload.weight_decay !== null && payload.weight_decay !== '') {
+      optArgs.push('weight_decay=' + payload.weight_decay);
+      delete payload.weight_decay;
     }
     if (payload.optimizer_type === 'Prodigy' || payload.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
       if (payload.prodigy_d_coef && payload.prodigy_d_coef !== '2.0') optArgs.push(`d_coef=${payload.prodigy_d_coef}`);
