@@ -34,7 +34,7 @@ class TaggerInterrogateRequest(BaseModel):
 class APIResponse(BaseModel):
     status: str
     message: Optional[str]
-    data: Optional[Dict]
+    data: Optional[Any] = None
 
 
 class APIResponseSuccess(APIResponse):

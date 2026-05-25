@@ -8,6 +8,30 @@ window.taggerMixin = {
   taggerRunning: false,
   taggerPollTimer: null,
 
+  // ── Helpers ────────────────────────────────────────────
+  escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch(e) { return btoa('{"options":[]}'); } },
+
+  animaSelectHtml(config, defaultValue, inputId) {
+    const enc = this.escJson(config);
+    return `<div class="anima-select" x-data="animaSelect('${enc}', '${(defaultValue||'').replace(/'/g, "\\'")}')" x-init="syncToModel()" @click.outside="closeOnOutside()">
+      <input type="hidden" x-ref="modelInput" value="${defaultValue||''}" id="${inputId}">
+      <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="open=!open">
+        <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+        <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="anima-select-menu" x-show="open" x-transition>
+        <div class="anima-select-menu-scroll">
+          <template x-for="opt in flatOptions" :key="opt.v">
+            <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
+              <span x-text="opt.l" :title="opt.l"></span>
+              <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>`;
+  },
+
   // ── Methods ────────────────────────────────────────────
   async buildTaggerForm() {
     const container = document.getElementById('taggerForm');
@@ -18,14 +42,15 @@ window.taggerMixin = {
       container.innerHTML = `<div class="card-header">${this.t('tagger.title')}</div><div style="padding:20px;color:var(--text-secondary)">${this.t('common.failed')}: Unable to load model list</div>`;
       return;
     }
-    const modelOpts = models.map(m=>`<option value="${m.id}">${m.name||m.id}</option>`).join('');
+    const modelOpts = models.map(m=>({v:m.id, l:m.name||m.id}));
+    const modelSelect = this.animaSelectHtml({options: modelOpts}, modelOpts[0]?.v || '', 'tagger-model');
     const conflictOpts = [
       {v:'ignore',l:this.t('tagger.conflictIgnore')},{v:'copy',l:this.t('tagger.conflictCopy')},{v:'prepend',l:this.t('tagger.conflictPrepend')}
     ];
-    const conflictSelect = `<select id="tagger-conflict-action">${conflictOpts.map(o=>`<option value="${o.v}" ${o.v==='copy'?'selected':''}>${o.l}</option>`).join('')}</select>`;
+    const conflictSelect = this.animaSelectHtml({options: conflictOpts}, 'copy', 'tagger-conflict-action');
     container.innerHTML = `<div class="card-header">${this.t('tagger.title')}</div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-right"><input type="text" id="tagger-path" value="./train/aki" style="flex:1"><div class="field-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button></div></div></div>
-      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.model')}</div><div class="field-desc">${this.t('tagger.modelDesc')}</div></div><div class="field-right"><select id="tagger-model">${modelOpts}</select></div></div>
+      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.model')}</div><div class="field-desc">${this.t('tagger.modelDesc')}</div></div><div class="field-right">${modelSelect}</div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.threshold')}</div><div class="field-desc">${this.t('tagger.thresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-threshold').stepDown()">-</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-threshold').stepUp()">+</button></div></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.characterThreshold')}</div><div class="field-desc">${this.t('tagger.characterThresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepDown()">-</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepUp()">+</button></div></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.additionalTags')}</div><div class="field-desc">${this.t('tagger.additionalTagsDesc')}</div></div><div class="field-right"><input type="text" id="tagger-additional" placeholder="e.g. 1girl, solo"></div></div>
