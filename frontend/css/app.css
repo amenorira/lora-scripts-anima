@@ -704,22 +704,29 @@ input[type="checkbox"]:focus-visible {
 }
 .field + .field { border-top: 1px solid var(--border-default); padding-top: 11px; }
 
-/* Conditional fields — smooth expand/collapse on toggle */
+/* Conditional fields — smooth expand/collapse on toggle
+   JS measures scrollHeight and sets inline max-height for accurate animation.
+   CSS defines the transition curve; JS drives the start/end values. */
 .field-conditional {
   overflow: hidden;
   transition: max-height 0.35s var(--ease-out),
-              opacity 0.28s var(--ease-out),
+              opacity 0.25s var(--ease-out),
               padding-top 0.35s var(--ease-out),
               padding-bottom 0.35s var(--ease-out),
+              margin-top 0.35s var(--ease-out),
+              margin-bottom 0.35s var(--ease-out),
+              transform 0.3s var(--ease-out),
               border-top-width 0.35s var(--ease-out);
-  max-height: 200px;
+  max-height: none;
   opacity: 1;
 }
 .field-conditional.field-hidden {
-  max-height: 0;
+  max-height: 0 !important;
   opacity: 0;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
   border-top-width: 0 !important;
 }
 
@@ -920,6 +927,21 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   padding: 6px 8px;
   margin: 0 -8px;
   transition: background 0.12s ease;
+}
+/* Restore conditional-field transitions overridden by #trainFormContent .field specificity */
+#trainFormContent .field-conditional {
+  transition: max-height 0.35s var(--ease-out),
+              opacity 0.25s var(--ease-out),
+              padding-top 0.35s var(--ease-out),
+              padding-bottom 0.35s var(--ease-out),
+              margin-top 0.35s var(--ease-out),
+              margin-bottom 0.35s var(--ease-out),
+              transform 0.3s var(--ease-out),
+              border-top-width 0.35s var(--ease-out);
+  will-change: max-height, opacity;
+}
+#trainFormContent .field-conditional.field-hidden {
+  will-change: auto;
 }
 #trainFormContent .field:hover {
   background: var(--hover-overlay);

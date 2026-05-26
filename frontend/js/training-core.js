@@ -185,6 +185,8 @@ window.trainingCoreMixin = {
 
   showConditionalFields(parentKey) {
     const expectedVal = this.form[parentKey];
+    const toAnimate = []; // collect rows that need animation
+
     document.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
       const eqVal = row.getAttribute('data-show-if-eq');
       const neqVal = row.getAttribute('data-show-if-neq');
@@ -198,8 +200,69 @@ window.trainingCoreMixin = {
       } else if (neqVal !== null) {
         match = String(expectedVal) !== neqVal && String(expectedVal) !== 'null' && String(expectedVal) !== 'undefined' && String(expectedVal) !== '';
       }
-      row.classList.toggle('field-hidden', !match);
+
+      const currentlyHidden = row.classList.contains('field-hidden');
+      if (match === !currentlyHidden) return; // no state change
+
+      // Clean up any in-flight transition
+      row.style.transition = 'none';
+      row.style.maxHeight = '';
+      row.style.transform = '';
+
+      if (!match) {
+        // HIDE: measure → lock height → add .field-hidden to trigger CSS transition
+        const h = row.scrollHeight;
+        row.style.maxHeight = h + 'px';
+        row.style.transform = 'translateY(0)';
+        toAnimate.push({ row: row, action: 'hide', height: h });
+      } else {
+        // SHOW: measure target while hidden → start from 0 → animate to full height
+        row.classList.remove('field-hidden');
+        const h = row.scrollHeight;
+        row.style.maxHeight = '0px';
+        row.style.transform = 'translateY(-6px)';
+        toAnimate.push({ row: row, action: 'show', height: h });
+      }
     });
+
+    if (toAnimate.length === 0) { this.updateToml(); return; }
+
+    // Single forced layout read, then apply all animations in one frame
+    toAnimate.forEach(item => { void item.row.offsetHeight; });
+
+    requestAnimationFrame(() => {
+      toAnimate.forEach(item => {
+        const row = item.row;
+        // Restore transition (was set to 'none' for cleanup)
+        row.style.transition = '';
+        if (item.action === 'hide') {
+          row.classList.add('field-hidden');
+        } else {
+          row.style.maxHeight = item.height + 'px';
+          row.style.transform = 'translateY(0)';
+        }
+
+        // Clean up after transition
+        const onEnd = function(e) {
+          if (e.propertyName === 'max-height') {
+            row.style.maxHeight = '';
+            row.style.transform = '';
+            row.style.transition = '';
+            row.removeEventListener('transitionend', onEnd);
+          }
+        };
+        row.addEventListener('transitionend', onEnd);
+        // Fallback cleanup
+        setTimeout(function() {
+          if (row.style.maxHeight || row.style.transform) {
+            row.style.maxHeight = '';
+            row.style.transform = '';
+            row.style.transition = '';
+          }
+        }, 500);
+      });
+    });
+
     this.updateToml();
   },
 
