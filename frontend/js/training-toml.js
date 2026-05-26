@@ -13,27 +13,53 @@ window.trainingTomlMixin = {
 
   // ── TOML ────────────────────────────────────────────────
   updateToml() {
-    const validKeys = new Set();
     const trainType = this.form.model_train_type || 'sd-lora';
     const allSections = window.getVisibleSections(trainType);
-    allSections.forEach(s => s.fields.forEach(f => {
-      if (!f.showIf || this._fieldShowIfMet(f)) {
-        validKeys.add(f.key);
-      }
-    }));
-
     const lines = [];
 
-    if (validKeys.has('model_train_type') && this.form.model_train_type) {
-      lines.push(`model_train_type = "${this.form.model_train_type}"`);
-    }
+    // Collect which LyCORIS UI fields are active (visible in form based on showIf)
+    const activeLycorisKeys = new Set();
+    const networkModule = this.form.network_module || '';
+    const isKohya = networkModule === 'lycoris.kohya';
+    const isLycorisNative = networkModule === 'networks.loha' || networkModule === 'networks.lokr';
+
+    // Map UI field key → network_args key (matching adapter.py mappings)
+    const NET_ARG_MAP = {
+      lycoris_algo: 'algo', conv_dim: 'conv_dim', conv_alpha: 'conv_alpha',
+      lokr_factor: 'factor', use_cp: 'use_cp', use_scalar: 'use_scalar',
+      decompose_both: 'decompose_both', full_matrix: 'full_matrix', train_norm: 'train_norm',
+      rank_dropout: 'rank_dropout', module_dropout: 'module_dropout', dropout: 'dropout',
+      dora_wd: 'dora_wd', block_size: 'block_size', constraint: 'constraint',
+      rescaled: 'rescaled', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora',
+    };
+    // Fields only available for lycoris.kohya (not sd-scripts native LoHa/LoKr)
+    const KOHYA_ONLY = new Set(['lycoris_algo','use_cp','use_scalar','decompose_both','full_matrix',
+      'train_norm','dropout','dora_wd','block_size','constraint','rescaled','bypass_mode','rs_lora']);
 
     for (const [k, v] of Object.entries(this.form)) {
-      if (!validKeys.has(k)) continue;
-      if (k === 'model_train_type') continue;
-      if (k.startsWith('_')) continue;
-      if (k === 'sample_prompts' || k === 'optimizer_args_custom') continue;
+      // Check if this field is visible (not hidden, showIf met)
+      let fieldVisible = false;
+      for (const s of allSections) {
+        const f = (s.fields || []).find(x => x.key === k);
+        if (f) {
+          if (f.hidden) break;
+          if (!f.showIf || this._fieldShowIfMet(f)) fieldVisible = true;
+          break;
+        }
+      }
+      if (!fieldVisible) continue;
+      if (k === 'model_train_type' || k.startsWith('_')) continue;
+      if (k === 'sample_prompts' || k === 'optimizer_args_custom' || k === 'network_args_custom') continue;
       if (v === '' || v === null || v === undefined) continue;
+
+      // Collect LyCORIS UI fields for network_args formatting
+      if (NET_ARG_MAP[k] && (isKohya || (isLycorisNative && !KOHYA_ONLY.has(k)))) {
+        activeLycorisKeys.add(k);
+        continue; // not added as top-level line
+      }
+      // Skip preview-only UI fields and merged optimizer fields
+      if (['enable_preview','positive_prompts','negative_prompts',
+           'sample_cfg','sample_width','sample_height','sample_seed','sample_steps'].includes(k)) continue;
       if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay') continue;
 
       if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
@@ -44,10 +70,33 @@ window.trainingTomlMixin = {
       else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
     }
 
+    // ── Build network_args ──────────────────────────────
+    const netArgsArr = [];
+    // Custom network_args
+    const netCustom = this.form.network_args_custom;
+    if (netCustom && typeof netCustom === 'string') {
+      netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s));
+    }
+    // LyCORIS UI fields → key=value
+    for (const k of activeLycorisKeys) {
+      const v = this.form[k];
+      // Match adapter.py _is_empty_value: skip None, false, NaN, empty strings
+      if (v === null || v === undefined || v === false || v === '') continue;
+      if (typeof v === 'number' && isNaN(v)) continue;
+      const argKey = NET_ARG_MAP[k];
+      const val = typeof v === 'boolean' ? String(v).toLowerCase() : String(v);
+      netArgsArr.push(`${argKey}=${val}`);
+    }
+    if (netArgsArr.length > 0) {
+      const quoted = netArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
+      lines.push(`network_args = [${quoted}]`);
+    }
+
+    // ── Build optimizer_args ────────────────────────────
     const optArgsArr = [];
-    const custom = this.form.optimizer_args_custom;
-    if (custom && typeof custom === 'string') {
-      optArgsArr.push(...custom.split('\n').map(s => s.trim()).filter(s => s));
+    const optCustom = this.form.optimizer_args_custom;
+    if (optCustom && typeof optCustom === 'string') {
+      optArgsArr.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s));
     }
     if (this.form.weight_decay !== undefined && this.form.weight_decay !== null && this.form.weight_decay !== '') {
       optArgsArr.push('weight_decay=' + this.form.weight_decay);

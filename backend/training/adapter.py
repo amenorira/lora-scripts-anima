@@ -27,23 +27,27 @@ TLORA_NETWORK_ARG_FIELDS = {
     "tlora_min_rank", "tlora_rank_schedule", "tlora_orthogonal_init",
 }
 
-# ── LyCORIS 字段映射 ─────────────────────────────────────────
-LYCORIS_NETWORK_ARG_MAP: dict[str, str] = {
+# ── LyCORIS 通用字段映射（sd-scripts 原生 LoHa/LoKr 和 lycoris.kohya 均支持）───
+LYCORIS_COMMON_ARG_MAP: dict[str, str] = {
     "conv_dim": "conv_dim",
     "conv_alpha": "conv_alpha",
     "lokr_factor": "factor",
+    "rank_dropout": "rank_dropout",
+    "module_dropout": "module_dropout",
+}
+
+# ── 仅 lycoris.kohya 支持的高级字段 ──────────────────────────
+LYCORIS_KOHYA_ONLY_ARG_MAP: dict[str, str] = {
     "use_cp": "use_cp",
     "use_scalar": "use_scalar",
     "decompose_both": "decompose_both",
     "full_matrix": "full_matrix",
-    "rank_dropout": "rank_dropout",
-    "module_dropout": "module_dropout",
     "train_norm": "train_norm",
     "dropout": "dropout",
 }
 
-# ── lycoris.kohya 专有字段映射 ────────────────────────────────
-LYCORIS_KOHYA_ARG_MAP: dict[str, str] = {
+# ── lycoris.kohya 专有字段映射（算法选择器等）────────────────
+LYCORIS_KOHYA_SPECIFIC_ARG_MAP: dict[str, str] = {
     "lycoris_algo": "algo",
     "dora_wd": "dora_wd",
     "block_size": "block_size",
@@ -54,7 +58,11 @@ LYCORIS_KOHYA_ARG_MAP: dict[str, str] = {
 }
 
 # lycoris.kohya 模块下所有需从顶层 pop 掉的 UI 字段
-LYCORIS_KOHYA_UI_FIELDS = set(LYCORIS_KOHYA_ARG_MAP.keys()) | set(LYCORIS_NETWORK_ARG_MAP.keys())
+LYCORIS_KOHYA_UI_FIELDS = (
+    set(LYCORIS_COMMON_ARG_MAP.keys())
+    | set(LYCORIS_KOHYA_ONLY_ARG_MAP.keys())
+    | set(LYCORIS_KOHYA_SPECIFIC_ARG_MAP.keys())
+)
 
 
 def _is_empty_value(value: Any) -> bool:
@@ -187,28 +195,35 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                     f"preset={preset_path.as_posix()}"
                 ]
 
-    # ── 4. LyCORIS 顶层字段 → network_args（networks.loha / networks.lokr）──
+    # ── 4. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅原生支持的参数）──
     if source.get("network_module") in ("networks.loha", "networks.lokr"):
         network_args = list(source.get("network_args") or [])
-        for ui_field, arg_key in LYCORIS_NETWORK_ARG_MAP.items():
+        for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 network_args.append(f"{arg_key}={value}")
         if network_args:
             source["network_args"] = network_args
 
-    # ── 4.5. lycoris.kohya 字段 → network_args ──────────────
+    # ── 4.5. lycoris.kohya 字段 → network_args（通用 + kohya特有 + kohya专有）───
     if source.get("network_module") == "lycoris.kohya":
         network_args = list(source.get("network_args") or [])
-        # 先处理 lycoris.kohya 专有映射
-        for ui_field, arg_key in LYCORIS_KOHYA_ARG_MAP.items():
+        # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
+        for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 if isinstance(value, bool):
                     value = str(value).lower()
                 network_args.append(f"{arg_key}={value}")
-        # 再处理通用 LyCORIS 字段（conv_dim, dropout 等）
-        for ui_field, arg_key in LYCORIS_NETWORK_ARG_MAP.items():
+        # 通用 LyCORIS 字段（conv_dim, rank_dropout 等，sd-scripts 原生也支持）
+        for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
+            value = source.pop(ui_field, None)
+            if not _is_empty_value(value):
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                network_args.append(f"{arg_key}={value}")
+        # 仅 lycoris.kohya 支持的高级字段（use_cp, decompose_both 等）
+        for ui_field, arg_key in LYCORIS_KOHYA_ONLY_ARG_MAP.items():
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 if isinstance(value, bool):
@@ -232,7 +247,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}
     for key, value in source.items():
         # 跳过纯 UI 字段、合并字段、及已处理的 T-LoRA/LyCORIS 字段
-        if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in TLORA_NETWORK_ARG_FIELDS or key in LYCORIS_NETWORK_ARG_MAP or key in LYCORIS_KOHYA_UI_FIELDS:
+        if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in TLORA_NETWORK_ARG_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:
             continue
         # 跳过空值
         if _is_empty_value(value):
