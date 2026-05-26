@@ -728,6 +728,7 @@ input[type="checkbox"]:focus-visible {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   border-top-width: 0 !important;
+  pointer-events: none;
 }
 
 .field-left { flex: 1; min-width: 0; padding-top: 1px; }
@@ -938,10 +939,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
               margin-bottom 0.35s var(--ease-out),
               transform 0.3s var(--ease-out),
               border-top-width 0.35s var(--ease-out);
-  will-change: max-height, opacity;
-}
-#trainFormContent .field-conditional.field-hidden {
-  will-change: auto;
 }
 #trainFormContent .field:hover {
   background: var(--hover-overlay);

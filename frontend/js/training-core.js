@@ -230,36 +230,33 @@ window.trainingCoreMixin = {
     // Single forced layout read, then apply all animations in one frame
     toAnimate.forEach(item => { void item.row.offsetHeight; });
 
+    // Double RAF ensures browser has processed layout before starting transitions
     requestAnimationFrame(() => {
-      toAnimate.forEach(item => {
-        const row = item.row;
-        // Restore transition (was set to 'none' for cleanup)
-        row.style.transition = '';
-        if (item.action === 'hide') {
-          row.classList.add('field-hidden');
-        } else {
-          row.style.maxHeight = item.height + 'px';
-          row.style.transform = 'translateY(0)';
-        }
+      requestAnimationFrame(() => {
+        toAnimate.forEach(item => {
+          const row = item.row;
+          row.style.transition = ''; // restore CSS transition
+          if (item.action === 'hide') {
+            row.classList.add('field-hidden');
+          } else {
+            row.style.maxHeight = item.height + 'px';
+            row.style.transform = 'translateY(0)';
+          }
 
-        // Clean up after transition
-        const onEnd = function(e) {
-          if (e.propertyName === 'max-height') {
+          let timerId = null;
+          const cleanup = function() {
+            if (timerId) { clearTimeout(timerId); timerId = null; }
             row.style.maxHeight = '';
             row.style.transform = '';
             row.style.transition = '';
             row.removeEventListener('transitionend', onEnd);
-          }
-        };
-        row.addEventListener('transitionend', onEnd);
-        // Fallback cleanup
-        setTimeout(function() {
-          if (row.style.maxHeight || row.style.transform) {
-            row.style.maxHeight = '';
-            row.style.transform = '';
-            row.style.transition = '';
-          }
-        }, 500);
+          };
+          const onEnd = function(e) {
+            if (e.propertyName === 'max-height') cleanup();
+          };
+          row.addEventListener('transitionend', onEnd);
+          timerId = setTimeout(cleanup, 500);
+        });
       });
     });
 
