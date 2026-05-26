@@ -706,9 +706,9 @@ input[type="checkbox"]:focus-visible {
 
 /* Conditional fields — smooth expand/collapse on toggle
    JS measures scrollHeight and sets inline max-height for accurate animation.
+   overflow is set to 'hidden' during animation by JS, restored to visible after.
    CSS defines the transition curve; JS drives the start/end values. */
 .field-conditional {
-  overflow: hidden;
   transition: max-height 0.35s var(--ease-out),
               opacity 0.25s var(--ease-out),
               padding-top 0.35s var(--ease-out),
@@ -931,6 +931,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 /* Restore conditional-field transitions overridden by #trainFormContent .field specificity */
 #trainFormContent .field-conditional {
+  overflow: visible;
   transition: max-height 0.35s var(--ease-out),
               opacity 0.25s var(--ease-out),
               padding-top 0.35s var(--ease-out),

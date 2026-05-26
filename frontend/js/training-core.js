@@ -211,12 +211,14 @@ window.trainingCoreMixin = {
 
       if (!match) {
         // HIDE: measure → lock height → add .field-hidden to trigger CSS transition
+        row.style.overflow = 'hidden';
         const h = row.scrollHeight;
         row.style.maxHeight = h + 'px';
         row.style.transform = 'translateY(0)';
         toAnimate.push({ row: row, action: 'hide', height: h });
       } else {
         // SHOW: measure target while hidden → start from 0 → animate to full height
+        row.style.overflow = 'hidden';
         row.classList.remove('field-hidden');
         const h = row.scrollHeight;
         row.style.maxHeight = '0px';
@@ -249,6 +251,7 @@ window.trainingCoreMixin = {
             row.style.maxHeight = '';
             row.style.transform = '';
             row.style.transition = '';
+            row.style.overflow = '';
             row.removeEventListener('transitionend', onEnd);
           };
           const onEnd = function(e) {
