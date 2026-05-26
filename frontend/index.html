@@ -201,19 +201,6 @@
             <div style="font-size:13px;color:var(--text-tertiary)" x-text="version ? 'v' + version : ''"></div>
           </div>
 
-          <!-- Quick GPU Status -->
-          <div class="card card-gpu" style="margin-bottom:14px" x-show="gpuInfo">
-            <div style="display:flex;align-items:center;gap:12px">
-              <div style="width:10px;height:10px;border-radius:50%;background:var(--success);flex-shrink:0;box-shadow:0 0 6px var(--success)" 
-                   :style="gpuInfo && gpuInfo.gpu_load_pct > 80 ? 'background:var(--danger);box-shadow:0 0 6px var(--danger)' : gpuInfo && gpuInfo.gpu_load_pct > 50 ? 'background:var(--warning);box-shadow:0 0 6px var(--warning)' : 'background:var(--success);box-shadow:0 0 6px var(--success)'"></div>
-              <div style="flex:1">
-                <div style="font-size:13px;font-weight:600" x-text="gpuInfo ? gpuInfo.name : 'GPU'"></div>
-                <div style="font-size:11px;color:var(--text-tertiary)" x-text="gpuInfo ? gpuInfo.vram_used_mb + ' MB / ' + gpuInfo.vram_total_mb + ' MB VRAM' : ''"></div>
-              </div>
-              <div style="font-size:20px;font-weight:700;color:var(--text-primary)" x-text="gpuInfo ? gpuInfo.gpu_load_pct + '%' : ''"></div>
-            </div>
-          </div>
-
           <!-- Quick Actions -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:32px">
             <a class="card" href="javascript:void(0)" @click="navigate('train-basic')"

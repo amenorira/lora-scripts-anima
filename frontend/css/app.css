@@ -586,7 +586,7 @@ a:hover { text-decoration: underline; }
 }
 /* Color-coded card accents */
 .card.card-status  { border-left-color: var(--accent); }
-.card.card-gpu     { border-left-color: #8b5cf6; }
+
 .card.card-system  { border-left-color: #10b981; }
 .card.card-params  { border-left-color: #f59e0b; }
 .card.card-charts  { border-left-color: #6366f1; }
