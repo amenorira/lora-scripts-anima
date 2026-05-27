@@ -11,6 +11,7 @@ window.monitorCoreMixin = {
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
   chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
+  _monitorAbortCtrl: null,
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
@@ -20,12 +21,16 @@ window.monitorCoreMixin = {
   },
   stopMonitorPolling() {
     if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
+    if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
     this._monitorFirstFetch = false; this._dashboardRendered = false; this._destroyCharts();
   },
   async fetchMonitorStatus() {
+    // Abort previous in-flight request to prevent stale data overwriting fresh data
+    if (this._monitorAbortCtrl) this._monitorAbortCtrl.abort();
+    this._monitorAbortCtrl = new AbortController();
     try {
       const tid = this.taskId || '';
-      const r = await fetch('/api/monitor/status?task_id='+encodeURIComponent(tid));
+      const r = await fetch('/api/monitor/status?task_id='+encodeURIComponent(tid), { signal: this._monitorAbortCtrl.signal });
       const j = await r.json();
       if (j.status==='success') {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
@@ -37,13 +42,16 @@ window.monitorCoreMixin = {
         if (this.currentRoute==='monitor-logs') this.renderLogs();
       }
       if (this._monitorFirstFetch) { this._monitorFirstFetch=false; this.finishProgress(); }
-    } catch(e) { if (this._monitorFirstFetch) { this._monitorFirstFetch=false; this.finishProgress(); } }
+    } catch(e) {
+      if (e.name === 'AbortError') return; // silently ignore aborted requests
+      if (this._monitorFirstFetch) { this._monitorFirstFetch=false; this.finishProgress(); }
+    }
   },
 
   // ── Log helpers ────────────────────────────────────────
-  copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => alert('Copied')); },
+  copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => this.toast(this.t('common.copied'))); },
   clearLogs() { this.logLines = []; this.renderLogs(); },
-  _escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+  _escapeHtml(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
 
   // ── History ────────────────────────────────────────────
   async loadHistory() {

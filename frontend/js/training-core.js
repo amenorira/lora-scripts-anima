@@ -10,6 +10,13 @@ window.trainingCoreMixin = {
   formHistory: [],
   formHistoryIdx: -1,
 
+  // File picker modal state
+  showFilePickerModalFlag: false,
+  _pickerKey: '',
+  _pickerFiles: [],
+  _pickerFilter: '',
+  _pickerCwd: '',
+
   trainTypes: [
     { v: 'sd-lora', l: 'SD LoRA', dk: 'opt.model_train_type_sd-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
@@ -33,6 +40,7 @@ window.trainingCoreMixin = {
 
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
+    this._autoLoaded = false; // Reset so autoLoadLastParams can run again
     const r = this.currentRoute;
     const cfg = ROUTE_CONFIG[r] || {};
     let trainType = cfg.trainType || 'sd-lora';

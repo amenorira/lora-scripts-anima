@@ -9,7 +9,8 @@ window.taggerMixin = {
   taggerPollTimer: null,
 
   // ── Helpers ────────────────────────────────────────────
-  escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch(e) { return btoa('{"options":[]}'); } },
+  // escJson defined in trainingCoreMixin (shared via mixin merge)
+  _escHtml(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
 
   animaSelectHtml(config, defaultValue, inputId) {
     const enc = this.escJson(config);
@@ -100,7 +101,7 @@ window.taggerMixin = {
       if (d.status === 'success' && d.data) {
         const p = d.data;
         const lines = (p.logs || []).slice(-20);
-        out.innerHTML = `<div style="margin-bottom:4px;color:var(--accent)">[${p.current}/${p.total}] ${p.current_file || ''}</div>` + lines.map(l => `<div>${l}</div>`).join('');
+        out.innerHTML = `<div style="margin-bottom:4px;color:var(--accent)">[${p.current}/${p.total}] ${this._escHtml(p.current_file || '')}</div>` + lines.map(l => `<div>${this._escHtml(l)}</div>`).join('');
         out.scrollTop = out.scrollHeight;
         if (p.status === 'done') {
           this.taggerRunning = false; document.getElementById('tagger-stop-btn').disabled = true;

@@ -137,6 +137,24 @@ window.trainingPresetsMixin = {
       let val = t.substring(eq+1).trim();
       if (val==='true') { result[key]=true; continue; }
       if (val==='false') { result[key]=false; continue; }
+      // Inline array: ["a", "b"] or ['a', 'b']
+      if (val.startsWith('[') && val.endsWith(']')) {
+        try {
+          // Normalize TOML array to JSON: unquoted strings → quoted
+          const inner = val.slice(1,-1).trim();
+          if (inner === '') { result[key] = []; continue; }
+          // Try native JSON parse first (works if all items are quoted)
+          result[key] = JSON.parse(val);
+        } catch(_) {
+          // Fallback: split by comma, strip quotes
+          result[key] = inner.split(',').map(s => {
+            s = s.trim();
+            if ((s.startsWith('"')&&s.endsWith('"'))||(s.startsWith("'")&&s.endsWith("'"))) return s.slice(1,-1);
+            return s;
+          }).filter(s => s);
+        }
+        continue;
+      }
       if (!isNaN(val)&&val!=='') { result[key]=Number(val); continue; }
       if ((val.startsWith('"')&&val.endsWith('"'))||(val.startsWith("'")&&val.endsWith("'"))) { result[key]=val.slice(1,-1); continue; }
       result[key]=val;
@@ -205,5 +223,16 @@ window.trainingPresetsMixin = {
     this.updateToml();
     this.rebuildForm();
     this.toast(this.t('preset.cleared'));
+  },
+
+  applyPresetNavigate(preset) {
+    if (!preset || !preset.data) return;
+    // Determine target route from preset train_type
+    const tt = (preset.metadata && preset.metadata.train_type) || 'sd-lora';
+    const routeMap = { 'sd-lora': 'train-basic', 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
+    const targetRoute = routeMap[tt] || 'train-basic';
+    this.navigate(targetRoute);
+    // Apply after navigate so buildTrainForm runs first
+    this.$nextTick(() => this.applyPreset(preset));
   }
 };

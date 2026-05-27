@@ -11,6 +11,12 @@ window.tagEditorMixin = {
   tagEditorModified: false,
   tagEditorDirName: '',
 
+  // -- Helpers ------------------------------------------------
+  _escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  },
+
   // -- Methods ------------------------------------------------
   async tagEditorLoad(dir) {
     var d = dir || this.tagEditorDir || (this.form && this.form.train_data_dir) || './train/aki';
@@ -71,9 +77,9 @@ window.tagEditorMixin = {
       if (j.status === 'success') {
         this.tagEditorLoad();
       } else {
-        alert(j.message || 'Operation failed');
+        this.toast(j.message || 'Operation failed', 'error');
       }
-    } catch (e) { alert('Operation failed: ' + e); }
+    } catch (e) { this.toast('Operation failed: ' + e, 'error'); }
   },
 
   tagEditorUpdate(imgPath, newTags) {
@@ -92,7 +98,7 @@ window.tagEditorMixin = {
 
     html += '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center">';
     html += '<span style="font-size:12px;color:var(--text-secondary)">' + tt('datasetDir', 'Dataset') + ':</span>';
-    html += '<input type="text" style="flex:1" value="' + this.tagEditorDir + '" id="tagEditorDirInput" @keydown.enter="tagEditorLoad($event.target.value)">';
+    html += '<input type="text" style="flex:1" value="' + this._escHtml(this.tagEditorDir) + '" id="tagEditorDirInput" @keydown.enter="tagEditorLoad($event.target.value)">';
     html += '<button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById(\'tagEditorDirInput\').value)">' + tt('loadImages', 'Load') + '</button>';
     html += '<span style="font-size:12px;color:var(--text-tertiary)">' + imgs.length + ' images</span>';
     html += '</div></div>';
@@ -115,20 +121,21 @@ window.tagEditorMixin = {
 
     html += '<div class="tag-editor-grid">';
     imgs.forEach(function(img, idx) {
+      var esc = self._escHtml;
       var tagPills = (img.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) {
-        var escPath = img.path.replace(/'/g,"\\'");
-        var escTag = t.trim().replace(/'/g,"\\'");
-        return '<span class="tag-pill" @click="tagEditorRemoveTag(\'' + escPath + '\',\'' + escTag + '\')" title="' + tt('clickToDelete', 'Click to remove') + '">' + t.trim() + '</span>';
+        var escPath = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var escTag = t.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return '<span class="tag-pill" @click="tagEditorRemoveTag(\'' + escPath + '\',\'' + escTag + '\')" title="' + tt('clickToDelete', 'Click to remove') + '">' + esc(t.trim()) + '</span>';
       }).join('');
       var isModified = self.tagEditorOriginal[img.path] !== undefined && self.tagEditorOriginal[img.path] !== img.tags;
-      var escPath2 = img.path.replace(/'/g,"\\'");
+      var escPath2 = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
       html += '<div class="tag-editor-item ' + (isModified ? 'modified' : '') + '">';
-      html += '<div class="tag-editor-thumb"><img src="' + img.thumbnail + '" loading="lazy" alt="' + img.name + '"/></div>';
+      html += '<div class="tag-editor-thumb"><img src="' + esc(img.thumbnail) + '" loading="lazy" alt="' + esc(img.name) + '"/></div>';
       html += '<div class="tag-editor-info">';
-      html += '<div class="tag-editor-filename">' + img.name + (isModified ? ' *' : '') + '</div>';
+      html += '<div class="tag-editor-filename">' + esc(img.name) + (isModified ? ' *' : '') + '</div>';
       html += '<div class="tag-editor-tags">' + tagPills + '</div>';
-      html += '<textarea class="tag-editor-textarea" id="tagtext-' + idx + '" @input="tagEditorUpdate(\'' + escPath2 + '\',$event.target.value)" @focus="tagEditorMarkDirty()" rows="2">' + img.tags + '</textarea>';
+      html += '<textarea class="tag-editor-textarea" id="tagtext-' + idx + '" @input="tagEditorUpdate(\'' + escPath2 + '\',$event.target.value)" @focus="tagEditorMarkDirty()" rows="2">' + esc(img.tags) + '</textarea>';
       html += '</div></div>';
     });
     html += '</div>';

@@ -106,8 +106,6 @@ document.addEventListener('alpine:init', () => {
 
       this._startHealthCheck();
 
-      document.title = this.pageTitle + ' | lora-scripts-anima';
-
       window.__anima = this;
     },
 
@@ -256,7 +254,6 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
-        this.refreshSavedConfigs();
       } catch(e){}
       this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
       this.rightPanelCollapsed = localStorage.getItem('anima-right-panel-collapsed') === '1';

@@ -65,7 +65,13 @@ window.trainingTomlMixin = {
       if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
       else if (typeof v === 'number') lines.push(`${k} = ${v}`);
       else if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
-        lines.push(`${k} = ${Number(v)}`);
+        // Preserve scientific notation (e.g. "1e-4") as-is, convert plain numbers
+        const trimmed = v.trim();
+        if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
+          lines.push(`${k} = ${trimmed}`);
+        } else {
+          lines.push(`${k} = ${Number(trimmed)}`);
+        }
       }
       else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
     }
@@ -170,7 +176,13 @@ window.trainingTomlMixin = {
     }
     for (const [k, v] of Object.entries(payload)) {
       if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
-        payload[k] = Number(v);
+        // Preserve scientific notation as string for TOML compatibility
+        const trimmed = v.trim();
+        if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
+          payload[k] = trimmed; // keep as string "1e-4"
+        } else {
+          payload[k] = Number(trimmed);
+        }
       }
     }
 
