@@ -7,7 +7,10 @@ window.monitorRenderMixin = {
   renderDashboard() {
     const el = document.getElementById('monitorDashboard');
     if (!el) return;
-    const d = this.monitorData||{}, gpu=this.gpuInfo, sys=this.sysInfo;
+    const isHistoryMode = !!this.selectedRunDir;
+    const d = isHistoryMode ? (this.runDetailData||{}) : (this.monitorData||{});
+    const gpu = isHistoryMode ? null : this.gpuInfo;
+    const sys = isHistoryMode ? null : this.sysInfo;
     const t = (k,fb) => this.t('monitor.'+k)||fb||k;
     const firstRender = !this._dashboardRendered; this._dashboardRendered=true;
     const tab = this.dashTab||'overview';
@@ -18,9 +21,28 @@ window.monitorRenderMixin = {
     this._prevBarValues = {vram:vramPct, load:loadPct, cpu:cpuPct, ram:ramPct};
 
     let html = '<div class="monitor-dashboard">';
-    html += '<div class="monitor-row" style="margin-bottom:12px">';
-    html += this._statusCard(d,t); if (sys) html += this._systemCard(sys,t); if (gpu) html += this._gpuCard(gpu,t);
-    html += '</div>';
+
+    // ── 历史模式提示条 ──
+    if (isHistoryMode) {
+      const runName = (d.config && d.config.output_name) || this.selectedRunDir.split('/').pop() || '';
+      html += `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;border-left:3px solid var(--accent)">`;
+      html += `<span style="font-size:12px;color:var(--text-tertiary)">📜 ${t('viewingHistory','Viewing history')}</span>`;
+      html += `<b style="font-size:14px">${this._escapeHtml(runName)}</b>`;
+      if (d.train_result) {
+        const st = d.train_result.status || '';
+        const dur = d.train_result.duration_str || '';
+        html += `<span class="badge" style="font-size:11px;background:${st==='completed'?'var(--success)':st==='failed'?'var(--danger)':'var(--text-tertiary)'};color:#fff;padding:2px 8px;border-radius:4px">${st}</span>`;
+        if (dur) html += `<span style="font-size:11px;color:var(--text-tertiary)">${dur}</span>`;
+      }
+      html += `<div style="flex:1"></div>`;
+      html += `<button class="btn btn-sm" @click="clearRunDetail()" style="font-size:12px">← ${t('backToLive','Back to live')}</button>`;
+      html += `</div>`;
+    } else {
+      html += '<div class="monitor-row" style="margin-bottom:12px">';
+      html += this._statusCard(d,t); if (sys) html += this._systemCard(sys,t); if (gpu) html += this._gpuCard(gpu,t);
+      html += '</div>';
+    }
+
     if (tab==='overview') html += this._renderOverview(d,t);
     else if (tab==='charts') html += this._renderCharts(d,t);
     else if (tab==='samples') html += this._renderSamples(t);
@@ -37,6 +59,19 @@ window.monitorRenderMixin = {
 
   _renderOverview(d,t) {
     let html='';
+    const isHistoryMode = !!this.selectedRunDir;
+
+    // ── 训练结果摘要（历史模式）──
+    if (isHistoryMode && d.train_result) {
+      const tr = d.train_result;
+      html += '<div class="card" style="margin-top:12px"><div class="card-header">'+t('trainResult','Training Result')+'</div>';
+      html += '<div class="param-grid">';
+      html += `<div class="param-item"><span class="param-label">${t('status','Status')}</span><span class="param-value" style="color:${tr.status==='completed'?'var(--success)':'var(--danger)'}">${tr.status||'?'}</span></div>`;
+      if (tr.duration_str) html += `<div class="param-item"><span class="param-label">${t('duration','Duration')}</span><span class="param-value">${tr.duration_str}</span></div>`;
+      if (tr.exit_code != null) html += `<div class="param-item"><span class="param-label">Exit Code</span><span class="param-value">${tr.exit_code}</span></div>`;
+      html += '</div></div>';
+    }
+
     html+='<div class="card card-params" style="margin-top:12px"><div class="card-header">'+t('trainParams','Parameters')+'</div>';
     if (this.trainParams.length) { html+='<div class="param-grid">'; this.trainParams.forEach(p=>{html+=`<div class="param-item"><span class="param-label">${this._escapeHtml(p.label)}</span><span class="param-value">${this._escapeHtml(p.value)}</span></div>`;}); html+='</div>'; }
     else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','Start training to see parameters')+'</p></div>';
@@ -173,7 +208,8 @@ window.monitorRenderMixin = {
       if (hasRunning) html += '<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px">' + t('pastRuns', 'Past Runs') + '</div>';
       html += '<div class="history-grid">';
       this.historyItems.forEach(h => {
-        html += '<div class="card history-card" @click="navigate(\'monitor-dashboard\')" style="cursor:pointer">';
+        const clickAction = h.run_dir ? `viewRunDetail('${this._escapeHtml(h.run_dir)}')` : `navigate('monitor-dashboard')`;
+        html += `<div class="card history-card" @click="${clickAction}" style="cursor:pointer">`;
         html += '<div class="card-header">' + this._escapeHtml(h.time) + '</div>';
         html += '<div><b>' + this._escapeHtml(h.name || '') + '</b></div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this._escapeHtml(h.model || '') + '</div>';

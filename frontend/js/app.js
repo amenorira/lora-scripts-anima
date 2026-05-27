@@ -218,7 +218,11 @@ document.addEventListener('alpine:init', () => {
     // ── Route Content Builder ───────────────────────────────
     buildRouteContent() {
       const r = this.currentRoute;
-      if (!r.startsWith('monitor-')) this.stopMonitorPolling();
+      if (!r.startsWith('monitor-')) {
+        this.stopMonitorPolling();
+        this.selectedRunDir = null;
+        this.runDetailData = null;
+      }
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
       } else if (r === 'tagger') {

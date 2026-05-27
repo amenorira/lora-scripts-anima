@@ -3,10 +3,12 @@
 
   GET  /api/monitor/status        — 聚合监控状态
   GET  /api/monitor/history        — 历史训练记录
+  GET  /api/monitor/run-detail     — 指定训练的图表 + 日志 + 配置
   GET  /api/monitor/preview-image  — 预览图片代理
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +19,7 @@ from backend.monitor.training import (
     read_tensorboard_loss, parse_log_progress,
     latest_train_config, extract_train_params,
 )
-from backend.monitor.artifacts import newest_previews, scan_history, read_train_log
+from backend.monitor.artifacts import newest_previews, scan_history, read_train_log, _parse_toml_config
 from backend.tasks import tm
 
 router = APIRouter()
@@ -143,6 +145,82 @@ async def monitor_history():
         running = None  # 已完成/终止的任务不算运行中
 
     return {"status": "success", "data": {"running": running, "history": history}}
+
+
+@router.get("/monitor/run-detail")
+async def monitor_run_detail(run_dir: str = Query("")):
+    """获取指定历史训练的详情：Loss/LR 图表 + 日志 + 配置参数 + 预览样本。
+    run_dir 为相对于项目根的路径（如 output/my_lora_20260527-143021）"""
+    if not run_dir:
+        return {"status": "error", "message": "run_dir is required"}
+
+    abs_run_dir = (REPO_ROOT / run_dir).resolve()
+
+    # 安全检查：必须在 output/ 下
+    try:
+        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return {"status": "error", "message": "Invalid run_dir / 无效路径"}
+
+    if not abs_run_dir.is_dir():
+        return {"status": "error", "message": "Run directory not found / 训练目录不存在"}
+
+    result: dict = {"run_dir": run_dir}
+
+    # ── 配置参数 ──
+    config_file = abs_run_dir / "config.toml"
+    if config_file.exists():
+        try:
+            params = _parse_toml_config(config_file)
+            if params:
+                result["config"] = params
+                result["train_params"] = extract_train_params(params)
+        except Exception:
+            pass
+
+    # ── TensorBoard Loss/LR 图表 ──
+    result["tensorboard_loss"] = read_tensorboard_loss(run_dir=str(abs_run_dir))
+
+    # ── 预览样本 ──
+    checkpoints_dir = str(abs_run_dir / "checkpoints")
+    result["previews"] = newest_previews(checkpoints_dir)
+
+    # ── 训练日志 ──
+    # 先尝试通过 task_id 日志文件
+    log_files = list(abs_run_dir.glob("train_*.log"))
+    if log_files:
+        latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
+        try:
+            from backend.monitor.artifacts import _tail_file
+            log_lines = _tail_file(latest_log)
+            if log_lines:
+                result["log_lines"] = log_lines[-300:]
+                progress = parse_log_progress(log_lines)
+                for key in ("step", "total_steps", "percent", "loss",
+                             "lr", "epoch", "eta", "speed",
+                             "has_error", "error_msg"):
+                    if key in progress and progress[key] is not None:
+                        result[key] = progress[key]
+        except Exception:
+            pass
+
+    # ── result.json（训练结果）──
+    result_file = abs_run_dir / "result.json"
+    if result_file.exists():
+        try:
+            result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # ── run_info.txt ──
+    info_file = abs_run_dir / "run_info.txt"
+    if info_file.exists():
+        try:
+            result["run_info"] = info_file.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    return {"status": "success", "data": result}
 
 
 @router.get("/monitor/preview-image")

@@ -96,9 +96,13 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
     return result
 
 
-def read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list[dict]:
+def read_tensorboard_loss(
+    limit: int = 50000,
+    downsample_to: int = 2000,
+    run_dir: str | None = None,
+) -> list[dict]:
     """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样。
-    扫描 output/*/log/（运行文件夹）中的 TensorBoard 事件。
+    若指定 run_dir，仅读取该目录下的 log/；否则扫描 output/*/log/（按 mtime 倒序取最新）。
     使用缓存避免高频轮询时重复解析 event 文件。"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
@@ -106,10 +110,23 @@ def read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list
         return []
 
     # 扫描 per-run 文件夹下的 log/ 子目录
-    log_dirs = []
-    if OUTPUT_DIR.exists():
-        for run_dir in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            log_sub = run_dir / "log"
+    log_dirs: list[Path] = []
+    if run_dir:
+        # 指定 run_dir：只读该目录
+        rd = Path(run_dir)
+        log_sub = rd / "log"
+        if log_sub.is_dir():
+            log_dirs.append(log_sub)
+        # 兼容：run_dir 本身就是 checkpoints 父目录
+        if not log_dirs:
+            for candidate in [rd, rd.parent]:
+                log_sub2 = candidate / "log"
+                if log_sub2.is_dir():
+                    log_dirs.append(log_sub2)
+                    break
+    elif OUTPUT_DIR.exists():
+        for rd in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            log_sub = rd / "log"
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
 
@@ -118,7 +135,7 @@ def read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list
         "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
     )
 
-    for log_dir in log_dirs[:5]:  # 最多检查 5 个日志目录
+    for log_dir in (log_dirs[:1] if run_dir else log_dirs[:5]):
         ea = _get_cached_accumulator(log_dir)
         if ea is None:
             continue

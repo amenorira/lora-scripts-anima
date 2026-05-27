@@ -13,6 +13,10 @@ window.monitorCoreMixin = {
   chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
   _monitorAbortCtrl: null,
 
+  // ── History run detail ─────────────────────────────────
+  selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
+  runDetailData: null,    // 历史训练详情缓存
+
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
     this.stopMonitorPolling(); this._monitorFirstFetch = true;
@@ -34,8 +38,13 @@ window.monitorCoreMixin = {
       const j = await r.json();
       if (j.status==='success') {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
-        this.lossSeries = j.data.tensorboard_loss||[]; this.trainParams = j.data.train_params||[];
-        this.previews = j.data.previews||[]; if (j.data.log_lines) this.logLines = j.data.log_lines;
+        // 仅在实时模式下更新图表/日志数据（历史模式由 viewRunDetail 管理）
+        if (!this.selectedRunDir) {
+          this.lossSeries = j.data.tensorboard_loss||[];
+          this.trainParams = j.data.train_params||[];
+          this.previews = j.data.previews||[];
+          if (j.data.log_lines) this.logLines = j.data.log_lines;
+        }
         if (j.data.state==='RUNNING') { this.isTraining=true; this.isIdle=false; this.statusText=j.data.state_label||j.data.state; }
         else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
         if (this.currentRoute==='monitor-dashboard') this.renderDashboard();
@@ -71,5 +80,48 @@ window.monitorCoreMixin = {
     if (!this._chartInstances) return;
     Object.values(this._chartInstances).forEach(c => { try{c.destroy()}catch(_){} });
     this._chartInstances = {};
+  },
+
+  // ── Run Detail (查看历史训练) ─────────────────────────
+  async viewRunDetail(runDir) {
+    /** 查看指定历史训练的详情（图表 + 日志 + 配置） */
+    this.selectedRunDir = runDir;
+    this.runDetailData = null;
+    this.dashTab = 'overview';
+    this.navigate('monitor-dashboard');
+    // 等待 DOM 就绪后拉取数据
+    await this.$nextTick();
+    await this._fetchRunDetail(runDir);
+  },
+
+  async _fetchRunDetail(runDir) {
+    try {
+      this.startProgress();
+      const r = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.runDetailData = j.data;
+        this.lossSeries = j.data.tensorboard_loss || [];
+        this.trainParams = j.data.train_params || [];
+        this.previews = j.data.previews || [];
+        if (j.data.log_lines) this.logLines = j.data.log_lines;
+        this.renderDashboard();
+      } else {
+        this.toast(j.message || 'Failed to load run detail');
+      }
+    } catch (e) {
+      this.toast('Error loading run detail');
+    } finally {
+      this.finishProgress();
+    }
+  },
+
+  clearRunDetail() {
+    /** 返回实时监控模式 */
+    this.selectedRunDir = null;
+    this.runDetailData = null;
+    // 强制刷新：先停止再重启轮询
+    this.stopMonitorPolling();
+    this.startMonitorPolling();
   }
 };
