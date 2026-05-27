@@ -70,7 +70,10 @@
   "section": {
     "model": "模型与数据集",
     "network": "网络结构",
-    "training": "训练设置",
+    "training": "训练核心",
+    "optimizer": "优化器与学习率",
+    "regularization": "正则化与损失",
+    "performance": "性能优化",
     "save": "保存与日志",
     "caption": "Caption 处理",
     "preview": "预览采样"

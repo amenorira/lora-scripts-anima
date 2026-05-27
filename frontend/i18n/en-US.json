@@ -70,7 +70,10 @@
   "section": {
     "model": "Model & Dataset",
     "network": "Network",
-    "training": "Training",
+    "training": "Training Core",
+    "optimizer": "Optimizer & LR",
+    "regularization": "Regularization & Loss",
+    "performance": "Performance",
     "save": "Save & Logging",
     "caption": "Caption",
     "preview": "Preview"
