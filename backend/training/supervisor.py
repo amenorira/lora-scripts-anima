@@ -7,9 +7,12 @@ Anima Backend — 训练进程管理器
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -106,46 +109,71 @@ def run_train(
 
     # 默认 output 目录
     od = output_dir or str(Path(toml_path).parent.parent / "output")
-    env = _build_train_env(
-        output_dir=od,
-        task_id="",
-    )
 
-    # GPU 配置
-    if gpu_ids:
-        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_ids)
-        if len(gpu_ids) > 1:
-            args[3:3] = ["--multi_gpu", "--num_processes", str(len(gpu_ids))]
-            if sys.platform == "win32":
-                env["USE_LIBUV"] = "0"
-                args[3:3] = ["--rdzv_backend", "c10d"]
-
-    # 创建任务
-    task = tm.create_task(args, env)
+    # 先创建任务获取 task_id，再构建完整 env（确保 ANIMA_TASK_ID 一开始就正确）
+    task = tm.create_task(args, None)
     if not task:
         return {"status": "error", "message": "Failed to create task / 创建任务失败: max concurrency limit reached / 已达最大并发"}
 
     task_id = task.task_id
-    env["ANIMA_TASK_ID"] = task_id
     task_id_short = task_id[:8]
 
+    # GPU 配置（先构建参数列表）
+    if gpu_ids:
+        env_extra = {"CUDA_VISIBLE_DEVICES": ",".join(str(g) for g in gpu_ids)}
+        if len(gpu_ids) > 1:
+            args[3:3] = ["--multi_gpu", "--num_processes", str(len(gpu_ids))]
+            if sys.platform == "win32":
+                env_extra["USE_LIBUV"] = "0"
+                args[3:3] = ["--rdzv_backend", "c10d"]
+    else:
+        env_extra = {}
+
+    env = _build_train_env(output_dir=od, task_id=task_id)
+    env.update(env_extra)
+    task.environ = env  # 更新 task 的环境变量
+
     # 日志文件放在运行文件夹内
-    log_dir = Path(od)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"train_{task_id_short}.log"
+    run_dir = Path(od)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / f"train_{task_id_short}.log"
 
     def _run():
+        import json as _json
+        start_time = time.time()
+        exit_code = -1
+        status = "error"
+        error_msg = ""
+
         try:
             # 打开日志文件用于捕获 stdout
-            with open(log_file, "w", encoding="utf-8", errors="replace") as lf:
+            with open(log_file, "w", encoding="utf-8", errors="backslashreplace") as lf:
                 task.execute(stdout_file=lf)
                 result = task.communicate()
+                exit_code = result.returncode
                 if result.returncode != 0:
-                    log.error(f"Training failed / 训练失败 (task={task_id_short})")
+                    status = "failed"
+                    error_msg = f"exit code {result.returncode}"
+                    log.error(f"Training failed / 训练失败 (task={task_id_short}, exit={result.returncode})")
                 else:
+                    status = "completed"
                     log.info(f"Training completed / 训练完成 (task={task_id_short})")
+        except subprocess.TimeoutExpired:
+            status = "timeout"
+            error_msg = "Training timed out / 训练超时"
+            log.error(f"Training timed out / 训练超时 (task={task_id_short})")
         except Exception as e:
+            status = "error"
+            error_msg = str(e)[:500]
             log.error(f"Training exception / 训练异常 (task={task_id_short}): {e}")
+
+        duration = time.time() - start_time
+
+        # ── B: 写入结构化训练结果 ────────────────────────
+        _write_result_json(run_dir, task_id, status, exit_code, error_msg, duration)
+        # ── C: 失败时提取尾部错误日志 ─────────────────────
+        if status != "completed":
+            _write_error_tail(log_file, run_dir, task_id_short)
 
     coro = asyncio.to_thread(_run)
     asyncio.create_task(coro)
@@ -205,3 +233,48 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
         return "torch", msg
 
     return requested, ""
+
+
+def _write_result_json(
+    run_dir: Path,
+    task_id: str,
+    status: str,
+    exit_code: int,
+    error_msg: str,
+    duration_sec: float,
+) -> None:
+    """写入结构化训练结果文件"""
+    try:
+        result = {
+            "task_id": task_id,
+            "status": status,
+            "exit_code": exit_code,
+            "duration_sec": round(duration_sec, 1),
+            "duration_str": f"{int(duration_sec // 60)}m {int(duration_sec % 60)}s",
+            "error": error_msg if error_msg else None,
+        }
+        result_path = run_dir / "result.json"
+        result_path.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        log.warning(f"Failed to write result.json / 写入失败: {e}")
+
+
+def _write_error_tail(log_file: Path, run_dir: Path, task_id_short: str) -> None:
+    """训练失败时，从日志中提取最后 50 行写入 error.log"""
+    try:
+        if not log_file.exists():
+            return
+        text = log_file.read_text(encoding="utf-8", errors="backslashreplace")
+        lines = text.split("\n")
+        tail = lines[-50:] if len(lines) > 50 else lines
+        error_path = run_dir / "error.log"
+        error_path.write_text(
+            "\n".join(tail),
+            encoding="utf-8",
+        )
+        log.info(f"Error log written / 错误日志已写入: {error_path.name} (task={task_id_short})")
+    except OSError as e:
+        log.warning(f"Failed to write error.log / 写入失败: {e}")

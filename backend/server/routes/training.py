@@ -18,13 +18,20 @@ router = APIRouter()
 
 trainer_mapping = {
     "sd-lora": "./vendor/sd-scripts/train_network.py",
-    "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
+    "sd-finetune": "./vendor/sd-scripts/fine_tune.py",
     "sd-dreambooth": "./vendor/sd-scripts/train_db.py",
+    "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
     "sdxl-finetune": "./vendor/sd-scripts/sdxl_train.py",
     "sd3-lora": "./vendor/sd-scripts/sd3_train_network.py",
+    "sd3-finetune": "./vendor/sd-scripts/sd3_train.py",
     "flux-lora": "./vendor/sd-scripts/flux_train_network.py",
     "flux-finetune": "./vendor/sd-scripts/flux_train.py",
+    "flux-controlnet": "./vendor/sd-scripts/flux_train_control_net.py",
     "anima-lora": "./vendor/sd-scripts/anima_train_network.py",
+    "anima-controlnet": "./vendor/sd-scripts/anima_train_control_net_lllite.py",
+    "hunyuan-lora": "./vendor/sd-scripts/hunyuan_image_train_network.py",
+    "lumina-lora": "./vendor/sd-scripts/lumina_train_network.py",
+    "lumina-finetune": "./vendor/sd-scripts/lumina_train.py",
 }
 
 avaliable_scripts = [
@@ -82,6 +89,58 @@ def get_sample_prompts(config: dict):
     return positive_prompts, sample_prompts_arg
 
 
+def _cleanup_autosave(autosave_dir: str, keep: int = 50) -> None:
+    """清理 autosave 目录，仅保留最近 N 个 TOML 文件"""
+    try:
+        files = sorted(
+            [f for f in os.listdir(autosave_dir) if f.endswith(".toml")],
+            key=lambda f: os.path.getmtime(os.path.join(autosave_dir, f)),
+            reverse=True,
+        )
+        for old_file in files[keep:]:
+            try:
+                os.remove(os.path.join(autosave_dir, old_file))
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str, is_resume: bool) -> None:
+    """写入人类可读的训练摘要 run_info.txt"""
+    try:
+        model_path = config.get("pretrained_model_name_or_path", "?")
+        model_name = os.path.basename(model_path) if model_path else "?"
+        dataset = config.get("train_data_dir", "?")
+        lines = [
+            f"Training Run: {os.path.basename(run_dir)}",
+            f"Started:      {timestamp}",
+            f"Type:         {train_type}",
+            f"Resume:       {'yes' if is_resume else 'no'}",
+            f"Model:        {model_name}",
+            f"Dataset:      {dataset}",
+            f"Output Name:  {config.get('output_name', '?')}",
+            f"Resolution:   {config.get('resolution', '?')}",
+            f"Batch Size:   {config.get('train_batch_size', '?')}",
+            f"LR:           {config.get('learning_rate', '?')}",
+            f"Optimizer:    {config.get('optimizer_type', '?')}",
+            f"Network Dim:  {config.get('network_dim', '?')}",
+            f"Network Alpha:{config.get('network_alpha', '?')}",
+            f"Epochs:       {config.get('max_train_epochs', '?')}",
+            f"Mixed Prec:   {config.get('mixed_precision', '?')}",
+            f"Seed:         {config.get('seed', '?')}",
+            "",
+            f"Full config:  config.toml",
+            f"Training log: train_*.log",
+            f"Checkpoints:  checkpoints/",
+        ]
+        info_path = os.path.join(run_dir, "run_info.txt")
+        with open(info_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except OSError as e:
+        log.warning(f"Failed to write run_info.txt / 写入失败: {e}")
+
+
 @router.post("/run")
 async def create_toml_file(request: Request):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -99,19 +158,21 @@ async def create_toml_file(request: Request):
     # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
     try:
         from backend.training import adapt_config, detect_attention_backend
-        adapted_config, warnings = adapt_config(config)
-        for w in warnings:
-            log.warning(f"[Adapter] {w}")
-        config = adapted_config
+    except ImportError as e:
+        log.error(f"[Adapter] Failed to import training adapter / 训练适配器导入失败: {e}")
+        return APIResponseFail(message=f"Training adapter import error / 训练适配器导入错误: {e}")
 
-        if "attn_mode" in config:
-            attn_requested = config.get("attn_mode", "torch")
-            attn_actual, attn_warning = detect_attention_backend(attn_requested)
-            if attn_warning:
-                log.warning(f"[Attn] {attn_warning}")
-                config["attn_mode"] = attn_actual
-    except ImportError:
-        pass
+    adapted_config, warnings = adapt_config(config)
+    for w in warnings:
+        log.warning(f"[Adapter] {w}")
+    config = adapted_config
+
+    if "attn_mode" in config:
+        attn_requested = config.get("attn_mode", "torch")
+        attn_actual, attn_warning = detect_attention_backend(attn_requested)
+        if attn_warning:
+            log.warning(f"[Attn] {attn_warning}")
+            config["attn_mode"] = attn_actual
     # ──────────────────────────────────────────────────────────
 
     # ── Per-run folder: isolate each training run ──────────────
@@ -120,13 +181,21 @@ async def create_toml_file(request: Request):
     run_dir_name = f"{safe_name}_{timestamp}"
     is_resume = bool(config.get("resume", "").strip())
 
+    # 用户设置的基础输出目录（默认 ./output），后端自动在其下创建子文件夹
+    output_base = config.get("output_dir", "./output")
+
     if not is_resume:
-        run_dir = os.path.join(os.getcwd(), "output", run_dir_name)
-        config["output_dir"] = run_dir
+        run_dir = os.path.join(output_base, run_dir_name)
+        os.makedirs(run_dir, exist_ok=True)
+        # sd-scripts 原生写入 checkpoints/（模型 + 样本图），log/ 单独指定
+        config["output_dir"] = os.path.join(run_dir, "checkpoints")
         config["logging_dir"] = os.path.join(run_dir, "log")
     else:
-        # 续训时保持原 output_dir，但日志也放到对应 run 目录
-        run_dir = config.get("output_dir", os.path.join(os.getcwd(), "output", run_dir_name))
+        # 续训时保持原 output_dir（含 checkpoints/），但日志也放到对应 run 目录
+        run_dir = config.get("output_dir", os.path.join(output_base, run_dir_name, "checkpoints"))
+        # run_dir 在续训时是 checkpoints/ 的父目录
+        if "checkpoints" in str(run_dir):
+            run_dir = os.path.dirname(str(run_dir))
         if "logging_dir" not in config:
             config["logging_dir"] = os.path.join(str(run_dir), "log")
     # ──────────────────────────────────────────────────────────
@@ -161,19 +230,25 @@ async def create_toml_file(request: Request):
             log.error(f"Error while processing prompts: {e}")
             return APIResponseFail(message=str(e))
 
-    # ── Write TOML to autosave (index) AND run folder (self-contained) ──
-    os.makedirs(os.path.join(os.getcwd(), "config", "autosave"), exist_ok=True)
-    toml_file = os.path.join(os.getcwd(), "config", "autosave", f"{timestamp}.toml")
+    # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
+    autosave_dir = os.path.join(os.getcwd(), "config", "autosave")
+    os.makedirs(autosave_dir, exist_ok=True)
+    _cleanup_autosave(autosave_dir, keep=50)
+
+    toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
     toml_content = toml.dumps(config)
     with open(toml_file, "w", encoding="utf-8") as f:
         f.write(toml_content)
 
-    # Also save a copy in the run folder for self-contained records
-    if not is_resume:
-        os.makedirs(run_dir, exist_ok=True)
+    # Self-contained config copy in run folder
     run_config_file = os.path.join(run_dir, "config.toml")
     with open(run_config_file, "w", encoding="utf-8") as f:
         f.write(toml_content)
+    # ──────────────────────────────────────────────────────────
+
+    # ── G: 写入人类可读 run_info.txt ─────────────────────────
+    _write_run_info(run_dir, config, model_train_type, timestamp, is_resume)
+    # ──────────────────────────────────────────────────────────
 
     result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)
     return result
@@ -198,7 +273,9 @@ async def run_script(request: Request, background_tasks: BackgroundTasks):
                 value = f'"{v}"'
             result.append(value)
     script_args = " ".join(result)
-    script_path = Path(os.getcwd()) / "scripts" / script_name
+    script_path = Path(os.getcwd()) / "vendor" / "sd-scripts" / script_name
+    if not script_path.exists():
+        return APIResponseFail(message=f"Script not found / 脚本不存在: {script_name}")
     cmd = f"{launch_utils.python_bin} {script_path} {script_args}"
     background_tasks.add_task(launch_utils.run, cmd)
     return APIResponseSuccess()

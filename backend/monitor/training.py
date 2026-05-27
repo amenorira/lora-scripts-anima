@@ -4,13 +4,58 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-LOG_DIR = REPO_ROOT / "logs"
 OUTPUT_DIR = REPO_ROOT / "output"
 CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
+
+# ── TensorBoard Event 缓存 ─────────────────────────────────
+# 缓存 EventAccumulator 实例，按 log_dir 索引
+# 每次请求检查 event file mtime，仅在文件更新时重新 Reload
+_tb_cache: dict[str, tuple[float, Any]] = {}   # {log_dir: (event_mtime, EventAccumulator)}
+_CACHE_TTL = 5.0  # 缓存有效期（秒），避免频繁 Reload
+
+
+def _get_cached_accumulator(log_dir: Path) -> Any | None:
+    """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
+    try:
+        from tensorboard.backend.event_processing import event_accumulator
+    except Exception:
+        return None
+
+    log_dir_str = str(log_dir)
+    event_files = sorted(log_dir.rglob("events.out.tfevents.*"),
+                         key=lambda p: p.stat().st_mtime, reverse=True)
+    if not event_files:
+        _tb_cache.pop(log_dir_str, None)
+        return None
+
+    latest_mtime = max(ef.stat().st_mtime for ef in event_files)
+    now = time.time()
+
+    if log_dir_str in _tb_cache:
+        cached_mtime, cached_ea = _tb_cache[log_dir_str]
+        if cached_mtime == latest_mtime and (now - cached_mtime) < _CACHE_TTL:
+            return cached_ea
+
+    # 缓存未命中或过期：创建新 accumulator
+    try:
+        ea = event_accumulator.EventAccumulator(
+            log_dir_str,
+            size_guidance={event_accumulator.SCALARS: 0},
+        )
+        ea.Reload()
+        _tb_cache[log_dir_str] = (latest_mtime, ea)
+        # 清理过大的缓存（保留最近 3 个）
+        if len(_tb_cache) > 3:
+            oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
+            del _tb_cache[oldest]
+        return ea
+    except Exception:
+        return None
 
 
 # ── TensorBoard Event 降采样 (LTTB) ────────────────────────
@@ -53,44 +98,32 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
 def read_tensorboard_loss(limit: int = 50000, downsample_to: int = 2000) -> list[dict]:
     """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样。
-    优先扫描 output/*/log/（运行文件夹），回退到 logs/（旧格式）。"""
+    扫描 output/*/log/（运行文件夹）中的 TensorBoard 事件。
+    使用缓存避免高频轮询时重复解析 event 文件。"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:
         return []
 
-    # 优先扫描 per-run 文件夹，回退到旧 logs 目录
+    # 扫描 per-run 文件夹下的 log/ 子目录
     log_dirs = []
     if OUTPUT_DIR.exists():
         for run_dir in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
             log_sub = run_dir / "log"
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
-    if LOG_DIR.exists():
-        log_dirs.append(LOG_DIR)
-
-    # 收集所有 event files
-    event_files = []
-    for log_dir in log_dirs:
-        for ef in sorted(log_dir.rglob("events.out.tfevents.*"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if ef.is_file():
-                event_files.append(ef)
-    if not event_files:
-        return []
 
     scalar_tags = (
         "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
         "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
     )
 
-    for event_file in event_files[:3]:
+    for log_dir in log_dirs[:5]:  # 最多检查 5 个日志目录
+        ea = _get_cached_accumulator(log_dir)
+        if ea is None:
+            continue
+
         try:
-            run_dir = event_file.parent
-            ea = event_accumulator.EventAccumulator(
-                str(run_dir),
-                size_guidance={event_accumulator.SCALARS: 0},
-            )
-            ea.Reload()
             available = set(ea.Tags().get("scalars", []))
         except Exception:
             continue

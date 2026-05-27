@@ -16,10 +16,12 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 # ── 预览样本 ──────────────────────────────────────────────
 
 def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]:
-    """扫描最新的训练样本图"""
-    roots = []
+    """扫描最新的训练样本图（checkpoints/sample/ → sample/ → output_dir 根）"""
+    roots: list[Path] = []
     if output_dir:
-        roots.extend([Path(output_dir) / "sample", Path(output_dir)])
+        od = Path(output_dir)
+        roots.extend([od / "sample", od])           # checkpoints/sample/, checkpoints/
+        roots.append(od.parent / "sample")           # run_dir/sample/ (兼容旧结构)
     roots.extend([OUTPUT_DIR / "sample", OUTPUT_DIR])
 
     found: list[Path] = []
@@ -157,29 +159,55 @@ def scan_history() -> list[dict]:
 
 # ── 训练日志读取 ──────────────────────────────────────────
 
+# 日志 tail 读取的最大字节数（约 500-1000 行）
+_LOG_TAIL_BYTES = 64 * 1024
+
+
+def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
+    """高效读取文件尾部内容（不加载整个文件到内存）"""
+    try:
+        size = path.stat().st_size
+        if size == 0:
+            return []
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            if size <= max_bytes:
+                f.seek(0)
+                return f.read().split("\n")
+            f.seek(size - max_bytes)
+            # 丢弃第一行（可能是不完整的行）
+            content = f.read()
+            first_newline = content.find("\n")
+            if first_newline >= 0:
+                content = content[first_newline + 1:]
+            return content.split("\n")
+    except OSError:
+        return []
+
+
 def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
-    """读取训练任务的实时日志。优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
+    """读取训练任务的实时日志（tail 方式，高性能）。
+    优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
     task_id_short = task_id[:8]
 
     # 先在指定目录查找
     if output_dir and output_dir.exists():
         for log_file in sorted(output_dir.glob(f"train_{task_id_short}*.log"),
                                key=lambda p: p.stat().st_mtime, reverse=True):
-            try:
-                return log_file.read_text(encoding="utf-8", errors="replace").split("\n")
-            except OSError:
-                continue
+            lines = _tail_file(log_file)
+            if lines:
+                return lines
 
     # 回退：扫描所有运行子目录
     if OUTPUT_DIR.exists():
-        for run_dir in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime if p.is_dir() else 0, reverse=True):
+        for run_dir in sorted(OUTPUT_DIR.iterdir(),
+                              key=lambda p: p.stat().st_mtime if p.is_dir() else 0,
+                              reverse=True):
             if not run_dir.is_dir():
                 continue
             for log_file in sorted(run_dir.glob(f"train_{task_id_short}*.log"),
                                    key=lambda p: p.stat().st_mtime, reverse=True):
-                try:
-                    return log_file.read_text(encoding="utf-8", errors="replace").split("\n")
-                except OSError:
-                    continue
+                lines = _tail_file(log_file)
+                if lines:
+                    return lines
 
     return []

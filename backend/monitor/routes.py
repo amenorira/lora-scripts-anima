@@ -24,7 +24,6 @@ router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = REPO_ROOT / "output"
-LOG_DIR = REPO_ROOT / "logs"
 
 STATE_LABELS = {
     "RUNNING": "Training / 训练中",
@@ -148,7 +147,7 @@ async def monitor_history():
 
 @router.get("/monitor/preview-image")
 async def monitor_preview_image(path: str = Query("")):
-    """预览图片代理"""
+    """预览图片代理 — 仅允许 output/ 和 logs/ 目录下的文件"""
     import mimetypes
     import urllib.parse
     from fastapi.responses import FileResponse
@@ -156,8 +155,20 @@ async def monitor_preview_image(path: str = Query("")):
     decoded = urllib.parse.unquote(path)
     p = (REPO_ROOT / decoded).resolve()
 
-    allowed = [OUTPUT_DIR.resolve(), LOG_DIR.resolve()]
-    if not any(p == root or root in p.parents for root in allowed):
+    # 使用 relative_to 做安全的路径约束检查（禁止路径遍历）
+    allowed_roots = [
+        OUTPUT_DIR.resolve(),
+        (REPO_ROOT / "output").resolve(),
+    ]
+    ok = False
+    for root in allowed_roots:
+        try:
+            p.relative_to(root)
+            ok = True
+            break
+        except ValueError:
+            continue
+    if not ok:
         return {"status": "error", "message": "禁止访问"}
 
     if not p.is_file():
