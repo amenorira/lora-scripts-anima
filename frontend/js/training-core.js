@@ -219,8 +219,8 @@ window.trainingCoreMixin = {
     }
 
     return `<div class="field${condClass}" data-field-row="${dataKey.replace(/'/g, "\\'")}"${condAttrs}${readonlyAttrs}>
-      <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}</div>
-      <div class="field-right">${inputHtml}${actionsHtml}${readonlyWarnHtml}</div>
+      <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}${readonlyWarnHtml}</div>
+      <div class="field-right">${inputHtml}${actionsHtml}</div>
     </div>`;
   },
 
@@ -429,36 +429,34 @@ window.trainingCoreMixin = {
         met = String(parentVal) !== neqVal && String(parentVal) !== 'null' && String(parentVal) !== 'undefined' && String(parentVal) !== '';
       }
 
-      const wasActive = row.getAttribute('data-readonly-if-active') === '1';
-      if (met === wasActive) return; // no state change
-
+      // Always apply full state (idempotent) to handle re-renders correctly
       if (met) {
         row.setAttribute('data-readonly-if-active', '1');
         row.classList.add('field-readonly');
-        // Disable all interactive elements
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
-        // Add warning text
+        // Ensure warning text exists
         const reasonKey = row.getAttribute('data-readonly-if-reason');
         const text = reasonKey ? self.t(reasonKey) : '';
         if (text && !row.querySelector('.field-readonly-warn')) {
           const warnEl = document.createElement('div');
           warnEl.className = 'field-readonly-warn';
           warnEl.textContent = text;
-          const fieldRight = row.querySelector('.field-right');
-          if (fieldRight) fieldRight.appendChild(warnEl);
+          const fieldLeft = row.querySelector('.field-left');
+          if (fieldLeft) fieldLeft.appendChild(warnEl);
+        } else if (text && row.querySelector('.field-readonly-warn')) {
+          // Update text in case locale changed
+          row.querySelector('.field-readonly-warn').textContent = text;
         }
       } else {
         row.removeAttribute('data-readonly-if-active');
         row.classList.remove('field-readonly');
-        // Re-enable all interactive elements
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = false; el.style.pointerEvents = ''; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = ''; sel.style.opacity = ''; });
-        // Remove warning text
         const warnEl = row.querySelector('.field-readonly-warn');
         if (warnEl) warnEl.remove();
       }
