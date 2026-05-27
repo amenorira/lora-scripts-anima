@@ -44,7 +44,7 @@ MODEL_SIGNATURE = [
         "type": ModelType.FLUX,
         "signature": [
             "double_blocks.0.img_mlp.0.weight",
-            "guidance_in.in_layer.weight"
+            "guidance_in.in_layer.weight",
             "model.diffusion_model.double_blocks",
             "double_blocks.0.img_attn.norm.query_norm.scale",
         ]
@@ -73,7 +73,7 @@ MODEL_SIGNATURE = [
         "type": ModelType.LoRA,
         "signature": [
             "lora_te_text_model_encoder",
-            "lora_unet_up_blocks"
+            "lora_unet_up_blocks",
             "lora_unet_input_blocks_4_1_transformer_blocks_0_attn1_to_k.alpha",
             "lora_unet_input_blocks_4_1_transformer_blocks_0_attn1_to_k.lora_up.weight",
 

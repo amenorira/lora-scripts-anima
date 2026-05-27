@@ -66,9 +66,12 @@ LYCORIS_KOHYA_UI_FIELDS = (
 
 
 def _is_empty_value(value: Any) -> bool:
-    """检测空值/无效值：None、NaN、空字符串、'undefined'、'null'"""
-    if value is None or value is False:
+    """检测空值/无效值：None、NaN、空字符串、'undefined'、'null'
+    注意：布尔值 False 不是空值，toggle 关闭时应显式传入 false"""
+    if value is None:
         return True
+    if isinstance(value, bool):
+        return False
     if isinstance(value, float) and math.isnan(value):
         return True
     if isinstance(value, str) and value.strip().lower() in {"", "undefined", "null", "nan"}:
@@ -241,6 +244,18 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 network_args.append(f"{field}={value}")
         if network_args:
             source["network_args"] = network_args
+
+    # ── 5.5. 互斥字段校验 ────────────────────────────────
+    # network_train_unet_only 和 network_train_text_encoder_only 互斥
+    unet_only = source.get("network_train_unet_only")
+    te_only = source.get("network_train_text_encoder_only")
+    if unet_only and te_only:
+        warnings.append(
+            "[Conflict] network_train_unet_only and network_train_text_encoder_only "
+            "are both true; forcing text_encoder_only=false / 两者同时为 true，"
+            "自动关闭 text_encoder_only"
+        )
+        source["network_train_text_encoder_only"] = False
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告

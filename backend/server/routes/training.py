@@ -208,6 +208,15 @@ async def create_toml_file(request: Request):
     if not validated:
         return APIResponseFail(message=message)
 
+    # ── Anima: qwen3 编码器路径必填校验 ─────────────────
+    if model_train_type == "anima-lora":
+        qwen3_path = config.get("qwen3", "").strip()
+        if not qwen3_path:
+            return APIResponseFail(
+                message="Qwen3 path is required for Anima LoRA training / "
+                "Anima LoRA 训练需要填写 Qwen3 编码器路径"
+            )
+
     if "prompt_file" in config and config["prompt_file"].strip() != "":
         prompt_file = config["prompt_file"].strip()
         if not os.path.exists(prompt_file):

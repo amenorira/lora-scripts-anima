@@ -62,7 +62,7 @@ window.trainingTomlMixin = {
            'sample_cfg','sample_width','sample_height','sample_seed','sample_steps'].includes(k)) continue;
       if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay') continue;
 
-      if (typeof v === 'boolean') { if (v) lines.push(`${k} = true`); }
+      if (typeof v === 'boolean') { lines.push(`${k} = ${v}`); }
       else if (typeof v === 'number') lines.push(`${k} = ${v}`);
       else if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
         // Preserve scientific notation (e.g. "1e-4") as-is, convert plain numbers
