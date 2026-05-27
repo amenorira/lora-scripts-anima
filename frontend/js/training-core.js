@@ -34,6 +34,7 @@ window.trainingCoreMixin = {
     this.renderTrainingForm(v);
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
+    this.setupReadonlyWatchers();
     this.updateToml();
     this.loadPresets();
   },
@@ -67,6 +68,7 @@ window.trainingCoreMixin = {
     this.renderTrainingForm(trainType);
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
+    this.setupReadonlyWatchers();
     this.loadPresets();
 
     const self = this;
@@ -185,9 +187,40 @@ window.trainingCoreMixin = {
       condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
-    return `<div class="field${condClass}" data-field-row="${dataKey.replace(/'/g, "\\'")}"${condAttrs}>
+    // ── Readonly If ──
+    let readonlyAttrs = '';
+    let readonlyWarnHtml = '';
+    if (field.readonlyIf) {
+      const rf = field.readonlyIf;
+      const parentVal = this.form[rf.key];
+      let readonlyMet = false;
+      readonlyAttrs = ` data-readonly-if-key="${rf.key}"`;
+      if (rf.eq !== undefined) {
+        readonlyMet = String(parentVal) === String(rf.eq);
+        readonlyAttrs += ` data-readonly-if-eq="${rf.eq}"`;
+        if (rf.or && Array.isArray(rf.or)) {
+          readonlyMet = readonlyMet || rf.or.some(v => String(parentVal) === String(v));
+          readonlyAttrs += ` data-readonly-if-or="${rf.or.join(',')}"`;
+        }
+      } else if (rf.neq !== undefined) {
+        readonlyMet = String(parentVal) !== String(rf.neq) && parentVal !== null && parentVal !== undefined && String(parentVal) !== '';
+        readonlyAttrs += ` data-readonly-if-neq="${rf.neq}"`;
+      }
+      if (readonlyMet) {
+        readonlyAttrs += ` data-readonly-if-active="1"`;
+        const reasonText = rf.reasonKey ? this.t(rf.reasonKey) : '';
+        if (reasonText) {
+          readonlyWarnHtml = `<div class="field-readonly-warn">${reasonText}</div>`;
+        }
+      }
+      if (rf.reasonKey) {
+        readonlyAttrs += ` data-readonly-if-reason="${rf.reasonKey}"`;
+      }
+    }
+
+    return `<div class="field${condClass}" data-field-row="${dataKey.replace(/'/g, "\\'")}"${condAttrs}${readonlyAttrs}>
       <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}</div>
-      <div class="field-right">${inputHtml}${actionsHtml}</div>
+      <div class="field-right">${inputHtml}${actionsHtml}${readonlyWarnHtml}</div>
     </div>`;
   },
 
@@ -286,26 +319,67 @@ window.trainingCoreMixin = {
     }));
     this._autoValueRules = rules;
     if (rules.length === 0) return;
-    // Apply initial state
+
     const self = this;
+    // Collect all unique watched field keys
+    const allWatchedKeys = new Set();
     rules.forEach(r => {
-      self.$watch('form.' + r.watch, function(newVal) {
-        const rule = self._autoValueRules.find(x => x.target === r.target && x.when === newVal);
-        if (rule) {
-          // The watcher matches → set auto value
-          if (rule.set !== null && rule.set !== undefined) {
-            self.form[rule.target] = rule.set;
+      if (r.watch && typeof r.watch === 'object' && !Array.isArray(r.watch)) {
+        Object.keys(r.watch).forEach(k => allWatchedKeys.add(k));
+      } else {
+        allWatchedKeys.add(r.watch);
+      }
+    });
+
+    // Evaluate if a rule matches current form state
+    const matchRule = (rule) => {
+      if (rule.watch && typeof rule.watch === 'object' && !Array.isArray(rule.watch)) {
+        // Multi-condition: all fields must match
+        return Object.entries(rule.watch).every(([k, v]) => String(self.form[k]) === String(v));
+      }
+      // Single condition: original logic
+      return String(self.form[rule.watch]) === String(rule.when);
+    };
+
+    // Register a watcher for each unique watched key
+    allWatchedKeys.forEach(watchKey => {
+      self.$watch('form.' + watchKey, function() {
+        // Find all target fields affected by this watchKey
+        const affectedTargets = new Set();
+        rules.forEach(r => {
+          if (r.watch && typeof r.watch === 'object' && !Array.isArray(r.watch)) {
+            if (watchKey in r.watch) affectedTargets.add(r.target);
+          } else if (r.watch === watchKey) {
+            affectedTargets.add(r.target);
           }
-        } else {
-          // Check if any rule for this target still matches
-          const anyMatch = self._autoValueRules.some(x => x.target === r.target && String(self.form[x.watch]) === String(x.when));
-          if (!anyMatch) {
-            // Restore default if no rule matches
-            const field = self.findFieldDef(r.target);
-            if (field) self.form[r.target] = field.default;
+        });
+
+        affectedTargets.forEach(target => {
+          // Find the first matching rule for this target
+          const matched = self._autoValueRules.find(x => x.target === target && matchRule(x));
+          if (matched) {
+            if (matched.set !== null && matched.set !== undefined) {
+              self.form[matched.target] = matched.set;
+            }
+          } else {
+            // No rule matches → restore default
+            const field = self.findFieldDef(target);
+            if (field) self.form[target] = field.default;
           }
-        }
+        });
+
+        // Update readonly states after auto_value changes
+        self.updateReadonlyStates();
       });
+    });
+
+    // Apply initial auto_value state
+    rules.forEach(r => {
+      if (matchRule(r)) {
+        if (r.set !== null && r.set !== undefined) {
+          self.form[r.target] = r.set;
+        }
+      }
     });
   },
 
@@ -315,6 +389,79 @@ window.trainingCoreMixin = {
     this._allShowIfKeys().forEach(k => {
       // Use a named function for clarity; Alpine re-evaluates on change
       self.$watch('form.' + k, () => self.showConditionalFields(k));
+    });
+  },
+
+  // ── Readonly If: disable fields based on conditions ──
+  _allReadonlyIfKeys() {
+    const keys = new Set();
+    this._allSections().forEach(s => s.fields.forEach(f => {
+      if (f.readonlyIf) keys.add(f.readonlyIf.key);
+    }));
+    return [...keys];
+  },
+
+  setupReadonlyWatchers() {
+    const self = this;
+    this._allReadonlyIfKeys().forEach(k => {
+      self.$watch('form.' + k, () => self.updateReadonlyStates());
+    });
+    // Also watch model_train_type for multi-condition auto_value
+    self.$watch('form.model_train_type', () => self.updateReadonlyStates());
+    // Initial apply
+    self.updateReadonlyStates();
+  },
+
+  updateReadonlyStates() {
+    const self = this;
+    document.querySelectorAll('[data-readonly-if-key]').forEach(row => {
+      const key = row.getAttribute('data-readonly-if-key');
+      const eqVal = row.getAttribute('data-readonly-if-eq');
+      const orVals = (row.getAttribute('data-readonly-if-or') || '').split(',').filter(Boolean);
+      const neqVal = row.getAttribute('data-readonly-if-neq');
+      const parentVal = self.form[key];
+
+      let met = false;
+      if (eqVal !== null) {
+        met = String(parentVal) === eqVal;
+        if (!met && orVals.length > 0) met = orVals.indexOf(String(parentVal)) !== -1;
+      } else if (neqVal !== null) {
+        met = String(parentVal) !== neqVal && String(parentVal) !== 'null' && String(parentVal) !== 'undefined' && String(parentVal) !== '';
+      }
+
+      const wasActive = row.getAttribute('data-readonly-if-active') === '1';
+      if (met === wasActive) return; // no state change
+
+      if (met) {
+        row.setAttribute('data-readonly-if-active', '1');
+        row.classList.add('field-readonly');
+        // Disable all interactive elements
+        row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = true; });
+        row.querySelectorAll('.stepper button').forEach(el => { el.disabled = true; });
+        row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
+        row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
+        // Add warning text
+        const reasonKey = row.getAttribute('data-readonly-if-reason');
+        const text = reasonKey ? self.t(reasonKey) : '';
+        if (text && !row.querySelector('.field-readonly-warn')) {
+          const warnEl = document.createElement('div');
+          warnEl.className = 'field-readonly-warn';
+          warnEl.textContent = text;
+          const fieldRight = row.querySelector('.field-right');
+          if (fieldRight) fieldRight.appendChild(warnEl);
+        }
+      } else {
+        row.removeAttribute('data-readonly-if-active');
+        row.classList.remove('field-readonly');
+        // Re-enable all interactive elements
+        row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = false; });
+        row.querySelectorAll('.stepper button').forEach(el => { el.disabled = false; });
+        row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = false; el.style.pointerEvents = ''; });
+        row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = ''; sel.style.opacity = ''; });
+        // Remove warning text
+        const warnEl = row.querySelector('.field-readonly-warn');
+        if (warnEl) warnEl.remove();
+      }
     });
   },
 

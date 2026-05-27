@@ -899,6 +899,38 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 /* ── Field Actions ───────────────────────────────────────── */
 .field-actions { display: flex; gap: 1px; margin-left: 3px; flex-shrink: 0; }
 
+/* ── Field Readonly State ────────────────────────────────── */
+.field-readonly {
+  opacity: 0.75;
+}
+.field-readonly input[type="text"],
+.field-readonly input[type="number"],
+.field-readonly textarea,
+.field-readonly select {
+  background: var(--bg-surface-raised) !important;
+  color: var(--text-tertiary) !important;
+  cursor: not-allowed !important;
+  border-color: var(--border-default) !important;
+}
+.field-readonly .stepper button {
+  pointer-events: none;
+  opacity: 0.4;
+}
+.field-readonly .field-actions .btn-icon {
+  opacity: 0.3;
+  pointer-events: none;
+}
+.field-readonly-warn {
+  font-size: 11.5px;
+  color: #d97706;
+  margin-top: 3px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+[data-theme="dark"] .field-readonly-warn {
+  color: #f59e0b;
+}
+
 /* ── Training Form — Flat Design (no card boxes) ─────────── */
 #trainFormContent .card {
   background: transparent;

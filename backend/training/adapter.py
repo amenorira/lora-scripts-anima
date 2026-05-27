@@ -257,6 +257,24 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         )
         source["network_train_text_encoder_only"] = False
 
+    # ── 5.6. EmoSens 优化器：强制 lr_scheduler + 模型感知 LR ──
+    _EMO_OPTIMIZERS = {"vendor.emo_optimizer.emosens.EmoSens"}
+    if source.get("optimizer_type") in _EMO_OPTIMIZERS:
+        # 强制 lr_scheduler = constant（忽略用户可能的残留值）
+        if source.get("lr_scheduler") != "constant":
+            source["lr_scheduler"] = "constant"
+            warnings.append(
+                "EmoSens: lr_scheduler forced to constant (内部自动管理学习率)"
+            )
+        # 根据模型架构调整学习率（仅当前端未正确预填时）
+        model_type = source.get("model_train_type", "sd-lora")
+        lr = source.get("learning_rate", "1.0")
+        if model_type == "anima-lora" and lr == "1.0":
+            source["learning_rate"] = "0.1"
+            warnings.append(
+                "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"
+            )
+
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}

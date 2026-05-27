@@ -69,6 +69,12 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
     env["ANIMA_OUTPUT_DIR"] = output_dir
     env["ANIMA_TASK_ID"] = task_id
 
+    # 确保项目根目录在 Python path 中（支持 vendor.emo_optimizer 等自定义模块）
+    repo_root = str(Path(__file__).parents[2])
+    existing_pypath = env.get("PYTHONPATH", "")
+    if repo_root not in existing_pypath.split(os.pathsep):
+        env["PYTHONPATH"] = repo_root + (os.pathsep + existing_pypath if existing_pypath else "")
+
     return env
 
 

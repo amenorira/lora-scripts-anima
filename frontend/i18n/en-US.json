@@ -466,6 +466,8 @@
     "optimizer_group_lion": "Lion Series",
     "optimizer_group_prodigy": "Prodigy Series",
     "optimizer_group_other": "Others",
+    "optimizer_group_emo": "Emo Series",
+    "optimizer_type_EmoSens": "EmoSens: Emotion-driven optimizer with automatic learning rate adjustment (emoPulse mechanism)",
     "loss_type_default": "Use the model's default loss function",
     "loss_type_l1": "L1 Loss (MAE), more robust to outliers",
     "loss_type_l2": "L2 Loss (MSE), more sensitive to large errors",

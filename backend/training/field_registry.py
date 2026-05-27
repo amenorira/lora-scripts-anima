@@ -105,8 +105,8 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "min_timestep", "type": "number", "section": "training", "desc_key": "field.min_timestep", "target": "toml", "min": 0, "max": 999, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.min_timestepHint"},
     {"key": "max_timestep", "type": "number", "section": "training", "desc_key": "field.max_timestep", "target": "toml", "min": 1, "max": 1000, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.max_timestepHint"},
 # ── Optimizer & Learning Rate ──
-{"key": "optimizer_type", "type": "select", "default": "AdamW8bit", "section": "optimizer", "desc_key": "field.optimizer_type", "target": "toml", "groups": [{"label_key": "opt.optimizer_group_adamw", "options": [{"v": "AdamW", "l": "AdamW", "dk": "opt.optimizer_type_AdamW"}, {"v": "AdamW8bit", "l": "AdamW8bit", "dk": "opt.optimizer_type_AdamW8bit"}, {"v": "PagedAdamW8bit", "l": "PagedAdamW8bit", "dk": "opt.optimizer_type_PagedAdamW8bit"}]}, {"label_key": "opt.optimizer_group_lion", "options": [{"v": "Lion", "l": "Lion", "dk": "opt.optimizer_type_Lion"}, {"v": "Lion8bit", "l": "Lion8bit", "dk": "opt.optimizer_type_Lion8bit"}, {"v": "PagedLion8bit", "l": "PagedLion8bit", "dk": "opt.optimizer_type_PagedLion8bit"}]}, {"label_key": "opt.optimizer_group_prodigy", "options": [{"v": "Prodigy", "l": "Prodigy", "dk": "opt.optimizer_type_Prodigy"}, {"v": "prodigyplus.ProdigyPlusScheduleFree", "l": "ProdigyPlusScheduleFree", "dk": "opt.optimizer_type_ProdigyPlus"}]}, {"label_key": "opt.optimizer_group_other", "options": [{"v": "AdaFactor", "l": "AdaFactor", "dk": "opt.optimizer_type_AdaFactor"}, {"v": "pytorch_optimizer.CAME", "l": "CAME", "dk": "opt.optimizer_type_CAME"}, {"v": "AdamWScheduleFree", "l": "AdamWScheduleFree", "dk": "opt.optimizer_type_AdamWScheduleFree"}]}]},
-{"key": "learning_rate", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.learning_rate", "target": "toml", "auto_value": [{"watch": "optimizer_type", "when": "Prodigy", "set": "1.0"}, {"watch": "optimizer_type", "when": "prodigyplus.ProdigyPlusScheduleFree", "set": "1.0"}]},
+{"key": "optimizer_type", "type": "select", "default": "AdamW8bit", "section": "optimizer", "desc_key": "field.optimizer_type", "target": "toml", "groups": [{"label_key": "opt.optimizer_group_adamw", "options": [{"v": "AdamW", "l": "AdamW", "dk": "opt.optimizer_type_AdamW"}, {"v": "AdamW8bit", "l": "AdamW8bit", "dk": "opt.optimizer_type_AdamW8bit"}, {"v": "PagedAdamW8bit", "l": "PagedAdamW8bit", "dk": "opt.optimizer_type_PagedAdamW8bit"}]}, {"label_key": "opt.optimizer_group_lion", "options": [{"v": "Lion", "l": "Lion", "dk": "opt.optimizer_type_Lion"}, {"v": "Lion8bit", "l": "Lion8bit", "dk": "opt.optimizer_type_Lion8bit"}, {"v": "PagedLion8bit", "l": "PagedLion8bit", "dk": "opt.optimizer_type_PagedLion8bit"}]}, {"label_key": "opt.optimizer_group_prodigy", "options": [{"v": "Prodigy", "l": "Prodigy", "dk": "opt.optimizer_type_Prodigy"}, {"v": "prodigyplus.ProdigyPlusScheduleFree", "l": "ProdigyPlusScheduleFree", "dk": "opt.optimizer_type_ProdigyPlus"}]}, {"label_key": "opt.optimizer_group_other", "options": [{"v": "AdaFactor", "l": "AdaFactor", "dk": "opt.optimizer_type_AdaFactor"}, {"v": "pytorch_optimizer.CAME", "l": "CAME", "dk": "opt.optimizer_type_CAME"}, {"v": "AdamWScheduleFree", "l": "AdamWScheduleFree", "dk": "opt.optimizer_type_AdamWScheduleFree"}]}, {"label_key": "opt.optimizer_group_emo", "options": [{"v": "vendor.emo_optimizer.emosens.EmoSens", "l": "EmoSens", "dk": "opt.optimizer_type_EmoSens"}]}]},
+{"key": "learning_rate", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.learning_rate", "target": "toml", "auto_value": [{"watch": "optimizer_type", "when": "Prodigy", "set": "1.0"}, {"watch": "optimizer_type", "when": "prodigyplus.ProdigyPlusScheduleFree", "set": "1.0"}, {"watch": {"optimizer_type": "vendor.emo_optimizer.emosens.EmoSens", "model_train_type": "anima-lora"}, "set": "0.1"}, {"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": "1.0"}]},
 {"key": "unet_lr", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.unet_lr", "target": "toml"},
 {"key": "text_encoder_lr", "type": "text", "default": "1e-5", "section": "optimizer", "desc_key": "field.text_encoder_lr", "target": "toml"},
     # Anima: 逐层学习率控制（advanced）
@@ -115,11 +115,11 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "mlp_lr", "type": "text", "section": "optimizer", "desc_key": "field.mlp_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.mlp_lrHint"},
     {"key": "mod_lr", "type": "text", "section": "optimizer", "desc_key": "field.mod_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.mod_lrHint"},
     {"key": "llm_adapter_lr", "type": "text", "section": "optimizer", "desc_key": "field.llm_adapter_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.llm_adapter_lrHint"},
-{"key": "lr_scheduler", "type": "select", "default": "cosine_with_restarts", "section": "optimizer", "desc_key": "field.lr_scheduler", "target": "toml", "options": [{"v": "cosine_with_restarts", "l": "cosine_with_restarts", "dk": "opt.lr_scheduler_cosine_with_restarts"}, {"v": "cosine", "l": "cosine", "dk": "opt.lr_scheduler_cosine"}, {"v": "linear", "l": "linear", "dk": "opt.lr_scheduler_linear"}, {"v": "polynomial", "l": "polynomial", "dk": "opt.lr_scheduler_polynomial"}, {"v": "constant", "l": "constant", "dk": "opt.lr_scheduler_constant"}, {"v": "constant_with_warmup", "l": "constant_with_warmup", "dk": "opt.lr_scheduler_constant_with_warmup"}]},
-{"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "target": "toml", "min": 0},
+{"key": "lr_scheduler", "type": "select", "default": "cosine_with_restarts", "section": "optimizer", "desc_key": "field.lr_scheduler", "target": "toml", "options": [{"v": "cosine_with_restarts", "l": "cosine_with_restarts", "dk": "opt.lr_scheduler_cosine_with_restarts"}, {"v": "cosine", "l": "cosine", "dk": "opt.lr_scheduler_cosine"}, {"v": "linear", "l": "linear", "dk": "opt.lr_scheduler_linear"}, {"v": "polynomial", "l": "polynomial", "dk": "opt.lr_scheduler_polynomial"}, {"v": "constant", "l": "constant", "dk": "opt.lr_scheduler_constant"}, {"v": "constant_with_warmup", "l": "constant_with_warmup", "dk": "opt.lr_scheduler_constant_with_warmup"}], "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": "constant"}], "readonly_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens", "reason_key": "field.lr_scheduler_emoLocked"}},
+{"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "target": "toml", "min": 0, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}], "readonly_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens", "reason_key": "field.lr_warmup_steps_emoLocked"}},
 {"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "target": "toml", "min": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"}},
 {"key": "lr_scheduler_power", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lr_scheduler_power", "target": "toml", "min": 0.1, "step": 0.1, "show_if": {"key": "lr_scheduler", "eq": "polynomial"}},
-{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "step": 0.1},
+{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "step": 0.1, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}]},
 {"key": "weight_decay", "type": "number", "section": "optimizer", "desc_key": "field.weight_decay", "target": "merged", "step": 0.001, "hint_key": "field.weight_decayHint"},
 {"key": "prodigy_d_coef", "type": "text", "default": "2.0", "section": "optimizer", "desc_key": "field.prodigy_d_coef", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "Prodigy", "_or": ["prodigyplus.ProdigyPlusScheduleFree"]}},
 {"key": "prodigy_d0", "type": "text", "default": "", "section": "optimizer", "desc_key": "field.prodigy_d0", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "Prodigy", "_or": ["prodigyplus.ProdigyPlusScheduleFree"]}},
@@ -206,6 +206,8 @@ _FIELD_KEY_MAP = {
     "label_key": "labelKey",
     "dk": "dKey",
     "auto_value": "autoValue",
+    "readonly_if": "readonlyIf",
+    "reason_key": "reasonKey",
 }
 
 
@@ -239,6 +241,17 @@ def _to_camel(field: dict) -> dict:
                     converted["neq"] = sv
                 else:
                     converted[sk] = sv
+            result[new_key] = converted
+        elif k == "readonly_if" and isinstance(v, dict):
+            # Convert readonly_if similarly to show_if
+            converted = {}
+            for rk, rv in v.items():
+                if rk == "_or":
+                    converted["or"] = rv
+                elif rk == "reason_key":
+                    converted["reasonKey"] = rv
+                else:
+                    converted[rk] = rv
             result[new_key] = converted
         elif k == "auto_value" and isinstance(v, list):
             result[new_key] = v
