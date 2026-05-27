@@ -260,8 +260,6 @@
     "expand": "展开",
     "preview": "预览",
     "panelLabel": "参数面板",
-    "expandPanel": "展开参数面板",
-    "collapsePanel": "收起参数面板",
     "requestFailed": "请求失败",
     "failed": "失败",
     "invalidToml": "无有效TOML配置",

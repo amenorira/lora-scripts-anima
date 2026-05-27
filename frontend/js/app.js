@@ -20,7 +20,6 @@ document.addEventListener('alpine:init', () => {
     showThemeDropdown: false,
     showLangDropdown: false,
     sidebarCollapsed: false,
-    rightPanelCollapsed: false,
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
@@ -145,11 +144,6 @@ document.addEventListener('alpine:init', () => {
       localStorage.setItem('anima-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0');
     },
 
-    toggleRightPanel() {
-      this.rightPanelCollapsed = !this.rightPanelCollapsed;
-      localStorage.setItem('anima-right-panel-collapsed', this.rightPanelCollapsed ? '1' : '0');
-    },
-
     themeLabel() {
       if (this.resolvedTheme === 'dark') return this.t('common.themeLight');
       return this.t('common.themeDark');
@@ -260,7 +254,6 @@ document.addEventListener('alpine:init', () => {
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
       } catch(e){}
       this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
-      this.rightPanelCollapsed = localStorage.getItem('anima-right-panel-collapsed') === '1';
     },
 
     saveUISettings() {

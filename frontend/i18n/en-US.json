@@ -258,8 +258,6 @@
     "expand": "Expand",
     "preview": "Preview",
     "panelLabel": "Parameters",
-    "expandPanel": "Expand Panel",
-    "collapsePanel": "Collapse Panel",
     "requestFailed": "Request failed",
     "failed": "Failed",
     "invalidToml": "No valid TOML keys",

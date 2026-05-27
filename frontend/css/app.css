@@ -68,29 +68,29 @@
 
 /* ── Dark Theme ──────────────────────────────────────────── */
 [data-theme="dark"] {
-  --accent: #4d94ff;
-  --accent-hover: #3d7fd9;
-  --accent-soft: rgba(77, 148, 255, 0.10);
-  --accent-muted: rgba(77, 148, 255, 0.05);
+  --accent: #5da0f7;
+  --accent-hover: #4d90e0;
+  --accent-soft: rgba(93, 160, 247, 0.12);
+  --accent-muted: rgba(93, 160, 247, 0.06);
 
-  --bg-root: #1e1e1e;
-  --bg-surface: #252526;
-  --bg-surface-raised: #2d2d2d;
-  --bg-sidebar: #1b1b1b;
-  --bg-preview: #1e1e1e;
-  --bg-input: #2d2d2d;
-  --bg-overlay: rgba(0,0,0,0.50);
+  --bg-root: #232326;
+  --bg-surface: #2a2a2e;
+  --bg-surface-raised: #313135;
+  --bg-sidebar: #202023;
+  --bg-preview: #232326;
+  --bg-input: #2e2e32;
+  --bg-overlay: rgba(0,0,0,0.45);
 
-  --text-primary: #d4d4d4;
-  --text-secondary: #9d9d9d;
-  --text-tertiary: #6a6a6a;
-  --text-sidebar: #cccccc;
-  --text-sidebar-muted: #7a7a7a;
-  --text-sidebar-active: #e8e8e8;
+  --text-primary: #e2e0dc;
+  --text-secondary: #a8a4a0;
+  --text-tertiary: #787472;
+  --text-sidebar: #d8d6d2;
+  --text-sidebar-muted: #827e7a;
+  --text-sidebar-active: #f0eeea;
 
-  --border-default: #3c3c3c;
-  --border-input: #454545;
-  --border-focus: #4d94ff;
+  --border-default: #3a3a3e;
+  --border-input: #444448;
+  --border-focus: #5da0f7;
 
   --text-preview: #d4d4d4;
   --text-preview-key: #c4a0f0;
@@ -99,16 +99,16 @@
   --text-preview-str: #9ece6a;
   --text-preview-comment: #706f6a;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.22);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.30), 0 2px 4px -2px rgba(0,0,0,0.22);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.38), 0 4px 6px -4px rgba(0,0,0,0.28);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.25), 0 2px 4px -2px rgba(0,0,0,0.18);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.30), 0 4px 6px -4px rgba(0,0,0,0.22);
 
-  --hover-overlay: rgba(255,255,255,0.06);
-  --active-overlay: rgba(255,255,255,0.10);
-  --hover-btn: rgba(255,255,255,0.08);
+  --hover-overlay: rgba(255,255,255,0.05);
+  --active-overlay: rgba(255,255,255,0.08);
+  --hover-btn: rgba(255,255,255,0.07);
 
-  --success: #22c55e;
-  --warning: #d97706;
+  --success: #34d399;
+  --warning: #f59e0b;
   --info: #60a5fa;
 }
 
@@ -987,10 +987,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   border-left: 1px solid var(--border-default);
   display: flex; flex-direction: column; overflow: visible;
   position: relative;
-  transition: width 0.25s ease, min-width 0.25s ease, opacity 0.25s ease;
-}
-.right-panel.collapsed {
-  width: 0; min-width: 0; opacity: 0; overflow: hidden;
 }
 .panel-header {
   padding: 14px 16px 10px;
@@ -1000,36 +996,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   letter-spacing: 0.4px;
   user-select: none;
 }
-/* Floating collapse handle — icon-only, sits outside panel's left edge */
-.panel-collapse-float {
-  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
-  z-index: 51;
-  display: flex; align-items: center; justify-content: center;
-  padding: 30px 6px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-right: none;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  color: var(--text-secondary); cursor: pointer;
-  box-shadow: -2px 0 14px rgba(0,0,0,.08);
-  transition: background 0.2s, color 0.2s, box-shadow 0.25s, padding-right 0.2s;
-}
-.panel-collapse-float:hover {
-  background: var(--bg-surface-raised);
-  color: var(--accent);
-  box-shadow: -4px 0 24px rgba(77,148,255,.15);
-  padding-right: 7px;
-}
-.panel-collapse-float:active {
-  background: var(--accent-soft);
-  box-shadow: -1px 0 6px rgba(0,0,0,.06);
-}
-.panel-collapse-float svg {
-  transition: transform 0.25s ease;
-}
-.panel-collapse-float:hover svg {
-  transform: translateX(-2px);
-}
 .panel-preview {
   flex: 1; padding: 14px 16px;
   font-family: var(--font-mono); font-size: 13px;
@@ -1037,8 +1003,8 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   transition: opacity 0.2s ease;
 }
-.right-panel.collapsed .panel-preview,
-.right-panel.collapsed .panel-actions { opacity: 0; }
+.right-panel .panel-preview,
+.right-panel .panel-actions { opacity: 1; }
 .panel-preview .toml-key { color: var(--text-preview-key); }
 .panel-preview .toml-eq { color: var(--text-preview-eq); }
 .panel-preview .toml-num { color: var(--text-preview-num); }
@@ -1052,36 +1018,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 .panel-actions .btn-row { display: flex; gap: 6px; }
 
-/* ── Right Panel Expand Trigger ──────────────────────────── */
-.right-panel-expand {
-  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
-  z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-  padding: 30px 6px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-right: none;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  color: var(--text-secondary); cursor: pointer;
-  box-shadow: -2px 0 14px rgba(0,0,0,.08);
-  transition: background 0.2s, color 0.2s, box-shadow 0.25s, padding-right 0.2s;
-}
-.right-panel-expand:hover {
-  background: var(--bg-surface-raised);
-  color: var(--accent);
-  box-shadow: -4px 0 24px rgba(77,148,255,.15);
-  padding-right: 7px;
-}
-.right-panel-expand:active {
-  background: var(--accent-soft);
-  box-shadow: -1px 0 6px rgba(0,0,0,.06);
-}
-.right-panel-expand svg {
-  transition: transform 0.25s ease;
-}
-.right-panel-expand:hover svg {
-  transform: translateX(-2px);
-}
 .panel-actions .btn-row .btn { flex: 1; }
 .panel-status {
   padding: 6px 14px 10px; font-size: 11.5px;
@@ -1454,7 +1390,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 1000px) {
-  .right-panel, .right-panel-expand { display: none; }
+  .right-panel { display: none; }
 }
 @media (max-width: 700px) {
   .sidebar { width: 52px; min-width: 52px; }
