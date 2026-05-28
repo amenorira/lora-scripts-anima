@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title lora-scripts-anima (CN Mirror)
+title lora-scripts-anima (Aliyun Mirror)
 
 echo ============================================
-echo   lora-scripts-anima - CN Mirror
-echo   pip: Tsinghua  ^|  PyTorch: Aliyun
+echo   lora-scripts-anima - Aliyun Mirror
+echo   pip + PyTorch: mirrors.aliyun.com
 echo ============================================
 
 echo [Check] Checking environment...
@@ -82,12 +82,11 @@ if not "%_CHOICE%"=="1" (echo Cancelled. && pause && exit /b 0)
 
 echo.
 echo [Install] Starting installation (CN mirrors)...
-echo   pip: https://pypi.tuna.tsinghua.edu.cn/simple
-echo   torch: https://mirrors.aliyun.com/pytorch-wheels/cu128
+echo   mirrors.aliyun.com
 echo.
 
-REM Set CN mirrors
-set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+REM Set Aliyun mirrors
+set PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 if not exist "venv\Scripts\python.exe" (
     echo Creating venv...
