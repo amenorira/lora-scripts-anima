@@ -77,15 +77,15 @@ cd lora-scripts-anima
 
 ### Quick Start
 
-| Platform | Install + Launch | Update + Launch |
-|----------|-----------------|----------------|
-| Windows | `.\start.bat` | `.\update-and-start.bat` |
-| Linux | `bash start.sh` | `bash update-and-start.sh` |
+| Platform | Install + Launch |
+|----------|-----------------|
+| Windows | `.\start.bat` |
+| Linux | `bash start.sh` |
 
 The GUI opens automatically at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 
 > **RTX 40/50 users**: the startup script detects flash_attn status.
-> If ❌ not installed, run `.\install-flash-attn.bat` (Windows) or `bash install-flash-attn.sh` (Linux).
+> If ❌ not installed, install via the GUI **Environment** tab.
 
 ## ✨ SD-Trainer GUI
 
@@ -116,23 +116,9 @@ Just launch and everything is available — no extra commands needed.
 
 Recommended for RTX 40/50 series GPUs for optimal training and inference performance.
 
-### One-Click Install
+### Installation
 
-```sh
-# Windows
-.\install-flash-attn.bat
-
-# Linux
-bash install-flash-attn.sh
-```
-
-### Features
-
-- **Auto-detection**: Python / PyTorch / CUDA ABI / platform
-- **Smart matching**: fetches candidates from GitHub Releases, scored & ranked
-- **Interactive selection**: numbered list with compatibility notes, pick by key
-- **Built-in repair**: auto-uninstalls mismatched versions and reinstalls the correct one
-- **Post-install verification**: auto import + CUDA forward test
+Launch the GUI and install from the **Environment** tab. The script auto-detects Python / PyTorch / CUDA ABI / platform and matches the best wheel.
 
 ### Manual Usage
 

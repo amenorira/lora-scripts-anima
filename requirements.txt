@@ -1,47 +1,54 @@
-# ── 训练核心依赖（版本由 sd-scripts/requirements.txt 管控，此处仅文档记录）──
+# ============================================================
+# 项目额外依赖
+# sd-scripts 核心依赖通过 vendor/sd-scripts/requirements.txt 安装，
+# 此处仅列出项目 GUI / 后端 / 扩展所需的额外包。
+# 安装顺序：先 sd-scripts，再本文件。
+# ============================================================
+
+# ── 版本锁定（sd-scripts 未指定版本，此处统一管控）──
+bitsandbytes==0.46.0
+tensorboard==2.20.0
+numpy==1.26.4
+
+# ── GUI（dataset-tag-editor 子进程）──
+gradio==3.44.2
+
+# ── 后端（FastAPI）──
+fastapi==0.103.2
+pydantic>=2.0,<3
+uvicorn==0.22.0
+httpx==0.24.1
+
+# ── 数据处理 ──
+pandas
+pillow
+
+# ── 构建工具 ──
+setuptools<80,>=68
+
+# ── 训练扩展 ──
+open-clip-torch==2.20.0   # SDXL 训练需要
+lycoris-lora==3.4.0        # LoRA / LoCon / LoHA 训练扩展
+
+# ============================================================
+# 以下为 sd-scripts 依赖，由 vendor/sd-scripts/requirements.txt 安装。
+# 保留版本号用于 validate_requirements() 校验，标记 skip_verify 跳过。
+# ============================================================
 accelerate==1.6.0  # skip_verify
 transformers==4.54.1  # skip_verify
 diffusers[torch]==0.32.1  # skip_verify
 ftfy==6.3.1  # skip_verify
-# albumentations==1.3.0
 opencv-python==4.10.0.84  # skip_verify
 einops==0.7.0
-pytorch-lightning==1.9.0
-bitsandbytes==0.46.0
 lion-pytorch==0.2.3  # skip_verify
 schedulefree==1.4
 pytorch-optimizer==3.10.0  # skip_verify
 prodigy-plus-schedule-free==1.9.2  # skip_verify
 prodigyopt==1.1.2
-tensorboard==2.20.0  # skip_verify
-setuptools<80,>=68  # keep pkg_resources available for older packages (gradio, etc.)
 safetensors==0.4.5  # skip_verify
-# gradio==3.16.2
-altair==4.2.2
-easygui==0.98.3
 toml==0.10.2
 voluptuous==0.15.2  # skip_verify
 huggingface-hub==0.34.3  # skip_verify
-# for Image utils
 imagesize==1.4.1
-# for T5XXL tokenizer (SD3/FLUX)
-sentencepiece==0.2.1  # skip_verify
-# for GPU monitoring
-nvidia-ml-py>=12.535.0
-# for ui
 rich==14.1.0  # skip_verify
-pandas
-scipy
-requests
-pillow
-numpy==1.26.4
-# ── GUI 依赖 ──
-gradio==3.44.2
-fastapi==0.103.2
-pydantic>=2.0,<3
-uvicorn==0.22.0
-wandb==0.16.2
-httpx==0.24.1
-# ── 扩展 ──
-open-clip-torch==2.20.0
-lycoris-lora==3.2.0.post2
+sentencepiece==0.2.1  # skip_verify

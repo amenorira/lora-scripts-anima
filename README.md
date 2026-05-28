@@ -78,15 +78,15 @@ cd lora-scripts-anima
 
 ### 快速开始
 
-| 平台 | 安装 + 启动 | 更新仓库并启动 |
-|------|-------------|----------------|
-| Windows | `.\start.bat` | `.\update-and-start.bat` |
-| Linux | `bash start.sh` | `bash update-and-start.sh` |
+| 平台 | 安装 + 启动 |
+|------|------------|
+| Windows | `.\start.bat` |
+| Linux | `bash start.sh` |
 
 启动后 GUI 自动打开 [http://127.0.0.1:12333](http://127.0.0.1:12333)。
 
 > **RTX 40/50 系显卡用户**：启动脚本会自动检测 flash_attn 状态。
-> 如显示 ❌ 未安装，运行 `.\install-flash-attn.bat` (Windows) 或 `bash install-flash-attn.sh` (Linux) 一键安装。
+> 如显示 ❌ 未安装，可在 GUI 的 **环境** 标签页中一键安装。
 
 ## ✨ SD-Trainer GUI
 
@@ -121,23 +121,9 @@ cd lora-scripts-anima
 
 RTX 40/50 系显卡推荐安装 flash_attn 以获得最佳训练和推理性能。
 
-### 一键安装
+### 安装方式
 
-```sh
-# Windows
-.\install-flash-attn.bat
-
-# Linux
-bash install-flash-attn.sh
-```
-
-### 功能特性
-
-- **自动环境检测**：Python / PyTorch / CUDA ABI / 平台
-- **智能匹配**：从 GitHub Releases 动态拉取候选 prebuilt wheel，评分排序
-- **交互式选择**：展示所有候选及兼容性说明，数字键选择版本
-- **内建修复**：已装版本 ABI 不匹配时自动卸载并重新安装正确版本
-- **安装后验证**：完成后自动 import + CUDA forward 测试
+启动 GUI 后，在 **环境** 标签页中点击安装即可，脚本会自动检测 Python / PyTorch / CUDA ABI / 平台并匹配最佳 wheel。
 
 ### 手动使用
 

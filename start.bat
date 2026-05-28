@@ -95,21 +95,24 @@ if not exist "venv\Scripts\python.exe" (
     venv\Scripts\python.exe -m pip install --upgrade pip -q
 )
 
-echo [1/3] Installing PyTorch...
+echo [1/3] Installing PyTorch 2.10.0+cu128...
 venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
 pushd vendor\sd-scripts
 ..\..\venv\Scripts\python.exe -m pip install -r requirements.txt
+set _SD_RC=!errorlevel!
 popd
-if !errorlevel! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
+if !_SD_RC! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
 
 echo [3/3] Installing project deps...
 venv\Scripts\python.exe -m pip install --upgrade -r requirements.txt
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!
+set HF_HOME=huggingface
+set PYTHONUTF8=1
 goto :launch
 
 :run_venv
@@ -117,33 +120,16 @@ echo [Launch] Starting...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
 
-REM Verify venv actually has torch (not an empty venv)
+REM Quick torch sanity check
 venv\Scripts\python.exe -c "import torch" 2>nul
 if !errorlevel! neq 0 (
-    echo.
-    echo [Notice] Virtual environment exists but dependencies are missing or broken.
-    echo    1. Install / Repair dependencies
-    echo    2. Exit
-    set /p _CHOICE="Enter option (1/2): "
-    if "!_CHOICE!"=="1" goto :install
-    echo Cancelled.
-    pause
-    exit /b 0
-)
-
-venv\Scripts\python.exe tools\check_deps.py 2>nul
-if !errorlevel! neq 0 (
-    echo.
-    echo [Notice] Dependencies are incomplete.
-    echo    1. Launch anyway
-    echo    2. Repair dependencies
-    set /p _CHOICE="Enter option (1/2): "
-    if "!_CHOICE!"=="2" goto :install
+    echo [Notice] venv exists but torch missing — repairing...
+    goto :install
 )
 
 :launch
 venv\Scripts\python.exe -c "import flash_attn; print('[flash_attn] OK')" 2>nul
-if !errorlevel! neq 0 echo [flash_attn] NOT FOUND. Run install-flash-attn.bat
+if !errorlevel! neq 0 echo [flash_attn] NOT FOUND. Install via GUI: Environment tab -> Flash Attention
 
 echo.
 venv\Scripts\python.exe gui.py %*
