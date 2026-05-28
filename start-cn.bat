@@ -71,7 +71,7 @@ if "!_OK!"=="0" (
 echo   Environment check passed.
 echo.
 
-if exist "venv\Scripts\python.exe" goto :run
+if exist "venv\Scripts\python.exe" goto :run_venv
 
 echo [Notice] Virtual environment (venv) not found.
 echo    1. Install
@@ -80,8 +80,9 @@ set /p _CHOICE="Enter option (1/2): "
 
 if not "%_CHOICE%"=="1" (echo Cancelled. && pause && exit /b 0)
 
+:install
 echo.
-echo [Install] Starting installation (CN mirrors)...
+echo [Install] Starting installation (Aliyun mirrors)...
 echo   mirrors.aliyun.com
 echo.
 
@@ -107,11 +108,25 @@ venv\Scripts\python.exe -m pip install --upgrade -r requirements.txt
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!
+goto :run_venv
 
-:run
+:run_venv
 echo [Launch] Starting...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
+
+venv\Scripts\python.exe -c "import torch" 2>nul
+if !errorlevel! neq 0 (
+    echo.
+    echo [Notice] Virtual environment exists but dependencies are missing or broken.
+    echo    1. Install / Repair dependencies
+    echo    2. Exit
+    set /p _CHOICE="Enter option (1/2): "
+    if "!_CHOICE!"=="1" goto :install
+    echo Cancelled.
+    pause
+    exit /b 0
+)
 
 venv\Scripts\python.exe tools\check_deps.py 2>nul
 if !errorlevel! neq 0 echo [Notice] Dependencies may be incomplete.

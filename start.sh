@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# start.sh - One-stop entry: environment check -> install -> launch
+# start.sh - One-stop: environment check -> install -> launch
 # Run: bash start.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,85 +83,103 @@ fi
 echo "  Environment check passed."
 echo ""
 
-# --- Venv check ---
-if [ -f "venv/bin/activate" ]; then
-    echo "[Launch] Activating virtual environment..."
-    export HF_HOME=huggingface
-    export PYTHONUTF8=1
-    source "venv/bin/activate"
-
-    python tools/check_deps.py 2>/dev/null || echo "[Notice] Dependencies may be incomplete. Re-run start.sh to install."
+# ============================================================
+#  Shared install function
+# ============================================================
+do_install() {
+    echo ""
+    echo "[Install] Starting installation..."
     echo ""
 
-    if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
-        echo "[flash_attn] OK (version $FA_VER)"
-    else
-        echo "[flash_attn] NOT FOUND. RTX 40/50 series: run bash install-flash-attn.sh"
+    if [ ! -d "venv" ]; then
+        echo "Creating venv..."
+        $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
     fi
+
+    source "venv/bin/activate"
+    export HF_HOME=huggingface
+
+    echo "[1/3] Installing PyTorch 2.10.0 + CUDA 12.8..."
+    CUDA_VER=$(nvidia-smi 2>/dev/null | grep -oiP 'CUDA Version: \K[\d\.]+' || echo "")
+    if [ -z "$CUDA_VER" ]; then
+        CUDA_VER=$(nvcc --version 2>/dev/null | grep -oiP 'release \K[\d\.]+' || echo "")
+    fi
+    CUDA_MAJOR=$(echo "$CUDA_VER" | awk -F'.' '{print $1}')
+
+    if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -ge 12 ]; then
+        echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.10.0+cu128..."
+        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    elif [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -eq 11 ]; then
+        echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.4.0+cu118..."
+        pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+        pip install --no-deps xformers==0.0.27.post2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+    else
+        echo "  No CUDA detected or unsupported. Installing PyTorch 2.10.0+cu128..."
+        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    fi
+    if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
+
+    echo "[2/3] Installing sd-scripts dependencies..."
+    pip install -r vendor/sd-scripts/requirements.txt
+    if [ $? -ne 0 ]; then echo "[ERROR] sd-scripts dependencies install failed."; exit 1; fi
+
+    echo "[3/3] Installing project dependencies..."
+    pip install --upgrade -r requirements.txt
+    if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
+
     echo ""
+    echo "[Done] Installation complete!"
+}
 
-    python gui.py "$@"
-    exit 0
-fi
-
-# --- Venv not found, offer install ---
-echo "[Notice] Virtual environment (venv) not found."
-echo "   1. Install"
-echo "   2. Exit"
-echo ""
-read -r -p "Enter option (1/2): " CHOICE
-
-if [ "$CHOICE" != "1" ]; then
-    echo "Cancelled."
-    exit 0
-fi
-
-# --- Install ---
-echo ""
-echo "[Install] Starting installation..."
-echo ""
-
-if [ ! -d "venv" ]; then
-    echo "Creating venv..."
-    $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
-fi
-
-source "venv/bin/activate"
-export HF_HOME=huggingface
-
-echo "[1/3] Installing PyTorch 2.10.0 + CUDA 12.8..."
-CUDA_VER=$(nvidia-smi 2>/dev/null | grep -oiP 'CUDA Version: \K[\d\.]+' || echo "")
-if [ -z "$CUDA_VER" ]; then
-    CUDA_VER=$(nvcc --version 2>/dev/null | grep -oiP 'release \K[\d\.]+' || echo "")
-fi
-CUDA_MAJOR=$(echo "$CUDA_VER" | awk -F'.' '{print $1}')
-
-if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -ge 12 ]; then
-    echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.10.0+cu128..."
-    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
-elif [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -eq 11 ]; then
-    echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.4.0+cu118..."
-    pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-    pip install --no-deps xformers==0.0.27.post2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+# ============================================================
+#  Venv check with broken-venv detection
+# ============================================================
+if [ -f "venv/bin/activate" ]; then
+    source "venv/bin/activate"
+    if python -c "import torch" 2>/dev/null; then
+        # Venv has torch - OK to launch
+        :
+    else
+        echo "[Notice] Virtual environment exists but dependencies are missing or broken."
+        echo "   1. Install / Repair dependencies"
+        echo "   2. Exit"
+        echo ""
+        read -r -p "Enter option (1/2): " CHOICE
+        if [ "$CHOICE" = "1" ]; then
+            do_install
+        else
+            echo "Cancelled."
+            exit 0
+        fi
+    fi
 else
-    echo "  No CUDA detected or unsupported version. Installing PyTorch 2.10.0+cu128..."
-    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    echo "[Notice] Virtual environment (venv) not found."
+    echo "   1. Install"
+    echo "   2. Exit"
+    echo ""
+    read -r -p "Enter option (1/2): " CHOICE
+    if [ "$CHOICE" != "1" ]; then
+        echo "Cancelled."
+        exit 0
+    fi
+    do_install
 fi
-if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
-echo "[2/3] Installing sd-scripts dependencies..."
-pip install -r vendor/sd-scripts/requirements.txt
-if [ $? -ne 0 ]; then echo "[ERROR] sd-scripts dependencies install failed."; exit 1; fi
-
-echo "[3/3] Installing project dependencies..."
-pip install --upgrade -r requirements.txt
-if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
-
-echo ""
-echo "[Done] Installation complete!"
-echo ""
-
-# --- Launch ---
-echo "[Launch] Starting GUI..."
+# ============================================================
+#  Launch
+# ============================================================
+echo "[Launch] Starting..."
+export HF_HOME=huggingface
 export PYTHONUTF8=1
+
+python tools/check_deps.py 2>/dev/null || echo "[Notice] Dependencies may be incomplete. Re-run start.sh to install."
+echo ""
+
+if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
+    echo "[flash_attn] OK (version $FA_VER)"
+else
+    echo "[flash_attn] NOT FOUND. RTX 40/50 series: bash install-flash-attn.sh"
+fi
+echo ""
+
 python gui.py "$@"
