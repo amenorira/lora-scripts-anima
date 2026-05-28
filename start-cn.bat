@@ -109,7 +109,9 @@ venv\Scripts\python.exe -m pip install "!_TORCH_URL!" "!_TV_URL!"
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
-venv\Scripts\python.exe -m pip install -r vendor\sd-scripts\requirements.txt
+pushd vendor\sd-scripts
+..\..\venv\Scripts\python.exe -m pip install -r requirements.txt
+popd
 if !errorlevel! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
 
 echo [3/3] Installing project deps...

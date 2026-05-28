@@ -127,8 +127,7 @@ do_install() {
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
     echo "[2/3] Installing sd-scripts dependencies..."
-    pip install -r vendor/sd-scripts/requirements.txt
-    if [ $? -ne 0 ]; then echo "[ERROR] sd-scripts dependencies install failed."; exit 1; fi
+(cd vendor/sd-scripts && pip install -r requirements.txt)
 
     echo "[3/3] Installing project dependencies..."
     pip install --upgrade -r requirements.txt
