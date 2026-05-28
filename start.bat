@@ -1,7 +1,10 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
+title lora-scripts-anima
+
+REM Try UTF-8, but survive if it fails
+chcp 65001 >nul 2>&1
 
 echo ============================================
 echo   lora-scripts-anima
@@ -15,26 +18,32 @@ echo [Check] Checking environment...
 set _OK=1
 
 REM --- 1. Python detection ---
-where python >nul 2>&1
-if %errorlevel% neq 0 (
+set _PYPATH=
+for /f "tokens=*" %%i in ('where python 2^>nul') do (
+    if "!_PYPATH!"=="" set _PYPATH=%%i
+)
+
+if "!_PYPATH!"=="" (
     echo   [FAIL] Python is not installed or not in PATH.
     echo          Download: https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe
     echo          Or: winget install Python.Python.3.12
-    echo          !! Check [Add Python to PATH] during install !!
+    echo          !! IMPORTANT: Check [Add Python to PATH] during install !!
     set _OK=0
     goto :check_gpu
 )
 
-REM Check if MS Store stub
-python -c "import sys; sys.exit(0 if 'WindowsApps' in sys.executable else 1)" >nul 2>&1
+REM Check if MS Store stub (by path, avoid running the stub)
+echo !_PYPATH! | findstr /i "WindowsApps" >nul
 if !errorlevel! equ 0 (
-    echo   [FAIL] Microsoft Store Python placeholder (not a real Python).
-    echo          Install from python.org (link above).
+    echo   [FAIL] Microsoft Store Python placeholder detected.
+    echo          Path: !_PYPATH!
+    echo          This is NOT a real Python. Install from python.org:
+    echo          https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe
     set _OK=0
     goto :check_gpu
 )
 
-REM Check version
+REM Check version (safe to run now: not a Store stub)
 python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
 if !errorlevel! neq 0 (
     for /f "tokens=*" %%i in ('python --version 2^>^&1') do set _PYVER=%%i
@@ -69,8 +78,8 @@ if %errorlevel% neq 0 (
 )
 
 REM --- 3. Disk space ---
-for %%d in ("%~dp0.") do set _DRIVE=%%~dd
-for /f "usebackq tokens=*" %%a in (`powershell -NoProfile -Command "[math]::Round((Get-PSDrive -Name '%_DRIVE:~0,1%').Free/1GB)"`) do set _FREEGB=%%a
+set _DRIVE=%~d0
+for /f "usebackq tokens=*" %%a in (`powershell -NoProfile -Command "[math]::Round((Get-PSDrive -Name '!$_DRIVE:~0,1!').Free/1GB)" 2^>nul`) do set _FREEGB=%%a
 if defined _FREEGB (
     if !_FREEGB! LSS 10 (
         echo   [FAIL] Disk free: !_FREEGB! GB. Recommend 30GB+.
@@ -81,7 +90,7 @@ if defined _FREEGB (
         echo   [OK] Disk free: !_FREEGB! GB
     )
 ) else (
-    echo   [WARN] Could not check disk space.
+    echo   [WARN] Could not check disk space (PowerShell may be unavailable).
 )
 
 echo.
