@@ -314,6 +314,29 @@ window.trainingCoreMixin = {
 
   // ── Auto Value: auto-set field value when watcher field changes ──
   _autoValueRules: null,
+
+  /** Check whether a single autoValue rule matches the current form state. */
+  _matchAutoValueRule(rule) {
+    if (rule.watch && typeof rule.watch === 'object' && !Array.isArray(rule.watch)) {
+      // Multi-condition: all watched fields must match their expected values
+      return Object.entries(rule.watch).every(([k, v]) => String(this.form[k]) === String(v));
+    }
+    // Single condition
+    return String(this.form[rule.watch]) === String(rule.when);
+  },
+
+  /** Apply autoValue rules once based on current form state (no watcher side-effects). */
+  _applyInitialAutoValues() {
+    if (!this._autoValueRules || this._autoValueRules.length === 0) return;
+    this._autoValueRules.forEach(r => {
+      if (this._matchAutoValueRule(r)) {
+        if (r.set !== null && r.set !== undefined) {
+          this.form[r.target] = r.set;
+        }
+      }
+    });
+  },
+
   setupAutoValueWatchers() {
     // Collect all autoValue rules from all visible fields
     const rules = [];
@@ -336,16 +359,6 @@ window.trainingCoreMixin = {
       }
     });
 
-    // Evaluate if a rule matches current form state
-    const matchRule = (rule) => {
-      if (rule.watch && typeof rule.watch === 'object' && !Array.isArray(rule.watch)) {
-        // Multi-condition: all fields must match
-        return Object.entries(rule.watch).every(([k, v]) => String(self.form[k]) === String(v));
-      }
-      // Single condition: original logic
-      return String(self.form[rule.watch]) === String(rule.when);
-    };
-
     // Register a watcher for each unique watched key
     allWatchedKeys.forEach(watchKey => {
       self.$watch('form.' + watchKey, function() {
@@ -361,7 +374,7 @@ window.trainingCoreMixin = {
 
         affectedTargets.forEach(target => {
           // Find the first matching rule for this target
-          const matched = self._autoValueRules.find(x => x.target === target && matchRule(x));
+          const matched = self._autoValueRules.find(x => x.target === target && self._matchAutoValueRule(x));
           if (matched) {
             if (matched.set !== null && matched.set !== undefined) {
               self.form[matched.target] = matched.set;
@@ -373,19 +386,20 @@ window.trainingCoreMixin = {
           }
         });
 
+        // Re-evaluate conditional visibility for all affected targets
+        affectedTargets.forEach(target => {
+          if (self._allShowIfKeys().indexOf(target) !== -1) {
+            self.showConditionalFields(target);
+          }
+        });
+
         // Update readonly states after auto_value changes
         self.updateReadonlyStates();
       });
     });
 
     // Apply initial auto_value state
-    rules.forEach(r => {
-      if (matchRule(r)) {
-        if (r.set !== null && r.set !== undefined) {
-          self.form[r.target] = r.set;
-        }
-      }
-    });
+    this._applyInitialAutoValues();
   },
 
   // ── Show If Watchers: listen for parent field changes to show/hide children ──
@@ -535,7 +549,11 @@ window.trainingCoreMixin = {
   rebuildForm() {
     const r = this.currentRoute;
     if (!r || !r.startsWith('train-')) return;
+    // Re-apply autoValue rules so select fields, locked fields etc. stay consistent
+    // after preset load, config import, or full reset.
+    this._applyInitialAutoValues();
     this.renderTrainingForm(this.form.model_train_type || 'sd-lora');
+    this.updateReadonlyStates();
   },
 
   // ── File Pickers ───────────────────────────────────────
