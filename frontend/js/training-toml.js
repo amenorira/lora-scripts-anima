@@ -98,24 +98,8 @@ window.trainingTomlMixin = {
       lines.push(`network_args = [${quoted}]`);
     }
 
-    // ── Build optimizer_args ────────────────────────────
-    const optArgsArr = [];
-    const optCustom = this.form.optimizer_args_custom;
-    if (optCustom && typeof optCustom === 'string') {
-      optArgsArr.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s));
-    }
-    if (this.form.weight_decay !== undefined && this.form.weight_decay !== null && this.form.weight_decay !== '') {
-      optArgsArr.push('weight_decay=' + this.form.weight_decay);
-    }
-    if (this.form.optimizer_type === 'Prodigy' || this.form.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
-      if (this.form.prodigy_d_coef && this.form.prodigy_d_coef !== '2.0') optArgsArr.push(`d_coef=${this.form.prodigy_d_coef}`);
-      if (this.form.prodigy_d0) optArgsArr.push(`d0=${this.form.prodigy_d0}`);
-    }
-    if (this.form.optimizer_type === 'vendor.emo_optimizer.emosens.EmoSens') {
-      if (this.form.stopcoef !== undefined && this.form.stopcoef !== null && this.form.stopcoef !== '') {
-        optArgsArr.push('stopcoef=' + this.form.stopcoef);
-      }
-    }
+    // ── Build optimizer_args (shared logic) ──────────────
+    const optArgsArr = this._buildOptimizerArgs(this.form);
     if (optArgsArr.length > 0) {
       const quoted = optArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
       lines.push(`optimizer_args = [${quoted}]`);
@@ -156,6 +140,58 @@ window.trainingTomlMixin = {
 
   copyToml() {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
+  },
+
+  /**
+   * 组装 optimizer_args 数组（公共逻辑，TOML 预览和 startTraining 共用）。
+   * merged 字段仅在值 ≠ 优化器默认值时写入。
+   */
+  _buildOptimizerArgs(form) {
+    const optArgs = [];
+    const optType = form.optimizer_type;
+
+    // 1. 用户自定义参数（直接透传）
+    const optCustom = form.optimizer_args_custom;
+    if (optCustom && typeof optCustom === 'string') {
+      optArgs.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s));
+    }
+
+    // 2. merged 字段规则：[formKey, argKey, defaultsByOptimizer]
+    //    defaults 中值为 null → 非空即写；值为 '' → 空则跳过
+    const MERGED_RULES = [
+      { form: 'weight_decay', arg: 'weight_decay', defaults: { _fallback: null } },
+      { form: 'stopcoef', arg: 'stopcoef', defaults: { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
+      { form: 'prodigy_d_coef', arg: 'd_coef', defaults: { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
+      { form: 'prodigy_d0', arg: 'd0', defaults: { 'Prodigy': '', 'prodigyplus.ProdigyPlusScheduleFree': '' } },
+      { form: 'betas', arg: 'betas', defaults: {
+        'AdamW': '0.9,0.999', 'AdamW8bit': '0.9,0.999', 'PagedAdamW8bit': '0.9,0.999',
+        'Lion': '0.9,0.99', 'Lion8bit': '0.9,0.99', 'PagedLion8bit': '0.9,0.99',
+        'pytorch_optimizer.CAME': '0.9,0.999,0.9999',
+        'vendor.emo_optimizer.emosens.EmoSens': '0.9,0.995',
+      }},
+      { form: 'eps', arg: 'eps', defaults: {
+        'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
+        'pytorch_optimizer.CAME': '1e-16',
+        'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
+      }},
+      { form: 'came_weight_decouple', arg: 'weight_decouple', defaults: { 'pytorch_optimizer.CAME': true } },
+      { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: { 'pytorch_optimizer.CAME': false } },
+      { form: 'came_clip_threshold', arg: 'clip_threshold', defaults: { 'pytorch_optimizer.CAME': 1.0 } },
+      { form: 'came_ams_bound', arg: 'ams_bound', defaults: { 'pytorch_optimizer.CAME': false } },
+      { form: 'came_eps1', arg: 'eps1', defaults: { 'pytorch_optimizer.CAME': '1e-30' } },
+      { form: 'came_eps2', arg: 'eps2', defaults: { 'pytorch_optimizer.CAME': '1e-16' } },
+    ];
+
+    for (const rule of MERGED_RULES) {
+      const val = form[rule.form];
+      if (val === undefined || val === null || val === '') continue;
+      const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
+      if (defVal !== undefined && defVal !== null && val == defVal) continue;
+      const formatted = typeof val === 'boolean' ? String(val).toLowerCase() : String(val);
+      optArgs.push(rule.arg + '=' + formatted);
+    }
+
+    return optArgs;
   },
 
   // ── Training ───────────────────────────────────────────
@@ -213,20 +249,13 @@ window.trainingTomlMixin = {
       delete payload.sample_prompts;
     }
 
-    const optArgs = [];
-    if (payload.optimizer_args_custom && typeof payload.optimizer_args_custom === 'string') {
-      optArgs.push(...payload.optimizer_args_custom.split('\n').map(s => s.trim()).filter(s => s));
-      delete payload.optimizer_args_custom;
-    }
-    if (payload.weight_decay !== undefined && payload.weight_decay !== null && payload.weight_decay !== '') {
-      optArgs.push('weight_decay=' + payload.weight_decay);
-      delete payload.weight_decay;
-    }
-    if (payload.optimizer_type === 'Prodigy' || payload.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
-      if (payload.prodigy_d_coef && payload.prodigy_d_coef !== '2.0') optArgs.push(`d_coef=${payload.prodigy_d_coef}`);
-      if (payload.prodigy_d0) optArgs.push(`d0=${payload.prodigy_d0}`);
-      delete payload.prodigy_d_coef;
-      delete payload.prodigy_d0;
+    // ── Build optimizer_args via shared function ──────────
+    const optArgs = this._buildOptimizerArgs(payload);
+    // Remove merged fields from top-level payload (they are now in optimizer_args)
+    for (const key of ['optimizer_args_custom','weight_decay','stopcoef','prodigy_d_coef','prodigy_d0',
+                        'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
+                        'came_ams_bound','came_eps1','came_eps2']) {
+      delete payload[key];
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;
 

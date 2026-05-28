@@ -161,7 +161,25 @@ window.trainingCoreMixin = {
     } else if (field.type === 'number') {
       inputHtml = `<input type="number" x-model.number="form.${dataKey}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}">`;
     } else {
-      inputHtml = `<input type="text" x-model="form.${dataKey}">`;
+      // Text input: add dynamic placeholder for optimizer merged fields
+      const _optDefaults = {
+        betas: {
+          'AdamW':'0.9, 0.999','AdamW8bit':'0.9, 0.999','PagedAdamW8bit':'0.9, 0.999',
+          'Lion':'0.9, 0.99','Lion8bit':'0.9, 0.99','PagedLion8bit':'0.9, 0.99',
+          'pytorch_optimizer.CAME':'0.9, 0.999, 0.9999',
+          'vendor.emo_optimizer.emosens.EmoSens':'0.9, 0.995',
+        },
+        eps: {
+          'AdamW':'1e-8','AdamW8bit':'1e-8','PagedAdamW8bit':'1e-8',
+          'pytorch_optimizer.CAME':'1e-16',
+          'vendor.emo_optimizer.emosens.EmoSens':'1e-8',
+        },
+        came_eps1: { 'pytorch_optimizer.CAME':'1e-30' },
+        came_eps2: { 'pytorch_optimizer.CAME':'1e-16' },
+      };
+      const _ph = _optDefaults[dataKey] ? (_optDefaults[dataKey][this.form.optimizer_type] || '') : '';
+      const _phAttr = _ph ? ` placeholder="${_ph}"` : '';
+      inputHtml = `<input type="text" x-model="form.${dataKey}"${_phAttr}>`;
     }
 
     let actionsHtml = '';
