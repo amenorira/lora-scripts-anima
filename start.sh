@@ -1,5 +1,6 @@
 #!/usr/bin/bash
-set -e
+# start.sh - One-stop entry: environment check -> install -> launch
+# Run: bash start.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -9,11 +10,7 @@ echo "  lora-scripts-anima"
 echo "============================================"
 echo ""
 
-# ============================================================
-#  ENVIRONMENT CHECK (all checks run, issues accumulated)
-# ============================================================
 echo "[Check] Checking environment..."
-
 OK=1
 
 # --- 1. Python detection ---
@@ -31,18 +28,22 @@ if [ -z "$PYTHON_BIN" ]; then
     OK=0
 else
     PYVER=$($PYTHON_BIN --version 2>&1)
-    PYMAJOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.major)")
-    PYMINOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)")
-    PYBITS=$($PYTHON_BIN -c "import struct; print(struct.calcsize('P')*8)")
+    PYMAJOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+    PYMINOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
 
-    if [ "$PYMAJOR" -lt 3 ] || { [ "$PYMAJOR" -eq 3 ] && [ "$PYMINOR" -lt 10 ]; }; then
+    if [ "$PYMAJOR" -lt 3 ] 2>/dev/null || { [ "$PYMAJOR" -eq 3 ] && [ "$PYMINOR" -lt 10 ]; }; then
         echo "  [FAIL] $PYVER - Python 3.10+ required (3.12 recommended)."
         OK=0
-    elif [ "$PYBITS" != "64" ]; then
-        echo "  [FAIL] 32-bit Python detected. 64-bit required."
-        OK=0
     else
-        echo "  [OK] $PYVER ($PYBITS-bit)"
+        IS64=$($PYTHON_BIN -c "import sys; print('64' if sys.maxsize > 2**32 else '32')" 2>/dev/null || echo "?")
+        if [ "$IS64" = "64" ]; then
+            echo "  [OK] $PYVER (64-bit)"
+        elif [ "$IS64" = "32" ]; then
+            echo "  [FAIL] 32-bit Python detected. 64-bit required."
+            OK=0
+        else
+            echo "  [OK] $PYVER"
+        fi
     fi
 fi
 
@@ -82,21 +83,16 @@ fi
 echo "  Environment check passed."
 echo ""
 
-# ============================================================
-#  VENV CHECK & INSTALL
-# ============================================================
+# --- Venv check ---
 if [ -f "venv/bin/activate" ]; then
     echo "[Launch] Activating virtual environment..."
     export HF_HOME=huggingface
     export PYTHONUTF8=1
     source "venv/bin/activate"
 
-    # Check deps (non-fatal)
-    python tools/check_deps.py 2>/dev/null || {
-        echo "[Notice] Dependencies may be incomplete. Re-run start.sh to install."
-    }
+    python tools/check_deps.py 2>/dev/null || echo "[Notice] Dependencies may be incomplete. Re-run start.sh to install."
+    echo ""
 
-    # Check flash-attn (non-fatal)
     if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
         echo "[flash_attn] OK (version $FA_VER)"
     else
@@ -110,7 +106,6 @@ fi
 
 # --- Venv not found, offer install ---
 echo "[Notice] Virtual environment (venv) not found."
-echo ""
 echo "   1. Install"
 echo "   2. Exit"
 echo ""
@@ -121,23 +116,20 @@ if [ "$CHOICE" != "1" ]; then
     exit 0
 fi
 
-# ============================================================
-#  INSTALL (inline, no external scripts)
-# ============================================================
+# --- Install ---
 echo ""
 echo "[Install] Starting installation..."
 echo ""
 
 if [ ! -d "venv" ]; then
     echo "Creating venv..."
-    $PYTHON_BIN -m venv venv
+    $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
 fi
 
 source "venv/bin/activate"
 export HF_HOME=huggingface
 
 echo "[1/3] Installing PyTorch 2.10.0 + CUDA 12.8..."
-# Try to detect CUDA version for best PyTorch match
 CUDA_VER=$(nvidia-smi 2>/dev/null | grep -oiP 'CUDA Version: \K[\d\.]+' || echo "")
 if [ -z "$CUDA_VER" ]; then
     CUDA_VER=$(nvcc --version 2>/dev/null | grep -oiP 'release \K[\d\.]+' || echo "")
@@ -146,33 +138,30 @@ CUDA_MAJOR=$(echo "$CUDA_VER" | awk -F'.' '{print $1}')
 
 if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -ge 12 ]; then
     echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.10.0+cu128..."
-    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 \
-        --extra-index-url https://download.pytorch.org/whl/cu128
+    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 elif [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -eq 11 ]; then
     echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.4.0+cu118..."
-    pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 \
-        --extra-index-url https://download.pytorch.org/whl/cu118
-    pip install --no-deps xformers==0.0.27.post2+cu118 \
-        --extra-index-url https://download.pytorch.org/whl/cu118
+    pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+    pip install --no-deps xformers==0.0.27.post2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 else
     echo "  No CUDA detected or unsupported version. Installing PyTorch 2.10.0+cu128..."
-    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 \
-        --extra-index-url https://download.pytorch.org/whl/cu128
+    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 fi
+if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
 echo "[2/3] Installing sd-scripts dependencies..."
 pip install -r vendor/sd-scripts/requirements.txt
+if [ $? -ne 0 ]; then echo "[ERROR] sd-scripts dependencies install failed."; exit 1; fi
 
 echo "[3/3] Installing project dependencies..."
 pip install --upgrade -r requirements.txt
+if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
 
 echo ""
 echo "[Done] Installation complete!"
 echo ""
 
-# ============================================================
-#  LAUNCH
-# ============================================================
+# --- Launch ---
 echo "[Launch] Starting GUI..."
 export PYTHONUTF8=1
 python gui.py "$@"
