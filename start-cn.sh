@@ -100,13 +100,14 @@ do_install() {
     if [ ! -d "venv" ]; then
         echo "Creating venv..."
         $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
+        source "venv/bin/activate"
+        echo "Upgrading pip..."
+        pip install --upgrade pip -q 2>/dev/null
+    else
+        source "venv/bin/activate"
     fi
 
-    source "venv/bin/activate"
     export HF_HOME=huggingface
-
-    echo "Upgrading pip..."
-    pip install --upgrade pip -q 2>/dev/null || echo "  [WARN] pip upgrade failed, continuing..."
 
     # Detect Python + platform tag for direct wheel URL
     WHEEL_TAG=$(python -c "

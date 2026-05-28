@@ -91,11 +91,9 @@ if not exist "venv\Scripts\python.exe" (
     echo Creating venv...
     python -m venv venv
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
+    echo Upgrading pip...
+    venv\Scripts\python.exe -m pip install --upgrade pip -q
 )
-
-echo Upgrading pip for faster downloads...
-venv\Scripts\python.exe -m pip install --upgrade pip -q
-if !errorlevel! neq 0 (echo [WARN] pip upgrade failed, continuing...)
 
 echo [1/3] Installing PyTorch...
 venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128

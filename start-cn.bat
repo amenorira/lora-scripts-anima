@@ -95,12 +95,9 @@ if not exist "venv\Scripts\python.exe" (
     echo Creating venv...
     python -m venv venv
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
+    echo Upgrading pip...
+    venv\Scripts\python.exe -m pip install --upgrade pip -q
 )
-
-REM Upgrade pip for faster downloads
-echo Upgrading pip...
-venv\Scripts\python.exe -m pip install --upgrade pip -q
-if !errorlevel! neq 0 (echo [WARN] pip upgrade failed, continuing...)
 
 REM Detect Python tag for direct wheel URL
 for /f "tokens=*" %%v in ('venv\Scripts\python.exe -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')"') do set _PYTAG=%%v
