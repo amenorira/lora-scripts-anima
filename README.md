@@ -67,7 +67,7 @@ Stable Diffusion 训练工作台。一切集成于一个 WebUI 中。
 | RTX 50 系 (Blackwell) | **2.8.0** | **12.8** |
 
 > 安装脚本默认 PyTorch 2.10.0 + CUDA 12.8，全系列通用，cp312 有预编译 flash-attn。
-> 国内用户运行 `install-cn.ps1`，pip 使用清华镜像加速，PyTorch 使用官方 CDN（国内可达 15-20 MB/s）。
+> 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
 ### 克隆仓库
 
@@ -78,10 +78,10 @@ cd lora-scripts-anima
 
 ### 快速开始
 
-| 平台 | 安装 | 直接启动 | 更新仓库并启动 |
-|------|------|----------|----------------|
-| Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
-| Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
+| 平台 | 安装 + 启动 | 更新仓库并启动 |
+|------|-------------|----------------|
+| Windows | `.\start.bat` | `.\update-and-start.bat` |
+| Linux | `bash start.sh` | `bash update-and-start.sh` |
 
 启动后 GUI 自动打开 [http://127.0.0.1:12333](http://127.0.0.1:12333)。
 

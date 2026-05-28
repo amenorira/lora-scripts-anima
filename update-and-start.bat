@@ -26,52 +26,33 @@ if %errorlevel% neq 0 (
 echo.
 
 :check_venv
-REM ── 检查虚拟环境 ──
-if exist "venv\Scripts\activate.bat" (
+REM ── Check virtual environment ──
+if exist "venv\Scripts\python.exe" (
     goto :run
 )
 
-echo [提示] 未检测到虚拟环境 (venv)。
-echo.
-echo    [1] 安装（运行 install.ps1）
-echo    [2] 退出
-echo.
-set /p choice=请输入选项 (1/2):
-
-if "%choice%"=="1" (
-    echo.
-    echo [安装] 开始运行 install.ps1 ...
-    powershell -ExecutionPolicy Bypass -File "%~dp0install.ps1"
-    if %errorlevel% neq 0 (
-        echo [错误] 安装失败
-        pause
-        exit /b 1
-    )
-    echo [完成] 安装完成，开始启动...
-    echo.
-    goto :run
-)
-echo 已取消。
+echo [Notice] Virtual environment (venv) not found.
+echo         Please run start.bat first for first-time setup.
 pause
-exit /b 0
+exit /b 1
 
 :run
-echo [启动] 激活虚拟环境...
+echo [Launch] Activating virtual environment...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
-call "venv\Scripts\activate.bat"
 
-REM ── 依赖检测 ──
-python tools\check_deps.py
-if %errorlevel% neq 0 (
-    echo [提示] 更新后依赖可能不完整，可运行 install.ps1 修复。
-    echo Dependencies may have changed, run install.ps1 to fix.
-    pause
+REM ── Deps check ──
+venv\Scripts\python.exe tools\check_deps.py 2>nul
+if !errorlevel! neq 0 (
+    echo [Notice] Dependencies may have changed. Run start.bat to reinstall.
 )
 
-REM ── 检测 flash-attn ──
-python -c "import flash_attn; print('[flash_attn] OK')" 2>nul || echo [flash_attn] NOT FOUND / 未找到 — RTX 40/50 series recommended: .\install-flash-attn.bat
+REM ── flash-attn check ──
+venv\Scripts\python.exe -c "import flash_attn; print('[flash_attn] OK')" 2>nul
+if !errorlevel! neq 0 (
+    echo [flash_attn] NOT FOUND. RTX 40/50 series: run install-flash-attn.bat
+)
 echo.
 
-python gui.py %*
+venv\Scripts\python.exe gui.py %*
 pause

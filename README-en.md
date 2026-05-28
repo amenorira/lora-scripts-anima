@@ -77,10 +77,10 @@ cd lora-scripts-anima
 
 ### Quick Start
 
-| Platform | Install | Launch | Update + Launch |
-|----------|---------|--------|----------------|
-| Windows | `.\install-cn.ps1` | `.\start.bat` | `.\update-and-start.bat` |
-| Linux | `bash install.sh` | `bash start.sh` | `bash update-and-start.sh` |
+| Platform | Install + Launch | Update + Launch |
+|----------|-----------------|----------------|
+| Windows | `.\start.bat` | `.\update-and-start.bat` |
+| Linux | `bash start.sh` | `bash update-and-start.sh` |
 
 The GUI opens automatically at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 

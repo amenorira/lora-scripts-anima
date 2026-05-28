@@ -8,8 +8,8 @@ echo ============================================
 echo.
 
 REM 检查 venv
-if not exist "venv\Scripts\activate.bat" (
-    echo [错误] 未找到虚拟环境，请先运行 install.ps1
+if not exist "venv\Scripts\python.exe" (
+    echo [错误] 未找到虚拟环境，请先运行 start.bat
     pause
     exit /b 1
 )
