@@ -49,7 +49,7 @@ where nvidia-smi >nul 2>&1
 if %errorlevel% neq 0 (
     echo   [WARN] nvidia-smi not found.
 ) else (
-    for /f "tokens=*" %%i in ('nvidia-smi --query-gpu=name --format=csv,noheader 2^>nul') do set _GPU=%%i
+    for /f "tokens=*" %%i in ('nvidia-smi -L 2^>nul') do set _GPU=%%i
     if defined _GPU (echo   [OK] GPU: !_GPU!) else (echo   [WARN] Cannot read GPU info.)
 )
 

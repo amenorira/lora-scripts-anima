@@ -50,7 +50,7 @@ fi
 
 # --- 2. GPU detection ---
 if command -v nvidia-smi &>/dev/null; then
-    GPUNAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+    GPUNAME=$(nvidia-smi -L 2>/dev/null | head -1)
     if [ -n "$GPUNAME" ]; then
         echo "  [OK] GPU: $GPUNAME"
     else
