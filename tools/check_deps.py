@@ -67,17 +67,19 @@ def _cmp_ver(a: str, b: str) -> int:
     return -1 if pa < pb else (1 if pa > pb else 0)
 
 
-def _check() -> dict[str, str]:
+def _check(req_path: Path, label: str = "") -> dict[str, str]:
     """Returns {pkg: issue_description} or empty dict / 返回问题字典，空则正常"""
-    repo_root = Path(__file__).resolve().parents[1]
-    req_path = repo_root / "requirements.txt"
     if not req_path.exists():
-        return {"requirements.txt": "file not found / 文件不存在"}
+        return {f"{label or req_path.name}": "file not found / 文件不存在"}
 
     required = _parse_requirements(req_path)
     issues: dict[str, str] = {}
 
     for pkg_name, (min_ver, max_ver) in required.items():
+        # 跳过 pip 选项行（如 "-e ."）
+        if pkg_name.startswith("-"):
+            continue
+
         installed = None
         for variant in (pkg_name, pkg_name.replace("-", "_"), pkg_name.replace("_", "-")):
             try:
@@ -99,28 +101,57 @@ def _check() -> dict[str, str]:
 
 
 def main():
-    issues = _check()
+    repo_root = Path(__file__).resolve().parents[1]
 
-    if not issues:
+    # 训练核心 sd-scripts 依赖优先检查
+    sd_req = repo_root / "vendor" / "sd-scripts" / "requirements.txt"
+    sd_issues = _check(sd_req, label="sd-scripts")
+
+    # 主项目依赖
+    main_req = repo_root / "requirements.txt"
+    main_issues = _check(main_req, label="requirements.txt")
+
+    all_issues = {**sd_issues, **main_issues}
+
+    if not all_issues:
         print("[deps] All OK / 依赖完整")
         return 0
 
     # Issues found
-    print(f"[deps] {len(issues)} issue(s) found / 发现 {len(issues)} 个问题:")
-    for pkg, desc in issues.items():
-        print(f"  - {pkg}: {desc}")
+    print(f"[deps] {len(all_issues)} issue(s) found / 发现 {len(all_issues)} 个问题:")
+    if sd_issues:
+        print("  [sd-scripts]")
+        for pkg, desc in sd_issues.items():
+            print(f"    - {pkg}: {desc}")
+    if main_issues:
+        print("  [requirements.txt]")
+        for pkg, desc in main_issues.items():
+            print(f"    - {pkg}: {desc}")
 
     if "--fix" in sys.argv:
         print()
         print("[deps] Trying to fix / 尝试修复...")
-        repo_root = Path(__file__).resolve().parents[1]
         try:
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "-r",
-                 str(repo_root / "requirements.txt")],
-                stdout=sys.stdout, stderr=sys.stderr
-            )
-            remaining = _check()
+            # 训练核心优先修复
+            if sd_issues and sd_req.exists():
+                print("[deps] Fixing sd-scripts dependencies / 修复 sd-scripts 依赖...")
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-r", str(sd_req)],
+                    stdout=sys.stdout, stderr=sys.stderr
+                )
+            # 再修复主项目依赖
+            if main_issues and main_req.exists():
+                print("[deps] Fixing main dependencies / 修复主项目依赖...")
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-r", str(main_req)],
+                    stdout=sys.stdout, stderr=sys.stderr
+                )
+
+            # 重新检查
+            sd_remaining = _check(sd_req, label="sd-scripts") if sd_req.exists() else {}
+            main_remaining = _check(main_req, label="requirements.txt") if main_req.exists() else {}
+            remaining = {**sd_remaining, **main_remaining}
+
             if not remaining:
                 print("[deps] Fix succeeded / 修复成功")
                 return 0

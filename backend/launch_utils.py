@@ -324,8 +324,10 @@ def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: b
     # if not check_run("backend/scripts/torch_check.py"):
     #     sys.exit(1)
 
+    # 训练核心 sd-scripts 依赖优先验证并修复
+    validate_requirements("vendor/sd-scripts/requirements.txt")
+    # 主项目依赖（GUI 层等），补充 sd-scripts 未覆盖的包
     validate_requirements("requirements.txt")
-    validate_requirements("vendor/sd-scripts/requirements.txt", fix=False)
     setup_windows_bitsandbytes()
 
     if prepare_onnxruntime:

@@ -1,35 +1,35 @@
 # ── 训练核心依赖（版本由 sd-scripts/requirements.txt 管控，此处仅文档记录）──
-accelerate>=0.33.0  # skip_verify
-transformers>=4.44.0  # skip_verify
-diffusers[torch]>=0.25.0  # skip_verify
-ftfy>=6.1.1  # skip_verify
+accelerate==1.6.0  # skip_verify
+transformers==4.54.1  # skip_verify
+diffusers[torch]==0.32.1  # skip_verify
+ftfy==6.3.1  # skip_verify
 # albumentations==1.3.0
-opencv-python>=4.8.1  # skip_verify
+opencv-python==4.10.0.84  # skip_verify
 einops==0.7.0
 pytorch-lightning==1.9.0
 bitsandbytes==0.46.0
-lion-pytorch>=0.1.2  # skip_verify
+lion-pytorch==0.2.3  # skip_verify
 schedulefree==1.4
-pytorch-optimizer>=3.7.0  # skip_verify
-prodigy-plus-schedule-free>=1.9.0  # skip_verify
+pytorch-optimizer==3.10.0  # skip_verify
+prodigy-plus-schedule-free==1.9.2  # skip_verify
 prodigyopt==1.1.2
 tensorboard==2.20.0  # skip_verify
 setuptools<80,>=68  # keep pkg_resources available for older packages (gradio, etc.)
-safetensors>=0.4.4  # skip_verify
+safetensors==0.4.5  # skip_verify
 # gradio==3.16.2
 altair==4.2.2
 easygui==0.98.3
 toml==0.10.2
-voluptuous>=0.13.1  # skip_verify
-huggingface-hub>=0.24.5  # skip_verify
+voluptuous==0.15.2  # skip_verify
+huggingface-hub==0.34.3  # skip_verify
 # for Image utils
 imagesize==1.4.1
 # for T5XXL tokenizer (SD3/FLUX)
-sentencepiece==0.2.0  # skip_verify
+sentencepiece==0.2.1  # skip_verify
 # for GPU monitoring
 nvidia-ml-py>=12.535.0
 # for ui
-rich>=13.7.0  # skip_verify
+rich==14.1.0  # skip_verify
 pandas
 scipy
 requests
