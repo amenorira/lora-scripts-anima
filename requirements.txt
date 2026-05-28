@@ -37,7 +37,8 @@ pillow
 numpy==1.26.4
 # ── GUI 依赖 ──
 gradio==3.44.2
-fastapi==0.95.1
+fastapi==0.103.2
+pydantic>=2.0,<3
 uvicorn==0.22.0
 wandb==0.16.2
 httpx==0.24.1
