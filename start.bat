@@ -110,7 +110,7 @@ venv\Scripts\python.exe -m pip install --upgrade -r requirements.txt
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!
-goto :run_venv
+goto :launch
 
 :run_venv
 echo [Launch] Starting...
@@ -141,6 +141,7 @@ if !errorlevel! neq 0 (
     if "!_CHOICE!"=="2" goto :install
 )
 
+:launch
 venv\Scripts\python.exe -c "import flash_attn; print('[flash_attn] OK')" 2>nul
 if !errorlevel! neq 0 echo [flash_attn] NOT FOUND. Run install-flash-attn.bat
 
