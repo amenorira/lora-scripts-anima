@@ -282,23 +282,7 @@ def check_run(file: str) -> bool:
     return result.returncode == 0
 
 
-def network_gfw_test(timeout=3):
-    try:
-        import requests
-        # requests will auto detect system proxies
-        response = requests.get("https://www.google.com", timeout=timeout)
-        if response.status_code == 200:
-            log.info("Network test passed")
-            return True
-        else:
-            log.error(f"Network test failed: {response.status_code}")
-            return False
-    except requests.exceptions.RequestException as e:
-        log.error(f"Network test failed: {e}")
-        return False
-
-
-def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: bool = True):
+def prepare_environment(prepare_onnxruntime: bool = True):
     if sys.platform == "win32":
         # disable triton on windows
         os.environ["XFORMERS_FORCE_DISABLE_TRITON"] = "1"
@@ -307,12 +291,6 @@ def prepare_environment(disable_auto_mirror: bool = True, prepare_onnxruntime: b
     os.environ["BITSANDBYTES_NOWELCOME"] = "1"
     os.environ["PYTHONWARNINGS"] = "ignore::UserWarning"
     os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-
-    if not disable_auto_mirror and not network_gfw_test():
-        log.info("use pip & huggingface mirrors")
-        os.environ.setdefault("PIP_FIND_LINKS", "https://mirror.sjtu.edu.cn/pytorch-wheels/torch_stable.html")
-        os.environ.setdefault("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
-        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
     if not os.environ.get("PATH"):
         os.environ["PATH"] = os.path.dirname(sys.executable)

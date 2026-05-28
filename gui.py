@@ -24,7 +24,6 @@ parser.add_argument("--skip-prepare-environment", action="store_true")
 parser.add_argument("--skip-prepare-onnxruntime", action="store_true")
 parser.add_argument("--disable-tensorboard", action="store_true", help="Disable TensorBoard (port 6006)")
 parser.add_argument("--enable-tageditor", action="store_true", help="Enable legacy Gradio tag editor (port 28001)")
-parser.add_argument("--disable-auto-mirror", action="store_true")
 parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
 parser.add_argument("--tensorboard-port", type=int, default=6006)
 parser.add_argument("--localization", type=str)
@@ -125,7 +124,7 @@ def launch():
     log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
 
     if not args.skip_prepare_environment:
-        prepare_environment(disable_auto_mirror=args.disable_auto_mirror)
+        prepare_environment()
 
     if not check_port_avaliable(args.port):
         avaliable = find_avaliable_ports(30000, 30000 + 20)
