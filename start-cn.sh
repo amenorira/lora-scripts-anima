@@ -94,6 +94,8 @@ do_install() {
     echo ""
 
     export PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+    export PIP_DISABLE_PIP_VERSION_CHECK=1
+    export PIP_PREFER_BINARY=1
 
     if [ ! -d "venv" ]; then
         echo "Creating venv..."
@@ -103,7 +105,20 @@ do_install() {
     source "venv/bin/activate"
     export HF_HOME=huggingface
 
-    echo "[1/3] Installing PyTorch 2.10.0 + CUDA 12.8..."
+    echo "Upgrading pip..."
+    pip install --upgrade pip -q 2>/dev/null || echo "  [WARN] pip upgrade failed, continuing..."
+
+    # Detect Python + platform tag for direct wheel URL
+    WHEEL_TAG=$(python -c "
+import sys
+py = f'cp{sys.version_info.major}{sys.version_info.minor}'
+plat = 'win_amd64' if sys.platform == 'win32' else 'linux_x86_64'
+print(f'{py}-{py}-{plat}')
+")
+    TORCH_URL="https://mirrors.aliyun.com/pytorch-wheels/cu128/torch-2.10.0%2Bcu128-${WHEEL_TAG}.whl"
+    TV_URL="https://mirrors.aliyun.com/pytorch-wheels/cu128/torchvision-0.25.0%2Bcu128-${WHEEL_TAG}.whl"
+
+    echo "[1/3] Installing PyTorch 2.10.0 + CUDA 12.8 (direct wheel)..."
     CUDA_VER=$(nvidia-smi 2>/dev/null | grep -oiP 'CUDA Version: \K[\d\.]+' || echo "")
     if [ -z "$CUDA_VER" ]; then
         CUDA_VER=$(nvcc --version 2>/dev/null | grep -oiP 'release \K[\d\.]+' || echo "")
@@ -112,14 +127,16 @@ do_install() {
 
     if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -ge 12 ]; then
         echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.10.0+cu128..."
-        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
+        pip install "$TORCH_URL" "$TV_URL"
     elif [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -eq 11 ]; then
         echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.4.0+cu118..."
-        pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 -f https://mirrors.aliyun.com/pytorch-wheels/cu118/
+        TORCH_URL="https://mirrors.aliyun.com/pytorch-wheels/cu118/torch-2.4.0%2Bcu118-${WHEEL_TAG}.whl"
+        TV_URL="https://mirrors.aliyun.com/pytorch-wheels/cu118/torchvision-0.19.0%2Bcu118-${WHEEL_TAG}.whl"
+        pip install "$TORCH_URL" "$TV_URL"
         pip install --no-deps xformers==0.0.27.post2+cu118 -f https://mirrors.aliyun.com/pytorch-wheels/cu118/
     else
         echo "  No CUDA detected or unsupported. Installing PyTorch 2.10.0+cu128..."
-        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
+        pip install "$TORCH_URL" "$TV_URL"
     fi
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 

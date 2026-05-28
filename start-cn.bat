@@ -86,8 +86,10 @@ echo [Install] Starting installation (Aliyun mirrors)...
 echo   mirrors.aliyun.com
 echo.
 
-REM Set Aliyun mirrors
+REM Set Aliyun mirrors + speed optimizations
 set PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+set PIP_DISABLE_PIP_VERSION_CHECK=1
+set PIP_PREFER_BINARY=1
 
 if not exist "venv\Scripts\python.exe" (
     echo Creating venv...
@@ -95,8 +97,18 @@ if not exist "venv\Scripts\python.exe" (
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
 )
 
-echo [1/3] Installing PyTorch 2.10.0 + CUDA 12.8...
-venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
+REM Upgrade pip for faster downloads
+echo Upgrading pip...
+venv\Scripts\python.exe -m pip install --upgrade pip -q
+if !errorlevel! neq 0 (echo [WARN] pip upgrade failed, continuing...)
+
+REM Detect Python tag for direct wheel URL
+for /f "tokens=*" %%v in ('venv\Scripts\python.exe -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')"') do set _PYTAG=%%v
+set _TORCH_URL=https://mirrors.aliyun.com/pytorch-wheels/cu128/torch-2.10.0%%2Bcu128-!_PYTAG!-!_PYTAG!-win_amd64.whl
+set _TV_URL=https://mirrors.aliyun.com/pytorch-wheels/cu128/torchvision-0.25.0%%2Bcu128-!_PYTAG!-!_PYTAG!-win_amd64.whl
+
+echo [1/3] Installing PyTorch 2.10.0 + CUDA 12.8 (direct wheel)...
+venv\Scripts\python.exe -m pip install "!_TORCH_URL!" "!_TV_URL!"
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
