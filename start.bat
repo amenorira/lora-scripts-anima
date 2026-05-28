@@ -130,7 +130,14 @@ if !errorlevel! neq 0 (
 )
 
 venv\Scripts\python.exe tools\check_deps.py 2>nul
-if !errorlevel! neq 0 echo [Notice] Dependencies may be incomplete.
+if !errorlevel! neq 0 (
+    echo.
+    echo [Notice] Dependencies are incomplete.
+    echo    1. Launch anyway
+    echo    2. Repair dependencies
+    set /p _CHOICE="Enter option (1/2): "
+    if "!_CHOICE!"=="2" goto :install
+)
 
 venv\Scripts\python.exe -c "import flash_attn; print('[flash_attn] OK')" 2>nul
 if !errorlevel! neq 0 echo [flash_attn] NOT FOUND. Run install-flash-attn.bat

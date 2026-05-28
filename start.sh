@@ -179,7 +179,19 @@ echo "[Launch] Starting..."
 export HF_HOME=huggingface
 export PYTHONUTF8=1
 
-python tools/check_deps.py 2>/dev/null || echo "[Notice] Dependencies may be incomplete. Re-run start.sh to install."
+if python tools/check_deps.py 2>/dev/null; then
+        :
+    else
+        echo ""
+        echo "[Notice] Dependencies are incomplete."
+        echo "   1. Launch anyway"
+        echo "   2. Repair dependencies"
+        echo ""
+        read -r -p "Enter option (1/2): " CHOICE
+        if [ "$CHOICE" = "2" ]; then
+            do_install
+        fi
+    fi
 echo ""
 
 if FA_VER=$(python -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
