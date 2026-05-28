@@ -1,6 +1,6 @@
 /* ================================================================
    lora-scripts-anima UI — I18n System v3
-   Preloads ALL locale JSON files synchronously at script execution
+   Loads ALL locale JSON files synchronously at script execution
    time (before Alpine boots), so t() always has data available.
    To add a new language: drop a JSON file in i18n/ and add its
    code to the LOCALES array below.
@@ -15,21 +15,33 @@ const I18N = (() => {
   let _messages = null;
   const _cache = {};  // locale → messages (all preloaded)
 
-  // ── Preload ALL locales asynchronously ──────────────────
-  (async function preloadAll() {
-    const results = await Promise.allSettled(
-      LOCALES.map(async loc => {
-        const r = await fetch('/anima-ui/i18n/' + loc + '.json');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        _cache[loc] = await r.json();
-      })
-    );
-    results.forEach((res, i) => {
-      if (res.status === 'rejected') {
-        console.warn('[i18n] Failed to preload locale: ' + LOCALES[i], res.reason);
-      }
-    });
-  })();
+  // ── Synchronous JSON loader (blocks until data is ready) ─
+  function _loadJSON(url) {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, false);  // false = synchronous
+    try {
+      xhr.send();
+    } catch (e) {
+      throw new Error('Network error loading ' + url + ': ' + e.message);
+    }
+    if (xhr.status < 200 || xhr.status >= 300) {
+      throw new Error('HTTP ' + xhr.status + ' loading ' + url);
+    }
+    try {
+      return JSON.parse(xhr.responseText);
+    } catch (e) {
+      throw new Error('Invalid JSON in ' + url + ': ' + e.message);
+    }
+  }
+
+  // ── Preload ALL locales synchronously ────────────────────
+  LOCALES.forEach(function(loc) {
+    try {
+      _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json');
+    } catch (e) {
+      console.warn('[i18n] Failed to preload locale: ' + loc, e);
+    }
+  });
 
   /**
    * Detect browser language from navigator.language.
@@ -43,7 +55,7 @@ const I18N = (() => {
   }
 
   /**
-   * Initialize I18N. Synchronous — call once, no await needed.
+   * Initialize I18N. Synchronous — data already loaded, no await needed.
    * Priority: explicit arg > localStorage > browser language > 'en-US'
    */
   function init(locale) {

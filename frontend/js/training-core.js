@@ -223,7 +223,7 @@ window.trainingCoreMixin = {
       }
     }
 
-    return `<div class="field${condClass}" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>`
+    return `<div class="field${condClass}" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
       <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}${readonlyWarnHtml}</div>
       <div class="field-right">${inputHtml}${actionsHtml}</div>
     </div>`;

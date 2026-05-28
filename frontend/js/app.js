@@ -49,6 +49,10 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────
     async init() {
+      // Initialize I18N first — must be ready before any t() call
+      I18N.init();
+      this.locale = I18N.getLocale();
+
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
       this.currentRoute = route;
@@ -59,17 +63,17 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const r = await fetch('/api/version');
-        if (!r.ok) { this.version = 'dev'; return; }
-        const d = await r.json();
-        if (d.status === 'success' && d.data && d.data.version) this.version = d.data.version;
-        else this.version = 'dev';
+        if (r.ok) {
+          const d = await r.json();
+          if (d.status === 'success' && d.data && d.data.version) this.version = d.data.version;
+          else this.version = 'dev';
+        } else {
+          this.version = 'dev';
+        }
       } catch (e) { this.version = 'dev'; }
 
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();
-
-      I18N.init();
-      this.locale = I18N.getLocale();
 
       this.loadUISettings();
 
