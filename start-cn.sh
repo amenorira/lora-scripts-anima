@@ -112,14 +112,14 @@ do_install() {
 
     if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -ge 12 ]; then
         echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.10.0+cu128..."
-        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://mirrors.aliyun.com/pytorch-wheels/cu128
+        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
     elif [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -eq 11 ]; then
         echo "  Detected CUDA $CUDA_VER, installing PyTorch 2.4.0+cu118..."
-        pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 --index-url https://mirrors.aliyun.com/pytorch-wheels/cu118
-        pip install --no-deps xformers==0.0.27.post2+cu118 --index-url https://mirrors.aliyun.com/pytorch-wheels/cu118
+        pip install torch==2.4.0+cu118 torchvision==0.19.0+cu118 -f https://mirrors.aliyun.com/pytorch-wheels/cu118/
+        pip install --no-deps xformers==0.0.27.post2+cu118 -f https://mirrors.aliyun.com/pytorch-wheels/cu118/
     else
         echo "  No CUDA detected or unsupported. Installing PyTorch 2.10.0+cu128..."
-        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://mirrors.aliyun.com/pytorch-wheels/cu128
+        pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
     fi
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 

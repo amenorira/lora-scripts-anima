@@ -96,7 +96,7 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 echo [1/3] Installing PyTorch 2.10.0 + CUDA 12.8...
-venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://mirrors.aliyun.com/pytorch-wheels/cu128
+venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
