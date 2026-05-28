@@ -129,6 +129,8 @@
     "min_snr_gamma": "最小信噪比伽马值。如果启用推荐为 5",
     "weight_decay": "权重衰减。推荐 0.01~0.1，留空则不启用",
     "weight_decayHint": "推荐 0.01~0.1。将合并进 optimizer_args。",
+    "stopcoef": "收敛灵敏度 (stopcoef)",
+    "stopcoefHint": "EmoSens 早停判定阈值。越低越早触发 [READY TO STOP] 通知。官方默认 0.04。",
     "prodigy_d_coef": "Prodigy 优化器 d_coef 参数",
     "prodigy_d0": "Prodigy 优化器 d0 参数（初始 D 估计值，留空使用默认）",
     "optimizer_args_custom": "自定义优化器参数（多行）",

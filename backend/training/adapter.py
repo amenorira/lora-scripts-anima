@@ -274,6 +274,13 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             warnings.append(
                 "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"
             )
+        # weight_decay 安全网：EmoSens 官方默认 0.01
+        wd = source.get("weight_decay")
+        if wd is None or wd == "":
+            source["weight_decay"] = 0.01
+            warnings.append(
+                "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
+            )
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告

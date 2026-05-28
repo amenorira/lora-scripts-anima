@@ -60,40 +60,63 @@ if sys.platform == "win32":
 atexit.register(_cleanup_subprocesses)
 
 
-@catch_exception
 def run_tensorboard():
     log.info("Starting tensorboard / 正在启动 TensorBoard...")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
-         "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    _subprocesses.append((proc, "TensorBoard"))
-    log.info(
-        "TensorBoard started at http://%s:%s/ / TensorBoard 已启动",
-        args.tensorboard_host, args.tensorboard_port,
-    )
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
+             "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # 检查进程是否立即崩溃
+        import time as _time
+        _time.sleep(0.5)
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"TensorBoard exited immediately with code {proc.returncode}. "
+                f"Check if tensorboard is installed or port {args.tensorboard_port} is available."
+            )
+        _subprocesses.append((proc, "TensorBoard"))
+        log.info(
+            "TensorBoard started at http://%s:%s/ / TensorBoard 已启动",
+            args.tensorboard_host, args.tensorboard_port,
+        )
+    except Exception as e:
+        log.error(f"TensorBoard failed to start: {e}")
+        # 不静默吞掉异常，让用户感知
+        raise
 
 
-@catch_exception
 def run_tag_editor():
     log.info("Starting tageditor / 正在启动标签编辑器...")
-    cmd = [
-        sys.executable,
-        base_dir_path() / "vendor/dataset-tag-editor/scripts/launch.py",
-        "--port", "28001",
-        "--shadow-gradio-output",
-        "--root-path", "/proxy/tageditor"
-    ]
-    if args.localization:
-        cmd.extend(["--localization", args.localization])
-    else:
-        l = locale.getdefaultlocale()[0]
-        if l and l.startswith("zh"):
-            cmd.extend(["--localization", "zh-Hans"])
-    proc = subprocess.Popen(cmd)
-    _subprocesses.append((proc, "tag editor"))
+    try:
+        cmd = [
+            sys.executable,
+            base_dir_path() / "vendor/dataset-tag-editor/scripts/launch.py",
+            "--port", "28001",
+            "--shadow-gradio-output",
+            "--root-path", "/proxy/tageditor"
+        ]
+        if args.localization:
+            cmd.extend(["--localization", args.localization])
+        else:
+            l = locale.getdefaultlocale()[0]
+            if l and l.startswith("zh"):
+                cmd.extend(["--localization", "zh-Hans"])
+        proc = subprocess.Popen(cmd)
+        # 检查进程是否立即崩溃
+        import time as _time
+        _time.sleep(0.5)
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"Tag editor exited immediately with code {proc.returncode}. "
+                f"Check if dependencies are installed."
+            )
+        _subprocesses.append((proc, "tag editor"))
+    except Exception as e:
+        log.error(f"Tag editor failed to start: {e}")
+        raise
 
 
 def launch():

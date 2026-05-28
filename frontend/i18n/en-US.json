@@ -129,6 +129,8 @@
     "min_snr_gamma": "Minimum SNR gamma. Recommended: 5 if enabled.",
     "weight_decay": "Weight decay. Recommended 0.01~0.1. Leave empty to disable.",
     "weight_decayHint": "Recommended 0.01~0.1",
+    "stopcoef": "Convergence Sensitivity (stopcoef)",
+    "stopcoefHint": "EmoSens early-stop threshold. Lower = earlier [READY TO STOP] notification. Official default: 0.04.",
     "prodigy_d_coef": "Prodigy optimizer d_coef parameter",
     "prodigy_d0": "Prodigy optimizer d0 parameter (initial D estimate)",
     "optimizer_args_custom": "Custom Optimizer Arguments (multi-line)",

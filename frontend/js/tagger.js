@@ -79,8 +79,12 @@ window.taggerMixin = {
     if (!path) { this.toast(this.t('common.specifyDir')); return; }
     this.taggerRunning = true; document.getElementById('tagger-stop-btn').disabled = false;
     const out = document.getElementById('tagger-output'); out.style.display='block'; out.textContent=this.t('tagger.running');
+    // 30 秒请求超时
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const r = await fetch('/api/interrogate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,interrogator_model:model,threshold,character_threshold:charThreshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:conflictAction,add_rating_tag:document.getElementById('tagger-add-rating')?.checked||false,add_model_tag:document.getElementById('tagger-add-model')?.checked||false,escape_tag:document.getElementById('tagger-escape-tag')?.checked||false,batch_remove_duplicated_tag:removeDup,sort_by_alphabetical_order:false,add_confident_as_weight:false,replace_underscore_excludes:'',batch_output_dir:'',batch_output_filename_format:'[name].[output_extension]',batch_output_save_json:false,unload_model_after_running:false})});
+      const r = await fetch('/api/interrogate',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctrl.signal,body:JSON.stringify({path,interrogator_model:model,threshold,character_threshold:charThreshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:conflictAction,add_rating_tag:document.getElementById('tagger-add-rating')?.checked||false,add_model_tag:document.getElementById('tagger-add-model')?.checked||false,escape_tag:document.getElementById('tagger-escape-tag')?.checked||false,batch_remove_duplicated_tag:removeDup,sort_by_alphabetical_order:false,add_confident_as_weight:false,replace_underscore_excludes:'',batch_output_dir:'',batch_output_filename_format:'[name].[output_extension]',batch_output_save_json:false,unload_model_after_running:false})});
+      clearTimeout(timeout);
       const d = await r.json();
       if (d.status === 'success' && d.data && d.data.task_id) {
         this.pollTaggerProgress(d.data.task_id);
@@ -89,7 +93,12 @@ window.taggerMixin = {
         this.toast(d.message||this.t('common.failed'));
         this.taggerRunning = false; document.getElementById('tagger-stop-btn').disabled = true;
       }
-    } catch(e) { out.textContent='Error: '+e.message; this.toast(this.t('common.failed')+': '+e.message); this.taggerRunning=false; document.getElementById('tagger-stop-btn').disabled=true; }
+    } catch(e) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') { out.textContent='Error: Request timeout'; this.toast(this.t('common.failed')+': Timeout'); }
+      else { out.textContent='Error: '+e.message; this.toast(this.t('common.failed')+': '+e.message); }
+      this.taggerRunning=false; document.getElementById('tagger-stop-btn').disabled=true;
+    }
   },
 
   async pollTaggerProgress(taskId) {

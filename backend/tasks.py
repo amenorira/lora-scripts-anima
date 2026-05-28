@@ -26,6 +26,8 @@ except ModuleNotFoundError:
 
 # 已完成任务最大保留数（超出后自动清理最旧的）
 _MAX_FINISHED_TASKS = 20
+# 已完成任务最大保留时间（秒），超过此时间的任务自动清理
+_MAX_TASK_AGE = 3600
 
 
 def kill_proc_tree(pid: int, including_parent: bool = True) -> None:
@@ -125,17 +127,28 @@ class TaskManager:
         self._lock = threading.Lock()
 
     def _cleanup_finished(self) -> None:
-        """清理超出上限的已完成/已终止任务"""
+        """清理超时的已完成/已终止任务，以及超出数量上限的任务"""
+        now = time.time()
+        to_remove = []
         finished = [
             (tid, t) for tid, t in self.tasks.items()
             if t.status in (TaskStatus.FINISHED, TaskStatus.TERMINATED)
         ]
-        if len(finished) <= _MAX_FINISHED_TASKS:
-            return
-        # 按完成时间排序，保留最新的
-        finished.sort(key=lambda x: x[1].finished_at or x[1].created_at)
-        to_remove = finished[:len(finished) - _MAX_FINISHED_TASKS]
-        for tid, _ in to_remove:
+        # 先按时间过期清理
+        for tid, t in finished:
+            age = now - (t.finished_at or t.created_at)
+            if age > _MAX_TASK_AGE:
+                to_remove.append(tid)
+        # 如果仍然超出数量上限，再按数量清理最旧的
+        remaining_finished = [
+            (tid, t) for tid, t in finished if tid not in to_remove
+        ]
+        if len(remaining_finished) > _MAX_FINISHED_TASKS:
+            remaining_finished.sort(key=lambda x: x[1].finished_at or x[1].created_at)
+            overflow = remaining_finished[:len(remaining_finished) - _MAX_FINISHED_TASKS]
+            for tid, _ in overflow:
+                to_remove.append(tid)
+        for tid in to_remove:
             del self.tasks[tid]
             log.debug(f"Cleaned up finished task / 清理已完成任务: {tid[:8]}")
 

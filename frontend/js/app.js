@@ -59,8 +59,9 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const r = await fetch('/api/version');
+        if (!r.ok) { this.version = 'dev'; return; }
         const d = await r.json();
-        if (d.status === 'success') this.version = d.data.version;
+        if (d.status === 'success' && d.data && d.data.version) this.version = d.data.version;
         else this.version = 'dev';
       } catch (e) { this.version = 'dev'; }
 

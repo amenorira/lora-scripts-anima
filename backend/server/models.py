@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Union, Dict, Any
+from pathlib import Path
 
 
 class TaggerInterrogateRequest(BaseModel):
@@ -29,6 +30,19 @@ class TaggerInterrogateRequest(BaseModel):
     replace_underscore_excludes: str = Field(
         default="0_0, (o)_(o), +_+, +_-, ._., <o>_<o>, <|>_<|>, =_=, >_<, 3_3, 6_9, >_o, @_@, ^_^, o_o, u_u, x_x, |_|, ||_||"
     )
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """防止路径遍历攻击"""
+        try:
+            p = Path(v).resolve()
+        except (ValueError, OSError):
+            raise ValueError(f"Invalid path: {v}")
+        # 确保路径不为空且在合理的文件系统范围内
+        if not str(p) or p == p.root:
+            raise ValueError(f"Path must not be filesystem root: {v}")
+        return v
 
 
 class APIResponse(BaseModel):

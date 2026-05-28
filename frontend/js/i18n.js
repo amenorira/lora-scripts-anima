@@ -15,18 +15,18 @@ const I18N = (() => {
   let _messages = null;
   const _cache = {};  // locale → messages (all preloaded)
 
-  // ── Preload ALL locales synchronously on script execution ─
-  (function preloadAll() {
-    LOCALES.forEach(loc => {
-      try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', '/anima-ui/i18n/' + loc + '.json', false); // sync
-        xhr.send();
-        if (xhr.status === 200) {
-          _cache[loc] = JSON.parse(xhr.responseText);
-        }
-      } catch (e) {
-        console.warn('[i18n] Failed to preload locale: ' + loc, e);
+  // ── Preload ALL locales asynchronously ──────────────────
+  (async function preloadAll() {
+    const results = await Promise.allSettled(
+      LOCALES.map(async loc => {
+        const r = await fetch('/anima-ui/i18n/' + loc + '.json');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        _cache[loc] = await r.json();
+      })
+    );
+    results.forEach((res, i) => {
+      if (res.status === 'rejected') {
+        console.warn('[i18n] Failed to preload locale: ' + LOCALES[i], res.reason);
       }
     });
   })();

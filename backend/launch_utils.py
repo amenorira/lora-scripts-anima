@@ -348,7 +348,7 @@ def check_port_avaliable(port: int):
         s.bind(("127.0.0.1", port))
         s.close()
         return True
-    except:
+    except (OSError, socket.error):
         return False
 
 

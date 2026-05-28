@@ -14,6 +14,7 @@ import toml
 from fastapi import APIRouter, BackgroundTasks, Body, Request
 from starlette.requests import Request
 
+from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT, TOOLS_DIR
 from backend import launch_utils
 from backend.server.config import app_config
 from backend.server.models import (APIResponse, APIResponseFail,
@@ -37,7 +38,7 @@ def _git_version() -> str:
         import subprocess
         r = subprocess.run(["git", "describe", "--tags", "--always"],
                           capture_output=True, text=True,
-                          cwd=Path(__file__).parents[2])
+                          cwd=str(REPO_ROOT))
         return r.stdout.strip() or "dev"
     except Exception:
         return "dev"
@@ -231,8 +232,8 @@ from uuid import uuid4 as _install_uuid
 
 _install_jobs: dict[str, dict] = {}
 
-def _start_install_job(cmd: list[str]) -> str:
-    """启动后台 pip install，输出写入临时日志文件。返回 job_id。"""
+def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
+    """启动后台 pip install，输出写入临时日志文件。失败时自动重试（指数退避）。返回 job_id。"""
     job_id = _install_uuid().hex[:12]
     log_f = _install_tmp.NamedTemporaryFile(
         delete=False, suffix=".log", prefix="anima_install_",
@@ -245,18 +246,34 @@ def _start_install_job(cmd: list[str]) -> str:
     }
 
     def _run():
-        try:
-            proc = _install_sp.Popen(
-                cmd, stdout=log_f, stderr=_install_sp.STDOUT, text=True,
-            )
-            proc.wait()
-            _install_jobs[job_id]["returncode"] = proc.returncode
-        except Exception as e:
-            log_f.write(f"\n[ERROR] {e}\n")
-            _install_jobs[job_id]["returncode"] = -1
-        finally:
-            _install_jobs[job_id]["done"] = True
-            log_f.close()
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    log_f.write(f"\n[RETRY] Attempt {attempt + 1}/{max_retries + 1}...\n")
+                    log_f.flush()
+                proc = _install_sp.Popen(
+                    cmd, stdout=log_f, stderr=_install_sp.STDOUT, text=True,
+                )
+                proc.wait()
+                if proc.returncode == 0:
+                    _install_jobs[job_id]["returncode"] = 0
+                    break
+                if attempt < max_retries:
+                    wait_sec = 2 ** attempt
+                    log_f.write(f"\n[RETRY] Failed with code {proc.returncode}, retrying in {wait_sec}s...\n")
+                    log_f.flush()
+                    _install_time.sleep(wait_sec)
+                else:
+                    _install_jobs[job_id]["returncode"] = proc.returncode
+            except Exception as e:
+                log_f.write(f"\n[ERROR] {e}\n")
+                log_f.flush()
+                if attempt < max_retries:
+                    _install_time.sleep(2 ** attempt)
+                else:
+                    _install_jobs[job_id]["returncode"] = -1
+        _install_jobs[job_id]["done"] = True
+        log_f.close()
 
     _install_thr.Thread(target=_run, daemon=True).start()
     return job_id
@@ -288,6 +305,7 @@ async def install_log(job_id: str, tail: int = 20) -> dict:
 # ═══════════════════════════════════════════════════════════
 
 _fa_cache: dict[str, dict] = {}  # key: source name → {candidates, fetch_error, from_disk, ts}
+_fa_cache_lock = __import__('threading').Lock()
 _FA_CACHE_TTL = 300  # 5 分钟，避免频繁请求 GitHub API 触发限流
 
 
@@ -295,7 +313,7 @@ def _import_flash_attn_tool():
     """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。"""
     import importlib.util
     import sys
-    _root = Path(__file__).parents[2]
+    _root = REPO_ROOT
     _path = _root / "tools" / "install_flash_attn.py"
     if not _path.exists():
         raise ImportError(f"install_flash_attn.py not found at {_path}")
@@ -326,8 +344,13 @@ async def flash_attn_status(source: str = "") -> dict:
         env = detect_env()
         now = time.time()
         cache_key = source or "default"
-        cached = _fa_cache.get(cache_key)
-        if cached is None or (now - cached.get("ts", 0)) > _FA_CACHE_TTL:
+
+        # 线程安全地读取缓存
+        with _fa_cache_lock:
+            cached = _fa_cache.get(cache_key)
+            cache_expired = cached is None or (now - cached.get("ts", 0)) > _FA_CACHE_TTL
+
+        if cache_expired:
             candidates, fetch_error = fetch_candidates(env)
             from_disk = False
             # 检测是否来自磁盘缓存（fetch_error 中包含 "回退磁盘缓存" 字样）
@@ -337,11 +360,15 @@ async def flash_attn_status(source: str = "") -> dict:
                 {"url": c["url"], "name": c["name"], "notes": c.get("notes", c["notes"]) if isinstance(c, dict) else [], "usable": c["usable"]}
                 for c in candidates[:20]
             ]
-            _fa_cache[cache_key] = {
-                "candidates": slim, "fetch_error": fetch_error,
-                "from_disk": from_disk, "ts": now
-            }
-        c = _fa_cache[cache_key]
+            # 线程安全地写入缓存
+            with _fa_cache_lock:
+                _fa_cache[cache_key] = {
+                    "candidates": slim, "fetch_error": fetch_error,
+                    "from_disk": from_disk, "ts": now
+                }
+
+        with _fa_cache_lock:
+            c = _fa_cache[cache_key].copy()
         token_set = bool(
             _os.environ.get("FA_GITHUB_TOKEN") or _os.environ.get("GITHUB_TOKEN")
         )
@@ -478,9 +505,9 @@ def _read_sd_scripts_version() -> dict:
     
     返回 dict 含 version_source 字段标识数据来源。
     """
-    root = Path(__file__).parents[2]
-    sd_root = root / "vendor" / "sd-scripts"
-    track_file = root / "vendor" / ".sd-scripts-version"
+    root = REPO_ROOT
+    sd_root = SD_SCRIPTS_DIR
+    track_file = VENDOR_ROOT / ".sd-scripts-version"
     
     info: dict = {
         "local_commit": None,

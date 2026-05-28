@@ -44,4 +44,7 @@ class Config:
         self._stored[key] = value
 
 
-app_config = Config(Path(__file__).parents[2].absolute() / "assets" / "config.json")
+from backend.constants import REPO_ROOT
+
+
+app_config = Config(REPO_ROOT / "assets" / "config.json")

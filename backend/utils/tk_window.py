@@ -35,7 +35,7 @@ def open_file_selector(
         )
         last_dir = os.path.dirname(filename)
         return filename
-    except:
+    except (OSError, RuntimeError, TypeError):
         return ""
 
 
@@ -52,5 +52,5 @@ def open_directory_selector(initialdir) -> str:
         )
         last_dir = directory
         return directory
-    except:
+    except (OSError, RuntimeError, TypeError):
         return ""

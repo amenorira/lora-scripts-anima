@@ -60,7 +60,7 @@ window.trainingTomlMixin = {
       // Skip preview-only UI fields and merged optimizer fields
       if (['enable_preview','positive_prompts','negative_prompts',
            'sample_cfg','sample_width','sample_height','sample_seed','sample_steps'].includes(k)) continue;
-      if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay') continue;
+      if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay' || k === 'stopcoef') continue;
 
       if (typeof v === 'boolean') { lines.push(`${k} = ${v}`); }
       else if (typeof v === 'number') lines.push(`${k} = ${v}`);
@@ -110,6 +110,11 @@ window.trainingTomlMixin = {
     if (this.form.optimizer_type === 'Prodigy' || this.form.optimizer_type === 'prodigyplus.ProdigyPlusScheduleFree') {
       if (this.form.prodigy_d_coef && this.form.prodigy_d_coef !== '2.0') optArgsArr.push(`d_coef=${this.form.prodigy_d_coef}`);
       if (this.form.prodigy_d0) optArgsArr.push(`d0=${this.form.prodigy_d0}`);
+    }
+    if (this.form.optimizer_type === 'vendor.emo_optimizer.emosens.EmoSens') {
+      if (this.form.stopcoef !== undefined && this.form.stopcoef !== null && this.form.stopcoef !== '') {
+        optArgsArr.push('stopcoef=' + this.form.stopcoef);
+      }
     }
     if (optArgsArr.length > 0) {
       const quoted = optArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');

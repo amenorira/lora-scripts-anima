@@ -12,6 +12,7 @@ window.monitorCoreMixin = {
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
   chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
   _monitorAbortCtrl: null,
+  _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
 
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
@@ -32,10 +33,15 @@ window.monitorCoreMixin = {
     // Abort previous in-flight request to prevent stale data overwriting fresh data
     if (this._monitorAbortCtrl) this._monitorAbortCtrl.abort();
     this._monitorAbortCtrl = new AbortController();
+    // 递增请求序列号，用于丢弃过期响应
+    const seq = ++this._monitorRequestSeq;
     try {
       const tid = this.taskId || '';
       const r = await fetch('/api/monitor/status?task_id='+encodeURIComponent(tid), { signal: this._monitorAbortCtrl.signal });
+      if (!r.ok) return;
       const j = await r.json();
+      // 丢弃过期响应（序列号不匹配说明有更新的请求已发出）
+      if (seq !== this._monitorRequestSeq) return;
       if (j.status==='success') {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
         // 仅在实时模式下更新图表/日志数据（历史模式由 viewRunDetail 管理）

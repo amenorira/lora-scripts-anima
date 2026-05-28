@@ -18,6 +18,7 @@ from typing import Optional
 
 from backend.log import log
 from backend.tasks import tm
+from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
 
 
 def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int:
@@ -70,7 +71,7 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
     env["ANIMA_TASK_ID"] = task_id
 
     # 确保项目根目录在 Python path 中（支持 vendor.emo_optimizer 等自定义模块）
-    repo_root = str(Path(__file__).parents[2])
+    repo_root = str(REPO_ROOT)
     existing_pypath = env.get("PYTHONPATH", "")
     if repo_root not in existing_pypath.split(os.pathsep):
         env["PYTHONPATH"] = repo_root + (os.pathsep + existing_pypath if existing_pypath else "")
@@ -80,7 +81,7 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
 
 def _get_trainer_script(trainer_file: str) -> Path:
     """解析训练脚本路径"""
-    base = Path(__file__).parents[2]  # repo root
+    base = REPO_ROOT  # repo root
     script = base / trainer_file.lstrip("./")
     if not script.exists():
         raise FileNotFoundError(f"Training script not found / 训练脚本不存在: {script}")
@@ -102,38 +103,53 @@ def run_train(
     """
     script = _get_trainer_script(trainer_file)
 
+    # 默认 output 目录
+    od = output_dir or str(Path(toml_path).parent.parent / "output")
+
+    # ── 1. GPU 校验（在创建任务之前，避免无效 GPU 产生孤儿任务）──
+    validated_ids: list[int] = []
+    env_extra: dict = {}
+    if gpu_ids:
+        try:
+            import torch
+            device_count = torch.cuda.device_count()
+            validated_ids = [int(g) for g in gpu_ids]
+            if not all(0 <= g < device_count for g in validated_ids):
+                raise ValueError(f"GPU ID out of range (available: 0-{device_count - 1})")
+        except (ValueError, TypeError, ImportError) as e:
+            log.error(f"Invalid GPU IDs / GPU ID 无效: {gpu_ids} — {e}")
+            return {"status": "error", "message": f"Invalid GPU IDs: {gpu_ids}"}
+
+    if validated_ids:
+        env_extra = {"CUDA_VISIBLE_DEVICES": ",".join(str(g) for g in validated_ids)}
+        if len(validated_ids) > 1 and sys.platform == "win32":
+            env_extra["USE_LIBUV"] = "0"
+
+    # ── 2. 构建命令行参数 ──────────────────────────────
     args = [
         sys.executable, "-m", "accelerate.commands.launch",
         "--num_cpu_threads_per_process", str(cpu_threads),
         "--quiet",
-        str(script),
-        "--config_file", toml_path,
     ]
+    # 多 GPU 参数
+    if len(validated_ids) > 1:
+        args.extend(["--multi_gpu", "--num_processes", str(len(validated_ids))])
+        if sys.platform == "win32":
+            args.extend(["--rdzv_backend", "c10d"])
+    # 训练脚本 + 训练配置
+    args.append(str(script))
+    args.extend(["--config_file", toml_path])
 
     if extra_args:
         args.extend(extra_args)
 
-    # 默认 output 目录
-    od = output_dir or str(Path(toml_path).parent.parent / "output")
-
-    # 先创建任务获取 task_id，再构建完整 env（确保 ANIMA_TASK_ID 一开始就正确）
+    # ── 3. 创建任务（此时所有校验已通过）─────────────────
     task = tm.create_task(args, None)
     if not task:
         return {"status": "error", "message": "Failed to create task / 创建任务失败: max concurrency limit reached / 已达最大并发"}
 
     task_id = task.task_id
     task_id_short = task_id[:8]
-
-    # GPU 配置（先构建参数列表）
-    if gpu_ids:
-        env_extra = {"CUDA_VISIBLE_DEVICES": ",".join(str(g) for g in gpu_ids)}
-        if len(gpu_ids) > 1:
-            args[3:3] = ["--multi_gpu", "--num_processes", str(len(gpu_ids))]
-            if sys.platform == "win32":
-                env_extra["USE_LIBUV"] = "0"
-                args[3:3] = ["--rdzv_backend", "c10d"]
-    else:
-        env_extra = {}
 
     env = _build_train_env(output_dir=od, task_id=task_id)
     env.update(env_extra)

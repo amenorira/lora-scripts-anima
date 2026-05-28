@@ -1,4 +1,6 @@
 import logging
+import os
+from logging.handlers import RotatingFileHandler
 
 
 log = logging.getLogger('anima-trainer')
@@ -34,9 +36,20 @@ try:
         console=console,
     )
     rh.set_name(logging.INFO)
-    while log.hasHandlers() and len(log.handlers) > 0:
-        log.removeHandler(log.handlers[0])
+    log.handlers.clear()
     log.addHandler(rh)
+
+    # File log with rotation (10 MB × 5 backups)
+    os.makedirs('logs', exist_ok=True)
+    fh = RotatingFileHandler(
+        'logs/anima.log', maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8'
+    )
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    log.addHandler(fh)
 
 except ModuleNotFoundError:
     pass

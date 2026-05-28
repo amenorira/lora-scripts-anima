@@ -28,14 +28,16 @@ def check_torch_gpu():
         elif torch.version.hip:
             log.info(f'Torch backend: AMD ROCm HIP {torch.version.hip}')
 
-        devices = [torch.cuda.device(i) for i in range(torch.cuda.device_count())]
-
-        for pos, device in enumerate(devices):
-            name = torch.cuda.get_device_name(device)
-            memory = torch.cuda.get_device_properties(device).total_memory
+        device_count = torch.cuda.device_count()
+        for pos in range(device_count):
+            props = torch.cuda.get_device_properties(pos)
+            name = props.name
+            memory = props.total_memory
+            device = torch.cuda.device(pos)
             available_devices.append(device)
             printable_devices.append(f"GPU {pos}: {name} ({round(memory / (1024**3))} GB)")
             log.info(
-                f'Torch detected GPU: {name} VRAM {round(memory / 1024 / 1024)} Arch {torch.cuda.get_device_capability(device)} Cores {torch.cuda.get_device_properties(device).multi_processor_count}')
+                f'Torch detected GPU: {name} VRAM {round(memory / 1024 / 1024)} '
+                f'Arch {props.major}.{props.minor} Cores {props.multi_processor_count}')
     except Exception as e:
         log.error(f'Could not load torch: {e}')

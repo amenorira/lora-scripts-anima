@@ -10,7 +10,7 @@ window.trainingCoreMixin = {
   formHistory: [],
   formHistoryIdx: -1,
 
-  // File picker modal state
+  _formSaveTimer: null,
   showFilePickerModalFlag: false,
   _pickerKey: '',
   _pickerFiles: [],
@@ -73,7 +73,10 @@ window.trainingCoreMixin = {
 
     const self = this;
     this.$watch('form', () => {
-      try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
+      clearTimeout(self._formSaveTimer);
+      self._formSaveTimer = setTimeout(() => {
+        try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
+      }, 1000);
     });
 
     window.addEventListener('locale-changed', () => {
@@ -146,9 +149,11 @@ window.trainingCoreMixin = {
       }
       const hasGroups = !!(fc.groups && fc.groups.length);
       const hasOptionDescs = (fc.options || []).some(o => o.d) || (fc.groups || []).some(g => (g.options || []).some(o => o.d));
+      fc.hasOptionDescs = !!hasOptionDescs;
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
-      const menuHtml = `<div class="anima-select-menu" x-show="open" x-transition><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div><div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div></div>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${String(val ?? '').replace(/'/g, "\\'")}')" @click.outside="closeOnOutside()"><input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      const descPanelHtml = fc.hasOptionDescs ? `<div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>` : '';
+      const menuHtml = `<div class="anima-select-menu" x-show="open" x-transition><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()"><input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea x-model="form.${dataKey}" rows="3"></textarea>`;
     } else if (field.type === 'stepper') {
@@ -218,7 +223,7 @@ window.trainingCoreMixin = {
       }
     }
 
-    return `<div class="field${condClass}" data-field-row="${dataKey.replace(/'/g, "\\'")}"${condAttrs}${readonlyAttrs}>
+    return `<div class="field${condClass}" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>`
       <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}${readonlyWarnHtml}</div>
       <div class="field-right">${inputHtml}${actionsHtml}</div>
     </div>`;
@@ -464,6 +469,7 @@ window.trainingCoreMixin = {
   },
 
   esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
+  escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
   escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch (e) { return btoa('{"options":[]}'); } },
 
   setField(key, value) {

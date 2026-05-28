@@ -55,7 +55,11 @@ app.include_router(proxy_router)
 cors_config = os.environ.get("ANIMA_APP_CORS", "")
 if cors_config != "":
     if cors_config == "1":
-        cors_config = ["http://localhost:8004", "*"]
+        # 仅在开发模式下允许通配符 CORS
+        if os.environ.get("ANIMA_DEV") == "1":
+            cors_config = ["http://localhost:8004", "*"]
+        else:
+            cors_config = ["http://localhost:8004"]
     else:
         cors_config = cors_config.split(";")
     app.add_middleware(
