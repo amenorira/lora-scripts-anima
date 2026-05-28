@@ -18,7 +18,7 @@ done
 if $create_venv; then
     echo "Creating python venv..."
     python3 -m venv venv
-    source "$script_dir/venv/bin/activate"
+    . "$script_dir/venv/bin/activate"
     echo "active venv"
 fi
 

@@ -97,11 +97,11 @@ do_install() {
     if [ ! -d "venv" ]; then
         echo "Creating venv..."
         $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
-        source "venv/bin/activate"
+        . "venv/bin/activate"
         echo "Upgrading pip..."
         pip install --upgrade pip -q 2>/dev/null
     else
-        source "venv/bin/activate"
+        . "venv/bin/activate"
     fi
 
     export HF_HOME=huggingface
@@ -141,7 +141,7 @@ do_install() {
 #  Venv check with broken-venv detection
 # ============================================================
 if [ -f "venv/bin/activate" ]; then
-    source "venv/bin/activate"
+    . "venv/bin/activate"
     if python -c "import torch" 2>/dev/null; then
         # Venv has torch - OK to launch
         :

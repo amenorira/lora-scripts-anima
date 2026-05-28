@@ -31,7 +31,7 @@ fi
 echo "[Launch] Activating virtual environment..."
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-source "venv/bin/activate"
+. "venv/bin/activate"
 
 python tools/check_deps.py 2>/dev/null || echo "[Notice] Dependencies may have changed. Run: bash start.sh"
 echo ""

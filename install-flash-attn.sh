@@ -15,7 +15,7 @@ if [ ! -f "venv/bin/activate" ]; then
     exit 1
 fi
 
-source "venv/bin/activate"
+. "venv/bin/activate"
 
 # 委托给智能 Python 安装脚本
 echo "[启动] 运行智能 wheel 匹配安装..."
