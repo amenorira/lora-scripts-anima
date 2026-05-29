@@ -185,6 +185,9 @@ window.trainingTomlMixin = {
     for (const rule of MERGED_RULES) {
       const val = form[rule.form];
       if (val === undefined || val === null || val === '') continue;
+      // Skip fields whose showIf condition is not met (hidden fields)
+      const fieldDef = this.findFieldDef(rule.form);
+      if (fieldDef && fieldDef.showIf && !this._fieldShowIfMet(fieldDef)) continue;
       const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
       if (defVal !== undefined && defVal !== null && val == defVal) continue;
       const formatted = typeof val === 'boolean' ? String(val).toLowerCase() : String(val);

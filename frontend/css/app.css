@@ -697,17 +697,108 @@ input[type="checkbox"]:focus-visible {
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--text-tertiary);
 }
-/* ── Form Fields (one per row) ───────────────────────────── */
+/* ── Form Fields (vertical stacked layout) ───────────────── */
 .field {
-  display: flex; align-items: flex-start; gap: 14px;
-  padding: 7px 0;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 0 10px 10px;
+  border-left: 3px solid transparent;
+  transition: border-left-color 0.25s var(--ease-out);
 }
-.field + .field { border-top: 1px solid var(--border-default); padding-top: 11px; }
+.field + .field { border-top: 1px solid var(--border-default); padding-top: 12px; }
 
-/* Conditional fields — smooth expand/collapse on toggle
-   JS measures scrollHeight and sets inline max-height for accurate animation.
-   overflow is set to 'hidden' during animation by JS, restored to visible after.
-   CSS defines the transition curve; JS drives the start/end values. */
+/* ── Change indicator: amber left bar ────────────────────── */
+.field.field-changed {
+  border-left-color: #d97706;
+}
+[data-theme="dark"] .field.field-changed {
+  border-left-color: #f59e0b;
+}
+
+/* ── Field header row: param name + menu buttons ─────────── */
+.field-header {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 24px;
+}
+.field-key {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  color: var(--text-primary); line-height: 1.3;
+  letter-spacing: -0.1px;
+  cursor: pointer; user-select: all;
+  border-radius: 3px;
+  padding: 0 3px; margin: -1px -3px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.field-key:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.field-header-right {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Field body row: description + control ───────────────── */
+.field-body {
+  display: flex; align-items: center; gap: 14px;
+  min-height: 34px;
+}
+.field-desc {
+  flex: 1; min-width: 0;
+  font-size: 12px; color: var(--text-secondary); line-height: 1.45;
+}
+.field-control {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 5px;
+  min-width: 180px;
+  justify-content: flex-end;
+}
+/* Full-width input row for text/textarea/path fields */
+.field-input-row {
+  margin-top: 6px;
+  width: 100%;
+}
+.field-input-row textarea { width: 100%; }
+/* Toggle gets its own narrower column */
+.field-control .toggle { flex-shrink: 0; }
+
+/* Stepper: left-right clamp with number centered */
+.field-control .stepper {
+  flex-shrink: 0;
+}
+
+/* Select / text input inside field-control */
+.field-control .anima-select,
+.field-control input[type="text"],
+.field-control input[type="number"],
+.field-control textarea {
+  width: 100%;
+}
+
+/* Toggle inline with description */
+.field-body-toggle {
+  display: flex; align-items: center; gap: 14px;
+}
+.field-body-toggle .field-desc { flex: 1; }
+.field-body-toggle .toggle { flex-shrink: 0; }
+
+/* ── Field hint / readonly warning ───────────────────────── */
+.field-hint {
+  font-size: 11.5px; color: var(--text-tertiary); line-height: 1.4;
+  padding-top: 2px;
+}
+.field-readonly-warn {
+  font-size: 11.5px;
+  color: #d97706;
+  margin-top: 3px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+[data-theme="dark"] .field-readonly-warn {
+  color: #f59e0b;
+}
+
+/* ── Conditional fields — smooth expand/collapse ─────────── */
 .field-conditional {
   transition: max-height 0.35s var(--ease-out),
               opacity 0.25s var(--ease-out),
@@ -731,12 +822,108 @@ input[type="checkbox"]:focus-visible {
   pointer-events: none;
 }
 
+/* ── Nested child fields (tree indentation) ──────────────── */
+.field-nested {
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 2px dashed var(--border-default);
+}
+.field-nested.field-changed {
+  border-left-color: #d97706;
+  border-left-style: solid;
+}
+[data-theme="dark"] .field-nested.field-changed {
+  border-left-color: #f59e0b;
+}
+
+/* ── Menu button (square, 24×24) ─────────────────────────── */
+.btn-menu {
+  width: 24px; height: 24px; padding: 0;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+  position: relative;
+}
+.btn-menu:hover {
+  background: var(--hover-overlay);
+  color: var(--text-primary);
+}
+.btn-menu svg { width: 14px; height: 14px; }
+
+/* ── Menu popup ──────────────────────────────────────────── */
+.field-menu-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 165px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+}
+.field-menu-popup button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 10px;
+  border: none; background: none;
+  color: var(--text-primary); font-size: 12.5px;
+  font-family: inherit; cursor: pointer;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 0.1s ease;
+}
+.field-menu-popup button:hover {
+  background: var(--hover-overlay);
+}
+.field-menu-popup button svg {
+  width: 14px; height: 14px; flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* ── Input wrapper with embedded file buttons ────────────── */
+.field-input-wrap {
+  position: relative; width: 100%;
+}
+.field-input-wrap input[type="text"],
+.field-input-wrap input[type="number"] {
+  padding-right: 60px;
+}
+.field-input-wrap .field-input-actions {
+  position: absolute;
+  right: 2px; top: 50%;
+  transform: translateY(-50%);
+  display: flex; align-items: center; gap: 1px;
+}
+.field-input-wrap .field-input-actions .btn-icon {
+  width: 26px; height: 26px;
+}
+
+/* ── Field Readonly State ────────────────────────────────── */
+.field-readonly { opacity: 0.75; }
+.field-readonly input[type="text"],
+.field-readonly input[type="number"],
+.field-readonly textarea,
+.field-readonly select {
+  background: var(--bg-surface-raised) !important;
+  color: var(--text-tertiary) !important;
+  cursor: not-allowed !important;
+  border-color: var(--border-default) !important;
+}
+.field-readonly .stepper button { pointer-events: none; opacity: 0.4; }
+.field-readonly .field-actions .btn-icon { opacity: 0.3; pointer-events: none; }
+.field-readonly .field-input-wrap .field-input-actions .btn-icon { opacity: 0.3; pointer-events: none; }
+.field-readonly .btn-menu { opacity: 0.3; pointer-events: none; }
+
+/* ── Legacy field layout (settings, about, tagger pages) ── */
 .field-left { flex: 1; min-width: 0; padding-top: 1px; }
 .field-label { font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4; }
-.field-desc { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.4; }
-
 .field-right {
-  flex-shrink: 0; min-width: 240px; max-width: 400px;
+  flex-shrink: 0; min-width: 200px; max-width: 400px;
   display: flex; align-items: center; gap: 5px;
 }
 
@@ -896,40 +1083,8 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 .btn-icon:hover { background: var(--bg-surface-raised); color: var(--text-primary); }
 .btn-icon svg { width: 15px; height: 15px; }
 
-/* ── Field Actions ───────────────────────────────────────── */
+/* ── Field Actions (legacy, used by non-training forms) ──── */
 .field-actions { display: flex; gap: 1px; margin-left: 3px; flex-shrink: 0; }
-
-/* ── Field Readonly State ────────────────────────────────── */
-.field-readonly {
-  opacity: 0.75;
-}
-.field-readonly input[type="text"],
-.field-readonly input[type="number"],
-.field-readonly textarea,
-.field-readonly select {
-  background: var(--bg-surface-raised) !important;
-  color: var(--text-tertiary) !important;
-  cursor: not-allowed !important;
-  border-color: var(--border-default) !important;
-}
-.field-readonly .stepper button {
-  pointer-events: none;
-  opacity: 0.4;
-}
-.field-readonly .field-actions .btn-icon {
-  opacity: 0.3;
-  pointer-events: none;
-}
-.field-readonly-warn {
-  font-size: 11.5px;
-  color: #d97706;
-  margin-top: 3px;
-  line-height: 1.4;
-  font-weight: 500;
-}
-[data-theme="dark"] .field-readonly-warn {
-  color: #f59e0b;
-}
 
 /* ── Training Form — Flat Design (no card boxes) ─────────── */
 #trainFormContent .card {
@@ -957,11 +1112,11 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 /* Field rows: subtle background on hover */
 #trainFormContent .field {
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  padding: 10px 8px 10px 10px;
   margin: 0 -8px;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, border-left-color 0.25s var(--ease-out);
 }
-/* Restore conditional-field transitions overridden by #trainFormContent .field specificity */
+/* Restore conditional-field transitions */
 #trainFormContent .field-conditional {
   overflow: visible;
   transition: max-height 0.35s var(--ease-out),
@@ -978,6 +1133,12 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 #trainFormContent .field + .field {
   border-top: none;
+}
+/* Nested fields inside trainFormContent */
+#trainFormContent .field-nested {
+  margin-left: 14px;
+  padding-left: 12px;
+  margin-right: -8px;
 }
 
 /* ── Right Panel ─────────────────────────────────────────── */

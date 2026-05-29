@@ -53,12 +53,22 @@ window.trainingCoreMixin = {
 
     const defaults = {};
     const allSections = window.getVisibleSections(trainType);
-    allSections.forEach(s => { s.fields.forEach(f => { if (f.default !== undefined) defaults[f.key] = f.default; }); });
+    allSections.forEach(s => { s.fields.forEach(f => {
+      if (f.default !== undefined) {
+        defaults[f.key] = f.default;
+      } else if (!f.hidden) {
+        // Add sensible defaults for fields without explicit defaults
+        if (f.type === 'toggle') defaults[f.key] = false;
+        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = f.min || 0;
+        else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
+        else defaults[f.key] = '';
+      }
+    }); });
     defaults.model_train_type = trainType;
 
     this.form = { ...defaults, ...(saved || {}) };
-    this.formDefaults = { ...this.form };
-    this.formHistory = [this.formDefaults];
+    this.formDefaults = { ...defaults };
+    this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
 
     const tt = this.trainTypes.find(t => t.v === this.form.model_train_type);
@@ -124,9 +134,13 @@ window.trainingCoreMixin = {
     const label = this.t(field.descKey) || field.descKey || field.key;
     const hint = field.hintKey ? this.t(field.hintKey) : '';
     const dataKey = field.key;
-    let inputHtml = '';
+    const isToggle = field.type === 'toggle';
+    // Text/textarea/path fields get their input on a separate row (full-width)
+    const isFullWidth = field.type === 'textarea' || (field.role && field.role.startsWith('file-'));
 
-    if (field.type === 'toggle') {
+    // ── Generate input HTML ──
+    let inputHtml = '';
+    if (isToggle) {
       inputHtml = `<label class="toggle"><input type="checkbox" x-model="form.${dataKey}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
@@ -157,38 +171,43 @@ window.trainingCoreMixin = {
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea x-model="form.${dataKey}" rows="3"></textarea>`;
     } else if (field.type === 'stepper') {
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${field.step || 1})">-</button><input type="number" x-model.number="form.${dataKey}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}"><button type="button" @click="stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
+      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${field.step || 1})">−</button><input type="number" x-model.number="form.${dataKey}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}"><button type="button" @click="stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
     } else if (field.type === 'number') {
       inputHtml = `<input type="number" x-model.number="form.${dataKey}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}">`;
     } else {
-      // Text input: add dynamic placeholder for optimizer merged fields
-      const _optDefaults = {
-        betas: {
-          'AdamW':'0.9, 0.999','AdamW8bit':'0.9, 0.999','PagedAdamW8bit':'0.9, 0.999',
-          'Lion':'0.9, 0.99','Lion8bit':'0.9, 0.99','PagedLion8bit':'0.9, 0.99',
-          'pytorch_optimizer.CAME':'0.9, 0.999, 0.9999',
-          'vendor.emo_optimizer.emosens.EmoSens':'0.9, 0.995',
-        },
-        eps: {
-          'AdamW':'1e-8','AdamW8bit':'1e-8','PagedAdamW8bit':'1e-8',
-          'pytorch_optimizer.CAME':'1e-16',
-          'vendor.emo_optimizer.emosens.EmoSens':'1e-8',
-        },
+      // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
+      const _OPT_PH = {
+        betas: { 'AdamW':'0.9, 0.999','AdamW8bit':'0.9, 0.999','PagedAdamW8bit':'0.9, 0.999','Lion':'0.9, 0.99','Lion8bit':'0.9, 0.99','PagedLion8bit':'0.9, 0.99','pytorch_optimizer.CAME':'0.9, 0.999, 0.9999','vendor.emo_optimizer.emosens.EmoSens':'0.9, 0.995' },
+        eps: { 'AdamW':'1e-8','AdamW8bit':'1e-8','PagedAdamW8bit':'1e-8','pytorch_optimizer.CAME':'1e-16','vendor.emo_optimizer.emosens.EmoSens':'1e-8' },
         came_eps1: { 'pytorch_optimizer.CAME':'1e-30' },
         came_eps2: { 'pytorch_optimizer.CAME':'1e-16' },
       };
-      const _ph = _optDefaults[dataKey] ? (_optDefaults[dataKey][this.form.optimizer_type] || '') : '';
-      const _phAttr = _ph ? ` placeholder="${_ph}"` : '';
-      inputHtml = `<input type="text" x-model="form.${dataKey}"${_phAttr}>`;
+      const _phMap = _OPT_PH[dataKey];
+      if (_phMap) {
+        // Dynamic placeholder that updates when optimizer_type changes
+        const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
+        inputHtml = `<input type="text" x-model="form.${dataKey}" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
+      } else {
+        inputHtml = `<input type="text" x-model="form.${dataKey}">`;
+      }
     }
 
-    let actionsHtml = '';
+    // ── Embed file picker buttons inside input ──
+    let controlHtml = '';
     if (field.role && field.role.startsWith('file-')) {
-      actionsHtml = `<div class="field-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" title="Local picker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><button type="button" class="btn-icon" @click="undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button><button type="button" class="btn-icon" @click="resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button></div>`;
-    } else if (field.type === 'text' || field.type === 'number' || field.type === 'textarea') {
-      actionsHtml = `<div class="field-actions"><button type="button" class="btn-icon" @click="undoField('${dataKey}')" title="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button><button type="button" class="btn-icon" @click="resetField('${dataKey}')" title="Reset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button></div>`;
+      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" title="Local picker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
+    } else {
+      controlHtml = inputHtml;
     }
 
+    // ── Reset button + popup menu (in secondary layer) ──
+    const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+    const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
+    const _copySvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
+    const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button><button type="button" @click="copyFieldName('${dataKey}');_menuOpen=false">${_copySvg}<span>${this.t('common.copyParamName')}</span></button></div>`;
+
+    // ── Conditional display ──
     let condClass = '';
     let condAttrs = '';
     if (field.showIf) {
@@ -241,10 +260,43 @@ window.trainingCoreMixin = {
       }
     }
 
-    return `<div class="field${condClass}" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
-      <div class="field-left"><div class="field-label">${label}</div>${hint ? `<div class="field-desc">${hint}</div>` : ''}${readonlyWarnHtml}</div>
-      <div class="field-right">${inputHtml}${actionsHtml}</div>
+    // ── Nested detection (child of a showIf parent) ──
+    const nestedClass = field.showIf ? ' field-nested' : '';
+
+    // ── Build body row ──
+    let bodyHtml = '';
+    if (isToggle) {
+      // Toggle: description + switch on same row
+      bodyHtml = `<div class="field-body field-body-toggle"><div class="field-desc">${label}</div><div class="field-control">${controlHtml}</div></div>`;
+    } else if (isFullWidth) {
+      // Full-width: description row + input row (spans entire width)
+      bodyHtml = `<div class="field-body"><div class="field-desc">${label}</div></div><div class="field-input-row">${controlHtml}</div>`;
+    } else {
+      // Inline: description + control on same row (number, stepper, select)
+      bodyHtml = `<div class="field-body"><div class="field-desc">${label}</div><div class="field-control">${controlHtml}</div></div>`;
+    }
+
+    // ── Assemble ──
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) }" x-data="{ _menuOpen: false }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
+      <div class="field-header">
+        <span class="field-key" @click="copyFieldName('${dataKey}')" title="${this.escapeAttr(dataKey)}">${this.esc(dataKey)}</span>
+        <div class="field-header-right">
+          <div style="position:relative;display:inline-flex">
+            <button type="button" class="btn-menu" @click="_menuOpen=!_menuOpen" title="⋯">${_dotsSvg}</button>
+            <div x-show="_menuOpen" @click.outside="_menuOpen=false" x-cloak>${_menuPopupHtml}</div>
+          </div>
+        </div>
+      </div>
+      ${bodyHtml}
+      ${hint ? `<div class="field-hint">${hint}</div>` : ''}
+      ${readonlyWarnHtml}
     </div>`;
+  },
+
+  copyFieldName(key) {
+    navigator.clipboard.writeText(key).then(() => {
+      this.toast(this.t('common.paramCopied') || 'Copied');
+    });
   },
 
   showConditionalFields(parentKey) {
@@ -481,8 +533,9 @@ window.trainingCoreMixin = {
           const warnEl = document.createElement('div');
           warnEl.className = 'field-readonly-warn';
           warnEl.textContent = text;
-          const fieldLeft = row.querySelector('.field-left');
-          if (fieldLeft) fieldLeft.appendChild(warnEl);
+          // Append to field row (works for both new vertical and legacy layouts)
+          const anchor = row.querySelector('.field-body') || row.querySelector('.field-left') || row;
+          anchor.parentNode.insertBefore(warnEl, anchor.nextSibling);
         } else if (text && row.querySelector('.field-readonly-warn')) {
           // Update text in case locale changed
           row.querySelector('.field-readonly-warn').textContent = text;
