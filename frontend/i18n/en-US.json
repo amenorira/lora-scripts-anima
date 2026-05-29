@@ -148,6 +148,8 @@
     "optimizer_args_customHint": "Format: weight_decay=0.01 betas=0.9,0.999. One key=value per line.",
     "lr_scheduler_emoLocked": "EmoSens manages LR scheduling internally, locked to constant",
     "lr_warmup_steps_emoLocked": "EmoSens does not require external warmup, locked to 0",
+    "lr_scheduler_locked": "This optimizer manages its own LR schedule internally, locked to constant",
+    "learning_rate_prodigyLocked": "Prodigy uses lr as a D-adaptation scaling factor, fixed at 1.0",
     "network_module": "Training network module",
     "network_dim": "Network dimension. Common range 4~128. Lower dim reduces VRAM.",
     "network_alpha": "Common values: equal to network_dim, or half, or 1.",

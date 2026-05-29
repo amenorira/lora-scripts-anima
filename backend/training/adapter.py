@@ -282,6 +282,29 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
             )
 
+    # ── 5.6b. Prodigy 优化器：锁定 learning_rate ─────────
+    _PRODIGY_OPTIMIZERS = {"Prodigy", "prodigyplus.ProdigyPlusScheduleFree"}
+    if source.get("optimizer_type") in _PRODIGY_OPTIMIZERS:
+        lr = source.get("learning_rate", "1.0")
+        try:
+            lr_val = float(lr)
+        except (ValueError, TypeError):
+            lr_val = 1.0
+        if abs(lr_val - 1.0) > 1e-6:
+            source["learning_rate"] = "1.0"
+            warnings.append(
+                "Prodigy: learning_rate forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
+            )
+
+    # ── 5.6c. ScheduleFree 优化器：锁定 lr_scheduler ─────
+    _SCHEDULEFREE_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
+    if source.get("optimizer_type") in _SCHEDULEFREE_OPTIMIZERS:
+        if source.get("lr_scheduler") != "constant":
+            source["lr_scheduler"] = "constant"
+            warnings.append(
+                "ScheduleFree: lr_scheduler forced to constant (内部自动管理调度)"
+            )
+
     # ── 5.7. torch.compile 兼容性校验 ────────────────────
     if source.get("torch_compile"):
         # torch.compile 与 blocks_to_swap 不兼容

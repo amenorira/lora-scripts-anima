@@ -148,6 +148,8 @@
     "optimizer_args_customHint": "格式: weight_decay=0.01 betas=0.9,0.999。一行一对 key=value，传递给训练器的 --optimizer_args",
     "lr_scheduler_emoLocked": "EmoSens 内部自动管理学习率调度，此参数已锁定为 constant",
     "lr_warmup_steps_emoLocked": "EmoSens 不需要外部预热步骤，此参数已锁定为 0",
+    "lr_scheduler_locked": "此优化器内部自动管理学习率调度，已锁定为 constant",
+    "learning_rate_prodigyLocked": "Prodigy 使用 lr 作为 D-adaptation 缩放因子，必须固定为 1.0",
     "network_module": "训练网络模块。SD/SDXL 选 networks.lora；LoHa/LoKr 选对应项；Anima 选 networks.lora_anima",
     "network_dim": "网络维度。常用 4~128，不是越大越好，低 dim 可降低显存占用",
     "network_alpha": "常用值：等于 network_dim 或 network_dim*1/2 或 1。使用较小的 alpha 需要提升学习率",
