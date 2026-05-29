@@ -282,6 +282,17 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
             )
 
+    # ── 5.7. torch.compile 兼容性校验 ────────────────────
+    if source.get("torch_compile"):
+        # torch.compile 与 blocks_to_swap 不兼容
+        blocks = source.get("blocks_to_swap", 0) or 0
+        if blocks > 0:
+            source["torch_compile"] = False
+            warnings.append(
+                "[Conflict] torch_compile is incompatible with blocks_to_swap; "
+                "disabling torch_compile / torch_compile 与 blocks_to_swap 不兼容，已自动关闭 torch_compile"
+            )
+
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}

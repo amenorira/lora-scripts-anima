@@ -160,6 +160,8 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "vae_chunk_size", "type": "number", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
     {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima"},
     {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 32, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.blocks_to_swapHint"},
+    # torch.compile（性能加速，需 PyTorch 2.0+）
+    {"key": "torch_compile", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.torch_compile", "target": "toml", "hint_key": "field.torch_compileHint"},
 # ── Save ──
 {"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml"},
 {"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder"},

@@ -21,7 +21,7 @@
   "monitor": {
     "status": "训练状态",
     "idle": "空闲",
-    "training": "训练中",
+    "training": "训练",
     "finished": "已完成",
     "terminated": "已终止",
     "created": "等待启动",
@@ -48,7 +48,6 @@
     "logCopy": "复制",
     "logClear": "清空",
     "running": "运行中",
-    "training": "训练",
     "pastRuns": "历史记录",
     "runDir": "文件夹",
     "dataset": "数据集",
@@ -239,7 +238,9 @@
     "rescaled": "OFT 重缩放（仅 OFT 类）",
     "bypass_mode": "旁路模式",
     "rs_lora": "Rank-Stabilized LoRA（仅 LoCon）",
-    "rs_loraHint": "稳定低秩训练，仅 LoCon 算法下有效"
+    "rs_loraHint": "稳定低秩训练，仅 LoCon 算法下有效",
+    "torch_compile": "启用 torch.compile（JIT 编译加速训练）",
+    "torch_compileHint": "需 PyTorch 2.0+。首次前向传播较慢（编译预热）。Windows 上 inductor 后端可能不稳定，遇报错请关闭此选项。"
   },
   "common": {
     "startTraining": "开始训练",
@@ -289,7 +290,8 @@
     "backendReconnectedToast": "后端已重新连接",
     "disconnectedSeconds": "{n} 秒前",
     "disconnectedMinutes": "{n} 分 {s} 秒前",
-    "disconnectedHours": "{n} 小时 {s} 分前"
+    "disconnectedHours": "{n} 小时 {s} 分前",
+    "adapterWarnings": "配置警告"
   },
   "preset": {
     "title": "预设管理",

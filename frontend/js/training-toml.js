@@ -263,7 +263,19 @@ window.trainingTomlMixin = {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
       if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
-      else { this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted')); }
+      else {
+        this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted'));
+        // 弹出适配器警告（如有）
+        const warnings = data.data && data.data.warnings;
+        if (warnings && warnings.length > 0) {
+          setTimeout(() => {
+            const msg = warnings.join('\n');
+            this.toast('⚠️ ' + this.t('common.adapterWarnings'));
+            // 使用 alert 确保用户看到重要警告（如 torch_compile 被自动关闭）
+            alert('⚠️ ' + this.t('common.adapterWarnings') + ':\n\n' + msg);
+          }, 500);
+        }
+      }
     } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
   },
 

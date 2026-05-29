@@ -48,7 +48,6 @@
     "logCopy": "Copy",
     "logClear": "Clear",
     "running": "Running",
-    "training": "Training",
     "pastRuns": "Past Runs",
     "runDir": "Folder",
     "dataset": "Dataset",
@@ -239,7 +238,9 @@
     "rescaled": "OFT Rescaled (OFT only)",
     "bypass_mode": "Bypass Mode",
     "rs_lora": "Rank-Stabilized LoRA (LoCon only)",
-    "rs_loraHint": "Stabilized low-rank training, LoCon algorithm only"
+    "rs_loraHint": "Stabilized low-rank training, LoCon algorithm only",
+    "torch_compile": "Enable torch.compile (JIT compile for faster training)",
+    "torch_compileHint": "Requires PyTorch 2.0+. First forward pass is slow (compilation warmup). On Windows, inductor backend may be unstable; disable if errors occur."
   },
   "common": {
     "startTraining": "Start Training",
@@ -289,7 +290,8 @@
     "backendReconnectedToast": "Backend reconnected",
     "disconnectedSeconds": "{n}s ago",
     "disconnectedMinutes": "{n}m {s}s ago",
-    "disconnectedHours": "{n}h {s}m ago"
+    "disconnectedHours": "{n}h {s}m ago",
+    "adapterWarnings": "Configuration Warnings"
   },
   "preset": {
     "title": "Preset Management",

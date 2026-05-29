@@ -162,8 +162,8 @@ async def create_toml_file(request: Request):
         log.error(f"[Adapter] Failed to import training adapter / 训练适配器导入失败: {e}")
         return APIResponseFail(message=f"Training adapter import error / 训练适配器导入错误: {e}")
 
-    adapted_config, warnings = adapt_config(config)
-    for w in warnings:
+    adapted_config, adapter_warnings = adapt_config(config)
+    for w in adapter_warnings:
         log.warning(f"[Adapter] {w}")
     config = adapted_config
 
@@ -260,6 +260,13 @@ async def create_toml_file(request: Request):
     # ──────────────────────────────────────────────────────────
 
     result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)
+
+    # 将适配器警告附加到返回结果中（前端弹窗展示）
+    if result.get("status") == "success" and adapter_warnings:
+        if "data" not in result or not isinstance(result["data"], dict):
+            result["data"] = {}
+        result["data"]["warnings"] = adapter_warnings
+
     return result
 
 
