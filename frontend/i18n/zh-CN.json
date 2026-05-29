@@ -240,7 +240,9 @@
     "rs_lora": "Rank-Stabilized LoRA（仅 LoCon）",
     "rs_loraHint": "稳定低秩训练，仅 LoCon 算法下有效",
     "torch_compile": "启用 torch.compile（JIT 编译加速训练）",
-    "torch_compileHint": "需 PyTorch 2.0+。首次前向传播较慢（编译预热）。Windows 上 inductor 后端可能不稳定，遇报错请关闭此选项。"
+    "torch_compileHint": "需 PyTorch 2.0+。首次前向传播较慢（编译预热）。Windows 上 inductor 后端可能不稳定，遇报错请切换为 eager。",
+    "dynamo_backend": "编译后端（dynamo backend）",
+    "dynamo_backendHint": "inductor：默认后端，优化程度最高，Windows 上可能不稳定。eager：兼容性最好，适合调试和 Windows 用户。cudagraphs：利用 CUDA Graph 减少内核启动开销。"
   },
   "common": {
     "startTraining": "开始训练",
@@ -538,6 +540,9 @@
     "group_lion": "Lion 系列",
     "group_sgd": "SGD 系列",
     "group_adaptive": "自适应学习率",
-    "group_other": "其他"
+    "group_other": "其他",
+    "dynamo_backend_inductor": "默认编译后端，优化程度最高，Linux/macOS 推荐",
+    "dynamo_backend_eager": "兼容性最好的后端，Windows 推荐，适合调试",
+    "dynamo_backend_cudagraphs": "利用 CUDA Graph 减少内核启动开销"
   }
 }

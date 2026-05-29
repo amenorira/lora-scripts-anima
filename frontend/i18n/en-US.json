@@ -240,7 +240,9 @@
     "rs_lora": "Rank-Stabilized LoRA (LoCon only)",
     "rs_loraHint": "Stabilized low-rank training, LoCon algorithm only",
     "torch_compile": "Enable torch.compile (JIT compile for faster training)",
-    "torch_compileHint": "Requires PyTorch 2.0+. First forward pass is slow (compilation warmup). On Windows, inductor backend may be unstable; disable if errors occur."
+    "torch_compileHint": "Requires PyTorch 2.0+. First forward pass is slow (compilation warmup). On Windows, inductor backend may be unstable; switch to eager if errors occur.",
+    "dynamo_backend": "Compile Backend (dynamo backend)",
+    "dynamo_backendHint": "inductor: default backend, highest optimization, may be unstable on Windows. eager: best compatibility, recommended for Windows and debugging. cudagraphs: uses CUDA Graph to reduce kernel launch overhead."
   },
   "common": {
     "startTraining": "Start Training",
@@ -538,6 +540,9 @@
     "group_lion": "Lion",
     "group_sgd": "SGD",
     "group_adaptive": "Adaptive LR",
-    "group_other": "Other"
+    "group_other": "Other",
+    "dynamo_backend_inductor": "Default backend, highest optimization, recommended for Linux/macOS",
+    "dynamo_backend_eager": "Best compatibility backend, recommended for Windows and debugging",
+    "dynamo_backend_cudagraphs": "Uses CUDA Graph to reduce kernel launch overhead"
   }
 }

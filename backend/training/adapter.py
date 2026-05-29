@@ -292,6 +292,14 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "[Conflict] torch_compile is incompatible with blocks_to_swap; "
                 "disabling torch_compile / torch_compile 与 blocks_to_swap 不兼容，已自动关闭 torch_compile"
             )
+        # Windows + inductor 警告
+        import sys
+        dynamo_backend = source.get("dynamo_backend", "inductor")
+        if sys.platform == "win32" and dynamo_backend == "inductor":
+            warnings.append(
+                "[Warning] inductor backend may be unstable on Windows; "
+                "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
+            )
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
