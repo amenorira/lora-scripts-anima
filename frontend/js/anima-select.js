@@ -13,9 +13,14 @@ document.addEventListener('alpine:init', () => {
 
     get displayGroups() {
       try {
-        const json = typeof fieldConfigJson === 'string'
-          ? decodeURIComponent(escape(atob(fieldConfigJson)))
-          : JSON.stringify(fieldConfigJson || {});
+        let json;
+        if (typeof fieldConfigJson === 'string') {
+          const binary = atob(fieldConfigJson);
+          const bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
+          json = new TextDecoder().decode(bytes);
+        } else {
+          json = JSON.stringify(fieldConfigJson || {});
+        }
         const fc = typeof json === 'string' ? JSON.parse(json) : json;
         if (fc.groups && fc.groups.length) return fc.groups;
         if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];

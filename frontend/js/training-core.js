@@ -135,8 +135,6 @@ window.trainingCoreMixin = {
     });
   },
 
-  setupStickyTabs() { /* no-op */ },
-
   renderTrainingForm(trainType) {
     const container = document.getElementById('trainFormContent');
     if (!container) return;
@@ -615,9 +613,12 @@ window.trainingCoreMixin = {
     });
   },
 
-  esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; },
+  // Canonical HTML escape (text content & "-delimited attributes).
+  // Handles null/undefined/0 correctly.
+  esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
+  // Canonical HTML escape for '-delimited attributes (also escapes single quotes).
   escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
-  escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch (e) { return btoa('{"options":[]}'); } },
+  escJson(obj) { try { var json = JSON.stringify(obj); var bytes = new TextEncoder().encode(json); var binary = String.fromCharCode.apply(null, bytes); return btoa(binary); } catch (e) { return btoa('{"options":[]}'); } },
 
   setField(key, value) {
     const oldVal = this.form[key];

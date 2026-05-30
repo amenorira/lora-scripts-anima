@@ -437,7 +437,11 @@
               </div>
             </div>
           </template>
-          <div x-show="allPresets.length === 0" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0" x-text="t('preset.empty')">暂无可用预设</div>
+          <div x-show="presetsLoading" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0">
+            <div class="env-spinner" style="margin:0 auto 8px"></div>
+            <span x-text="t('common.loading', 'Loading...')">加载中...</span>
+          </div>
+          <div x-show="!presetsLoading && allPresets.length === 0" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0" x-text="t('preset.empty')">暂无可用预设</div>
         </div>
       </div>
 
@@ -476,7 +480,7 @@
       <div class="panel-header">
         <span x-text="t('common.tomlPreview')">TOML Preview</span>
       </div>
-      <div class="panel-preview" id="tomlPreview" x-effect="updateToml()"># Parameters will appear here</div>
+      <div class="panel-preview" id="tomlPreview" x-effect="updateTomlDebounced()"># Parameters will appear here</div>
       <div class="panel-actions">
         <div class="btn-row">
           <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>

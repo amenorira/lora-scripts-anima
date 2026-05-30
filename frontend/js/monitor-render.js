@@ -27,7 +27,7 @@ window.monitorRenderMixin = {
       const runName = (d.config && d.config.output_name) || this.selectedRunDir.split('/').pop() || '';
       html += `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;border-left:3px solid var(--accent)">`;
       html += `<span style="font-size:12px;color:var(--text-tertiary)">📜 ${t('viewingHistory','Viewing history')}</span>`;
-      html += `<b style="font-size:14px">${this._escapeHtml(runName)}</b>`;
+      html += `<b style="font-size:14px">${this.esc(runName)}</b>`;
       if (d.train_result) {
         const st = d.train_result.status || '';
         const dur = d.train_result.duration_str || '';
@@ -73,11 +73,11 @@ window.monitorRenderMixin = {
     }
 
     html+='<div class="card card-params" style="margin-top:12px"><div class="card-header">'+t('trainParams','Parameters')+'</div>';
-    if (this.trainParams.length) { html+='<div class="param-grid">'; this.trainParams.forEach(p=>{html+=`<div class="param-item"><span class="param-label">${this._escapeHtml(p.label)}</span><span class="param-value">${this._escapeHtml(p.value)}</span></div>`;}); html+='</div>'; }
+    if (this.trainParams.length) { html+='<div class="param-grid">'; this.trainParams.forEach(p=>{html+=`<div class="param-item"><span class="param-label">${this.esc(p.label)}</span><span class="param-value">${this.esc(p.value)}</span></div>`;}); html+='</div>'; }
     else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','Start training to see parameters')+'</p></div>';
     html+='</div>';
     if (this.previews.length) { html+='<div class="card card-preview" style="margin-top:12px"><div class="card-header">'+t('previewSamples','Preview')+'</div><div class="preview-grid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">';
-      this.previews.slice(0,6).forEach(p=>{html+=`<div class="preview-item" @click="dashTab='samples';renderDashboard()" style="cursor:pointer"><img src="${this._escapeHtml(p.url)}" alt="${this._escapeHtml(p.name)}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${this._escapeHtml(p.name)}</span></div>`;});
+      this.previews.slice(0,6).forEach(p=>{html+=`<div class="preview-item" @click="dashTab='samples';renderDashboard()" style="cursor:pointer"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${this.esc(p.name)}</span></div>`;});
       html+='</div></div>'; }
     return html;
   },
@@ -94,8 +94,8 @@ window.monitorRenderMixin = {
     let html='<div class="card card-preview"><div class="card-header">'+t('previewSamples','Preview')+'</div>';
     if (this.previews.length) { html+='<div class="preview-controls" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1)" :disabled="previewStep<=0">&larr; Prev</button><span style="font-size:13px">Step <b x-text="previewStep+1"></b> / <b>'+this.previews.length+'</b></span><button class="btn btn-sm" @click="previewStep=Math.min('+(this.previews.length-1)+',previewStep+1)" :disabled="previewStep>='+(this.previews.length-1)+'">Next &rarr;</button></div><div class="preview-grid">';
       const p=this.previews[this.previewStep]||this.previews[0];
-      html+=`<div class="preview-item" style="grid-column:1/-1"><img src="${this._escapeHtml(p.url)}" alt="${this._escapeHtml(p.name)}" loading="lazy" onclick="window.open('${this._escapeHtml(p.url).replace(/'/g,'&#39;')}')" style="max-height:400px;object-fit:contain"/><span>${this._escapeHtml(p.name)}</span></div>`;
-      this.previews.forEach((pv,i)=>{html+=`<div class="preview-item" style="cursor:pointer;${i===this.previewStep?'border:2px solid var(--accent);':''}" @click="previewStep=${i}"><img src="${this._escapeHtml(pv.url)}" alt="${this._escapeHtml(pv.name)}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;});
+      html+=`<div class="preview-item" style="grid-column:1/-1"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" onclick="window.open('${this.esc(p.url).replace(/'/g,'&#39;')}')" style="max-height:400px;object-fit:contain"/><span>${this.esc(p.name)}</span></div>`;
+      this.previews.forEach((pv,i)=>{html+=`<div class="preview-item" style="cursor:pointer;${i===this.previewStep?'border:2px solid var(--accent);':''}" @click="previewStep=${i}"><img src="${this.esc(pv.url)}" alt="${this.esc(pv.name)}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;});
       html+='</div>'; }
     else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>'+t('noTrainingHint','Preview images appear during training')+'</p></div>';
     html+='</div>'; return html;
@@ -114,15 +114,15 @@ window.monitorRenderMixin = {
       if(d.epoch) html+=`<div>${t('epoch','Epoch')}: <b>${d.epoch}</b></div>`; if(d.speed) html+=`<div>${t('speed','Speed')}: <b>${d.speed}</b></div>`;
       if(d.eta) html+=`<div>ETA: <b>${d.eta}</b></div>`; }
     else if(d.last_config&&d.last_config.name) { const lc=d.last_config;
-      html+=`<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${t('lastTraining','Last')}: <b>${this._escapeHtml(lc.name)}</b></div><div style="font-size:12px;color:var(--text-tertiary)">${this._escapeHtml(lc.model)} · LR:${this._escapeHtml(lc.lr)} · Dim:${this._escapeHtml(lc.dim)} · Epochs:${this._escapeHtml(lc.epochs)}</div>`; }
-    if(d.has_error) html+=`<div style="color:var(--danger);margin-top:8px">${this._escapeHtml(d.error_msg)||t('error','Error')}</div>`;
+      html+=`<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${t('lastTraining','Last')}: <b>${this.esc(lc.name)}</b></div><div style="font-size:12px;color:var(--text-tertiary)">${this.esc(lc.model)} · LR:${this.esc(lc.lr)} · Dim:${this.esc(lc.dim)} · Epochs:${this.esc(lc.epochs)}</div>`; }
+    if(d.has_error) html+=`<div style="color:var(--danger);margin-top:8px">${this.esc(d.error_msg)||t('error','Error')}</div>`;
     html+='</div>'; return html;
   },
 
   _gpuCard(gpu,t) {
     const vramPct=gpu.vram_total_mb>0?gpu.vram_used_mb/gpu.vram_total_mb*100:0, vramGrade=vramPct>90?'high':vramPct>70?'mid':'low';
     const loadPct=gpu.gpu_load_pct||0, loadGrade=loadPct>80?'high':loadPct>50?'mid':'low';
-    let html=`<div class="card card-gpu flex-1"><div class="card-header">${t('gpu','GPU')}</div><div style="font-size:14px;font-weight:600;margin:4px 0">${this._escapeHtml(gpu.name)||'GPU'}</div>`;
+    let html=`<div class="card card-gpu flex-1"><div class="card-header">${t('gpu','GPU')}</div><div style="font-size:14px;font-weight:600;margin:4px 0">${this.esc(gpu.name)||'GPU'}</div>`;
     html+=`<div class="monitor-stat">${t('vramUsed','VRAM')}: <b class="${vramGrade}">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${vramGrade}" data-bar="vram" data-target="${vramPct}"></div></div>`;
     html+=`<div class="monitor-stat" style="margin-top:8px">${t('gpuLoad','Load')}: <b class="${loadGrade}">${loadPct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${loadGrade}" data-bar="load" data-target="${loadPct}"></div></div>`;
     if(gpu.temperature_c!=null) html+=`<div style="font-size:12px;margin-top:6px">${t('gpuTemp','Temp')}: <b>${gpu.temperature_c}&deg;C</b></div>`;
@@ -133,7 +133,7 @@ window.monitorRenderMixin = {
   _systemCard(sys,t) {
     const cpuGrade=sys.cpu_pct>80?'high':sys.cpu_pct>50?'mid':'low', ramGrade=sys.ram_pct>80?'high':sys.ram_pct>50?'mid':'low';
     let html=`<div class="card card-system flex-1"><div class="card-header">${t('system','System')}</div>`;
-    if(sys.cpu_name) html+=`<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${this._escapeHtml(sys.cpu_name)}</div>`;
+    if(sys.cpu_name) html+=`<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${this.esc(sys.cpu_name)}</div>`;
     html+=`<div class="monitor-stat">${t('cpu','CPU')}: <b class="${cpuGrade}">${sys.cpu_pct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${cpuGrade}" data-bar="cpu" data-target="${sys.cpu_pct}"></div></div>`;
     html+=`<div class="monitor-stat" style="margin-top:8px">${t('ram','RAM')}: <b class="${ramGrade}">${sys.ram_used_gb} GB (${sys.ram_pct}%)</b> / ${sys.ram_total_gb} GB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${ramGrade}" data-bar="ram" data-target="${sys.ram_pct}"></div></div>`;
     html+='</div>'; return html;
@@ -173,7 +173,7 @@ window.monitorRenderMixin = {
     else if(level==='info') lines=lines.filter(l=>!l.toLowerCase().includes('error')&&!l.toLowerCase().includes('traceback')&&!l.toLowerCase().includes('warn'));
     let html='<div class="log-lines">';
     if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-    else lines.forEach(line=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')?'log-error':lower.includes('warning')?'log-warn':'';html+=`<div class="log-line ${cls}">${this._escapeHtml(line)}</div>`;});
+    else lines.forEach(line=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')?'log-error':lower.includes('warning')?'log-warn':'';html+=`<div class="log-line ${cls}">${this.esc(line)}</div>`;});
     html+='</div>'; el.innerHTML=html; if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
   },
 
@@ -195,11 +195,11 @@ window.monitorRenderMixin = {
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running" style="border-left:3px solid var(--primary)">';
-      html += '<div class="card-header">' + t('running', 'Running') + ' <span class="badge badge-running">● ' + (t('training', 'Training') || 'Training') + '</span></div>';
-      html += '<div><b>' + this._escapeHtml(r.name || r.id || '') + '</b></div>';
-      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this._escapeHtml((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
-      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this._escapeHtml(r.lr || '?') + ' | ' + t('historyDim', 'Dim') + ': ' + this._escapeHtml(r.dim || '?') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this._escapeHtml(r.epochs || '?') + '</div>';
-      if (r.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('runDir', 'Folder') || 'Folder') + ': ' + this._escapeHtml(r.run_dir) + '</div>';
+      html += '<div class="card-header">' + t('running', 'Running') + ' <span class="badge badge-running">' + (t('training', 'Training') || 'Training') + '</span></div>';
+      html += '<div><b>' + this.esc(r.name || r.id || '') + '</b></div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this.esc(r.lr || '?') + ' | ' + t('historyDim', 'Dim') + ': ' + this.esc(r.dim || '?') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this.esc(r.epochs || '?') + '</div>';
+      if (r.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
       html += '</div>';
     }
 
@@ -208,14 +208,14 @@ window.monitorRenderMixin = {
       if (hasRunning) html += '<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px">' + t('pastRuns', 'Past Runs') + '</div>';
       html += '<div class="history-grid">';
       this.historyItems.forEach(h => {
-        const clickAction = h.run_dir ? `viewRunDetail('${this._escapeHtml(h.run_dir)}')` : `navigate('monitor-dashboard')`;
+        const clickAction = h.run_dir ? `viewRunDetail('${this.esc(h.run_dir)}')` : `navigate('monitor-dashboard')`;
         html += `<div class="card history-card" @click="${clickAction}" style="cursor:pointer">`;
-        html += '<div class="card-header">' + this._escapeHtml(h.time) + '</div>';
-        html += '<div><b>' + this._escapeHtml(h.name || '') + '</b></div>';
-        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this._escapeHtml(h.model || '') + '</div>';
-        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this._escapeHtml(h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + this._escapeHtml(h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this._escapeHtml(h.epochs || '') + '</div>';
-        if (h.dataset) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('dataset', 'Dataset') || 'Dataset') + ': ' + this._escapeHtml(h.dataset) + '</div>';
-        if (h.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary)">' + (t('runDir', 'Folder') || 'Folder') + ': ' + this._escapeHtml(h.run_dir) + '</div>';
+        html += '<div class="card-header">' + this.esc(h.time) + '</div>';
+        html += '<div><b>' + this.esc(h.name || '') + '</b></div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc(h.model || '') + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this.esc(h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + this.esc(h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this.esc(h.epochs || '') + '</div>';
+        if (h.dataset) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
+        if (h.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary)">' + (t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(h.run_dir) + '</div>';
         html += '</div>';
       });
       html += '</div>';

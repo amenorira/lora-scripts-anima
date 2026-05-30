@@ -281,6 +281,7 @@
     "copyParamName": "复制参数名",
     "paramCopied": "已复制",
     "enterConfigName": "请输入配置名称",
+    "loading": "加载中...",
     "noConfigs": "暂无保存的配置",
     "tomlPreview": "参数预览",
     "collapse": "收起",

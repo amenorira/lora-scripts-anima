@@ -140,18 +140,9 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    toggleTheme() {
-      this.setTheme(this.resolvedTheme === 'dark' ? 'light' : 'dark');
-    },
-
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
       localStorage.setItem('anima-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0');
-    },
-
-    themeLabel() {
-      if (this.resolvedTheme === 'dark') return this.t('common.themeLight');
-      return this.t('common.themeDark');
     },
 
     // ── Progress Bar ───────────────────────────────────────
@@ -159,17 +150,21 @@ document.addEventListener('alpine:init', () => {
       clearInterval(this._progressTimer);
       this._progressStartTime = Date.now();
       this.progressPercent = 0;
+      var stages = (window.UI_CONSTANTS && window.UI_CONSTANTS.PROGRESS_STAGES) || [{ duration: 300, max: 30 }, { duration: 1700, max: 65 }, { duration: Infinity, max: 90 }];
+      var t1 = stages[0].duration, m1 = stages[0].max;
+      var t2 = stages[1].duration, m2 = stages[1].max;
+      var maxPct = stages[2].max;
 
       this._progressTimer = setInterval(() => {
-        const elapsed = Date.now() - this._progressStartTime;
-        if (elapsed < 300) {
-          this.progressPercent = Math.round((elapsed / 300) * 30);
-        } else if (elapsed < 2000) {
-          this.progressPercent = Math.round(30 + ((elapsed - 300) / 1700) * 35);
+        var elapsed = Date.now() - this._progressStartTime;
+        if (elapsed < t1) {
+          this.progressPercent = Math.round((elapsed / t1) * m1);
+        } else if (elapsed < t1 + t2) {
+          this.progressPercent = Math.round(m1 + ((elapsed - t1) / t2) * (m2 - m1));
         } else {
-          this.progressPercent = Math.round(65 + ((elapsed - 2000) / (elapsed - 1800)) * 25);
+          this.progressPercent = Math.round(m2 + ((elapsed - t1 - t2) / (elapsed - t1 - t2 + 200)) * (maxPct - m2));
         }
-        if (this.progressPercent > 90) this.progressPercent = 90;
+        if (this.progressPercent > maxPct) this.progressPercent = maxPct;
       }, 100);
     },
 

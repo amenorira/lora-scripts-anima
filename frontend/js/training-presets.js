@@ -14,6 +14,7 @@ window.trainingPresetsMixin = {
   savePresetDesc: '',
   presets: [],
   allPresets: [],
+  presetsLoading: false,
   currentPreset: null,
   currentPresetName: '',
 
@@ -171,6 +172,7 @@ window.trainingPresetsMixin = {
 
   // ── Presets ────────────────────────────────────────────
   async loadPresets() {
+    this.presetsLoading = true;
     try {
       const r = await fetch('/api/presets');
       const d = await r.json();
@@ -183,6 +185,7 @@ window.trainingPresetsMixin = {
         );
       }
     } catch (e) { /* ignore */ }
+    finally { this.presetsLoading = false; }
   },
 
   applyPreset(preset) {

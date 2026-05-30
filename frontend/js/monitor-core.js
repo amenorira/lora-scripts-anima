@@ -66,7 +66,6 @@ window.monitorCoreMixin = {
   // ── Log helpers ────────────────────────────────────────
   copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => this.toast(this.t('common.copied'))); },
   clearLogs() { this.logLines = []; this.renderLogs(); },
-  _escapeHtml(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
 
   // ── History ────────────────────────────────────────────
   async loadHistory() {

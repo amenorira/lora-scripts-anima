@@ -10,6 +10,7 @@ window.trainingTomlMixin = {
   isIdle: true,
   taskId: null,
   statusText: 'Idle',
+  _tomlDebounceTimer: null,
 
   // ── TOML ────────────────────────────────────────────────
   updateToml() {
@@ -122,6 +123,12 @@ window.trainingTomlMixin = {
     }
   },
 
+  // Debounced TOML update (for x-effect binding, avoids per-keystroke recalc)
+  updateTomlDebounced() {
+    clearTimeout(this._tomlDebounceTimer);
+    this._tomlDebounceTimer = setTimeout(() => this.updateToml(), 250);
+  },
+
   // Helper: check if a field's showIf condition is met
   _fieldShowIfMet(f) {
     const sf = f.showIf;
@@ -189,7 +196,7 @@ window.trainingTomlMixin = {
       const fieldDef = this.findFieldDef(rule.form);
       if (fieldDef && fieldDef.showIf && !this._fieldShowIfMet(fieldDef)) continue;
       const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
-      if (defVal !== undefined && defVal !== null && val == defVal) continue;
+      if (defVal !== undefined && defVal !== null && String(val) === String(defVal)) continue;
       const formatted = typeof val === 'boolean' ? String(val).toLowerCase() : String(val);
       optArgs.push(rule.arg + '=' + formatted);
     }

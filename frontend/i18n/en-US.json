@@ -279,6 +279,7 @@
     "copyParamName": "Copy parameter name",
     "paramCopied": "Copied",
     "enterConfigName": "Enter configuration name",
+    "loading": "Loading...",
     "noConfigs": "No saved configurations",
     "tomlPreview": "Parameter Preview",
     "collapse": "Collapse",

@@ -11,11 +11,7 @@ window.tagEditorMixin = {
   tagEditorModified: false,
   tagEditorDirName: '',
 
-  // -- Helpers ------------------------------------------------
-  _escHtml(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  },
+  // esc() and escapeAttr() defined in trainingCoreMixin (shared via mixin merge)
 
   // -- Methods ------------------------------------------------
   async tagEditorLoad(dir) {
@@ -98,7 +94,7 @@ window.tagEditorMixin = {
 
     html += '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center">';
     html += '<span style="font-size:12px;color:var(--text-secondary)">' + tt('datasetDir', 'Dataset') + ':</span>';
-    html += '<input type="text" style="flex:1" value="' + this._escHtml(this.tagEditorDir) + '" id="tagEditorDirInput" @keydown.enter="tagEditorLoad($event.target.value)">';
+    html += '<input type="text" style="flex:1" value="' + this.esc(this.tagEditorDir) + '" id="tagEditorDirInput" @keydown.enter="tagEditorLoad($event.target.value)">';
     html += '<button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById(\'tagEditorDirInput\').value)">' + tt('loadImages', 'Load') + '</button>';
     html += '<span style="font-size:12px;color:var(--text-tertiary)">' + imgs.length + ' images</span>';
     html += '</div></div>';
@@ -121,7 +117,7 @@ window.tagEditorMixin = {
 
     html += '<div class="tag-editor-grid">';
     imgs.forEach(function(img, idx) {
-      var esc = self._escHtml;
+      var esc = self.esc;
       var tagPills = (img.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) {
         var escPath = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         var escTag = t.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
