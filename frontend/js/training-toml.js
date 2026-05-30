@@ -13,7 +13,7 @@ window.trainingTomlMixin = {
 
   // ── TOML ────────────────────────────────────────────────
   updateToml() {
-    const trainType = this.form.model_train_type || 'sd-lora';
+    const trainType = this.form.model_train_type || 'anima-lora';
     const allSections = window.getVisibleSections(trainType);
     const lines = [];
 
@@ -200,11 +200,25 @@ window.trainingTomlMixin = {
   // ── Training ───────────────────────────────────────────
   async startTraining() {
     if (this.isTraining) return;
+
+    const trainType = this.form.model_train_type || 'anima-lora';
+
+    // Validation: Check required fields based on train type
+    if (trainType === 'anima-lora') {
+      if (!this.form.vae || this.form.vae.trim() === '') {
+        this.toast(this.t('common.vaeRequired', 'VAE is required for Anima training'), 'error');
+        return;
+      }
+      if (!this.form.qwen3 || this.form.qwen3.trim() === '') {
+        this.toast(this.t('common.qwen3Required', 'Qwen3 model is required for Anima training'), 'error');
+        return;
+      }
+    }
+
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
 
     const validKeys = new Set(['model_train_type']);
-    const trainType = this.form.model_train_type || 'sd-lora';
     const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => s.fields.forEach(f => {
       if (!f.showIf || this._fieldShowIfMet(f)) {

@@ -28,7 +28,7 @@ window.trainingPresetsMixin = {
     const name = (this.savePresetName || '').trim();
     if (!name) { this.toast(this.t('common.enterConfigName')); return; }
     const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
-    const trainType = routeCfg.trainType || this.form.model_train_type || 'sd-lora';
+    const trainType = routeCfg.trainType || this.form.model_train_type || 'anima-lora';
     try {
       const r = await fetch('/api/presets', {
         method: 'POST',
@@ -177,7 +177,7 @@ window.trainingPresetsMixin = {
       if (d.status === 'success' && d.data && d.data.presets) {
         this.allPresets = d.data.presets;
         const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
-        const currentType = routeCfg.trainType || this.form.model_train_type || 'sd-lora';
+        const currentType = routeCfg.trainType || this.form.model_train_type || 'anima-lora';
         this.presets = d.data.presets.filter(p =>
           p && p.metadata && (!p.metadata.train_type || p.metadata.train_type === currentType)
         );
@@ -228,9 +228,9 @@ window.trainingPresetsMixin = {
   applyPresetNavigate(preset) {
     if (!preset || !preset.data) return;
     // Determine target route from preset train_type
-    const tt = (preset.metadata && preset.metadata.train_type) || 'sd-lora';
-    const routeMap = { 'sd-lora': 'train-basic', 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
-    const targetRoute = routeMap[tt] || 'train-basic';
+    const tt = (preset.metadata && preset.metadata.train_type) || 'anima-lora';
+    const routeMap = { 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
+    const targetRoute = routeMap[tt] || 'train-anima';
     this.navigate(targetRoute);
     // Apply after navigate so buildTrainForm runs first
     this.$nextTick(() => this.applyPreset(preset));

@@ -56,7 +56,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
 {"key": "clip_skip", "type": "stepper", "default": 2, "section": "model", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
 # ── Network ──
-{"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
+{"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": ["sd", "sdxl"]}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
 {"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "target": "toml", "min": 1, "max": 256, "step": 8},
 {"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "target": "toml", "min": 1},
 {"key": "network_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.network_weights", "target": "toml", "role": "file-model-saved"},
@@ -88,7 +88,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.rs_loraHint"},
 # ── Training Core ──
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "target": "toml", "min": 1},
-{"key": "max_train_steps", "type": "number", "section": "training", "desc_key": "field.max_train_steps", "target": "toml", "min": 1},
+{"key": "max_train_steps", "type": "number", "default": "", "section": "training", "desc_key": "field.max_train_steps", "target": "toml", "min": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1},
 {"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},

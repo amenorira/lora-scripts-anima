@@ -18,19 +18,26 @@ window.trainingCoreMixin = {
   _pickerCwd: '',
 
   trainTypes: [
-    { v: 'sd-lora', l: 'SD LoRA', dk: 'opt.model_train_type_sd-lora' },
-    { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
+    { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
   ],
   currentTrainTypeDesc: '',
-  currentTrainTypeLabel: 'SD LoRA',
+  currentTrainTypeLabel: 'Anima LoRA',
 
   switchTrainType(v) {
-    if (this.form.model_train_type === v) return;
-    this.form.model_train_type = v;
+    // Update display labels and descriptions
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
+
+    // Auto-set network_module based on train type
+    if (v === 'anima-lora' && this.form.network_module === 'networks.lora') {
+      this.form.network_module = 'networks.lora_anima';
+    } else if (v !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
+      this.form.network_module = 'networks.lora';
+    }
+
+    // Re-render form with new train type
     this.renderTrainingForm(v);
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
@@ -44,22 +51,28 @@ window.trainingCoreMixin = {
     this._autoLoaded = false; // Reset so autoLoadLastParams can run again
     const r = this.currentRoute;
     const cfg = ROUTE_CONFIG[r] || {};
-    let trainType = cfg.trainType || 'sd-lora';
-    if (r === 'train-anima') trainType = 'anima-lora';
+    let trainType = cfg.trainType || 'anima-lora';
 
     const savedKey = 'anima-form-' + r;
     let saved = null;
     try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
 
+    // Migrate: if saved train type is no longer available, reset to default
+    if (saved && saved.model_train_type === 'sd-lora') {
+      saved.model_train_type = trainType;
+    }
+
     const defaults = {};
     const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => { s.fields.forEach(f => {
-      if (f.default !== undefined) {
+      // Use explicit default if it's a meaningful value (not null/empty)
+      const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
+      if (hasExplicitDefault) {
         defaults[f.key] = f.default;
       } else if (!f.hidden) {
-        // Add sensible defaults for fields without explicit defaults
+        // For number/stepper without explicit default, leave empty (not min)
         if (f.type === 'toggle') defaults[f.key] = false;
-        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = f.min || 0;
+        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
         else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
         else defaults[f.key] = '';
       }
@@ -89,6 +102,13 @@ window.trainingCoreMixin = {
       }, 1000);
     });
 
+    // Watch for train type changes from anima-select component
+    this.$watch('form.model_train_type', (newVal, oldVal) => {
+      if (newVal !== oldVal) {
+        self.switchTrainType(newVal);
+      }
+    });
+
     window.addEventListener('locale-changed', () => {
       const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
@@ -100,7 +120,7 @@ window.trainingCoreMixin = {
   renderTrainingForm(trainType) {
     const container = document.getElementById('trainFormContent');
     if (!container) return;
-    const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'sd-lora');
+    const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
     let html = '';
     sections.forEach(section => {
       const fields = section.fields.filter(f => !f.hidden);
@@ -118,7 +138,7 @@ window.trainingCoreMixin = {
   },
 
   _allSections() {
-    return window.getVisibleSections(this.form.model_train_type || 'sd-lora');
+    return window.getVisibleSections(this.form.model_train_type || 'anima-lora');
   },
 
   _allShowIfKeys() {
@@ -131,7 +151,15 @@ window.trainingCoreMixin = {
 
   renderField(field) {
     const val = this.form[field.key];
-    const label = this.t(field.descKey) || field.descKey || field.key;
+    const trainType = this.form.model_train_type || 'anima-lora';
+    const trainTypeSuffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+
+    // Try train-type-specific desc key first, then fall back to default
+    // Only use if the i18n key actually exists (to avoid showing "field.qwen3_anima" etc.)
+    const descKeyWithSuffix = field.descKey + trainTypeSuffix;
+    const specificLabel = this.t(descKeyWithSuffix);
+    const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
+    const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = field.hintKey ? this.t(field.hintKey) : '';
     const dataKey = field.key;
     const isToggle = field.type === 'toggle';
@@ -145,19 +173,33 @@ window.trainingCoreMixin = {
     } else if (field.type === 'select') {
       const fc = {};
       const self = this;
+      const currentTrainType = this.form.model_train_type || 'anima-lora';
+      const groupMap = { 'sd-lora': 'sd', 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+      const currentGroup = groupMap[currentTrainType] || 'all';
+
       const resolveOption = (o) => {
         const cloned = { v: o.v, l: o.l };
         if (o.dKey) { cloned.d = self.t(o.dKey) || ''; }
         else if (o.d) { cloned.d = o.d; }
         return cloned;
       };
+
+      // Filter options by group compatibility
+      const filterByGroup = (opts) => {
+        return (opts || []).filter(o => {
+          if (!o.group || o.group === 'all') return true;
+          if (Array.isArray(o.group)) return o.group.includes(currentGroup);
+          return o.group === currentGroup;
+        }).map(o => resolveOption(o));
+      };
+
       if (field.groups && field.groups.length) {
         fc.groups = field.groups.map(g => ({
           label: g.labelKey ? (self.t(g.labelKey) || g.label) : (g.label || ''),
-          options: (g.options || []).map(o => resolveOption(o))
-        }));
+          options: filterByGroup(g.options)
+        })).filter(g => g.options.length > 0);
       } else if (field.options && field.options.length) {
-        fc.options = field.options.map(o => resolveOption(o));
+        fc.options = filterByGroup(field.options);
       } else {
         fc.options = [];
       }
@@ -602,11 +644,26 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
+    // Preserve current train type - don't reset it
+    const currentTrainType = this.form.model_train_type;
     this.form = { ...this.formDefaults };
-    this.formHistory = [this.formDefaults];
+    this.form.model_train_type = currentTrainType;
+
+    // Adjust network_module based on train type
+    const targetNetworkModule = currentTrainType === 'anima-lora' ? 'networks.lora_anima' : 'networks.lora';
+    this.form.network_module = targetNetworkModule;
+
+    this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
     this.updateToml();
     this.rebuildForm();
+
+    // Ensure network_module is correct after rebuild
+    this.$nextTick(() => {
+      this.form.network_module = targetNetworkModule;
+      this.updateToml();
+    });
+
     this.toast(this.t('common.allReset'));
   },
 
@@ -623,7 +680,7 @@ window.trainingCoreMixin = {
     // Re-apply autoValue rules so select fields, locked fields etc. stay consistent
     // after preset load, config import, or full reset.
     this._applyInitialAutoValues();
-    this.renderTrainingForm(this.form.model_train_type || 'sd-lora');
+    this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
     this.updateReadonlyStates();
   },
 

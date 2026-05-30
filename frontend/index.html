@@ -306,18 +306,37 @@
           </div>
         </div>
 
-        <!-- Tab switcher -->
+        <!-- Train type selector -->
         <div class="train-tab-card">
-          <div class="train-tab-list">
-            <template x-for="tt in trainTypes" :key="tt.v">
-              <button class="train-tab-item" 
-                      :class="{ active: form.model_train_type === tt.v }"
-                      @click="switchTrainType(tt.v)">
-                <span x-text="tt.l"></span>
+          <div class="train-type-select-wrap">
+            <label class="train-type-label" x-text="t('opt.model_train_type', 'Training Type')"></label>
+            <div class="anima-select" style="min-width:200px"
+                 x-data="animaSelect({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}, form.model_train_type)"
+                 @click.outside="closeOnOutside()">
+              <input type="hidden" x-ref="modelInput" x-model="form.model_train_type">
+              <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()">
+                <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+                <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
               </button>
-            </template>
+              <div class="anima-select-menu" x-show="open" x-transition>
+                <div class="anima-select-menu-scroll">
+                  <template x-for="(opt, oIdx) in flatOptions" :key="opt.v">
+                    <div class="anima-select-option" :class="{ active: opt.v === value }"
+                         @click="select(opt.v)"
+                         @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()">
+                      <span x-text="opt.l" :title="opt.l"></span>
+                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </div>
+                  </template>
+                </div>
+                <div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>
+              </div>
+            </div>
           </div>
-          <p class="train-type-desc" x-text="currentTrainTypeDesc"></p>
         </div>
 
         <form @submit.prevent="" id="trainForm">
