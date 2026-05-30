@@ -18,6 +18,7 @@ from backend.tagger.interrogators.base import Interrogator
 from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator
 from backend.tagger.interrogators.camie import CamieTaggerInterrogator
+from backend.constants import HF_CACHE_DIR
 import traceback
 
 tag_escape_pattern = re.compile(r'([\\()])')
@@ -29,55 +30,65 @@ def get_tagger_progress(task_id: str) -> dict:
     return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []})
 
 
+# 所有模型统一下载到项目 huggingface/ 目录
+_hf_cache = str(HF_CACHE_DIR)
+
 available_interrogators = {
     'wd-convnext-v3': WaifuDiffusionInterrogator(
         'wd-convnext-v3',
         repo_id='SmilingWolf/wd-convnext-tagger-v3',
+        cache_dir=_hf_cache,
     ),
     'wd-swinv2-v3': WaifuDiffusionInterrogator(
         'wd-swinv2-v3',
         repo_id='SmilingWolf/wd-swinv2-tagger-v3',
+        cache_dir=_hf_cache,
     ),
     'wd-vit-v3': WaifuDiffusionInterrogator(
         'wd14-vit-v3',
         repo_id='SmilingWolf/wd-vit-tagger-v3',
+        cache_dir=_hf_cache,
     ),
     'wd14-convnextv2-v2': WaifuDiffusionInterrogator(
         'wd14-convnextv2-v2', repo_id='SmilingWolf/wd-v1-4-convnextv2-tagger-v2',
-        revision='v2.0'
+        revision='v2.0', cache_dir=_hf_cache,
     ),
     'wd14-swinv2-v2': WaifuDiffusionInterrogator(
         'wd14-swinv2-v2', repo_id='SmilingWolf/wd-v1-4-swinv2-tagger-v2',
-        revision='v2.0'
+        revision='v2.0', cache_dir=_hf_cache,
     ),
     'wd14-vit-v2': WaifuDiffusionInterrogator(
         'wd14-vit-v2', repo_id='SmilingWolf/wd-v1-4-vit-tagger-v2',
-        revision='v2.0'
+        revision='v2.0', cache_dir=_hf_cache,
     ),
     'wd14-moat-v2': WaifuDiffusionInterrogator(
         'wd-v1-4-moat-tagger-v2',
         repo_id='SmilingWolf/wd-v1-4-moat-tagger-v2',
-        revision='v2.0'
+        revision='v2.0', cache_dir=_hf_cache,
     ),
     'wd-eva02-large-tagger-v3': WaifuDiffusionInterrogator(
         'wd-eva02-large-tagger-v3',
         repo_id='SmilingWolf/wd-eva02-large-tagger-v3',
+        cache_dir=_hf_cache,
     ),
     'wd-vit-large-tagger-v3': WaifuDiffusionInterrogator(
         'wd-vit-large-tagger-v3',
         repo_id='SmilingWolf/wd-vit-large-tagger-v3',
+        cache_dir=_hf_cache,
     ),
     'cl_tagger_1_01': CLTaggerInterrogator(
         'cl_tagger_1_01',
         repo_id='cella110n/cl_tagger',
         model_path='cl_tagger_1_01/model.onnx',
         tag_mapping_path='cl_tagger_1_01/tag_mapping.json',
+        cache_dir=_hf_cache,
     ),
     'camie-tagger-v2': CamieTaggerInterrogator(
         'camie-tagger-v2',
         repo_id='Camais03/camie-tagger-v2',
         model_filename='camie-tagger-v2.onnx',
         metadata_filename='camie-tagger-v2-metadata.json',
+        cache_dir=_hf_cache,
     ),
 }
 

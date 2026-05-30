@@ -38,15 +38,18 @@ class CamieTaggerInterrogator(Interrogator):
 
     def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs.get("repo_id", "Camais03/camie-tagger-v2")
+        cache_dir = self.kwargs.get("cache_dir", None)
         print(f"Loading {self.name} model from {repo_id}")
 
         model_path = Path(hf_hub_download(
             repo_id=repo_id,
             filename=self.model_filename,
+            cache_dir=cache_dir,
         ))
         metadata_path = Path(hf_hub_download(
             repo_id=repo_id,
             filename=self.metadata_filename,
+            cache_dir=cache_dir,
         ))
         return model_path, metadata_path
 
