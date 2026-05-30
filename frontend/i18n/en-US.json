@@ -64,7 +64,16 @@
     "outputDir": "Output",
     "overview": "Overview",
     "charts": "Charts",
-    "samples": "Samples"
+    "samples": "Samples",
+    "logLevelAll": "All",
+    "logLevelError": "Error",
+    "logLevelWarn": "Warn",
+    "logLevelInfo": "Info",
+    "chartLossAverage": "Avg Loss",
+    "chartLossCurrent": "Current Loss",
+    "chartLossEpochAvg": "Epoch Avg Loss",
+    "chartLrUnet": "UNet LR",
+    "smooth": "Smooth"
   },
   "section": {
     "model": "Model & Dataset",

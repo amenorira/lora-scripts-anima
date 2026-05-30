@@ -118,10 +118,8 @@ window.tagEditorMixin = {
     html += '<div class="tag-editor-grid">';
     imgs.forEach(function(img, idx) {
       var esc = self.esc;
-      var tagPills = (img.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) {
-        var escPath = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        var escTag = t.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return '<span class="tag-pill" @click="tagEditorRemoveTag(\'' + escPath + '\',\'' + escTag + '\')" title="' + tt('clickToDelete', 'Click to remove') + '">' + esc(t.trim()) + '</span>';
+      var tagPills = (img.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t, tagIdx) {
+        return '<span class="tag-pill" data-tag-path="' + self.escapeAttr(img.path) + '" data-tag-value="' + self.escapeAttr(t.trim()) + '" @click="tagEditorRemoveTag($event.target.dataset.tagPath, $event.target.dataset.tagValue)" title="' + tt('clickToDelete', 'Click to remove') + '">' + esc(t.trim()) + '</span>';
       }).join('');
       var isModified = self.tagEditorOriginal[img.path] !== undefined && self.tagEditorOriginal[img.path] !== img.tags;
       var escPath2 = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");

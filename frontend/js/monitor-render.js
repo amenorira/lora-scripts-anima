@@ -83,9 +83,14 @@ window.monitorRenderMixin = {
   },
 
   _renderCharts(d,t) {
-    let html='<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">Smooth</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
+    html+='<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
     html+='<div class="chart-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">';
-    const tags = this.lossSeries.length?this.lossSeries:[{tag:'loss/average',name:'loss average',latest:null,points:[]},{tag:'loss/current',name:'loss current',latest:null,points:[]},{tag:'loss/epoch_average',name:'loss epoch average',latest:null,points:[]},{tag:'lr/unet',name:'lr unet',latest:null,points:[]}];
+    const tags = this.lossSeries.length ? this.lossSeries : [
+      {tag:'loss/average', name: t('chartLossAverage','loss average'), latest:null, points:[]},
+      {tag:'loss/current', name: t('chartLossCurrent','loss current'), latest:null, points:[]},
+      {tag:'loss/epoch_average', name: t('chartLossEpochAvg','loss epoch average'), latest:null, points:[]},
+      {tag:'lr/unet', name: t('chartLrUnet','lr unet'), latest:null, points:[]}
+    ];
     tags.forEach(s=>{html+=`<div class="chart-panel"><div class="chart-title">${s.name} <span class="chart-val">${s.latest!=null?s.latest.toFixed(4):'--'}</span></div><canvas id="chart-${s.tag.replace(/[/.]/g,'-')}" width="360" height="200"></canvas></div>`;});
     html+='</div></div>'; return html;
   },

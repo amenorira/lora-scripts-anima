@@ -408,9 +408,6 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.sidebar-bottom .divider { width: 1px; height: 18px; background: var(--border-default); margin: 0 2px; }
-.sidebar-bottom .bottom-label { font-size: 11px; color: var(--text-sidebar-muted); margin-left: auto; }
-
 /* ── Backend Connectivity Indicator ─────────────────────── */
 .backend-status {
   display: flex; align-items: center; gap: 7px;

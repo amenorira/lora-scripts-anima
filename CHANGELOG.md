@@ -13,9 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Frontend/backend connectivity indicator with real-time disconnect duration
 - Training artifact isolated storage per run
 - Environment management: sd-scripts version info card
+- `constants.js`: centralized UI constants + `OPTIMIZER_DEFAULTS` (single source of truth for optimizer defaults)
 
 ### Changed
 - **i18n fallback changed from zh-CN to en-US** (more international default)
+- **SD 1.5 training type removed** (only SDXL + Anima LoRA remain)
 - Port changed from 28000 to 12333
 - Runtime cache migrated from `output/` to `cache/` directory
 - Training records renamed for clarity
@@ -23,16 +25,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Training form de-card-ified with flattened design
 - Right panel toggle button: unified sizing, centered, icon-only
 - Install section: spinning loader + timer + live log output
+- Optimizer defaults unified: `training-core.js` and `training-toml.js` now share `OPTIMIZER_DEFAULTS`
 
 ### Removed
 - sd-scripts update management feature (local version info only)
 - Custom scrollbar styling (unstable across browsers)
+- Empty "Tools" route page (placeholder, not yet implemented)
+- Unused CSS classes: `.sidebar-bottom .divider`, `.sidebar-bottom .bottom-label`
 
 ### Fixed
 - Training form rendering regression after restructuring
 - Progress bar stuck at 90% after navigation
 - History page blank after refactoring
 - Encoding issues and crash-on-launch in Windows startup scripts
+- Log level filter buttons now use i18n (were hardcoded English)
+- Monitor chart placeholder labels now use i18n (were hardcoded English)
+- Home page quick-action card now shows "Anima / SDXL" (was "SD / SDXL / Anima")
+- Tagger model list now cached to avoid redundant API calls on page switch
+- Tag editor: tag pill click handlers use data attributes (eliminates injection risk from inline onclick)
 
 ---
 

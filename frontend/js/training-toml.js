@@ -165,28 +165,30 @@ window.trainingTomlMixin = {
 
     // 2. merged 字段规则：[formKey, argKey, defaultsByOptimizer]
     //    defaults 中值为 null → 非空即写；值为 '' → 空则跳过
+    //    默认值取自 window.OPTIMIZER_DEFAULTS（单一数据源，与 training-core.js 共用）
+    const DEFS = window.OPTIMIZER_DEFAULTS || {};
     const MERGED_RULES = [
-      { form: 'weight_decay', arg: 'weight_decay', defaults: { _fallback: null } },
-      { form: 'stopcoef', arg: 'stopcoef', defaults: { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
-      { form: 'prodigy_d_coef', arg: 'd_coef', defaults: { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
-      { form: 'prodigy_d0', arg: 'd0', defaults: { 'Prodigy': '', 'prodigyplus.ProdigyPlusScheduleFree': '' } },
-      { form: 'betas', arg: 'betas', defaults: {
+      { form: 'weight_decay', arg: 'weight_decay', defaults: Object.assign({ _fallback: null }, DEFS.weight_decay) },
+      { form: 'stopcoef', arg: 'stopcoef', defaults: DEFS.stopcoef || { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
+      { form: 'prodigy_d_coef', arg: 'd_coef', defaults: DEFS.prodigy_d_coef || { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
+      { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '', 'prodigyplus.ProdigyPlusScheduleFree': '' } },
+      { form: 'betas', arg: 'betas', defaults: DEFS.betas || {
         'AdamW': '0.9,0.999', 'AdamW8bit': '0.9,0.999', 'PagedAdamW8bit': '0.9,0.999',
         'Lion': '0.9,0.99', 'Lion8bit': '0.9,0.99', 'PagedLion8bit': '0.9,0.99',
         'pytorch_optimizer.CAME': '0.9,0.999,0.9999',
         'vendor.emo_optimizer.emosens.EmoSens': '0.9,0.995',
       }},
-      { form: 'eps', arg: 'eps', defaults: {
+      { form: 'eps', arg: 'eps', defaults: DEFS.eps || {
         'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
         'pytorch_optimizer.CAME': '1e-16',
         'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
       }},
-      { form: 'came_weight_decouple', arg: 'weight_decouple', defaults: { 'pytorch_optimizer.CAME': true } },
-      { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: { 'pytorch_optimizer.CAME': false } },
-      { form: 'came_clip_threshold', arg: 'clip_threshold', defaults: { 'pytorch_optimizer.CAME': 1.0 } },
-      { form: 'came_ams_bound', arg: 'ams_bound', defaults: { 'pytorch_optimizer.CAME': false } },
-      { form: 'came_eps1', arg: 'eps1', defaults: { 'pytorch_optimizer.CAME': '1e-30' } },
-      { form: 'came_eps2', arg: 'eps2', defaults: { 'pytorch_optimizer.CAME': '1e-16' } },
+      { form: 'came_weight_decouple', arg: 'weight_decouple', defaults: DEFS.came_weight_decouple || { 'pytorch_optimizer.CAME': true } },
+      { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: DEFS.came_fixed_decay || { 'pytorch_optimizer.CAME': false } },
+      { form: 'came_clip_threshold', arg: 'clip_threshold', defaults: DEFS.came_clip_threshold || { 'pytorch_optimizer.CAME': 1.0 } },
+      { form: 'came_ams_bound', arg: 'ams_bound', defaults: DEFS.came_ams_bound || { 'pytorch_optimizer.CAME': false } },
+      { form: 'came_eps1', arg: 'eps1', defaults: DEFS.came_eps1 || { 'pytorch_optimizer.CAME': '1e-30' } },
+      { form: 'came_eps2', arg: 'eps2', defaults: DEFS.came_eps2 || { 'pytorch_optimizer.CAME': '1e-16' } },
     ];
 
     for (const rule of MERGED_RULES) {

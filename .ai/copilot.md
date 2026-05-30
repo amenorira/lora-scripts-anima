@@ -31,6 +31,11 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 - `backend/` — Backend (FastAPI)
 - `frontend/` — Frontend (Alpine.js SPA)
+  - `frontend/js/constants.js` — Centralized UI constants + optimizer defaults
+  - `frontend/js/config.js` — Route table + field definition fallback
+  - `frontend/js/training-core.js` — Form builder + field logic
+  - `frontend/js/training-toml.js` — TOML generation + training start/stop
+  - `frontend/js/training-presets.js` — Preset CRUD
 - `gui.py` — Entry point
 - `config/` — Training presets
 - `.ai/` — Agent instructions (copilot.md, i18n.md)
@@ -38,7 +43,9 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 ## Localization
 
-All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 439 keys). Never hardcode Chinese/English strings.
+All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 448 keys). Never hardcode Chinese/English strings.
+
+**Optimizer defaults**: Shared optimizer parameter defaults (betas, eps, weight_decay, etc.) are defined in `frontend/js/constants.js` as `OPTIMIZER_DEFAULTS`. Both `training-core.js` and `training-toml.js` reference this single source of truth. When adding a new optimizer, update `OPTIMIZER_DEFAULTS` first, then the consuming files will pick up the changes automatically.
 
 ## Architecture
 

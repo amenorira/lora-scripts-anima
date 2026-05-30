@@ -235,14 +235,8 @@ window.trainingCoreMixin = {
       inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
-      const _OPT_PH = {
-        betas: { 'AdamW':'0.9, 0.999','AdamW8bit':'0.9, 0.999','PagedAdamW8bit':'0.9, 0.999','Lion':'0.9, 0.99','Lion8bit':'0.9, 0.99','PagedLion8bit':'0.9, 0.99','pytorch_optimizer.CAME':'0.9, 0.999, 0.9999','vendor.emo_optimizer.emosens.EmoSens':'0.9, 0.995' },
-        eps: { 'AdamW':'1e-8','AdamW8bit':'1e-8','PagedAdamW8bit':'1e-8','pytorch_optimizer.CAME':'1e-16','vendor.emo_optimizer.emosens.EmoSens':'1e-8' },
-        came_eps1: { 'pytorch_optimizer.CAME':'1e-30' },
-        came_eps2: { 'pytorch_optimizer.CAME':'1e-16' },
-        weight_decay: { 'vendor.emo_optimizer.emosens.EmoSens':'0.01' },
-        max_grad_norm: { 'vendor.emo_optimizer.emosens.EmoSens':'0' },
-      };
+      // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
+      const _OPT_PH = window.OPTIMIZER_DEFAULTS || {};
       const _phMap = _OPT_PH[dataKey];
       if (_phMap) {
         // Dynamic placeholder that updates when optimizer_type changes

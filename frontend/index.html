@@ -264,10 +264,10 @@
           <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="text" x-model="logSearch" :placeholder="t('monitor.logSearch','Search...')" style="width:140px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input="renderLogs()">
-            <button class="log-level-btn" :class="{ active: logLevel === 'all' }" @click="logLevel='all'; renderLogs()">All</button>
-            <button class="log-level-btn" :class="{ active: logLevel === 'error' }" @click="logLevel='error'; renderLogs()">Error</button>
-            <button class="log-level-btn" :class="{ active: logLevel === 'warn' }" @click="logLevel='warn'; renderLogs()">Warn</button>
-            <button class="log-level-btn" :class="{ active: logLevel === 'info' }" @click="logLevel='info'; renderLogs()">Info</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'all' }" @click="logLevel='all'; renderLogs()" x-text="t('monitor.logLevelAll','All')">All</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'error' }" @click="logLevel='error'; renderLogs()" x-text="t('monitor.logLevelError','Error')">Error</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'warn' }" @click="logLevel='warn'; renderLogs()" x-text="t('monitor.logLevelWarn','Warn')">Warn</button>
+            <button class="log-level-btn" :class="{ active: logLevel === 'info' }" @click="logLevel='info'; renderLogs()" x-text="t('monitor.logLevelInfo','Info')">Info</button>
             <button class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
               <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
             </button>
@@ -368,19 +368,6 @@
           </div>
         </div>
         <div id="tagEditorContainer"></div>
-      </div>
-
-      <!-- Route: Tools -->
-      <div x-show="currentRoute === 'tools'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('tools.title')">Tools</h1>
-          <p class="page-subtitle" x-text="t('tools.subtitle')">LoRA extraction, merging, conversion utilities</p>
-        </div>
-        <div class="card">
-          <div style="text-align:center;padding:30px">
-            <p style="color:var(--text-secondary);margin-bottom:16px">LoRA Tools</p>
-          </div>
-        </div>
       </div>
 
       <!-- Route: Environment -->

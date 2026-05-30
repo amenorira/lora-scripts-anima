@@ -7,6 +7,7 @@ window.taggerMixin = {
   // ── State ──────────────────────────────────────────────
   taggerRunning: false,
   taggerPollTimer: null,
+  _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
 
   // ── Helpers ────────────────────────────────────────────
   // esc() and escJson defined in trainingCoreMixin (shared via mixin merge)
@@ -37,7 +38,13 @@ window.taggerMixin = {
     const container = document.getElementById('taggerForm');
     if (!container) return;
     let models = [];
-    try { const r=await fetch('/api/tagger/models'); const d=await r.json(); if(d.status==='success') models=d.data||[]; } catch(e){}
+    // 使用缓存的模型列表，避免每次切换页面都请求
+    if (this._taggerModelsCache && this._taggerModelsCache.length) {
+      models = this._taggerModelsCache;
+    } else {
+      try { const r=await fetch('/api/tagger/models'); const d=await r.json(); if(d.status==='success') models=d.data||[]; } catch(e){}
+      if (models.length) this._taggerModelsCache = models;
+    }
     if (!models.length) {
       container.innerHTML = `<div class="card-header">${this.t('tagger.title')}</div><div style="padding:20px;color:var(--text-secondary)">${this.t('common.failed')}: Unable to load model list</div>`;
       return;

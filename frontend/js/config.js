@@ -68,7 +68,6 @@ window.ROUTE_CONFIG = {
   'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
-  'tools': { titleKey: 'tools.title', subtitleKey: 'tools.subtitle' },
   'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'about': { titleKey: 'about.title', subtitleKey: 'about.subtitle' },
