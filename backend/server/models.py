@@ -18,6 +18,10 @@ class TaggerInterrogateRequest(BaseModel):
         ge=0,
         le=1
     )
+    category_thresholds: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Per-category thresholds. Keys: general, character, copyright, artist, meta, year, rating"
+    )
     add_rating_tag: bool = False
     add_model_tag: bool = False
     additional_tags: str = ""

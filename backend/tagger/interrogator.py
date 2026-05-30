@@ -17,6 +17,7 @@ from backend.tagger import dbimutils, format
 from backend.tagger.interrogators.base import Interrogator
 from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator
+from backend.tagger.interrogators.camie import CamieTaggerInterrogator
 import traceback
 
 tag_escape_pattern = re.compile(r'([\\()])')
@@ -72,6 +73,12 @@ available_interrogators = {
         model_path='cl_tagger_1_01/model.onnx',
         tag_mapping_path='cl_tagger_1_01/tag_mapping.json',
     ),
+    'camie-tagger-v2': CamieTaggerInterrogator(
+        'camie-tagger-v2',
+        repo_id='Camais03/camie-tagger-v2',
+        model_filename='camie-tagger-v2.onnx',
+        metadata_filename='camie-tagger-v2-metadata.json',
+    ),
 }
 
 
@@ -94,23 +101,25 @@ def on_interrogate(
 
         threshold: float,
         character_threshold: float,
+        category_thresholds: Dict[str, float] = None,
 
-        add_rating_tag: bool,
-        add_model_tag: bool,
+        add_rating_tag: bool = False,
+        add_model_tag: bool = False,
 
-        additional_tags: str,
-        exclude_tags: str,
-        sort_by_alphabetical_order: bool,
-        add_confident_as_weight: bool,
-        replace_underscore: bool,
-        replace_underscore_excludes: str,
-        escape_tag: bool,
+        additional_tags: str = "",
+        exclude_tags: str = "",
+        sort_by_alphabetical_order: bool = False,
+        add_confident_as_weight: bool = False,
+        replace_underscore: bool = False,
+        replace_underscore_excludes: str = "",
+        escape_tag: bool = False,
 
-        unload_model_after_running: bool
+        unload_model_after_running: bool = False
 ):
     postprocess_opts = (
         threshold,
         character_threshold,
+        category_thresholds or {},
         add_rating_tag,
         add_model_tag,
         split_str(additional_tags),

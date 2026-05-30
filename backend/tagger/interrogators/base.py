@@ -1,8 +1,51 @@
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from PIL import Image
 
 tag_escape_pattern = re.compile(r'([\\()])')
+
+# ── Camie Tagger v2 推荐分类阈值 ──────────────────────
+
+# Macro-optimized: 每个标签权重相同，稀有标签友好，宁多勿少（推荐打标训练数据用）
+CAMIE_MACRO_THRESHOLDS = {
+    "general": 0.492,
+    "character": 0.492,
+    "copyright": 0.492,
+    "artist": 0.492,
+    "meta": 0.492,
+    "year": 0.492,
+    "rating": 0.492,
+}
+
+# Micro-optimized: 按标签出现频率加权，常见标签更精准，误报更少
+CAMIE_MICRO_THRESHOLDS = {
+    "general": 0.614,
+    "character": 0.614,
+    "copyright": 0.614,
+    "artist": 0.614,
+    "meta": 0.614,
+    "year": 0.614,
+    "rating": 0.614,
+}
+
+# 预设合集（供前端使用）
+CAMIE_THRESHOLD_PRESETS = {
+    "macro": CAMIE_MACRO_THRESHOLDS,
+    "micro": CAMIE_MICRO_THRESHOLDS,
+}
+
+# 各分类显示名称
+CATEGORY_LABELS = {
+    "general": "特征 (General)",
+    "character": "角色 (Character)",
+    "copyright": "版权 (Copyright)",
+    "artist": "画师 (Artist)",
+    "meta": "元数据 (Meta)",
+    "year": "年份 (Year)",
+    "rating": "分级 (Rating)",
+    "quality": "质量 (Quality)",
+    "model": "模型 (Model)",
+}
 
 
 class Interrogator:
@@ -12,6 +55,7 @@ class Interrogator:
 
             threshold=0.35,
             character_threshold=0.6,
+            category_thresholds: Optional[Dict[str, float]] = None,
 
             add_rating_tag=False,
             add_model_tag=False,
@@ -33,19 +77,26 @@ class Interrogator:
         if not add_model_tag and 'model' in tags:
             del tags['model']
 
+        # 角色标签：优先用 character_threshold，其次查 category_thresholds
         if 'character' in tags:
+            char_th = character_threshold
+            if category_thresholds and 'character' in category_thresholds:
+                char_th = category_thresholds['character']
             for t, c in tags['character']:
-                if c >= character_threshold:
+                if c >= char_th:
                     ok_tags[t] = c
-
             del tags['character']
 
         for t in additional_tags:
             ok_tags[t] = 1.0
 
         for category in tags:
+            # 确定本分类的阈值：分类阈值 > 全局 threshold
+            cat_th = threshold
+            if category_thresholds and category in category_thresholds:
+                cat_th = category_thresholds[category]
             for t, c in tags[category]:
-                if c >= threshold:
+                if c >= cat_th:
                     ok_tags[t] = c
 
         for e in exclude_tags:
@@ -102,7 +153,7 @@ class Interrogator:
         :param image: The input image to be interrogated.
         :return: A dictionary with categories as keys and lists of (tag, confidence)
 
-        categories: "rating", "general", "character", "copyright", "artist", "meta", "quality", "model"
+        categories: "rating", "general", "character", "copyright", "artist", "meta", "year", "quality", "model"
         """
 
         raise NotImplementedError()

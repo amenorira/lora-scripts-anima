@@ -82,6 +82,7 @@ async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: Backg
         interrogator=interrogator,
         threshold=req.threshold,
         character_threshold=req.character_threshold,
+        category_thresholds=req.category_thresholds,
         add_rating_tag=req.add_rating_tag,
         add_model_tag=req.add_model_tag,
         additional_tags=req.additional_tags,
