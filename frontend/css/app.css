@@ -15,12 +15,12 @@
   --warning: #ea580c;
   --info: #3b82f6;
 
-  --bg-root: #faf9f6;
+  --bg-root: #f9f9f9;
   --bg-surface: #ffffff;
-  --bg-surface-raised: #fafaf8;
-  --bg-sidebar: #f2f1ed;
-  --bg-preview: #faf9f6;
-  --bg-input: #ffffff;
+  --bg-surface-raised: #f5f5f5;
+  --bg-sidebar: #f1f1f1;
+  --bg-preview: #f5f5f5;
+  --bg-input: #f9f9f9;
   --bg-overlay: rgba(0,0,0,0.25);
 
   --text-primary: #1e1b18;
@@ -53,8 +53,8 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
 
-  --sidebar-w: 220px;
-  --panel-w: 380px;
+  --sidebar-w: 180px;
+  --panel-w: clamp(320px, 30vw, 500px);
 
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
@@ -73,12 +73,12 @@
   --accent-soft: rgba(93, 160, 247, 0.12);
   --accent-muted: rgba(93, 160, 247, 0.06);
 
-  --bg-root: #232326;
-  --bg-surface: #2a2a2e;
-  --bg-surface-raised: #313135;
-  --bg-sidebar: #202023;
-  --bg-preview: #232326;
-  --bg-input: #2e2e32;
+  --bg-root: #2a2a2a;
+  --bg-surface: #333333;
+  --bg-surface-raised: #383838;
+  --bg-sidebar: #1a1a1a;
+  --bg-preview: #222222;
+  --bg-input: #2a2a2a;
   --bg-overlay: rgba(0,0,0,0.45);
 
   --text-primary: #e2e0dc;
@@ -530,7 +530,7 @@ a:hover { text-decoration: underline; }
 
 /* ── Train Type Selector ──────────────────────────────── */
 .train-tab-card {
-  margin-bottom: 18px;
+  /* margin handled by layout constraint below */
 }
 .train-type-select-wrap {
   display: inline-flex;
@@ -560,15 +560,27 @@ a:hover { text-decoration: underline; }
   border-left: 3px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 20px 22px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   box-shadow: var(--shadow-sm);
   transition: border-left-color 0.5s var(--ease-out);
 }
 .card-header {
-  font-size: 14px; font-weight: 600;
-  color: var(--text-primary); margin-bottom: 14px;
+  font-size: 18px; font-weight: 650;
+  color: var(--text-primary); margin-bottom: 16px;
   letter-spacing: -0.2px;
+  padding: 0 0 8px 0;
+  border-bottom: 1px solid var(--border-default);
 }
+/* ── Section header accent colors ──────────────────────── */
+[data-section="model"] .card-header         { border-bottom-color: #4d94ff; }
+[data-section="network"] .card-header       { border-bottom-color: #10b981; }
+[data-section="optimizer"] .card-header     { border-bottom-color: #f59e0b; }
+[data-section="training"] .card-header      { border-bottom-color: #8b5cf6; }
+[data-section="save"] .card-header          { border-bottom-color: #0ea5e9; }
+[data-section="regularization"] .card-header{ border-bottom-color: #f43f5e; }
+[data-section="performance"] .card-header   { border-bottom-color: #6366f1; }
+[data-section="preview"] .card-header       { border-bottom-color: #ec4899; }
+[data-section="caption"] .card-header       { border-bottom-color: #78716c; }
 /* Color-coded card accents */
 .card.card-status  { border-left-color: var(--accent); }
 
@@ -682,16 +694,21 @@ input[type="checkbox"]:focus-visible {
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--text-tertiary);
 }
-/* ── Form Fields (vertical stacked layout) ───────────────── */
+/* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
-  display: flex; flex-direction: column; gap: 2px;
   padding: 10px 0 10px 10px;
   border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border-default);
   transition: border-left-color 0.25s var(--ease-out);
 }
-.field + .field { border-top: 1px solid var(--border-default); padding-top: 12px; }
-
-/* ── Change indicator: amber left bar ────────────────────── */
+.field-row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 36px;
+}
+.field-info {
+  flex: 1; min-width: 0;
+}
+/* ── Change indicator: amber left bar (color only, no layout shift) ── */
 .field.field-changed {
   border-left-color: #d97706;
 }
@@ -699,78 +716,43 @@ input[type="checkbox"]:focus-visible {
   border-left-color: #f59e0b;
 }
 
-/* ── Field header row: param name + menu buttons ─────────── */
-.field-header {
-  display: flex; align-items: center; gap: 8px;
-  min-height: 24px;
-}
+/* ── Field info (parameter name + description, stacked) ──── */
 .field-key {
-  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
-  color: var(--text-primary); line-height: 1.3;
+  display: block;
+  font-size: 14px; font-weight: 600;
+  color: var(--text-primary); line-height: 1.35;
   letter-spacing: -0.1px;
-  cursor: pointer; user-select: all;
-  border-radius: 3px;
-  padding: 0 3px; margin: -1px -3px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.field-key:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.field-header-right {
-  margin-left: auto;
-  display: flex; align-items: center; gap: 4px;
-  flex-shrink: 0;
-}
-
-/* ── Field body row: description + control ───────────────── */
-.field-body {
-  display: flex; align-items: center; gap: 14px;
-  min-height: 34px;
 }
 .field-desc {
-  flex: 1; min-width: 0;
-  font-size: 12px; color: var(--text-secondary); line-height: 1.45;
+  font-size: 12.5px; color: var(--text-secondary); line-height: 1.45;
+  margin-top: 2px;
 }
+/* ── Field control (input / select / stepper, right side) ── */
 .field-control {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 5px;
-  min-width: 180px;
-  justify-content: flex-end;
 }
-/* Full-width input row for text/textarea/path fields */
+.field-control .anima-select {
+  min-width: 200px;
+}
+.field-control .stepper {
+  width: 140px;
+}
+.field-control input[type="text"],
+.field-control input[type="number"] {
+  width: 100%;
+}
+/* Full-width input row for textarea/path fields */
 .field-input-row {
   margin-top: 6px;
   width: 100%;
 }
 .field-input-row textarea { width: 100%; }
-/* Toggle gets its own narrower column */
-.field-control .toggle { flex-shrink: 0; }
-
-/* Stepper: left-right clamp with number centered */
-.field-control .stepper {
-  flex-shrink: 0;
-}
-
-/* Select / text input inside field-control */
-.field-control .anima-select,
-.field-control input[type="text"],
-.field-control input[type="number"],
-.field-control textarea {
-  width: 100%;
-}
-
-/* Toggle inline with description */
-.field-body-toggle {
-  display: flex; align-items: center; gap: 14px;
-}
-.field-body-toggle .field-desc { flex: 1; }
-.field-body-toggle .toggle { flex-shrink: 0; }
 
 /* ── Field hint / readonly warning ───────────────────────── */
 .field-hint {
-  font-size: 11.5px; color: var(--text-tertiary); line-height: 1.4;
-  padding-top: 2px;
+  font-size: 12px; color: var(--text-tertiary); line-height: 1.45;
+  padding-top: 3px;
 }
 .field-readonly-warn {
   font-size: 11.5px;
@@ -824,19 +806,27 @@ input[type="checkbox"]:focus-visible {
 /* ── Menu button (square, 24×24) ─────────────────────────── */
 .btn-menu {
   width: 24px; height: 24px; padding: 0;
-  border: none; border-radius: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   position: relative;
 }
 .btn-menu:hover {
   background: var(--hover-overlay);
   color: var(--text-primary);
+  border-color: var(--text-sidebar-muted);
 }
 .btn-menu svg { width: 14px; height: 14px; }
+
+/* ── Field menu wrap (hover trigger for popup) ────────────── */
+.field-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
 
 /* ── Menu popup ──────────────────────────────────────────── */
 .field-menu-popup {
@@ -844,13 +834,20 @@ input[type="checkbox"]:focus-visible {
   top: 100%;
   right: 0;
   margin-top: 4px;
-  min-width: 165px;
+  min-width: 140px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 4px;
   box-shadow: var(--shadow-lg);
   z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+.field-menu-wrap:hover .field-menu-popup {
+  opacity: 1;
+  visibility: visible;
 }
 .field-menu-popup button {
   display: flex; align-items: center; gap: 8px;
@@ -930,7 +927,7 @@ input:focus, textarea:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-input[type="number"] { font-family: var(--font-mono); appearance: textfield; -moz-appearance: textfield; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
@@ -968,12 +965,12 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   box-shadow: 0 0 0 3px var(--accent-soft);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.stepper input { border: none; border-radius: 0; width: 64px; text-align: center; padding: 6px 4px; box-shadow: none; }
+.stepper input { border: none; border-radius: 0; flex: 1; width: 0; text-align: center; padding: 7px 4px; box-shadow: none; }
 .stepper input:focus { box-shadow: none; }
 .stepper button {
-  width: 28px; border: none;
-  background: var(--bg-surface-raised); color: var(--text-secondary);
-  cursor: pointer; font-size: 15px; font-family: var(--font-mono);
+  width: 32px; border: none; flex-shrink: 0;
+  background: var(--bg-sidebar); color: var(--text-secondary);
+  cursor: pointer; font-size: 16px; font-weight: 500; font-family: inherit;
   display: flex; align-items: center; justify-content: center;
   transition: background var(--duration-fast), color var(--duration-fast);
   user-select: none;
@@ -1533,8 +1530,23 @@ input[type="range"]::-webkit-slider-thumb {
 .btn:disabled, .btn[disabled] { opacity: 0.40; cursor: not-allowed; pointer-events: none; }
 input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; background: var(--bg-surface-raised); }
 
+/* ── Training form width constraint (centered, prevents over-stretching on wide screens) ── */
+.train-tab-card {
+  max-width: 800px;
+  margin: 0 auto 36px auto;
+}
+#trainForm {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
-@media (max-width: 1000px) {
+/* Wide screens: let the TOML preview panel grow */
+@media (min-width: 1600px) {
+  :root { --panel-w: clamp(380px, 34vw, 580px); }
+}
+/* Medium screens: hide right panel when space is tight */
+@media (max-width: 1100px) {
   .right-panel { display: none; }
 }
 @media (max-width: 700px) {

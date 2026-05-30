@@ -75,6 +75,7 @@
     "performance": "Performance",
     "save": "Save & Logging",
     "caption": "Caption",
+    "misc": "Other Settings",
     "preview": "Preview"
   },
   "field": {
@@ -129,8 +130,8 @@
     "optimizer_type": "Optimizer",
     "loss_type": "Loss function type",
     "min_snr_gamma": "Minimum SNR gamma. Recommended: 5 if enabled.",
-    "weight_decay": "Weight decay. Recommended 0.01~0.1. Leave empty to disable.",
-    "weight_decayHint": "Recommended 0.01~0.1",
+    "weight_decay": "Weight decay. Leave empty for optimizer default.",
+    "weight_decayHint": "Merged into optimizer_args. EmoSens defaults to 0.01.",
     "stopcoef": "Convergence Sensitivity (stopcoef)",
     "stopcoefHint": "EmoSens early-stop threshold. Lower = earlier [READY TO STOP] notification. Official default: 0.04.",
     "prodigy_d_coef": "Prodigy optimizer d_coef parameter",

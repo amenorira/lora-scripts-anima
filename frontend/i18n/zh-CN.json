@@ -75,6 +75,7 @@
     "performance": "性能优化",
     "save": "保存与日志",
     "caption": "Caption 处理",
+    "misc": "其他设置",
     "preview": "预览采样"
   },
   "field": {
@@ -129,8 +130,8 @@
     "optimizer_type": "优化器设置",
     "loss_type": "损失函数类型",
     "min_snr_gamma": "最小信噪比伽马值。如果启用推荐为 5",
-    "weight_decay": "权重衰减。推荐 0.01~0.1，留空则不启用",
-    "weight_decayHint": "推荐 0.01~0.1。将合并进 optimizer_args。",
+    "weight_decay": "权重衰减。留空使用优化器默认值",
+    "weight_decayHint": "将合并进 optimizer_args。EmoSens 默认 0.01，其他优化器不启用",
     "stopcoef": "收敛灵敏度 (stopcoef)",
     "stopcoefHint": "EmoSens 早停判定阈值。越低越早触发 [READY TO STOP] 通知。官方默认 0.04。",
     "prodigy_d_coef": "Prodigy 优化器 d_coef 参数",
@@ -153,7 +154,7 @@
     "lr_warmup_steps_emoLocked": "EmoSens 不需要外部预热步骤，此参数已锁定为 0",
     "lr_scheduler_locked": "此优化器内部自动管理学习率调度，已锁定为 constant",
     "learning_rate_prodigyLocked": "Prodigy 使用 lr 作为 D-adaptation 缩放因子，必须固定为 1.0",
-    "network_module": "训练网络模块。SD/SDXL 选 networks.lora；LoHa/LoKr 选对应项；Anima 选 networks.lora_anima",
+    "network_module": "训练网络模块",
     "network_dim": "网络维度。常用 4~128，不是越大越好，低 dim 可降低显存占用",
     "network_alpha": "常用值：等于 network_dim 或 network_dim*1/2 或 1。使用较小的 alpha 需要提升学习率",
     "network_weights": "从已有的 LoRA 模型上继续训练，填写路径",

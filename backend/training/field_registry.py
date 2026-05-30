@@ -53,8 +53,8 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "show_if": {"key": "enable_bucket", "eq": True}},
-{"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "clip_skip", "type": "stepper", "default": 2, "section": "model", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
+{"key": "v_parameterization", "type": "toggle", "default": False, "section": "misc", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
+{"key": "clip_skip", "type": "stepper", "default": 2, "section": "misc", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
 # ── Network ──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": ["sd", "sdxl"]}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
 {"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "target": "toml", "min": 1, "max": 256, "step": 8},
@@ -88,10 +88,9 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.rs_loraHint"},
 # ── Training Core ──
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "target": "toml", "min": 1},
-{"key": "max_train_steps", "type": "number", "default": "", "section": "training", "desc_key": "field.max_train_steps", "target": "toml", "min": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1},
-{"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
+{"key": "seed", "type": "number", "default": 1337, "section": "misc", "desc_key": "field.seed", "target": "toml"},
 {"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
     # Anima: Timestep & Weighting (training core for DiT)
     {"key": "timestep_sampling", "type": "select", "default": "sigmoid", "section": "training", "desc_key": "field.timestep_sampling", "target": "toml", "group": "anima", "options": [{"v": "sigmoid", "l": "sigmoid", "dk": "opt.timestep_sampling_sigmoid"}, {"v": "sigma", "l": "sigma", "dk": "opt.timestep_sampling_sigma"}, {"v": "uniform", "l": "uniform", "dk": "opt.timestep_sampling_uniform"}, {"v": "shift", "l": "shift", "dk": "opt.timestep_sampling_shift"}]},
@@ -143,8 +142,8 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}},
 {"key": "min_snr_gamma", "type": "number", "section": "regularization", "desc_key": "field.min_snr_gamma", "target": "toml", "step": 0.1},
 {"key": "noise_offset", "type": "number", "section": "regularization", "desc_key": "field.noise_offset", "target": "toml", "step": 0.001},
-{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.zero_terminal_snr", "target": "toml"},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.gradient_checkpointing", "target": "toml"},
+{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "misc", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": ["sd", "sdxl"]},
+{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml"},
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": ["sd", "sdxl"]},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": ["sd", "sdxl"]},

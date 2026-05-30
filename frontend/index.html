@@ -312,8 +312,9 @@
             <label class="train-type-label" x-text="t('opt.model_train_type', 'Training Type')"></label>
             <div class="anima-select" style="min-width:200px"
                  x-data="animaSelect({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}, form.model_train_type)"
-                 @click.outside="closeOnOutside()">
-              <input type="hidden" x-ref="modelInput" x-model="form.model_train_type">
+                 @click.outside="closeOnOutside()"
+                 @anima-select-change="setField('model_train_type', $event.detail.value)">
+              <input type="hidden" x-ref="modelInput" :value="form.model_train_type">
               <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()">
                 <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
                 <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

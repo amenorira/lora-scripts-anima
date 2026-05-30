@@ -36,6 +36,8 @@ window.trainingCoreMixin = {
     } else if (v !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
       this.form.network_module = 'networks.lora';
     }
+    // Also update the default so individual field reset uses the correct value
+    this.formDefaults.network_module = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
 
     // Re-render form with new train type
     this.renderTrainingForm(v);
@@ -51,26 +53,29 @@ window.trainingCoreMixin = {
     this._autoLoaded = false; // Reset so autoLoadLastParams can run again
     const r = this.currentRoute;
     const cfg = ROUTE_CONFIG[r] || {};
-    let trainType = cfg.trainType || 'anima-lora';
+    const routeTrainType = cfg.trainType || 'anima-lora';
 
     const savedKey = 'anima-form-' + r;
     let saved = null;
     try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
 
-    // Migrate: if saved train type is no longer available, reset to default
-    if (saved && saved.model_train_type === 'sd-lora') {
-      saved.model_train_type = trainType;
+    // Use saved train type if valid, otherwise fall back to route default
+    const validTrainTypes = this.trainTypes.map(t => t.v);
+    let trainType = routeTrainType;
+    if (saved && saved.model_train_type && validTrainTypes.includes(saved.model_train_type)) {
+      trainType = saved.model_train_type;
+    } else if (saved && saved.model_train_type === 'sd-lora') {
+      // Migrate old value
+      saved.model_train_type = routeTrainType;
     }
 
     const defaults = {};
     const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => { s.fields.forEach(f => {
-      // Use explicit default if it's a meaningful value (not null/empty)
       const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
       if (hasExplicitDefault) {
         defaults[f.key] = f.default;
       } else if (!f.hidden) {
-        // For number/stepper without explicit default, leave empty (not min)
         if (f.type === 'toggle') defaults[f.key] = false;
         else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
         else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
@@ -79,7 +84,22 @@ window.trainingCoreMixin = {
     }); });
     defaults.model_train_type = trainType;
 
+    // Adjust network_module default based on train type
+    if (trainType === 'anima-lora') {
+      defaults.network_module = 'networks.lora_anima';
+    }
+
     this.form = { ...defaults, ...(saved || {}) };
+    // Ensure model_train_type is valid (saved may have been from another route)
+    if (!validTrainTypes.includes(this.form.model_train_type)) {
+      this.form.model_train_type = trainType;
+    }
+    // Fix incompatible network_module after merge
+    if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
+      this.form.network_module = 'networks.lora_anima';
+    } else if (this.form.model_train_type !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
+      this.form.network_module = 'networks.lora';
+    }
     this.formDefaults = { ...defaults };
     this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
@@ -169,7 +189,7 @@ window.trainingCoreMixin = {
     // ── Generate input HTML ──
     let inputHtml = '';
     if (isToggle) {
-      inputHtml = `<label class="toggle"><input type="checkbox" x-model="form.${dataKey}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
+      inputHtml = `<label class="toggle"><input type="checkbox" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
       const self = this;
@@ -209,13 +229,12 @@ window.trainingCoreMixin = {
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const descPanelHtml = fc.hasOptionDescs ? `<div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>` : '';
       const menuHtml = `<div class="anima-select-menu" x-show="open" x-transition><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()"><input type="hidden" x-ref="modelInput" x-model="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
-      inputHtml = `<textarea x-model="form.${dataKey}" rows="3"></textarea>`;
-    } else if (field.type === 'stepper') {
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${field.step || 1})">−</button><input type="number" x-model.number="form.${dataKey}" min="${field.min || 0}" max="${field.max || 999}" step="${field.step || 1}"><button type="button" @click="stepField('${dataKey}', ${field.step || 1})">+</button></div>`;
-    } else if (field.type === 'number') {
-      inputHtml = `<input type="number" x-model.number="form.${dataKey}" step="${field.step || 1}" min="${field.min !== undefined ? field.min : ''}" max="${field.max !== undefined ? field.max : ''}">`;
+      inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"></textarea>`;
+    } else if (field.type === 'stepper' || field.type === 'number') {
+      const sStep = field.step || 1;
+      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
       const _OPT_PH = {
@@ -223,14 +242,16 @@ window.trainingCoreMixin = {
         eps: { 'AdamW':'1e-8','AdamW8bit':'1e-8','PagedAdamW8bit':'1e-8','pytorch_optimizer.CAME':'1e-16','vendor.emo_optimizer.emosens.EmoSens':'1e-8' },
         came_eps1: { 'pytorch_optimizer.CAME':'1e-30' },
         came_eps2: { 'pytorch_optimizer.CAME':'1e-16' },
+        weight_decay: { 'vendor.emo_optimizer.emosens.EmoSens':'0.01' },
+        max_grad_norm: { 'vendor.emo_optimizer.emosens.EmoSens':'0' },
       };
       const _phMap = _OPT_PH[dataKey];
       if (_phMap) {
         // Dynamic placeholder that updates when optimizer_type changes
         const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" x-model="form.${dataKey}" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
       } else {
-        inputHtml = `<input type="text" x-model="form.${dataKey}">`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)">`;
       }
     }
 
@@ -245,9 +266,8 @@ window.trainingCoreMixin = {
     // ── Reset button + popup menu (in secondary layer) ──
     const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
     const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
-    const _copySvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
     const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-    const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button><button type="button" @click="copyFieldName('${dataKey}');_menuOpen=false">${_copySvg}<span>${this.t('common.copyParamName')}</span></button></div>`;
+    const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
     let condClass = '';
@@ -306,30 +326,27 @@ window.trainingCoreMixin = {
     const nestedClass = field.showIf ? ' field-nested' : '';
 
     // ── Build body row ──
-    let bodyHtml = '';
-    if (isToggle) {
-      // Toggle: description + switch on same row
-      bodyHtml = `<div class="field-body field-body-toggle"><div class="field-desc">${label}</div><div class="field-control">${controlHtml}</div></div>`;
-    } else if (isFullWidth) {
-      // Full-width: description row + input row (spans entire width)
-      bodyHtml = `<div class="field-body"><div class="field-desc">${label}</div></div><div class="field-input-row">${controlHtml}</div>`;
+    let controlSection = '';
+    let fullWidthRow = '';
+    if (isFullWidth) {
+      // Textarea / path: info on top, input full-width below (outside field-row)
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}</div><div class="field-desc">${label}</div></div>`;
+      fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
-      // Inline: description + control on same row (number, stepper, select)
-      bodyHtml = `<div class="field-body"><div class="field-desc">${label}</div><div class="field-control">${controlHtml}</div></div>`;
+      // Standard: info left, control right — single flex row
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}</div><div class="field-desc">${label}</div></div><div class="field-control">${controlHtml}</div>`;
     }
 
     // ── Assemble ──
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) }" x-data="{ _menuOpen: false }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
-      <div class="field-header">
-        <span class="field-key" @click="copyFieldName('${dataKey}')" title="${this.escapeAttr(dataKey)}">${this.esc(dataKey)}</span>
-        <div class="field-header-right">
-          <div style="position:relative;display:inline-flex">
-            <button type="button" class="btn-menu" @click="_menuOpen=!_menuOpen" title="⋯">${_dotsSvg}</button>
-            <div x-show="_menuOpen" @click.outside="_menuOpen=false" x-cloak>${_menuPopupHtml}</div>
-          </div>
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
+      <div class="field-row">
+        ${controlSection}
+        <div class="field-menu-wrap">
+          <button type="button" class="btn-menu" title="⋯">${_dotsSvg}</button>
+          ${_menuPopupHtml}
         </div>
       </div>
-      ${bodyHtml}
+      ${fullWidthRow}
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
       ${readonlyWarnHtml}
     </div>`;
@@ -444,6 +461,7 @@ window.trainingCoreMixin = {
       if (this._matchAutoValueRule(r)) {
         if (r.set !== null && r.set !== undefined) {
           this.form[r.target] = r.set;
+          this.formDefaults[r.target] = r.set;
         }
       }
     });
@@ -490,11 +508,14 @@ window.trainingCoreMixin = {
           if (matched) {
             if (matched.set !== null && matched.set !== undefined) {
               self.form[matched.target] = matched.set;
+              self.formDefaults[matched.target] = matched.set;
             }
           } else {
-            // No rule matches → restore default
+            // No rule matches → restore default (also update formDefaults)
             const field = self.findFieldDef(target);
-            if (field) self.form[target] = field.default;
+            const defVal = field ? field.default : (self.formDefaults[target]);
+            if (field) self.form[target] = defVal;
+            self.formDefaults[target] = defVal;
           }
         });
 
@@ -568,19 +589,18 @@ window.trainingCoreMixin = {
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
-        // Ensure warning text exists
+        // Ensure warning text exists (deduplicate: remove any stale ones first)
         const reasonKey = row.getAttribute('data-readonly-if-reason');
         const text = reasonKey ? self.t(reasonKey) : '';
-        if (text && !row.querySelector('.field-readonly-warn')) {
+        // Remove ALL existing warnings in this row to avoid duplication
+        row.querySelectorAll('.field-readonly-warn').forEach(el => el.remove());
+        if (text) {
           const warnEl = document.createElement('div');
           warnEl.className = 'field-readonly-warn';
           warnEl.textContent = text;
-          // Append to field row (works for both new vertical and legacy layouts)
-          const anchor = row.querySelector('.field-body') || row.querySelector('.field-left') || row;
-          anchor.parentNode.insertBefore(warnEl, anchor.nextSibling);
-        } else if (text && row.querySelector('.field-readonly-warn')) {
-          // Update text in case locale changed
-          row.querySelector('.field-readonly-warn').textContent = text;
+          // Insert after .field-row, or at end of row
+          const anchor = row.querySelector('.field-row') || row;
+          anchor.parentNode === row ? row.appendChild(warnEl) : anchor.parentNode.insertBefore(warnEl, anchor.nextSibling);
         }
       } else {
         row.removeAttribute('data-readonly-if-active');
@@ -615,8 +635,10 @@ window.trainingCoreMixin = {
     let newVal = current + delta;
     if (field && field.min !== undefined && newVal < field.min) newVal = field.min;
     if (field && field.max !== undefined && newVal > field.max) newVal = field.max;
-    this.form[key] = newVal;
-    this.pushHistory({ ...this.form });
+    // Fix floating-point drift (e.g. 0.1 + 0.2 = 0.30000000000000004)
+    const decimals = (String(step).split('.')[1] || '').length;
+    newVal = Number(newVal.toFixed(decimals));
+    this.setField(key, newVal);
   },
 
   findFieldDef(key) {
@@ -628,14 +650,21 @@ window.trainingCoreMixin = {
   },
 
   undoField(key) {
-    if (this.formHistoryIdx > 0) {
-      this.formHistoryIdx--;
-      const prev = this.formHistory[this.formHistoryIdx];
-      for (const [k, v] of Object.entries(prev)) {
-        if (this.form[k] !== v) this.form[k] = v;
+    if (this.formHistoryIdx <= 0) return;
+    // Walk back through history to find the most recent entry where this key differs
+    for (let i = this.formHistoryIdx - 1; i >= 0; i--) {
+      const entry = this.formHistory[i];
+      if (key in entry && entry[key] !== this.form[key]) {
+        this.form[key] = entry[key];
+        this.formHistoryIdx = i;
+        this.updateToml();
+        return;
       }
-      this.updateToml();
     }
+    // No different value found → restore to default
+    const def = this.formDefaults[key];
+    this.form[key] = def !== undefined ? def : '';
+    this.updateToml();
   },
 
   resetField(key) {
