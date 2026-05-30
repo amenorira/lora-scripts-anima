@@ -4,7 +4,7 @@
 
 _✨ LoRA Training Tool for Anima Models ✨_
 
-A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) for **Anima model** LoRA training. Also compatible with SD 1.5 / SDXL.
+A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) for **Anima model** (Qwen3 + T5 dual encoder) LoRA training. Also compatible with SDXL.
 
 </div>
 
@@ -25,33 +25,50 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
 </p>
 
 > ⚠️ **Important Notice**  
-> This project is under active restructuring. The code is currently in a development state and some features may not be functional yet.  
-> Please check back later for a stable release. Thanks for your interest!
+> This project is under active development (v2.1.0-dev). Some features may be unstable. Please check back for a stable release.
 
-Anima LoRA training GUI with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports LoRA training for SD / SDXL / Anima models.
+lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports **SDXL** and **Anima** LoRA training (SD 1.5 has been removed).
 
 ### Supported Model Types
 
 | Training Type | Base Model |
 |---------------|------------|
-| LoRA | SD 1.5 / SD 2.x |
 | LoRA | SDXL |
-| **LoRA** | **Anima** |
+| **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
 
 > ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but these are not yet wired into the current UI.
 
-## ✨NEW: Train WebUI
+## ✨ Features
 
-The **REAL** Stable Diffusion Training Studio. Everything in one WebUI.
+- **Training WebUI** — All-in-one workspace: LoRA training form, TOML config preview, preset management (save/load/delete), training history
+- **Real-time Hardware Monitor** — GPU utilization / VRAM / temperature, CPU / RAM usage, Chart.js dynamic charts, TensorBoard integration, live log viewer
+- **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
+- **WD14 Auto-Tagger** — Integrated WD14 tagger for one-click dataset labeling
+- **Flash Attention Smart Install** — Auto-detects Python / CUDA / PyTorch versions and ABI, matches the best prebuilt wheel via GitHub API, one-click install
+- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
+- **Internationalization (i18n)** — Bilingual UI (448 translation keys), browser language auto-detection, persistent preference
+- **Dark / Light Theme** — Auto-follow system preference or manual toggle
+- **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
 
-Follow the installation guide below to install the GUI, then run `start.bat`(Windows) or `bash start.sh`(Linux) to start the GUI.
+## Project Structure
 
-![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/d3fcf5ad-fb8f-4e1d-81f9-c903376c19c6)
-
-| Tensorboard | WD 1.4 Tagger | Tag Editor |
-| ------------ | ------------ | ------------ |
-| ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/b2ac5c36-3edf-43a6-9719-cb00b757fc76) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/9504fad1-7d77-46a7-a68f-91fbbdbc7407) | ![image](https://github.com/Akegarasu/lora-scripts/assets/36563862/4597917b-caa8-4e90-b950-8b01738996f2) |
-
+```
+lora-scripts-anima/
+├── vendor/sd-scripts/          ← Training engine (full kohya-ss/sd-scripts)
+├── backend/                    ← FastAPI backend
+│   ├── server/                 ← API core (routes, state, proxy)
+│   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
+│   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
+│   ├── tageditor/              ← Native tag editor
+│   └── tagger/                 ← WD14 tagging module
+├── frontend/                   ← Alpine.js SPA frontend
+├── config/                     ← TOML config presets
+├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
+├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
+├── gui.py                      ← Main entry point
+├── start.bat / start.sh        ← Launch scripts
+└── requirements.txt            ← Project dependencies
+```
 
 # Usage
 
@@ -82,45 +99,34 @@ cd lora-scripts-anima
 | Windows | `.\start.bat` |
 | Linux | `bash start.sh` |
 
-The GUI opens automatically at [http://127.0.0.1:12333](http://127.0.0.1:12333).
+First launch automatically creates a virtual environment and installs all dependencies. The GUI opens at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 
-> **RTX 40/50 users**: the startup script detects flash_attn status.
-> If ❌ not installed, install via the GUI **Environment** tab.
+> **RTX 40/50 users**: the startup script detects flash_attn status. If not installed, use the GUI **Environment** tab for one-click install.
 
-## ✨ SD-Trainer GUI
+## Program Arguments
 
-Training WebUI with integrated TensorBoard, WD14 tagger, and tag editor.
-
-Just launch and everything is available — no extra commands needed.
-
-> ℹ️ Legacy manual scripts (`train.ps1`, `tagger.ps1`, etc.) have been archived to `legacy/scripts/`.
-> ℹ️ Frontend: `frontend/` (Alpine.js SPA), Backend: `backend/` (FastAPI), Engine: `vendor/sd-scripts/`.
-> ℹ️ Legacy frontend and scripts archived to `legacy/`.
-
-## Program arguments
-
-| Parameter Name                | Type  | Default Value | Description                                      |
-|-------------------------------|-------|---------------|--------------------------------------------------|
-| `--host`                      | str   | "127.0.0.1"   | Hostname for the server                          |
-| `--port`                      | int   | 12333         | Port to run the server                           |
-| `--listen`                    | bool  | false         | Enable listening mode for the server             |
-| `--skip-prepare-environment`  | bool  | false         | Skip the environment preparation step            |
-| `--disable-tensorboard`       | bool  | false         | Disable TensorBoard                              |
-| `--disable-tageditor`         | bool  | false         | Disable tag editor                               |
-| `--tensorboard-host`          | str   | "127.0.0.1"   | Host to run TensorBoard                          |
-| `--tensorboard-port`          | int   | 6006          | Port to run TensorBoard                          |
-| `--localization`              | str   |               | Localization settings for the interface          |
-| `--dev`                       | bool  | false         | Developer mode to disale some checks             |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `--host` | str | "127.0.0.1" | Server hostname |
+| `--port` | int | 12333 | Server port |
+| `--listen` | bool | false | Enable listening mode (allow external access) |
+| `--skip-prepare-environment` | bool | false | Skip environment preparation |
+| `--disable-tensorboard` | bool | false | Disable TensorBoard |
+| `--enable-tageditor` | bool | false | Enable legacy Gradio tag editor (port 28001) |
+| `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
+| `--tensorboard-port` | int | 6006 | TensorBoard port |
+| `--localization` | str | | Interface localization setting |
+| `--dev` | bool | false | Developer mode |
 
 ## Flash Attention Acceleration
 
-Recommended for RTX 40/50 series GPUs for optimal training and inference performance.
+Recommended for RTX 40/50 series GPUs for optimal training performance.
 
-### Installation
+### GUI Install
 
-Launch the GUI and install from the **Environment** tab. The script auto-detects Python / PyTorch / CUDA ABI / platform and matches the best wheel.
+Launch the GUI and install from the **Environment** tab. The script auto-detects Python / PyTorch / CUDA ABI / platform and matches the best prebuilt wheel via GitHub API.
 
-### Manual Usage
+### Manual Install
 
 ```sh
 python tools/install_flash_attn.py              # Interactive install
@@ -128,6 +134,35 @@ python tools/install_flash_attn.py --dry-run    # Preview only
 python tools/install_flash_attn.py --url URL    # Manual wheel URL
 python tools/install_flash_attn.py --yes        # Non-interactive auto
 ```
+
+## EmoSens Adaptive Optimizer
+
+The project includes EmoSens v3.9 adaptive optimizer (`vendor/emo_optimizer/`) for better convergence on Anima DiT training.
+
+### Recommended Settings
+
+| Training Type | Learning Rate | Scheduler | max_grad_norm |
+|---------------|:------------:|:---------:|:-------------:|
+| SDXL LoRA | 1.0 | constant | 0 |
+| Anima LoRA (DiT) | 0.1 | constant | 0 |
+
+Select `EmoSens` from the optimizer dropdown in the training form.
+
+## Preset Management
+
+Save, load, and delete training presets in TOML format. Presets are stored in `config/presets/`.
+
+- **Save**: Configure training parameters and click "Save Preset"
+- **Load**: Select a saved preset from the dropdown
+- **Delete**: Remove unwanted presets from the management panel
+
+## Environment Management
+
+The GUI **Environment** tab provides:
+- Python / PyTorch / CUDA version info
+- sd-scripts engine version
+- Flash Attention installation status with one-click install
+- Candidate wheel list preview
 
 ## Acknowledgements
 
