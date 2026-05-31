@@ -7,6 +7,7 @@ window.taggerMixin = {
   // ── State ──────────────────────────────────────────────
   taggerRunning: false,
   taggerPollTimer: null,
+  taggerTaskId: null,        // 当前运行中的 task_id，用于停止
   _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
   taggerSelectedModel: '',   // 当前选中的 tagger 模型 ID
   taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
@@ -180,7 +181,8 @@ window.taggerMixin = {
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const body = {path,interrogator_model:model,threshold,character_threshold:charThreshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:conflictAction,add_rating_tag:document.getElementById('tagger-add-rating')?.checked||false,add_model_tag:document.getElementById('tagger-add-model')?.checked||false,escape_tag:document.getElementById('tagger-escape-tag')?.checked||false,batch_remove_duplicated_tag:removeDup,sort_by_alphabetical_order:false,add_confident_as_weight:false,replace_underscore_excludes:'',batch_output_dir:'',batch_output_filename_format:'[name].[output_extension]',batch_output_save_json:false,unload_model_after_running:false};
+      const body = {path,interrogator_model:model,threshold,character_threshold:charThreshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_action_on_conflict:conflictAction,add_rating_tag:document.getElementById('tagger-add-rating')?.checked||false,add_model_tag:document.getElementById('tagger-add-model')?.checked||false,escape_tag:document.getElementById('tagger-escape-tag')?.checked||false,batch_remove_duplicated_tag:removeDup,sort_by_alphabetical_order:false,add_confident_as_weight:false,batch_output_dir:'',batch_output_filename_format:'[name].[output_extension]',batch_output_save_json:false,unload_model_after_running:false};
+      // replace_underscore_excludes 不发送，使用后端默认的表情标签排除列表
       if (categoryThresholds && Object.keys(categoryThresholds).length) {
         body.category_thresholds = categoryThresholds;
       }
@@ -188,6 +190,7 @@ window.taggerMixin = {
       clearTimeout(timeout);
       const d = await r.json();
       if (d.status === 'success' && d.data && d.data.task_id) {
+        this.taggerTaskId = d.data.task_id;
         this.pollTaggerProgress(d.data.task_id);
       } else {
         out.textContent = 'Error: '+(d.message||'Unknown');
@@ -213,9 +216,10 @@ window.taggerMixin = {
         const lines = (p.logs || []).slice(-20);
         out.innerHTML = `<div style="margin-bottom:4px;color:var(--accent)">[${p.current}/${p.total}] ${this.esc(p.current_file || '')}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
         out.scrollTop = out.scrollHeight;
-        if (p.status === 'done') {
+        if (p.status === 'done' || p.status === 'cancelled') {
           this.taggerRunning = false; document.getElementById('tagger-stop-btn').disabled = true;
-          this.toast(this.t('tagger.completed'));
+          this.taggerTaskId = null;
+          this.toast(p.status === 'done' ? this.t('tagger.completed') : this.t('tagger.stop'));
           return;
         }
         if (p.status === 'error') {
@@ -230,9 +234,15 @@ window.taggerMixin = {
     }
   },
 
-  stopTagger() {
+  async stopTagger() {
     this.taggerRunning = false;
     if (this.taggerPollTimer) { clearTimeout(this.taggerPollTimer); this.taggerPollTimer = null; }
+    // 通知后端取消任务
+    if (this.taggerTaskId) {
+      try { await fetch(`/api/interrogate/stop?task_id=${this.taggerTaskId}`, {method:'POST'}); } catch(e) {}
+      this.taggerTaskId = null;
+    }
+    document.getElementById('tagger-stop-btn').disabled = true;
     this.toast(this.t('tagger.stop'));
   },
 

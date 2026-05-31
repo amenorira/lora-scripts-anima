@@ -30,6 +30,15 @@ def get_tagger_progress(task_id: str) -> dict:
     return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []})
 
 
+def cancel_tagger_task(task_id: str) -> bool:
+    """标记任务为已取消，on_interrogate 循环会检查此标志提前退出。"""
+    if task_id in _tagger_progress:
+        _tagger_progress[task_id]["status"] = "cancelled"
+        _tagger_progress[task_id]["logs"].append('Task cancelled by user')
+        return True
+    return False
+
+
 # 所有模型统一下载到项目 huggingface/ 目录
 _hf_cache = str(HF_CACHE_DIR)
 
@@ -185,6 +194,10 @@ def on_interrogate(
         print(f'found {total} image(s)')
 
         for idx, path in enumerate(paths):
+            # 检查是否被用户取消
+            if _tagger_progress.get(task_id, {}).get("status") == "cancelled":
+                print(f'Task {task_id} cancelled at {idx}/{total}')
+                break
             try:
                 with Image.open(path) as image:
                     # guess the output path
@@ -275,7 +288,8 @@ def on_interrogate(
             _tagger_progress[task_id]["current"] = idx + 1
             _tagger_progress[task_id]["current_file"] = str(path.name)
 
-        _tagger_progress[task_id]["status"] = "done"
+        if _tagger_progress.get(task_id, {}).get("status") != "cancelled":
+            _tagger_progress[task_id]["status"] = "done"
         print('all done')
 
     if unload_model_after_running:

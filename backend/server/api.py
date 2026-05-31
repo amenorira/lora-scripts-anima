@@ -23,7 +23,8 @@ from backend.server.models import (APIResponse, APIResponseFail,
 from backend.server.state import avaliable_presets, load_presets
 from backend.log import log
 from backend.tagger.interrogator import (available_interrogators,
-                                          on_interrogate)
+                                          on_interrogate,
+                                          cancel_tagger_task)
 from backend.tasks import tm
 from backend.utils import train_utils
 from backend.utils.devices import printable_devices
@@ -102,6 +103,14 @@ async def tagger_progress(task_id: str):
     """Poll tagger task progress."""
     from backend.tagger.interrogator import get_tagger_progress
     return APIResponseSuccess(data=get_tagger_progress(task_id))
+
+
+@router.post("/interrogate/stop")
+async def stop_interrogate(task_id: str):
+    """Cancel a running tagger task."""
+    if cancel_tagger_task(task_id):
+        return APIResponseSuccess(data={"message": "Task cancelled"})
+    return APIResponseFail(message="Task not found")
 
 
 @router.get("/tagger/models")
