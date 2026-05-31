@@ -284,6 +284,11 @@ def on_interrogate(
             except UnidentifiedImageError:
                 print(f'{path} is not supported image type')
                 _tagger_progress[task_id]["logs"].append(f'Skip (unsupported): {path.name}')
+            except Exception as e:
+                err_msg = f'{path.name}: {type(e).__name__}: {str(e)[:200]}'
+                print(f'Error processing {err_msg}')
+                traceback.print_exc()
+                _tagger_progress[task_id]["logs"].append(f'Error: {err_msg}')
 
             _tagger_progress[task_id]["current"] = idx + 1
             _tagger_progress[task_id]["current_file"] = str(path.name)

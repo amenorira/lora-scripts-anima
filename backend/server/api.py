@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 import toml
-from fastapi import APIRouter, BackgroundTasks, Body, Request
+from fastapi import APIRouter, Body, Request
 from starlette.requests import Request
 
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT, TOOLS_DIR
@@ -64,22 +64,23 @@ async def get_fields():
 
 
 @router.post("/interrogate")
-async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: BackgroundTasks):
+async def run_interrogate(req: TaggerInterrogateRequest):
     import uuid
     from backend.tagger.interrogator import get_tagger_progress
     task_id = str(uuid.uuid4())[:8]
     interrogator = available_interrogators.get(req.interrogator_model, available_interrogators["wd14-convnextv2-v2"])
-    background_tasks.add_task(
+    # 使用独立线程执行，避免阻塞 FastAPI 事件循环
+    asyncio.create_task(asyncio.to_thread(
         on_interrogate,
         task_id=task_id,
         image=None,
         batch_input_glob=req.path,
         batch_input_recursive=req.batch_input_recursive,
-        batch_output_dir="",
+        batch_output_dir=req.batch_output_dir,
         batch_output_filename_format="[name].[output_extension]",
         batch_output_action_on_conflict=req.batch_output_action_on_conflict,
         batch_remove_duplicated_tag=req.batch_remove_duplicated_tag,
-        batch_output_save_json=False,
+        batch_output_save_json=req.batch_output_save_json,
         interrogator=interrogator,
         threshold=req.threshold,
         character_threshold=req.character_threshold,
@@ -88,13 +89,13 @@ async def run_interrogate(req: TaggerInterrogateRequest, background_tasks: Backg
         add_model_tag=req.add_model_tag,
         additional_tags=req.additional_tags,
         exclude_tags=req.exclude_tags,
-        sort_by_alphabetical_order=False,
-        add_confident_as_weight=False,
+        sort_by_alphabetical_order=req.sort_by_alphabetical_order,
+        add_confident_as_weight=req.add_confident_as_weight,
         replace_underscore=req.replace_underscore,
         replace_underscore_excludes=req.replace_underscore_excludes,
         escape_tag=req.escape_tag,
         unload_model_after_running=True
-    )
+    ))
     return APIResponseSuccess(data={"task_id": task_id})
 
 

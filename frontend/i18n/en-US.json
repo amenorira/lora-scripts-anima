@@ -352,7 +352,7 @@
     "threshold": "Threshold",
     "thresholdDesc": "Confidence threshold. Tags below this are discarded. Recommended: 0.35",
     "characterThreshold": "Character Threshold",
-    "characterThresholdDesc": "Only effective for cl_tagger model. Recommended: 0.6",
+    "characterThresholdDesc": "CL Tagger & Camie support per-character category threshold. Not applicable for WD14 series. Recommended: 0.6",
     "categoryThresholdsDesc": "Toggle and set per-category thresholds. Unchecked categories are excluded.",
     "presetLabel": "Threshold Preset",
     "presetDesc": "Macro: rare-tag friendly (better recall, recommended for training data). Micro: common-tag precise (fewer false positives). Switching to Custom when any slider is manually changed.",

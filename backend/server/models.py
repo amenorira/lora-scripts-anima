@@ -28,8 +28,15 @@ class TaggerInterrogateRequest(BaseModel):
     exclude_tags: str = ""
     escape_tag: bool = True
     batch_input_recursive: bool = False
+    batch_output_dir: str = Field(
+        default="",
+        description="Output directory for tag files. Empty = same as input directory."
+    )
     batch_output_action_on_conflict: str = "ignore"
     batch_remove_duplicated_tag: bool = False
+    batch_output_save_json: bool = False
+    sort_by_alphabetical_order: bool = False
+    add_confident_as_weight: bool = False
     replace_underscore: bool = True
     replace_underscore_excludes: str = Field(
         default="0_0, (o)_(o), +_+, +_-, ._., <o>_<o>, <|>_<|>, =_=, >_<, 3_3, 6_9, >_o, @_@, ^_^, o_o, u_u, x_x, |_|, ||_||"

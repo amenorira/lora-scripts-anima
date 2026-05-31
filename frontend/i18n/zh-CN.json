@@ -352,7 +352,7 @@
     "threshold": "阈值",
     "thresholdDesc": "置信度阈值，低于此值的标签将被丢弃。推荐 0.35",
     "characterThreshold": "角色名称识别阈值",
-    "characterThresholdDesc": "仅 cl_tagger 模型生效。推荐 0.6",
+    "characterThresholdDesc": "CL Tagger 及 Camie 模型支持角色分类独立阈值。WD14 系列不适用。推荐 0.6",
     "categoryThresholdsDesc": "勾选并设置每个分类的独立阈值。未勾选的分类不输出。",
     "presetLabel": "阈值预设",
     "presetDesc": "Macro：稀有标签友好（宁多勿少，推荐打标训练数据）。Micro：常见标签更精准（误报更少）。修改任意滑块后自动切换为自定义。",
