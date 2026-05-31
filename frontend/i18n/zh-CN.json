@@ -352,10 +352,10 @@
     "threshold": "阈值",
     "thresholdDesc": "置信度阈值，低于此值的标签将被丢弃。推荐 0.35",
     "characterThreshold": "角色名称识别阈值",
-    "characterThresholdDesc": "CL Tagger 及 Camie 模型支持角色分类独立阈值。WD14 系列不适用。推荐 0.6",
-    "categoryThresholdsDesc": "勾选并设置每个分类的独立阈值。未勾选的分类不输出。",
+    "characterThresholdDesc": "CL Tagger 模型专用的角色名称识别阈值。Camie 模型请在下方分类阈值中单独设置角色分类。WD14 系列不适用。推荐 0.6",
+    "categoryThresholdsDesc": "勾选并设置每个分类的独立阈值。未勾选的分类不输出标签。",
     "presetLabel": "阈值预设",
-    "presetDesc": "Macro：稀有标签友好（宁多勿少，推荐打标训练数据）。Micro：常见标签更精准（误报更少）。修改任意滑块后自动切换为自定义。",
+    "presetDesc": "Macro（推荐）：阈值 0.492 · 稀有标签友好，宁多勿少 — 适合打标训练数据\nMicro：阈值 0.614 · 常见标签更精准，误报更少\n修改任意分类阈值后自动切换为「自定义」",
     "presetMacro": "Macro-optimized（推荐）",
     "presetMicro": "Micro-optimized",
     "presetCustom": "自定义",
@@ -384,7 +384,11 @@
     "conflictCopy": "覆盖",
     "conflictPrepend": "添加到开头",
     "unloadModel": "完成后卸载模型",
-    "removeDuplicated": "移除重复标签"
+    "removeDuplicated": "移除重复标签",
+    "removeDuplicatedDesc": "自动去除输出标签中的重复项",
+    "addRatingTagDesc": "输出安全分级标签（如 safe / questionable / explicit）",
+    "addModelTagDesc": "输出 AI 模型识别标签",
+    "imagesProcessed": "张图片已处理"
   },
   "tagEditor": {
     "title": "标签编辑器",

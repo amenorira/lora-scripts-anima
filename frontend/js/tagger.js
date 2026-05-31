@@ -25,6 +25,32 @@ window.taggerMixin = {
     if (sel) sel.value = 'custom';
   },
 
+  /** Camie 分类阈值步进辅助方法（避免 Alpine @click 中使用 var 声明语句） */
+  _camieStepDown(cat) {
+    const el = document.getElementById('tagger-th-' + cat);
+    if (el) el.stepDown();
+    this._camieCustomPreset();
+  },
+  _camieStepUp(cat) {
+    const el = document.getElementById('tagger-th-' + cat);
+    if (el) el.stepUp();
+    this._camieCustomPreset();
+  },
+  /** checkbox 切换时同步 stepper 按钮 disabled 状态 + 阈值输入框 */
+  _camieToggleCat(cat) {
+    const cb = document.getElementById('tagger-en-' + cat);
+    if (!cb) return;
+    const disabled = !cb.checked;
+    const th = document.getElementById('tagger-th-' + cat);
+    if (th) th.disabled = disabled;
+    // 同步 stepper 按钮
+    const stepper = th ? th.closest('.stepper') : null;
+    if (stepper) {
+      stepper.querySelectorAll('button').forEach(b => { b.disabled = disabled; });
+    }
+    this._camieCustomPreset();
+  },
+
   applyCamiePreset(preset) {
     if (preset === 'custom') { this.taggerPreset = 'custom'; return; }
     const vals = this.CAMIE_PRESETS[preset];
@@ -33,8 +59,13 @@ window.taggerMixin = {
     for (const cat of cats) {
       const thEl = document.getElementById('tagger-th-'+cat);
       const enEl = document.getElementById('tagger-en-'+cat);
-      if (thEl) thEl.value = vals[cat];
-      if (enEl) { enEl.checked = true; if (thEl) thEl.disabled = false; }
+      if (thEl) { thEl.value = vals[cat]; thEl.disabled = false; }
+      if (enEl) enEl.checked = true;
+      // 同步 stepper 按钮 disabled 状态
+      const stepper = thEl ? thEl.closest('.stepper') : null;
+      if (stepper) {
+        stepper.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      }
     }
     this.taggerPreset = preset;
     const sel = document.getElementById('tagger-preset');
@@ -91,8 +122,8 @@ window.taggerMixin = {
     // ── Camie v2 分类阈值默认值 ────────────────────────
     const _ct = (cat, defVal) => {
       return `<div class="field" x-show="taggerSelectedModel==='camie-tagger-v2'" x-transition>
-        <div class="field-left"><label class="toggle" style="gap:8px"><input type="checkbox" id="tagger-en-${cat}" checked @change="document.getElementById('tagger-th-${cat}').disabled=!this.checked;_camieCustomPreset()"><span class="toggle-track"><span class="toggle-thumb"></span></span> ${this.t('tagger.cat'+cat.charAt(0).toUpperCase()+cat.slice(1))}</label></div>
-        <div class="field-right"><div class="stepper"><button type="button" @click="var e=document.getElementById('tagger-th-${cat}');e.stepDown();_camieCustomPreset()" :disabled="!document.getElementById('tagger-en-${cat}')?.checked">-</button><input type="number" id="tagger-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="var e=document.getElementById('tagger-th-${cat}');e.stepUp();_camieCustomPreset()" :disabled="!document.getElementById('tagger-en-${cat}')?.checked">+</button></div></div></div>`;
+        <div class="field-left"><label class="toggle" style="gap:8px"><input type="checkbox" id="tagger-en-${cat}" checked @change="_camieToggleCat('${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span> ${this.t('tagger.cat'+cat.charAt(0).toUpperCase()+cat.slice(1))}</label></div>
+        <div class="field-right"><div class="stepper"><button type="button" @click="_camieStepDown('${cat}')">-</button><input type="number" id="tagger-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_camieStepUp('${cat}')">+</button></div></div></div>`;
     };
     const presetOpts = [
       {v:'macro',l:this.t('tagger.presetMacro')},
@@ -103,7 +134,7 @@ window.taggerMixin = {
     const presetSelect = `<select id="tagger-preset" @change="applyCamiePreset($event.target.value)">${presetOpts.map(o=>`<option value="${o.v}">${this.esc(o.l)}</option>`).join('')}</select>`;
 
     container.innerHTML = `<div class="card-header">${this.t('tagger.title')}</div>
-      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-right"><input type="text" id="tagger-path" value="./train/aki" style="flex:1"><div class="field-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button></div></div></div>
+      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-right"><input type="text" id="tagger-path" placeholder="./train/aki" style="flex:1"><div class="field-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button></div></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.model')}</div><div class="field-desc">${this.t('tagger.modelDesc')}</div></div><div class="field-right">${modelSelect}</div></div>
       <div class="field" x-show="taggerSelectedModel!=='camie-tagger-v2'" x-transition><div class="field-left"><div class="field-label">${this.t('tagger.threshold')}</div><div class="field-desc">${this.t('tagger.thresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-threshold').stepDown()">-</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-threshold').stepUp()">+</button></div></div></div>
       <div class="field" x-show="taggerSelectedModel==='cl_tagger_1_01'" x-transition><div class="field-left"><div class="field-label">${this.t('tagger.characterThreshold')}</div><div class="field-desc">${this.t('tagger.characterThresholdDesc')}</div></div><div class="field-right"><div class="stepper"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepDown()">-</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepUp()">+</button></div></div></div>
@@ -123,12 +154,12 @@ window.taggerMixin = {
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.replaceUnderscore')}</div><div class="field-desc">${this.t('tagger.replaceUnderscoreDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-replace-underscore" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.escapeTag')}</div><div class="field-desc">${this.t('tagger.escapeTagDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-escape-tag" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.recursive')}</div><div class="field-desc">${this.t('tagger.recursiveDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-recursive" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
-      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.removeDuplicated')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-remove-dup"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
-      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addRatingTag')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-rating"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
-      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addModelTag')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-model"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
+      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.removeDuplicated')}</div><div class="field-desc">${this.t('tagger.removeDuplicatedDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-remove-dup"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
+      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addRatingTag')}</div><div class="field-desc">${this.t('tagger.addRatingTagDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-rating"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
+      <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.addModelTag')}</div><div class="field-desc">${this.t('tagger.addModelTagDesc')}</div></div><div class="field-right"><label class="toggle"><input type="checkbox" id="tagger-add-model"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div>
       <div class="field"><div class="field-left"><div class="field-label">${this.t('tagger.conflictAction')}</div><div class="field-desc">${this.t('tagger.conflictActionDesc')}</div></div><div class="field-right">${conflictSelect}</div></div>
       <div class="mt-4 flex gap-2"><button class="btn btn-primary" @click="runTagger()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${this.t('tagger.start')}</button><button class="btn btn-ghost" @click="stopTagger()" id="tagger-stop-btn" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> ${this.t('tagger.stop')}</button></div>
-      <div id="tagger-output" class="mt-2" style="padding:12px;background:var(--bg-preview);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;color:var(--text-preview);min-height:40px;max-height:240px;overflow-y:auto;display:none"></div>`;
+      <div id="tagger-output" class="mt-2" style="padding:12px;background:var(--bg-preview);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;color:var(--text-preview);min-height:40px;max-height:400px;overflow-y:auto;display:none"></div>`;
 
     // ── 监听模型切换，同步 taggerSelectedModel ──────────
     const modelEl = document.getElementById('tagger-model');
@@ -154,7 +185,9 @@ window.taggerMixin = {
   async runTagger() {
     const path = document.getElementById('tagger-path').value;
     const model = document.getElementById('tagger-model').value;
-    const threshold = parseFloat(document.getElementById('tagger-threshold')?.value || '0.35');
+    const thresholdEl = document.getElementById('tagger-threshold');
+    // Camie 使用分类阈值体系，全局 threshold 不适用
+    const threshold = (model === 'camie-tagger-v2') ? 0.35 : parseFloat(thresholdEl?.value || '0.35');
     const charThreshold = parseFloat(document.getElementById('tagger-char-threshold')?.value || '0.6');
     const additional = document.getElementById('tagger-additional').value;
     const exclude = document.getElementById('tagger-exclude').value;
@@ -219,6 +252,14 @@ window.taggerMixin = {
         if (p.status === 'done' || p.status === 'cancelled') {
           this.taggerRunning = false; document.getElementById('tagger-stop-btn').disabled = true;
           this.taggerTaskId = null;
+          // 添加统计摘要
+          if (p.status === 'done' && p.total > 0) {
+            const summary = document.createElement('div');
+            summary.style.cssText = 'margin-top:8px;padding:8px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600';
+            summary.textContent = `✓ ${this.t('tagger.completed')} — ${p.current}/${p.total} ${this.t('tagger.imagesProcessed')}`;
+            out.appendChild(summary);
+          }
+          out.scrollTop = out.scrollHeight;
           this.toast(p.status === 'done' ? this.t('tagger.completed') : this.t('tagger.stop'));
           return;
         }

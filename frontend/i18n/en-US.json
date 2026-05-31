@@ -352,10 +352,10 @@
     "threshold": "Threshold",
     "thresholdDesc": "Confidence threshold. Tags below this are discarded. Recommended: 0.35",
     "characterThreshold": "Character Threshold",
-    "characterThresholdDesc": "CL Tagger & Camie support per-character category threshold. Not applicable for WD14 series. Recommended: 0.6",
-    "categoryThresholdsDesc": "Toggle and set per-category thresholds. Unchecked categories are excluded.",
+    "characterThresholdDesc": "CL Tagger specific character name threshold. For Camie, set character threshold in the category section below. Not applicable for WD14 series. Recommended: 0.6",
+    "categoryThresholdsDesc": "Toggle and set per-category thresholds. Unchecked categories are excluded from output.",
     "presetLabel": "Threshold Preset",
-    "presetDesc": "Macro: rare-tag friendly (better recall, recommended for training data). Micro: common-tag precise (fewer false positives). Switching to Custom when any slider is manually changed.",
+    "presetDesc": "Macro (Recommended): threshold 0.492 · Rare-tag friendly, better recall — ideal for training data\nMicro: threshold 0.614 · Common-tag precise, fewer false positives\nManually changing any category slider switches to Custom",
     "presetMacro": "Macro-optimized (Recommended)",
     "presetMicro": "Micro-optimized",
     "presetCustom": "Custom",
@@ -384,7 +384,11 @@
     "conflictCopy": "Overwrite",
     "conflictPrepend": "Prepend",
     "unloadModel": "Unload Model After Completion",
-    "removeDuplicated": "Remove Duplicate Tags"
+    "removeDuplicated": "Remove Duplicate Tags",
+    "removeDuplicatedDesc": "Automatically deduplicate output tags",
+    "addRatingTagDesc": "Output content rating tags (e.g. safe / questionable / explicit)",
+    "addModelTagDesc": "Output AI model identification tag",
+    "imagesProcessed": "images processed"
   },
   "tagEditor": {
     "title": "Tag Editor",
