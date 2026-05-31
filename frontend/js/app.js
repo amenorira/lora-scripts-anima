@@ -206,7 +206,7 @@ document.addEventListener('alpine:init', () => {
 
     showRightPanel() {
       const r = this.currentRoute;
-      return r && (r.startsWith('train-') || r === 'tools');
+      return r && (r.startsWith('train-') || r === 'tagger' || r === 'tools');
     },
 
     // ── Route Content Builder ───────────────────────────────
@@ -216,6 +216,10 @@ document.addEventListener('alpine:init', () => {
         this.stopMonitorPolling();
         this.selectedRunDir = null;
         this.runDetailData = null;
+      }
+      // Stop tagger if navigating away
+      if (r !== 'tagger' && this.taggerRunning) {
+        this.stopTagger();
       }
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();

@@ -315,6 +315,7 @@
     "disconnectedSeconds": "{n} 秒前",
     "disconnectedMinutes": "{n} 分 {s} 秒前",
     "disconnectedHours": "{n} 小时 {s} 分前",
+    "clear": "清除",
     "adapterWarnings": "配置警告"
   },
   "preset": {
@@ -345,6 +346,9 @@
     "stop": "停止",
     "completed": "标注完成",
     "running": "标注中...",
+    "logTitle": "Tagger 日志",
+    "basicSettings": "基本设置",
+    "outputOptions": "输出选项",
     "imageDir": "图片文件夹路径",
     "imageDirDesc": "包含待标注图片的文件夹路径",
     "model": "Tagger 模型",

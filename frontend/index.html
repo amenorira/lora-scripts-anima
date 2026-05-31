@@ -464,34 +464,70 @@
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()">
-      <div class="panel-header">
-        <span x-text="t('common.tomlPreview')">TOML Preview</span>
-      </div>
-      <div class="panel-preview" id="tomlPreview" x-effect="updateTomlDebounced()"># Parameters will appear here</div>
-      <div class="panel-actions">
-        <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
-          <button class="btn btn-ghost btn-sm" @click="openSavePresetModal()" x-text="t('common.save')">Save</button>
-          <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.load')">Load</button>
+      <!-- Training: TOML preview + actions -->
+      <template x-if="currentRoute && currentRoute.startsWith('train-')">
+        <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
+          <div class="panel-header">
+            <span x-text="t('common.tomlPreview')">TOML Preview</span>
+          </div>
+          <div class="panel-preview" id="tomlPreview" x-effect="updateTomlDebounced()"># Parameters will appear here</div>
+          <div class="panel-actions">
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
+              <button class="btn btn-ghost btn-sm" @click="openSavePresetModal()" x-text="t('common.save')">Save</button>
+              <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.load')">Load</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
+              <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-start" style="flex:1" @click="startTraining()"
+                      :disabled="isTraining" x-text="isTraining ? t('common.training') : t('common.startTraining')">
+                Start Training
+              </button>
+              <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
+                      :disabled="!isTraining" x-text="t('common.stopTraining')">
+                Stop Training
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
-          <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
+      </template>
+      <!-- Tagger: Log output + actions -->
+      <template x-if="currentRoute === 'tagger'">
+        <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
+          <div class="panel-header">
+            <span x-text="t('tagger.logTitle', 'Tagger 日志')">Tagger 日志</span>
+          </div>
+          <div class="panel-preview" id="taggerLogPanel"></div>
+          <div class="panel-actions">
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" style="flex:1" @click="clearTaggerLog()" x-text="t('common.clear', '清除')">清除</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-start" style="flex:1" @click="runTagger()"
+                      :disabled="taggerRunning" x-text="taggerRunning ? t('tagger.running') : t('tagger.start')">
+                启动
+              </button>
+              <button class="btn btn-stop" style="flex:1" @click="stopTagger()"
+                      :disabled="!taggerRunning" x-text="t('tagger.stop')">
+                停止
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
+      </template>
+      <!-- Other tools (placeholder) -->
+      <template x-if="currentRoute === 'tools'">
+        <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
+          <div class="panel-header"><span>Tools</span></div>
+          <div class="panel-preview" style="color:var(--text-tertiary)">Select a tool from the sidebar</div>
         </div>
-        <div class="btn-row">
-          <button class="btn btn-start" style="flex:1" @click="startTraining()"
-                  :disabled="isTraining" x-text="isTraining ? t('common.training') : t('common.startTraining')">
-            Start Training
-          </button>
-          <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
-                  :disabled="!isTraining" x-text="t('common.stopTraining')">
-            Stop Training
-          </button>
-        </div>
-      </div>
+      </template>
     </div>
 
   </div>

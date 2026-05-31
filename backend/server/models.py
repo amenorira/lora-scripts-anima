@@ -6,7 +6,7 @@ from pathlib import Path
 class TaggerInterrogateRequest(BaseModel):
     path: str
     interrogator_model: str = Field(
-        default="wd14-convnextv2-v2"
+        default="wd-eva02-large-tagger-v3"
     )
     threshold: float = Field(
         default=0.35,

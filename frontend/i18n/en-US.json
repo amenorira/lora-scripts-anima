@@ -315,6 +315,7 @@
     "disconnectedSeconds": "{n}s ago",
     "disconnectedMinutes": "{n}m {s}s ago",
     "disconnectedHours": "{n}h {s}m ago",
+    "clear": "Clear",
     "adapterWarnings": "Configuration Warnings"
   },
   "preset": {
@@ -345,6 +346,9 @@
     "stop": "Stop",
     "completed": "Tagging completed",
     "running": "Tagging...",
+    "logTitle": "Tagger Log",
+    "basicSettings": "Basic Settings",
+    "outputOptions": "Output Options",
     "imageDir": "Image Directory",
     "imageDirDesc": "Path to folder containing images to tag",
     "model": "Tagger Model",

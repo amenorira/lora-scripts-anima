@@ -68,7 +68,7 @@ async def run_interrogate(req: TaggerInterrogateRequest):
     import uuid
     from backend.tagger.interrogator import get_tagger_progress
     task_id = str(uuid.uuid4())[:8]
-    interrogator = available_interrogators.get(req.interrogator_model, available_interrogators["wd14-convnextv2-v2"])
+    interrogator = available_interrogators.get(req.interrogator_model, available_interrogators["wd-eva02-large-tagger-v3"])
     # 使用独立线程执行，避免阻塞 FastAPI 事件循环
     asyncio.create_task(asyncio.to_thread(
         on_interrogate,

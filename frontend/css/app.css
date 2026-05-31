@@ -905,6 +905,56 @@ input[type="checkbox"]:focus-visible {
   flex-shrink: 0; min-width: 200px; max-width: 400px;
   display: flex; align-items: center; gap: 5px;
 }
+/* Stepper in legacy field-right: cap width so it doesn't stretch too far */
+.field-right .stepper {
+  max-width: 160px;
+}
+
+/* ── Camie tagger category threshold grid ──────────────── */
+.camie-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+.camie-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+}
+.camie-item .toggle {
+  font-size: 12px;
+  color: var(--text-primary);
+  gap: 6px;
+}
+.camie-item .stepper {
+  width: 100%;
+}
+.camie-grid-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  padding: 0 8px;
+}
+
+/* ── Toggle switch grid (compact multi-column) ─────────── */
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 2px 16px;
+  padding: 4px 0;
+}
+.toggle-grid .toggle {
+  font-size: 13px;
+  color: var(--text-primary);
+  gap: 7px;
+  padding: 4px 0;
+}
 
 /* ── Inputs ──────────────────────────────────────────────── */
 input[type="text"],
@@ -953,7 +1003,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 
 /* ── Number Stepper ──────────────────────────────────────── */
 .stepper {
-  display: inline-flex; align-items: stretch;
+  display: flex; align-items: stretch; width: 100%;
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm); overflow: hidden;
 }
@@ -1119,6 +1169,50 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin-right: -8px;
 }
 
+/* ── Tagger Form — Flat Design (matching training form) ──── */
+#taggerForm .card {
+  background: transparent;
+  border: none;
+  border-left: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: none;
+}
+#taggerForm .card-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.6px;
+  padding: 22px 0 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-default);
+}
+#taggerForm .card:first-child .card-header {
+  padding-top: 0;
+}
+#taggerForm .field {
+  border-radius: var(--radius-sm);
+  padding: 10px 8px 10px 10px;
+  margin: 0 -8px;
+  transition: background 0.12s ease, border-left-color 0.25s var(--ease-out);
+}
+#taggerForm .field:hover {
+  background: var(--hover-overlay);
+}
+#taggerForm .field + .field {
+  border-top: none;
+}
+#taggerForm .field-nested {
+  margin-left: 14px;
+  padding-left: 12px;
+  margin-right: -8px;
+}
+/* Smooth x-transition timing to match training conditional fields */
+#taggerForm [x-transition] {
+  transition: opacity 0.25s var(--ease-out), transform 0.3s var(--ease-out) !important;
+}
+
 /* ── Right Panel ─────────────────────────────────────────── */
 .right-panel {
   width: var(--panel-w); min-width: var(--panel-w);
@@ -1126,6 +1220,12 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   border-left: 1px solid var(--border-default);
   display: flex; flex-direction: column; overflow: visible;
   position: relative;
+}
+/* Inner wrapper for route-conditional content (x-if) */
+.panel-inner {
+  display: flex; flex-direction: column;
+  height: 100%; min-height: 0;
+  overflow: hidden;
 }
 .panel-header {
   padding: 14px 16px 10px;
@@ -1144,6 +1244,12 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 .right-panel .panel-preview,
 .right-panel .panel-actions { opacity: 1; }
+/* Tagger log panel: softer word-breaking for readability */
+#taggerLogPanel {
+  word-break: normal;
+  overflow-wrap: break-word;
+  color: var(--text-secondary);
+}
 .panel-preview .toml-key { color: var(--text-preview-key); }
 .panel-preview .toml-eq { color: var(--text-preview-eq); }
 .panel-preview .toml-num { color: var(--text-preview-num); }
