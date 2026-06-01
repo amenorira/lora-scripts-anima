@@ -1,1 +1,20 @@
+* text=auto eol=lf
+
 *.ps1 text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.pyd binary
+*.safetensors binary
+*.ckpt binary
+*.pt binary
+*.pth binary
+*.bin binary
