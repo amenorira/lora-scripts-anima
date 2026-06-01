@@ -83,7 +83,7 @@ window.monitorRenderMixin = {
   },
 
   _renderCharts(d,t) {
-    html+='<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
+    let html = '<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
     html+='<div class="chart-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">';
     const tags = this.lossSeries.length ? this.lossSeries : [
       {tag:'loss/average', name: t('chartLossAverage','loss average'), latest:null, points:[]},

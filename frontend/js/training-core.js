@@ -695,7 +695,7 @@ window.trainingCoreMixin = {
     this.formHistory = this.formHistory.slice(0, this.formHistoryIdx + 1);
     this.formHistory.push(state);
     if (this.formHistory.length > 50) this.formHistory.shift();
-    else this.formHistoryIdx = this.formHistory.length - 1;
+    this.formHistoryIdx = this.formHistory.length - 1;
   },
 
   rebuildForm() {
