@@ -114,14 +114,23 @@ async def stop_interrogate(task_id: str):
     return APIResponseFail(message="Task not found")
 
 
+# 模型 ID → 用户友好显示名称
+_MODEL_DISPLAY_NAMES = {
+    'wd-eva02-large-tagger-v3': 'WD EVA02 Large v3',
+    'wd-vit-large-tagger-v3':  'WD ViT Large v3',
+    'cl_tagger_1_01':          'CL Tagger v1.01',
+    'camie-tagger-v2':         'Camie Tagger v2',
+}
+
+
 @router.get("/tagger/models")
 async def list_tagger_models():
     """List available tagger/interrogator models."""
     models = []
-    for key, interrogator in available_interrogators.items():
+    for key in available_interrogators:
         models.append({
             "id": key,
-            "name": key
+            "name": _MODEL_DISPLAY_NAMES.get(key, key),
         })
     return APIResponseSuccess(data=models)
 

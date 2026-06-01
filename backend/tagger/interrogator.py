@@ -24,7 +24,30 @@ import traceback
 tag_escape_pattern = re.compile(r'([\\()])')
 
 # ── Progress tracker for tagger tasks ────────────────────
+_TAGGER_PROGRESS_TTL = 300  # 终态任务保留 5 分钟后自动清理
+
 _tagger_progress: Dict[str, dict] = {}
+
+
+def _cleanup_completed_tasks():
+    """清理已达终态且超过 TTL 的任务，防止内存泄漏。"""
+    import time
+    now = time.time()
+    expired = [
+        tid for tid, info in _tagger_progress.items()
+        if info.get("status") in ("done", "cancelled", "error")
+        and now - info.get("_completed_at", now) > _TAGGER_PROGRESS_TTL
+    ]
+    for tid in expired:
+        del _tagger_progress[tid]
+
+
+def _mark_task_completed(task_id: str):
+    """标记任务完成时间，供 TTL 清理使用。"""
+    import time
+    if task_id in _tagger_progress:
+        _tagger_progress[task_id]["_completed_at"] = time.time()
+
 
 def get_tagger_progress(task_id: str) -> dict:
     return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []})
@@ -35,6 +58,7 @@ def cancel_tagger_task(task_id: str) -> bool:
     if task_id in _tagger_progress:
         _tagger_progress[task_id]["status"] = "cancelled"
         _tagger_progress[task_id]["logs"].append('Task cancelled by user')
+        _mark_task_completed(task_id)
         return True
     return False
 
@@ -158,6 +182,8 @@ def on_interrogate(
         ]
 
         total = len(paths)
+        # 每次新建任务前清理过期任务
+        _cleanup_completed_tasks()
         _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
         print(f'found {total} image(s)')
 
@@ -191,6 +217,7 @@ def on_interrogate(
                         _tagger_progress[task_id]["status"] = "error"
                         _tagger_progress[task_id]["error_detail"] = error_msg
                         _tagger_progress[task_id]["logs"].append(f'Error: {error_msg}')
+                        _mark_task_completed(task_id)
                         return str(error)
 
                     output_path = output_dir.joinpath(
@@ -263,6 +290,7 @@ def on_interrogate(
 
         if _tagger_progress.get(task_id, {}).get("status") != "cancelled":
             _tagger_progress[task_id]["status"] = "done"
+        _mark_task_completed(task_id)
         print('all done')
 
     if unload_model_after_running:

@@ -25,6 +25,24 @@ window.taggerMixin = {
     if (el) el.value = 'custom';
   },
 
+  /** 通用阈值步进 */
+  _thStepDown() {
+    const el = document.getElementById('tagger-threshold');
+    if (el) el.stepDown();
+  },
+  _thStepUp() {
+    const el = document.getElementById('tagger-threshold');
+    if (el) el.stepUp();
+  },
+  /** CL 角色阈值步进 */
+  _charStepDown() {
+    const el = document.getElementById('tagger-char-threshold');
+    if (el) el.stepDown();
+  },
+  _charStepUp() {
+    const el = document.getElementById('tagger-char-threshold');
+    if (el) el.stepUp();
+  },
   /** Camie 分类阈值步进辅助方法 */
   _camieStepDown(cat) {
     const el = document.getElementById('tagger-th-' + cat);
@@ -156,11 +174,11 @@ window.taggerMixin = {
       _fieldRow('tagger.model', 'tagger.modelDesc', modelSelect) +
       // 通用阈值 — 仅非 Camie 非 CL 模型可见
       _fieldRow('tagger.threshold', 'tagger.thresholdDesc',
-        `<div class="stepper"><button type="button" onclick="document.getElementById('tagger-threshold').stepDown()">−</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-threshold').stepUp()">+</button></div>`,
+        `<div class="stepper"><button type="button" @click="_thStepDown()">−</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" @click="_thStepUp()">+</button></div>`,
         ` x-show="taggerSelectedModel!=='camie-tagger-v2' && taggerSelectedModel!=='cl_tagger_1_01'" x-transition`) +
       // CL 角色阈值 — 仅 CL tagger 可见
       _fieldRow('tagger.characterThreshold', 'tagger.characterThresholdDesc',
-        `<div class="stepper"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepDown()">−</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" onclick="document.getElementById('tagger-char-threshold').stepUp()">+</button></div>`,
+        `<div class="stepper"><button type="button" @click="_charStepDown()">−</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" @click="_charStepUp()">+</button></div>`,
         ` x-show="taggerSelectedModel==='cl_tagger_1_01'" x-transition`) +
     `</div>` +
 
@@ -202,15 +220,11 @@ window.taggerMixin = {
     `</div>`;
 
     // ── 监听模型切换，同步 taggerSelectedModel ──────────
+    // animaSelect 组件在 select() 时会 dispatch input 事件到 hidden input
     const modelEl = document.getElementById('tagger-model');
     if (modelEl) {
       this.taggerSelectedModel = modelEl.value;
       if (modelEl.value) localStorage.setItem('anima-tagger-model', modelEl.value);
-      const observer = new MutationObserver(() => {
-        this.taggerSelectedModel = modelEl.value;
-        localStorage.setItem('anima-tagger-model', modelEl.value);
-      });
-      observer.observe(modelEl, { attributes: true, attributeFilter: ['value'] });
       modelEl.addEventListener('input', () => {
         this.taggerSelectedModel = modelEl.value;
         localStorage.setItem('anima-tagger-model', modelEl.value);
@@ -305,6 +319,7 @@ window.taggerMixin = {
   async pollTaggerProgress(taskId) {
     const panel = this._getTaggerLogPanel();
     if (!this.taggerRunning) return;
+    let delay = 1500; // 默认轮询间隔
     try {
       const r = await fetch(`/api/interrogate/progress?task_id=${taskId}`);
       const d = await r.json();
@@ -334,10 +349,17 @@ window.taggerMixin = {
           this.toast(this.t('common.failed'));
           return;
         }
+        // 退避策略：进度停滞时逐步增大间隔，减少无效请求
+        if (p.current > 0 && p.total > 0) {
+          const ratio = p.current / p.total;
+          if (ratio < 0.1) delay = 1500;
+          else if (ratio < 0.5) delay = 2000;
+          else delay = 3000;
+        }
       }
-    } catch(e) { /* polling error, ignore */ }
+    } catch(e) { delay = 3000; /* 网络错误时加大间隔 */ }
     if (this.taggerRunning) {
-      this.taggerPollTimer = setTimeout(() => this.pollTaggerProgress(taskId), 1500);
+      this.taggerPollTimer = setTimeout(() => this.pollTaggerProgress(taskId), delay);
     }
   },
 
