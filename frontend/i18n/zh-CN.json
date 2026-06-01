@@ -440,7 +440,14 @@
     "tokenCount": "Token 数",
     "previewHint": "点击外部或 Esc 关闭",
     "detailHint": "← → 翻页 · Esc 关闭 · 点击标签移除",
-    "shortcuts": "Ctrl+S 保存 · Ctrl+Z 撤销"
+    "shortcuts": "Ctrl+S 保存 · Ctrl+Z 撤销",
+    "unsavedConfirm": "有未保存的修改，确定要离开吗？",
+    "revertConfirm": "确定丢弃所有未保存的修改？此操作不可撤销。",
+    "backToGrid": "返回网格",
+    "logicAndHint": "筛选同时含所有标签的图片",
+    "logicOrHint": "筛选含任意标签的图片",
+    "batchErrors": "错误",
+    "loadFromTraining": "从训练设置"
   },
   "tools": {
     "title": "工具",

@@ -440,7 +440,14 @@
     "tokenCount": "Tokens",
     "previewHint": "Click outside or Esc to close",
     "detailHint": "← → navigate · Esc close · click tag to remove",
-    "shortcuts": "Ctrl+S save · Ctrl+Z undo"
+    "shortcuts": "Ctrl+S save · Ctrl+Z undo",
+    "unsavedConfirm": "You have unsaved changes. Leave without saving?",
+    "revertConfirm": "Discard all unsaved changes? This cannot be undone.",
+    "backToGrid": "Grid",
+    "logicAndHint": "Show images with ALL selected tags",
+    "logicOrHint": "Show images with ANY selected tag",
+    "batchErrors": "errors",
+    "loadFromTraining": "From training"
   },
   "tools": {
     "title": "Tools",

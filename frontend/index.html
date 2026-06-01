@@ -391,6 +391,9 @@
               <span style="font-size:12px;color:var(--text-tertiary)" x-text="t('tagEditor.datasetDir') + ':'">Dataset:</span>
               <input type="text" class="te-input" style="width:360px;max-width:60vw" x-model="tagEditorDir" :placeholder="t('tagEditor.datasetDirPlaceholder') || 'Enter dataset directory path...'" @keydown.enter="tagEditorLoad()">
               <button class="btn btn-sm btn-primary" @click="tagEditorLoad()" x-text="t('tagEditor.loadImages')">Load</button>
+              <template x-if="form && form.train_data_dir">
+                <button class="btn btn-sm btn-ghost" @click="tagEditorDir = form.train_data_dir; tagEditorLoad()" style="font-size:11px"><span x-text="t('tagEditor.loadFromTraining') || 'From training'"></span>: <span style="color:var(--accent)" x-text="form.train_data_dir"></span></button>
+              </template>
             </div>
           </div>
         </template>
@@ -441,7 +444,7 @@
                 <div style="display:flex;gap:4px;margin-bottom:6px">
                   <button class="te-logic-btn" :class="tagEditorTagLogic === 'AND' ? 'active' : ''" @click="tagEditorTagLogic = 'AND'" title="Match ALL selected tags">AND</button>
                   <button class="te-logic-btn" :class="tagEditorTagLogic === 'OR' ? 'active' : ''" @click="tagEditorTagLogic = 'OR'" title="Match ANY selected tag">OR</button>
-                  <span style="flex:1"></span>
+                  <span style="flex:1;font-size:10px;color:var(--text-tertiary);line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" x-text="tagEditorTagLogic === 'AND' ? (t('tagEditor.logicAndHint') || '筛选同时含所有标签的图片') : (t('tagEditor.logicOrHint') || '筛选含任意标签的图片')"></span>
                   <button class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" @click="tagEditorClearFilters()" x-text="t('tagEditor.clearFilters')">Clear</button>
                 </div>
                 <!-- Active filters -->
@@ -473,6 +476,12 @@
               <!-- Toolbar with quick filters + sort -->
               <div class="te-toolbar">
                 <div class="te-toolbar-group" style="gap:6px">
+                  <!-- Search input -->
+                  <div class="te-search-wrap" style="width:180px">
+                    <input type="text" class="te-input" x-model.debounce.200ms="tagEditorSearchQuery" :placeholder="t('tagEditor.searchPlaceholder') || 'Search files/tags...'">
+                    <button class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorSearchQuery = ''; tagEditorRecompute()">&times;</button>
+                  </div>
+                  <span style="width:1px;height:16px;background:var(--border-default)"></span>
                   <!-- Quick filter buttons -->
                   <button class="te-quick-btn" :class="tagEditorQuickFilter === 'all' ? 'active' : ''" @click="tagEditorQuickFilter = 'all'; tagEditorRecompute()">
                     <span x-text="t('tagEditor.scopeAll') || 'All'"></span>
@@ -573,7 +582,7 @@
                           </template>
                         </div>
                       </div>
-                      <textarea class="te-card-textarea" :value="img.tags" @input="img.tags = $event.target.value; tagEditorMarkDirty()" rows="2"></textarea>
+                      <textarea class="te-card-textarea" :value="img.tags" @input="tagEditorUpdateTagsText(img.path, $event.target.value)" rows="2"></textarea>
                     </div>
                   </div>
                 </template>
@@ -603,6 +612,7 @@
               <div class="te-detail-header">
                 <span class="te-detail-filename" x-text="tagEditorDetailImg().name"></span>
                 <div style="display:flex;align-items:center;gap:6px">
+                  <button class="btn btn-sm btn-ghost" @click="tagEditorCloseDetail()" title="Back to grid">&larr; <span x-text="t('tagEditor.backToGrid') || 'Grid'">Grid</span></button>
                   <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx <= 0" @click="tagEditorDetailPrev()">&lsaquo;</button>
                   <span style="font-size:11px;color:var(--text-tertiary);min-width:40px;text-align:center" x-text="(tagEditorDetailIdx+1) + '/' + tagEditorGetFiltered().length"></span>
                   <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx >= tagEditorGetFiltered().length - 1" @click="tagEditorDetailNext()">&rsaquo;</button>
@@ -622,12 +632,21 @@
                   <div>
                     <div class="te-detail-tags">
                       <template x-for="(tag, tagIdx) in (tagEditorDetailImg() ? tagEditorDetailImg().tags : '').split(',').filter(function(t){ return t.trim(); })" :key="'dt-'+tagIdx">
-                        <span class="te-preview-pill" @click="tagEditorDetailRemoveTag(tag.trim())" x-text="tag.trim()"></span>
+                        <span class="te-pill-wrap">
+                          <span class="te-pill-arrow" @click="tagEditorDetailMoveTag(tag.trim(), 'left')" title="Move left">&lsaquo;</span>
+                          <span class="te-preview-pill" @click="tagEditorDetailRemoveTag(tag.trim())" x-text="tag.trim()"></span>
+                          <span class="te-pill-arrow" @click="tagEditorDetailMoveTag(tag.trim(), 'right')" title="Move right">&rsaquo;</span>
+                        </span>
                       </template>
                     </div>
-                    <div style="display:flex;gap:4px;margin-top:8px">
-                      <input type="text" class="te-input" style="flex:1" :placeholder="t('tagEditor.addTagPlaceholder') || 'Add tag... (Enter)'" @keydown="tagEditorDetailAddTag($event)">
+                    <div style="display:flex;gap:4px;margin-top:8px;position:relative">
+                      <input type="text" class="te-input" style="flex:1" :placeholder="t('tagEditor.addTagPlaceholder') || 'Add tag... (Enter)'" @keydown="tagEditorDetailAddTag($event)" @input="tagEditorOnSuggestInput($event, tagEditorDetailImg().path)" @focus="tagEditorFocusedImg = tagEditorDetailImg().path; tagEditorFocusedVal = $event.target.value" @blur="tagEditorBlurSuggest()">
                       <button class="btn btn-sm btn-ghost" @click="tagEditorSortSingle(tagEditorDetailImg().path)" title="Sort tags">↕ Sort</button>
+                      <div class="te-autocomplete" x-show="tagEditorFocusedImg === tagEditorDetailImg().path && tagEditorGetSuggestions(tagEditorDetailImg().path).length > 0">
+                        <template x-for="sug in tagEditorGetSuggestions(tagEditorDetailImg().path)" :key="'ds-'+sug">
+                          <div class="te-autocomplete-item" @mousedown.prevent="tagEditorPickSuggestion(tagEditorDetailImg().path, sug)" x-text="sug"></div>
+                        </template>
+                      </div>
                     </div>
                   </div>
                 </template>

@@ -1719,6 +1719,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-pill-wrap { display: inline-flex; align-items: center; gap: 0; }
 .te-pill-arrow { font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 0 1px; opacity: 0; transition: opacity 0.1s, color 0.1s; line-height: 1; user-select: none; }
 .te-card-tags:hover .te-pill-arrow { opacity: 0.5; }
+.te-detail-tags:hover .te-pill-arrow { opacity: 0.5; }
 .te-pill-arrow:hover { color: var(--accent); opacity: 1 !important; }
 .te-pill { font-size: 10px; padding: 1px 5px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); cursor: pointer; transition: background 0.1s; white-space: nowrap; line-height: 1.5; }
 .te-pill:hover { background: var(--danger); color: #fff; }

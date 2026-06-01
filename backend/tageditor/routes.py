@@ -185,10 +185,16 @@ async def save_all_tags(data: dict):
     for item in images:
         img_path = item.get("path", "")
         tags = item.get("tags", "")
-        if not img_path:
+        if not img_path or not os.path.isfile(img_path):
             continue
         p = Path(img_path)
-        write_tags(p.with_suffix(".txt"), tags)
+        cap_path = p.with_suffix(".txt")
+        # 安全检查：确保标签文件与图片在同一目录下
+        cap_resolved = cap_path.resolve()
+        img_resolved = p.resolve()
+        if cap_resolved.parent != img_resolved.parent:
+            continue
+        write_tags(cap_path, tags)
         saved += 1
     return {"status": "success", "data": {"saved": saved}}
 
@@ -214,22 +220,12 @@ async def batch_edit_tags(data: dict):
             return {"status": "error", "message": "未选中任何图片"}
         all_images = scan_images(d)
         target_images = [img for img in all_images if img.get("path", "") in set(selected_paths)]
-    elif scope == "filtered" and "filter" in data:
-        f = data["filter"]
-        include_tags = set(f.get("include_tags", []))
-        include_any = set(f.get("include_any_tags", []))
-        exclude_tags = set(f.get("exclude_tags", []))
-        images = scan_images(d)
-        target_images = []
-        for img in images:
-            tags_set = set(t.strip() for t in img.get("tags", "").split(",") if t.strip())
-            if include_tags and not include_tags.issubset(tags_set):
-                continue
-            if include_any and include_any.isdisjoint(tags_set):
-                continue
-            if exclude_tags and not exclude_tags.isdisjoint(tags_set):
-                continue
-            target_images.append(img)
+    elif scope == "filtered":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return {"status": "error", "message": "筛选结果为空"}
+        all_images = scan_images(d)
+        target_images = [img for img in all_images if img.get("path", "") in set(selected_paths)]
     else:
         target_images = scan_images(d)
 
@@ -282,12 +278,28 @@ async def move_or_delete_files(data: dict):
                     if cap and cap.exists():
                         shutil.move(str(cap), str(dest_path / cap.name))
                 result["moved"] += 1
+                # 清理 .bak 备份文件
+                for bak_ext in [".txt.bak", ".caption.bak"]:
+                    bak_file = img_path.with_suffix(bak_ext)
+                    if bak_file.exists():
+                        try:
+                            shutil.move(str(bak_file), str(dest_path / bak_file.name))
+                        except Exception:
+                            pass
             elif action == "delete":
                 img_path.unlink()
                 if delete_caption:
                     cap = find_caption(img_path)
                     if cap and cap.exists():
                         cap.unlink()
+                # 清理 .bak 备份文件
+                for bak_ext in [".txt.bak", ".caption.bak"]:
+                    bak_file = img_path.with_suffix(bak_ext)
+                    if bak_file.exists():
+                        try:
+                            bak_file.unlink()
+                        except Exception:
+                            pass
                 result["deleted"] += 1
         except Exception as e:
             result["errors"].append(f"{img_path.name}: {e}")

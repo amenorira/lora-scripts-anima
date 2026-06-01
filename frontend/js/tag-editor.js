@@ -86,9 +86,22 @@ window.tagEditorMixin = {
       var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir));
       var j = await r.json();
       if (j.status === 'success') {
-        this.tagEditorTagFreq = (j.data.tags || []).slice(0, 200);
+        this.tagEditorTagFreq = (j.data.tags || []);
       }
     } catch (e) { /* silent */ }
+  },
+
+  tagEditorRefreshTagFreq() {
+    var counter = {};
+    var self = this;
+    this.tagEditorImages.forEach(function(img) {
+      var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+      tags.forEach(function(t) { counter[t] = (counter[t] || 0) + 1; });
+    });
+    var freq = [];
+    for (var tag in counter) { freq.push({ tag: tag, count: counter[tag] }); }
+    freq.sort(function(a, b) { return b.count - a.count; });
+    this.tagEditorTagFreq = freq;
   },
 
   tagEditorSaveAll() {
@@ -111,6 +124,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorRevert() {
+    if (!confirm((this.t('tagEditor.revertConfirm') || 'Discard all unsaved changes?'))) return;
     var self = this;
     this.tagEditorImages.forEach(function(img) {
       if (self.tagEditorOriginal[img.path] !== undefined) img.tags = self.tagEditorOriginal[img.path];
@@ -119,6 +133,12 @@ window.tagEditorMixin = {
     this.tagEditorSelected = [];
     this.tagEditorHistory = [];
     this.tagEditorHistoryIdx = -1;
+    this.tagEditorRefreshTagFreq();
+  },
+
+  _teConfirmNav(route) {
+    if (!this.tagEditorModified || this.currentRoute !== 'tagEditor') return true;
+    return confirm((this.t('tagEditor.unsavedConfirm') || 'You have unsaved changes. Leave without saving?'));
   },
 
   async tagEditorRestoreBackup() {
@@ -301,6 +321,7 @@ window.tagEditorMixin = {
     img.tags = tagList.join(', ');
     this.tagEditorModified = true;
     this._tePushHistory(imgPath, oldTags, img.tags);
+    this.tagEditorRefreshTagFreq();
   },
 
   tagEditorAddTagToImage(imgPath, tag) {
@@ -314,6 +335,7 @@ window.tagEditorMixin = {
     img.tags = img.tags ? tag + ', ' + img.tags : tag;
     this.tagEditorModified = true;
     this._tePushHistory(imgPath, oldTags, img.tags);
+    this.tagEditorRefreshTagFreq();
   },
 
   tagEditorHandleTagInput(event, imgPath) {
@@ -326,6 +348,16 @@ window.tagEditorMixin = {
   },
 
   tagEditorMarkDirty() { this.tagEditorModified = true; },
+
+  tagEditorUpdateTagsText(imgPath, newTags) {
+    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
+    if (!img) return;
+    var oldTags = img.tags;
+    img.tags = newTags;
+    this.tagEditorModified = true;
+    this._tePushHistory(imgPath, oldTags, newTags);
+    this.tagEditorRefreshTagFreq();
+  },
 
   // ── Token Counter ──────────────────────────────────────
   tagEditorTokenCount(tags) {
@@ -374,8 +406,10 @@ window.tagEditorMixin = {
   tagEditorDetailUpdateText(event) {
     var img = this.tagEditorDetailImg();
     if (!img) return;
+    var oldTags = img.tags;
     img.tags = event.target.value;
     this.tagEditorModified = true;
+    this._tePushHistory(img.path, oldTags, img.tags);
   },
 
   // ── Keyboard Shortcuts ─────────────────────────────────
@@ -413,6 +447,7 @@ window.tagEditorMixin = {
 
     var payload = { dir: this.tagEditorDir, operation: op, args: args, scope: scope };
     if (scope === 'selected') payload.selected_paths = this.tagEditorSelected;
+    else if (scope === 'filtered') payload.selected_paths = this.tagEditorGetFiltered().map(function(i) { return i.path; });
 
     try {
       var r = await fetch('/api/tageditor/batch', {
@@ -421,7 +456,12 @@ window.tagEditorMixin = {
       });
       var j = await r.json();
       if (j.status === 'success') {
-        this.toast((this.t('tagEditor.batchDone') || 'Done') + ': ' + (j.data.modified || 0), 'success');
+        var msg = (this.t('tagEditor.batchDone') || 'Done') + ': ' + (j.data.modified || 0);
+        if (j.data.errors && j.data.errors.length > 0) {
+          msg += ' (' + (this.t('tagEditor.batchErrors') || 'errors') + ': ' + j.data.errors.length + ')';
+          console.warn('Batch errors:', j.data.errors);
+        }
+        this.toast(msg, j.data.errors && j.data.errors.length > 0 ? 'warning' : 'success');
         this.tagEditorLoad(this.tagEditorDir);
       } else { this.toast(j.message || 'Operation failed', 'error'); }
     } catch (e) { this.toast('Operation failed: ' + e, 'error'); }
@@ -489,5 +529,11 @@ window.tagEditorMixin = {
     img.tags = tags.join(', ');
     this.tagEditorModified = true;
     this._tePushHistory(imgPath, oldTags, img.tags);
+  },
+
+  tagEditorDetailMoveTag(tag, direction) {
+    var img = this.tagEditorDetailImg();
+    if (!img) return;
+    this.tagEditorMoveTag(img.path, tag, direction);
   },
 };

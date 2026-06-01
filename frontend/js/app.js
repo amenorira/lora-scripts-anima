@@ -79,6 +79,13 @@ document.addEventListener('alpine:init', () => {
 
       window.addEventListener('hashchange', () => this.handleRoute());
 
+      window.addEventListener('beforeunload', (e) => {
+        if (this.tagEditorModified && this.currentRoute === 'tagEditor') {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
         const r = this.currentRoute;
@@ -178,6 +185,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Routing ─────────────────────────────────────────────
     navigate(route) {
+      if (!this._teConfirmNav(route)) return;
       window.location.hash = route;
       this.handleRoute();
     },
