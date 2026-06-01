@@ -1,46 +1,101 @@
 /* ================================================================
-   tag-editor.js -- Batch tag editor (dataset-captions)
-   Mixin merged into animaApp Alpine component
+   tag-editor.js — Native Tag Editor v2.1
+   Alpine.js mixin: preview modal, sort, keyboard shortcuts,
+   tag autocomplete, token counter, undo history
    ================================================================ */
 
 window.tagEditorMixin = {
-  // -- State --------------------------------------------------
+  // ── Core State ─────────────────────────────────────────
   tagEditorDir: '',
   tagEditorImages: [],
   tagEditorOriginal: {},
   tagEditorModified: false,
-  tagEditorDirName: '',
+  tagEditorTagFreq: [],
+  tagEditorSearchQuery: '',
+  tagEditorTagSearch: '',
+  tagEditorTagSelection: [],
+  tagEditorExcludedTags: [],
+  tagEditorSelected: [],
+  tagEditorPage: 1,
+  tagEditorPageSize: 60,
+  tagEditorBatchScope: 'all',
+  tagEditorBatchVal: '',
+  tagEditorBatchVal2: '',
+  tagEditorTagLogic: 'AND',
 
-  // esc() and escapeAttr() defined in trainingCoreMixin (shared via mixin merge)
+  // ── New State ──────────────────────────────────────────
+  tagEditorLoading: false,
+  tagEditorSortBy: 'name',       // name | tags | modified
+  tagEditorSortAsc: true,
+  tagEditorPreviewImg: null,     // image object for preview modal
+  tagEditorPreviewTags: '',      // editable tags in preview
+  tagEditorDetailMode: false,    // split-screen detail view
+  tagEditorDetailIdx: 0,         // current image index in detail
+  tagEditorDetailView: 'chip',   // chip | text
+  tagEditorTagSortBy: 'freq',    // freq | alpha | length
+  tagEditorTagSortAsc: false,
+  tagEditorHistory: [],          // undo stack [{path, oldTags, newTags}]
+  tagEditorHistoryIdx: -1,
+  tagEditorQuickFilter: 'all',   // all | notag | modified
+  tagEditorFocusedImg: null,     // imgPath for autocomplete dropdown
+  tagEditorFocusedVal: '',       // current input value for suggestions
 
-  // -- Methods ------------------------------------------------
+  // ── Lifecycle ──────────────────────────────────────────
   async tagEditorLoad(dir) {
-    var d = dir || this.tagEditorDir || (this.form && this.form.train_data_dir) || './train/aki';
+    var d = dir || this.tagEditorDir || (this.form && this.form.train_data_dir) || '';
+    if (!d) { this.toast(this.t('common.specifyDir') || 'Please specify a directory', 'warning'); return; }
     this.tagEditorDir = d;
+    this.tagEditorLoading = true;
     this.startProgress();
     try {
       var r = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(d));
       var j = await r.json();
       if (j.status === 'success') {
         this.tagEditorImages = j.data.images || [];
-        this.tagEditorDirName = j.data.dir_name || '';
         this.tagEditorOriginal = {};
         var self = this;
         this.tagEditorImages.forEach(function(img) { self.tagEditorOriginal[img.path] = img.tags; });
         this.tagEditorModified = false;
-        this.renderTagEditor();
+        this.tagEditorSelected = [];
+        this.tagEditorPage = 1;
+        this.tagEditorSearchQuery = '';
+        this.tagEditorTagSelection = [];
+        this.tagEditorExcludedTags = [];
+        this.tagEditorHistory = [];
+        this.tagEditorHistoryIdx = -1;
+        this.tagEditorQuickFilter = 'all';
+        await this.tagEditorLoadTagFreq();
       } else {
         this.tagEditorImages = [];
-        this.renderTagEditor();
+        this.tagEditorTagFreq = [];
+        this.toast(j.message || 'Load failed', 'error');
       }
-    } catch (e) { this.tagEditorImages = []; this.renderTagEditor(); }
-    finally { this.finishProgress(); }
+    } catch (e) {
+      this.tagEditorImages = [];
+      this.tagEditorTagFreq = [];
+      this.toast('Load failed: ' + e, 'error');
+    } finally {
+      this.tagEditorLoading = false;
+      this.finishProgress();
+    }
+  },
+
+  async tagEditorLoadTagFreq() {
+    if (!this.tagEditorDir) return;
+    try {
+      var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir));
+      var j = await r.json();
+      if (j.status === 'success') {
+        this.tagEditorTagFreq = (j.data.tags || []).slice(0, 200);
+      }
+    } catch (e) { /* silent */ }
   },
 
   tagEditorSaveAll() {
     if (!this.tagEditorModified) return;
     var images = this.tagEditorImages.map(function(img) { return { path: img.path, tags: img.tags }; });
     var self = this;
+    this.startProgress();
     fetch('/api/tageditor/save-all', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images: images }),
@@ -49,9 +104,10 @@ window.tagEditorMixin = {
         self.tagEditorOriginal = {};
         self.tagEditorImages.forEach(function(img) { self.tagEditorOriginal[img.path] = img.tags; });
         self.tagEditorModified = false;
-        self.renderTagEditor();
-      }
-    });
+        self.toast((self.t('common.saved') || 'Saved') + ' (' + (j.data.saved || 0) + ')', 'success');
+      } else { self.toast(j.message || 'Save failed', 'error'); }
+    }).catch(function(e) { self.toast('Save failed: ' + e, 'error'); })
+      .finally(function() { self.finishProgress(); });
   },
 
   tagEditorRevert() {
@@ -60,94 +116,378 @@ window.tagEditorMixin = {
       if (self.tagEditorOriginal[img.path] !== undefined) img.tags = self.tagEditorOriginal[img.path];
     });
     this.tagEditorModified = false;
-    this.renderTagEditor();
+    this.tagEditorSelected = [];
+    this.tagEditorHistory = [];
+    this.tagEditorHistoryIdx = -1;
   },
 
-  async tagEditorBatchOp(op, args) {
+  async tagEditorRestoreBackup() {
+    if (!this.tagEditorDir) return;
+    if (!confirm(this.t('tagEditor.restoreConfirm') || 'Restore all tag files from .bak backups?')) return;
     try {
-      var r = await fetch('/api/tageditor/batch', {
+      var r = await fetch('/api/tageditor/restore-backup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: this.tagEditorDir, operation: op, args: args }),
+        body: JSON.stringify({ dir: this.tagEditorDir }),
       });
       var j = await r.json();
       if (j.status === 'success') {
-        this.tagEditorLoad();
-      } else {
-        this.toast(j.message || 'Operation failed', 'error');
+        this.toast((this.t('tagEditor.restored') || 'Restored') + ': ' + (j.data.restored || 0), 'success');
+        this.tagEditorLoad(this.tagEditorDir);
       }
-    } catch (e) { this.toast('Operation failed: ' + e, 'error'); }
+    } catch (e) { this.toast('Restore failed: ' + e, 'error'); }
   },
 
-  tagEditorUpdate(imgPath, newTags) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (img) { img.tags = newTags; this.tagEditorModified = true; }
+  // ── Undo History ───────────────────────────────────────
+  _tePushHistory(imgPath, oldTags, newTags) {
+    this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
+    this.tagEditorHistory.push({ path: imgPath, oldTags: oldTags, newTags: newTags });
+    this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
+    if (this.tagEditorHistory.length > 200) { this.tagEditorHistory.shift(); this.tagEditorHistoryIdx--; }
   },
 
-  renderTagEditor() {
-    var el = document.getElementById('tagEditorContainer');
-    if (!el) return;
+  tagEditorUndo() {
+    if (this.tagEditorHistoryIdx < 0) return;
+    var entry = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    var img = this.tagEditorImages.find(function(i) { return i.path === entry.path; });
+    if (img) { img.tags = entry.oldTags; this.tagEditorModified = true; }
+    this.tagEditorHistoryIdx--;
+  },
+
+  tagEditorRedo() {
+    if (this.tagEditorHistoryIdx >= this.tagEditorHistory.length - 1) return;
+    this.tagEditorHistoryIdx++;
+    var entry = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    var img = this.tagEditorImages.find(function(i) { return i.path === entry.path; });
+    if (img) { img.tags = entry.newTags; this.tagEditorModified = true; }
+  },
+
+  // ── Filtering, Sorting & Pagination ────────────────────
+  tagEditorGetFiltered() {
     var imgs = this.tagEditorImages;
-    var self = this;
-    var tt = function(k, fb) { return (self.t && self.t('tagEditor.' + k)) || fb || k; };
+    var q = (this.tagEditorSearchQuery || '').toLowerCase().trim();
+    var sel = this.tagEditorTagSelection || [];
+    var exc = this.tagEditorExcludedTags || [];
+    var logic = this.tagEditorTagLogic || 'AND';
+    var qf = this.tagEditorQuickFilter || 'all';
 
-    var html = '<div class="tag-editor">';
-
-    html += '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center">';
-    html += '<span style="font-size:12px;color:var(--text-secondary)">' + tt('datasetDir', 'Dataset') + ':</span>';
-    html += '<input type="text" style="flex:1" value="' + this.esc(this.tagEditorDir) + '" id="tagEditorDirInput" @keydown.enter="tagEditorLoad($event.target.value)">';
-    html += '<button class="btn btn-sm btn-primary" @click="tagEditorLoad(document.getElementById(\'tagEditorDirInput\').value)">' + tt('loadImages', 'Load') + '</button>';
-    html += '<span style="font-size:12px;color:var(--text-tertiary)">' + imgs.length + ' images</span>';
-    html += '</div></div>';
-
-    if (!imgs.length) {
-      html += '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">' + tt('noImages', 'No images found') + '</div>';
-      el.innerHTML = html;
-      return;
+    if (q) {
+      imgs = imgs.filter(function(img) {
+        return (img.name && img.name.toLowerCase().indexOf(q) !== -1) ||
+               (img.tags && img.tags.toLowerCase().indexOf(q) !== -1);
+      });
+    }
+    if (qf === 'notag') {
+      imgs = imgs.filter(function(img) { return !img.tags || !img.tags.trim(); });
+    } else if (qf === 'modified') {
+      var orig = this.tagEditorOriginal;
+      imgs = imgs.filter(function(img) { return orig[img.path] !== undefined && orig[img.path] !== img.tags; });
+    }
+    if (sel.length > 0) {
+      imgs = imgs.filter(function(img) {
+        var tags = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); });
+        if (logic === 'AND') { return sel.every(function(st) { return tags.indexOf(st.toLowerCase()) !== -1; }); }
+        else { return sel.some(function(st) { return tags.indexOf(st.toLowerCase()) !== -1; }); }
+      });
+    }
+    if (exc.length > 0) {
+      imgs = imgs.filter(function(img) {
+        var tags = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); });
+        return !exc.some(function(et) { return tags.indexOf(et.toLowerCase()) !== -1; });
+      });
     }
 
-    html += '<div class="card" style="margin-bottom:12px"><div class="batch-toolbar">';
-    html += '<input type="text" id="batchVal" placeholder="value" style="width:120px"><input type="text" id="batchVal2" placeholder="' + tt('findReplace', 'replace with') + '" style="width:120px">';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'add_prefix\',{value:document.getElementById(\'batchVal\').value})">' + tt('addPrefix', 'Add Prefix') + '</button>';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'add_suffix\',{value:document.getElementById(\'batchVal\').value})">' + tt('addSuffix', 'Add Suffix') + '</button>';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'find_replace\',{find:document.getElementById(\'batchVal\').value,replace:document.getElementById(\'batchVal2\').value})">' + tt('findReplace', 'Find & Replace') + '</button>';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'delete_tag\',{value:document.getElementById(\'batchVal\').value})">' + tt('deleteTag', 'Delete') + '</button>';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'dedup\',{})">' + tt('dedup', 'Dedup') + '</button>';
-    html += '<button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp(\'sort\',{})">' + tt('sort', 'Sort') + '</button>';
-    html += '</div></div>';
-
-    html += '<div class="tag-editor-grid">';
-    imgs.forEach(function(img, idx) {
-      var esc = self.esc;
-      var tagPills = (img.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t, tagIdx) {
-        return '<span class="tag-pill" data-tag-path="' + self.escapeAttr(img.path) + '" data-tag-value="' + self.escapeAttr(t.trim()) + '" @click="tagEditorRemoveTag($event.target.dataset.tagPath, $event.target.dataset.tagValue)" title="' + tt('clickToDelete', 'Click to remove') + '">' + esc(t.trim()) + '</span>';
-      }).join('');
-      var isModified = self.tagEditorOriginal[img.path] !== undefined && self.tagEditorOriginal[img.path] !== img.tags;
-      var escPath2 = img.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-      html += '<div class="tag-editor-item ' + (isModified ? 'modified' : '') + '">';
-      html += '<div class="tag-editor-thumb"><img src="' + esc(img.thumbnail) + '" loading="lazy" alt="' + esc(img.name) + '"/></div>';
-      html += '<div class="tag-editor-info">';
-      html += '<div class="tag-editor-filename">' + esc(img.name) + (isModified ? ' *' : '') + '</div>';
-      html += '<div class="tag-editor-tags">' + tagPills + '</div>';
-      html += '<textarea class="tag-editor-textarea" id="tagtext-' + idx + '" @input="tagEditorUpdate(\'' + escPath2 + '\',$event.target.value)" @focus="tagEditorMarkDirty()" rows="2">' + esc(img.tags) + '</textarea>';
-      html += '</div></div>';
+    // Sort
+    var sortBy = this.tagEditorSortBy || 'name';
+    var asc = this.tagEditorSortAsc;
+    var orig = this.tagEditorOriginal;
+    imgs = imgs.slice().sort(function(a, b) {
+      var va, vb;
+      if (sortBy === 'tags') {
+        va = (a.tags || '').split(',').filter(function(t){return t.trim();}).length;
+        vb = (b.tags || '').split(',').filter(function(t){return t.trim();}).length;
+      } else if (sortBy === 'modified') {
+        va = (orig[a.path] !== undefined && orig[a.path] !== a.tags) ? 1 : 0;
+        vb = (orig[b.path] !== undefined && orig[b.path] !== b.tags) ? 1 : 0;
+      } else {
+        va = (a.name || '').toLowerCase();
+        vb = (b.name || '').toLowerCase();
+      }
+      if (va < vb) return asc ? -1 : 1;
+      if (va > vb) return asc ? 1 : -1;
+      return 0;
     });
-    html += '</div>';
-
-    html += '</div>';
-    el.innerHTML = html;
+    return imgs;
   },
 
+  tagEditorTotalPages() { return Math.max(1, Math.ceil(this.tagEditorGetFiltered().length / this.tagEditorPageSize)); },
+  tagEditorGetPaged() {
+    var f = this.tagEditorGetFiltered();
+    var s = (this.tagEditorPage - 1) * this.tagEditorPageSize;
+    return f.slice(s, s + this.tagEditorPageSize);
+  },
+  tagEditorRecompute() { this.tagEditorPage = 1; },
+
+  tagEditorToggleSort(by) {
+    if (this.tagEditorSortBy === by) { this.tagEditorSortAsc = !this.tagEditorSortAsc; }
+    else { this.tagEditorSortBy = by; this.tagEditorSortAsc = true; }
+  },
+
+  tagEditorToggleTagSort(by) {
+    if (this.tagEditorTagSortBy === by) { this.tagEditorTagSortAsc = !this.tagEditorTagSortAsc; }
+    else { this.tagEditorTagSortBy = by; this.tagEditorTagSortAsc = false; }
+  },
+
+  // ── Tag Cloud Filtering ────────────────────────────────
+  tagEditorToggleTagFilter(tag) {
+    var idx = this.tagEditorTagSelection.indexOf(tag);
+    if (idx !== -1) this.tagEditorTagSelection.splice(idx, 1);
+    else this.tagEditorTagSelection.push(tag);
+    this.tagEditorPage = 1;
+  },
+  tagEditorToggleExcludeTag(tag) {
+    var idx = this.tagEditorExcludedTags.indexOf(tag);
+    if (idx !== -1) this.tagEditorExcludedTags.splice(idx, 1);
+    else this.tagEditorExcludedTags.push(tag);
+    this.tagEditorPage = 1;
+  },
+  tagEditorClearFilters() {
+    this.tagEditorTagSelection = [];
+    this.tagEditorExcludedTags = [];
+    this.tagEditorSearchQuery = '';
+    this.tagEditorTagSearch = '';
+    this.tagEditorQuickFilter = 'all';
+    this.tagEditorPage = 1;
+  },
+  tagEditorGetFilteredTagFreq() {
+    var q = (this.tagEditorTagSearch || '').toLowerCase().trim();
+    var freq = this.tagEditorTagFreq || [];
+    if (q) freq = freq.filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1; });
+    var sortBy = this.tagEditorTagSortBy || 'freq';
+    var asc = this.tagEditorTagSortAsc;
+    freq = freq.slice().sort(function(a, b) {
+      var va, vb;
+      if (sortBy === 'alpha') { va = a.tag.toLowerCase(); vb = b.tag.toLowerCase(); }
+      else if (sortBy === 'length') { va = a.tag.length; vb = b.tag.length; }
+      else { va = a.count; vb = b.count; }
+      if (va < vb) return asc ? -1 : 1;
+      if (va > vb) return asc ? 1 : -1;
+      return 0;
+    });
+    return freq;
+  },
+  tagEditorIsTagSelected(tag) { return this.tagEditorTagSelection.indexOf(tag) !== -1; },
+  tagEditorIsTagExcluded(tag) { return this.tagEditorExcludedTags.indexOf(tag) !== -1; },
+
+  // ── Image Selection ────────────────────────────────────
+  tagEditorIsSelected(p) { return this.tagEditorSelected.indexOf(p) !== -1; },
+  tagEditorToggleSelect(p) {
+    var idx = this.tagEditorSelected.indexOf(p);
+    if (idx !== -1) this.tagEditorSelected.splice(idx, 1);
+    else this.tagEditorSelected.push(p);
+  },
+  tagEditorSelectAll() { this.tagEditorSelected = this.tagEditorGetFiltered().map(function(i) { return i.path; }); },
+  tagEditorSelectNone() { this.tagEditorSelected = []; },
+  tagEditorSelectInvert() {
+    var cur = new Set(this.tagEditorSelected);
+    this.tagEditorSelected = this.tagEditorGetFiltered().filter(function(i) { return !cur.has(i.path); }).map(function(i) { return i.path; });
+  },
+
+  // ── Tag Editing (with undo) ────────────────────────────
   tagEditorRemoveTag(imgPath, tag) {
     var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
     if (!img) return;
+    var oldTags = img.tags;
     var tagList = img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t && t !== tag; });
     img.tags = tagList.join(', ');
     this.tagEditorModified = true;
-    this.renderTagEditor();
+    this._tePushHistory(imgPath, oldTags, img.tags);
   },
 
-  tagEditorMarkDirty() {
+  tagEditorAddTagToImage(imgPath, tag) {
+    tag = (tag || '').trim();
+    if (!tag) return;
+    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
+    if (!img) return;
+    var existing = img.tags.split(',').map(function(t) { return t.trim(); });
+    if (existing.indexOf(tag) !== -1) return;
+    var oldTags = img.tags;
+    img.tags = img.tags ? tag + ', ' + img.tags : tag;
     this.tagEditorModified = true;
+    this._tePushHistory(imgPath, oldTags, img.tags);
+  },
+
+  tagEditorHandleTagInput(event, imgPath) {
+    if (event.key !== 'Enter') return;
+    var val = event.target.value.trim();
+    if (!val) return;
+    var self = this;
+    val.split(',').forEach(function(t) { self.tagEditorAddTagToImage(imgPath, t.trim()); });
+    event.target.value = '';
+  },
+
+  tagEditorMarkDirty() { this.tagEditorModified = true; },
+
+  // ── Token Counter ──────────────────────────────────────
+  tagEditorTokenCount(tags) {
+    if (!tags) return 0;
+    return tags.split(',').filter(function(t) { return t.trim(); }).length;
+  },
+
+  // ── Detail View (split-screen, like AnimaLoraStudio) ───
+  tagEditorOpenDetail(imgPath) {
+    var filtered = this.tagEditorGetFiltered();
+    var idx = filtered.findIndex(function(i) { return i.path === imgPath; });
+    if (idx === -1) return;
+    this.tagEditorDetailIdx = idx;
+    this.tagEditorDetailMode = true;
+    this.tagEditorDetailView = 'chip';
+  },
+  tagEditorCloseDetail() {
+    this.tagEditorDetailMode = false;
+  },
+  tagEditorDetailImg() {
+    var filtered = this.tagEditorGetFiltered();
+    return filtered[this.tagEditorDetailIdx] || null;
+  },
+  tagEditorDetailPrev() {
+    if (this.tagEditorDetailIdx > 0) this.tagEditorDetailIdx--;
+  },
+  tagEditorDetailNext() {
+    var filtered = this.tagEditorGetFiltered();
+    if (this.tagEditorDetailIdx < filtered.length - 1) this.tagEditorDetailIdx++;
+  },
+  tagEditorDetailRemoveTag(tag) {
+    var img = this.tagEditorDetailImg();
+    if (!img) return;
+    this.tagEditorRemoveTag(img.path, tag);
+  },
+  tagEditorDetailAddTag(event) {
+    if (event.key !== 'Enter') return;
+    var img = this.tagEditorDetailImg();
+    if (!img) return;
+    var val = event.target.value.trim();
+    if (!val) return;
+    var self = this;
+    val.split(',').forEach(function(t) { self.tagEditorAddTagToImage(img.path, t.trim()); });
+    event.target.value = '';
+  },
+  tagEditorDetailUpdateText(event) {
+    var img = this.tagEditorDetailImg();
+    if (!img) return;
+    img.tags = event.target.value;
+    this.tagEditorModified = true;
+  },
+
+  // ── Keyboard Shortcuts ─────────────────────────────────
+  tagEditorKeydown(e) {
+    if (!this.tagEditorImages.length) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 's') { e.preventDefault(); this.tagEditorSaveAll(); }
+      else if (e.key === 'z') { e.preventDefault(); if (e.shiftKey) this.tagEditorRedo(); else this.tagEditorUndo(); }
+      else if (e.key === 'a') { e.preventDefault(); this.tagEditorSelectAll(); }
+    }
+    if (this.tagEditorDetailMode) {
+      if (e.key === 'Escape') { this.tagEditorCloseDetail(); }
+      else if (e.key === 'ArrowLeft') { this.tagEditorDetailPrev(); }
+      else if (e.key === 'ArrowRight') { this.tagEditorDetailNext(); }
+    }
+  },
+
+  // ── Batch Operations ───────────────────────────────────
+  async tagEditorBatchOp(op) {
+    var args = {};
+    var needsVal = ['add_prefix', 'add_suffix', 'delete_tag', 'inject_trigger', 'remove_trigger'].indexOf(op) !== -1;
+    var needsFind = op === 'find_replace' || op === 'regex_replace';
+    if (needsVal && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter a value', 'warning'); return; }
+    if (needsFind && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter find text', 'warning'); return; }
+
+    if (op === 'find_replace') { args.find = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
+    else if (op === 'regex_replace') { args.pattern = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
+    else { args.value = this.tagEditorBatchVal; }
+
+    var scope = this.tagEditorBatchScope;
+    var count = scope === 'all' ? this.tagEditorImages.length : scope === 'selected' ? this.tagEditorSelected.length : this.tagEditorGetFiltered().length;
+    var scopeLabel = scope === 'all' ? (this.t('tagEditor.scopeAll') || 'All') : scope === 'selected' ? (this.t('tagEditor.scopeSelected') || 'Selected') : (this.t('tagEditor.scopeFiltered') || 'Filtered');
+    if (!confirm((this.t('tagEditor.batchConfirm') || 'Apply') + ' [' + op + '] ' + (this.t('tagEditor.batchConfirmOn') || 'to') + ' ' + count + ' ' + (this.t('tagEditor.imageCount') || 'images') + ' (' + scopeLabel + ')?')) return;
+
+    var payload = { dir: this.tagEditorDir, operation: op, args: args, scope: scope };
+    if (scope === 'selected') payload.selected_paths = this.tagEditorSelected;
+
+    try {
+      var r = await fetch('/api/tageditor/batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      var j = await r.json();
+      if (j.status === 'success') {
+        this.toast((this.t('tagEditor.batchDone') || 'Done') + ': ' + (j.data.modified || 0), 'success');
+        this.tagEditorLoad(this.tagEditorDir);
+      } else { this.toast(j.message || 'Operation failed', 'error'); }
+    } catch (e) { this.toast('Operation failed: ' + e, 'error'); }
+  },
+
+  tagEditorSortSingle(imgPath) {
+    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
+    if (!img) return;
+    var oldTags = img.tags;
+    var tags = img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    tags.sort();
+    img.tags = tags.join(', ');
+    this.tagEditorModified = true;
+    this._tePushHistory(imgPath, oldTags, img.tags);
+  },
+
+  // ── No-tag count ───────────────────────────────────────
+  tagEditorNoTagCount() {
+    return this.tagEditorImages.filter(function(img) { return !img.tags || !img.tags.trim(); }).length;
+  },
+  tagEditorModifiedCount() {
+    var orig = this.tagEditorOriginal;
+    return this.tagEditorImages.filter(function(img) { return orig[img.path] !== undefined && orig[img.path] !== img.tags; }).length;
+  },
+
+  // ── Autocomplete ───────────────────────────────────────
+  tagEditorGetSuggestions(imgPath) {
+    if (this.tagEditorFocusedImg !== imgPath || !this.tagEditorFocusedVal || this.tagEditorFocusedVal.length < 1) return [];
+    var q = this.tagEditorFocusedVal.toLowerCase();
+    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
+    var existing = img ? img.tags.split(',').map(function(t) { return t.trim().toLowerCase(); }) : [];
+    var freq = this.tagEditorTagFreq || [];
+    return freq.filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1 && existing.indexOf(t.tag.toLowerCase()) === -1; })
+               .slice(0, 8)
+               .map(function(t) { return t.tag; });
+  },
+
+  tagEditorOnSuggestInput(event, imgPath) {
+    this.tagEditorFocusedImg = imgPath;
+    this.tagEditorFocusedVal = event.target.value;
+  },
+
+  tagEditorPickSuggestion(imgPath, tag) {
+    this.tagEditorAddTagToImage(imgPath, tag);
+    this.tagEditorFocusedImg = null;
+    this.tagEditorFocusedVal = '';
+  },
+
+  tagEditorBlurSuggest() {
+    var self = this;
+    setTimeout(function() { self.tagEditorFocusedImg = null; self.tagEditorFocusedVal = ''; }, 200);
+  },
+
+  // ── Tag Reorder (move left/right) ─────────────────────
+  tagEditorMoveTag(imgPath, tag, direction) {
+    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
+    if (!img) return;
+    var oldTags = img.tags;
+    var tags = img.tags.split(',').map(function(t) { return t.trim(); });
+    var idx = tags.indexOf(tag);
+    if (idx === -1) return;
+    var targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= tags.length) return;
+    var tmp = tags[idx]; tags[idx] = tags[targetIdx]; tags[targetIdx] = tmp;
+    img.tags = tags.join(', ');
+    this.tagEditorModified = true;
+    this._tePushHistory(imgPath, oldTags, img.tags);
   },
 };

@@ -1,16 +1,18 @@
 """
 Tag Editor API 路由
 
-  GET  /api/tageditor/images?dir=...       — 列出图片+标签
-  GET  /api/tageditor/tags?dir=...         — 标签频率统计
-  POST /api/tageditor/filter               — 按标签过滤
-  POST /api/tageditor/save                 — 保存单张标签
-  POST /api/tageditor/save-all             — 批量保存
-  POST /api/tageditor/batch                — 批量操作
-  POST /api/tageditor/move-delete          — 文件移动/删除
-  POST /api/tageditor/restore-backup       — 还原备份
-  GET  /api/tageditor/download-zip?dir=... — 下载 zip
-  GET  /api/tageditor/thumbnail?path=...   — 缩略图代理
+  GET  /api/tageditor/images?dir=...         — 列出图片+标签
+  GET  /api/tageditor/tags?dir=...           — 标签频率统计
+  GET  /api/tageditor/stats?dir=...          — 数据集统计概览
+  GET  /api/tageditor/autocomplete?dir=...   — 标签自动补全
+  POST /api/tageditor/filter                 — 按标签过滤
+  POST /api/tageditor/save                   — 保存单张标签
+  POST /api/tageditor/save-all               — 批量保存
+  POST /api/tageditor/batch                  — 批量操作（支持 scope=selected）
+  POST /api/tageditor/move-delete            — 文件移动/删除
+  POST /api/tageditor/restore-backup         — 还原备份
+  GET  /api/tageditor/download-zip?dir=...   — 下载 zip
+  GET  /api/tageditor/thumbnail?path=...     — 缩略图代理
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
-    scan_images, count_tags, IMAGE_EXTENSIONS,
+    scan_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
 )
 from backend.tageditor.operations import apply_operation
 
@@ -72,6 +74,57 @@ async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     tags_data, total_images = count_tags(dir_path, recursive=recursive)
 
     return {"status": "success", "data": {"tags": tags_data, "total_images": total_images}}
+
+
+@router.get("/tageditor/stats")
+async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True)):
+    """数据集统计概览：图片总数、标签总数、有/无标签文件的图片数"""
+    if not dir:
+        return {"status": "error", "message": "请指定数据集目录路径"}
+
+    dir_path = resolve_dir(dir)
+    if not dir_path.exists():
+        return {"status": "error", "message": f"目录不存在: {dir}"}
+
+    images = scan_images(dir_path, recursive=recursive)
+    total = len(images)
+    with_caption = sum(1 for i in images if i.get("has_caption"))
+    without_caption = total - with_caption
+    all_tags: set[str] = set()
+    for img in images:
+        for t in img.get("tags", "").split(","):
+            t = t.strip()
+            if t:
+                all_tags.add(t)
+
+    return {
+        "status": "success",
+        "data": {
+            "total_images": total,
+            "with_caption": with_caption,
+            "without_caption": without_caption,
+            "unique_tags": len(all_tags),
+        }
+    }
+
+
+@router.get("/tageditor/autocomplete")
+async def tag_autocomplete(
+    dir: str = Query(""),
+    prefix: str = Query(""),
+    limit: int = Query(20),
+    recursive: bool = Query(True),
+):
+    """标签自动补全"""
+    if not dir or not prefix:
+        return {"status": "success", "data": {"suggestions": []}}
+
+    dir_path = resolve_dir(dir)
+    if not dir_path.exists():
+        return {"status": "success", "data": {"suggestions": []}}
+
+    suggestions = get_autocomplete(dir_path, prefix, limit=limit, recursive=recursive)
+    return {"status": "success", "data": {"suggestions": suggestions}}
 
 
 @router.post("/tageditor/filter")
@@ -155,7 +208,13 @@ async def batch_edit_tags(data: dict):
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
 
-    if scope == "filtered" and "filter" in data:
+    if scope == "selected":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return {"status": "error", "message": "未选中任何图片"}
+        all_images = scan_images(d)
+        target_images = [img for img in all_images if img.get("path", "") in set(selected_paths)]
+    elif scope == "filtered" and "filter" in data:
         f = data["filter"]
         include_tags = set(f.get("include_tags", []))
         include_any = set(f.get("include_any_tags", []))

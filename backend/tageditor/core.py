@@ -114,3 +114,11 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
         for tag, count in counter.most_common()
     ]
     return tags_data, total_images
+
+
+def get_autocomplete(dir_path: Path, prefix: str, limit: int = 20, recursive: bool = True) -> list[str]:
+    """标签自动补全：返回以 prefix 开头的标签（按频率排序）"""
+    tags_data, _ = count_tags(dir_path, recursive=recursive)
+    prefix_lower = prefix.lower()
+    results = [t["tag"] for t in tags_data if t["tag"].lower().startswith(prefix_lower)]
+    return results[:limit]
