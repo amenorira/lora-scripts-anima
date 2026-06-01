@@ -410,8 +410,11 @@
     "searchTags": "Search tags...",
     "searchPlaceholder": "Search filenames or tags...",
     "clearFilters": "Clear",
+    "showMore": "Show more...",
+    "showLess": "Show less",
     "selection": "Selection",
     "selectAll": "All",
+    "selectPage": "Page",
     "selectNone": "None",
     "selectInvert": "Invert",
     "selected": " selected",
@@ -424,6 +427,7 @@
     "dedup": "Dedup",
     "sort": "Sort",
     "injectTrigger": "Trigger",
+    "removeTrigger": "Remove Trigger",
     "clickToDelete": "Click to remove tag",
     "addTagPlaceholder": "Add tag...",
     "batchPlaceholder": "value",
@@ -447,7 +451,8 @@
     "logicAndHint": "Show images with ALL selected tags",
     "logicOrHint": "Show images with ANY selected tag",
     "batchErrors": "errors",
-    "loadFromTraining": "From training"
+    "loadFromTraining": "From training",
+    "perPage": "/page"
   },
   "tools": {
     "title": "Tools",

@@ -182,6 +182,7 @@ async def save_all_tags(data: dict):
     if not images:
         return {"status": "error", "message": "无数据"}
     saved = 0
+    skipped = 0
     for item in images:
         img_path = item.get("path", "")
         tags = item.get("tags", "")
@@ -194,9 +195,14 @@ async def save_all_tags(data: dict):
         img_resolved = p.resolve()
         if cap_resolved.parent != img_resolved.parent:
             continue
+        # 只在标签实际变化时才写入
+        existing_tags = read_tags(cap_path) if cap_path.exists() else ""
+        if existing_tags == tags.strip():
+            skipped += 1
+            continue
         write_tags(cap_path, tags)
         saved += 1
-    return {"status": "success", "data": {"saved": saved}}
+    return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
 
 
 @router.post("/tageditor/batch")

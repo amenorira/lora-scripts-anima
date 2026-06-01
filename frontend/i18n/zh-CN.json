@@ -410,8 +410,11 @@
     "searchTags": "搜索标签...",
     "searchPlaceholder": "搜索文件名或标签...",
     "clearFilters": "清除筛选",
+    "showMore": "显示更多...",
+    "showLess": "收起",
     "selection": "选择",
     "selectAll": "全选",
+    "selectPage": "选当前页",
     "selectNone": "全不选",
     "selectInvert": "反选",
     "selected": " 已选中",
@@ -424,6 +427,7 @@
     "dedup": "去重",
     "sort": "排序",
     "injectTrigger": "触发词",
+    "removeTrigger": "移除触发词",
     "clickToDelete": "点击移除标签",
     "addTagPlaceholder": "添加标签...",
     "batchPlaceholder": "值",
@@ -447,7 +451,8 @@
     "logicAndHint": "筛选同时含所有标签的图片",
     "logicOrHint": "筛选含任意标签的图片",
     "batchErrors": "错误",
-    "loadFromTraining": "从训练设置"
+    "loadFromTraining": "从训练设置",
+    "perPage": "/页"
   },
   "tools": {
     "title": "工具",

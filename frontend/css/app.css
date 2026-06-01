@@ -1645,18 +1645,21 @@ input[type="range"]::-webkit-slider-thumb {
 .te-search-clear:hover { color: var(--text-primary); background: var(--hover-overlay); }
 
 /* Tag cloud */
-.te-tag-cloud { display: flex; flex-direction: column; gap: 2px; }
-.te-tag-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 5px; font-size: 12px; transition: background 0.1s; cursor: default; }
+.te-tag-cloud { display: flex; flex-direction: column; gap: 2px; contain: layout style; }
+.te-tag-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 5px; font-size: 12px; transition: background 0.1s; cursor: default; position: relative; overflow: hidden; }
 .te-tag-item:hover { background: var(--hover-overlay); }
 .te-tag-item.selected { background: var(--accent-soft); }
 .te-tag-item.selected .te-tag-name { color: var(--accent); font-weight: 600; }
 .te-tag-item.excluded { background: rgba(220, 38, 38, 0.08); }
 .te-tag-item.excluded .te-tag-name { color: var(--danger); text-decoration: line-through; }
-.te-tag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text-primary); }
+.te-tag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text-primary); position: relative; z-index: 1; }
 .te-tag-name:hover { color: var(--accent); }
-.te-tag-count { font-size: 10.5px; color: var(--text-secondary); min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
-.te-tag-exclude-btn { font-size: 14px; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity 0.1s, color 0.1s; padding: 0 2px; line-height: 1; }
-.te-tag-item:hover .te-tag-exclude-btn { opacity: 0.5; }
+.te-tag-count { font-size: 10.5px; color: var(--text-secondary); min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; position: relative; z-index: 1; }
+.te-tag-item .te-tag-freq-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-muted); border-radius: 5px; transition: width 0.2s var(--ease-out); pointer-events: none; }
+.te-tag-item.selected .te-tag-freq-bar { background: var(--accent-soft); }
+.te-tag-item.excluded .te-tag-freq-bar { background: rgba(220, 38, 38, 0.06); }
+.te-tag-exclude-btn { font-size: 14px; color: var(--text-tertiary); cursor: pointer; opacity: 0.3; transition: opacity 0.1s, color 0.1s; padding: 0 2px; line-height: 1; }
+.te-tag-item:hover .te-tag-exclude-btn { opacity: 0.7; }
 .te-tag-exclude-btn:hover { color: var(--danger); opacity: 1 !important; }
 
 /* Logic toggle */
@@ -1688,7 +1691,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-sort-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
 /* Image grid */
-.te-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; flex: 1; overflow-y: auto; padding-bottom: 8px; align-content: start; max-height: calc(100vh - 360px); }
+.te-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; flex: 1; overflow-y: auto; padding-bottom: 8px; align-content: start; max-height: calc(100vh - 360px); -webkit-overflow-scrolling: touch; }
 
 /* Image card */
 .te-card { border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
@@ -1713,7 +1716,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* Card info */
 .te-card-info { padding: 8px 10px 10px; }
 .te-card-name { font-size: 11px; font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
-.te-card-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; max-height: 48px; overflow-y: auto; }
+.te-card-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; max-height: 48px; overflow-y: auto; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
 
 /* Tag pills with reorder arrows */
 .te-pill-wrap { display: inline-flex; align-items: center; gap: 0; }

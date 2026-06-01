@@ -460,12 +460,19 @@
                 </template>
                 <!-- Tag list -->
                 <div class="te-tag-cloud" style="flex:1;min-height:0;overflow-y:auto">
-                  <template x-for="t in tagEditorGetFilteredTagFreq()" :key="t.tag">
+                  <template x-for="t in tagEditorGetDisplayedTagFreq()" :key="t.tag">
                     <div class="te-tag-item" :class="{ selected: tagEditorIsTagSelected(t.tag), excluded: tagEditorIsTagExcluded(t.tag) }">
+                      <div class="te-tag-freq-bar" :style="'width:' + (tagEditorTagFreq.length > 0 ? Math.max(2, (t.count / Math.max(1, tagEditorTagFreq[0].count)) * 100) : 0) + '%'"></div>
                       <span class="te-tag-name" @click="tagEditorToggleTagFilter(t.tag)" x-text="t.tag"></span>
                       <span class="te-tag-count" x-text="t.count"></span>
                       <span class="te-tag-exclude-btn" @click="tagEditorToggleExcludeTag(t.tag)" title="Exclude">&times;</span>
                     </div>
+                  </template>
+                  <template x-if="tagEditorHasMoreTags() && !tagEditorTagCloudExpanded">
+                    <button class="btn btn-sm btn-ghost" style="width:100%;margin-top:4px;font-size:11px" @click="tagEditorTagCloudExpanded = true" x-text="t('tagEditor.showMore') || 'Show more...'"></button>
+                  </template>
+                  <template x-if="tagEditorTagCloudExpanded">
+                    <button class="btn btn-sm btn-ghost" style="width:100%;margin-top:4px;font-size:11px" @click="tagEditorTagCloudExpanded = false" x-text="t('tagEditor.showLess') || 'Show less'"></button>
                   </template>
                 </div>
               </div>
@@ -516,6 +523,7 @@
                   </span>
                   <span style="width:1px;height:14px;background:var(--border-default)"></span>
                   <button class="btn btn-sm btn-ghost" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')">All</button>
+                  <button class="btn btn-sm btn-ghost" @click="tagEditorSelectPage()" x-text="t('tagEditor.selectPage') || 'Page'">Page</button>
                   <button class="btn btn-sm btn-ghost" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')">None</button>
                   <button class="btn btn-sm btn-ghost" @click="tagEditorSelectInvert()" x-text="t('tagEditor.selectInvert')">Invert</button>
                   <template x-if="tagEditorSelected.length > 0">
@@ -544,6 +552,7 @@
                   <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup')" x-text="t('tagEditor.dedup')">Dedup</button>
                   <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort')" x-text="t('tagEditor.sort')">Sort</button>
                   <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('inject_trigger')" x-text="t('tagEditor.injectTrigger')">Trigger</button>
+                  <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('remove_trigger')" x-text="t('tagEditor.removeTrigger')">Remove Trigger</button>
                 </div>
               </div>
 
@@ -596,6 +605,12 @@
                   <span class="te-page-info" x-text="tagEditorPage + ' / ' + tagEditorTotalPages()"></span>
                   <button class="btn btn-sm btn-ghost" :disabled="tagEditorPage >= tagEditorTotalPages()" @click="tagEditorPage++">&rsaquo;</button>
                   <button class="btn btn-sm btn-ghost" :disabled="tagEditorPage >= tagEditorTotalPages()" @click="tagEditorPage = tagEditorTotalPages()">&raquo;</button>
+                  <span style="width:1px;height:14px;background:var(--border-default);margin:0 4px"></span>
+                  <select class="te-input" style="width:auto;font-size:11px;padding:2px 4px" x-model.number="tagEditorPageSize" @change="tagEditorPage = 1">
+                    <template x-for="size in tagEditorPageSizeOptions" :key="size">
+                      <option :value="size" x-text="size + (t('tagEditor.perPage') || '/page')"></option>
+                    </template>
+                  </select>
                 </div>
               </template>
             </div>
