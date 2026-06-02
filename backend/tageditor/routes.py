@@ -171,7 +171,8 @@ async def save_image_tags(data: dict):
     if not img_path or not os.path.isfile(img_path):
         return {"status": "error", "message": "图片路径无效"}
     p = Path(img_path)
-    write_tags(p.with_suffix(".txt"), tags)
+    cap = find_caption(p) or p.with_suffix(".txt")
+    write_tags(cap, tags)
     return {"status": "success", "message": "已保存"}
 
 
@@ -189,13 +190,12 @@ async def save_all_tags(data: dict):
         if not img_path or not os.path.isfile(img_path):
             continue
         p = Path(img_path)
-        cap_path = p.with_suffix(".txt")
+        cap_path = find_caption(p) or p.with_suffix(".txt")
         # 安全检查：确保标签文件与图片在同一目录下
         cap_resolved = cap_path.resolve()
         img_resolved = p.resolve()
         if cap_resolved.parent != img_resolved.parent:
             continue
-        # 只在标签实际变化时才写入
         existing_tags = read_tags(cap_path) if cap_path.exists() else ""
         if existing_tags == tags.strip():
             skipped += 1
@@ -224,14 +224,16 @@ async def batch_edit_tags(data: dict):
         selected_paths = data.get("selected_paths", [])
         if not selected_paths:
             return {"status": "error", "message": "未选中任何图片"}
+        selected_set = set(selected_paths)
         all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in set(selected_paths)]
+        target_images = [img for img in all_images if img.get("path", "") in selected_set]
     elif scope == "filtered":
         selected_paths = data.get("selected_paths", [])
         if not selected_paths:
             return {"status": "error", "message": "筛选结果为空"}
+        selected_set = set(selected_paths)
         all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in set(selected_paths)]
+        target_images = [img for img in all_images if img.get("path", "") in selected_set]
     else:
         target_images = scan_images(d)
 
@@ -243,7 +245,7 @@ async def batch_edit_tags(data: dict):
         if not cap_path:
             continue
         p = Path(cap_path)
-        cap = p.with_suffix(".txt")
+        cap = find_caption(p) or p.with_suffix(".txt")
         tags = read_tags(cap) if cap.exists() else ""
         new_tags, err = apply_operation(tags, operation, args)
         if err:
@@ -254,6 +256,60 @@ async def batch_edit_tags(data: dict):
             modified += 1
 
     return {"status": "success", "data": {"modified": modified, "errors": errors}}
+
+
+@router.post("/tageditor/batch/preview")
+async def preview_batch_edit(data: dict):
+    """预览批量操作（不实际执行）"""
+    dir_path = data.get("dir", "")
+    operation = data.get("operation", "")
+    args = data.get("args", {})
+    scope = data.get("scope", "all")
+
+    if not dir_path or not operation:
+        return {"status": "error", "message": "缺少参数"}
+
+    d = resolve_dir(dir_path)
+    if not d.exists():
+        return {"status": "error", "message": "目录不存在"}
+
+    if scope == "selected":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return {"status": "error", "message": "未选中任何图片"}
+        selected_set = set(selected_paths)
+        all_images = scan_images(d)
+        target_images = [img for img in all_images if img.get("path", "") in selected_set]
+    elif scope == "filtered":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return {"status": "error", "message": "筛选结果为空"}
+        selected_set = set(selected_paths)
+        all_images = scan_images(d)
+        target_images = [img for img in all_images if img.get("path", "") in selected_set]
+    else:
+        target_images = scan_images(d)
+
+    preview_data = []
+    for img in target_images:
+        cap_path = img.get("path", "")
+        if not cap_path:
+            continue
+        p = Path(cap_path)
+        cap = find_caption(p) or p.with_suffix(".txt")
+        tags = read_tags(cap) if cap.exists() else ""
+        new_tags, err = apply_operation(tags, operation, args)
+        if err:
+            continue
+        if new_tags != tags:
+            preview_data.append({
+                "path": img.get("path"),
+                "name": img.get("name"),
+                "old_tags": tags,
+                "new_tags": new_tags,
+            })
+
+    return {"status": "success", "data": {"modified_count": len(preview_data), "preview": preview_data}}
 
 
 @router.post("/tageditor/move-delete")
@@ -387,6 +443,13 @@ async def tag_editor_thumbnail(path: str = Query("")):
 
     decoded = urllib.parse.unquote(path)
     p = (REPO_ROOT / decoded).resolve()
+
+    # Path traversal protection: ensure resolved path is within REPO_ROOT
+    try:
+        p.relative_to(REPO_ROOT)
+    except ValueError:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("", status_code=404)
 
     if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
         from fastapi.responses import PlainTextResponse

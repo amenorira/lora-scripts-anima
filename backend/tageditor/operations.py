@@ -67,8 +67,10 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
 
         elif operation == "inject_trigger":
             trigger = args.get("value", "").strip()
-            if trigger and trigger not in tags:
-                return (trigger + ", " + tags if tags else trigger), None
+            if trigger:
+                lst = tag_list(tags)
+                if trigger not in lst:
+                    return (trigger + ", " + tags if tags else trigger), None
             return tags, None
 
         elif operation == "remove_trigger":

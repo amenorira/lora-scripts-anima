@@ -50,11 +50,12 @@ def write_tags(cap_path: Path, tags: str) -> None:
 
 def thumbnail_url(img_path: Path) -> str:
     """图片缩略图 API URL"""
+    import urllib.parse
     try:
         rel = str(img_path.relative_to(REPO_ROOT)).replace("\\", "/")
     except ValueError:
         rel = str(img_path).replace("\\", "/")
-    return f"/api/tageditor/thumbnail?path={rel}"
+    return f"/api/tageditor/thumbnail?path={urllib.parse.quote(rel, safe='')}"
 
 
 def scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:
