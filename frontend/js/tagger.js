@@ -28,13 +28,13 @@ window.taggerMixin = {
   CAMIE_CATS: ['general','character','copyright','artist','meta','year','rating'],
   CL_CATS: ['general','character','copyright','artist','meta','quality','rating'],
 
-  /** 将预设切为"自定义"（同时更新 Camie 和 CL 预设选择器） */
+  /** 将预设切为"自定义"（仅更新当前激活的预设选择器） */
   _camieCustomPreset() {
     this.taggerPreset = 'custom';
-    const el = document.getElementById('tagger-preset');
+    const isCL = this.taggerSelectedModel === 'cl_tagger_1_02';
+    const id = isCL ? 'tagger-cl-preset' : 'tagger-preset';
+    const el = document.getElementById(id);
     if (el) el.value = 'custom';
-    const clEl = document.getElementById('tagger-cl-preset');
-    if (clEl) clEl.value = 'custom';
   },
 
   /** 通用阈值步进 */
@@ -96,10 +96,10 @@ window.taggerMixin = {
       }
     }
     this.taggerPreset = preset;
-    const presetEl = document.getElementById('tagger-preset');
-    if (presetEl && presetEl.value !== preset) { presetEl.value = preset; }
-    const clPresetEl = document.getElementById('tagger-cl-preset');
-    if (clPresetEl && clPresetEl.value !== preset) { clPresetEl.value = preset; }
+    // 仅同步当前激活的预设选择器（避免两个面板的预设互相覆盖）
+    const activePresetId = isCL ? 'tagger-cl-preset' : 'tagger-preset';
+    const activeEl = document.getElementById(activePresetId);
+    if (activeEl && activeEl.value !== preset) { activeEl.value = preset; }
   },
 
   // ── Helpers ────────────────────────────────────────────
@@ -254,7 +254,7 @@ window.taggerMixin = {
       `</div></div>` +
     `</div>`;
 
-    // ── 监听模型切换，同步 taggerSelectedModel ──────────
+    // ── 监听模型切换，同步 taggerSelectedModel 并应用预设 ──
     // animaSelect 组件在 select() 时会 dispatch input 事件到 hidden input
     const modelEl = document.getElementById('tagger-model');
     if (modelEl) {
@@ -263,6 +263,13 @@ window.taggerMixin = {
       modelEl.addEventListener('input', () => {
         this.taggerSelectedModel = modelEl.value;
         localStorage.setItem('anima-tagger-model', modelEl.value);
+        // 切换到新模型时，读取其预设选择器的当前值并应用
+        const newIsCL = modelEl.value === 'cl_tagger_1_02';
+        const newPresetId = newIsCL ? 'tagger-cl-preset' : 'tagger-preset';
+        const newPresetEl = document.getElementById(newPresetId);
+        if (newPresetEl && newPresetEl.value) {
+          this.applyCamiePreset(newPresetEl.value);
+        }
       });
     }
 
@@ -279,9 +286,13 @@ window.taggerMixin = {
         this.applyCamiePreset(clPresetEl.value);
       });
     }
-    if ((savedModel === 'camie-tagger-v2' || savedModel === 'cl_tagger_1_02') && !this._taggerPresetInitialized) {
-      this.taggerPreset = 'macro';
-      this._taggerPresetInitialized = true;
+    // 初始化：为当前模型显式应用默认预设
+    if (savedModel === 'camie-tagger-v2' || savedModel === 'cl_tagger_1_02') {
+      const initPresetId = savedModel === 'cl_tagger_1_02' ? 'tagger-cl-preset' : 'tagger-preset';
+      const initPresetEl = document.getElementById(initPresetId);
+      if (initPresetEl && initPresetEl.value) {
+        this.applyCamiePreset(initPresetEl.value);
+      }
     }
   },
 
