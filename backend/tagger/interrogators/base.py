@@ -77,7 +77,7 @@ class Interrogator:
         if not add_model_tag and 'model' in tags:
             del tags['model']
 
-        # 角色标签：优先用 character_threshold，其次查 category_thresholds
+        # 角色标签：优先用 category_thresholds，其次用 character_threshold
         if 'character' in tags:
             char_th = character_threshold
             if category_thresholds and 'character' in category_thresholds:

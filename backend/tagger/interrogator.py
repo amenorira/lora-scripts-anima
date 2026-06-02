@@ -83,11 +83,11 @@ available_interrogators = {
         repo_id='SmilingWolf/wd-vit-large-tagger-v3',
         cache_dir=_hf_cache,
     ),
-    'cl_tagger_1_01': CLTaggerInterrogator(
-        'cl_tagger_1_01',
+    'cl_tagger_1_02': CLTaggerInterrogator(
+        'cl_tagger_1_02',
         repo_id='cella110n/cl_tagger',
-        model_path='cl_tagger_1_01/model.onnx',
-        tag_mapping_path='cl_tagger_1_01/tag_mapping.json',
+        model_path='cl_tagger_1_02/model.onnx',
+        tag_mapping_path='cl_tagger_1_02/tag_mapping.json',
         cache_dir=_hf_cache,
     ),
     'camie-tagger-v2': CamieTaggerInterrogator(

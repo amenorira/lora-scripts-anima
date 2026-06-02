@@ -118,7 +118,7 @@ async def stop_interrogate(task_id: str):
 _MODEL_DISPLAY_NAMES = {
     'wd-eva02-large-tagger-v3': 'WD EVA02 Large v3',
     'wd-vit-large-tagger-v3':  'WD ViT Large v3',
-    'cl_tagger_1_01':          'CL Tagger v1.01',
+    'cl_tagger_1_02':          'CL Tagger v1.02',
     'camie-tagger-v2':         'Camie Tagger v2',
 }
 

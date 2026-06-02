@@ -230,9 +230,11 @@ document.addEventListener('alpine:init', () => {
         this.selectedRunDir = null;
         this.runDetailData = null;
       }
-      // Stop tagger if navigating away
+      // Stop tagger polling if navigating away (backend task continues)
       if (r !== 'tagger' && this.taggerRunning) {
-        this.stopTagger();
+        this.taggerRunning = false;
+        if (this.taggerPollTimer) { clearTimeout(this.taggerPollTimer); this.taggerPollTimer = null; }
+        this.taggerTaskId = null;
       }
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();

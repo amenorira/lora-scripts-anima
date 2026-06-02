@@ -19,12 +19,22 @@ window.taggerMixin = {
     macro: { general: '0.492', character: '0.492', copyright: '0.492', artist: '0.492', meta: '0.492', year: '0.492', rating: '0.492' },
     micro: { general: '0.614', character: '0.614', copyright: '0.614', artist: '0.614', meta: '0.614', year: '0.614', rating: '0.614' },
   },
+  // ── CL Tagger 阈值预设 ───────────────────────────────
+  CL_PRESETS: {
+    macro: { general: '0.35', character: '0.6', copyright: '0.35', artist: '0.35', meta: '0.35', quality: '0.35', rating: '0.35' },
+    micro: { general: '0.45', character: '0.7', copyright: '0.45', artist: '0.45', meta: '0.45', quality: '0.45', rating: '0.45' },
+  },
+  // ── 各模型分类定义 ────────────────────────────────────
+  CAMIE_CATS: ['general','character','copyright','artist','meta','year','rating'],
+  CL_CATS: ['general','character','copyright','artist','meta','quality','rating'],
 
-  /** 将预设切为"自定义" */
+  /** 将预设切为"自定义"（同时更新 Camie 和 CL 预设选择器） */
   _camieCustomPreset() {
     this.taggerPreset = 'custom';
     const el = document.getElementById('tagger-preset');
     if (el) el.value = 'custom';
+    const clEl = document.getElementById('tagger-cl-preset');
+    if (clEl) clEl.value = 'custom';
   },
 
   /** 通用阈值步进 */
@@ -45,16 +55,14 @@ window.taggerMixin = {
     const el = document.getElementById('tagger-char-threshold');
     if (el) el.stepUp();
   },
-  /** Camie 分类阈值步进辅助方法 */
+  /** 分类阈值步进辅助方法（不触发预设切换，由模板显式调用） */
   _camieStepDown(cat) {
     const el = document.getElementById('tagger-th-' + cat);
     if (el) el.stepDown();
-    this._camieCustomPreset();
   },
   _camieStepUp(cat) {
     const el = document.getElementById('tagger-th-' + cat);
     if (el) el.stepUp();
-    this._camieCustomPreset();
   },
   /** checkbox 切换时同步 stepper 按钮 disabled 状态 */
   _camieToggleCat(cat) {
@@ -72,9 +80,11 @@ window.taggerMixin = {
 
   applyCamiePreset(preset) {
     if (preset === 'custom') { this.taggerPreset = 'custom'; return; }
-    const vals = this.CAMIE_PRESETS[preset];
+    const isCL = this.taggerSelectedModel === 'cl_tagger_1_02';
+    const presets = isCL ? this.CL_PRESETS : this.CAMIE_PRESETS;
+    const cats = isCL ? this.CL_CATS : this.CAMIE_CATS;
+    const vals = presets[preset];
     if (!vals) return;
-    const cats = ['general','character','copyright','artist','meta','year','rating'];
     for (const cat of cats) {
       const thEl = document.getElementById('tagger-th-'+cat);
       const enEl = document.getElementById('tagger-en-'+cat);
@@ -88,6 +98,8 @@ window.taggerMixin = {
     this.taggerPreset = preset;
     const presetEl = document.getElementById('tagger-preset');
     if (presetEl && presetEl.value !== preset) { presetEl.value = preset; }
+    const clPresetEl = document.getElementById('tagger-cl-preset');
+    if (clPresetEl && clPresetEl.value !== preset) { clPresetEl.value = preset; }
   },
 
   // ── Helpers ────────────────────────────────────────────
@@ -146,10 +158,12 @@ window.taggerMixin = {
       {v:'custom',l:this.t('tagger.presetCustom')},
     ];
     const presetSelect = this.animaSelectHtml({options: presetOpts}, 'macro', 'tagger-preset');
+    const clPresetSelect = this.animaSelectHtml({options: presetOpts}, 'macro', 'tagger-cl-preset');
 
     // ── 辅助：生成 field-row（标签在左，控件在右）────
-    const _fieldRow = (labelKey, descKey, controlHtml, extraAttrs) => {
-      return `<div class="field"${extraAttrs||''}><div class="field-row"><div class="field-info"><div class="field-key">${this.t(labelKey)}</div><div class="field-desc">${this.t(descKey)}</div></div><div class="field-control">${controlHtml}</div></div></div>`;
+    const _fieldRow = (labelKey, descKey, controlHtml, extraAttrs, extraClass) => {
+      const cls = extraClass ? `field ${extraClass}` : 'field';
+      return `<div class="${cls}"${extraAttrs||''}><div class="field-row"><div class="field-info"><div class="field-key">${this.t(labelKey)}</div><div class="field-desc">${this.t(descKey)}</div></div><div class="field-control">${controlHtml}</div></div></div>`;
     };
 
     // ── 辅助：生成开关项 ─────────────────────────────
@@ -157,10 +171,10 @@ window.taggerMixin = {
       return `<label class="toggle"><input type="checkbox" id="${id}"${checked?' checked':''}><span class="toggle-track"><span class="toggle-thumb"></span></span><span>${this.t(labelKey)}</span></label>`;
     };
 
-    // ── 辅助：Camie 分类字段行（field-nested 样式，checkbox+stepper 在右侧）─
-    const _camieCatField = (cat, defVal) => {
+    // ── 辅助：分类字段行（field-nested 样式，checkbox+stepper 在右侧）─
+    const _catField = (cat, defVal) => {
       const catLabel = this.t('tagger.cat'+cat.charAt(0).toUpperCase()+cat.slice(1));
-      return `<div class="field field-nested"><div class="field-row"><div class="field-info"><div class="field-key">${catLabel}</div></div><div class="field-control"><label class="toggle" style="margin-right:6px"><input type="checkbox" id="tagger-en-${cat}" checked @change="_camieToggleCat('${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><div class="stepper"><button type="button" @click="_camieStepDown('${cat}')">−</button><input type="number" id="tagger-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_camieStepUp('${cat}')">+</button></div></div></div></div>`;
+      return `<div class="field field-nested"><div class="field-row"><div class="field-info"><div class="field-key">${catLabel}</div></div><div class="field-control"><label class="toggle" style="margin-right:6px"><input type="checkbox" id="tagger-en-${cat}" checked @change="_camieToggleCat('${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><div class="stepper"><button type="button" @click="_camieStepDown('${cat}');_camieCustomPreset()">−</button><input type="number" id="tagger-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_camieStepUp('${cat}');_camieCustomPreset()">+</button></div></div></div></div>`;
     };
 
     const _folderSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
@@ -174,32 +188,50 @@ window.taggerMixin = {
       // 图片文件夹路径 — 全宽布局（标签在上，输入框在下，参照训练界面）
       `<div class="field"><div class="field-info" style="margin-bottom:6px"><div class="field-key">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-input-row"><div class="field-input-wrap"><input type="text" id="tagger-path" placeholder="./train/aki"><div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}" aria-label="Browse local files">${_folderSvg}</button></div></div></div></div>` +
       _fieldRow('tagger.model', 'tagger.modelDesc', modelSelect) +
-      // 通用阈值 — 仅非 Camie 非 CL 模型可见
+      // 通用阈值 — 仅 WD14 系列可见（CL 和 Camie 用分类阈值代替）
       _fieldRow('tagger.threshold', 'tagger.thresholdDesc',
         `<div class="stepper"><button type="button" @click="_thStepDown()">−</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" @click="_thStepUp()">+</button></div>`,
-        ` x-show="taggerSelectedModel!=='camie-tagger-v2' && taggerSelectedModel!=='cl_tagger_1_01'" x-transition`) +
-      // CL 角色阈值 — 仅 CL tagger 可见
+        ` :class="{ 'field-hidden': taggerSelectedModel==='camie-tagger-v2' || taggerSelectedModel==='cl_tagger_1_02' }"`, 'field-conditional') +
+      // CL 角色阈值 — 仅 WD14 系列可见（CL 和 Camie 在分类面板中单独设置角色阈值）
       _fieldRow('tagger.characterThreshold', 'tagger.characterThresholdDesc',
         `<div class="stepper"><button type="button" @click="_charStepDown()">−</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" @click="_charStepUp()">+</button></div>`,
-        ` x-show="taggerSelectedModel==='cl_tagger_1_01'" x-transition`) +
+        ` :class="{ 'field-hidden': taggerSelectedModel==='camie-tagger-v2' || taggerSelectedModel==='cl_tagger_1_02' }"`, 'field-conditional') +
     `</div>` +
 
     // ════════════════════════════════════════════════════════
     // Card 2: Camie 分类阈值（仅 Camie 模型可见）
     // ════════════════════════════════════════════════════════
-    `<div class="card" x-show="taggerSelectedModel==='camie-tagger-v2'" x-transition><div class="card-header">${this.t('tagger.presetLabel')}</div>` +
+    `<div class="card field-conditional" :class="{ 'field-hidden': taggerSelectedModel!=='camie-tagger-v2' }"><div class="card-header">${this.t('tagger.presetLabel')}</div>` +
       // 阈值预设选择器
       `<div class="field"><div class="field-row"><div class="field-info"><div class="field-key">${this.t('tagger.presetLabel')}</div><div class="field-desc">${this.t('tagger.presetDesc')}</div></div><div class="field-control">${presetSelect}</div></div></div>` +
       // 说明文字
       `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
       // 各分类作为嵌套字段（field-nested）
-      _camieCatField('general','0.492') +
-      _camieCatField('character','0.492') +
-      _camieCatField('copyright','0.492') +
-      _camieCatField('artist','0.492') +
-      _camieCatField('meta','0.492') +
-      _camieCatField('year','0.492') +
-      _camieCatField('rating','0.492') +
+      _catField('general','0.492',false) +
+      _catField('character','0.492',false) +
+      _catField('copyright','0.492',false) +
+      _catField('artist','0.492',false) +
+      _catField('meta','0.492',false) +
+      _catField('year','0.492',false) +
+      _catField('rating','0.492',false) +
+    `</div>` +
+
+    // ════════════════════════════════════════════════════════
+    // Card 2b: CL 分类阈值（仅 CL tagger 可见）
+    // ════════════════════════════════════════════════════════
+    `<div class="card field-conditional" :class="{ 'field-hidden': taggerSelectedModel!=='cl_tagger_1_02' }"><div class="card-header">${this.t('tagger.clCategoryLabel')}</div>` +
+      // 阈值预设选择器
+      `<div class="field"><div class="field-row"><div class="field-info"><div class="field-key">${this.t('tagger.presetLabel')}</div><div class="field-desc">${this.t('tagger.clPresetDesc')}</div></div><div class="field-control">${clPresetSelect}</div></div></div>` +
+      // 说明文字
+      `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
+      // CL 分类字段
+      _catField('general','0.35',true) +
+      _catField('character','0.6',true) +
+      _catField('copyright','0.35',true) +
+      _catField('artist','0.35',true) +
+      _catField('meta','0.35',true) +
+      _catField('quality','0.35',true) +
+      _catField('rating','0.35',true) +
     `</div>` +
 
     // ════════════════════════════════════════════════════════
@@ -240,7 +272,13 @@ window.taggerMixin = {
         this.applyCamiePreset(presetEl.value);
       });
     }
-    if (savedModel === 'camie-tagger-v2' && !this._taggerPresetInitialized) {
+    const clPresetEl = document.getElementById('tagger-cl-preset');
+    if (clPresetEl) {
+      clPresetEl.addEventListener('input', () => {
+        this.applyCamiePreset(clPresetEl.value);
+      });
+    }
+    if ((savedModel === 'camie-tagger-v2' || savedModel === 'cl_tagger_1_02') && !this._taggerPresetInitialized) {
       this.taggerPreset = 'macro';
       this._taggerPresetInitialized = true;
     }
@@ -264,7 +302,7 @@ window.taggerMixin = {
     const path = document.getElementById('tagger-path').value;
     const model = document.getElementById('tagger-model').value;
     const thresholdEl = document.getElementById('tagger-threshold');
-    const threshold = (model === 'camie-tagger-v2') ? 0.35 : parseFloat(thresholdEl?.value || '0.35');
+    const threshold = (model === 'camie-tagger-v2' || model === 'cl_tagger_1_02') ? 0.35 : parseFloat(thresholdEl?.value || '0.35');
     const charThreshold = parseFloat(document.getElementById('tagger-char-threshold')?.value || '0.6');
     const additional = document.getElementById('tagger-additional').value;
     const exclude = document.getElementById('tagger-exclude').value;
@@ -272,16 +310,29 @@ window.taggerMixin = {
     const removeDup = document.getElementById('tagger-remove-dup')?.checked || false;
     if (!path) { this.toast(this.t('common.specifyDir')); return; }
 
-    // ── 收集 Camie 分类阈值 ──────────────────────────
+    // ── 收集分类阈值 ──────────────────────────
+    // 未勾选的分类设阈值为 1.0，使其不输出标签（与 UI 描述一致）
     let categoryThresholds = null;
     if (model === 'camie-tagger-v2') {
       categoryThresholds = {};
-      const cats = ['general','character','copyright','artist','meta','year','rating'];
-      for (const cat of cats) {
+      for (const cat of this.CAMIE_CATS) {
         const enEl = document.getElementById('tagger-en-'+cat);
         if (enEl && enEl.checked) {
           const thEl = document.getElementById('tagger-th-'+cat);
           if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
+        } else {
+          categoryThresholds[cat] = 1.0;
+        }
+      }
+    } else if (model === 'cl_tagger_1_02') {
+      categoryThresholds = {};
+      for (const cat of this.CL_CATS) {
+        const enEl = document.getElementById('tagger-en-'+cat);
+        if (enEl && enEl.checked) {
+          const thEl = document.getElementById('tagger-th-'+cat);
+          if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
+        } else {
+          categoryThresholds[cat] = 1.0;
         }
       }
     }

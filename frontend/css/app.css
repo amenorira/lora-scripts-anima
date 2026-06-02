@@ -1230,9 +1230,30 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   padding-left: 12px;
   margin-right: -8px;
 }
-/* Smooth x-transition timing to match training conditional fields */
-#taggerForm [x-transition] {
-  transition: opacity 0.25s var(--ease-out), transform 0.3s var(--ease-out) !important;
+/* Smooth expand/collapse for tagger conditional fields (matching training form) */
+#taggerForm .field-conditional {
+  overflow: visible;
+  transition: max-height 0.35s var(--ease-out),
+              opacity 0.25s var(--ease-out),
+              padding-top 0.35s var(--ease-out),
+              padding-bottom 0.35s var(--ease-out),
+              margin-top 0.35s var(--ease-out),
+              margin-bottom 0.35s var(--ease-out),
+              transform 0.3s var(--ease-out),
+              border-top-width 0.35s var(--ease-out);
+  max-height: none;
+  opacity: 1;
+}
+#taggerForm .field-conditional.field-hidden {
+  max-height: 0 !important;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border-top-width: 0 !important;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 /* ── Right Panel ─────────────────────────────────────────── */
