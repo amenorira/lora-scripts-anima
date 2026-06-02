@@ -43,9 +43,9 @@ FIELDS: list[dict[str, Any]] = [
 # ── Model ──
 {"key": "model_train_type", "type": "select", "default": "sd-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sd-lora", "l": "SD LoRA", "dk": "opt.model_train_type_sd-lora"}, {"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./sd-models/model.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
-{"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model"},
-{"key": "qwen3", "type": "text", "default": "", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima"},
-{"key": "train_data_dir", "type": "text", "default": "./train/aki", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
+{"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "hint_key": "field.vaeHint"},
+{"key": "qwen3", "type": "text", "default": "", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "hint_key": "field.qwen3Hint"},
+{"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
 {"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "target": "toml", "role": "file-folder"},
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
 {"key": "enable_bucket", "type": "toggle", "default": True, "section": "model", "desc_key": "field.enable_bucket", "target": "toml"},
@@ -53,17 +53,17 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "show_if": {"key": "enable_bucket", "eq": True}},
-{"key": "v_parameterization", "type": "toggle", "default": False, "section": "misc", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "clip_skip", "type": "stepper", "default": 2, "section": "misc", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
+{"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
+{"key": "clip_skip", "type": "stepper", "default": 2, "section": "model", "desc_key": "field.clip_skip", "target": "toml", "min": 0, "max": 12, "step": 1, "group": ["sd", "sdxl"]},
 # ── Network ──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": ["sd", "sdxl"]}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
-{"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "target": "toml", "min": 1, "max": 256, "step": 8},
+{"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
+{"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml"},
+{"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "target": "toml", "min": 1, "max": 256, "step": 1},
 {"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "target": "toml", "min": 1},
 {"key": "network_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.network_weights", "target": "toml", "role": "file-model-saved"},
 {"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01},
 {"key": "scale_weight_norms", "type": "number", "section": "network", "desc_key": "field.scale_weight_norms", "target": "toml", "min": 0, "step": 0.01},
-{"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
-{"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml"},
 {"key": "network_args_custom", "type": "textarea", "default": "", "section": "network", "desc_key": "field.network_args_custom", "target": "ui", "hint_key": "field.network_args_customHint", "hidden": True},
     # lycoris.kohya 算法选择器
     {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},
@@ -90,10 +90,11 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "target": "toml", "min": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1},
-{"key": "seed", "type": "number", "default": 1337, "section": "misc", "desc_key": "field.seed", "target": "toml"},
+{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml"},
+{"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
 {"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
     # Anima: Timestep & Weighting (training core for DiT)
-    {"key": "timestep_sampling", "type": "select", "default": "sigmoid", "section": "training", "desc_key": "field.timestep_sampling", "target": "toml", "group": "anima", "options": [{"v": "sigmoid", "l": "sigmoid", "dk": "opt.timestep_sampling_sigmoid"}, {"v": "sigma", "l": "sigma", "dk": "opt.timestep_sampling_sigma"}, {"v": "uniform", "l": "uniform", "dk": "opt.timestep_sampling_uniform"}, {"v": "shift", "l": "shift", "dk": "opt.timestep_sampling_shift"}]},
+    {"key": "timestep_sampling", "type": "select", "default": "sigmoid", "section": "training", "desc_key": "field.timestep_sampling", "target": "toml", "group": "anima", "options": [{"v": "sigmoid", "l": "sigmoid", "dk": "opt.timestep_sampling_sigmoid"}, {"v": "sigma", "l": "sigma", "dk": "opt.timestep_sampling_sigma"}, {"v": "uniform", "l": "uniform", "dk": "opt.timestep_sampling_uniform"}, {"v": "shift", "l": "shift", "dk": "opt.timestep_sampling_shift"}, {"v": "flux_shift", "l": "flux_shift", "dk": "opt.timestep_sampling_flux_shift"}]},
     {"key": "sigmoid_scale", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.sigmoid_scale", "target": "toml", "step": 0.001, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift"]}},
     {"key": "discrete_flow_shift", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.discrete_flow_shift", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "shift"}},
     {"key": "weighting_scheme", "type": "select", "default": "uniform", "section": "training", "desc_key": "field.weighting_scheme", "target": "toml", "group": "anima", "options": [{"v": "uniform", "l": "uniform", "dk": "opt.weighting_scheme_uniform"}, {"v": "sigma_sqrt", "l": "sigma_sqrt", "dk": "opt.weighting_scheme_sigma_sqrt"}, {"v": "logit_normal", "l": "logit_normal", "dk": "opt.weighting_scheme_logit_normal"}, {"v": "mode", "l": "mode", "dk": "opt.weighting_scheme_mode"}, {"v": "cosmap", "l": "cosmap", "dk": "opt.weighting_scheme_cosmap"}, {"v": "none", "l": "none", "dk": "opt.weighting_scheme_none"}]},
@@ -106,8 +107,8 @@ FIELDS: list[dict[str, Any]] = [
 # ── Optimizer & Learning Rate ──
 {"key": "optimizer_type", "type": "select", "default": "AdamW8bit", "section": "optimizer", "desc_key": "field.optimizer_type", "target": "toml", "groups": [{"label_key": "opt.optimizer_group_adamw", "options": [{"v": "AdamW", "l": "AdamW", "dk": "opt.optimizer_type_AdamW"}, {"v": "AdamW8bit", "l": "AdamW8bit", "dk": "opt.optimizer_type_AdamW8bit"}, {"v": "PagedAdamW8bit", "l": "PagedAdamW8bit", "dk": "opt.optimizer_type_PagedAdamW8bit"}]}, {"label_key": "opt.optimizer_group_lion", "options": [{"v": "Lion", "l": "Lion", "dk": "opt.optimizer_type_Lion"}, {"v": "Lion8bit", "l": "Lion8bit", "dk": "opt.optimizer_type_Lion8bit"}, {"v": "PagedLion8bit", "l": "PagedLion8bit", "dk": "opt.optimizer_type_PagedLion8bit"}]}, {"label_key": "opt.optimizer_group_prodigy", "options": [{"v": "Prodigy", "l": "Prodigy", "dk": "opt.optimizer_type_Prodigy"}, {"v": "prodigyplus.ProdigyPlusScheduleFree", "l": "ProdigyPlusScheduleFree", "dk": "opt.optimizer_type_ProdigyPlus"}]}, {"label_key": "opt.optimizer_group_other", "options": [{"v": "AdaFactor", "l": "AdaFactor", "dk": "opt.optimizer_type_AdaFactor"}, {"v": "pytorch_optimizer.CAME", "l": "CAME", "dk": "opt.optimizer_type_CAME"}, {"v": "AdamWScheduleFree", "l": "AdamWScheduleFree", "dk": "opt.optimizer_type_AdamWScheduleFree"}]}, {"label_key": "opt.optimizer_group_emo", "options": [{"v": "vendor.emo_optimizer.emosens.EmoSens", "l": "EmoSens", "dk": "opt.optimizer_type_EmoSens"}]}]},
 {"key": "learning_rate", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.learning_rate", "target": "toml", "auto_value": [{"watch": "optimizer_type", "when": "Prodigy", "set": "1.0"}, {"watch": "optimizer_type", "when": "prodigyplus.ProdigyPlusScheduleFree", "set": "1.0"}, {"watch": {"optimizer_type": "vendor.emo_optimizer.emosens.EmoSens", "model_train_type": "anima-lora"}, "set": "0.1"}, {"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": "1.0"}], "readonly_if": {"key": "optimizer_type", "eq": "Prodigy", "_or": ["prodigyplus.ProdigyPlusScheduleFree"], "reason_key": "field.learning_rate_prodigyLocked"}},
-{"key": "unet_lr", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.unet_lr", "target": "toml"},
-{"key": "text_encoder_lr", "type": "text", "default": "1e-5", "section": "optimizer", "desc_key": "field.text_encoder_lr", "target": "toml"},
+{"key": "unet_lr", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.unet_lr", "target": "toml", "show_if": {"key": "network_train_text_encoder_only", "neq": True}},
+{"key": "text_encoder_lr", "type": "text", "default": "1e-5", "section": "optimizer", "desc_key": "field.text_encoder_lr", "target": "toml", "show_if": {"key": "network_train_unet_only", "neq": True}},
     # Anima: 逐层学习率控制（advanced）
     {"key": "self_attn_lr", "type": "text", "section": "optimizer", "desc_key": "field.self_attn_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.self_attn_lrHint"},
     {"key": "cross_attn_lr", "type": "text", "section": "optimizer", "desc_key": "field.cross_attn_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.cross_attn_lrHint"},
@@ -142,17 +143,16 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}},
 {"key": "min_snr_gamma", "type": "number", "section": "regularization", "desc_key": "field.min_snr_gamma", "target": "toml", "step": 0.1},
 {"key": "noise_offset", "type": "number", "section": "regularization", "desc_key": "field.noise_offset", "target": "toml", "step": 0.001},
-{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "misc", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml"},
+{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": ["sd", "sdxl"]},
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": ["sd", "sdxl"]},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}]},
-{"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima"},
+{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "sdpa", "l": "sdpa", "dk": "opt.attn_mode_sdpa"}, {"v": "sageattn", "l": "sageattn", "dk": "opt.attn_mode_sageattn"}]},
+{"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True}]},
 {"key": "cache_latents", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents", "target": "toml"},
 {"key": "cache_latents_to_disk", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents_to_disk", "target": "toml"},
 {"key": "cache_text_encoder_outputs", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml"},
-{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml"},
+{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml", "auto_value": [{"watch": "cache_text_encoder_outputs_to_disk", "when": True, "set_target": "cache_text_encoder_outputs", "set": True}]},
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": ["sd", "sdxl"]},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml"},
     # Anima: VAE performance
@@ -165,7 +165,7 @@ FIELDS: list[dict[str, Any]] = [
 # ── Save ──
 {"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml", "required": True},
 {"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder", "required": True},
-{"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "diffusers_safetensors", "l": "diffusers_safetensors", "dk": "opt.save_model_as_diffusers_safetensors"}]},
+{"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "diffusers", "l": "diffusers", "dk": "opt.save_model_as_diffusers"}, {"v": "diffusers_safetensors", "l": "diffusers_safetensors", "dk": "opt.save_model_as_diffusers_safetensors"}]},
 {"key": "save_precision", "type": "select", "default": "fp16", "section": "save", "desc_key": "field.save_precision", "target": "toml", "options": [{"v": "fp16", "l": "fp16", "dk": "opt.save_precision_fp16"}, {"v": "bf16", "l": "bf16", "dk": "opt.save_precision_bf16"}, {"v": "float", "l": "float", "dk": "opt.save_precision_float"}]},
 {"key": "save_every_n_epochs", "type": "number", "default": 2, "section": "save", "desc_key": "field.save_every_n_epochs", "target": "toml", "min": 1},
 {"key": "save_every_n_steps", "type": "number", "section": "save", "desc_key": "field.save_every_n_steps", "target": "toml", "min": 1, "hint_key": "field.save_every_n_stepsHint"},
@@ -222,6 +222,7 @@ _FIELD_KEY_MAP = {
     "auto_value": "autoValue",
     "readonly_if": "readonlyIf",
     "reason_key": "reasonKey",
+    "set_target": "setTarget",
 }
 
 
@@ -268,7 +269,10 @@ def _to_camel(field: dict) -> dict:
                     converted[rk] = rv
             result[new_key] = converted
         elif k == "auto_value" and isinstance(v, list):
-            result[new_key] = v
+            result[new_key] = [
+                {_FIELD_KEY_MAP.get(ik, ik): iv for ik, iv in item.items()}
+                for item in v
+            ]
         else:
             result[new_key] = v
     return result
@@ -276,6 +280,7 @@ def _to_camel(field: dict) -> dict:
 
 def get_fields_json() -> dict:
     """返回前端可用的字段定义 JSON"""
+    section_order = ["model", "network", "training", "optimizer", "regularization", "caption", "performance", "save", "preview", "misc"]
     sections: dict[str, list[dict]] = {}
     section_meta = {
         "model": {"title_key": "section.model"},
@@ -287,6 +292,7 @@ def get_fields_json() -> dict:
         "save": {"title_key": "section.save"},
         "caption": {"title_key": "section.caption"},
         "preview": {"title_key": "section.preview"},
+        "misc": {"title_key": "section.misc"},
     }
 
     for f in FIELDS:
@@ -299,7 +305,13 @@ def get_fields_json() -> dict:
             }
         sections[section_name]["fields"].append(_to_camel(f))
 
+    # Render sections in defined order; skip sections with no visible fields
+    result_sections = []
+    for s_key in section_order:
+        if s_key in sections and sections[s_key]["fields"]:
+            result_sections.append(sections[s_key])
+
     result = {
-        "sections": list(sections.values()),
+        "sections": result_sections,
     }
     return result

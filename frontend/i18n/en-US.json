@@ -258,7 +258,9 @@
     "torch_compile": "Enable torch.compile (JIT compile for faster training)",
     "torch_compileHint": "Requires PyTorch 2.0+. First forward pass is slow (compilation warmup). On Windows, inductor backend may be unstable; switch to eager if errors occur.",
     "dynamo_backend": "Compile Backend (dynamo backend)",
-    "dynamo_backendHint": "inductor: default backend, highest optimization, may be unstable on Windows. eager: best compatibility, recommended for Windows and debugging. cudagraphs: uses CUDA Graph to reduce kernel launch overhead."
+    "dynamo_backendHint": "inductor: default backend, highest optimization, may be unstable on Windows. eager: best compatibility, recommended for Windows and debugging. cudagraphs: uses CUDA Graph to reduce kernel launch overhead.",
+    "vaeHint": "Required for Anima training (QwenImage VAE)",
+    "qwen3Hint": "Required for Anima training (Qwen3-0.6B text encoder path)"
   },
   "common": {
     "startTraining": "Start Training",
@@ -676,6 +678,10 @@
     "group_other": "Other",
     "dynamo_backend_inductor": "Default backend, highest optimization, recommended for Linux/macOS",
     "dynamo_backend_eager": "Best compatibility backend, recommended for Windows and debugging",
-    "dynamo_backend_cudagraphs": "Uses CUDA Graph to reduce kernel launch overhead"
+    "dynamo_backend_cudagraphs": "Uses CUDA Graph to reduce kernel launch overhead",
+    "attn_mode_sdpa": "SDPA (PyTorch 2.0+ native attention)",
+    "attn_mode_sageattn": "SageAttention (inference only, not for training)",
+    "timestep_sampling_flux_shift": "Flux Shift (timestep distribution shift for Flux models)",
+    "save_model_as_diffusers": "Diffusers format (for Diffusers ecosystem)"
   }
 }

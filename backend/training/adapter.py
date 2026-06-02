@@ -324,6 +324,34 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
             )
 
+    # ── 5.8. cache_text_encoder_outputs 与 text_encoder_only 互斥 ──
+    if source.get("cache_text_encoder_outputs") and source.get("network_train_text_encoder_only"):
+        source["network_train_text_encoder_only"] = False
+        source["network_train_unet_only"] = True
+        warnings.append(
+            "[Conflict] cache_text_encoder_outputs and network_train_text_encoder_only "
+            "are incompatible; forcing unet_only=True, text_encoder_only=False / "
+            "缓存文本编码器输出与仅训练文本编码器不兼容，已自动切换为仅训练主干"
+        )
+
+    # ── 5.9. attn_mode=xformers 需要 split_attn ──
+    if source.get("attn_mode") == "xformers" and not source.get("split_attn"):
+        source["split_attn"] = True
+        warnings.append(
+            "[Auto] attn_mode=xformers requires split_attn; "
+            "enabling split_attn automatically / "
+            "xformers 注意力模式需要 split_attn，已自动开启"
+        )
+
+    # ── 5.10. sageattn 不支持训练 ──
+    if source.get("attn_mode") == "sageattn":
+        source["attn_mode"] = "torch"
+        warnings.append(
+            "[Warning] sageattn does not support training; "
+            "falling back to torch mode / "
+            "sageattn 不支持训练，已回退为 torch 模式"
+        )
+
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}

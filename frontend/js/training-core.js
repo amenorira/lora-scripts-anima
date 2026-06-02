@@ -472,7 +472,7 @@ window.trainingCoreMixin = {
     const rules = [];
     this._allSections().forEach(s => s.fields.forEach(f => {
       if (f.autoValue && Array.isArray(f.autoValue)) {
-        f.autoValue.forEach(r => rules.push({ target: f.key, defaultVal: f.default, watch: r.watch, when: r.when, set: r.set }));
+        f.autoValue.forEach(r => rules.push({ target: r.setTarget || f.key, defaultVal: f.default, watch: r.watch, when: r.when, set: r.set }));
       }
     }));
     this._autoValueRules = rules;
@@ -654,6 +654,19 @@ window.trainingCoreMixin = {
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
 
+    // Mutual exclusion: network_train_unet_only and network_train_text_encoder_only
+    if (key === 'network_train_unet_only' && value === true) {
+      this.form['network_train_text_encoder_only'] = false;
+    }
+    if (key === 'network_train_text_encoder_only' && value === true) {
+      this.form['network_train_unet_only'] = false;
+    }
+    // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
+    if (key === 'cache_text_encoder_outputs' && value === true) {
+      this.form['network_train_unet_only'] = true;
+      this.form['network_train_text_encoder_only'] = false;
+    }
+
     // Clear error for this field on change and re-render to update UI
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
@@ -777,6 +790,16 @@ window.trainingCoreMixin = {
       const maxT = Number(this.form.max_timestep);
       if (!isNaN(minT) && !isNaN(maxT) && minT >= maxT) {
         errors.min_timestep = this.t('common.minTimestepError') || 'Min timestep must be less than max timestep';
+      }
+    }
+
+    // Anima mode: vae and qwen3 are required
+    if (String(this.form.model_train_type) === 'anima-lora') {
+      if (!this.form.vae || String(this.form.vae).trim() === '') {
+        errors['vae'] = window.t('common.vaeRequired') || 'Anima training requires a VAE model';
+      }
+      if (!this.form.qwen3 || String(this.form.qwen3).trim() === '') {
+        errors['qwen3'] = window.t('common.qwen3Required') || 'Anima training requires a Qwen3 model';
       }
     }
 
