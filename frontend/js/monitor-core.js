@@ -12,6 +12,7 @@ window.monitorCoreMixin = {
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
   chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
   _monitorAbortCtrl: null,
+  _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
 
   // ── History run detail ─────────────────────────────────
@@ -51,6 +52,29 @@ window.monitorCoreMixin = {
           this.previews = j.data.previews||[];
           if (j.data.log_lines) this.logLines = j.data.log_lines;
         }
+        // Notification on training completion
+        const prevState = this._prevState || null;
+        this._prevState = j.data.state;
+        if (prevState === 'RUNNING' && j.data.state !== 'RUNNING') {
+          const msg = j.data.state === 'FINISHED'
+            ? (this.t('monitor.trainCompleted') || 'Training completed!')
+            : (this.t('monitor.trainTerminated') || 'Training terminated');
+          this.toast(msg, j.data.state === 'FINISHED' ? 'success' : 'error');
+          // Browser notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('lora-scripts-anima', { body: msg });
+          } else if ('Notification' in window && Notification.permission !== 'denied') {
+            Notification.requestPermission();
+          }
+          // Flash page title
+          const origTitle = document.title;
+          let flashCount = 0;
+          const flashTimer = setInterval(() => {
+            document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
+            flashCount++;
+            if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
+          }, 800);
+        }
         if (j.data.state==='RUNNING') { this.isTraining=true; this.isIdle=false; this.statusText=j.data.state_label||j.data.state; }
         else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
         if (this.currentRoute==='monitor-dashboard') this.renderDashboard();
@@ -77,7 +101,7 @@ window.monitorCoreMixin = {
         this.historyItems = d.data.history || [];
       }
       this.renderHistory();
-    } catch(e) {}
+    } catch(e) { this.toast(this.t('monitor.historyLoadError') || 'Failed to load history', 'error'); }
     finally { this.finishProgress(); }
   },
 
@@ -85,6 +109,30 @@ window.monitorCoreMixin = {
     if (!this._chartInstances) return;
     Object.values(this._chartInstances).forEach(c => { try{c.destroy()}catch(_){} });
     this._chartInstances = {};
+  },
+
+  // ── Stop Training ─────────────────────────────────────
+  async stopTraining() {
+    if (!this.monitorData || !this.monitorData.active_task) return;
+    const taskId = this.monitorData.active_task.id;
+    if (!taskId) return;
+    if (!confirm(this.t('monitor.confirmStop') || 'Are you sure you want to stop training?')) return;
+    try {
+      const r = await fetch('/api/monitor/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId })
+      });
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.toast(this.t('monitor.trainStopped') || 'Training stopped', 'success');
+        this.fetchMonitorStatus();
+      } else {
+        this.toast(j.message || 'Failed to stop training', 'error');
+      }
+    } catch(e) {
+      this.toast(this.t('monitor.stopFailed') || 'Failed to stop training', 'error');
+    }
   },
 
   // ── Run Detail (查看历史训练) ─────────────────────────

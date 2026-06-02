@@ -106,10 +106,28 @@ def scan_history() -> list[dict]:
             model_path = params.get("pretrained_model_name_or_path", "")
             model_name = Path(model_path).name if model_path else "Unknown"
 
+            # 读取 result.json 获取训练状态
+            status = ""
+            duration = ""
+            result_file = run_dir / "result.json"
+            if result_file.exists():
+                try:
+                    import json
+                    rj = json.loads(result_file.read_text(encoding="utf-8"))
+                    status = rj.get("status", "")
+                    duration = rj.get("duration_str", "")
+                except Exception:
+                    pass
+
+            try:
+                rel_run_dir = str(run_dir.relative_to(REPO_ROOT)).replace("\\", "/")
+            except ValueError:
+                rel_run_dir = str(run_dir).replace("\\", "/")
+
             history.append({
                 "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
                 "timestamp": st.st_mtime,
-                "run_dir": str(run_dir.relative_to(REPO_ROOT)).replace("\\", "/"),
+                "run_dir": rel_run_dir,
                 "config_file": config_file.name,
                 "name": params.get("output_name", run_dir.name),
                 "model": model_name,
@@ -117,6 +135,8 @@ def scan_history() -> list[dict]:
                 "dim": params.get("network_dim", "?"),
                 "epochs": params.get("max_train_epochs", "?"),
                 "dataset": params.get("train_data_dir", ""),
+                "status": status,
+                "duration": duration,
             })
 
     # ── 回退/补充：扫描 autosave（可能有些旧记录只有 toml 没目录） ──
@@ -141,10 +161,15 @@ def scan_history() -> list[dict]:
             model_name = Path(model_path).name if model_path else "Unknown"
             run_dir = params.get("output_dir", "")
 
+            try:
+                rel_run_dir = str(Path(run_dir).relative_to(REPO_ROOT)).replace("\\", "/") if run_dir else ""
+            except ValueError:
+                rel_run_dir = str(run_dir).replace("\\", "/") if run_dir else ""
+
             history.append({
                 "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
                 "timestamp": st.st_mtime,
-                "run_dir": str(Path(run_dir).relative_to(REPO_ROOT)).replace("\\", "/") if run_dir else "",
+                "run_dir": rel_run_dir,
                 "config_file": cfg_path.name,
                 "name": params.get("output_name", cfg_path.stem),
                 "model": model_name,
@@ -152,6 +177,8 @@ def scan_history() -> list[dict]:
                 "dim": params.get("network_dim", "?"),
                 "epochs": params.get("max_train_epochs", "?"),
                 "dataset": params.get("train_data_dir", ""),
+                "status": "",
+                "duration": "",
             })
 
     return history

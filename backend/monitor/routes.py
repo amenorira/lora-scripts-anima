@@ -62,7 +62,8 @@ async def monitor_status(task_id: str = Query("")):
     result["previews"] = newest_previews(train_config.get("output_dir"))
 
     tasks = tm.dump()
-    result["all_tasks"] = tasks
+    # 只返回运行中的任务，避免暴露所有已完成/已终止任务
+    result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
 
     if not tasks:
         return {"status": "success", "data": result}
@@ -108,11 +109,39 @@ async def monitor_status(task_id: str = Query("")):
             "dim": train_config.get("network_dim", "?"),
             "epochs": train_config.get("max_train_epochs", "?"),
         }
+
+        # 尝试读取 result.json 获取完成状态
+        try:
+            output_dir_path = Path(train_config.get("output_dir", str(OUTPUT_DIR)))
+            result_file = output_dir_path / "result.json"
+            if result_file.exists():
+                result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
         log_lines = read_train_log(active.get("id", ""))
         if log_lines:
             result["log_lines"] = log_lines[-300:]
 
     return {"status": "success", "data": result}
+
+
+@router.post("/monitor/stop")
+async def monitor_stop():
+    """停止当前正在运行的训练任务"""
+    tasks = tm.dump()
+    running_task_id = None
+    for t in tasks:
+        if t.get("status") == "RUNNING":
+            running_task_id = t.get("id")
+            break
+    if not running_task_id:
+        return {"status": "error", "message": "No running task found / 没有正在运行的任务"}
+    try:
+        tm.terminate_task(running_task_id)
+        return {"status": "success", "message": "Task stopped / 任务已停止"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("/monitor/history")
@@ -236,7 +265,6 @@ async def monitor_preview_image(path: str = Query("")):
     # 使用 relative_to 做安全的路径约束检查（禁止路径遍历）
     allowed_roots = [
         OUTPUT_DIR.resolve(),
-        (REPO_ROOT / "output").resolve(),
     ]
     ok = False
     for root in allowed_roots:

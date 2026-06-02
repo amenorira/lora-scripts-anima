@@ -12,49 +12,142 @@ window.monitorRenderMixin = {
     const gpu = isHistoryMode ? null : this.gpuInfo;
     const sys = isHistoryMode ? null : this.sysInfo;
     const t = (k,fb) => this.t('monitor.'+k)||fb||k;
-    const firstRender = !this._dashboardRendered; this._dashboardRendered=true;
+    const firstRender = !this._dashboardRendered;
     const tab = this.dashTab||'overview';
-    const prevBars = this._prevBarValues||{};
-    const vramPct = gpu?(gpu.vram_total_mb>0?gpu.vram_used_mb/gpu.vram_total_mb*100:0):0;
-    const loadPct = gpu?(gpu.gpu_load_pct||0):0;
-    const cpuPct = sys?sys.cpu_pct:0, ramPct = sys?sys.ram_pct:0;
-    this._prevBarValues = {vram:vramPct, load:loadPct, cpu:cpuPct, ram:ramPct};
 
-    let html = '<div class="monitor-dashboard">';
+    // Full render on first load, tab change, or history mode change
+    if (firstRender || this._prevDashTab !== tab || this._prevHistoryMode !== isHistoryMode) {
+      this._prevDashTab = tab;
+      this._prevHistoryMode = isHistoryMode;
+      this._dashboardRendered = true;
 
-    // ── 历史模式提示条 ──
-    if (isHistoryMode) {
-      const runName = (d.config && d.config.output_name) || this.selectedRunDir.split('/').pop() || '';
-      html += `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;border-left:3px solid var(--accent)">`;
-      html += `<span style="font-size:12px;color:var(--text-tertiary)">📜 ${t('viewingHistory','Viewing history')}</span>`;
-      html += `<b style="font-size:14px">${this.esc(runName)}</b>`;
-      if (d.train_result) {
-        const st = d.train_result.status || '';
-        const dur = d.train_result.duration_str || '';
-        html += `<span class="badge" style="font-size:11px;background:${st==='completed'?'var(--success)':st==='failed'?'var(--danger)':'var(--text-tertiary)'};color:#fff;padding:2px 8px;border-radius:4px">${st}</span>`;
-        if (dur) html += `<span style="font-size:11px;color:var(--text-tertiary)">${dur}</span>`;
+      const prevBars = this._prevBarValues||{};
+      const vramPct = gpu?(gpu.vram_total_mb>0?gpu.vram_used_mb/gpu.vram_total_mb*100:0):0;
+      const loadPct = gpu?(gpu.gpu_load_pct||0):0;
+      const cpuPct = sys?sys.cpu_pct:0, ramPct = sys?sys.ram_pct:0;
+      this._prevBarValues = {vram:vramPct, load:loadPct, cpu:cpuPct, ram:ramPct};
+
+      let html = '<div class="monitor-dashboard">';
+
+      // ── 历史模式提示条 ──
+      if (isHistoryMode) {
+        const runName = (d.config && d.config.output_name) || this.selectedRunDir.split('/').pop() || '';
+        html += `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;border-left:3px solid var(--accent)">`;
+        html += `<span style="font-size:12px;color:var(--text-tertiary)">📜 ${t('viewingHistory','Viewing history')}</span>`;
+        html += `<b style="font-size:14px">${this.esc(runName)}</b>`;
+        if (d.train_result) {
+          const st = d.train_result.status || '';
+          const dur = d.train_result.duration_str || '';
+          html += `<span class="badge" style="font-size:11px;background:${st==='completed'?'var(--success)':st==='failed'?'var(--danger)':'var(--text-tertiary)'};color:#fff;padding:2px 8px;border-radius:4px">${st}</span>`;
+          if (dur) html += `<span style="font-size:11px;color:var(--text-tertiary)">${dur}</span>`;
+        }
+        html += `<div style="flex:1"></div>`;
+        html += `<button class="btn btn-sm" @click="clearRunDetail()" style="font-size:12px">← ${t('backToLive','Back to live')}</button>`;
+        html += `</div>`;
+      } else {
+        html += '<div class="monitor-row" style="margin-bottom:12px">';
+        html += this._statusCard(d,t); if (sys) html += this._systemCard(sys,t); if (gpu) html += this._gpuCard(gpu,t);
+        html += '</div>';
       }
-      html += `<div style="flex:1"></div>`;
-      html += `<button class="btn btn-sm" @click="clearRunDetail()" style="font-size:12px">← ${t('backToLive','Back to live')}</button>`;
-      html += `</div>`;
-    } else {
-      html += '<div class="monitor-row" style="margin-bottom:12px">';
-      html += this._statusCard(d,t); if (sys) html += this._systemCard(sys,t); if (gpu) html += this._gpuCard(gpu,t);
+
+      if (tab==='overview') html += this._renderOverview(d,t);
+      else if (tab==='charts') html += this._renderCharts(d,t);
+      else if (tab==='samples') html += this._renderSamples(t);
+      else if (tab==='tensorboard') html += this._renderTensorBoard();
       html += '</div>';
+      this._destroyCharts(); el.innerHTML = html;
+
+      const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
+      if (firstRender) { bars.forEach(bar=>{bar.style.transition='none';bar.style.width=bar.dataset.target+'%';}); }
+      else { bars.forEach(bar=>{const key=bar.dataset.bar,prev=prevBars[key]!=null?prevBars[key]:0;bar.style.width=prev+'%';});
+        requestAnimationFrame(()=>{requestAnimationFrame(()=>{bars.forEach(bar=>{bar.style.width=bar.dataset.target+'%';});});}); }
+      setTimeout(()=>this._drawCharts(),100);
+      return;
     }
 
-    if (tab==='overview') html += this._renderOverview(d,t);
-    else if (tab==='charts') html += this._renderCharts(d,t);
-    else if (tab==='samples') html += this._renderSamples(t);
-    else if (tab==='tensorboard') html += this._renderTensorBoard();
-    html += '</div>';
-    this._destroyCharts(); el.innerHTML = html;
+    // Incremental update on subsequent polls
+    this._updateDashboardValues(d, gpu, sys, t);
+  },
 
-    const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
-    if (firstRender) { bars.forEach(bar=>{bar.style.transition='none';bar.style.width=bar.dataset.target+'%';}); }
-    else { bars.forEach(bar=>{const key=bar.dataset.bar,prev=prevBars[key]!=null?prevBars[key]:0;bar.style.width=prev+'%';});
-      requestAnimationFrame(()=>{requestAnimationFrame(()=>{bars.forEach(bar=>{bar.style.width=bar.dataset.target+'%';});});}); }
-    setTimeout(()=>this._drawCharts(),100);
+  _updateDashboardValues(d, gpu, sys, t) {
+    // Update status values without rebuilding DOM
+    const statusEl = document.querySelector('.card-status');
+    if (statusEl) {
+      const stateCode = d.state || 'IDLE';
+      const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
+      const state = stateLabels[stateCode] || stateCode;
+      const isTraining = stateCode === 'RUNNING';
+      const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
+      // Update state text
+      const stateTextEl = statusEl.querySelector('[data-field="state"]');
+      if (stateTextEl) { stateTextEl.textContent = state; stateTextEl.style.color = color; }
+      // Update step, loss, lr, etc.
+      const fields = {step: d.step, loss: d.loss, lr: d.lr, epoch: d.epoch, speed: d.speed, eta: d.eta};
+      for (const [key, val] of Object.entries(fields)) {
+        const el = statusEl.querySelector(`[data-field="${key}"]`);
+        if (el) el.innerHTML = val != null ? `<b>${this.esc(String(val))}</b>` : '';
+      }
+      // Update progress bar
+      const progressBar = statusEl.querySelector('.monitor-bar-fill[data-bar="progress"]');
+      if (progressBar && d.percent) progressBar.style.width = d.percent + '%';
+    }
+
+    // Update GPU values
+    if (gpu) {
+      const gpuEl = document.querySelector('.card-gpu');
+      if (gpuEl) {
+        const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
+        const loadPct = gpu.gpu_load_pct || 0;
+        const vramBar = gpuEl.querySelector('[data-bar="vram"]');
+        if (vramBar) vramBar.dataset.target = vramPct;
+        const loadBar = gpuEl.querySelector('[data-bar="load"]');
+        if (loadBar) loadBar.dataset.target = loadPct;
+        gpuEl.querySelectorAll('.monitor-bar-fill[data-bar]').forEach(bar => {
+          bar.style.width = bar.dataset.target + '%';
+        });
+      }
+    }
+
+    // Update system values
+    if (sys) {
+      const sysEl = document.querySelector('.card-system');
+      if (sysEl) {
+        const cpuBar = sysEl.querySelector('[data-bar="cpu"]');
+        if (cpuBar) { cpuBar.dataset.target = sys.cpu_pct; cpuBar.style.width = sys.cpu_pct + '%'; }
+        const ramBar = sysEl.querySelector('[data-bar="ram"]');
+        if (ramBar) { ramBar.dataset.target = sys.ram_pct; ramBar.style.width = sys.ram_pct + '%'; }
+      }
+    }
+
+    // Update charts incrementally
+    this._updateCharts();
+  },
+
+  _updateCharts() {
+    if (!this._chartInstances) return;
+    this.lossSeries.forEach((s, idx) => {
+      const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
+      const chart = this._chartInstances[id];
+      if (!chart) return;
+      const smoothing = this.chartSmoothing || 0;
+      let points = s.points;
+      if (smoothing > 0 && points.length > 1) {
+        points = [];
+        let ema = s.points[0].value;
+        const alpha = 1 - smoothing;
+        s.points.forEach((p, i) => {
+          if (i === 0) ema = p.value;
+          else ema = alpha * p.value + (1 - alpha) * ema;
+          points.push({ step: p.step, value: ema });
+        });
+      }
+      chart.data.datasets[0].data = points.map(p => ({ x: p.step, y: p.value }));
+      chart.data.datasets[0].label = s.name;
+      // Update latest value display
+      const titleEl = document.querySelector(`#${id}`)?.closest('.chart-panel')?.querySelector('.chart-val');
+      if (titleEl && s.latest != null) titleEl.textContent = s.latest.toFixed(4);
+      chart.update('none');
+    });
   },
 
   _renderOverview(d,t) {
@@ -83,7 +176,7 @@ window.monitorRenderMixin = {
   },
 
   _renderCharts(d,t) {
-    let html = '<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
+    let html = '<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="chartSmoothing=$event.target.value; _updateCharts()" @change="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
     html+='<div class="chart-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">';
     const tags = this.lossSeries.length ? this.lossSeries : [
       {tag:'loss/average', name: t('chartLossAverage','loss average'), latest:null, points:[]},
@@ -112,14 +205,21 @@ window.monitorRenderMixin = {
     const stateCode=d.state||'IDLE', stateLabels={'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
     const state=stateLabels[stateCode]||stateCode, isTraining=stateCode==='RUNNING';
     const color=isTraining?'var(--success)':(d.has_error?'var(--danger)':'var(--text-secondary)');
-    let html=`<div class="card card-status flex-1"><div class="card-header">${t('status','Status')}</div><div style="font-size:20px;font-weight:700;color:${color};margin:8px 0">${state}</div>`;
-    if (isTraining) { if(d.percent>0) html+=`<div class="monitor-bar-track" style="height:8px;margin:8px 0"><div class="monitor-bar-fill low" style="width:${d.percent}%;transition:width 1s ease"></div></div>`;
-      if(d.step) html+=`<div>${t('step','Steps')}: <b>${d.step}</b> / ${d.total_steps||'?'} (${d.percent||0}%)</div>`;
-      if(d.loss) html+=`<div>${t('loss','Loss')}: <b>${d.loss}</b></div>`; if(d.lr) html+=`<div>${t('lr','LR')}: <b>${d.lr}</b></div>`;
-      if(d.epoch) html+=`<div>${t('epoch','Epoch')}: <b>${d.epoch}</b></div>`; if(d.speed) html+=`<div>${t('speed','Speed')}: <b>${d.speed}</b></div>`;
-      if(d.eta) html+=`<div>ETA: <b>${d.eta}</b></div>`; }
+    let html=`<div class="card card-status flex-1"><div class="card-header">${t('status','Status')}</div><div style="font-size:20px;font-weight:700;color:${color};margin:8px 0" data-field="state">${state}</div>`;
+    if (isTraining) { if(d.percent>0) html+=`<div class="monitor-bar-track" style="height:8px;margin:8px 0"><div class="monitor-bar-fill low" data-bar="progress" style="width:${d.percent}%;transition:width 1s ease"></div></div>`;
+      if(d.step) html+=`<div data-field="step">${t('step','Steps')}: <b>${d.step}</b> / ${d.total_steps||'?'} (${d.percent||0}%)</div>`;
+      if(d.loss) html+=`<div data-field="loss">${t('loss','Loss')}: <b>${d.loss}</b></div>`; if(d.lr) html+=`<div data-field="lr">${t('lr','LR')}: <b>${d.lr}</b></div>`;
+      if(d.epoch) html+=`<div data-field="epoch">${t('epoch','Epoch')}: <b>${d.epoch}</b></div>`; if(d.speed) html+=`<div data-field="speed">${t('speed','Speed')}: <b>${d.speed}</b></div>`;
+      if(d.eta) html+=`<div data-field="eta">ETA: <b>${d.eta}</b></div>`;
+      // Stop training button
+      html+=`<button class="btn btn-sm" style="margin-top:8px;background:var(--danger);color:#fff;border:none" @click="stopTraining()">${t('stopTraining','Stop Training')}</button>`; }
     else if(d.last_config&&d.last_config.name) { const lc=d.last_config;
       html+=`<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${t('lastTraining','Last')}: <b>${this.esc(lc.name)}</b></div><div style="font-size:12px;color:var(--text-tertiary)">${this.esc(lc.model)} · LR:${this.esc(lc.lr)} · Dim:${this.esc(lc.dim)} · Epochs:${this.esc(lc.epochs)}</div>`; }
+    // Empty state guidance
+    else if (stateCode === 'IDLE' && !d.last_config) {
+      html+=`<div style="margin-top:12px;font-size:13px;color:var(--text-tertiary)">${t('noTrainingHint','Start a training task to see real-time progress here')}</div>`;
+      html+=`<button class="btn btn-primary" style="margin-top:8px" @click="navigate('train-basic')">${t('goToTraining','Go to Training')}</button>`;
+    }
     if(d.has_error) html+=`<div style="color:var(--danger);margin-top:8px">${this.esc(d.error_msg)||t('error','Error')}</div>`;
     html+='</div>'; return html;
   },
@@ -173,13 +273,38 @@ window.monitorRenderMixin = {
     if(!this.logLines.length){el.innerHTML='<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','No logs yet')+'</p></div>';return;}
     const search=(this.logSearch||'').toLowerCase(), level=this.logLevel||'all'; let lines=this.logLines;
     if(search) lines=lines.filter(l=>l.toLowerCase().includes(search));
-    if(level==='error') lines=lines.filter(l=>l.toLowerCase().includes('error')||l.toLowerCase().includes('traceback'));
-    else if(level==='warn') lines=lines.filter(l=>l.toLowerCase().includes('warn'));
-    else if(level==='info') lines=lines.filter(l=>!l.toLowerCase().includes('error')&&!l.toLowerCase().includes('traceback')&&!l.toLowerCase().includes('warn'));
+    if(level==='error') lines=lines.filter(l=>{
+      const lower=l.toLowerCase();
+      return lower.includes('error')||lower.includes('traceback')||lower.includes('exception')||/\bcuda\b.*\berror\b/i.test(l)||/\bfail\b/i.test(l);
+    });
+    else if(level==='warn') lines=lines.filter(l=>{
+      const lower=l.toLowerCase();
+      return lower.includes('warning')||lower.includes('warn')||/\bdeprecated\b/i.test(l);
+    });
+    else if(level==='info') lines=lines.filter(l=>{
+      const lower=l.toLowerCase();
+      return !lower.includes('error')&&!lower.includes('traceback')&&!lower.includes('exception')&&!lower.includes('warning')&&!lower.includes('warn');
+    });
     let html='<div class="log-lines">';
     if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-    else lines.forEach(line=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')?'log-error':lower.includes('warning')?'log-warn':'';html+=`<div class="log-line ${cls}">${this.esc(line)}</div>`;});
-    html+='</div>'; el.innerHTML=html; if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
+    else lines.forEach((line, idx)=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')||lower.includes('exception')?'log-error':lower.includes('warning')||lower.includes('warn')?'log-warn':'';const lineNum=idx+1;html+=`<div class="log-line ${cls}"><span class="log-line-num">${lineNum}</span>${this.esc(line)}</div>`;});
+    html+='</div>';
+    if (!this.logAutoScroll && this.logLines.length > 0) {
+      html += `<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
+    }
+    el.innerHTML=html; if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
+    // Add scroll detection
+    const logLinesDiv = el.querySelector('.log-lines');
+    if (logLinesDiv) {
+      logLinesDiv.onscroll = () => {
+        const atBottom = logLinesDiv.scrollHeight - logLinesDiv.scrollTop - logLinesDiv.clientHeight < 30;
+        if (this.logAutoScroll && !atBottom) {
+          this.logAutoScroll = false;
+        } else if (!this.logAutoScroll && atBottom) {
+          this.logAutoScroll = true;
+        }
+      };
+    }
   },
 
   renderHistory() {
@@ -215,7 +340,16 @@ window.monitorRenderMixin = {
       this.historyItems.forEach(h => {
         const clickAction = h.run_dir ? `viewRunDetail('${this.esc(h.run_dir)}')` : `navigate('monitor-dashboard')`;
         html += `<div class="card history-card" @click="${clickAction}" style="cursor:pointer">`;
-        html += '<div class="card-header">' + this.esc(h.time) + '</div>';
+        html += '<div class="card-header">' + this.esc(h.time);
+        if (h.status) {
+          const statusColors = {completed: 'var(--success)', failed: 'var(--danger)', error: 'var(--danger)', terminated: 'var(--text-tertiary)'};
+          const statusLabels = {completed: '✓ Completed', failed: '✗ Failed', error: '✗ Error', terminated: '⏹ Terminated'};
+          const color = statusColors[h.status] || 'var(--text-tertiary)';
+          const label = statusLabels[h.status] || h.status;
+          html += `<span class="badge" style="font-size:10px;background:${color};color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px">${label}</span>`;
+        }
+        if (h.duration) html += `<span style="font-size:11px;color:var(--text-tertiary);margin-left:6px">${this.esc(h.duration)}</span>`;
+        html += '</div>';
         html += '<div><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc(h.model || '') + '</div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this.esc(h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + this.esc(h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this.esc(h.epochs || '') + '</div>';

@@ -15,7 +15,7 @@ CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引
 # 每次请求检查 event file mtime，仅在文件更新时重新 Reload
-_tb_cache: dict[str, tuple[float, Any]] = {}   # {log_dir: (event_mtime, EventAccumulator)}
+_tb_cache: dict[str, tuple[float, float, Any]] = {}   # {log_dir: (cache_time, event_mtime, EventAccumulator)}
 _CACHE_TTL = 5.0  # 缓存有效期（秒），避免频繁 Reload
 
 
@@ -37,8 +37,8 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
     now = time.time()
 
     if log_dir_str in _tb_cache:
-        cached_mtime, cached_ea = _tb_cache[log_dir_str]
-        if cached_mtime == latest_mtime and (now - cached_mtime) < _CACHE_TTL:
+        cache_time, cached_mtime, cached_ea = _tb_cache[log_dir_str]
+        if cached_mtime == latest_mtime and (now - cache_time) < _CACHE_TTL:
             return cached_ea
 
     # 缓存未命中或过期：创建新 accumulator
@@ -48,7 +48,7 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
             size_guidance={event_accumulator.SCALARS: 0},
         )
         ea.Reload()
-        _tb_cache[log_dir_str] = (latest_mtime, ea)
+        _tb_cache[log_dir_str] = (now, latest_mtime, ea)
         # 清理过大的缓存（保留最近 3 个）
         if len(_tb_cache) > 3:
             oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
@@ -74,6 +74,9 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
         bucket_start = 1 + int(i * bucket_size)
         bucket_end = 1 + int((i + 1) * bucket_size)
         bucket_end = min(bucket_end, n - 1)
+        # 保证 bucket 内至少有一个点
+        if bucket_start >= bucket_end:
+            bucket_end = min(bucket_start + 1, n - 1)
 
         max_area = -1.0
         max_idx = bucket_start
@@ -198,9 +201,13 @@ def parse_log_progress(lines: list[str]) -> dict:
         info["percent"] = min(100.0, round(step * 100 / total, 2)) if total else 0
         info["eta"] = m.group("eta") or ""
 
-    loss_m = re.findall(r"\b(?:loss|train_loss|avr_loss)\s*[=:]\s*([0-9.eE+-]+)", text)
-    if loss_m:
-        info["loss"] = loss_m[-1]
+    # 按优先级解析 loss：loss/current > loss/average > train_loss > avr_loss > loss
+    loss_preference = ["loss/current", "loss/average", "train_loss", "avr_loss", r"\bloss\b(?!/(current|average|epoch))"]
+    for loss_key in loss_preference:
+        m = re.search(rf"{loss_key}\s*[=:]\s*([0-9.eE+-]+)", text)
+        if m:
+            info["loss"] = m.group(1)
+            break
 
     lr_m = re.findall(r"(?:lr|learning_rate)\s*[=:]\s*([0-9.eE+-]+)", text)
     if lr_m:
@@ -254,11 +261,14 @@ def latest_train_config() -> dict:
         bool_keys = ["gradient_checkpointing", "full_bf16", "full_fp16"]
 
         for key in str_keys:
-            m = re.search(rf'^{key}\s*=\s*["\'](?P<v>.*?)["\']\s*$', text, re.MULTILINE)
+            # 匹配引号字符串，支持转义引号和行内注释
+            m = re.search(rf'^{key}\s*=\s*"(?P<v>(?:[^"\\]|\\.)*)"\s*(?:#.*)?$', text, re.MULTILINE)
+            if not m:
+                m = re.search(rf"^{key}\s*=\s*'(?P<v>(?:[^'\\]|\\.)*)'\s*(?:#.*)?$", text, re.MULTILINE)
             if m:
                 params[key] = m.group("v")
         for key in num_keys:
-            m = re.search(rf'^{key}\s*=\s*(?P<v>[0-9.eE+-]+)\s*$', text, re.MULTILINE)
+            m = re.search(rf'^{key}\s*=\s*(?P<v>-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(?:#.*)?$', text, re.MULTILINE)
             if m:
                 params[key] = m.group("v")
         for key in bool_keys:

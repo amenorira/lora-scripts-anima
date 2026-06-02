@@ -96,7 +96,8 @@ class Task:
 
     def wait(self):
         self.process.wait()
-        self.status = TaskStatus.FINISHED
+        if self.status != TaskStatus.TERMINATED:
+            self.status = TaskStatus.FINISHED
         self.finished_at = time.time()
 
     def execute(self, stdout_file=None):

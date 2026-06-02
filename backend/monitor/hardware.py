@@ -26,33 +26,44 @@ def gpu_info() -> dict | None:
         return None
     try:
         import pynvml
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        name = pynvml.nvmlDeviceGetName(handle)
-        if isinstance(name, bytes):
-            name = name.decode("utf-8", errors="replace")
-        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        device_count = pynvml.nvmlDeviceGetCount()
+        gpus = []
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            name = pynvml.nvmlDeviceGetName(handle)
+            if isinstance(name, bytes):
+                name = name.decode("utf-8", errors="replace")
+            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
 
-        try:
-            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-        except Exception:
-            temp = None
+            try:
+                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            except Exception:
+                temp = None
 
-        try:
-            power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
-            power_w = round(power_mw / 1000, 1)
-        except Exception:
-            power_w = None
+            try:
+                power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
+                power_w = round(power_mw / 1000, 1)
+            except Exception:
+                power_w = None
 
-        return {
-            "name": name,
-            "vram_used_mb": round(mem.used / (1024 * 1024)),
-            "vram_total_mb": round(mem.total / (1024 * 1024)),
-            "gpu_load_pct": util.gpu,
-            "mem_load_pct": util.memory,
-            "temperature_c": temp,
-            "power_w": power_w,
-        }
+            gpus.append({
+                "index": i,
+                "name": name,
+                "vram_used_mb": round(mem.used / (1024 * 1024)),
+                "vram_total_mb": round(mem.total / (1024 * 1024)),
+                "gpu_load_pct": util.gpu,
+                "mem_load_pct": util.memory,
+                "temperature_c": temp,
+                "power_w": power_w,
+            })
+
+        result: dict = {"gpus": gpus}
+        # 向后兼容：将第一个 GPU 的字段提升到顶层
+        if gpus:
+            first = gpus[0]
+            result.update({k: v for k, v in first.items() if k != "index"})
+        return result
     except Exception:
         return None
 
