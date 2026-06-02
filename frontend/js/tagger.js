@@ -395,21 +395,24 @@ window.taggerMixin = {
       const d = await r.json();
       if (d.status === 'success' && d.data) {
         const p = d.data;
-        const lines = (p.logs || []).slice(-20);
         if (panel) {
-          panel.innerHTML = `<div style="margin-bottom:4px;color:var(--accent);font-weight:600">[${p.current}/${p.total}] ${this.esc(p.current_file || '')}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
+          if (p.status === 'done') {
+            // 完成：清理进度行，只保留日志和完成摘要
+            const lines = (p.logs || []).slice(-15);
+            panel.innerHTML = `<div style="padding:8px 10px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600;font-size:13px;margin-bottom:6px">✓ ${this.t('tagger.completed')} — ${p.current}/${p.total} ${this.t('tagger.imagesProcessed')}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
+          } else if (p.status === 'cancelled') {
+            panel.innerHTML = `<div style="color:var(--warning);font-weight:500">⏹ ${this.t('tagger.stop')}</div>`;
+          } else {
+            // 运行中：蓝色进度行 + 最新日志
+            const lines = (p.logs || []).slice(-20);
+            const progressLine = p.total > 0 ? `[${p.current}/${p.total}] ${this.esc(p.current_file || '')}` : this.t('tagger.running');
+            panel.innerHTML = `<div style="margin-bottom:4px;color:var(--accent);font-weight:600">${progressLine}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
+          }
           panel.scrollTop = panel.scrollHeight;
         }
         if (p.status === 'done' || p.status === 'cancelled') {
           this.taggerRunning = false;
           this.taggerTaskId = null;
-          if (p.status === 'done' && p.total > 0 && panel) {
-            const summary = document.createElement('div');
-            summary.style.cssText = 'margin-top:8px;padding:8px 10px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600;font-size:13px';
-            summary.textContent = `✓ ${this.t('tagger.completed')} — ${p.current}/${p.total} ${this.t('tagger.imagesProcessed')}`;
-            panel.appendChild(summary);
-            panel.scrollTop = panel.scrollHeight;
-          }
           this.toast(p.status === 'done' ? this.t('tagger.completed') : this.t('tagger.stop'));
           return;
         }

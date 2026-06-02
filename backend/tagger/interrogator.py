@@ -194,6 +194,10 @@ def on_interrogate(
             _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
         print(f'found {total} image(s)')
 
+        # 首次使用会自动下载模型，添加提示到日志
+        with _tagger_progress_lock:
+            _tagger_progress[task_id]["logs"].append('Loading model (first use may download automatically)...')
+
         for idx, path in enumerate(paths):
             # 检查是否被用户取消
             with _tagger_progress_lock:
