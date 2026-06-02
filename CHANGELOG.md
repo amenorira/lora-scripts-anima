@@ -44,6 +44,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tagger model list now cached to avoid redundant API calls on page switch
 - Tag editor: tag pill click handlers use data attributes (eliminates injection risk from inline onclick)
 
+### 🔒 安全修复
+- **[严重] `/tageditor/save` 路径穿越漏洞**：接口未校验文件路径范围，攻击者可写入任意位置。已添加路径白名单校验，限制只能写入项目目录和 output 目录
+- **[严重] `shell=True` 命令注入风险**：Linux 下 `launch_utils.run()` 默认使用 `shell=True`，用户输入可能被注入。已改为默认 `shell=False`，`run_pip` 显式保留 `shell=True`（内部可信参数），`run_script` 改为列表传参
+
+### 🐛 缺陷修复
+- **[严重] `pick_file` 无效类型崩溃**：`picker_type` 不是 `folder` 或 `model-file` 时 `coro` 未定义导致 500 错误，已添加 `else` 分支返回错误响应
+- **[严重] `validate_data_dir` 静默移动用户文件**：验证函数会自动创建子目录并移动文件，不可撤销。已改为返回验证错误，提示用户手动整理数据集
+- **[严重] CSS 变量 `--border-color` 未定义**：6 处边框使用不存在的变量导致边框不可见，已替换为 `--border-default`
+- **[严重] CSS 变量 `--radius` 未定义**：3 处圆角使用不存在的变量导致圆角失效，已替换为 `--radius-md`
+- **[高] `save_params` 不持久化**：保存参数后未调用 `save_config()`，重启后数据丢失，已添加持久化调用
+- **[高] `Config.__getitem__` 返回 None**：缺失 key 时前端收到 `null` 而非 `{}`，已改为回退到默认值
+- **[高] `_install_jobs` 内存泄漏**：安装任务字典无限增长，已添加 10 分钟 TTL 清理机制
+- **[高] WebSocket 代理不处理二进制消息**：收到二进制帧时连接静默断开，已改用 `receive()` 按类型分发
+- **[高] `locale-changed` 事件监听器泄漏**：每次导航训练页都添加新监听器，已改为先移除再添加
+- **[高] `--primary` CSS 变量未定义**：monitor-render 使用不存在的变量，已替换为 `--accent`
+- **[中] `model_train_type` KeyError**：无效类型导致 500 错误，已改用 `.get()` 返回友好错误
+- **[中] `sitecustomize.py` 全局替换 `print`**：每次调用额外输出 `i18n_print`，已移除猴子补丁
+- **[中] `random.choice` 无种子**：训练随机选 prompt 不可复现，已使用训练 seed 初始化随机数
+- **[中] `tagEditorBlurSuggest` 竞态条件**：快速切换焦点时自动补全异常，已存储 timeout ID 并在新焦点时清除
+- **[中] `escJson` 调用栈溢出**：大数据时 `String.fromCharCode.apply` 栈溢出，已改用 `btoa(unescape(encodeURIComponent()))`
+- **[中] `autoLoadLastParams` 名称误导**：函数名暗示加载参数但实际只显示 toast，已重命名为 `_markAutoLoaded`
+- **[中] `taggerPreset` 强制覆盖**：Camie 模型时每次重建表单都重置用户选择，已添加初始化标志保护
+- **[中] 硬编码 i18n 字符串**：TensorBoard、Light/Dark/Auto、Regex、Chip/Text 等未走 i18n，已替换为 Alpine 绑定
+- **[中] `localFilePickerTagger` 静默吞错**：文件选择失败时无提示，已添加 toast 通知
+- **[低] `httpx.AsyncClient` 从不关闭**：已添加连接池限制
+- **[低] 端口检查 TOCTOU 竞态**：已添加文档注释说明
+- **[低] Loss 正则匹配过宽**：`loss` 会匹配 `total_loss` 等，已添加 `\b` 词边界
+- **[低] `tagEditorFocusedImg` Enter 后未清除**：已添加清除逻辑
+- **[低] `saveUISettings` 重复存储 theme**：已移除重复字段
+
+### 🔧 内部改进
+- `_tagger_progress` 字典添加 `threading.Lock` 保护，修复多线程竞态条件
+- `findFieldDef` 改为只搜索当前训练类型的可见 section，避免返回错误字段定义
+- TOML 数字转换逻辑提取为共享 `_coerceNum()` 方法，消除 `updateToml` 和 `startTraining` 的重复代码
+- `run_script` 端点改为列表传参，消除 shell 拼接风险
+
 ---
 
 ## [2.0.0] — 2026-05-23
