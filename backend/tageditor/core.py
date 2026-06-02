@@ -7,17 +7,30 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from backend.constants import REPO_ROOT
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 CAPTION_EXTENSIONS = {".txt", ".caption"}
 
 
 def resolve_dir(dir_path: str) -> Path:
-    """解析目录路径，支持相对路径"""
+    """解析目录路径，支持相对路径；path traversal 安全"""
     p = Path(dir_path)
     if not p.is_absolute():
         p = REPO_ROOT / p
-    return p
+    p = p.resolve()
+    # 安全检查：确保解析后的路径在允许范围内
+    try:
+        from backend.constants import OUTPUT_DIR
+        allowed_roots = [REPO_ROOT.resolve(), OUTPUT_DIR.resolve()]
+    except ImportError:
+        allowed_roots = [REPO_ROOT.resolve()]
+    for root in allowed_roots:
+        try:
+            p.relative_to(root)
+            return p
+        except ValueError:
+            continue
+    raise ValueError(f"路径不在允许范围内: {dir_path}")
 
 
 def find_caption(img_path: Path) -> Path | None:
@@ -37,16 +50,22 @@ def read_tags(cap_path: Path) -> str:
         return ""
 
 
-def write_tags(cap_path: Path, tags: str) -> None:
-    """写入标签文件（自动 .bak 备份，仅在首次修改时创建）"""
-    if cap_path.exists():
-        bak_path = cap_path.with_suffix(cap_path.suffix + ".bak")
-        if not bak_path.exists():
-            try:
-                shutil.copy2(cap_path, bak_path)
-            except Exception:
-                pass
-    cap_path.write_text(tags.strip(), encoding="utf-8", errors="replace")
+def write_tags(cap_path: Path, tags: str) -> bool:
+    """写入标签文件（自动 .bak 备份，仅在首次修改时创建）
+    返回 True 表示成功，False 表示写入失败"""
+    try:
+        if cap_path.exists():
+            bak_path = cap_path.with_suffix(cap_path.suffix + ".bak")
+            if not bak_path.exists():
+                try:
+                    shutil.copy2(cap_path, bak_path)
+                except Exception:
+                    pass
+        cap_path.parent.mkdir(parents=True, exist_ok=True)
+        cap_path.write_text(tags.strip(), encoding="utf-8", errors="replace")
+        return True
+    except Exception:
+        return False
 
 
 def thumbnail_url(img_path: Path) -> str:
@@ -105,11 +124,11 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
         for img in glob_method(f"*{ext}"):
             if img.name.startswith("."):
                 continue
+            total_images += 1
             cap = find_caption(img)
             if cap:
                 tags = tag_list(read_tags(cap))
                 counter.update(tags)
-                total_images += 1
 
     tags_data = [
         {"tag": tag, "count": count}
@@ -120,7 +139,7 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
 
 # ── Autocomplete 缓存 ──────────────────────────────────────────
 _autocomplete_cache: dict[str, tuple[float, list[dict]]] = {}
-_AUTOCOMPLETE_TTL = 30  # seconds
+_AUTOCOMPLETE_TTL = 300  # seconds
 
 
 def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:

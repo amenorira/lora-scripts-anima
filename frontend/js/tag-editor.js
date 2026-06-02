@@ -102,6 +102,8 @@ window.tagEditorMixin = {
         this.tagEditorTagCountMax = '';
         this.tagEditorUseRegex = false;
         this._tePendingTextEdits = {};
+        this._teFilteredCacheKey = '';
+        this._teFreqCacheKey = '';
         await this.tagEditorLoadTagFreq();
         this._teTryRestoreDraft();
       } else {
@@ -213,6 +215,7 @@ window.tagEditorMixin = {
     freq = freq.filter(function(t) { return t.count > 0; });
     freq.sort(function(a, b) { return b.count - a.count; });
     this.tagEditorTagFreq = freq;
+    this._teFreqCacheKey = '';
   },
 
   tagEditorRefreshTagFreq() {
@@ -226,6 +229,7 @@ window.tagEditorMixin = {
     for (var tag in counter) { freq.push({ tag: tag, count: counter[tag] }); }
     freq.sort(function(a, b) { return b.count - a.count; });
     this.tagEditorTagFreq = freq;
+    this._teFreqCacheKey = '';
   },
 
   tagEditorSaveAll() {
@@ -247,6 +251,8 @@ window.tagEditorMixin = {
         self.tagEditorImages.forEach(function(img) { self.tagEditorOriginal[img.path] = img.tags; });
         self.tagEditorModified = false;
         self._teClearDraft();
+        self._teFilteredCacheKey = '';
+        self._teFreqCacheKey = '';
         self.toast((self.t('common.saved') || 'Saved') + ' (' + (j.data.saved || 0) + ')', 'success');
       } else { self.toast(j.message || 'Save failed', 'error'); }
     }).catch(function(e) { self.toast('Save failed: ' + e, 'error'); })
@@ -265,6 +271,8 @@ window.tagEditorMixin = {
     this.tagEditorHistoryIdx = -1;
     this._teClearDraft();
     this.tagEditorRefreshTagFreq();
+    this._teFilteredCacheKey = '';
+    this._teFreqCacheKey = '';
   },
 
   _teConfirmNav(route) {
@@ -329,7 +337,28 @@ window.tagEditorMixin = {
   },
 
   // ── Filtering, Sorting & Pagination ────────────────────
+  _teFilteredCacheKey: '',
+  _teFilteredCacheResult: null,
   tagEditorGetFiltered() {
+    // Build a cache key from all filter inputs
+    var cacheKey = JSON.stringify({
+      imgsLen: this.tagEditorImages.length,
+      q: this.tagEditorSearchQuery,
+      sel: this.tagEditorTagSelection,
+      exc: this.tagEditorExcludedTags,
+      logic: this.tagEditorTagLogic,
+      qf: this.tagEditorQuickFilter,
+      countMin: this.tagEditorTagCountMin,
+      countMax: this.tagEditorTagCountMax,
+      useRegex: this.tagEditorUseRegex,
+      sortBy: this.tagEditorSortBy,
+      sortAsc: this.tagEditorSortAsc,
+    });
+    if (this._teFilteredCacheKey === cacheKey && this._teFilteredCacheResult) {
+      return this._teFilteredCacheResult;
+    }
+    this._teFilteredCacheKey = cacheKey;
+
     var imgs = this.tagEditorImages;
     var q = (this.tagEditorSearchQuery || '').toLowerCase().trim();
     var sel = this.tagEditorTagSelection || [];
@@ -405,6 +434,7 @@ window.tagEditorMixin = {
       if (va > vb) return asc ? 1 : -1;
       return 0;
     });
+    this._teFilteredCacheResult = imgs;
     return imgs;
   },
 
@@ -451,7 +481,20 @@ window.tagEditorMixin = {
     this.tagEditorRegexError = false;
     this.tagEditorPage = 1;
   },
+  _teFreqCacheKey: '',
+  _teFreqCacheResult: null,
   tagEditorGetFilteredTagFreq() {
+    var cacheKey = JSON.stringify({
+      len: this.tagEditorTagFreq.length,
+      q: this.tagEditorTagSearch,
+      sortBy: this.tagEditorTagSortBy,
+      sortAsc: this.tagEditorTagSortAsc,
+    });
+    if (this._teFreqCacheKey === cacheKey && this._teFreqCacheResult) {
+      return this._teFreqCacheResult;
+    }
+    this._teFreqCacheKey = cacheKey;
+
     var q = (this.tagEditorTagSearch || '').toLowerCase().trim();
     var freq = this.tagEditorTagFreq || [];
     if (q) freq = freq.filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1; });
@@ -466,14 +509,12 @@ window.tagEditorMixin = {
       if (va > vb) return asc ? 1 : -1;
       return 0;
     });
+    this._teFreqCacheResult = freq;
     return freq;
   },
   tagEditorGetDisplayedTagFreq() {
     var freq = this.tagEditorGetFilteredTagFreq();
     var limit = this.tagEditorTagCloudExpanded ? this.tagEditorTagCloudLimit * 6 : this.tagEditorTagCloudLimit;
-    if (freq.length > limit && !this.tagEditorTagCloudExpanded) {
-      return freq.slice(0, limit);
-    }
     return freq.slice(0, limit);
   },
   tagEditorHasMoreTags() {
@@ -531,7 +572,10 @@ window.tagEditorMixin = {
   },
 
   tagEditorPasteTags(imgPath) {
-    if (this.tagEditorCopiedTags.length === 0) return;
+    if (this.tagEditorCopiedTags.length === 0) {
+      this.toast('Nothing copied', 'warning');
+      return;
+    }
     var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
     if (!img) return;
     var oldTags = img.tags;
@@ -607,11 +651,12 @@ window.tagEditorMixin = {
     this.tagEditorModified = true;
     this._tePushHistory(imgPath, oldTags, img.tags);
     this._teUpdateFreqIncremental(oldTags, img.tags);
+    this._teCachedDetailImg = null;
   },
 
   tagEditorAddTagToImage(imgPath, tag) {
     tag = (tag || '').trim();
-    if (!tag) return;
+    if (!tag || tag.length > 200 || /[<>]/.test(tag)) return;
     var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
     if (!img) return;
     var existing = img.tags.split(',').map(function(t) { return t.trim(); });
@@ -621,6 +666,7 @@ window.tagEditorMixin = {
     this.tagEditorModified = true;
     this._tePushHistory(imgPath, oldTags, img.tags);
     this._teUpdateFreqIncremental(oldTags, img.tags);
+    this._teCachedDetailImg = null;
   },
 
   tagEditorHandleTagInput(event, imgPath) {
@@ -680,12 +726,13 @@ window.tagEditorMixin = {
       }
       if (!merged) self._tePushHistory(imgPath, oldT, newT);
       self._teUpdateFreqIncremental(oldT, newT);
+      self._teFilteredCacheKey = '';
+      self._teFreqCacheKey = '';
       delete self._tePendingTextEdits[imgPath];
     }, 500);
   },
 
   // ── Detail View (drawer mode) ─────────────────────────
-  _teCachedFiltered: null,
   _teCachedDetailImg: null,
   _teCachedFreqCount: 0,
 
@@ -698,13 +745,11 @@ window.tagEditorMixin = {
     var img = len > this.tagEditorDetailIdx ? filtered[this.tagEditorDetailIdx] : null;
     this._teCachedDetailImg = img;
     this._teCachedFreqCount = len;
-    this._teCachedFiltered = filtered;
     return img;
   },
 
   tagEditorOpenDetail(imgPath) {
     this._teCachedDetailImg = null;
-    this._teCachedFiltered = null;
     this._teCachedFreqCount = 0;
     var filtered = this.tagEditorGetFiltered();
     var idx = filtered.findIndex(function(i) { return i.path === imgPath; });
@@ -718,7 +763,6 @@ window.tagEditorMixin = {
     this.tagEditorDetailMode = false;
     this.tagEditorContextMenu = null;
     this._teCachedDetailImg = null;
-    this._teCachedFiltered = null;
   },
   tagEditorDetailPrev() {
     this._teCachedDetailImg = null;
@@ -773,15 +817,23 @@ window.tagEditorMixin = {
           this.tagEditorCopyTags(this.tagEditorDetailImg().path);
         } else if (this.tagEditorSelected.length === 1) {
           this.tagEditorCopyTags(this.tagEditorSelected[0]);
+        } else if (this.tagEditorSelected.length === 0) {
+          this.toast(this.t('tagEditor.selectOneImage') || 'Select an image to copy tags', 'warning');
+        } else {
+          this.toast(this.t('tagEditor.selectOneImage') || 'Select a single image to copy tags', 'warning');
         }
       }
       else if (e.key === 'v' && !inInput) {
         e.preventDefault();
         if (this.tagEditorDetailMode && this.tagEditorDetailImg()) {
           this.tagEditorPasteTags(this.tagEditorDetailImg().path);
-        } else if (this.tagEditorSelected.length >= 1) {
-          var self = this;
-          this.tagEditorSelected.forEach(function(p) { self.tagEditorPasteTags(p); });
+        } else if (this.tagEditorSelected.length === 1) {
+          this.tagEditorPasteTags(this.tagEditorSelected[0]);
+        } else if (this.tagEditorSelected.length > 1) {
+          var selCount = this.tagEditorSelected.length;
+          if (!confirm('Paste ' + this.tagEditorCopiedTags.length + ' tags to ' + selCount + ' selected images?')) return;
+          var self2 = this;
+          this.tagEditorSelected.forEach(function(p) { self2.tagEditorPasteTags(p); });
         }
       }
     }
@@ -884,20 +936,38 @@ window.tagEditorMixin = {
           console.warn('Batch errors:', j.data.errors);
         }
         this.toast(msg, j.data.errors && j.data.errors.length > 0 ? 'warning' : 'success');
-        // Incremental update instead of full reload
+        // Incremental update: only refresh images that were modified by the batch
         if (j.data.modified > 0) {
-          this.tagEditorLoadTagFreq();
-          // Refresh images but keep state
+          // Determine which paths were in scope for this batch operation
+          var batchPaths = new Set();
+          if (scope === 'selected' || scope === 'filtered') {
+            payload.selected_paths.forEach(function(p) { batchPaths.add(p); });
+          }
+          // Refetch images from server
           var refreshR = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(this.tagEditorDir));
           var refreshJ = await refreshR.json();
           if (refreshJ.status === 'success') {
-            this.tagEditorImages = refreshJ.data.images || [];
-            var orig = this.tagEditorOriginal;
-            var self2 = this;
+            var serverImages = refreshJ.data.images || [];
+            var serverMap = {};
+            serverImages.forEach(function(img) { serverMap[img.path] = img; });
+            var self3 = this;
             this.tagEditorImages.forEach(function(img) {
-              self2.tagEditorOriginal[img.path] = orig[img.path] !== undefined ? orig[img.path] : img.tags;
+              if (batchPaths.size === 0 || batchPaths.has(img.path)) {
+                // This image was in scope — update tags from server and reset original
+                if (serverMap[img.path]) {
+                  img.tags = serverMap[img.path].tags;
+                }
+                self3.tagEditorOriginal[img.path] = img.tags;
+              }
+              // Otherwise keep local edits intact
             });
-            this.tagEditorModified = false;
+            // Add any new images that don't exist locally
+            serverImages.forEach(function(srvImg) {
+              if (!self3.tagEditorImages.find(function(i) { return i.path === srvImg.path; })) {
+                self3.tagEditorImages.push(srvImg);
+                self3.tagEditorOriginal[srvImg.path] = srvImg.tags;
+              }
+            });
             this.tagEditorRefreshTagFreq();
             this._teClearDraft();
           }
@@ -961,17 +1031,21 @@ window.tagEditorMixin = {
       var j = await r.json();
       if (j.status === 'success') {
         this.tagEditorBatchPreview = null;
-        // Refresh images
+        // Refresh images — merge updates to avoid overwriting local edits
         var refreshR = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(this.tagEditorDir));
         var refreshJ = await refreshR.json();
         if (refreshJ.status === 'success') {
-          this.tagEditorImages = refreshJ.data.images || [];
-          var orig = this.tagEditorOriginal;
-          var self2 = this;
+          var serverImages2 = refreshJ.data.images || [];
+          var serverMap2 = {};
+          serverImages2.forEach(function(img) { serverMap2[img.path] = img; });
+          var previewPaths = new Set(pdata.map(function(item) { return item.path; }));
+          var self3 = this;
           this.tagEditorImages.forEach(function(img) {
-            self2.tagEditorOriginal[img.path] = orig[img.path] !== undefined ? orig[img.path] : img.tags;
+            if (previewPaths.has(img.path) && serverMap2[img.path]) {
+              img.tags = serverMap2[img.path].tags;
+              self3.tagEditorOriginal[img.path] = img.tags;
+            }
           });
-          this.tagEditorModified = false;
           this.tagEditorRefreshTagFreq();
         }
         this.toast(this.t('tagEditor.batchDone') || 'Done', 'success');
@@ -1120,7 +1194,32 @@ window.tagEditorMixin = {
     }
     this._teDragRect = null;
     this.tagEditorDragStart = null;
+    // Use microtask to defer reset until after click event fires
+    var self = this;
+    Promise.resolve().then(function() { self.tagEditorDragSelect = false; });
+  },
+
+  // Cleanup drag listeners on route change
+  tagEditorCleanup() {
+    if (this._teDragMoveHandler) {
+      window.removeEventListener('mousemove', this._teDragMoveHandler);
+      this._teDragMoveHandler = null;
+    }
+    if (this._teDragUpHandler) {
+      window.removeEventListener('mouseup', this._teDragUpHandler);
+      this._teDragUpHandler = null;
+    }
+    this._teDragRect = null;
+    this.tagEditorDragStart = null;
     this.tagEditorDragSelect = false;
+    this._teStopAutoSave();
+    // Cleanup debounce timers
+    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
+    var pending = this._tePendingTextEdits || {};
+    for (var key in pending) {
+      if (pending[key] && pending[key].timer) clearTimeout(pending[key].timer);
+    }
+    this._tePendingTextEdits = {};
   },
 
   tagEditorDragRect() {

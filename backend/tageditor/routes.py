@@ -90,12 +90,11 @@ async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True))
     total = len(images)
     with_caption = sum(1 for i in images if i.get("has_caption"))
     without_caption = total - with_caption
+    from backend.tageditor.core import tag_list as _tag_list
     all_tags: set[str] = set()
     for img in images:
-        for t in img.get("tags", "").split(","):
-            t = t.strip()
-            if t:
-                all_tags.add(t)
+        for t in _tag_list(img.get("tags", "")):
+            all_tags.add(t)
 
     return {
         "status": "success",
@@ -187,7 +186,8 @@ async def save_image_tags(data: dict):
     if not _is_path_allowed(p):
         return {"status": "error", "message": "路径不在允许范围内 / Path not in allowed directory"}
     cap = find_caption(p) or p.with_suffix(".txt")
-    write_tags(cap, tags)
+    if not write_tags(cap, tags):
+        return {"status": "error", "message": "写入标签文件失败"}
     _invalidate_cache(p.parent)
     return {"status": "success", "message": "已保存"}
 
@@ -219,7 +219,8 @@ async def save_all_tags(data: dict):
         if existing_tags == tags.strip():
             skipped += 1
             continue
-        write_tags(cap_path, tags)
+        if not write_tags(cap_path, tags):
+            continue
         saved += 1
     if saved > 0:
         dirs = {Path(item["path"]).parent for item in images if item.get("path")}
@@ -264,10 +265,10 @@ async def batch_edit_tags(data: dict):
     errors = []
 
     for img in target_images:
-        cap_path = img.get("path", "")
-        if not cap_path:
+        img_path_str = img.get("path", "")
+        if not img_path_str:
             continue
-        p = Path(cap_path)
+        p = Path(img_path_str)
         cap = find_caption(p) or p.with_suffix(".txt")
         tags = read_tags(cap) if cap.exists() else ""
         new_tags, err = apply_operation(tags, operation, args)
@@ -275,7 +276,9 @@ async def batch_edit_tags(data: dict):
             errors.append(f"{img.get('name', '?')}: {err}")
             continue
         if new_tags != tags:
-            write_tags(cap, new_tags)
+            if not write_tags(cap, new_tags):
+                errors.append(f"{img.get('name', '?')}: 写入失败")
+                continue
             modified += 1
 
     if modified > 0:
@@ -355,9 +358,17 @@ async def move_or_delete_files(data: dict):
         if not img_path.exists():
             result["errors"].append(f"不存在: {img_path.name}")
             continue
+
+        if not _is_path_allowed(img_path):
+            result["errors"].append(f"路径拒绝: {img_path.name}")
+            continue
+
         try:
             if action == "move":
                 dest_path = Path(dest)
+                if not _is_path_allowed(dest_path.resolve()):
+                    result["errors"].append(f"目标路径拒绝: {dest}")
+                    continue
                 dest_path.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(img_path), str(dest_path / img_path.name))
                 if delete_caption:
@@ -404,6 +415,8 @@ async def restore_from_backup(data: dict):
     d = resolve_dir(dir_path)
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
+    if not _is_path_allowed(d):
+        return {"status": "error", "message": "路径不在允许范围内"}
 
     restored = 0
     for ext in {".txt", ".caption"}:
@@ -450,11 +463,22 @@ async def download_dataset_zip(dir: str = Query("")):
                     cap_arc = cap.name
                 files_to_zip.append((cap, cap_arc))
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path, arcname in files_to_zip:
-            zf.write(file_path, arcname)
-    buf.seek(0)
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _write_zip():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path, arcname in files_to_zip:
+                try:
+                    zf.write(file_path, arcname)
+                except FileNotFoundError:
+                    pass  # file deleted during zip building
+        buf.seek(0)
+        return buf
+
+    loop = asyncio.get_event_loop()
+    buf = await loop.run_in_executor(None, _write_zip)
 
     return StreamingResponse(
         buf, media_type="application/zip",

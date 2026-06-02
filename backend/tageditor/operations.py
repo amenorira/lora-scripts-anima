@@ -16,18 +16,22 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
     """
     try:
         if operation == "add_prefix":
-            prefix = args.get("value", "")
-            return (prefix + ", " + tags if tags and prefix else prefix or tags), None
+            prefix = args.get("value", "").strip()
+            if not prefix:
+                return tags, None
+            return (prefix + ", " + tags if tags else prefix), None
 
         elif operation == "add_suffix":
-            suffix = args.get("value", "")
-            return (tags + ", " + suffix if tags and suffix else suffix or tags), None
+            suffix = args.get("value", "").strip()
+            if not suffix:
+                return tags, None
+            return (tags + ", " + suffix if tags else suffix), None
 
         elif operation == "find_replace":
             find = args.get("find", "")
             replace = args.get("replace", "")
             if find:
-                lst = [t.replace(find, replace) if find in t else t for t in tag_list(tags)]
+                lst = [t.replace(find, replace) for t in tag_list(tags)]
                 return tag_str(lst), None
             return tags, None
 
@@ -35,7 +39,9 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
             pattern = args.get("pattern", "")
             replace = args.get("replace", "")
             try:
-                return re.sub(pattern, replace, tags), None
+                lst = tag_list(tags)
+                result = [re.sub(pattern, replace, t) for t in lst]
+                return tag_str(result), None
             except re.error as e:
                 return tags, f"正则表达式错误: {e}"
 
@@ -102,11 +108,6 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
                     else:
                         new_list.append(new)
             return tag_str(new_list), None
-
-        elif operation == "delete_by_filter":
-            targets = set(args.get("values", []))
-            lst = [t for t in tag_list(tags) if t not in targets]
-            return tag_str(lst), None
 
         elif operation == "replace_tag":
             find = args.get("find", "").strip()

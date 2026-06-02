@@ -207,6 +207,10 @@ document.addEventListener('alpine:init', () => {
         this.showLoadModal = false;
         return;
       }
+      // Cleanup tag editor resources when leaving
+      if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
+        this.tagEditorCleanup();
+      }
       this.currentRoute = route;
 
       const cfg = ROUTE_CONFIG[route];
