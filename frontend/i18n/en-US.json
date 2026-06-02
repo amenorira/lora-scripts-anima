@@ -500,7 +500,9 @@
     "preview": "Preview",
     "noTagsToExport": "No tags to export",
     "copyFailed": "Copy failed",
-    "batchPreviewMore": "... and {n} more"
+    "batchPreviewMore": "... and {n} more",
+    "replaceTag": "Merge Tag",
+    "batchConfirmAll": "WARNING: This affects ALL {n} images. Continue?"
   },
   "tools": {
     "title": "Tools",

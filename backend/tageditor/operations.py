@@ -107,6 +107,15 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
             lst = [t for t in tag_list(tags) if t not in targets]
             return tag_str(lst), None
 
+        elif operation == "replace_tag":
+            find = args.get("find", "").strip()
+            replace = args.get("replace", "").strip()
+            if find:
+                lst = tag_list(tags)
+                result = [replace if t == find else t for t in lst]
+                return tag_str(result), None
+            return tags, None
+
         else:
             return tags, f"未知操作: {operation}"
 

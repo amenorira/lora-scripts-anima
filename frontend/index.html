@@ -615,6 +615,7 @@
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort')" x-text="t('tagEditor.sort')">Sort</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('inject_trigger')" x-text="t('tagEditor.injectTrigger')">Trigger</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('remove_trigger')" x-text="t('tagEditor.removeTrigger')">Remove Trigger</button>
+                    <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('replace_tag')" x-text="t('tagEditor.replaceTag') || 'Merge Tag'">Merge Tag</button>
                   </div>
                 </div>
               </div>
@@ -622,7 +623,7 @@
               <!-- Image grid -->
               <div class="te-image-grid" style="margin-top:4px" @mousedown="tagEditorCardMouseDown($event, null)" @mouseup="tagEditorDragStart = null">
                 <template x-for="img in tagEditorGetPaged()" :key="img.path">
-                  <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" @click="tagEditorCardClick($event, img.path)" @dblclick="tagEditorCardDblClick($event, img.path)">
+                  <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" :data-te-path="img.path" @click="tagEditorCardClick($event, img.path)" @dblclick="tagEditorCardDblClick($event, img.path)">
                     <div class="te-card-thumb">
                       <img :src="img.thumbnail" loading="lazy" :alt="img.name">
                       <div class="te-card-thumb-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg></div>
@@ -758,6 +759,9 @@
           </div>
         </template>
 
+        <!-- Drag selection rectangle -->
+        <div class="te-drag-rect" x-show="tagEditorDragRect() !== null" :style="tagEditorDragRect() ? 'left:' + tagEditorDragRect().left + 'px;top:' + tagEditorDragRect().top + 'px;width:' + tagEditorDragRect().width + 'px;height:' + tagEditorDragRect().height + 'px' : ''"></div>
+
         <!-- Batch preview modal -->
         <template x-if="tagEditorBatchPreview !== null">
           <div class="te-preview-backdrop" @click.self="tagEditorCancelBatchPreview()">
@@ -770,10 +774,10 @@
                 <button class="btn btn-sm btn-ghost" @click="tagEditorCancelBatchPreview()" aria-label="Close">&times;</button>
               </div>
               <div class="te-preview-modal-body">
-                <template x-if="!tagEditorBatchPreview.data.preview || tagEditorBatchPreview.data.preview.length === 0">
+                <template x-if="!tagEditorBatchPreview.preview || tagEditorBatchPreview.preview.length === 0">
                   <div style="text-align:center;padding:24px;color:var(--text-tertiary)" x-text="t('tagEditor.batchPreviewNone') || 'No images will be modified'"></div>
                 </template>
-                <template x-for="diff in (tagEditorBatchPreview.data.preview || []).slice(0, 50)" :key="diff.path">
+                <template x-for="(diff, idx) in (tagEditorBatchPreview.preview || []).slice(0, 50)" :key="diff.path">
                   <div class="te-preview-diff-item">
                     <div class="te-preview-diff-name" x-text="diff.name"></div>
                     <div class="te-preview-diff-row">
@@ -782,14 +786,14 @@
                         <div class="te-preview-diff-text te-preview-diff-old" x-text="diff.old_tags || '(empty)'"></div>
                       </div>
                       <div class="te-preview-diff-col">
-                        <div class="te-preview-diff-label" x-text="t('tagEditor.batchPreviewAfter') || 'After'"></div>
-                        <div class="te-preview-diff-text te-preview-diff-new" x-text="diff.new_tags || '(empty)'"></div>
+                        <div class="te-preview-diff-label" x-text="t('tagEditor.batchPreviewAfter') || 'After (editable)'"></div>
+                        <textarea class="te-preview-diff-text te-preview-diff-new" style="width:100%;resize:vertical;min-height:40px;font-family:var(--font-mono);font-size:10.5px;border:none;outline:none;background:transparent" :value="diff._edited || diff.new_tags" @input="tagEditorUpdatePreviewTag(idx, $event.target.value)" rows="2"></textarea>
                       </div>
                     </div>
                   </div>
                 </template>
-                <template x-if="(tagEditorBatchPreview.data.preview || []).length > 50">
-                  <div style="text-align:center;padding:8px;font-size:11px;color:var(--text-tertiary)" x-text="(t('tagEditor.batchPreviewMore') || '... and {n} more').replace('{n}', tagEditorBatchPreview.data.preview.length - 50)"></div>
+                <template x-if="(tagEditorBatchPreview.preview || []).length > 50">
+                  <div style="text-align:center;padding:8px;font-size:11px;color:var(--text-tertiary)" x-text="(t('tagEditor.batchPreviewMore') || '... and {n} more').replace('{n}', tagEditorBatchPreview.preview.length - 50)"></div>
                 </template>
               </div>
               <div class="te-preview-modal-footer">

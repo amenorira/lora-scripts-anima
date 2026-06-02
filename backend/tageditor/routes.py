@@ -30,6 +30,7 @@ from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
     scan_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
+    _invalidate_cache,
 )
 from backend.tageditor.operations import apply_operation
 
@@ -166,7 +167,13 @@ def _is_path_allowed(path: Path) -> bool:
     """Check that a resolved path is within REPO_ROOT or the output directory."""
     resolved = path.resolve()
     allowed_roots = [REPO_ROOT.resolve(), OUTPUT_DIR.resolve()]
-    return any(str(resolved).startswith(str(r)) for r in allowed_roots)
+    for root in allowed_roots:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
 
 
 @router.post("/tageditor/save")
@@ -181,6 +188,7 @@ async def save_image_tags(data: dict):
         return {"status": "error", "message": "路径不在允许范围内 / Path not in allowed directory"}
     cap = find_caption(p) or p.with_suffix(".txt")
     write_tags(cap, tags)
+    _invalidate_cache(p.parent)
     return {"status": "success", "message": "已保存"}
 
 
@@ -213,6 +221,7 @@ async def save_all_tags(data: dict):
             continue
         write_tags(cap_path, tags)
         saved += 1
+    _invalidate_cache(d) if saved > 0 else None
     return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
 
 
@@ -266,6 +275,8 @@ async def batch_edit_tags(data: dict):
             write_tags(cap, new_tags)
             modified += 1
 
+    if modified > 0:
+        _invalidate_cache(d)
     return {"status": "success", "data": {"modified": modified, "errors": errors}}
 
 
@@ -401,6 +412,8 @@ async def restore_from_backup(data: dict):
             except Exception:
                 pass
 
+    if restored > 0:
+        _invalidate_cache(d)
     return {"status": "success", "data": {"restored": restored}}
 
 

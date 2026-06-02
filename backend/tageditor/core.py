@@ -38,13 +38,14 @@ def read_tags(cap_path: Path) -> str:
 
 
 def write_tags(cap_path: Path, tags: str) -> None:
-    """写入标签文件（自动 .bak 备份）"""
+    """写入标签文件（自动 .bak 备份，仅在首次修改时创建）"""
     if cap_path.exists():
         bak_path = cap_path.with_suffix(cap_path.suffix + ".bak")
-        try:
-            shutil.copy2(cap_path, bak_path)
-        except Exception:
-            pass
+        if not bak_path.exists():
+            try:
+                shutil.copy2(cap_path, bak_path)
+            except Exception:
+                pass
     cap_path.write_text(tags.strip(), encoding="utf-8", errors="replace")
 
 
@@ -117,9 +118,32 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
     return tags_data, total_images
 
 
+# ── Autocomplete 缓存 ──────────────────────────────────────────
+_autocomplete_cache: dict[str, tuple[float, list[dict]]] = {}
+_AUTOCOMPLETE_TTL = 30  # seconds
+
+
+def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:
+    import time
+    cache_key = f"{dir_path.resolve()}:{recursive}"
+    now = time.time()
+    if cache_key in _autocomplete_cache:
+        ts, data = _autocomplete_cache[cache_key]
+        if now - ts < _AUTOCOMPLETE_TTL:
+            return data
+    tags_data, _ = count_tags(dir_path, recursive=recursive)
+    _autocomplete_cache[cache_key] = (now, tags_data)
+    return tags_data
+
+
+def _invalidate_cache(dir_path: Path, recursive: bool = True) -> None:
+    cache_key = f"{dir_path.resolve()}:{recursive}"
+    _autocomplete_cache.pop(cache_key, None)
+
+
 def get_autocomplete(dir_path: Path, prefix: str, limit: int = 20, recursive: bool = True) -> list[str]:
     """标签自动补全：返回以 prefix 开头的标签（按频率排序）"""
-    tags_data, _ = count_tags(dir_path, recursive=recursive)
+    tags_data = _get_cached_tags(dir_path, recursive=recursive)
     prefix_lower = prefix.lower()
     results = [t["tag"] for t in tags_data if t["tag"].lower().startswith(prefix_lower)]
     return results[:limit]

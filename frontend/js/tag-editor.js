@@ -20,7 +20,7 @@ window.tagEditorMixin = {
   tagEditorPage: 1,
   tagEditorPageSize: 60,
   tagEditorPageSizeOptions: [30, 60, 120, 240],
-  tagEditorBatchScope: 'all',
+  tagEditorBatchScope: 'filtered',
   tagEditorBatchVal: '',
   tagEditorBatchVal2: '',
   tagEditorTagLogic: 'AND',
@@ -100,6 +100,7 @@ window.tagEditorMixin = {
         this.tagEditorTagCountMin = '';
         this.tagEditorTagCountMax = '';
         this.tagEditorUseRegex = false;
+        this._tePendingTextEdits = {};
         await this.tagEditorLoadTagFreq();
         this._teTryRestoreDraft();
       } else {
@@ -466,11 +467,17 @@ window.tagEditorMixin = {
   },
   tagEditorGetDisplayedTagFreq() {
     var freq = this.tagEditorGetFilteredTagFreq();
-    if (this.tagEditorTagCloudExpanded) return freq;
-    return freq.slice(0, this.tagEditorTagCloudLimit);
+    var limit = this.tagEditorTagCloudExpanded ? this.tagEditorTagCloudLimit * 6 : this.tagEditorTagCloudLimit;
+    if (freq.length > limit && !this.tagEditorTagCloudExpanded) {
+      return freq.slice(0, limit);
+    }
+    return freq.slice(0, limit);
   },
   tagEditorHasMoreTags() {
-    return this.tagEditorGetFilteredTagFreq().length > this.tagEditorTagCloudLimit;
+    return this.tagEditorGetFilteredTagFreq().length > this.tagEditorTagCloudDisplayLimit();
+  },
+  tagEditorTagCloudDisplayLimit() {
+    return this.tagEditorTagCloudExpanded ? this.tagEditorTagCloudLimit * 6 : this.tagEditorTagCloudLimit;
   },
   tagEditorIsTagSelected(tag) { return this.tagEditorTagSelection.indexOf(tag) !== -1; },
   tagEditorIsTagExcluded(tag) { return this.tagEditorExcludedTags.indexOf(tag) !== -1; },
@@ -825,10 +832,12 @@ window.tagEditorMixin = {
     var self = this;
     var count = 0;
     this.tagEditorImages.forEach(function(img) {
+      var oldTags = img.tags;
       var existing = (img.tags || '').split(',').map(function(t){return t.trim();});
       if (existing.indexOf(tag) === -1) {
         img.tags = img.tags ? tag + ', ' + img.tags : tag;
         self.tagEditorModified = true;
+        self._tePushHistory(img.path, oldTags, img.tags);
         count++;
       }
     });
@@ -840,18 +849,26 @@ window.tagEditorMixin = {
   async tagEditorBatchOp(op) {
     var args = {};
     var needsVal = ['add_prefix', 'add_suffix', 'delete_tag', 'inject_trigger', 'remove_trigger'].indexOf(op) !== -1;
-    var needsFind = op === 'find_replace' || op === 'regex_replace';
+    var needsFind = op === 'find_replace' || op === 'regex_replace' || op === 'replace_tag';
     if (needsVal && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter a value', 'warning'); return; }
     if (needsFind && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter find text', 'warning'); return; }
 
     if (op === 'find_replace') { args.find = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
     else if (op === 'regex_replace') { args.pattern = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
+    else if (op === 'replace_tag') { args.find = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
     else { args.value = this.tagEditorBatchVal; }
 
     var scope = this.tagEditorBatchScope;
     var count = scope === 'all' ? this.tagEditorImages.length : scope === 'selected' ? this.tagEditorSelected.length : this.tagEditorGetFiltered().length;
+    if (count === 0) { this.toast(this.t('tagEditor.noImages') || 'No images to operate on', 'warning'); return; }
     var scopeLabel = scope === 'all' ? (this.t('tagEditor.scopeAll') || 'All') : scope === 'selected' ? (this.t('tagEditor.scopeSelected') || 'Selected') : (this.t('tagEditor.scopeFiltered') || 'Filtered');
-    if (!confirm((this.t('tagEditor.batchConfirm') || 'Apply') + ' [' + op + '] ' + (this.t('tagEditor.batchConfirmOn') || 'to') + ' ' + count + ' ' + (this.t('tagEditor.imageCount') || 'images') + ' (' + scopeLabel + ')?')) return;
+    // Stronger confirm for 'all' scope
+    if (scope === 'all') {
+      var msg = (this.t('tagEditor.batchConfirmAll') || 'WARNING: This will affect ALL {n} images. Continue?').replace('{n}', count);
+      if (!confirm(msg)) return;
+    } else {
+      if (!confirm((this.t('tagEditor.batchConfirm') || 'Apply') + ' [' + op + '] ' + (this.t('tagEditor.batchConfirmOn') || 'to') + ' ' + count + ' ' + (this.t('tagEditor.imageCount') || 'images') + ' (' + scopeLabel + ')?')) return;
+    }
 
     var payload = { dir: this.tagEditorDir, operation: op, args: args, scope: scope };
     if (scope === 'selected') payload.selected_paths = this.tagEditorSelected;
@@ -883,7 +900,9 @@ window.tagEditorMixin = {
             this.tagEditorImages.forEach(function(img) {
               self2.tagEditorOriginal[img.path] = orig[img.path] !== undefined ? orig[img.path] : img.tags;
             });
+            this.tagEditorModified = false;
             this.tagEditorRefreshTagFreq();
+            this._teClearDraft();
           }
         }
       } else { this.toast(j.message || 'Operation failed', 'error'); }
@@ -893,12 +912,13 @@ window.tagEditorMixin = {
   async tagEditorPreviewBatchOp(op) {
     var args = {};
     var needsVal = ['add_prefix', 'add_suffix', 'delete_tag', 'inject_trigger', 'remove_trigger'].indexOf(op) !== -1;
-    var needsFind = op === 'find_replace' || op === 'regex_replace';
+    var needsFind = op === 'find_replace' || op === 'regex_replace' || op === 'replace_tag';
     if (needsVal && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter a value', 'warning'); return; }
     if (needsFind && !this.tagEditorBatchVal) { this.toast(this.t('tagEditor.batchPlaceholder') || 'Enter find text', 'warning'); return; }
 
     if (op === 'find_replace') { args.find = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
     else if (op === 'regex_replace') { args.pattern = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
+    else if (op === 'replace_tag') { args.find = this.tagEditorBatchVal; args.replace = this.tagEditorBatchVal2 || ''; }
     else { args.value = this.tagEditorBatchVal; }
 
     var scope = this.tagEditorBatchScope;
@@ -913,17 +933,27 @@ window.tagEditorMixin = {
       });
       var j = await r.json();
       if (j.status === 'success') {
-        this.tagEditorBatchPreview = { operation: op, data: j.data };
+        // Store editable preview entries
+        var previewList = (j.data.preview || []).map(function(item) {
+          return { path: item.path, name: item.name, old_tags: item.old_tags, new_tags: item.new_tags, _edited: item.new_tags };
+        });
+        this.tagEditorBatchPreview = { operation: op, data: j.data, preview: previewList };
       } else { this.toast(j.message || 'Preview failed', 'error'); }
     } catch (e) { this.toast('Preview failed: ' + e, 'error'); }
   },
 
+  tagEditorUpdatePreviewTag(previewIdx, value) {
+    if (!this.tagEditorBatchPreview || !this.tagEditorBatchPreview.preview) return;
+    var item = this.tagEditorBatchPreview.preview[previewIdx];
+    if (item) item._edited = value;
+  },
+
   async tagEditorConfirmBatchPreview() {
     if (!this.tagEditorBatchPreview) return;
-    var pdata = this.tagEditorBatchPreview.data;
-    if (!pdata || !pdata.preview || pdata.preview.length === 0) return;
-    var images = pdata.preview.map(function(item) {
-      return { path: item.path, tags: item.new_tags };
+    var pdata = this.tagEditorBatchPreview.preview;
+    if (!pdata || pdata.length === 0) return;
+    var images = pdata.map(function(item) {
+      return { path: item.path, tags: item._edited || item.new_tags };
     });
 
     try {
@@ -1034,20 +1064,76 @@ window.tagEditorMixin = {
     if (event.button !== 0) return;
     if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow')) return;
     // Start drag selection
-    var rect = event.currentTarget.closest('.te-image-grid');
-    if (!rect) return;
-    this.tagEditorDragStart = { x: event.clientX, y: event.clientY };
-    this.tagEditorDragSelect = true;
+    var grid = event.currentTarget.closest('.te-image-grid');
+    if (!grid) return;
+    var gridRect = grid.getBoundingClientRect();
+    this.tagEditorDragStart = { x: event.clientX, y: event.clientY, grid: grid, gridTop: gridRect.top, gridLeft: gridRect.left };
+    this._teDragRect = { left: event.clientX, top: event.clientY, width: 0, height: 0 };
+    this.tagEditorDragSelect = false;
+    // Listen for move/up on window so drag works outside the grid
+    var self = this;
+    if (this._teDragMoveHandler) window.removeEventListener('mousemove', this._teDragMoveHandler);
+    if (this._teDragUpHandler) window.removeEventListener('mouseup', this._teDragUpHandler);
+    this._teDragMoveHandler = function(e) { self._teOnDragMove(e); };
+    this._teDragUpHandler = function(e) { self._teOnDragEnd(e); };
+    window.addEventListener('mousemove', this._teDragMoveHandler);
+    window.addEventListener('mouseup', this._teDragUpHandler);
+  },
+
+  _teOnDragMove(e) {
+    if (!this.tagEditorDragStart) return;
+    var dx = (e.clientX - this.tagEditorDragStart.x);
+    var dy = (e.clientY - this.tagEditorDragStart.y);
+    if (!this.tagEditorDragSelect && (dx * dx + dy * dy) > 16) {
+      // Threshold crossed: start drag selection
+      this.tagEditorDragSelect = true;
+    }
+    if (!this.tagEditorDragSelect) return;
+    var left = Math.min(e.clientX, this.tagEditorDragStart.x);
+    var top = Math.min(e.clientY, this.tagEditorDragStart.y);
+    var width = Math.abs(e.clientX - this.tagEditorDragStart.x);
+    var height = Math.abs(e.clientY - this.tagEditorDragStart.y);
+    this._teDragRect = { left: left, top: top, width: width, height: height };
+  },
+
+  _teOnDragEnd(e) {
+    window.removeEventListener('mousemove', this._teDragMoveHandler);
+    window.removeEventListener('mouseup', this._teDragUpHandler);
+    this._teDragMoveHandler = null;
+    this._teDragUpHandler = null;
+    if (this.tagEditorDragSelect && this._teDragRect) {
+      // Select cards that intersect the drag rectangle
+      var rect = this._teDragRect;
+      var grid = this.tagEditorDragStart ? this.tagEditorDragStart.grid : null;
+      if (grid) {
+        var cards = grid.querySelectorAll('.te-card');
+        var self = this;
+        cards.forEach(function(card) {
+          var cr = card.getBoundingClientRect();
+          // Check intersection
+          if (cr.right > rect.left && cr.left < rect.left + rect.width &&
+              cr.bottom > rect.top && cr.top < rect.top + rect.height) {
+            var imgPath = card.getAttribute('data-te-path');
+            if (imgPath && self.tagEditorSelected.indexOf(imgPath) === -1) {
+              self.tagEditorSelected.push(imgPath);
+            }
+          }
+        });
+      }
+    }
+    this._teDragRect = null;
+    this.tagEditorDragStart = null;
+    this.tagEditorDragSelect = false;
+  },
+
+  tagEditorDragRect() {
+    return this._teDragRect || null;
   },
 
   tagEditorCardClick(event, imgPath) {
     if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow,.te-card-check')) return;
     // If we just did a drag, don't process as click
-    if (this.tagEditorDragStart) {
-      var dx = (event.clientX - this.tagEditorDragStart.x);
-      var dy = (event.clientY - this.tagEditorDragStart.y);
-      if (dx * dx + dy * dy > 16) return; // was a drag
-    }
+    if (this.tagEditorDragSelect) return;
     this.tagEditorToggleSelect(imgPath, event);
   },
 
