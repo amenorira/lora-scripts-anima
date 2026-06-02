@@ -182,6 +182,9 @@ async def get_files(pick_type) -> APIResponse:
         regex_filter = preset_info["filter"]
         result_list = []
 
+        if not path.exists():
+            return result_list
+
         if file_type == "file":
             if regex_filter:
                 pattern = re.compile(regex_filter)
