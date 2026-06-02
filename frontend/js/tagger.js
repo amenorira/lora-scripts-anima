@@ -56,38 +56,38 @@ window.taggerMixin = {
     if (el) el.stepUp();
   },
   /** 分类阈值步进辅助方法（不触发预设切换，由模板显式调用） */
-  _camieStepDown(cat) {
-    const el = document.getElementById('tagger-th-' + cat);
+  _catStepDown(prefix, cat) {
+    const el = document.getElementById(prefix + '-th-' + cat);
     if (el) el.stepDown();
   },
-  _camieStepUp(cat) {
-    const el = document.getElementById('tagger-th-' + cat);
+  _catStepUp(prefix, cat) {
+    const el = document.getElementById(prefix + '-th-' + cat);
     if (el) el.stepUp();
   },
   /** checkbox 切换时同步 stepper 按钮 disabled 状态 */
-  _camieToggleCat(cat) {
-    const cb = document.getElementById('tagger-en-' + cat);
+  _catToggleCat(prefix, cat) {
+    const cb = document.getElementById(prefix + '-en-' + cat);
     if (!cb) return;
     const disabled = !cb.checked;
-    const th = document.getElementById('tagger-th-' + cat);
+    const th = document.getElementById(prefix + '-th-' + cat);
     if (th) th.disabled = disabled;
     const stepper = th ? th.closest('.stepper') : null;
     if (stepper) {
       stepper.querySelectorAll('button').forEach(b => { b.disabled = disabled; });
     }
-    // 仅开关分类不触发自定义，改数值才触发
   },
 
   applyCamiePreset(preset) {
     if (preset === 'custom') { this.taggerPreset = 'custom'; return; }
     const isCL = this.taggerSelectedModel === 'cl_tagger_1_02';
+    const prefix = isCL ? 'tagger-cl' : 'tagger-camie';
     const presets = isCL ? this.CL_PRESETS : this.CAMIE_PRESETS;
     const cats = isCL ? this.CL_CATS : this.CAMIE_CATS;
     const vals = presets[preset];
     if (!vals) return;
     for (const cat of cats) {
-      const thEl = document.getElementById('tagger-th-'+cat);
-      const enEl = document.getElementById('tagger-en-'+cat);
+      const thEl = document.getElementById(prefix + '-th-' + cat);
+      const enEl = document.getElementById(prefix + '-en-' + cat);
       if (thEl) { thEl.value = vals[cat]; thEl.disabled = false; }
       if (enEl) enEl.checked = true;
       const stepper = thEl ? thEl.closest('.stepper') : null;
@@ -172,9 +172,10 @@ window.taggerMixin = {
     };
 
     // ── 辅助：分类字段行（field-nested 样式，checkbox+stepper 在右侧）─
-    const _catField = (cat, defVal) => {
+    // prefix: 'tagger-camie' 或 'tagger-cl'，用于区分同名的 DOM ID
+    const _catField = (prefix, cat, defVal) => {
       const catLabel = this.t('tagger.cat'+cat.charAt(0).toUpperCase()+cat.slice(1));
-      return `<div class="field field-nested"><div class="field-row"><div class="field-info"><div class="field-key">${catLabel}</div></div><div class="field-control"><label class="toggle" style="margin-right:6px"><input type="checkbox" id="tagger-en-${cat}" checked @change="_camieToggleCat('${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><div class="stepper"><button type="button" @click="_camieStepDown('${cat}');_camieCustomPreset()">−</button><input type="number" id="tagger-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_camieStepUp('${cat}');_camieCustomPreset()">+</button></div></div></div></div>`;
+      return `<div class="field field-nested"><div class="field-row"><div class="field-info"><div class="field-key">${catLabel}</div></div><div class="field-control"><label class="toggle" style="margin-right:6px"><input type="checkbox" id="${prefix}-en-${cat}" checked @change="_catToggleCat('${prefix}','${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><div class="stepper"><button type="button" @click="_catStepDown('${prefix}','${cat}');_camieCustomPreset()">−</button><input type="number" id="${prefix}-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_catStepUp('${prefix}','${cat}');_camieCustomPreset()">+</button></div></div></div></div>`;
     };
 
     const _folderSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
@@ -207,13 +208,13 @@ window.taggerMixin = {
       // 说明文字
       `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
       // 各分类作为嵌套字段（field-nested）
-      _catField('general','0.492',false) +
-      _catField('character','0.492',false) +
-      _catField('copyright','0.492',false) +
-      _catField('artist','0.492',false) +
-      _catField('meta','0.492',false) +
-      _catField('year','0.492',false) +
-      _catField('rating','0.492',false) +
+      _catField('tagger-camie','general','0.492') +
+      _catField('tagger-camie','character','0.492') +
+      _catField('tagger-camie','copyright','0.492') +
+      _catField('tagger-camie','artist','0.492') +
+      _catField('tagger-camie','meta','0.492') +
+      _catField('tagger-camie','year','0.492') +
+      _catField('tagger-camie','rating','0.492') +
     `</div>` +
 
     // ════════════════════════════════════════════════════════
@@ -225,13 +226,13 @@ window.taggerMixin = {
       // 说明文字
       `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
       // CL 分类字段
-      _catField('general','0.35',true) +
-      _catField('character','0.6',true) +
-      _catField('copyright','0.35',true) +
-      _catField('artist','0.35',true) +
-      _catField('meta','0.35',true) +
-      _catField('quality','0.35',true) +
-      _catField('rating','0.35',true) +
+      _catField('tagger-cl','general','0.35') +
+      _catField('tagger-cl','character','0.6') +
+      _catField('tagger-cl','copyright','0.35') +
+      _catField('tagger-cl','artist','0.35') +
+      _catField('tagger-cl','meta','0.35') +
+      _catField('tagger-cl','quality','0.35') +
+      _catField('tagger-cl','rating','0.35') +
     `</div>` +
 
     // ════════════════════════════════════════════════════════
@@ -315,10 +316,11 @@ window.taggerMixin = {
     let categoryThresholds = null;
     if (model === 'camie-tagger-v2') {
       categoryThresholds = {};
+      const prefix = 'tagger-camie';
       for (const cat of this.CAMIE_CATS) {
-        const enEl = document.getElementById('tagger-en-'+cat);
+        const enEl = document.getElementById(prefix + '-en-' + cat);
         if (enEl && enEl.checked) {
-          const thEl = document.getElementById('tagger-th-'+cat);
+          const thEl = document.getElementById(prefix + '-th-' + cat);
           if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
         } else {
           categoryThresholds[cat] = 1.0;
@@ -326,10 +328,11 @@ window.taggerMixin = {
       }
     } else if (model === 'cl_tagger_1_02') {
       categoryThresholds = {};
+      const prefix = 'tagger-cl';
       for (const cat of this.CL_CATS) {
-        const enEl = document.getElementById('tagger-en-'+cat);
+        const enEl = document.getElementById(prefix + '-en-' + cat);
         if (enEl && enEl.checked) {
-          const thEl = document.getElementById('tagger-th-'+cat);
+          const thEl = document.getElementById(prefix + '-th-' + cat);
           if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
         } else {
           categoryThresholds[cat] = 1.0;
