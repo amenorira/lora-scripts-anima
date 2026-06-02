@@ -112,7 +112,7 @@ document.addEventListener('alpine:init', () => {
       this.buildRouteContent();
 
       if (this.autoLoadHistory) {
-        setTimeout(() => this.autoLoadLastParams(), 500);
+        setTimeout(() => this._markAutoLoaded(), 500);
       }
 
       this._startHealthCheck();
@@ -269,7 +269,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     saveUISettings() {
-      localStorage.setItem('anima-ui-settings', JSON.stringify({theme:this.theme,autoLoadHistory:this.autoLoadHistory}));
+      localStorage.setItem('anima-ui-settings', JSON.stringify({autoLoadHistory:this.autoLoadHistory}));
       this.resolveTheme();
       this.toast(this.t('common.saved'));
     },

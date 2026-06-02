@@ -77,7 +77,7 @@
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </span>
-        <span>TensorBoard</span>
+        <span x-text="t('nav.tensorboard')">TensorBoard</span>
       </a>
 
       <!-- Training -->
@@ -162,9 +162,9 @@
           <svg class="theme-icon theme-icon-dark" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
         </button>
         <div class="sidebar-dropdown-menu">
-          <button :class="{ active: theme === 'light' }" @click="setTheme('light')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> Light</button>
-          <button :class="{ active: theme === 'dark' }" @click="setTheme('dark')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg> Dark</button>
-          <button :class="{ active: theme === 'auto' }" @click="setTheme('auto')">Auto</button>
+          <button :class="{ active: theme === 'light' }" @click="setTheme('light')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> <span x-text="t('common.themeLight')">Light</span></button>
+          <button :class="{ active: theme === 'dark' }" @click="setTheme('dark')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg> <span x-text="t('common.themeDark')">Dark</span></button>
+          <button :class="{ active: theme === 'auto' }" @click="setTheme('auto')"><span x-text="t('common.themeAuto')">Auto</span></button>
         </div>
       </div>
       <!-- Language dropdown -->
@@ -607,7 +607,7 @@
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix')" x-text="t('tagEditor.addPrefix')">Prefix</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_suffix')" x-text="t('tagEditor.addSuffix')">Suffix</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('find_replace')" x-text="t('tagEditor.findReplace')">Replace</button>
-                    <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('regex_replace')">Regex</button>
+                    <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('regex_replace')" x-text="t('tagEditor.regexSearch')">Regex</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('delete_tag')" x-text="t('tagEditor.deleteTag')">Delete</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup')" x-text="t('tagEditor.dedup')">Dedup</button>
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort')" x-text="t('tagEditor.sort')">Sort</button>
@@ -703,8 +703,8 @@
                 </div>
                 <!-- View toggle -->
                 <div style="display:flex;gap:4px;padding:0 16px;margin-top:8px">
-                  <button class="te-logic-btn" :class="tagEditorDetailView === 'chip' ? 'active' : ''" @click="tagEditorDetailView = 'chip'">Chip</button>
-                  <button class="te-logic-btn" :class="tagEditorDetailView === 'text' ? 'active' : ''" @click="tagEditorDetailView = 'text'">Text</button>
+                  <button class="te-logic-btn" :class="tagEditorDetailView === 'chip' ? 'active' : ''" @click="tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')">Chip</button>
+                  <button class="te-logic-btn" :class="tagEditorDetailView === 'text' ? 'active' : ''" @click="tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')">Text</button>
                   <span style="flex:1"></span>
                   <span class="te-token-badge" :class="tagEditorTokenCount(tagEditorDetailImg().tags) > 75 ? 'warn' : ''" x-text="tagEditorTokenCount(tagEditorDetailImg().tags) + ' tags'"></span>
                 </div>

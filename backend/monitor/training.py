@@ -198,7 +198,7 @@ def parse_log_progress(lines: list[str]) -> dict:
         info["percent"] = min(100.0, round(step * 100 / total, 2)) if total else 0
         info["eta"] = m.group("eta") or ""
 
-    loss_m = re.findall(r"(?:loss|train_loss|avr_loss)\s*[=:]\s*([0-9.eE+-]+)", text)
+    loss_m = re.findall(r"\b(?:loss|train_loss|avr_loss)\s*[=:]\s*([0-9.eE+-]+)", text)
     if loss_m:
         info["loss"] = loss_m[-1]
 

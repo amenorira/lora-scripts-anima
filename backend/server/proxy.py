@@ -22,7 +22,7 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
         host = os.environ.get("ANIMA_TAGEDITOR_HOST", "127.0.0.1")
         port = os.environ.get("ANIMA_TAGEDITOR_PORT", "28001")
 
-    client = httpx.AsyncClient(base_url=f"http://{host}:{port}/", proxies={}, trust_env=False, timeout=360)
+    client = httpx.AsyncClient(base_url=f"http://{host}:{port}/", proxies={}, trust_env=False, timeout=360, limits=httpx.Limits(max_connections=10, max_keepalive_connections=5))
 
     async def _reverse_proxy(request: Request):
         if full_path:
@@ -57,8 +57,13 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
 async def proxy_ws_forward(ws_a: WebSocket, ws_b: websockets.WebSocketClientProtocol):
     while True:
         try:
-            data = await ws_a.receive_text()
-            await ws_b.send(data)
+            msg = await ws_a.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            if "text" in msg and msg["text"] is not None:
+                await ws_b.send(msg["text"])
+            elif "bytes" in msg and msg["bytes"] is not None:
+                await ws_b.send(msg["bytes"])
         except starlette.websockets.WebSocketDisconnect:
             break
         except Exception as e:

@@ -11,6 +11,7 @@ window.trainingCoreMixin = {
   formHistoryIdx: -1,
 
   _formSaveTimer: null,
+  _localeChangeHandler: null,
   showFilePickerModalFlag: false,
   _pickerKey: '',
   _pickerFiles: [],
@@ -50,7 +51,7 @@ window.trainingCoreMixin = {
 
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
-    this._autoLoaded = false; // Reset so autoLoadLastParams can run again
+    this._autoLoaded = false; // Reset so _markAutoLoaded can run again
     const r = this.currentRoute;
     const cfg = ROUTE_CONFIG[r] || {};
     const routeTrainType = cfg.trainType || 'anima-lora';
@@ -129,10 +130,14 @@ window.trainingCoreMixin = {
       }
     });
 
-    window.addEventListener('locale-changed', () => {
+    if (this._localeChangeHandler) {
+      window.removeEventListener('locale-changed', this._localeChangeHandler);
+    }
+    this._localeChangeHandler = () => {
       const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
-    });
+    };
+    window.addEventListener('locale-changed', this._localeChangeHandler);
   },
 
   renderTrainingForm(trainType) {
@@ -612,7 +617,20 @@ window.trainingCoreMixin = {
   esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
   // Canonical HTML escape for '-delimited attributes (also escapes single quotes).
   escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
-  escJson(obj) { try { var json = JSON.stringify(obj); var bytes = new TextEncoder().encode(json); var binary = String.fromCharCode.apply(null, bytes); return btoa(binary); } catch (e) { return btoa('{"options":[]}'); } },
+  escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch (e) { console.error('escJson failed:', e); return btoa('{"options":[]}'); } },
+
+  /** Coerce a string value that looks like a number into an actual number for TOML/API.
+   *  Returns the coerced value, or the original value if not coercible. */
+  _coerceNum(v) {
+    if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
+      const trimmed = v.trim();
+      if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
+        return trimmed; // keep scientific notation as string
+      }
+      return Number(trimmed);
+    }
+    return v;
+  },
 
   setField(key, value) {
     const oldVal = this.form[key];
@@ -637,7 +655,8 @@ window.trainingCoreMixin = {
   },
 
   findFieldDef(key) {
-    for (const s of window.TRAIN_SECTIONS || []) {
+    const sections = this._allSections();
+    for (const s of sections) {
       const f = s.fields.find(x => x.key === key);
       if (f) return f;
     }

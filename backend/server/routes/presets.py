@@ -95,4 +95,5 @@ async def save_params(request=None):
     if request:
         body = await request.json()
         app_config["saved_params"] = body.get("params", {})
+        app_config.save_config()  # Persist to disk
     return APIResponseSuccess()

@@ -25,6 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
+from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
@@ -33,8 +34,6 @@ from backend.tageditor.core import (
 from backend.tageditor.operations import apply_operation
 
 router = APIRouter()
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -163,6 +162,13 @@ async def filter_images(data: dict):
                                            "total": len(images), "images": matched}}
 
 
+def _is_path_allowed(path: Path) -> bool:
+    """Check that a resolved path is within REPO_ROOT or the output directory."""
+    resolved = path.resolve()
+    allowed_roots = [REPO_ROOT.resolve(), OUTPUT_DIR.resolve()]
+    return any(str(resolved).startswith(str(r)) for r in allowed_roots)
+
+
 @router.post("/tageditor/save")
 async def save_image_tags(data: dict):
     """保存单张图片的标签"""
@@ -171,6 +177,8 @@ async def save_image_tags(data: dict):
     if not img_path or not os.path.isfile(img_path):
         return {"status": "error", "message": "图片路径无效"}
     p = Path(img_path)
+    if not _is_path_allowed(p):
+        return {"status": "error", "message": "路径不在允许范围内 / Path not in allowed directory"}
     cap = find_caption(p) or p.with_suffix(".txt")
     write_tags(cap, tags)
     return {"status": "success", "message": "已保存"}
@@ -190,6 +198,9 @@ async def save_all_tags(data: dict):
         if not img_path or not os.path.isfile(img_path):
             continue
         p = Path(img_path)
+        # 路径遍历检查
+        if not _is_path_allowed(p):
+            continue
         cap_path = find_caption(p) or p.with_suffix(".txt")
         # 安全检查：确保标签文件与图片在同一目录下
         cap_resolved = cap_path.resolve()

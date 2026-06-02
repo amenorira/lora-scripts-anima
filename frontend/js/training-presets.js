@@ -163,7 +163,8 @@ window.trainingPresetsMixin = {
     return result;
   },
 
-  autoLoadLastParams() {
+  // Called after buildTrainForm to show a toast about auto-loaded params
+  _markAutoLoaded() {
     if (this._autoLoaded) return;
     if (!this.autoLoadHistory || !this.currentRoute.startsWith('train-')) return;
     this._autoLoaded = true;

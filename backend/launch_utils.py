@@ -91,7 +91,7 @@ def run(command,
         shell: Optional[bool] = None):
 
     if shell is None:
-        shell = False if sys.platform == "win32" else True
+        shell = False  # Always use shell=False for safety; avoids command injection on Linux
 
     if desc is not None:
         print(desc)
@@ -255,7 +255,8 @@ def setup_onnxruntime(
 
 
 def run_pip(command, desc=None, live=False):
-    return run(f'"{python_bin}" -m pip {command}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+    # shell=True is safe here: command is constructed internally from trusted arguments
+    return run(f'"{python_bin}" -m pip {command}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=True)
 
 
 def pip_install(package: str, version: Optional[str] = None, index_url: Optional[str] = None, live: bool = True):
@@ -329,6 +330,11 @@ def catch_exception(f):
 
 
 def check_port_avaliable(port: int):
+    """Check if a port is available.
+
+    Note: TOCTOU race exists — the port may be taken between check and bind.
+    Callers should handle binding failures gracefully.
+    """
     try:
         s = socket.socket()
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -346,5 +352,5 @@ def find_avaliable_ports(port_init: int, port_range: int):
         if check_port_avaliable(p):
             return p
 
-    log.error(f"error finding avaliable ports in range: {port_init} -> {port_range}")
+    log.error(f"error finding available ports in range: {port_init} -> {port_range}")
     return None

@@ -16,7 +16,8 @@
     "system": "System",
     "environment": "Environment",
     "uiSettings": "UI Settings",
-    "about": "About"
+    "about": "About",
+    "tensorboard": "TensorBoard"
   },
   "monitor": {
     "status": "Training Status",
@@ -474,6 +475,8 @@
     "tagCountMin": "Min",
     "tagCountMax": "Max",
     "regexSearch": "Regex",
+    "viewChip": "Chip",
+    "viewText": "Text",
     "regexSearchPlaceholder": "Regex search...",
     "viewDetail": "View Detail",
     "clickToSelectHint": "Click to select · Double-click for detail · Right-click to exclude",

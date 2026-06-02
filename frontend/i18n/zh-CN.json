@@ -16,7 +16,8 @@
     "system": "系统",
     "environment": "环境管理",
     "uiSettings": "UI 设置",
-    "about": "关于"
+    "about": "关于",
+    "tensorboard": "TensorBoard"
   },
   "monitor": {
     "status": "训练状态",
@@ -474,6 +475,8 @@
     "tagCountMin": "最少",
     "tagCountMax": "最多",
     "regexSearch": "正则",
+    "viewChip": "Chip",
+    "viewText": "Text",
     "regexSearchPlaceholder": "正则表达式搜索...",
     "viewDetail": "查看详情",
     "clickToSelectHint": "点击选中 · 双击详情 · 右键排除",

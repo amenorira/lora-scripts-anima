@@ -27,6 +27,7 @@ window.tagEditorMixin = {
 
   // ── v2.2 New State ─────────────────────────────────────
   tagEditorLoading: false,
+  _teBlurTimer: null,
   tagEditorSortBy: 'name',
   tagEditorSortAsc: true,
   tagEditorDetailMode: false,
@@ -633,6 +634,7 @@ window.tagEditorMixin = {
     this._teUpdateFreqIncremental(oldTags, img.tags);
     event.target.value = '';
     this.tagEditorFocusedVal = '';
+    this.tagEditorFocusedImg = null;
   },
 
   tagEditorMarkDirty() { this.tagEditorModified = true; },
@@ -985,6 +987,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorOnSuggestInput(event, imgPath) {
+    clearTimeout(this._teBlurTimer);
     this.tagEditorFocusedImg = imgPath;
     this.tagEditorFocusedVal = event.target.value;
   },
@@ -997,7 +1000,8 @@ window.tagEditorMixin = {
 
   tagEditorBlurSuggest() {
     var self = this;
-    setTimeout(function() { self.tagEditorFocusedImg = null; self.tagEditorFocusedVal = ''; }, 200);
+    clearTimeout(this._teBlurTimer);
+    this._teBlurTimer = setTimeout(function() { self.tagEditorFocusedImg = null; self.tagEditorFocusedVal = ''; }, 200);
   },
 
   // ── Tag Reorder (move left/right) ─────────────────────

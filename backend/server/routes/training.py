@@ -75,7 +75,8 @@ def get_sample_prompts(config: dict):
         if not txt_files:
             raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
         try:
-            sample_prompt_file = random.choice(txt_files)
+            seed_val = config.get("seed", 2333)
+            sample_prompt_file = random.Random(int(seed_val)).choice(txt_files)
             with open(sample_prompt_file, 'r', encoding='utf-8') as f:
                 positive_prompts = f.read()
         except IOError:
@@ -153,7 +154,9 @@ async def create_toml_file(request: Request):
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
     model_train_type = config.get("model_train_type", "sd-lora")
-    trainer_file = trainer_mapping[model_train_type]
+    trainer_file = trainer_mapping.get(model_train_type)
+    if not trainer_file:
+        return APIResponseFail(message=f"Unsupported training type: {model_train_type} / 不支持的训练类型: {model_train_type}")
 
     # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
     try:
@@ -284,14 +287,10 @@ async def run_script(request: Request, background_tasks: BackgroundTasks):
     for k, v in j.items():
         result.append(f"--{k}")
         if not isinstance(v, bool):
-            value = str(v)
-            if " " in value:
-                value = f'"{v}"'
-            result.append(value)
-    script_args = " ".join(result)
+            result.append(str(v))
     script_path = Path(os.getcwd()) / "vendor" / "sd-scripts" / script_name
     if not script_path.exists():
         return APIResponseFail(message=f"Script not found / 脚本不存在: {script_name}")
-    cmd = f"{launch_utils.python_bin} {script_path} {script_args}"
-    background_tasks.add_task(launch_utils.run, cmd)
+    cmd_list = [launch_utils.python_bin, str(script_path)] + result
+    background_tasks.add_task(launch_utils.run, cmd_list)
     return APIResponseSuccess()

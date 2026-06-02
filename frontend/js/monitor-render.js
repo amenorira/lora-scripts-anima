@@ -199,7 +199,7 @@ window.monitorRenderMixin = {
     // Running task
     if (hasRunning) {
       const r = this.runningTask;
-      html += '<div class="card history-card history-running" style="border-left:3px solid var(--primary)">';
+      html += '<div class="card history-card history-running" style="border-left:3px solid var(--accent)">';
       html += '<div class="card-header">' + t('running', 'Running') + ' <span class="badge badge-running">' + (t('training', 'Training') || 'Training') + '</span></div>';
       html += '<div><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';

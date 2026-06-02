@@ -142,6 +142,8 @@ async def pick_file(picker_type: str):
     elif picker_type == "model-file":
         file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt"), ("all files", "*.*")]
         coro = asyncio.to_thread(open_file_selector, "", "Select file", file_types)
+    else:
+        return APIResponseFail(message=f"Invalid picker_type: {picker_type}")
 
     result = await coro
     if result == "":
@@ -252,6 +254,21 @@ from uuid import uuid4 as _install_uuid
 
 _install_jobs: dict[str, dict] = {}
 
+def _cleanup_install_jobs():
+    """Remove completed install jobs older than 10 minutes."""
+    now = time.time()
+    expired = [jid for jid, job in _install_jobs.items()
+               if job.get("done") and now - job.get("start", 0) > 600]
+    for jid in expired:
+        jpath = _install_jobs[jid].get("log_path")
+        if jpath:
+            try:
+                os.unlink(jpath)
+            except Exception:
+                pass
+        del _install_jobs[jid]
+
+
 def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
     """启动后台 pip install，输出写入临时日志文件。失败时自动重试（指数退避）。返回 job_id。"""
     job_id = _install_uuid().hex[:12]
@@ -302,6 +319,7 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
 @router.get("/install-log/{job_id}")
 async def install_log(job_id: str, tail: int = 20) -> dict:
     """轮询安装进度。返回最新日志行 + 完成状态。"""
+    _cleanup_install_jobs()
     import time
     job = _install_jobs.get(job_id)
     if not job:

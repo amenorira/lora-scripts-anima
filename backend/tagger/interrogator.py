@@ -20,6 +20,7 @@ from backend.tagger.interrogators.cl import CLTaggerInterrogator
 from backend.tagger.interrogators.camie import CamieTaggerInterrogator
 from backend.constants import HF_CACHE_DIR
 import traceback
+import threading
 
 tag_escape_pattern = re.compile(r'([\\()])')
 
@@ -27,40 +28,45 @@ tag_escape_pattern = re.compile(r'([\\()])')
 _TAGGER_PROGRESS_TTL = 300  # 终态任务保留 5 分钟后自动清理
 
 _tagger_progress: Dict[str, dict] = {}
+_tagger_progress_lock = threading.Lock()
 
 
 def _cleanup_completed_tasks():
     """清理已达终态且超过 TTL 的任务，防止内存泄漏。"""
     import time
     now = time.time()
-    expired = [
-        tid for tid, info in _tagger_progress.items()
-        if info.get("status") in ("done", "cancelled", "error")
-        and now - info.get("_completed_at", now) > _TAGGER_PROGRESS_TTL
-    ]
-    for tid in expired:
-        del _tagger_progress[tid]
+    with _tagger_progress_lock:
+        expired = [
+            tid for tid, info in _tagger_progress.items()
+            if info.get("status") in ("done", "cancelled", "error")
+            and now - info.get("_completed_at", now) > _TAGGER_PROGRESS_TTL
+        ]
+        for tid in expired:
+            del _tagger_progress[tid]
 
 
 def _mark_task_completed(task_id: str):
     """标记任务完成时间，供 TTL 清理使用。"""
     import time
-    if task_id in _tagger_progress:
-        _tagger_progress[task_id]["_completed_at"] = time.time()
+    with _tagger_progress_lock:
+        if task_id in _tagger_progress:
+            _tagger_progress[task_id]["_completed_at"] = time.time()
 
 
 def get_tagger_progress(task_id: str) -> dict:
-    return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []})
+    with _tagger_progress_lock:
+        return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []}).copy()
 
 
 def cancel_tagger_task(task_id: str) -> bool:
     """标记任务为已取消，on_interrogate 循环会检查此标志提前退出。"""
-    if task_id in _tagger_progress:
-        _tagger_progress[task_id]["status"] = "cancelled"
-        _tagger_progress[task_id]["logs"].append('Task cancelled by user')
-        _mark_task_completed(task_id)
-        return True
-    return False
+    with _tagger_progress_lock:
+        if task_id in _tagger_progress:
+            _tagger_progress[task_id]["status"] = "cancelled"
+            _tagger_progress[task_id]["logs"].append('Task cancelled by user')
+            _mark_task_completed(task_id)
+            return True
+        return False
 
 
 # 所有模型统一下载到项目 huggingface/ 目录
@@ -184,12 +190,15 @@ def on_interrogate(
         total = len(paths)
         # 每次新建任务前清理过期任务
         _cleanup_completed_tasks()
-        _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
+        with _tagger_progress_lock:
+            _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
         print(f'found {total} image(s)')
 
         for idx, path in enumerate(paths):
             # 检查是否被用户取消
-            if _tagger_progress.get(task_id, {}).get("status") == "cancelled":
+            with _tagger_progress_lock:
+                cancelled = _tagger_progress.get(task_id, {}).get("status") == "cancelled"
+            if cancelled:
                 print(f'Task {task_id} cancelled at {idx}/{total}')
                 break
             try:
@@ -214,9 +223,10 @@ def on_interrogate(
                         )
                     except (TypeError, ValueError) as error:
                         error_msg = f"Format error: {str(error)[:200]}"
-                        _tagger_progress[task_id]["status"] = "error"
-                        _tagger_progress[task_id]["error_detail"] = error_msg
-                        _tagger_progress[task_id]["logs"].append(f'Error: {error_msg}')
+                        with _tagger_progress_lock:
+                            _tagger_progress[task_id]["status"] = "error"
+                            _tagger_progress[task_id]["error_detail"] = error_msg
+                            _tagger_progress[task_id]["logs"].append(f'Error: {error_msg}')
                         _mark_task_completed(task_id)
                         return str(error)
 
@@ -231,9 +241,10 @@ def on_interrogate(
 
                         if batch_output_action_on_conflict == 'ignore':
                             print(f'skipping {path}')
-                            _tagger_progress[task_id]["logs"].append(f'Skip (exists): {path.name}')
-                            _tagger_progress[task_id]["current"] = idx + 1
-                            _tagger_progress[task_id]["current_file"] = str(path.name)
+                            with _tagger_progress_lock:
+                                _tagger_progress[task_id]["logs"].append(f'Skip (exists): {path.name}')
+                                _tagger_progress[task_id]["current"] = idx + 1
+                                _tagger_progress[task_id]["current_file"] = str(path.name)
                             continue
 
                     tags = interrogator.interrogate(image)
@@ -275,21 +286,26 @@ def on_interrogate(
                             json.dumps(tags)
                         )
 
-                    _tagger_progress[task_id]["logs"].append(f'[{idx+1}/{total}] {path.name}: {len(processed_tags)} tags')
+                    with _tagger_progress_lock:
+                        _tagger_progress[task_id]["logs"].append(f'[{idx+1}/{total}] {path.name}: {len(processed_tags)} tags')
             except UnidentifiedImageError:
                 print(f'{path} is not supported image type')
-                _tagger_progress[task_id]["logs"].append(f'Skip (unsupported): {path.name}')
+                with _tagger_progress_lock:
+                    _tagger_progress[task_id]["logs"].append(f'Skip (unsupported): {path.name}')
             except Exception as e:
                 err_msg = f'{path.name}: {type(e).__name__}: {str(e)[:200]}'
                 print(f'Error processing {err_msg}')
                 traceback.print_exc()
-                _tagger_progress[task_id]["logs"].append(f'Error: {err_msg}')
+                with _tagger_progress_lock:
+                    _tagger_progress[task_id]["logs"].append(f'Error: {err_msg}')
 
-            _tagger_progress[task_id]["current"] = idx + 1
-            _tagger_progress[task_id]["current_file"] = str(path.name)
+            with _tagger_progress_lock:
+                _tagger_progress[task_id]["current"] = idx + 1
+                _tagger_progress[task_id]["current_file"] = str(path.name)
 
-        if _tagger_progress.get(task_id, {}).get("status") != "cancelled":
-            _tagger_progress[task_id]["status"] = "done"
+        with _tagger_progress_lock:
+            if _tagger_progress.get(task_id, {}).get("status") != "cancelled":
+                _tagger_progress[task_id]["status"] = "done"
         _mark_task_completed(task_id)
         print('all done')
 

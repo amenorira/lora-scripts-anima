@@ -1,11 +1,4 @@
 
-
-_origin_print = print
-
-
-def i18n_print(data, *args, **kwargs):
-    _origin_print(data, *args, **kwargs)
-    _origin_print("i18n_print")
-
-
-__builtins__["print"] = i18n_print
+# sitecustomize.py — reserved for future use
+# (Previously contained a global print monkey-patch that was removed due to
+#  side effects on third-party library output)

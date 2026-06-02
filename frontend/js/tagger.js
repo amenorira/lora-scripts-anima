@@ -11,6 +11,7 @@ window.taggerMixin = {
   _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
   taggerSelectedModel: '',   // 当前选中的 tagger 模型 ID
   taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
+  _taggerPresetInitialized: false,
 
   // ── Camie 阈值预设 ───────────────────────────────────
   CAMIE_PRESETS: {
@@ -238,8 +239,9 @@ window.taggerMixin = {
         this.applyCamiePreset(presetEl.value);
       });
     }
-    if (savedModel === 'camie-tagger-v2') {
+    if (savedModel === 'camie-tagger-v2' && !this._taggerPresetInitialized) {
       this.taggerPreset = 'macro';
+      this._taggerPresetInitialized = true;
     }
   },
 
@@ -382,7 +384,8 @@ window.taggerMixin = {
   },
 
   localFilePickerTagger(inputId) {
-    fetch('/api/pick_file?picker_type=folder').then(r=>r.json()).then(d=>{if(d.status==='success'&&d.data&&d.data.path) document.getElementById(inputId).value=d.data.path;}).catch(()=>{});
+    var self = this;
+    fetch('/api/pick_file?picker_type=folder').then(r=>r.json()).then(d=>{if(d.status==='success'&&d.data&&d.data.path) document.getElementById(inputId).value=d.data.path;}).catch(function(){ self.toast(self.t('common.localPickerNA')); });
   },
 
   openTagEditor() { window.open('/proxy/tageditor','_blank'); },

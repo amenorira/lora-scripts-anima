@@ -37,8 +37,10 @@ class Config:
             log.error(f"Error saving config: {e}")
 
     def __getitem__(self, key):
-
-        return self._stored.get(key, None)
+        val = self._stored.get(key)
+        if val is None:
+            val = self._default.get(key)
+        return val
 
     def __setitem__(self, key, value):
         self._stored[key] = value

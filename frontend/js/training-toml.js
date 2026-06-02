@@ -64,17 +64,12 @@ window.trainingTomlMixin = {
       if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay' || k === 'stopcoef') continue;
 
       if (typeof v === 'boolean') { lines.push(`${k} = ${v}`); }
-      else if (typeof v === 'number') lines.push(`${k} = ${v}`);
-      else if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
-        // Preserve scientific notation (e.g. "1e-4") as-is, convert plain numbers
-        const trimmed = v.trim();
-        if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
-          lines.push(`${k} = ${trimmed}`);
-        } else {
-          lines.push(`${k} = ${Number(trimmed)}`);
-        }
+      else if (typeof v === 'number') { lines.push(`${k} = ${v}`); }
+      else {
+        const coerced = this._coerceNum(v);
+        if (coerced !== v) { lines.push(`${k} = ${coerced}`); }
+        else { lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`); }
       }
-      else lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
     }
 
     // ── Build network_args ──────────────────────────────
@@ -242,15 +237,8 @@ window.trainingTomlMixin = {
       payload[k] = v;
     }
     for (const [k, v] of Object.entries(payload)) {
-      if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
-        // Preserve scientific notation as string for TOML compatibility
-        const trimmed = v.trim();
-        if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
-          payload[k] = trimmed; // keep as string "1e-4"
-        } else {
-          payload[k] = Number(trimmed);
-        }
-      }
+      const coerced = this._coerceNum(v);
+      if (coerced !== v) { payload[k] = coerced; }
     }
 
     if (payload.sample_prompts && typeof payload.sample_prompts === 'string') {
