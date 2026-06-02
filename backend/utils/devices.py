@@ -1,3 +1,4 @@
+import os
 from backend.log import log
 from packaging.version import Version
 
@@ -10,11 +11,9 @@ def check_torch_gpu():
         import torch
         log.info(f'Torch {torch.__version__}')
         if not torch.cuda.is_available():
-            log.error("Torch is not able to use GPU, please check your torch installation.\n Use --skip-prepare-environment to disable this check")
-            log.error("！！！Torch 无法使用 GPU，您无法正常开始训练！！！\n您的显卡可能并不支持，或是 torch 安装有误。请检查您的 torch 安装。")
+            log.warning("Torch is not able to use GPU. GUI will work, training requires GPU. / Torch 无法使用 GPU，界面可正常使用，但训练需要显卡。")
             if "cpu" in torch.__version__:
-                log.error("You are using torch CPU, please install torch GPU version by run install script again.")
-                log.error("！！！您正在使用 CPU 版本的 torch，无法正常开始训练。请重新运行安装脚本！！！")
+                log.warning("You are using torch CPU version. Training will not work. / 当前使用 CPU 版 PyTorch，无法训练。")
             return
 
         if Version(torch.__version__) < Version("2.3.0"):

@@ -1,9 +1,18 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # start.sh - One-stop: environment check -> install -> launch
 # Run: bash start.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+
+QUIET=0
+for arg in "$@"; do
+    if [ "$arg" = "--quiet" ] || [ "$arg" = "-q" ]; then
+        QUIET=1
+    fi
+done
 
 echo "============================================"
 echo "  lora-scripts-anima"
@@ -47,13 +56,23 @@ else
     fi
 fi
 
-# --- 2. GPU detection ---
+# --- 2. GPU / CUDA detection ---
 if command -v nvidia-smi &>/dev/null; then
     GPUNAME=$(nvidia-smi -L 2>/dev/null | head -1)
     if [ -n "$GPUNAME" ]; then
         echo "  [OK] GPU: $GPUNAME"
     else
         echo "  [WARN] nvidia-smi found but cannot read GPU info."
+    fi
+    CUDAVER=$(nvidia-smi 2>/dev/null | grep "CUDA Version" | sed 's/.*CUDA Version: \([0-9.]*\).*/\1/')
+    if [ -n "$CUDAVER" ]; then
+        CUDA_MAJOR=$(echo "$CUDAVER" | cut -d. -f1)
+        CUDA_MINOR=$(echo "$CUDAVER" | cut -d. -f2)
+        if [ "$CUDA_MAJOR" -ge 12 ] 2>/dev/null; then
+            echo "  [OK] CUDA Version: $CUDAVER (driver)"
+        else
+            echo "  [WARN] CUDA Version: $CUDAVER (driver) — PyTorch cu128 requires >= 12.8"
+        fi
     fi
 else
     echo "  [WARN] nvidia-smi not found - no NVIDIA GPU or driver?"
@@ -97,24 +116,21 @@ do_install() {
     if [ ! -d "venv" ]; then
         echo "Creating venv..."
         $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
-        . "venv/bin/activate"
         echo "Upgrading pip..."
-        pip install --upgrade pip -q 2>/dev/null
-    else
-        . "venv/bin/activate"
+        "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
     export HF_HOME=huggingface
 
     echo "[1/3] Installing PyTorch 2.10.0+cu128..."
-    pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
     echo "[2/3] Installing sd-scripts dependencies..."
-(cd vendor/sd-scripts && pip install -r requirements.txt)
+    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed."; exit 1; }
 
     echo "[3/3] Installing project dependencies..."
-    pip install --upgrade -r requirements.txt
+    "$VENV_PYTHON" -m pip install --upgrade -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
 
     echo ""
@@ -124,23 +140,27 @@ do_install() {
 # ============================================================
 #  Venv check with broken-venv detection
 # ============================================================
-if [ -f "venv/bin/activate" ]; then
-    . "venv/bin/activate"
-    if ! $PYTHON_BIN -c "import torch" 2>/dev/null; then
+if [ -f "$VENV_PYTHON" ]; then
+    if ! "$VENV_PYTHON" -c "import torch" 2>/dev/null; then
         echo "[Notice] venv exists but torch missing — repairing..."
         do_install
     fi
 else
     echo "[Notice] Virtual environment (venv) not found."
-    echo "   1. Install"
-    echo "   2. Exit"
-    echo ""
-    read -r -p "Enter option (1/2): " CHOICE
-    if [ "$CHOICE" != "1" ]; then
-        echo "Cancelled."
-        exit 0
+    if [ "$QUIET" = "1" ]; then
+        echo "  --quiet mode: auto-installing..."
+        do_install
+    else
+        echo "   1. Install"
+        echo "   2. Exit"
+        echo ""
+        read -r -p "Enter option (1/2): " CHOICE
+        if [ "$CHOICE" != "1" ]; then
+            echo "Cancelled."
+            exit 0
+        fi
+        do_install
     fi
-    do_install
 fi
 
 # ============================================================
@@ -152,11 +172,11 @@ export PYTHONUTF8=1
 
 echo ""
 
-if FA_VER=$($PYTHON_BIN -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
+if FA_VER=$("$VENV_PYTHON" -c "from importlib.metadata import version; print(version('flash_attn'))" 2>/dev/null); then
     echo "[flash_attn] OK (version $FA_VER)"
 else
     echo "[flash_attn] NOT FOUND. Install via GUI: Environment tab -> Flash Attention"
 fi
 echo ""
 
-$PYTHON_BIN gui.py "$@"
+"$VENV_PYTHON" gui.py "$@"

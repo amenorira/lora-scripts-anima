@@ -3,6 +3,10 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title lora-scripts-anima
 
+set _QUIET=0
+for %%a in (%*) do if /i "%%a"=="--quiet" set _QUIET=1
+for %%a in (%*) do if /i "%%a"=="-q" set _QUIET=1
+
 echo ============================================
 echo   lora-scripts-anima
 echo ============================================
@@ -47,10 +51,13 @@ for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo   [OK] %%i (64-bit)
 :check_gpu
 where nvidia-smi >nul 2>&1
 if %errorlevel% neq 0 (
-    echo   [WARN] nvidia-smi not found.
+    echo   [WARN] nvidia-smi not found — no NVIDIA GPU or driver?
+    echo          This project needs NVIDIA GPU ^(RTX 30/40/50^) for training.
 ) else (
     for /f "tokens=*" %%i in ('nvidia-smi -L 2^>nul') do set _GPU=%%i
     if defined _GPU (echo   [OK] GPU: !_GPU!) else (echo   [WARN] Cannot read GPU info.)
+    for /f "tokens=9" %%i in ('nvidia-smi 2^>nul ^| findstr /c:"CUDA Version"') do set _CUDA_VER=%%i
+    if defined _CUDA_VER echo   [OK] CUDA Version: !_CUDA_VER!
 )
 
 set _DRIVE=%~d0
@@ -73,6 +80,10 @@ echo.
 if exist "venv\Scripts\python.exe" goto :run_venv
 
 echo [Notice] Virtual environment (venv) not found.
+if "!_QUIET!"=="1" (
+    echo   --quiet mode: auto-installing...
+    goto :install
+)
 echo    1. Install
 echo    2. Exit
 set /p _CHOICE="Enter option (1/2): "

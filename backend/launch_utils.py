@@ -306,10 +306,17 @@ def prepare_environment(prepare_onnxruntime: bool = True):
     validate_requirements("vendor/sd-scripts/requirements.txt")
     # 主项目依赖（GUI 层等），补充 sd-scripts 未覆盖的包
     validate_requirements("requirements.txt")
-    setup_windows_bitsandbytes()
+
+    try:
+        setup_windows_bitsandbytes()
+    except Exception:
+        log.warning("bitsandbytes setup skipped (GPU may be unavailable) / bitsandbytes 初始化跳过 (可能无 GPU)")
 
     if prepare_onnxruntime:
-        setup_onnxruntime()
+        try:
+            setup_onnxruntime()
+        except Exception:
+            log.warning("onnxruntime-gpu setup skipped (GPU may be unavailable) / onnxruntime-gpu 初始化跳过 (可能无 GPU)")
 
 
 def catch_exception(f):
