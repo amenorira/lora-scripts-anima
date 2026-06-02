@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import atexit
 import platform
 
 _nvml_ready = False
@@ -16,6 +17,7 @@ def _ensure_nvml() -> bool:
         import pynvml
         pynvml.nvmlInit()
         _nvml_ready = True
+        atexit.register(pynvml.nvmlShutdown)
         return True
     except Exception:
         return False
@@ -76,8 +78,10 @@ def _get_cpu_name() -> str:
             import winreg
             key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
                                  r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
-            name = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
-            winreg.CloseKey(key)
+            try:
+                name = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+            finally:
+                winreg.CloseKey(key)
         else:
             try:
                 with open("/proc/cpuinfo") as f:
@@ -96,7 +100,7 @@ def system_info() -> dict:
     """CPU / RAM 使用率"""
     try:
         import psutil
-        cpu = psutil.cpu_percent(interval=0.1)
+        cpu = psutil.cpu_percent(interval=None)
         mem = psutil.virtual_memory()
         cpu_name = _get_cpu_name()
         return {

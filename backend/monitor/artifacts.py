@@ -25,15 +25,16 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
     roots.extend([OUTPUT_DIR / "sample", OUTPUT_DIR])
 
     found: list[Path] = []
+    seen: set[Path] = set()
     for root in roots:
         if not root.exists():
             continue
         for p in sorted(root.rglob("*"),
                         key=lambda x: x.stat().st_mtime if x.is_file() else 0,
                         reverse=True):
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
-                if p not in found:
-                    found.append(p)
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p not in seen:
+                seen.add(p)
+                found.append(p)
                 if len(found) >= limit * 2:
                     break
         if len(found) >= limit:
@@ -48,6 +49,10 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
             rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
         except ValueError:
             rel = str(p)
+        # Security: validate resolved path stays within REPO_ROOT
+        resolved = p.resolve()
+        if not str(resolved).startswith(str(REPO_ROOT.resolve())):
+            continue
         result.append({
             "name": p.name,
             "url": f"/preview-image?path={rel}",

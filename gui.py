@@ -131,34 +131,45 @@ def launch():
         if avaliable:
             args.port = avaliable
         else:
-            log.error("port finding fallback error")
+            log.error("port finding fallback error / 端口查找失败，无可用端口")
+            sys.exit(1)
 
     log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
 
     # flash-attn status
     try:
         from importlib.metadata import version as pkg_version
-        fa_ver = pkg_version("flash_attn")
-        log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
+    except ImportError:
+        pkg_version = None
+
+    try:
+        fa_ver = pkg_version("flash_attn") if pkg_version else None
+        if fa_ver:
+            log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
+        else:
+            log.info("flash_attn: NOT FOUND / 未安装")
     except Exception:
         log.info("flash_attn: NOT FOUND / 未安装")
 
     # xformers status
     try:
-        xf_ver = pkg_version("xformers")
-        log.info(f"xformers: OK (version / 版本 {xf_ver})")
+        xf_ver = pkg_version("xformers") if pkg_version else None
+        if xf_ver:
+            log.info(f"xformers: OK (version / 版本 {xf_ver})")
+        else:
+            log.info("xformers: NOT FOUND / 未安装")
     except Exception:
         log.info("xformers: NOT FOUND / 未安装")
+
+    if args.listen:
+        args.host = "0.0.0.0"
+        args.tensorboard_host = "0.0.0.0"
 
     os.environ["ANIMA_HOST"] = args.host
     os.environ["ANIMA_PORT"] = str(args.port)
     os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)
     os.environ["ANIMA_DEV"] = "1" if args.dev else "0"
-
-    if args.listen:
-        args.host = "0.0.0.0"
-        args.tensorboard_host = "0.0.0.0"
 
     if args.enable_tageditor:
         run_tag_editor()

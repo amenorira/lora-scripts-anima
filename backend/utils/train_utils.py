@@ -124,8 +124,10 @@ def read_safetensors_metadata(path) -> Dict:
 
 
 def guess_model_type(path):
-    if path.endswith("safetensors"):
+    if path.endswith(".safetensors"):
         metadata = read_safetensors_metadata(path)
+        if metadata is None:
+            return ModelType.UNKNOWN
         model_keys = "\n".join(metadata.keys())
         for m in MODEL_SIGNATURE:
             if any([k in model_keys for k in m["signature"]]):
@@ -133,10 +135,12 @@ def guess_model_type(path):
 
         return ModelType.UNKNOWN
 
-    if path.endswith("pt") or path.endswith("ckpt"):
+    if path.endswith(".pt") or path.endswith(".ckpt"):
         with open(path, "rb") as f:
             content = f.read(1024 * 1000)
             return match_model_type_legacy(content)
+
+    return ModelType.UNKNOWN
 
 
 def validate_model(model_name: str, training_type: str = "sd-lora"):
@@ -248,10 +252,12 @@ def get_total_images(path, recursive=True):
         image_files = glob.glob(path + '/**/*.jpg', recursive=True)
         image_files += glob.glob(path + '/**/*.jpeg', recursive=True)
         image_files += glob.glob(path + '/**/*.png', recursive=True)
+        image_files += glob.glob(path + '/**/*.webp', recursive=True)
     else:
         image_files = glob.glob(path + '/*.jpg')
         image_files += glob.glob(path + '/*.jpeg')
         image_files += glob.glob(path + '/*.png')
+        image_files += glob.glob(path + '/*.webp')
     return image_files
 
 

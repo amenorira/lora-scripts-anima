@@ -82,9 +82,14 @@ class Task:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 stdout, stderr = self.process.communicate()
-            self.process.kill()
-            self.status = TaskStatus.TERMINATED
-            raise
+                self.status = TaskStatus.TERMINATED
+                raise
+            else:
+                # 内层重试成功，进程已结束，不要再 kill
+                retcode = self.process.poll()
+                self.status = TaskStatus.FINISHED
+                self.finished_at = time.time()
+                return subprocess.CompletedProcess(self.process.args, retcode, stdout, stderr)
         except Exception:
             self.process.kill()
             self.status = TaskStatus.TERMINATED
@@ -106,7 +111,13 @@ class Task:
         if stdout_file:
             kwargs["stdout"] = stdout_file
             kwargs["stderr"] = subprocess.STDOUT
-        self.process = subprocess.Popen(self.command, **kwargs)
+        try:
+            self.process = subprocess.Popen(self.command, **kwargs)
+        except Exception as e:
+            log.error(f"Failed to start process / 启动进程失败: {e}")
+            self.status = TaskStatus.TERMINATED
+            self.finished_at = time.time()
+            raise
 
     def terminate(self):
         try:
@@ -176,9 +187,11 @@ class TaskManager:
             self.tasks[task_id] = task
 
     def terminate_task(self, task_id: str) -> None:
+        task = None
         with self._lock:
-            if task_id in self.tasks:
-                self.tasks[task_id].terminate()
+            task = self.tasks.get(task_id)
+        if task:
+            task.terminate()
 
     def wait_for_process(self, task_id: str) -> None:
         task = None

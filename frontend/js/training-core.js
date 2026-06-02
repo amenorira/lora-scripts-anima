@@ -275,17 +275,17 @@ window.trainingCoreMixin = {
       const sf = field.showIf;
       const parentVal = this.form[sf.key];
       let condMet = false;
-      condAttrs = ` data-show-if-key="${sf.key}"`;
+      condAttrs = ` data-show-if-key="${this.escapeAttr(sf.key)}"`;
       if (sf.eq !== undefined) {
         condMet = String(parentVal) === String(sf.eq);
-        condAttrs += ` data-show-if-eq="${sf.eq}"`;
+        condAttrs += ` data-show-if-eq="${this.escapeAttr(sf.eq)}"`;
         if (sf.or && Array.isArray(sf.or)) {
           condMet = condMet || sf.or.some(function(v) { return String(parentVal) === String(v); });
-          condAttrs += ` data-show-if-or="${sf.or.join(',')}"`;
+          condAttrs += ` data-show-if-or="${this.escapeAttr(sf.or.join(','))}"`;
         }
       } else if (sf.neq !== undefined) {
         condMet = String(parentVal) !== String(sf.neq) && parentVal !== null && parentVal !== undefined && parentVal !== '';
-        condAttrs += ` data-show-if-neq="${sf.neq}"`;
+        condAttrs += ` data-show-if-neq="${this.escapeAttr(sf.neq)}"`;
       }
       condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
@@ -297,17 +297,17 @@ window.trainingCoreMixin = {
       const rf = field.readonlyIf;
       const parentVal = this.form[rf.key];
       let readonlyMet = false;
-      readonlyAttrs = ` data-readonly-if-key="${rf.key}"`;
+      readonlyAttrs = ` data-readonly-if-key="${this.escapeAttr(rf.key)}"`;
       if (rf.eq !== undefined) {
         readonlyMet = String(parentVal) === String(rf.eq);
-        readonlyAttrs += ` data-readonly-if-eq="${rf.eq}"`;
+        readonlyAttrs += ` data-readonly-if-eq="${this.escapeAttr(rf.eq)}"`;
         if (rf.or && Array.isArray(rf.or)) {
           readonlyMet = readonlyMet || rf.or.some(v => String(parentVal) === String(v));
-          readonlyAttrs += ` data-readonly-if-or="${rf.or.join(',')}"`;
+          readonlyAttrs += ` data-readonly-if-or="${this.escapeAttr(rf.or.join(','))}"`;
         }
       } else if (rf.neq !== undefined) {
         readonlyMet = String(parentVal) !== String(rf.neq) && parentVal !== null && parentVal !== undefined && String(parentVal) !== '';
-        readonlyAttrs += ` data-readonly-if-neq="${rf.neq}"`;
+        readonlyAttrs += ` data-readonly-if-neq="${this.escapeAttr(rf.neq)}"`;
       }
       if (readonlyMet) {
         readonlyAttrs += ` data-readonly-if-active="1"`;
@@ -317,7 +317,7 @@ window.trainingCoreMixin = {
         }
       }
       if (rf.reasonKey) {
-        readonlyAttrs += ` data-readonly-if-reason="${rf.reasonKey}"`;
+        readonlyAttrs += ` data-readonly-if-reason="${this.escapeAttr(rf.reasonKey)}"`;
       }
     }
 
@@ -638,7 +638,10 @@ window.trainingCoreMixin = {
   setField(key, value) {
     const oldVal = this.form[key];
     if (oldVal === value) return;
-    if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) value = Number(value);
+    if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) {
+      const numVal = Number(value);
+      if (!isNaN(numVal)) value = numVal;
+    }
 
     // Enforce min/max bounds on number fields
     const field = this.findFieldDef(key);

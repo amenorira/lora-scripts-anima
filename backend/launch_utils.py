@@ -2,6 +2,7 @@ import locale
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,11 @@ from typing import Optional
 
 from importlib import metadata as importlib_metadata
 
+try:
+    from packaging.version import Version as _Version
+except ImportError:
+    _Version = None
+
 from backend.log import log
 
 python_bin = sys.executable
@@ -23,7 +29,11 @@ def base_dir_path():
 
 
 def find_windows_git():
-    possible_paths = ["git\\bin\\git.exe", "git\\cmd\\git.exe", "Git\\mingw64\\libexec\\git-core\\git.exe", "C:\\Program Files\\Git\\cmd\\git.exe"]
+    possible_paths = [
+        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Git", "cmd", "git.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"), "Git", "cmd", "git.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "cmd", "git.exe"),
+    ]
     for path in possible_paths:
         if os.path.exists(path):
             return path
@@ -168,10 +178,22 @@ def is_installed(package, friendly: str = None):
                 # log.debug(f'Package version found: {pkg_name} {version}')
 
                 if pkg_version is not None:
-                    if '>=' in pkg:
-                        ok = version >= pkg_version
-                    else:
-                        ok = version == pkg_version
+                    try:
+                        if _Version is not None:
+                            # Use proper version comparison
+                            if '>=' in pkg:
+                                ok = _Version(version) >= _Version(pkg_version)
+                            else:
+                                ok = _Version(version) == _Version(pkg_version)
+                        else:
+                            # Fallback to string comparison if packaging unavailable
+                            if '>=' in pkg:
+                                ok = version >= pkg_version
+                            else:
+                                ok = version == pkg_version
+                    except Exception:
+                        # Version parsing failed, assume mismatch
+                        ok = False
 
                     if not ok:
                         log.info(f'Package wrong version: {pkg_name} {version} required {pkg_version}')
@@ -255,8 +277,9 @@ def setup_onnxruntime(
 
 
 def run_pip(command, desc=None, live=False):
-    # shell=True is safe here: command is constructed internally from trusted arguments
-    return run(f'"{python_bin}" -m pip {command}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=True)
+    # Use shell=False with list args to avoid shell injection
+    cmd = [python_bin, "-m", "pip"] + shlex.split(command)
+    return run(cmd, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=False)
 
 
 def pip_install(package: str, version: Optional[str] = None, index_url: Optional[str] = None, live: bool = True):

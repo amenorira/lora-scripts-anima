@@ -27,13 +27,14 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         return None
 
     log_dir_str = str(log_dir)
-    event_files = sorted(log_dir.rglob("events.out.tfevents.*"),
-                         key=lambda p: p.stat().st_mtime, reverse=True)
+    event_files = list(log_dir.rglob("events.out.tfevents.*"))
     if not event_files:
         _tb_cache.pop(log_dir_str, None)
         return None
 
-    latest_mtime = max(ef.stat().st_mtime for ef in event_files)
+    ef_with_mtime = [(p, p.stat().st_mtime) for p in event_files]
+    ef_with_mtime.sort(key=lambda x: x[1], reverse=True)
+    latest_mtime = ef_with_mtime[0][1]
     now = time.time()
 
     if log_dir_str in _tb_cache:
@@ -217,9 +218,10 @@ def parse_log_progress(lines: list[str]) -> dict:
     if ep_m:
         info["epoch"] = f"{ep_m.group(1)}/{ep_m.group(2)}" if ep_m.group(2) else ep_m.group(1)
 
-    speed_m = re.findall(r"([0-9.]+)\s*(?:it/s|s/it)", text)
+    speed_m = list(re.finditer(r"([0-9.]+)\s*(it/s|s/it)", text))
     if speed_m:
-        info["speed"] = speed_m[-1] + ("it/s" if "it/s" in text else "s/it")
+        last = speed_m[-1]
+        info["speed"] = last.group(1) + last.group(2)
 
     error_patterns = [
         r"\btraceback\b", r"cuda out of memory",

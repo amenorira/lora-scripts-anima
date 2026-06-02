@@ -105,8 +105,11 @@ def _normalize_network_args(values: Any) -> list[str]:
             continue
         if value.lower() in {"undefined", "null", "nan"}:
             continue
-        if math.isnan(float(value)) if _is_float(value) else False:
-            continue
+        try:
+            if math.isnan(float(value)):
+                continue
+        except (ValueError, TypeError):
+            pass
 
         normalized = f"{key}={value}"
         if key in key_index:
@@ -172,8 +175,6 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     merged_network_args: list[str] = []
     if isinstance(source.get("network_args"), list):
         merged_network_args.extend(source["network_args"])
-    if isinstance(source.get("network_args_custom"), list):
-        merged_network_args.extend(source.pop("network_args_custom"))
 
     normalized_network_args = _normalize_network_args(merged_network_args)
     if normalized_network_args:
@@ -269,7 +270,11 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         # 根据模型架构调整学习率（仅当前端未正确预填时）
         model_type = source.get("model_train_type", "sd-lora")
         lr = source.get("learning_rate", "1.0")
-        if model_type == "anima-lora" and lr == "1.0":
+        try:
+            lr_val = float(lr)
+        except (ValueError, TypeError):
+            lr_val = 1.0
+        if model_type == "anima-lora" and abs(lr_val - 1.0) < 1e-6:
             source["learning_rate"] = "0.1"
             warnings.append(
                 "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"

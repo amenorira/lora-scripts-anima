@@ -21,14 +21,14 @@ from backend.tasks import tm
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
 
 
-def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int:
+def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int | None:
     """查找可用端口（用于 monitor）"""
     for offset in range(max_attempts):
         port = start + offset
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("127.0.0.1", port)) != 0:
                 return port
-    return start  # fallback
+    return None
 
 
 def _truthy_env(name: str) -> bool:
@@ -198,7 +198,10 @@ def run_train(
             _write_error_tail(log_file, run_dir, task_id_short)
 
     coro = asyncio.to_thread(_run)
-    asyncio.create_task(coro)
+    task_handle = asyncio.create_task(coro)
+    task_handle.add_done_callback(
+        lambda t: log.error(f"Training background task crashed / 后台训练任务异常: {t.exception()}") if t.exception() else None
+    )
 
     log.info(f"Training started / 训练已启动: {task_id_short} ({Path(toml_path).name})")
 

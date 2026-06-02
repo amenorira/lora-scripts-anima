@@ -24,7 +24,8 @@ document.addEventListener('alpine:init', () => {
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
-    _progressTimer: null,
+    _progressInterval: null,
+    _progressResetTimer: null,
     _progressStartTime: 0,
 
     // UI Settings
@@ -159,7 +160,8 @@ document.addEventListener('alpine:init', () => {
 
     // ── Progress Bar ───────────────────────────────────────
     startProgress() {
-      clearInterval(this._progressTimer);
+      clearInterval(this._progressInterval);
+      clearTimeout(this._progressResetTimer);
       this._progressStartTime = Date.now();
       this.progressPercent = 0;
       var stages = (window.UI_CONSTANTS && window.UI_CONSTANTS.PROGRESS_STAGES) || [{ duration: 300, max: 30 }, { duration: 1700, max: 65 }, { duration: Infinity, max: 90 }];
@@ -167,7 +169,7 @@ document.addEventListener('alpine:init', () => {
       var t2 = stages[1].duration, m2 = stages[1].max;
       var maxPct = stages[2].max;
 
-      this._progressTimer = setInterval(() => {
+      this._progressInterval = setInterval(() => {
         var elapsed = Date.now() - this._progressStartTime;
         if (elapsed < t1) {
           this.progressPercent = Math.round((elapsed / t1) * m1);
@@ -181,9 +183,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     finishProgress() {
-      clearInterval(this._progressTimer);
+      clearInterval(this._progressInterval);
+      this._progressInterval = null;
       this.progressPercent = 100;
-      this._progressTimer = setTimeout(() => {
+      this._progressResetTimer = setTimeout(() => {
         this.progressPercent = 0;
       }, 900);
     },
