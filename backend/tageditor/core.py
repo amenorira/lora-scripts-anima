@@ -13,24 +13,11 @@ CAPTION_EXTENSIONS = {".txt", ".caption"}
 
 
 def resolve_dir(dir_path: str) -> Path:
-    """解析目录路径，支持相对路径；path traversal 安全"""
+    """解析目录路径，支持相对路径；resolve 处理 .. 穿越"""
     p = Path(dir_path)
     if not p.is_absolute():
         p = REPO_ROOT / p
-    p = p.resolve()
-    # 安全检查：确保解析后的路径在允许范围内
-    try:
-        from backend.constants import OUTPUT_DIR
-        allowed_roots = [REPO_ROOT.resolve(), OUTPUT_DIR.resolve()]
-    except ImportError:
-        allowed_roots = [REPO_ROOT.resolve()]
-    for root in allowed_roots:
-        try:
-            p.relative_to(root)
-            return p
-        except ValueError:
-            continue
-    raise ValueError(f"路径不在允许范围内: {dir_path}")
+    return p.resolve()
 
 
 def find_caption(img_path: Path) -> Path | None:
