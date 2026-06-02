@@ -53,6 +53,7 @@ window.tagEditorMixin = {
   tagEditorTagCountMax: '',
   // Regex search
   tagEditorUseRegex: false,
+  tagEditorRegexError: false,
   // Batch preview
   tagEditorBatchPreview: null,
   // Right-click context menu
@@ -338,6 +339,7 @@ window.tagEditorMixin = {
     var countMin = parseInt(this.tagEditorTagCountMin) || 0;
     var countMax = parseInt(this.tagEditorTagCountMax);
     var useRegex = this.tagEditorUseRegex;
+    this.tagEditorRegexError = false;
 
     if (q) {
       if (useRegex) {
@@ -346,7 +348,7 @@ window.tagEditorMixin = {
           imgs = imgs.filter(function(img) {
             return re.test(img.name || '') || re.test(img.tags || '');
           });
-        } catch (e) { /* invalid regex, fall through */ }
+        } catch (e) { this.tagEditorRegexError = true; }
       } else {
         imgs = imgs.filter(function(img) {
           return (img.name && img.name.toLowerCase().indexOf(q) !== -1) ||
@@ -446,6 +448,7 @@ window.tagEditorMixin = {
     this.tagEditorTagCountMin = '';
     this.tagEditorTagCountMax = '';
     this.tagEditorUseRegex = false;
+    this.tagEditorRegexError = false;
     this.tagEditorPage = 1;
   },
   tagEditorGetFilteredTagFreq() {
@@ -679,12 +682,6 @@ window.tagEditorMixin = {
       self._teUpdateFreqIncremental(oldT, newT);
       delete self._tePendingTextEdits[imgPath];
     }, 500);
-  },
-
-  // ── Token Counter ──────────────────────────────────────
-  tagEditorTokenCount(tags) {
-    if (!tags) return 0;
-    return tags.split(',').filter(function(t) { return t.trim(); }).length;
   },
 
   // ── Detail View (drawer mode) ─────────────────────────

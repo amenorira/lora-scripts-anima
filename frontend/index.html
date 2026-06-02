@@ -526,6 +526,7 @@
                   </div>
                   <!-- Regex toggle -->
                   <button class="te-regex-toggle" :class="tagEditorUseRegex ? 'active' : ''" @click="tagEditorUseRegex = !tagEditorUseRegex; tagEditorRecompute()" title="Toggle regex search">.*</button>
+                  <span x-show="tagEditorRegexError" style="color:var(--danger);font-size:10px;margin-left:2px" x-text="t('tagEditor.regexError') || 'Invalid regex'"></span>
                   <span style="width:1px;height:16px;background:var(--border-default)"></span>
                   <!-- Tag count range filter -->
                   <div class="te-range-filter">
@@ -603,7 +604,7 @@
                       <option value="filtered" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'">Filtered</option>
                     </select>
                     <span style="width:1px;height:14px;background:var(--border-default);margin:0 4px"></span>
-                    <button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 8px" @click="tagEditorPreviewBatchOp('add_prefix')" x-text="t('tagEditor.preview') || 'Preview'"></button>
+                    <button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 8px" @click="tagEditorPreviewBatchOp((tagEditorBatchVal && tagEditorBatchVal2) ? 'find_replace' : 'add_prefix')" x-text="t('tagEditor.preview') || 'Preview'"></button>
                   </div>
                   <div class="te-batch-buttons">
                     <button class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix')" x-text="t('tagEditor.addPrefix')">Prefix</button>
@@ -626,7 +627,7 @@
                   <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" :data-te-path="img.path" @click="tagEditorCardClick($event, img.path)" @dblclick="tagEditorCardDblClick($event, img.path)">
                     <div class="te-card-thumb">
                       <img :src="img.thumbnail" loading="lazy" :alt="img.name">
-                      <div class="te-card-thumb-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg></div>
+                      <div class="te-card-thumb-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
                       <div class="te-card-check" @click.stop>
                         <input type="checkbox" :checked="tagEditorIsSelected(img.path)" @click.stop="tagEditorToggleSelect(img.path, $event)">
                       </div>
@@ -634,7 +635,7 @@
                     <div class="te-card-info">
                       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
                         <div class="te-card-name" style="flex:1;min-width:0" x-text="img.name" :title="img.name"></div>
-                        <span class="te-token-badge" :class="tagEditorTokenCount(img.tags) > 75 ? 'warn' : ''" x-text="tagEditorTokenCount(img.tags)" style="flex-shrink:0"></span>
+
                         <div class="te-copy-paste-bar" style="flex-shrink:0">
                           <button class="te-copy-paste-btn" @click.stop="tagEditorCopyTags(img.path)" title="Ctrl+C" aria-label="Copy tags">📋</button>
                           <button class="te-copy-paste-btn" @click.stop="tagEditorPasteTags(img.path)" title="Ctrl+V" :disabled="tagEditorCopiedTags.length === 0" aria-label="Paste tags">📄</button>
@@ -709,7 +710,7 @@
                   <button class="te-logic-btn" :class="tagEditorDetailView === 'chip' ? 'active' : ''" @click="tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')">Chip</button>
                   <button class="te-logic-btn" :class="tagEditorDetailView === 'text' ? 'active' : ''" @click="tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')">Text</button>
                   <span style="flex:1"></span>
-                  <span class="te-token-badge" :class="tagEditorTokenCount(tagEditorDetailImg().tags) > 75 ? 'warn' : ''" x-text="tagEditorTokenCount(tagEditorDetailImg().tags) + ' tags'"></span>
+
                 </div>
                 <div class="te-detail-drawer-body">
                   <!-- Chip view -->

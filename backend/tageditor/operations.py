@@ -27,7 +27,8 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
             find = args.get("find", "")
             replace = args.get("replace", "")
             if find:
-                return tags.replace(find, replace), None
+                lst = [t.replace(find, replace) if find in t else t for t in tag_list(tags)]
+                return tag_str(lst), None
             return tags, None
 
         elif operation == "regex_replace":

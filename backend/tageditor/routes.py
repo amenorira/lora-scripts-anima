@@ -221,7 +221,10 @@ async def save_all_tags(data: dict):
             continue
         write_tags(cap_path, tags)
         saved += 1
-    _invalidate_cache(d) if saved > 0 else None
+    if saved > 0:
+        dirs = {Path(item["path"]).parent for item in images if item.get("path")}
+        for _d in dirs:
+            _invalidate_cache(_d)
     return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
 
 

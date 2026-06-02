@@ -1758,10 +1758,6 @@ input[type="range"]::-webkit-slider-thumb {
 .te-pill { font-size: 10px; padding: 1px 5px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); cursor: pointer; transition: background 0.1s; white-space: nowrap; line-height: 1.5; }
 .te-pill:hover { background: var(--danger); color: #fff; }
 
-/* Token count badge */
-.te-token-badge { font-size: 9px; padding: 1px 5px; border-radius: 8px; background: var(--bg-surface-raised); color: var(--text-tertiary); font-weight: 600; margin-left: auto; flex-shrink: 0; }
-.te-token-badge.warn { background: rgba(234, 88, 12, 0.12); color: var(--warning); }
-
 /* Card add tag row */
 .te-card-add-row { display: flex; gap: 3px; margin-bottom: 4px; }
 .te-card-add-input { flex: 1; min-width: 0; font-size: 10.5px; padding: 2px 6px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-input); color: var(--text-primary); outline: none; }
