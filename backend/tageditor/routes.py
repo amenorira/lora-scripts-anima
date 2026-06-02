@@ -25,7 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from backend.constants import REPO_ROOT, OUTPUT_DIR
+from backend.constants import REPO_ROOT
 from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
@@ -162,19 +162,6 @@ async def filter_images(data: dict):
                                            "total": len(images), "images": matched}}
 
 
-def _is_path_allowed(path: Path) -> bool:
-    """Check that a resolved path is within REPO_ROOT or the output directory."""
-    resolved = path.resolve()
-    allowed_roots = [REPO_ROOT.resolve(), OUTPUT_DIR.resolve()]
-    for root in allowed_roots:
-        try:
-            resolved.relative_to(root)
-            return True
-        except ValueError:
-            continue
-    return False
-
-
 @router.post("/tageditor/save")
 async def save_image_tags(data: dict):
     """保存单张图片的标签"""
@@ -183,8 +170,6 @@ async def save_image_tags(data: dict):
     if not img_path or not os.path.isfile(img_path):
         return {"status": "error", "message": "图片路径无效"}
     p = Path(img_path)
-    if not _is_path_allowed(p):
-        return {"status": "error", "message": "路径不在允许范围内 / Path not in allowed directory"}
     cap = find_caption(p) or p.with_suffix(".txt")
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
@@ -206,9 +191,6 @@ async def save_all_tags(data: dict):
         if not img_path or not os.path.isfile(img_path):
             continue
         p = Path(img_path)
-        # 路径遍历检查
-        if not _is_path_allowed(p):
-            continue
         cap_path = find_caption(p) or p.with_suffix(".txt")
         # 安全检查：确保标签文件与图片在同一目录下
         cap_resolved = cap_path.resolve()
@@ -359,16 +341,9 @@ async def move_or_delete_files(data: dict):
             result["errors"].append(f"不存在: {img_path.name}")
             continue
 
-        if not _is_path_allowed(img_path):
-            result["errors"].append(f"路径拒绝: {img_path.name}")
-            continue
-
         try:
             if action == "move":
                 dest_path = Path(dest)
-                if not _is_path_allowed(dest_path.resolve()):
-                    result["errors"].append(f"目标路径拒绝: {dest}")
-                    continue
                 dest_path.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(img_path), str(dest_path / img_path.name))
                 if delete_caption:
@@ -415,8 +390,6 @@ async def restore_from_backup(data: dict):
     d = resolve_dir(dir_path)
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
-    if not _is_path_allowed(d):
-        return {"status": "error", "message": "路径不在允许范围内"}
 
     restored = 0
     for ext in {".txt", ".caption"}:
@@ -464,7 +437,6 @@ async def download_dataset_zip(dir: str = Query("")):
                 files_to_zip.append((cap, cap_arc))
 
     import asyncio
-    from concurrent.futures import ThreadPoolExecutor
 
     def _write_zip():
         buf = io.BytesIO()
@@ -493,14 +465,9 @@ async def tag_editor_thumbnail(path: str = Query("")):
     import mimetypes
 
     decoded = urllib.parse.unquote(path)
-    p = (REPO_ROOT / decoded).resolve()
-
-    # Path traversal protection: ensure resolved path is within REPO_ROOT
-    try:
-        p.relative_to(REPO_ROOT)
-    except ValueError:
-        from fastapi.responses import PlainTextResponse
-        return PlainTextResponse("", status_code=404)
+    p = Path(decoded)
+    if not p.is_absolute():
+        p = (REPO_ROOT / decoded).resolve()
 
     if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
         from fastapi.responses import PlainTextResponse

@@ -92,14 +92,19 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
             new_tags_list = args.get("new_tags", [])
             if len(old_tags) != len(new_tags_list):
                 return tags, "old_tags 和 new_tags 长度不匹配"
+            # Build dict for O(1) lookup instead of O(n) .index()
+            tag_map = {}
+            for i, old in enumerate(old_tags):
+                if old:
+                    tag_map[old] = new_tags_list[i]
             lst = tag_list(tags)
             new_list = []
             for t in lst:
-                try:
-                    idx = old_tags.index(t)
-                    if new_tags_list[idx]:
-                        new_list.append(new_tags_list[idx])
-                except ValueError:
+                if t in tag_map:
+                    mapped = tag_map[t]
+                    if mapped:
+                        new_list.append(mapped)
+                else:
                     new_list.append(t)
             for i, (old, new) in enumerate(zip(old_tags, new_tags_list)):
                 if not old and new and new not in new_list:
