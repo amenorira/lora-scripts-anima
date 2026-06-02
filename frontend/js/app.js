@@ -20,6 +20,7 @@ document.addEventListener('alpine:init', () => {
     showThemeDropdown: false,
     showLangDropdown: false,
     sidebarCollapsed: false,
+    rightPanelOpen: false,
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
@@ -107,6 +108,10 @@ document.addEventListener('alpine:init', () => {
 
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         if (this.theme === 'auto') this.resolveTheme();
+      });
+
+      window.addEventListener('resize', () => {
+        if (window.innerWidth > 1100) this.rightPanelOpen = false;
       });
 
       this.buildRouteContent();
@@ -284,6 +289,7 @@ document.addEventListener('alpine:init', () => {
     onLocaleChange() {
       I18N.setLocale(this.locale);
       this.showLangDropdown = false;
+      document.documentElement.lang = this.locale === 'zh-CN' ? 'zh-CN' : 'en';
     },
 
     // ── Toast ──────────────────────────────────────────────
@@ -291,6 +297,8 @@ document.addEventListener('alpine:init', () => {
       const c = document.getElementById('toastContainer');
       const el = document.createElement('div');
       el.className = 'toast';
+      el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+      el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
       if (type) {
         el.classList.add(type);
         const icon = type === 'error'

@@ -317,7 +317,12 @@
     "disconnectedMinutes": "{n} 分 {s} 秒前",
     "disconnectedHours": "{n} 小时 {s} 分前",
     "clear": "清除",
-    "adapterWarnings": "配置警告"
+    "adapterWarnings": "配置警告",
+    "fieldRequired": "此字段为必填项",
+    "formErrors": "请在开始训练前修正表单错误",
+    "minBucketResoError": "最小分辨率不能超过最大分辨率",
+    "minTimestepError": "最小时间步必须小于最大时间步",
+    "starting": "启动中..."
   },
   "preset": {
     "title": "预设管理",

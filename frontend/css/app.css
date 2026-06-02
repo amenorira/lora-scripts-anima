@@ -898,6 +898,28 @@ input[type="checkbox"]:focus-visible {
 .field-readonly .field-input-wrap .field-input-actions .btn-icon { opacity: 0.3; pointer-events: none; }
 .field-readonly .btn-menu { opacity: 0.3; pointer-events: none; }
 
+/* ── Field Validation ───────────────────────────────────── */
+.field-required {
+  color: var(--danger);
+  margin-left: 2px;
+  font-weight: 700;
+}
+.field-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.field-error::before {
+  content: '⚠';
+  font-size: 12px;
+}
+.field.field-error-state {
+  border-left-color: var(--danger);
+}
+
 /* ── Legacy field layout (settings, about, tagger pages) ── */
 .field-left { flex: 1; min-width: 0; padding-top: 1px; }
 .field-label { font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4; }
@@ -1274,6 +1296,14 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 .status-indicator.running { background: var(--danger); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+/* By default, toggle button and backdrop are hidden on larger screens */
+.panel-toggle-btn {
+  display: none;
+}
+.panel-backdrop {
+  display: none;
+}
 
 /* ── Page Progress Bar (determinate 0→100%) ─────────────── */
 .page-progress {
@@ -1979,9 +2009,59 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 @media (min-width: 1600px) {
   :root { --panel-w: clamp(380px, 34vw, 580px); }
 }
-/* Medium screens: hide right panel when space is tight */
+/* Medium screens: slide right panel in as an overlay instead of hiding it */
 @media (max-width: 1100px) {
-  .right-panel { display: none; }
+  .right-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(380px, 85vw);
+    min-width: unset;
+    transform: translateX(100%);
+    z-index: 100;
+    transition: transform 0.3s var(--ease-out);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+    border-left: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    display: flex; flex-direction: column;
+  }
+  .right-panel.open {
+    transform: translateX(0);
+  }
+  /* Backdrop overlay when panel is open */
+  .panel-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 99;
+  }
+  .panel-backdrop.open {
+    display: block;
+  }
+  /* Toggle button to open/close the panel */
+  .panel-toggle-btn {
+    display: flex !important;
+    position: fixed;
+    right: 12px;
+    bottom: 24px;
+    z-index: 101;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    transition: transform 0.2s var(--ease-out);
+  }
+  .panel-toggle-btn:hover {
+    transform: scale(1.08);
+  }
 }
 @media (max-width: 700px) {
   .sidebar { width: 52px; min-width: 52px; }
@@ -2008,6 +2088,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .sidebar-dropdown-menu button { color: var(--text-sidebar); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: rgba(255,255,255,0.08); color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
+[data-theme="dark"] .panel-backdrop.open {
+  background: rgba(0,0,0,0.55);
+}
 
 /* ================================================================
    Anima Custom Select — 2026-style dropdown
@@ -2505,6 +2588,52 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .env-candidate-item:hover { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
 [data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ── Accessibility ─────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 14px;
+  z-index: 10001;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.skip-link:focus {
+  left: 14px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .page-progress-fill { transition: none; }
+}
+
+@media (forced-colors: active) {
+  input[type="checkbox"] {
+    appearance: auto;
+    -webkit-appearance: auto;
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════
    End of anima-ui design system

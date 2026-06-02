@@ -6,6 +6,7 @@
 window.taggerMixin = {
   // ── State ──────────────────────────────────────────────
   taggerRunning: false,
+  taggerStarting: false,
   taggerPollTimer: null,
   taggerTaskId: null,        // 当前运行中的 task_id，用于停止
   _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
@@ -171,7 +172,7 @@ window.taggerMixin = {
     // ════════════════════════════════════════════════════════
     `<div class="card"><div class="card-header">${this.t('tagger.basicSettings')}</div>` +
       // 图片文件夹路径 — 全宽布局（标签在上，输入框在下，参照训练界面）
-      `<div class="field"><div class="field-info" style="margin-bottom:6px"><div class="field-key">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-input-row"><div class="field-input-wrap"><input type="text" id="tagger-path" placeholder="./train/aki"><div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}">${_folderSvg}</button></div></div></div></div>` +
+      `<div class="field"><div class="field-info" style="margin-bottom:6px"><div class="field-key">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-input-row"><div class="field-input-wrap"><input type="text" id="tagger-path" placeholder="./train/aki"><div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}" aria-label="Browse local files">${_folderSvg}</button></div></div></div></div>` +
       _fieldRow('tagger.model', 'tagger.modelDesc', modelSelect) +
       // 通用阈值 — 仅非 Camie 非 CL 模型可见
       _fieldRow('tagger.threshold', 'tagger.thresholdDesc',
@@ -285,6 +286,7 @@ window.taggerMixin = {
       }
     }
 
+    this.taggerStarting = true;
     this.taggerRunning = true;
     const panel = this._getTaggerLogPanel();
     if (panel) { panel.innerHTML = `<div style="color:var(--accent)">${this.t('tagger.running')}</div>`; }
@@ -316,6 +318,7 @@ window.taggerMixin = {
       this.toast(this.t('common.failed')+': '+(e.name==='AbortError'?'Timeout':e.message));
       this.taggerRunning = false;
     }
+    this.taggerStarting = false;
   },
 
   async pollTaggerProgress(taskId) {

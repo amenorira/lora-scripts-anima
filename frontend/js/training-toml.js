@@ -7,6 +7,7 @@ window.trainingTomlMixin = {
   tomlRaw: '',
   tomlHighlighted: '',
   isTraining: false,
+  trainingStarting: false,
   isIdle: true,
   taskId: null,
   statusText: 'Idle',
@@ -205,6 +206,12 @@ window.trainingTomlMixin = {
   async startTraining() {
     if (this.isTraining) return;
 
+    // Form validation before starting
+    if (!this.validateForm()) {
+      this.toast(this.t('common.formErrors') || 'Please fix form errors before starting training', 'error');
+      return;
+    }
+
     const trainType = this.form.model_train_type || 'anima-lora';
 
     // Validation: Check required fields based on train type
@@ -219,6 +226,7 @@ window.trainingTomlMixin = {
       }
     }
 
+    this.trainingStarting = true;
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
 
@@ -291,6 +299,7 @@ window.trainingTomlMixin = {
         }
       }
     } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+    this.trainingStarting = false;
   },
 
   async stopTraining() {

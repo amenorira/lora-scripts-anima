@@ -317,7 +317,12 @@
     "disconnectedMinutes": "{n}m {s}s ago",
     "disconnectedHours": "{n}h {s}m ago",
     "clear": "Clear",
-    "adapterWarnings": "Configuration Warnings"
+    "adapterWarnings": "Configuration Warnings",
+    "fieldRequired": "This field is required",
+    "formErrors": "Please fix form errors before starting training",
+    "minBucketResoError": "Min resolution cannot exceed max resolution",
+    "minTimestepError": "Min timestep must be less than max timestep",
+    "starting": "Starting..."
   },
   "preset": {
     "title": "Preset Management",

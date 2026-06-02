@@ -9,6 +9,7 @@ window.trainingCoreMixin = {
   formDefaults: {},
   formHistory: [],
   formHistoryIdx: -1,
+  formErrors: {},
 
   _formSaveTimer: null,
   _localeChangeHandler: null,
@@ -184,6 +185,7 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = field.hintKey ? this.t(field.hintKey) : '';
+    const requiredMark = field.required ? '<span class="field-required" aria-hidden="true">*</span>' : '';
     const dataKey = field.key;
     const isToggle = field.type === 'toggle';
     // Text/textarea/path fields get their input on a separate row (full-width)
@@ -255,7 +257,7 @@ window.trainingCoreMixin = {
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
     if (field.role && field.role.startsWith('file-')) {
-      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" title="Local picker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
+      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" title="Local picker" aria-label="Browse local files"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" title="Built-in browser" aria-label="Search built-in models"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;
     }
@@ -327,11 +329,11 @@ window.trainingCoreMixin = {
     let fullWidthRow = '';
     if (isFullWidth) {
       // Textarea / path: info on top, input full-width below (outside field-row)
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}</div><div class="field-desc">${label}</div></div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}</div></div>`;
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}</div><div class="field-desc">${label}</div></div><div class="field-control">${controlHtml}</div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}</div></div><div class="field-control">${controlHtml}</div>`;
     }
 
     // ── Assemble ──
@@ -345,6 +347,7 @@ window.trainingCoreMixin = {
       </div>
       ${fullWidthRow}
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
+      ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
       ${readonlyWarnHtml}
     </div>`;
   },
@@ -636,9 +639,28 @@ window.trainingCoreMixin = {
     const oldVal = this.form[key];
     if (oldVal === value) return;
     if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) value = Number(value);
+
+    // Enforce min/max bounds on number fields
+    const field = this.findFieldDef(key);
+    if (field && field.type === 'number') {
+      const numVal = Number(value);
+      if (!isNaN(numVal)) {
+        if (field.min !== undefined && numVal < field.min) value = field.min;
+        if (field.max !== undefined && numVal > field.max) value = field.max;
+      }
+    }
+
     this.form[key] = value;
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
+
+    // Clear error for this field on change and re-render to update UI
+    if (this.formErrors && this.formErrors[key]) {
+      this.formErrors[key] = null;
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
+      return;
+    }
+    this.updateToml();
   },
 
   stepField(key, delta) {
@@ -725,6 +747,45 @@ window.trainingCoreMixin = {
     this._applyInitialAutoValues();
     this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
     this.updateReadonlyStates();
+  },
+
+  // ── Validation ────────────────────────────────────────
+  validateForm() {
+    const errors = {};
+    // Check all required fields
+    const sections = this._allSections();
+    for (const section of sections) {
+      for (const field of section.fields) {
+        if (!field.required) continue;
+        const val = this.form[field.key];
+        if (val === undefined || val === null || val === '') {
+          errors[field.key] = this.t('common.fieldRequired') || 'This field is required';
+        }
+      }
+    }
+    // Cross-field: min_bucket_reso <= max_bucket_reso
+    if (this.form.enable_bucket) {
+      const minR = Number(this.form.min_bucket_reso);
+      const maxR = Number(this.form.max_bucket_reso);
+      if (!isNaN(minR) && !isNaN(maxR) && minR > maxR) {
+        errors.min_bucket_reso = this.t('common.minBucketResoError') || 'Min resolution cannot exceed max resolution';
+      }
+    }
+    // Cross-field: min_timestep < max_timestep (Anima)
+    if (this.form.min_timestep !== undefined && this.form.max_timestep !== undefined) {
+      const minT = Number(this.form.min_timestep);
+      const maxT = Number(this.form.max_timestep);
+      if (!isNaN(minT) && !isNaN(maxT) && minT >= maxT) {
+        errors.min_timestep = this.t('common.minTimestepError') || 'Min timestep must be less than max timestep';
+      }
+    }
+
+    this.formErrors = errors;
+    const hasErrors = Object.keys(errors).length > 0;
+    if (hasErrors) {
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
+    }
+    return !hasErrors;
   },
 
   // ── File Pickers ───────────────────────────────────────
