@@ -2076,6 +2076,9 @@ input[type="range"]::-webkit-slider-thumb {
 .w-full { width: 100%; }
 
 .btn:disabled, .btn[disabled] { opacity: 0.40; cursor: not-allowed; pointer-events: none; }
+
+/* ── Modal config-list-item borders restored (items now wrapped in <div>) ── */
+.modal .config-list-item + .config-list-item { border-top: 1px solid var(--border-default); }
 input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; background: var(--bg-surface-raised); }
 
 /* ── Training form width constraint (centered, prevents over-stretching on wide screens) ── */
