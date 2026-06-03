@@ -17,6 +17,7 @@ window.trainingPresetsMixin = {
   presetsLoading: false,
   currentPreset: null,
   currentPresetName: '',
+  previousPresetData: null,
 
   // ── Param Save/Load (server presets) ──────────────────
   openSavePresetModal() {
@@ -216,6 +217,48 @@ window.trainingPresetsMixin = {
     if (idx < 0) idx = 0;
     idx = (idx + dir + this.presets.length) % this.presets.length;
     this.applyPreset(this.presets[idx]);
+  },
+
+  switchPresetWithDiff(dir) {
+    if (this.presets.length < 2) return;
+    const oldData = this.currentPreset && this.currentPreset.data ? { ...this.currentPreset.data } : null;
+    this.switchPreset(dir);
+    const newPreset = this.currentPreset;
+    if (oldData && newPreset && newPreset.data) {
+      const changes = this.computeChanges(oldData, newPreset.data);
+      if (changes.length > 0) {
+        const name = (newPreset.metadata && newPreset.metadata.name) || '';
+        this.toast(this._formatSwitchToast(changes, name));
+      }
+    }
+  },
+
+  computeChanges(oldData, newData) {
+    const changes = [];
+    const allKeys = new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]);
+    for (const k of allKeys) {
+      const ov = oldData[k];
+      const nv = newData[k];
+      if (ov === undefined) { changes.push({ key: k, type: 'added', newVal: nv }); }
+      else if (nv === undefined) { changes.push({ key: k, type: 'removed', oldVal: ov }); }
+      else if (String(ov) !== String(nv)) { changes.push({ key: k, type: 'modified', oldVal: ov, newVal: nv }); }
+    }
+    return changes;
+  },
+
+  _formatSwitchToast(changes, name) {
+    const t = this.t.bind(this);
+    const lines = changes.slice(0, 5).map(c => {
+      if (c.type === 'modified') {
+        return c.key + ': ' + String(c.oldVal) + ' -> ' + String(c.newVal);
+      } else if (c.type === 'added') {
+        return '+ ' + c.key + ': ' + String(c.newVal) + ' (' + t('preset.diff.added') + ')';
+      } else {
+        return '- ' + c.key + ': ' + String(c.oldVal);
+      }
+    });
+    if (changes.length > 5) lines.push('...' + t('preset.andMore').replace('{n}', changes.length - 5));
+    return t('preset.switched') + ' ' + name + '\n' + lines.join('\n');
   },
 
   clearPreset() {

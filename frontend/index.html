@@ -300,8 +300,16 @@
             <h1 class="page-title" x-text="pageTitle">Training</h1>
             <span class="preset-badge" x-show="currentPresetName">
               <span class="preset-badge-label" x-text="t('preset.current') + ':'"></span>
+              <button type="button" class="preset-badge-arrow" @click="switchPresetWithDiff(-1)"
+                      x-show="presets.length >= 2" :title="t('common.prev')" aria-label="Previous preset">
+                <svg width="8" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
               <strong x-text="currentPresetName"></strong>
-              <button type="button"  class="preset-badge-close" @click="clearPreset()" :title="t('preset.clear')" aria-label="Clear preset">
+              <button type="button" class="preset-badge-arrow" @click="switchPresetWithDiff(1)"
+                      x-show="presets.length >= 2" :title="t('common.next')" aria-label="Next preset">
+                <svg width="8" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button type="button" class="preset-badge-close" @click="clearPreset()" :title="t('preset.clear')" aria-label="Clear preset">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </span>

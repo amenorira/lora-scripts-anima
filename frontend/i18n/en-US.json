@@ -329,7 +329,9 @@
     "formErrors": "Please fix form errors before starting training",
     "minBucketResoError": "Min resolution cannot exceed max resolution",
     "minTimestepError": "Min timestep must be less than max timestep",
-    "starting": "Starting..."
+    "starting": "Starting...",
+    "prev": "Previous",
+    "next": "Next"
   },
   "preset": {
     "title": "Preset Management",

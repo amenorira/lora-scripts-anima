@@ -538,6 +538,12 @@ a:hover { text-decoration: underline; }
 .preset-badge-close:hover {
   opacity: 0.85; background: var(--hover-overlay);
 }
+.preset-badge-arrow {
+  background: none; border: none; color: var(--text-tertiary);
+  cursor: pointer; padding: 2px 4px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.preset-badge-arrow:hover { color: var(--text-primary); }
 .page-title { font-size: 20px; font-weight: 750; color: var(--text-primary); letter-spacing: -0.4px; margin-bottom: 4px; }
 .page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
 

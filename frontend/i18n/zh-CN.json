@@ -329,7 +329,9 @@
     "formErrors": "请在开始训练前修正表单错误",
     "minBucketResoError": "最小分辨率不能超过最大分辨率",
     "minTimestepError": "最小时间步必须小于最大时间步",
-    "starting": "启动中..."
+    "starting": "启动中...",
+    "prev": "上一个",
+    "next": "下一个"
   },
   "preset": {
     "title": "预设管理",
