@@ -516,6 +516,9 @@
     "sortLength": "长",
     "sortName": "名称",
     "sortTagCount": "标签数",
+    "batchScope": "范围",
+    "batchNoChanges": "没有需要应用的更改",
+    "selectOneImage": "请先选中一张图片",
     "exitEditor": "退出编辑器"
   },
   "bulkAction": {

@@ -516,6 +516,9 @@
     "sortLength": "Len",
     "sortName": "Name",
     "sortTagCount": "Tags",
+    "batchScope": "Scope",
+    "batchNoChanges": "No changes to apply",
+    "selectOneImage": "Select an image first",
     "exitEditor": "Exit Editor"
   },  "bulkAction": {
     "add": "Add",
