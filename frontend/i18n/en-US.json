@@ -516,7 +516,7 @@
     "sortLength": "Len",
     "sortName": "Name",
     "sortTagCount": "Tags",
-    "exitEdit": "Exit Edit"
+    "exitEditor": "Exit Editor"
   },  "bulkAction": {
     "add": "Add",
     "removeTag": "Remove",
