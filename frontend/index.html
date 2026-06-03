@@ -600,11 +600,11 @@
                   <!-- Scope selector -->
                   <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px;color:var(--text-tertiary)">
                     <span x-text="t('tagEditor.batchScope') || 'Scope'"></span>
-                    <select class="te-input" style="width:auto;font-size:11px;padding:3px 6px" x-model="tagEditorBatchScope">
-                      <option value="all" x-text="(t('tagEditor.scopeAll') || 'All') + ' (' + tagEditorImages.length + ')'"></option>
-                      <option value="selected" x-text="(t('tagEditor.scopeSelected') || 'Selected') + ' (' + tagEditorSelected.length + ')'"></option>
-                      <option value="filtered" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'"></option>
-                    </select>
+                    <div style="display:flex;gap:2px">
+                      <button type="button" class="te-quick-btn" :class="tagEditorBatchScope === 'all' ? 'active' : ''" @click="tagEditorBatchScope = 'all'" x-text="(t('tagEditor.scopeAll') || 'All') + ' (' + tagEditorImages.length + ')'"></button>
+                      <button type="button" class="te-quick-btn" :class="tagEditorBatchScope === 'selected' ? 'active' : ''" @click="tagEditorBatchScope = 'selected'" x-text="(t('tagEditor.scopeSelected') || 'Selected') + ' (' + tagEditorSelected.length + ')'"></button>
+                      <button type="button" class="te-quick-btn" :class="tagEditorBatchScope === 'filtered' ? 'active' : ''" @click="tagEditorBatchScope = 'filtered'" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'"></button>
+                    </div>
                     <span style="flex:1"></span>
                     <button type="button" class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')">All</button>
                     <button type="button" class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')">None</button>
