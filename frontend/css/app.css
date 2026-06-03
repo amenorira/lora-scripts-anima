@@ -1684,7 +1684,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── Tag Editor v2.1 ────────────────────────────────────── */
 .te-layout { display: grid; grid-template-columns: 260px 1fr; gap: 12px; margin-top: 12px; min-height: calc(100vh - 180px); }
-.te-left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.te-left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; min-height: 0; max-height: calc(100vh - 180px); }
 .te-right { display: flex; flex-direction: column; gap: 0; min-width: 0; overflow: hidden; }
 .te-section { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 10px; }
 .te-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-bottom: 6px; }
