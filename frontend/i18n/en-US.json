@@ -353,7 +353,6 @@
     "descPlaceholder": "Short description (optional)",
     "importPreset": "Import Preset",
     "switched": "Switched to",
-    "previewing": "Preview: {name}",
     "paramsCount": "{n} parameters",
     "andMore": "{n} more",
     "compare": "Compare",
@@ -365,8 +364,7 @@
       "modifiedCount": "{n} modified",
       "addedCount": "{n} added",
       "apply": "Apply this preset",
-      "cancel": "Cancel comparison",
-      "noChanges": "No differences"
+      "cancel": "Cancel comparison"
     }
   },
   "tagger": {

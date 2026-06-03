@@ -353,7 +353,6 @@
     "descPlaceholder": "简短描述（可选）",
     "importPreset": "导入预设",
     "switched": "已切换至",
-    "previewing": "预览: {name}",
     "paramsCount": "{n} 个参数",
     "andMore": "等 {n} 个",
     "compare": "对比差异",
@@ -365,8 +364,7 @@
       "modifiedCount": "{n} 个已修改",
       "addedCount": "{n} 个新增",
       "apply": "应用此预设",
-      "cancel": "取消对比",
-      "noChanges": "无差异"
+      "cancel": "取消对比"
     }
   },
   "tagger": {

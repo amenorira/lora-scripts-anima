@@ -246,6 +246,11 @@ window.trainingPresetsMixin = {
 
   applyPreset(preset) {
     if (!preset || !preset.data) return;
+    if (this.formDiffMap) {
+      this.formDiffMap = null;
+      this.diffCounts = { modified: 0, added: 0 };
+      this.previewPreset = null;
+    }
     const data = preset.data;
     const overrideKeys = Object.keys(data);
     for (const k of overrideKeys) {
@@ -316,6 +321,9 @@ window.trainingPresetsMixin = {
   },
 
   clearPreset() {
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
     this.currentPreset = null;
     this.currentPresetName = '';
     this.form = { ...this.formDefaults };
