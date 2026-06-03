@@ -1230,12 +1230,17 @@ window.tagEditorMixin = {
     if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow,.te-card-check')) return;
     // If we just did a drag, don't process as click
     if (this.tagEditorDragSelect) return;
-    this.tagEditorToggleSelect(imgPath, event);
+    // Click on thumbnail opens detail view
+    if (event.target.closest('.te-card-thumb')) {
+      this.tagEditorOpenDetail(imgPath);
+    } else {
+      this.tagEditorToggleSelect(imgPath, event);
+    }
   },
 
   tagEditorCardDblClick(event, imgPath) {
-    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow,.te-card-check')) return;
-    this.tagEditorOpenDetail(imgPath);
+    // Deprecated: single click on thumbnail now opens detail
+    // Keep for backward compatibility but do nothing
   },
 
   // ── Tag Cloud scroll context ────────────────────────────

@@ -634,7 +634,7 @@
               <!-- Image grid -->
               <div class="te-image-grid" style="margin-top:4px" @mousedown="tagEditorCardMouseDown($event, null)" @mouseup="tagEditorDragStart = null">
                 <template x-for="img in tagEditorGetPaged()" :key="img.path">
-                  <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" :data-te-path="img.path" @click="tagEditorCardClick($event, img.path)" @dblclick="tagEditorCardDblClick($event, img.path)">
+                  <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" :data-te-path="img.path" @click="tagEditorCardClick($event, img.path)">
                     <div class="te-card-thumb">
                       <img :src="img.thumbnail" loading="lazy" :alt="img.name">
                       <div class="te-card-thumb-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
