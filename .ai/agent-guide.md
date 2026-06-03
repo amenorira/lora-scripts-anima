@@ -151,8 +151,8 @@ python -m py_compile backend/server/routes/training.py
 ```bash
 python -c "
 import json
-zh = json.load(open('frontend/i18n/zh-CN.json'))
-en = json.load(open('frontend/i18n/en-US.json'))
+zh = json.load(open('frontend/i18n/zh-CN.json', encoding='utf-8'))
+en = json.load(open('frontend/i18n/en-US.json', encoding='utf-8'))
 def keys(d, p=''): return {f'{p}.{k}' if p else k for k,v in d.items()} | \
     {sk for k,v in d.items() if isinstance(v,dict) for sk in keys(v, f'{p}.{k}' if p else k)}
 only_zh = keys(zh)-keys(en); only_en = keys(en)-keys(zh)
@@ -162,10 +162,10 @@ print('Only zh:', only_zh or 'none'); print('Only en:', only_en or 'none')
 
 ### CSS 变量检查
 ```bash
-# 确保没有使用未定义的 CSS 变量
-grep -rn 'var(--border-color)' frontend/css/   # 应该为空
-grep -rn 'var(--radius)' frontend/css/          # 应该为空（只有 --radius-sm/md/lg）
-grep -rn 'var(--primary)' frontend/             # 应该为空（只有 --accent）
+# 确保没有使用未定义的 CSS 变量（Windows: Select-String）
+Select-String -Path 'frontend/css/*.css' -Pattern 'var\(--border-color\)'    # 应为空
+Select-String -Path 'frontend/css/*.css' -Pattern 'var\(--radius\)(?!-)'     # 应为空（只有 --radius-sm/md/lg）
+Select-String -Path 'frontend/css/*.css' -Pattern 'var\(--primary\)(?!-)'    # 应为空（只有 --accent）
 ```
 
 ---

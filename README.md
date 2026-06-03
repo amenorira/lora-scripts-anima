@@ -46,7 +46,7 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 - **WD14 自动打标** — 集成 WD14 标签器，一键为数据集图片生成标签
 - **Flash Attention 智能安装** — 自动检测 Python/CUDA/PyTorch 版本及 ABI，通过 GitHub API 匹配最佳预编译 wheel，一键安装
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
-- **国际化 (i18n)** — 中英双语界面（448 个翻译键），浏览器语言自动检测，偏好持久保存
+- **国际化 (i18n)** — 中英双语界面（676 个翻译键），浏览器语言自动检测，偏好持久保存
 - **暗色/亮色主题** — 支持自动跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
 

@@ -43,7 +43,7 @@ The `vendor/sd-scripts/` directory contains the complete training engine from [k
 
 ## Localization
 
-All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 448 keys). Never hardcode Chinese/English strings.
+All user-visible UI text MUST use i18n keys. See `.ai/i18n.md` for detailed rules. Translation files are in `frontend/i18n/` (zh-CN.json + en-US.json, 676 keys). Never hardcode Chinese/English strings.
 
 **Optimizer defaults**: Shared optimizer parameter defaults (betas, eps, weight_decay, etc.) are defined in `frontend/js/constants.js` as `OPTIMIZER_DEFAULTS`. Both `training-core.js` and `training-toml.js` reference this single source of truth. When adding a new optimizer, update `OPTIMIZER_DEFAULTS` first, then the consuming files will pick up the changes automatically.
 

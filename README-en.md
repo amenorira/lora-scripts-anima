@@ -46,7 +46,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 - **WD14 Auto-Tagger** — Integrated WD14 tagger for one-click dataset labeling
 - **Flash Attention Smart Install** — Auto-detects Python / CUDA / PyTorch versions and ABI, matches the best prebuilt wheel via GitHub API, one-click install
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
-- **Internationalization (i18n)** — Bilingual UI (448 translation keys), browser language auto-detection, persistent preference
+- **Internationalization (i18n)** — Bilingual UI (676 translation keys), browser language auto-detection, persistent preference
 - **Dark / Light Theme** — Auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
 
