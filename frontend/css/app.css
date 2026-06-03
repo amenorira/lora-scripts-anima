@@ -1981,7 +1981,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-range-filter span { font-size: 10px; color: var(--text-tertiary); }
 
 /* History panel */
-.te-history-panel { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 900; width: 260px; max-height: 60vh; background: var(--bg-surface); border: 1px solid var(--border-default); border-right: none; border-radius: var(--radius-md) 0 0 var(--radius-md); box-shadow: -2px 0 12px rgba(0,0,0,0.1); overflow-y: auto; padding: 10px; }
+.te-history-panel { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 900; width: 260px; max-height: 60vh; background: var(--bg-surface); border: 1px solid var(--border-default); border-right: none; border-radius: var(--radius-md) 0 0 var(--radius-md); box-shadow: -2px 0 12px rgba(0,0,0,0.1); overflow-y: auto; padding: 10px; scroll-behavior: smooth; }
 .te-history-title { font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
 .te-history-item { font-size: 11px; padding: 4px 6px; color: var(--text-tertiary); border-bottom: 1px solid var(--border-default); cursor: default; }
 .te-history-item:hover { color: var(--text-primary); background: var(--hover-overlay); }

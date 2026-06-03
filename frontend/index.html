@@ -602,7 +602,7 @@
                   <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px;color:var(--text-tertiary)">
                     <span x-text="t('tagEditor.batchScope') || 'Scope'"></span>
                     <select class="te-input" style="width:auto;font-size:11px;padding:3px 6px" x-model="tagEditorBatchScope">
-                      <option value="all" x-text="t('tagEditor.scopeAll') || 'All' + ' (' + tagEditorImages.length + ')'"></option>
+                      <option value="all" x-text="(t('tagEditor.scopeAll') || 'All') + ' (' + tagEditorImages.length + ')'"></option>
                       <option value="selected" x-text="(t('tagEditor.scopeSelected') || 'Selected') + ' (' + tagEditorSelected.length + ')'"></option>
                       <option value="filtered" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'"></option>
                     </select>
@@ -850,7 +850,7 @@
 
         <!-- History panel (toggle) -->
         <template x-if="tagEditorHistoryVisible && tagEditorHistory.length > 0">
-          <div class="te-history-panel">
+          <div class="te-history-panel" id="teHistoryPanel" x-init="$nextTick(() => { $el.scrollTop = 0; })">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
               <span class="te-history-title" x-text="t('tagEditor.historyPanel') || 'History'"></span>
               <button class="btn btn-sm btn-ghost" style="font-size:10px;padding:1px 4px" @click="tagEditorHistoryVisible = false" aria-label="Close">&times;</button>

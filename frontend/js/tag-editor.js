@@ -130,6 +130,7 @@ window.tagEditorMixin = {
 
   // ── Auto-save ──────────────────────────────────────────
   _teGetDraftKey() { return 'tagEditor_draft_' + (this.tagEditorDir || 'default'); },
+  _teAutoSaveInProgress: false,
 
   _teStartAutoSave() {
     this._teStopAutoSave();
@@ -142,7 +143,8 @@ window.tagEditorMixin = {
   },
 
   _teAutoSaveDraft() {
-    if (!this.tagEditorModified) return;
+    if (!this.tagEditorModified || this._teAutoSaveInProgress) return;
+    this._teAutoSaveInProgress = true;
     var modifiedImgs = [];
     var orig = this.tagEditorOriginal;
     var self = this;
@@ -151,11 +153,12 @@ window.tagEditorMixin = {
         modifiedImgs.push({ path: img.path, tags: img.tags });
       }
     });
-    if (modifiedImgs.length === 0) return;
+    if (modifiedImgs.length === 0) { this._teAutoSaveInProgress = false; return; }
     try {
       var draft = { dir: this.tagEditorDir, images: modifiedImgs, time: Date.now() };
       localStorage.setItem(this._teGetDraftKey(), JSON.stringify(draft));
     } catch (e) { /* quota exceeded, ignore */ }
+    finally { this._teAutoSaveInProgress = false; }
   },
 
   _teTryRestoreDraft() {
@@ -185,7 +188,7 @@ window.tagEditorMixin = {
 
   // ── Incremental Tag Frequency ──────────────────────────
   _teUpdateFreqIncremental(oldTags, newTags) {
-    var freq = this.tagEditorTagFreq || [];
+    var freq = (this.tagEditorTagFreq || []).slice(); // Create a copy to avoid race conditions
     var map = {};
     freq.forEach(function(t, i) { map[t.tag] = i; });
     var oldList = (oldTags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
@@ -193,7 +196,7 @@ window.tagEditorMixin = {
     // Remove old tags from count
     oldList.forEach(function(tag) {
       if (map[tag] !== undefined && freq[map[tag]]) {
-        freq[map[tag]].count = Math.max(0, freq[map[tag]].count - 1);
+        freq[map[tag]] = { tag: freq[map[tag]].tag, count: Math.max(0, freq[map[tag]].count - 1) };
       }
     });
     // Add new tags
@@ -201,7 +204,7 @@ window.tagEditorMixin = {
     newList.forEach(function(tag) { tagMap[tag] = (tagMap[tag] || 0) + 1; });
     for (var tag in tagMap) {
       if (map[tag] !== undefined && freq[map[tag]]) {
-        freq[map[tag]].count += tagMap[tag];
+        freq[map[tag]] = { tag: tag, count: freq[map[tag]].count + tagMap[tag] };
       } else {
         freq.push({ tag: tag, count: tagMap[tag] });
       }
@@ -296,7 +299,10 @@ window.tagEditorMixin = {
     this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
     this.tagEditorHistory.push({ path: imgPath, oldTags: oldTags, newTags: newTags, time: Date.now() });
     this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
-    if (this.tagEditorHistory.length > 200) { this.tagEditorHistory.shift(); this.tagEditorHistoryIdx--; }
+    if (this.tagEditorHistory.length > 200) {
+      this.tagEditorHistory.shift();
+      this.tagEditorHistoryIdx = Math.max(0, this.tagEditorHistoryIdx - 1);
+    }
     this._teFilteredCacheKey = '';
   },
 
@@ -372,16 +378,20 @@ window.tagEditorMixin = {
       if (useRegex) {
         try {
           var re = new RegExp(q, 'i');
+          this.tagEditorRegexError = false;
           imgs = imgs.filter(function(img) {
             return re.test(img.name || '') || re.test(img.tags || '');
           });
         } catch (e) { this.tagEditorRegexError = true; }
       } else {
+        this.tagEditorRegexError = false;
         imgs = imgs.filter(function(img) {
           return (img.name && img.name.toLowerCase().indexOf(q) !== -1) ||
                  (img.tags && img.tags.toLowerCase().indexOf(q) !== -1);
         });
       }
+    } else {
+      this.tagEditorRegexError = false;
     }
     if (qf === 'notag') {
       imgs = imgs.filter(function(img) { return !img.tags || !img.tags.trim(); });
@@ -650,6 +660,7 @@ window.tagEditorMixin = {
     this._tePushHistory(imgPath, oldTags, img.tags);
     this._teUpdateFreqIncremental(oldTags, img.tags);
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
   },
 
   tagEditorAddTagToImage(imgPath, tag) {
@@ -665,6 +676,7 @@ window.tagEditorMixin = {
     this._tePushHistory(imgPath, oldTags, img.tags);
     this._teUpdateFreqIncremental(oldTags, img.tags);
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
   },
 
   tagEditorHandleTagInput(event, imgPath) {
@@ -707,6 +719,7 @@ window.tagEditorMixin = {
     img.tags = newTags;
     this.tagEditorModified = true;
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
     var self = this;
     var pending = this._tePendingTextEdits[imgPath];
     if (pending.timer) clearTimeout(pending.timer);
@@ -732,23 +745,26 @@ window.tagEditorMixin = {
 
   // ── Detail View (drawer mode) ─────────────────────────
   _teCachedDetailImg: null,
-  _teCachedFreqCount: 0,
+  _teCachedDetailKey: '',
 
   tagEditorDetailImg() {
     var filtered = this.tagEditorGetFiltered();
     var len = filtered.length;
-    if (this._teCachedFreqCount === len && this._teCachedDetailImg) {
+    var idx = this.tagEditorDetailIdx;
+    // Create a cache key based on filtered length, index, and image path
+    var currentKey = len + ':' + idx + ':' + (filtered[idx] ? filtered[idx].path : '');
+    if (this._teCachedDetailKey === currentKey && this._teCachedDetailImg) {
       return this._teCachedDetailImg;
     }
-    var img = len > this.tagEditorDetailIdx ? filtered[this.tagEditorDetailIdx] : null;
+    var img = len > idx ? filtered[idx] : null;
     this._teCachedDetailImg = img;
-    this._teCachedFreqCount = len;
+    this._teCachedDetailKey = currentKey;
     return img;
   },
 
   tagEditorOpenDetail(imgPath) {
     this._teCachedDetailImg = null;
-    this._teCachedFreqCount = 0;
+    this._teCachedDetailKey = '';
     var filtered = this.tagEditorGetFiltered();
     var idx = filtered.findIndex(function(i) { return i.path === imgPath; });
     if (idx === -1) return;
@@ -761,13 +777,16 @@ window.tagEditorMixin = {
     this.tagEditorDetailMode = false;
     this.tagEditorContextMenu = null;
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
   },
   tagEditorDetailPrev() {
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
     if (this.tagEditorDetailIdx > 0) this.tagEditorDetailIdx--;
   },
   tagEditorDetailNext() {
     this._teCachedDetailImg = null;
+    this._teCachedDetailKey = '';
     var filtered = this.tagEditorGetFiltered();
     if (this.tagEditorDetailIdx < filtered.length - 1) this.tagEditorDetailIdx++;
   },
@@ -1105,6 +1124,8 @@ window.tagEditorMixin = {
   },
 
   // ── Autocomplete ───────────────────────────────────────
+  _teSuggestDebounceTimer: null,
+
   tagEditorGetSuggestions(imgPath) {
     if (this.tagEditorFocusedImg !== imgPath || !this.tagEditorFocusedVal || this.tagEditorFocusedVal.length < 1) return [];
     var q = this.tagEditorFocusedVal.toLowerCase();
@@ -1118,8 +1139,13 @@ window.tagEditorMixin = {
 
   tagEditorOnSuggestInput(event, imgPath) {
     clearTimeout(this._teBlurTimer);
+    clearTimeout(this._teSuggestDebounceTimer);
     this.tagEditorFocusedImg = imgPath;
-    this.tagEditorFocusedVal = event.target.value;
+    var self = this;
+    var val = event.target.value;
+    this._teSuggestDebounceTimer = setTimeout(function() {
+      self.tagEditorFocusedVal = val;
+    }, 50);
   },
 
   tagEditorPickSuggestion(imgPath, tag) {
@@ -1171,9 +1197,8 @@ window.tagEditorMixin = {
     this._teDragRect = { left: event.clientX, top: event.clientY, width: 0, height: 0 };
     this.tagEditorDragSelect = false;
     // Listen for move/up on window so drag works outside the grid
+    this._teRemoveDragListeners();
     var self = this;
-    if (this._teDragMoveHandler) window.removeEventListener('mousemove', this._teDragMoveHandler);
-    if (this._teDragUpHandler) window.removeEventListener('mouseup', this._teDragUpHandler);
     this._teDragMoveHandler = function(e) { self._teOnDragMove(e); };
     this._teDragUpHandler = function(e) { self._teOnDragEnd(e); };
     window.addEventListener('mousemove', this._teDragMoveHandler);
@@ -1197,10 +1222,7 @@ window.tagEditorMixin = {
   },
 
   _teOnDragEnd(e) {
-    window.removeEventListener('mousemove', this._teDragMoveHandler);
-    window.removeEventListener('mouseup', this._teDragUpHandler);
-    this._teDragMoveHandler = null;
-    this._teDragUpHandler = null;
+    this._teRemoveDragListeners();
     if (this.tagEditorDragSelect && this._teDragRect) {
       // Select cards that intersect the drag rectangle
       var rect = this._teDragRect;
@@ -1230,14 +1252,7 @@ window.tagEditorMixin = {
 
   // Cleanup drag listeners on route change
   tagEditorCleanup() {
-    if (this._teDragMoveHandler) {
-      window.removeEventListener('mousemove', this._teDragMoveHandler);
-      this._teDragMoveHandler = null;
-    }
-    if (this._teDragUpHandler) {
-      window.removeEventListener('mouseup', this._teDragUpHandler);
-      this._teDragUpHandler = null;
-    }
+    this._teRemoveDragListeners();
     this._teDragRect = null;
     this.tagEditorDragStart = null;
     this.tagEditorDragSelect = false;
@@ -1249,6 +1264,17 @@ window.tagEditorMixin = {
       if (pending[key] && pending[key].timer) clearTimeout(pending[key].timer);
     }
     this._tePendingTextEdits = {};
+  },
+
+  _teRemoveDragListeners() {
+    if (this._teDragMoveHandler) {
+      window.removeEventListener('mousemove', this._teDragMoveHandler);
+      this._teDragMoveHandler = null;
+    }
+    if (this._teDragUpHandler) {
+      window.removeEventListener('mouseup', this._teDragUpHandler);
+      this._teDragUpHandler = null;
+    }
   },
 
   tagEditorDragRect() {
@@ -1317,11 +1343,12 @@ window.tagEditorMixin = {
     });
     var txt = Array.from(tagSet).sort().join(', ');
     if (!txt) { this.toast('No tags to export', 'warning'); return; }
+    var self = this;
     navigator.clipboard.writeText(txt).then(function() {
-      this.toast((this.t('common.copied') || 'Copied') + ' ' + tagSet.size + ' tags', 'success');
-    }.bind(this)).catch(function() {
-      this.toast('Copy failed', 'error');
-    }.bind(this));
+      self.toast((self.t('common.copied') || 'Copied') + ' ' + tagSet.size + ' tags', 'success');
+    }).catch(function() {
+      self.toast('Copy failed', 'error');
+    });
   },
 
   // ── Keyboard: Enter opens detail on selected card ───────
