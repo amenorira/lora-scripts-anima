@@ -388,7 +388,7 @@
             <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorRevert()" :disabled="!tagEditorModified" x-text="t('common.revert')">Revert</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')">Restore Backup</button>
             <span style="width:1px;height:18px;background:var(--border-default);margin:0 2px"></span>
-            <button type="button"  class="btn btn-sm btn-secondary" @click="navigate('home')" x-text="t('tagEditor.exitEditor')">退出编辑器</button>
+            <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorReset()" x-show="tagEditorHasImages()" x-text="t('tagEditor.exitEditor')">退出编辑器</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorHistoryVisible = !tagEditorHistoryVisible" :style="tagEditorHistoryVisible ? 'color:var(--accent)' : ''" x-text="t('tagEditor.historyPanel') || 'History'" :disabled="!tagEditorHasUndo()"></button>
           </div>
         </div>

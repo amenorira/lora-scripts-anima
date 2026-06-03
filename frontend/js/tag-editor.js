@@ -510,6 +510,21 @@ window.tagEditorMixin = {
     this.tagEditorRegexError = false;
     this.tagEditorPage = 1;
   },
+  tagEditorReset() {
+    this.tagEditorImages = [];
+    this.tagEditorOriginal = {};
+    this.tagEditorModified = false;
+    this.tagEditorTagFreq = [];
+    this.tagEditorClearFilters();
+    this.tagEditorSelectNone();
+    this.tagEditorCloseDetail();
+    this.tagEditorBatchOpen = false;
+    this.tagEditorCopiedTags = [];
+    this.tagEditorHistory = [];
+    this.tagEditorHistoryIdx = -1;
+    this.tagEditorHistoryVisible = false;
+    this._teStopAutoSave();
+  },
   _teFreqCacheKey: '',
   _teFreqCacheResult: null,
   tagEditorGetFilteredTagFreq() {
