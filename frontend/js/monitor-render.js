@@ -167,7 +167,7 @@ window.monitorRenderMixin = {
 
     html+='<div class="card card-params" style="margin-top:12px"><div class="card-header">'+t('trainParams','Parameters')+'</div>';
     if (this.trainParams.length) { html+='<div class="param-grid">'; this.trainParams.forEach(p=>{html+=`<div class="param-item"><span class="param-label">${this.esc(p.label)}</span><span class="param-value">${this.esc(p.value)}</span></div>`;}); html+='</div>'; }
-    else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','Start training to see parameters')+'</p></div>';
+    else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noParamsHint','Start training to see parameters')+'</p></div>';
     html+='</div>';
     if (this.previews.length) { html+='<div class="card card-preview" style="margin-top:12px"><div class="card-header">'+t('previewSamples','Preview')+'</div><div class="preview-grid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">';
       this.previews.slice(0,6).forEach(p=>{html+=`<div class="preview-item" @click="dashTab='samples';renderDashboard()" style="cursor:pointer"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${this.esc(p.name)}</span></div>`;});
@@ -195,7 +195,7 @@ window.monitorRenderMixin = {
       html+=`<div class="preview-item" style="grid-column:1/-1"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" onclick="window.open('${this.esc(p.url).replace(/'/g,'&#39;')}')" style="max-height:400px;object-fit:contain"/><span>${this.esc(p.name)}</span></div>`;
       this.previews.forEach((pv,i)=>{html+=`<div class="preview-item" style="cursor:pointer;${i===this.previewStep?'border:2px solid var(--accent);':''}" @click="previewStep=${i}"><img src="${this.esc(pv.url)}" alt="${this.esc(pv.name)}" loading="lazy" style="height:60px;object-fit:cover"/></div>`;});
       html+='</div>'; }
-    else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>'+t('noTrainingHint','Preview images appear during training')+'</p></div>';
+    else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>'+t('noPreviewHint','Preview images appear during training')+'</p></div>';
     html+='</div>'; return html;
   },
 
@@ -270,7 +270,7 @@ window.monitorRenderMixin = {
   renderLogs() {
     const el=document.getElementById('monitorLogs'); if(!el) return;
     const t=(k,fb)=>this.t('monitor.'+k)||fb||k;
-    if(!this.logLines.length){el.innerHTML='<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noTrainingHint','No logs yet')+'</p></div>';return;}
+    if(!this.logLines.length){el.innerHTML='<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noLogsHint','No logs yet')+'</p></div>';return;}
     const search=(this.logSearch||'').toLowerCase(), level=this.logLevel||'all'; let lines=this.logLines;
     if(search) lines=lines.filter(l=>l.toLowerCase().includes(search));
     if(level==='error') lines=lines.filter(l=>{

@@ -74,7 +74,12 @@
     "chartLossCurrent": "Current Loss",
     "chartLossEpochAvg": "Epoch Avg Loss",
     "chartLrUnet": "UNet LR",
-    "smooth": "Smooth"
+    "smooth": "Smooth",
+    "goToTraining": "Go to Training",
+    "stopTraining": "Stop Training",
+    "noParamsHint": "Training parameters will appear here after starting",
+    "noPreviewHint": "Preview images will appear during training",
+    "noLogsHint": "No logs yet"
   },
   "section": {
     "model": "Model & Dataset",

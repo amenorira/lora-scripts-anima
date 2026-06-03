@@ -74,7 +74,12 @@
     "chartLossCurrent": "当前 Loss",
     "chartLossEpochAvg": "Epoch 平均 Loss",
     "chartLrUnet": "UNet 学习率",
-    "smooth": "平滑"
+    "smooth": "平滑",
+    "goToTraining": "前往训练",
+    "stopTraining": "终止训练",
+    "noParamsHint": "启动训练后，训练参数将在此显示",
+    "noPreviewHint": "训练开始后将在此显示预览图",
+    "noLogsHint": "暂无日志"
   },
   "section": {
     "model": "模型与数据集",
