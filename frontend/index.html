@@ -351,6 +351,23 @@
         </div>
 
         <form @submit.prevent="" id="trainForm">
+          <div class="diff-toolbar" x-show="formDiffMap && Object.keys(formDiffMap).length > 0" x-cloak>
+            <span class="diff-toolbar-label">
+              <span x-text="t('preset.diff.comparingWith').replace('{name}', previewPreset ? previewPreset.metadata.name : '')"></span>
+            </span>
+            <span class="diff-toolbar-stats">
+              <span class="diff-stat-modified" x-show="diffCounts && diffCounts.modified > 0"
+                    x-text="t('preset.diff.modifiedCount').replace('{n}', diffCounts.modified)"></span>
+              <span class="diff-stat-added" x-show="diffCounts && diffCounts.added > 0"
+                    x-text="t('preset.diff.addedCount').replace('{n}', diffCounts.added)"></span>
+            </span>
+            <div class="diff-toolbar-actions">
+              <button class="btn btn-primary btn-sm" @click="applyDiffPreset()"
+                      x-text="t('preset.diff.apply')">Apply</button>
+              <button class="btn btn-ghost btn-sm" @click="cancelDiff()"
+                      x-text="t('preset.diff.cancel')">Cancel</button>
+            </div>
+          </div>
           <div id="trainFormContent"></div>
         </form>
       </div>

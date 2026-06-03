@@ -19,6 +19,7 @@ window.trainingPresetsMixin = {
   currentPresetName: '',
   previewPreset: null,
   diffCounts: { modified: 0, added: 0 },
+  formDiffMap: null,
   // ── Param Save/Load (server presets) ──────────────────
   openSavePresetModal() {
     this.savePresetName = this.form.output_name || '';

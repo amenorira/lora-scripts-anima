@@ -337,7 +337,7 @@ window.trainingCoreMixin = {
     }
 
     // ── Assemble ──
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
       <div class="field-row">
         ${controlSection}
         <div class="field-menu-wrap">
@@ -346,6 +346,14 @@ window.trainingCoreMixin = {
         </div>
       </div>
       ${fullWidthRow}
+      <div class="field-diff-info" x-show="formDiffMap && formDiffMap['${dataKey}']" x-cloak>
+        <template x-if="formDiffMap['${dataKey}'].type === 'modified'">
+          <span class="field-diff-change"><span class="field-diff-old" x-text="String(formDiffMap['${dataKey}'].oldVal)"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String(formDiffMap['${dataKey}'].newVal)"></span></span>
+        </template>
+        <template x-if="formDiffMap['${dataKey}'].type === 'added'">
+          <span class="field-diff-type-added" x-text="String(formDiffMap['${dataKey}'].newVal)"></span>
+        </template>
+      </div>
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
       ${readonlyWarnHtml}

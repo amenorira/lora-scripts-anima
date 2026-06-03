@@ -2738,6 +2738,29 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .badge-off { background: rgba(224,85,85,0.15); color: #e05555; }
 .preset-preview-actions { display: flex; gap: 6px; }
 
+/* ── Preset Diff Highlighting ────────────────────────── */
+.field-diff-modified { border-left-color: #e8d44d !important; background: rgba(232,212,77,0.06); }
+.field-diff-added { border-left-color: #55e055 !important; background: rgba(85,224,85,0.06); }
+.field-diff-info { font-size: 11px; padding: 2px 0 2px 12px; color: var(--text-tertiary); }
+.field-diff-change { display: inline-flex; align-items: center; gap: 4px; }
+.field-diff-old { text-decoration: line-through; color: #e05555; }
+.field-diff-arrow { color: var(--text-tertiary); }
+.field-diff-new { color: #55e055; font-weight: 500; }
+.field-diff-type-added { color: #55e055; font-weight: 500; }
+
+/* ── Diff Toolbar ─────────────────────────────────────── */
+.diff-toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 14px; margin-bottom: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--border-default);
+  border-radius: 8px; font-size: 13px;
+}
+.diff-toolbar-label { color: var(--text-secondary); font-weight: 500; }
+.diff-toolbar-stats { display: flex; gap: 10px; color: var(--text-tertiary); font-size: 12px; }
+.diff-stat-modified { color: #e8d44d; }
+.diff-stat-added { color: #55e055; }
+.diff-toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
+
 /* ═══════════════════════════════════════════════════════════
    End of anima-ui design system
    ═══════════════════════════════════════════════════════════ */
