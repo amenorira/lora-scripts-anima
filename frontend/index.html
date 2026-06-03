@@ -376,6 +376,9 @@
               <template x-if="tagEditorSaving">
                 <span style="color:var(--accent)">· <span x-text="t('tagEditor.saving') || 'Saving...'"></span></span>
               </template>
+              <template x-if="form && form.trigger_word">
+                <span class="te-trigger-badge">Trigger: <code x-text="form.trigger_word"></code></span>
+              </template>
             </p>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -588,35 +591,82 @@
                 </div>
               </template>
 
-              <!-- Collapsible batch bar -->
+              <!-- Collapsible batch bar — 4-row layout -->
               <div class="te-batch-toggle" @click="tagEditorBatchOpen = !tagEditorBatchOpen">
                 <span class="te-batch-toggle-arrow" :class="tagEditorBatchOpen ? 'open' : ''">▶</span>
                 <span x-text="t('tagEditor.batchToggle') || 'Batch Operations'"></span>
               </div>
-              <div class="te-batch-collapse" :class="tagEditorBatchOpen ? '' : 'closed'" style="max-height:200px">
-                <div class="te-batch-bar">
-                  <div class="te-batch-inputs">
-                    <input type="text" class="te-input" style="width:130px" x-model="tagEditorBatchVal" :placeholder="t('tagEditor.batchPlaceholder') || 'value'" aria-label="Batch operation value">
-                    <input type="text" class="te-input" style="width:130px" x-model="tagEditorBatchVal2" :placeholder="t('tagEditor.batchPlaceholder2') || 'replace with'" aria-label="Batch operation replacement">
-                    <select class="te-input" style="width:auto" x-model="tagEditorBatchScope" aria-label="Batch operation scope">
-                      <option value="all" x-text="t('tagEditor.scopeAll') || 'All'">All</option>
-                      <option value="selected" x-text="(t('tagEditor.scopeSelected') || 'Selected') + ' (' + tagEditorSelected.length + ')'">Selected</option>
-                      <option value="filtered" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'">Filtered</option>
+              <div class="te-batch-collapse" :class="tagEditorBatchOpen ? '' : 'closed'">
+                <div class="te-batch-bar-v2">
+                  <!-- Scope selector -->
+                  <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px;color:var(--text-tertiary)">
+                    <span x-text="t('tagEditor.batchScope') || 'Scope'"></span>
+                    <select class="te-input" style="width:auto;font-size:11px;padding:3px 6px" x-model="tagEditorBatchScope">
+                      <option value="all" x-text="t('tagEditor.scopeAll') || 'All' + ' (' + tagEditorImages.length + ')'"></option>
+                      <option value="selected" x-text="(t('tagEditor.scopeSelected') || 'Selected') + ' (' + tagEditorSelected.length + ')'"></option>
+                      <option value="filtered" x-text="(t('tagEditor.scopeFiltered') || 'Filtered') + ' (' + tagEditorGetFiltered().length + ')'"></option>
                     </select>
-                    <span style="width:1px;height:14px;background:var(--border-default);margin:0 4px"></span>
-                    <button type="button"  class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 8px" @click="tagEditorPreviewBatchOp((tagEditorBatchVal && tagEditorBatchVal2) ? 'find_replace' : 'add_prefix')" x-text="t('tagEditor.preview') || 'Preview'"></button>
+                    <span style="flex:1"></span>
+                    <button type="button" class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')">All</button>
+                    <button type="button" class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')">None</button>
                   </div>
-                  <div class="te-batch-buttons">
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_prefix')" x-text="t('tagEditor.addPrefix')">Prefix</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('add_suffix')" x-text="t('tagEditor.addSuffix')">Suffix</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('find_replace')" x-text="t('tagEditor.findReplace')">Replace</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('regex_replace')" x-text="t('tagEditor.regexSearch')">Regex</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('delete_tag')" x-text="t('tagEditor.deleteTag')">Delete</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('dedup')" x-text="t('tagEditor.dedup')">Dedup</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('sort')" x-text="t('tagEditor.sort')">Sort</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('inject_trigger')" x-text="t('tagEditor.injectTrigger')">Trigger</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('remove_trigger')" x-text="t('tagEditor.removeTrigger')">Remove Trigger</button>
-                    <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorBatchOp('replace_tag')" x-text="t('tagEditor.replaceTag') || 'Merge Tag'">Merge Tag</button>
+                  <!-- Row 1: Add -->
+                  <div class="te-batch-row">
+                    <span class="te-batch-row-icon" style="color:var(--accent)">＋</span>
+                    <span class="te-batch-row-label" x-text="t('bulkAction.add') || 'Add'">Add</span>
+                    <div class="te-batch-row-inputs" style="position:relative">
+                      <input type="text" class="te-input" x-model="batchAddInput" :placeholder="t('tagEditor.batchPlaceholder') || 'tag1, tag2'" @input="batchOnInput($event, 'add')" @focus="batchOnFocus('add')" @blur="batchOnBlur()" style="font-size:11px;padding:4px 8px">
+                      <div class="te-batch-autocomplete" x-show="batchSuggestOpen === 'add' && tagEditorBatchSuggestList().length > 0">
+                        <template x-for="sug in tagEditorBatchSuggestList()" :key="'ba-'+sug">
+                          <div class="te-autocomplete-item" @mousedown.prevent="batchPickSuggestion('add', sug)" x-text="sug"></div>
+                        </template>
+                      </div>
+                    </div>
+                    <div class="te-pos-toggle">
+                      <button type="button" class="te-pos-btn" :class="batchPos === 'front' ? 'active' : ''" @click="batchPos = 'front'" x-text="t('bulkAction.posFront') || 'Front'">Front</button>
+                      <button type="button" class="te-pos-btn" :class="batchPos === 'back' ? 'active' : ''" @click="batchPos = 'back'" x-text="t('bulkAction.posBack') || 'Back'">Back</button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary te-batch-act-btn" :disabled="!tagEditorBatchCanOperate()" @click="tagEditorBatchApply('add')" x-text="t('bulkAction.add') || 'Add'">Add</button>
+                  </div>
+                  <!-- Row 2: Remove -->
+                  <div class="te-batch-row">
+                    <span class="te-batch-row-icon" style="color:var(--danger)">−</span>
+                    <span class="te-batch-row-label" x-text="t('bulkAction.removeTag') || 'Remove'">Remove</span>
+                    <div class="te-batch-row-inputs" style="position:relative">
+                      <input type="text" class="te-input" x-model="batchRemoveInput" :placeholder="t('tagEditor.batchPlaceholder') || 'tag1, tag2'" @input="batchOnInput($event, 'remove')" @focus="batchOnFocus('remove')" @blur="batchOnBlur()" style="font-size:11px;padding:4px 8px">
+                      <div class="te-batch-autocomplete" x-show="batchSuggestOpen === 'remove' && tagEditorBatchSuggestList().length > 0">
+                        <template x-for="sug in tagEditorBatchSuggestList()" :key="'br-'+sug">
+                          <div class="te-autocomplete-item" @mousedown.prevent="batchPickSuggestion('remove', sug)" x-text="sug"></div>
+                        </template>
+                      </div>
+                    </div>
+                    <span aria-hidden="true" class="te-batch-spacer"></span>
+                    <button type="button" class="btn btn-sm btn-secondary te-batch-act-btn" :disabled="!tagEditorBatchCanOperate()" @click="tagEditorBatchApply('remove')" style="color:var(--danger);border-color:color-mix(in oklch,var(--danger) 35%,var(--border-default))" x-text="t('bulkAction.removeTag') || 'Remove'">Remove</button>
+                  </div>
+                  <!-- Row 3: Replace -->
+                  <div class="te-batch-row">
+                    <span class="te-batch-row-icon" style="color:var(--text-secondary)">⇄</span>
+                    <span class="te-batch-row-label" x-text="t('bulkAction.replace') || 'Replace'">Replace</span>
+                    <div class="te-batch-row-inputs" style="position:relative">
+                      <input type="text" class="te-input" x-model="batchOldTag" :placeholder="t('tagEditor.batchPlaceholder') || 'old tag'" @input="batchOnInput($event, 'replace')" @focus="batchOnFocus('replace')" @blur="batchOnBlur()" style="font-size:11px;padding:4px 8px">
+                      <span style="color:var(--text-tertiary);margin:0 4px">→</span>
+                      <input type="text" class="te-input" x-model="batchNewTag" :placeholder="t('tagEditor.batchPlaceholder2') || 'new tag'" @focus="batchOnFocus('replace')" @blur="batchOnBlur()" style="font-size:11px;padding:4px 8px">
+                      <div class="te-batch-autocomplete" x-show="batchSuggestOpen === 'replace' && tagEditorBatchSuggestList().length > 0">
+                        <template x-for="sug in tagEditorBatchSuggestList()" :key="'brp-'+sug">
+                          <div class="te-autocomplete-item" @mousedown.prevent="batchPickSuggestion('replace', sug)" x-text="sug"></div>
+                        </template>
+                      </div>
+                    </div>
+                    <span aria-hidden="true" class="te-batch-spacer"></span>
+                    <button type="button" class="btn btn-sm btn-ghost te-batch-act-btn" :disabled="!tagEditorBatchCanOperate() || !batchOldTag || !batchNewTag" @click="tagEditorBatchApply('replace')" x-text="t('bulkAction.replace') || 'Replace'">Replace</button>
+                  </div>
+                  <!-- Row 4: Dedupe -->
+                  <div class="te-batch-row te-batch-row-last">
+                    <span class="te-batch-row-icon" style="color:var(--text-secondary)">⊞</span>
+                    <span class="te-batch-row-label" x-text="t('bulkAction.dedupe') || 'Dedupe'">Dedupe</span>
+                    <span class="te-batch-row-hint" x-text="t('bulkAction.dedupeRowHint') || 'Remove duplicate tags within each image'">Remove duplicate tags</span>
+                    <span aria-hidden="true" class="te-batch-spacer"></span>
+                    <button type="button" class="btn btn-sm btn-ghost te-batch-act-btn" :disabled="!tagEditorBatchCanOperate()" @click="tagEditorBatchApply('dedupe')" x-text="t('bulkAction.dedupe') || 'Dedupe'">Dedupe</button>
                   </div>
                 </div>
               </div>
@@ -674,6 +724,31 @@
                   </div>
                 </template>
               </div>
+
+              <!-- Tag Stats Panel (selected images) -->
+              <template x-if="tagEditorSelected.length > 0">
+                <div class="te-stats-panel">
+                  <div class="te-stats-hdr">
+                    <span class="te-stats-title" x-text="t('tagStats.title') || 'Tag Distribution'"></span>
+                    <span class="te-stats-badge" style="font-size:10px;padding:0 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent)"><span x-text="tagEditorSelected.length"></span> selected</span>
+                    <span style="flex:1"></span>
+                    <input type="text" class="te-input" style="width:120px;font-size:10px;padding:2px 6px" x-model="statsFilter" :placeholder="t('common.filter') || 'Filter'">
+                    <button type="button" class="te-stats-sbtn" @click="statsSort = statsSort === 'count_desc' ? 'count_asc' : 'count_desc'" x-text="statsSort === 'count_desc' ? '#↓' : '#↑'"></button>
+                    <button type="button" class="te-stats-sbtn" @click="statsSort = statsSort === 'name_asc' ? 'name_desc' : 'name_asc'" x-text="statsSort === 'name_asc' ? 'A↓' : 'A↑'"></button>
+                  </div>
+                  <div class="te-stats-list">
+                    <template x-for="item in tagEditorStatsFiltered()" :key="item.tag">
+                      <div class="te-stats-row">
+                        <span class="te-stats-bar" :style="'width:' + Math.max(3, (item.count / Math.max(1, tagEditorStatsMax())) * 100) + '%'"></span>
+                        <button type="button" class="te-stats-tag" @click="tagEditorPickStatsTag(item.tag)" x-text="item.tag"></button>
+                        <span class="te-stats-cnt" x-text="item.count"></span>
+                        <button type="button" class="te-stats-del" @click="tagEditorStatsRemoveTag(item.tag)" title="Remove from selected">×</button>
+                      </div>
+                    </template>
+                    <div x-show="tagEditorStatsFiltered().length === 0" style="text-align:center;padding:12px;color:var(--text-tertiary);font-size:11px" x-text="statsFilter ? 'No matches' : 'No tags in selection'"></div>
+                  </div>
+                </div>
+              </template>
 
               <!-- Pagination -->
               <template x-if="tagEditorTotalPages() > 1">
@@ -772,48 +847,6 @@
 
         <!-- Drag selection rectangle -->
         <div class="te-drag-rect" x-show="tagEditorDragRect() !== null" :style="tagEditorDragRect() ? 'position:fixed;pointer-events:none;left:' + tagEditorDragRect().left + 'px;top:' + tagEditorDragRect().top + 'px;width:' + tagEditorDragRect().width + 'px;height:' + tagEditorDragRect().height + 'px' : ''"></div>
-
-        <!-- Batch preview modal -->
-        <template x-if="tagEditorBatchPreview !== null">
-          <div class="te-preview-backdrop" @click.self="tagEditorCancelBatchPreview()">
-            <div class="te-preview-modal-new">
-              <div class="te-preview-modal-header">
-                <span class="te-preview-modal-title">
-                  <span x-text="t('tagEditor.batchPreviewTitle') || 'Batch Preview'"></span>
-                  <span style="font-size:12px;color:var(--text-tertiary);margin-left:8px" x-text="'[' + tagEditorBatchPreview.operation + '] ' + (tagEditorBatchPreview.data.modified_count || 0) + ' ' + (t('tagEditor.imageCount') || 'images')"></span>
-                </span>
-                <button class="btn btn-sm btn-ghost" @click="tagEditorCancelBatchPreview()" aria-label="Close">&times;</button>
-              </div>
-              <div class="te-preview-modal-body">
-                <template x-if="!tagEditorBatchPreview.preview || tagEditorBatchPreview.preview.length === 0">
-                  <div style="text-align:center;padding:24px;color:var(--text-tertiary)" x-text="t('tagEditor.batchPreviewNone') || 'No images will be modified'"></div>
-                </template>
-                <template x-for="(diff, idx) in (tagEditorBatchPreview.preview || []).slice(0, 50)" :key="diff.path">
-                  <div class="te-preview-diff-item">
-                    <div class="te-preview-diff-name" x-text="diff.name"></div>
-                    <div class="te-preview-diff-row">
-                      <div class="te-preview-diff-col">
-                        <div class="te-preview-diff-label" x-text="t('tagEditor.batchPreviewBefore') || 'Before'"></div>
-                        <div class="te-preview-diff-text te-preview-diff-old" x-text="diff.old_tags || '(empty)'"></div>
-                      </div>
-                      <div class="te-preview-diff-col">
-                        <div class="te-preview-diff-label" x-text="t('tagEditor.batchPreviewAfter') || 'After (editable)'"></div>
-                        <textarea class="te-preview-diff-text te-preview-diff-new" style="width:100%;resize:vertical;min-height:40px;font-family:var(--font-mono);font-size:10.5px;border:none;outline:none;background:transparent" :value="diff._edited || diff.new_tags" @input="tagEditorUpdatePreviewTag(idx, $event.target.value)" rows="2"></textarea>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <template x-if="(tagEditorBatchPreview.preview || []).length > 50">
-                  <div style="text-align:center;padding:8px;font-size:11px;color:var(--text-tertiary)" x-text="(t('tagEditor.batchPreviewMore') || '... and {n} more').replace('{n}', tagEditorBatchPreview.preview.length - 50)"></div>
-                </template>
-              </div>
-              <div class="te-preview-modal-footer">
-                <button class="btn btn-sm btn-secondary" @click="tagEditorCancelBatchPreview()" x-text="t('common.cancel') || 'Cancel'"></button>
-                <button class="btn btn-sm btn-primary" @click="tagEditorConfirmBatchPreview()" x-text="t('tagEditor.batchPreviewConfirm') || 'Confirm & Apply'" :disabled="!tagEditorBatchPreview.data.preview || tagEditorBatchPreview.data.preview.length === 0"></button>
-              </div>
-            </div>
-          </div>
-        </template>
 
         <!-- History panel (toggle) -->
         <template x-if="tagEditorHistoryVisible && tagEditorHistory.length > 0">
