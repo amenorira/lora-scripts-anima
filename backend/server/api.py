@@ -1,18 +1,11 @@
 import asyncio
-import hashlib
-import json
 import os
 import re
-import random
 
-from glob import glob
-from datetime import datetime
 from pathlib import Path
 
 
-import toml
-from fastapi import APIRouter, Body, Request
-from starlette.requests import Request
+from fastapi import APIRouter, Request
 
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT, TOOLS_DIR
 from backend import launch_utils
@@ -53,7 +46,8 @@ async def health_check():
 
 @router.get("/version")
 async def get_version():
-    return APIResponseSuccess(data={"version": _git_version()})
+    version = await asyncio.to_thread(_git_version)
+    return APIResponseSuccess(data={"version": version})
 
 
 @router.get("/fields")
@@ -256,20 +250,22 @@ import time as _install_time
 from uuid import uuid4 as _install_uuid
 
 _install_jobs: dict[str, dict] = {}
+_install_jobs_lock = _install_thr.Lock()
 
 def _cleanup_install_jobs():
     """Remove completed install jobs older than 10 minutes."""
     now = time.time()
-    expired = [jid for jid, job in _install_jobs.items()
-               if job.get("done") and now - job.get("start", 0) > 600]
-    for jid in expired:
-        jpath = _install_jobs[jid].get("log_path")
-        if jpath:
-            try:
-                os.unlink(jpath)
-            except Exception:
-                pass
-        del _install_jobs[jid]
+    with _install_jobs_lock:
+        expired = [jid for jid, job in _install_jobs.items()
+                   if job.get("done") and now - job.get("start", 0) > 600]
+        for jid in expired:
+            jpath = _install_jobs[jid].get("log_path")
+            if jpath:
+                try:
+                    os.unlink(jpath)
+                except Exception:
+                    pass
+            del _install_jobs[jid]
 
 
 def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
@@ -280,10 +276,11 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
         mode="w", encoding="utf-8",
     )
     log_path = log_f.name
-    _install_jobs[job_id] = {
-        "log_path": log_path, "done": False,
-        "start": _install_time.time(), "returncode": None,
-    }
+    with _install_jobs_lock:
+        _install_jobs[job_id] = {
+            "log_path": log_path, "done": False,
+            "start": _install_time.time(), "returncode": None,
+        }
 
     def _run():
         for attempt in range(max_retries + 1):
@@ -296,7 +293,8 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
                 )
                 proc.wait()
                 if proc.returncode == 0:
-                    _install_jobs[job_id]["returncode"] = 0
+                    with _install_jobs_lock:
+                        _install_jobs[job_id]["returncode"] = 0
                     break
                 if attempt < max_retries:
                     wait_sec = 2 ** attempt
@@ -304,15 +302,18 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
                     log_f.flush()
                     _install_time.sleep(wait_sec)
                 else:
-                    _install_jobs[job_id]["returncode"] = proc.returncode
+                    with _install_jobs_lock:
+                        _install_jobs[job_id]["returncode"] = proc.returncode
             except Exception as e:
                 log_f.write(f"\n[ERROR] {e}\n")
                 log_f.flush()
                 if attempt < max_retries:
                     _install_time.sleep(2 ** attempt)
                 else:
-                    _install_jobs[job_id]["returncode"] = -1
-        _install_jobs[job_id]["done"] = True
+                    with _install_jobs_lock:
+                        _install_jobs[job_id]["returncode"] = -1
+        with _install_jobs_lock:
+            _install_jobs[job_id]["done"] = True
         log_f.close()
 
     _install_thr.Thread(target=_run, daemon=True).start()
@@ -324,7 +325,11 @@ async def install_log(job_id: str, tail: int = 20) -> dict:
     """轮询安装进度。返回最新日志行 + 完成状态。"""
     _cleanup_install_jobs()
     import time
-    job = _install_jobs.get(job_id)
+    with _install_jobs_lock:
+        job = _install_jobs.get(job_id)
+        # 拷贝 dict 避免在锁外持有引用
+        if job:
+            job = dict(job)
     if not job:
         return {"lines": "", "done": True, "error": "Job not found / 任务不存在"}
     try:
@@ -346,7 +351,7 @@ async def install_log(job_id: str, tail: int = 20) -> dict:
 # ═══════════════════════════════════════════════════════════
 
 _fa_cache: dict[str, dict] = {}  # key: source name → {candidates, fetch_error, from_disk, ts}
-_fa_cache_lock = __import__('threading').Lock()
+_fa_cache_lock = _install_thr.Lock()
 _FA_CACHE_TTL = 300  # 5 分钟，避免频繁请求 GitHub API 触发限流
 
 
@@ -675,7 +680,7 @@ def _read_sd_scripts_version() -> dict:
 @router.get("/sd-scripts/status")
 async def sd_scripts_status() -> dict:
     """返回 sd-scripts 训练核心的本地版本信息（仅本地，不查询上游）。"""
-    info = _read_sd_scripts_version()
+    info = await asyncio.to_thread(_read_sd_scripts_version)
     owner, repo_name = info["repo"].split("/") if "/" in info["repo"] else ("kohya-ss", "sd-scripts")
     return {
         "local": info,

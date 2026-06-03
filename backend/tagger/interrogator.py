@@ -19,6 +19,7 @@ from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator
 from backend.tagger.interrogators.camie import CamieTaggerInterrogator
 from backend.constants import HF_CACHE_DIR
+from backend.log import log
 import traceback
 import threading
 
@@ -170,7 +171,7 @@ def on_interrogate(
 
         # check the input directory path
         if not os.path.isdir(base_dir):
-            print('input path is not a directory')
+            log.error('input path is not a directory')
             return 'input path is not a directory'
 
         # this line is moved here because some reason
@@ -192,7 +193,7 @@ def on_interrogate(
         _cleanup_completed_tasks()
         with _tagger_progress_lock:
             _tagger_progress[task_id] = {"status": "running", "current": 0, "total": total, "current_file": "", "logs": []}
-        print(f'found {total} image(s)')
+        log.info(f'found {total} image(s)')
 
         # 首次使用会自动下载模型，添加提示到日志
         with _tagger_progress_lock:
@@ -203,7 +204,7 @@ def on_interrogate(
             with _tagger_progress_lock:
                 cancelled = _tagger_progress.get(task_id, {}).get("status") == "cancelled"
             if cancelled:
-                print(f'Task {task_id} cancelled at {idx}/{total}')
+                log.info(f'Task {task_id} cancelled at {idx}/{total}')
                 break
             try:
                 with Image.open(path) as image:
@@ -244,7 +245,7 @@ def on_interrogate(
                         output.append(output_path.read_text(errors='ignore').strip())
 
                         if batch_output_action_on_conflict == 'ignore':
-                            print(f'skipping {path}')
+                            log.info(f'skipping {path}')
                             with _tagger_progress_lock:
                                 _tagger_progress[task_id]["logs"].append(f'Skip (exists): {path.name}')
                                 _tagger_progress[task_id]["current"] = idx + 1
@@ -257,7 +258,7 @@ def on_interrogate(
                         *postprocess_opts
                     )
 
-                    print(
+                    log.info(
                         f'[{idx+1}/{total}] found {len(processed_tags)} tags from {path.name}'
                     )
 
@@ -293,12 +294,12 @@ def on_interrogate(
                     with _tagger_progress_lock:
                         _tagger_progress[task_id]["logs"].append(f'[{idx+1}/{total}] {path.name}: {len(processed_tags)} tags')
             except UnidentifiedImageError:
-                print(f'{path} is not supported image type')
+                log.warning(f'{path} is not supported image type')
                 with _tagger_progress_lock:
                     _tagger_progress[task_id]["logs"].append(f'Skip (unsupported): {path.name}')
             except Exception as e:
                 err_msg = f'{path.name}: {type(e).__name__}: {str(e)[:200]}'
-                print(f'Error processing {err_msg}')
+                log.warning(f'Error processing {err_msg}')
                 traceback.print_exc()
                 with _tagger_progress_lock:
                     _tagger_progress[task_id]["logs"].append(f'Error: {err_msg}')
@@ -311,7 +312,7 @@ def on_interrogate(
             if _tagger_progress.get(task_id, {}).get("status") != "cancelled":
                 _tagger_progress[task_id]["status"] = "done"
         _mark_task_completed(task_id)
-        print('all done')
+        log.info('all done')
 
     if unload_model_after_running:
         interrogator.unload()

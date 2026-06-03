@@ -76,7 +76,7 @@ async def proxy_ws_reverse(ws_a: WebSocket, ws_b: websockets.WebSocketClientProt
         try:
             data = await ws_b.recv()
             await ws_a.send_text(data)
-        except websockets.exceptions.ConnectionClosedOK:
+        except websockets.exceptions.ConnectionClosed:
             break
         except Exception as e:
             log.error(f"Error when proxy data backend -> client: {e}")

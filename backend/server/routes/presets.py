@@ -1,12 +1,14 @@
 """
 Preset routes — GET/POST/DELETE /presets, /config/saved_params
 """
+import json
 import os
 import re
 
 import toml
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
+from backend.server.config import app_config
 from backend.server.models import APIResponseFail, APIResponseSuccess, PresetSaveRequest
 from backend.server.state import avaliable_presets, load_presets
 from backend.log import log
@@ -80,20 +82,14 @@ async def delete_preset(name: str):
 
 
 @router.get("/config/saved_params")
-async def get_saved_params(request=None):
-    from backend.server.config import app_config
+async def get_saved_params():
     saved_params = app_config["saved_params"]
     return APIResponseSuccess(data=saved_params)
 
 
 @router.post("/config/saved_params")
-async def save_params(request=None):
-    import json
-    from backend.server.config import app_config
-    from fastapi import Request
-
-    if request:
-        body = await request.json()
-        app_config["saved_params"] = body.get("params", {})
-        app_config.save_config()  # Persist to disk
+async def save_params(request: Request):
+    body = await request.json()
+    app_config["saved_params"] = body.get("params", {})
+    app_config.save_config()
     return APIResponseSuccess()

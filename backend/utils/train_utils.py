@@ -216,8 +216,6 @@ def validate_data_dir(path):
             log.error(f"No images found in {path}")
             return False
 
-    return True
-
 
 def suggest_num_repeat(img_count):
     if img_count <= 10:

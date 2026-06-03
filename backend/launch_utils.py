@@ -216,7 +216,6 @@ def validate_requirements(requirements_file: str, fix: bool = True):
             if line.strip() != ''
             and not line.strip().startswith("#")
             and not (line.strip().startswith("-") and not line.strip().startswith("--index-url "))
-            and line is not None
             and "# skip_verify" not in line
         ]
 

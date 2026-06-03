@@ -13,15 +13,16 @@ class Info(NamedTuple):
 
 def hash(i: Info, algo='sha1') -> str:
     try:
-        hash = hashlib.new(algo)
-    except ImportError:
+        hasher = hashlib.new(algo)
+    except ValueError:
         raise ValueError(f"'{algo}' is invalid hash algorithm")
 
     # TODO: is okay to hash large image?
     with open(i.path, 'rb') as file:
-        hash.update(file.read())
+        for chunk in iter(lambda: file.read(65536), b''):
+            hasher.update(chunk)
 
-    return hash.hexdigest()
+    return hasher.hexdigest()
 
 
 def ts(i: Info, fmt='%Y%m%d_%H%M%S') -> str:

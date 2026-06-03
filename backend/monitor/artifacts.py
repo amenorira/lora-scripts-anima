@@ -3,7 +3,9 @@
 """
 from __future__ import annotations
 
+import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = REPO_ROOT / "output"
 CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+# ── scan_history 缓存 ────────────────────────────────────
+_history_cache: tuple[float, list[dict]] | None = None
+_HISTORY_CACHE_TTL = 30  # 秒
 
 
 # ── 预览样本 ──────────────────────────────────────────────
@@ -85,6 +91,11 @@ def _parse_toml_config(path: Path) -> dict | None:
 
 def scan_history() -> list[dict]:
     """扫描训练记录：优先从 output/*/config.toml（运行文件夹），回退到 config/autosave/"""
+    global _history_cache
+    now = time.time()
+    if _history_cache and now - _history_cache[0] < _HISTORY_CACHE_TTL:
+        return _history_cache[1]
+
     history = []
     seen_names = set()  # 按 output_name+timestamp 去重
 
@@ -117,7 +128,6 @@ def scan_history() -> list[dict]:
             result_file = run_dir / "result.json"
             if result_file.exists():
                 try:
-                    import json
                     rj = json.loads(result_file.read_text(encoding="utf-8"))
                     status = rj.get("status", "")
                     duration = rj.get("duration_str", "")
@@ -186,6 +196,7 @@ def scan_history() -> list[dict]:
                 "duration": "",
             })
 
+    _history_cache = (time.time(), history)
     return history
 
 
