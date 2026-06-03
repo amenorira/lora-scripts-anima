@@ -515,6 +515,8 @@ window.tagEditorMixin = {
     this.tagEditorOriginal = {};
     this.tagEditorModified = false;
     this.tagEditorTagFreq = [];
+    this.tagEditorDir = '';
+    try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
     this.tagEditorClearFilters();
     this.tagEditorSelectNone();
     this.tagEditorCloseDetail();

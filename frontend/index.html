@@ -381,14 +381,14 @@
               </template>
             </p>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" x-show="tagEditorHasImages()">
             <span style="font-size:11px;color:var(--text-tertiary)" x-text="t('tagEditor.shortcuts') || 'Ctrl+S save · Ctrl+Z undo'"></span>
             <button type="button"  class="btn btn-sm btn-primary" @click="tagEditorLoad()" x-text="t('common.refresh')">Refresh</button>
             <button type="button"  class="btn btn-sm btn-primary" @click="tagEditorSaveAll()" :disabled="!tagEditorModified || tagEditorSaving" x-text="tagEditorSaving ? (t('tagEditor.saving') || 'Saving...') : (t('common.save'))">Save</button>
             <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorRevert()" :disabled="!tagEditorModified" x-text="t('common.revert')">Revert</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')">Restore Backup</button>
             <span style="width:1px;height:18px;background:var(--border-default);margin:0 2px"></span>
-            <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorReset()" x-show="tagEditorHasImages()" x-text="t('tagEditor.exitEditor')">退出编辑器</button>
+            <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorReset()" x-text="t('tagEditor.exitEditor')">退出编辑器</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorHistoryVisible = !tagEditorHistoryVisible" :style="tagEditorHistoryVisible ? 'color:var(--accent)' : ''" x-text="t('tagEditor.historyPanel') || 'History'" :disabled="!tagEditorHasUndo()"></button>
           </div>
         </div>
