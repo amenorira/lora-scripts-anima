@@ -443,6 +443,7 @@ async def download_dataset_zip(dir: str = Query("")):
                 files_to_zip.append((cap, cap_arc))
 
     import asyncio
+    import urllib.parse
 
     def _write_zip():
         buf = io.BytesIO()
@@ -458,9 +459,11 @@ async def download_dataset_zip(dir: str = Query("")):
     loop = asyncio.get_event_loop()
     buf = await loop.run_in_executor(None, _write_zip)
 
+    # RFC 5987: URL-encode non-ASCII filename for Content-Disposition header
+    encoded_name = urllib.parse.quote(f"{dir_name}.zip")
     return StreamingResponse(
         buf, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{dir_name}.zip"'},
+        headers={"Content-Disposition": f"attachment; filename=\"{dir_name}.zip\"; filename*=UTF-8''{encoded_name}"},
     )
 
 

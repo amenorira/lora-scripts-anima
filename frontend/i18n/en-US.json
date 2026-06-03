@@ -505,9 +505,21 @@
     "copyFailed": "Copy failed",
     "batchPreviewMore": "... and {n} more",
     "replaceTag": "Merge Tag",
-    "batchConfirmAll": "WARNING: This affects ALL {n} images. Continue?"
-  },
-  "tools": {
+    "batchConfirmAll": "WARNING: This affects ALL {n} images. Continue?",
+    "sortFreq": "Freq",
+    "sortAlpha": "A-Z",
+    "sortLength": "Len",
+    "sortName": "Name",
+    "sortTagCount": "Tags"
+  },  "bulkAction": {
+    "add": "Add",
+    "removeTag": "Remove",
+    "replace": "Replace",
+    "dedupe": "Dedupe",
+    "dedupeRowHint": "Remove duplicate tags within each image",
+    "posFront": "Front",
+    "posBack": "Back"
+  },  "tools": {
     "title": "Tools",
     "subtitle": "LoRA extraction, merging, conversion utilities"
   },

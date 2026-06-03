@@ -62,9 +62,24 @@ window.tagEditorMixin = {
   tagEditorHistoryVisible: false,
   // Saving indicator
   tagEditorSaving: false,
+  // Regex search
+  tagEditorUseRegex: false,
+  tagEditorRegexError: false,
+  // Tag count range filter
+  tagEditorTagCountMin: '',
+  tagEditorTagCountMax: '',
+  // Drag-and-drop reorder
+  tagEditorDetailDragOverIdx: -1,
+  tagEditorDetailDragSrcIdx: -1,
 
   // ── Lifecycle ──────────────────────────────────────────
   async tagEditorLoad(dir) {
+    // 若无显式传入目录，尝试从 sessionStorage 恢复上次加载的目录
+    if (!dir && !this.tagEditorDir) {
+      var cached = null;
+      try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}
+      if (cached) { dir = cached; }
+    }
     var d = dir || this.tagEditorDir || (this.form && this.form.train_data_dir) || '';
     if (!d) { this.toast(this.t('common.specifyDir') || 'Please specify a directory', 'warning'); return; }
     this.tagEditorDir = d;
@@ -75,6 +90,8 @@ window.tagEditorMixin = {
       var r = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(d));
       var j = await r.json();
       if (j.status === 'success') {
+        // 加载成功，记住目录以便刷新后恢复
+        try { sessionStorage.setItem('tagEditor_lastDir', d); } catch (e) {}
         this.tagEditorImages = j.data.images || [];
         this.tagEditorOriginal = {};
         var self = this;
@@ -104,11 +121,15 @@ window.tagEditorMixin = {
       } else {
         this.tagEditorImages = [];
         this.tagEditorTagFreq = [];
+        this.tagEditorDir = '';
+        try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
         this.toast(j.message || 'Load failed', 'error');
       }
     } catch (e) {
       this.tagEditorImages = [];
       this.tagEditorTagFreq = [];
+      this.tagEditorDir = '';
+      try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e2) {}
       this.toast('Load failed: ' + e, 'error');
     } finally {
       this.tagEditorLoading = false;
@@ -1185,10 +1206,46 @@ window.tagEditorMixin = {
     this.tagEditorMoveTag(img.path, tag, direction);
   },
 
+  // ── Tag Drag-and-Drop Reorder ──────────────────────────
+  tagEditorDetailDragStart(event, tagIdx) {
+    this.tagEditorDetailDragSrcIdx = tagIdx;
+    this.tagEditorDetailDragOverIdx = -1;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(tagIdx));
+    var el = event.target.closest('.te-pill-wrap');
+    if (el) { setTimeout(function() { el.style.opacity = '0.4'; }, 0); }
+  },
+  tagEditorDetailDragOver(event, tagIdx) {
+    event.dataTransfer.dropEffect = 'move';
+    this.tagEditorDetailDragOverIdx = tagIdx;
+  },
+  tagEditorDetailDragLeave(event) {
+    this.tagEditorDetailDragOverIdx = -1;
+  },
+  tagEditorDetailDrop(event, targetIdx) {
+    var srcIdx = parseInt(event.dataTransfer.getData('text/plain'));
+    var srcEl = document.querySelector('.te-pill-drag-src');
+    if (srcEl) srcEl.style.opacity = '';
+    this.tagEditorDetailDragSrcIdx = -1;
+    this.tagEditorDetailDragOverIdx = -1;
+    if (isNaN(srcIdx) || srcIdx === targetIdx) return;
+
+    var img = this.tagEditorDetailImg();
+    if (!img) return;
+    var oldTags = img.tags;
+    var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    if (srcIdx >= tags.length || targetIdx >= tags.length) return;
+    var moved = tags.splice(srcIdx, 1)[0];
+    tags.splice(targetIdx, 0, moved);
+    img.tags = tags.join(', ');
+    this.tagEditorModified = true;
+    this._tePushHistory(img.path, oldTags, img.tags);
+  },
+
   // ── Drag to Select ─────────────────────────────────────
   tagEditorCardMouseDown(event, imgPath) {
     if (event.button !== 0) return;
-    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow')) return;
+    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-del')) return;
     // Start drag selection
     var grid = event.currentTarget.closest('.te-image-grid');
     if (!grid) return;
@@ -1282,7 +1339,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorCardClick(event, imgPath) {
-    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-arrow,.te-card-check')) return;
+    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-del,.te-card-check')) return;
     if (this.tagEditorDragSelect) return;
     this.tagEditorOpenDetail(imgPath);
   },

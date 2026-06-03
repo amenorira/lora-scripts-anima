@@ -395,7 +395,7 @@
         <!-- Empty state -->
         <template x-if="tagEditorIsEmpty()">
           <div class="card te-empty-state">
-            <div class="te-empty-icon">📂</div>
+            <div class="te-empty-icon">⊞</div>
             <div class="te-empty-title" x-text="t('tagEditor.noImages')">No images loaded</div>
             <div class="te-empty-desc" x-text="t('tagEditor.clickToSelectHint')">Enter a dataset directory to get started</div>
             <div class="te-empty-actions">
@@ -457,7 +457,7 @@
               </div>
 
               <!-- Tag cloud -->
-              <div class="te-section" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="te-section" style="flex:1;min-height:0;display:flex;flex-direction:column">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
                   <div class="te-section-title" style="margin-bottom:0" x-text="t('tagEditor.tagCloud')">Tag Cloud</div>
                   <span style="font-size:11px;color:var(--text-secondary);font-weight:500" x-text="tagEditorTagFreq.length + (t('tagEditor.uniqueTags') || ' tags')">0</span>
@@ -465,13 +465,13 @@
                 <!-- Tag cloud sort buttons -->
                 <div style="display:flex;gap:3px;margin-bottom:6px">
                   <button type="button"  class="te-sort-btn" :class="tagEditorTagSortBy === 'freq' ? 'active' : ''" @click="tagEditorToggleTagSort('freq')" title="Sort by frequency">
-                    #<span x-show="tagEditorTagSortBy === 'freq'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
+                    <span x-text="t('tagEditor.sortFreq')">频</span><span x-show="tagEditorTagSortBy === 'freq'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
                   </button>
                   <button type="button"  class="te-sort-btn" :class="tagEditorTagSortBy === 'alpha' ? 'active' : ''" @click="tagEditorToggleTagSort('alpha')" title="Sort alphabetically">
-                    A<span x-show="tagEditorTagSortBy === 'alpha'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
+                    <span x-text="t('tagEditor.sortAlpha')">名</span><span x-show="tagEditorTagSortBy === 'alpha'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
                   </button>
                   <button type="button"  class="te-sort-btn" :class="tagEditorTagSortBy === 'length' ? 'active' : ''" @click="tagEditorToggleTagSort('length')" title="Sort by tag length">
-                    ↔<span x-show="tagEditorTagSortBy === 'length'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
+                    <span x-text="t('tagEditor.sortLength')">长</span><span x-show="tagEditorTagSortBy === 'length'" x-text="tagEditorTagSortAsc ? '↑' : '↓'"></span>
                   </button>
                 </div>
                 <!-- Tag search -->
@@ -528,7 +528,7 @@
                     <button type="button"  class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorSearchQuery = ''; tagEditorRecompute()" aria-label="Clear search">&times;</button>
                   </div>
                   <!-- Regex toggle -->
-                  <button type="button"  class="te-regex-toggle" :class="tagEditorUseRegex ? 'active' : ''" @click="tagEditorUseRegex = !tagEditorUseRegex; tagEditorRecompute()" title="Toggle regex search">.*</button>
+                  <button type="button"  class="te-regex-toggle" :class="tagEditorUseRegex ? 'active' : ''" @click="tagEditorUseRegex = !tagEditorUseRegex; tagEditorRecompute()" title="Toggle regex search" x-text="t('tagEditor.regexSearch') || '正则'">正则</button>
                   <span x-show="tagEditorRegexError" style="color:var(--danger);font-size:10px;margin-left:2px" x-text="t('tagEditor.regexError') || 'Invalid regex'"></span>
                   <span style="width:1px;height:16px;background:var(--border-default)"></span>
                   <!-- Tag count range filter -->
@@ -559,9 +559,9 @@
                   </span>
                   <span style="width:1px;height:14px;background:var(--border-default)"></span>
                   <!-- Sort buttons -->
-                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'name' ? 'active' : ''" @click="tagEditorToggleSort('name')" title="Sort by filename">A↕</button>
-                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'tags' ? 'active' : ''" @click="tagEditorToggleSort('tags')" title="Sort by tag count">#↕</button>
-                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'modified' ? 'active' : ''" @click="tagEditorToggleSort('modified')" title="Sort by modified">✎↕</button>
+                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'name' ? 'active' : ''" @click="tagEditorToggleSort('name')" title="Sort by filename" x-text="t('tagEditor.sortName')">名称</button>
+                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'tags' ? 'active' : ''" @click="tagEditorToggleSort('tags')" title="Sort by tag count" x-text="t('tagEditor.sortTagCount')">标签数</button>
+                  <button type="button"  class="te-sort-btn" :class="tagEditorSortBy === 'modified' ? 'active' : ''" @click="tagEditorToggleSort('modified')" title="Sort by modified" x-text="t('tagEditor.modified')">已修改</button>
                   <span style="width:1px;height:14px;background:var(--border-default)"></span>
                   <!-- Selection buttons -->
                   <button type="button"  class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')"></button>
@@ -569,7 +569,7 @@
                   <button type="button"  class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')"></button>
                   <button type="button"  class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px" @click="tagEditorSelectInvert()" x-text="t('tagEditor.selectInvert')"></button>
                   <span style="width:1px;height:14px;background:var(--border-default);margin:0 2px"></span>
-                  <button type="button"  class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px;color:var(--accent)" @click="tagEditorExportFilteredTags()" title="Copy all tags from filtered images">📤 Export</button>
+                  <button type="button"  class="btn btn-sm btn-ghost" style="font-size:11px;padding:2px 6px;color:var(--accent)" @click="tagEditorExportFilteredTags()" title="Copy all tags from filtered images" x-text="t('common.export')">导出</button>
                 </div>
               </div>
 
@@ -579,17 +579,15 @@
                 <button type="button"  class="te-copy-paste-btn" @click="tagEditorCopiedTags = []" aria-label="Clear copied tags">&times;</button>
               </div>
 
-              <!-- Multi-select floating action bar -->
-              <template x-if="tagEditorSelected.length > 0">
-                <div class="te-multi-bar">
-                  <span class="te-multi-bar-label" x-text="tagEditorSelected.length + (t('tagEditor.selected') || ' selected')"></span>
-                  <input type="text" class="te-multi-bar-input" x-ref="multiAddInp" :placeholder="t('tagEditor.addTagToSelected') || 'Add tag to all selected...'" aria-label="Add tag to all selected images" @keydown="if($event.key==='Enter' && $event.target.value.trim()){ tagEditorAddTagToSelected($event.target.value.trim()); $event.target.value=''; }">
-                  <button type="button"  class="te-multi-bar-btn" @click="var v=$refs.multiAddInp.value.trim(); if(v){tagEditorAddTagToSelected(v);$refs.multiAddInp.value=''}" x-text="t('tagEditor.addPrefix') || 'Add'"></button>
-                  <input type="text" class="te-multi-bar-input" x-ref="multiRemInp" :placeholder="t('tagEditor.removeSelectedTag') || 'Remove tag from selected...'" aria-label="Remove tag from all selected images" @keydown="if($event.key==='Enter' && $event.target.value.trim()){ tagEditorRemoveTagFromSelected($event.target.value.trim()); $event.target.value=''; }">
-                  <button type="button"  class="te-multi-bar-btn danger" @click="var v=$refs.multiRemInp.value.trim(); if(v){tagEditorRemoveTagFromSelected(v);$refs.multiRemInp.value=''}" x-text="t('tagEditor.deleteTag') || 'Remove'"></button>
-                  <button type="button"  class="te-multi-bar-btn" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')"></button>
+              <!-- Multi-select floating action bar — always present, no layout shift -->
+              <div class="te-multi-bar" :class="{ 'te-multi-bar--hidden': tagEditorSelected.length === 0 }">
+                  <span class="te-multi-bar-label" x-text="tagEditorSelected.length + (t('tagEditor.selected') || ' selected')">0 已选中</span>
+                  <input type="text" class="te-multi-bar-input" x-ref="multiAddInp" :placeholder="t('tagEditor.addTagToSelected') || 'Add tag to all selected...'" aria-label="Add tag to all selected images" @keydown="if($event.key==='Enter' && $event.target.value.trim()){ tagEditorAddTagToSelected($event.target.value.trim()); $event.target.value=''; }" :disabled="tagEditorSelected.length === 0">
+                  <button type="button"  class="te-multi-bar-btn" @click="var v=$refs.multiAddInp.value.trim(); if(v){tagEditorAddTagToSelected(v);$refs.multiAddInp.value=''}" x-text="t('tagEditor.addPrefix') || 'Add'" :disabled="tagEditorSelected.length === 0"></button>
+                  <input type="text" class="te-multi-bar-input" x-ref="multiRemInp" :placeholder="t('tagEditor.removeSelectedTag') || 'Remove tag from selected...'" aria-label="Remove tag from all selected images" @keydown="if($event.key==='Enter' && $event.target.value.trim()){ tagEditorRemoveTagFromSelected($event.target.value.trim()); $event.target.value=''; }" :disabled="tagEditorSelected.length === 0">
+                  <button type="button"  class="te-multi-bar-btn danger" @click="var v=$refs.multiRemInp.value.trim(); if(v){tagEditorRemoveTagFromSelected(v);$refs.multiRemInp.value=''}" x-text="t('tagEditor.deleteTag') || 'Remove'" :disabled="tagEditorSelected.length === 0"></button>
+                  <button type="button"  class="te-multi-bar-btn" @click="tagEditorSelectNone()" x-text="t('tagEditor.selectNone')" :disabled="tagEditorSelected.length === 0"></button>
                 </div>
-              </template>
 
               <!-- Collapsible batch bar — 4-row layout -->
               <div class="te-batch-toggle" @click="tagEditorBatchOpen = !tagEditorBatchOpen">
@@ -675,7 +673,7 @@
               <!-- Empty filter results message -->
               <template x-if="tagEditorGetFiltered().length === 0 && tagEditorImages.length > 0">
                 <div style="text-align:center;padding:40px 16px;color:var(--text-tertiary)">
-                  <div style="font-size:48px;margin-bottom:12px;opacity:0.4">🔍</div>
+                  <div style="font-size:13px;margin-bottom:12px;opacity:0.6;color:var(--text-tertiary)" x-text="t('tagEditor.noFilterResults') || 'No images match your filters'"></div>
                   <div x-text="t('tagEditor.noFilterResults') || 'No images match your filters'"></div>
                   <button type="button" class="btn btn-sm btn-ghost" style="margin-top:12px" @click="tagEditorClearFilters()" x-text="t('tagEditor.clearFilters')"></button>
                 </div>
@@ -686,7 +684,7 @@
                 <template x-for="img in tagEditorGetPaged()" :key="img.path">
                   <div class="te-card" :class="{ modified: tagEditorOriginal[img.path] !== undefined && tagEditorOriginal[img.path] !== img.tags, selected: tagEditorIsSelected(img.path) }" :data-modified-label="(t('tagEditor.modified') || 'M')" :data-te-path="img.path" @click="tagEditorCardClick($event, img.path)">
                     <div class="te-card-thumb">
-                      <img :src="img.thumbnail" loading="lazy" :alt="img.name">
+                      <img :src="img.thumbnail" loading="lazy" decoding="async" style="object-fit:contain" :alt="img.name">
                       <div class="te-card-thumb-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
                       <div class="te-card-check" @click.stop>
                         <input type="checkbox" :checked="tagEditorIsSelected(img.path)" @click.stop="tagEditorToggleSelect(img.path, $event)">
@@ -782,8 +780,8 @@
                 <div class="te-detail-drawer-header">
                   <span class="te-detail-drawer-filename" x-text="tagEditorDetailImg().name"></span>
                   <div style="display:flex;align-items:center;gap:4px">
-                    <button class="btn btn-sm btn-ghost" @click="tagEditorCopyTags(tagEditorDetailImg().path)" title="Ctrl+C" style="font-size:11px;padding:2px 6px" aria-label="Copy tags">📋</button>
-                    <button class="btn btn-sm btn-ghost" @click="tagEditorPasteTags(tagEditorDetailImg().path)" title="Ctrl+V" :disabled="tagEditorCopiedTags.length === 0" style="font-size:11px;padding:2px 6px" aria-label="Paste tags">📄</button>
+                    <button class="btn btn-sm btn-ghost" @click="tagEditorCopyTags(tagEditorDetailImg().path)" title="Ctrl+C" style="font-size:11px;padding:2px 6px" x-text="t('tagEditor.copyTags')">复制</button>
+                    <button class="btn btn-sm btn-ghost" @click="tagEditorPasteTags(tagEditorDetailImg().path)" title="Ctrl+V" :disabled="tagEditorCopiedTags.length === 0" style="font-size:11px;padding:2px 6px" x-text="t('tagEditor.pasteTags')">粘贴</button>
                     <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx <= 0" @click="tagEditorDetailPrev()" aria-label="Previous image">&lsaquo;</button>
                     <span style="font-size:11px;color:var(--text-tertiary);min-width:40px;text-align:center" x-text="(tagEditorDetailIdx+1) + '/' + tagEditorGetFiltered().length"></span>
                     <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx >= tagEditorGetFiltered().length - 1" @click="tagEditorDetailNext()" aria-label="Next image">&rsaquo;</button>
@@ -803,10 +801,14 @@
                     <div>
                       <div class="te-detail-drawer-tags">
                         <template x-for="(tag, tagIdx) in (tagEditorDetailImg() ? tagEditorDetailImg().tags : '').split(',').map(function(t){ return t.trim(); }).filter(function(t){ return t; })" :key="'dt-'+tagIdx">
-                          <span class="te-pill-wrap">
-                            <span class="te-pill-arrow" @click="tagEditorDetailMoveTag(tag, 'left')" x-text="'‹'"></span>
-                            <span class="te-pill" @click="tagEditorDetailRemoveTag(tag)" @contextmenu="tagEditorShowContext(tag, $event)" x-text="tag"></span>
-                            <span class="te-pill-arrow" @click="tagEditorDetailMoveTag(tag, 'right')" x-text="'›'"></span>
+                          <span class="te-pill-wrap" draggable="true"
+                                @dragstart="tagEditorDetailDragStart($event, tagIdx)"
+                                @dragover.prevent="tagEditorDetailDragOver($event, tagIdx)"
+                                @dragleave="tagEditorDetailDragLeave($event)"
+                                @drop="tagEditorDetailDrop($event, tagIdx)"
+                                :class="{ 'te-pill-drag-over': tagEditorDetailDragOverIdx === tagIdx, 'te-pill-drag-src': tagEditorDetailDragSrcIdx === tagIdx }">
+                            <span class="te-pill" @dblclick="tagEditorDetailRemoveTag(tag)" @contextmenu="tagEditorShowContext(tag, $event)" x-text="tag"></span>
+                            <span class="te-pill-del" @click.stop="tagEditorDetailRemoveTag(tag)" title="删除标签">&times;</span>
                           </span>
                         </template>
                       </div>
@@ -837,11 +839,11 @@
         <!-- Right-click context menu -->
         <template x-if="tagEditorContextMenu !== null">
           <div class="te-context-menu" :style="'left:' + tagEditorContextMenu.x + 'px;top:' + tagEditorContextMenu.y + 'px'" @click.stop>
-            <div class="te-context-item" @click="tagEditorContextInclude()">🔍 <span x-text="t('tagEditor.contextInclude') || 'Include this tag'"></span></div>
-            <div class="te-context-item danger" @click="tagEditorContextExclude()">🚫 <span x-text="t('tagEditor.contextExclude') || 'Exclude this tag'"></span></div>
+            <div class="te-context-item" @click="tagEditorContextInclude()"><span x-text="t('tagEditor.contextInclude') || 'Include this tag'"></span></div>
+            <div class="te-context-item danger" @click="tagEditorContextExclude()"><span x-text="t('tagEditor.contextExclude') || 'Exclude this tag'"></span></div>
             <div class="te-context-divider"></div>
-            <div class="te-context-item" @click="tagEditorContextCopy()">📋 <span x-text="t('tagEditor.contextCopy') || 'Copy tag name'"></span></div>
-            <div class="te-context-item" @click="tagEditorContextAddAll()">✨ <span x-text="t('tagEditor.contextAddAll') || 'Add to all images'"></span></div>
+            <div class="te-context-item" @click="tagEditorContextCopy()"><span x-text="t('tagEditor.contextCopy') || 'Copy tag name'"></span></div>
+            <div class="te-context-item" @click="tagEditorContextAddAll()"><span x-text="t('tagEditor.contextAddAll') || 'Add to all images'"></span></div>
           </div>
         </template>
 

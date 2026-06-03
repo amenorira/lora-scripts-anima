@@ -505,7 +505,21 @@
     "copyFailed": "复制失败",
     "batchPreviewMore": "... 还有 {n} 张",
     "replaceTag": "合并标签",
-    "batchConfirmAll": "⚠ 警告：此操作将影响全部 {n} 张图片，确定继续吗？"
+    "batchConfirmAll": "⚠ 警告：此操作将影响全部 {n} 张图片，确定继续吗？",
+    "sortFreq": "频",
+    "sortAlpha": "名",
+    "sortLength": "长",
+    "sortName": "名称",
+    "sortTagCount": "标签数"
+  },
+  "bulkAction": {
+    "add": "添加",
+    "removeTag": "移除",
+    "replace": "替换",
+    "dedupe": "去重",
+    "dedupeRowHint": "移除每张图片中重复的标签",
+    "posFront": "开头",
+    "posBack": "结尾"
   },
   "tools": {
     "title": "工具",
