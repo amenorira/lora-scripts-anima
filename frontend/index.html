@@ -1093,17 +1093,51 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="max-height:60vh;overflow-y:auto">
       <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
       <template x-for="p in allPresets" :key="p.metadata.name">
-        <div class="config-list-item" @click="loadPresetFromList(p); showLoadModal = false" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div style="min-width:0">
-            <div class="config-name" x-text="p.metadata.name" style="font-weight:600"></div>
-            <div class="text-sm text-muted" x-text="p.metadata.description || ''" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+        <div>
+          <div class="config-list-item" @click="togglePreview(p)"
+               style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div style="min-width:0">
+              <div class="config-name" x-text="p.metadata.name" style="font-weight:600"></div>
+              <div class="text-sm text-muted" x-text="p.metadata.description || ''" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span class="text-xs text-muted" x-text="t('preset.paramsCount').replace('{n}', Object.keys(p.data || {}).length)"></span>
+              <button class="btn-icon" @click.stop="deletePresetFromList(p)" :title="t('preset.delete')" :aria-label="'Delete ' + p.metadata.name" style="opacity:0.4">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </div>
           </div>
-          <button class="btn-icon" @click.stop="deletePresetFromList(p)" :title="t('preset.delete')" :aria-label="'Delete ' + p.metadata.name" style="flex-shrink:0;opacity:0.4">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
+          <!-- Preview card -->
+          <div x-show="previewPreset && previewPreset.metadata.name === p.metadata.name"
+               class="preset-preview-card" x-transition>
+            <div class="preset-preview-params">
+              <template x-for="k in previewTopKeys(p)" :key="k">
+                <div class="preset-preview-param">
+                  <code class="preset-preview-key" x-text="k"></code>
+                  <span class="preset-preview-val">
+                    <template x-if="typeof p.data[k] === 'boolean'">
+                      <span class="badge" :class="p.data[k] ? 'badge-on' : 'badge-off'" x-text="p.data[k] ? 'true' : 'false'"></span>
+                    </template>
+                    <template x-if="typeof p.data[k] !== 'boolean'">
+                      <span x-text="String(p.data[k])"></span>
+                    </template>
+                  </span>
+                </div>
+              </template>
+              <div class="text-xs text-muted" style="margin-top:4px"
+                   x-show="previewParamCount(p) > 8"
+                   x-text="t('preset.andMore').replace('{n}', previewParamCount(p) - 8)"></div>
+            </div>
+            <div class="preset-preview-actions">
+              <button class="btn btn-ghost btn-xs" @click.stop="applyPreset(p); showLoadModal = false"
+                      x-text="t('preset.apply')">Apply</button>
+              <button class="btn btn-ghost btn-xs" @click.stop="enterDiffMode()"
+                      x-text="t('preset.compare')">Compare</button>
+            </div>
+          </div>
         </div>
       </template>
     </div>

@@ -2719,6 +2719,22 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   }
 }
 
+/* ── Preset Preview Card ─────────────────────────────── */
+.preset-preview-card {
+  background: var(--bg-surface-raised); border: 1px solid var(--border-default);
+  border-radius: 6px; padding: 10px 12px; margin: 4px 0 8px 0;
+}
+.preset-preview-params { margin-bottom: 8px; }
+.preset-preview-param {
+  display: flex; gap: 8px; padding: 1px 0; font-size: 12px;
+}
+.preset-preview-key { color: var(--accent); font-weight: 500; min-width: 0; flex-shrink: 0; }
+.preset-preview-val { color: var(--text-secondary); word-break: break-all; }
+.badge { font-size: 11px; padding: 0 5px; border-radius: 3px; }
+.badge-on { background: rgba(85,224,85,0.15); color: #55e055; }
+.badge-off { background: rgba(224,85,85,0.15); color: #e05555; }
+.preset-preview-actions { display: flex; gap: 6px; }
+
 /* ═══════════════════════════════════════════════════════════
    End of anima-ui design system
    ═══════════════════════════════════════════════════════════ */

@@ -17,6 +17,8 @@ window.trainingPresetsMixin = {
   presetsLoading: false,
   currentPreset: null,
   currentPresetName: '',
+  previewPreset: null,
+  diffCounts: { modified: 0, added: 0 },
   // ── Param Save/Load (server presets) ──────────────────
   openSavePresetModal() {
     this.savePresetName = this.form.output_name || '';
@@ -58,6 +60,59 @@ window.trainingPresetsMixin = {
     if (!preset) return;
     this.applyPreset(preset);
     this.showLoadModal = false;
+  },
+
+  togglePreview(preset) {
+    this.previewPreset = (this.previewPreset && this.previewPreset.metadata.name === preset.metadata.name) ? null : preset;
+  },
+
+  previewParamCount(preset) {
+    if (!preset || !preset.data) return 0;
+    return Object.keys(preset.data).length;
+  },
+
+  previewTopKeys(preset) {
+    if (!preset || !preset.data) return [];
+    return Object.keys(preset.data).slice(0, 8);
+  },
+
+  enterDiffMode() {
+    const preset = this.previewPreset;
+    if (!preset) return;
+    const diffMap = {};
+    let modified = 0, added = 0;
+    const currentForm = this.form || {};
+    const presetData = preset.data || {};
+    const allKeys = new Set([...Object.keys(currentForm), ...Object.keys(presetData)]);
+    for (const k of allKeys) {
+      const cv = currentForm[k];
+      const pv = presetData[k];
+      if (pv === undefined) continue;
+      if (cv === undefined) {
+        diffMap[k] = { type: 'added', newVal: pv }; added++;
+      } else if (String(cv) !== String(pv)) {
+        diffMap[k] = { type: 'modified', oldVal: cv, newVal: pv }; modified++;
+      }
+    }
+    this.formDiffMap = diffMap;
+    this.diffCounts = { modified, added };
+    this.showLoadModal = false;
+    this.rebuildForm();
+  },
+
+  applyDiffPreset() {
+    if (!this.previewPreset) return;
+    this.applyPreset(this.previewPreset);
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
+  },
+
+  cancelDiff() {
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
+    this.rebuildForm();
   },
 
   // ── Confirm Modal ─────────────────────────────────────
