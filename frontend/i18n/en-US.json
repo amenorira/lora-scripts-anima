@@ -349,7 +349,23 @@
     "description": "Description",
     "namePlaceholder": "Enter preset name",
     "descPlaceholder": "Short description (optional)",
-    "importPreset": "Import Preset"
+    "importPreset": "Import Preset",
+    "switched": "Switched to",
+    "previewing": "Preview: {name}",
+    "paramsCount": "{n} parameters",
+    "andMore": "{n} more",
+    "compare": "Compare",
+    "apply": "Apply",
+    "diff": {
+      "modified": "modified",
+      "added": "added",
+      "comparingWith": "Comparing: {name}",
+      "modifiedCount": "{n} modified",
+      "addedCount": "{n} added",
+      "apply": "Apply this preset",
+      "cancel": "Cancel comparison",
+      "noChanges": "No differences"
+    }
   },
   "tagger": {
     "title": "Tagger",
