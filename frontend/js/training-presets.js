@@ -17,8 +17,6 @@ window.trainingPresetsMixin = {
   presetsLoading: false,
   currentPreset: null,
   currentPresetName: '',
-  previousPresetData: null,
-
   // ── Param Save/Load (server presets) ──────────────────
   openSavePresetModal() {
     this.savePresetName = this.form.output_name || '';
