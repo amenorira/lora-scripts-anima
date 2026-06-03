@@ -1712,9 +1712,6 @@ input[type="range"]::-webkit-slider-thumb {
 .te-tag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text-primary); position: relative; z-index: 1; }
 .te-tag-name:hover { color: var(--accent); }
 .te-tag-count { font-size: 10.5px; color: var(--text-secondary); min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; position: relative; z-index: 1; }
-.te-tag-item .te-tag-freq-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-muted); border-radius: 5px; transition: width 0.2s var(--ease-out); pointer-events: none; }
-.te-tag-item.selected .te-tag-freq-bar { background: var(--accent-soft); }
-.te-tag-item.excluded .te-tag-freq-bar { background: rgba(220, 38, 38, 0.06); }
 .te-tag-exclude-btn { font-size: 14px; color: var(--text-tertiary); cursor: pointer; opacity: 0.3; transition: opacity 0.1s, color 0.1s; padding: 0 2px; line-height: 1; }
 .te-tag-item:hover .te-tag-exclude-btn { opacity: 0.7; }
 .te-tag-exclude-btn:hover { color: var(--danger); opacity: 1 !important; }
@@ -1751,24 +1748,19 @@ input[type="range"]::-webkit-slider-thumb {
 .te-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; flex: 1; overflow-y: auto; padding-bottom: 8px; align-content: start; max-height: calc(100vh - 360px); -webkit-overflow-scrolling: touch; }
 
 /* Image card — square with overlay */
-.te-card { border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; position: relative; aspect-ratio: 1; }
+.te-card { border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); transition: border-color 0.15s, box-shadow 0.15s; position: relative; aspect-ratio: 1; }
 .te-card:hover { border-color: var(--border-focus); }
 .te-card.modified { border-left: 3px solid var(--warning); }
 .te-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft), inset 0 0 0 1px var(--accent-soft); }
 
 /* Card thumb — fills entire card */
-.te-card-thumb { position: relative; width: 100%; height: 100%; background: var(--bg-preview); overflow: hidden; cursor: pointer; }
+.te-card-thumb { position: relative; width: 100%; height: 100%; background: var(--bg-preview); overflow: hidden; cursor: pointer; border-radius: var(--radius-md); }
 .te-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s; }
 .te-card:hover .te-card-thumb img { transform: scale(1.05); }
-.te-card-thumb-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0); display: flex; align-items: center; justify-content: center; transition: background 0.15s; pointer-events: none; }
+.te-card-thumb-overlay { position: absolute; inset: 0; z-index: 4; background: rgba(0,0,0,0); display: flex; align-items: center; justify-content: center; transition: background 0.15s; pointer-events: none; }
 .te-card:hover .te-card-thumb-overlay { background: rgba(0,0,0,0.15); }
 .te-card-thumb-overlay svg { width: 28px; height: 28px; color: #fff; opacity: 0; transition: opacity 0.15s; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); }
 .te-card:hover .te-card-thumb-overlay svg { opacity: 0.8; }
-
-/* Bigger checkbox */
-.te-card-check { position: absolute; top: 6px; left: 6px; z-index: 3; }
-.te-card-check input[type=checkbox] { width: 20px; height: 20px; border-radius: 4px; border: 2px solid rgba(255,255,255,0.6); background: rgba(0,0,0,0.3); accent-color: var(--accent); cursor: pointer; }
-.te-card-check input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
 
 /* Card info overlay */
 .te-card-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; background: linear-gradient(transparent, rgba(0,0,0,0.85)); color: #fff; opacity: 0; transition: opacity 0.2s; z-index: 2; max-height: 70%; overflow-y: auto; }
@@ -1778,11 +1770,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* Tag pills with reorder arrows */
 .te-pill-wrap { display: inline-flex; align-items: center; gap: 0; }
-.te-pill-arrow { font-size: 11px; color: rgba(255,255,255,0.6); cursor: pointer; padding: 0 1px; opacity: 0; transition: opacity 0.1s, color 0.1s; line-height: 1; user-select: none; }
 .te-card-tags:hover .te-pill-arrow, .te-detail-tags:hover .te-pill-arrow, .te-detail-drawer-tags:hover .te-pill-arrow { opacity: 0.7; }
 .te-pill-arrow:hover { color: #fff; opacity: 1 !important; }
-.te-pill { font-size: 10px; padding: 1px 5px; border-radius: 10px; background: rgba(255,255,255,0.2); color: #fff; cursor: pointer; transition: background 0.1s; white-space: nowrap; line-height: 1.5; }
-.te-pill:hover { background: var(--danger); color: #fff; }
 
 /* Card add tag row */
 .te-card-add-row { display: flex; gap: 3px; margin-bottom: 4px; }
@@ -1946,7 +1935,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card.selected .te-card-check input[type=checkbox]:not(:checked) { border-color: var(--accent); background: rgba(37,99,235,0.2); }
 
 /* Tag bar: gradient frequency indicator */
-.te-tag-item .te-tag-freq-bar { border-radius: 5px; transition: width 0.25s var(--ease-out); background: linear-gradient(90deg, var(--accent-soft), var(--accent)); }
+.te-tag-item .te-tag-freq-bar { position: absolute; left: 0; top: 0; bottom: 0; pointer-events: none; border-radius: 5px; transition: width 0.25s var(--ease-out); background: linear-gradient(90deg, var(--accent-soft), var(--accent)); }
 .te-tag-item.selected .te-tag-freq-bar { background: linear-gradient(90deg, var(--accent-muted), var(--accent)); }
 .te-tag-item.excluded .te-tag-freq-bar { background: rgba(220, 38, 38, 0.06); }
 

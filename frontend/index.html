@@ -771,7 +771,7 @@
         </template>
 
         <!-- Drag selection rectangle -->
-        <div class="te-drag-rect" x-show="tagEditorDragRect() !== null" :style="tagEditorDragRect() ? 'position:fixed;pointer-events:none;z-index:9999;left:' + tagEditorDragRect().left + 'px;top:' + tagEditorDragRect().top + 'px;width:' + tagEditorDragRect().width + 'px;height:' + tagEditorDragRect().height + 'px' : ''"></div>
+        <div class="te-drag-rect" x-show="tagEditorDragRect() !== null" :style="tagEditorDragRect() ? 'position:fixed;pointer-events:none;left:' + tagEditorDragRect().left + 'px;top:' + tagEditorDragRect().top + 'px;width:' + tagEditorDragRect().width + 'px;height:' + tagEditorDragRect().height + 'px' : ''"></div>
 
         <!-- Batch preview modal -->
         <template x-if="tagEditorBatchPreview !== null">

@@ -377,6 +377,12 @@ async def move_or_delete_files(data: dict):
         except Exception as e:
             result["errors"].append(f"{img_path.name}: {e}")
 
+    if result["moved"] > 0 or result["deleted"] > 0:
+        dirs_to_invalidate = {img_path.parent for img_path in [Path(p) for p in paths]}
+        if action == "move" and dest:
+            dirs_to_invalidate.add(Path(dest))
+        for d in dirs_to_invalidate:
+            _invalidate_cache(d)
     return {"status": "success", "data": result}
 
 
