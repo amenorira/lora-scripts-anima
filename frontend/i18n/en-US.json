@@ -515,7 +515,8 @@
     "sortAlpha": "A-Z",
     "sortLength": "Len",
     "sortName": "Name",
-    "sortTagCount": "Tags"
+    "sortTagCount": "Tags",
+    "exitEdit": "Exit Edit"
   },  "bulkAction": {
     "add": "Add",
     "removeTag": "Remove",

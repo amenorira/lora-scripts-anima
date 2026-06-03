@@ -388,6 +388,7 @@
             <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorRevert()" :disabled="!tagEditorModified" x-text="t('common.revert')">Revert</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')">Restore Backup</button>
             <span style="width:1px;height:18px;background:var(--border-default);margin:0 2px"></span>
+            <button type="button"  class="btn btn-sm btn-secondary" @click="tagEditorExitEdit()" x-show="tagEditorDetailMode || tagEditorTagSelection.length > 0 || tagEditorExcludedTags.length > 0 || tagEditorSelected.length > 0 || tagEditorSearchQuery || tagEditorQuickFilter !== 'all'" x-text="t('tagEditor.exitEdit')">退出编辑</button>
             <button type="button"  class="btn btn-sm btn-ghost" @click="tagEditorHistoryVisible = !tagEditorHistoryVisible" :style="tagEditorHistoryVisible ? 'color:var(--accent)' : ''" x-text="t('tagEditor.historyPanel') || 'History'" :disabled="!tagEditorHasUndo()"></button>
           </div>
         </div>
@@ -785,6 +786,7 @@
                     <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx <= 0" @click="tagEditorDetailPrev()" aria-label="Previous image">&lsaquo;</button>
                     <span style="font-size:11px;color:var(--text-tertiary);min-width:40px;text-align:center" x-text="(tagEditorDetailIdx+1) + '/' + tagEditorGetFiltered().length"></span>
                     <button class="btn btn-sm btn-ghost" :disabled="tagEditorDetailIdx >= tagEditorGetFiltered().length - 1" @click="tagEditorDetailNext()" aria-label="Next image">&rsaquo;</button>
+                    <button class="btn btn-sm btn-secondary" @click="tagEditorExitEdit()" x-text="t('tagEditor.exitEdit')">退出编辑</button>
                     <button class="btn btn-sm btn-ghost" @click="tagEditorCloseDetail()" title="Esc" aria-label="Close detail view">&times;</button>
                   </div>
                 </div>

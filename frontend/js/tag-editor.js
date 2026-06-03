@@ -510,6 +510,11 @@ window.tagEditorMixin = {
     this.tagEditorRegexError = false;
     this.tagEditorPage = 1;
   },
+  tagEditorExitEdit() {
+    this.tagEditorCloseDetail();
+    this.tagEditorClearFilters();
+    this.tagEditorSelectNone();
+  },
   _teFreqCacheKey: '',
   _teFreqCacheResult: null,
   tagEditorGetFilteredTagFreq() {

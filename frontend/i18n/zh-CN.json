@@ -515,7 +515,8 @@
     "sortAlpha": "名",
     "sortLength": "长",
     "sortName": "名称",
-    "sortTagCount": "标签数"
+    "sortTagCount": "标签数",
+    "exitEdit": "退出编辑"
   },
   "bulkAction": {
     "add": "添加",
