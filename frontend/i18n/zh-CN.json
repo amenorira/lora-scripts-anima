@@ -504,7 +504,6 @@
     "noTagsToExport": "没有可导出的标签",
     "copyFailed": "复制失败",
     "batchPreviewMore": "... 还有 {n} 张",
-    "perPage": "/页",
     "replaceTag": "合并标签",
     "batchConfirmAll": "⚠ 警告：此操作将影响全部 {n} 张图片，确定继续吗？"
   },
