@@ -1,80 +1,107 @@
 /* ================================================================
-   tag-editor.js — Native Tag Editor v2.2
-   Alpine.js mixin: clipboard, auto-save, multi-select batch ops,
-   batch preview, drawer detail, drag-select, right-click context,
-   incremental freq update, tag-count range filter, regex search
+   tag-editor.js — Tag Editor v3: 3-Column Layout
+   Alpine.js mixin: left tag cloud, center image grid, right editor panel
    ================================================================ */
 
 window.tagEditorMixin = {
-  // ── Core State ─────────────────────────────────────────
+
+  // ===== Core State =====
   tagEditorDir: '',
   tagEditorImages: [],
   tagEditorOriginal: {},
   tagEditorModified: false,
   tagEditorTagFreq: [],
+  tagEditorMaxFreq: 0,
+  tagEditorLoading: false,
+  tagEditorSaving: false,
+
+  // ===== Filters & Search =====
   tagEditorSearchQuery: '',
+  tagEditorUseRegex: false,
+  tagEditorQuickFilter: 'all',
+  tagEditorSortBy: 'name',
+  tagEditorSortAsc: true,
   tagEditorTagSearch: '',
+  tagEditorTagLogic: 'AND',
   tagEditorTagSelection: [],
   tagEditorExcludedTags: [],
+  tagEditorTagSortBy: 'freq',
+  tagEditorTagSortAsc: false,
+  tagEditorTagCloudLimit: 200,
+  tagEditorTagCloudExpanded: false,
+
+  // ===== Selection & Grid =====
   tagEditorSelected: [],
   tagEditorPage: 1,
   tagEditorPageSize: 60,
-  tagEditorPageSizeOptions: [30, 60, 120, 240],
+  tagEditorDragSelect: false,
+  tagEditorDragStart: null,
+  tagEditorDragRect: null,
+  tagEditorContextMenu: null,
+  tagEditorLeftCollapsed: false,
+  tagEditorRightCollapsed: false,
+  _teLastSelected: null,
+
+  // ===== Right Panel Editor =====
+  tagEditorDetailView: 'chip',
+  tagEditorDetailText: '',
+  tagEditorAddInput: '',
+  tagEditorSuggestions: [],
+  _teSuggestTimer: null,
+  _teBlurTimer: null,
+  tagEditorDetailDragOverIdx: -1,
+  tagEditorDetailDragSrcIdx: -1,
+
+  // ===== Batch Operations =====
   tagEditorBatchScope: 'filtered',
-  // Batch bar v2 state
   batchAddInput: '',
   batchRemoveInput: '',
   batchOldTag: '',
   batchNewTag: '',
   batchPos: 'front',
   batchSuggestOpen: null,
-  batchSuggestTail: '',
-  tagEditorTagLogic: 'AND',
+  batchSuggestItems: [],
+  _teBatchSuggestTimer: null,
+  _teBatchBlurTimer: null,
 
-  // ── v2.2 New State ─────────────────────────────────────
-  tagEditorLoading: false,
-  _teBlurTimer: null,
-  tagEditorSortBy: 'name',
-  tagEditorSortAsc: true,
-  tagEditorDetailMode: false,
-  tagEditorDetailIdx: 0,
-  tagEditorDetailView: 'chip',
-  tagEditorTagSortBy: 'freq',
-  tagEditorTagSortAsc: false,
-  tagEditorTagCloudLimit: 200,
-  tagEditorTagCloudExpanded: false,
+  // ===== Clipboard =====
+  tagEditorCopiedTags: [],
+
+  // ===== Undo/Redo =====
   tagEditorHistory: [],
   tagEditorHistoryIdx: -1,
-  tagEditorQuickFilter: 'all',
-  tagEditorFocusedImg: null,
-  tagEditorFocusedVal: '',
-  // Clipboard
-  tagEditorCopiedTags: [],
-  // Collapsible batch
-  tagEditorBatchOpen: false,
-  // Auto-save
-  // Right-click context menu
-  tagEditorContextMenu: null,
-  // Drag select
-  tagEditorDragSelect: false,
-  tagEditorDragStart: null,
-  // History panel
-  tagEditorHistoryVisible: false,
-  // Saving indicator
-  tagEditorSaving: false,
-  // Regex search
-  tagEditorUseRegex: false,
-  tagEditorRegexError: false,
-  // Tag count range filter
-  tagEditorTagCountMin: '',
-  tagEditorTagCountMax: '',
-  // Drag-and-drop reorder
-  tagEditorDetailDragOverIdx: -1,
-  tagEditorDetailDragSrcIdx: -1,
 
-  // ── Lifecycle ──────────────────────────────────────────
+  // ===== Confirm Dialog =====
+  tagEditorConfirmOpen: false,
+  tagEditorConfirmMsg: '',
+  tagEditorConfirmCb: null,
+
+  // ===== Auto-save =====
+  _teAutoSaveInterval: null,
+  _tePendingTextEdits: {},
+
+  // ===== Cache =====
+  _teFilteredCacheKey: '',
+  _teFreqCacheKey: '',
+  _teCachedFiltered: null,
+  _teCachedFreqResult: null,
+
+  // ===== Lifecycle =====
+  tagEditorCleanup() {
+    this._teStopAutoSave();
+    if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
+    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
+    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
+    if (this._teBatchBlurTimer) { clearTimeout(this._teBatchBlurTimer); this._teBatchBlurTimer = null; }
+    var keys = Object.keys(this._tePendingTextEdits);
+    for (var i = 0; i < keys.length; i++) {
+      clearTimeout(this._tePendingTextEdits[keys[i]]);
+    }
+    this._tePendingTextEdits = {};
+  },
+
+  // ===== Data Loading =====
   async tagEditorLoad(dir) {
-    // 若无显式传入目录，尝试从 sessionStorage 恢复上次加载的目录
     if (!dir && !this.tagEditorDir) {
       var cached = null;
       try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}
@@ -90,7 +117,6 @@ window.tagEditorMixin = {
       var r = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(d));
       var j = await r.json();
       if (j.status === 'success') {
-        // 加载成功，记住目录以便刷新后恢复
         try { sessionStorage.setItem('tagEditor_lastDir', d); } catch (e) {}
         this.tagEditorImages = j.data.images || [];
         this.tagEditorOriginal = {};
@@ -99,42 +125,25 @@ window.tagEditorMixin = {
         this.tagEditorModified = false;
         this.tagEditorSelected = [];
         this.tagEditorPage = 1;
-        this.tagEditorSearchQuery = '';
-        this.tagEditorTagSelection = [];
-        this.tagEditorExcludedTags = [];
         this.tagEditorHistory = [];
         this.tagEditorHistoryIdx = -1;
-        this.tagEditorQuickFilter = 'all';
-        this.tagEditorTagCloudExpanded = false;
-        this.tagEditorCopiedTags = [];
-        this.tagEditorBatchOpen = false;
-        this.tagEditorContextMenu = null;
-        this.tagEditorDetailMode = false;
-        this.tagEditorTagCountMin = '';
-        this.tagEditorTagCountMax = '';
-        this.tagEditorUseRegex = false;
-        this._tePendingTextEdits = {};
+        this.tagEditorTagSelection = [];
+        this.tagEditorExcludedTags = [];
         this._teFilteredCacheKey = '';
         this._teFreqCacheKey = '';
+        this._teCachedFiltered = null;
+        this._teCachedFreqResult = null;
         await this.tagEditorLoadTagFreq();
-        this._teTryRestoreDraft();
+        this._teCheckDraft();
+        this._teStartAutoSave();
       } else {
-        this.tagEditorImages = [];
-        this.tagEditorTagFreq = [];
-        this.tagEditorDir = '';
-        try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
-        this.toast(j.message || 'Load failed', 'error');
+        this.toast(j.message || this.t('common.error'), 'error');
       }
     } catch (e) {
-      this.tagEditorImages = [];
-      this.tagEditorTagFreq = [];
-      this.tagEditorDir = '';
-      try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e2) {}
-      this.toast('Load failed: ' + e, 'error');
+      this.toast(this.t('common.networkError'), 'error');
     } finally {
       this.tagEditorLoading = false;
       this.finishProgress();
-      this._teStartAutoSave();
     }
   },
 
@@ -144,1294 +153,983 @@ window.tagEditorMixin = {
       var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir));
       var j = await r.json();
       if (j.status === 'success') {
-        this.tagEditorTagFreq = (j.data.tags || []);
+        this.tagEditorTagFreq = j.data.freq || [];
+        this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
+        this._teFreqCacheKey = '';
+        this._teCachedFreqResult = null;
       }
     } catch (e) { /* silent */ }
   },
 
-  // ── Auto-save ──────────────────────────────────────────
-  _teGetDraftKey() { return 'tagEditor_draft_' + (this.tagEditorDir || 'default'); },
-  _teAutoSaveInProgress: false,
+  // ===== Filtering & Sorting =====
+  tagEditorGetFiltered() {
+    var cacheKey = this.tagEditorSearchQuery + '|' + this.tagEditorQuickFilter + '|' +
+      this.tagEditorTagSelection.join(',') + '|' + this.tagEditorExcludedTags.join(',') + '|' +
+      this.tagEditorTagLogic + '|' + this.tagEditorSortBy + '|' + this.tagEditorSortAsc;
+    if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
-  _teStartAutoSave() {
-    this._teStopAutoSave();
-    var self = this;
-    this.tagEditorAutoSaveTimer = setInterval(function() { self._teAutoSaveDraft(); }, 30000);
-  },
+    var images = this.tagEditorImages.slice();
 
-  _teStopAutoSave() {
-    if (this.tagEditorAutoSaveTimer) { clearInterval(this.tagEditorAutoSaveTimer); this.tagEditorAutoSaveTimer = null; }
-  },
+    if (this.tagEditorQuickFilter === 'notag') {
+      images = images.filter(function(img) { return !img.tags || img.tags.trim() === ''; });
+    } else if (this.tagEditorQuickFilter === 'modified') {
+      var orig = this.tagEditorOriginal;
+      images = images.filter(function(img) { return img.tags !== orig[img.path]; });
+    }
 
-  _teAutoSaveDraft() {
-    if (!this.tagEditorModified || this._teAutoSaveInProgress) return;
-    this._teAutoSaveInProgress = true;
-    var modifiedImgs = [];
-    var orig = this.tagEditorOriginal;
-    var self = this;
-    this.tagEditorImages.forEach(function(img) {
-      if (orig[img.path] !== undefined && orig[img.path] !== img.tags) {
-        modifiedImgs.push({ path: img.path, tags: img.tags });
-      }
-    });
-    if (modifiedImgs.length === 0) { this._teAutoSaveInProgress = false; return; }
-    try {
-      var draft = { dir: this.tagEditorDir, images: modifiedImgs, time: Date.now() };
-      localStorage.setItem(this._teGetDraftKey(), JSON.stringify(draft));
-    } catch (e) { /* quota exceeded, ignore */ }
-    finally { this._teAutoSaveInProgress = false; }
-  },
-
-  _teTryRestoreDraft() {
-    try {
-      var raw = localStorage.getItem(this._teGetDraftKey());
-      if (!raw) return;
-      var draft = JSON.parse(raw);
-      if (!draft || !draft.images || draft.images.length === 0) return;
-      if (!confirm((this.t('tagEditor.draftFound') || 'Unsaved draft found. Restore?'))) {
-        localStorage.removeItem(this._teGetDraftKey());
-        return;
-      }
-      var self = this;
-      draft.images.forEach(function(item) {
-        var img = self.tagEditorImages.find(function(i) { return i.path === item.path; });
-        if (img) { img.tags = item.tags; self.tagEditorModified = true; }
-      });
-      this.tagEditorRefreshTagFreq();
-      localStorage.removeItem(this._teGetDraftKey());
-      this.toast(this.t('tagEditor.autoSaveRestored') || 'Restored unsaved changes', 'success');
-    } catch (e) { /* ignore */ }
-  },
-
-  _teClearDraft() {
-    try { localStorage.removeItem(this._teGetDraftKey()); } catch (e) {}
-  },
-
-  // ── Incremental Tag Frequency ──────────────────────────
-  _teUpdateFreqIncremental(oldTags, newTags) {
-    var freq = (this.tagEditorTagFreq || []).slice(); // Create a copy to avoid race conditions
-    var map = {};
-    freq.forEach(function(t, i) { map[t.tag] = i; });
-    var oldList = (oldTags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-    var newList = (newTags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-    // Remove old tags from count
-    oldList.forEach(function(tag) {
-      if (map[tag] !== undefined && freq[map[tag]]) {
-        freq[map[tag]] = { tag: freq[map[tag]].tag, count: Math.max(0, freq[map[tag]].count - 1) };
-      }
-    });
-    // Add new tags
-    var tagMap = {};
-    newList.forEach(function(tag) { tagMap[tag] = (tagMap[tag] || 0) + 1; });
-    for (var tag in tagMap) {
-      if (map[tag] !== undefined && freq[map[tag]]) {
-        freq[map[tag]] = { tag: tag, count: freq[map[tag]].count + tagMap[tag] };
+    if (this.tagEditorSearchQuery) {
+      var q = this.tagEditorSearchQuery.toLowerCase();
+      if (this.tagEditorUseRegex) {
+        try {
+          var re = new RegExp(this.tagEditorSearchQuery, 'i');
+          images = images.filter(function(img) {
+            return re.test(img.name) || re.test(img.tags || '');
+          });
+        } catch (e) { /* invalid regex, show all */ }
       } else {
-        freq.push({ tag: tag, count: tagMap[tag] });
+        images = images.filter(function(img) {
+          return img.name.toLowerCase().indexOf(q) !== -1 ||
+            (img.tags || '').toLowerCase().indexOf(q) !== -1;
+        });
       }
     }
-    // Remove zero-count tags and re-sort
-    freq = freq.filter(function(t) { return t.count > 0; });
-    freq.sort(function(a, b) { return b.count - a.count; });
-    this.tagEditorTagFreq = freq;
-    this._teFreqCacheKey = '';
-  },
 
-  tagEditorRefreshTagFreq() {
-    var counter = {};
-    var self = this;
-    this.tagEditorImages.forEach(function(img) {
-      var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
-      tags.forEach(function(t) { counter[t] = (counter[t] || 0) + 1; });
-    });
-    var freq = [];
-    for (var tag in counter) { freq.push({ tag: tag, count: counter[tag] }); }
-    freq.sort(function(a, b) { return b.count - a.count; });
-    this.tagEditorTagFreq = freq;
-    this._teFreqCacheKey = '';
-  },
+    if (this.tagEditorTagSelection.length > 0) {
+      var sel = this.tagEditorTagSelection;
+      if (this.tagEditorTagLogic === 'AND') {
+        images = images.filter(function(img) {
+          var parts = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); }).filter(function(t) { return t; });
+          return sel.every(function(s) { return parts.indexOf(s.toLowerCase()) !== -1; });
+        });
+      } else {
+        images = images.filter(function(img) {
+          var parts = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); }).filter(function(t) { return t; });
+          return sel.some(function(s) { return parts.indexOf(s.toLowerCase()) !== -1; });
+        });
+      }
+    }
 
-  tagEditorSaveAll() {
-    if (!this.tagEditorModified) return;
-    this.tagEditorSaving = true;
-    var orig = this.tagEditorOriginal;
-    var images = this.tagEditorImages.filter(function(img) {
-      return orig[img.path] !== undefined && orig[img.path] !== img.tags;
-    }).map(function(img) { return { path: img.path, tags: img.tags }; });
-    if (images.length === 0) { this.tagEditorModified = false; this.tagEditorSaving = false; return; }
-    var self = this;
-    this.startProgress();
-    fetch('/api/tageditor/save-all', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: images }),
-    }).then(function(r) { return r.json(); }).then(function(j) {
-      if (j.status === 'success') {
-        self.tagEditorOriginal = {};
-        self.tagEditorImages.forEach(function(img) { self.tagEditorOriginal[img.path] = img.tags; });
-        self.tagEditorModified = false;
-        self._teClearDraft();
-        self._teFilteredCacheKey = '';
-        self._teFreqCacheKey = '';
-        self.toast((self.t('common.saved') || 'Saved') + ' (' + (j.data.saved || 0) + ')', 'success');
-      } else { self.toast(j.message || 'Save failed', 'error'); }
-    }).catch(function(e) { self.toast('Save failed: ' + e, 'error'); })
-      .finally(function() { self.tagEditorSaving = false; self.finishProgress(); });
-  },
-
-  tagEditorRevert() {
-    if (!confirm((this.t('tagEditor.revertConfirm') || 'Discard all unsaved changes?'))) return;
-    var self = this;
-    this.tagEditorImages.forEach(function(img) {
-      if (self.tagEditorOriginal[img.path] !== undefined) img.tags = self.tagEditorOriginal[img.path];
-    });
-    this.tagEditorModified = false;
-    this.tagEditorSelected = [];
-    this.tagEditorHistory = [];
-    this.tagEditorHistoryIdx = -1;
-    this._teClearDraft();
-    this.tagEditorRefreshTagFreq();
-    this._teFilteredCacheKey = '';
-    this._teFreqCacheKey = '';
-  },
-
-  _teConfirmNav(route) {
-    if (!this.tagEditorModified || this.currentRoute !== 'tagEditor') return true;
-    return confirm((this.t('tagEditor.unsavedConfirm') || 'You have unsaved changes. Leave without saving?'));
-  },
-
-  async tagEditorRestoreBackup() {
-    if (!this.tagEditorDir) return;
-    if (!confirm(this.t('tagEditor.restoreConfirm') || 'Restore all tag files from .bak backups?')) return;
-    try {
-      var r = await fetch('/api/tageditor/restore-backup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: this.tagEditorDir }),
+    if (this.tagEditorExcludedTags.length > 0) {
+      var exc = this.tagEditorExcludedTags;
+      images = images.filter(function(img) {
+        var parts = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); }).filter(function(t) { return t; });
+        return !exc.some(function(s) { return parts.indexOf(s.toLowerCase()) !== -1; });
       });
-      var j = await r.json();
-      if (j.status === 'success') {
-        this.toast((this.t('tagEditor.restored') || 'Restored') + ': ' + (j.data.restored || 0), 'success');
-        this.tagEditorLoad(this.tagEditorDir);
+    }
+
+    var sortBy = this.tagEditorSortBy;
+    var asc = this.tagEditorSortAsc;
+    var self = this;
+    images.sort(function(a, b) {
+      if (sortBy === 'tagCount') {
+        var ca = a.tags ? a.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
+        var cb = b.tags ? b.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
+        return asc ? ca - cb : cb - ca;
+      } else if (sortBy === 'modified') {
+        var ma = a.tags !== self.tagEditorOriginal[a.path] ? 1 : 0;
+        var mb = b.tags !== self.tagEditorOriginal[b.path] ? 1 : 0;
+        return asc ? ma - mb : mb - ma;
       }
-    } catch (e) { this.toast('Restore failed: ' + e, 'error'); }
+      return asc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+    });
+
+    this._teFilteredCacheKey = cacheKey;
+    this._teCachedFiltered = images;
+    return images;
   },
 
-  // ── Undo History ───────────────────────────────────────
-  _tePushHistory(imgPath, oldTags, newTags) {
-    this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
-    this.tagEditorHistory.push({ path: imgPath, oldTags: oldTags, newTags: newTags, time: Date.now() });
-    this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
-    if (this.tagEditorHistory.length > 200) {
-      this.tagEditorHistory.shift();
-      this.tagEditorHistoryIdx = Math.max(0, this.tagEditorHistoryIdx - 1);
+  tagEditorGetPaged() {
+    var filtered = this.tagEditorGetFiltered();
+    var start = (this.tagEditorPage - 1) * this.tagEditorPageSize;
+    return filtered.slice(start, start + this.tagEditorPageSize);
+  },
+
+  tagEditorTotalPages() {
+    return Math.max(1, Math.ceil(this.tagEditorGetFiltered().length / this.tagEditorPageSize));
+  },
+
+  tagEditorGetPageNumbers() {
+    var total = this.tagEditorTotalPages();
+    var current = this.tagEditorPage;
+    var pages = [];
+    if (total <= 7) {
+      for (var i = 1; i <= total; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (current > 3) pages.push('...');
+      var start = Math.max(2, current - 1);
+      var end = Math.min(total - 1, current + 1);
+      for (var i2 = start; i2 <= end; i2++) pages.push(i2);
+      if (current < total - 2) pages.push('...');
+      pages.push(total);
+    }
+    return pages;
+  },
+
+  tagEditorGetQuickCount(type) {
+    if (type === 'notag') {
+      return this.tagEditorImages.filter(function(img) { return !img.tags || img.tags.trim() === ''; }).length;
+    }
+    if (type === 'modified') {
+      var orig = this.tagEditorOriginal;
+      return this.tagEditorImages.filter(function(img) { return img.tags !== orig[img.path]; }).length;
+    }
+    return 0;
+  },
+
+  // ===== Tag Cloud =====
+  tagEditorGetFilteredTagFreq() {
+    var cacheKey = this.tagEditorTagSearch + '|' + this.tagEditorTagSortBy + '|' + this.tagEditorTagSortAsc;
+    if (cacheKey === this._teFreqCacheKey && this._teCachedFreqResult) return this._teCachedFreqResult;
+
+    var freq = this.tagEditorTagFreq.slice();
+    if (this.tagEditorTagSearch) {
+      var q = this.tagEditorTagSearch.toLowerCase();
+      freq = freq.filter(function(item) { return item.tag.toLowerCase().indexOf(q) !== -1; });
+    }
+    var sortBy = this.tagEditorTagSortBy;
+    var asc = this.tagEditorTagSortAsc;
+    freq.sort(function(a, b) {
+      if (sortBy === 'alpha') return asc ? a.tag.localeCompare(b.tag) : b.tag.localeCompare(a.tag);
+      if (sortBy === 'length') return asc ? a.tag.length - b.tag.length : b.tag.length - a.tag.length;
+      return asc ? a.count - b.count : b.count - a.count;
+    });
+
+    this._teFreqCacheKey = cacheKey;
+    this._teCachedFreqResult = freq;
+    return freq;
+  },
+
+  tagEditorGetDisplayFreq() {
+    var freq = this.tagEditorGetFilteredTagFreq();
+    var limit = this.tagEditorTagCloudExpanded ? 1200 : this.tagEditorTagCloudLimit;
+    return freq.slice(0, limit);
+  },
+
+  tagEditorSelectTag(tag) {
+    var idx = this.tagEditorTagSelection.indexOf(tag);
+    if (idx === -1) {
+      this.tagEditorTagSelection.push(tag);
+    } else {
+      this.tagEditorTagSelection.splice(idx, 1);
     }
     this._teFilteredCacheKey = '';
+    this._teCachedFiltered = null;
+    this.tagEditorPage = 1;
+  },
+
+  tagEditorExcludeTag(tag) {
+    var idx = this.tagEditorExcludedTags.indexOf(tag);
+    if (idx === -1) {
+      this.tagEditorExcludedTags.push(tag);
+    } else {
+      this.tagEditorExcludedTags.splice(idx, 1);
+    }
+    this._teFilteredCacheKey = '';
+    this._teCachedFiltered = null;
+    this.tagEditorPage = 1;
+  },
+
+  tagEditorTagCtx(e, tag) {
+    this.tagEditorContextMenu = { x: e.clientX, y: e.clientY, tag: tag };
+  },
+
+  tagEditorCtxInclude() {
+    var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
+    if (tag && this.tagEditorTagSelection.indexOf(tag) === -1) {
+      this.tagEditorTagSelection.push(tag);
+      this._teFilteredCacheKey = '';
+      this._teCachedFiltered = null;
+      this.tagEditorPage = 1;
+    }
+    this.tagEditorContextMenu = null;
+  },
+
+  tagEditorCtxExclude() {
+    var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
+    if (tag && this.tagEditorExcludedTags.indexOf(tag) === -1) {
+      this.tagEditorExcludedTags.push(tag);
+      this._teFilteredCacheKey = '';
+      this._teCachedFiltered = null;
+      this.tagEditorPage = 1;
+    }
+    this.tagEditorContextMenu = null;
+  },
+
+  tagEditorCtxCopy() {
+    var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
+    if (tag) {
+      navigator.clipboard.writeText(tag).catch(function() {});
+      this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
+    }
+    this.tagEditorContextMenu = null;
+  },
+
+  tagEditorCtxAddAll() {
+    var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
+    if (tag) {
+      var self = this;
+      this._tePushHistory();
+      this.tagEditorImages.forEach(function(img) {
+        var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+        if (tags.indexOf(tag) === -1) {
+          tags.push(tag);
+          self._teUpdateImageTags(img, tags.join(', '));
+        }
+      });
+    }
+    this.tagEditorContextMenu = null;
+  },
+
+  // ===== Card Interactions =====
+  tagEditorCardClick(img, idx, e) {
+    var filtered = this.tagEditorGetFiltered();
+    var pageStart = (this.tagEditorPage - 1) * this.tagEditorPageSize;
+    var globalIdx = pageStart + idx;
+
+    if (e.shiftKey && this._teLastSelected !== null) {
+      var lastIdx = this._teLastSelected;
+      var start2 = Math.min(lastIdx, globalIdx);
+      var end2 = Math.max(lastIdx, globalIdx);
+      this.tagEditorSelected = [];
+      for (var i = start2; i <= end2; i++) {
+        if (filtered[i]) this.tagEditorSelected.push(filtered[i].path);
+      }
+    } else {
+      var existsIdx = this.tagEditorSelected.indexOf(img.path);
+      if (existsIdx === -1) {
+        this.tagEditorSelected.push(img.path);
+      } else {
+        this.tagEditorSelected.splice(existsIdx, 1);
+      }
+    }
+    this._teLastSelected = globalIdx;
+    this._updateRightPanel();
+  },
+
+  tagEditorCardDblClick(img, idx, e) {
+    this.tagEditorRightCollapsed = false;
+  },
+
+  tagEditorCardCtx(img, e) {
+    this.tagEditorContextMenu = { x: e.clientX, y: e.clientY, img: img };
+  },
+
+  tagEditorToggleSelect(path, e) {
+    var idx = this.tagEditorSelected.indexOf(path);
+    if (idx === -1) {
+      this.tagEditorSelected.push(path);
+    } else {
+      this.tagEditorSelected.splice(idx, 1);
+    }
+    this._updateRightPanel();
+  },
+
+  tagEditorSelectAll() {
+    var filtered = this.tagEditorGetFiltered();
+    var pageStart = (this.tagEditorPage - 1) * this.tagEditorPageSize;
+    var pageEnd = Math.min(filtered.length, pageStart + this.tagEditorPageSize);
+    this.tagEditorSelected = [];
+    for (var i = pageStart; i < pageEnd; i++) {
+      this.tagEditorSelected.push(filtered[i].path);
+    }
+    this._updateRightPanel();
+  },
+
+  tagEditorSelectInvert() {
+    var selected = this.tagEditorSelected.slice();
+    this.tagEditorSelectAll();
+    var allCurrent = this.tagEditorSelected.slice();
+    this.tagEditorSelected = allCurrent.filter(function(p) { return selected.indexOf(p) === -1; });
+    this._updateRightPanel();
+  },
+
+  _updateRightPanel() {
+    if (this.tagEditorSelected.length === 1) {
+      this.tagEditorRightCollapsed = false;
+      var img = this.tagEditorGetSelectedImg();
+      if (img) {
+        this.tagEditorDetailText = img.tags || '';
+        this.tagEditorDetailView = 'chip';
+      }
+    } else if (this.tagEditorSelected.length >= 2) {
+      this.tagEditorRightCollapsed = false;
+    }
+  },
+
+  tagEditorGetSelectedImg() {
+    if (this.tagEditorSelected.length < 1) return null;
+    var path = this.tagEditorSelected[0];
+    for (var i = 0; i < this.tagEditorImages.length; i++) {
+      if (this.tagEditorImages[i].path === path) return this.tagEditorImages[i];
+    }
+    return null;
+  },
+
+  tagEditorGetSelectedTags() {
+    var img = this.tagEditorGetSelectedImg();
+    if (!img || !img.tags) return [];
+    return img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+  },
+
+  // ===== Drag Selection =====
+  tagEditorGridMouseDown(e) {
+    if (e.target.closest('.te-v3-card')) return;
+    if (e.target.closest('input') || e.target.closest('button') || e.target.closest('select')) return;
+    this.tagEditorDragSelect = true;
+    this.tagEditorDragStart = { x: e.clientX, y: e.clientY };
+    this.tagEditorDragRect = null;
+  },
+
+  tagEditorGridMouseMove(e) {
+    if (!this.tagEditorDragSelect || !this.tagEditorDragStart) return;
+    var x1 = this.tagEditorDragStart.x, y1 = this.tagEditorDragStart.y;
+    var x2 = e.clientX, y2 = e.clientY;
+    this.tagEditorDragRect = {
+      left: Math.min(x1, x2), top: Math.min(y1, y2),
+      width: Math.abs(x2 - x1), height: Math.abs(y2 - y1)
+    };
+  },
+
+  tagEditorGridMouseUp(e) {
+    if (!this.tagEditorDragSelect) return;
+    this.tagEditorDragSelect = false;
+    this.tagEditorDragStart = null;
+    if (this.tagEditorDragRect) {
+      var rect = this.tagEditorDragRect;
+      var self = this;
+      document.querySelectorAll('.te-v3-card').forEach(function(card) {
+        var cr = card.getBoundingClientRect();
+        var ix = rect.left < cr.right && (rect.left + rect.width) > cr.left &&
+          rect.top < cr.bottom && (rect.top + rect.height) > cr.top;
+        if (ix) {
+          var input = card.querySelector('input[type=checkbox]');
+          if (input) {
+            var path = input.getAttribute('data-path') || '';
+            if (path && self.tagEditorSelected.indexOf(path) === -1) {
+              self.tagEditorSelected.push(path);
+            }
+          }
+        }
+      });
+      this._updateRightPanel();
+    }
+    this.tagEditorDragRect = null;
+  },
+
+  // ===== Single Image Editor =====
+  tagEditorAddTagToSelected() {
+    var val = this.tagEditorAddInput.trim();
+    if (!val || this.tagEditorSelected.length !== 1) return;
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var newTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    var existing = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var added = [];
+    var self = this;
+    newTags.forEach(function(t) {
+      if (existing.indexOf(t) === -1) { existing.push(t); added.push(t); }
+    });
+    if (added.length > 0) {
+      this._tePushHistory();
+      self._teUpdateImageTags(img, existing.join(', '));
+    }
+    this.tagEditorAddInput = '';
+    this.tagEditorSuggestions = [];
+  },
+
+  tagEditorRemoveTagFromSelected(tag) {
+    if (this.tagEditorSelected.length !== 1) return;
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var idx = tags.indexOf(tag);
+    if (idx !== -1) {
+      this._tePushHistory();
+      tags.splice(idx, 1);
+      this._teUpdateImageTags(img, tags.join(', '));
+    }
+  },
+
+  tagEditorSortSelectedTags() {
+    if (this.tagEditorSelected.length !== 1) return;
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    if (tags.length <= 1) return;
+    this._tePushHistory();
+    tags.sort(function(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+    this._teUpdateImageTags(img, tags.join(', '));
+  },
+
+  tagEditorDetailDragStart(e, idx) {
+    this.tagEditorDetailDragSrcIdx = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    var el = e.target.closest('.te-v3-right-tag');
+    if (el) { setTimeout(function() { el.style.opacity = '0.4'; }, 0); }
+  },
+
+  tagEditorDetailDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  },
+
+  tagEditorDetailDrop(e) {
+    e.preventDefault();
+    var srcIdx = this.tagEditorDetailDragSrcIdx;
+    if (srcIdx < 0) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    if (srcIdx >= tags.length) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    var moving = tags.splice(srcIdx, 1)[0];
+    var destIdx = tags.length;
+    var dropTarget = e.target.closest('.te-v3-right-tag');
+    if (dropTarget) {
+      var spanEl = dropTarget.querySelector('span');
+      var tagText = spanEl ? spanEl.textContent.trim() : '';
+      var foundIdx = tags.indexOf(tagText);
+      if (foundIdx !== -1) destIdx = foundIdx;
+    }
+    this._tePushHistory();
+    tags.splice(destIdx, 0, moving);
+    this._teUpdateImageTags(img, tags.join(', '));
+    this.tagEditorDetailDragSrcIdx = -1;
+    this.tagEditorDetailDragOverIdx = -1;
+  },
+
+  tagEditorDetailEditTag(ti) {
+    this.tagEditorDetailView = 'text';
+  },
+
+  tagEditorDetailTextChange() {
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var self = this;
+    var path = img.path;
+    if (this._tePendingTextEdits[path]) clearTimeout(this._tePendingTextEdits[path]);
+    this._tePendingTextEdits[path] = setTimeout(function() {
+      self._tePushHistory();
+      self._teUpdateImageTags(img, self.tagEditorDetailText);
+      delete self._tePendingTextEdits[path];
+    }, 500);
+  },
+
+  tagEditorCopySelectedTags() {
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    this.tagEditorCopiedTags = tags.slice();
+    this.toast(this.t('tagEditor.tagsCopied').replace('{n}', tags.length));
+  },
+
+  tagEditorPasteTagsToSelected() {
+    if (this.tagEditorCopiedTags.length === 0) return;
+    if (this.tagEditorSelected.length !== 1) {
+      this.toast(this.t('tagEditor.selectOneImage'), 'warning');
+      return;
+    }
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    var existing = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var added = [];
+    var self = this;
+    this.tagEditorCopiedTags.forEach(function(t) {
+      if (existing.indexOf(t) === -1) { existing.push(t); added.push(t); }
+    });
+    if (added.length > 0) {
+      this._tePushHistory();
+      self._teUpdateImageTags(img, existing.join(', '));
+      this.toast(this.t('tagEditor.tagsPasted').replace('{n}', added.length));
+    }
+  },
+
+  tagEditorNavDetail(dir) {
+    if (this.tagEditorSelected.length !== 1) return;
+    var filtered = this.tagEditorGetFiltered();
+    var currentPath = this.tagEditorSelected[0];
+    var currentIdx = -1;
+    for (var i = 0; i < filtered.length; i++) {
+      if (filtered[i].path === currentPath) { currentIdx = i; break; }
+    }
+    var newIdx = currentIdx + dir;
+    if (newIdx >= 0 && newIdx < filtered.length) {
+      this.tagEditorSelected = [filtered[newIdx].path];
+      this._updateRightPanel();
+      this.tagEditorPage = Math.floor(newIdx / this.tagEditorPageSize) + 1;
+    }
+  },
+
+  tagEditorCanNavDetail(dir) {
+    if (this.tagEditorSelected.length !== 1) return false;
+    var filtered = this.tagEditorGetFiltered();
+    var currentPath = this.tagEditorSelected[0];
+    var currentIdx = -1;
+    for (var i = 0; i < filtered.length; i++) {
+      if (filtered[i].path === currentPath) { currentIdx = i; break; }
+    }
+    var newIdx = currentIdx + dir;
+    return newIdx >= 0 && newIdx < filtered.length;
+  },
+
+  // ===== Autocomplete =====
+  tagEditorGetSuggestions(val) {
+    if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
+    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
+    var v = (val || this.tagEditorAddInput || '').trim();
+    if (!v) { this.tagEditorSuggestions = []; return; }
+    var self = this;
+    this._teSuggestTimer = setTimeout(function() {
+      var parts = v.split(',');
+      var last = parts[parts.length - 1].trim().toLowerCase();
+      if (!last) { self.tagEditorSuggestions = []; return; }
+      self.tagEditorSuggestions = self.tagEditorTagFreq
+        .filter(function(item) { return item.tag.toLowerCase().indexOf(last) !== -1; })
+        .slice(0, 8)
+        .map(function(item) { return item.tag; });
+    }, 50);
+  },
+
+  tagEditorBlurSuggest() {
+    if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
+    var self = this;
+    this._teBlurTimer = setTimeout(function() {
+      self.tagEditorSuggestions = [];
+    }, 200);
+  },
+
+  tagEditorSelectSuggestion(s) {
+    var parts = (this.tagEditorAddInput || '').split(',');
+    parts.pop();
+    parts.push(' ' + s);
+    this.tagEditorAddInput = parts.join(',') + ', ';
+    this.tagEditorSuggestions = [];
+    this.tagEditorGetSuggestions(this.tagEditorAddInput);
+  },
+
+  // ===== Batch Operations =====
+  tagEditorBatchSuggest(field) {
+    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
+    if (this._teBatchBlurTimer) { clearTimeout(this._teBatchBlurTimer); this._teBatchBlurTimer = null; }
+    var val = '';
+    if (field === 'add') val = this.batchAddInput;
+    else if (field === 'remove') val = this.batchRemoveInput;
+    else if (field === 'old') val = this.batchOldTag;
+    if (!val || !val.trim()) { this.batchSuggestOpen = null; this.batchSuggestItems = []; return; }
+    var self = this;
+    var v = val.trim().toLowerCase();
+    this._teBatchSuggestTimer = setTimeout(function() {
+      self.batchSuggestItems = self.tagEditorTagFreq
+        .filter(function(item) { return item.tag.toLowerCase().indexOf(v) !== -1; })
+        .slice(0, 6)
+        .map(function(item) { return item.tag; });
+      self.batchSuggestOpen = field;
+    }, 50);
+  },
+
+  tagEditorBatchBlur() {
+    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
+    var self = this;
+    this._teBatchBlurTimer = setTimeout(function() {
+      self.batchSuggestOpen = null;
+    }, 200);
+  },
+
+  tagEditorBatchSelectSuggestion(s) {
+    var field = this.batchSuggestOpen;
+    if (field === 'add') this.batchAddInput = s;
+    else if (field === 'remove') this.batchRemoveInput = s;
+    else if (field === 'old') this.batchOldTag = s;
+    this.batchSuggestOpen = null;
+    this.batchSuggestItems = [];
+  },
+
+  tagEditorGetBatchTargets() {
+    if (this.tagEditorBatchScope === 'all') return this.tagEditorImages;
+    if (this.tagEditorBatchScope === 'selected') {
+      var sel = this.tagEditorSelected;
+      return this.tagEditorImages.filter(function(img) { return sel.indexOf(img.path) !== -1; });
+    }
+    return this.tagEditorGetFiltered();
+  },
+
+  tagEditorBatchAdd() {
+    var val = this.batchAddInput.trim();
+    if (!val) return;
+    var newTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    if (newTags.length === 0) return;
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this._tePushHistory();
+    targets.forEach(function(img) {
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      var changed = false;
+      newTags.forEach(function(t) {
+        if (tags.indexOf(t) === -1) {
+          if (self.batchPos === 'front') tags.unshift(t);
+          else tags.push(t);
+          changed = true;
+        }
+      });
+      if (changed) self._teUpdateImageTags(img, tags.join(', '));
+    });
+    this.batchAddInput = '';
+    this.toast(this.t('tagEditor.batchDone'));
+  },
+
+  tagEditorBatchRemove() {
+    var val = this.batchRemoveInput.trim();
+    if (!val) return;
+    var rmTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    if (rmTags.length === 0) return;
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this._tePushHistory();
+    targets.forEach(function(img) {
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      var before = tags.length;
+      tags = tags.filter(function(t) { return rmTags.indexOf(t) === -1; });
+      if (tags.length !== before) self._teUpdateImageTags(img, tags.join(', '));
+    });
+    this.batchRemoveInput = '';
+    this.toast(this.t('tagEditor.batchDone'));
+  },
+
+  tagEditorBatchReplace() {
+    var oldTag = this.batchOldTag.trim();
+    var newTag = this.batchNewTag.trim();
+    if (!oldTag || !newTag) return;
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this._tePushHistory();
+    targets.forEach(function(img) {
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      var idx = tags.indexOf(oldTag);
+      if (idx !== -1) {
+        tags[idx] = newTag;
+        self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
+      }
+    });
+    this.batchOldTag = ''; this.batchNewTag = '';
+    this.toast(this.t('tagEditor.batchDone'));
+  },
+
+  tagEditorBatchDedup() {
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this._tePushHistory();
+    targets.forEach(function(img) {
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      var deduped = self._teDedupTags(tags);
+      if (deduped.length !== tags.length) self._teUpdateImageTags(img, deduped.join(', '));
+    });
+    this.toast(this.t('tagEditor.batchDone'));
+  },
+
+  tagEditorBatchSort() {
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this._tePushHistory();
+    targets.forEach(function(img) {
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      if (tags.length <= 1) return;
+      var sorted = tags.slice().sort(function(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+      if (sorted.join(',') !== tags.join(',')) self._teUpdateImageTags(img, sorted.join(', '));
+    });
+    this.toast(this.t('tagEditor.batchDone'));
+  },
+
+  tagEditorBatchRemoveTag(tag) {
+    this.batchRemoveInput = tag;
+    this.tagEditorBatchRemove();
+  },
+
+  tagEditorGetSelectedStats() {
+    if (this.tagEditorSelected.length < 2) return [];
+    var counter = {};
+    var sel = this.tagEditorSelected;
+    this.tagEditorImages.forEach(function(img) {
+      if (sel.indexOf(img.path) === -1) return;
+      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+      tags.forEach(function(t) {
+        counter[t] = (counter[t] || 0) + 1;
+      });
+    });
+    return Object.keys(counter).map(function(k) { return { tag: k, count: counter[k] }; })
+      .sort(function(a, b) { return b.count - a.count; });
+  },
+
+  _teDedupTags(tags) {
+    var seen = {};
+    return tags.filter(function(t) {
+      var lower = t.trim().toLowerCase();
+      if (seen[lower]) return false;
+      seen[lower] = true;
+      return true;
+    });
+  },
+
+  // ===== Undo/Redo =====
+  _tePushHistory() {
+    if (this.tagEditorHistoryIdx < this.tagEditorHistory.length - 1) {
+      this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
+    }
+    var snapshot = {};
+    var orig = this.tagEditorOriginal;
+    var self = this;
+    this.tagEditorImages.forEach(function(img) {
+      if (img.tags !== orig[img.path]) {
+        snapshot[img.path] = { old: orig[img.path], new: img.tags };
+      }
+    });
+    if (Object.keys(snapshot).length === 0) return;
+    this.tagEditorHistory.push(snapshot);
+    if (this.tagEditorHistory.length > 200) this.tagEditorHistory.shift();
+    this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
   },
 
   tagEditorUndo() {
     if (this.tagEditorHistoryIdx < 0) return;
-    var entry = this.tagEditorHistory[this.tagEditorHistoryIdx];
-    var img = this.tagEditorImages.find(function(i) { return i.path === entry.path; });
-    if (img) {
-      var oldTags = img.tags;
-      img.tags = entry.oldTags;
-      this.tagEditorModified = true;
-      this._teUpdateFreqIncremental(oldTags, img.tags);
-      this._teFilteredCacheKey = '';
-    }
+    var snapshot = this.tagEditorHistory[this.tagEditorHistoryIdx];
     this.tagEditorHistoryIdx--;
+    this._teApplySnapshot(snapshot);
   },
 
   tagEditorRedo() {
     if (this.tagEditorHistoryIdx >= this.tagEditorHistory.length - 1) return;
     this.tagEditorHistoryIdx++;
-    var entry = this.tagEditorHistory[this.tagEditorHistoryIdx];
-    var img = this.tagEditorImages.find(function(i) { return i.path === entry.path; });
-    if (img) {
-      var oldTags = img.tags;
-      img.tags = entry.newTags;
-      this.tagEditorModified = true;
-      this._teUpdateFreqIncremental(oldTags, img.tags);
-      this._teFilteredCacheKey = '';
-    }
+    var snapshot = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    this._teApplySnapshot(snapshot);
   },
 
-  tagEditorHasUndo() { return this.tagEditorHistoryIdx >= 0; },
-  tagEditorHasRedo() { return this.tagEditorHistoryIdx < this.tagEditorHistory.length - 1; },
-  tagEditorHistoryList() {
-    return this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1).reverse().slice(0, 20);
-  },
-
-  // ── Filtering, Sorting & Pagination ────────────────────
-  _teFilteredCacheKey: '',
-  _teFilteredCacheResult: null,
-  tagEditorGetFiltered() {
-    // Build a cache key from all filter inputs
-    var cacheKey = JSON.stringify({
-      imgsLen: this.tagEditorImages.length,
-      q: this.tagEditorSearchQuery,
-      sel: this.tagEditorTagSelection,
-      exc: this.tagEditorExcludedTags,
-      logic: this.tagEditorTagLogic,
-      qf: this.tagEditorQuickFilter,
-      countMin: this.tagEditorTagCountMin,
-      countMax: this.tagEditorTagCountMax,
-      useRegex: this.tagEditorUseRegex,
-      sortBy: this.tagEditorSortBy,
-      sortAsc: this.tagEditorSortAsc,
-    });
-    if (this._teFilteredCacheKey === cacheKey && this._teFilteredCacheResult) {
-      return this._teFilteredCacheResult;
-    }
-    this._teFilteredCacheKey = cacheKey;
-
-    var imgs = this.tagEditorImages;
-    var q = (this.tagEditorSearchQuery || '').toLowerCase().trim();
-    var sel = this.tagEditorTagSelection || [];
-    var exc = this.tagEditorExcludedTags || [];
-    var logic = this.tagEditorTagLogic || 'AND';
-    var qf = this.tagEditorQuickFilter || 'all';
-    var countMin = parseInt(this.tagEditorTagCountMin) || 0;
-    var countMax = parseInt(this.tagEditorTagCountMax);
-    var useRegex = this.tagEditorUseRegex;
-    this.tagEditorRegexError = false;
-
-    if (q) {
-      if (useRegex) {
-        try {
-          var re = new RegExp(q, 'i');
-          this.tagEditorRegexError = false;
-          imgs = imgs.filter(function(img) {
-            return re.test(img.name || '') || re.test(img.tags || '');
-          });
-        } catch (e) { this.tagEditorRegexError = true; }
-      } else {
-        this.tagEditorRegexError = false;
-        imgs = imgs.filter(function(img) {
-          return (img.name && img.name.toLowerCase().indexOf(q) !== -1) ||
-                 (img.tags && img.tags.toLowerCase().indexOf(q) !== -1);
-        });
-      }
-    } else {
-      this.tagEditorRegexError = false;
-    }
-    if (qf === 'notag') {
-      imgs = imgs.filter(function(img) { return !img.tags || !img.tags.trim(); });
-    } else if (qf === 'modified') {
-      var orig = this.tagEditorOriginal;
-      imgs = imgs.filter(function(img) { return orig[img.path] !== undefined && orig[img.path] !== img.tags; });
-    }
-    if (sel.length > 0) {
-      imgs = imgs.filter(function(img) {
-        var tags = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); });
-        if (logic === 'AND') { return sel.every(function(st) { return tags.indexOf(st.toLowerCase()) !== -1; }); }
-        else { return sel.some(function(st) { return tags.indexOf(st.toLowerCase()) !== -1; }); }
-      });
-    }
-    if (exc.length > 0) {
-      imgs = imgs.filter(function(img) {
-        var tags = (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); });
-        return !exc.some(function(et) { return tags.indexOf(et.toLowerCase()) !== -1; });
-      });
-    }
-    // Tag count range filter
-    if (countMin > 0 || (!isNaN(countMax) && countMax >= 0)) {
-      imgs = imgs.filter(function(img) {
-        var cnt = (img.tags || '').split(',').filter(function(t){return t.trim();}).length;
-        if (countMin > 0 && cnt < countMin) return false;
-        if (!isNaN(countMax) && cnt > countMax) return false;
-        return true;
-      });
-    }
-
-    // Sort
-    var sortBy = this.tagEditorSortBy || 'name';
-    var asc = this.tagEditorSortAsc;
-    var orig = this.tagEditorOriginal;
-    imgs = imgs.slice().sort(function(a, b) {
-      var va, vb;
-      if (sortBy === 'tags') {
-        va = (a.tags || '').split(',').filter(function(t){return t.trim();}).length;
-        vb = (b.tags || '').split(',').filter(function(t){return t.trim();}).length;
-      } else if (sortBy === 'modified') {
-        va = (orig[a.path] !== undefined && orig[a.path] !== a.tags) ? 1 : 0;
-        vb = (orig[b.path] !== undefined && orig[b.path] !== b.tags) ? 1 : 0;
-      } else {
-        va = (a.name || '').toLowerCase();
-        vb = (b.name || '').toLowerCase();
-      }
-      if (va < vb) return asc ? -1 : 1;
-      if (va > vb) return asc ? 1 : -1;
-      return 0;
-    });
-    this._teFilteredCacheResult = imgs;
-    return imgs;
-  },
-
-  tagEditorTotalPages() { return Math.max(1, Math.ceil(this.tagEditorGetFiltered().length / this.tagEditorPageSize)); },
-  tagEditorGetPaged() {
-    var f = this.tagEditorGetFiltered();
-    var s = (this.tagEditorPage - 1) * this.tagEditorPageSize;
-    return f.slice(s, s + this.tagEditorPageSize);
-  },
-  tagEditorRecompute() { this.tagEditorPage = 1; },
-
-  tagEditorToggleSort(by) {
-    if (this.tagEditorSortBy === by) { this.tagEditorSortAsc = !this.tagEditorSortAsc; }
-    else { this.tagEditorSortBy = by; this.tagEditorSortAsc = true; }
-  },
-
-  tagEditorToggleTagSort(by) {
-    if (this.tagEditorTagSortBy === by) { this.tagEditorTagSortAsc = !this.tagEditorTagSortAsc; }
-    else { this.tagEditorTagSortBy = by; this.tagEditorTagSortAsc = false; }
-  },
-
-  // ── Tag Cloud Filtering ────────────────────────────────
-  tagEditorToggleTagFilter(tag) {
-    var idx = this.tagEditorTagSelection.indexOf(tag);
-    if (idx !== -1) this.tagEditorTagSelection.splice(idx, 1);
-    else this.tagEditorTagSelection.push(tag);
-    this.tagEditorPage = 1;
-  },
-  tagEditorToggleExcludeTag(tag) {
-    var idx = this.tagEditorExcludedTags.indexOf(tag);
-    if (idx !== -1) this.tagEditorExcludedTags.splice(idx, 1);
-    else this.tagEditorExcludedTags.push(tag);
-    this.tagEditorPage = 1;
-  },
-  tagEditorClearFilters() {
-    this.tagEditorTagSelection = [];
-    this.tagEditorExcludedTags = [];
-    this.tagEditorSearchQuery = '';
-    this.tagEditorTagSearch = '';
-    this.tagEditorQuickFilter = 'all';
-    this.tagEditorTagCountMin = '';
-    this.tagEditorTagCountMax = '';
-    this.tagEditorUseRegex = false;
-    this.tagEditorRegexError = false;
-    this.tagEditorPage = 1;
-  },
-  tagEditorReset() {
-    this.tagEditorImages = [];
-    this.tagEditorOriginal = {};
-    this.tagEditorModified = false;
-    this.tagEditorTagFreq = [];
-    this.tagEditorDir = '';
-    try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
-    this.tagEditorClearFilters();
-    this.tagEditorSelectNone();
-    this.tagEditorCloseDetail();
-    this.tagEditorBatchOpen = false;
-    this.tagEditorCopiedTags = [];
-    this.tagEditorHistory = [];
-    this.tagEditorHistoryIdx = -1;
-    this.tagEditorHistoryVisible = false;
-    this._teStopAutoSave();
-  },
-  _teFreqCacheKey: '',
-  _teFreqCacheResult: null,
-  tagEditorGetFilteredTagFreq() {
-    var cacheKey = JSON.stringify({
-      len: this.tagEditorTagFreq.length,
-      q: this.tagEditorTagSearch,
-      sortBy: this.tagEditorTagSortBy,
-      sortAsc: this.tagEditorTagSortAsc,
-    });
-    if (this._teFreqCacheKey === cacheKey && this._teFreqCacheResult) {
-      return this._teFreqCacheResult;
-    }
-    this._teFreqCacheKey = cacheKey;
-
-    var q = (this.tagEditorTagSearch || '').toLowerCase().trim();
-    var freq = this.tagEditorTagFreq || [];
-    if (q) freq = freq.filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1; });
-    var sortBy = this.tagEditorTagSortBy || 'freq';
-    var asc = this.tagEditorTagSortAsc;
-    freq = freq.slice().sort(function(a, b) {
-      var va, vb;
-      if (sortBy === 'alpha') { va = a.tag.toLowerCase(); vb = b.tag.toLowerCase(); }
-      else if (sortBy === 'length') { va = a.tag.length; vb = b.tag.length; }
-      else { va = a.count; vb = b.count; }
-      if (va < vb) return asc ? -1 : 1;
-      if (va > vb) return asc ? 1 : -1;
-      return 0;
-    });
-    this._teFreqCacheResult = freq;
-    return freq;
-  },
-  tagEditorGetDisplayedTagFreq() {
-    var freq = this.tagEditorGetFilteredTagFreq();
-    var limit = this.tagEditorTagCloudExpanded ? this.tagEditorTagCloudLimit * 6 : this.tagEditorTagCloudLimit;
-    return freq.slice(0, limit);
-  },
-  tagEditorHasMoreTags() {
-    return this.tagEditorGetFilteredTagFreq().length > this.tagEditorTagCloudDisplayLimit();
-  },
-  tagEditorTagCloudDisplayLimit() {
-    return this.tagEditorTagCloudExpanded ? this.tagEditorTagCloudLimit * 6 : this.tagEditorTagCloudLimit;
-  },
-  tagEditorIsTagSelected(tag) { return this.tagEditorTagSelection.indexOf(tag) !== -1; },
-  tagEditorIsTagExcluded(tag) { return this.tagEditorExcludedTags.indexOf(tag) !== -1; },
-
-  // ── Image Selection ────────────────────────────────────
-  tagEditorIsSelected(p) { return this.tagEditorSelected.indexOf(p) !== -1; },
-  tagEditorToggleSelect(p, event) {
-    if (event && event.shiftKey && this.tagEditorSelected.length > 0) {
-      // Shift+click range selection
-      var filtered = this.tagEditorGetFiltered();
-      var lastSelected = this.tagEditorSelected[this.tagEditorSelected.length - 1];
-      var lastIdx = filtered.findIndex(function(i) { return i.path === lastSelected; });
-      var curIdx = filtered.findIndex(function(i) { return i.path === p; });
-      if (lastIdx !== -1 && curIdx !== -1) {
-        var start = Math.min(lastIdx, curIdx);
-        var end = Math.max(lastIdx, curIdx);
-        for (var i = start; i <= end; i++) {
-          var fp = filtered[i].path;
-          if (this.tagEditorSelected.indexOf(fp) === -1) this.tagEditorSelected.push(fp);
-        }
-        return;
-      }
-    }
-    var idx = this.tagEditorSelected.indexOf(p);
-    if (idx !== -1) this.tagEditorSelected.splice(idx, 1);
-    else this.tagEditorSelected.push(p);
-  },
-  tagEditorSelectAll() { this.tagEditorSelected = this.tagEditorGetFiltered().map(function(i) { return i.path; }); },
-  tagEditorSelectNone() { this.tagEditorSelected = []; },
-  tagEditorSelectInvert() {
-    var cur = new Set(this.tagEditorSelected);
-    this.tagEditorSelected = this.tagEditorGetFiltered().filter(function(i) { return !cur.has(i.path); }).map(function(i) { return i.path; });
-  },
-  tagEditorSelectPage() {
+  _teApplySnapshot(snapshot) {
     var self = this;
-    var pagePaths = this.tagEditorGetPaged().map(function(i) { return i.path; });
-    var existing = new Set(this.tagEditorSelected);
-    pagePaths.forEach(function(p) { if (!existing.has(p)) self.tagEditorSelected.push(p); });
-  },
-
-  // ── Copy / Paste ───────────────────────────────────────
-  tagEditorCopyTags(imgPath) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    this.tagEditorCopiedTags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
-    var msg = (this.t('tagEditor.tagsCopied') || 'Copied {n} tags').replace('{n}', this.tagEditorCopiedTags.length);
-    this.toast(msg, 'success');
-  },
-
-  tagEditorPasteTags(imgPath) {
-    if (this.tagEditorCopiedTags.length === 0) {
-      this.toast('Nothing copied', 'warning');
-      return;
-    }
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    var oldTags = img.tags;
-    var existing = new Set((img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }));
-    var added = [];
-    var self = this;
-    this.tagEditorCopiedTags.forEach(function(tag) {
-      if (!existing.has(tag)) { added.push(tag); existing.add(tag); }
-    });
-    if (added.length === 0) return;
-    img.tags = Array.from(existing).join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-    this._teUpdateFreqIncremental(oldTags, img.tags);
-    var msg = (this.t('tagEditor.tagsPasted') || 'Pasted {n} tags').replace('{n}', added.length);
-    this.toast(msg, 'success');
-  },
-
-  tagEditorCopySingleTag(tag) {
-    this.tagEditorCopiedTags = [tag];
-    var msg = (this.t('tagEditor.singleTagCopied') || 'Copied tag: {tag}').replace('{tag}', tag);
-    this.toast(msg, 'success');
-  },
-
-  // ── Multi-select Batch Tag Ops ─────────────────────────
-  tagEditorAddTagToSelected(tag) {
-    tag = (tag || '').trim();
-    if (!tag) return;
-    var self = this;
-    var count = 0;
-    this.tagEditorSelected.forEach(function(path) {
-      var img = self.tagEditorImages.find(function(i) { return i.path === path; });
-      if (!img) return;
-      var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); });
-      if (tags.indexOf(tag) === -1) {
-        var oldTags = img.tags;
-        img.tags = img.tags ? tag + ', ' + img.tags : tag;
-        self.tagEditorModified = true;
-        self._tePushHistory(path, oldTags, img.tags);
-        count++;
-      }
-    });
-    if (count > 0) { this.tagEditorRefreshTagFreq(); this.toast(tag + ' +' + count, 'success'); }
-  },
-
-  tagEditorRemoveTagFromSelected(tag) {
-    tag = (tag || '').trim();
-    if (!tag) return;
-    var self = this;
-    var count = 0;
-    this.tagEditorSelected.forEach(function(path) {
-      var img = self.tagEditorImages.find(function(i) { return i.path === path; });
-      if (!img) return;
-      var oldTags = img.tags;
-      var tagList = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t && t !== tag; });
-      if (tagList.join(', ') !== oldTags) {
-        img.tags = tagList.join(', ');
-        self.tagEditorModified = true;
-        self._tePushHistory(path, oldTags, img.tags);
-        count++;
-      }
-    });
-    if (count > 0) { this.tagEditorRefreshTagFreq(); this.toast(tag + ' -' + count, 'success'); }
-  },
-
-  // ── Tag Editing (with undo) ────────────────────────────
-  tagEditorRemoveTag(imgPath, tag) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    var oldTags = img.tags;
-    var tagList = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t && t !== tag; });
-    img.tags = tagList.join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-    this._teUpdateFreqIncremental(oldTags, img.tags);
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-  },
-
-  tagEditorAddTagToImage(imgPath, tag) {
-    tag = (tag || '').trim();
-    if (!tag || tag.length > 200 || /[<>]/.test(tag)) return;
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    var existing = (img.tags || '').split(',').map(function(t) { return t.trim(); });
-    if (existing.indexOf(tag) !== -1) return;
-    var oldTags = img.tags;
-    img.tags = img.tags ? tag + ', ' + img.tags : tag;
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-    this._teUpdateFreqIncremental(oldTags, img.tags);
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-  },
-
-  tagEditorHandleTagInput(event, imgPath) {
-    if (event.key !== 'Enter') return;
-    var val = event.target.value.trim();
-    if (!val) return;
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) { event.target.value = ''; return; }
-    var oldTags = img.tags;
-    var tags = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-    var existing = new Set(tags);
-    var added = [];
-    val.split(',').forEach(function(t) {
-      var tt = t.trim();
-      if (tt && !existing.has(tt)) { added.push(tt); existing.add(tt); }
-    });
-    if (added.length === 0) { event.target.value = ''; return; }
-    img.tags = Array.from(existing).join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-    this._teUpdateFreqIncremental(oldTags, img.tags);
-    event.target.value = '';
-    this.tagEditorFocusedVal = '';
-    this.tagEditorFocusedImg = null;
-  },
-
-  tagEditorMarkDirty() { this.tagEditorModified = true; },
-
-  // ── Debounced textarea handler ─────────────────────────
-  _tePendingTextEdits: {},
-
-  tagEditorUpdateTagsText(imgPath, newTags) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    // Capture original tags on first keystroke
-    if (!this._tePendingTextEdits[imgPath]) {
-      this._tePendingTextEdits[imgPath] = { oldTags: img.tags, timer: null };
-    }
-    // Update display immediately
-    img.tags = newTags;
-    this.tagEditorModified = true;
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-    var self = this;
-    var pending = this._tePendingTextEdits[imgPath];
-    if (pending.timer) clearTimeout(pending.timer);
-    pending.timer = setTimeout(function() {
-      var oldT = pending.oldTags;
-      var newT = img.tags;
-      // Merge with any existing history entry for same path
-      var merged = false;
-      for (var h = self.tagEditorHistoryIdx; h >= 0; h--) {
-        if (self.tagEditorHistory[h].path === imgPath) {
-          self.tagEditorHistory[h].newTags = newT;
-          merged = true;
-          break;
-        }
-      }
-      if (!merged) self._tePushHistory(imgPath, oldT, newT);
-      self._teUpdateFreqIncremental(oldT, newT);
-      self._teFilteredCacheKey = '';
-      self._teFreqCacheKey = '';
-      delete self._tePendingTextEdits[imgPath];
-    }, 500);
-  },
-
-  // ── Detail View (drawer mode) ─────────────────────────
-  _teCachedDetailImg: null,
-  _teCachedDetailKey: '',
-
-  tagEditorDetailImg() {
-    var filtered = this.tagEditorGetFiltered();
-    var len = filtered.length;
-    var idx = this.tagEditorDetailIdx;
-    // Create a cache key based on filtered length, index, and image path
-    var currentKey = len + ':' + idx + ':' + (filtered[idx] ? filtered[idx].path : '');
-    if (this._teCachedDetailKey === currentKey && this._teCachedDetailImg) {
-      return this._teCachedDetailImg;
-    }
-    var img = len > idx ? filtered[idx] : null;
-    this._teCachedDetailImg = img;
-    this._teCachedDetailKey = currentKey;
-    return img;
-  },
-
-  tagEditorOpenDetail(imgPath) {
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-    var filtered = this.tagEditorGetFiltered();
-    var idx = filtered.findIndex(function(i) { return i.path === imgPath; });
-    if (idx === -1) return;
-    this.tagEditorDetailIdx = idx;
-    this.tagEditorDetailMode = true;
-    this.tagEditorDetailView = 'chip';
-    this.tagEditorContextMenu = null;
-  },
-  tagEditorCloseDetail() {
-    this.tagEditorDetailMode = false;
-    this.tagEditorContextMenu = null;
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-  },
-  tagEditorDetailPrev() {
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-    if (this.tagEditorDetailIdx > 0) this.tagEditorDetailIdx--;
-  },
-  tagEditorDetailNext() {
-    this._teCachedDetailImg = null;
-    this._teCachedDetailKey = '';
-    var filtered = this.tagEditorGetFiltered();
-    if (this.tagEditorDetailIdx < filtered.length - 1) this.tagEditorDetailIdx++;
-  },
-  tagEditorOpenSelectedDetail() {
-    if (this.tagEditorSelected.length === 1) {
-      this.tagEditorOpenDetail(this.tagEditorSelected[0]);
-    } else if (this.tagEditorDetailMode && this.tagEditorDetailImg()) {
-      return;
-    }
-  },
-  tagEditorDetailRemoveTag(tag) {
-    var img = this.tagEditorDetailImg();
-    if (!img) return;
-    this.tagEditorRemoveTag(img.path, tag);
-  },
-  tagEditorDetailAddTag(event) {
-    if (event.key !== 'Enter') return;
-    var img = this.tagEditorDetailImg();
-    if (!img) return;
-    var val = event.target.value.trim();
-    if (!val) return;
-    var self = this;
-    val.split(',').forEach(function(t) { self.tagEditorAddTagToImage(img.path, t.trim()); });
-    event.target.value = '';
-    this.tagEditorFocusedVal = '';
-  },
-  tagEditorDetailUpdateText(event) {
-    var img = this.tagEditorDetailImg();
-    if (!img) return;
-    this.tagEditorUpdateTagsText(img.path, event.target.value);
-  },
-
-  // ── Keyboard Shortcuts ─────────────────────────────────
-  tagEditorKeydown(e) {
-    if (this.currentRoute !== 'tagEditor') return;
-    if (!this.tagEditorImages.length) return;
-    var inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
-    if (e.ctrlKey || e.metaKey) {
-      if (e.key === 's') { e.preventDefault(); this.tagEditorSaveAll(); }
-      else if (e.key === 'z') { e.preventDefault(); if (e.shiftKey) this.tagEditorRedo(); else this.tagEditorUndo(); }
-      else if (e.key === 'a' && !inInput) { e.preventDefault(); this.tagEditorSelectAll(); }
-      else if (e.key === 'c' && !inInput) {
-        e.preventDefault();
-        if (this.tagEditorDetailMode && this.tagEditorDetailImg()) {
-          this.tagEditorCopyTags(this.tagEditorDetailImg().path);
-        } else if (this.tagEditorSelected.length === 1) {
-          this.tagEditorCopyTags(this.tagEditorSelected[0]);
-        } else if (this.tagEditorSelected.length === 0) {
-          this.toast(this.t('tagEditor.selectOneImage') || 'Select an image to copy tags', 'warning');
-        } else {
-          this.toast(this.t('tagEditor.selectOneImage') || 'Select a single image to copy tags', 'warning');
-        }
-      }
-      else if (e.key === 'v' && !inInput) {
-        e.preventDefault();
-        if (this.tagEditorDetailMode && this.tagEditorDetailImg()) {
-          this.tagEditorPasteTags(this.tagEditorDetailImg().path);
-        } else if (this.tagEditorSelected.length === 1) {
-          this.tagEditorPasteTags(this.tagEditorSelected[0]);
-        } else if (this.tagEditorSelected.length > 1) {
-          var selCount = this.tagEditorSelected.length;
-          if (!confirm('Paste ' + this.tagEditorCopiedTags.length + ' tags to ' + selCount + ' selected images?')) return;
-          var self2 = this;
-          this.tagEditorSelected.forEach(function(p) { self2.tagEditorPasteTags(p); });
-        }
-      }
-    }
-    if (this.tagEditorDetailMode && !inInput) {
-      if (e.key === 'Escape') { this.tagEditorCloseDetail(); }
-      else if (e.key === 'ArrowLeft') { this.tagEditorDetailPrev(); }
-      else if (e.key === 'ArrowRight') { this.tagEditorDetailNext(); }
-    }
-  },
-
-  // ── Right-Click Context Menu ───────────────────────────
-  tagEditorShowContext(tag, event) {
-    event.preventDefault();
-    event.stopPropagation();
-    var x = Math.min(event.clientX, window.innerWidth - 190);
-    var y = Math.min(event.clientY, window.innerHeight - 160);
-    this.tagEditorContextMenu = { tag: tag, x: Math.max(x, 4), y: Math.max(y, 4) };
-  },
-
-  tagEditorHideContext() { this.tagEditorContextMenu = null; },
-
-  tagEditorContextInclude() {
-    if (!this.tagEditorContextMenu) return;
-    this.tagEditorToggleTagFilter(this.tagEditorContextMenu.tag);
-    this.tagEditorHideContext();
-  },
-
-  tagEditorContextExclude() {
-    if (!this.tagEditorContextMenu) return;
-    this.tagEditorToggleExcludeTag(this.tagEditorContextMenu.tag);
-    this.tagEditorHideContext();
-  },
-
-  tagEditorContextCopy() {
-    if (!this.tagEditorContextMenu) return;
-    this.tagEditorCopySingleTag(this.tagEditorContextMenu.tag);
-    this.tagEditorHideContext();
-  },
-
-  tagEditorContextAddAll() {
-    if (!this.tagEditorContextMenu) return;
-    var tag = this.tagEditorContextMenu.tag;
-    this.tagEditorHideContext();
-    if (!confirm((this.t('tagEditor.batchConfirm') || 'Add') + ' "' + tag + '" ' + (this.t('tagEditor.batchConfirmOn') || 'to') + ' ' + this.tagEditorImages.length + ' ' + (this.t('tagEditor.imageCount') || 'images') + '?')) return;
-    var self = this;
-    var count = 0;
+    var hasAnyMod = false;
     this.tagEditorImages.forEach(function(img) {
-      var oldTags = img.tags;
-      var existing = (img.tags || '').split(',').map(function(t){return t.trim();});
-      if (existing.indexOf(tag) === -1) {
-        img.tags = img.tags ? tag + ', ' + img.tags : tag;
-        self.tagEditorModified = true;
-        self._tePushHistory(img.path, oldTags, img.tags);
-        count++;
+      if (snapshot.hasOwnProperty(img.path)) {
+        var s = snapshot[img.path];
+        img.tags = s.old;
+        self.tagEditorOriginal[img.path] = s.old;
+        hasAnyMod = true;
       }
     });
-    if (count > 0) { this.tagEditorRefreshTagFreq(); this.toast(tag + ' +' + count, 'success'); }
-    this.tagEditorHideContext();
-  },
-
-  // ── Batch Operations V2: 4-row layout, client-side ──────
-  tagEditorBatchCanOperate() {
-    return this.tagEditorBatchScope === 'all' ? this.tagEditorImages.length > 0 :
-      this.tagEditorBatchScope === 'selected' ? this.tagEditorSelected.length > 0 :
-      this.tagEditorGetFiltered().length > 0;
-  },
-
-  _teParseBatchTags(raw) {
-    return (raw || '').split(/[,，\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
-  },
-
-  tagEditorBatchSuggestList() {
-    if (!this.batchSuggestTail || this.batchSuggestTail.length < 1) return [];
-    var q = this.batchSuggestTail.toLowerCase();
-    return (this.tagEditorTagFreq || [])
-      .filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1; })
-      .slice(0, 8)
-      .map(function(t) { return t.tag; });
-  },
-
-  batchOnInput(event, source) {
-    var val = event.target.value || '';
-    var m = val.match(/([^,，\n]*)$/);
-    this.batchSuggestTail = (m ? m[1] : val).trim().toLowerCase();
-    this.batchSuggestOpen = source;
-  },
-  batchOnFocus(source) { this.batchSuggestOpen = source; },
-  batchOnBlur() {
-    var self = this;
-    setTimeout(function() { self.batchSuggestOpen = null; }, 200);
-  },
-  batchPickSuggestion(source, tag) {
-    if (source === 'add') {
-      this.batchAddInput = (this.batchAddInput || '').replace(/([^,，\n]*)$/, tag);
-    } else if (source === 'remove') {
-      this.batchRemoveInput = (this.batchRemoveInput || '').replace(/([^,，\n]*)$/, tag);
-    } else if (source === 'replace') {
-      this.batchOldTag = (this.batchOldTag || '').replace(/([^,，\n]*)$/, tag);
-    }
-    this.batchSuggestOpen = null;
-  },
-
-  tagEditorBatchApply(op) {
-    var scope = this.tagEditorBatchScope;
-    var keys = scope === 'all' ? this.tagEditorImages.map(function(i){return i.path;}) :
-      scope === 'selected' ? this.tagEditorSelected.slice() :
-      this.tagEditorGetFiltered().map(function(i){return i.path;});
-    if (keys.length === 0) { this.toast(this.t('tagEditor.noImages') || 'No images', 'warning'); return; }
-
-    var updates = {};
-    var self = this;
-
-    if (op === 'add') {
-      var ts = this._teParseBatchTags(this.batchAddInput);
-      if (ts.length === 0) { this.toast('Enter tags to add', 'warning'); return; }
-      var insertFront = this.batchPos === 'front';
-      keys.forEach(function(k) {
-        var img = self.tagEditorImages.find(function(i){return i.path===k;});
-        if (!img) return;
-        var cur = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-        var have = new Set(cur);
-        var toAdd = ts.filter(function(tag){return !have.has(tag);});
-        if (toAdd.length === 0) return;
-        updates[k] = insertFront ? toAdd.concat(cur).join(', ') : cur.concat(toAdd).join(', ');
-      });
-    } else if (op === 'remove') {
-      var drop = new Set(this._teParseBatchTags(this.batchRemoveInput));
-      if (drop.size === 0) { this.toast('Enter tags to remove', 'warning'); return; }
-      keys.forEach(function(k) {
-        var img = self.tagEditorImages.find(function(i){return i.path===k;});
-        if (!img) return;
-        var cur = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-        var next = cur.filter(function(tag){return !drop.has(tag);});
-        if (next.join(', ') !== (img.tags || '')) updates[k] = next.join(', ');
-      });
-    } else if (op === 'replace') {
-      var o = (this.batchOldTag || '').trim();
-      var n = (this.batchNewTag || '').trim();
-      if (!o || !n) { this.toast('Enter both old and new tags', 'warning'); return; }
-      keys.forEach(function(k) {
-        var img = self.tagEditorImages.find(function(i){return i.path===k;});
-        if (!img) return;
-        var cur = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-        if (cur.indexOf(o) === -1) return;
-        var seen = new Set(); var next = [];
-        cur.forEach(function(t) { var out = t === o ? n : t; if (!seen.has(out)) { seen.add(out); next.push(out); } });
-        updates[k] = next.join(', ');
-      });
-    } else if (op === 'dedupe') {
-      keys.forEach(function(k) {
-        var img = self.tagEditorImages.find(function(i){return i.path===k;});
-        if (!img) return;
-        var cur = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;});
-        var seen = new Set(); var next = [];
-        cur.forEach(function(t) { if (!seen.has(t)) { seen.add(t); next.push(t); } });
-        if (next.length !== cur.length) updates[k] = next.join(', ');
-      });
-    }
-
-    var count = Object.keys(updates).length;
-    if (count === 0) { this.toast(this.t('tagEditor.batchNoChanges') || 'No changes to apply', 'warning'); return; }
-
-    var scopeLabel = scope === 'all' ? (this.t('tagEditor.scopeAll') || 'All') :
-      scope === 'selected' ? (this.t('tagEditor.scopeSelected') || 'Selected') :
-      (this.t('tagEditor.scopeFiltered') || 'Filtered');
-    if (!confirm('Apply ' + op + ' to ' + count + ' images (' + scopeLabel + ')?')) return;
-
-    for (var path in updates) {
-      var img = self.tagEditorImages.find(function(i){return i.path===path;});
-      if (img) {
-        var oldTags = img.tags;
-        img.tags = updates[path];
-        self.tagEditorModified = true;
-        self._tePushHistory(path, oldTags, updates[path]);
-      }
-    }
-    this.tagEditorRefreshTagFreq();
+    this.tagEditorModified = hasAnyMod;
     this._teFilteredCacheKey = '';
-
-    if (op === 'add') this.batchAddInput = '';
-    if (op === 'remove') this.batchRemoveInput = '';
-    if (op === 'replace') { this.batchOldTag = ''; this.batchNewTag = ''; }
-
-    this.toast(op + ': ' + count + ' ' + (this.t('tagEditor.imageCount') || 'images'), 'success');
+    this._teCachedFiltered = null;
+    this._teFreqCacheKey = '';
+    this._teCachedFreqResult = null;
+    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
   },
 
-  // ── Tag Stats Panel ─────────────────────────────────────
-  statsFilter: '',
-  statsSort: 'count_desc',
+  // ===== Core Edit Helper =====
+  _teUpdateImageTags(img, newTagsStr) {
+    var oldTags = img.tags || '';
+    img.tags = newTagsStr;
+    this.tagEditorModified = this.tagEditorImages.some(function(i) {
+      return i.tags !== this.tagEditorOriginal[i.path];
+    }.bind(this));
+    this._teFilteredCacheKey = '';
+    this._teCachedFiltered = null;
+    this.tagEditorDetailText = newTagsStr;
 
-  tagEditorStatsItems() {
-    var counter = {};
-    var self = this;
-    this.tagEditorSelected.forEach(function(path) {
-      var img = self.tagEditorImages.find(function(i){return i.path===path;});
-      if (!img) return;
-      (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;}).forEach(function(t){
-        counter[t] = (counter[t] || 0) + 1;
+    var oldList = oldTags ? oldTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var newList = newTagsStr ? newTagsStr.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var removed = oldList.filter(function(t) { return newList.indexOf(t) === -1; });
+    var added = newList.filter(function(t) { return oldList.indexOf(t) === -1; });
+    if (removed.length > 0 || added.length > 0) {
+      var self = this;
+      removed.forEach(function(t) {
+        var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
+        if (item && item.count > 0) item.count--;
       });
-    });
-    var items = [];
-    for (var tag in counter) items.push({tag: tag, count: counter[tag]});
-    items.sort(function(a,b){return b.count - a.count || a.tag.localeCompare(b.tag);});
-    return items;
+      added.forEach(function(t) {
+        var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
+        if (item) { item.count++; } else { self.tagEditorTagFreq.push({ tag: t, count: 1 }); }
+      });
+      this._teFreqCacheKey = '';
+      this._teCachedFreqResult = null;
+      this.tagEditorMaxFreq = this.tagEditorTagFreq.reduce(function(max, f) { return Math.max(max, f.count); }, 0);
+    }
   },
 
-  tagEditorStatsMax() {
-    var items = this.tagEditorStatsItems();
-    return items.length > 0 ? items[0].count : 1;
-  },
-
-  tagEditorStatsFiltered() {
-    var items = this.tagEditorStatsItems();
-    var f = (this.statsFilter || '').trim().toLowerCase();
-    if (f) items = items.filter(function(i){return i.tag.toLowerCase().indexOf(f) !== -1;});
-    if (this.statsSort === 'count_asc') items.sort(function(a,b){return a.count - b.count || a.tag.localeCompare(b.tag);});
-    else if (this.statsSort === 'name_asc') items.sort(function(a,b){return a.tag.localeCompare(b.tag);});
-    else if (this.statsSort === 'name_desc') items.sort(function(a,b){return b.tag.localeCompare(a.tag);});
-    // default: count_desc (already sorted in tagEditorStatsItems)
-    return items;
-  },
-
-  tagEditorPickStatsTag(tag) {
-    var matched = [];
-    var self = this;
-    this.tagEditorImages.forEach(function(img) {
-      if ((img.tags || '').split(',').map(function(t){return t.trim();}).indexOf(tag) !== -1) {
-        matched.push(img.path);
-      }
-    });
-    this.tagEditorSelected = matched;
-    this.toast(tag + ': ' + matched.length + ' images', 'success');
-  },
-
-  tagEditorStatsRemoveTag(tag) {
-    var self = this;
-    var modified = 0;
-    this.tagEditorSelected.forEach(function(path) {
-      var img = self.tagEditorImages.find(function(i){return i.path===path;});
-      if (!img) return;
-      var oldTags = img.tags;
-      var cur = (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t && t !== tag;});
-      if (cur.join(', ') !== oldTags) {
-        img.tags = cur.join(', ');
-        self.tagEditorModified = true;
-        self._tePushHistory(path, oldTags, img.tags);
-        modified++;
-      }
-    });
-    if (modified > 0) { this.tagEditorRefreshTagFreq(); this._teFilteredCacheKey = ''; }
-  },
-
-  tagEditorSortSingle(imgPath) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    var oldTags = img.tags;
-    var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
-    tags.sort();
-    img.tags = tags.join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-  },
-
-  // ── No-tag / Modified counts ───────────────────────────
-  tagEditorNoTagCount() {
-    return this.tagEditorImages.filter(function(img) { return !img.tags || !img.tags.trim(); }).length;
-  },
   tagEditorModifiedCount() {
     var orig = this.tagEditorOriginal;
-    return this.tagEditorImages.filter(function(img) { return orig[img.path] !== undefined && orig[img.path] !== img.tags; }).length;
+    return this.tagEditorImages.filter(function(img) { return img.tags !== orig[img.path]; }).length;
   },
 
-  // ── Autocomplete ───────────────────────────────────────
-  _teSuggestDebounceTimer: null,
-
-  tagEditorGetSuggestions(imgPath) {
-    if (this.tagEditorFocusedImg !== imgPath || !this.tagEditorFocusedVal || this.tagEditorFocusedVal.length < 1) return [];
-    var q = this.tagEditorFocusedVal.toLowerCase();
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    var existing = img ? (img.tags || '').split(',').map(function(t) { return t.trim().toLowerCase(); }) : [];
-    var freq = this.tagEditorTagFreq || [];
-    return freq.filter(function(t) { return t.tag.toLowerCase().indexOf(q) !== -1 && existing.indexOf(t.tag.toLowerCase()) === -1; })
-               .slice(0, 8)
-               .map(function(t) { return t.tag; });
-  },
-
-  tagEditorOnSuggestInput(event, imgPath) {
-    clearTimeout(this._teBlurTimer);
-    clearTimeout(this._teSuggestDebounceTimer);
-    this.tagEditorFocusedImg = imgPath;
+  // ===== Save =====
+  async tagEditorSaveAll() {
     var self = this;
-    var val = event.target.value;
-    this._teSuggestDebounceTimer = setTimeout(function() {
-      self.tagEditorFocusedVal = val;
-    }, 50);
+    var modified = this.tagEditorImages.filter(function(img) {
+      return img.tags !== self.tagEditorOriginal[img.path];
+    });
+    if (modified.length === 0) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
+    this.tagEditorConfirmMsg = this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length);
+    var self2 = this;
+    this.tagEditorConfirmCb = function() { self2._doSaveAll(modified); };
+    this.tagEditorConfirmOpen = true;
   },
 
-  tagEditorPickSuggestion(imgPath, tag) {
-    this.tagEditorAddTagToImage(imgPath, tag);
-    this.tagEditorFocusedImg = null;
-    this.tagEditorFocusedVal = '';
-  },
-
-  tagEditorBlurSuggest() {
-    var self = this;
-    clearTimeout(this._teBlurTimer);
-    this._teBlurTimer = setTimeout(function() { self.tagEditorFocusedImg = null; self.tagEditorFocusedVal = ''; }, 200);
-  },
-
-  // ── Tag Reorder (move left/right) ─────────────────────
-  tagEditorMoveTag(imgPath, tag, direction) {
-    var img = this.tagEditorImages.find(function(i) { return i.path === imgPath; });
-    if (!img) return;
-    var oldTags = img.tags;
-    var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); });
-    var idx = -1;
-    for (var i = 0; i < tags.length; i++) {
-      if (tags[i] === tag) { idx = i; break; }
-    }
-    if (idx === -1) return;
-    var targetIdx = direction === 'left' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= tags.length) return;
-    var tmp = tags[idx]; tags[idx] = tags[targetIdx]; tags[targetIdx] = tmp;
-    img.tags = tags.join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(imgPath, oldTags, img.tags);
-  },
-
-  tagEditorDetailMoveTag(tag, direction) {
-    var img = this.tagEditorDetailImg();
-    if (!img) return;
-    this.tagEditorMoveTag(img.path, tag, direction);
-  },
-
-  // ── Tag Drag-and-Drop Reorder ──────────────────────────
-  tagEditorDetailDragStart(event, tagIdx) {
-    this.tagEditorDetailDragSrcIdx = tagIdx;
-    this.tagEditorDetailDragOverIdx = -1;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', String(tagIdx));
-    var el = event.target.closest('.te-pill-wrap');
-    if (el) { setTimeout(function() { el.style.opacity = '0.4'; }, 0); }
-  },
-  tagEditorDetailDragOver(event, tagIdx) {
-    event.dataTransfer.dropEffect = 'move';
-    this.tagEditorDetailDragOverIdx = tagIdx;
-  },
-  tagEditorDetailDragLeave(event) {
-    this.tagEditorDetailDragOverIdx = -1;
-  },
-  tagEditorDetailDrop(event, targetIdx) {
-    var srcIdx = parseInt(event.dataTransfer.getData('text/plain'));
-    var srcEl = document.querySelector('.te-pill-drag-src');
-    if (srcEl) srcEl.style.opacity = '';
-    this.tagEditorDetailDragSrcIdx = -1;
-    this.tagEditorDetailDragOverIdx = -1;
-    if (isNaN(srcIdx) || srcIdx === targetIdx) return;
-
-    var img = this.tagEditorDetailImg();
-    if (!img) return;
-    var oldTags = img.tags;
-    var tags = (img.tags || '').split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
-    if (srcIdx >= tags.length || targetIdx >= tags.length) return;
-    var moved = tags.splice(srcIdx, 1)[0];
-    tags.splice(targetIdx, 0, moved);
-    img.tags = tags.join(', ');
-    this.tagEditorModified = true;
-    this._tePushHistory(img.path, oldTags, img.tags);
-  },
-
-  // ── Drag to Select ─────────────────────────────────────
-  tagEditorCardMouseDown(event, imgPath) {
-    if (event.button !== 0) return;
-    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-del')) return;
-    // Start drag selection
-    var grid = event.currentTarget.closest('.te-image-grid');
-    if (!grid) return;
-    var gridRect = grid.getBoundingClientRect();
-    this.tagEditorDragStart = { x: event.clientX, y: event.clientY, grid: grid, gridTop: gridRect.top, gridLeft: gridRect.left };
-    this._teDragRect = { left: event.clientX, top: event.clientY, width: 0, height: 0 };
-    this.tagEditorDragSelect = false;
-    // Listen for move/up on window so drag works outside the grid
-    this._teRemoveDragListeners();
-    var self = this;
-    this._teDragMoveHandler = function(e) { self._teOnDragMove(e); };
-    this._teDragUpHandler = function(e) { self._teOnDragEnd(e); };
-    window.addEventListener('mousemove', this._teDragMoveHandler);
-    window.addEventListener('mouseup', this._teDragUpHandler);
-  },
-
-  _teOnDragMove(e) {
-    if (!this.tagEditorDragStart) return;
-    var dx = (e.clientX - this.tagEditorDragStart.x);
-    var dy = (e.clientY - this.tagEditorDragStart.y);
-    if (!this.tagEditorDragSelect && (dx * dx + dy * dy) > 16) {
-      // Threshold crossed: start drag selection
-      this.tagEditorDragSelect = true;
-    }
-    if (!this.tagEditorDragSelect) return;
-    var left = Math.min(e.clientX, this.tagEditorDragStart.x);
-    var top = Math.min(e.clientY, this.tagEditorDragStart.y);
-    var width = Math.abs(e.clientX - this.tagEditorDragStart.x);
-    var height = Math.abs(e.clientY - this.tagEditorDragStart.y);
-    this._teDragRect = { left: left, top: top, width: width, height: height };
-  },
-
-  _teOnDragEnd(e) {
-    this._teRemoveDragListeners();
-    if (this.tagEditorDragSelect && this._teDragRect) {
-      // Select cards that intersect the drag rectangle
-      var rect = this._teDragRect;
-      var grid = this.tagEditorDragStart ? this.tagEditorDragStart.grid : null;
-      if (grid) {
-        var cards = grid.querySelectorAll('.te-card');
-        var self = this;
-        cards.forEach(function(card) {
-          var cr = card.getBoundingClientRect();
-          // Check intersection
-          if (cr.right > rect.left && cr.left < rect.left + rect.width &&
-              cr.bottom > rect.top && cr.top < rect.top + rect.height) {
-            var imgPath = card.getAttribute('data-te-path');
-            if (imgPath && self.tagEditorSelected.indexOf(imgPath) === -1) {
-              self.tagEditorSelected.push(imgPath);
-            }
-          }
-        });
+  async _doSaveAll(modified) {
+    this.tagEditorSaving = true;
+    try {
+      var payload = modified.map(function(img) {
+        return { path: img.path, tags: img.tags };
+      });
+      var r = await fetch('/api/tageditor/save-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: payload })
+      });
+      var j = await r.json();
+      if (j.status === 'success') {
+        var orig = this.tagEditorOriginal;
+        modified.forEach(function(img) { orig[img.path] = img.tags; });
+        this.tagEditorModified = false;
+        this.tagEditorHistory = [];
+        this.tagEditorHistoryIdx = -1;
+        this.tagEditorSaving = false;
+        this.toast(this.t('common.saved'));
+        this._teRemoveDraft();
+      } else {
+        this.tagEditorSaving = false;
+        this.toast(j.message || this.t('common.error'), 'error');
       }
+    } catch (e) {
+      this.tagEditorSaving = false;
+      this.toast(this.t('common.networkError'), 'error');
     }
-    this._teDragRect = null;
-    this.tagEditorDragStart = null;
-    // Use microtask to defer reset until after click event fires
-    var self = this;
-    Promise.resolve().then(function() { self.tagEditorDragSelect = false; });
   },
 
-  // Cleanup drag listeners on route change
-  tagEditorCleanup() {
-    this._teRemoveDragListeners();
-    this._teDragRect = null;
-    this.tagEditorDragStart = null;
-    this.tagEditorDragSelect = false;
+  // ===== Auto-save Draft =====
+  _teStartAutoSave() {
     this._teStopAutoSave();
-    // Cleanup debounce timers
-    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
-    var pending = this._tePendingTextEdits || {};
-    for (var key in pending) {
-      if (pending[key] && pending[key].timer) clearTimeout(pending[key].timer);
-    }
-    this._tePendingTextEdits = {};
-  },
-
-  _teRemoveDragListeners() {
-    if (this._teDragMoveHandler) {
-      window.removeEventListener('mousemove', this._teDragMoveHandler);
-      this._teDragMoveHandler = null;
-    }
-    if (this._teDragUpHandler) {
-      window.removeEventListener('mouseup', this._teDragUpHandler);
-      this._teDragUpHandler = null;
-    }
-  },
-
-  tagEditorDragRect() {
-    return this._teDragRect || null;
-  },
-
-  tagEditorCardClick(event, imgPath) {
-    if (event.target.closest('input,textarea,button,.te-pill,.te-pill-del,.te-card-check')) return;
-    if (this.tagEditorDragSelect) return;
-    this.tagEditorOpenDetail(imgPath);
-  },
-
-  // ── Tag Cloud scroll context ────────────────────────────
-  tagEditorTagRightClick(tag, event) {
-    this.tagEditorShowContext(tag, event);
-  },
-
-  tagEditorMaxFreq() {
-    if (!this.tagEditorTagFreq || this.tagEditorTagFreq.length === 0) return 1;
-    return this.tagEditorTagFreq[0].count;
-  },
-
-  // ── Card tag click handler ──────────────────────────────
-  tagEditorCardTagClick(tag, event, imgPath) {
-    if (event.ctrlKey || event.metaKey) {
-      // Ctrl+click: remove from all selected
-      event.preventDefault();
-      this.tagEditorRemoveTagFromSelected(tag);
-    } else if (event.shiftKey) {
-      // Shift+click: add to all selected
-      event.preventDefault();
-      this.tagEditorAddTagToSelected(tag);
-    } else {
-      this.tagEditorRemoveTag(imgPath, tag);
-    }
-  },
-
-  // ── Improved empty state ────────────────────────────────
-  tagEditorHasImages() {
-    return this.tagEditorImages.length > 0 && !this.tagEditorLoading;
-  },
-  tagEditorIsEmpty() {
-    return this.tagEditorImages.length === 0 && !this.tagEditorLoading;
-  },
-
-  // ── Load from training directory ────────────────────────
-  tagEditorLoadFromTraining() {
-    if (this.form && this.form.train_data_dir) {
-      this.tagEditorDir = this.form.train_data_dir;
-      this.tagEditorLoad();
-    }
-  },
-
-  // ── Page navigation ─────────────────────────────────────
-  tagEditorGoPage(page) {
-    var total = this.tagEditorTotalPages();
-    this.tagEditorPage = Math.max(1, Math.min(page, total));
-  },
-
-  // ── Export filtered tags ────────────────────────────────
-  tagEditorExportFilteredTags() {
-    var filtered = this.tagEditorGetFiltered();
-    var tagSet = new Set();
-    filtered.forEach(function(img) {
-      (img.tags || '').split(',').map(function(t){return t.trim();}).filter(function(t){return t;}).forEach(function(t){tagSet.add(t);});
-    });
-    var txt = Array.from(tagSet).sort().join(', ');
-    if (!txt) { this.toast('No tags to export', 'warning'); return; }
     var self = this;
-    navigator.clipboard.writeText(txt).then(function() {
-      self.toast((self.t('common.copied') || 'Copied') + ' ' + tagSet.size + ' tags', 'success');
-    }).catch(function() {
-      self.toast('Copy failed', 'error');
-    });
+    this._teAutoSaveInterval = setInterval(function() {
+      self._teSaveDraft();
+    }, 30000);
   },
 
-  // ── Keyboard: Enter opens detail on selected card ───────
-  tagEditorHandleGlobalKey(e) {
-    if (e.key !== 'Enter') return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
-    if (this.tagEditorDetailMode) return;
-    if (this.tagEditorSelected.length === 1) {
-      this.tagEditorOpenDetail(this.tagEditorSelected[0]);
+  _teStopAutoSave() {
+    if (this._teAutoSaveInterval) { clearInterval(this._teAutoSaveInterval); this._teAutoSaveInterval = null; }
+  },
+
+  _teSaveDraft() {
+    if (!this.tagEditorModified) return;
+    try {
+      var key = 'tagEditor_draft_' + this.tagEditorDir;
+      var data = this.tagEditorImages.map(function(img) {
+        return { path: img.path, tags: img.tags, original: this.tagEditorOriginal[img.path] };
+      }.bind(this));
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) { /* quota exceeded, ignore */ }
+  },
+
+  _teCheckDraft() {
+    try {
+      var key = 'tagEditor_draft_' + this.tagEditorDir;
+      var raw = localStorage.getItem(key);
+      if (raw) {
+        var data = JSON.parse(raw);
+        if (data && data.length > 0) {
+          var self = this;
+          this.tagEditorConfirmMsg = this.t('tagEditor.draftFound');
+          this.tagEditorConfirmCb = function() {
+            data.forEach(function(item) {
+              var img = self.tagEditorImages.find(function(i) { return i.path === item.path; });
+              if (img) {
+                img.tags = item.tags;
+                self.tagEditorOriginal[img.path] = item.original || item.tags;
+              }
+            });
+            self.tagEditorModified = true;
+            self._teFilteredCacheKey = '';
+            self._teCachedFiltered = null;
+            self.toast(self.t('tagEditor.autoSaveRestored'));
+          };
+          this.tagEditorConfirmOpen = true;
+        }
+      }
+    } catch (e) { /* ignore */ }
+  },
+
+  _teRemoveDraft() {
+    try {
+      var key = 'tagEditor_draft_' + this.tagEditorDir;
+      localStorage.removeItem(key);
+    } catch (e) { /* ignore */ }
+  },
+
+  // ===== Navigation Guard =====
+  _teConfirmNav(route) {
+    if (this.currentRoute !== 'tagEditor') return true;
+    if (!this.tagEditorModified) return true;
+    return window.confirm(this.t('tagEditor.unsavedConfirm'));
+  },
+
+  // ===== Keyboard Shortcuts =====
+  tagEditorHandleKeydown(e) {
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      this.tagEditorSaveAll();
+      return;
+    }
+    if (e.ctrlKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      this.tagEditorUndo();
+      return;
+    }
+    if (e.ctrlKey && e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      this.tagEditorRedo();
+      return;
+    }
+    if (e.ctrlKey && e.key === 'a') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      this.tagEditorSelectAll();
+      return;
+    }
+    if (e.ctrlKey && e.key === 'c') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (this.tagEditorSelected.length === 1) {
+        e.preventDefault();
+        this.tagEditorCopySelectedTags();
+      }
+      return;
+    }
+    if (e.ctrlKey && e.key === 'v') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (this.tagEditorSelected.length === 1 && this.tagEditorCopiedTags.length > 0) {
+        e.preventDefault();
+        this.tagEditorPasteTagsToSelected();
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        e.target.blur();
+      }
+      this.tagEditorSelected = [];
+      this.tagEditorRightCollapsed = true;
+      this.tagEditorContextMenu = null;
+      return;
+    }
+    if (e.key === 'ArrowLeft' && this.tagEditorSelected.length === 1) {
+      e.preventDefault();
+      this.tagEditorNavDetail(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight' && this.tagEditorSelected.length === 1) {
+      e.preventDefault();
+      this.tagEditorNavDetail(1);
+      return;
+    }
+    if (e.ctrlKey && e.key === 'f') {
+      e.preventDefault();
+      var searchInput = document.querySelector('.te-v3-top-search input');
+      if (searchInput) searchInput.focus();
+      return;
     }
   }
 };
