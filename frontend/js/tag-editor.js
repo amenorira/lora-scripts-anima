@@ -28,8 +28,8 @@ window.tagEditorMixin = {
   tagEditorExcludedTags: [],
   tagEditorTagSortBy: 'freq',
   tagEditorTagSortAsc: false,
-  tagEditorTagCloudLimit: 200,
-  tagEditorTagCloudExpanded: false,
+  tagEditorTagCloudLimit: 9999,
+  tagEditorTagCloudExpanded: true,
 
   // ===== Selection & Grid =====
   tagEditorSelected: [],
@@ -166,7 +166,7 @@ window.tagEditorMixin = {
         this._teFreqCacheKey = '';
         this._teCachedFreqResult = null;
       }
-    } catch (e) { /* silent */ }
+    } catch (e) { this.tagEditorTagFreq = []; this.tagEditorMaxFreq = 0; }
   },
 
   tagEditorReloadDir() {
@@ -337,9 +337,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetDisplayFreq() {
-    var freq = this.tagEditorGetFilteredTagFreq();
-    var limit = this.tagEditorTagCloudExpanded ? 1200 : this.tagEditorTagCloudLimit;
-    return freq.slice(0, limit);
+    return this.tagEditorGetFilteredTagFreq();
   },
 
   tagEditorSelectTag(tag) {
