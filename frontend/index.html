@@ -392,7 +392,7 @@
         </div>
 
         <!-- Confirm dialog -->
-        <div x-show="tagEditorConfirmOpen" class="te-v3-confirm" @click.self="tagEditorConfirmOpen = false" x-transition>
+        <div x-show="tagEditorConfirmOpen" class="te-v3-confirm" @click.self="tagEditorConfirmOpen = false; tagEditorConfirmCb = null" x-transition>
           <div class="te-v3-confirm-box">
             <div class="te-v3-confirm-msg" x-text="tagEditorConfirmMsg"></div>
             <div class="te-v3-confirm-btns">
@@ -457,8 +457,9 @@
               &#x2630;
             </button>
             <div class="te-v3-top-search">
-              <input type="text" x-model="tagEditorSearchQuery"
+              <input type="text" :value="tagEditorSearchQuery"
                 :placeholder="tagEditorUseRegex ? t('tagEditor.regexSearchPlaceholder') : t('tagEditor.searchPlaceholder')"
+                @input="tagEditorSetSearch($event.target.value)"
                 @keydown.escape="tagEditorSearchQuery = ''">
               <button class="te-v3-top-regex" :class="{ active: tagEditorUseRegex }"
                 @click="tagEditorUseRegex = !tagEditorUseRegex" x-text="'.*'"></button>
@@ -511,14 +512,16 @@
             <div class="te-v3-left" :class="{ collapsed: tagEditorLeftCollapsed }">
               <div class="te-v3-left-dir">
                 <span x-text="tagEditorDir || '...'" :title="tagEditorDir"></span>
-                <button @click="tagEditorLoad(tagEditorDir)" title="Reload">&#x21BB;</button>
+                <button @click="tagEditorReloadDir()" :title="t('tagEditor.loadImages')">&#x21BB;</button>
               </div>
               <div class="te-v3-left-undo">
                 <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" title="Undo Ctrl+Z">&#x21A9;</button>
                 <button @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" title="Redo Ctrl+Shift+Z">&#x21AA;</button>
               </div>
               <div class="te-v3-left-search">
-                <input type="text" x-model="tagEditorTagSearch" :placeholder="t('tagEditor.searchTags')">
+                <input type="text" :value="tagEditorTagSearch"
+                  :placeholder="t('tagEditor.searchTags')"
+                  @input="tagEditorSetTagSearch($event.target.value)">
                 <button class="te-v3-left-search-clear" x-show="tagEditorTagSearch"
                   @click="tagEditorTagSearch = ''">&times;</button>
               </div>
