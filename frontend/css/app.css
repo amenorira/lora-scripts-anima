@@ -507,6 +507,7 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .page-header { margin-bottom: 20px; }

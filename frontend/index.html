@@ -769,14 +769,8 @@
                 </div>
               </template>
 
-              <!-- No Selection Placeholder -->
-              <template x-if="tagEditorSelected.length === 0 && !tagEditorRightCollapsed">
-                <div class="te-v3-right-placeholder">
-                  <div class="te-v3-right-placeholder-icon">&#x1F4DD;</div>
-                  <div class="te-v3-right-placeholder-text" x-text="t('tagEditor.selectOneImage')"></div>
-                </div>
-              </template>
-            </div>
+            <!-- No Selection — panel auto-collapses when nothing selected -->
+          </div>
           </div>
 
           <!-- Bottom Bar -->
@@ -815,7 +809,7 @@
             <div class="te-v3-bottom-pages">
               <button @click="tagEditorPage = 1" :disabled="tagEditorPage === 1">&laquo;</button>
               <button @click="tagEditorPage--" :disabled="tagEditorPage === 1">&lsaquo;</button>
-              <template x-for="p in tagEditorGetPageNumbers()" :key="p">
+              <template x-for="(p, pidx) in tagEditorGetPageNumbers()" :key="'pg-' + pidx">
                 <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
                   @click="tagEditorPage = p" x-text="p"></button>
                 <span x-show="typeof p !== 'number'" x-text="p" style="padding:0 4px;color:var(--text-tertiary)"></span>
