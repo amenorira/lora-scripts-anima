@@ -118,6 +118,8 @@ window.tagEditorMixin = {
     this.tagEditorDir = d;
     this.tagEditorLoading = true;
     this._teStopAutoSave();
+    if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
+    if (this._teTagSearchDebounce) { clearTimeout(this._teTagSearchDebounce); this._teTagSearchDebounce = null; }
     this.startProgress();
     try {
       var r = await fetch('/api/tageditor/images?dir=' + encodeURIComponent(d));
@@ -924,51 +926,72 @@ window.tagEditorMixin = {
     if (this.tagEditorHistoryIdx < this.tagEditorHistory.length - 1) {
       this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
     }
-    var snapshot = {};
+    var checkpoint = {};
     var orig = this.tagEditorOriginal;
-    var self = this;
     this.tagEditorImages.forEach(function(img) {
       if (img.tags !== orig[img.path]) {
-        snapshot[img.path] = { old: orig[img.path], new: img.tags };
+        checkpoint[img.path] = img.tags;
       }
     });
-    if (Object.keys(snapshot).length === 0) return;
-    this.tagEditorHistory.push(snapshot);
+    this.tagEditorHistory.push(checkpoint);
     if (this.tagEditorHistory.length > 200) this.tagEditorHistory.shift();
     this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
   },
 
   tagEditorUndo() {
     if (this.tagEditorHistoryIdx < 0) return;
-    var snapshot = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    var targetIdx = this.tagEditorHistoryIdx;
     this.tagEditorHistoryIdx--;
-    this._teApplySnapshot(snapshot);
+    var checkpoint = this.tagEditorHistoryIdx >= 0 ? this.tagEditorHistory[this.tagEditorHistoryIdx] : {};
+    this._teApplyCheckpoint(checkpoint, targetIdx);
   },
 
   tagEditorRedo() {
     if (this.tagEditorHistoryIdx >= this.tagEditorHistory.length - 1) return;
     this.tagEditorHistoryIdx++;
-    var snapshot = this.tagEditorHistory[this.tagEditorHistoryIdx];
-    this._teApplySnapshot(snapshot);
+    var checkpoint = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    this._teApplyCheckpoint(checkpoint, this.tagEditorHistoryIdx);
   },
 
-  _teApplySnapshot(snapshot) {
+  _teApplyCheckpoint(checkpoint, targetIdx) {
     var self = this;
     var hasAnyMod = false;
     this.tagEditorImages.forEach(function(img) {
-      if (snapshot.hasOwnProperty(img.path)) {
-        var s = snapshot[img.path];
-        img.tags = s.old;
-        self.tagEditorOriginal[img.path] = s.old;
-        hasAnyMod = true;
+      if (checkpoint.hasOwnProperty(img.path)) {
+        var newTags = checkpoint[img.path];
+        if (img.tags !== newTags) {
+          self._teUpdateFreq(img.tags, newTags);
+          img.tags = newTags;
+        }
+        if (img.tags !== self.tagEditorOriginal[img.path]) hasAnyMod = true;
       }
     });
     this.tagEditorModified = hasAnyMod;
     this._teFilteredCacheKey = '';
     this._teCachedFiltered = null;
+    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this._updateRightPanel();
+  },
+
+  _teUpdateFreq(oldTags, newTags) {
+    var oldList = oldTags ? oldTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var newList = newTags ? newTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+    var removed = oldList.filter(function(t) { return newList.indexOf(t) === -1; });
+    var added = newList.filter(function(t) { return oldList.indexOf(t) === -1; });
+    if (removed.length === 0 && added.length === 0) return;
+    var self = this;
+    removed.forEach(function(t) {
+      var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
+      if (item && item.count > 0) item.count--;
+    });
+    added.forEach(function(t) {
+      var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
+      if (item) { item.count++; } else { self.tagEditorTagFreq.push({ tag: t, count: 1 }); }
+    });
+    this.tagEditorTagFreq = this.tagEditorTagFreq.filter(function(f) { return f.count > 0; });
+    this.tagEditorMaxFreq = this.tagEditorTagFreq.reduce(function(max, f) { return Math.max(max, f.count); }, 0);
     this._teFreqCacheKey = '';
     this._teCachedFreqResult = null;
-    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
   },
 
   // ===== Core Edit Helper =====
