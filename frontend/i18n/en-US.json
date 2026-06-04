@@ -556,7 +556,15 @@
     "sortDesc": "Descending",
     "prevImage": "Previous",
     "nextImage": "Next",
-    "currentHint": "current"
+    "currentHint": "current",
+    "tagReordered": "(reordered)",
+    "emptySearch": "No matching images found",
+    "clearFilter": "Clear Filters",
+    "noImageSelected": "Click an image to start editing",
+    "confirmBatchDesc": "Apply \"{operation}\" to {count} images?",
+    "regexError": "Invalid regular expression",
+    "draftSavedAt": "Draft saved at {time}",
+    "draftSaveFailed": "Draft save failed"
   },
   "bulkAction": {
     "add": "Add",
@@ -564,6 +572,7 @@
     "replace": "Replace",
     "dedupe": "Dedup",
     "dedupeRowHint": "Remove duplicate tags from each image",
+    "sort": "Sort",
     "posFront": "Front",
     "posBack": "Back"
   },

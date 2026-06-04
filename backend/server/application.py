@@ -74,7 +74,7 @@ if cors_config != "":
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
     response = await call_next(request)
-    response.headers["Cache-Control"] = "max-age=0"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     return response
 
 app.include_router(api_router, prefix="/api")

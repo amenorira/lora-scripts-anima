@@ -310,17 +310,22 @@ document.addEventListener('alpine:init', () => {
       el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
       if (type) {
         el.classList.add(type);
-        const icon = type === 'error'
-          ? '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
-          : '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+        var icon;
+        if (type === 'error') {
+          icon = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        } else if (type === 'warning') {
+          icon = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+        } else {
+          icon = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+        }
         el.innerHTML = icon + '<span>' + message + '</span>';
       } else {
         el.textContent = message;
       }
       c.appendChild(el);
-      setTimeout(() => {
+      setTimeout(function() {
         el.classList.add('out');
-        setTimeout(() => { if (el.parentNode) el.remove(); }, 300);
+        setTimeout(function() { if (el.parentNode) el.remove(); }, 300);
       }, 2800);
     },
 

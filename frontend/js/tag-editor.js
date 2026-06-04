@@ -22,6 +22,8 @@ window.tagEditorMixin = {
   tagEditorQuickFilter: 'all',
   tagEditorSortBy: 'name',
   tagEditorSortAsc: true,
+  tagEditorSortBy2: '',
+  tagEditorSortAsc2: true,
   tagEditorTagSearch: '',
   tagEditorTagLogic: 'AND',
   tagEditorTagSelection: [],
@@ -30,6 +32,7 @@ window.tagEditorMixin = {
   tagEditorTagSortAsc: false,
   tagEditorTagCloudLimit: 500,
   _teCloudShowAll: false,
+  _teSearchLoading: false,
 
   // ===== Selection & Grid =====
   tagEditorSelected: [],
@@ -81,6 +84,7 @@ window.tagEditorMixin = {
   // ===== Auto-save =====
   _teAutoSaveInterval: null,
   _tePendingTextEdits: {},
+  _teDraftSavedAt: '',
 
   // ===== Cache =====
   _teFilteredCacheKey: '',
@@ -90,6 +94,7 @@ window.tagEditorMixin = {
   _teSearchDebounce: null,
   _teTagSearchDebounce: null,
   _teIsSaving: false,
+  _teSaveProgress: 0,
 
   // ===== Lifecycle =====
   tagEditorCleanup() {
@@ -142,6 +147,9 @@ window.tagEditorMixin = {
         this._teFreqCacheKey = '';
         this._teCachedFiltered = null;
         this._teCachedFreqResult = null;
+        this._teSearchLoading = false;
+        this.tagEditorRegexError = false;
+        this._teDraftSavedAt = '';
         await this.tagEditorLoadTagFreq();
         this._teCheckDraft();
         this._teStartAutoSave();
@@ -185,14 +193,18 @@ window.tagEditorMixin = {
   tagEditorSetSearch(val) {
     if (this._teSearchDebounce) clearTimeout(this._teSearchDebounce);
     var self = this;
+    this._teSearchLoading = true;
     this._teSearchDebounce = setTimeout(function() {
       self.tagEditorSearchQuery = val;
       self._teSearchDebounce = null;
+      self._teSearchLoading = false;
       self.tagEditorPage = 1;
     }, 150);
   },
   tagEditorClearSearch() {
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
+    this._teSearchLoading = false;
+    this.tagEditorRegexError = false;
     this.tagEditorSearchQuery = '';
     this.tagEditorPage = 1;
   },
@@ -212,6 +224,7 @@ window.tagEditorMixin = {
     var cacheKey = this.tagEditorSearchQuery + '|' + this.tagEditorQuickFilter + '|' +
       this.tagEditorTagSelection.join(',') + '|' + this.tagEditorExcludedTags.join(',') + '|' +
       this.tagEditorTagLogic + '|' + this.tagEditorSortBy + '|' + this.tagEditorSortAsc + '|' +
+      this.tagEditorSortBy2 + '|' + this.tagEditorSortAsc2 + '|' +
       this.tagEditorUseRegex;
     if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
@@ -269,16 +282,36 @@ window.tagEditorMixin = {
     var asc = this.tagEditorSortAsc;
     var self = this;
     images.sort(function(a, b) {
+      var cmp = 0;
+      // Primary sort
       if (sortBy === 'tagCount') {
         var ca = a.tags ? a.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
         var cb = b.tags ? b.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
-        return asc ? ca - cb : cb - ca;
+        cmp = asc ? ca - cb : cb - ca;
       } else if (sortBy === 'modified') {
         var ma = a.tags !== self.tagEditorOriginal[a.path] ? 1 : 0;
         var mb = b.tags !== self.tagEditorOriginal[b.path] ? 1 : 0;
-        return asc ? ma - mb : mb - ma;
+        cmp = asc ? ma - mb : mb - ma;
+      } else {
+        cmp = asc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
       }
-      return asc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+      // Secondary sort (only when primary is tied)
+      if (cmp === 0 && self.tagEditorSortBy2) {
+        var sortBy2 = self.tagEditorSortBy2;
+        var asc2 = self.tagEditorSortAsc2;
+        if (sortBy2 === 'tagCount') {
+          var ca2 = a.tags ? a.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
+          var cb2 = b.tags ? b.tags.split(',').filter(function(t) { return t.trim(); }).length : 0;
+          cmp = asc2 ? ca2 - cb2 : cb2 - ca2;
+        } else if (sortBy2 === 'modified') {
+          var ma2 = a.tags !== self.tagEditorOriginal[a.path] ? 1 : 0;
+          var mb2 = b.tags !== self.tagEditorOriginal[b.path] ? 1 : 0;
+          cmp = asc2 ? ma2 - mb2 : mb2 - ma2;
+        } else {
+          cmp = asc2 ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+        }
+      }
+      return cmp;
     });
 
     this._teFilteredCacheKey = cacheKey;
@@ -778,102 +811,111 @@ window.tagEditorMixin = {
     return this.tagEditorGetFiltered();
   },
 
-  _teConfirmBatchScope(action) {
-    if (this.tagEditorBatchScope !== 'all') return true;
-    var count = this.tagEditorImages.length;
-    if (count <= 10) return true;
-    return window.confirm(this.t('tagEditor.batchConfirmAll').replace('{n}', count));
+  _teConfirmBatchScope(action, cb) {
+    var targets = this.tagEditorGetBatchTargets();
+    var count = targets.length;
+    if (count === 0) { this.toast(this.t('tagEditor.batchNoChanges'), 'warning'); return; }
+    var actionLabel = this.t('bulkAction.' + action) || action;
+    this.tagEditorConfirmMsg = this.t('tagEditor.confirmBatchDesc')
+      .replace('{count}', count).replace('{operation}', actionLabel);
+    this.tagEditorConfirmCb = cb;
+    this.tagEditorConfirmOpen = true;
   },
 
   tagEditorBatchAdd() {
     var val = this.batchAddInput.trim();
     if (!val) return;
-    if (!this._teConfirmBatchScope('add')) return;
     var newTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
     if (newTags.length === 0) return;
-    var targets = this.tagEditorGetBatchTargets();
     var self = this;
-    targets.forEach(function(img) {
-      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
-      var changed = false;
-      newTags.forEach(function(t) {
-        if (tags.indexOf(t) === -1) {
-          if (self.batchPos === 'front') tags.unshift(t);
-          else tags.push(t);
-          changed = true;
-        }
+    this._teConfirmBatchScope('add', function() {
+      var targets = self.tagEditorGetBatchTargets();
+      targets.forEach(function(img) {
+        var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+        var changed = false;
+        newTags.forEach(function(t) {
+          if (tags.indexOf(t) === -1) {
+            if (self.batchPos === 'front') tags.unshift(t);
+            else tags.push(t);
+            changed = true;
+          }
+        });
+        if (changed) self._teUpdateImageTags(img, tags.join(', '));
       });
-      if (changed) self._teUpdateImageTags(img, tags.join(', '));
+      self._tePushHistory();
+      self.batchAddInput = '';
+      self.toast(self.t('tagEditor.batchDone'));
     });
-    this._tePushHistory();
-    this.batchAddInput = '';
-    this.toast(this.t('tagEditor.batchDone'));
   },
 
   tagEditorBatchRemove() {
     var val = this.batchRemoveInput.trim();
     if (!val) return;
-    if (!this._teConfirmBatchScope('remove')) return;
     var rmTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
     if (rmTags.length === 0) return;
-    var targets = this.tagEditorGetBatchTargets();
     var self = this;
-    targets.forEach(function(img) {
-      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
-      var before = tags.length;
-      tags = tags.filter(function(t) { return rmTags.indexOf(t) === -1; });
-      if (tags.length !== before) self._teUpdateImageTags(img, tags.join(', '));
+    this._teConfirmBatchScope('removeTag', function() {
+      var targets = self.tagEditorGetBatchTargets();
+      targets.forEach(function(img) {
+        var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+        var before = tags.length;
+        tags = tags.filter(function(t) { return rmTags.indexOf(t) === -1; });
+        if (tags.length !== before) self._teUpdateImageTags(img, tags.join(', '));
+      });
+      self._tePushHistory();
+      self.batchRemoveInput = '';
+      self.toast(self.t('tagEditor.batchDone'));
     });
-    this._tePushHistory();
-    this.batchRemoveInput = '';
-    this.toast(this.t('tagEditor.batchDone'));
   },
 
   tagEditorBatchReplace() {
     var oldTag = this.batchOldTag.trim();
     var newTag = this.batchNewTag.trim();
     if (!oldTag || !newTag) return;
-    if (!this._teConfirmBatchScope('replace')) return;
-    var targets = this.tagEditorGetBatchTargets();
     var self = this;
-    targets.forEach(function(img) {
-      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
-      var idx = tags.indexOf(oldTag);
-      if (idx !== -1) {
-        tags[idx] = newTag;
-        self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
-      }
+    this._teConfirmBatchScope('replace', function() {
+      var targets = self.tagEditorGetBatchTargets();
+      targets.forEach(function(img) {
+        var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+        var idx = tags.indexOf(oldTag);
+        if (idx !== -1) {
+          tags[idx] = newTag;
+          self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
+        }
+      });
+      self._tePushHistory();
+      self.batchOldTag = ''; self.batchNewTag = '';
+      self.toast(self.t('tagEditor.batchDone'));
     });
-    this._tePushHistory();
-    this.batchOldTag = ''; this.batchNewTag = '';
-    this.toast(this.t('tagEditor.batchDone'));
   },
 
   tagEditorBatchDedup() {
-    if (!this._teConfirmBatchScope('dedup')) return;
-    var targets = this.tagEditorGetBatchTargets();
     var self = this;
-    targets.forEach(function(img) {
-      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
-      var deduped = self._teDedupTags(tags);
-      if (deduped.length !== tags.length) self._teUpdateImageTags(img, deduped.join(', '));
+    this._teConfirmBatchScope('dedupe', function() {
+      var targets = self.tagEditorGetBatchTargets();
+      targets.forEach(function(img) {
+        var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+        var deduped = self._teDedupTags(tags);
+        if (deduped.length !== tags.length) self._teUpdateImageTags(img, deduped.join(', '));
+      });
+      self._tePushHistory();
+      self.toast(self.t('tagEditor.batchDone'));
     });
-    this._tePushHistory();
-    this.toast(this.t('tagEditor.batchDone'));
   },
 
   tagEditorBatchSort() {
-    if (!this._teConfirmBatchScope('sort')) return;
-    var targets = this.tagEditorGetBatchTargets();
     var self = this;
-    targets.forEach(function(img) {
-      var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
-      if (tags.length <= 1) return;
-      var sorted = tags.slice().sort(function(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
-      if (sorted.join(',') !== tags.join(',')) self._teUpdateImageTags(img, sorted.join(', '));
+    this._teConfirmBatchScope('sort', function() {
+      var targets = self.tagEditorGetBatchTargets();
+      targets.forEach(function(img) {
+        var tags = img.tags ? img.tags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
+        if (tags.length <= 1) return;
+        var sorted = tags.slice().sort(function(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+        if (sorted.join(',') !== tags.join(',')) self._teUpdateImageTags(img, sorted.join(', '));
+      });
+      self._tePushHistory();
+      self.toast(self.t('tagEditor.batchDone'));
     });
-    this._tePushHistory();
-    this.toast(this.t('tagEditor.batchDone'));
   },
 
   tagEditorBatchRemoveTag(tag) {
@@ -975,14 +1017,16 @@ window.tagEditorMixin = {
       var added = afterList.filter(function(t) { return beforeList.indexOf(t) === -1; });
       var removed = beforeList.filter(function(t) { return afterList.indexOf(t) === -1; });
       var unchanged = afterList.filter(function(t) { return beforeList.indexOf(t) !== -1; });
-      if (added.length > 0 || removed.length > 0) {
+      var reordered = (added.length === 0 && removed.length === 0 && beforeTags !== afterTags);
+      if (added.length > 0 || removed.length > 0 || reordered) {
         var img = self.tagEditorImages.find(function(i) { return i.path === path; });
         diff.push({
           path: path,
           name: img ? img.name : path,
           added: added,
           removed: removed,
-          unchanged: unchanged
+          unchanged: unchanged,
+          reordered: reordered
         });
       }
     });
@@ -1097,34 +1141,46 @@ window.tagEditorMixin = {
   async _doSaveAll(modified) {
     this.tagEditorSaving = true;
     this._teIsSaving = true;
+    this._teSaveProgress = 0;
+    var CHUNK_SIZE = 50;
+    var self = this;
+
     try {
-      var payload = modified.map(function(img) {
-        return { path: img.path, tags: img.tags };
-      });
-      var r = await fetch('/api/tageditor/save-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: payload })
-      });
-      var j = await r.json();
-      if (j.status === 'success') {
-        var orig = this.tagEditorOriginal;
-        modified.forEach(function(img) { orig[img.path] = img.tags; });
-        this.tagEditorModified = false;
-        this.tagEditorHistory = [];
-        this.tagEditorHistoryIdx = -1;
-        this.tagEditorSaving = false;
-        this._teIsSaving = false;
-        this.toast(this.t('common.saved'));
-        this._teRemoveDraft();
-      } else {
-        this.tagEditorSaving = false;
-        this._teIsSaving = false;
-        this.toast(j.message || this.t('common.error'), 'error');
+      for (var i = 0; i < modified.length; i += CHUNK_SIZE) {
+        var chunk = modified.slice(i, i + CHUNK_SIZE);
+        var payload = chunk.map(function(img) {
+          return { path: img.path, tags: img.tags };
+        });
+        var r = await fetch('/api/tageditor/save-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: payload })
+        });
+        var j = await r.json();
+        if (j.status !== 'success') {
+          self.toast(j.message || self.t('common.error'), 'error');
+          self.tagEditorSaving = false;
+          self._teIsSaving = false;
+          self._teSaveProgress = 0;
+          return;
+        }
+        var orig = self.tagEditorOriginal;
+        chunk.forEach(function(img) { orig[img.path] = img.tags; });
+        self._teSaveProgress = Math.round((i + chunk.length) / modified.length * 100);
       }
+      this.tagEditorModified = false;
+      this.tagEditorHistory = [];
+      this.tagEditorHistoryIdx = -1;
+      this.tagEditorSaving = false;
+      this._teIsSaving = false;
+      this._teSaveProgress = 0;
+      this.toast(this.t('common.saved'));
+      this._teDraftSavedAt = '';
+      this._teRemoveDraft();
     } catch (e) {
       this.tagEditorSaving = false;
       this._teIsSaving = false;
+      this._teSaveProgress = 0;
       this.toast(this.t('common.networkError'), 'error');
     }
   },
@@ -1155,7 +1211,10 @@ window.tagEditorMixin = {
       if (data.length > 0) {
         localStorage.setItem(key, JSON.stringify(data));
       }
-    } catch (e) { /* quota exceeded, ignore */ }
+      this._teDraftSavedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      this.toast(this.t('tagEditor.draftSaveFailed'), 'warning');
+    }
   },
 
   _teCheckDraft() {

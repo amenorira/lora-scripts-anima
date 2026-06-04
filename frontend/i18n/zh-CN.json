@@ -556,7 +556,15 @@
     "sortDesc": "降序",
     "prevImage": "上一张",
     "nextImage": "下一张",
-    "currentHint": "当前"
+    "currentHint": "当前",
+    "tagReordered": "（顺序变更）",
+    "emptySearch": "未找到匹配图片",
+    "clearFilter": "清除筛选",
+    "noImageSelected": "请选择一张图片开始编辑",
+    "confirmBatchDesc": "对 {count} 张图片执行「{operation}」操作，是否继续？",
+    "regexError": "正则表达式无效",
+    "draftSavedAt": "草稿已于 {time} 保存",
+    "draftSaveFailed": "草稿保存失败"
   },
   "bulkAction": {
     "add": "添加",
@@ -564,6 +572,7 @@
     "replace": "替换",
     "dedupe": "去重",
     "dedupeRowHint": "移除每张图片中重复的标签",
+    "sort": "排序",
     "posFront": "开头",
     "posBack": "结尾"
   },
