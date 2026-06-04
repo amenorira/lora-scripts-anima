@@ -18,6 +18,7 @@ window.tagEditorMixin = {
   // ===== Filters & Search =====
   tagEditorSearchQuery: '',
   tagEditorUseRegex: false,
+  tagEditorRegexError: false,
   tagEditorQuickFilter: 'all',
   tagEditorSortBy: 'name',
   tagEditorSortAsc: true,
@@ -214,10 +215,11 @@ window.tagEditorMixin = {
       if (this.tagEditorUseRegex) {
         try {
           var re = new RegExp(this.tagEditorSearchQuery, 'i');
+          this.tagEditorRegexError = false;
           images = images.filter(function(img) {
             return re.test(img.name) || re.test(img.tags || '');
           });
-        } catch (e) { /* invalid regex, show all */ }
+        } catch (e) { this.tagEditorRegexError = true; }
       } else {
         images = images.filter(function(img) {
           return img.name.toLowerCase().indexOf(q) !== -1 ||
@@ -484,6 +486,11 @@ window.tagEditorMixin = {
         this.tagEditorDetailText = img.tags || '';
         this.tagEditorDetailView = 'chip';
       }
+      var self = this;
+      setTimeout(function() {
+        var input = document.querySelector('.te-v3-right-add input');
+        if (input) input.focus();
+      }, 50);
     } else if (this.tagEditorSelected.length >= 2) {
       this.tagEditorRightCollapsed = false;
     }
@@ -785,9 +792,17 @@ window.tagEditorMixin = {
     return this.tagEditorGetFiltered();
   },
 
+  _teConfirmBatchScope(action) {
+    if (this.tagEditorBatchScope !== 'all') return true;
+    var count = this.tagEditorImages.length;
+    if (count <= 10) return true;
+    return window.confirm(this.t('tagEditor.batchConfirmAll').replace('{n}', count));
+  },
+
   tagEditorBatchAdd() {
     var val = this.batchAddInput.trim();
     if (!val) return;
+    if (!this._teConfirmBatchScope('add')) return;
     var newTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
     if (newTags.length === 0) return;
     var targets = this.tagEditorGetBatchTargets();
@@ -812,6 +827,7 @@ window.tagEditorMixin = {
   tagEditorBatchRemove() {
     var val = this.batchRemoveInput.trim();
     if (!val) return;
+    if (!this._teConfirmBatchScope('remove')) return;
     var rmTags = val.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
     if (rmTags.length === 0) return;
     var targets = this.tagEditorGetBatchTargets();
@@ -831,6 +847,7 @@ window.tagEditorMixin = {
     var oldTag = this.batchOldTag.trim();
     var newTag = this.batchNewTag.trim();
     if (!oldTag || !newTag) return;
+    if (!this._teConfirmBatchScope('replace')) return;
     var targets = this.tagEditorGetBatchTargets();
     var self = this;
     this._tePushHistory();
@@ -847,6 +864,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorBatchDedup() {
+    if (!this._teConfirmBatchScope('dedup')) return;
     var targets = this.tagEditorGetBatchTargets();
     var self = this;
     this._tePushHistory();

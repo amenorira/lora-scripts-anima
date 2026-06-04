@@ -541,7 +541,16 @@
     "batchScope": "Scope",
     "batchNoChanges": "No changes to apply",
     "selectOneImage": "Click an image to start editing",
-    "exitEditor": "Exit Editor"
+    "exitEditor": "Exit Editor",
+    "filteredCount": "{n} filtered",
+    "showPanel": "Show editor panel",
+    "hidePanel": "Hide editor panel",
+    "toggleTagCloud": "Toggle tag cloud",
+    "undoHint": "Undo",
+    "redoHint": "Redo",
+    "reloadDir": "Reload",
+    "sortAsc": "Ascending",
+    "sortDesc": "Descending"
   },
   "bulkAction": {
     "add": "Add",

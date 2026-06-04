@@ -541,7 +541,16 @@
     "batchScope": "范围",
     "batchNoChanges": "没有需要应用的更改",
     "selectOneImage": "点击图片开始编辑",
-    "exitEditor": "退出编辑器"
+    "exitEditor": "退出编辑器",
+    "filteredCount": "{n} 筛选",
+    "showPanel": "显示编辑面板",
+    "hidePanel": "隐藏编辑面板",
+    "toggleTagCloud": "切换标签云",
+    "undoHint": "撤销",
+    "redoHint": "重做",
+    "reloadDir": "重新加载",
+    "sortAsc": "升序",
+    "sortDesc": "降序"
   },
   "bulkAction": {
     "add": "添加",

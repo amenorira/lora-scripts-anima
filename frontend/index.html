@@ -460,7 +460,8 @@
               <input type="text" :value="tagEditorSearchQuery"
                 :placeholder="tagEditorUseRegex ? t('tagEditor.regexSearchPlaceholder') : t('tagEditor.searchPlaceholder')"
                 @input="tagEditorSetSearch($event.target.value)"
-                @keydown.escape="tagEditorSearchQuery = ''">
+                @keydown.escape="tagEditorSearchQuery = ''"
+                :class="{ 'te-v3-input-error': tagEditorRegexError }">
               <button class="te-v3-top-regex" :class="{ active: tagEditorUseRegex }"
                 @click="tagEditorUseRegex = !tagEditorUseRegex" x-text="'.*'"></button>
             </div>
@@ -482,11 +483,15 @@
               </button>
             </div>
             <div class="te-v3-top-sort">
-              <select x-model="tagEditorSortBy" @change="tagEditorSortAsc = true">
+              <select x-model="tagEditorSortBy">
                 <option value="name" x-text="t('tagEditor.sortName')"></option>
                 <option value="tagCount" x-text="t('tagEditor.sortTagCount')"></option>
                 <option value="modified" x-text="t('tagEditor.modified')"></option>
               </select>
+              <button class="te-v3-top-toggle" style="width:22px;height:22px;font-size:10px;margin-left:2px"
+                @click="tagEditorSortAsc = !tagEditorSortAsc"
+                :title="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')"
+                x-text="tagEditorSortAsc ? '&#x2191;' : '&#x2193;'"></button>
             </div>
             <div class="te-v3-top-divider"></div>
             <button class="te-v3-top-sel-btn" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')"></button>
@@ -501,9 +506,9 @@
               </template>
             </button>
             <div class="te-v3-top-divider"></div>
-            <button class="te-v3-top-toggle" @click="tagEditorRightCollapsed = !tagEditorRightCollapsed" title="Toggle editor panel">
-              &#x25C0;
-            </button>
+            <button class="te-v3-top-toggle" @click="tagEditorRightCollapsed = !tagEditorRightCollapsed"
+              :title="tagEditorRightCollapsed ? t('tagEditor.showPanel') : t('tagEditor.hidePanel')"
+              x-text="tagEditorRightCollapsed ? '&#x25B6;' : '&#x25C0;'"></button>
           </div>
 
           <!-- Main: 3 Columns -->
@@ -785,7 +790,7 @@
             <template x-if="tagEditorGetFiltered().length !== tagEditorImages.length">
               <div class="te-v3-bottom-stat">
                 <div class="te-v3-bottom-divider" style="margin:0 4px"></div>
-                <span style="color:var(--text-tertiary)"><span x-text="tagEditorGetFiltered().length"></span> filtered</span>
+                <span style="color:var(--text-tertiary)"><span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorGetFiltered().length)"></span></span>
               </div>
             </template>
             <template x-if="tagEditorSelected.length > 0">
