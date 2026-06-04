@@ -2731,8 +2731,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .preset-preview-param {
   display: flex; gap: 8px; padding: 1px 0; font-size: 12px;
 }
-.preset-preview-key { color: var(--accent); font-weight: 500; min-width: 0; flex-shrink: 0; }
-.preset-preview-val { color: var(--text-secondary); word-break: break-all; }
+.preset-preview-key { color: var(--accent); font-weight: 500; max-width: 40%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-preview-val { color: var(--text-secondary); word-break: break-word; overflow-wrap: anywhere; min-width: 0; }
 .badge { font-size: 11px; padding: 0 5px; border-radius: 3px; }
 .badge-on { background: rgba(85,224,85,0.15); color: #55e055; }
 .badge-off { background: rgba(224,85,85,0.15); color: #e05555; }
