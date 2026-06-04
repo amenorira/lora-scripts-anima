@@ -43,9 +43,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Home page quick-action card now shows "Anima / SDXL" (was "SD / SDXL / Anima")
 - Tagger model list now cached to avoid redundant API calls on page switch
 - Tag editor: tag pill click handlers use data attributes (eliminates injection risk from inline onclick)
+- **Tag editor v3: complete 3-column layout redesign** — left tag cloud (collapsible), center image grid, right persistent editor panel (single/batch adaptive), single-row top toolbar, bottom status bar
 
 ### 🔒 安全修复
-- **[严重] `/tageditor/save` 路径穿越漏洞**：接口未校验文件路径范围，攻击者可写入任意位置。已添加路径白名单校验，限制只能写入项目目录和 output 目录
+- **[严重] `/tageditor/save` 路径穿越漏洞（再修复）**：先前声称的路径白名单实未生效——代码中缺少 `resolve()` 和父目录校验。已与 `/save-all` 对齐，添加 `cap.resolve().parent == p.resolve().parent` 检查
 - **[严重] `shell=True` 命令注入风险**：Linux 下 `launch_utils.run()` 默认使用 `shell=True`，用户输入可能被注入。已改为默认 `shell=False`，`run_pip` 显式保留 `shell=True`（内部可信参数），`run_script` 改为列表传参
 
 ### 🐛 缺陷修复
@@ -73,12 +74,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **[低] Loss 正则匹配过宽**：`loss` 会匹配 `total_loss` 等，已添加 `\b` 词边界
 - **[低] `tagEditorFocusedImg` Enter 后未清除**：已添加清除逻辑
 - **[低] `saveUISettings` 重复存储 theme**：已移除重复字段
+- **Tag editor v3 UX 修复 (15项)**：搜索防抖(150ms)、重载确认守卫、Escape 分级关闭、草稿仅存修改项、color-mix 兼容性、零计数标签清理、flex 高度自适应、折叠箭头动态方向、无效正则报错、批量全量确认、自动聚焦编辑器、排序方向 toggle、`v-for`→Alpine 语法、batch-row 定位、i18n 新 key
+- **Tag editor v3: undo/redo 重构**：从 snapshot 改为 checkpoint 模型，修复无法增量回退的 bug，redo 可用，频率同步
 
 ### 🔧 内部改进
 - `_tagger_progress` 字典添加 `threading.Lock` 保护，修复多线程竞态条件
 - `findFieldDef` 改为只搜索当前训练类型的可见 section，避免返回错误字段定义
 - TOML 数字转换逻辑提取为共享 `_coerceNum()` 方法，消除 `updateToml` 和 `startTraining` 的重复代码
 - `run_script` 端点改为列表传参，消除 shell 拼接风险
+- `scan_images` / `count_tags`: 单次 `rglob("*")` + 扩展名过滤替代 6 次独立遍历，大幅提升大数据集加载速度
 
 ---
 
