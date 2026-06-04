@@ -1829,7 +1829,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-v3-batch-scope { display: flex; gap: 2px; margin-bottom: 10px; }
 .te-v3-batch-scope button { flex: 1; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border-default); background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; }
 .te-v3-batch-scope button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
-.te-v3-batch-row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; }
+.te-v3-batch-row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; position: relative; }
 .te-v3-batch-row label { font-size: 11px; font-weight: 600; color: var(--text-secondary); width: 36px; flex-shrink: 0; }
 .te-v3-batch-row input { flex: 1; min-width: 0; font-size: 11px; padding: 4px 8px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); outline: none; }
 .te-v3-batch-row input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }

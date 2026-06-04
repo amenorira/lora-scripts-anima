@@ -812,7 +812,10 @@
               <button @click="tagEditorPage++" :disabled="tagEditorPage >= tagEditorTotalPages()">&rsaquo;</button>
               <button @click="tagEditorPage = tagEditorTotalPages()" :disabled="tagEditorPage >= tagEditorTotalPages()">&raquo;</button>
               <select x-model="tagEditorPageSize" @change="tagEditorPage = 1">
-                <option v-for="s in [30, 60, 120, 240]" :key="s" :value="s" x-text="s"></option>
+                <option value="30">30</option>
+                <option value="60">60</option>
+                <option value="120">120</option>
+                <option value="240">240</option>
               </select>
               <span style="font-size:11px;color:var(--text-tertiary)" x-text="t('tagEditor.perPage')"></span>
             </div>
