@@ -551,8 +551,11 @@
                 </template>
               </div>
               <div class="te-v3-left-cloud">
-                <template x-if="tagEditorGetFilteredTagFreq().length === 0">
-                  <div class="te-v3-left-empty" x-text="tagEditorTagSearch ? t('common.noResults') : t('tagEditor.noTag')"></div>
+                <template x-if="tagEditorGetFilteredTagFreq().length === 0 && tagEditorTagFreq.length > 0">
+                  <div class="te-v3-left-empty" x-text="t('common.noResults')"></div>
+                </template>
+                <template x-if="tagEditorGetFilteredTagFreq().length === 0 && tagEditorTagFreq.length === 0">
+                  <div class="te-v3-left-empty">&#x1F3F7; <span x-text="t('tagEditor.noImages')"></span></div>
                 </template>
                 <template x-for="item in tagEditorGetDisplayFreq()" :key="item.tag">
                   <div class="te-v3-tag-row"

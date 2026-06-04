@@ -1687,7 +1687,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── Tag Editor v3: 3-Column Layout ──────────────────────── */
 
 /* ===== Layout ===== */
-.te-v3 { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.te-v3 { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 8px 12px; }
 .te-v3-top { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; min-height: 36px; }
 .te-v3-main { flex: 1; display: flex; gap: 0; min-height: 0; overflow: hidden; }
 .te-v3-bottom { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 4px 0; font-size: 11px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); flex-wrap: wrap; }
