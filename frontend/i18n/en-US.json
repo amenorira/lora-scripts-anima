@@ -640,7 +640,6 @@
     "sdScriptsOpenRepo": "Open repo"
   },
   "opt": {
-    "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x series LoRA training",
     "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
     "model_train_type_anima-lora": "Diffusion Transformer (DiT) model derived from NVIDIA Cosmos-Predict2-2B",
     "save_model_as_safetensors": "SafeTensors format, safe and fast to load, recommended",

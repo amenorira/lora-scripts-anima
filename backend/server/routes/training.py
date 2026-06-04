@@ -17,9 +17,6 @@ from backend.utils import train_utils
 router = APIRouter()
 
 trainer_mapping = {
-    "sd-lora": "./vendor/sd-scripts/train_network.py",
-    "sd-finetune": "./vendor/sd-scripts/fine_tune.py",
-    "sd-dreambooth": "./vendor/sd-scripts/train_db.py",
     "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
     "sdxl-finetune": "./vendor/sd-scripts/sdxl_train.py",
     "sd3-lora": "./vendor/sd-scripts/sd3_train_network.py",
@@ -153,7 +150,7 @@ async def create_toml_file(request: Request):
     gpu_ids = config.pop("gpu_ids", None)
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
-    model_train_type = config.get("model_train_type", "sd-lora")
+    model_train_type = config.get("model_train_type", "sdxl-lora")
     trainer_file = trainer_mapping.get(model_train_type)
     if not trainer_file:
         return APIResponseFail(message=f"Unsupported training type: {model_train_type} / 不支持的训练类型: {model_train_type}")

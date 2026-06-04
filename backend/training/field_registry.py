@@ -41,10 +41,10 @@ from typing import Any
 
 FIELDS: list[dict[str, Any]] = [
 # ── Model ──
-{"key": "model_train_type", "type": "select", "default": "sd-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sd-lora", "l": "SD LoRA", "dk": "opt.model_train_type_sd-lora"}, {"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
+{"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./sd-models/model.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
-{"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "hint_key": "field.vaeHint"},
-{"key": "qwen3", "type": "text", "default": "", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "hint_key": "field.qwen3Hint"},
+{"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "hint_key": "field.vaeHint", "requiredGroups": ["anima"]},
+{"key": "qwen3", "type": "text", "default": "", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "hint_key": "field.qwen3Hint", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
 {"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "target": "toml", "role": "file-folder"},
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
@@ -175,7 +175,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "log_with", "type": "select", "default": "tensorboard", "section": "save", "desc_key": "field.log_with", "target": "toml", "hidden": True, "options": [{"v": "tensorboard", "l": "TensorBoard", "dk": "opt.log_with_tensorboard"}, {"v": "wandb", "l": "Weights & Biases", "dk": "opt.log_with_wandb"}, {"v": "all", "l": "TensorBoard + WandB", "dk": "opt.log_with_all"}]},
 # ── Caption ──
 {"key": "caption_extension", "type": "text", "default": ".txt", "section": "caption", "desc_key": "field.caption_extension", "target": "toml"},
-{"key": "max_token_length", "type": "select", "default": "75", "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "options": [{"v": "75", "l": "75", "dk": "opt.max_token_length_75"}, {"v": "150", "l": "150", "dk": "opt.max_token_length_150"}, {"v": "225", "l": "225", "dk": "opt.max_token_length_225"}]},
+{"key": "max_token_length", "type": "select", "default": "225", "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": ["sd", "sdxl"], "options": [{"v": "75", "l": "75", "dk": "opt.max_token_length_75"}, {"v": "150", "l": "150", "dk": "opt.max_token_length_150"}, {"v": "225", "l": "225", "dk": "opt.max_token_length_225"}]},
 {"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "shuffle_caption", "type": "toggle", "default": True, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},

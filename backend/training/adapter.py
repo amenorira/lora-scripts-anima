@@ -268,7 +268,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "EmoSens: lr_scheduler forced to constant (内部自动管理学习率)"
             )
         # 根据模型架构调整学习率（仅当前端未正确预填时）
-        model_type = source.get("model_train_type", "sd-lora")
+        model_type = source.get("model_train_type", "sdxl-lora")
         lr = source.get("learning_rate", "1.0")
         try:
             lr_val = float(lr)

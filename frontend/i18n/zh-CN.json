@@ -642,7 +642,6 @@
     "sdScriptsOpenRepo": "打开仓库"
   },
   "opt": {
-    "model_train_type_sd-lora": "Stable Diffusion 1.x / 2.x 系列模型 LoRA 训练",
     "model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
     "model_train_type_anima-lora": "基于 NVIDIA Cosmos-Predict2-2B 衍生的 Diffusion Transformer (DiT) 架构模型",
     "save_model_as_safetensors": "SafeTensors 格式，安全且加载快，推荐使用",

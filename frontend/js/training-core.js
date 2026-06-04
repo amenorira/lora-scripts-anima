@@ -185,7 +185,13 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = field.hintKey ? this.t(field.hintKey) : '';
-    const requiredMark = field.required ? '<span class="field-required" aria-hidden="true">*</span>' : '';
+    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+    const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
+    let isRequired = field.required;
+    if (!isRequired && field.requiredGroups && Array.isArray(field.requiredGroups)) {
+      isRequired = field.requiredGroups.includes(currentGroup);
+    }
+    const requiredMark = isRequired ? '<span class="field-required" aria-hidden="true">*</span>' : '';
     const dataKey = field.key;
     const isToggle = field.type === 'toggle';
     // Text/textarea/path fields get their input on a separate row (full-width)
@@ -199,7 +205,7 @@ window.trainingCoreMixin = {
       const fc = {};
       const self = this;
       const currentTrainType = this.form.model_train_type || 'anima-lora';
-      const groupMap = { 'sd-lora': 'sd', 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+      const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
       const currentGroup = groupMap[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
@@ -777,10 +783,14 @@ window.trainingCoreMixin = {
   validateForm() {
     const errors = {};
     // Check all required fields
+    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+    const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
     const sections = this._allSections();
     for (const section of sections) {
       for (const field of section.fields) {
-        if (!field.required) continue;
+        const isFieldRequired = field.required ||
+          (field.requiredGroups && Array.isArray(field.requiredGroups) && field.requiredGroups.includes(currentGroup));
+        if (!isFieldRequired) continue;
         const val = this.form[field.key];
         if (val === undefined || val === null || val === '') {
           errors[field.key] = this.t('common.fieldRequired') || 'This field is required';

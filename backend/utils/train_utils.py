@@ -143,7 +143,7 @@ def guess_model_type(path):
     return ModelType.UNKNOWN
 
 
-def validate_model(model_name: str, training_type: str = "sd-lora"):
+def validate_model(model_name: str, training_type: str = "sdxl-lora"):
     if os.path.exists(model_name):
         if os.path.isdir(model_name):
             files = os.listdir(model_name)
@@ -166,9 +166,6 @@ def validate_model(model_name: str, training_type: str = "sd-lora"):
 
         if model_type not in [ModelType.SD15, ModelType.SD2, ModelType.SD3, ModelType.SDXL, ModelType.FLUX, ModelType.LUMINA, ModelType.ANIMA]:
             return False, "Pretrained model is not a Stable Diffusion, Flux, Lumina or Anima checkpoint / 校验失败：底模不是支持的模型类型"
-
-        if model_type == ModelType.SDXL and training_type == "sd-lora":
-            return False, "Pretrained model is SDXL, but you are training with SD1.5 LoRA / 校验失败：你选择的是 SD1.5 LoRA 训练，但预训练模型是 SDXL。请前往专家模式选择正确的模型种类。"
 
         return True, "ok"
 

@@ -40,11 +40,11 @@ window.TRAIN_SECTIONS = FALLBACK_COMMON;
 
 /**
  * Get all sections with fields filtered by the given train type.
- * @param {string} trainType - 'sd-lora' | 'sdxl-lora' | 'anima-lora'
+ * @param {string} trainType - 'sdxl-lora' | 'anima-lora'
  * @returns {Array} sections with .fields filtered by group
  */
 window.getVisibleSections = function(trainType) {
-  const groupMap = { 'sd-lora': 'sd', 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+  const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
   const targetGroup = groupMap[trainType] || 'all';
   return (window.TRAIN_SECTIONS || []).map(function(section) {
     const filteredFields = (section.fields || []).filter(function(field) {
