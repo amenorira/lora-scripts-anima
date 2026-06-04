@@ -460,36 +460,36 @@
               <input type="text" :value="tagEditorSearchQuery"
                 :placeholder="tagEditorUseRegex ? t('tagEditor.regexSearchPlaceholder') : t('tagEditor.searchPlaceholder')"
                 @input="tagEditorSetSearch($event.target.value)"
-                @keydown.escape="tagEditorSearchQuery = ''"
+                @keydown.escape="tagEditorClearSearch()"
                 :class="{ 'te-v3-input-error': tagEditorRegexError }">
               <button class="te-v3-top-regex" :class="{ active: tagEditorUseRegex }"
-                @click="tagEditorUseRegex = !tagEditorUseRegex" x-text="'.*'"></button>
+                @click="tagEditorUseRegex = !tagEditorUseRegex; tagEditorPage = 1" x-text="'.*'"></button>
             </div>
             <div class="te-v3-top-filters">
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
-                @click="tagEditorQuickFilter = 'all'">
+                @click="tagEditorQuickFilter = 'all'; tagEditorPage = 1">
                 <span x-text="t('tagEditor.selection')"></span>
                 <span class="badge" x-text="tagEditorGetFiltered().length"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'notag' }"
-                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag')">
+                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag'); tagEditorPage = 1">
                 <span x-text="t('tagEditor.noTag')"></span>
                 <span class="badge" x-text="tagEditorGetQuickCount('notag')"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'modified' }"
-                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'modified' ? 'all' : 'modified')">
+                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'modified' ? 'all' : 'modified'); tagEditorPage = 1">
                 <span x-text="t('tagEditor.unsavedChanges')"></span>
                 <span class="badge" x-text="tagEditorGetQuickCount('modified')"></span>
               </button>
             </div>
             <div class="te-v3-top-sort">
-              <select x-model="tagEditorSortBy">
+              <select x-model="tagEditorSortBy" @change="tagEditorPage = 1">
                 <option value="name" x-text="t('tagEditor.sortName')"></option>
                 <option value="tagCount" x-text="t('tagEditor.sortTagCount')"></option>
                 <option value="modified" x-text="t('tagEditor.modified')"></option>
               </select>
               <button class="te-v3-top-toggle" style="width:22px;height:22px;font-size:10px;margin-left:2px"
-                @click="tagEditorSortAsc = !tagEditorSortAsc"
+                @click="tagEditorSortAsc = !tagEditorSortAsc; tagEditorPage = 1"
                 :title="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')"
                 x-text="tagEditorSortAsc ? '&#x2191;' : '&#x2193;'"></button>
             </div>
@@ -528,7 +528,7 @@
                   :placeholder="t('tagEditor.searchTags')"
                   @input="tagEditorSetTagSearch($event.target.value)">
                 <button class="te-v3-left-search-clear" x-show="tagEditorTagSearch"
-                  @click="tagEditorTagSearch = ''">&times;</button>
+                  @click="tagEditorClearTagSearch()">&times;</button>
               </div>
               <div class="te-v3-left-logic">
                 <button :class="{ active: tagEditorTagLogic === 'AND' }" @click="tagEditorTagLogic = 'AND'"

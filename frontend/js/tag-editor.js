@@ -187,7 +187,13 @@ window.tagEditorMixin = {
     this._teSearchDebounce = setTimeout(function() {
       self.tagEditorSearchQuery = val;
       self._teSearchDebounce = null;
+      self.tagEditorPage = 1;
     }, 150);
+  },
+  tagEditorClearSearch() {
+    if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
+    this.tagEditorSearchQuery = '';
+    this.tagEditorPage = 1;
   },
   tagEditorSetTagSearch(val) {
     if (this._teTagSearchDebounce) clearTimeout(this._teTagSearchDebounce);
@@ -197,10 +203,15 @@ window.tagEditorMixin = {
       self._teTagSearchDebounce = null;
     }, 150);
   },
+  tagEditorClearTagSearch() {
+    if (this._teTagSearchDebounce) { clearTimeout(this._teTagSearchDebounce); this._teTagSearchDebounce = null; }
+    this.tagEditorTagSearch = '';
+  },
   tagEditorGetFiltered() {
     var cacheKey = this.tagEditorSearchQuery + '|' + this.tagEditorQuickFilter + '|' +
       this.tagEditorTagSelection.join(',') + '|' + this.tagEditorExcludedTags.join(',') + '|' +
-      this.tagEditorTagLogic + '|' + this.tagEditorSortBy + '|' + this.tagEditorSortAsc;
+      this.tagEditorTagLogic + '|' + this.tagEditorSortBy + '|' + this.tagEditorSortAsc + '|' +
+      this.tagEditorUseRegex;
     if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
     var images = this.tagEditorImages.slice();
@@ -346,6 +357,9 @@ window.tagEditorMixin = {
     var idx = this.tagEditorTagSelection.indexOf(tag);
     if (idx === -1) {
       this.tagEditorTagSelection.push(tag);
+      // Remove from excluded if present (mutual exclusion)
+      var excIdx = this.tagEditorExcludedTags.indexOf(tag);
+      if (excIdx !== -1) this.tagEditorExcludedTags.splice(excIdx, 1);
     } else {
       this.tagEditorTagSelection.splice(idx, 1);
     }
@@ -358,6 +372,9 @@ window.tagEditorMixin = {
     var idx = this.tagEditorExcludedTags.indexOf(tag);
     if (idx === -1) {
       this.tagEditorExcludedTags.push(tag);
+      // Remove from included if present (mutual exclusion)
+      var selIdx = this.tagEditorTagSelection.indexOf(tag);
+      if (selIdx !== -1) this.tagEditorTagSelection.splice(selIdx, 1);
     } else {
       this.tagEditorExcludedTags.splice(idx, 1);
     }
@@ -374,6 +391,8 @@ window.tagEditorMixin = {
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
     if (tag && this.tagEditorTagSelection.indexOf(tag) === -1) {
       this.tagEditorTagSelection.push(tag);
+      var excIdx = this.tagEditorExcludedTags.indexOf(tag);
+      if (excIdx !== -1) this.tagEditorExcludedTags.splice(excIdx, 1);
       this._teFilteredCacheKey = '';
       this._teCachedFiltered = null;
       this.tagEditorPage = 1;
@@ -385,6 +404,8 @@ window.tagEditorMixin = {
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
     if (tag && this.tagEditorExcludedTags.indexOf(tag) === -1) {
       this.tagEditorExcludedTags.push(tag);
+      var selIdx = this.tagEditorTagSelection.indexOf(tag);
+      if (selIdx !== -1) this.tagEditorTagSelection.splice(selIdx, 1);
       this._teFilteredCacheKey = '';
       this._teCachedFiltered = null;
       this.tagEditorPage = 1;
@@ -648,10 +669,12 @@ window.tagEditorMixin = {
     if (!img) return;
     var self = this;
     var path = img.path;
+    var capturedText = this.tagEditorDetailText;
+    var capturedImg = img;
     if (this._tePendingTextEdits[path]) clearTimeout(this._tePendingTextEdits[path]);
     this._tePendingTextEdits[path] = setTimeout(function() {
       self._tePushHistory();
-      self._teUpdateImageTags(img, self.tagEditorDetailText);
+      self._teUpdateImageTags(capturedImg, capturedText);
       delete self._tePendingTextEdits[path];
     }, 500);
   },
@@ -1007,7 +1030,15 @@ window.tagEditorMixin = {
     }.bind(this));
     this._teFilteredCacheKey = '';
     this._teCachedFiltered = null;
-    this.tagEditorDetailText = newTagsStr;
+    // Cancel any pending text-edit debounce for this image (batch op takes precedence)
+    if (this._tePendingTextEdits[img.path]) {
+      clearTimeout(this._tePendingTextEdits[img.path]);
+      delete this._tePendingTextEdits[img.path];
+    }
+    // Only update detail text if the image being edited is currently selected
+    if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
+      this.tagEditorDetailText = newTagsStr;
+    }
 
     var oldList = oldTags ? oldTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
     var newList = newTagsStr ? newTagsStr.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
@@ -1156,6 +1187,8 @@ window.tagEditorMixin = {
 
   // ===== Keyboard Shortcuts =====
   tagEditorHandleKeydown(e) {
+    // Only active when tag editor is the current route
+    if (this.currentRoute !== 'tagEditor') return;
     if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
       this.tagEditorSaveAll();
