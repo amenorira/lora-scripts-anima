@@ -569,6 +569,10 @@
                   </div>
                 </template>
               </div>
+              <div class="te-v3-left-more" x-show="tagEditorGetFilteredTagFreq().length > tagEditorTagCloudLimit &amp;&amp; !_teCloudShowAll">
+                <button @click="_teCloudShowAll = true"
+                  x-text="t('tagEditor.showMore') + ' (' + tagEditorGetFilteredTagFreq().length + ')'"></button>
+              </div>
             </div>
 
             <!-- Center: Image Grid -->
@@ -758,7 +762,7 @@
                           <span class="te-v3-batch-stats-cnt" x-text="item.count"></span>
                           <button class="te-v3-batch-stats-del"
                             @click="tagEditorBatchRemoveTag(item.tag)">&times;</button>
-                        </div>
+                      </div>
                       </template>
                     </div>
                   </div>

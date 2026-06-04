@@ -28,8 +28,8 @@ window.tagEditorMixin = {
   tagEditorExcludedTags: [],
   tagEditorTagSortBy: 'freq',
   tagEditorTagSortAsc: false,
-  tagEditorTagCloudLimit: 9999,
-  tagEditorTagCloudExpanded: true,
+  tagEditorTagCloudLimit: 500,
+  _teCloudShowAll: false,
 
   // ===== Selection & Grid =====
   tagEditorSelected: [],
@@ -337,7 +337,9 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetDisplayFreq() {
-    return this.tagEditorGetFilteredTagFreq();
+    var freq = this.tagEditorGetFilteredTagFreq();
+    if (this._teCloudShowAll) return freq;
+    return freq.slice(0, this.tagEditorTagCloudLimit);
   },
 
   tagEditorSelectTag(tag) {
@@ -938,20 +940,19 @@ window.tagEditorMixin = {
 
   tagEditorUndo() {
     if (this.tagEditorHistoryIdx < 0) return;
-    var targetIdx = this.tagEditorHistoryIdx;
     this.tagEditorHistoryIdx--;
     var checkpoint = this.tagEditorHistoryIdx >= 0 ? this.tagEditorHistory[this.tagEditorHistoryIdx] : {};
-    this._teApplyCheckpoint(checkpoint, targetIdx);
+    this._teApplyCheckpoint(checkpoint);
   },
 
   tagEditorRedo() {
     if (this.tagEditorHistoryIdx >= this.tagEditorHistory.length - 1) return;
     this.tagEditorHistoryIdx++;
     var checkpoint = this.tagEditorHistory[this.tagEditorHistoryIdx];
-    this._teApplyCheckpoint(checkpoint, this.tagEditorHistoryIdx);
+    this._teApplyCheckpoint(checkpoint);
   },
 
-  _teApplyCheckpoint(checkpoint, targetIdx) {
+  _teApplyCheckpoint(checkpoint) {
     var self = this;
     var hasAnyMod = false;
     this.tagEditorImages.forEach(function(img) {
@@ -962,6 +963,11 @@ window.tagEditorMixin = {
           img.tags = newTags;
         }
         if (img.tags !== self.tagEditorOriginal[img.path]) hasAnyMod = true;
+      } else {
+        if (img.tags !== self.tagEditorOriginal[img.path]) {
+          self._teUpdateFreq(img.tags, self.tagEditorOriginal[img.path]);
+          img.tags = self.tagEditorOriginal[img.path];
+        }
       }
     });
     this.tagEditorModified = hasAnyMod;
