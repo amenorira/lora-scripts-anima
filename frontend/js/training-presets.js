@@ -84,7 +84,7 @@ window.trainingPresetsMixin = {
   },
 
   openEditModal(preset) {
-    if (!preset || !preset.data) return;
+    if (!preset || !preset.data || !this.form) return;
     this.editPresetTarget = preset;
     this._formBeforeEdit = { ...this.form };
     this._defaultsBeforeEdit = { ...this.formDefaults };
@@ -120,6 +120,10 @@ window.trainingPresetsMixin = {
       if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
       this.showEditModal = false;
       this.editPresetTarget = null;
+      await this.loadPresets();
+      this.toast(this.t('common.saved'));
+    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
+    finally {
       if (this._formBeforeEdit) {
         this.form = { ...this._formBeforeEdit };
         this.formDefaults = { ...this._defaultsBeforeEdit };
@@ -131,9 +135,7 @@ window.trainingPresetsMixin = {
       this._historyBeforeEdit = null;
       this.updateToml();
       this.rebuildForm();
-      await this.loadPresets();
-      this.toast(this.t('common.saved'));
-    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
+    }
   },
 
   cancelEditPreset() {
@@ -221,18 +223,20 @@ window.trainingPresetsMixin = {
       this.t('preset.batchDelete'),
       this.t('preset.confirmBatchDelete').replace('{n}', self.selectedPresets.length),
       async function() {
+        const names = [...self.selectedPresets];
         let deleted = 0;
-        for (const name of self.selectedPresets) {
+        for (const name of names) {
           try {
             const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
             const d = await r.json();
             if (d.status === 'success') deleted++;
           } catch (e) { /* continue */ }
         }
+        const total = names.length;
         self.batchMode = false;
         self.selectedPresets = [];
         await self.loadPresets();
-        self.toast(self.t('preset.cleared') + ' (' + deleted + '/' + self.selectedPresets.length + ')');
+        self.toast(self.t('preset.deletedCount').replace('{deleted}', deleted).replace('{total}', total));
       }
     );
   },

@@ -946,10 +946,10 @@
         </div>
         <!-- Batch toolbar -->
         <div class="batch-toolbar" x-show="batchMode" x-cloak>
-          <button class="btn btn-ghost btn-xs" @click="selectAllPresets()" x-text="t('preset.selectAll')">Select All</button>
-          <button class="btn btn-ghost btn-xs" @click="deselectAllPresets()" x-text="t('preset.deselectAll')">Deselect All</button>
-          <span class="text-sm text-muted" x-text="selectedPresets.length + ' selected'"></span>
-          <button class="btn btn-danger btn-xs" @click="batchDeletePresets()"
+          <button class="btn btn-ghost btn-sm" @click="selectAllPresets()" x-text="t('preset.selectAll')">Select All</button>
+          <button class="btn btn-ghost btn-sm" @click="deselectAllPresets()" x-text="t('preset.deselectAll')">Deselect All</button>
+          <span class="text-sm text-muted" x-text="t('preset.selectedCount').replace('{n}', selectedPresets.length)"></span>
+          <button class="btn btn-danger btn-sm" @click="batchDeletePresets()"
                   :disabled="selectedPresets.length === 0" x-text="t('preset.deleteSelected')">Delete Selected</button>
         </div>
         <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
@@ -969,8 +969,8 @@
                     <input id="renameInput" type="text" class="input input-sm" x-model="renameNewName"
                            @keydown.enter="confirmRename()" @keydown.escape="cancelRename()"
                            @click.stop="">
-                    <button class="btn btn-primary btn-xs" @click.stop="confirmRename()" x-text="t('common.save')">Save</button>
-                    <button class="btn btn-ghost btn-xs" @click.stop="cancelRename()" x-text="t('common.cancel')">Cancel</button>
+                    <button class="btn btn-primary btn-sm" @click.stop="confirmRename()" x-text="t('common.save')">Save</button>
+                    <button class="btn btn-ghost btn-sm" @click.stop="cancelRename()" x-text="t('common.cancel')">Cancel</button>
                   </div>
                   <!-- Normal display -->
                   <div x-show="!renamingPreset || renamingPreset.metadata.name !== p.metadata.name"
@@ -985,10 +985,10 @@
                 </div>
                 <!-- Action buttons -->
                 <div class="preset-card-actions" x-show="!batchMode" @click.stop>
-                  <button class="btn btn-ghost btn-xs" @click.stop="openEditModal(p)" x-text="t('preset.edit')">Edit</button>
-                  <button class="btn btn-ghost btn-xs" @click.stop="applyPresetNavigate(p)" x-text="t('preset.apply')">Apply</button>
-                  <button class="btn btn-ghost btn-xs" @click.stop="startRename(p)" x-text="t('preset.rename')">Rename</button>
-                  <button class="btn btn-ghost btn-xs btn-danger-text" @click.stop="deletePresetFromList(p)" x-text="t('preset.delete')">Delete</button>
+                  <button class="btn btn-ghost btn-sm" @click.stop="openEditModal(p)" x-text="t('preset.edit')">Edit</button>
+                  <button class="btn btn-ghost btn-sm" @click.stop="applyPresetNavigate(p)" x-text="t('preset.apply')">Apply</button>
+                  <button class="btn btn-ghost btn-sm" @click.stop="startRename(p)" x-text="t('preset.rename')">Rename</button>
+                  <button class="btn btn-ghost btn-sm btn-danger-text" @click.stop="deletePresetFromList(p)" x-text="t('preset.delete')">Delete</button>
                 </div>
               </div>
               <!-- Preview card -->
