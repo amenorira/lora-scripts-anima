@@ -20,6 +20,12 @@ window.trainingPresetsMixin = {
   previewPreset: null,
   diffCounts: { modified: 0, added: 0 },
   formDiffMap: null,
+  showEditModal: false,
+  editPresetTarget: null,
+  batchMode: false,
+  selectedPresets: [],
+  renamingPreset: null,
+  renameNewName: '',
   // ── Param Save/Load (server presets) ──────────────────
   openSavePresetModal() {
     this.savePresetName = this.form.output_name || '';
@@ -75,6 +81,160 @@ window.trainingPresetsMixin = {
   previewTopKeys(preset) {
     if (!preset || !preset.data) return [];
     return Object.keys(preset.data).slice(0, 8);
+  },
+
+  openEditModal(preset) {
+    if (!preset || !preset.data) return;
+    this.editPresetTarget = preset;
+    this._formBeforeEdit = { ...this.form };
+    this._defaultsBeforeEdit = { ...this.formDefaults };
+    this._historyBeforeEdit = [...this.formHistory];
+    this._historyIdxBeforeEdit = this.formHistoryIdx;
+    this.form = { ...preset.data };
+    this.formDefaults = { ...this.form };
+    this.formHistory = [this.formDefaults];
+    this.formHistoryIdx = 0;
+    this.showEditModal = true;
+    this.updateToml();
+    this.$nextTick(() => {
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', 'editPresetFormContent');
+    });
+  },
+
+  async saveEditedPreset() {
+    const preset = this.editPresetTarget;
+    if (!preset) return;
+    const trainType = this.form.model_train_type || 'anima-lora';
+    try {
+      const r = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: preset.metadata.name,
+          description: preset.metadata.description || '',
+          train_type: trainType,
+          data: { ...this.form }
+        })
+      });
+      const d = await r.json();
+      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
+      this.showEditModal = false;
+      this.editPresetTarget = null;
+      if (this._formBeforeEdit) {
+        this.form = { ...this._formBeforeEdit };
+        this.formDefaults = { ...this._defaultsBeforeEdit };
+        this.formHistory = [...this._historyBeforeEdit];
+        this.formHistoryIdx = this._historyIdxBeforeEdit;
+      }
+      this._formBeforeEdit = null;
+      this._defaultsBeforeEdit = null;
+      this._historyBeforeEdit = null;
+      this.updateToml();
+      this.rebuildForm();
+      await this.loadPresets();
+      this.toast(this.t('common.saved'));
+    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
+  },
+
+  cancelEditPreset() {
+    this.showEditModal = false;
+    this.editPresetTarget = null;
+    if (this._formBeforeEdit) {
+      this.form = { ...this._formBeforeEdit };
+      this.formDefaults = { ...this._defaultsBeforeEdit };
+      this.formHistory = [...this._historyBeforeEdit];
+      this.formHistoryIdx = this._historyIdxBeforeEdit;
+    }
+    this._formBeforeEdit = null;
+    this._defaultsBeforeEdit = null;
+    this._historyBeforeEdit = null;
+    this.updateToml();
+    this.rebuildForm();
+  },
+
+  startRename(preset) {
+    this.renamingPreset = preset;
+    this.renameNewName = preset.metadata.name || '';
+    this.$nextTick(() => {
+      const el = document.getElementById('renameInput');
+      if (el) { el.focus(); el.select(); }
+    });
+  },
+
+  async confirmRename() {
+    const preset = this.renamingPreset;
+    const newName = (this.renameNewName || '').trim();
+    if (!preset || !newName || newName === preset.metadata.name) {
+      this.renamingPreset = null;
+      return;
+    }
+    try {
+      const r = await fetch('/api/presets/' + encodeURIComponent(preset.metadata.name) + '/rename', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_name: newName })
+      });
+      const d = await r.json();
+      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
+      this.renamingPreset = null;
+      await this.loadPresets();
+      this.toast(this.t('common.saved'));
+    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
+  },
+
+  cancelRename() {
+    this.renamingPreset = null;
+    this.renameNewName = '';
+  },
+
+  toggleBatchMode() {
+    this.batchMode = !this.batchMode;
+    this.selectedPresets = [];
+  },
+
+  togglePresetSelection(preset) {
+    const name = preset.metadata.name;
+    const idx = this.selectedPresets.indexOf(name);
+    if (idx >= 0) {
+      this.selectedPresets.splice(idx, 1);
+    } else {
+      this.selectedPresets.push(name);
+    }
+  },
+
+  isPresetSelected(preset) {
+    return this.selectedPresets.indexOf(preset.metadata.name) >= 0;
+  },
+
+  selectAllPresets() {
+    this.selectedPresets = this.allPresets.map(p => p.metadata.name);
+  },
+
+  deselectAllPresets() {
+    this.selectedPresets = [];
+  },
+
+  async batchDeletePresets() {
+    if (this.selectedPresets.length === 0) return;
+    const self = this;
+    this.openConfirm(
+      this.t('preset.batchDelete'),
+      this.t('preset.confirmBatchDelete').replace('{n}', self.selectedPresets.length),
+      async function() {
+        let deleted = 0;
+        for (const name of self.selectedPresets) {
+          try {
+            const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
+            const d = await r.json();
+            if (d.status === 'success') deleted++;
+          } catch (e) { /* continue */ }
+        }
+        self.batchMode = false;
+        self.selectedPresets = [];
+        await self.loadPresets();
+        self.toast(self.t('preset.cleared') + ' (' + deleted + '/' + self.selectedPresets.length + ')');
+      }
+    );
   },
 
   enterDiffMode() {

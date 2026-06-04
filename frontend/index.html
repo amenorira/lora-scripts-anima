@@ -932,28 +932,89 @@
       <div x-show="currentRoute === 'presets'" x-cloak>
         <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div>
-            <h1 class="page-title" x-text="t('preset.title')" style="margin-bottom:0">预设管理</h1>
-            <p class="page-subtitle" x-text="t('preset.subtitle')">管理和应用训练预设</p>
+            <h1 class="page-title" x-text="t('preset.title')" style="margin-bottom:0">Preset Management</h1>
+            <p class="page-subtitle" x-text="t('preset.subtitle')">Manage and apply training presets</p>
           </div>
-          <button class="btn btn-primary btn-sm" @click="importConfigFile()" x-text="t('preset.importPreset')">导入预设</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" x-show="!batchMode" @click="toggleBatchMode()"
+                    x-text="t('preset.batchDelete')">Batch Delete</button>
+            <button class="btn btn-ghost btn-sm" x-show="batchMode" @click="toggleBatchMode()"
+                    x-text="t('common.cancel')">Cancel</button>
+            <button class="btn btn-primary btn-sm" @click="importConfigFile()" x-show="!batchMode"
+                    x-text="t('preset.importPreset')">Import</button>
+          </div>
         </div>
+        <!-- Batch toolbar -->
+        <div class="batch-toolbar" x-show="batchMode" x-cloak>
+          <button class="btn btn-ghost btn-xs" @click="selectAllPresets()" x-text="t('preset.selectAll')">Select All</button>
+          <button class="btn btn-ghost btn-xs" @click="deselectAllPresets()" x-text="t('preset.deselectAll')">Deselect All</button>
+          <span class="text-sm text-muted" x-text="selectedPresets.length + ' selected'"></span>
+          <button class="btn btn-danger btn-xs" @click="batchDeletePresets()"
+                  :disabled="selectedPresets.length === 0" x-text="t('preset.deleteSelected')">Delete Selected</button>
+        </div>
+        <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
         <div class="preset-cards" id="presetCards">
           <template x-for="p in allPresets" :key="p.metadata.name">
-            <div class="preset-card" @click="applyPresetNavigate(p)"
-                 :class="{ active: currentPreset && currentPreset.metadata.name === p.metadata.name }">
-              <div class="preset-card-name" x-text="p.metadata.name"></div>
-              <div class="preset-card-desc" x-text="p.metadata.description"></div>
-              <div class="preset-card-meta">
-                <span x-text="p.metadata.author"></span>
-                <span x-text="'v' + p.metadata.version"></span>
+            <div class="preset-card-wrap" :class="{ 'selected': batchMode && isPresetSelected(p) }">
+              <!-- Batch checkbox -->
+              <div class="preset-card-check" x-show="batchMode">
+                <input type="checkbox" :checked="isPresetSelected(p)" @click.stop="togglePresetSelection(p)">
+              </div>
+              <!-- Card body -->
+              <div class="preset-card" @click="batchMode ? togglePresetSelection(p) : togglePreview(p)"
+                   :class="{ active: currentPreset && currentPreset.metadata.name === p.metadata.name }">
+                <div class="preset-card-header">
+                  <!-- Inline rename -->
+                  <div x-show="renamingPreset && renamingPreset.metadata.name === p.metadata.name" style="display:flex;gap:4px">
+                    <input id="renameInput" type="text" class="input input-sm" x-model="renameNewName"
+                           @keydown.enter="confirmRename()" @keydown.escape="cancelRename()"
+                           @click.stop="">
+                    <button class="btn btn-primary btn-xs" @click.stop="confirmRename()" x-text="t('common.save')">Save</button>
+                    <button class="btn btn-ghost btn-xs" @click.stop="cancelRename()" x-text="t('common.cancel')">Cancel</button>
+                  </div>
+                  <!-- Normal display -->
+                  <div x-show="!renamingPreset || renamingPreset.metadata.name !== p.metadata.name"
+                       class="preset-card-name" x-text="p.metadata.name"></div>
+                  <div class="preset-card-type">
+                    <span class="badge badge-train-type" x-text="(p.metadata && p.metadata.train_type) || 'anima-lora'"></span>
+                  </div>
+                </div>
+                <div class="preset-card-desc" x-text="p.metadata.description || ''"></div>
+                <div class="preset-card-meta">
+                  <span x-text="t('preset.paramsCount').replace('{n}', Object.keys(p.data || {}).length)"></span>
+                </div>
+                <!-- Action buttons -->
+                <div class="preset-card-actions" x-show="!batchMode" @click.stop>
+                  <button class="btn btn-ghost btn-xs" @click.stop="openEditModal(p)" x-text="t('preset.edit')">Edit</button>
+                  <button class="btn btn-ghost btn-xs" @click.stop="applyPresetNavigate(p)" x-text="t('preset.apply')">Apply</button>
+                  <button class="btn btn-ghost btn-xs" @click.stop="startRename(p)" x-text="t('preset.rename')">Rename</button>
+                  <button class="btn btn-ghost btn-xs btn-danger-text" @click.stop="deletePresetFromList(p)" x-text="t('preset.delete')">Delete</button>
+                </div>
+              </div>
+              <!-- Preview card -->
+              <div x-show="previewPreset && previewPreset.metadata.name === p.metadata.name && !batchMode"
+                   class="preset-preview-card" x-transition>
+                <div class="preset-preview-params">
+                  <template x-for="k in previewTopKeys(p)" :key="k">
+                    <div class="preset-preview-param">
+                      <code class="preset-preview-key" x-text="k"></code>
+                      <span class="preset-preview-val">
+                        <template x-if="typeof p.data[k] === 'boolean'">
+                          <span class="badge" :class="p.data[k] ? 'badge-on' : 'badge-off'" x-text="p.data[k] ? 'true' : 'false'"></span>
+                        </template>
+                        <template x-if="typeof p.data[k] !== 'boolean'">
+                          <span x-text="String(p.data[k])"></span>
+                        </template>
+                      </span>
+                    </div>
+                  </template>
+                  <div class="text-xs text-muted" style="margin-top:4px"
+                       x-show="previewParamCount(p) > 8"
+                       x-text="t('preset.andMore').replace('{n}', previewParamCount(p) - 8)"></div>
+                </div>
               </div>
             </div>
           </template>
-          <div x-show="presetsLoading" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0">
-            <div class="env-spinner" style="margin:0 auto 8px"></div>
-            <span x-text="t('common.loading', 'Loading...')">加载中...</span>
-          </div>
-          <div x-show="!presetsLoading && allPresets.length === 0" style="color:var(--text-tertiary);font-size:12px;grid-column:1/-1;text-align:center;padding:40px 0" x-text="t('preset.empty')">暂无可用预设</div>
         </div>
       </div>
 
@@ -1160,6 +1221,25 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" @click="showLoadModal = false" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Preset Modal ────────────────────────────────── -->
+<div class="modal-overlay" x-show="showEditModal" @click.self="cancelEditPreset()" x-cloak>
+  <div class="modal modal-edit-preset">
+    <div class="modal-header">
+      <span x-text="t('preset.editPreset') + ': ' + (editPresetTarget ? editPresetTarget.metadata.name : '')">Edit Preset</span>
+      <button class="btn-icon" @click="cancelEditPreset()" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="max-height:75vh;overflow-y:auto;padding:0">
+      <div id="editPresetFormContent"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="cancelEditPreset()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-primary btn-sm" @click="saveEditedPreset()" x-text="t('common.save')">Save</button>
     </div>
   </div>
 </div>

@@ -42,7 +42,7 @@ window.trainingCoreMixin = {
     this.formDefaults.network_module = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
 
     // Re-render form with new train type
-    this.renderTrainingForm(v);
+    this.renderTrainingForm(v, null);
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
@@ -110,7 +110,7 @@ window.trainingCoreMixin = {
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
-    this.renderTrainingForm(trainType);
+    this.renderTrainingForm(trainType, null);
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
@@ -141,8 +141,8 @@ window.trainingCoreMixin = {
     window.addEventListener('locale-changed', this._localeChangeHandler);
   },
 
-  renderTrainingForm(trainType) {
-    const container = document.getElementById('trainFormContent');
+  renderTrainingForm(trainType, targetId) {
+    const container = document.getElementById(targetId || 'trainFormContent');
     if (!container) return;
     const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
     let html = '';
@@ -681,7 +681,7 @@ window.trainingCoreMixin = {
     // Clear error for this field on change and re-render to update UI
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null);
       return;
     }
     this.updateToml();
@@ -817,7 +817,7 @@ window.trainingCoreMixin = {
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;
     if (hasErrors) {
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null);
     }
     return !hasErrors;
   },
