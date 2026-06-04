@@ -98,8 +98,8 @@ window.trainingPresetsMixin = {
     this.updateToml();
     this.$nextTick(() => {
       this.renderTrainingForm(this.form.model_train_type || 'anima-lora', 'editPresetFormContent');
-      const container = document.getElementById('editPresetFormContent');
-      if (container) container.scrollTop = 0;
+      const mb = document.querySelector('.modal-edit-preset .modal-body');
+      if (mb) mb.scrollTop = 0;
     });
   },
 
