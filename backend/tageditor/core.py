@@ -69,25 +69,26 @@ def scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:
     """扫描目录下所有图片及对应标签"""
     images = []
     glob_method = dir_path.rglob if recursive else dir_path.glob
-    for ext in IMAGE_EXTENSIONS:
-        for img in glob_method(f"*{ext}"):
-            if img.name.startswith("."):
-                continue
-            cap = find_caption(img)
-            tags = read_tags(cap) if cap else ""
-            try:
-                rel = str(img.relative_to(dir_path)).replace("\\", "/")
-            except ValueError:
-                rel = img.name
-
-            images.append({
-                "name": img.name,
-                "path": str(img),
-                "rel_path": rel,
-                "tags": tags,
-                "has_caption": cap is not None,
-                "thumbnail": thumbnail_url(img),
-            })
+    img_exts = set(IMAGE_EXTENSIONS)
+    for p in glob_method("*"):
+        if not p.is_file() or p.name.startswith("."):
+            continue
+        if p.suffix.lower() not in img_exts:
+            continue
+        cap = find_caption(p)
+        tags = read_tags(cap) if cap else ""
+        try:
+            rel = str(p.relative_to(dir_path)).replace("\\", "/")
+        except ValueError:
+            rel = p.name
+        images.append({
+            "name": p.name,
+            "path": str(p),
+            "rel_path": rel,
+            "tags": tags,
+            "has_caption": cap is not None,
+            "thumbnail": thumbnail_url(p),
+        })
     images.sort(key=lambda x: x["name"])
     return images
 
@@ -107,15 +108,17 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
     counter: Counter = Counter()
     total_images = 0
     glob_method = dir_path.rglob if recursive else dir_path.glob
-    for ext in IMAGE_EXTENSIONS:
-        for img in glob_method(f"*{ext}"):
-            if img.name.startswith("."):
-                continue
-            total_images += 1
-            cap = find_caption(img)
-            if cap:
-                tags = tag_list(read_tags(cap))
-                counter.update(tags)
+    img_exts = set(IMAGE_EXTENSIONS)
+    for p in glob_method("*"):
+        if not p.is_file() or p.name.startswith("."):
+            continue
+        if p.suffix.lower() not in img_exts:
+            continue
+        total_images += 1
+        cap = find_caption(p)
+        if cap:
+            tags = tag_list(read_tags(cap))
+            counter.update(tags)
 
     tags_data = [
         {"tag": tag, "count": count}
