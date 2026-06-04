@@ -169,8 +169,11 @@ async def save_image_tags(data: dict):
     tags = data.get("tags", "")
     if not img_path or not os.path.isfile(img_path):
         return {"status": "error", "message": "图片路径无效"}
-    p = Path(img_path)
+    p = Path(img_path).resolve()
     cap = find_caption(p) or p.with_suffix(".txt")
+    cap = cap.resolve()
+    if cap.parent != p.parent:
+        return {"status": "error", "message": "路径无效"}
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
     _invalidate_cache(p.parent)
