@@ -30,3 +30,6 @@ config/autosave/*
 config/presets/test*.toml
 
 vendor/sd-scripts/tests/
+
+.superpowers
+docs
