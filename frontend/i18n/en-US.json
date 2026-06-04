@@ -331,7 +331,10 @@
     "minTimestepError": "Min timestep must be less than max timestep",
     "starting": "Starting...",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "apply": "Apply",
+    "confirm": "Confirm",
+    "noResults": "No results"
   },
   "preset": {
     "title": "Preset Management",
@@ -444,7 +447,7 @@
     "datasetDirPlaceholder": "Enter dataset directory path...",
     "loadImages": "Load",
     "noImages": "No images yet, load a dataset directory first",
-    "imageCount": " images",
+    "imageCount": "images",
     "uniqueTags": " tags",
     "unsavedChanges": "modified",
     "noTagImages": "No Tag",
@@ -550,7 +553,10 @@
     "redoHint": "Redo",
     "reloadDir": "Reload",
     "sortAsc": "Ascending",
-    "sortDesc": "Descending"
+    "sortDesc": "Descending",
+    "prevImage": "Previous",
+    "nextImage": "Next",
+    "currentHint": "current"
   },
   "bulkAction": {
     "add": "Add",

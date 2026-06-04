@@ -331,7 +331,10 @@
     "minTimestepError": "最小时间步必须小于最大时间步",
     "starting": "启动中...",
     "prev": "上一个",
-    "next": "下一个"
+    "next": "下一个",
+    "apply": "应用",
+    "confirm": "确认",
+    "noResults": "无结果"
   },
   "preset": {
     "title": "预设管理",
@@ -550,7 +553,10 @@
     "redoHint": "重做",
     "reloadDir": "重新加载",
     "sortAsc": "升序",
-    "sortDesc": "降序"
+    "sortDesc": "降序",
+    "prevImage": "上一张",
+    "nextImage": "下一张",
+    "currentHint": "当前"
   },
   "bulkAction": {
     "add": "添加",
