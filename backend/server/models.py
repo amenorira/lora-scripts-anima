@@ -77,3 +77,7 @@ class PresetSaveRequest(BaseModel):
     author: str = ""
     train_type: str = ""
     data: Dict[str, Any] = {}
+
+
+class PresetRenameRequest(BaseModel):
+    new_name: str

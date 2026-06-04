@@ -9,7 +9,7 @@ import toml
 from fastapi import APIRouter, Request
 
 from backend.server.config import app_config
-from backend.server.models import APIResponseFail, APIResponseSuccess, PresetSaveRequest
+from backend.server.models import APIResponseFail, APIResponseSuccess, PresetSaveRequest, PresetRenameRequest
 from backend.server.state import avaliable_presets, load_presets
 from backend.log import log
 
@@ -79,6 +79,34 @@ async def delete_preset(name: str):
 
     log.info(f"Preset deleted: {safe_name}")
     return APIResponseSuccess(message=f"Preset deleted / 已删除: {name}")
+
+
+@router.put("/presets/{name}/rename")
+async def rename_preset(name: str, req: PresetRenameRequest):
+    """Rename a preset file."""
+
+    preset_dir = os.path.join(os.getcwd(), "config", "presets")
+    safe_old = re.sub(r'[\\/*?:"<>|]', "_", name)
+    safe_new = re.sub(r'[\\/*?:"<>|]', "_", req.new_name)
+    oldpath = os.path.join(preset_dir, f"{safe_old}.toml")
+    newpath = os.path.join(preset_dir, f"{safe_new}.toml")
+
+    if not os.path.isfile(oldpath):
+        return APIResponseFail(message="Preset not found / 预设不存在")
+
+    if os.path.isfile(newpath):
+        return APIResponseFail(message="A preset with this name already exists / 同名预设已存在")
+
+    try:
+        os.rename(oldpath, newpath)
+    except OSError as e:
+        log.error(f"Failed to rename preset: {e}")
+        return APIResponseFail(message=f"Failed to rename preset / 重命名失败: {e}")
+
+    await load_presets()
+
+    log.info(f"Preset renamed: {name} -> {req.new_name}")
+    return APIResponseSuccess(data={"old_name": name, "new_name": req.new_name})
 
 
 @router.get("/config/saved_params")
