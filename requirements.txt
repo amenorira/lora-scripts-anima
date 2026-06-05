@@ -32,7 +32,7 @@ lycoris-lora==3.4.0        # LoRA / LoCon / LoHA 训练扩展
 
 # ============================================================
 # 以下为 sd-scripts 依赖，由 vendor/sd-scripts/requirements.txt 安装。
-# 保留版本号用于 validate_requirements() 校验，标记 skip_verify 跳过。
+# 保留版本号供参考使用，标记 skip_verify 可跳过安装。
 # ============================================================
 accelerate==1.6.0  # skip_verify
 transformers==4.54.1  # skip_verify

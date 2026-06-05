@@ -208,33 +208,6 @@ def is_installed(package, friendly: str = None):
         return False
 
 
-def validate_requirements(requirements_file: str, fix: bool = True):
-    with open(requirements_file, 'r', encoding='utf8') as f:
-        lines = [
-            line.strip().split("#")[0].strip()  # strip inline comments
-            for line in f.readlines()
-            if line.strip() != ''
-            and not line.strip().startswith("#")
-            and not (line.strip().startswith("-") and not line.strip().startswith("--index-url "))
-            and "# skip_verify" not in line
-        ]
-
-        index_url = ""
-        for line in lines:
-            if line.startswith("--index-url "):
-                index_url = line.replace("--index-url ", "")
-                continue
-
-            if not is_installed(line):
-                if fix:
-                    if index_url != "":
-                        run_pip(f"install {line} --index-url {index_url}", line, live=True)
-                    else:
-                        run_pip(f"install {line}", line, live=True)
-                else:
-                    log.warning(f'[Deps] Version mismatch / 版本不匹配: {line}')
-                    log.warning(f'[Deps] Training may fail. Run install script to reinstall / 请运行 install 脚本重新安装依赖')
-
 
 def setup_windows_bitsandbytes():
     if sys.platform != "win32":
@@ -323,12 +296,6 @@ def prepare_environment(prepare_onnxruntime: bool = True):
     prepare_submodules()
 
     check_dirs(["config/autosave", "logs"])
-
-    skip_validation = os.environ.get("ANIMA_SKIP_VALIDATION", "") == "1"
-
-    if not skip_validation:
-        validate_requirements("vendor/sd-scripts/requirements.txt")
-        validate_requirements("requirements.txt")
 
     try:
         setup_windows_bitsandbytes()
