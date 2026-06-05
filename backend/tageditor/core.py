@@ -93,6 +93,39 @@ def scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:
     return images
 
 
+def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]:
+    """Only scan and read tags for selected images, instead of full directory scan."""
+    dir_resolved = dir_path.resolve()
+    images = []
+    img_exts = set(IMAGE_EXTENSIONS)
+    for spath in selected_paths:
+        p = Path(spath).resolve()
+        if not p.is_file() or p.name.startswith("."):
+            continue
+        if p.suffix.lower() not in img_exts:
+            continue
+        try:
+            p.relative_to(dir_resolved)
+        except ValueError:
+            continue
+        cap = find_caption(p)
+        tags = read_tags(cap) if cap else ""
+        try:
+            rel = str(p.relative_to(dir_resolved)).replace("\\", "/")
+        except ValueError:
+            rel = p.name
+        images.append({
+            "name": p.name,
+            "path": str(p),
+            "rel_path": rel,
+            "tags": tags,
+            "has_caption": cap is not None,
+            "thumbnail": thumbnail_url(p),
+        })
+    images.sort(key=lambda x: x["name"])
+    return images
+
+
 def tag_list(tags_str: str) -> list[str]:
     """逗号分隔字符串 → 去空格的标签列表"""
     return [t.strip() for t in tags_str.split(",") if t.strip()]

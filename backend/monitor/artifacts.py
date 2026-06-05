@@ -9,9 +9,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-OUTPUT_DIR = REPO_ROOT / "output"
-CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
+from backend.constants import REPO_ROOT, OUTPUT_DIR
+from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # ── scan_history 缓存 ────────────────────────────────────

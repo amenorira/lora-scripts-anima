@@ -245,7 +245,9 @@ def setup_windows_bitsandbytes():
     bnb_path = os.path.join(sysconfig.get_paths()["purelib"], "bitsandbytes")
 
     installed_bnb = is_installed("bitsandbytes")  # don't check version here
-    bnb_cuda_setup = len([f for f in os.listdir(bnb_path) if re.findall(r"libbitsandbytes_cuda.+?\.dll", f)]) != 0
+    bnb_cuda_setup = False
+    if os.path.isdir(bnb_path):
+        bnb_cuda_setup = len([f for f in os.listdir(bnb_path) if re.findall(r"libbitsandbytes_cuda.+?\.dll", f)]) != 0
 
     if not installed_bnb or not bnb_cuda_setup:
         log.error("detected wrong install of bitsandbytes, reinstall it")

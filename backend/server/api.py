@@ -224,7 +224,7 @@ async def get_files(pick_type) -> APIResponse:
     if pick_type not in pick_preset:
         return APIResponseFail(message="Invalid request")
 
-    dirs = list_path_or_files(pick_preset[pick_type])
+    dirs = await asyncio.to_thread(list_path_or_files, pick_preset[pick_type])
     _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={
         "files": dirs

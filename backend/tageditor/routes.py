@@ -23,18 +23,37 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from backend.constants import REPO_ROOT
 from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
-    scan_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
+    scan_images, scan_selected_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
     _invalidate_cache,
 )
 from backend.tageditor.operations import apply_operation
 
 router = APIRouter()
+
+
+# ── Helper ───────────────────────────────────────────────────────
+
+def _resolve_target_images(data: dict, dir_path: Path) -> tuple[list[dict], str | None]:
+    """Resolve target images based on scope. Returns (images, error_message)."""
+    scope = data.get("scope", "all")
+    if scope == "selected":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return [], "未选中任何图片"
+        return scan_selected_images(dir_path, set(selected_paths)), None
+    elif scope == "filtered":
+        selected_paths = data.get("selected_paths", [])
+        if not selected_paths:
+            return [], "筛选结果为空"
+        return scan_selected_images(dir_path, set(selected_paths)), None
+    else:
+        return scan_images(dir_path), None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -167,13 +186,12 @@ async def save_image_tags(data: dict):
     """保存单张图片的标签"""
     img_path = data.get("path", "")
     tags = data.get("tags", "")
-    if not img_path or not os.path.isfile(img_path):
+    if not img_path:
         return {"status": "error", "message": "图片路径无效"}
     p = Path(img_path).resolve()
+    if not p.is_file():
+        return {"status": "error", "message": "图片路径无效"}
     cap = find_caption(p) or p.with_suffix(".txt")
-    cap = cap.resolve()
-    if cap.parent != p.parent:
-        return {"status": "error", "message": "路径无效"}
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
     _invalidate_cache(p.parent)
@@ -195,11 +213,6 @@ async def save_all_tags(data: dict):
             continue
         p = Path(img_path)
         cap_path = find_caption(p) or p.with_suffix(".txt")
-        # 安全检查：确保标签文件与图片在同一目录下
-        cap_resolved = cap_path.resolve()
-        img_resolved = p.resolve()
-        if cap_resolved.parent != img_resolved.parent:
-            continue
         existing_tags = read_tags(cap_path) if cap_path.exists() else ""
         if existing_tags == tags.strip():
             skipped += 1
@@ -220,8 +233,6 @@ async def batch_edit_tags(data: dict):
     dir_path = data.get("dir", "")
     operation = data.get("operation", "")
     args = data.get("args", {})
-    scope = data.get("scope", "all")
-
     if not dir_path or not operation:
         return {"status": "error", "message": "缺少参数"}
 
@@ -229,22 +240,9 @@ async def batch_edit_tags(data: dict):
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
 
-    if scope == "selected":
-        selected_paths = data.get("selected_paths", [])
-        if not selected_paths:
-            return {"status": "error", "message": "未选中任何图片"}
-        selected_set = set(selected_paths)
-        all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in selected_set]
-    elif scope == "filtered":
-        selected_paths = data.get("selected_paths", [])
-        if not selected_paths:
-            return {"status": "error", "message": "筛选结果为空"}
-        selected_set = set(selected_paths)
-        all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in selected_set]
-    else:
-        target_images = scan_images(d)
+    target_images, err = _resolve_target_images(data, d)
+    if err:
+        return {"status": "error", "message": err}
 
     modified = 0
     errors = []
@@ -277,8 +275,6 @@ async def preview_batch_edit(data: dict):
     dir_path = data.get("dir", "")
     operation = data.get("operation", "")
     args = data.get("args", {})
-    scope = data.get("scope", "all")
-
     if not dir_path or not operation:
         return {"status": "error", "message": "缺少参数"}
 
@@ -286,22 +282,9 @@ async def preview_batch_edit(data: dict):
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
 
-    if scope == "selected":
-        selected_paths = data.get("selected_paths", [])
-        if not selected_paths:
-            return {"status": "error", "message": "未选中任何图片"}
-        selected_set = set(selected_paths)
-        all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in selected_set]
-    elif scope == "filtered":
-        selected_paths = data.get("selected_paths", [])
-        if not selected_paths:
-            return {"status": "error", "message": "筛选结果为空"}
-        selected_set = set(selected_paths)
-        all_images = scan_images(d)
-        target_images = [img for img in all_images if img.get("path", "") in selected_set]
-    else:
-        target_images = scan_images(d)
+    target_images, err = _resolve_target_images(data, d)
+    if err:
+        return {"status": "error", "message": err}
 
     preview_data = []
     for img in target_images:
@@ -337,9 +320,10 @@ async def move_or_delete_files(data: dict):
         return {"status": "error", "message": "未指定文件"}
 
     result = {"moved": 0, "deleted": 0, "errors": []}
+    resolved_parents = set()
 
     for img_path_str in paths:
-        img_path = Path(img_path_str)
+        img_path = Path(img_path_str).resolve()
         if not img_path.exists():
             result["errors"].append(f"不存在: {img_path.name}")
             continue
@@ -354,7 +338,6 @@ async def move_or_delete_files(data: dict):
                     if cap and cap.exists():
                         shutil.move(str(cap), str(dest_path / cap.name))
                 result["moved"] += 1
-                # 清理 .bak 备份文件
                 for bak_ext in [".txt.bak", ".caption.bak"]:
                     bak_file = img_path.with_suffix(bak_ext)
                     if bak_file.exists():
@@ -368,7 +351,6 @@ async def move_or_delete_files(data: dict):
                     cap = find_caption(img_path)
                     if cap and cap.exists():
                         cap.unlink()
-                # 清理 .bak 备份文件
                 for bak_ext in [".txt.bak", ".caption.bak"]:
                     bak_file = img_path.with_suffix(bak_ext)
                     if bak_file.exists():
@@ -377,11 +359,12 @@ async def move_or_delete_files(data: dict):
                         except Exception:
                             pass
                 result["deleted"] += 1
+            resolved_parents.add(img_path.parent)
         except Exception as e:
             result["errors"].append(f"{img_path.name}: {e}")
 
     if result["moved"] > 0 or result["deleted"] > 0:
-        dirs_to_invalidate = {img_path.parent for img_path in [Path(p) for p in paths]}
+        dirs_to_invalidate = resolved_parents.copy()
         if action == "move" and dest:
             dirs_to_invalidate.add(Path(dest))
         for d in dirs_to_invalidate:
@@ -482,7 +465,6 @@ async def tag_editor_thumbnail(path: str = Query("")):
         p = (REPO_ROOT / decoded).resolve()
 
     if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
-        from fastapi.responses import PlainTextResponse
         return PlainTextResponse("", status_code=404)
 
     mt = mimetypes.guess_type(p.name)[0] or "image/jpeg"

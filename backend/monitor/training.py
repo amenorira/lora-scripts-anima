@@ -8,9 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-OUTPUT_DIR = REPO_ROOT / "output"
-CONFIG_AUTOSAVE = REPO_ROOT / "config" / "autosave"
+from backend.constants import REPO_ROOT, OUTPUT_DIR
+from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引

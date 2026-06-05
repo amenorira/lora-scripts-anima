@@ -150,7 +150,6 @@ async def create_toml_file(request: Request):
 
     gpu_ids = config.pop("gpu_ids", None)
 
-    suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
     model_train_type = config.get("model_train_type", "sdxl-lora")
     trainer_file = trainer_mapping.get(model_train_type)
     if not trainer_file:
@@ -204,6 +203,8 @@ async def create_toml_file(request: Request):
     if model_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
             return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
+
+    suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
 
     validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], model_train_type)
     if not validated:
