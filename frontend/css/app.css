@@ -1831,8 +1831,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card-tag { font-size: 9px; padding: 0 4px; border-radius: 3px; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); white-space: nowrap; }
 
 /* ===== Right Editor Panel ===== */
-.te-editor { width: 0; flex-shrink: 0; overflow: hidden; border-left: 1px solid transparent; background: var(--bg-canvas); transition: width 0.15s, border-color 0.15s; display: flex; flex-direction: column; }
-.te-editor.open { width: 360px; border-left-color: var(--border-default); }
+.te-editor { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border-default); background: var(--bg-canvas); }
 .te-editor-inner { flex: 1; overflow: hidden; padding: 0; display: flex; flex-direction: column; gap: 0; }
 .te-editor-inner::-webkit-scrollbar { width: 4px; }
 .te-editor-inner::-webkit-scrollbar-track { background: transparent; }
@@ -2005,6 +2004,7 @@ input[type="range"]::-webkit-slider-thumb {
   .te-sidebar { width: 100%; max-height: 35vh; border-right: none; border-bottom: 1px solid var(--border-default); }
   .te-sidebar.collapsed { max-height: 0; width: 100%; }
   .te-main { flex-direction: column; }
+  .te-editor { width: 100%; max-height: 40vh; border-left: none; border-top: 1px solid var(--border-default); }
 }
 
 .btn:disabled, .btn[disabled] { opacity: 0.40; cursor: not-allowed; pointer-events: none; }

@@ -718,7 +718,7 @@
                 </template>
               </div>
             </div>
-            <div class="te-editor" :class="{ open: tagEditorSelected.length > 0 }">
+            <div class="te-editor">
               <template x-if="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <div class="te-editor-empty">
                   <span x-text="t('tagEditor.noImageSelected')"></span>
@@ -736,7 +736,6 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </div>
-                    <button class="te-editor-close" @click="tagEditorSelected = []; tagEditorAddInput = ''" :title="t('common.close')">&times;</button>
                   </div>
                   <div class="te-editor-preview">
                     <img :src="tagEditorGetSelectedImg()?.thumbnail" :alt="tagEditorGetSelectedImg()?.name">
@@ -785,7 +784,6 @@
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
-                    <button class="te-editor-close" @click="tagEditorSelected = []" :title="t('common.close')">&times;</button>
                   </div>
                   <div class="te-editor-body">
                   <div class="te-batch-section">
