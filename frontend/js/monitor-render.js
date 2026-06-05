@@ -101,10 +101,16 @@ window.monitorRenderMixin = {
       if (gpuEl) {
         const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
         const loadPct = gpu.gpu_load_pct || 0;
+        const vramGrade = vramPct > 90 ? 'high' : vramPct > 70 ? 'mid' : 'low';
+        const loadGrade = loadPct > 80 ? 'high' : loadPct > 50 ? 'mid' : 'low';
         const vramBar = gpuEl.querySelector('[data-bar="vram"]');
-        if (vramBar) vramBar.dataset.target = vramPct;
+        if (vramBar) { vramBar.dataset.target = vramPct; vramBar.className = 'monitor-bar-fill ' + vramGrade; }
         const loadBar = gpuEl.querySelector('[data-bar="load"]');
-        if (loadBar) loadBar.dataset.target = loadPct;
+        if (loadBar) { loadBar.dataset.target = loadPct; loadBar.className = 'monitor-bar-fill ' + loadGrade; }
+        const vramText = gpuEl.querySelector('[data-field="vram-text"]');
+        if (vramText) { vramText.textContent = gpu.vram_used_mb + ' MB (' + Math.round(vramPct) + '%)'; vramText.className = vramGrade; }
+        const loadText = gpuEl.querySelector('[data-field="load-text"]');
+        if (loadText) { loadText.textContent = loadPct + '%'; loadText.className = loadGrade; }
         gpuEl.querySelectorAll('.monitor-bar-fill[data-bar]').forEach(bar => {
           bar.style.width = bar.dataset.target + '%';
         });
@@ -115,10 +121,16 @@ window.monitorRenderMixin = {
     if (sys) {
       const sysEl = document.querySelector('.card-system');
       if (sysEl) {
+        const cpuGrade = sys.cpu_pct > 80 ? 'high' : sys.cpu_pct > 50 ? 'mid' : 'low';
+        const ramGrade = sys.ram_pct > 80 ? 'high' : sys.ram_pct > 50 ? 'mid' : 'low';
         const cpuBar = sysEl.querySelector('[data-bar="cpu"]');
-        if (cpuBar) { cpuBar.dataset.target = sys.cpu_pct; cpuBar.style.width = sys.cpu_pct + '%'; }
+        if (cpuBar) { cpuBar.dataset.target = sys.cpu_pct; cpuBar.className = 'monitor-bar-fill ' + cpuGrade; cpuBar.style.width = sys.cpu_pct + '%'; }
         const ramBar = sysEl.querySelector('[data-bar="ram"]');
-        if (ramBar) { ramBar.dataset.target = sys.ram_pct; ramBar.style.width = sys.ram_pct + '%'; }
+        if (ramBar) { ramBar.dataset.target = sys.ram_pct; ramBar.className = 'monitor-bar-fill ' + ramGrade; ramBar.style.width = sys.ram_pct + '%'; }
+        const cpuText = sysEl.querySelector('[data-field="cpu-text"]');
+        if (cpuText) { cpuText.textContent = sys.cpu_pct + '%'; cpuText.className = cpuGrade; }
+        const ramText = sysEl.querySelector('[data-field="ram-text"]');
+        if (ramText) { ramText.textContent = sys.ram_used_gb + ' GB (' + sys.ram_pct + '%)'; ramText.className = ramGrade; }
       }
     }
 
@@ -231,8 +243,8 @@ window.monitorRenderMixin = {
     const vramPct=gpu.vram_total_mb>0?gpu.vram_used_mb/gpu.vram_total_mb*100:0, vramGrade=vramPct>90?'high':vramPct>70?'mid':'low';
     const loadPct=gpu.gpu_load_pct||0, loadGrade=loadPct>80?'high':loadPct>50?'mid':'low';
     let html=`<div class="card card-gpu flex-1"><div class="card-header">${t('gpu','GPU')}</div><div style="font-size:14px;font-weight:600;margin:4px 0">${this.esc(gpu.name)||'GPU'}</div>`;
-    html+=`<div class="monitor-stat">${t('vramUsed','VRAM')}: <b class="${vramGrade}">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${vramGrade}" data-bar="vram" data-target="${vramPct}"></div></div>`;
-    html+=`<div class="monitor-stat" style="margin-top:8px">${t('gpuLoad','Load')}: <b class="${loadGrade}">${loadPct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${loadGrade}" data-bar="load" data-target="${loadPct}"></div></div>`;
+    html+=`<div class="monitor-stat">${t('vramUsed','VRAM')}: <b class="${vramGrade}" data-field="vram-text">${gpu.vram_used_mb} MB (${Math.round(vramPct)}%)</b> / ${gpu.vram_total_mb} MB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${vramGrade}" data-bar="vram" data-target="${vramPct}"></div></div>`;
+    html+=`<div class="monitor-stat" style="margin-top:8px">${t('gpuLoad','Load')}: <b class="${loadGrade}" data-field="load-text">${loadPct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${loadGrade}" data-bar="load" data-target="${loadPct}"></div></div>`;
     if(gpu.temperature_c!=null) html+=`<div style="font-size:12px;margin-top:6px">${t('gpuTemp','Temp')}: <b>${gpu.temperature_c}&deg;C</b></div>`;
     if(gpu.power_w!=null) html+=`<div style="font-size:12px">${t('gpuPower','Power')}: <b>${gpu.power_w}W</b></div>`;
     html+='</div>'; return html;
@@ -242,8 +254,8 @@ window.monitorRenderMixin = {
     const cpuGrade=sys.cpu_pct>80?'high':sys.cpu_pct>50?'mid':'low', ramGrade=sys.ram_pct>80?'high':sys.ram_pct>50?'mid':'low';
     let html=`<div class="card card-system flex-1"><div class="card-header">${t('system','System')}</div>`;
     if(sys.cpu_name) html+=`<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${this.esc(sys.cpu_name)}</div>`;
-    html+=`<div class="monitor-stat">${t('cpu','CPU')}: <b class="${cpuGrade}">${sys.cpu_pct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${cpuGrade}" data-bar="cpu" data-target="${sys.cpu_pct}"></div></div>`;
-    html+=`<div class="monitor-stat" style="margin-top:8px">${t('ram','RAM')}: <b class="${ramGrade}">${sys.ram_used_gb} GB (${sys.ram_pct}%)</b> / ${sys.ram_total_gb} GB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${ramGrade}" data-bar="ram" data-target="${sys.ram_pct}"></div></div>`;
+    html+=`<div class="monitor-stat">${t('cpu','CPU')}: <b class="${cpuGrade}" data-field="cpu-text">${sys.cpu_pct}%</b></div><div class="monitor-bar-track"><div class="monitor-bar-fill ${cpuGrade}" data-bar="cpu" data-target="${sys.cpu_pct}"></div></div>`;
+    html+=`<div class="monitor-stat" style="margin-top:8px">${t('ram','RAM')}: <b class="${ramGrade}" data-field="ram-text">${sys.ram_used_gb} GB (${sys.ram_pct}%)</b> / ${sys.ram_total_gb} GB</div><div class="monitor-bar-track"><div class="monitor-bar-fill ${ramGrade}" data-bar="ram" data-target="${sys.ram_pct}"></div></div>`;
     html+='</div>'; return html;
   },
 
