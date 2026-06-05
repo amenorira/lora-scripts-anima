@@ -1,6 +1,6 @@
 import os
 import json
-from pathlib import Path
+import shutil
 from backend.log import log
 
 class Config:
@@ -9,24 +9,33 @@ class Config:
         self.path = path
         self._stored = {}
         self._default = {
-            "last_path": "",
             "saved_params": {}
         }
-        self.lock = False
 
     def load_config(self):
         log.info(f"Loading config from {self.path}")
         if not os.path.exists(self.path):
-            self._stored = self._default
-            self.save_config()
-            return
+            old_path = REPO_ROOT / "assets" / "config.json"
+            if os.path.exists(old_path):
+                try:
+                    shutil.copy2(old_path, self.path)
+                    log.info(f"Migrated config from {old_path} to {self.path}")
+                except Exception as e:
+                    log.error(f"Migration failed: {e}, using defaults")
+                    self._stored = dict(self._default)
+                    self.save_config()
+                    return
+            else:
+                self._stored = dict(self._default)
+                self.save_config()
+                return
 
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 self._stored = json.load(f)
         except Exception as e:
             log.error(f"Error loading config: {e}")
-            self._stored = self._default
+            self._stored = dict(self._default)
             return
 
     def save_config(self):
@@ -46,7 +55,7 @@ class Config:
         self._stored[key] = value
 
 
-from backend.constants import REPO_ROOT
+from backend.constants import CONFIG_DIR, REPO_ROOT
 
 
-app_config = Config(REPO_ROOT / "assets" / "config.json")
+app_config = Config(CONFIG_DIR / "state.json")

@@ -16,7 +16,7 @@ huggingface/
 sd-models/*
 !sd-models/.gitkeep
 
-assets/config.json
+config/state.json
 
 py310
 python
