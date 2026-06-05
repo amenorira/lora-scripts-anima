@@ -678,13 +678,17 @@ window.trainingCoreMixin = {
       if (!isNaN(numVal)) value = numVal;
     }
 
-    // Enforce min/max bounds on number fields
+    // Enforce min/max bounds on number fields (skip empty/unset — means "disabled")
     const field = this.findFieldDef(key);
     if (field && field.type === 'number') {
-      const numVal = Number(value);
-      if (!isNaN(numVal)) {
-        if (field.min !== undefined && numVal < field.min) value = field.min;
-        if (field.max !== undefined && numVal > field.max) value = field.max;
+      if (value === '' || value === null || value === undefined) {
+        // preserve empty/unset — signals sd-scripts "not used"
+      } else {
+        const numVal = Number(value);
+        if (!isNaN(numVal)) {
+          if (field.min !== undefined && numVal < field.min) value = field.min;
+          if (field.max !== undefined && numVal > field.max) value = field.max;
+        }
       }
     }
 
