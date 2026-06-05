@@ -121,14 +121,6 @@ def _normalize_network_args(values: Any) -> list[str]:
     return ordered
 
 
-def _is_float(s: str) -> bool:
-    try:
-        float(s)
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
 def _normalize_path(value: str) -> str:
     """路径规范化：反斜杠 → 正斜杠"""
     if isinstance(value, str) and "\\" in value:

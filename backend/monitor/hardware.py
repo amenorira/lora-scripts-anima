@@ -5,8 +5,18 @@ from __future__ import annotations
 
 import atexit
 import platform
+import threading
+import time as _time
 
 _nvml_ready = False
+
+_cpu_name_cache: str | None = None
+_gpu_sample: dict | None = None
+_gpu_sample_lock = threading.Lock()
+_sys_sample: dict | None = None
+_sys_sample_lock = threading.Lock()
+_SAMPLE_TTL = 1.0
+_sample_started = False
 
 
 def _ensure_nvml() -> bool:
@@ -23,7 +33,32 @@ def _ensure_nvml() -> bool:
         return False
 
 
-def gpu_info() -> dict | None:
+def _start_sampler():
+    global _sample_started
+    if _sample_started:
+        return
+    _sample_started = True
+
+    def _sample():
+        global _gpu_sample, _sys_sample
+        while True:
+            try:
+                with _gpu_sample_lock:
+                    _gpu_sample = _gpu_info_raw()
+            except Exception:
+                pass
+            try:
+                with _sys_sample_lock:
+                    _sys_sample = _sys_info_raw()
+            except Exception:
+                pass
+            _time.sleep(_SAMPLE_TTL)
+
+    t = threading.Thread(target=_sample, daemon=True)
+    t.start()
+
+
+def _gpu_info_raw() -> dict | None:
     if not _ensure_nvml():
         return None
     try:
@@ -70,8 +105,17 @@ def gpu_info() -> dict | None:
         return None
 
 
+def gpu_info() -> dict | None:
+    _start_sampler()
+    with _gpu_sample_lock:
+        return _gpu_sample
+
+
 def _get_cpu_name() -> str:
     """获取 CPU 型号名称"""
+    global _cpu_name_cache
+    if _cpu_name_cache is not None:
+        return _cpu_name_cache
     name = ""
     try:
         if platform.system() == "Windows":
@@ -93,10 +137,11 @@ def _get_cpu_name() -> str:
                 pass
     except Exception:
         pass
-    return name or platform.processor() or ""
+    _cpu_name_cache = name or platform.processor() or ""
+    return _cpu_name_cache
 
 
-def system_info() -> dict:
+def _sys_info_raw() -> dict:
     """CPU / RAM 使用率"""
     try:
         import psutil
@@ -113,3 +158,11 @@ def system_info() -> dict:
     except Exception:
         return {"cpu_name": "", "cpu_pct": 0, "ram_used_gb": 0,
                 "ram_total_gb": 0, "ram_pct": 0}
+
+
+def system_info() -> dict:
+    _start_sampler()
+    global _cpu_name_cache
+    with _sys_sample_lock:
+        return _sys_sample or {"cpu_name": _cpu_name_cache or "", "cpu_pct": 0,
+                                "ram_used_gb": 0, "ram_total_gb": 0, "ram_pct": 0}

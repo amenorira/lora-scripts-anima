@@ -240,6 +240,10 @@ def parse_log_progress(lines: list[str]) -> dict:
 
 # ── 训练配置解析 (TOML) ────────────────────────────────────
 
+_latest_config_mtime: float = 0.0
+_latest_config_cache: dict = {}
+
+
 def latest_train_config() -> dict:
     """解析最新的 autosave TOML 配置"""
     if not CONFIG_AUTOSAVE.exists():
@@ -248,6 +252,13 @@ def latest_train_config() -> dict:
         CONFIG_AUTOSAVE.glob("*.toml"),
         key=lambda p: p.stat().st_mtime, reverse=True
     )
+    if not configs:
+        _latest_config_mtime = 0.0
+        _latest_config_cache = {}
+        return {}
+    latest_mtime = configs[0].stat().st_mtime
+    if _latest_config_mtime == latest_mtime and _latest_config_cache:
+        return _latest_config_cache
     for cfg_path in configs[:3]:
         try:
             text = cfg_path.read_text(encoding="utf-8", errors="replace")
@@ -279,6 +290,8 @@ def latest_train_config() -> dict:
                 params[key] = m.group("v").lower()
 
         if params:
+            _latest_config_mtime = latest_mtime
+            _latest_config_cache = params
             return params
     return {}
 

@@ -136,7 +136,8 @@ window.tagEditorMixin = {
         this.tagEditorOriginal = {};
         var self = this;
         this.tagEditorImages.forEach(function(img) { self.tagEditorOriginal[img.path] = img.tags; });
-        this.tagEditorModified = false;
+      this.tagEditorModified = false;
+      this._teModifiedCountCache = undefined;
         this.tagEditorSelected = [];
         this.tagEditorPage = 1;
         this.tagEditorHistory = [];
@@ -348,12 +349,13 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetQuickCount(type) {
+    var images = this._teCachedFiltered || this.tagEditorImages;
     if (type === 'notag') {
-      return this.tagEditorImages.filter(function(img) { return !img.tags || img.tags.trim() === ''; }).length;
+      return images.filter(function(img) { return !img.tags || img.tags.trim() === ''; }).length;
     }
     if (type === 'modified') {
       var orig = this.tagEditorOriginal;
-      return this.tagEditorImages.filter(function(img) { return img.tags !== orig[img.path]; }).length;
+      return images.filter(function(img) { return img.tags !== orig[img.path]; }).length;
     }
     return 0;
   },
@@ -1053,6 +1055,7 @@ window.tagEditorMixin = {
       }
     });
     this.tagEditorModified = hasAnyMod;
+    this._teModifiedCountCache = undefined;
     this._teFilteredCacheKey = '';
     this._teCachedFiltered = null;
     this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
@@ -1060,6 +1063,7 @@ window.tagEditorMixin = {
   },
 
   _teUpdateFreq(oldTags, newTags) {
+    this._teModifiedCountCache = undefined;
     var oldList = oldTags ? oldTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
     var newList = newTags ? newTags.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; }) : [];
     var removed = oldList.filter(function(t) { return newList.indexOf(t) === -1; });
@@ -1087,6 +1091,7 @@ window.tagEditorMixin = {
     this.tagEditorModified = this.tagEditorImages.some(function(i) {
       return i.tags !== this.tagEditorOriginal[i.path];
     }.bind(this));
+    this._teModifiedCountCache = undefined;
     this._teFilteredCacheKey = '';
     this._teCachedFiltered = null;
     // Cancel any pending text-edit debounce for this image (batch op takes precedence)
@@ -1121,8 +1126,10 @@ window.tagEditorMixin = {
   },
 
   tagEditorModifiedCount() {
+    if (this._teModifiedCountCache !== undefined) return this._teModifiedCountCache;
     var orig = this.tagEditorOriginal;
-    return this.tagEditorImages.filter(function(img) { return img.tags !== orig[img.path]; }).length;
+    this._teModifiedCountCache = this.tagEditorImages.filter(function(img) { return img.tags !== orig[img.path]; }).length;
+    return this._teModifiedCountCache;
   },
 
   // ===== Save =====
@@ -1169,6 +1176,7 @@ window.tagEditorMixin = {
         self._teSaveProgress = Math.round((i + chunk.length) / modified.length * 100);
       }
       this.tagEditorModified = false;
+      this._teModifiedCountCache = undefined;
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
       this.tagEditorSaving = false;
@@ -1235,6 +1243,7 @@ window.tagEditorMixin = {
               }
             });
             self.tagEditorModified = true;
+            self._teModifiedCountCache = undefined;
             self._teFilteredCacheKey = '';
             self._teCachedFiltered = null;
             self.toast(self.t('tagEditor.autoSaveRestored'));

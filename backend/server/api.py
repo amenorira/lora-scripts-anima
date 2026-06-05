@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import time as _time
 
 from pathlib import Path
 
@@ -27,13 +28,20 @@ from backend.utils.tk_window import (open_directory_selector,
 router = APIRouter()
 
 
+_git_version_cache: str | None = None
+
+
 def _git_version() -> str:
+    global _git_version_cache
+    if _git_version_cache is not None:
+        return _git_version_cache
     try:
         import subprocess
         r = subprocess.run(["git", "describe", "--tags", "--always"],
                           capture_output=True, text=True,
                           cwd=str(REPO_ROOT))
-        return r.stdout.strip() or "dev"
+        _git_version_cache = r.stdout.strip() or "dev"
+        return _git_version_cache
     except Exception:
         return "dev"
 
@@ -148,8 +156,17 @@ async def pick_file(picker_type: str):
     })
 
 
+_files_cache: dict[str, tuple[float, list[dict]]] = {}
+_FILES_CACHE_TTL = 60
+
+
 @router.get("/get_files")
 async def get_files(pick_type) -> APIResponse:
+    now = _time.time()
+    cached = _files_cache.get(pick_type)
+    if cached and now - cached[0] < _FILES_CACHE_TTL:
+        return APIResponseSuccess(data={"files": cached[1]})
+
     pick_preset = {
         "model-file": {
             "type": "file",
@@ -208,6 +225,7 @@ async def get_files(pick_type) -> APIResponse:
         return APIResponseFail(message="Invalid request")
 
     dirs = list_path_or_files(pick_preset[pick_type])
+    _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={
         "files": dirs
     })
@@ -540,6 +558,9 @@ async def xformers_install() -> dict:
 # ═══════════════════════════════════════════════════════════
 
 
+_sd_scripts_version_cache: dict | None = None
+
+
 def _read_sd_scripts_version() -> dict:
     """读取 vendor/sd-scripts 的本地版本信息。
     
@@ -551,6 +572,10 @@ def _read_sd_scripts_version() -> dict:
     
     返回 dict 含 version_source 字段标识数据来源。
     """
+    global _sd_scripts_version_cache
+    if _sd_scripts_version_cache is not None:
+        return _sd_scripts_version_cache
+
     root = REPO_ROOT
     sd_root = SD_SCRIPTS_DIR
     track_file = VENDOR_ROOT / ".sd-scripts-version"
@@ -633,6 +658,7 @@ def _read_sd_scripts_version() -> dict:
         except Exception:
             pass
 
+        _sd_scripts_version_cache = info
         return info
 
     # ── 第2层：跟踪文件 ────────────────────────────────
@@ -663,6 +689,7 @@ def _read_sd_scripts_version() -> dict:
                             info["tag"] = val
             if info["local_commit"]:
                 info["version_source"] = "tracking_file"
+            _sd_scripts_version_cache = info
             return info
         except Exception:
             pass
@@ -674,6 +701,7 @@ def _read_sd_scripts_version() -> dict:
         if setup_py.exists():
             info["version_source"] = "inferred"
 
+    _sd_scripts_version_cache = info
     return info
 
 

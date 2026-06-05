@@ -296,38 +296,57 @@ window.monitorRenderMixin = {
     const el=document.getElementById('monitorLogs'); if(!el) return;
     const t=(k,fb)=>this.t('monitor.'+k)||fb||k;
     if(!this.logLines.length){el.innerHTML='<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noLogsHint','No logs yet')+'</p></div>';return;}
-    const search=(this.logSearch||'').toLowerCase(), level=this.logLevel||'all'; let lines=this.logLines;
-    if(search) lines=lines.filter(l=>l.toLowerCase().includes(search));
-    if(level==='error') lines=lines.filter(l=>{
-      const lower=l.toLowerCase();
-      return lower.includes('error')||lower.includes('traceback')||lower.includes('exception')||/\bcuda\b.*\berror\b/i.test(l)||/\bfail\b/i.test(l);
-    });
-    else if(level==='warn') lines=lines.filter(l=>{
-      const lower=l.toLowerCase();
-      return lower.includes('warning')||lower.includes('warn')||/\bdeprecated\b/i.test(l);
-    });
-    else if(level==='info') lines=lines.filter(l=>{
-      const lower=l.toLowerCase();
-      return !lower.includes('error')&&!lower.includes('traceback')&&!lower.includes('exception')&&!lower.includes('warning')&&!lower.includes('warn');
-    });
-    let html='<div class="log-lines">';
-    if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-    else lines.forEach((line, idx)=>{const lower=line.toLowerCase(),cls=lower.includes('error')||lower.includes('traceback')||lower.includes('exception')?'log-error':lower.includes('warning')||lower.includes('warn')?'log-warn':'';const lineNum=idx+1;html+=`<div class="log-line ${cls}"><span class="log-line-num">${lineNum}</span>${this.esc(line)}</div>`;});
-    html+='</div>';
-    if (!this.logAutoScroll && this.logLines.length > 0) {
-      html += `<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
+    const search=(this.logSearch||'').toLowerCase(), level=this.logLevel||'all';
+
+    if(search!==this._prevLogSearch||level!==this._prevLogLevel){
+      this._prevLogSearch=search;
+      this._prevLogLevel=level;
+      this._lastLogLineCount=0;
+      let lines=this.logLines;
+      if(search) lines=lines.filter(l=>l.toLowerCase().indexOf(search)!==-1);
+      if(level==='error') lines=lines.filter(l=>{
+        const lower=l.toLowerCase();
+        return lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1||/\bcuda\b.*\berror\b/i.test(l)||/\bfail\b/i.test(l);
+      });
+      else if(level==='warn') lines=lines.filter(l=>{
+        const lower=l.toLowerCase();
+        return lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1||/\bdeprecated\b/i.test(l);
+      });
+      else if(level==='info') lines=lines.filter(l=>{
+        const lower=l.toLowerCase();
+        return !(lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1||lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1);
+      });
+      this._lastLogLineCount=this.logLines.length;
+      let html='<div class="log-lines">';
+      if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
+      else lines.forEach((line,idx)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';html+=`<div class="log-line ${cls}"><span class="log-line-num">${idx+1}</span>${this.esc(line)}</div>`;});
+      html+='</div>';
+      if(!this.logAutoScroll&&this.logLines.length>0){
+        html+=`<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
+      }
+      el.innerHTML=html;
+    }else{
+      const newLineCount=this.logLines.length;
+      if(newLineCount<=this._lastLogLineCount) return;
+      const newLines=this.logLines.slice(this._lastLogLineCount);
+      this._lastLogLineCount=newLineCount;
+      const container=el.querySelector('.log-lines');
+      if(!container) return;
+      const frag=document.createDocumentFragment();
+      const startIdx=newLineCount-newLines.length;
+      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+this.esc(line);frag.appendChild(divEl);});
+      container.appendChild(frag);
+      while(container.children.length>500){container.removeChild(container.firstChild);}
+      if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
+      return;
     }
-    el.innerHTML=html; if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
-    // Add scroll detection
-    const logLinesDiv = el.querySelector('.log-lines');
-    if (logLinesDiv) {
-      logLinesDiv.onscroll = () => {
-        const atBottom = logLinesDiv.scrollHeight - logLinesDiv.scrollTop - logLinesDiv.clientHeight < 30;
-        if (this.logAutoScroll && !atBottom) {
-          this.logAutoScroll = false;
-        } else if (!this.logAutoScroll && atBottom) {
-          this.logAutoScroll = true;
-        }
+    if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
+    const logLinesDiv=el.querySelector('.log-lines');
+    if(logLinesDiv){
+      logLinesDiv.onscroll=()=>{
+        const atBottom=logLinesDiv.scrollHeight-logLinesDiv.scrollTop-logLinesDiv.clientHeight<30;
+        if(this.logAutoScroll&&!atBottom){this.logAutoScroll=false;}
+        else if(!this.logAutoScroll&&atBottom){this.logAutoScroll=true;}
       };
     }
   },

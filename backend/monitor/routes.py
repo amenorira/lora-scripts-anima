@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -38,11 +39,16 @@ STATE_LABELS = {
 @router.get("/monitor/status")
 async def monitor_status(task_id: str = Query("")):
     """聚合监控端点：GPU + CPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
+    gpu, system, tb_loss = await asyncio.gather(
+        asyncio.to_thread(gpu_info),
+        asyncio.to_thread(system_info),
+        asyncio.to_thread(read_tensorboard_loss),
+    )
     result = {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "gpu": gpu_info(),
-        "system": system_info(),
-        "tensorboard_loss": read_tensorboard_loss(),
+        "gpu": gpu,
+        "system": system,
+        "tensorboard_loss": tb_loss,
         "state": "IDLE",
         "state_label": "Idle / 空闲",
         "step": 0,
@@ -57,9 +63,9 @@ async def monitor_status(task_id: str = Query("")):
         "error_msg": None,
     }
 
-    train_config = latest_train_config()
+    train_config = await asyncio.to_thread(latest_train_config)
     result["train_params"] = extract_train_params(train_config)
-    result["previews"] = newest_previews(train_config.get("output_dir"))
+    result["previews"] = await asyncio.to_thread(newest_previews, train_config.get("output_dir"))
 
     tasks = tm.dump()
     # 只返回运行中的任务，避免暴露所有已完成/已终止任务
@@ -84,9 +90,9 @@ async def monitor_status(task_id: str = Query("")):
     if active_status == "RUNNING":
         # 从运行文件夹读取日志
         active_output_dir = train_config.get("output_dir", str(OUTPUT_DIR))
-        log_lines = read_train_log(active.get("id", ""), Path(active_output_dir) if active_output_dir else None)
+        log_lines = await asyncio.to_thread(read_train_log, active.get("id", ""), Path(active_output_dir) if active_output_dir else None)
         if log_lines:
-            progress = parse_log_progress(log_lines)
+            progress = await asyncio.to_thread(parse_log_progress, log_lines)
             for key in ("step", "total_steps", "percent", "loss",
                          "lr", "epoch", "eta", "speed",
                          "has_error", "error_msg"):
@@ -119,11 +125,31 @@ async def monitor_status(task_id: str = Query("")):
         except Exception:
             pass
 
-        log_lines = read_train_log(active.get("id", ""))
+        log_lines = await asyncio.to_thread(read_train_log, active.get("id", ""))
         if log_lines:
             result["log_lines"] = log_lines[-300:]
 
     return {"status": "success", "data": result}
+
+
+@router.get("/monitor/loss")
+async def monitor_loss(run_dir: str = Query("")):
+    data = await asyncio.to_thread(read_tensorboard_loss, run_dir=run_dir or None)
+    return {"status": "success", "data": data}
+
+
+@router.get("/monitor/previews")
+async def monitor_previews(task_id: str = Query("")):
+    train_config = await asyncio.to_thread(latest_train_config)
+    data = await asyncio.to_thread(newest_previews, train_config.get("output_dir"))
+    return {"status": "success", "data": data}
+
+
+@router.get("/monitor/config")
+async def monitor_config():
+    train_config = await asyncio.to_thread(latest_train_config)
+    data = await asyncio.to_thread(extract_train_params, train_config)
+    return {"status": "success", "data": data}
 
 
 @router.post("/monitor/stop")
@@ -147,7 +173,7 @@ async def monitor_stop():
 @router.get("/monitor/history")
 async def monitor_history():
     """训练记录：运行中任务 + 历史训练记录"""
-    history = scan_history()
+    history = await asyncio.to_thread(scan_history)
 
     # 获取当前运行中任务
     running = None
@@ -161,7 +187,7 @@ async def monitor_history():
 
     # 如果运行中任务状态为 RUNNING，补充训练参数
     if running and running.get("status") == "RUNNING":
-        train_config = latest_train_config()
+        train_config = await asyncio.to_thread(latest_train_config)
         params = extract_train_params(train_config)
         running["name"] = train_config.get("output_name", "")
         running["model"] = train_config.get("pretrained_model_name_or_path", "")
@@ -208,11 +234,11 @@ async def monitor_run_detail(run_dir: str = Query("")):
             pass
 
     # ── TensorBoard Loss/LR 图表 ──
-    result["tensorboard_loss"] = read_tensorboard_loss(run_dir=str(abs_run_dir))
+    result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
     # ── 预览样本 ──
     checkpoints_dir = str(abs_run_dir / "checkpoints")
-    result["previews"] = newest_previews(checkpoints_dir)
+    result["previews"] = await asyncio.to_thread(newest_previews, checkpoints_dir)
 
     # ── 训练日志 ──
     # 先尝试通过 task_id 日志文件
@@ -263,18 +289,9 @@ async def monitor_preview_image(path: str = Query("")):
     p = (REPO_ROOT / decoded).resolve()
 
     # 使用 relative_to 做安全的路径约束检查（禁止路径遍历）
-    allowed_roots = [
-        OUTPUT_DIR.resolve(),
-    ]
-    ok = False
-    for root in allowed_roots:
-        try:
-            p.relative_to(root)
-            ok = True
-            break
-        except ValueError:
-            continue
-    if not ok:
+    try:
+        p.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
         return {"status": "error", "message": "禁止访问"}
 
     if not p.is_file():

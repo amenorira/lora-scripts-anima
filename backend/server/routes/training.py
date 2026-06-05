@@ -1,6 +1,7 @@
 """
 Training routes — POST /run, POST /run_script
 """
+import asyncio
 import json
 import os
 from datetime import datetime
@@ -149,7 +150,7 @@ async def create_toml_file(request: Request):
 
     gpu_ids = config.pop("gpu_ids", None)
 
-    suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
+    suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
     model_train_type = config.get("model_train_type", "sdxl-lora")
     trainer_file = trainer_mapping.get(model_train_type)
     if not trainer_file:
@@ -246,17 +247,19 @@ async def create_toml_file(request: Request):
 
     toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
     toml_content = toml.dumps(config)
-    with open(toml_file, "w", encoding="utf-8") as f:
-        f.write(toml_content)
 
-    # Self-contained config copy in run folder
-    run_config_file = os.path.join(run_dir, "config.toml")
-    with open(run_config_file, "w", encoding="utf-8") as f:
-        f.write(toml_content)
+    def _write_configs():
+        with open(toml_file, "w", encoding="utf-8") as f:
+            f.write(toml_content)
+        run_config_file = os.path.join(run_dir, "config.toml")
+        with open(run_config_file, "w", encoding="utf-8") as f:
+            f.write(toml_content)
+
+    await asyncio.to_thread(_write_configs)
     # ──────────────────────────────────────────────────────────
 
     # ── G: 写入人类可读 run_info.txt ─────────────────────────
-    _write_run_info(run_dir, config, model_train_type, timestamp, is_resume)
+    await asyncio.to_thread(_write_run_info, run_dir, config, model_train_type, timestamp, is_resume)
     # ──────────────────────────────────────────────────────────
 
     result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)

@@ -52,7 +52,7 @@ document.addEventListener('alpine:init', () => {
       this._escHandler = (e) => {
         if (e.key === 'Escape' && this.open) { this.open = false; }
       };
-      document.addEventListener('keydown', this._escHandler);
+      this.$el.addEventListener('keydown', this._escHandler);
 
       // Sync display when the hidden input value is changed externally
       // (e.g. by autoValue, preset load, undo, reset, or any programmatic form update).
@@ -80,7 +80,7 @@ document.addEventListener('alpine:init', () => {
 
     destroy() {
       if (this._escHandler) {
-        document.removeEventListener('keydown', this._escHandler);
+        this.$el.removeEventListener('keydown', this._escHandler);
       }
     },
 

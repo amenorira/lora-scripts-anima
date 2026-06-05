@@ -52,19 +52,11 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(proxy_router)
 
 
-cors_config = os.environ.get("ANIMA_APP_CORS", "")
-if cors_config != "":
-    if cors_config == "1":
-        # 仅在开发模式下允许通配符 CORS
-        if os.environ.get("ANIMA_DEV") == "1":
-            cors_config = ["http://localhost:8004", "*"]
-        else:
-            cors_config = ["http://localhost:8004"]
-    else:
-        cors_config = cors_config.split(";")
+# CORS only needed for dev debugging; not required for localhost use
+if os.environ.get("ANIMA_DEV") == "1":
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_config,
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -74,7 +66,11 @@ if cors_config != "":
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
     response = await call_next(request)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    path = request.url.path
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    elif path.startswith("/anima-ui/") or any(path.endswith(ext) for ext in (".js", ".css", ".png", ".ico", ".svg", ".woff2")):
+        response.headers["Cache-Control"] = "public, max-age=3600"
     return response
 
 app.include_router(api_router, prefix="/api")

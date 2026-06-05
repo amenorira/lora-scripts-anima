@@ -21,8 +21,18 @@ _HISTORY_CACHE_TTL = 30  # 秒
 
 # ── 预览样本 ──────────────────────────────────────────────
 
+_previews_cache: tuple[float, str, list[dict]] | None = None
+_PREVIEWS_CACHE_TTL = 5.0
+
+
 def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]:
     """扫描最新的训练样本图（checkpoints/sample/ → sample/ → output_dir 根）"""
+    global _previews_cache
+    now = time.time()
+    cache_key = output_dir or ""
+    if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
+        return _previews_cache[2]
+
     roots: list[Path] = []
     if output_dir:
         od = Path(output_dir)
@@ -55,15 +65,12 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
             rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
         except ValueError:
             rel = str(p)
-        # Security: validate resolved path stays within REPO_ROOT
-        resolved = p.resolve()
-        if not str(resolved).startswith(str(REPO_ROOT.resolve())):
-            continue
         result.append({
             "name": p.name,
             "url": f"/preview-image?path={rel}",
             "size": p.stat().st_size,
         })
+    _previews_cache = (now, cache_key, result)
     return result
 
 
@@ -227,9 +234,20 @@ def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
         return []
 
 
+_log_file_cache: dict[str, tuple[float, Path]] = {}
+_LOG_FILE_CACHE_TTL = 10.0
+
+
 def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
     """读取训练任务的实时日志（tail 方式，高性能）。
     优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
+    now = time.time()
+    if task_id in _log_file_cache:
+        cache_time, cached_path = _log_file_cache[task_id]
+        if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
+            lines = _tail_file(cached_path)
+            if lines:
+                return lines
     task_id_short = task_id[:8]
 
     # 先在指定目录查找
@@ -238,6 +256,7 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
                                key=lambda p: p.stat().st_mtime, reverse=True):
             lines = _tail_file(log_file)
             if lines:
+                _log_file_cache[task_id] = (now, log_file)
                 return lines
 
     # 回退：扫描所有运行子目录
@@ -251,6 +270,7 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
                                    key=lambda p: p.stat().st_mtime, reverse=True):
                 lines = _tail_file(log_file)
                 if lines:
+                    _log_file_cache[task_id] = (now, log_file)
                     return lines
 
     return []

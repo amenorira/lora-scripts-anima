@@ -278,8 +278,14 @@ def _to_camel(field: dict) -> dict:
     return result
 
 
+_fields_json_cache: dict | None = None
+
+
 def get_fields_json() -> dict:
     """返回前端可用的字段定义 JSON"""
+    global _fields_json_cache
+    if _fields_json_cache is not None:
+        return _fields_json_cache
     section_order = ["model", "network", "training", "optimizer", "regularization", "caption", "performance", "save", "preview", "misc"]
     sections: dict[str, list[dict]] = {}
     section_meta = {
@@ -314,4 +320,5 @@ def get_fields_json() -> dict:
     result = {
         "sections": result_sections,
     }
+    _fields_json_cache = result
     return result

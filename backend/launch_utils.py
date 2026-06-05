@@ -322,13 +322,11 @@ def prepare_environment(prepare_onnxruntime: bool = True):
 
     check_dirs(["config/autosave", "logs"])
 
-    # if not check_run("backend/scripts/torch_check.py"):
-    #     sys.exit(1)
+    skip_validation = os.environ.get("ANIMA_SKIP_VALIDATION", "") == "1"
 
-    # 训练核心 sd-scripts 依赖优先验证并修复
-    validate_requirements("vendor/sd-scripts/requirements.txt")
-    # 主项目依赖（GUI 层等），补充 sd-scripts 未覆盖的包
-    validate_requirements("requirements.txt")
+    if not skip_validation:
+        validate_requirements("vendor/sd-scripts/requirements.txt")
+        validate_requirements("requirements.txt")
 
     try:
         setup_windows_bitsandbytes()

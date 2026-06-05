@@ -111,34 +111,46 @@ window.trainingCoreMixin = {
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
     this.renderTrainingForm(trainType, null);
+    // Clean up previous watchers
+    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { w(); }); }
+    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { w(); }); }
+    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { w(); }); }
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
     this.loadPresets();
 
     const self = this;
-    this.$watch('form', () => {
+
+    if (self._formWatcher) {
+      self._formWatcher();
+      self._formWatcher = null;
+    }
+    self._formWatcher = self.$watch('form', () => {
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
       }, 1000);
     });
 
-    // Watch for train type changes from anima-select component
-    this.$watch('form.model_train_type', (newVal, oldVal) => {
+    if (self._trainTypeWatcher) {
+      self._trainTypeWatcher();
+      self._trainTypeWatcher = null;
+    }
+    self._trainTypeWatcher = self.$watch('form.model_train_type', (newVal, oldVal) => {
       if (newVal !== oldVal) {
         self.switchTrainType(newVal);
       }
     });
 
-    if (this._localeChangeHandler) {
-      window.removeEventListener('locale-changed', this._localeChangeHandler);
+    if (self._localeChangeHandler) {
+      window.removeEventListener('locale-changed', self._localeChangeHandler);
     }
-    this._localeChangeHandler = () => {
+    self._localeChangeHandler = () => {
       const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
     };
-    window.addEventListener('locale-changed', this._localeChangeHandler);
+    window.addEventListener('locale-changed', self._localeChangeHandler);
   },
 
   renderTrainingForm(trainType, targetId) {
@@ -482,6 +494,9 @@ window.trainingCoreMixin = {
   },
 
   setupAutoValueWatchers() {
+    // Clean up previous watchers
+    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { w(); }); }
+    this._autoValueWatchers = [];
     // Collect all autoValue rules from all visible fields
     const rules = [];
     this._allSections().forEach(s => s.fields.forEach(f => {
@@ -505,7 +520,7 @@ window.trainingCoreMixin = {
 
     // Register a watcher for each unique watched key
     allWatchedKeys.forEach(watchKey => {
-      self.$watch('form.' + watchKey, function() {
+      self._autoValueWatchers.push(self.$watch('form.' + watchKey, function() {
         // Find all target fields affected by this watchKey
         const affectedTargets = new Set();
         rules.forEach(r => {
@@ -542,7 +557,7 @@ window.trainingCoreMixin = {
 
         // Update readonly states after auto_value changes
         self.updateReadonlyStates();
-      });
+      }));
     });
 
     // Apply initial auto_value state
@@ -552,9 +567,12 @@ window.trainingCoreMixin = {
   // ── Show If Watchers: listen for parent field changes to show/hide children ──
   setupShowIfWatchers() {
     const self = this;
+    // Clean up previous watchers
+    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { w(); }); }
+    this._showIfWatchers = [];
     this._allShowIfKeys().forEach(k => {
       // Use a named function for clarity; Alpine re-evaluates on change
-      self.$watch('form.' + k, () => self.showConditionalFields(k));
+      self._showIfWatchers.push(self.$watch('form.' + k, () => self.showConditionalFields(k)));
     });
   },
 
@@ -569,11 +587,14 @@ window.trainingCoreMixin = {
 
   setupReadonlyWatchers() {
     const self = this;
+    // Clean up previous watchers
+    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { w(); }); }
+    this._readonlyWatchers = [];
     this._allReadonlyIfKeys().forEach(k => {
-      self.$watch('form.' + k, () => self.updateReadonlyStates());
+      self._readonlyWatchers.push(self.$watch('form.' + k, () => self.updateReadonlyStates()));
     });
     // Also watch model_train_type for multi-condition auto_value
-    self.$watch('form.model_train_type', () => self.updateReadonlyStates());
+    self._readonlyWatchers.push(self.$watch('form.model_train_type', () => self.updateReadonlyStates()));
     // Initial apply
     self.updateReadonlyStates();
   },
