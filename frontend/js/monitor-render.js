@@ -58,7 +58,10 @@ window.monitorRenderMixin = {
       this._destroyCharts(); el.innerHTML = html;
 
       const bars = el.querySelectorAll('.monitor-bar-fill[data-bar]');
-      if (firstRender) { bars.forEach(bar=>{bar.style.transition='none';bar.style.width=bar.dataset.target+'%';}); }
+      if (firstRender) {
+        bars.forEach(bar => { bar.style.transition = 'none'; bar.style.width = bar.dataset.target + '%'; });
+        requestAnimationFrame(() => { bars.forEach(bar => { bar.style.transition = ''; }); });
+      }
       else { bars.forEach(bar=>{const key=bar.dataset.bar,prev=prevBars[key]!=null?prevBars[key]:0;bar.style.width=prev+'%';});
         requestAnimationFrame(()=>{requestAnimationFrame(()=>{bars.forEach(bar=>{bar.style.width=bar.dataset.target+'%';});});}); }
       setTimeout(()=>this._drawCharts(),100);
