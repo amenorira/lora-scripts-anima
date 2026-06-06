@@ -2881,7 +2881,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 8px auto 4px;
+  margin: 8px 0 4px;
   border: 1px solid rgba(77, 148, 255, 0.15);
 }
 [data-theme="dark"] .home-hero-mascot {
@@ -2932,6 +2932,27 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .home-hero-mascot-ring { animation: none; }
 }
 
+.home-hero-mascot-placeholder {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.55);
+  padding: 2px 6px;
+  border-radius: 3px;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+}
+[data-theme="dark"] .home-hero-mascot-placeholder {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.3);
+}
+
 /* Author + GitHub link row */
 .home-hero-author {
   display: flex;
@@ -2956,19 +2977,13 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .home-hero-author-link:hover { text-decoration: underline; opacity: 0.85; }
 .home-hero-author-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .home-hero-author-sep {
   color: var(--text-tertiary);
   margin: 0 2px;
   user-select: none;
-}
-.home-hero-author-ext {
-  color: var(--text-tertiary);
-  margin-left: -2px;
-  flex-shrink: 0;
 }
 
 /* Shields-style badges */
@@ -2997,8 +3012,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .home-badge:hover { filter: brightness(1.08); }
 .home-badge:active { transform: translateY(1px); }
 .home-badge:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .home-badge-l {
   display: flex;
@@ -3013,8 +3028,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding: 0 8px;
   color: #ffffff;
 }
-.home-badge-v-license { background: #44cc11; }   /* green */
-.home-badge-v-release { background: #9050e0; }   /* purple */
+.home-badge-v-license { background: #2f9508; }   /* green */
+.home-badge-v-release { background: #7a3fc4; }   /* purple */
 
 .home-hero-footer {
   font-size: 11px;

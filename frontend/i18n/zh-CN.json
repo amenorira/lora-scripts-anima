@@ -760,6 +760,7 @@
   "home": {
     "subtitle": "基于 sd-scripts 的训练器",
     "author": "作者",
-    "github": "GitHub"
+    "github": "GitHub",
+    "placeholder": "占位"
   }
 }

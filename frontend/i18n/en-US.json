@@ -760,6 +760,7 @@
   "home": {
     "subtitle": "A sd-scripts based trainer",
     "author": "Author",
-    "github": "GitHub"
+    "github": "GitHub",
+    "placeholder": "placeholder"
   }
 }
