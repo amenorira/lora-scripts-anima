@@ -107,3 +107,64 @@ def test_legacy_cache_files_not_read(tmp_path, monkeypatch):
 
     assert _load_disk_cache("default") is None
     assert _load_etag("default") is None
+
+
+def test_fetch_candidates_threads_source_to_try_fetch(monkeypatch, tmp_path):
+    """验证 fetch_candidates(source='mirror') 调用 _try_fetch_api 时 source='mirror'。"""
+    from install_flash_attn import fetch_candidates
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+
+    captured = []
+
+    def fake_try_fetch(url, source):
+        captured.append((url, source))
+        return [], None, False
+
+    monkeypatch.setattr("install_flash_attn._try_fetch_api", fake_try_fetch)
+    monkeypatch.setattr("install_flash_attn._save_disk_cache", lambda *a, **k: None)
+
+    env = {
+        "platform": "linux_x86_64",
+        "torch_tag": "torch2.10",
+        "cuda_tag": "cu128",
+        "python_tag": "cp312",
+    }
+    fetch_candidates(env, source="mirror")
+
+    # _try_fetch_api 至少被调用一次，且 source='mirror'
+    assert len(captured) >= 1
+    for url, src in captured:
+        assert src == "mirror"
+
+
+def test_fetch_candidates_uses_correct_source_urls(monkeypatch, tmp_path):
+    """验证 fetch_candidates(source='mirror') 使用 ghproxy URL，default 用 GitHub 直连。"""
+    from install_flash_attn import fetch_candidates
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+    monkeypatch.setattr("install_flash_attn._save_disk_cache", lambda *a, **k: None)
+
+    captured_urls = []
+
+    def fake_try_fetch(url, source):
+        captured_urls.append(url)
+        return [], None, False
+
+    monkeypatch.setattr("install_flash_attn._try_fetch_api", fake_try_fetch)
+
+    env = {
+        "platform": "linux_x86_64",
+        "torch_tag": "torch2.10",
+        "cuda_tag": "cu128",
+        "python_tag": "cp312",
+    }
+
+    captured_urls.clear()
+    fetch_candidates(env, source="default")
+    assert all("ghproxy.com" not in u for u in captured_urls)
+    assert any("mjun0812" in u for u in captured_urls)
+
+    captured_urls.clear()
+    fetch_candidates(env, source="mirror")
+    assert all(u.startswith("https://ghproxy.com/") for u in captured_urls)

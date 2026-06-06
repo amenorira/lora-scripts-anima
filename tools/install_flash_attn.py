@@ -292,7 +292,7 @@ def _build_request(url: str, *, etag: Optional[str] = None) -> urllib.request.Re
     return urllib.request.Request(url, headers=headers)
 
 
-def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
+def _try_fetch_api(url: str, source: str) -> tuple[Optional[list], Optional[str], bool]:
     """尝试从 GitHub API 拉取数据。
 
     使用 ETag 条件请求：
@@ -300,9 +300,13 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
     - 200 → 有新数据，保存新 ETag，返回 (data, None, unchanged=False)
     - 403/其他错误 → 返回 (None, error, unchanged=False)
 
+    Args:
+        url: GitHub releases API URL。
+        source: 候选源标识，决定 ETag 文件路径（按源分 key 避免污染）。
+
     Returns: (data, error, unchanged) — unchanged=True 表示缓存仍然有效
     """
-    etag = _load_etag()
+    etag = _load_etag(source)
     try:
         req = _build_request(url + "?per_page=100", etag=etag)
         resp = urllib.request.urlopen(req, timeout=15)
@@ -310,7 +314,7 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
         # 保存新 ETag
         new_etag = resp.headers.get("ETag") or resp.headers.get("etag")
         if new_etag:
-            _save_etag(new_etag)
+            _save_etag(new_etag, source)
 
         data = json.loads(resp.read())
         if isinstance(data, list):
@@ -325,7 +329,7 @@ def _try_fetch_api(url: str) -> tuple[Optional[list], Optional[str], bool]:
             # 304 Not Modified — 缓存有效，不消耗 rate limit！
             return None, None, True
         if exc.code in (403, 429):
-            return None, f"API rate limited (60/h, cache from {_cache_age_str()} still usable): {exc} / API 限流", False
+            return None, f"API rate limited (60/h, cache from {_cache_age_str(source)} still usable): {exc} / API 限流", False
         return None, str(exc), False
     except Exception as exc:
         return None, str(exc), False
@@ -390,11 +394,13 @@ def _score_candidate(
 
 
 def _filter_cached_for_env(
-    cached: list[dict[str, Any]], env: dict[str, Any]
+    cached: list[dict[str, Any]], env: dict[str, Any], source: str
 ) -> list[dict[str, Any]]:
     """对磁盘缓存的 candidates 重新解析 + 环境匹配 + 评分。
 
     缓存只存了 {url, name}，不同环境需要重新过滤。
+    传入的 cached 已是 source 专属过滤过的，source 参数当前未使用，
+    保留便于调用点统一透传。
     """
     plat = env.get("platform")
     result: list[dict[str, Any]] = []
@@ -415,7 +421,9 @@ def _filter_cached_for_env(
     return sorted(result, key=lambda x: -x["score"])
 
 
-def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optional[str]]:
+def fetch_candidates(
+    env: dict[str, Any], source: str = "default"
+) -> tuple[list[dict[str, Any]], Optional[str]]:
     """获取候选 wheel 列表。
 
     策略（开箱即用，无需 Token）：
@@ -423,6 +431,14 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     2. 缓存过期时，用 ETag 条件请求增量更新（304 不计入 rate limit）
     3. API 失败时继续用缓存，不阻塞用户
     4. 首次使用无缓存时，尝试 API + fallback URLs
+
+    Args:
+        env: detect_env() 返回的环境信息。
+        source: 候选源标识（'default' / 'mirror' / 'fallback' 或其他）。
+                决定：拉取哪个 GitHub API、读写哪个 ETag/磁盘缓存文件。
+                未知 source 降级为 default。
+
+    Returns: (candidates, fetch_error)
     """
     plat = env.get("platform")
     torch_tag = env.get("torch_tag")
@@ -433,8 +449,8 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
         return [], None
 
     # ── 第一步：加载磁盘缓存（秒级响应）──
-    cached = _load_disk_cache()
-    is_fresh = _cache_is_fresh()
+    cached = _load_disk_cache(source)
+    is_fresh = _cache_is_fresh(source)
 
     # ── 第二步：尝试 API 刷新（ETag 条件请求）──
     if cached and is_fresh:
@@ -442,13 +458,14 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
         data = None
     else:
         # 缓存过期或不存在，尝试 API
-        urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
+        primary, fallbacks = get_source_config(source)
+        urls = [primary] + fallbacks
         data = None
         for url in urls:
-            data, err, unchanged = _try_fetch_api(url)
+            data, err, unchanged = _try_fetch_api(url, source)
             if unchanged:
                 # 304 Not Modified — 缓存仍然有效，刷新时间戳
-                _save_disk_cache(cached) if cached else None
+                _save_disk_cache(cached, source) if cached else None
                 break
             if data is not None:
                 break
@@ -460,11 +477,12 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     if raw_releases is None:
         # 没有新数据，使用缓存（重新过滤匹配当前环境）
         if cached:
-            return _filter_cached_for_env(cached, env), None  # 静默成功
+            return _filter_cached_for_env(cached, env, source), None  # 静默成功
         # 无缓存且 API 失败 — 最后一次尝试
-        urls = [FA_RELEASES_URL] + FA_FALLBACK_URLS
+        primary, fallbacks = get_source_config(source)
+        urls = [primary] + fallbacks
         for url in urls:
-            raw_releases, _err, _ = _try_fetch_api(url)
+            raw_releases, _err, _ = _try_fetch_api(url, source)
             if raw_releases is not None:
                 break
         if raw_releases is None:
@@ -473,7 +491,7 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     if not isinstance(raw_releases, list):
         msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
         if cached:
-            return _filter_cached_for_env(cached, env), None  # API 报错但有缓存
+            return _filter_cached_for_env(cached, env, source), None  # API 报错但有缓存
         return [], f"GitHub API error: {msg} / GitHub API 错误: {msg}"
 
     candidates: list[dict[str, Any]] = []
@@ -507,7 +525,7 @@ def fetch_candidates(env: dict[str, Any]) -> tuple[list[dict[str, Any]], Optiona
     result = sorted(candidates, key=lambda x: -x["score"])
     # 成功后写入磁盘缓存，供 API 限流时兜底
     if result:
-        _save_disk_cache(result)
+        _save_disk_cache(result, source)
     return result, None
 
 
