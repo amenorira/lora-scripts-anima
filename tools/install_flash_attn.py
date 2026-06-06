@@ -67,7 +67,6 @@ def get_source_config(source: str) -> tuple[str, list[str]]:
     return cfg["primary"], list(cfg["fallback"])
 
 # 磁盘缓存（优先使用，API 仅用于增量更新）
-# 注意：缓存文件按 source 分 key，避免不同源的候选 / ETag 互相污染
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 
 # 缓存有效期：24 小时。wheel 发布不频繁，无需频繁刷新。
