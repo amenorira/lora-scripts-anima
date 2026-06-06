@@ -396,18 +396,11 @@ async def flash_attn_status(source: str = "") -> dict:
     import time
     import os as _os
     detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
-    # 支持切换源
-    if source:
-        import tools.install_flash_attn as fa_tool
-        try:
-            fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
-        except Exception:
-            pass
+    cache_key = source or "default"
     try:
         status = current_status()
         env = detect_env()
         now = time.time()
-        cache_key = source or "default"
 
         # 线程安全地读取缓存
         with _fa_cache_lock:
@@ -415,7 +408,7 @@ async def flash_attn_status(source: str = "") -> dict:
             cache_expired = cached is None or (now - cached.get("ts", 0)) > _FA_CACHE_TTL
 
         if cache_expired:
-            candidates, fetch_error = fetch_candidates(env)
+            candidates, fetch_error = fetch_candidates(env, source=cache_key)
             from_disk = False
             # 检测是否来自磁盘缓存（fetch_error 中包含 "回退磁盘缓存" 字样）
             if fetch_error and "回退磁盘缓存" in str(fetch_error):
@@ -449,29 +442,6 @@ async def flash_attn_status(source: str = "") -> dict:
         return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(e)}
 
 
-def _fa_source_config(source: str):
-    """切换候选源配置。
-    - default: GitHub 官方 API（国际）
-    - mirror:  ghproxy 代理（国内）
-    - fallback: 备用 GitHub 仓库
-    """
-    if source == "mirror":
-        return (
-            "https://ghproxy.com/https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
-            ["https://ghproxy.com/https://api.github.com/repos/bdashore3/flash-attention/releases"]
-        )
-    if source == "fallback":
-        return (
-            "https://api.github.com/repos/bdashore3/flash-attention/releases",
-            ["https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases"]
-        )
-    # default
-    return (
-        "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
-        ["https://api.github.com/repos/bdashore3/flash-attention/releases"]
-    )
-
-
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
     """安装 flash_attn wheel（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
@@ -486,13 +456,7 @@ async def flash_attn_install(request: Request) -> dict:
 
     if url is None:
         env = detect_env()
-        if source and source != "default":
-            import tools.install_flash_attn as fa_tool
-            try:
-                fa_tool.FA_RELEASES_URL, fa_tool.FA_FALLBACK_URLS = _fa_source_config(source)
-            except Exception:
-                pass
-        candidates, _ = fetch_candidates(env)
+        candidates, _ = fetch_candidates(env, source=source or "default")
         url = None
         for c in candidates:
             if c["usable"]:
