@@ -16,7 +16,6 @@
     "system": "System",
     "environment": "Environment",
     "uiSettings": "UI Settings",
-    "about": "About",
     "tensorboard": "TensorBoard"
   },
   "monitor": {
@@ -590,17 +589,6 @@
     "autoLoadHistory": "Auto-load History",
     "autoLoadHistoryDesc": "Automatically restore last training parameters on startup",
     "localeChanged": "Language changed, re-rendering..."
-  },
-  "about": {
-    "title": "About",
-    "subtitle": "lora-scripts-anima",
-    "version": "Version",
-    "description": "Description",
-    "descriptionText": "A modern web UI for Stable Diffusion LoRA / Dreambooth training.",
-    "github": "GitHub",
-    "basedOn": "Based on",
-    "modifiedBy": "Modified by",
-    "frontend": "Frontend"
   },
   "environment": {
     "title": "Environment",

@@ -16,7 +16,6 @@
     "system": "系统",
     "environment": "环境管理",
     "uiSettings": "UI 设置",
-    "about": "关于",
     "tensorboard": "TensorBoard"
   },
   "monitor": {
@@ -590,17 +589,6 @@
     "autoLoadHistory": "自动加载历史参数",
     "autoLoadHistoryDesc": "启动时自动恢复上次的训练参数",
     "localeChanged": "语言已切换，正在重新渲染..."
-  },
-  "about": {
-    "title": "关于",
-    "subtitle": "lora-scripts-anima",
-    "version": "版本",
-    "description": "描述",
-    "descriptionText": "Stable Diffusion LoRA / Dreambooth 训练的现代化 Web UI",
-    "github": "GitHub",
-    "basedOn": "基于",
-    "modifiedBy": "修改者",
-    "frontend": "前端"
   },
   "environment": {
     "title": "环境管理",

@@ -2824,11 +2824,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .home-hero-logo-dark { display: block; }
 
 .home-hero-title {
-  font-size: 54px;
-  font-weight: 800;
-  letter-spacing: -1.5px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
   color: var(--text-primary);
-  line-height: 1;
+  line-height: 1.2;
   margin: 0 0 12px;
 }
 
@@ -3041,9 +3041,5 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* Narrow screens: scale down hero proportionally */
 @media (max-width: 600px) {
-  .home-hero-title { font-size: 38px; letter-spacing: -1.2px; }
-  .home-hero-logo svg { width: 96px; height: 96px; }
-  .home-hero-mascot { width: 160px; height: 160px; border-radius: 20px; }
-  .home-hero-mascot-ring { width: 110px; height: 110px; margin: -55px 0 0 -55px; }
-  .home-hero-mascot-label { font-size: 26px; }
+  .home-hero-title { font-size: 20px; letter-spacing: -0.2px; }
 }

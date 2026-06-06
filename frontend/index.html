@@ -52,30 +52,6 @@
        x-init="sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1'; $nextTick(() => $el.classList.remove('no-transition'))">
     <div class="sidebar-header">
       <div class="brand-clickable" @click="navigate('home')" title="Home" aria-label="Home">
-        <div class="brand-logo">
-          <!-- Light gradient: blue → purple -->
-          <svg class="brand-logo-light" viewBox="0 0 24 24" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="brandGradLight" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#4d94ff"/>
-                <stop offset="100%" stop-color="#8b5cf6"/>
-              </linearGradient>
-            </defs>
-            <circle cx="12" cy="12" r="10" fill="none" stroke="url(#brandGradLight)" stroke-width="1.6" stroke-dasharray="50 6.5" stroke-dashoffset="15"/>
-            <path d="M12 6 L17.5 17 L6.5 17 Z" fill="url(#brandGradLight)"/>
-          </svg>
-          <!-- Dark gradient: brighter blue → brighter purple -->
-          <svg class="brand-logo-dark" viewBox="0 0 24 24" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="brandGradDark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#5da0f7"/>
-                <stop offset="100%" stop-color="#a78bfa"/>
-              </linearGradient>
-            </defs>
-            <circle cx="12" cy="12" r="10" fill="none" stroke="url(#brandGradDark)" stroke-width="1.6" stroke-dasharray="50 6.5" stroke-dashoffset="15"/>
-            <path d="M12 6 L17.5 17 L6.5 17 Z" fill="url(#brandGradDark)"/>
-          </svg>
-        </div>
         <div class="brand-name">lora-scripts-anima</div>
       </div>
     </div>
@@ -162,13 +138,7 @@
         </span>
         <span x-text="t('nav.uiSettings')">UI Settings</span>
       </a>
-      <a class="sidebar-item" data-group="system" :class="{ active: currentRoute === 'about' }"
-         @click="navigate('about')" href="javascript:void(0)" :aria-current="currentRoute === 'about' ? 'page' : null">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        </span>
-        <span x-text="t('nav.about')">About</span>
-      </a>
+
     </div>
 
     <div class="sidebar-bottom">
@@ -222,30 +192,6 @@
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
         <div class="home-hero">
-          <!-- Hero logo (large, theme-adaptive) -->
-          <div class="home-hero-logo">
-            <svg class="home-hero-logo-light" viewBox="0 0 24 24" width="120" height="120" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="heroGradLight" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stop-color="#4d94ff"/>
-                  <stop offset="100%" stop-color="#8b5cf6"/>
-                </linearGradient>
-              </defs>
-              <circle cx="12" cy="12" r="10" fill="none" stroke="url(#heroGradLight)" stroke-width="1.6" stroke-dasharray="50 6.5" stroke-dashoffset="15"/>
-              <path d="M12 6 L17.5 17 L6.5 17 Z" fill="url(#heroGradLight)"/>
-            </svg>
-            <svg class="home-hero-logo-dark" viewBox="0 0 24 24" width="120" height="120" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="heroGradDark" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stop-color="#5da0f7"/>
-                  <stop offset="100%" stop-color="#a78bfa"/>
-                </linearGradient>
-              </defs>
-              <circle cx="12" cy="12" r="10" fill="none" stroke="url(#heroGradDark)" stroke-width="1.6" stroke-dasharray="50 6.5" stroke-dashoffset="15"/>
-              <path d="M12 6 L17.5 17 L6.5 17 Z" fill="url(#heroGradDark)"/>
-            </svg>
-          </div>
-
           <h1 class="home-hero-title">lora-scripts-anima</h1>
           <div class="home-hero-subtitle" x-text="t('home.subtitle', 'A sd-scripts based trainer')"></div>
 
@@ -253,12 +199,6 @@
             <span class="home-hero-meta-item">
               <span class="home-hero-meta-k">build</span><span class="home-hero-meta-v" x-text="version"></span>
             </span>
-          </div>
-
-          <div class="home-hero-mascot">
-            <span class="home-hero-mascot-placeholder" x-text="t('home.placeholder', 'placeholder')">placeholder</span>
-            <div class="home-hero-mascot-ring" aria-hidden="true"></div>
-            <span class="home-hero-mascot-label" aria-hidden="true">anima</span>
           </div>
 
           <div class="home-hero-author">
@@ -1092,32 +1032,7 @@
       </div>
 
       <!-- Route: About -->
-      <div x-show="currentRoute === 'about'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('about.title')">About</h1>
-          <p class="page-subtitle" x-text="t('about.subtitle')">lora-scripts-anima</p>
-        </div>
-        <div class="card">
-          <div style="display:flex;flex-direction:column;gap:12px">
-            <div class="field">
-              <div class="field-left"><div class="field-label" x-text="t('about.version')">Version</div></div>
-              <div class="field-right"><span style="font-family:var(--font-mono);font-size:13px" x-text="version"></span></div>
-            </div>
-            <div class="field">
-              <div class="field-left"><div class="field-label" x-text="t('about.description')">Description</div></div>
-              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)" x-text="t('about.descriptionText')">Training UI</span></div>
-            </div>
-            <div class="field">
-              <div class="field-left"><div class="field-label" x-text="t('about.github')">GitHub</div></div>
-              <div class="field-right"><a href="https://github.com/amenorira/lora-scripts-anima" target="_blank" rel="noopener" style="font-family:var(--font-mono);font-size:13px">amenorira/lora-scripts-anima</a></div>
-            </div>
-            <div class="field">
-              <div class="field-left"><div class="field-label" x-text="t('about.frontend')">Frontend</div></div>
-              <div class="field-right"><span style="font-size:13px;color:var(--text-secondary)">Anima UI</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
+
 
     </main>
 
