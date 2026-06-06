@@ -66,6 +66,12 @@ def get_source_config(source: str) -> tuple[str, list[str]]:
     cfg = SOURCE_CONFIGS.get(source) or SOURCE_CONFIGS["default"]
     return cfg["primary"], list(cfg["fallback"])
 
+
+def _urls_for(source: str) -> list[str]:
+    """返回 source 对应的 [primary, *fallback] URL 列表，便于循环尝试。"""
+    primary, fallbacks = get_source_config(source)
+    return [primary] + fallbacks
+
 # 磁盘缓存（优先使用，API 仅用于增量更新）
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 
@@ -441,9 +447,46 @@ def fetch_candidates(
     Returns: (candidates, fetch_error)
     """
     plat = env.get("platform")
-    torch_tag = env.get("torch_tag")
-    cuda_tag = env.get("cuda_tag")
-    python_tag = env.get("python_tag")
+
+    if not plat:
+        return [], None
+
+    # ── 第一步：加载磁盘缓存（秒级响应）──
+    cached = _load_disk_cache(source)
+    is_fresh = _cache_is_fresh(source)
+
+    # ── 第二步：尝试 API 刷新（ETag 条件请求）──
+    if cached and is_fresh:
+        # 缓存新鲜，静默尝试后台刷新
+        data = None
+    else:
+        # 缓存过期或不存在，尝试 API
+        urls = _urls_for(source)
+        data = None
+        for url in urls:
+            data, err, unchanged = _try_fetch_api(url, source)
+            if unchanged:
+                # 304 Not Modified — 缓存仍然有效，刷新时间戳
+                _save_disk_cache(cached, source) if cached else None
+                break
+            if data is not None:
+                break
+            # 错误继续尝试下一个 URL
+
+    # ── 第三步：解析数据 ──
+    raw_releases = data  # 可能为 None
+
+    if raw_releases is None:
+        # 没有新数据，使用缓存（重新过滤匹配当前环境）
+        if cached:
+            return _filter_cached_for_env(cached, env, source), None  # 静默成功
+        # 无缓存且 API 失败 — 最后一次尝试
+        for url in _urls_for(source):
+            raw_releases, _err, _ = _try_fetch_api(url, source)
+            if raw_releases is not None:
+                break
+        if raw_releases is None:
+            return [], "Cannot connect to GitHub. Check network, or manually paste a wheel URL. / 无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
 
     if not plat:
         return [], None
