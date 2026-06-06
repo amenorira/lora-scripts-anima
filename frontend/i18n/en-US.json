@@ -756,5 +756,9 @@
     "attn_mode_sageattn": "SageAttention (inference only, not for training)",
     "timestep_sampling_flux_shift": "Flux Shift (timestep distribution shift for Flux models)",
     "save_model_as_diffusers": "Diffusers format (for Diffusers ecosystem)"
+  },
+  "home": {
+    "subtitle": "Diffusion Transformer LoRA Training",
+    "footer": "Derived from NVIDIA Cosmos-Predict2-2B · Anima Project"
   }
 }

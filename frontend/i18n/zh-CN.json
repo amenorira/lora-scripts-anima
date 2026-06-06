@@ -756,5 +756,9 @@
     "attn_mode_sageattn": "SageAttention（仅推理，不支持训练）",
     "timestep_sampling_flux_shift": "Flux Shift（Flux 模型时间步位移）",
     "save_model_as_diffusers": "Diffusers 格式（适用于 Diffusers 生态）"
+  },
+  "home": {
+    "subtitle": "扩散 Transformer LoRA 训练",
+    "footer": "源自 NVIDIA Cosmos-Predict2-2B · Anima 项目"
   }
 }
