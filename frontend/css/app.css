@@ -206,6 +206,7 @@ a:hover { text-decoration: underline; }
   transition: padding var(--duration-slow) var(--ease-out);
 }
 
+/* === 旧 brand 样式已废弃（Task 3 替换） ===
 .sidebar-header .brand-text {
   font-size: 17px; font-weight: 700; color: var(--text-sidebar); letter-spacing: -0.3px;
   white-space: nowrap; overflow: hidden;
@@ -226,6 +227,7 @@ a:hover { text-decoration: underline; }
 
 .brand-clickable { cursor: pointer; user-select: none; border-radius: var(--radius-sm); padding: 2px 6px; margin: -2px -6px; transition: opacity var(--duration-normal) var(--ease-out); }
 .brand-clickable:hover { opacity: 0.72; }
+=== 结束 === */
 
 .sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; }
 
