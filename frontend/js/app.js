@@ -88,18 +88,6 @@ document.addEventListener('alpine:init', () => {
         }
       });
 
-      window.addEventListener('locale-changed', () => {
-        this.locale = I18N.getLocale();
-        const r = this.currentRoute;
-        const cfg = ROUTE_CONFIG[r] || {};
-        if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
-        else this.pageTitle = cfg.title || r;
-        if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
-        else this.pageSubtitle = cfg.subtitle || '';
-        document.title = this.pageTitle + ' | lora-scripts-anima';
-        this.buildRouteContent();
-      });
-
       document.addEventListener('click', (e) => {
         if (!e.target.closest('.sidebar-dropdown')) {
           this.showThemeDropdown = false;
@@ -116,6 +104,18 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.buildRouteContent();
+
+      window.addEventListener('locale-changed', () => {
+        this.locale = I18N.getLocale();
+        const r = this.currentRoute;
+        const cfg = ROUTE_CONFIG[r] || {};
+        if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
+        else this.pageTitle = cfg.title || r;
+        if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
+        else this.pageSubtitle = cfg.subtitle || '';
+        document.title = this.pageTitle + ' | lora-scripts-anima';
+        this.buildRouteContent();
+      });
 
       if (this.autoLoadHistory) {
         setTimeout(() => this._markAutoLoaded(), 500);
