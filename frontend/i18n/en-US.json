@@ -758,7 +758,6 @@
     "save_model_as_diffusers": "Diffusers format (for Diffusers ecosystem)"
   },
   "home": {
-    "subtitle": "Diffusion Transformer LoRA Training",
-    "footer": "Derived from NVIDIA Cosmos-Predict2-2B · Anima Project"
+    "subtitle": "A sd-scripts based trainer"
   }
 }
