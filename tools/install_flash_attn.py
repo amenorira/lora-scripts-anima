@@ -67,9 +67,8 @@ def get_source_config(source: str) -> tuple[str, list[str]]:
     return cfg["primary"], list(cfg["fallback"])
 
 # 磁盘缓存（优先使用，API 仅用于增量更新）
+# 注意：缓存文件按 source 分 key，避免不同源的候选 / ETag 互相污染
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
-_FA_CACHE_FILE = _FA_CACHE_DIR / ".fa_wheels_cache.json"
-_FA_ETAG_FILE = _FA_CACHE_DIR / ".fa_etag.txt"       # 存 ETag，条件请求不消耗 rate limit
 
 # 缓存有效期：24 小时。wheel 发布不频繁，无需频繁刷新。
 # 即使缓存过期，ETag 条件请求也能保证不浪费 rate limit。
@@ -81,11 +80,23 @@ _FA_GITHUB_TOKEN = os.environ.get("FA_GITHUB_TOKEN") or os.environ.get("GITHUB_T
 
 # ── 磁盘缓存（带 ETag 支持）────────────────────────────────────────────────
 
-def _load_disk_cache() -> Optional[list[dict[str, Any]]]:
+def _cache_paths(source: str) -> tuple[Path, Path]:
+    """返回 (disk_cache_file, etag_file)；按源分 key 避免跨源污染。
+
+    单一职责：纯函数，输入 source → 路径。
+    """
+    return (
+        _FA_CACHE_DIR / f".fa_wheels_{source}.json",
+        _FA_CACHE_DIR / f".fa_etag_{source}.txt",
+    )
+
+
+def _load_disk_cache(source: str = "default") -> Optional[list[dict[str, Any]]]:
     """读取磁盘缓存。兼容旧格式（纯列表）和新格式（{ts, candidates}）。"""
+    cache_file, _ = _cache_paths(source)
     try:
-        if _FA_CACHE_FILE.exists():
-            data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
             if isinstance(data, list) and len(data) > 0:
                 return data  # 旧格式：纯列表
             if isinstance(data, dict) and "candidates" in data:
@@ -95,8 +106,9 @@ def _load_disk_cache() -> Optional[list[dict[str, Any]]]:
     return None
 
 
-def _save_disk_cache(candidates: list[dict[str, Any]]) -> None:
+def _save_disk_cache(candidates: list[dict[str, Any]], source: str = "default") -> None:
     """保存候选列表 + 时间戳到磁盘。"""
+    cache_file, _ = _cache_paths(source)
     try:
         _FA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         slim = [
@@ -105,50 +117,54 @@ def _save_disk_cache(candidates: list[dict[str, Any]]) -> None:
             for c in candidates
         ]
         payload = {"ts": time.time(), "candidates": slim}
-        _FA_CACHE_FILE.write_text(
+        cache_file.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
     except Exception:
         pass
 
 
-def _load_etag() -> Optional[str]:
+def _load_etag(source: str = "default") -> Optional[str]:
     """读取上次 API 返回的 ETag。"""
+    _, etag_file = _cache_paths(source)
     try:
-        if _FA_ETAG_FILE.exists():
-            return _FA_ETAG_FILE.read_text(encoding="utf-8").strip()
+        if etag_file.exists():
+            return etag_file.read_text(encoding="utf-8").strip()
     except Exception:
         pass
     return None
 
 
-def _save_etag(etag: str) -> None:
+def _save_etag(etag: str, source: str = "default") -> None:
     """保存 ETag 供下次条件请求使用。"""
+    _, etag_file = _cache_paths(source)
     try:
         _FA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _FA_ETAG_FILE.write_text(etag, encoding="utf-8")
+        etag_file.write_text(etag, encoding="utf-8")
     except Exception:
         pass
 
 
-def _cache_is_fresh() -> bool:
+def _cache_is_fresh(source: str = "default") -> bool:
     """磁盘缓存是否在有效期内。"""
+    cache_file, _ = _cache_paths(source)
     try:
-        if not _FA_CACHE_FILE.exists():
+        if not cache_file.exists():
             return False
-        data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(cache_file.read_text(encoding="utf-8"))
         age = time.time() - data.get("ts", 0)
         return age < _FA_CACHE_TTL
     except Exception:
         return False
 
 
-def _cache_age_str() -> str:
+def _cache_age_str(source: str = "default") -> str:
     """磁盘缓存的年龄描述。"""
+    cache_file, _ = _cache_paths(source)
     try:
-        if not _FA_CACHE_FILE.exists():
+        if not cache_file.exists():
             return "No cache / 无缓存"
-        data = json.loads(_FA_CACHE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(cache_file.read_text(encoding="utf-8"))
         age = time.time() - data.get("ts", 0)
         if age < 60:
             return f"{age:.0f}s ago / {age:.0f}秒前"

@@ -36,6 +36,74 @@ def test_get_source_config_unknown_falls_back_to_default():
     assert fallbacks == default_fallbacks
 
 
-def test_source_configs_is_immutable_dict():
+def test_source_configs_contains_required_sources():
     """确认三个源都已配置（防止漏改）。"""
     assert set(SOURCE_CONFIGS.keys()) >= {"default", "mirror", "fallback"}
+
+
+def test_cache_paths_isolated_per_source():
+    """不同 source 的缓存路径必须不同。"""
+    from install_flash_attn import _cache_paths
+
+    a_cache, a_etag = _cache_paths("default")
+    b_cache, b_etag = _cache_paths("mirror")
+    assert a_cache != b_cache
+    assert a_etag != b_etag
+    assert a_cache.name == ".fa_wheels_default.json"
+    assert a_etag.name == ".fa_etag_default.txt"
+    assert b_cache.name == ".fa_wheels_mirror.json"
+    assert b_etag.name == ".fa_etag_mirror.txt"
+
+
+def test_cache_io_isolated_per_source(tmp_path, monkeypatch):
+    """验证 _save_disk_cache 写到 source 专属文件，_load_disk_cache 只读对应 source。"""
+    from install_flash_attn import (
+        _save_disk_cache, _load_disk_cache, _cache_paths,
+    )
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+
+    _save_disk_cache([{"url": "u1", "name": "n1", "notes": [], "usable": True, "score": 50}],
+                     source="default")
+    _save_disk_cache([{"url": "u2", "name": "n2", "notes": [], "usable": True, "score": 60}],
+                     source="mirror")
+
+    default_cache, _ = _cache_paths("default")
+    mirror_cache, _ = _cache_paths("mirror")
+    assert default_cache.exists()
+    assert mirror_cache.exists()
+    assert default_cache != mirror_cache
+
+    loaded_default = _load_disk_cache("default")
+    loaded_mirror = _load_disk_cache("mirror")
+    assert loaded_default[0]["url"] == "u1"
+    assert loaded_mirror[0]["url"] == "u2"
+
+
+def test_etag_io_isolated_per_source(tmp_path, monkeypatch):
+    """验证 _save_etag 写到 source 专属文件，_load_etag 只读对应 source。"""
+    from install_flash_attn import _save_etag, _load_etag
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+
+    _save_etag("etag-default-abc", source="default")
+    _save_etag("etag-mirror-xyz", source="mirror")
+
+    assert _load_etag("default") == "etag-default-abc"
+    assert _load_etag("mirror") == "etag-mirror-xyz"
+
+
+def test_legacy_cache_files_not_read(tmp_path, monkeypatch):
+    """旧路径 .fa_wheels_cache.json / .fa_etag.txt 不再被读取。"""
+    from install_flash_attn import _load_disk_cache, _load_etag
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+
+    (tmp_path / ".fa_wheels_cache.json").write_text(
+        '[{"url": "old", "name": "old", "notes": [], "usable": true, "score": 0}]',
+        encoding="utf-8",
+    )
+    (tmp_path / ".fa_etag.txt").write_text("old-etag", encoding="utf-8")
+
+    assert _load_disk_cache("default") is None
+    assert _load_etag("default") is None
