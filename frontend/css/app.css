@@ -2870,45 +2870,151 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   opacity: 0.5;
 }
 
-.home-hero-chips {
+/* Mascot placeholder (no real image — CSS gradient + spinning ring + "anima" wordmark) */
+.home-hero-mascot {
+  width: 220px;
+  height: 220px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(77, 148, 255, 0.12), rgba(139, 92, 246, 0.12));
+  position: relative;
+  overflow: hidden;
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-bottom: 48px;
-}
-.home-chip {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 18px;
-  border: 1px solid var(--border-default);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
-  user-select: none;
+  justify-content: center;
+  margin: 8px auto 4px;
+  border: 1px solid rgba(77, 148, 255, 0.15);
 }
-.home-chip:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+[data-theme="dark"] .home-hero-mascot {
+  background: linear-gradient(135deg, rgba(93, 160, 247, 0.14), rgba(167, 139, 250, 0.14));
+  border-color: rgba(93, 160, 247, 0.18);
+}
+.home-hero-mascot-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 160px;
+  height: 160px;
+  margin: -80px 0 0 -80px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: rgba(77, 148, 255, 0.55);
+  border-right-color: rgba(139, 92, 246, 0.35);
+  animation: hero-mascot-spin 12s linear infinite;
+  pointer-events: none;
+}
+[data-theme="dark"] .home-hero-mascot-ring {
+  border-top-color: rgba(93, 160, 247, 0.65);
+  border-right-color: rgba(167, 139, 250, 0.45);
+}
+.home-hero-mascot-label {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #4d94ff, #8b5cf6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  z-index: 1;
+}
+[data-theme="dark"] .home-hero-mascot-label {
+  background: linear-gradient(135deg, #5da0f7, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+@keyframes hero-mascot-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-mascot-ring { animation: none; }
+}
+
+/* Author + GitHub link row */
+.home-hero-author {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.home-hero-author-k {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.home-hero-author-link {
   color: var(--accent);
   text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
 }
-.home-chip:focus-visible {
-  outline: none;
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.home-hero-author-link:hover { text-decoration: underline; opacity: 0.85; }
+.home-hero-author-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
-.home-chip svg { flex-shrink: 0; }
+.home-hero-author-sep {
+  color: var(--text-tertiary);
+  margin: 0 2px;
+  user-select: none;
+}
+.home-hero-author-ext {
+  color: var(--text-tertiary);
+  margin-left: -2px;
+  flex-shrink: 0;
+}
+
+/* Shields-style badges */
+.home-hero-badges {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.home-badge {
+  display: inline-flex;
+  align-items: stretch;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  font-family: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  letter-spacing: 0.2px;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.home-badge:hover { filter: brightness(1.08); }
+.home-badge:active { transform: translateY(1px); }
+.home-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-badge-l {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  background: #555555;
+  color: #ffffff;
+}
+.home-badge-v {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #ffffff;
+}
+.home-badge-v-license { background: #44cc11; }   /* green */
+.home-badge-v-release { background: #9050e0; }   /* purple */
 
 .home-hero-footer {
   font-size: 11px;
@@ -2922,6 +3028,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 @media (max-width: 600px) {
   .home-hero-title { font-size: 38px; letter-spacing: -1.2px; }
   .home-hero-logo svg { width: 96px; height: 96px; }
-  .home-hero-chips { gap: 6px; }
-  .home-chip { height: 32px; font-size: 12px; padding: 0 12px; }
+  .home-hero-mascot { width: 160px; height: 160px; border-radius: 20px; }
+  .home-hero-mascot-ring { width: 110px; height: 110px; margin: -55px 0 0 -55px; }
+  .home-hero-mascot-label { font-size: 26px; }
 }
