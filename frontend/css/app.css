@@ -2902,6 +2902,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   color: var(--accent);
   text-decoration: none;
 }
+.home-chip:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .home-chip svg { flex-shrink: 0; }
 
 .home-hero-footer {
