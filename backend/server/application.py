@@ -70,7 +70,7 @@ async def add_cache_control_header(request, call_next):
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     elif path.startswith("/anima-ui/"):
-        response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers["Cache-Control"] = "no-cache, max-age=0"
     elif any(path.endswith(ext) for ext in (".png", ".ico", ".svg", ".woff2")):
         response.headers["Cache-Control"] = "public, max-age=3600"
     elif any(path.endswith(ext) for ext in (".js", ".css")):
