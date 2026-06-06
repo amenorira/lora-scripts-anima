@@ -41,12 +41,30 @@ from pathlib import Path
 from typing import Any, Optional
 
 # ── 配置 ──────────────────────────────────────────────────────────────────
-FA_RELEASES_URL = (
-    "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases"
-)
-FA_FALLBACK_URLS = [
-    "https://api.github.com/repos/bdashore3/flash-attention/releases",
-]
+SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
+    "default": {
+        "primary":  "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
+        "fallback": ["https://api.github.com/repos/bdashore3/flash-attention/releases"],
+    },
+    "mirror": {
+        "primary":  "https://ghproxy.com/https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
+        "fallback": ["https://ghproxy.com/https://api.github.com/repos/bdashore3/flash-attention/releases"],
+    },
+    "fallback": {
+        "primary":  "https://api.github.com/repos/bdashore3/flash-attention/releases",
+        "fallback": ["https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases"],
+    },
+}
+
+
+def get_source_config(source: str) -> tuple[str, list[str]]:
+    """返回 (primary_url, fallback_urls)；未知 source 降级为 default。
+
+    单一职责：把 source 字符串映射到一组 URL。
+    无副作用、无 IO、可缓存。
+    """
+    cfg = SOURCE_CONFIGS.get(source) or SOURCE_CONFIGS["default"]
+    return cfg["primary"], list(cfg["fallback"])
 
 # 磁盘缓存（优先使用，API 仅用于增量更新）
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
