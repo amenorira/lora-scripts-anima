@@ -2803,7 +2803,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
    Home Hero — large logo, typography-led identity page
    ═══════════════════════════════════════════════════════════ */
 .home-hero {
-  max-width: 560px;
+  max-width: 620px;
   margin: 12vh auto 0;
   padding: 0 20px;
   display: flex;
@@ -2826,7 +2826,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .home-hero-title {
   font-size: 54px;
   font-weight: 800;
-  letter-spacing: -2px;
+  letter-spacing: -1.5px;
   color: var(--text-primary);
   line-height: 1;
   margin: 0 0 12px;
@@ -2920,7 +2920,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* Narrow screens: scale down hero proportionally */
 @media (max-width: 600px) {
-  .home-hero-title { font-size: 42px; letter-spacing: -1.5px; }
+  .home-hero-title { font-size: 38px; letter-spacing: -1.2px; }
   .home-hero-logo svg { width: 96px; height: 96px; }
   .home-hero-chips { gap: 6px; }
   .home-chip { height: 32px; font-size: 12px; padding: 0 12px; }
