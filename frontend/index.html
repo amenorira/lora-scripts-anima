@@ -411,7 +411,7 @@
             <input type="text" x-model="tagEditorDir" :placeholder="t('tagEditor.datasetDirPlaceholder')"
               @keydown.enter="tagEditorLoad(tagEditorDir)">
             <button class="btn btn-primary btn-sm" @click="tagEditorLoad(tagEditorDir)" x-text="t('tagEditor.loadImages')"></button>
-            <button class="btn btn-ghost btn-sm" @click="tagEditorLoad()" x-text="t('tagEditor.loadFromTraining')"></button>
+            <button class="btn btn-ghost btn-sm" @click="tagEditorLoad(form.train_data_dir)" x-text="t('tagEditor.loadFromTraining')"></button>
           </div>
         </div>
 

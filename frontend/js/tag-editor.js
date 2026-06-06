@@ -223,8 +223,8 @@ window.tagEditorMixin = {
       try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}
       if (cached) { dir = cached; }
     }
-    var d = dir || this.tagEditorDir || (this.form && this.form.train_data_dir) || '';
-    if (!d) { this.toast(this.t('common.specifyDir') || 'Please specify a directory', 'warning'); return; }
+    var d = dir || this.tagEditorDir || '';
+    if (!d) return;
     this.tagEditorDir = d;
     this.tagEditorLoading = true;
     this._teStopAutoSave();
