@@ -168,3 +168,34 @@ def test_fetch_candidates_uses_correct_source_urls(monkeypatch, tmp_path):
     captured_urls.clear()
     fetch_candidates(env, source="mirror")
     assert all(u.startswith("https://ghproxy.com/") for u in captured_urls)
+
+
+def test_fetch_candidates_no_duplicate_api_calls(monkeypatch, tmp_path):
+    """回归测试：T3m 95e8720 曾引入 fetch_candidates 内部重复代码段（pre-existing 旧 body 未删），
+    导致 _try_fetch_api 被调用 2-4 次。修复后每次请求只调用 1 次（无 cached fallback）。
+    """
+    from install_flash_attn import fetch_candidates
+
+    monkeypatch.setattr("install_flash_attn._FA_CACHE_DIR", tmp_path)
+    monkeypatch.setattr("install_flash_attn._save_disk_cache", lambda *a, **k: None)
+
+    call_count = {"n": 0}
+
+    def fake_try_fetch(url, source):
+        call_count["n"] += 1
+        return [], None, False
+
+    monkeypatch.setattr("install_flash_attn._try_fetch_api", fake_try_fetch)
+
+    env = {
+        "platform": "linux_x86_64",
+        "torch_tag": "torch2.10",
+        "cuda_tag": "cu128",
+        "python_tag": "cp312",
+    }
+
+    call_count["n"] = 0
+    fetch_candidates(env, source="default")
+    assert call_count["n"] == 1, (
+        f"fetch_candidates 应只调 1 次 _try_fetch_api，实际调 {call_count['n']} 次（重复段残留）"
+    )

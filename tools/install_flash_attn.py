@@ -488,49 +488,6 @@ def fetch_candidates(
         if raw_releases is None:
             return [], "Cannot connect to GitHub. Check network, or manually paste a wheel URL. / 无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
 
-    if not plat:
-        return [], None
-
-    # ── 第一步：加载磁盘缓存（秒级响应）──
-    cached = _load_disk_cache(source)
-    is_fresh = _cache_is_fresh(source)
-
-    # ── 第二步：尝试 API 刷新（ETag 条件请求）──
-    if cached and is_fresh:
-        # 缓存新鲜，静默尝试后台刷新
-        data = None
-    else:
-        # 缓存过期或不存在，尝试 API
-        primary, fallbacks = get_source_config(source)
-        urls = [primary] + fallbacks
-        data = None
-        for url in urls:
-            data, err, unchanged = _try_fetch_api(url, source)
-            if unchanged:
-                # 304 Not Modified — 缓存仍然有效，刷新时间戳
-                _save_disk_cache(cached, source) if cached else None
-                break
-            if data is not None:
-                break
-            # 错误继续尝试下一个 URL
-
-    # ── 第三步：解析数据 ──
-    raw_releases = data  # 可能为 None
-
-    if raw_releases is None:
-        # 没有新数据，使用缓存（重新过滤匹配当前环境）
-        if cached:
-            return _filter_cached_for_env(cached, env, source), None  # 静默成功
-        # 无缓存且 API 失败 — 最后一次尝试
-        primary, fallbacks = get_source_config(source)
-        urls = [primary] + fallbacks
-        for url in urls:
-            raw_releases, _err, _ = _try_fetch_api(url, source)
-            if raw_releases is not None:
-                break
-        if raw_releases is None:
-            return [], "Cannot connect to GitHub. Check network, or manually paste a wheel URL. / 无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
-
     if not isinstance(raw_releases, list):
         msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
         if cached:
