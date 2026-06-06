@@ -2117,6 +2117,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 @media (max-width: 700px) {
   .sidebar { width: 52px; min-width: 52px; }
+  .sidebar .brand-name,
   .sidebar .sidebar-section-label,
   .sidebar .sidebar-item span:not(.nav-icon),
   .sidebar .sidebar-bottom .bottom-label, .sidebar .sidebar-bottom .divider,
