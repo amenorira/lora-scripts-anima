@@ -255,22 +255,26 @@
             </span>
           </div>
 
-          <div class="home-hero-chips">
-            <a class="home-chip" href="javascript:void(0)" @click="navigate('train-basic')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              <span x-text="t('nav.loraTraining')">LoRA Training</span>
+          <div class="home-hero-mascot" aria-hidden="true">
+            <div class="home-hero-mascot-ring"></div>
+            <span class="home-hero-mascot-label">anima</span>
+          </div>
+
+          <div class="home-hero-author">
+            <span class="home-hero-author-k" x-text="t('home.author', 'Author')">Author</span>
+            <a class="home-hero-author-link" href="https://github.com/amenorira" target="_blank" rel="noopener">amenorira</a>
+            <span class="home-hero-author-sep" aria-hidden="true">·</span>
+            <span class="home-hero-author-k" x-text="t('home.github', 'GitHub')">GitHub</span>
+            <a class="home-hero-author-link" href="https://github.com/amenorira/lora-scripts-anima" target="_blank" rel="noopener">lora-scripts-anima</a>
+            <svg class="home-hero-author-ext" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </div>
+
+          <div class="home-hero-badges">
+            <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/blob/main/LICENSE" target="_blank" rel="noopener">
+              <span class="home-badge-l">License</span><span class="home-badge-v home-badge-v-license">AGPL-3.0</span>
             </a>
-            <a class="home-chip" href="javascript:void(0)" @click="navigate('monitor-dashboard')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-              <span x-text="t('nav.monitorDashboard')">Dashboard</span>
-            </a>
-            <a class="home-chip" href="javascript:void(0)" @click="navigate('tagger')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-              <span x-text="t('nav.tagger')">Tagger</span>
-            </a>
-            <a class="home-chip" href="javascript:void(0)" @click="navigate('environment')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              <span x-text="t('nav.environment')">Environment</span>
+            <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/releases" target="_blank" rel="noopener">
+              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release">v0.1.0</span>
             </a>
           </div>
 
