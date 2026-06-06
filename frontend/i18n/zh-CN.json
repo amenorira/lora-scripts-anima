@@ -758,6 +758,8 @@
     "save_model_as_diffusers": "Diffusers 格式（适用于 Diffusers 生态）"
   },
   "home": {
-    "subtitle": "基于 sd-scripts 的训练器"
+    "subtitle": "基于 sd-scripts 的训练器",
+    "author": "作者",
+    "github": "GitHub"
   }
 }

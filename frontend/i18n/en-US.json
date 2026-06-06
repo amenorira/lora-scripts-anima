@@ -758,6 +758,8 @@
     "save_model_as_diffusers": "Diffusers format (for Diffusers ecosystem)"
   },
   "home": {
-    "subtitle": "A sd-scripts based trainer"
+    "subtitle": "A sd-scripts based trainer",
+    "author": "Author",
+    "github": "GitHub"
   }
 }
