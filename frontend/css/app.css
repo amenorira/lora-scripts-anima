@@ -201,33 +201,64 @@ a:hover { text-decoration: underline; }
   transition: none !important;
 }
 
+/* ── Brand (logo + name) ───────────────────────────────── */
 .sidebar-header {
-  padding: 18px 16px 14px;
+  padding: 16px 12px 14px;
   transition: padding var(--duration-slow) var(--ease-out);
 }
-
-/* === 旧 brand 样式已废弃（Task 3 替换） ===
-.sidebar-header .brand-text {
-  font-size: 17px; font-weight: 700; color: var(--text-sidebar); letter-spacing: -0.3px;
-  white-space: nowrap; overflow: hidden;
-  transition: opacity var(--duration-normal) var(--ease-out),
-              max-width var(--duration-slow) var(--ease-out);
-  max-width: 300px; opacity: 1;
+.brand-clickable {
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: opacity var(--duration-normal) var(--ease-out);
 }
-.sidebar.collapsed .brand-text { opacity: 0; max-width: 0; }
-
-.brand-version {
-  font-size: 11px; color: var(--text-sidebar-muted);
-  white-space: nowrap; overflow: hidden;
-  transition: opacity var(--duration-fast) var(--ease-out),
-              max-width var(--duration-slow) var(--ease-out);
-  max-width: 200px; opacity: 1;
-}
-.sidebar.collapsed .brand-version { opacity: 0; max-width: 0; }
-
-.brand-clickable { cursor: pointer; user-select: none; border-radius: var(--radius-sm); padding: 2px 6px; margin: -2px -6px; transition: opacity var(--duration-normal) var(--ease-out); }
 .brand-clickable:hover { opacity: 0.72; }
-=== 结束 === */
+
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+/* Show one logo per theme, hide the other (CSS-driven) */
+.brand-logo-light { display: block; }
+.brand-logo-dark { display: none; }
+[data-theme="dark"] .brand-logo-light { display: none; }
+[data-theme="dark"] .brand-logo-dark { display: block; }
+
+.brand-name {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--text-sidebar-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  transition: opacity var(--duration-normal) var(--ease-out),
+              max-height var(--duration-slow) var(--ease-out);
+  max-height: 20px;
+  opacity: 1;
+  text-align: center;
+}
+
+/* ── Collapsed Sidebar: show only logo ─────────────────── */
+.sidebar.collapsed .brand-clickable {
+  gap: 0;
+  padding: 2px 4px;
+}
+.sidebar.collapsed .brand-name {
+  opacity: 0;
+  max-height: 0;
+}
 
 .sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; }
 
@@ -2086,7 +2117,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 @media (max-width: 700px) {
   .sidebar { width: 52px; min-width: 52px; }
-  .sidebar .brand-text, .sidebar .version, .sidebar .sidebar-section-label,
+  .sidebar .sidebar-section-label,
   .sidebar .sidebar-item span:not(.nav-icon),
   .sidebar .sidebar-bottom .bottom-label, .sidebar .sidebar-bottom .divider,
   .sidebar .sidebar-bottom .bottom-btn span { display: none; }
@@ -2104,7 +2135,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .sidebar-bottom { border-top-color: rgba(255,255,255,0.06); }
 [data-theme="dark"] .sidebar-bottom .bottom-btn:hover { background: rgba(255,255,255,0.07); }
 [data-theme="dark"] .sidebar-bottom .divider { background: rgba(255,255,255,0.08); }
-[data-theme="dark"] .sidebar-header .brand-text { color: #fafaf9; }
+[data-theme="dark"] .sidebar-header .brand-name { color: #fafaf9; }
 [data-theme="dark"] .sidebar-dropdown-menu { background: var(--bg-surface); border-color: var(--border-default); box-shadow: 0 8px 24px rgba(0,0,0,0.40); }
 [data-theme="dark"] .sidebar-dropdown-menu button { color: var(--text-sidebar); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: rgba(255,255,255,0.08); color: var(--text-sidebar-active); }
