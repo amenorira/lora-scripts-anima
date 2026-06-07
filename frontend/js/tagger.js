@@ -833,6 +833,35 @@ window.taggerMixin = {
     }
   },
 
+  /** 复制单个分类的标签 */
+  copyCategoryTags(key) {
+    const cat = this.singleImage.categories[key];
+    if (!cat || !cat.visibleTags.length) return;
+    const opts = this.singleImage.formatOptions;
+    const parts = [];
+    for (const tag of cat.visibleTags) {
+      let tagName = tag[0];
+      if (opts.replaceUnderscore) tagName = tagName.replace(/_/g, ' ');
+      if (opts.escapeTag) tagName = tagName.replace(/([\\()])/g, '\\$1');
+      parts.push(tagName);
+    }
+    const text = parts.join(', ');
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast(this.t('tagger.copied'));
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      this.toast(this.t('tagger.copied'));
+    }
+  },
+
   collapseAllCats() {
     for (const key in this.singleImage.categories) {
       this.singleImage.categories[key].collapsed = true;

@@ -2912,7 +2912,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   gap: 0;
   align-items: flex-start;
-  user-select: none; /* 拖拽时防止选中文字 */
 }
 .single-tagger-left {
   min-width: 260px;
@@ -2931,10 +2930,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   width: 6px;
   min-width: 6px;
   cursor: col-resize;
-  background: transparent;
+  background: var(--border-default);
   transition: background 0.15s;
   position: relative;
   align-self: stretch;
+  border-radius: 3px;
 }
 .divider-vertical:hover,
 .divider-vertical.dragging {
@@ -3086,8 +3086,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   color: var(--text-secondary);
   line-height: 1.6;
   word-break: break-all;
-  max-height: 80px;
-  overflow-y: auto;
 }
 .tag-summary .btn-copy {
   font-size: 11px;
