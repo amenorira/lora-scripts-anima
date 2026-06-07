@@ -548,25 +548,46 @@ window.taggerMixin = {
   },
 
   /** 应用预设到初始阈值 */
+  /** 应用预设到阈值 */
   applySinglePreset(preset) {
+    if (preset === 'custom') return;
     const isCL = this.singleImage.model === 'cl_tagger_1_02';
     const isCamie = this.singleImage.model === 'camie-tagger-v2';
+    const isCategoryModel = isCL || isCamie;
+
+    // ── 预推理：更新初始阈值滑块 ──
     const thEl = document.getElementById('single-init-threshold');
     const thVal = document.getElementById('single-init-th-val');
-    if (!thEl) return;
-
-    if (preset === 'custom') return;
-
-    let initVal = '0.50';
-    if (isCamie) {
-      initVal = this.CAMIE_PRESETS[preset] ? this.CAMIE_PRESETS[preset].general : '0.50';
-    } else if (isCL) {
-      initVal = this.CL_PRESETS[preset] ? this.CL_PRESETS[preset].general : '0.50';
-    } else {
-      initVal = preset === 'macro' ? '0.35' : (preset === 'micro' ? '0.45' : '0.50');
+    if (thEl) {
+      let initVal = '0.50';
+      if (isCamie) {
+        initVal = this.CAMIE_PRESETS[preset] ? this.CAMIE_PRESETS[preset].general : '0.50';
+      } else if (isCL) {
+        initVal = this.CL_PRESETS[preset] ? this.CL_PRESETS[preset].general : '0.50';
+      } else {
+        initVal = preset === 'macro' ? '0.35' : (preset === 'micro' ? '0.45' : '0.50');
+      }
+      thEl.value = initVal;
+      if (thVal) thVal.value = parseFloat(initVal).toFixed(2);
     }
-    thEl.value = initVal;
-    if (thVal) thVal.value = parseFloat(initVal).toFixed(2);
+
+    // ── 推理后：将预设值同步到分类阈值并刷新 ──
+    if (this.singleImage.inferred && isCategoryModel) {
+      const presets = isCL ? this.CL_PRESETS : this.CAMIE_PRESETS;
+      const vals = presets[preset];
+      if (vals) {
+        for (const key in this.singleImage.categories) {
+          if (vals[key] !== undefined) {
+            this.singleImage.categories[key].threshold = parseFloat(vals[key]);
+          }
+        }
+      }
+      // 同步全局阈值 = 预设的 general 值（如果存在）
+      if (vals && vals.general) {
+        this.singleImage.globalThreshold = parseFloat(vals.general);
+      }
+      this._recalcAllVisibleTags();
+    }
   },
 
   /** 文件选择器 */
