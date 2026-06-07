@@ -678,13 +678,18 @@ window.taggerMixin = {
     this.singleImage.inferring = false;
   },
 
-  /** 全局阈值变更 → 同步所有分类阈值并重新计算可见标签 */
+  _singleThDebounceTimer: null,
+
+  /** 全局阈值变更 → 同步所有分类阈值并重新计算可见标签（100ms 防抖） */
   applyGlobalThreshold() {
     const gt = this.singleImage.globalThreshold;
     for (const key in this.singleImage.categories) {
       this.singleImage.categories[key].threshold = gt;
     }
-    this._recalcAllVisibleTags();
+    if (this._singleThDebounceTimer) clearTimeout(this._singleThDebounceTimer);
+    this._singleThDebounceTimer = setTimeout(() => {
+      this._recalcAllVisibleTags();
+    }, 100);
   },
 
   /** 分类阈值变更 → 重新计算该分类可见标签（模板中 @input 调用） */
@@ -705,7 +710,9 @@ window.taggerMixin = {
       cat.visibleTags = [];
       return;
     }
-    cat.visibleTags = cat.tags.filter(tag => tag[1] >= cat.threshold);
+    const filtered = cat.tags.filter(tag => tag[1] >= cat.threshold);
+    cat._totalCount = filtered.length;
+    cat.visibleTags = filtered.slice(0, 200);
   },
 
   /** 重新计算所有分类的 visibleTags */

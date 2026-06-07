@@ -729,10 +729,13 @@ async def tagger_single_image(
     # ── 构建响应（返回全部标签，置信度保留 4 位小数）─────
     categories = {}
     for cat_key, tag_list in tags.items():
-        categories[cat_key] = [
+        filtered = [
             [tag_name, round(confidence, 4)]
             for tag_name, confidence in tag_list
+            if confidence >= 0.01
         ]
+        if filtered:
+            categories[cat_key] = filtered
 
     # ── 分类显示标签 ───────────────────────────────────
     labels = {}

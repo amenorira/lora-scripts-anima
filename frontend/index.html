@@ -424,7 +424,7 @@
                     <div class="cat-panel-header" @click="cat.collapsed = !cat.collapsed">
                       <span class="cat-panel-arrow">▼</span>
                       <span x-text="cat.label"></span>
-                      <span class="cat-panel-count" x-text="'(' + cat.visibleTags.length + ')'"></span>
+                      <span class="cat-panel-count" x-text="cat.visibleTags.length >= 200 ? '(' + cat.visibleTags.length + '/' + (cat._totalCount || 0) + '+' + ')' : '(' + cat.visibleTags.length + ')'"></span>
                       <!-- 可见开关 -->
                       <label class="toggle" style="margin-left:8px" @click.stop="">
                         <input type="checkbox" :checked="cat.visible" @change="cat.visible = $event.target.checked; recalcCategoryVisibility(key)">
@@ -446,6 +446,9 @@
                           </span>
                         </template>
                         <span x-show="cat.visibleTags.length === 0" style="color:var(--text-tertiary);font-size:12px" x-text="t('tagger.noTags')">没有符号条件的标签</span>
+                      </div>
+                      <div x-show="cat._totalCount > 200" style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px;border-top:1px solid var(--border-default);margin-top:4px">
+                        仅显示前 200 个，共 <span x-text="cat._totalCount"></span> 个。调高阈值可减少标签。
                       </div>
                     </div>
                   </div>
