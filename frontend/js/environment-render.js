@@ -38,6 +38,16 @@ window.environmentRenderMixin = {
     const faInstalled = s?.installed;
     let h = '';
 
+    // Busy: show before anything else
+    if (this.faBusy) {
+      const elapsed = this._formatElapsed(this.faInstallElapsed);
+      const log = this.faInstallLog || '';
+      h += `<details id="env-flash-attn" ${this.faCardOpen?'open':''} class="env-row">`;
+      h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">Flash Attention</span><span class="env-badge env-badge-loading">${T('installing','Installing...')}</span></summary>`;
+      h += `<div class="env-row-detail"><div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('installingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${log?`<pre class="env-install-log">${log}</pre>`:''}</div></div></details>`;
+      return h;
+    }
+
     const faBadge = this.faError
       ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !s ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
@@ -47,14 +57,6 @@ window.environmentRenderMixin = {
     h += `<details id="env-flash-attn" ${this.faCardOpen?'open':''} class="env-row">`;
     h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">Flash Attention</span><span class="env-row-subtitle">${T('trainingAccel','Training acceleration (optional)')}</span>${faBadge}</summary>`;
     h += `<div class="env-row-detail">`;
-
-    if (this.faBusy) {
-      const elapsed = this._formatElapsed(this.faInstallElapsed);
-      const log = this.faInstallLog || '';
-      h += `<div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('installingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${log?`<pre class="env-install-log">${log}</pre>`:''}</div>`;
-      h += `</div></details>`;
-      return h;
-    }
 
     if (this.faError) h += `<div class="env-msg env-msg-err"><pre>${this.faError}</pre></div>`;
 
@@ -74,6 +76,7 @@ window.environmentRenderMixin = {
         else if (/rate limit|限流/i.test(s.fetch_error)) h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}<br>${T('rateLimitHint','Will retry. Paste URL manually.')}</div>`;
         else h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}: ${s.fetch_error}<br>${T('manualUrlHint','Paste wheel URL manually.')}</div>`;
       }
+      if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) h+=`<div class="env-msg env-msg-warn">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
 
       // Confirm dialog
       if (this.faConfirmMsg) {
@@ -122,6 +125,14 @@ window.environmentRenderMixin = {
     const xs = this.xfStatus; const xfEnv = xs?.env || {}; const xfInstalled = xs?.installed;
     let h = '';
 
+    if (this.xfBusy) {
+      const elapsed = this._formatElapsed(this.xfInstallElapsed);
+      h += `<details id="env-xformers" ${this.xfCardOpen?'open':''} class="env-row">`;
+      h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">xformers</span><span class="env-badge env-badge-loading">${T('installing','Installing...')}</span></summary>`;
+      h += `<div class="env-row-detail"><div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('xfInstallingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${this.xfInstallLog?`<pre class="env-install-log">${this.xfInstallLog}</pre>`:''}</div></div></details>`;
+      return h;
+    }
+
     const xfBadge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !xs ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
       : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')} &middot; v${xs.version||'?'}</span>`
@@ -130,13 +141,6 @@ window.environmentRenderMixin = {
     h += `<details id="env-xformers" ${this.xfCardOpen?'open':''} class="env-row">`;
     h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">xformers</span><span class="env-row-subtitle">${T('xfHint','Memory-efficient attention (optional)')}</span>${xfBadge}</summary>`;
     h += `<div class="env-row-detail">`;
-
-    if (this.xfBusy) {
-      const elapsed = this._formatElapsed(this.xfInstallElapsed);
-      h += `<div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('xfInstallingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${this.xfInstallLog?`<pre class="env-install-log">${this.xfInstallLog}</pre>`:''}</div>`;
-      h += `</div></details>`;
-      return h;
-    }
 
     if (this.xfError) h += `<div class="env-msg env-msg-err"><pre>${this.xfError}</pre></div>`;
 

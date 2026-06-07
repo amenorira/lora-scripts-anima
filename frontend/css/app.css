@@ -2327,9 +2327,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-row-subtitle {
   font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.env-row-hint {
-  font-size: 11px; color: var(--text-tertiary); display: none;
-}
 
 /* ── Badges ──────────────────────────────────────────────── */
 .env-badge {
