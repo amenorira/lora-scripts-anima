@@ -1,6 +1,7 @@
 import re
 from typing import Dict, List, Optional, Tuple
 from PIL import Image
+from backend.log import log
 
 tag_escape_pattern = re.compile(r'([\\()])')
 
@@ -137,7 +138,7 @@ class Interrogator:
         if hasattr(self, 'model') and self.model is not None:
             del self.model
             unloaded = True
-            print(f'Unloaded {self.name}')
+            log.info(f'Unloaded {self.name}')
 
         if hasattr(self, 'tags'):
             del self.tags

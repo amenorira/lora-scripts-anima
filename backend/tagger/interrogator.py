@@ -20,7 +20,6 @@ from backend.tagger.interrogators.cl import CLTaggerInterrogator
 from backend.tagger.interrogators.camie import CamieTaggerInterrogator
 from backend.constants import HF_CACHE_DIR
 from backend.log import log
-import traceback
 import threading
 
 tag_escape_pattern = re.compile(r'([\\()])')
@@ -300,7 +299,7 @@ def on_interrogate(
             except Exception as e:
                 err_msg = f'{path.name}: {type(e).__name__}: {str(e)[:200]}'
                 log.warning(f'Error processing {err_msg}')
-                traceback.print_exc()
+                log.exception(f'Error processing {err_msg}')
                 with _tagger_progress_lock:
                     _tagger_progress[task_id]["logs"].append(f'Error: {err_msg}')
 

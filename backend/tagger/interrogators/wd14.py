@@ -14,6 +14,7 @@ from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 from backend.tagger.interrogators.base import Interrogator
 from backend.tagger import dbimutils, format
+from backend.log import log
 
 
 class WaifuDiffusionInterrogator(Interrogator):
@@ -30,7 +31,7 @@ class WaifuDiffusionInterrogator(Interrogator):
         self.kwargs = kwargs
 
     def download(self) -> Tuple[os.PathLike, os.PathLike]:
-        print(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
+        log.info(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
 
         model_path = Path(hf_hub_download(
             **self.kwargs, filename=self.model_path))
@@ -60,10 +61,17 @@ class WaifuDiffusionInterrogator(Interrogator):
         # https://onnxruntime.ai/docs/execution-providers/
         # https://github.com/toriato/stable-diffusion-webui-wd14-tagger/commit/e4ec460122cf674bbf984df30cdb10b4370c1224#r92654958
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        opts = None
+        try:
+            from onnxruntime import SessionOptions
+            opts = SessionOptions()
+            opts.log_severity_level = 3
+        except Exception:
+            pass
 
-        self.model = InferenceSession(str(model_path), providers=providers)
+        self.model = InferenceSession(str(model_path), providers=providers, sess_options=opts)
 
-        print(f'Loaded {self.name} model from {model_path}')
+        log.info(f'Loaded {self.name} model from {model_path}')
 
         self.tags = pd.read_csv(tags_path)
 

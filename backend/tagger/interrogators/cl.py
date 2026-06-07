@@ -14,6 +14,7 @@ from huggingface_hub import hf_hub_download
 from dataclasses import dataclass
 from backend.tagger import dbimutils, format
 from backend.tagger.interrogators.base import Interrogator
+from backend.log import log
 
 
 @dataclass
@@ -74,11 +75,11 @@ def get_tags(probs, labels: LabelData):
                     rating_conf = float(rating_probs[rating_idx_local])
                     result["rating"].append((rating_name, rating_conf))
                 else:
-                    print(f"Warning: Invalid global index {rating_idx_global} for rating tag.")
+                    log.warning(f"Invalid global index {rating_idx_global} for rating tag.")
             else:
-                print("Warning: rating_probs became empty after filtering.")
+                log.warning("rating_probs became empty after filtering.")
         else:
-            print("Warning: No valid indices found for rating tags within probs length.")
+            log.warning("No valid indices found for rating tags within probs length.")
 
     # Quality (select max)
     if len(labels.quality) > 0:
@@ -93,11 +94,11 @@ def get_tags(probs, labels: LabelData):
                     quality_conf = float(quality_probs[quality_idx_local])
                     result["quality"].append((quality_name, quality_conf))
                 else:
-                    print(f"Warning: Invalid global index {quality_idx_global} for quality tag.")
+                    log.warning(f"Invalid global index {quality_idx_global} for quality tag.")
             else:
-                print("Warning: quality_probs became empty after filtering.")
+                log.warning("quality_probs became empty after filtering.")
         else:
-            print("Warning: No valid indices found for quality tags within probs length.")
+            log.warning("No valid indices found for quality tags within probs length.")
 
     # All tags for each category (no threshold)
     category_map = {
@@ -117,7 +118,7 @@ def get_tags(probs, labels: LabelData):
                     if idx_global < len(labels.names) and labels.names[idx_global] is not None:
                         result[category].append((labels.names[idx_global], float(category_probs[idx_local])))
                     else:
-                        print(f"Warning: Invalid global index {idx_global} for {category} tag.")
+                        log.warning(f"Invalid global index {idx_global} for {category} tag.")
 
     # Sort by probability (descending)
     for k in result:
@@ -139,7 +140,7 @@ class CLTaggerInterrogator(Interrogator):
         self.kwargs = kwargs
 
     def download(self) -> Tuple[os.PathLike, os.PathLike]:
-        print(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
+        log.info(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
 
         model_path = Path(hf_hub_download(
             **self.kwargs, filename=self.model_path))
@@ -154,10 +155,17 @@ class CLTaggerInterrogator(Interrogator):
         from onnxruntime import InferenceSession
 
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        opts = None
+        try:
+            from onnxruntime import SessionOptions
+            opts = SessionOptions()
+            opts.log_severity_level = 3
+        except Exception:
+            pass
 
-        self.model = InferenceSession(str(model_path), providers=providers)
+        self.model = InferenceSession(str(model_path), providers=providers, sess_options=opts)
 
-        print(f'Loaded {self.name} model from {model_path}')
+        log.info(f'Loaded {self.name} model from {model_path}')
 
         self.tags = self.load_tag_mapping(tag_mapping_path)
 
@@ -241,7 +249,7 @@ class CLTaggerInterrogator(Interrogator):
         outputs = self.model.run([output_name], {input_name: input_tensor})[0]
 
         if np.isnan(outputs).any() or np.isinf(outputs).any():
-            print("Warning: NaN or Inf detected in model output. Clamping...")
+            log.warning("NaN or Inf detected in model output. Clamping...")
             outputs = np.nan_to_num(outputs, nan=0.0, posinf=1.0, neginf=0.0)  # Clamp to 0-1 range
 
         # Apply sigmoid (outputs are likely logits)
@@ -264,5 +272,4 @@ class CLTaggerInterrogator(Interrogator):
         #         output_tags.append(tag.replace("_", " "))
         # output_text = ", ".join(output_tags)
 
-        print(predictions)
         return predictions
