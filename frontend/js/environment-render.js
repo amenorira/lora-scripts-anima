@@ -11,24 +11,21 @@ window.environmentRenderMixin = {
     let html = '';
 
     // ═══ Section: 加速库 ═══
-    html += `<div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div>`;
-
-    // ═══ Flash Attention card ═══
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div><div class="env-section-grid">`;
     html += this._renderFaCard(T);
-
-    // ═══ xformers card ═══
     html += this._renderXfCard(T);
+    html += `</div></div>`;
 
-    // ═══ Section: 训练核心 (sd-scripts) ═══
-    html += `<div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
+    // ═══ Section: 训练核心 ═══
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div><div class="env-section-grid">`;
     html += this._renderSdCard(T);
+    html += `</div></div>`;
 
     el.innerHTML = html;
 
     // ── Bind events ──
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
-    this._bindSdEvents(el);
     this._bindCardToggle(el);
   },
 
