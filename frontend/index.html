@@ -461,11 +461,27 @@
                 </div>
               </div>
 
-              <!-- 未推理时右侧显示模型选择 -->
-              <div class="single-tagger-right" x-show="!singleImage.inferred" style="justify-content:center;align-items:center;padding:20px">
-                <div class="field" style="width:100%">
+              <!-- 未推理时右侧显示模型选择 + 阈值预设 -->
+              <div class="single-tagger-right" x-show="!singleImage.inferred" style="display:flex;flex-direction:column;gap:12px;padding:0">
+                <div class="field">
                   <div class="field-info"><div class="field-key" x-text="t('tagger.model')">Tagger 模型</div></div>
                   <div class="field-control" id="singleModelSelect"></div>
+                </div>
+                <div class="field">
+                  <div class="field-row">
+                    <div class="field-info"><div class="field-key" x-text="t('tagger.presetLabel')">阈值预设</div></div>
+                    <div class="field-control" id="singlePresetSelect"></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-row">
+                    <div class="field-info"><div class="field-key" x-text="t('tagger.globalThreshold')">初始阈值</div></div>
+                    <div class="field-control" style="display:flex;align-items:center;gap:8px">
+                      <input type="range" id="single-init-threshold" min="0" max="1" step="0.01" value="0.50"
+                             style="flex:1;height:4px;accent-color:var(--accent)">
+                      <span id="single-init-th-val" style="font-size:12px;color:var(--text-secondary);min-width:36px;text-align:right;font-variant-numeric:tabular-nums">0.50</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

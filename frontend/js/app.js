@@ -226,6 +226,7 @@ document.addEventListener('alpine:init', () => {
 
     showRightPanel() {
       const r = this.currentRoute;
+      if (r === 'tagger' && this.taggerMode === 'single') return false;
       return r && (r.startsWith('train-') || r === 'tagger' || r === 'tools');
     },
 

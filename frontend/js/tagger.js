@@ -481,7 +481,10 @@ window.taggerMixin = {
   switchTaggerMode(mode) {
     this.taggerMode = mode;
     if (mode === 'single') {
-      this.$nextTick(() => { this.buildSingleModelSelect(); });
+      this.$nextTick(() => {
+        this.buildSingleModelSelect();
+        this.buildSinglePresetSelect();
+      });
     }
   },
 
@@ -512,6 +515,57 @@ window.taggerMixin = {
         });
       }
     });
+  },
+
+  /** 构建单图模式阈值预设选择器 */
+  buildSinglePresetSelect() {
+    const container = document.getElementById('singlePresetSelect');
+    if (!container || container.children.length > 0) return;
+    const presetOpts = [
+      { v: 'macro', l: this.t('tagger.presetMacro') },
+      { v: 'micro', l: this.t('tagger.presetMicro') },
+      { v: 'custom', l: this.t('tagger.presetCustom') },
+    ];
+    const html = this.animaSelectHtml({ options: presetOpts }, 'macro', 'single-preset');
+    container.innerHTML = html;
+    this.$nextTick(() => {
+      const presetEl = document.getElementById('single-preset');
+      if (presetEl) {
+        presetEl.addEventListener('input', () => {
+          this.applySinglePreset(presetEl.value);
+        });
+      }
+    });
+
+    const thEl = document.getElementById('single-init-threshold');
+    const thVal = document.getElementById('single-init-th-val');
+    if (thEl && thVal) {
+      thEl.addEventListener('input', () => {
+        thVal.textContent = parseFloat(thEl.value).toFixed(2);
+      });
+    }
+  },
+
+  /** 应用预设到初始阈值 */
+  applySinglePreset(preset) {
+    const isCL = this.singleImage.model === 'cl_tagger_1_02';
+    const isCamie = this.singleImage.model === 'camie-tagger-v2';
+    const thEl = document.getElementById('single-init-threshold');
+    const thVal = document.getElementById('single-init-th-val');
+    if (!thEl) return;
+
+    if (preset === 'custom') return;
+
+    let initVal = '0.50';
+    if (isCamie) {
+      initVal = this.CAMIE_PRESETS[preset] ? this.CAMIE_PRESETS[preset].general : '0.50';
+    } else if (isCL) {
+      initVal = this.CL_PRESETS[preset] ? this.CL_PRESETS[preset].general : '0.50';
+    } else {
+      initVal = preset === 'macro' ? '0.35' : (preset === 'micro' ? '0.45' : '0.50');
+    }
+    thEl.value = initVal;
+    if (thVal) thVal.textContent = parseFloat(initVal).toFixed(2);
   },
 
   /** 文件选择器 */
@@ -596,7 +650,8 @@ window.taggerMixin = {
         return;
       }
       const data = d.data;
-      this.singleImage.globalThreshold = 0.50;
+      const initThEl = document.getElementById('single-init-threshold');
+      this.singleImage.globalThreshold = initThEl ? parseFloat(initThEl.value) || 0.50 : 0.50;
       this.singleImage.categories = {};
 
       for (const [key, tags] of Object.entries(data.categories)) {
