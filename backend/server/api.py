@@ -678,3 +678,70 @@ async def sd_scripts_status() -> dict:
         "local": info,
         "repo_url": f"https://github.com/{owner}/{repo_name}",
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  单图标注推理
+# ═══════════════════════════════════════════════════════════
+
+from io import BytesIO
+from fastapi import UploadFile, File, Form
+from backend.tagger.interrogators.base import CATEGORY_LABELS
+
+
+@router.post("/tagger/single")
+async def tagger_single_image(
+    file: UploadFile = File(...),
+    interrogator_model: str = Form(default="camie-v2"),
+):
+    """Single-image tag inference. Returns all categories with raw confidence scores.
+    No files written — pure in-memory inference for frontend display."""
+    from PIL import Image, UnidentifiedImageError
+    from backend.tagger.interrogator import available_interrogators
+
+    # ── 校验图片 ──────────────────────────────────────
+    if not file.content_type or not file.content_type.startswith("image/"):
+        return APIResponseFail(message="File is not an image / 文件不是图片")
+
+    try:
+        contents = await file.read()
+        image = Image.open(BytesIO(contents))
+        image.load()
+    except UnidentifiedImageError:
+        return APIResponseFail(message="Cannot identify image format / 无法识别图片格式")
+    except Exception as e:
+        return APIResponseFail(message=f"Failed to read image: {str(e)[:200]}")
+
+    # ── 获取 interrogator ──────────────────────────────
+    interrogator = available_interrogators.get(interrogator_model)
+    if interrogator is None:
+        return APIResponseFail(
+            message=f"Unknown model: {interrogator_model} / 未知模型: {interrogator_model}"
+        )
+
+    # ── 推理 ───────────────────────────────────────────
+    try:
+        tags = await asyncio.to_thread(interrogator.interrogate, image)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return APIResponseFail(message=f"Inference failed: {str(e)[:200]}")
+
+    # ── 构建响应（返回全部标签，置信度保留 4 位小数）─────
+    categories = {}
+    for cat_key, tag_list in tags.items():
+        categories[cat_key] = [
+            [tag_name, round(confidence, 4)]
+            for tag_name, confidence in tag_list
+        ]
+
+    # ── 分类显示标签 ───────────────────────────────────
+    labels = {}
+    for cat_key in categories:
+        labels[cat_key] = CATEGORY_LABELS.get(cat_key, cat_key)
+
+    return APIResponseSuccess(data={
+        "model": interrogator_model,
+        "categories": categories,
+        "labels": labels,
+    })
