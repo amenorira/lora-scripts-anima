@@ -3087,7 +3087,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .tag-summary-content {
   color: var(--text-primary);
   line-height: 1.7;
-  overflow-wrap: break-word;
   font-size: 13px;
 }
 .tag-summary .btn-copy {
