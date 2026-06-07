@@ -692,7 +692,7 @@ from backend.tagger.interrogators.base import CATEGORY_LABELS
 @router.post("/tagger/single")
 async def tagger_single_image(
     file: UploadFile = File(...),
-    interrogator_model: str = Form(default="camie-v2"),
+    interrogator_model: str = Form(...),
 ):
     """Single-image tag inference. Returns all categories with raw confidence scores.
     No files written — pure in-memory inference for frontend display."""
