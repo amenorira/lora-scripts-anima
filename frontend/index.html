@@ -527,7 +527,7 @@
                               <span class="tag-conf" x-text="tag[1].toFixed(2)"></span>
                             </span>
                           </template>
-                          <span x-show="cat.visibleTags.length === 0" style="color:var(--text-tertiary);font-size:12px" x-text="t('tagger.noTags')">没有符号条件的标签</span>
+                          <span x-show="cat.visibleTags.length === 0" style="color:var(--text-tertiary);font-size:12px" x-text="t('tagger.noTags')">没有符合条件的标签</span>
                         </div>
                         <div x-show="cat._totalCount > 200" style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px;border-top:1px solid var(--border-default);margin-top:4px">
                           仅显示前 200 个，共 <span x-text="cat._totalCount"></span> 个。调高阈值可减少标签。

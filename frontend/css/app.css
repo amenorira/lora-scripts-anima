@@ -1104,7 +1104,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   background: transparent; color: var(--text-secondary);
   border-color: var(--border-default);
 }
-.btn-ghost:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); border-color: var(--border-input); }
+.btn-ghost:hover { background: var(--bg-surface-raised); color: var(--text-primary); border-color: var(--border-input); }
 
 /* Outline-to-fill: Start (teal) & Stop (red) */
 .btn-start {

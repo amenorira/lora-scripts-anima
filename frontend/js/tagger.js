@@ -492,6 +492,24 @@ window.taggerMixin = {
         this.buildSingleModelSelect();
         this.buildSinglePresetSelect();
       });
+      // 全局监听粘贴事件
+      document.addEventListener('paste', this._onSinglePaste);
+    } else {
+      document.removeEventListener('paste', this._onSinglePaste);
+    }
+  },
+
+  /** 全局粘贴处理（document 级别，确保焦点不在 drop-zone 时也能触发） */
+  _onSinglePaste(e) {
+    if (this.taggerMode !== 'single') return;
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        this.loadImageFile(item.getAsFile());
+        break;
+      }
     }
   },
 
@@ -761,6 +779,7 @@ window.taggerMixin = {
     if (!cat) return;
     if (!cat.visible) {
       cat.visibleTags = [];
+      cat._totalCount = 0;
       return;
     }
     const filtered = cat.tags.filter(tag => tag[1] >= cat.threshold);
