@@ -2486,6 +2486,36 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
 [data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
+/* ── Install source area ─────────────────────────────────── */
+.env-install-source {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 8px);
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-sunken, var(--bg-surface-raised));
+}
+.env-install-source-title {
+  font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.env-best-candidate {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--bg-surface);
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm, 6px);
+}
+.env-best-label {
+  font-size: 11px; color: var(--text-tertiary); flex-shrink: 0;
+}
+.env-best-name {
+  flex: 1; font-family: var(--font-mono, monospace); font-size: 11px;
+  color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.env-best-candidate .btn { flex-shrink: 0; }
+.env-toggle-candidates {
+  align-self: flex-start;
+}
+
+[data-theme="dark"] .env-install-source { background: var(--bg-surface-raised); }
+[data-theme="dark"] .env-best-candidate { background: var(--bg-input); }
+
 /* ── Accessibility ─────────────────────────────────────── */
 .skip-link {
   position: absolute;
