@@ -549,7 +549,6 @@ window.taggerMixin = {
     });
   },
 
-  /** 应用预设到初始阈值 */
   /** 应用预设到阈值 */
   applySinglePreset(preset) {
     if (preset === 'custom') return;

@@ -6,7 +6,9 @@ import time as _time
 from pathlib import Path
 
 
-from fastapi import APIRouter, Request
+from io import BytesIO
+
+from fastapi import APIRouter, File, Form, Request, UploadFile
 
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT, TOOLS_DIR
 from backend import launch_utils
@@ -16,11 +18,12 @@ from backend.server.models import (APIResponse, APIResponseFail,
                                  TaggerInterrogateRequest)
 from backend.server.state import avaliable_presets, load_presets
 from backend.log import log
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from backend.tagger.interrogator import (available_interrogators,
                                           on_interrogate,
                                           cancel_tagger_task)
+from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tasks import tm
 from backend.utils import train_utils
 from backend.utils.devices import printable_devices
@@ -686,11 +689,6 @@ async def sd_scripts_status() -> dict:
 #  单图标注推理
 # ═══════════════════════════════════════════════════════════
 
-from io import BytesIO
-from fastapi import UploadFile, File, Form
-from backend.tagger.interrogators.base import CATEGORY_LABELS
-
-
 @router.post("/tagger/single")
 async def tagger_single_image(
     file: UploadFile = File(...),
@@ -698,7 +696,6 @@ async def tagger_single_image(
 ):
     """Single-image tag inference. Returns all categories with raw confidence scores.
     No files written — pure in-memory inference for frontend display."""
-    from PIL import Image
 
     # ── 校验图片 ──────────────────────────────────────
     if not file.content_type or not file.content_type.startswith("image/"):

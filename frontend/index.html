@@ -375,7 +375,7 @@
      @mouseleave="handleResizeEnd()">
               <!-- 左侧：图片上传区 -->
               <div class="single-tagger-left" :style="{ width: singleImage.leftWidth + '%' }">
-                <div class="drop-zone"
+                <div class="drop-zone" tabindex="0"
                      :class="{ 'has-image': singleImage.previewUrl, 'drag-over': singleImage.dragOver }"
                      @click="singleFilePicker()"
                      @dragover.prevent="singleImage.dragOver = true"
