@@ -25,6 +25,11 @@ window.taggerMixin = {
     categories: {},          // { key: { label, tags:[[name,conf],...], threshold, visible, collapsed, visibleTags:[] } }
     inferring: false,
     inferred: false,
+    formatOptions: {
+      replaceUnderscore: true,
+      escapeTag: true,
+      addRatingTag: false,
+    },
   },
 
   // ── Camie 阈值预设 ───────────────────────────────────
@@ -724,12 +729,21 @@ window.taggerMixin = {
 
   /** 汇总可见标签文本（逗号分隔） */
   summaryTagsText() {
+    const opts = this.singleImage.formatOptions;
     const parts = [];
     for (const key in this.singleImage.categories) {
       const cat = this.singleImage.categories[key];
+      if (key === 'rating' && !opts.addRatingTag) continue;
       if (cat.visible) {
         for (const tag of cat.visibleTags) {
-          parts.push(tag[0]);
+          let tagName = tag[0];
+          if (opts.replaceUnderscore) {
+            tagName = tagName.replace(/_/g, ' ');
+          }
+          if (opts.escapeTag) {
+            tagName = tagName.replace(/([\\()])/g, '\\$1');
+          }
+          parts.push(tagName);
         }
       }
     }

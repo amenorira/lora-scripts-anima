@@ -483,6 +483,25 @@
                     </div>
                   </div>
                 </div>
+                <div class="field">
+                  <div class="toggle-grid" style="padding:4px 0">
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.replaceUnderscore" checked>
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.replaceUnderscore')">将下划线替换为空格</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.escapeTag" checked>
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.escapeTag')">转义括号</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.addRatingTag">
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.addRatingTag')">添加等级标签</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
