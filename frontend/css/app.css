@@ -2295,6 +2295,24 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   margin-bottom: 0;
 }
 
+/* ── Settings row ────────────────────────────────────────── */
+.settings-row {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border-default);
+}
+.settings-row:first-of-type { border-top: 1px solid var(--border-default); }
+.settings-row-main { flex: 1; min-width: 0; }
+.settings-row-label {
+  font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4;
+}
+.settings-row-desc {
+  font-size: 11.5px; color: var(--text-tertiary); line-height: 1.4; margin-top: 2px;
+}
+.settings-row-action {
+  flex-shrink: 0; display: flex; align-items: center; padding-top: 2px;
+}
+
 /* ── Row (replaces card, no-box style) ──────────────────── */
 .env-row {
   display: block;

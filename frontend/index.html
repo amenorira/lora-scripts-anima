@@ -919,25 +919,20 @@
 
       <!-- Route: Settings -->
       <div x-show="currentRoute === 'settings'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
-          <p class="page-subtitle" x-text="t('settings.subtitle')">Customize your training UI experience</p>
-        </div>
-        <div class="card">
-          <!-- Auto-load history -->
-          <div class="field">
-            <div class="field-left">
-              <div class="field-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>
-              <div class="field-desc" x-text="t('settings.autoLoadHistoryDesc')">Automatically restore last training parameters on startup</div>
+        <div class="env-section">
+          <div class="env-section-header" x-text="t('settings.title')">UI Settings</div>
+          <div class="settings-row">
+            <div class="settings-row-main">
+              <div class="settings-row-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>
+              <div class="settings-row-desc" x-text="t('settings.autoLoadHistoryDesc')">Automatically restore last training parameters on startup</div>
             </div>
-            <div class="field-right">
+            <div class="settings-row-action">
               <label class="toggle">
                 <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()">
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
               </label>
             </div>
           </div>
-
         </div>
       </div>
 
