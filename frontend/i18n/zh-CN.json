@@ -444,7 +444,7 @@
     "startInference": "开始推理",
     "inferring": "推理中...",
     "noImage": "请先上传图片",
-    "noTags": "没有符号条件的标签",
+    "noTags": "没有符合条件的标签",
     "globalThreshold": "全局阈值",
     "copyTags": "复制标签",
     "copied": "已复制到剪贴板",
