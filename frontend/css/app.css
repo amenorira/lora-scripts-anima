@@ -2971,14 +2971,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* 分类面板 — 扁平列表风格 */
 .cat-panel {
-  margin-bottom: 14px;
-  padding-bottom: 14px;
+  margin-bottom: 10px;
+  padding: 8px 8px 8px 8px;
   border-bottom: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: 8px;
   transition: background 0.15s;
 }
 .cat-panel:hover {
-  background: var(--bg-surface-raised);
+  background: rgba(0,0,0,0.04);
 }
 .cat-panel:last-child {
   border-bottom: none;
@@ -2987,7 +2987,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 6px 8px;
+  padding: 0;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -2996,8 +2996,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .cat-panel-header:hover {
   color: var(--accent);
-  background: var(--accent-muted);
-  border-radius: 6px;
 }
 .cat-panel:not(.collapsed) .cat-panel-header {
   color: var(--accent);
@@ -3027,13 +3025,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px 0;
   font-size: 12px;
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-.cat-panel-controls:hover {
-  background: var(--accent-muted);
 }
 .cat-panel-controls input[type="range"] {
   flex: 1;
@@ -3041,12 +3034,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   accent-color: var(--accent);
 }
 .cat-panel-body {
-  padding: 4px 12px 12px;
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-.cat-panel-body:hover {
-  background: var(--accent-muted);
+  padding: 4px 0 0;
 }
 .cat-panel.collapsed .cat-panel-body,
 .cat-panel.collapsed .cat-panel-controls {
