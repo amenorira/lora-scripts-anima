@@ -2974,6 +2974,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   margin-bottom: 14px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-default);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.cat-panel:hover {
+  background: var(--bg-surface-raised);
 }
 .cat-panel:last-child {
   border-bottom: none;
@@ -2982,7 +2987,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0 6px 6px;
+  padding: 6px 8px 6px 8px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -2991,6 +2996,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .cat-panel-header:hover {
   color: var(--accent);
+  background: var(--accent-muted);
+  border-radius: 6px;
 }
 .cat-panel:not(.collapsed) .cat-panel-header {
   color: var(--accent);
@@ -3022,8 +3029,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   gap: 6px;
   padding: 6px 12px;
   font-size: 12px;
-  background: var(--bg-surface-raised);
   border-radius: 6px;
+  transition: background 0.15s;
+}
+.cat-panel-controls:hover {
+  background: var(--accent-muted);
 }
 .cat-panel-controls input[type="range"] {
   flex: 1;
@@ -3032,6 +3042,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .cat-panel-body {
   padding: 4px 12px 12px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.cat-panel-body:hover {
+  background: var(--accent-muted);
 }
 .cat-panel.collapsed .cat-panel-body,
 .cat-panel.collapsed .cat-panel-controls {
