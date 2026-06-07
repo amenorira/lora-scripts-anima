@@ -108,7 +108,9 @@ def _gpu_info_raw() -> dict | None:
 def gpu_info() -> dict | None:
     _start_sampler()
     with _gpu_sample_lock:
-        return _gpu_sample
+        if _gpu_sample is not None:
+            return _gpu_sample
+    return _gpu_info_raw()
 
 
 def _get_cpu_name() -> str:
@@ -162,7 +164,7 @@ def _sys_info_raw() -> dict:
 
 def system_info() -> dict:
     _start_sampler()
-    global _cpu_name_cache
     with _sys_sample_lock:
-        return _sys_sample or {"cpu_name": _cpu_name_cache or "", "cpu_pct": 0,
-                                "ram_used_gb": 0, "ram_total_gb": 0, "ram_pct": 0}
+        if _sys_sample is not None:
+            return _sys_sample
+    return _sys_info_raw()
