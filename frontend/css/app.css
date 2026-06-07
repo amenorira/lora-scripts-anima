@@ -2972,6 +2972,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 /* 分类面板 — 扁平列表风格 */
 .cat-panel {
   margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-default);
+}
+.cat-panel:last-child {
+  border-bottom: none;
 }
 .cat-panel-header {
   display: flex;
