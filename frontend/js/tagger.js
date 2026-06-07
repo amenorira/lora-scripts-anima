@@ -25,6 +25,8 @@ window.taggerMixin = {
     categories: {},          // { key: { label, tags:[[name,conf],...], threshold, visible, collapsed, visibleTags:[] } }
     inferring: false,
     inferred: false,
+    leftWidth: 55,           // 左侧宽度百分比
+    isResizing: false,       // 是否正在拖拽分隔线
     formatOptions: {
       replaceUnderscore: true,
       escapeTag: true,
@@ -642,6 +644,30 @@ window.taggerMixin = {
       this.toast(this.t('common.failed') + ': Failed to read image file');
       this.singleImage.file = null;
     }
+  },
+
+  /** 拖拽分隔线：开始 */
+  handleResizeStart() {
+    this.singleImage.isResizing = true;
+    document.body.style.cursor = 'col-resize';
+  },
+
+  /** 拖拽分隔线：移动 */
+  handleResizeMove(e) {
+    if (!this.singleImage.isResizing) return;
+    const layout = document.querySelector('.single-tagger-layout');
+    if (!layout) return;
+    const rect = layout.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = (x / rect.width) * 100;
+    // 限制范围：20% ~ 80%
+    this.singleImage.leftWidth = Math.min(80, Math.max(20, Math.round(pct)));
+  },
+
+  /** 拖拽分隔线：结束 */
+  handleResizeEnd() {
+    this.singleImage.isResizing = false;
+    document.body.style.cursor = '';
   },
 
   /** 清除图片和推理结果 */

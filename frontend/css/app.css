@@ -2910,29 +2910,54 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 /* 单图布局容器 */
 .single-tagger-layout {
   display: flex;
-  gap: 16px;
+  gap: 0;
   align-items: flex-start;
+  user-select: none; /* 拖拽时防止选中文字 */
 }
 .single-tagger-left {
-  flex: 1.2;
-  min-width: 0;
+  min-width: 260px;
+  padding-right: 8px;
 }
 .single-tagger-right {
-  flex: 1;
   min-width: 260px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-left: 8px;
+}
+
+/* 可拖拽分隔线 */
+.divider-vertical {
+  width: 6px;
+  min-width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  position: relative;
+  align-self: stretch;
+}
+.divider-vertical:hover,
+.divider-vertical.dragging {
+  background: var(--accent);
+}
+.divider-vertical::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 10px; /* 扩大点击区域 */
 }
 
 /* 自适应：窄屏切换为上下堆叠 */
 @media (max-width: 767px) {
+  .divider-vertical { display: none; }
   .single-tagger-layout {
     flex-direction: column;
   }
   .single-tagger-left,
   .single-tagger-right {
     width: 100%;
+    padding: 0;
   }
 }
 

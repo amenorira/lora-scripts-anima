@@ -369,9 +369,12 @@
         <!-- 单图模式 -->
         <div x-show="taggerMode === 'single'" id="singleTaggerContent">
           <div class="card">
-            <div class="single-tagger-layout">
+            <div class="single-tagger-layout"
+     @mousemove="handleResizeMove($event)"
+     @mouseup="handleResizeEnd()"
+     @mouseleave="handleResizeEnd()">
               <!-- 左侧：图片上传区 -->
-              <div class="single-tagger-left">
+              <div class="single-tagger-left" :style="{ width: singleImage.leftWidth + '%' }">
                 <div class="drop-zone"
                      :class="{ 'has-image': singleImage.previewUrl, 'drag-over': singleImage.dragOver }"
                      @click="singleFilePicker()"
@@ -398,10 +401,20 @@
                           x-show="singleImage.file"
                           x-text="t('common.clear')">清除</button>
                 </div>
+              <!-- 标签汇总栏：推理后显示 -->
+              <div class="tag-summary" x-show="singleImage.inferred">
+                <div class="tag-summary-header">
+                  <span class="tag-summary-title"><span x-text="t('tagger.totalTags')">总计标签</span>: <span x-text="summaryTagCount()"></span></span>
+                  <button class="btn btn-sm btn-ghost btn-copy" @click="copyTags()" x-text="t('tagger.copyTags')">复制标签</button>
+                </div>
+                <div class="tag-summary-content" x-text="summaryTagsText()"></div>
+              </div>
               </div>
 
+              <div class="divider-vertical" :class="{ dragging: singleImage.isResizing }" @mousedown.prevent="handleResizeStart()"></div>
+
               <!-- 右侧：模型选择器始终可见 + 条件内容 -->
-              <div class="single-tagger-right" style="display:flex;flex-direction:column;gap:12px;padding:0">
+              <div class="single-tagger-right" :style="{ width: (100 - singleImage.leftWidth) + '%' }" style="display:flex;flex-direction:column;gap:12px;padding:0">
                 <!-- 模型选择器 — 始终可见 -->
                 <div class="field">
                   <div class="field-info"><div class="field-key" x-text="t('tagger.model')">Tagger 模型</div></div>
@@ -523,14 +536,6 @@
                     </div>
                   </template>
 
-                  <!-- 底部汇总栏 -->
-                  <div class="tag-summary">
-                    <div class="tag-summary-header">
-                      <span class="tag-summary-title"><span x-text="t('tagger.totalTags')">总计标签</span>: <span x-text="summaryTagCount()"></span></span>
-                      <button class="btn btn-sm btn-ghost btn-copy" @click="copyTags()" x-text="t('tagger.copyTags')">复制标签</button>
-                    </div>
-                    <div class="tag-summary-content" x-text="summaryTagsText()"></div>
-                  </div>
                 </div>
               </div>
             </div>
