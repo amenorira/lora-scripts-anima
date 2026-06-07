@@ -2978,7 +2978,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   transition: background 0.15s;
 }
 .cat-panel:hover {
-  background: rgba(0,0,0,0.04);
+  background: rgba(0,0,0,0.07);
 }
 .cat-panel:last-child {
   border-bottom: none;
