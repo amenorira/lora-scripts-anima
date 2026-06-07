@@ -652,7 +652,11 @@
     "installThis": "Install this",
     "installSource": "Install source",
     "showAllCandidates": "Show all candidates",
-    "hideAllCandidates": "Hide all candidates"
+    "hideAllCandidates": "Hide all candidates",
+    "envLabel": "Env",
+    "installLabel": "Install",
+    "actionLabel": "Actions",
+    "verLabel": "Ver"
   },
   "opt": {
     "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",

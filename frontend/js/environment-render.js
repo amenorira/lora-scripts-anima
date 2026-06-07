@@ -10,29 +10,25 @@ window.environmentRenderMixin = {
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
     let html = '';
 
-    // ═══ Section: 加速库 ═══
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div><div class="env-section-grid">`;
-    html += this._renderFaCard(T);
-    html += this._renderXfCard(T);
-    html += `</div></div>`;
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div>`;
+    html += this._renderFaRow(T);
+    html += this._renderXfRow(T);
+    html += `</div>`;
 
-    // ═══ Section: 训练核心 ═══
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div><div class="env-section-grid">`;
-    html += this._renderSdCard(T);
-    html += `</div></div>`;
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
+    html += this._renderSdRow(T);
+    html += `</div>`;
 
     el.innerHTML = html;
-
-    // ── Bind events ──
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
     this._bindCardToggle(el);
   },
 
   // ═══════════════════════════════════════════════════════
-  //  Flash Attention card render
+  //  Flash Attention row
   // ═══════════════════════════════════════════════════════
-  _renderFaCard(T) {
+  _renderFaRow(T) {
     const s = this.faStatus;
     const env = s?.env || {};
     const candidates = s?.candidates || [];
@@ -42,72 +38,63 @@ window.environmentRenderMixin = {
     const faInstalled = s?.installed;
     let h = '';
 
-    if (this.faBusy) {
-      const elapsed = this._formatElapsed(this.faInstallElapsed);
-      const log = this.faInstallLog || '';
-      h += `<details id="env-flash-attn" ${this.faCardOpen?'open':''} class="env-card">
-        <summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">Flash Attention</span><span class="env-badge env-badge-loading">${T('installing','Installing...')}</span></summary>
-        <div class="env-card-body"><div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('installingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${log?`<pre class="env-install-log">${log}</pre>`:''}</div></div></details>`;
-      return h;
-    }
-
-    const faStatusBadge = this.faError
+    const faBadge = this.faError
       ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !s ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
       : faInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')} &middot; v${s.version||'?'}</span>`
       : `<span class="env-badge env-badge-warn">${T('notInstalled','Not installed')}</span>`;
 
-    h += `<details id="env-flash-attn" ${this.faCardOpen?'open':''} class="env-card">
-      <summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">Flash Attention</span><span class="env-card-hint">${T('trainingAccel','Training acceleration (optional)')}</span><span class="env-card-hint">${T('restartHint','After install restart GUI for changes.')}</span>${faStatusBadge}</summary>
-      <div class="env-card-body">`;
+    h += `<details id="env-flash-attn" ${this.faCardOpen?'open':''} class="env-row">`;
+    h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">Flash Attention</span><span class="env-row-subtitle">${T('trainingAccel','Training acceleration (optional)')}</span>${faBadge}</summary>`;
+    h += `<div class="env-row-detail">`;
+
+    if (this.faBusy) {
+      const elapsed = this._formatElapsed(this.faInstallElapsed);
+      const log = this.faInstallLog || '';
+      h += `<div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('installingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${log?`<pre class="env-install-log">${log}</pre>`:''}</div>`;
+      h += `</div></details>`;
+      return h;
+    }
 
     if (this.faError) h += `<div class="env-msg env-msg-err"><pre>${this.faError}</pre></div>`;
 
     if (s) {
-      const rows = [
-        ['flash_attn', faInstalled?`v${s.version||'?'}`:`<span class="env-text-warn">${T('notInstalled','Not installed')}</span>`],
-        ['Python', env.python_tag||'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>'],
-        ['CUDA', env.cuda_tag?`${env.cuda_tag} <span class="env-text-dim">(${env.cuda_ver||'?'})</span>`:'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>'],
-        ['PyTorch', env.torch_tag?`${env.torch_tag} <span class="env-text-dim">(${env.torch_ver||'?'})</span>`:'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>'],
-        ['Platform', env.platform||'<span class="env-text-dim">'+T('unsupported','Unsupported')+'</span>'],
-      ];
-      h += `<table class="env-table"><tbody>`; rows.forEach(([l,v]) => { h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`; }); h+=`</tbody></table>`;
+      // Environment info
+      const envItems = [];
+      if (faInstalled) envItems.push(`<span class="env-env-item">flash_attn <em>v${s.version||'?'}</em></span>`);
+      if (env.python_tag) envItems.push(`<span class="env-env-item"><em>${env.python_tag}</em></span>`);
+      if (env.cuda_tag) envItems.push(`<span class="env-env-item">CUDA <em>${env.cuda_tag}</em> <span class="env-text-dim">(${env.cuda_ver||'?'})</span></span>`);
+      if (env.torch_tag) envItems.push(`<span class="env-env-item">PyTorch <em>${env.torch_tag}</em></span>`);
+      if (env.platform) envItems.push(`<span class="env-env-item"><em>${env.platform}</em></span>`);
+      h += `<div class="env-detail-group"><span class="env-detail-label">${T('envLabel','Env')}</span><div class="env-detail-content">${envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`}</div></div>`;
 
+      // Error / info messages
       if (s.fetch_error) {
         if (s.from_disk_cache) h+=`<div class="env-msg env-msg-info">${T('usingCachedData','Using cached data.')} ${T('cachedDataHint','Auto-updates on next success.')}</div>`;
         else if (/rate limit|限流/i.test(s.fetch_error)) h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}<br>${T('rateLimitHint','Will retry. Paste URL manually.')}</div>`;
         else h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}: ${s.fetch_error}<br>${T('manualUrlHint','Paste wheel URL manually.')}</div>`;
       }
-      if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) h+=`<div class="env-msg env-msg-warn">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
 
-      // ── Confirm dialog (replaces install area + action bar) ──
+      // Confirm dialog
       if (this.faConfirmMsg) {
         h+=`<div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div>`;
       } else {
-        // ── Install source area ──
-        h += `<div class="env-install-source">
-          <div class="env-install-source-title">${T('installSource','Install source')}</div>
-          <div class="env-source-group">
-            <button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault','Official')}</button>
-            <button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror','Mirror')}</button>
-            <button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback','Alt')}</button>
-          </div>`;
-
-        // Best candidate row
+        // Install group
+        h += `<div class="env-detail-group"><span class="env-detail-label">${T('installLabel','Install')}</span><div class="env-detail-content" style="flex-direction:column;align-items:flex-start;">`;
+        h += `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">`;
+        h += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback','Alt')}</button></span>`;
         if (best) {
-          h += `<div class="env-best-candidate">
-            <span class="env-best-label">${T('bestCandidate','Best match')}</span>
-            <code class="env-best-name" title="${best.name}">${best.name}</code>
-            <button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>
-          </div>`;
+          h += `<button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>`;
+          h += `<code style="font-size:10.5px;color:var(--text-tertiary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;" title="${best.name}">${best.name}</code>`;
         }
+        h += `</div>`;
 
-        // Show all candidates toggle
-        h += `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm env-toggle-candidates">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
+        // Candidates toggle
+        h += `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm" style="margin-top:4px;">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
 
-        // Candidate list (collapsible)
+        // Candidate list
         if (this.faCandidatesOpen && candidates.length) {
-          h += `<ul class="env-candidate-list">`;
+          h += `<ul class="env-candidate-list" style="margin-top:4px;">`;
           candidates.forEach(c => {
             const mark = c.usable?'ok':'warn';
             h += `<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${c.name}">${c.name}</code>${c.notes.length?`<span class="env-candidate-notes">${c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; ')}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${c.url.replace(/'/g,"\\'")}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
@@ -116,54 +103,64 @@ window.environmentRenderMixin = {
         }
 
         // Manual URL
-        h += `<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-secondary">${T('installUrl','URL Install')}</button></div>`;
-
-        h += `</div>`; // .env-install-source
-
-        // Simplified action bar
-        h += `<div class="env-actions">
-          <button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?best.name:''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button>
-          <button id="fa-refresh-btn" class="btn-icon" ${this.faBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
-        </div>`;
+        h += `<div class="env-manual-url" style="margin-top:4px;"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-secondary">${T('installUrl','URL Install')}</button></div>`;
+        h += `</div></div>`;
       }
+
+      // Actions
+      h += `<div class="env-detail-group"><span class="env-detail-label">${T('actionLabel','Actions')}</span><div class="env-detail-content"><div class="env-actions"><button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?best.name:''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button><button id="fa-refresh-btn" class="btn-icon" ${this.faBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div></div>`;
     }
-    h+=`</div></details>`;
+
+    h += `</div></details>`;
     return h;
   },
 
   // ═══════════════════════════════════════════════════════
-  //  xformers card render
+  //  xformers row
   // ═══════════════════════════════════════════════════════
-  _renderXfCard(T) {
+  _renderXfRow(T) {
     const xs = this.xfStatus; const xfEnv = xs?.env || {}; const xfInstalled = xs?.installed;
     let h = '';
-    if (this.xfBusy) {
-      const elapsed = this._formatElapsed(this.xfInstallElapsed);
-      h += `<details id="env-xformers" ${this.xfCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">xformers</span><span class="env-badge env-badge-loading">${T('installing','Installing...')}</span></summary><div class="env-card-body"><div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('xfInstallingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${this.xfInstallLog?`<pre class="env-install-log">${this.xfInstallLog}</pre>`:''}</div></div></details>`;
-      return h;
-    }
-    const xfStatusBadge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+
+    const xfBadge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !xs ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
       : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')} &middot; v${xs.version||'?'}</span>`
       : `<span class="env-badge env-badge-warn">${T('notInstalled','Not installed')}</span>`;
 
-    h+=`<details id="env-xformers" ${this.xfCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">xformers</span><span class="env-card-hint">${T('xfHint','Memory-efficient attention (optional)')}</span><span class="env-card-hint">${T('xfRestartHint','After install restart GUI.')}</span>${xfStatusBadge}</summary><div class="env-card-body">`;
-    if (this.xfError) h+=`<div class="env-msg env-msg-err"><pre>${this.xfError}</pre></div>`;
-    if (xs) {
-      h+=`<table class="env-table"><tbody>`;
-      [['xformers',xfInstalled?`v${xs.version||'?'}`:`<span class="env-text-warn">${T('notInstalled','Not installed')}</span>`],['Python',xfEnv.python_tag||'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>'],['PyTorch',xfEnv.torch_ver||'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>'],['CUDA',xfEnv.cuda_ver?`cu${xfEnv.cuda_ver.replace('.','')}`:'<span class="env-text-dim">'+T('notDetected','N/A')+'</span>']].forEach(([l,v])=>{h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`;});
-      h+=`</tbody></table>`;
-      if (!xfInstalled) h+=`<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
-      h+=`<div class="env-actions"><button id="xf-install-btn" class="btn btn-secondary" ${this.xfBusy?'disabled':''}>${xfInstalled?T('reinstall','Reinstall'):T('xfInstallBtn','Install via PyPI')}</button><button id="xf-refresh-btn" class="btn-icon" ${this.xfBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div>`;
+    h += `<details id="env-xformers" ${this.xfCardOpen?'open':''} class="env-row">`;
+    h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">xformers</span><span class="env-row-subtitle">${T('xfHint','Memory-efficient attention (optional)')}</span>${xfBadge}</summary>`;
+    h += `<div class="env-row-detail">`;
+
+    if (this.xfBusy) {
+      const elapsed = this._formatElapsed(this.xfInstallElapsed);
+      h += `<div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('xfInstallingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${this.xfInstallLog?`<pre class="env-install-log">${this.xfInstallLog}</pre>`:''}</div>`;
+      h += `</div></details>`;
+      return h;
     }
-    h+=`</div></details>`;
+
+    if (this.xfError) h += `<div class="env-msg env-msg-err"><pre>${this.xfError}</pre></div>`;
+
+    if (xs) {
+      const envItems = [];
+      if (xfInstalled) envItems.push(`<span class="env-env-item">xformers <em>v${xs.version||'?'}</em></span>`);
+      if (xfEnv.python_tag) envItems.push(`<span class="env-env-item"><em>${xfEnv.python_tag}</em></span>`);
+      if (xfEnv.torch_ver) envItems.push(`<span class="env-env-item">PyTorch <em>${xfEnv.torch_ver}</em></span>`);
+      if (xfEnv.cuda_ver) envItems.push(`<span class="env-env-item">CUDA <em>cu${xfEnv.cuda_ver.replace('.','')}</em></span>`);
+      h += `<div class="env-detail-group"><span class="env-detail-label">${T('envLabel','Env')}</span><div class="env-detail-content">${envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`}</div></div>`;
+
+      if (!xfInstalled) h += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
+
+      h += `<div class="env-detail-group"><span class="env-detail-label">${T('actionLabel','Actions')}</span><div class="env-detail-content"><div class="env-actions"><button id="xf-install-btn" class="btn btn-secondary" ${this.xfBusy?'disabled':''}>${xfInstalled?T('reinstall','Reinstall'):T('xfInstallBtn','Install via PyPI')}</button><button id="xf-refresh-btn" class="btn-icon" ${this.xfBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div></div>`;
+    }
+
+    h += `</div></details>`;
     return h;
   },
 
   // ═══════════════════════════════════════════════════════
-  //  sd-scripts card render (local version info only)
+  //  sd-scripts row
   // ═══════════════════════════════════════════════════════
-  _renderSdCard(T) {
+  _renderSdRow(T) {
     const sd = this.sdStatus; const sdLocal = sd?.local || {};
     let h = '';
 
@@ -171,16 +168,24 @@ window.environmentRenderMixin = {
       ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
       : `<span class="env-badge env-badge-ok">${T('sdScriptsUpToDate','Up to date')}</span>`;
 
-    h+=`<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-card-hint">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${sdBadge}</summary><div class="env-card-body">`;
+    h += `<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-row">`;
+    h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-row-subtitle">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${sdBadge}</summary>`;
+    h += `<div class="env-row-detail">`;
 
     if (sd) {
       const repoUrl = sd.repo_url || `https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}`;
-      h+=`<table class="env-table"><tbody>`;
-      [['Repo',`<a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo||'kohya-ss/sd-scripts'} &#8599;</a>`],['Branch',sdLocal.local_branch||'<span class="env-text-dim">-</span>'],sdLocal.tag?['Tag',`<a href="${repoUrl}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a>`]:null,['Commit',sdLocal.local_commit?`<a href="${repoUrl}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit}</code></a>`:'<span class="env-text-dim">UNKNOWN</span>'],['Sync date',sdLocal.sync_date||'<span class="env-text-dim">-</span>']].filter(r=>r).forEach(([l,v])=>{h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`;});
-      h+=`</tbody></table>`;
-      h+=`<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div>`;
+      const verItems = [
+        `<span class="env-env-item">Repo <a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo||'kohya-ss/sd-scripts'} &#8599;</a></span>`,
+        sdLocal.local_branch ? `<span class="env-env-item">Branch <em>${sdLocal.local_branch}</em></span>` : null,
+        sdLocal.tag ? `<span class="env-env-item">Tag <a href="${repoUrl}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a></span>` : null,
+        sdLocal.local_commit ? `<span class="env-env-item">Commit <a href="${repoUrl}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit.slice(0,8)}</code></a></span>` : null,
+        sdLocal.sync_date ? `<span class="env-env-item">Sync <span class="env-text-dim">${sdLocal.sync_date}</span></span>` : null,
+      ].filter(r=>r);
+      h += `<div class="env-detail-group"><span class="env-detail-label">${T('verLabel','Ver')}</span><div class="env-detail-content">${verItems.join(' &middot; ')}</div></div>`;
+
+      h += `<div class="env-detail-group"><span class="env-detail-label"></span><div class="env-detail-content"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div></div>`;
     }
-    h+=`</div></details>`;
+    h += `</div></details>`;
     return h;
   },
 

@@ -652,7 +652,11 @@
     "installThis": "安装此版本",
     "installSource": "安装源",
     "showAllCandidates": "查看全部候选",
-    "hideAllCandidates": "隐藏全部候选"
+    "hideAllCandidates": "隐藏全部候选",
+    "envLabel": "环境",
+    "installLabel": "安装",
+    "actionLabel": "操作",
+    "verLabel": "版本"
   },
   "opt": {
     "model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
