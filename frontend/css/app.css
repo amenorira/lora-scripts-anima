@@ -2301,7 +2301,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding: 10px 4px;
   border-bottom: 1px solid var(--border-default);
 }
-.settings-row:first-of-type { border-top: 1px solid var(--border-default); }
 .settings-row-main { flex: 1; min-width: 0; }
 .settings-row-label {
   font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4;
@@ -2318,7 +2317,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: block;
   border-bottom: 1px solid var(--border-default);
 }
-.env-row:first-of-type { border-top: 1px solid var(--border-default); }
 
 .env-row[open] { background: var(--accent-muted); }
 .env-row[open] .env-row-summary { border-bottom: 1px solid var(--border-default); }
