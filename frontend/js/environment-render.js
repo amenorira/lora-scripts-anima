@@ -167,21 +167,18 @@ window.environmentRenderMixin = {
     const sd = this.sdStatus; const sdLocal = sd?.local || {};
     let h = '';
 
-    const sdBadge = this.sdError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
-      : !sd ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
+    const sdBadge = !sd
+      ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
       : `<span class="env-badge env-badge-ok">${T('sdScriptsUpToDate','Up to date')}</span>`;
 
     h+=`<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-card"><summary class="env-card-summary"><span class="env-chevron"></span><span class="env-card-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-card-hint">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${sdBadge}</summary><div class="env-card-body">`;
-
-    if (this.sdError) h+=`<div class="env-msg env-msg-err"><pre>${this.sdError}</pre></div>`;
 
     if (sd) {
       const repoUrl = sd.repo_url || `https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}`;
       h+=`<table class="env-table"><tbody>`;
       [['Repo',`<a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${sdLocal.repo||'kohya-ss/sd-scripts'} &#8599;</a>`],['Branch',sdLocal.local_branch||'<span class="env-text-dim">-</span>'],sdLocal.tag?['Tag',`<a href="${repoUrl}/releases/tag/${sdLocal.tag}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.tag}</code></a>`]:null,['Commit',sdLocal.local_commit?`<a href="${repoUrl}/commit/${sdLocal.local_commit}" target="_blank" rel="noopener" class="env-link"><code>${sdLocal.local_commit}</code></a>`:'<span class="env-text-dim">UNKNOWN</span>'],['Sync date',sdLocal.sync_date||'<span class="env-text-dim">-</span>']].filter(r=>r).forEach(([l,v])=>{h+=`<tr><td class="env-table-label">${l}</td><td class="env-table-value">${v}</td></tr>`;});
       h+=`</tbody></table>`;
-
-      h+=`<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a><button id="sd-refresh-btn" class="btn-icon" title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div>`;
+      h+=`<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div>`;
     }
     h+=`</div></details>`;
     return h;
@@ -217,11 +214,6 @@ window.environmentRenderMixin = {
     const xfInstallBtn = el.querySelector('#xf-install-btn'), xfRefreshBtn = el.querySelector('#xf-refresh-btn');
     if (xfInstallBtn) xfInstallBtn.addEventListener('click', () => a.xfInstall());
     if (xfRefreshBtn) xfRefreshBtn.addEventListener('click', () => a.xfRefresh());
-  },
-
-  _bindSdEvents(el) {
-    const a = window.__anima || this;
-    const sdRefreshBtn = el.querySelector('#sd-refresh-btn'); if (sdRefreshBtn) sdRefreshBtn.addEventListener('click', () => a.sdRefresh());
   },
 
   _bindCardToggle(el) {
