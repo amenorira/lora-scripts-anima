@@ -27,6 +27,7 @@ window.taggerMixin = {
     inferred: false,
     leftWidth: 55,           // 左侧宽度百分比
     isResizing: false,       // 是否正在拖拽分隔线
+    summaryParts: [],        // 汇总标签数组（响应式，供 x-for 渲染）
     formatOptions: {
       replaceUnderscore: true,
       escapeTag: true,
@@ -773,6 +774,7 @@ window.taggerMixin = {
     for (const key in this.singleImage.categories) {
       this._recalcVisibleTags(key);
     }
+    this.singleImage.summaryParts = this.summaryTagsParts();
   },
 
   /** 汇总可见标签数量 */
