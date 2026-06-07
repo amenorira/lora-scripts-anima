@@ -2971,19 +2971,16 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* 分类面板 — 扁平列表风格 */
 .cat-panel {
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 2px solid var(--border-default);
 }
 .cat-panel:first-child {
-  border-top: 1px solid var(--border-default);
-}
-.cat-panel:nth-child(even) {
-  background: rgba(0,0,0,0.02);
+  border-top: 2px solid var(--border-default);
 }
 .cat-panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0 8px 4px;
+  padding: 10px 0 10px 6px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -2991,6 +2988,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   user-select: none;
 }
 .cat-panel-header:hover {
+  color: var(--accent);
+}
+.cat-panel:not(.collapsed) .cat-panel-header {
   color: var(--accent);
 }
 .cat-panel-arrow {
