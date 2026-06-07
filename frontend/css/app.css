@@ -2974,11 +2974,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   margin-bottom: 10px;
   padding: 8px 8px 8px 8px;
   border-bottom: 1px solid var(--border-default);
-  border-radius: 8px;
   transition: background 0.15s;
 }
 .cat-panel:hover {
-  background: rgba(0,0,0,0.07);
+  background: rgba(0,0,0,0.09);
 }
 .cat-panel:last-child {
   border-bottom: none;
@@ -3067,6 +3066,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* 底部汇总栏 */
 .tag-summary {
+  margin-top: 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md, 8px);
   background: var(--bg-surface);
@@ -3087,7 +3087,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .tag-summary-content {
   color: var(--text-primary);
   line-height: 1.7;
-  word-break: break-all;
+  word-break: break-word;
+  overflow-wrap: break-word;
   font-size: 13px;
 }
 .tag-summary .btn-copy {
