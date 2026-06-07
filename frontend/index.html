@@ -406,7 +406,12 @@
                   <span class="tag-summary-title"><span x-text="t('tagger.totalTags')">总计标签</span>: <span x-text="summaryTagCount()"></span></span>
                   <button class="btn" style="font-size:12px;padding:4px 14px" @click="copyTags()" x-text="t('tagger.copyTags')">复制标签</button>
                 </div>
-                <div class="tag-summary-content" x-text="summaryTagsText()"></div>
+                <div class="tag-summary-content">
+                  <template x-for="(t, i) in summaryTagsParts()" :key="i">
+                    <template x-if="i > 0">, </template>
+                    <span style="white-space:nowrap" x-text="t"></span>
+                  </template>
+                </div>
               </div>
               </div>
 

@@ -791,6 +791,11 @@ window.taggerMixin = {
 
   /** 汇总可见标签文本（逗号分隔） */
   summaryTagsText() {
+    return this.summaryTagsParts().join(', ');
+  },
+
+  /** 汇总可见标签数组（用于 x-for 渲染，每个标签作为独立不换行单元） */
+  summaryTagsParts() {
     const opts = this.singleImage.formatOptions;
     const parts = [];
     for (const key in this.singleImage.categories) {
@@ -805,18 +810,16 @@ window.taggerMixin = {
           if (opts.escapeTag) {
             tagName = tagName.replace(/([\\()])/g, '\\$1');
           }
-          // 标签内部空格替换为不换行空格，防止多词标签被截断
-          tagName = tagName.replace(/ /g, '\u00A0');
           parts.push(tagName);
         }
       }
     }
-    return parts.join(', ');
+    return parts;
   },
 
   /** 复制标签到剪贴板 */
   async copyTags() {
-    const text = this.summaryTagsText().replace(/\u00A0/g, ' ');
+    const text = this.summaryTagsText();
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
