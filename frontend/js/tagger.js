@@ -14,6 +14,19 @@ window.taggerMixin = {
   taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
   _taggerPresetInitialized: false,
 
+  // ── 单图模式状态 ─────────────────────────────────────
+  taggerMode: 'batch',       // 'batch' | 'single'
+  singleImage: {
+    previewUrl: null,        // base64 预览
+    file: null,              // 原始 File 对象
+    dragOver: false,
+    model: '',               // 模型 ID
+    globalThreshold: 0.50,
+    categories: {},          // { key: { label, tags:[[name,conf],...], threshold, visible, collapsed, visibleTags:[] } }
+    inferring: false,
+    inferred: false,
+  },
+
   // ── Camie 阈值预设 ───────────────────────────────────
   CAMIE_PRESETS: {
     macro: { general: '0.492', character: '0.492', copyright: '0.492', artist: '0.492', meta: '0.492', year: '0.492', rating: '0.492' },
@@ -460,4 +473,240 @@ window.taggerMixin = {
   },
 
   openTagEditor() { window.open('/proxy/tageditor','_blank'); },
+
+  // ════════════════════════════════════════════════════════
+  //  单图模式方法
+  // ════════════════════════════════════════════════════════
+
+  switchTaggerMode(mode) {
+    this.taggerMode = mode;
+    if (mode === 'single') {
+      this.$nextTick(() => { this.buildSingleModelSelect(); });
+    }
+  },
+
+  /** 构建单图模式模型选择器 */
+  async buildSingleModelSelect() {
+    const container = document.getElementById('singleModelSelect');
+    if (!container || container.children.length > 0) return;
+    let models = this._taggerModelsCache;
+    if (!models || !models.length) {
+      try {
+        const r = await fetch('/api/tagger/models');
+        const d = await r.json();
+        if (d.status === 'success') models = d.data || [];
+        if (models.length) this._taggerModelsCache = models;
+      } catch (e) { return; }
+    }
+    if (!models || !models.length) return;
+    const modelOpts = models.map(m => ({ v: m.id, l: m.name || m.id }));
+    const savedModel = this.taggerSelectedModel || localStorage.getItem('anima-tagger-model') || modelOpts[0]?.v || '';
+    this.singleImage.model = savedModel;
+    const html = this.animaSelectHtml({ options: modelOpts }, savedModel, 'single-tagger-model');
+    container.innerHTML = html;
+    this.$nextTick(() => {
+      const el = document.getElementById('single-tagger-model');
+      if (el) {
+        el.addEventListener('input', () => {
+          this.singleImage.model = el.value;
+        });
+      }
+    });
+  },
+
+  /** 文件选择器 */
+  singleFilePicker() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) {
+        this.loadImageFile(e.target.files[0]);
+      }
+    };
+    input.click();
+  },
+
+  /** 拖拽放下图片 */
+  handleImageDrop(e) {
+    this.singleImage.dragOver = false;
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      this.loadImageFile(file);
+    }
+  },
+
+  /** Ctrl+V 粘贴图片 */
+  handleImagePaste(e) {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        this.loadImageFile(item.getAsFile());
+        break;
+      }
+    }
+  },
+
+  /** 加载图片文件并生成预览 */
+  loadImageFile(file) {
+    this.singleImage.file = file;
+    this.singleImage.inferred = false;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this.singleImage.previewUrl = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  },
+
+  /** 执行单图推理 */
+  async runSingleInference() {
+    if (!this.singleImage.file) {
+      this.toast(this.t('tagger.noImage'));
+      return;
+    }
+    this.singleImage.inferring = true;
+    try {
+      const formData = new FormData();
+      formData.append('file', this.singleImage.file);
+      formData.append('interrogator_model', this.singleImage.model || 'camie-tagger-v2');
+
+      const r = await fetch('/api/tagger/single', {
+        method: 'POST',
+        body: formData,
+      });
+      const d = await r.json();
+      if (d.status !== 'success') {
+        this.toast(d.message || this.t('common.failed'));
+        this.singleImage.inferring = false;
+        return;
+      }
+      const data = d.data;
+      this.singleImage.globalThreshold = 0.50;
+      this.singleImage.categories = {};
+
+      for (const [key, tags] of Object.entries(data.categories)) {
+        if (!tags || tags.length === 0) continue;
+        this.singleImage.categories[key] = {
+          label: data.labels[key] || key,
+          tags: tags,                                          // 原始数据（不过滤）
+          threshold: this.singleImage.globalThreshold,         // 分类独立阈值，初始继承全局
+          visible: true,
+          collapsed: key !== 'general',                        // 默认只展开 General
+          visibleTags: [],                                     // 满足本分类阈值 + 可见的标签（响应式数组）
+        };
+      }
+      this._recalcAllVisibleTags();
+      this.singleImage.inferred = true;
+    } catch (e) {
+      this.toast(this.t('common.failed') + ': ' + e.message);
+    }
+    this.singleImage.inferring = false;
+  },
+
+  /** 全局阈值变更 → 同步所有分类阈值并重新计算可见标签 */
+  applyGlobalThreshold() {
+    const gt = this.singleImage.globalThreshold;
+    for (const key in this.singleImage.categories) {
+      this.singleImage.categories[key].threshold = gt;
+    }
+    this._recalcAllVisibleTags();
+  },
+
+  /** 分类阈值变更 → 重新计算该分类可见标签（模板中 @input 调用） */
+  recalcCategoryThreshold(key) {
+    this._recalcVisibleTags(key);
+  },
+
+  /** 分类可见性切换 → 重新计算（模板中 @change 调用） */
+  recalcCategoryVisibility(key) {
+    this._recalcVisibleTags(key);
+  },
+
+  /** 重新计算单个分类的 visibleTags */
+  _recalcVisibleTags(key) {
+    const cat = this.singleImage.categories[key];
+    if (!cat) return;
+    if (!cat.visible) {
+      cat.visibleTags = [];
+      return;
+    }
+    cat.visibleTags = cat.tags.filter(tag => tag[1] >= cat.threshold);
+  },
+
+  /** 重新计算所有分类的 visibleTags */
+  _recalcAllVisibleTags() {
+    for (const key in this.singleImage.categories) {
+      this._recalcVisibleTags(key);
+    }
+  },
+
+  /** 汇总可见标签数量 */
+  summaryTagCount() {
+    let count = 0;
+    for (const key in this.singleImage.categories) {
+      const cat = this.singleImage.categories[key];
+      if (cat.visible) {
+        count += cat.visibleTags.length;
+      }
+    }
+    return count;
+  },
+
+  /** 汇总可见标签文本（逗号分隔） */
+  summaryTagsText() {
+    const parts = [];
+    for (const key in this.singleImage.categories) {
+      const cat = this.singleImage.categories[key];
+      if (cat.visible) {
+        for (const tag of cat.visibleTags) {
+          parts.push(tag[0]);
+        }
+      }
+    }
+    return parts.join(', ');
+  },
+
+  /** 复制标签到剪贴板 */
+  async copyTags() {
+    const text = this.summaryTagsText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast(this.t('tagger.copied'));
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      this.toast(this.t('tagger.copied'));
+    }
+  },
+
+  collapseAllCats() {
+    for (const key in this.singleImage.categories) {
+      this.singleImage.categories[key].collapsed = true;
+    }
+  },
+  expandAllCats() {
+    for (const key in this.singleImage.categories) {
+      this.singleImage.categories[key].collapsed = false;
+    }
+  },
+  showAllCats() {
+    for (const key in this.singleImage.categories) {
+      this.singleImage.categories[key].visible = true;
+    }
+    this._recalcAllVisibleTags();
+  },
+  hideAllCats() {
+    for (const key in this.singleImage.categories) {
+      this.singleImage.categories[key].visible = false;
+    }
+    this._recalcAllVisibleTags();
+  },
 };
