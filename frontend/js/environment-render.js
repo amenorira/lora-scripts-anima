@@ -80,22 +80,52 @@ window.environmentRenderMixin = {
       }
       if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) h+=`<div class="env-msg env-msg-warn">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
 
+      // ── Confirm dialog (replaces install area + action bar) ──
       if (this.faConfirmMsg) {
-        h+=`<div class="env-actions"><div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div></div>`;
+        h+=`<div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div>`;
       } else {
-        h+=`<div class="env-actions"><button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?best.name:''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button><button id="fa-refresh-btn" class="btn-icon" ${this.faBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><span class="env-actions-spacer"></span><span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault','官方')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror','镜像')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback','备用')}</button></span><button id="fa-toggle-btn" class="btn btn-ghost btn-sm">${this.faCandidatesOpen?T('hideCandidates','Hide'):T('showCandidates','Show')+' ('+candidates.length+')'}</button></div>`;
-      }
+        // ── Install source area ──
+        h += `<div class="env-install-source">
+          <div class="env-install-source-title">${T('installSource','Install source')}</div>
+          <div class="env-source-group">
+            <button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault','Official')}</button>
+            <button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror','Mirror')}</button>
+            <button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback','Alt')}</button>
+          </div>`;
 
-      if (this.faCandidatesOpen && candidates.length) {
-        h+=`<ul class="env-candidate-list">`;
-        candidates.forEach(c => {
-          const mark = c.usable?'ok':'warn';
-          h+=`<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${c.name}">${c.name}</code>${c.notes.length?`<span class="env-candidate-notes">${c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; ')}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${c.url.replace(/'/g,"\\'")}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
-        });
-        h+=`</ul>`;
-      }
+        // Best candidate row
+        if (best) {
+          h += `<div class="env-best-candidate">
+            <span class="env-best-label">${T('bestCandidate','Best match')}</span>
+            <code class="env-best-name" title="${best.name}">${best.name}</code>
+            <button id="fa-best-install-btn" class="btn btn-sm btn-secondary" data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>
+          </div>`;
+        }
 
-      h+=`<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-secondary">${T('installUrl','URL Install')}</button></div>`;
+        // Show all candidates toggle
+        h += `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm env-toggle-candidates">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
+
+        // Candidate list (collapsible)
+        if (this.faCandidatesOpen && candidates.length) {
+          h += `<ul class="env-candidate-list">`;
+          candidates.forEach(c => {
+            const mark = c.usable?'ok':'warn';
+            h += `<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${c.name}">${c.name}</code>${c.notes.length?`<span class="env-candidate-notes">${c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; ')}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${c.url.replace(/'/g,"\\'")}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
+          });
+          h += `</ul>`;
+        }
+
+        // Manual URL
+        h += `<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-secondary">${T('installUrl','URL Install')}</button></div>`;
+
+        h += `</div>`; // .env-install-source
+
+        // Simplified action bar
+        h += `<div class="env-actions">
+          <button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?best.name:''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button>
+          <button id="fa-refresh-btn" class="btn-icon" ${this.faBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        </div>`;
+      }
     }
     h+=`</div></details>`;
     return h;
@@ -168,6 +198,8 @@ window.environmentRenderMixin = {
     if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
     if (faRefreshBtn) faRefreshBtn.addEventListener('click', () => a.faRefresh());
     if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
+    const bestInstallBtn = el.querySelector('#fa-best-install-btn');
+    if (bestInstallBtn) bestInstallBtn.addEventListener('click', () => a.faInstall(bestInstallBtn.dataset.url));
     el.querySelectorAll('.env-source-btn').forEach(btn => { btn.addEventListener('click', () => {
       if (btn.id === 'fa-src-mirror') a.faSource = 'mirror'; else if (btn.id === 'fa-src-fallback') a.faSource = 'fallback'; else a.faSource = 'default';
       a.faRefresh();
