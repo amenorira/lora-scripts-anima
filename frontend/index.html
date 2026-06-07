@@ -354,9 +354,123 @@
       <div x-show="currentRoute === 'tagger'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('tagger.title')">Tagger</h1>
-          <p class="page-subtitle" x-text="t('tagger.subtitle')">Auto-tag images using WD14 models</p>
+          <p class="page-subtitle" x-text="t('tagger.subtitle')">Auto-tag images using AI models</p>
         </div>
-        <div class="card" id="taggerForm"></div>
+
+        <!-- Tab 栏 -->
+        <div class="tagger-tabs">
+          <button class="tagger-tab" :class="{ active: taggerMode === 'batch' }" @click="switchTaggerMode('batch')" x-text="t('tagger.batchMode')">批量模式</button>
+          <button class="tagger-tab" :class="{ active: taggerMode === 'single' }" @click="switchTaggerMode('single')" x-text="t('tagger.singleMode')">单图模式</button>
+        </div>
+
+        <!-- 批量模式 -->
+        <div x-show="taggerMode === 'batch'" class="card" id="taggerForm"></div>
+
+        <!-- 单图模式 -->
+        <div x-show="taggerMode === 'single'" id="singleTaggerContent">
+          <div class="card">
+            <div class="single-tagger-layout">
+              <!-- 左侧：图片上传区 -->
+              <div class="single-tagger-left">
+                <div class="drop-zone"
+                     :class="{ 'has-image': singleImage.previewUrl, 'drag-over': singleImage.dragOver }"
+                     @click="singleFilePicker()"
+                     @dragover.prevent="singleImage.dragOver = true"
+                     @dragleave="singleImage.dragOver = false"
+                     @drop.prevent="handleImageDrop($event)"
+                     @paste="handleImagePaste($event)">
+                  <div class="drop-zone-placeholder" x-show="!singleImage.previewUrl">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <div x-text="t('tagger.dropImageHere')">拖拽图片到此处，或点击选择</div>
+                    <div style="font-size:11px;opacity:0.6" x-text="t('tagger.orPaste')">或 Ctrl+V 粘贴</div>
+                  </div>
+                  <img :src="singleImage.previewUrl" x-show="singleImage.previewUrl" alt="Preview">
+                </div>
+                <div class="single-tagger-actions">
+                  <button class="btn btn-start" style="flex:1"
+                          @click="runSingleInference()"
+                          :disabled="!singleImage.file || singleImage.inferring"
+                          x-text="singleImage.inferring ? t('tagger.inferring') : t('tagger.startInference')">
+                    开始推理
+                  </button>
+                </div>
+              </div>
+
+              <!-- 右侧：结果区 -->
+              <div class="single-tagger-right" x-show="singleImage.inferred">
+                <!-- 全局阈值 -->
+                <div class="field">
+                  <div class="field-row">
+                    <div class="field-info"><div class="field-key" x-text="t('tagger.globalThreshold')">全局阈值</div></div>
+                    <div class="field-control" style="display:flex;align-items:center;gap:8px">
+                      <input type="range" min="0" max="1" step="0.01"
+                             x-model.number="singleImage.globalThreshold"
+                             @input="applyGlobalThreshold()"
+                             style="flex:1;height:4px;accent-color:var(--accent)">
+                      <span style="font-size:12px;color:var(--text-secondary);min-width:36px;text-align:right;font-variant-numeric:tabular-nums" x-text="singleImage.globalThreshold.toFixed(2)">0.50</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:6px;margin-top:4px">
+                    <button class="btn btn-xs btn-ghost" @click="collapseAllCats()" x-text="t('tagger.collapseAll')">折叠全部</button>
+                    <button class="btn btn-xs btn-ghost" @click="expandAllCats()" x-text="t('tagger.expandAll')">展开全部</button>
+                    <button class="btn btn-xs btn-ghost" @click="showAllCats()" x-text="t('tagger.showAll')">显示全部</button>
+                    <button class="btn btn-xs btn-ghost" @click="hideAllCats()" x-text="t('tagger.hideAll')">隐藏全部</button>
+                  </div>
+                </div>
+
+                <!-- 分类面板 -->
+                <template x-for="(cat, key) in singleImage.categories" :key="key">
+                  <div class="cat-panel" :class="{ collapsed: cat.collapsed }">
+                    <div class="cat-panel-header" @click="cat.collapsed = !cat.collapsed">
+                      <span class="cat-panel-arrow">▼</span>
+                      <span x-text="cat.label"></span>
+                      <span class="cat-panel-count" x-text="'(' + cat.visibleTags.length + ')'"></span>
+                      <!-- 可见开关 -->
+                      <label class="toggle" style="margin-left:8px" @click.stop="">
+                        <input type="checkbox" :checked="cat.visible" @change="cat.visible = $event.target.checked; recalcCategoryVisibility(key)">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      </label>
+                    </div>
+                    <div class="cat-panel-controls">
+                      <input type="range" min="0" max="1" step="0.01"
+                             x-model.number="cat.threshold"
+                             @input="recalcCategoryThreshold(key)">
+                      <span class="cat-th-value" x-text="cat.threshold.toFixed(2)"></span>
+                    </div>
+                    <div class="cat-panel-body">
+                      <div class="tag-list">
+                        <template x-for="(tag, i) in cat.visibleTags" :key="i">
+                          <span class="tag-item">
+                            <span x-text="tag[0]"></span>
+                            <span class="tag-conf" x-text="tag[1].toFixed(2)"></span>
+                          </span>
+                        </template>
+                        <span x-show="cat.visibleTags.length === 0" style="color:var(--text-tertiary);font-size:12px" x-text="t('tagger.noTags')">没有符号条件的标签</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 底部汇总栏 -->
+                <div class="tag-summary">
+                  <div class="tag-summary-header">
+                    <span class="tag-summary-title"><span x-text="t('tagger.totalTags')">总计标签</span>: <span x-text="summaryTagCount()"></span></span>
+                    <button class="btn btn-sm btn-ghost btn-copy" @click="copyTags()" x-text="t('tagger.copyTags')">复制标签</button>
+                  </div>
+                  <div class="tag-summary-content" x-text="summaryTagsText()"></div>
+                </div>
+              </div>
+
+              <!-- 未推理时右侧显示模型选择 -->
+              <div class="single-tagger-right" x-show="!singleImage.inferred" style="justify-content:center;align-items:center;padding:20px">
+                <div class="field" style="width:100%">
+                  <div class="field-info"><div class="field-key" x-text="t('tagger.model')">Tagger 模型</div></div>
+                  <div class="field-control" id="singleModelSelect"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Route: Tag Editor -->
@@ -1074,7 +1188,8 @@
             <span x-text="t('tagger.logTitle', 'Tagger 日志')">Tagger 日志</span>
           </div>
           <div class="panel-preview" id="taggerLogPanel"></div>
-          <div class="panel-actions">
+          <!-- 批量模式：显示操作按钮 -->
+          <div class="panel-actions" x-show="taggerMode === 'batch'">
             <div class="btn-row">
               <button class="btn btn-ghost btn-sm" style="flex:1" @click="clearTaggerLog()" x-text="t('common.clear', '清除')">清除</button>
             </div>
@@ -1089,6 +1204,10 @@
                 停止
               </button>
             </div>
+          </div>
+          <!-- 单图模式：提示 -->
+          <div class="panel-actions" x-show="taggerMode === 'single'">
+            <div style="color:var(--text-tertiary);font-size:12px;text-align:center;padding:8px" x-text="t('tagger.singleMode')">单图模式</div>
           </div>
         </div>
       </template>
