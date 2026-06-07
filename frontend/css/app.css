@@ -2971,16 +2971,13 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* 分类面板 — 扁平列表风格 */
 .cat-panel {
-  border-bottom: 2px solid var(--border-default);
-}
-.cat-panel:first-child {
-  border-top: 2px solid var(--border-default);
+  margin-bottom: 14px;
 }
 .cat-panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 0 10px 6px;
+  padding: 6px 0 6px 6px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -3018,8 +3015,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0 8px 16px;
+  padding: 6px 12px;
   font-size: 12px;
+  background: var(--bg-surface-raised);
+  border-radius: 6px;
 }
 .cat-panel-controls input[type="range"] {
   flex: 1;
@@ -3027,7 +3026,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   accent-color: var(--accent);
 }
 .cat-panel-body {
-  padding: 0 0 10px 16px;
+  padding: 4px 12px 12px;
 }
 .cat-panel.collapsed .cat-panel-body,
 .cat-panel.collapsed .cat-panel-controls {
