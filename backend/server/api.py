@@ -16,6 +16,8 @@ from backend.server.models import (APIResponse, APIResponseFail,
                                  TaggerInterrogateRequest)
 from backend.server.state import avaliable_presets, load_presets
 from backend.log import log
+from PIL import UnidentifiedImageError
+
 from backend.tagger.interrogator import (available_interrogators,
                                           on_interrogate,
                                           cancel_tagger_task)
@@ -696,8 +698,7 @@ async def tagger_single_image(
 ):
     """Single-image tag inference. Returns all categories with raw confidence scores.
     No files written — pure in-memory inference for frontend display."""
-    from PIL import Image, UnidentifiedImageError
-    from backend.tagger.interrogator import available_interrogators
+    from PIL import Image
 
     # ── 校验图片 ──────────────────────────────────────
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -706,7 +707,6 @@ async def tagger_single_image(
     try:
         contents = await file.read()
         image = Image.open(BytesIO(contents))
-        image.load()
     except UnidentifiedImageError:
         return APIResponseFail(message="Cannot identify image format / 无法识别图片格式")
     except Exception as e:
@@ -723,8 +723,7 @@ async def tagger_single_image(
     try:
         tags = await asyncio.to_thread(interrogator.interrogate, image)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        log.exception("Single-image inference failed")
         return APIResponseFail(message=f"Inference failed: {str(e)[:200]}")
 
     # ── 构建响应（返回全部标签，置信度保留 4 位小数）─────
