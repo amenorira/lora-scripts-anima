@@ -627,6 +627,17 @@ window.taggerMixin = {
     }
   },
 
+  /** 清除图片和推理结果 */
+  clearSingleImage() {
+    this.singleImage.previewUrl = null;
+    this.singleImage.file = null;
+    this.singleImage.dragOver = false;
+    this.singleImage.categories = {};
+    this.singleImage.inferred = false;
+    this.singleImage.inferring = false;
+    this.singleImage.globalThreshold = 0.50;
+  },
+
   /** 执行单图推理 */
   async runSingleInference() {
     if (!this.singleImage.file) {
