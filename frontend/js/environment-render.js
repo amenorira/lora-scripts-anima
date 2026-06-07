@@ -98,7 +98,7 @@ window.environmentRenderMixin = {
           h += `<div class="env-best-candidate">
             <span class="env-best-label">${T('bestCandidate','Best match')}</span>
             <code class="env-best-name" title="${best.name}">${best.name}</code>
-            <button id="fa-best-install-btn" class="btn btn-sm btn-secondary" data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>
+            <button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>
           </div>`;
         }
 
