@@ -805,6 +805,8 @@ window.taggerMixin = {
           if (opts.escapeTag) {
             tagName = tagName.replace(/([\\()])/g, '\\$1');
           }
+          // 标签内部空格替换为不换行空格，防止多词标签被截断
+          tagName = tagName.replace(/ /g, '\u00A0');
           parts.push(tagName);
         }
       }
@@ -814,7 +816,7 @@ window.taggerMixin = {
 
   /** 复制标签到剪贴板 */
   async copyTags() {
-    const text = this.summaryTagsText();
+    const text = this.summaryTagsText().replace(/\u00A0/g, ' ');
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
