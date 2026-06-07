@@ -834,7 +834,7 @@ window.taggerMixin = {
   },
 
   /** 复制单个分类的标签 */
-  copyCategoryTags(key) {
+  async copyCategoryTags(key) {
     const cat = this.singleImage.categories[key];
     if (!cat || !cat.visibleTags.length) return;
     const opts = this.singleImage.formatOptions;
