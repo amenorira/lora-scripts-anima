@@ -2980,7 +2980,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 8px 0 8px 4px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
