@@ -2976,6 +2976,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .cat-panel:first-child {
   border-top: 1px solid var(--border-default);
 }
+.cat-panel:nth-child(even) {
+  background: rgba(0,0,0,0.02);
+}
 .cat-panel-header {
   display: flex;
   align-items: center;
@@ -3060,26 +3063,27 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md, 8px);
   background: var(--bg-surface);
-  padding: 10px 12px;
-  font-size: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
 .tag-summary-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .tag-summary-title {
   font-weight: 600;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .tag-summary-content {
-  color: var(--text-secondary);
-  line-height: 1.6;
+  color: var(--text-primary);
+  line-height: 1.7;
   word-break: break-all;
+  font-size: 13px;
 }
 .tag-summary .btn-copy {
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 10px;
 }
