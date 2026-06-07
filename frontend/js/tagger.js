@@ -27,7 +27,6 @@ window.taggerMixin = {
     inferred: false,
     leftWidth: 55,           // 左侧宽度百分比
     isResizing: false,       // 是否正在拖拽分隔线
-    summaryParts: [],        // 汇总标签数组（响应式，供 x-for 渲染）
     formatOptions: {
       replaceUnderscore: true,
       escapeTag: true,
@@ -774,7 +773,6 @@ window.taggerMixin = {
     for (const key in this.singleImage.categories) {
       this._recalcVisibleTags(key);
     }
-    this.singleImage.summaryParts = this.summaryTagsParts();
   },
 
   /** 汇总可见标签数量 */
@@ -793,7 +791,9 @@ window.taggerMixin = {
 
   /** 汇总可见标签文本（逗号分隔） */
   summaryTagsText() {
-    return this.summaryTagsParts().join(', ');
+    const parts = this.summaryTagsParts();
+    // 标签内空格替换为不换行空格，保证多词标签不被截断
+    return parts.map(t => t.replace(/ /g, '\u00A0')).join(', ');
   },
 
   /** 汇总可见标签数组（用于 x-for 渲染，每个标签作为独立不换行单元） */
@@ -821,7 +821,7 @@ window.taggerMixin = {
 
   /** 复制标签到剪贴板 */
   async copyTags() {
-    const text = this.summaryTagsText();
+    const text = this.summaryTagsParts().join(', ');
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
