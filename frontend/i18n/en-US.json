@@ -647,7 +647,12 @@
     "sdScriptsDesc": "Training core engine (kohya-ss/sd-scripts)",
     "sdScriptsUpToDate": "Up to date",
     "sdScriptsReleaseNotes": "Release notes",
-    "sdScriptsOpenRepo": "Open repo"
+    "sdScriptsOpenRepo": "Open repo",
+    "bestCandidate": "Best match",
+    "installThis": "Install this",
+    "installSource": "Install source",
+    "showAllCandidates": "Show all candidates",
+    "hideAllCandidates": "Hide all candidates"
   },
   "opt": {
     "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
