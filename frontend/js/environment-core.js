@@ -16,7 +16,7 @@ window.environmentCoreMixin = {
   xfInstallJobId: null, xfInstallLog: '', xfInstallElapsed: 0,
 
   // ── sd-scripts State ────────────────────────────────
-  sdStatus: null, sdError: null,
+  sdStatus: null,
 
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true, xfCardOpen: true, sdCardOpen: true,
@@ -47,7 +47,7 @@ window.environmentCoreMixin = {
         const data = await r.json();
         a[logKey] = data.lines || ''; a[elapsedKey] = data.elapsed || 0;
         if (data.done) { a._stopPolling(); const busyKey = prefix + 'Busy'; a[busyKey] = false;
-          const refreshMap = { fa: 'faRefresh', xf: 'xfRefresh', sd: 'sdRefresh' };
+          const refreshMap = { fa: 'faRefresh', xf: 'xfRefresh' };
           const refreshFn = refreshMap[prefix]; if (refreshFn) { try { await a[refreshFn](true); } catch (_) {} }
           a.finishProgress(); a.renderEnvironment();
         } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
@@ -71,7 +71,9 @@ window.environmentCoreMixin = {
       const tasks = [];
       if (needsFa) tasks.push(this.faRefresh(true));
       if (needsXf) tasks.push(this.xfRefresh(true));
-      if (needsSd) tasks.push(this.sdRefresh(true));
+      if (needsSd) tasks.push((async () => {
+        try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); } catch (_) { this.sdStatus = null; }
+      })());
       await Promise.all(tasks);
     }
     this.renderEnvironment(); this.finishProgress();
@@ -115,11 +117,4 @@ window.environmentCoreMixin = {
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
   },
 
-  // ── sd-scripts Methods ────────────────────────────────
-  async sdRefresh(silent) { this.sdError = null;
-    if (!silent) { this.startProgress(); this.toast(this.t('environment.refreshing')); }
-    try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); if (!silent) this.toast(this.t('environment.refreshed')); }
-    catch (e) { this.sdError = String(e); this.sdStatus = null; }
-    this.renderEnvironment(); if (!silent) this.finishProgress();
-  }
 };
