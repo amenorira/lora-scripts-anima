@@ -556,7 +556,16 @@ window.taggerMixin = {
     reader.onload = (e) => {
       this.singleImage.previewUrl = e.target.result;
     };
-    reader.readAsDataURL(file);
+    reader.onerror = () => {
+      this.toast(this.t('common.failed') + ': Failed to read image file');
+      this.singleImage.file = null;
+    };
+    try {
+      reader.readAsDataURL(file);
+    } catch (e) {
+      this.toast(this.t('common.failed') + ': Failed to read image file');
+      this.singleImage.file = null;
+    }
   },
 
   /** 执行单图推理 */
@@ -578,6 +587,11 @@ window.taggerMixin = {
       const d = await r.json();
       if (d.status !== 'success') {
         this.toast(d.message || this.t('common.failed'));
+        this.singleImage.inferring = false;
+        return;
+      }
+      if (!d.data || !d.data.categories) {
+        this.toast(this.t('common.failed'));
         this.singleImage.inferring = false;
         return;
       }
