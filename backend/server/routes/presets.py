@@ -8,6 +8,7 @@ import re
 import toml
 from fastapi import APIRouter, Request
 
+from backend.constants import PRESETS_DIR
 from backend.server.config import app_config
 from backend.server.models import APIResponseFail, APIResponseSuccess, PresetSaveRequest, PresetRenameRequest
 from backend.server.state import avaliable_presets, load_presets
@@ -29,7 +30,7 @@ async def get_presets():
 async def save_preset(req: PresetSaveRequest):
     """Save current form data as a preset TOML file in config/presets/."""
 
-    preset_dir = os.path.join(os.getcwd(), "config", "presets")
+    preset_dir = str(PRESETS_DIR)
     os.makedirs(preset_dir, exist_ok=True)
 
     meta = {
@@ -42,7 +43,7 @@ async def save_preset(req: PresetSaveRequest):
     preset = {"metadata": meta, "data": req.data}
     toml_str = toml.dumps(preset)
 
-    safe_name = re.sub(r'[\\/*?:"<>|]', "_", req.name)
+    safe_name = _safe_filename(req.name)
     filepath = os.path.join(preset_dir, f"{safe_name}.toml")
 
     try:
@@ -58,15 +59,39 @@ async def save_preset(req: PresetSaveRequest):
     return APIResponseSuccess(data={"name": req.name, "file": f"{safe_name}.toml"})
 
 
+def _find_preset_file(name: str):
+    """Find a preset file by metadata.name. Returns filepath or None."""
+    preset_dir = str(PRESETS_DIR)
+    if not os.path.isdir(preset_dir):
+        return None
+    found = None
+    for filename in os.listdir(preset_dir):
+        if not filename.endswith(".toml"):
+            continue
+        filepath = os.path.join(preset_dir, filename)
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                preset = toml.loads(f.read())
+            if preset.get("metadata", {}).get("name") == name:
+                if found:
+                    log.warning(f"Duplicate metadata.name detected / 检测到同名预设: {name} in {filename}")
+                    continue
+                found = filepath
+        except (OSError, toml.TomlDecodeError):
+            continue
+    return found
+
+
+def _safe_filename(name: str) -> str:
+    return re.sub(r'[\\/*?:"<>|]', "_", name)
+
+
 @router.delete("/presets/{name}")
 async def delete_preset(name: str):
     """Delete a preset file from config/presets/."""
 
-    preset_dir = os.path.join(os.getcwd(), "config", "presets")
-    safe_name = re.sub(r'[\\/*?:"<>|]', "_", name)
-    filepath = os.path.join(preset_dir, f"{safe_name}.toml")
-
-    if not os.path.isfile(filepath):
+    filepath = _find_preset_file(name)
+    if not filepath:
         return APIResponseFail(message="Preset not found / 预设不存在")
 
     try:
@@ -77,7 +102,7 @@ async def delete_preset(name: str):
 
     await load_presets()
 
-    log.info(f"Preset deleted: {safe_name}")
+    log.info(f"Preset deleted: {name}")
     return APIResponseSuccess(message=f"Preset deleted / 已删除: {name}")
 
 
@@ -85,23 +110,38 @@ async def delete_preset(name: str):
 async def rename_preset(name: str, req: PresetRenameRequest):
     """Rename a preset file."""
 
-    preset_dir = os.path.join(os.getcwd(), "config", "presets")
-    safe_old = re.sub(r'[\\/*?:"<>|]', "_", name)
-    safe_new = re.sub(r'[\\/*?:"<>|]', "_", req.new_name)
-    oldpath = os.path.join(preset_dir, f"{safe_old}.toml")
-    newpath = os.path.join(preset_dir, f"{safe_new}.toml")
-
-    if not os.path.isfile(oldpath):
+    oldpath = _find_preset_file(name)
+    if not oldpath:
         return APIResponseFail(message="Preset not found / 预设不存在")
 
-    if os.path.isfile(newpath):
+    preset_dir = str(PRESETS_DIR)
+    safe_new = _safe_filename(req.new_name)
+    newpath = os.path.join(preset_dir, f"{safe_new}.toml")
+
+    if oldpath != newpath and os.path.isfile(newpath):
         return APIResponseFail(message="A preset with this name already exists / 同名预设已存在")
 
     try:
-        os.rename(oldpath, newpath)
+        with open(oldpath, encoding="utf-8") as f:
+            preset = toml.loads(f.read())
+    except (OSError, toml.TomlDecodeError) as e:
+        log.error(f"Failed to read preset for rename: {e}")
+        return APIResponseFail(message=f"Failed to read preset / 读取失败: {e}")
+
+    preset.setdefault("metadata", {})["name"] = req.new_name
+
+    try:
+        with open(newpath, "w", encoding="utf-8") as f:
+            f.write(toml.dumps(preset))
     except OSError as e:
-        log.error(f"Failed to rename preset: {e}")
-        return APIResponseFail(message=f"Failed to rename preset / 重命名失败: {e}")
+        log.error(f"Failed to write renamed preset: {e}")
+        return APIResponseFail(message=f"Failed to write preset / 写入失败: {e}")
+
+    if oldpath != newpath:
+        try:
+            os.remove(oldpath)
+        except OSError as e:
+            log.warning(f"Failed to remove old preset file after rename: {e}")
 
     await load_presets()
 
