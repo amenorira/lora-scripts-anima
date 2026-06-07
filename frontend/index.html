@@ -387,13 +387,13 @@
                   <img :src="singleImage.previewUrl" x-show="singleImage.previewUrl" alt="Preview">
                 </div>
                 <div class="single-tagger-actions">
-                  <button class="btn btn-start" style="flex:1"
+                  <button class="btn btn-start" style="flex:0 0 60%"
                           @click="runSingleInference()"
                           :disabled="!singleImage.file || singleImage.inferring"
                           x-text="singleImage.inferring ? t('tagger.inferring') : t('tagger.startInference')">
                     开始推理
                   </button>
-                  <button class="btn btn-ghost btn-sm" style="flex:0 0 auto"
+                  <button class="btn btn-ghost" style="flex:1;color:var(--danger)"
                           @click="clearSingleImage()"
                           x-show="singleImage.file"
                           x-text="t('common.clear')">清除</button>
@@ -408,42 +408,54 @@
                   <div class="field-control" id="singleModelSelect"></div>
                 </div>
 
-                <!-- 预推理：预设 + 初始阈值 + 格式选项 -->
-                <div x-show="!singleImage.inferred">
+                <!-- 预设选择器（仅 Camie/CL 可见） -->
+                <div x-show="singleImage.model === 'camie-tagger-v2' || singleImage.model === 'cl_tagger_1_02'">
                   <div class="field">
                     <div class="field-row">
                       <div class="field-info"><div class="field-key" x-text="t('tagger.presetLabel')">阈值预设</div></div>
                       <div class="field-control" id="singlePresetSelect"></div>
                     </div>
                   </div>
-                  <div class="field">
-                    <div class="field-row">
-                      <div class="field-info"><div class="field-key" x-text="t('tagger.globalThreshold')">初始阈值</div></div>
-                      <div class="field-control" style="display:flex;align-items:center;gap:8px">
-                        <input type="range" id="single-init-threshold" min="0" max="1" step="0.01" value="0.50"
-                               style="flex:1;height:4px;accent-color:var(--accent)">
-                        <span id="single-init-th-val" style="font-size:12px;color:var(--text-secondary);min-width:36px;text-align:right;font-variant-numeric:tabular-nums">0.50</span>
+                </div>
+
+                <!-- 初始阈值（始终可见，标签随模型变化） -->
+                <div class="field">
+                  <div class="field-row">
+                    <div class="field-info">
+                      <div class="field-key">
+                        <span x-show="singleImage.model === 'camie-tagger-v2' || singleImage.model === 'cl_tagger_1_02'" x-text="t('tagger.globalThreshold')">初始阈值</span>
+                        <span x-show="singleImage.model !== 'camie-tagger-v2' && singleImage.model !== 'cl_tagger_1_02'" x-text="t('tagger.threshold')">阈值</span>
                       </div>
                     </div>
-                  </div>
-                  <div class="field">
-                    <div class="toggle-grid" style="padding:4px 0">
-                      <label class="toggle">
-                        <input type="checkbox" x-model="singleImage.formatOptions.replaceUnderscore" checked>
-                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                        <span x-text="t('tagger.replaceUnderscore')">将下划线替换为空格</span>
-                      </label>
-                      <label class="toggle">
-                        <input type="checkbox" x-model="singleImage.formatOptions.escapeTag" checked>
-                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                        <span x-text="t('tagger.escapeTag')">转义括号</span>
-                      </label>
-                      <label class="toggle">
-                        <input type="checkbox" x-model="singleImage.formatOptions.addRatingTag">
-                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                        <span x-text="t('tagger.addRatingTag')">添加等级标签</span>
-                      </label>
+                    <div class="field-control" style="display:flex;align-items:center;gap:8px">
+                      <input type="range" id="single-init-threshold" min="0" max="1" step="0.01" value="0.50"
+                             style="flex:1;height:4px;accent-color:var(--accent)"
+                             @input="document.getElementById('single-init-th-val').value = parseFloat($event.target.value).toFixed(2)">
+                      <input type="number" id="single-init-th-val" min="0" max="1" step="0.01" value="0.50"
+                             style="width:50px;font-size:12px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px"
+                             @change="document.getElementById('single-init-threshold').value = parseFloat($event.target.value)">
                     </div>
+                  </div>
+                </div>
+
+                <!-- 格式化开关：始终可见 -->
+                <div class="field">
+                  <div class="toggle-grid" style="padding:4px 0">
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.replaceUnderscore" checked>
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.replaceUnderscore')">将下划线替换为空格</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.escapeTag" checked>
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.escapeTag')">转义括号</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" x-model="singleImage.formatOptions.addRatingTag">
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                      <span x-text="t('tagger.addRatingTag')">添加等级标签</span>
+                    </label>
                   </div>
                 </div>
 
@@ -458,7 +470,10 @@
                                x-model.number="singleImage.globalThreshold"
                                @input="applyGlobalThreshold()"
                                style="flex:1;height:4px;accent-color:var(--accent)">
-                        <span style="font-size:12px;color:var(--text-secondary);min-width:36px;text-align:right;font-variant-numeric:tabular-nums" x-text="singleImage.globalThreshold.toFixed(2)">0.50</span>
+                        <input type="number" min="0" max="1" step="0.01"
+                               x-model.number="singleImage.globalThreshold"
+                               @change="applyGlobalThreshold()"
+                               style="width:52px;font-size:12px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
                       </div>
                     </div>
                     <div style="display:flex;gap:6px;margin-top:4px">
@@ -486,7 +501,10 @@
                         <input type="range" min="0" max="1" step="0.01"
                                x-model.number="cat.threshold"
                                @input="recalcCategoryThreshold(key)">
-                        <span class="cat-th-value" x-text="cat.threshold.toFixed(2)"></span>
+                        <input type="number" min="0" max="1" step="0.01"
+                               x-model.number="cat.threshold"
+                               @change="recalcCategoryThreshold(key)"
+                               style="width:50px;font-size:11px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
                       </div>
                       <div class="cat-panel-body">
                         <div class="tag-list">

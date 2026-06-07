@@ -517,6 +517,9 @@ window.taggerMixin = {
       if (el) {
         el.addEventListener('input', () => {
           this.singleImage.model = el.value;
+          this.$nextTick(() => {
+            this.buildSinglePresetSelect();
+          });
         });
       }
     });
@@ -525,7 +528,8 @@ window.taggerMixin = {
   /** 构建单图模式阈值预设选择器 */
   buildSinglePresetSelect() {
     const container = document.getElementById('singlePresetSelect');
-    if (!container || container.children.length > 0) return;
+    if (!container) return;
+    container.innerHTML = '';
     const presetOpts = [
       { v: 'macro', l: this.t('tagger.presetMacro') },
       { v: 'micro', l: this.t('tagger.presetMicro') },
@@ -541,14 +545,6 @@ window.taggerMixin = {
         });
       }
     });
-
-    const thEl = document.getElementById('single-init-threshold');
-    const thVal = document.getElementById('single-init-th-val');
-    if (thEl && thVal) {
-      thEl.addEventListener('input', () => {
-        thVal.textContent = parseFloat(thEl.value).toFixed(2);
-      });
-    }
   },
 
   /** 应用预设到初始阈值 */
@@ -570,7 +566,7 @@ window.taggerMixin = {
       initVal = preset === 'macro' ? '0.35' : (preset === 'micro' ? '0.45' : '0.50');
     }
     thEl.value = initVal;
-    if (thVal) thVal.textContent = parseFloat(initVal).toFixed(2);
+    if (thVal) thVal.value = parseFloat(initVal).toFixed(2);
   },
 
   /** 文件选择器 */
