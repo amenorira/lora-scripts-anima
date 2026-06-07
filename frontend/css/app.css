@@ -2284,7 +2284,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 
 /* ── Section header ─────────────────────────────────────── */
-.env-section { margin-bottom: 28px; }
+.env-section { margin-bottom: 28px; max-width: 800px; }
 .env-section:first-child { margin-top: 0; }
 .env-section-header {
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.4px;
