@@ -2283,22 +2283,28 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-family: var(--font-mono, monospace);
 }
 
-/* ── Section headers ─────────────────────────────────────── */
+/* ── Section ──────────────────────────────────────────────── */
+.env-section { margin-top: 24px; }
+.env-section:first-child { margin-top: 0; }
 .env-section-header {
   font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-tertiary);
   padding: 0 2px 8px;
   border-bottom: 1px solid var(--border-default);
-  margin-bottom: 12px; margin-top: 20px;
+  margin-bottom: 12px;
 }
-.env-section-header:first-child { margin-top: 0; }
+.env-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
 
 
 /* ── Card ────────────────────────────────────────────────── */
 .env-card {
   border: 1px solid var(--border-default); border-radius: var(--radius-lg, 10px);
-  background: var(--bg-surface); margin-bottom: 12px; overflow: hidden;
+  background: var(--bg-surface); overflow: hidden;
 }
 .env-card[open] .env-chevron { transform: rotate(90deg); }
 .env-card-summary {
