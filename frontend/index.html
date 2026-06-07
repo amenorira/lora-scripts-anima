@@ -418,8 +418,8 @@
                   </div>
                 </div>
 
-                <!-- 初始阈值（始终可见，标签随模型变化） -->
-                <div class="field">
+                <!-- 初始阈值（仅预推理可见，标签随模型变化） -->
+                <div class="field" x-show="!singleImage.inferred">
                   <div class="field-row">
                     <div class="field-info">
                       <div class="field-key">
