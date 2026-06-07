@@ -752,8 +752,10 @@ window.taggerMixin = {
 
   /** 汇总可见标签数量 */
   summaryTagCount() {
+    const opts = this.singleImage.formatOptions;
     let count = 0;
     for (const key in this.singleImage.categories) {
+      if (key === 'rating' && !opts.addRatingTag) continue;
       const cat = this.singleImage.categories[key];
       if (cat.visible) {
         count += cat.visibleTags.length;
