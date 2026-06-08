@@ -1,4 +1,3 @@
-import locale
 import os
 import platform
 import re
@@ -8,9 +7,8 @@ import subprocess
 import sys
 import socket
 import sysconfig
-from typing import List
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from importlib import metadata as importlib_metadata
 
@@ -26,51 +24,6 @@ python_bin = sys.executable
 
 def base_dir_path():
     return Path(__file__).parents[1].absolute()
-
-
-def find_windows_git():
-    possible_paths = [
-        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Git", "cmd", "git.exe"),
-        os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"), "Git", "cmd", "git.exe"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "cmd", "git.exe"),
-    ]
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-
-
-def prepare_git():
-    if shutil.which("git"):
-        return True
-
-    log.info("Finding git / 搜索 Git...")
-
-    if sys.platform == "win32":
-        git_path = find_windows_git()
-
-        if git_path is not None:
-            log.info(f"Git not found on PATH, but found at {git_path}, adding to PATH / 未在 PATH 中找到，但发现于 {git_path}，已添加")
-            os.environ["PATH"] += os.pathsep + os.path.dirname(git_path)
-            return True
-        else:
-            return False
-    else:
-        log.error("git not found, please install git first / 未找到 Git，请先安装 Git")
-        return False
-
-
-def prepare_submodules():
-    tag_editor_path = base_dir_path() / "vendor" / "dataset-tag-editor" / "scripts"
-
-    if not os.path.exists(tag_editor_path):
-        log.info("submodule not found, try clone / 子模块未找到，尝试克隆...")
-        log.info("checking git installation / 检查 Git 安装...")
-        if not prepare_git():
-            log.error("git not found, please install git first / 未找到 Git，请先安装 Git")
-            sys.exit(1)
-        subprocess.run(["git", "submodule", "init"])
-        subprocess.run(["git", "submodule", "update"])
-
 
 def git_tag(path: str) -> str:
     try:
@@ -292,8 +245,6 @@ def prepare_environment(prepare_onnxruntime: bool = True):
 
     if not os.environ.get("PATH"):
         os.environ["PATH"] = os.path.dirname(sys.executable)
-
-    prepare_submodules()
 
     check_dirs(["config/autosave", "logs"])
 

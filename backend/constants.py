@@ -15,7 +15,7 @@ CONFIG_DIR = REPO_ROOT / "config"
 LOGS_DIR = REPO_ROOT / "logs"
 TOOLS_DIR = REPO_ROOT / "tools"
 SD_SCRIPTS_DIR = VENDOR_ROOT / "sd-scripts"
-TAG_EDITOR_DIR = VENDOR_ROOT / "dataset-tag-editor"
+
 EMO_OPTIMIZER_DIR = VENDOR_ROOT / "emo_optimizer"
 CACHE_DIR = REPO_ROOT / "cache"
 HF_CACHE_DIR = REPO_ROOT / "huggingface"

@@ -18,9 +18,8 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
     if url_type == "tensorboard":
         host = os.environ.get("ANIMA_TENSORBOARD_HOST", "127.0.0.1")
         port = os.environ.get("ANIMA_TENSORBOARD_PORT", "6006")
-    elif url_type == "tageditor":
-        host = os.environ.get("ANIMA_TAGEDITOR_HOST", "127.0.0.1")
-        port = os.environ.get("ANIMA_TAGEDITOR_PORT", "28001")
+    else:
+        raise ValueError(f"Unknown url_type: {url_type}")
 
     client = httpx.AsyncClient(base_url=f"http://{host}:{port}/", proxies={}, trust_env=False, timeout=360, limits=httpx.Limits(max_connections=10, max_keepalive_connections=5))
 
@@ -82,16 +81,5 @@ async def proxy_ws_reverse(ws_a: WebSocket, ws_b: websockets.WebSocketClientProt
             log.error(f"Error when proxy data backend -> client: {e}")
             break
 
-
-@router.websocket("/proxy/tageditor/queue/join")
-async def websocket_a(ws_a: WebSocket):
-    ws_b_uri = "ws://127.0.0.1:28001/queue/join"
-    await ws_a.accept()
-    async with websockets.connect(ws_b_uri, timeout=360, ping_timeout=None) as ws_b_client:
-        fwd_task = asyncio.create_task(proxy_ws_forward(ws_a, ws_b_client))
-        rev_task = asyncio.create_task(proxy_ws_reverse(ws_a, ws_b_client))
-        await asyncio.gather(fwd_task, rev_task)
-
 router.add_route("/proxy/tensorboard/{path:path}", reverse_proxy_maker("tensorboard"), ["GET", "POST"])
 router.add_route("/font-roboto/{path:path}", reverse_proxy_maker("tensorboard", full_path=True), ["GET", "POST"])
-router.add_route("/proxy/tageditor/{path:path}", reverse_proxy_maker("tageditor"), ["GET", "POST"])

@@ -479,7 +479,7 @@ window.taggerMixin = {
     fetch('/api/pick_file?picker_type=folder').then(r=>r.json()).then(d=>{if(d.status==='success'&&d.data&&d.data.path) document.getElementById(inputId).value=d.data.path;}).catch(function(){ self.toast(self.t('common.localPickerNA')); });
   },
 
-  openTagEditor() { window.open('/proxy/tageditor','_blank'); },
+  openTagEditor() { window.location.hash = 'tagEditor'; },
 
   // ════════════════════════════════════════════════════════
   //  单图模式方法

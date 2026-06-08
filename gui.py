@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import atexit
-import locale
 import os
 import platform
 import signal
@@ -23,7 +22,6 @@ parser.add_argument("--listen", action="store_true")
 parser.add_argument("--skip-prepare-environment", action="store_true")
 parser.add_argument("--skip-prepare-onnxruntime", action="store_true")
 parser.add_argument("--disable-tensorboard", action="store_true", help="Disable TensorBoard (port 6006)")
-parser.add_argument("--enable-tageditor", action="store_true", help="Enable legacy Gradio tag editor (port 28001)")
 parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
 parser.add_argument("--tensorboard-port", type=int, default=6006)
 parser.add_argument("--localization", type=str)
@@ -86,38 +84,6 @@ def run_tensorboard():
         # 不静默吞掉异常，让用户感知
         raise
 
-
-def run_tag_editor():
-    log.info("Starting tageditor / 正在启动标签编辑器...")
-    try:
-        cmd = [
-            sys.executable,
-            base_dir_path() / "vendor/dataset-tag-editor/scripts/launch.py",
-            "--port", "28001",
-            "--shadow-gradio-output",
-            "--root-path", "/proxy/tageditor"
-        ]
-        if args.localization:
-            cmd.extend(["--localization", args.localization])
-        else:
-            l = locale.getdefaultlocale()[0]
-            if l and l.startswith("zh"):
-                cmd.extend(["--localization", "zh-Hans"])
-        proc = subprocess.Popen(cmd)
-        # 检查进程是否立即崩溃
-        import time as _time
-        _time.sleep(0.5)
-        if proc.poll() is not None:
-            raise RuntimeError(
-                f"Tag editor exited immediately with code {proc.returncode}. "
-                f"Check if dependencies are installed."
-            )
-        _subprocesses.append((proc, "tag editor"))
-    except Exception as e:
-        log.error(f"Tag editor failed to start: {e}")
-        raise
-
-
 def launch():
     log.info("Starting lora-scripts-anima GUI / 正在启动...")
     log.info(f"Base directory / 项目目录: {base_dir_path()}, Working directory / 工作目录: {os.getcwd()}")
@@ -170,9 +136,6 @@ def launch():
     os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)
     os.environ["ANIMA_DEV"] = "1" if args.dev else "0"
-
-    if args.enable_tageditor:
-        run_tag_editor()
 
     if not args.disable_tensorboard:
         run_tensorboard()

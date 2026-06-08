@@ -10,9 +10,6 @@ bitsandbytes==0.46.0
 tensorboard==2.20.0
 numpy==1.26.4
 
-# ── GUI（dataset-tag-editor 子进程）──
-gradio==3.44.2
-
 # ── 后端（FastAPI）──
 fastapi==0.103.2
 pydantic>=2.0,<3

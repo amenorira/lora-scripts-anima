@@ -112,7 +112,7 @@ First launch automatically creates a virtual environment and installs all depend
 | `--listen` | bool | false | Enable listening mode (allow external access) |
 | `--skip-prepare-environment` | bool | false | Skip environment preparation |
 | `--disable-tensorboard` | bool | false | Disable TensorBoard |
-| `--enable-tageditor` | bool | false | Enable legacy Gradio tag editor (port 28001) |
+
 | `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
 | `--tensorboard-port` | int | 6006 | TensorBoard port |
 | `--localization` | str | | Interface localization setting |
