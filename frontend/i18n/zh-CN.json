@@ -576,10 +576,17 @@
     "emptySearch": "未找到匹配图片",
     "clearFilter": "清除筛选",
     "noImageSelected": "请选择一张图片开始编辑",
-    "confirmBatchDesc": "对 {count} 张图片执行「{operation}」操作，是否继续？",
+    "confirmBatchDesc": "将对 {count}/{total} 张图片执行 {operation} 操作，确认执行？",
     "regexError": "正则表达式无效",
     "draftSavedAt": "草稿已于 {time} 保存",
-    "draftSaveFailed": "草稿保存失败"
+    "draftSaveFailed": "草稿保存失败",
+    "moveSelected": "移动到...",
+    "moveDone": "已移动",
+    "movePrompt": "输入目标目录路径:",
+    "deleteSelected": "删除图片",
+    "deleteConfirm": "确定删除 {n} 张图片及其标签文件？此操作不可逆。",
+    "deleteDone": "已删除",
+    "downloadZip": "下载数据集"
   },
   "bulkAction": {
     "add": "添加",

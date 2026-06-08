@@ -576,10 +576,17 @@
     "emptySearch": "No matching images found",
     "clearFilter": "Clear Filters",
     "noImageSelected": "Click an image to start editing",
-    "confirmBatchDesc": "Apply \"{operation}\" to {count} images?",
+    "confirmBatchDesc": "This will apply {operation} to {count}/{total} images. Confirm?",
     "regexError": "Invalid regular expression",
     "draftSavedAt": "Draft saved at {time}",
-    "draftSaveFailed": "Draft save failed"
+    "draftSaveFailed": "Draft save failed",
+    "moveSelected": "Move to...",
+    "moveDone": "Moved",
+    "movePrompt": "Enter target directory path:",
+    "deleteSelected": "Delete image",
+    "deleteConfirm": "Delete {n} images and their tag files? This cannot be undone.",
+    "deleteDone": "Deleted",
+    "downloadZip": "Download dataset"
   },
   "bulkAction": {
     "add": "Add",

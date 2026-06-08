@@ -578,6 +578,9 @@
           <div class="te-ctx-divider"></div>
           <div class="te-ctx-item" @click="tagEditorCtxCopy()" x-text="t('tagEditor.contextCopy')"></div>
           <div class="te-ctx-item" @click="tagEditorCtxAddAll()" x-text="t('tagEditor.contextAddAll')"></div>
+          <div class="te-ctx-divider"></div>
+          <div class="te-ctx-item" @click="tagEditorMoveSelected()" x-text="t('tagEditor.moveSelected')"></div>
+          <div class="te-ctx-item" @click="tagEditorDeleteSelected()" x-text="t('tagEditor.deleteSelected')"></div>
         </div>
 
         <!-- Empty State -->
@@ -691,6 +694,11 @@
               <template x-if="tagEditorModifiedCount() > 0">
                 <span x-text="'(' + tagEditorModifiedCount() + ')'"></span>
               </template>
+            </button>
+            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" :title="t('tagEditor.downloadZip')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
             </button>
           </div>
           <div class="te-main">

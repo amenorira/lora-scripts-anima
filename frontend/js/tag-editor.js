@@ -568,6 +568,73 @@ window.tagEditorMixin = {
     this.tagEditorContextMenu = null;
   },
 
+  // ===== Move / Delete (context menu actions) =====
+  tagEditorMoveSelected() {
+    var self = this;
+    var dir = prompt(this.t('tagEditor.movePrompt') || 'Enter target directory:');
+    if (!dir) return;
+    var targets = this.tagEditorGetBatchTargets();
+    fetch('/api/tageditor/move-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'move', files: targets.map(function(img) { return img.path; }), dest_dir: dir })
+    }).then(function(r) { return r.json(); }).then(function(j) {
+      if (j.status === 'success') {
+        self.toast(self.t('tagEditor.moveDone'));
+        self.tagEditorLoad(self.tagEditorDir);
+      } else {
+        self.toast(j.message || self.t('common.error'), 'error');
+      }
+    });
+  },
+
+  tagEditorDeleteSelected() {
+    var targets = this.tagEditorGetBatchTargets();
+    var self = this;
+    this.tagEditorConfirmMsg = this.t('tagEditor.deleteConfirm').replace('{n}', targets.length);
+    this.tagEditorConfirmCb = function() {
+      fetch('/api/tageditor/move-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', files: targets.map(function(img) { return img.path; }) })
+      }).then(function(r) { return r.json(); }).then(function(j) {
+        if (j.status === 'success') {
+          self.toast(self.t('tagEditor.deleteDone'));
+          self.tagEditorLoad(self.tagEditorDir);
+        } else {
+          self.toast(j.message || self.t('common.error'), 'error');
+        }
+      });
+    };
+    this.tagEditorConfirmOpen = true;
+  },
+
+  // ===== Download dataset =====
+  tagEditorDownloadZip() {
+    window.open('/api/tageditor/download-zip?dataset_dir=' + encodeURIComponent(this.tagEditorDir), '_blank');
+  },
+
+  // ===== Restore from .bak backup =====
+  tagEditorRestoreBackup() {
+    var self = this;
+    this.tagEditorConfirmMsg = this.t('tagEditor.restoreConfirm');
+    this.tagEditorConfirmCb = function() {
+      fetch('/api/tageditor/restore-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataset_dir: self.tagEditorDir })
+      }).then(function(r) { return r.json(); }).then(function(j) {
+        if (j.status === 'success') {
+          self.toast(self.t('tagEditor.restored'));
+          self.tagEditorLoad(self.tagEditorDir);
+        } else {
+          self.toast(j.message || self.t('common.error'), 'error');
+        }
+      });
+    };
+    this.tagEditorConfirmOpen = true;
+  },
+
   // ===== Card Interactions =====
   tagEditorGridBgClick(e) {
     if (!e.target.closest('.te-card') && !e.target.closest('.te-editor')) {
@@ -904,9 +971,11 @@ window.tagEditorMixin = {
     var targets = this.tagEditorGetBatchTargets();
     var count = targets.length;
     if (count === 0) { this.toast(this.t('tagEditor.batchNoChanges'), 'warning'); return; }
+    var totalCount = this.tagEditorImages.length;
     var actionLabel = this.t('bulkAction.' + action) || action;
     this.tagEditorConfirmMsg = this.t('tagEditor.confirmBatchDesc')
-      .replace('{count}', count).replace('{operation}', actionLabel);
+      .replace('{count}', count).replace('{operation}', actionLabel)
+      .replace('{total}', totalCount);
     this.tagEditorConfirmCb = cb;
     this.tagEditorConfirmOpen = true;
   },
