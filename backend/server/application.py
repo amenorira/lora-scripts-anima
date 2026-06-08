@@ -94,6 +94,6 @@ async def index():
 
 @app.get("/favicon.ico", response_class=FileResponse)
 async def favicon():
-    return FileResponse("assets/favicon.ico")
+    return FileResponse("frontend/assets/favicon.ico")
 
 app.mount("/", SPAStaticFiles(directory="frontend", html=True), name="static")
