@@ -586,7 +586,16 @@
     "deleteSelected": "Delete image",
     "deleteConfirm": "Delete {n} images and their tag files? This cannot be undone.",
     "deleteDone": "Deleted",
-    "downloadZip": "Download dataset"
+    "downloadZip": "Download dataset",
+    "snapshots": "Snapshots",
+    "snapshotsHint": "Snapshots are auto-created on save",
+    "snapshotRestore": "Restore this snapshot",
+    "snapshotDelete": "Delete snapshot",
+    "snapshotRestoreConfirm": "Restore from this snapshot? Unsaved changes will be overwritten.",
+    "snapshotRestored": "Snapshot restored",
+    "snapshotDeleted": "Snapshot deleted",
+    "inlineEditHint": "Rename tag",
+    "inlineReplaceDone": "Replaced {old} with {new} (affected {n} images)"
   },
   "bulkAction": {
     "add": "Add",

@@ -783,17 +783,32 @@
                       <span x-text="t('tagEditor.noImages')"></span>
                     </div>
                   </template>
-                  <template x-for="item in tagEditorGetDisplayFreq()" :key="item.tag">
-                    <div class="te-tag-row"
-                      :class="{ selected: tagEditorTagSelection.includes(item.tag), excluded: tagEditorExcludedTags.includes(item.tag) }"
-                      @click="tagEditorSelectTag(item.tag)"
-                      @contextmenu.prevent="tagEditorTagCtx($event, item.tag)">
-                      <div class="te-tag-bar" :style="'width:' + (tagEditorMaxFreq > 0 ? (item.count / tagEditorMaxFreq * 100) : 0) + '%'"></div>
-                      <span class="te-tag-name" x-text="item.tag"></span>
-                      <span class="te-tag-count" x-text="item.count"></span>
-                      <span class="te-tag-excl" @click.stop="tagEditorExcludeTag(item.tag)">&times;</span>
-                    </div>
-                  </template>
+                <template x-for="item in tagEditorGetDisplayFreq()" :key="item.tag">
+                  <div class="te-tag-row"
+                    :class="{ selected: tagEditorTagSelection.includes(item.tag), excluded: tagEditorExcludedTags.includes(item.tag) }"
+                    @contextmenu.prevent="tagEditorTagCtx($event, item.tag)">
+                    <div class="te-tag-bar" :style="'width:' + (tagEditorMaxFreq > 0 ? (item.count / tagEditorMaxFreq * 100) : 0) + '%'"></div>
+                    <template x-if="tagEditorInlineEdit && tagEditorInlineEdit.oldTag === item.tag">
+                      <input id="te-inline-edit-input" type="text" class="te-inline-edit-input"
+                        x-model="tagEditorInlineEdit.newTag"
+                        @keydown.enter="tagEditorFinishInlineEdit()"
+                        @keydown.escape="tagEditorCancelInlineEdit()"
+                        @blur="tagEditorFinishInlineEdit()"
+                        @click.stop>
+                      </template>
+                    <span class="te-tag-name" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
+                      @click="tagEditorSelectTag(item.tag)" x-text="item.tag"></span>
+                    <button class="te-tag-edit-btn" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
+                      @click="tagEditorStartInlineEdit(item.tag, $event)" :title="t('tagEditor.inlineEditHint')">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                    </button>
+                    <span class="te-tag-count" x-text="item.count"></span>
+                    <span class="te-tag-excl" @click.stop="tagEditorExcludeTag(item.tag)">&times;</span>
+                  </div>
+                </template>
                 </div>
                 <div class="te-tagcloud-more" x-show="tagEditorGetFilteredTagFreq().length > tagEditorTagCloudLimit && !_teCloudShowAll">
                   <button @click="_teCloudShowAll = true"
@@ -845,6 +860,30 @@
                       </div>
                     </template>
                   </div>
+                </div>
+                <div class="te-history-section-title" style="margin-top:12px; margin-bottom:4px; font-size:12px; color:var(--text-muted); padding:0 8px;">
+                  <span x-text="t('tagEditor.snapshots')"></span>
+                  <span style="float:right" x-text="'(' + tagEditorSnapshots.length + ')'"></span>
+                </div>
+                <div class="te-snapshot-list">
+                  <div x-show="tagEditorSnapshots.length === 0" style="padding:8px;font-size:12px;color:var(--text-muted)" x-text="t('tagEditor.snapshotsHint')"></div>
+                  <template x-for="snap in tagEditorSnapshots" :key="snap.id">
+                    <div class="te-snapshot-item">
+                      <span class="te-snapshot-time" x-text="_teFormatSnapshotTime(snap.timestamp)"></span>
+                      <span class="te-snapshot-meta">
+                        <span x-text="snap.file_count + ' files'"></span>
+                        <span x-text="_teFormatSize(snap.size_bytes)"></span>
+                      </span>
+                      <div class="te-snapshot-actions">
+                        <button @click="tagEditorRestoreSnapshot(snap.id)" :title="t('tagEditor.snapshotRestore')">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                          </svg>
+                        </button>
+                        <button @click="tagEditorDeleteSnapshot(snap.id)" :title="t('tagEditor.snapshotDelete')">&times;</button>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
@@ -945,9 +984,12 @@
                       @focus="tagEditorGetSuggestions(tagEditorAddInput)"
                       @blur="tagEditorBlurSuggest()">
                     <button @click="tagEditorAddTagToSelected()">+</button>
-                    <div class="te-suggest" x-show="tagEditorSuggestions.length > 0">
-                      <template x-for="s in tagEditorSuggestions" :key="s">
-                        <div class="te-suggest-item" @mousedown.prevent="tagEditorSelectSuggestion(s)" x-text="s"></div>
+                    <div class="te-suggest" x-show="tagEditorSuggestions.length > 0"
+                      :class="{ floating: _teSuggestCoords != null }"
+                      :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;top:'+_teSuggestCoords.bottom+'px') : ''">
+                      <template x-for="(s, sIdx) in tagEditorSuggestions" :key="s">
+                        <div class="te-suggest-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
+                          @mousedown.prevent="tagEditorSelectSuggestion(s)" x-text="s"></div>
                       </template>
                     </div>
                   </div>

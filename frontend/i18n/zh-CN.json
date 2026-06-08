@@ -586,7 +586,16 @@
     "deleteSelected": "删除图片",
     "deleteConfirm": "确定删除 {n} 张图片及其标签文件？此操作不可逆。",
     "deleteDone": "已删除",
-    "downloadZip": "下载数据集"
+    "downloadZip": "下载数据集",
+    "snapshots": "快照",
+    "snapshotsHint": "保存时自动创建快照",
+    "snapshotRestore": "恢复此快照",
+    "snapshotDelete": "删除快照",
+    "snapshotRestoreConfirm": "确定从此快照恢复？当前未保存的修改将被覆盖。",
+    "snapshotRestored": "快照已恢复",
+    "snapshotDeleted": "快照已删除",
+    "inlineEditHint": "重命名标签",
+    "inlineReplaceDone": "已将 {old} 替换为 {new}（影响 {n} 张图片）"
   },
   "bulkAction": {
     "add": "添加",

@@ -1850,9 +1850,33 @@ input[type="range"]::-webkit-slider-thumb {
 .te-batch-stag-x:hover { opacity: 1; }
 
 /* ===== Shared Components ===== */
-.te-suggest { position: absolute; z-index: 60; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); max-height: 140px; overflow-y: auto; top: 100%; left: 0; right: 40px; margin-top: 2px; }
-.te-suggest-item { padding: 5px 8px; font-size: 11px; color: var(--text-primary); cursor: pointer; }
-.te-suggest-item:hover { background: var(--accent-soft); color: var(--accent); }
+.te-suggest {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.te-suggest.floating {
+  position: fixed !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
+  min-width: 120px;
+  max-height: 180px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.te-suggest-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 .te-chip { display: inline-flex; align-items: center; gap: 1px; font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
 .te-chip.include { background: var(--accent-soft); color: var(--accent); }
@@ -3092,4 +3116,95 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .tag-summary .btn-copy {
   font-size: 12px;
   padding: 3px 10px;
+}
+
+/* ===== Inline Tag Edit ===== */
+.te-inline-edit-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 1px 4px;
+  font-size: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.te-tag-edit-btn {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.te-tag-row:hover .te-tag-edit-btn {
+  opacity: 0.6;
+}
+
+.te-tag-edit-btn:hover {
+  opacity: 1 !important;
+  color: var(--accent);
+}
+
+/* ===== Snapshots ===== */
+.te-snapshot-list {
+  padding: 0 4px;
+}
+
+.te-snapshot-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  gap: 4px;
+}
+
+.te-snapshot-item:hover {
+  background: var(--hover-overlay);
+}
+
+.te-snapshot-time {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+}
+
+.te-snapshot-meta {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.te-snapshot-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.te-snapshot-item:hover .te-snapshot-actions {
+  opacity: 1;
+}
+
+.te-snapshot-actions button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 2px;
+}
+
+.te-snapshot-actions button:hover {
+  color: var(--accent);
 }
