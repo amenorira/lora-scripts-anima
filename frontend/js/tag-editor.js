@@ -26,6 +26,68 @@ function _teSuggestFromFreq(freq, query, limit, onResult) {
   onResult(out);
 }
 
+function _teGetCaretCoords(inputEl) {
+  var style = window.getComputedStyle(inputEl);
+  var mirror = document.createElement('div');
+  var cs = [
+    'position', 'width', 'height', 'padding', 'font', 'fontSize', 'fontFamily',
+    'lineHeight', 'letterSpacing', 'wordSpacing', 'whiteSpace', 'boxSizing',
+    'textIndent', 'textTransform', 'overflowWrap', 'tabSize'
+  ];
+  for (var i = 0; i < cs.length; i++) {
+    try { mirror.style[cs[i]] = style[cs[i]]; } catch(e) {}
+  }
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.overflow = 'hidden';
+  mirror.style.top = '0';
+  mirror.style.left = '0';
+  document.body.appendChild(mirror);
+
+  var val = inputEl.value;
+  var pos = inputEl.selectionStart || 0;
+  mirror.textContent = val.substring(0, pos);
+  var span = document.createElement('span');
+  span.textContent = val.substring(pos) || '.';
+  mirror.appendChild(span);
+
+  var rect = inputEl.getBoundingClientRect();
+  var mirrorRect = mirror.getBoundingClientRect();
+  var spanRect = span.getBoundingClientRect();
+
+  var x = rect.left + (spanRect.left - mirrorRect.left);
+  var y = rect.top + (spanRect.top - mirrorRect.top) + parseInt(style.lineHeight || '0');
+
+  document.body.removeChild(mirror);
+  return { x: x, y: y, top: y, left: x, bottom: y + parseInt(style.lineHeight || '0') };
+}
+
+function _teGetCurrentToken(val, pos) {
+  if (!val) return '';
+  var before = val.substring(0, pos);
+  var after = val.substring(pos);
+  var startIdx = before.lastIndexOf(',');
+  startIdx = startIdx === -1 ? 0 : startIdx + 1;
+  var endIdx = after.indexOf(',');
+  var tokenEnd = endIdx === -1 ? val.length : pos + endIdx;
+  return val.substring(startIdx, tokenEnd).trim();
+}
+
+function _teReplaceToken(val, pos, suggestion) {
+  var before = val.substring(0, pos);
+  var after = val.substring(pos);
+  var startIdx = before.lastIndexOf(',');
+  startIdx = startIdx === -1 ? 0 : startIdx + 1;
+  var endIdx = after.indexOf(',');
+  var tokenEnd = endIdx === -1 ? val.length : pos + endIdx;
+
+  var prefix = val.substring(0, startIdx);
+  var suffix = val.substring(tokenEnd);
+  var result = prefix + (prefix.trim() ? ' ' : '') + suggestion + ', ';
+  return { text: result, caretPos: result.length };
+}
+
 window.tagEditorMixin = {
 
   // ===== Core State =====
@@ -54,6 +116,7 @@ window.tagEditorMixin = {
   tagEditorTagSortBy: 'freq',
   tagEditorTagSortAsc: false,
   tagEditorTagCloudLimit: 500,
+  tagEditorInlineEdit: null,
   _teCloudShowAll: false,
   _teSearchLoading: false,
 
@@ -70,6 +133,9 @@ window.tagEditorMixin = {
   tagEditorDetailText: '',
   tagEditorAddInput: '',
   tagEditorSuggestions: [],
+  _teSuggestCoords: null,
+  _teSuggestInputEl: null,
+  tagEditorSuggestIdx: -1,
   _teSuggestTimer: null,
   _teBlurTimer: null,
   tagEditorDetailDragOverIdx: -1,
@@ -98,6 +164,10 @@ window.tagEditorMixin = {
   // ===== Sidebar Tabs =====
   tagEditorSidebarTab: 'tags',
   tagEditorHistoryDetailIdx: -1,
+
+  // ===== Snapshots =====
+  tagEditorSnapshots: [],
+  tagEditorSnapshotLoading: false,
 
   // ===== Confirm Dialog =====
   tagEditorConfirmOpen: false,
@@ -255,6 +325,7 @@ window.tagEditorMixin = {
         this.tagEditorRegexError = false;
         this._teDraftSavedAt = '';
         await this.tagEditorLoadTagFreq();
+        this.tagEditorLoadSnapshots();
         this._teCheckDraft();
         this._teStartAutoSave();
       } else {
@@ -577,7 +648,7 @@ window.tagEditorMixin = {
     fetch('/api/tageditor/move-delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'move', files: targets.map(function(img) { return img.path; }), dest_dir: dir })
+      body: JSON.stringify({ action: 'move', paths: targets.map(function(img) { return img.path; }), dest: dir })
     }).then(function(r) { return r.json(); }).then(function(j) {
       if (j.status === 'success') {
         self.toast(self.t('tagEditor.moveDone'));
@@ -596,7 +667,7 @@ window.tagEditorMixin = {
       fetch('/api/tageditor/move-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', files: targets.map(function(img) { return img.path; }) })
+        body: JSON.stringify({ action: 'delete', paths: targets.map(function(img) { return img.path; }) })
       }).then(function(r) { return r.json(); }).then(function(j) {
         if (j.status === 'success') {
           self.toast(self.t('tagEditor.deleteDone'));
@@ -611,7 +682,7 @@ window.tagEditorMixin = {
 
   // ===== Download dataset =====
   tagEditorDownloadZip() {
-    window.open('/api/tageditor/download-zip?dataset_dir=' + encodeURIComponent(this.tagEditorDir), '_blank');
+    window.open('/api/tageditor/download-zip?dir=' + encodeURIComponent(this.tagEditorDir), '_blank');
   },
 
   // ===== Restore from .bak backup =====
@@ -622,7 +693,7 @@ window.tagEditorMixin = {
       fetch('/api/tageditor/restore-backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataset_dir: self.tagEditorDir })
+        body: JSON.stringify({ dir: self.tagEditorDir })
       }).then(function(r) { return r.json(); }).then(function(j) {
         if (j.status === 'success') {
           self.toast(self.t('tagEditor.restored'));
@@ -889,18 +960,25 @@ window.tagEditorMixin = {
   },
 
   // ===== Autocomplete =====
-  tagEditorGetSuggestions(val) {
+  tagEditorGetSuggestions(val, inputEl) {
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
     if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
     var v = (val || this.tagEditorAddInput || '').trim();
-    if (!v) { this.tagEditorSuggestions = []; return; }
+    if (!v) { this.tagEditorSuggestions = []; this._teSuggestCoords = null; return; }
     var self = this;
+    var el = inputEl || document.querySelector('.te-editor-add input');
+    var pos = el ? el.selectionStart : v.length;
     this._teSuggestTimer = setTimeout(function() {
-      var parts = v.split(',');
-      var last = parts[parts.length - 1].trim().toLowerCase();
-      if (!last) { self.tagEditorSuggestions = []; return; }
-      _teSuggestFromFreq(self.tagEditorTagFreq, last, 8, function(items) {
+      var token = _teGetCurrentToken(v, pos);
+      if (!token) { self.tagEditorSuggestions = []; self._teSuggestCoords = null; return; }
+      _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(items) {
         self.tagEditorSuggestions = items;
+        if (items.length > 0 && el) {
+          self._teSuggestCoords = _teGetCaretCoords(el);
+          self._teSuggestInputEl = el;
+        } else {
+          self._teSuggestCoords = null;
+        }
       });
     }, 50);
   },
@@ -910,16 +988,23 @@ window.tagEditorMixin = {
     var self = this;
     this._teBlurTimer = setTimeout(function() {
       self.tagEditorSuggestions = [];
+      self._teSuggestCoords = null;
     }, 200);
   },
 
   tagEditorSelectSuggestion(s) {
-    var parts = (this.tagEditorAddInput || '').split(',');
-    parts.pop();
-    parts.push(' ' + s);
-    this.tagEditorAddInput = parts.join(',') + ', ';
+    var el = this._teSuggestInputEl || document.querySelector('.te-editor-add input');
+    var val = this.tagEditorAddInput || '';
+    var pos = el ? el.selectionStart : val.length;
+    var result = _teReplaceToken(val, pos, s);
+    this.tagEditorAddInput = result.text;
     this.tagEditorSuggestions = [];
-    this.tagEditorGetSuggestions(this.tagEditorAddInput);
+    this._teSuggestCoords = null;
+    if (el) {
+      var self = this;
+      setTimeout(function() { el.focus(); el.setSelectionRange(result.caretPos, result.caretPos); }, 10);
+    }
+    this.tagEditorGetSuggestions(result.text, el);
   },
 
   // ===== Batch Operations =====
@@ -965,6 +1050,48 @@ window.tagEditorMixin = {
       return this.tagEditorImages.filter(function(img) { return sel.indexOf(img.path) !== -1; });
     }
     return this.tagEditorGetFiltered();
+  },
+
+  // ===== Inline Tag Editing =====
+  tagEditorStartInlineEdit(tag, event) {
+    event.stopPropagation();
+    this.tagEditorInlineEdit = { oldTag: tag, newTag: tag };
+    var self = this;
+    this.$nextTick(function() {
+      var input = document.getElementById('te-inline-edit-input');
+      if (input) { input.focus(); input.select(); }
+    });
+  },
+
+  tagEditorFinishInlineEdit() {
+    if (!this.tagEditorInlineEdit) return;
+    var oldTag = this.tagEditorInlineEdit.oldTag;
+    var newTag = this.tagEditorInlineEdit.newTag.trim();
+    this.tagEditorInlineEdit = null;
+    if (!newTag || oldTag === newTag) return;
+
+    var targets = this.tagEditorGetBatchTargets();
+    var affected = 0;
+    var self = this;
+    targets.forEach(function(img) {
+      var tags = _teParseTags(img.tags);
+      var idx = tags.indexOf(oldTag);
+      if (idx !== -1) {
+        tags[idx] = newTag;
+        var newTagsStr = tags.join(', ');
+        self._tePushHistory({path: img.path, before: img.tags, after: newTagsStr});
+        self._teUpdateImageTags(img, newTagsStr);
+        affected++;
+      }
+    });
+    if (affected > 0) {
+      this._teInvalidateFilter();
+      this.toast(this.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', affected));
+    }
+  },
+
+  tagEditorCancelInlineEdit() {
+    this.tagEditorInlineEdit = null;
   },
 
   _teConfirmBatchScope(action, cb) {
@@ -1305,6 +1432,7 @@ window.tagEditorMixin = {
       this._teIsSaving = false;
       this._teSaveProgress = 0;
       this.toast(this.t('common.saved'));
+      self._teCreateSnapshot();
       this._teDraftSavedAt = '';
       this._teRemoveDraft();
     } catch (e) {
@@ -1313,6 +1441,65 @@ window.tagEditorMixin = {
       this._teSaveProgress = 0;
       this.toast(this.t('common.networkError'), 'error');
     }
+  },
+
+  _teCreateSnapshot() {
+    var self = this;
+    fetch('/api/tageditor/snapshots?dataset_dir=' + encodeURIComponent(this.tagEditorDir), { method: 'POST' })
+      .then(function(r) { return r.json(); }).then(function(j) {
+        if (j.status === 'success') {
+          self.tagEditorSnapshots.unshift(j.data);
+        }
+      });
+  },
+
+  tagEditorLoadSnapshots() {
+    var self = this;
+    this.tagEditorSnapshotLoading = true;
+    fetch('/api/tageditor/snapshots?dataset_dir=' + encodeURIComponent(this.tagEditorDir))
+      .then(function(r) { return r.json(); }).then(function(j) {
+        if (j.status === 'success') self.tagEditorSnapshots = j.data || [];
+        self.tagEditorSnapshotLoading = false;
+      }).catch(function() { self.tagEditorSnapshotLoading = false; });
+  },
+
+  tagEditorRestoreSnapshot(sid) {
+    var self = this;
+    this.tagEditorConfirmMsg = this.t('tagEditor.snapshotRestoreConfirm');
+    this.tagEditorConfirmCb = function() {
+      fetch('/api/tageditor/snapshots/' + sid + '/restore?dataset_dir=' + encodeURIComponent(self.tagEditorDir), { method: 'POST' })
+        .then(function(r) { return r.json(); }).then(function(j) {
+          if (j.status === 'success') {
+            self.toast(self.t('tagEditor.snapshotRestored'));
+            self.tagEditorLoad(self.tagEditorDir);
+          } else {
+            self.toast(j.message || self.t('common.error'), 'error');
+          }
+        });
+    };
+    this.tagEditorConfirmOpen = true;
+  },
+
+  tagEditorDeleteSnapshot(sid) {
+    var self = this;
+    fetch('/api/tageditor/snapshots/' + sid + '?dataset_dir=' + encodeURIComponent(this.tagEditorDir), { method: 'DELETE' })
+      .then(function(r) { return r.json(); }).then(function(j) {
+        if (j.status === 'success') {
+          self.tagEditorSnapshots = self.tagEditorSnapshots.filter(function(s) { return s.id !== sid; });
+          self.toast(self.t('tagEditor.snapshotDeleted'));
+        }
+      });
+  },
+
+  _teFormatSnapshotTime(ts) {
+    var d = new Date(parseInt(ts) * 1000);
+    return d.toLocaleString();
+  },
+
+  _teFormatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
   },
 
   // ===== Auto-save Draft =====
@@ -1427,6 +1614,21 @@ window.tagEditorMixin = {
         e.preventDefault();
         this.tagEditorPasteTagsToSelected();
       }
+      return;
+    }
+    if (e.key === 'ArrowDown' && this.tagEditorSuggestions.length > 0) {
+      e.preventDefault();
+      this.tagEditorSuggestIdx = Math.min(this.tagEditorSuggestIdx + 1, this.tagEditorSuggestions.length - 1);
+      return;
+    }
+    if (e.key === 'ArrowUp' && this.tagEditorSuggestions.length > 0) {
+      e.preventDefault();
+      this.tagEditorSuggestIdx = Math.max(this.tagEditorSuggestIdx - 1, -1);
+      return;
+    }
+    if ((e.key === 'Enter' || e.key === 'Tab') && this.tagEditorSuggestions.length > 0 && this.tagEditorSuggestIdx >= 0) {
+      e.preventDefault();
+      this.tagEditorSelectSuggestion(this.tagEditorSuggestions[this.tagEditorSuggestIdx]);
       return;
     }
     if (e.key === 'Escape') {
