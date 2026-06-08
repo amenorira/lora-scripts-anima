@@ -454,7 +454,7 @@ async def download_dataset_zip(dir: str = Query("")):
     encoded_name = urllib.parse.quote(f"{dir_name}.zip")
     return StreamingResponse(
         buf, media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=\"{dir_name}.zip\"; filename*=UTF-8''{encoded_name}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
     )
 
 
