@@ -57,10 +57,10 @@ function _teGetCaretCoords(inputEl) {
   var spanRect = span.getBoundingClientRect();
 
   var x = rect.left + (spanRect.left - mirrorRect.left);
-  var y = rect.top + (spanRect.top - mirrorRect.top) + parseInt(style.lineHeight || '0');
+  var y = rect.top + (spanRect.top - mirrorRect.top) + (parseInt(style.lineHeight) || 0);
 
   document.body.removeChild(mirror);
-  return { x: x, y: y, top: y, left: x, bottom: y + parseInt(style.lineHeight || '0') };
+  return { x: x, y: y, top: y, left: x, bottom: y + (parseInt(style.lineHeight) || 0) };
 }
 
 function _teGetCurrentToken(val, pos) {
@@ -84,7 +84,7 @@ function _teReplaceToken(val, pos, suggestion) {
 
   var prefix = val.substring(0, startIdx);
   var suffix = val.substring(tokenEnd);
-  var result = prefix + (prefix.trim() ? ' ' : '') + suggestion + ', ';
+  var result = prefix + (prefix.trim() ? ' ' : '') + suggestion + ', ' + suffix;
   return { text: result, caretPos: result.length };
 }
 
@@ -971,6 +971,7 @@ window.tagEditorMixin = {
     this._teSuggestTimer = setTimeout(function() {
       var token = _teGetCurrentToken(v, pos);
       if (!token) { self.tagEditorSuggestions = []; self._teSuggestCoords = null; return; }
+      self.tagEditorSuggestIdx = -1;
       _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(items) {
         self.tagEditorSuggestions = items;
         if (items.length > 0 && el) {
@@ -1073,13 +1074,13 @@ window.tagEditorMixin = {
     var targets = this.tagEditorGetBatchTargets();
     var affected = 0;
     var self = this;
+    this._tePushHistory();
     targets.forEach(function(img) {
       var tags = _teParseTags(img.tags);
       var idx = tags.indexOf(oldTag);
       if (idx !== -1) {
         tags[idx] = newTag;
         var newTagsStr = tags.join(', ');
-        self._tePushHistory({path: img.path, before: img.tags, after: newTagsStr});
         self._teUpdateImageTags(img, newTagsStr);
         affected++;
       }
@@ -1626,7 +1627,7 @@ window.tagEditorMixin = {
       this.tagEditorSuggestIdx = Math.max(this.tagEditorSuggestIdx - 1, -1);
       return;
     }
-    if ((e.key === 'Enter' || e.key === 'Tab') && this.tagEditorSuggestions.length > 0 && this.tagEditorSuggestIdx >= 0) {
+    if ((e.key === 'Enter' || e.key === 'Tab') && this.tagEditorSuggestions.length > 0 && this.tagEditorSuggestIdx >= 0 && this.tagEditorSuggestIdx < this.tagEditorSuggestions.length) {
       e.preventDefault();
       this.tagEditorSelectSuggestion(this.tagEditorSuggestions[this.tagEditorSuggestIdx]);
       return;
