@@ -1,6 +1,6 @@
 """
 Tag Editor API 路由
-
+  
   GET  /api/tageditor/images?dir=...         — 列出图片+标签
   GET  /api/tageditor/tags?dir=...           — 标签频率统计
   GET  /api/tageditor/stats?dir=...          — 数据集统计概览
@@ -13,6 +13,10 @@ Tag Editor API 路由
   POST /api/tageditor/restore-backup         — 还原备份
   GET  /api/tageditor/download-zip?dir=...   — 下载 zip
   GET  /api/tageditor/thumbnail?path=...     — 缩略图代理
+  POST /api/tageditor/snapshots              — 创建还原点快照
+  GET  /api/tageditor/snapshots              — 列出所有快照
+  POST /api/tageditor/snapshots/{sid}/restore — 还原指定快照
+  DELETE /api/tageditor/snapshots/{sid}       — 删除指定快照
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ from backend.tageditor.core import (
     _invalidate_cache,
 )
 from backend.tageditor.operations import apply_operation
+from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot
 
 router = APIRouter()
 
@@ -469,3 +474,41 @@ async def tag_editor_thumbnail(path: str = Query("")):
 
     mt = mimetypes.guess_type(p.name)[0] or "image/jpeg"
     return FileResponse(p, media_type=mt)
+
+
+@router.post("/tageditor/snapshots")
+async def api_create_snapshot(dataset_dir: str = Query(...)):
+    try:
+        meta = create_snapshot(dataset_dir)
+        return {"status": "success", "data": meta}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/tageditor/snapshots")
+async def api_list_snapshots(dataset_dir: str = Query(...)):
+    try:
+        snaps = list_snapshots(dataset_dir)
+        return {"status": "success", "data": snaps}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/tageditor/snapshots/{sid}/restore")
+async def api_restore_snapshot(sid: str, dataset_dir: str = Query(...)):
+    try:
+        ok = restore_snapshot(dataset_dir, sid)
+        if ok:
+            return {"status": "success", "message": "Snapshot restored"}
+        return {"status": "error", "message": "Snapshot not found"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.delete("/tageditor/snapshots/{sid}")
+async def api_delete_snapshot(sid: str, dataset_dir: str = Query(...)):
+    try:
+        delete_snapshot(dataset_dir, sid)
+        return {"status": "success", "message": "Snapshot deleted"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
