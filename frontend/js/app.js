@@ -211,6 +211,10 @@ document.addEventListener('alpine:init', () => {
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
       }
+      // Stop training status poll when leaving training page
+      if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
+        this.stopTrainingStatusPoll();
+      }
       this.currentRoute = route;
 
       const cfg = ROUTE_CONFIG[route];
@@ -221,6 +225,10 @@ document.addEventListener('alpine:init', () => {
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
       this.buildRouteContent();
+      // Start training status poll when entering training page
+      if (route.startsWith('train-')) {
+        this.startTrainingStatusPoll();
+      }
       this.showLoadModal = false;
     },
 

@@ -795,6 +795,12 @@
     "timestep_sampling_flux_shift": "Flux Shift (timestep distribution shift for Flux models)",
     "save_model_as_diffusers": "Diffusers format (for Diffusers ecosystem)"
   },
+  "training": {
+    "startTraining": "Start Training",
+    "trainingInProgress": "Training in Progress...",
+    "taskRunning": "A training task is currently running",
+    "goToMonitor": "Go to Monitor"
+  },
   "home": {
     "subtitle": "A sd-scripts based trainer",
     "author": "Author",

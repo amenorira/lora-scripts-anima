@@ -19,6 +19,11 @@ window.trainingCoreMixin = {
   _pickerFilter: '',
   _pickerCwd: '',
 
+  // Training state
+  trainingBlocked: false,
+  trainingBlockedTimer: null,
+  activeTaskId: null,
+
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
@@ -151,6 +156,9 @@ window.trainingCoreMixin = {
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
+
+    // Start training status polling
+    this.startTrainingStatusPoll();
   },
 
   renderTrainingForm(trainType, targetId) {
@@ -899,5 +907,36 @@ window.trainingCoreMixin = {
     if (!file) return;
     this.setField(this._pickerKey, file.path || file.name || '');
     this.showFilePickerModalFlag = false;
+  },
+
+  // ── Training Status Polling ──────────────────────────────
+  async checkTrainingBlocked() {
+    try {
+      const r = await fetch('/api/monitor/is-active');
+      const d = await r.json();
+      if (d.status === 'success') {
+        this.trainingBlocked = d.data.active;
+        this.activeTaskId = d.data.task_id || null;
+      }
+    } catch (e) {
+      this.trainingBlocked = false;
+    }
+  },
+
+  startTrainingStatusPoll() {
+    this.stopTrainingStatusPoll();
+    this.checkTrainingBlocked();
+    this._trainStatusTimer = setInterval(() => {
+      if (this.currentRoute.startsWith('train-')) {
+        this.checkTrainingBlocked();
+      }
+    }, 5000);
+  },
+
+  stopTrainingStatusPoll() {
+    if (this._trainStatusTimer) {
+      clearInterval(this._trainStatusTimer);
+      this._trainStatusTimer = null;
+    }
   }
 };

@@ -795,6 +795,12 @@
     "timestep_sampling_flux_shift": "Flux Shift（Flux 模型时间步位移）",
     "save_model_as_diffusers": "Diffusers 格式（适用于 Diffusers 生态）"
   },
+  "training": {
+    "startTraining": "开始训练",
+    "trainingInProgress": "训练进行中...",
+    "taskRunning": "当前有训练任务正在运行",
+    "goToMonitor": "前往监控"
+  },
   "home": {
     "subtitle": "基于 sd-scripts 的训练器",
     "author": "作者",

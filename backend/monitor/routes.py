@@ -301,6 +301,21 @@ async def monitor_preview_image(path: str = Query("")):
     return FileResponse(p, media_type=mt)
 
 
+@router.get("/monitor/is-active")
+async def is_training_active():
+    """Check if there is an active training task."""
+    tasks = tm.dump()
+    active = any(t['status'] == 'RUNNING' for t in tasks)
+    active_task = next((t for t in tasks if t['status'] == 'RUNNING'), None)
+    return {
+        "status": "success",
+        "data": {
+            "active": active,
+            "task_id": active_task['id'] if active_task else None
+        }
+    }
+
+
 @router.get("/monitor/outputs")
 async def monitor_outputs(task_id: str = Query("")):
     """获取训练任务的输出文件列表"""

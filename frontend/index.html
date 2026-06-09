@@ -1299,13 +1299,19 @@
             </div>
             <div class="btn-row">
               <button class="btn btn-start" style="flex:1" @click="startTraining()"
-                      :disabled="isTraining || trainingStarting"
-                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t('common.training') : t('common.startTraining'))">
+                      :disabled="isTraining || trainingStarting || trainingBlocked"
+                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t('common.training') : (trainingBlocked ? t('training.trainingInProgress') : t('common.startTraining')))">
                 Start Training
               </button>
               <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
                       :disabled="!isTraining" x-text="t('common.stopTraining')">
                 Stop Training
+              </button>
+            </div>
+            <div x-show="trainingBlocked" class="training-blocked-hint" style="margin-top: 8px; padding: 8px; background: var(--warning-bg, #fff3cd); border-radius: 4px; font-size: 12px; color: var(--warning-text, #856404);">
+              <div x-text="t('training.taskRunning')"></div>
+              <button class="btn btn-sm" style="margin-top: 4px;" @click="navigate('monitor-dashboard')">
+                <span x-text="t('training.goToMonitor')"></span>
               </button>
             </div>
           </div>
