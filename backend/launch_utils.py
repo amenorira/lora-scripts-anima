@@ -233,6 +233,33 @@ def check_run(file: str) -> bool:
     return result.returncode == 0
 
 
+def check_requirements():
+    """Check and install missing packages from requirements.txt."""
+    req_file = Path(__file__).parents[1] / "requirements.txt"
+    if not req_file.exists():
+        return
+
+    log.info("Checking requirements / 检查依赖...")
+    missing = []
+    with open(req_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not is_installed(line):
+                missing.append(line)
+
+    if missing:
+        log.info(f"Installing {len(missing)} missing packages / 安装 {len(missing)} 个缺失的包")
+        for pkg in missing:
+            try:
+                run_pip(f"install {pkg}", desc=pkg, live=True)
+            except Exception as e:
+                log.warning(f"Failed to install {pkg}: {e}")
+    else:
+        log.info("All requirements satisfied / 所有依赖已满足")
+
+
 def prepare_environment(prepare_onnxruntime: bool = True):
     if sys.platform == "win32":
         # disable triton on windows
@@ -247,6 +274,12 @@ def prepare_environment(prepare_onnxruntime: bool = True):
         os.environ["PATH"] = os.path.dirname(sys.executable)
 
     check_dirs(["config/autosave", "logs"])
+
+    # Check and install missing requirements
+    try:
+        check_requirements()
+    except Exception as e:
+        log.warning(f"Requirements check failed: {e} / 依赖检查失败")
 
     try:
         setup_windows_bitsandbytes()
