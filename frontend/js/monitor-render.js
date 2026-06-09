@@ -544,28 +544,167 @@ window.monitorRenderMixin = {
       if (hasRunning) html += '<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px">' + t('pastRuns', 'Past Runs') + '</div>';
       html += '<div class="history-grid">';
       this.historyItems.forEach(h => {
-        const clickAction = h.run_dir ? `viewRunDetail('${this.esc(h.run_dir)}')` : `navigate('monitor-dashboard')`;
-        html += `<div class="card history-card" @click="${clickAction}" style="cursor:pointer">`;
-        html += '<div class="card-header">' + this.esc(h.time);
+        const runDirEsc = this.esc(h.run_dir || '');
+        html += `<div class="card history-card" style="position:relative">`;
+        html += '<div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + this.esc(h.time);
         if (h.status) {
           const statusColors = {completed: 'var(--success)', failed: 'var(--danger)', error: 'var(--danger)', terminated: 'var(--text-tertiary)'};
           const statusLabels = {completed: '✓ Completed', failed: '✗ Failed', error: '✗ Error', terminated: '⏹ Terminated'};
           const color = statusColors[h.status] || 'var(--text-tertiary)';
           const label = statusLabels[h.status] || h.status;
-          html += `<span class="badge" style="font-size:10px;background:${color};color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px">${label}</span>`;
+          html += `<span class="badge" style="font-size:10px;background:${color};color:#fff;padding:1px 6px;border-radius:3px">${label}</span>`;
         }
-        if (h.duration) html += `<span style="font-size:11px;color:var(--text-tertiary);margin-left:6px">${this.esc(h.duration)}</span>`;
+        if (h.duration) html += `<span style="font-size:11px;color:var(--text-tertiary)">${this.esc(h.duration)}</span>`;
         html += '</div>';
+        html += '<div style="cursor:pointer" @click="' + (h.run_dir ? `viewRunDetail('${runDirEsc}')` : `navigate('monitor-dashboard')`) + '">';
         html += '<div><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc(h.model || '') + '</div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this.esc(h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + this.esc(h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this.esc(h.epochs || '') + '</div>';
         if (h.dataset) html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">' + (t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
-        if (h.run_dir) html += '<div style="font-size:11px;color:var(--text-tertiary)">' + (t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(h.run_dir) + '</div>';
+        html += '</div>';
+        // Action buttons
+        if (h.run_dir) {
+          html += '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">';
+          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail('${runDirEsc}')" style="font-size:11px">${t('viewDetails', 'View Details')}</button>`;
+          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewSnapshot('${runDirEsc}')" style="font-size:11px">${t('viewConfig', 'View Config')}</button>`;
+          html += `<button class="btn btn-sm" @click.stop="reuseConfig('${runDirEsc}')" style="font-size:11px;background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
+          html += '</div>';
+        }
         html += '</div>';
       });
       html += '</div>';
     }
 
+    // Config snapshot modal placeholder
+    html += '<div id="configSnapshotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center">';
+    html += '<div class="card" style="max-width:700px;width:90%;max-height:80vh;overflow:auto;padding:20px;position:relative">';
+    html += '<button class="btn btn-sm" @click="closeSnapshotModal()" style="position:absolute;top:12px;right:12px;font-size:18px;line-height:1;padding:4px 8px">&times;</button>';
+    html += '<div id="configSnapshotContent"></div>';
+    html += '</div></div>';
+
     el.innerHTML = html;
+  },
+
+  async viewSnapshot(runDir) {
+    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    try {
+      this.startProgress();
+      const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.showSnapshotModal(j.data);
+      } else {
+        this.toast(j.message || t('configLoadError', 'Failed to load config'), 'error');
+      }
+    } catch (e) {
+      this.toast(t('configLoadError', 'Failed to load config'), 'error');
+    } finally {
+      this.finishProgress();
+    }
+  },
+
+  showSnapshotModal(snapshot) {
+    const modal = document.getElementById('configSnapshotModal');
+    const content = document.getElementById('configSnapshotContent');
+    if (!modal || !content) return;
+    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+
+    let html = '<h3 style="margin:0 0 16px;font-size:16px">' + t('configSnapshot', 'Config Snapshot') + '</h3>';
+    if (snapshot.params) {
+      const p = snapshot.params;
+      html += '<div class="param-grid" style="margin-bottom:16px">';
+      const keyParams = [
+        { label: t('historyModel', 'Model'), value: p.pretrained_model_name_or_path || '' },
+        { label: t('historyLR', 'Learning Rate'), value: p.learning_rate || '' },
+        { label: t('historyDim', 'Network Dim'), value: p.network_dim || '' },
+        { label: t('historyEpochs', 'Epochs'), value: p.max_train_epochs || '' },
+        { label: t('batchSize', 'Batch Size'), value: p.train_batch_size || '' },
+        { label: t('outputName', 'Output Name'), value: p.output_name || '' },
+      ];
+      keyParams.forEach(kv => {
+        if (kv.value) html += `<div class="param-item"><span class="param-label">${kv.label}</span><span class="param-value">${this.esc(String(kv.value))}</span></div>`;
+      });
+      html += '</div>';
+    }
+    if (snapshot.content) {
+      html += '<details open><summary style="cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px">' + t('rawConfig', 'Raw Config (TOML)') + '</summary>';
+      html += '<pre style="background:var(--bg-surface-raised);padding:12px;border-radius:6px;font-size:12px;overflow-x:auto;max-height:400px;overflow-y:auto">' + this.esc(snapshot.content) + '</pre>';
+      html += '</details>';
+    }
+    html += '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">';
+    html += `<button class="btn btn-sm btn-secondary" @click="copyConfigContent()">${t('copyConfig', 'Copy Config')}</button>`;
+    html += `<button class="btn btn-sm" @click="reuseConfigFromSnapshot('${this.esc(snapshot.run_dir || '')}')" style="background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
+    html += '</div>';
+
+    content.innerHTML = html;
+    modal.style.display = 'flex';
+    this._currentSnapshot = snapshot;
+  },
+
+  closeSnapshotModal() {
+    const modal = document.getElementById('configSnapshotModal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  copyConfigContent() {
+    if (this._currentSnapshot && this._currentSnapshot.content) {
+      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => {
+        this.toast(this.t('common.copied') || 'Copied!');
+      });
+    }
+  },
+
+  async reuseConfig(runDir) {
+    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    try {
+      this.startProgress();
+      const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
+      const j = await r.json();
+      if (j.status === 'success' && j.data.params) {
+        this._applyConfigToTraining(j.data.params);
+        this.toast(t('configLoaded', 'Config loaded! Redirecting to training page...'), 'success');
+        this.navigate('train-basic');
+      } else {
+        this.toast(j.message || t('configLoadError', 'Failed to load config'), 'error');
+      }
+    } catch (e) {
+      this.toast(t('configLoadError', 'Failed to load config'), 'error');
+    } finally {
+      this.finishProgress();
+    }
+  },
+
+  reuseConfigFromSnapshot(runDir) {
+    this.closeSnapshotModal();
+    if (runDir) this.reuseConfig(runDir);
+  },
+
+  _applyConfigToTraining(params) {
+    // Apply config params to the training form
+    if (!params || !this.form) return;
+    const fieldMap = [
+      'pretrained_model_name_or_path',
+      'learning_rate',
+      'network_dim',
+      'max_train_epochs',
+      'train_batch_size',
+      'output_name',
+      'train_data_dir',
+      'network_alpha',
+      'resolution',
+      'lr_scheduler',
+      'optimizer_type',
+      'network_module',
+      'mixed_precision',
+      'save_every_n_epochs',
+      'seed',
+    ];
+    for (const key of fieldMap) {
+      if (params[key] !== undefined && this.form[key] !== undefined) {
+        this.form[key] = String(params[key]);
+      }
+    }
+    // Update TOML preview if available
+    if (this.updateToml) this.updateToml();
   }
 };

@@ -397,3 +397,39 @@ async def get_snapshot(task_id: str = Query("")):
         return {"status": "success", "data": snapshot}
     else:
         return {"status": "error", "message": "Snapshot not found"}
+
+
+@router.get("/monitor/config-from-run")
+async def get_config_from_run(run_dir: str = Query("")):
+    """Get training config content from a run directory."""
+    if not run_dir:
+        return {"status": "error", "message": "run_dir required"}
+    
+    abs_run_dir = (REPO_ROOT / run_dir).resolve()
+    
+    # Safety check: must be under output/
+    try:
+        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return {"status": "error", "message": "Invalid run_dir"}
+    
+    if not abs_run_dir.is_dir():
+        return {"status": "error", "message": "Run directory not found"}
+    
+    config_file = abs_run_dir / "config.toml"
+    if not config_file.exists():
+        return {"status": "error", "message": "Config file not found"}
+    
+    try:
+        content = config_file.read_text(encoding="utf-8")
+        params = _parse_toml_config(config_file)
+        return {
+            "status": "success",
+            "data": {
+                "content": content,
+                "params": params or {},
+                "run_dir": run_dir
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
