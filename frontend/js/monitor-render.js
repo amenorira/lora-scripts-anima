@@ -248,21 +248,29 @@ window.monitorRenderMixin = {
     html+='</div>'; return html;
   },
 
-  _filterLogLines(lines, search, level) {
-    if (search) lines = lines.filter(l => l.toLowerCase().indexOf(search) !== -1);
-    if (level === 'error') lines = lines.filter(l => {
+  _filterLogLines(lines, search, level, withIndex = false) {
+    const matchesFilter = (l) => {
       const lower = l.toLowerCase();
-      return lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || /\bcuda\b.*\berror\b/i.test(l) || /\bfail\b/i.test(l);
-    });
-    else if (level === 'warn') lines = lines.filter(l => {
-      const lower = l.toLowerCase();
-      return lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1 || /\bdeprecated\b/i.test(l);
-    });
-    else if (level === 'info') lines = lines.filter(l => {
-      const lower = l.toLowerCase();
-      return !(lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1);
-    });
-    return lines;
+      if (search && lower.indexOf(search) === -1) return false;
+      if (level === 'error') {
+        return lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || /\bcuda\b.*\berror\b/i.test(l) || /\bfail\b/i.test(l);
+      } else if (level === 'warn') {
+        return lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1 || /\bdeprecated\b/i.test(l);
+      } else if (level === 'info') {
+        return !(lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1);
+      }
+      return true;
+    };
+    if (withIndex) {
+      const result = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (matchesFilter(lines[i])) {
+          result.push({ line: lines[i], index: i });
+        }
+      }
+      return result;
+    }
+    return lines.filter(matchesFilter);
   },
 
   _renderLogsTab(d,t) {
@@ -270,7 +278,7 @@ window.monitorRenderMixin = {
     html += '<div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
     html += '<span>' + t('logTitle','Real-time Logs') + '</span>';
     html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
-    html += '<input type="text" x-model="logSearch" placeholder="' + t('logSearch','Search...') + '" style="width:130px;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input="renderDashboard()">';
+    html += '<input type="text" x-model="logSearch" placeholder="' + t('logSearch','Search logs...') + '" style="width:130px;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input.debounce.300ms="renderDashboard()">';
     const levels = ['all','info','warn','error'];
     const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
     levels.forEach(l => {
@@ -284,16 +292,13 @@ window.monitorRenderMixin = {
     if (this.logLines && this.logLines.length) {
       const search = (this.logSearch||'').toLowerCase();
       const level = this.logLevel||'all';
-      let lines = this._filterLogLines(this.logLines, search, level);
+      let lines = this._filterLogLines(this.logLines, search, level, true);
       if (lines.length) {
-        lines.forEach((line, idx) => {
+        lines.forEach(({line, index}) => {
           const lo = line.toLowerCase();
           const cls = lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 ? 'log-error' : lo.indexOf('warning') !== -1 ? 'log-warn' : '';
-          let displayLine = this.esc(line);
-          if (search) {
-            displayLine = this._highlightSearch(displayLine, this.esc(search));
-          }
-          html += '<div class="log-line ' + cls + '"><span class="log-line-num">' + (idx+1) + '</span>' + displayLine + '</div>';
+          const displayLine = this._formatLogLine(line, search);
+          html += '<div class="log-line ' + cls + '"><span class="log-line-num">' + (index+1) + '</span>' + displayLine + '</div>';
         });
       } else {
         html += '<div class="dashboard-empty" style="padding:20px"><p>' + t('noResults','No matches') + '</p></div>';
@@ -312,6 +317,14 @@ window.monitorRenderMixin = {
     if (!escapedSearch) return escapedHtml;
     const regex = new RegExp('(' + escapedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
     return escapedHtml.replace(regex, '<mark>$1</mark>');
+  },
+
+  _formatLogLine(line, search) {
+    let displayLine = this.esc(line);
+    if (search) {
+      displayLine = this._highlightSearch(displayLine, this.esc(search));
+    }
+    return displayLine;
   },
 
   downloadLogs() {
@@ -428,11 +441,11 @@ window.monitorRenderMixin = {
       this._prevLogSearch=search;
       this._prevLogLevel=level;
       this._lastLogLineCount=0;
-      let lines=this._filterLogLines(this.logLines, search, level);
+      let lines=this._filterLogLines(this.logLines, search, level, true);
       this._lastLogLineCount=this.logLines.length;
       let html='<div class="log-lines">';
       if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-      else lines.forEach((line,idx)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';let dl=this.esc(line);if(search)dl=this._highlightSearch(dl,this.esc(search));html+=`<div class="log-line ${cls}"><span class="log-line-num">${idx+1}</span>${dl}</div>`;});
+      else lines.forEach(({line, index})=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const dl=this._formatLogLine(line, search);html+=`<div class="log-line ${cls}"><span class="log-line-num">${index+1}</span>${dl}</div>`;});
       html+='</div>';
       if(!this.logAutoScroll&&this.logLines.length>0){
         html+=`<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
@@ -447,7 +460,7 @@ window.monitorRenderMixin = {
       if(!container) return;
       const frag=document.createDocumentFragment();
       const startIdx=newLineCount-newLines.length;
-      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;let dl=this.esc(line);if(search)dl=this._highlightSearch(dl,this.esc(search));divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+dl;frag.appendChild(divEl);});
+      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;const dl=this._formatLogLine(line, search);divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+dl;frag.appendChild(divEl);});
       container.appendChild(frag);
       while(container.children.length>500){container.removeChild(container.firstChild);}
       if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
