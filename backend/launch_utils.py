@@ -243,8 +243,9 @@ def check_requirements():
     missing = []
     with open(req_file, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+            # Remove inline comments and strip whitespace
+            line = line.split("#")[0].strip()
+            if not line:
                 continue
             if not is_installed(line):
                 missing.append(line)
