@@ -21,7 +21,6 @@ window.trainingCoreMixin = {
 
   // Training state
   trainingBlocked: false,
-  trainingBlockedTimer: null,
   activeTaskId: null,
 
   trainTypes: [
@@ -920,6 +919,7 @@ window.trainingCoreMixin = {
       }
     } catch (e) {
       this.trainingBlocked = false;
+      this.activeTaskId = null;
     }
   },
 
