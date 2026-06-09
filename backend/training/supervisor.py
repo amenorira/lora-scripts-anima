@@ -19,6 +19,7 @@ from typing import Optional
 from backend.log import log
 from backend.tasks import tm
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
+from backend.monitor.snapshot import save_config_snapshot
 
 
 def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int | None:
@@ -150,6 +151,16 @@ def run_train(
 
     task_id = task.task_id
     task_id_short = task_id[:8]
+
+    # Save config snapshot
+    try:
+        save_config_snapshot(task_id, toml_path, extra_info={
+            "trainer_file": trainer_file,
+            "gpu_ids": gpu_ids,
+            "output_dir": od,
+        })
+    except Exception as e:
+        log.warning(f"Failed to save config snapshot / 保存配置快照失败: {e}")
 
     env = _build_train_env(output_dir=od, task_id=task_id)
     env.update(env_extra)

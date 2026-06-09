@@ -382,3 +382,18 @@ async def download_outputs(task_id: str = Query(""), files: str = Query("")):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
     )
+
+
+@router.get("/monitor/snapshot")
+async def get_snapshot(task_id: str = Query("")):
+    """Get training config snapshot for a task."""
+    from backend.monitor.snapshot import get_config_snapshot
+    
+    if not task_id:
+        return {"status": "error", "message": "task_id required"}
+    
+    snapshot = get_config_snapshot(task_id)
+    if snapshot:
+        return {"status": "success", "data": snapshot}
+    else:
+        return {"status": "error", "message": "Snapshot not found"}
