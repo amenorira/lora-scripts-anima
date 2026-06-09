@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 from typing import AsyncGenerator
 
 from sse_starlette.sse import EventSourceResponse
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
+
+logger = logging.getLogger(__name__)
 
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config
@@ -31,6 +34,8 @@ router = APIRouter()
 _HARDWARE_INTERVAL = 2.0
 _PROGRESS_INTERVAL = 1.0
 _LOG_INTERVAL = 1.0
+_POLL_INTERVAL = 0.5
+_MAX_LOG_LINES = 50
 
 
 async def _get_hardware() -> dict:
@@ -42,21 +47,25 @@ async def _get_hardware() -> dict:
     return {"gpu": gpu, "system": sys}
 
 
-async def _get_progress(task_id: str) -> dict | None:
-    """获取训练进度"""
+async def _resolve_log_lines(task_id: str) -> list[str] | None:
+    """共享逻辑：校验任务状态并读取日志行，返回 None 表示不可用"""
     task = tm.get_task(task_id)
     if not task or task.status != TaskStatus.RUNNING:
         return None
-
     train_config = await asyncio.to_thread(latest_train_config)
     output_dir = train_config.get("output_dir")
     log_lines = await asyncio.to_thread(
         read_train_log, task_id,
         Path(output_dir) if output_dir else None,
     )
+    return log_lines or None
+
+
+async def _get_progress(task_id: str) -> dict | None:
+    """获取训练进度"""
+    log_lines = await _resolve_log_lines(task_id)
     if not log_lines:
         return None
-
     progress = await asyncio.to_thread(parse_log_progress, log_lines)
     return {
         "step": progress.get("step", 0),
@@ -74,23 +83,12 @@ async def _get_progress(task_id: str) -> dict | None:
 
 async def _get_log_tail(task_id: str, last_line_count: int) -> tuple[list[str], int]:
     """获取日志增量，返回 (新行列表, 当前总行数)"""
-    task = tm.get_task(task_id)
-    if not task or task.status != TaskStatus.RUNNING:
-        return [], last_line_count
-
-    train_config = await asyncio.to_thread(latest_train_config)
-    output_dir = train_config.get("output_dir")
-    log_lines = await asyncio.to_thread(
-        read_train_log, task_id,
-        Path(output_dir) if output_dir else None,
-    )
+    log_lines = await _resolve_log_lines(task_id)
     if not log_lines:
         return [], last_line_count
-
     current_count = len(log_lines)
     if current_count > last_line_count:
-        new_lines = log_lines[last_line_count:]
-        return new_lines, current_count
+        return log_lines[last_line_count:], current_count
     return [], last_line_count
 
 
@@ -144,7 +142,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
                     "data": json.dumps(hw),
                 }
             except Exception:
-                pass
+                logger.debug("获取硬件信息失败", exc_info=True)
 
         # 推送训练进度
         if task_id and current_status == "RUNNING" and now - last_progress_time >= _PROGRESS_INTERVAL:
@@ -157,7 +155,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
                         "data": json.dumps(progress),
                     }
             except Exception:
-                pass
+                logger.debug("获取训练进度失败 (task_id=%s)", task_id, exc_info=True)
 
         # 推送日志增量
         if task_id and current_status == "RUNNING" and now - last_log_time >= _LOG_INTERVAL:
@@ -165,26 +163,30 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
             try:
                 new_lines, last_log_line_count = await _get_log_tail(task_id, last_log_line_count)
                 if new_lines:
+                    truncated = len(new_lines) > _MAX_LOG_LINES
+                    payload: dict = {
+                        "lines": new_lines[-_MAX_LOG_LINES:],
+                        "total": last_log_line_count,
+                    }
+                    if truncated:
+                        payload["truncated"] = True
+                        payload["total_new"] = len(new_lines)
                     yield {
                         "event": "log_update",
-                        "data": json.dumps({
-                            "lines": new_lines[-50:],  # 每次最多推送 50 行
-                            "total": last_log_line_count,
-                        }),
+                        "data": json.dumps(payload),
                     }
             except Exception:
-                pass
+                logger.debug("获取日志增量失败 (task_id=%s)", task_id, exc_info=True)
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(_POLL_INTERVAL)
 
 
 @router.get("/monitor/stream")
-async def monitor_stream(task_id: str = Query("")):
+async def monitor_stream(task_id: str = Query(""), request: Request = None):
     """SSE 端点：实时训练监控流"""
     if not task_id:
-        # 无 task_id 时只推送硬件信息
         async def _hw_only():
-            while True:
+            while not (request and await request.is_disconnected()):
                 try:
                     hw = await _get_hardware()
                     yield {
@@ -192,7 +194,7 @@ async def monitor_stream(task_id: str = Query("")):
                         "data": json.dumps(hw),
                     }
                 except Exception:
-                    pass
+                    logger.debug("获取硬件信息失败 (hw_only)", exc_info=True)
                 await asyncio.sleep(_HARDWARE_INTERVAL)
 
         return EventSourceResponse(_hw_only())
