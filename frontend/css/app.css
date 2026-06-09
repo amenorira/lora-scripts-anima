@@ -1663,11 +1663,21 @@ input[type="range"]::-webkit-slider-thumb {
 [data-theme="dark"] .monitor-logs-container {
   background: var(--bg-surface-raised);
 }
+.log-lines { display: flex; flex-direction: column; }
 .log-line { padding: 1px 4px 1px 0; border-radius: 2px; transition: background 0.1s; display: flex; align-items: flex-start; }
 .log-line:hover { background: var(--accent-muted); }
 .log-error { color: var(--danger); background: rgba(220, 38, 38, 0.06); }
 .log-warn { color: var(--warning); }
 .log-line-num { display: inline-block; min-width: 36px; padding-right: 8px; text-align: right; color: var(--text-tertiary); user-select: none; opacity: 0.5; font-size: 10px; flex-shrink: 0; }
+.log-line mark {
+  background: rgba(255, 213, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+[data-theme="dark"] .log-line mark {
+  background: rgba(255, 213, 0, 0.25);
+}
 .log-scroll-bottom { position: sticky; bottom: 8px; z-index: 10; }
 
 /* ── History ────────────────────────────────────────────── */

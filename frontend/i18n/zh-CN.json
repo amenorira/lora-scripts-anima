@@ -46,6 +46,7 @@
     "error": "训练异常",
     "logAutoScroll": "自动滚动",
     "logCopy": "复制",
+    "logDownload": "下载",
     "logClear": "清空",
     "running": "运行中",
     "pastRuns": "历史记录",

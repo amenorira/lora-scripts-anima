@@ -46,6 +46,7 @@
     "error": "Training Error",
     "logAutoScroll": "Auto-scroll",
     "logCopy": "Copy",
+    "logDownload": "Download",
     "logClear": "Clear",
     "running": "Running",
     "pastRuns": "Past Runs",

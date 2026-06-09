@@ -267,8 +267,20 @@ window.monitorRenderMixin = {
 
   _renderLogsTab(d,t) {
     let html = '<div class="card card-logs" style="margin-top:12px">';
-    html += '<div class="card-header">' + t('logTitle','Real-time Logs') + '</div>';
-    html += '<div id="monitorDashboardLogs" class="monitor-logs-container" style="max-height:calc(100vh - 320px);overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6">';
+    html += '<div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+    html += '<span>' + t('logTitle','Real-time Logs') + '</span>';
+    html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+    html += '<input type="text" x-model="logSearch" placeholder="' + t('logSearch','Search...') + '" style="width:130px;font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input="renderDashboard()">';
+    const levels = ['all','info','warn','error'];
+    const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
+    levels.forEach(l => {
+      html += `<button type="button" class="log-level-btn" :class="{active:logLevel==='${l}'}" @click="logLevel='${l}';renderDashboard()">${levelLabels[l]}</button>`;
+    });
+    html += `<button type="button" class="btn btn-sm" :class="logAutoScroll?'btn-primary':'btn-secondary'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?'${t('logAutoScroll','Auto-scroll')}: ON':'${t('logAutoScroll','Auto-scroll')}: OFF'"></span></button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">${t('logCopy','Copy')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">${t('logDownload','Download')}</button>`;
+    html += '</div></div>';
+    html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines" style="max-height:calc(100vh - 320px);overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6">';
     if (this.logLines && this.logLines.length) {
       const search = (this.logSearch||'').toLowerCase();
       const level = this.logLevel||'all';
@@ -277,7 +289,11 @@ window.monitorRenderMixin = {
         lines.forEach((line, idx) => {
           const lo = line.toLowerCase();
           const cls = lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 ? 'log-error' : lo.indexOf('warning') !== -1 ? 'log-warn' : '';
-          html += '<div class="log-line ' + cls + '"><span class="log-line-num">' + (idx+1) + '</span>' + this.esc(line) + '</div>';
+          let displayLine = this.esc(line);
+          if (search) {
+            displayLine = this._highlightSearch(displayLine, this.esc(search));
+          }
+          html += '<div class="log-line ' + cls + '"><span class="log-line-num">' + (idx+1) + '</span>' + displayLine + '</div>';
         });
       } else {
         html += '<div class="dashboard-empty" style="padding:20px"><p>' + t('noResults','No matches') + '</p></div>';
@@ -290,6 +306,26 @@ window.monitorRenderMixin = {
     }
     html += '</div></div>';
     return html;
+  },
+
+  _highlightSearch(escapedHtml, escapedSearch) {
+    if (!escapedSearch) return escapedHtml;
+    const regex = new RegExp('(' + escapedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    return escapedHtml.replace(regex, '<mark>$1</mark>');
+  },
+
+  downloadLogs() {
+    const content = this.logLines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'training-logs-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.toast(this.t('common.downloaded','Downloaded!'));
   },
 
   _renderOutputsTab(d,t) {
@@ -396,7 +432,7 @@ window.monitorRenderMixin = {
       this._lastLogLineCount=this.logLines.length;
       let html='<div class="log-lines">';
       if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-      else lines.forEach((line,idx)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';html+=`<div class="log-line ${cls}"><span class="log-line-num">${idx+1}</span>${this.esc(line)}</div>`;});
+      else lines.forEach((line,idx)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';let dl=this.esc(line);if(search)dl=this._highlightSearch(dl,this.esc(search));html+=`<div class="log-line ${cls}"><span class="log-line-num">${idx+1}</span>${dl}</div>`;});
       html+='</div>';
       if(!this.logAutoScroll&&this.logLines.length>0){
         html+=`<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
@@ -411,7 +447,7 @@ window.monitorRenderMixin = {
       if(!container) return;
       const frag=document.createDocumentFragment();
       const startIdx=newLineCount-newLines.length;
-      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+this.esc(line);frag.appendChild(divEl);});
+      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;let dl=this.esc(line);if(search)dl=this._highlightSearch(dl,this.esc(search));divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+dl;frag.appendChild(divEl);});
       container.appendChild(frag);
       while(container.children.length>500){container.removeChild(container.firstChild);}
       if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
