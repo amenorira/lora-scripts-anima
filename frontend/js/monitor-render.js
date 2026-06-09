@@ -50,12 +50,22 @@ window.monitorRenderMixin = {
         html += '</div>';
       }
 
-      if (tab==='overview') html += this._renderOverviewTab(d,t);
-      else if (tab==='logs') html += this._renderLogsTab(d,t);
-      else if (tab==='charts') html += this._renderChartsTab(d,t);
-      else if (tab==='samples') html += this._renderSamplesTab(t);
-      else if (tab==='outputs') html += this._renderOutputsTab(d,t);
-      else if (tab==='tensorboard') html += this._renderTensorBoard();
+      // Tab content with caching
+      if (!this._tabContentCache) this._tabContentCache = {};
+      const tabCacheKey = `${tab}-${isHistoryMode}-${this.logLines.length}-${this.logSearch}-${this.logLevel}`;
+      if (this._tabContentCache[tab] && this._tabContentCache[tab].key === tabCacheKey) {
+        html += this._tabContentCache[tab].html;
+      } else {
+        let tabHtml = '';
+        if (tab==='overview') tabHtml = this._renderOverviewTab(d,t);
+        else if (tab==='logs') tabHtml = this._renderLogsTab(d,t);
+        else if (tab==='charts') tabHtml = this._renderChartsTab(d,t);
+        else if (tab==='samples') tabHtml = this._renderSamplesTab(t);
+        else if (tab==='outputs') tabHtml = this._renderOutputsTab(d,t);
+        else if (tab==='tensorboard') tabHtml = this._renderTensorBoard();
+        this._tabContentCache[tab] = { key: tabCacheKey, html: tabHtml };
+        html += tabHtml;
+      }
       html += '</div>';
       this._destroyCharts(); el.innerHTML = html;
 
@@ -67,6 +77,18 @@ window.monitorRenderMixin = {
       else { bars.forEach(bar=>{const key=bar.dataset.bar,prev=prevBars[key]!=null?prevBars[key]:0;bar.style.width=prev+'%';});
         requestAnimationFrame(()=>{requestAnimationFrame(()=>{bars.forEach(bar=>{bar.style.width=bar.dataset.target+'%';});});}); }
       setTimeout(()=>this._drawCharts(),100);
+      // Add auto-scroll for logs tab
+      if (tab === 'logs') {
+        const logContainer = el.querySelector('#monitorDashboardLogs');
+        if (logContainer) {
+          if (this.logAutoScroll) logContainer.scrollTop = logContainer.scrollHeight;
+          logContainer.onscroll = () => {
+            const atBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 30;
+            if (this.logAutoScroll && !atBottom) { this.logAutoScroll = false; }
+            else if (!this.logAutoScroll && atBottom) { this.logAutoScroll = true; }
+          };
+        }
+      }
       return;
     }
 
@@ -226,6 +248,23 @@ window.monitorRenderMixin = {
     html+='</div>'; return html;
   },
 
+  _filterLogLines(lines, search, level) {
+    if (search) lines = lines.filter(l => l.toLowerCase().indexOf(search) !== -1);
+    if (level === 'error') lines = lines.filter(l => {
+      const lower = l.toLowerCase();
+      return lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || /\bcuda\b.*\berror\b/i.test(l) || /\bfail\b/i.test(l);
+    });
+    else if (level === 'warn') lines = lines.filter(l => {
+      const lower = l.toLowerCase();
+      return lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1 || /\bdeprecated\b/i.test(l);
+    });
+    else if (level === 'info') lines = lines.filter(l => {
+      const lower = l.toLowerCase();
+      return !(lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1);
+    });
+    return lines;
+  },
+
   _renderLogsTab(d,t) {
     let html = '<div class="card card-logs" style="margin-top:12px">';
     html += '<div class="card-header">' + t('logTitle','Real-time Logs') + '</div>';
@@ -233,11 +272,7 @@ window.monitorRenderMixin = {
     if (this.logLines && this.logLines.length) {
       const search = (this.logSearch||'').toLowerCase();
       const level = this.logLevel||'all';
-      let lines = this.logLines;
-      if (search) lines = lines.filter(l => l.toLowerCase().indexOf(search) !== -1);
-      if (level === 'error') lines = lines.filter(l => { const lo = l.toLowerCase(); return lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 || lo.indexOf('exception') !== -1; });
-      else if (level === 'warn') lines = lines.filter(l => { const lo = l.toLowerCase(); return lo.indexOf('warning') !== -1 || lo.indexOf('warn') !== -1; });
-      else if (level === 'info') lines = lines.filter(l => { const lo = l.toLowerCase(); return !(lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 || lo.indexOf('warning') !== -1); });
+      let lines = this._filterLogLines(this.logLines, search, level);
       if (lines.length) {
         lines.forEach((line, idx) => {
           const lo = line.toLowerCase();
@@ -246,6 +281,9 @@ window.monitorRenderMixin = {
         });
       } else {
         html += '<div class="dashboard-empty" style="padding:20px"><p>' + t('noResults','No matches') + '</p></div>';
+      }
+      if (!this.logAutoScroll && this.logLines.length > 0) {
+        html += `<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderDashboard()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
       }
     } else {
       html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + t('noLogsHint','No logs yet') + '</p></div>';
@@ -354,20 +392,7 @@ window.monitorRenderMixin = {
       this._prevLogSearch=search;
       this._prevLogLevel=level;
       this._lastLogLineCount=0;
-      let lines=this.logLines;
-      if(search) lines=lines.filter(l=>l.toLowerCase().indexOf(search)!==-1);
-      if(level==='error') lines=lines.filter(l=>{
-        const lower=l.toLowerCase();
-        return lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1||/\bcuda\b.*\berror\b/i.test(l)||/\bfail\b/i.test(l);
-      });
-      else if(level==='warn') lines=lines.filter(l=>{
-        const lower=l.toLowerCase();
-        return lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1||/\bdeprecated\b/i.test(l);
-      });
-      else if(level==='info') lines=lines.filter(l=>{
-        const lower=l.toLowerCase();
-        return !(lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1||lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1);
-      });
+      let lines=this._filterLogLines(this.logLines, search, level);
       this._lastLogLineCount=this.logLines.length;
       let html='<div class="log-lines">';
       if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
