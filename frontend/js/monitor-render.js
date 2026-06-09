@@ -13,11 +13,11 @@ window.monitorRenderMixin = {
     const sys = isHistoryMode ? null : this.sysInfo;
     const t = (k,fb) => this.t('monitor.'+k)||fb||k;
     const firstRender = !this._dashboardRendered;
-    const tab = this.dashTab||'overview';
+    const tab = this.monitorTab||'overview';
 
     // Full render on first load, tab change, or history mode change
-    if (firstRender || this._prevDashTab !== tab || this._prevHistoryMode !== isHistoryMode) {
-      this._prevDashTab = tab;
+    if (firstRender || this._prevMonitorTab !== tab || this._prevHistoryMode !== isHistoryMode) {
+      this._prevMonitorTab = tab;
       this._prevHistoryMode = isHistoryMode;
       this._dashboardRendered = true;
 
@@ -50,9 +50,11 @@ window.monitorRenderMixin = {
         html += '</div>';
       }
 
-      if (tab==='overview') html += this._renderOverview(d,t);
-      else if (tab==='charts') html += this._renderCharts(d,t);
-      else if (tab==='samples') html += this._renderSamples(t);
+      if (tab==='overview') html += this._renderOverviewTab(d,t);
+      else if (tab==='logs') html += this._renderLogsTab(d,t);
+      else if (tab==='charts') html += this._renderChartsTab(d,t);
+      else if (tab==='samples') html += this._renderSamplesTab(t);
+      else if (tab==='outputs') html += this._renderOutputsTab(d,t);
       else if (tab==='tensorboard') html += this._renderTensorBoard();
       html += '</div>';
       this._destroyCharts(); el.innerHTML = html;
@@ -175,7 +177,7 @@ window.monitorRenderMixin = {
     });
   },
 
-  _renderOverview(d,t) {
+  _renderOverviewTab(d,t) {
     let html='';
     const isHistoryMode = !!this.selectedRunDir;
 
@@ -195,12 +197,12 @@ window.monitorRenderMixin = {
     else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noParamsHint','Start training to see parameters')+'</p></div>';
     html+='</div>';
     if (this.previews.length) { html+='<div class="card card-preview" style="margin-top:12px"><div class="card-header">'+t('previewSamples','Preview')+'</div><div class="preview-grid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">';
-      this.previews.slice(0,6).forEach(p=>{html+=`<div class="preview-item" @click="dashTab='samples';renderDashboard()" style="cursor:pointer"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${this.esc(p.name)}</span></div>`;});
+      this.previews.slice(0,6).forEach(p=>{html+=`<div class="preview-item" @click="monitorTab='samples';renderDashboard()" style="cursor:pointer"><img src="${this.esc(p.url)}" alt="${this.esc(p.name)}" loading="lazy" style="height:80px;object-fit:cover"/><span style="font-size:10px">${this.esc(p.name)}</span></div>`;});
       html+='</div></div>'; }
     return html;
   },
 
-  _renderCharts(d,t) {
+  _renderChartsTab(d,t) {
     let html = '<div class="card card-charts"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><span>'+t('lossCurve','Loss/LR')+'</span><label style="font-size:11px;display:flex;align-items:center;gap:4px;font-weight:400"><span style="color:var(--text-tertiary)">'+t('smooth','Smooth')+'</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="chartSmoothing=$event.target.value; _updateCharts()" @change="renderDashboard()" style="width:60px;accent-color:var(--accent)" value="0.6"></label></div>';
     html+='<div class="chart-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px">';
     const tags = this.lossSeries.length ? this.lossSeries : [
@@ -213,7 +215,7 @@ window.monitorRenderMixin = {
     html+='</div></div>'; return html;
   },
 
-  _renderSamples(t) {
+  _renderSamplesTab(t) {
     let html='<div class="card card-preview"><div class="card-header">'+t('previewSamples','Preview')+'</div>';
     if (this.previews.length) { html+='<div class="preview-controls" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1)" :disabled="previewStep<=0">&larr; Prev</button><span style="font-size:13px">Step <b x-text="previewStep+1"></b> / <b>'+this.previews.length+'</b></span><button class="btn btn-sm" @click="previewStep=Math.min('+(this.previews.length-1)+',previewStep+1)" :disabled="previewStep>='+(this.previews.length-1)+'">Next &rarr;</button></div><div class="preview-grid">';
       const p=this.previews[this.previewStep]||this.previews[0];
@@ -222,6 +224,56 @@ window.monitorRenderMixin = {
       html+='</div>'; }
     else html+='<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>'+t('noPreviewHint','Preview images appear during training')+'</p></div>';
     html+='</div>'; return html;
+  },
+
+  _renderLogsTab(d,t) {
+    let html = '<div class="card card-logs" style="margin-top:12px">';
+    html += '<div class="card-header">' + t('logTitle','Real-time Logs') + '</div>';
+    html += '<div id="monitorDashboardLogs" class="monitor-logs-container" style="max-height:calc(100vh - 320px);overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6">';
+    if (this.logLines && this.logLines.length) {
+      const search = (this.logSearch||'').toLowerCase();
+      const level = this.logLevel||'all';
+      let lines = this.logLines;
+      if (search) lines = lines.filter(l => l.toLowerCase().indexOf(search) !== -1);
+      if (level === 'error') lines = lines.filter(l => { const lo = l.toLowerCase(); return lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 || lo.indexOf('exception') !== -1; });
+      else if (level === 'warn') lines = lines.filter(l => { const lo = l.toLowerCase(); return lo.indexOf('warning') !== -1 || lo.indexOf('warn') !== -1; });
+      else if (level === 'info') lines = lines.filter(l => { const lo = l.toLowerCase(); return !(lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 || lo.indexOf('warning') !== -1); });
+      if (lines.length) {
+        lines.forEach((line, idx) => {
+          const lo = line.toLowerCase();
+          const cls = lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1 ? 'log-error' : lo.indexOf('warning') !== -1 ? 'log-warn' : '';
+          html += '<div class="log-line ' + cls + '"><span class="log-line-num">' + (idx+1) + '</span>' + this.esc(line) + '</div>';
+        });
+      } else {
+        html += '<div class="dashboard-empty" style="padding:20px"><p>' + t('noResults','No matches') + '</p></div>';
+      }
+    } else {
+      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + t('noLogsHint','No logs yet') + '</p></div>';
+    }
+    html += '</div></div>';
+    return html;
+  },
+
+  _renderOutputsTab(d,t) {
+    let html = '<div class="card card-outputs" style="margin-top:12px">';
+    html += '<div class="card-header">' + t('outputs','Training Outputs') + '</div>';
+    const outputs = d.outputs || [];
+    if (outputs.length) {
+      html += '<div class="output-list" style="display:flex;flex-direction:column;gap:4px">';
+      outputs.forEach(o => {
+        html += '<div class="output-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg-surface-raised);font-size:13px">';
+        html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+        html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + this.esc(o.name || '') + '</span>';
+        if (o.size) html += '<span style="font-size:11px;color:var(--text-tertiary)">' + this.esc(o.size) + '</span>';
+        if (o.time) html += '<span style="font-size:11px;color:var(--text-tertiary)">' + this.esc(o.time) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>' + t('noOutputsHint','Training outputs will appear here after saving') + '</p></div>';
+    }
+    html += '</div>';
+    return html;
   },
 
   _renderTensorBoard() { return `<div class="card" style="padding:0;overflow:hidden;height:calc(100vh - 240px);min-height:500px"><iframe src="/proxy/tensorboard/" style="width:100%;height:100%;border:none;opacity:0;transition:opacity 0.5s" onload="this.style.opacity='1'"></iframe></div>`; },

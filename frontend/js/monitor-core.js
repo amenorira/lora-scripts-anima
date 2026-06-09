@@ -10,7 +10,7 @@ window.monitorCoreMixin = {
   previews: [], previewStep: 0, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
-  chartSmoothing: 0.6, dashTab: 'overview', _chartInstances: null,
+  chartSmoothing: 0.6, monitorTab: 'overview', _chartInstances: null,
   _monitorAbortCtrl: null,
   _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
@@ -263,7 +263,7 @@ window.monitorCoreMixin = {
     /** 查看指定历史训练的详情（图表 + 日志 + 配置） */
     this.selectedRunDir = runDir;
     this.runDetailData = null;
-    this.dashTab = 'overview';
+    this.monitorTab = 'overview';
     this.navigate('monitor-dashboard');
     // 等待 DOM 就绪后拉取数据
     await this.$nextTick();

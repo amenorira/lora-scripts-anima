@@ -652,6 +652,34 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 
+/* ── Monitor Tabs (tagger-style underline tabs) ─────────── */
+.monitor-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border-default);
+}
+.monitor-tab {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.monitor-tab:hover {
+  color: var(--text-primary);
+}
+.monitor-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 /* ── Unified Toggle / Checkbox ───────────────────────────── */
 input[type="checkbox"] {
   -webkit-appearance: none; appearance: none;

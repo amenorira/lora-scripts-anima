@@ -78,7 +78,10 @@
     "stopTraining": "Stop Training",
     "noParamsHint": "Training parameters will appear here after starting",
     "noPreviewHint": "Preview images will appear during training",
-    "noLogsHint": "No logs yet"
+    "noLogsHint": "No logs yet",
+    "logTitle": "Real-time Logs",
+    "outputs": "Outputs",
+    "noOutputsHint": "Training outputs will appear here after saving"
   },
   "section": {
     "model": "Model & Dataset",

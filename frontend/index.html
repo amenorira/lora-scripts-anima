@@ -226,14 +226,18 @@
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
         </div>
-        <!-- Dashboard Tabs -->
-        <div class="dash-tabs" style="display:flex;gap:4px;margin-bottom:16px">
-          <button type="button"  class="dash-tab" :class="{ active: dashTab === 'overview' }" @click="dashTab='overview'; renderDashboard()"
+        <!-- Monitor Tabs -->
+        <div class="monitor-tabs">
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'overview' }" @click="monitorTab='overview'; renderDashboard()"
                   x-text="t('monitor.overview','Overview')">Overview</button>
-          <button type="button"  class="dash-tab" :class="{ active: dashTab === 'charts' }" @click="dashTab='charts'; renderDashboard()"
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'logs' }" @click="monitorTab='logs'; renderDashboard()"
+                  x-text="t('monitor.logTitle','Logs')">Logs</button>
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'charts' }" @click="monitorTab='charts'; renderDashboard()"
                   x-text="t('monitor.charts','Charts')">Charts</button>
-          <button type="button"  class="dash-tab" :class="{ active: dashTab === 'samples' }" @click="dashTab='samples'; renderDashboard()"
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'samples' }" @click="monitorTab='samples'; renderDashboard()"
                   x-text="t('monitor.samples','Samples')">Samples</button>
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }" @click="monitorTab='outputs'; renderDashboard()"
+                  x-text="t('monitor.outputs','Outputs')">Outputs</button>
         </div>
         <div id="monitorDashboard"></div>
       </div>

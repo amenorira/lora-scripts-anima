@@ -78,7 +78,10 @@
     "stopTraining": "终止训练",
     "noParamsHint": "启动训练后，训练参数将在此显示",
     "noPreviewHint": "训练开始后将在此显示预览图",
-    "noLogsHint": "暂无日志"
+    "noLogsHint": "暂无日志",
+    "logTitle": "实时日志",
+    "outputs": "输出文件",
+    "noOutputsHint": "训练输出文件将在保存后显示"
   },
   "section": {
     "model": "模型与数据集",
