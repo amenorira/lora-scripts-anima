@@ -20,6 +20,8 @@ window.monitorCoreMixin = {
   _sseConnected: false,
   _sseRetryTimer: null,
   _sseRetryDelay: 3000,  // 重试延迟（毫秒）
+  _sseRetryCount: 0,
+  _sseMaxRetries: 10,
 
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
@@ -48,6 +50,7 @@ window.monitorCoreMixin = {
 
       es.onopen = () => {
         this._sseConnected = true;
+        this._sseRetryCount = 0;
         if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
       };
 
@@ -55,14 +58,17 @@ window.monitorCoreMixin = {
         this._sseConnected = false;
         es.close();
         this._eventSource = null;
-        // 重试逻辑：延迟后重连
+        // 重试逻辑：指数退避，最多重试 _sseMaxRetries 次
+        if (this._sseRetryCount >= this._sseMaxRetries) return;
         if (this._sseRetryTimer) clearTimeout(this._sseRetryTimer);
+        const delay = this._sseRetryDelay * Math.pow(2, this._sseRetryCount);
+        this._sseRetryCount++;
         this._sseRetryTimer = setTimeout(() => {
           this._sseRetryTimer = null;
           if (this.monitorData && this.monitorData.state === 'RUNNING') {
             this.connectMonitorSSE(taskId);
           }
-        }, this._sseRetryDelay);
+        }, delay);
       };
     } catch(_) {
       this._eventSource = null;
@@ -72,6 +78,7 @@ window.monitorCoreMixin = {
 
   disconnectMonitorSSE() {
     if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
+    this._sseRetryCount = 0;
     if (this._eventSource) {
       this._eventSource.close();
       this._eventSource = null;
@@ -79,29 +86,32 @@ window.monitorCoreMixin = {
     this._sseConnected = false;
   },
 
+  handleTaskCompletion(prevState, newState) {
+    if (prevState !== 'RUNNING' || newState === 'RUNNING') return;
+    const msg = newState === 'FINISHED'
+      ? (this.t('monitor.trainCompleted') || 'Training completed!')
+      : (this.t('monitor.trainTerminated') || 'Training terminated');
+    this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('lora-scripts-anima', { body: msg });
+    } else if ('Notification' in window && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+    const origTitle = document.title;
+    let flashCount = 0;
+    const flashTimer = setInterval(() => {
+      document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
+      flashCount++;
+      if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
+    }, 800);
+  },
+
   handleSSEStatusChange(data) {
     if (!data) return;
     const prevState = this._prevState;
     this._prevState = data.status;
-    // 通知训练完成
+    this.handleTaskCompletion(prevState, data.status);
     if (prevState === 'RUNNING' && data.status !== 'RUNNING') {
-      const msg = data.status === 'FINISHED'
-        ? (this.t('monitor.trainCompleted') || 'Training completed!')
-        : (this.t('monitor.trainTerminated') || 'Training terminated');
-      this.toast(msg, data.status === 'FINISHED' ? 'success' : 'error');
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('lora-scripts-anima', { body: msg });
-      } else if ('Notification' in window && Notification.permission !== 'denied') {
-        Notification.requestPermission();
-      }
-      const origTitle = document.title;
-      let flashCount = 0;
-      const flashTimer = setInterval(() => {
-        document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
-        flashCount++;
-        if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
-      }, 800);
-      // 任务结束，断开 SSE
       this.disconnectMonitorSSE();
     }
     if (data.status === 'RUNNING') { this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status; }
@@ -127,7 +137,10 @@ window.monitorCoreMixin = {
 
   handleSSELogUpdate(data) {
     if (!data || !data.lines || this.selectedRunDir) return;
-    this.logLines = [...this.logLines, ...data.lines].slice(-this.logMaxLines);
+    this.logLines.push(...data.lines);
+    if (this.logLines.length > this.logMaxLines) {
+      this.logLines.splice(0, this.logLines.length - this.logMaxLines);
+    }
     if (this.currentRoute === 'monitor-logs') this.renderLogs();
   },
 
@@ -178,26 +191,7 @@ window.monitorCoreMixin = {
         // Notification on training completion
         const prevState = this._prevState || null;
         this._prevState = j.data.state;
-        if (prevState === 'RUNNING' && j.data.state !== 'RUNNING') {
-          const msg = j.data.state === 'FINISHED'
-            ? (this.t('monitor.trainCompleted') || 'Training completed!')
-            : (this.t('monitor.trainTerminated') || 'Training terminated');
-          this.toast(msg, j.data.state === 'FINISHED' ? 'success' : 'error');
-          // Browser notification
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('lora-scripts-anima', { body: msg });
-          } else if ('Notification' in window && Notification.permission !== 'denied') {
-            Notification.requestPermission();
-          }
-          // Flash page title
-          const origTitle = document.title;
-          let flashCount = 0;
-          const flashTimer = setInterval(() => {
-            document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
-            flashCount++;
-            if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
-          }, 800);
-        }
+        this.handleTaskCompletion(prevState, j.data.state);
         if (j.data.state==='RUNNING') {
           this.isTraining=true; this.isIdle=false; this.statusText=j.data.state_label||j.data.state;
           // 首次获取状态后连接 SSE（如果尚未连接）
