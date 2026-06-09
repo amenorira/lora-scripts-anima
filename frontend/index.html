@@ -580,8 +580,7 @@
           <div class="te-ctx-item" @click="tagEditorCtxCopy()" x-text="t('tagEditor.contextCopy')"></div>
           <div class="te-ctx-item" @click="tagEditorCtxAddAll()" x-text="t('tagEditor.contextAddAll')"></div>
           <div class="te-ctx-divider"></div>
-          <div class="te-ctx-item" @click="tagEditorMoveSelected()" x-text="t('tagEditor.moveSelected')"></div>
-          <div class="te-ctx-item" @click="tagEditorDeleteSelected()" x-text="t('tagEditor.deleteSelected')"></div>
+          <div class="te-ctx-item te-ctx-danger" @click="tagEditorCtxDeleteTag()" x-text="t('tagEditor.contextDeleteTag')"></div>
         </div>
 
         <!-- Empty State -->
@@ -637,7 +636,7 @@
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
                 @click="tagEditorQuickFilter = 'all'; tagEditorPage = 1">
                 <span x-text="t('tagEditor.selection')"></span>
-                <span class="te-badge" x-text="tagEditorGetFiltered().length"></span>
+                <span class="te-badge" x-text="tagEditorFilteredCount()"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'notag' }"
                 @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag'); tagEditorPage = 1">
@@ -889,7 +888,7 @@
               </div>
             </div>
             <div class="te-grid-wrap" @click="tagEditorGridBgClick($event)">
-              <div class="te-grid-empty" x-show="tagEditorGetFiltered().length === 0 && tagEditorImages.length > 0">
+              <div class="te-grid-empty" x-show="tagEditorFilteredCount() === 0 && tagEditorImages.length > 0">
                 <div class="te-empty-icon">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -898,13 +897,12 @@
                 <div class="te-empty-title" x-text="t('tagEditor.emptySearch')"></div>
                 <button class="btn btn-ghost btn-sm" @click="tagEditorClearSearch(); tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorPage = 1" x-text="t('tagEditor.clearFilter')"></button>
               </div>
-              <div class="te-grid" id="teV3Grid" x-show="tagEditorGetFiltered().length > 0">
+              <div class="te-grid" id="teV3Grid" x-show="tagEditorFilteredCount() > 0">
                 <template x-for="(img, idx) in tagEditorGetPaged()" :key="img.path">
                   <div class="te-card"
                     :class="{ selected: tagEditorSelected.includes(img.path), modified: img.tags !== tagEditorOriginal[img.path] }"
                     @click="tagEditorCardClick(img, idx, $event)"
-                    @dblclick="tagEditorCardDblClick(img, idx, $event)"
-                    @contextmenu.prevent="tagEditorCardCtx(img, $event)">
+                    @dblclick="tagEditorCardDblClick(img, idx, $event)">
                     <div class="te-card-thumb">
                       <div class="te-card-skeleton"></div>
                       <img :src="img.thumbnail" :alt="img.name" loading="lazy"
@@ -1011,7 +1009,7 @@
                       </button>
                       <button :class="{ active: tagEditorBatchScope === 'filtered' }" @click="tagEditorBatchScope = 'filtered'">
                         <span x-text="t('tagEditor.scopeFiltered')"></span>
-                        <span class="te-badge" x-text="tagEditorGetFiltered().length"></span>
+                        <span class="te-badge" x-text="tagEditorFilteredCount()"></span>
                       </button>
                       <button :class="{ active: tagEditorBatchScope === 'all' }" @click="tagEditorBatchScope = 'all'">
                         <span x-text="t('tagEditor.scopeAll')"></span>
@@ -1026,8 +1024,8 @@
                         @input="tagEditorBatchSuggest('add')" @focus="tagEditorBatchSuggest('add')"
                         @blur="tagEditorBatchBlur()" @keydown.enter="tagEditorBatchAdd()">
                       <div class="te-batch-pos">
-                        <button :class="{ active: batchPos === 'front' }" @click="batchPos = 'front'" x-text="t('bulkAction.posFront')"></button>
-                        <button :class="{ active: batchPos === 'back' }" @click="batchPos = 'back'" x-text="t('bulkAction.posBack')"></button>
+                        <button :class="{ active: tagEditorBatchPos === 'front' }" @click="tagEditorBatchPos = 'front'" x-text="t('bulkAction.posFront')"></button>
+                        <button :class="{ active: tagEditorBatchPos === 'back' }" @click="tagEditorBatchPos = 'back'" x-text="t('bulkAction.posBack')"></button>
                       </div>
                       <button @click="tagEditorBatchAdd()" x-text="t('common.apply')"></button>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'add'">
@@ -1099,10 +1097,10 @@
               <strong x-text="tagEditorTagFreq.length"></strong>
               <span x-text="t('tagEditor.tagCloud')"></span>
             </span>
-            <template x-if="tagEditorGetFiltered().length !== tagEditorImages.length">
+            <template x-if="tagEditorFilteredCount() !== tagEditorImages.length">
               <span class="te-status-item te-status-muted">
                 <span class="te-status-sep"></span>
-                <span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorGetFiltered().length)"></span>
+                <span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorFilteredCount())"></span>
               </span>
             </template>
             <template x-if="tagEditorSelected.length > 0">

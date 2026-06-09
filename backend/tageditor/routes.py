@@ -9,7 +9,6 @@ Tag Editor API 路由
   POST /api/tageditor/save                   — 保存单张标签
   POST /api/tageditor/save-all               — 批量保存
   POST /api/tageditor/batch                  — 批量操作（支持 scope=selected）
-  POST /api/tageditor/move-delete            — 文件移动/删除
   POST /api/tageditor/restore-backup         — 还原备份
   GET  /api/tageditor/download-zip?dir=...   — 下载 zip
   GET  /api/tageditor/thumbnail?path=...     — 缩略图代理
@@ -34,7 +33,7 @@ from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
     scan_images, scan_selected_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
-    _invalidate_cache,
+    _invalidate_cache, get_cached_scan_images, tag_list,
 )
 from backend.tageditor.operations import apply_operation
 from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot
@@ -75,7 +74,7 @@ async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    images = scan_images(dir_path, recursive=recursive)
+    images = get_cached_scan_images(dir_path, recursive=recursive)
     dir_name = dir_path.name or str(dir_path)
 
     return {
@@ -110,15 +109,13 @@ async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True))
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    images = scan_images(dir_path, recursive=recursive)
+    images = get_cached_scan_images(dir_path, recursive=recursive)
     total = len(images)
     with_caption = sum(1 for i in images if i.get("has_caption"))
     without_caption = total - with_caption
-    from backend.tageditor.core import tag_list as _tag_list
     all_tags: set[str] = set()
     for img in images:
-        for t in _tag_list(img.get("tags", "")):
-            all_tags.add(t)
+        all_tags.update(tag_list(img.get("tags", "")))
 
     return {
         "status": "success",
@@ -166,11 +163,11 @@ async def filter_images(data: dict):
     exclude_tags = set(data.get("exclude_tags", []))
     search_text = (data.get("search", "") or "").strip().lower()
 
-    images = scan_images(d, recursive=data.get("recursive", True))
+    images = get_cached_scan_images(d, recursive=data.get("recursive", True))
     matched = []
 
     for img in images:
-        tags = set(t.strip() for t in img.get("tags", "").split(",") if t.strip())
+        tags = set(tag_list(img.get("tags", "")))
         if include_tags and not include_tags.issubset(tags):
             continue
         if include_any and include_any.isdisjoint(tags):
@@ -311,70 +308,6 @@ async def preview_batch_edit(data: dict):
             })
 
     return {"status": "success", "data": {"modified_count": len(preview_data), "preview": preview_data}}
-
-
-@router.post("/tageditor/move-delete")
-async def move_or_delete_files(data: dict):
-    """移动或删除文件"""
-    paths = data.get("paths", [])
-    action = data.get("action", "delete")
-    dest = data.get("dest", "")
-    delete_caption = data.get("delete_caption", True)
-
-    if not paths:
-        return {"status": "error", "message": "未指定文件"}
-
-    result = {"moved": 0, "deleted": 0, "errors": []}
-    resolved_parents = set()
-
-    for img_path_str in paths:
-        img_path = Path(img_path_str).resolve()
-        if not img_path.exists():
-            result["errors"].append(f"不存在: {img_path.name}")
-            continue
-
-        try:
-            if action == "move":
-                dest_path = Path(dest)
-                dest_path.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(img_path), str(dest_path / img_path.name))
-                if delete_caption:
-                    cap = find_caption(img_path)
-                    if cap and cap.exists():
-                        shutil.move(str(cap), str(dest_path / cap.name))
-                result["moved"] += 1
-                for bak_ext in [".txt.bak", ".caption.bak"]:
-                    bak_file = img_path.with_suffix(bak_ext)
-                    if bak_file.exists():
-                        try:
-                            shutil.move(str(bak_file), str(dest_path / bak_file.name))
-                        except Exception:
-                            pass
-            elif action == "delete":
-                img_path.unlink()
-                if delete_caption:
-                    cap = find_caption(img_path)
-                    if cap and cap.exists():
-                        cap.unlink()
-                for bak_ext in [".txt.bak", ".caption.bak"]:
-                    bak_file = img_path.with_suffix(bak_ext)
-                    if bak_file.exists():
-                        try:
-                            bak_file.unlink()
-                        except Exception:
-                            pass
-                result["deleted"] += 1
-            resolved_parents.add(img_path.parent)
-        except Exception as e:
-            result["errors"].append(f"{img_path.name}: {e}")
-
-    if result["moved"] > 0 or result["deleted"] > 0:
-        dirs_to_invalidate = resolved_parents.copy()
-        if action == "move" and dest:
-            dirs_to_invalidate.add(Path(dest))
-        for d in dirs_to_invalidate:
-            _invalidate_cache(d)
-    return {"status": "success", "data": result}
 
 
 @router.post("/tageditor/restore-backup")

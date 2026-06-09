@@ -11,6 +11,7 @@
   --accent-muted: rgba(77, 148, 255, 0.05);
   --danger: #dc2626;
   --danger-hover: #b91c1c;
+  --danger-soft: rgba(220, 38, 38, 0.10);
   --success: #10b981;
   --warning: #ea580c;
   --info: #3b82f6;
@@ -75,6 +76,7 @@
   --accent-hover: #4d90e0;
   --accent-soft: rgba(93, 160, 247, 0.12);
   --accent-muted: rgba(93, 160, 247, 0.06);
+  --danger-soft: rgba(220, 38, 38, 0.12);
 
   --bg-root: #2a2a2a;
   --bg-surface: #333333;
@@ -1887,6 +1889,8 @@ input[type="range"]::-webkit-slider-thumb {
 .te-ctx { position: fixed; z-index: 3000; min-width: 140px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); padding: 3px; }
 .te-ctx-item { padding: 5px 8px; font-size: 11px; color: var(--text-primary); cursor: pointer; border-radius: 3px; }
 .te-ctx-item:hover { background: var(--accent-soft); color: var(--accent); }
+.te-ctx-item.te-ctx-danger { color: var(--danger); }
+.te-ctx-item.te-ctx-danger:hover { background: var(--danger-soft); color: var(--danger); }
 .te-ctx-divider { height: 1px; background: var(--border-default); margin: 2px 5px; }
 
 /* ===== Drag ===== */

@@ -160,9 +160,10 @@ def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]
     return tags_data, total_images
 
 
-# ── Autocomplete 缓存 ──────────────────────────────────────────
+# ── 缓存 ────────────────────────────────────────────────────────
 _autocomplete_cache: dict[str, tuple[float, list[dict]]] = {}
-_AUTOCOMPLETE_TTL = 300  # seconds
+_scan_images_cache: dict[str, tuple[float, list[dict]]] = {}
+_CACHE_TTL = 300  # seconds
 
 
 def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:
@@ -171,16 +172,31 @@ def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:
     now = time.time()
     if cache_key in _autocomplete_cache:
         ts, data = _autocomplete_cache[cache_key]
-        if now - ts < _AUTOCOMPLETE_TTL:
+        if now - ts < _CACHE_TTL:
             return data
     tags_data, _ = count_tags(dir_path, recursive=recursive)
     _autocomplete_cache[cache_key] = (now, tags_data)
     return tags_data
 
 
+def get_cached_scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:
+    """带缓存的 scan_images，避免每次请求都扫描磁盘"""
+    import time
+    cache_key = f"{dir_path.resolve()}:{recursive}"
+    now = time.time()
+    if cache_key in _scan_images_cache:
+        ts, data = _scan_images_cache[cache_key]
+        if now - ts < _CACHE_TTL:
+            return data
+    data = scan_images(dir_path, recursive=recursive)
+    _scan_images_cache[cache_key] = (now, data)
+    return list(data)
+
+
 def _invalidate_cache(dir_path: Path, recursive: bool = True) -> None:
     cache_key = f"{dir_path.resolve()}:{recursive}"
     _autocomplete_cache.pop(cache_key, None)
+    _scan_images_cache.pop(cache_key, None)
 
 
 def get_autocomplete(dir_path: Path, prefix: str, limit: int = 20, recursive: bool = True) -> list[str]:

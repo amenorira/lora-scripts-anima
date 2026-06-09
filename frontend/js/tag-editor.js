@@ -147,7 +147,7 @@ window.tagEditorMixin = {
   batchRemoveInput: '',
   batchOldTag: '',
   batchNewTag: '',
-  batchPos: 'front',
+  tagEditorBatchPos: 'front',
   batchSuggestOpen: null,
   batchSuggestItems: [],
   _teBatchSuggestTimer: null,
@@ -184,6 +184,8 @@ window.tagEditorMixin = {
   _teFreqCacheKey: '',
   _teCachedFiltered: null,
   _teCachedFreqResult: null,
+  _teCachedSelectedStatsKey: '',
+  _teCachedSelectedStats: null,
   _teSearchDebounce: null,
   _teTagSearchDebounce: null,
   _teIsSaving: false,
@@ -199,6 +201,8 @@ window.tagEditorMixin = {
     this._teCachedFiltered = null;
     this._teQuickCountNoTag = undefined;
     this._teQuickCountMod = undefined;
+    this._teCachedSelectedStatsKey = '';
+    this._teCachedSelectedStats = null;
   },
   _teInvalidateFreq() {
     this._teFreqCacheKey = '';
@@ -505,6 +509,10 @@ window.tagEditorMixin = {
     return filtered.slice(start, start + this.tagEditorPageSize);
   },
 
+  tagEditorFilteredCount() {
+    return this.tagEditorGetFiltered().length;
+  },
+
   tagEditorTotalPages() {
     return Math.max(1, Math.ceil(this.tagEditorGetFiltered().length / this.tagEditorPageSize));
   },
@@ -639,43 +647,27 @@ window.tagEditorMixin = {
     this.tagEditorContextMenu = null;
   },
 
-  // ===== Move / Delete (context menu actions) =====
-  tagEditorMoveSelected() {
+  tagEditorCtxDeleteTag() {
+    var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
+    this.tagEditorContextMenu = null;
+    if (!tag) return;
     var self = this;
-    var dir = prompt(this.t('tagEditor.movePrompt') || 'Enter target directory:');
-    if (!dir) return;
-    var targets = this.tagEditorGetBatchTargets();
-    fetch('/api/tageditor/move-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'move', paths: targets.map(function(img) { return img.path; }), dest: dir })
-    }).then(function(r) { return r.json(); }).then(function(j) {
-      if (j.status === 'success') {
-        self.toast(self.t('tagEditor.moveDone'));
-        self.tagEditorLoad(self.tagEditorDir);
-      } else {
-        self.toast(j.message || self.t('common.error'), 'error');
-      }
-    });
-  },
-
-  tagEditorDeleteSelected() {
-    var targets = this.tagEditorGetBatchTargets();
-    var self = this;
-    this.tagEditorConfirmMsg = this.t('tagEditor.deleteConfirm').replace('{n}', targets.length);
+    this.tagEditorConfirmMsg = this.t('tagEditor.deleteTagConfirm').replace('{tag}', tag);
     this.tagEditorConfirmCb = function() {
-      fetch('/api/tageditor/move-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', paths: targets.map(function(img) { return img.path; }) })
-      }).then(function(r) { return r.json(); }).then(function(j) {
-        if (j.status === 'success') {
-          self.toast(self.t('tagEditor.deleteDone'));
-          self.tagEditorLoad(self.tagEditorDir);
-        } else {
-          self.toast(j.message || self.t('common.error'), 'error');
+      var affected = 0;
+      self.tagEditorImages.forEach(function(img) {
+        var tags = _teParseTags(img.tags);
+        var idx = tags.indexOf(tag);
+        if (idx !== -1) {
+          tags.splice(idx, 1);
+          self._teUpdateImageTags(img, tags.join(', '));
+          affected++;
         }
       });
+      if (affected > 0) {
+        self._tePushHistory();
+        self.toast(self.t('tagEditor.tagDeleted').replace('{tag}', tag).replace('{n}', affected));
+      }
     };
     this.tagEditorConfirmOpen = true;
   },
@@ -747,10 +739,6 @@ window.tagEditorMixin = {
   tagEditorCardDblClick(img, idx, e) {
     var input = document.querySelector('.te-editor-add input');
     if (input) input.focus();
-  },
-
-  tagEditorCardCtx(img, e) {
-    this.tagEditorContextMenu = { x: e.clientX, y: e.clientY, img: img };
   },
 
   tagEditorToggleSelect(path, e) {
@@ -856,8 +844,8 @@ window.tagEditorMixin = {
   tagEditorDetailDragStart(e, idx) {
     this.tagEditorDetailDragSrcIdx = idx;
     e.dataTransfer.effectAllowed = 'move';
-    var el = e.target.closest('.te-v3-right-tag');
-    if (el) { setTimeout(function() { el.style.opacity = '0.4'; }, 0); }
+    var el = e.target.closest('.te-editor-tag');
+    if (el) { setTimeout(function() { el.classList.add('te-pill-drag-src'); }, 0); }
   },
 
   tagEditorDetailDragOver(e) {
@@ -875,7 +863,7 @@ window.tagEditorMixin = {
     if (srcIdx >= tags.length) { this.tagEditorDetailDragSrcIdx = -1; return; }
     var moving = tags.splice(srcIdx, 1)[0];
     var destIdx = tags.length;
-    var dropTarget = e.target.closest('.te-v3-right-tag');
+    var dropTarget = e.target.closest('.te-editor-tag');
     if (dropTarget) {
       var spanEl = dropTarget.querySelector('span');
       var tagText = spanEl ? spanEl.textContent.trim() : '';
@@ -1121,7 +1109,7 @@ window.tagEditorMixin = {
         var changed = false;
         newTags.forEach(function(t) {
           if (tags.indexOf(t) === -1) {
-            if (self.batchPos === 'front') tags.unshift(t);
+            if (self.tagEditorBatchPos === 'front') tags.unshift(t);
             else tags.push(t);
             changed = true;
           }
@@ -1210,18 +1198,31 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetSelectedStats() {
-    if (this.tagEditorSelected.length < 2) return [];
+    if (this.tagEditorSelected.length < 2) {
+      this._teCachedSelectedStatsKey = '';
+      this._teCachedSelectedStats = null;
+      return [];
+    }
+    var selKey = this.tagEditorSelected.join('\x00');
+    if (selKey === this._teCachedSelectedStatsKey && this._teCachedSelectedStats) {
+      return this._teCachedSelectedStats;
+    }
+    var selSet = Object.create(null);
+    for (var si = 0; si < this.tagEditorSelected.length; si++) selSet[this.tagEditorSelected[si]] = true;
     var counter = {};
-    var sel = this.tagEditorSelected;
-    this.tagEditorImages.forEach(function(img) {
-      if (sel.indexOf(img.path) === -1) return;
-      var tags = _teParseTags(img.tags);
-      tags.forEach(function(t) {
-        counter[t] = (counter[t] || 0) + 1;
-      });
-    });
-    return Object.keys(counter).map(function(k) { return { tag: k, count: counter[k] }; })
+    var imgs = this.tagEditorImages;
+    for (var i = 0; i < imgs.length; i++) {
+      if (!selSet[imgs[i].path]) continue;
+      var tags = _teParseTags(imgs[i].tags);
+      for (var ti = 0; ti < tags.length; ti++) {
+        counter[tags[ti]] = (counter[tags[ti]] || 0) + 1;
+      }
+    }
+    var result = Object.keys(counter).map(function(k) { return { tag: k, count: counter[k] }; })
       .sort(function(a, b) { return b.count - a.count; });
+    this._teCachedSelectedStatsKey = selKey;
+    this._teCachedSelectedStats = result;
+    return result;
   },
 
   _teDedupTags(tags) {
