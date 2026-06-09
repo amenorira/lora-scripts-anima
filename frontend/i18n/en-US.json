@@ -90,7 +90,21 @@
     "downloadAll": "Download All",
     "selected": "Selected",
     "loading": "Loading...",
-    "selectFilesFirst": "Please select files first"
+    "selectFilesFirst": "Please select files first",
+    "viewDetails": "View Details",
+    "viewConfig": "View Config",
+    "reuseConfig": "Reuse Config",
+    "configSnapshot": "Config Snapshot",
+    "configLoaded": "Config loaded",
+    "configLoadError": "Error loading config",
+    "trainCompleted": "Training completed!",
+    "trainTerminated": "Training terminated",
+    "trainStopped": "Training stopped",
+    "confirmStop": "Are you sure you want to stop training?",
+    "stopFailed": "Failed to stop training",
+    "backToLive": "Back to live",
+    "viewingHistory": "Viewing history",
+    "trainResult": "Training Result"
   },
   "section": {
     "model": "Model & Dataset",

@@ -90,7 +90,21 @@
     "downloadAll": "下载全部",
     "selected": "已选中",
     "loading": "加载中...",
-    "selectFilesFirst": "请先选择文件"
+    "selectFilesFirst": "请先选择文件",
+    "viewDetails": "查看详情",
+    "viewConfig": "查看配置",
+    "reuseConfig": "复用配置",
+    "configSnapshot": "配置快照",
+    "configLoaded": "配置已加载",
+    "configLoadError": "加载配置失败",
+    "trainCompleted": "训练完成！",
+    "trainTerminated": "训练已终止",
+    "trainStopped": "训练已停止",
+    "confirmStop": "确定要停止训练吗？",
+    "stopFailed": "停止训练失败",
+    "backToLive": "返回实时",
+    "viewingHistory": "查看历史",
+    "trainResult": "训练结果"
   },
   "section": {
     "model": "模型与数据集",
