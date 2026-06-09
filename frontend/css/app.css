@@ -1895,6 +1895,10 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ===== Drag ===== */
 .te-pill-drag-src { opacity: 0.3; }
+.te-drop-before, .te-drop-after { position: relative; }
+.te-drop-before::before, .te-drop-after::after { content: ''; position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--accent); border-radius: 1px; z-index: 1; }
+.te-drop-before::before { left: -3px; }
+.te-drop-after::after { right: -3px; }
 
 /* ===== Status Bar ===== */
 .te-statusbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: 10px; color: var(--text-tertiary); border-top: 1px solid var(--border-default); flex-wrap: wrap; min-height: 26px; }

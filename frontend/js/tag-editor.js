@@ -140,6 +140,7 @@ window.tagEditorMixin = {
   _teBlurTimer: null,
   tagEditorDetailDragOverIdx: -1,
   tagEditorDetailDragSrcIdx: -1,
+  tagEditorDetailDragOverPos: '',
 
   // ===== Batch Operations =====
   tagEditorBatchScope: 'filtered',
@@ -844,8 +845,7 @@ window.tagEditorMixin = {
   tagEditorDetailDragStart(e, idx) {
     this.tagEditorDetailDragSrcIdx = idx;
     e.dataTransfer.effectAllowed = 'move';
-    var el = e.target.closest('.te-editor-tag');
-    if (el) { setTimeout(function() { el.classList.add('te-pill-drag-src'); }, 0); }
+    e.dataTransfer.setData('text/plain', '');
   },
 
   tagEditorDetailDragOver(e) {
@@ -853,28 +853,72 @@ window.tagEditorMixin = {
     e.dataTransfer.dropEffect = 'move';
   },
 
+  tagEditorDetailTagDragOver(e, idx) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (idx === this.tagEditorDetailDragSrcIdx) {
+      this.tagEditorDetailDragOverIdx = -1;
+      this.tagEditorDetailDragOverPos = '';
+      return;
+    }
+    var el = e.target.closest('.te-editor-tag');
+    if (!el) return;
+    var rect = el.getBoundingClientRect();
+    var midX = rect.left + rect.width / 2;
+    var pos = e.clientX < midX ? 'before' : 'after';
+    if (this.tagEditorDetailDragOverIdx !== idx || this.tagEditorDetailDragOverPos !== pos) {
+      this.tagEditorDetailDragOverIdx = idx;
+      this.tagEditorDetailDragOverPos = pos;
+    }
+  },
+
+  tagEditorDetailDragEnter(e, idx) {
+    e.preventDefault();
+    if (idx !== this.tagEditorDetailDragSrcIdx) {
+      this.tagEditorDetailDragOverIdx = idx;
+    }
+  },
+
+  tagEditorDetailDragLeave(e) {
+    var el = e.target.closest('.te-editor-tag');
+    if (!el || !el.contains(e.relatedTarget)) {
+      this.tagEditorDetailDragOverIdx = -1;
+      this.tagEditorDetailDragOverPos = '';
+    }
+  },
+
+  tagEditorDetailDragEnd(e) {
+    this.tagEditorDetailDragSrcIdx = -1;
+    this.tagEditorDetailDragOverIdx = -1;
+    this.tagEditorDetailDragOverPos = '';
+  },
+
   tagEditorDetailDrop(e) {
     e.preventDefault();
     var srcIdx = this.tagEditorDetailDragSrcIdx;
-    if (srcIdx < 0) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    var dropPos = this.tagEditorDetailDragOverPos;
+    this.tagEditorDetailDragSrcIdx = -1;
+    this.tagEditorDetailDragOverIdx = -1;
+    this.tagEditorDetailDragOverPos = '';
+    if (srcIdx < 0) return;
     var img = this.tagEditorGetSelectedImg();
-    if (!img) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    if (!img) return;
     var tags = _teParseTags(img.tags);
-    if (srcIdx >= tags.length) { this.tagEditorDetailDragSrcIdx = -1; return; }
+    if (srcIdx >= tags.length) return;
     var moving = tags.splice(srcIdx, 1)[0];
     var destIdx = tags.length;
     var dropTarget = e.target.closest('.te-editor-tag');
-    if (dropTarget) {
-      var spanEl = dropTarget.querySelector('span');
-      var tagText = spanEl ? spanEl.textContent.trim() : '';
-      var foundIdx = tags.indexOf(tagText);
-      if (foundIdx !== -1) destIdx = foundIdx;
+    if (dropTarget && dropTarget.dataset.ti != null) {
+      var dropIdx = parseInt(dropTarget.dataset.ti, 10);
+      if (!isNaN(dropIdx)) {
+        var adjIdx = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
+        destIdx = dropPos === 'after' ? adjIdx + 1 : adjIdx;
+      }
     }
     tags.splice(destIdx, 0, moving);
     this._teUpdateImageTags(img, tags.join(', '));
     this._tePushHistory();
-    this.tagEditorDetailDragSrcIdx = -1;
-    this.tagEditorDetailDragOverIdx = -1;
   },
 
   tagEditorDetailEditTag(ti) {

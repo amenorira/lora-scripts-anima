@@ -964,9 +964,13 @@
                   <div class="te-editor-body">
                     <div class="te-editor-tags" x-show="tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
-                        <span class="te-editor-tag" draggable="true"
+                        <span class="te-editor-tag" draggable="true" :data-ti="ti"
+                          :class="{ 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }"
                           @dragstart="tagEditorDetailDragStart($event, ti)"
-                          @dragend="function(e) { e.target.closest('.te-editor-tag')?.classList.remove('te-pill-drag-src'); }"
+                          @dragover="tagEditorDetailTagDragOver($event, ti)"
+                          @dragenter="tagEditorDetailDragEnter($event, ti)"
+                          @dragleave="tagEditorDetailDragLeave($event)"
+                          @dragend="tagEditorDetailDragEnd($event)"
                           @dblclick="tagEditorDetailEditTag(ti)">
                           <span x-text="tag"></span>
                           <span class="te-editor-tag-x" @click.stop="tagEditorRemoveTagFromSelected(tag)" @dblclick.stop>&times;</span>
