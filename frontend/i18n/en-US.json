@@ -82,7 +82,15 @@
     "noLogsHint": "No logs yet",
     "logTitle": "Real-time Logs",
     "outputs": "Outputs",
-    "noOutputsHint": "Training outputs will appear here after saving"
+    "noOutputsHint": "Training outputs will appear here after saving",
+    "refresh": "Refresh",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "downloadSelected": "Download Selected",
+    "downloadAll": "Download All",
+    "selected": "Selected",
+    "loading": "Loading...",
+    "selectFilesFirst": "Please select files first"
   },
   "section": {
     "model": "Model & Dataset",

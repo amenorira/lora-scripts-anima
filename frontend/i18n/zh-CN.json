@@ -82,7 +82,15 @@
     "noLogsHint": "暂无日志",
     "logTitle": "实时日志",
     "outputs": "输出文件",
-    "noOutputsHint": "训练输出文件将在保存后显示"
+    "noOutputsHint": "训练输出文件将在保存后显示",
+    "refresh": "刷新",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "downloadSelected": "下载所选",
+    "downloadAll": "下载全部",
+    "selected": "已选中",
+    "loading": "加载中...",
+    "selectFilesFirst": "请先选择文件"
   },
   "section": {
     "model": "模型与数据集",

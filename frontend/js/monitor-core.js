@@ -11,6 +11,7 @@ window.monitorCoreMixin = {
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
   logSearch: '', logErrorsOnly: false, logLevel: 'all',
   chartSmoothing: 0.6, monitorTab: 'overview', _chartInstances: null,
+  outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   _monitorAbortCtrl: null,
   _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
@@ -299,5 +300,75 @@ window.monitorCoreMixin = {
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
     this.startMonitorPolling();
+  },
+
+  // ── Output Files ──────────────────────────────────────
+  async loadOutputFiles() {
+    const taskId = this.monitorData?.active_task?.id || '';
+    if (!taskId) {
+      this.outputFiles = [];
+      this.outputFilesSelected = {};
+      return;
+    }
+    this.outputFilesLoading = true;
+    try {
+      const r = await fetch('/api/monitor/outputs?task_id=' + encodeURIComponent(taskId));
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.outputFiles = j.data || [];
+        this.outputFilesSelected = {};
+      }
+    } catch (e) {
+      this.outputFiles = [];
+    } finally {
+      this.outputFilesLoading = false;
+      this._tabContentCache = {};
+      this.renderDashboard();
+    }
+  },
+
+  toggleOutputFile(path) {
+    if (this.outputFilesSelected[path]) {
+      delete this.outputFilesSelected[path];
+    } else {
+      this.outputFilesSelected[path] = true;
+    }
+    this._tabContentCache = {};
+    this.renderDashboard();
+  },
+
+  selectAllOutputFiles() {
+    this.outputFiles.forEach(f => { this.outputFilesSelected[f.path] = true; });
+    this._tabContentCache = {};
+    this.renderDashboard();
+  },
+
+  deselectAllOutputFiles() {
+    this.outputFilesSelected = {};
+    this._tabContentCache = {};
+    this.renderDashboard();
+  },
+
+  get selectedOutputFiles() {
+    return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
+  },
+
+  async downloadSelectedOutputs() {
+    const taskId = this.monitorData?.active_task?.id || '';
+    if (!taskId) return;
+    const selected = this.selectedOutputFiles;
+    if (!selected.length) {
+      this.toast(this.t('monitor.selectFilesFirst') || 'Please select files first');
+      return;
+    }
+    const filesParam = selected.map(f => encodeURIComponent(f)).join(',');
+    window.open('/api/monitor/outputs/download?task_id=' + encodeURIComponent(taskId) + '&files=' + filesParam);
+  },
+
+  async downloadAllOutputs() {
+    const taskId = this.monitorData?.active_task?.id || '';
+    if (!taskId) return;
+    window.open('/api/monitor/outputs/download?task_id=' + encodeURIComponent(taskId));
   }
+
 };

@@ -52,7 +52,7 @@ window.monitorRenderMixin = {
 
       // Tab content with caching
       if (!this._tabContentCache) this._tabContentCache = {};
-      const tabCacheKey = `${tab}-${isHistoryMode}-${this.logLines.length}-${this.logSearch}-${this.logLevel}`;
+      const tabCacheKey = `${tab}-${isHistoryMode}-${this.logLines.length}-${this.logSearch}-${this.logLevel}-${this.outputFiles.length}`;
       if (this._tabContentCache[tab] && this._tabContentCache[tab].key === tabCacheKey) {
         html += this._tabContentCache[tab].html;
       } else {
@@ -61,7 +61,10 @@ window.monitorRenderMixin = {
         else if (tab==='logs') tabHtml = this._renderLogsTab(d,t);
         else if (tab==='charts') tabHtml = this._renderChartsTab(d,t);
         else if (tab==='samples') tabHtml = this._renderSamplesTab(t);
-        else if (tab==='outputs') tabHtml = this._renderOutputsTab(d,t);
+        else if (tab==='outputs') {
+          if (!this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
+          tabHtml = this._renderOutputsTab(d,t);
+        }
         else if (tab==='tensorboard') tabHtml = this._renderTensorBoard();
         this._tabContentCache[tab] = { key: tabCacheKey, html: tabHtml };
         html += tabHtml;
@@ -343,16 +346,33 @@ window.monitorRenderMixin = {
 
   _renderOutputsTab(d,t) {
     let html = '<div class="card card-outputs" style="margin-top:12px">';
-    html += '<div class="card-header">' + t('outputs','Training Outputs') + '</div>';
-    const outputs = d.outputs || [];
-    if (outputs.length) {
-      html += '<div class="output-list" style="display:flex;flex-direction:column;gap:4px">';
-      outputs.forEach(o => {
-        html += '<div class="output-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg-surface-raised);font-size:13px">';
-        html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
-        html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + this.esc(o.name || '') + '</span>';
-        if (o.size) html += '<span style="font-size:11px;color:var(--text-tertiary)">' + this.esc(o.size) + '</span>';
-        if (o.time) html += '<span style="font-size:11px;color:var(--text-tertiary)">' + this.esc(o.time) + '</span>';
+    html += '<div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+    html += '<span>' + t('outputs','Training Outputs') + '</span>';
+    html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()">${t('refresh','Refresh')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()">${t('selectAll','Select All')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">${t('deselectAll','Deselect All')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">${t('downloadSelected','Download Selected')}</button>`;
+    html += `<button type="button" class="btn btn-sm" @click="downloadAllOutputs()">${t('downloadAll','Download All')}</button>`;
+    html += '</div></div>';
+
+    if (this.outputFilesLoading) {
+      html += '<div class="dashboard-empty" style="padding:48px"><p>' + t('loading','Loading...') + '</p></div>';
+    } else if (this.outputFiles.length) {
+      const selectedCount = this.selectedOutputFiles.length;
+      if (selectedCount > 0) {
+        html += `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 12px">${t('selected','Selected')}: ${selectedCount} / ${this.outputFiles.length}</div>`;
+      }
+      html += '<div class="output-list" style="display:flex;flex-direction:column;gap:2px">';
+      this.outputFiles.forEach(f => {
+        const isSelected = !!this.outputFilesSelected[f.path];
+        html += `<div class="output-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);background:${isSelected?'var(--bg-surface-raised)':'transparent'};font-size:13px;cursor:pointer;transition:background 0.15s" @click="toggleOutputFile('${this.esc(f.path)}')">`;
+        html += `<input type="checkbox" ${isSelected?'checked':''} style="flex-shrink:0" @click.stop="toggleOutputFile('${this.esc(f.path)}')">`;
+        html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+        html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + this.esc(f.name) + '</span>';
+        if (f.is_lora) html += '<span class="badge" style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px">LoRA</span>';
+        html += '<span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0">' + this._formatFileSize(f.size) + '</span>';
+        html += '<span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0">' + this._formatFileTime(f.mtime) + '</span>';
         html += '</div>';
       });
       html += '</div>';
@@ -361,6 +381,22 @@ window.monitorRenderMixin = {
     }
     html += '</div>';
     return html;
+  },
+
+  _formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+  },
+
+  _formatFileTime(mtime) {
+    if (!mtime) return '';
+    const d = new Date(mtime * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   },
 
   _renderTensorBoard() { return `<div class="card" style="padding:0;overflow:hidden;height:calc(100vh - 240px);min-height:500px"><iframe src="/proxy/tensorboard/" style="width:100%;height:100%;border:none;opacity:0;transition:opacity 0.5s" onload="this.style.opacity='1'"></iframe></div>`; },

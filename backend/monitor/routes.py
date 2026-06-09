@@ -20,7 +20,7 @@ from backend.monitor.training import (
     read_tensorboard_loss, parse_log_progress,
     latest_train_config, extract_train_params,
 )
-from backend.monitor.artifacts import newest_previews, scan_history, read_train_log, _parse_toml_config
+from backend.monitor.artifacts import newest_previews, scan_history, read_train_log, _parse_toml_config, list_output_files
 from backend.tasks import tm
 
 router = APIRouter()
@@ -299,3 +299,65 @@ async def monitor_preview_image(path: str = Query("")):
 
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=mt)
+
+
+@router.get("/monitor/outputs")
+async def monitor_outputs(task_id: str = Query("")):
+    """获取训练任务的输出文件列表"""
+    if not task_id:
+        return {"status": "error", "message": "task_id is required"}
+    data = await asyncio.to_thread(list_output_files, task_id)
+    return {"status": "success", "data": data}
+
+
+@router.get("/monitor/outputs/download")
+async def download_outputs(task_id: str = Query(""), files: str = Query("")):
+    """下载输出文件（zip 格式）。files 为逗号分隔的文件路径列表，为空则下载全部。"""
+    import io
+    import zipfile
+    import urllib.parse
+    from fastapi.responses import StreamingResponse
+
+    if not task_id:
+        return {"status": "error", "message": "task_id is required"}
+
+    task_dir = OUTPUT_DIR / task_id
+    if not task_dir.exists() or not task_dir.is_dir():
+        return {"status": "error", "message": "Task output directory not found"}
+
+    # 解析要下载的文件列表
+    if files:
+        file_list = [urllib.parse.unquote(f.strip()) for f in files.split(",") if f.strip()]
+    else:
+        # 下载全部
+        file_list = []
+        for p in task_dir.rglob("*"):
+            if p.is_file():
+                try:
+                    file_list.append(str(p.relative_to(task_dir)).replace("\\", "/"))
+                except ValueError:
+                    pass
+
+    if not file_list:
+        return {"status": "error", "message": "No files to download"}
+
+    # 创建 zip
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rel_path in file_list:
+            abs_path = (task_dir / rel_path).resolve()
+            # 安全检查：确保文件在 task_dir 内
+            try:
+                abs_path.relative_to(task_dir.resolve())
+            except ValueError:
+                continue
+            if abs_path.is_file():
+                zf.write(abs_path, rel_path)
+    buf.seek(0)
+
+    zip_name = f"{task_id}_outputs.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )

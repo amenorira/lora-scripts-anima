@@ -237,6 +237,34 @@ _log_file_cache: dict[str, tuple[float, Path]] = {}
 _LOG_FILE_CACHE_TTL = 10.0
 
 
+LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
+
+
+def list_output_files(task_id: str) -> list[dict]:
+    """列出指定训练任务的输出文件。
+    扫描 output/<task_id>/ 目录，返回文件名、路径、大小、修改时间、是否为 LoRA 文件"""
+    task_dir = OUTPUT_DIR / task_id
+    if not task_dir.exists() or not task_dir.is_dir():
+        return []
+
+    result = []
+    for p in sorted(task_dir.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+        if not p.is_file():
+            continue
+        try:
+            rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
+        except ValueError:
+            rel = str(p).replace("\\", "/")
+        result.append({
+            "name": p.name,
+            "path": rel,
+            "size": p.stat().st_size,
+            "mtime": p.stat().st_mtime,
+            "is_lora": p.suffix.lower() in LORA_EXTENSIONS,
+        })
+    return result
+
+
 def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
     """读取训练任务的实时日志（tail 方式，高性能）。
     优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
