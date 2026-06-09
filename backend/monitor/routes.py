@@ -341,17 +341,23 @@ async def download_outputs(task_id: str = Query(""), files: str = Query("")):
     if not file_list:
         return {"status": "error", "message": "No files to download"}
 
-    # 创建 zip
+    def _is_safe_path(path: Path, allowed_dir: Path) -> bool:
+        return path.resolve().is_relative_to(allowed_dir.resolve())
+
+    # 创建 zip（限制总大小 2GB，使用 ZIP64 支持大文件）
+    max_total_size = 2 * 1024 * 1024 * 1024  # 2GB
+    total_size = 0
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         for rel_path in file_list:
             abs_path = (task_dir / rel_path).resolve()
-            # 安全检查：确保文件在 task_dir 内
-            try:
-                abs_path.relative_to(task_dir.resolve())
-            except ValueError:
+            if not _is_safe_path(abs_path, task_dir):
                 continue
             if abs_path.is_file():
+                file_size = abs_path.stat().st_size
+                if total_size + file_size > max_total_size:
+                    continue
+                total_size += file_size
                 zf.write(abs_path, rel_path)
     buf.seek(0)
 
