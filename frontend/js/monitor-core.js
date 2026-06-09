@@ -15,17 +15,140 @@ window.monitorCoreMixin = {
   _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
 
+  // ── SSE State ──────────────────────────────────────────
+  _eventSource: null,
+  _sseConnected: false,
+  _sseRetryTimer: null,
+  _sseRetryDelay: 3000,  // 重试延迟（毫秒）
+
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
   runDetailData: null,    // 历史训练详情缓存
+
+  // ── SSE Connection ─────────────────────────────────────
+  connectMonitorSSE(taskId) {
+    if (!taskId || this._eventSource) return;
+    const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
+    try {
+      const es = new EventSource(url);
+      this._eventSource = es;
+
+      es.addEventListener('status_change', (e) => {
+        try { this.handleSSEStatusChange(JSON.parse(e.data)); } catch(_) {}
+      });
+      es.addEventListener('progress', (e) => {
+        try { this.handleSSEProgress(JSON.parse(e.data)); } catch(_) {}
+      });
+      es.addEventListener('log_update', (e) => {
+        try { this.handleSSELogUpdate(JSON.parse(e.data)); } catch(_) {}
+      });
+      es.addEventListener('hardware', (e) => {
+        try { this.handleSSEHardware(JSON.parse(e.data)); } catch(_) {}
+      });
+
+      es.onopen = () => {
+        this._sseConnected = true;
+        if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
+      };
+
+      es.onerror = () => {
+        this._sseConnected = false;
+        es.close();
+        this._eventSource = null;
+        // 重试逻辑：延迟后重连
+        if (this._sseRetryTimer) clearTimeout(this._sseRetryTimer);
+        this._sseRetryTimer = setTimeout(() => {
+          this._sseRetryTimer = null;
+          if (this.monitorData && this.monitorData.state === 'RUNNING') {
+            this.connectMonitorSSE(taskId);
+          }
+        }, this._sseRetryDelay);
+      };
+    } catch(_) {
+      this._eventSource = null;
+      this._sseConnected = false;
+    }
+  },
+
+  disconnectMonitorSSE() {
+    if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
+    if (this._eventSource) {
+      this._eventSource.close();
+      this._eventSource = null;
+    }
+    this._sseConnected = false;
+  },
+
+  handleSSEStatusChange(data) {
+    if (!data) return;
+    const prevState = this._prevState;
+    this._prevState = data.status;
+    // 通知训练完成
+    if (prevState === 'RUNNING' && data.status !== 'RUNNING') {
+      const msg = data.status === 'FINISHED'
+        ? (this.t('monitor.trainCompleted') || 'Training completed!')
+        : (this.t('monitor.trainTerminated') || 'Training terminated');
+      this.toast(msg, data.status === 'FINISHED' ? 'success' : 'error');
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('lora-scripts-anima', { body: msg });
+      } else if ('Notification' in window && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+      const origTitle = document.title;
+      let flashCount = 0;
+      const flashTimer = setInterval(() => {
+        document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
+        flashCount++;
+        if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
+      }, 800);
+      // 任务结束，断开 SSE
+      this.disconnectMonitorSSE();
+    }
+    if (data.status === 'RUNNING') { this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status; }
+    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = 'Idle'; }
+    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+  },
+
+  handleSSEProgress(data) {
+    if (!data || this.selectedRunDir) return;
+    // 更新 monitorData 中的进度字段
+    if (this.monitorData) {
+      this.monitorData.step = data.step;
+      this.monitorData.total_steps = data.total_steps;
+      this.monitorData.percent = data.percent;
+      this.monitorData.loss = data.loss;
+      this.monitorData.lr = data.lr;
+      this.monitorData.epoch = data.epoch;
+      this.monitorData.eta = data.eta;
+      this.monitorData.speed = data.speed;
+    }
+    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+  },
+
+  handleSSELogUpdate(data) {
+    if (!data || !data.lines || this.selectedRunDir) return;
+    this.logLines = [...this.logLines, ...data.lines].slice(-this.logMaxLines);
+    if (this.currentRoute === 'monitor-logs') this.renderLogs();
+  },
+
+  handleSSEHardware(data) {
+    if (!data) return;
+    this.gpuInfo = data.gpu;
+    this.sysInfo = data.system;
+    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+  },
 
   // ── Polling ────────────────────────────────────────────
   startMonitorPolling() {
     this.stopMonitorPolling(); this._monitorFirstFetch = true;
     this.fetchMonitorStatus();
-    this.monitorTimer = setInterval(() => this.fetchMonitorStatus(), this.monitorPollMs);
+    // 仅在 SSE 不可用时使用轮询作为降级方案
+    this.monitorTimer = setInterval(() => {
+      if (!this._sseConnected) this.fetchMonitorStatus();
+    }, this.monitorPollMs);
   },
   stopMonitorPolling() {
+    this.disconnectMonitorSSE();
     if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
     if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
     this._monitorFirstFetch = false; this._dashboardRendered = false; this._destroyCharts();
@@ -75,7 +198,13 @@ window.monitorCoreMixin = {
             if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
           }, 800);
         }
-        if (j.data.state==='RUNNING') { this.isTraining=true; this.isIdle=false; this.statusText=j.data.state_label||j.data.state; }
+        if (j.data.state==='RUNNING') {
+          this.isTraining=true; this.isIdle=false; this.statusText=j.data.state_label||j.data.state;
+          // 首次获取状态后连接 SSE（如果尚未连接）
+          if (!this._eventSource && !this._sseConnected) {
+            this.connectMonitorSSE(tid);
+          }
+        }
         else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
         if (this.currentRoute==='monitor-dashboard') this.renderDashboard();
         if (this.currentRoute==='monitor-logs') this.renderLogs();
