@@ -159,7 +159,7 @@ class TaskMonitor:
     async def _collect_tb_incremental(self, task_id: str) -> None:
         """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到 SSE"""
         try:
-            train_config = latest_train_config()
+            train_config = latest_train_config(task_id)
             output_dir = train_config.get("output_dir")
             if not output_dir:
                 return
@@ -186,7 +186,8 @@ class TaskMonitor:
             )
             
             # 广播硬件信息到所有频道
-            for channel in event_bus.get_all_channels():
+            channels = list(event_bus.get_all_channels())
+            for channel in channels:
                 await event_bus.publish(channel, {
                     "type": "hardware",
                     "data": {"gpu": gpu, "system": sys_info}
@@ -197,7 +198,7 @@ class TaskMonitor:
     def _read_task_log(self, task_id: str) -> list[str] | None:
         """读取任务日志"""
         try:
-            train_config = latest_train_config()
+            train_config = latest_train_config(task_id)
             output_dir = train_config.get("output_dir")
             log_lines = read_train_log(
                 task_id,

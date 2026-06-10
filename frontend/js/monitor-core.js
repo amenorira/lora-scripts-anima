@@ -52,7 +52,7 @@ window.monitorCoreMixin = {
 
       es.onopen = () => {
         this._sseConnected = true;
-        this._monitorAbortCtrl?.abort();  // 终止飞行中的轮询请求，防止覆盖 SSE 增量
+        if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
         if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
       };
 
@@ -196,9 +196,15 @@ window.monitorCoreMixin = {
         series.latest = p.value;
       }
 
-      // 防止长时间训练导致内存无限增长（每 series 最多 5000 点）
       if (series.points.length > 5000) {
         series.points.splice(0, series.points.length - 5000);
+        series.min = Infinity;
+        series.max = -Infinity;
+        for (const p of series.points) {
+          if (p.value < series.min) series.min = p.value;
+          if (p.value > series.max) series.max = p.value;
+        }
+        series.latest = series.points[series.points.length - 1].value;
       }
 
       if (this.monitorData) {

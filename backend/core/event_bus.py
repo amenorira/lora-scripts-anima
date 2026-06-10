@@ -69,10 +69,16 @@ class EventBus:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                # 慢消费者：丢弃事件并记录日志
-                logger.warning(
-                    f"事件总线慢消费者: 频道 {channel} 队列已满，丢弃事件类型={event.get('type', '?')}"
-                )
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    logger.warning(
+                        f"事件总线慢消费者: 频道 {channel} 队列已满，丢弃事件类型={event.get('type', '?')}"
+                    )
     
     def publish_sync(self, channel: str, event: dict[str, Any]) -> None:
         """线程安全的同步发布（从同步线程调用）"""

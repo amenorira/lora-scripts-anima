@@ -314,11 +314,20 @@ def parse_log_progress(lines: list[str]) -> dict:
 
 # ── 训练配置解析 (TOML) ────────────────────────────────────
 
-_latest_config_mtime: float = 0.0
-_latest_config_cache: dict = {}
+_latest_config_cache: dict[tuple[str | None, float], dict] = {}
+_MAX_CONFIG_CACHE = 32
 
 
-def latest_train_config() -> dict:
+def _evict_config_cache() -> None:
+    """LRU 淘汰：保留最近 32 条缓存记录"""
+    if len(_latest_config_cache) <= _MAX_CONFIG_CACHE:
+        return
+    sorted_keys = sorted(_latest_config_cache.keys(), key=lambda k: k[1], reverse=True)
+    for key in sorted_keys[_MAX_CONFIG_CACHE:]:
+        del _latest_config_cache[key]
+
+
+def latest_train_config(task_id: str | None = None) -> dict:
     """解析最新的 autosave TOML 配置"""
     if not CONFIG_AUTOSAVE.exists():
         return {}
@@ -327,12 +336,11 @@ def latest_train_config() -> dict:
         key=lambda p: p.stat().st_mtime, reverse=True
     )
     if not configs:
-        _latest_config_mtime = 0.0
-        _latest_config_cache = {}
         return {}
     latest_mtime = configs[0].stat().st_mtime
-    if _latest_config_mtime == latest_mtime and _latest_config_cache:
-        return _latest_config_cache
+    cache_key = (task_id, latest_mtime)
+    if cache_key in _latest_config_cache:
+        return _latest_config_cache[cache_key]
     for cfg_path in configs[:3]:
         try:
             text = cfg_path.read_text(encoding="utf-8", errors="replace")
@@ -364,8 +372,8 @@ def latest_train_config() -> dict:
                 params[key] = m.group("v").lower()
 
         if params:
-            _latest_config_mtime = latest_mtime
-            _latest_config_cache = params
+            _latest_config_cache[cache_key] = params
+            _evict_config_cache()
             return params
     return {}
 
