@@ -195,6 +195,11 @@ window.monitorCoreMixin = {
         series.latest = p.value;
       }
 
+      // 防止长时间训练导致内存无限增长（每 series 最多 5000 点）
+      if (series.points.length > 5000) {
+        series.points.splice(0, series.points.length - 5000);
+      }
+
       if (this.monitorData) {
         if (tag === 'loss/current' || tag === 'loss/average') {
           const lastPt = newPoints[newPoints.length - 1];
@@ -244,7 +249,10 @@ window.monitorCoreMixin = {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
         // 仅在实时模式下更新图表/日志数据（历史模式由 viewRunDetail 管理）
         if (!this.selectedRunDir) {
-          this.lossSeries = j.data.tensorboard_loss||[];
+          // SSE 连接时由增量推送管理 lossSeries，轮询仅做首次全量加载
+          if (!this._sseConnected) {
+            this.lossSeries = j.data.tensorboard_loss||[];
+          }
           this.trainParams = j.data.train_params||[];
           this.previews = j.data.previews||[];
           if (j.data.log_lines) this.logLines = j.data.log_lines;
