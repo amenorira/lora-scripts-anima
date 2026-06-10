@@ -12,9 +12,6 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
     <img alt="GitHub 仓库星标" src="https://img.shields.io/github/stars/amenorira/lora-scripts-anima">
   </a>
-  <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
-    <img alt="GitHub 仓库分支" src="https://img.shields.io/github/forks/amenorira/lora-scripts-anima">
-  </a>
   <a href="https://raw.githubusercontent.com/amenorira/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
     <img src="https://img.shields.io/github/license/amenorira/lora-scripts-anima" alt="许可证">
   </a>
