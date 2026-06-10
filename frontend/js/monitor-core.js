@@ -46,6 +46,9 @@ window.monitorCoreMixin = {
       es.addEventListener('hardware', (e) => {
         try { this.handleSSEHardware(JSON.parse(e.data)); } catch(_) {}
       });
+      es.addEventListener('loss_update', (e) => {
+        try { this.handleSSELossUpdate(JSON.parse(e.data)); } catch(_) {}
+      });
 
       es.onopen = () => {
         this._sseConnected = true;
@@ -161,6 +164,51 @@ window.monitorCoreMixin = {
     
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
+    }
+  },
+
+  handleSSELossUpdate(data) {
+    if (!data || !data.points || this.selectedRunDir) return;
+
+    const points = data.points;
+
+    for (const [tag, newPoints] of Object.entries(points)) {
+      if (!newPoints || !newPoints.length) continue;
+
+      let series = this.lossSeries.find(s => s.tag === tag);
+      if (!series) {
+        series = {
+          tag: tag,
+          name: tag.replace(/\//g, ' ').replace(/_/g, ' '),
+          points: [],
+          latest: null,
+          min: Infinity,
+          max: -Infinity,
+        };
+        this.lossSeries.push(series);
+      }
+
+      for (const p of newPoints) {
+        series.points.push(p);
+        if (series.latest === null || p.value < series.min) series.min = p.value;
+        if (series.latest === null || p.value > series.max) series.max = p.value;
+        series.latest = p.value;
+      }
+
+      if (this.monitorData) {
+        if (tag === 'loss/current' || tag === 'loss/average') {
+          const lastPt = newPoints[newPoints.length - 1];
+          this.monitorData.loss = lastPt.value.toFixed(6);
+        }
+        if (tag === 'lr/unet') {
+          const lastPt = newPoints[newPoints.length - 1];
+          this.monitorData.lr = lastPt.value.toExponential ? lastPt.value.toExponential(4) : String(lastPt.value);
+        }
+      }
+    }
+
+    if (typeof this._updateCharts === 'function') {
+      this._updateCharts();
     }
   },
 
