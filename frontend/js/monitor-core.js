@@ -20,9 +20,7 @@ window.monitorCoreMixin = {
   _eventSource: null,
   _sseConnected: false,
   _sseRetryTimer: null,
-  _sseRetryDelay: 3000,  // 重试延迟（毫秒）
-  _sseRetryCount: 0,
-  _sseMaxRetries: 10,
+  _sseRetryDelay: 3000,  // 固定重试延迟（毫秒）
 
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
@@ -51,7 +49,6 @@ window.monitorCoreMixin = {
 
       es.onopen = () => {
         this._sseConnected = true;
-        this._sseRetryCount = 0;
         if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
       };
 
@@ -59,18 +56,15 @@ window.monitorCoreMixin = {
         this._sseConnected = false;
         es.close();
         this._eventSource = null;
-        // 重试逻辑：指数退避，最多重试 _sseMaxRetries 次
-        if (this._sseRetryCount >= this._sseMaxRetries) return;
+        // 重试逻辑：固定间隔重试
         if (this._sseRetryTimer) clearTimeout(this._sseRetryTimer);
-        const delay = this._sseRetryDelay * Math.pow(2, this._sseRetryCount);
-        this._sseRetryCount++;
         this._sseRetryTimer = setTimeout(() => {
           this._sseRetryTimer = null;
           const currentTaskId = this.monitorData?.active_task?.id;
           if (currentTaskId && this.monitorData && this.monitorData.state === 'RUNNING') {
             this.connectMonitorSSE(currentTaskId);
           }
-        }, delay);
+        }, this._sseRetryDelay);
       };
     } catch(_) {
       this._eventSource = null;
@@ -80,7 +74,6 @@ window.monitorCoreMixin = {
 
   disconnectMonitorSSE() {
     if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
-    this._sseRetryCount = 0;
     if (this._eventSource) {
       this._eventSource.close();
       this._eventSource = null;

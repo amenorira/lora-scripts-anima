@@ -31,11 +31,8 @@ from backend.tasks import tm, TaskStatus
 router = APIRouter()
 
 # SSE 推送间隔（秒）
-_HARDWARE_INTERVAL = 2.0
-_PROGRESS_INTERVAL = 1.0
-_LOG_INTERVAL = 1.0
-_POLL_INTERVAL = 0.5
-_MAX_LOG_LINES = 50
+_INTERVAL = 1.0
+_MAX_LOG_LINES = 1000
 
 
 async def _get_hardware() -> dict:
@@ -133,7 +130,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
                 break
 
         # 推送硬件信息
-        if now - last_hw_time >= _HARDWARE_INTERVAL:
+        if now - last_hw_time >= _INTERVAL:
             last_hw_time = now
             try:
                 hw = await _get_hardware()
@@ -145,7 +142,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
                 logger.debug("获取硬件信息失败", exc_info=True)
 
         # 推送训练进度
-        if task_id and current_status == "RUNNING" and now - last_progress_time >= _PROGRESS_INTERVAL:
+        if task_id and current_status == "RUNNING" and now - last_progress_time >= _INTERVAL:
             last_progress_time = now
             try:
                 progress = await _get_progress(task_id)
@@ -158,7 +155,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
                 logger.debug("获取训练进度失败 (task_id=%s)", task_id, exc_info=True)
 
         # 推送日志增量
-        if task_id and current_status == "RUNNING" and now - last_log_time >= _LOG_INTERVAL:
+        if task_id and current_status == "RUNNING" and now - last_log_time >= _INTERVAL:
             last_log_time = now
             try:
                 new_lines, last_log_line_count = await _get_log_tail(task_id, last_log_line_count)
@@ -178,7 +175,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[dict, None]:
             except Exception:
                 logger.debug("获取日志增量失败 (task_id=%s)", task_id, exc_info=True)
 
-        await asyncio.sleep(_POLL_INTERVAL)
+        await asyncio.sleep(_INTERVAL)
 
 
 @router.get("/monitor/stream")
@@ -195,7 +192,7 @@ async def monitor_stream(task_id: str = Query(""), request: Request = None):
                     }
                 except Exception:
                     logger.debug("获取硬件信息失败 (hw_only)", exc_info=True)
-                await asyncio.sleep(_HARDWARE_INTERVAL)
+                await asyncio.sleep(_INTERVAL)
 
         return EventSourceResponse(_hw_only())
 

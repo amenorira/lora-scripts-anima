@@ -328,10 +328,11 @@ async def monitor_outputs(task_id: str = Query("")):
 @router.get("/monitor/outputs/download")
 async def download_outputs(task_id: str = Query(""), files: str = Query("")):
     """下载输出文件（zip 格式）。files 为逗号分隔的文件路径列表，为空则下载全部。"""
-    import io
+    import tempfile
     import zipfile
     import urllib.parse
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
 
     if not task_id:
         return {"status": "error", "message": "task_id is required"}
@@ -359,28 +360,29 @@ async def download_outputs(task_id: str = Query(""), files: str = Query("")):
     def _is_safe_path(path: Path, allowed_dir: Path) -> bool:
         return path.resolve().is_relative_to(allowed_dir.resolve())
 
-    # 创建 zip（限制总大小 2GB，使用 ZIP64 支持大文件）
-    max_total_size = 2 * 1024 * 1024 * 1024  # 2GB
-    total_size = 0
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-        for rel_path in file_list:
-            abs_path = (task_dir / rel_path).resolve()
-            if not _is_safe_path(abs_path, task_dir):
-                continue
-            if abs_path.is_file():
-                file_size = abs_path.stat().st_size
-                if total_size + file_size > max_total_size:
+    # 创建临时文件（不占用内存）
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for rel_path in file_list:
+                abs_path = (task_dir / rel_path).resolve()
+                if not _is_safe_path(abs_path, task_dir):
                     continue
-                total_size += file_size
-                zf.write(abs_path, rel_path)
-    buf.seek(0)
+                if abs_path.is_file():
+                    zf.write(abs_path, rel_path)
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        return {"status": "error", "message": f"Failed to create zip: {str(e)}"}
 
     zip_name = f"{task_id}_outputs.zip"
-    return StreamingResponse(
-        buf,
+    return FileResponse(
+        tmp_path,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+        filename=zip_name,
+        background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
     )
 
 
