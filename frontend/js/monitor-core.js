@@ -116,35 +116,52 @@ window.monitorCoreMixin = {
   },
 
   handleSSEProgress(data) {
-    if (!data || this.selectedRunDir) return;
+    if (!data || !data.data || this.selectedRunDir) return;
+    const progress = data.data;
+    
     // 更新 monitorData 中的进度字段
     if (this.monitorData) {
-      this.monitorData.step = data.step;
-      this.monitorData.total_steps = data.total_steps;
-      this.monitorData.percent = data.percent;
-      this.monitorData.loss = data.loss;
-      this.monitorData.lr = data.lr;
-      this.monitorData.epoch = data.epoch;
-      this.monitorData.eta = data.eta;
-      this.monitorData.speed = data.speed;
+      this.monitorData.step = progress.step;
+      this.monitorData.total_steps = progress.total_steps;
+      this.monitorData.percent = progress.percent;
+      this.monitorData.loss = progress.loss;
+      this.monitorData.lr = progress.lr;
+      this.monitorData.epoch = progress.epoch;
+      this.monitorData.eta = progress.eta;
+      this.monitorData.speed = progress.speed;
     }
     if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
   },
 
   handleSSELogUpdate(data) {
-    if (!data || !data.lines || this.selectedRunDir) return;
-    this.logLines.push(...data.lines);
-    if (this.logLines.length > this.logMaxLines) {
-      this.logLines.splice(0, this.logLines.length - this.logMaxLines);
+    if (!data || !data.data || this.selectedRunDir) return;
+    const logData = data.data;
+    
+    if (logData.lines && logData.lines.length > 0) {
+      this.logLines.push(...logData.lines);
+      
+      // 限制日志行数
+      if (this.logLines.length > this.logMaxLines) {
+        this.logLines = this.logLines.slice(-this.logMaxLines);
+      }
+      
+      // 更新日志显示
+      if (this.currentRoute === 'monitor-logs') {
+        this.renderLogs();
+      }
     }
-    if (this.currentRoute === 'monitor-logs') this.renderLogs();
   },
 
   handleSSEHardware(data) {
-    if (!data) return;
-    this.gpuInfo = data.gpu;
-    this.sysInfo = data.system;
-    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+    if (!data || !data.data) return;
+    const hw = data.data;
+    
+    if (hw.gpu) this.gpuInfo = hw.gpu;
+    if (hw.system) this.sysInfo = hw.system;
+    
+    if (this.currentRoute === 'monitor-dashboard') {
+      this.renderDashboard();
+    }
   },
 
   // ── Polling ────────────────────────────────────────────
