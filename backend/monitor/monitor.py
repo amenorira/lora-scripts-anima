@@ -170,11 +170,12 @@ class TaskMonitor:
             if tb_points:
                 await event_bus.publish(task_id, {
                     "type": "loss_update",
+                    "task_id": task_id,
                     "points": tb_points,
                     "timestamp": time.time(),
                 })
         except Exception:
-            pass  # TB 读取失败不阻塞主监控循环
+            logger.debug(f"TB 增量读取失败 (task_id={task_id})", exc_info=True)
 
     async def _collect_hardware(self) -> None:
         """收集硬件信息"""
