@@ -9,19 +9,19 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
 </div>
 
 <p align="center">
-  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
-    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/ameyukisora/lora-scripts-anima">
+  <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/amenorira/lora-scripts-anima">
   </a>
-  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
-    <img alt="GitHub forks" src="https://img.shields.io/github/forks/ameyukisora/lora-scripts-anima">
+  <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/amenorira/lora-scripts-anima">
   </a>
-  <a href="https://raw.githubusercontent.com/ameyukisora/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
-    <img src="https://img.shields.io/github/license/ameyukisora/lora-scripts-anima" alt="license">
+  <a href="https://raw.githubusercontent.com/amenorira/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
+    <img src="https://img.shields.io/github/license/amenorira/lora-scripts-anima" alt="license">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README.md">中文</a>
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
 > ⚠️ **Important Notice**  
@@ -88,7 +88,7 @@ lora-scripts-anima/
 ### Clone
 
 ```sh
-git clone https://github.com/ameyukisora/lora-scripts-anima.git
+git clone https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
 ```
 

@@ -9,19 +9,19 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 </div>
 
 <p align="center">
-  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
-    <img alt="GitHub 仓库星标" src="https://img.shields.io/github/stars/ameyukisora/lora-scripts-anima">
+  <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub 仓库星标" src="https://img.shields.io/github/stars/amenorira/lora-scripts-anima">
   </a>
-  <a href="https://github.com/ameyukisora/lora-scripts-anima" style="margin: 2px;">
-    <img alt="GitHub 仓库分支" src="https://img.shields.io/github/forks/ameyukisora/lora-scripts-anima">
+  <a href="https://github.com/amenorira/lora-scripts-anima" style="margin: 2px;">
+    <img alt="GitHub 仓库分支" src="https://img.shields.io/github/forks/amenorira/lora-scripts-anima">
   </a>
-  <a href="https://raw.githubusercontent.com/ameyukisora/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
-    <img src="https://img.shields.io/github/license/ameyukisora/lora-scripts-anima" alt="许可证">
+  <a href="https://raw.githubusercontent.com/amenorira/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
+    <img src="https://img.shields.io/github/license/amenorira/lora-scripts-anima" alt="许可证">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ameyukisora/lora-scripts-anima/blob/main/README-en.md">English</a>
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
 > ⚠️ **重要提示**  
@@ -89,7 +89,7 @@ lora-scripts-anima/
 ### 克隆仓库
 
 ```sh
-git clone https://github.com/ameyukisora/lora-scripts-anima.git
+git clone https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
 ```
 
