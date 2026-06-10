@@ -15,7 +15,11 @@ from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 # 缓存 EventAccumulator 实例，按 log_dir 索引
 # 每次请求检查 event file mtime，仅在文件更新时重新 Reload
 _tb_cache: dict[str, tuple[float, float, Any]] = {}   # {log_dir: (cache_time, event_mtime, EventAccumulator)}
-_CACHE_TTL = 5.0  # 缓存有效期（秒），避免频繁 Reload
+_CACHE_TTL = 2.0  # 缓存有效期（秒），避免频繁 Reload
+
+# 增量读取用：按 (log_dir_str, tag) 追踪已推送的最大 step
+_last_seen_step: dict[tuple[str, str], int] = {}
+_MAX_SEEN_ENTRIES = 200  # 防止无限增长
 
 
 def _get_cached_accumulator(log_dir: Path) -> Any | None:
@@ -178,6 +182,82 @@ def read_tensorboard_loss(
             return series_list
 
     return []
+
+
+def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[dict]]:
+    """从 TB event 文件读取自上次调用以来的新增 scalar 点。
+    返回 {tag: [{"step": N, "value": V}, ...]}，无新数据时返回空 dict。
+    """
+    try:
+        from tensorboard.backend.event_processing import event_accumulator
+    except Exception:
+        return {}
+
+    # 扫描 log 目录（复用 read_tensorboard_loss 的路径逻辑）
+    log_dirs: list[Path] = []
+    if run_dir:
+        rd = Path(run_dir)
+        for candidate in [rd / "log", rd, rd.parent]:
+            log_sub = candidate / "log" if candidate.name != "log" else candidate
+            if log_sub.is_dir():
+                log_dirs.append(log_sub)
+                break
+    elif OUTPUT_DIR.exists():
+        for rd in sorted(OUTPUT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            log_sub = rd / "log"
+            if log_sub.is_dir():
+                log_dirs.append(log_sub)
+
+    scalar_tags = (
+        "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
+        "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
+    )
+
+    result: dict[str, list[dict]] = {}
+
+    for log_dir in log_dirs[:1]:
+        ea = _get_cached_accumulator(log_dir)
+        if ea is None:
+            continue
+
+        log_dir_str = str(log_dir)
+        try:
+            available = set(ea.Tags().get("scalars", []))
+        except Exception:
+            continue
+
+        for tag in scalar_tags:
+            if tag not in available:
+                continue
+            try:
+                events = ea.Scalars(tag)
+            except Exception:
+                continue
+
+            last_step = _last_seen_step.get((log_dir_str, tag), -1)
+            new_points = [
+                {"step": int(e.step), "value": round(float(e.value), 6)}
+                for e in events
+                if int(e.step) > last_step
+            ]
+            if not new_points:
+                continue
+
+            result[tag] = new_points
+            # 更新 last_seen_step
+            max_step = max(p["step"] for p in new_points)
+            _last_seen_step[(log_dir_str, tag)] = max_step
+
+    # 清理过大的追踪字典（LRU 淘汰最旧的条目）
+    if len(_last_seen_step) > _MAX_SEEN_ENTRIES:
+        oldest_keys = sorted(
+            _last_seen_step.keys(),
+            key=lambda k: _last_seen_step[k],
+        )[: len(_last_seen_step) - _MAX_SEEN_ENTRIES]
+        for key in oldest_keys:
+            del _last_seen_step[key]
+
+    return result
 
 
 # ── 训练日志解析 ───────────────────────────────────────────
