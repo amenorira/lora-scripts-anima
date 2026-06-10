@@ -188,11 +188,6 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
     """从 TB event 文件读取自上次调用以来的新增 scalar 点。
     返回 {tag: [{"step": N, "value": V}, ...]}，无新数据时返回空 dict。
     """
-    try:
-        from tensorboard.backend.event_processing import event_accumulator
-    except Exception:
-        return {}
-
     # 扫描 log 目录（复用 read_tensorboard_loss 的路径逻辑）
     log_dirs: list[Path] = []
     if run_dir:
