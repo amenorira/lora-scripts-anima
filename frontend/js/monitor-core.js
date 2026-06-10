@@ -52,6 +52,7 @@ window.monitorCoreMixin = {
 
       es.onopen = () => {
         this._sseConnected = true;
+        this._monitorAbortCtrl?.abort();  // 终止飞行中的轮询请求，防止覆盖 SSE 增量
         if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
       };
 
