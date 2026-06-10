@@ -142,7 +142,7 @@ window.monitorCoreMixin = {
       
       // 限制日志行数
       if (this.logLines.length > this.logMaxLines) {
-        this.logLines = this.logLines.slice(-this.logMaxLines);
+        this.logLines.splice(0, this.logLines.length - this.logMaxLines);
       }
       
       // 更新日志显示

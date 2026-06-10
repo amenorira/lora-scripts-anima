@@ -31,6 +31,7 @@ class TaskMonitor:
         self._running = False
         self._task: asyncio.Task | None = None
         self._poll_interval = 1.0  # 轮询间隔（秒）
+        self._log_push_lines = 1000  # 单次推送日志行数上限
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_line: dict[str, int] = {}  # task_id -> last_log_line_count
     
@@ -95,16 +96,15 @@ class TaskMonitor:
             
             # 只有运行中的任务才收集进度和日志
             if current_status == "RUNNING":
-                await self._collect_progress(task_id)
-                await self._collect_logs(task_id)
+                await self._collect_task_data(task_id)
         
         # 收集硬件信息（全局）
         await self._collect_hardware()
     
-    async def _collect_progress(self, task_id: str) -> None:
-        """收集训练进度"""
+    async def _collect_task_data(self, task_id: str) -> None:
+        """收集任务进度和日志增量（合并为一次日志文件读取）"""
         try:
-            # 读取日志文件
+            # 读取日志文件（一次 I/O）
             log_lines = await asyncio.to_thread(
                 self._read_task_log, task_id
             )
@@ -129,22 +129,12 @@ class TaskMonitor:
                     "epoch": progress.get("epoch"),
                     "eta": progress.get("eta"),
                     "speed": progress.get("speed"),
+                    "has_error": progress.get("has_error", False),
+                    "error_msg": progress.get("error_msg"),
                 }
             })
-        except Exception as e:
-            logger.debug(f"收集进度失败 (task_id={task_id}): {e}")
-    
-    async def _collect_logs(self, task_id: str) -> None:
-        """收集日志增量"""
-        try:
-            # 读取日志文件
-            log_lines = await asyncio.to_thread(
-                self._read_task_log, task_id
-            )
-            if not log_lines:
-                return
             
-            # 计算增量
+            # 计算日志增量
             last_count = self._last_log_line.get(task_id, 0)
             current_count = len(log_lines)
             
@@ -152,23 +142,22 @@ class TaskMonitor:
                 new_lines = log_lines[last_count:current_count]
                 self._last_log_line[task_id] = current_count
                 
-                # 发布日志事件
                 await event_bus.publish(task_id, {
                     "type": "log_update",
                     "task_id": task_id,
                     "data": {
-                        "lines": new_lines[-100:],  # 最多100行
+                        "lines": new_lines[-self._log_push_lines:],
                         "total": current_count,
-                        "truncated": len(new_lines) > 100
+                        "truncated": len(new_lines) > self._log_push_lines
                     }
                 })
         except Exception as e:
-            logger.debug(f"收集日志失败 (task_id={task_id}): {e}")
+            logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
     
     async def _collect_hardware(self) -> None:
         """收集硬件信息"""
         try:
-            gpu, sys = await asyncio.gather(
+            gpu, sys_info = await asyncio.gather(
                 asyncio.to_thread(gpu_info),
                 asyncio.to_thread(system_info)
             )
@@ -177,7 +166,7 @@ class TaskMonitor:
             for channel in event_bus.get_all_channels():
                 await event_bus.publish(channel, {
                     "type": "hardware",
-                    "data": {"gpu": gpu, "system": sys}
+                    "data": {"gpu": gpu, "system": sys_info}
                 })
         except Exception as e:
             logger.debug(f"收集硬件信息失败: {e}")
