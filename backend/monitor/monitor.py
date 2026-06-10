@@ -17,7 +17,7 @@ from typing import Any
 
 from backend.core.event_bus import event_bus
 from backend.monitor.hardware import gpu_info, system_info
-from backend.monitor.training import parse_log_progress, latest_train_config
+from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
 from backend.monitor.artifacts import read_train_log
 from backend.tasks import tm, TaskStatus
 
@@ -108,52 +108,74 @@ class TaskMonitor:
             log_lines = await asyncio.to_thread(
                 self._read_task_log, task_id
             )
-            if not log_lines:
-                return
             
-            # 解析进度
-            progress = await asyncio.to_thread(
-                parse_log_progress, log_lines
-            )
-            
-            # 发布进度事件
-            await event_bus.publish(task_id, {
-                "type": "progress",
-                "task_id": task_id,
-                "data": {
-                    "step": progress.get("step", 0),
-                    "total_steps": progress.get("total_steps", 0),
-                    "percent": progress.get("percent", 0),
-                    "loss": progress.get("loss"),
-                    "lr": progress.get("lr"),
-                    "epoch": progress.get("epoch"),
-                    "eta": progress.get("eta"),
-                    "speed": progress.get("speed"),
-                    "has_error": progress.get("has_error", False),
-                    "error_msg": progress.get("error_msg"),
-                }
-            })
-            
-            # 计算日志增量
-            last_count = self._last_log_line.get(task_id, 0)
-            current_count = len(log_lines)
-            
-            if current_count > last_count:
-                new_lines = log_lines[last_count:current_count]
-                self._last_log_line[task_id] = current_count
+            if log_lines:
+                # 解析进度
+                progress = await asyncio.to_thread(
+                    parse_log_progress, log_lines
+                )
                 
+                # 发布进度事件
                 await event_bus.publish(task_id, {
-                    "type": "log_update",
+                    "type": "progress",
                     "task_id": task_id,
                     "data": {
-                        "lines": new_lines[-self._log_push_lines:],
-                        "total": current_count,
-                        "truncated": len(new_lines) > self._log_push_lines
+                        "step": progress.get("step", 0),
+                        "total_steps": progress.get("total_steps", 0),
+                        "percent": progress.get("percent", 0),
+                        "loss": progress.get("loss"),
+                        "lr": progress.get("lr"),
+                        "epoch": progress.get("epoch"),
+                        "eta": progress.get("eta"),
+                        "speed": progress.get("speed"),
+                        "has_error": progress.get("has_error", False),
+                        "error_msg": progress.get("error_msg"),
                     }
                 })
+                
+                # 计算日志增量
+                last_count = self._last_log_line.get(task_id, 0)
+                current_count = len(log_lines)
+                
+                if current_count > last_count:
+                    new_lines = log_lines[last_count:current_count]
+                    self._last_log_line[task_id] = current_count
+                    
+                    await event_bus.publish(task_id, {
+                        "type": "log_update",
+                        "task_id": task_id,
+                        "data": {
+                            "lines": new_lines[-self._log_push_lines:],
+                            "total": current_count,
+                            "truncated": len(new_lines) > self._log_push_lines
+                        }
+                    })
+            
+            # TB 增量 loss 数据推送（独立于日志读取）
+            await self._collect_tb_incremental(task_id)
         except Exception as e:
             logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
-    
+
+    async def _collect_tb_incremental(self, task_id: str) -> None:
+        """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到 SSE"""
+        try:
+            train_config = latest_train_config()
+            output_dir = train_config.get("output_dir")
+            if not output_dir:
+                return
+            tb_points = await asyncio.to_thread(
+                read_tensorboard_incremental,
+                run_dir=output_dir,
+            )
+            if tb_points:
+                await event_bus.publish(task_id, {
+                    "type": "loss_update",
+                    "points": tb_points,
+                    "timestamp": time.time(),
+                })
+        except Exception:
+            pass  # TB 读取失败不阻塞主监控循环
+
     async def _collect_hardware(self) -> None:
         """收集硬件信息"""
         try:
