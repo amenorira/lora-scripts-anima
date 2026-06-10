@@ -366,8 +366,9 @@ window.monitorRenderMixin = {
       html += '<div class="output-list" style="display:flex;flex-direction:column;gap:2px">';
       this.outputFiles.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
-        html += `<div class="output-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);background:${isSelected?'var(--bg-surface-raised)':'transparent'};font-size:13px;cursor:pointer;transition:background 0.15s" @click="toggleOutputFile('${this.esc(f.path)}')">`;
-        html += `<input type="checkbox" ${isSelected?'checked':''} style="flex-shrink:0" @click.stop="toggleOutputFile('${this.esc(f.path)}')">`;
+        const fpJs = this.escapeJsString(f.path);
+        html += `<div class="output-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);background:${isSelected?'var(--bg-surface-raised)':'transparent'};font-size:13px;cursor:pointer;transition:background 0.15s" @click="toggleOutputFile('${fpJs}')">`;
+        html += `<input type="checkbox" ${isSelected?'checked':''} style="flex-shrink:0" @click.stop="toggleOutputFile('${fpJs}')">`;
         html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
         html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + this.esc(f.name) + '</span>';
         if (f.is_lora) html += '<span class="badge" style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px">LoRA</span>';
@@ -545,6 +546,7 @@ window.monitorRenderMixin = {
       html += '<div class="history-grid">';
       this.historyItems.forEach(h => {
         const runDirEsc = this.esc(h.run_dir || '');
+        const runDirJs = this.escapeJsString(h.run_dir || '');
         html += `<div class="card history-card" style="position:relative">`;
         html += '<div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + this.esc(h.time);
         if (h.status) {
@@ -556,7 +558,7 @@ window.monitorRenderMixin = {
         }
         if (h.duration) html += `<span style="font-size:11px;color:var(--text-tertiary)">${this.esc(h.duration)}</span>`;
         html += '</div>';
-        html += '<div style="cursor:pointer" @click="' + (h.run_dir ? `viewRunDetail('${runDirEsc}')` : `navigate('monitor-dashboard')`) + '">';
+        html += '<div style="cursor:pointer" @click="' + (h.run_dir ? `viewRunDetail('${runDirJs}')` : `navigate('monitor-dashboard')`) + '">';
         html += '<div><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyModel', 'Model') + ': ' + this.esc(h.model || '') + '</div>';
         html += '<div style="font-size:12px;color:var(--text-secondary)">' + t('historyLR', 'LR') + ': ' + this.esc(h.lr || '') + ' | ' + t('historyDim', 'Dim') + ': ' + this.esc(h.dim || '') + ' | ' + t('historyEpochs', 'Epochs') + ': ' + this.esc(h.epochs || '') + '</div>';
@@ -565,9 +567,9 @@ window.monitorRenderMixin = {
         // Action buttons
         if (h.run_dir) {
           html += '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">';
-          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail('${runDirEsc}')" style="font-size:11px">${t('viewDetails', 'View Details')}</button>`;
-          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewSnapshot('${runDirEsc}')" style="font-size:11px">${t('viewConfig', 'View Config')}</button>`;
-          html += `<button class="btn btn-sm" @click.stop="reuseConfig('${runDirEsc}')" style="font-size:11px;background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
+          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail('${runDirJs}')" style="font-size:11px">${t('viewDetails', 'View Details')}</button>`;
+          html += `<button class="btn btn-sm btn-secondary" @click.stop="viewSnapshot('${runDirJs}')" style="font-size:11px">${t('viewConfig', 'View Config')}</button>`;
+          html += `<button class="btn btn-sm" @click.stop="reuseConfig('${runDirJs}')" style="font-size:11px;background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
           html += '</div>';
         }
         html += '</div>';
@@ -633,7 +635,7 @@ window.monitorRenderMixin = {
     }
     html += '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">';
     html += `<button class="btn btn-sm btn-secondary" @click="copyConfigContent()">${t('copyConfig', 'Copy Config')}</button>`;
-    html += `<button class="btn btn-sm" @click="reuseConfigFromSnapshot('${this.esc(snapshot.run_dir || '')}')" style="background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
+    html += `<button class="btn btn-sm" @click="reuseConfigFromSnapshot('${this.escapeJsString(snapshot.run_dir || '')}')" style="background:var(--accent);color:#fff;border:none">${t('reuseConfig', 'Reuse Config')}</button>`;
     html += '</div>';
 
     content.innerHTML = html;

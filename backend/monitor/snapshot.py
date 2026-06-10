@@ -7,6 +7,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from backend.constants import OUTPUT_DIR
+
 def _validate_task_id(task_id: str) -> None:
     """Validate task_id to prevent path traversal."""
     if not task_id or ".." in task_id or "/" in task_id or "\\" in task_id:
@@ -15,7 +17,7 @@ def _validate_task_id(task_id: str) -> None:
 def save_config_snapshot(task_id: str, config_path: str, extra_info: dict = None) -> Path:
     """Save a snapshot of the training configuration."""
     _validate_task_id(task_id)
-    snapshot_dir = Path("output") / task_id
+    snapshot_dir = OUTPUT_DIR / task_id
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     
     # Copy config file
@@ -40,7 +42,7 @@ def save_config_snapshot(task_id: str, config_path: str, extra_info: dict = None
 def get_config_snapshot(task_id: str) -> dict | None:
     """Get the saved config snapshot for a task."""
     _validate_task_id(task_id)
-    snapshot_dir = Path("output") / task_id
+    snapshot_dir = OUTPUT_DIR / task_id
     if not snapshot_dir.exists():
         return None
     

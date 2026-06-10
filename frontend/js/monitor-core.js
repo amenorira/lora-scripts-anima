@@ -66,8 +66,9 @@ window.monitorCoreMixin = {
         this._sseRetryCount++;
         this._sseRetryTimer = setTimeout(() => {
           this._sseRetryTimer = null;
-          if (this.monitorData && this.monitorData.state === 'RUNNING') {
-            this.connectMonitorSSE(taskId);
+          const currentTaskId = this.monitorData?.active_task?.id;
+          if (currentTaskId && this.monitorData && this.monitorData.state === 'RUNNING') {
+            this.connectMonitorSSE(currentTaskId);
           }
         }, delay);
       };
@@ -117,6 +118,7 @@ window.monitorCoreMixin = {
     }
     if (data.status === 'RUNNING') { this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status; }
     else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = 'Idle'; }
+    else if (data.status === 'FINISHED' || data.status === 'TERMINATED') { this.isTraining = false; this.isIdle = true; this.statusText = data.status_label || data.status; }
     if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
   },
 

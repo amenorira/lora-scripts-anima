@@ -662,6 +662,8 @@ window.trainingCoreMixin = {
   esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
   // Canonical HTML escape for '-delimited attributes (also escapes single quotes).
   escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
+  // JS string escape for embedding values into @click="func('...')" etc.
+  escapeJsString(s) { if (s == null) return ''; return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); },
   escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch (e) { console.error('escJson failed:', e); return btoa('{"options":[]}'); } },
 
   /** Coerce a string value that looks like a number into an actual number for TOML/API.
