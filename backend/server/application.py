@@ -19,6 +19,8 @@ from backend.server.proxy import router as proxy_router
 from backend.monitor import router as monitor_router
 from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
+from backend.core.event_bus import event_bus
+from backend.monitor.monitor import task_monitor
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -44,8 +46,16 @@ async def app_startup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动时
+    event_bus.attach_loop(asyncio.get_running_loop())
+    await task_monitor.start()
+
     await app_startup()
+
     yield
+
+    # 关闭时
+    await task_monitor.stop()
 
 
 app = FastAPI(lifespan=lifespan)
