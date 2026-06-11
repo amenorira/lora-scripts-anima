@@ -43,6 +43,10 @@ async def app_startup():
     await load_presets()
     await asyncio.to_thread(check_torch_gpu)
 
+    url = f"http://{os.environ.get('ANIMA_HOST', '127.0.0.1')}:{os.environ.get('ANIMA_PORT', '12333')}/"
+    from backend.log import log as _log
+    _log.info("Server ready / 服务就绪  @ %s", url)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

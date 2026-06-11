@@ -328,3 +328,31 @@ def find_avaliable_ports(port_init: int, port_range: int):
 
     log.error(f"error finding available ports in range: {port_init} -> {port_range}")
     return None
+
+
+def check_environment():
+    """Check GPU and disk space; log results via RichHandler."""
+
+    # GPU check via nvidia-smi
+    try:
+        result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            gpu_info = result.stdout.strip().split('\n')[0]
+            log.info("GPU: %s", gpu_info)
+        else:
+            log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+    except FileNotFoundError:
+        log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+
+    # Disk space
+    try:
+        usage = shutil.disk_usage(base_dir_path())
+        free_gb = usage.free // (1024 ** 3)
+        if free_gb < 10:
+            log.error("Disk free: %d GB -- critically low / 磁盘空间不足", free_gb)
+        elif free_gb < 30:
+            log.warning("Disk free: %d GB / 磁盘剩余空间", free_gb)
+        else:
+            log.info("Disk free: %d GB / 磁盘剩余空间", free_gb)
+    except OSError:
+        pass

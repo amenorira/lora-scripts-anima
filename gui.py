@@ -7,7 +7,10 @@ import signal
 import subprocess
 import sys
 
-from backend.launch_utils import (base_dir_path, catch_exception, git_tag,
+# Immediate feedback before heavy imports (torch, fastapi, rich)
+print("Initializing...", flush=True)
+
+from backend.launch_utils import (base_dir_path, catch_exception, check_environment, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
 from backend.log import log
 
@@ -88,6 +91,7 @@ def launch():
     log.info("Starting lora-scripts-anima GUI / 正在启动...")
     log.info(f"Base directory / 项目目录: {base_dir_path()}, Working directory / 工作目录: {os.getcwd()}")
     log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
+    check_environment()
 
     if not args.skip_prepare_environment:
         prepare_environment()
@@ -141,15 +145,6 @@ def launch():
         run_tensorboard()
 
     import uvicorn
-    url = f"http://{args.host}:{args.port}/"
-    print()
-    print("=" * 60)
-    print("  lora-scripts-anima 已启动 / Server started")
-    print("=" * 60)
-    print(f"  URL :  {url}")
-    print("=" * 60)
-    print()
-    log.info(f"Server started at {url} / 服务器已启动")
     uvicorn.run("backend.server:app", host=args.host, port=args.port, log_level="error", reload=args.dev)
 
 

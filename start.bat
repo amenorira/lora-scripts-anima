@@ -1,4 +1,5 @@
 @echo off
+echo lora-scripts-anima
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title lora-scripts-anima
@@ -7,76 +8,40 @@ set _QUIET=0
 for %%a in (%*) do if /i "%%a"=="--quiet" set _QUIET=1
 for %%a in (%*) do if /i "%%a"=="-q" set _QUIET=1
 
-echo ============================================
-echo   lora-scripts-anima
-echo ============================================
-
-echo [Check] Checking environment...
-set _OK=1
-
+REM -- Bootstrap: verify Python exists --
 set _PYPATH=
 for /f "tokens=*" %%i in ('where python 2^>nul') do if "!_PYPATH!"=="" set _PYPATH=%%i
 
 if "!_PYPATH!"=="" (
-    echo   [FAIL] Python is not installed or not in PATH.
-    echo          Download: https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe
-    set _OK=0
-    goto :check_gpu
+    echo [FAIL] Python is not installed or not in PATH.
+    echo        Download: https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe
+    pause
+    exit /b 1
 )
 
 echo !_PYPATH! | findstr /i "WindowsApps" >nul
 if !errorlevel! equ 0 (
-    echo   [FAIL] Microsoft Store Python placeholder detected.
-    set _OK=0
-    goto :check_gpu
+    echo [FAIL] Microsoft Store Python placeholder detected.
+    pause
+    exit /b 1
 )
 
 python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
 if !errorlevel! neq 0 (
     for /f "tokens=*" %%i in ('python --version 2^>^&1') do set _PYVER=%%i
-    echo   [FAIL] !_PYVER! - Python 3.10+ required.
-    set _OK=0
-    goto :check_gpu
+    echo [FAIL] !_PYVER! - Python 3.10+ required.
+    pause
+    exit /b 1
 )
 
 python -c "import sys; sys.exit(0 if sys.maxsize > 2**32 else 1)" >nul 2>&1
 if !errorlevel! neq 0 (
-    echo   [FAIL] 32-bit Python detected. 64-bit required.
-    set _OK=0
-    goto :check_gpu
-)
-
-for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo   [OK] %%i (64-bit)
-
-:check_gpu
-where nvidia-smi >nul 2>&1
-if %errorlevel% neq 0 (
-    echo   [WARN] nvidia-smi not found — no NVIDIA GPU or driver?
-    echo          This project needs NVIDIA GPU ^(RTX 30/40/50^) for training.
-) else (
-    for /f "tokens=*" %%i in ('nvidia-smi -L 2^>nul') do set _GPU=%%i
-    if defined _GPU (echo   [OK] GPU: !_GPU!) else (echo   [WARN] Cannot read GPU info.)
-    for /f "tokens=9" %%i in ('nvidia-smi 2^>nul ^| findstr /c:"CUDA Version"') do set _CUDA_VER=%%i
-    if defined _CUDA_VER echo   [OK] CUDA Version: !_CUDA_VER!
-)
-
-set _DRIVE=%~d0
-for /f "usebackq tokens=*" %%a in (`powershell -NoProfile -Command "[math]::Round((Get-PSDrive -Name '!_DRIVE:~0,1!').Free/1GB)" 2^>nul`) do set _FREEGB=%%a
-if defined _FREEGB (
-    if !_FREEGB! LSS 10 (echo   [FAIL] Disk free: !_FREEGB! GB) else if !_FREEGB! LSS 30 (echo   [WARN] Disk free: !_FREEGB! GB) else (echo   [OK] Disk free: !_FREEGB! GB)
-) else (
-    echo   [WARN] Could not check disk space.
-)
-
-echo.
-if "!_OK!"=="0" (
-    echo   Environment check FAILED.
+    echo [FAIL] 32-bit Python detected. 64-bit required.
     pause
     exit /b 1
 )
-echo   Environment check passed.
-echo.
 
+REM -- Venv check --
 if exist "venv\Scripts\python.exe" goto :run_venv
 
 echo [Notice] Virtual environment (venv) not found.
@@ -94,7 +59,6 @@ if not "%_CHOICE%"=="1" (echo Cancelled. && pause && exit /b 0)
 echo.
 echo [Install] Starting installation...
 
-REM Speed optimizations
 set PIP_DISABLE_PIP_VERSION_CHECK=1
 set PIP_PREFER_BINARY=1
 
@@ -127,22 +91,19 @@ set PYTHONUTF8=1
 goto :launch
 
 :run_venv
-echo [Launch] Starting...
 set HF_HOME=huggingface
 set PYTHONUTF8=1
 
 REM Quick torch sanity check
+echo Checking torch...
 venv\Scripts\python.exe -c "import torch" 2>nul
 if !errorlevel! neq 0 (
-    echo [Notice] venv exists but torch missing — repairing...
+    echo [Notice] venv exists but torch missing -- repairing...
     goto :install
 )
 
 :launch
-venv\Scripts\python.exe -c "import flash_attn; print('[flash_attn] OK')" 2>nul
-if !errorlevel! neq 0 echo [flash_attn] NOT FOUND. Install via GUI: Environment tab -> Flash Attention
-
-echo.
+echo Starting...
 venv\Scripts\python.exe gui.py %*
 pause
 exit /b 0
