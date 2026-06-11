@@ -68,7 +68,7 @@ do_install() {
     (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed."; exit 1; }
 
     echo "[3/3] Installing project dependencies..."
-    "$VENV_PYTHON" -m pip install --upgrade -r requirements.txt
+    "$VENV_PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
 
     echo ""

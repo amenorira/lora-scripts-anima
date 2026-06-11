@@ -5,10 +5,10 @@
 # 安装顺序：先 sd-scripts，再本文件。
 # ============================================================
 
-# ── 版本锁定（sd-scripts 未指定版本，此处统一管控）──
-bitsandbytes==0.46.0
-tensorboard==2.20.0
-numpy==1.26.4
+# ── sd-scripts 依赖，版本由 sd-scripts/requirements.txt 管控 ──
+bitsandbytes
+tensorboard
+numpy<2.0
 
 # ── 后端（FastAPI）──
 fastapi==0.103.2
@@ -20,7 +20,7 @@ python-multipart==0.0.18
 websockets==14.2
 
 # ── 系统监控 ──
-psutil==7.0.0
+psutil>=7.0.0
 nvidia-ml-py==13.595.45
 
 # ── 数据处理 ──
@@ -28,7 +28,7 @@ pandas
 pillow
 
 # ── 构建工具 ──
-setuptools<80,>=68
+# setuptools 由 pip 自动管理，无需显式声明
 
 # ── 训练扩展 ──
 open-clip-torch==2.20.0   # SDXL 训练需要

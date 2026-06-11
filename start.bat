@@ -82,7 +82,7 @@ popd
 if !_SD_RC! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
 
 echo [3/3] Installing project deps...
-venv\Scripts\python.exe -m pip install --upgrade -r requirements.txt
+venv\Scripts\python.exe -m pip install -r requirements.txt
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!
