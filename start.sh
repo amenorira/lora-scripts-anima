@@ -61,6 +61,8 @@ do_install() {
     fi
 
     echo "[1/3] Installing PyTorch 2.10.0+cu128..."
+    # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
+    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q
     "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
@@ -80,7 +82,7 @@ export HF_HOME=huggingface
 export PYTHONUTF8=1
 if [ -f "$VENV_PYTHON" ]; then
     echo "Checking torch..."
-    if ! "$VENV_PYTHON" -c "import torch" 2>/dev/null; then
+    if ! "$VENV_PYTHON" -c "import torch, torchvision" 2>/dev/null; then
         echo "[Notice] venv exists but torch missing -- repairing..."
         do_install
     fi

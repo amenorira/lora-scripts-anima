@@ -219,7 +219,7 @@ def setup_onnxruntime(
 
     if not is_installed(f"onnxruntime-gpu"):
         log.info(f"installing onnxruntime")
-        pip_install("onnxruntime", onnx_version, index_url=index_url, live=True)
+        run_pip(f"uninstall onnxruntime -y", "onnxruntime", live=True)
         pip_install("onnxruntime-gpu", onnx_version, index_url=index_url, live=True)
 
 

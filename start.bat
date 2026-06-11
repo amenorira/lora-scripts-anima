@@ -71,6 +71,8 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 echo [1/3] Installing PyTorch 2.10.0+cu128...
+REM 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
+venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q
 venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
@@ -96,7 +98,7 @@ set PYTHONUTF8=1
 
 REM Quick torch sanity check
 echo Checking torch...
-venv\Scripts\python.exe -c "import torch" 2>nul
+venv\Scripts\python.exe -c "import torch, torchvision" 2>nul
 if !errorlevel! neq 0 (
     echo [Notice] venv exists but torch missing -- repairing...
     goto :install

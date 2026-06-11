@@ -66,18 +66,16 @@ def run_tensorboard():
         proc = subprocess.Popen(
             [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
              "--host", args.tensorboard_host, "--port", str(args.tensorboard_port)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         # 检查进程是否立即崩溃
         import time as _time
         _time.sleep(0.5)
         if proc.poll() is not None:
-            _, stderr = proc.communicate(timeout=2)
-            stderr_text = stderr.decode(errors="ignore").strip()
             raise RuntimeError(
                 f"TensorBoard exited immediately with code {proc.returncode}. "
-                f"{stderr_text or 'Check if tensorboard is installed or port ' + str(args.tensorboard_port) + ' is available.'}"
+                f"Check if tensorboard is installed or port {args.tensorboard_port} is available."
             )
         _subprocesses.append((proc, "TensorBoard"))
         log.info(
