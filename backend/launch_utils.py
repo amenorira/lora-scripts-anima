@@ -83,6 +83,53 @@ stderr: {result.stderr.decode(encoding="utf8", errors="ignore") if len(result.st
     return result.stdout.decode(encoding="utf8", errors="ignore")
 
 
+def _check_version(installed, constraint):
+    """Check if installed version satisfies a PEP 440 constraint string.
+    Handles compound constraints (commas) and all comparison operators."""
+    if _Version is None:
+        return True
+    try:
+        iv = _Version(installed)
+    except Exception:
+        return False
+
+    for part in constraint.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        for op in ('>=', '<=', '!=', '==', '~=', '>', '<'):
+            if part.startswith(op):
+                ver_str = part[len(op):].strip()
+                try:
+                    v = _Version(ver_str)
+                except Exception:
+                    continue
+                if op == '==' and iv != v:
+                    return False
+                if op == '>=' and iv < v:
+                    return False
+                if op == '<=' and iv > v:
+                    return False
+                if op == '>' and not (iv > v):
+                    return False
+                if op == '<' and not (iv < v):
+                    return False
+                if op == '!=' and iv == v:
+                    return False
+                if op == '~=':
+                    if iv < v:
+                        return False
+                    release = v.release
+                    if len(release) >= 2:
+                        next_major = _Version(f"{release[0] + 1}.0")
+                    else:
+                        next_major = _Version(f"{release[0] + 1}")
+                    if iv >= next_major:
+                        return False
+                break
+    return True
+
+
 def is_installed(package, friendly: str = None):
     #
     # This function was adapted from code written by vladimandic: https://github.com/vladmandic/automatic/commits/master
@@ -108,15 +155,7 @@ def is_installed(package, friendly: str = None):
         for pkg in pkgs:
             # Extract package name (strip all version constraints)
             pkg_name = re.split(r'[<>=!~]', pkg)[0].strip()
-            # Extract version from >= or == constraint for comparison
-            if '>=' in pkg:
-                pkg_version = re.findall(r'>=\s*([0-9a-zA-Z.+]+)', pkg)
-                pkg_version = pkg_version[0] if pkg_version else None
-            elif '==' in pkg:
-                pkg_version = re.findall(r'==\s*([0-9a-zA-Z.+]+)', pkg)
-                pkg_version = pkg_version[0] if pkg_version else None
-            else:
-                pkg_version = None
+            constraint_str = pkg[len(pkg_name):].strip()
 
             spec = None
             for try_name in (pkg_name, pkg_name.lower(), pkg_name.replace('_', '-')):
@@ -128,29 +167,10 @@ def is_installed(package, friendly: str = None):
 
             if spec is not None:
                 version = spec.metadata["Version"]
-                # log.debug(f'Package version found: {pkg_name} {version}')
 
-                if pkg_version is not None:
-                    try:
-                        if _Version is not None:
-                            # Use proper version comparison
-                            if '>=' in pkg:
-                                ok = _Version(version) >= _Version(pkg_version)
-                            else:
-                                ok = _Version(version) == _Version(pkg_version)
-                        else:
-                            # Fallback to string comparison if packaging unavailable
-                            if '>=' in pkg:
-                                ok = version >= pkg_version
-                            else:
-                                ok = version == pkg_version
-                    except Exception:
-                        # Version parsing failed, assume mismatch
-                        ok = False
-
-                    if not ok:
-                        log.info(f'Package wrong version: {pkg_name} {version} required {pkg_version}')
-                        return False
+                if constraint_str and not _check_version(version, constraint_str):
+                    log.info(f'Package wrong version: {pkg_name} {version} required {constraint_str}')
+                    return False
             else:
                 log.warning(f'Package version not found: {pkg_name}')
                 return False
