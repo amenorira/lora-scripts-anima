@@ -1,21 +1,15 @@
 # ============================================================
 # 项目额外依赖
-# sd-scripts 核心依赖通过 vendor/sd-scripts/requirements.txt 安装，
+# sd-scripts 核心依赖由 vendor/sd-scripts/requirements.txt 安装，
 # 此处仅列出项目 GUI / 后端 / 扩展所需的额外包。
 # 安装顺序：先 sd-scripts，再本文件。
 # ============================================================
-
-# ── sd-scripts 依赖，版本由 sd-scripts/requirements.txt 管控 ──
-bitsandbytes
-tensorboard
-numpy
 
 # ── 后端（FastAPI）──
 fastapi==0.103.2
 pydantic>=2.0,<3
 uvicorn==0.22.0
 httpx==0.24.1
-sse-starlette==2.1.3
 python-multipart==0.0.18
 websockets==14.2
 
@@ -24,35 +18,12 @@ psutil>=7.0.0
 nvidia-ml-py==13.595.45
 
 # ── 数据处理 ──
-pandas
-pillow
+pandas>=2.0
+pillow>=10.0
 
-# ── 构建工具 ──
+# ── 构建工具（TensorBoard 依赖 pkg_resources，setuptools>=82 已移除该模块）──
 setuptools>=68,<82
 
-# ── 训练扩展 ──
-open-clip-torch==2.20.0   # SDXL 训练需要
-lycoris-lora==3.4.0        # LoRA / LoCon / LoHA 训练扩展
-
-# ============================================================
-# 以下为 sd-scripts 依赖，由 vendor/sd-scripts/requirements.txt 安装。
-# 保留版本号供参考使用，标记 skip_verify 可跳过安装。
-# ============================================================
-accelerate==1.6.0  # skip_verify
-transformers==4.54.1  # skip_verify
-diffusers[torch]==0.32.1  # skip_verify
-ftfy==6.3.1  # skip_verify
-opencv-python==4.10.0.84  # skip_verify
-einops==0.7.0
-lion-pytorch==0.2.3  # skip_verify
-schedulefree==1.4
-pytorch-optimizer==3.10.0  # skip_verify
-prodigy-plus-schedule-free==1.9.2  # skip_verify
-prodigyopt==1.1.2
-safetensors==0.4.5  # skip_verify
-toml==0.10.2
-voluptuous==0.15.2  # skip_verify
-huggingface-hub==0.34.3  # skip_verify
-imagesize==1.4.1
-rich==14.1.0  # skip_verify
-sentencepiece==0.2.1  # skip_verify
+# ── 训练扩展（vendor/sd-scripts 代码需要但 vendor/requirements.txt 未声明）──
+open-clip-torch==2.20.0
+lycoris-lora==3.4.0
