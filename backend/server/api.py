@@ -474,7 +474,7 @@ async def flash_attn_install(request: Request) -> dict:
         url = "https://ghproxy.com/" + url
 
     import sys
-    job_id = _start_install_job([sys.executable, "-m", "pip", "install", url])
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", url])
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
@@ -518,7 +518,7 @@ async def xformers_status() -> dict:
 async def xformers_install() -> dict:
     """pip install xformers（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
     import sys
-    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "xformers"])
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "xformers"])
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
