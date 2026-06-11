@@ -26,3 +26,6 @@ setuptools>=68,<82
 
 # ── 训练扩展（vendor/sd-scripts 代码需要但 vendor/requirements.txt 未声明）──
 lycoris-lora==3.4.0
+
+# ── ONNX 推理（WD14 tagger 需要，GPU 版包含 CPU 支持）──
+onnxruntime-gpu
