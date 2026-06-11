@@ -277,7 +277,7 @@ _install_jobs_lock = _install_thr.Lock()
 
 def _cleanup_install_jobs():
     """Remove completed install jobs older than 10 minutes."""
-    now = time.time()
+    now = _install_time.time()
     with _install_jobs_lock:
         expired = [jid for jid, job in _install_jobs.items()
                    if job.get("done") and now - job.get("start", 0) > 600]
@@ -365,7 +365,7 @@ async def install_log(job_id: str, tail: int = 20) -> dict:
         "lines": lines,
         "done": job.get("done", False),
         "returncode": job.get("returncode"),
-        "elapsed": time.time() - job.get("start", 0),
+        "elapsed": _install_time.time() - job.get("start", 0),
     }
 
 
