@@ -8,7 +8,7 @@
 # ── sd-scripts 依赖，版本由 sd-scripts/requirements.txt 管控 ──
 bitsandbytes
 tensorboard
-numpy<2.0
+numpy
 
 # ── 后端（FastAPI）──
 fastapi==0.103.2
