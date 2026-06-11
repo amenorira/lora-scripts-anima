@@ -28,7 +28,7 @@ pandas
 pillow
 
 # ── 构建工具 ──
-# setuptools 由 pip 自动管理，无需显式声明
+setuptools>=68,<82
 
 # ── 训练扩展 ──
 open-clip-torch==2.20.0   # SDXL 训练需要
