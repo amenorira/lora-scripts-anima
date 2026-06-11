@@ -225,7 +225,8 @@ def detect_env() -> dict[str, Any]:
     driver_cuda_ver: Optional[str] = None
     try:
         r = subprocess.run(
-            ["nvidia-smi"], capture_output=True, text=True, timeout=10
+            ["nvidia-smi"], capture_output=True, text=True, timeout=10,
+            encoding="utf-8", errors="replace",
         )
         if r.returncode == 0:
             m = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", r.stdout)
@@ -234,7 +235,7 @@ def detect_env() -> dict[str, Any]:
                 if cuda_tag is None:
                     cuda_tag = f"cu{m.group(1)}{m.group(2)}"
                     cuda_ver = driver_cuda_ver
-    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+    except (subprocess.SubprocessError, OSError, FileNotFoundError, UnicodeError):
         pass
 
     return {
@@ -257,6 +258,8 @@ def _parse_wheel(name: str) -> Optional[dict[str, str]]:
     1. 标准: flash_attn-2.8.3+cu130torch2.12-cp312-cp312-linux_x86_64.whl
     2. Windows abi3: flash_attn_3-3.0.0+cu126torch2.11gite2743ab-cp39-abi3-win_amd64.whl
     """
+    if not name:
+        return None
     # 统一匹配：第二个 python tag 可能是 cp\d+、cp\d+t 或 abi3
     m = re.search(
         r"\+(cu\d+)(torch[\d.]+(?:git\w+)?)-"  # cuda + torch (可能有 git hash)
@@ -497,7 +500,7 @@ def fetch_candidates(
     candidates: list[dict[str, Any]] = []
     for release in raw_releases:
         for asset in release.get("assets", []):
-            tags = _parse_wheel(asset["name"])
+            tags = _parse_wheel(asset.get("name") or "")
             if not tags:
                 continue
             if tags["platform"] != plat:
@@ -628,8 +631,8 @@ def _print_candidates(candidates: list[dict[str, Any]]) -> None:
     for i, c in enumerate(candidates, 1):
         mark = "[OK]" if c["usable"] else "[--]"
         # 提取 flash_attn 版本号
-        fa_ver = c["name"].split("+")[0].replace("flash_attn-", "")
-        tags = _parse_wheel(c["name"]) or {}
+        fa_ver = (c.get("name") or "").split("+")[0].replace("flash_attn-", "")
+        tags = _parse_wheel(c.get("name") or "") or {}
         print(f"  [{i:>2}] {mark} score={c['score']:>3d}  flash_attn {fa_ver}")
         print(f"       file: {c['name']}")
         if c["notes"]:
