@@ -66,13 +66,7 @@
         </span>
         <span x-text="t('nav.monitorDashboard')">Dashboard</span>
       </a>
-      <a class="sidebar-item" data-group="monitor" :class="{ active: currentRoute === 'monitor-logs' }"
-         @click="navigate('monitor-logs')" href="javascript:void(0)" :aria-current="currentRoute === 'monitor-logs' ? 'page' : null">
-        <span class="nav-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        </span>
-        <span x-text="t('nav.monitorLogs')">Real-time Logs</span>
-      </a>
+
       <a class="sidebar-item" data-group="monitor" :class="{ active: currentRoute === 'tensorboard' }"
          @click="navigate('tensorboard')" href="javascript:void(0)" :aria-current="currentRoute === 'tensorboard' ? 'page' : null">
         <span class="nav-icon">
@@ -240,26 +234,6 @@
                   x-text="t('monitor.outputs','Outputs')">Outputs</button>
         </div>
         <div id="monitorDashboard"></div>
-      </div>
-
-      <!-- Route: Monitor Logs -->
-      <div x-show="currentRoute === 'monitor-logs'" x-cloak>
-        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <h1 class="page-title" x-text="t('nav.monitorLogs')" style="margin-bottom:0">Real-time Logs</h1>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" x-model="logSearch" :placeholder="t('monitor.logSearch','Search...')" style="width:140px;font-size:12px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-input);background:var(--bg-input);color:var(--text-primary)" @input="renderLogs()">
-            <button type="button"  class="log-level-btn" :class="{ active: logLevel === 'all' }" @click="logLevel='all'; renderLogs()" x-text="t('monitor.logLevelAll','All')">All</button>
-            <button type="button"  class="log-level-btn" :class="{ active: logLevel === 'error' }" @click="logLevel='error'; renderLogs()" x-text="t('monitor.logLevelError','Error')">Error</button>
-            <button type="button"  class="log-level-btn" :class="{ active: logLevel === 'warn' }" @click="logLevel='warn'; renderLogs()" x-text="t('monitor.logLevelWarn','Warn')">Warn</button>
-            <button type="button"  class="log-level-btn" :class="{ active: logLevel === 'info' }" @click="logLevel='info'; renderLogs()" x-text="t('monitor.logLevelInfo','Info')">Info</button>
-            <button type="button"  class="btn btn-sm" @click="logAutoScroll = !logAutoScroll" :class="logAutoScroll ? 'btn-primary' : 'btn-secondary'">
-              <span x-text="logAutoScroll ? t('monitor.logAutoScroll') + ': ON' : t('monitor.logAutoScroll') + ': OFF'"></span>
-            </button>
-            <button type="button"  class="btn btn-sm btn-secondary" @click="copyLogs()"><span x-text="t('monitor.logCopy')">Copy</span></button>
-            <button type="button"  class="btn btn-sm btn-secondary" @click="clearLogs()"><span x-text="t('monitor.logClear')">Clear</span></button>
-          </div>
-        </div>
-        <div id="monitorLogs" class="monitor-logs-container"></div>
       </div>
 
       <!-- Route: History -->

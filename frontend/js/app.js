@@ -264,10 +264,6 @@ document.addEventListener('alpine:init', () => {
         this.startProgress();
         this.startMonitorPolling();
         // renderDashboard() is called by fetchMonitorStatus() when data arrives
-      } else if (r === 'monitor-logs') {
-        this.startProgress();
-        this.startMonitorPolling();
-        // renderLogs() is called by fetchMonitorStatus() when data arrives
       } else if (r === 'history') {
         this.startProgress();
         this.loadHistory();

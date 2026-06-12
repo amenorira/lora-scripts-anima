@@ -15,10 +15,15 @@ window.monitorRenderMixin = {
     const firstRender = !this._dashboardRendered;
     const tab = this.monitorTab||'overview';
 
-    // Full render on first load, tab change, or history mode change
-    if (firstRender || this._prevMonitorTab !== tab || this._prevHistoryMode !== isHistoryMode) {
+    // 日志内容状态 (用于检测 SSE 推送 / 搜索 / 过滤 / 清空触发的变更)
+    const logState = `${this.logLines.length}-${this._logContentVersion}-${this.logSearch}-${this.logLevel}`;
+    const logStateChanged = tab === 'logs' && this._prevLogState !== logState;
+
+    // Full render on first load, tab change, history mode change, or log content change
+    if (firstRender || this._prevMonitorTab !== tab || this._prevHistoryMode !== isHistoryMode || logStateChanged) {
       this._prevMonitorTab = tab;
       this._prevHistoryMode = isHistoryMode;
+      this._prevLogState = logState;
       this._dashboardRendered = true;
 
       const prevBars = this._prevBarValues||{};
@@ -52,7 +57,7 @@ window.monitorRenderMixin = {
 
       // Tab content with caching
       if (!this._tabContentCache) this._tabContentCache = {};
-      const tabCacheKey = `${tab}-${isHistoryMode}-${this.logLines.length}-${this.logSearch}-${this.logLevel}-${this.outputFiles.length}`;
+      const tabCacheKey = `${tab}-${isHistoryMode}-${this.logLines.length}-${this._logContentVersion}-${this.logSearch}-${this.logLevel}-${this.outputFiles.length}`;
       if (this._tabContentCache[tab] && this._tabContentCache[tab].key === tabCacheKey) {
         html += this._tabContentCache[tab].html;
       } else {
@@ -289,6 +294,7 @@ window.monitorRenderMixin = {
     });
     html += `<button type="button" class="btn btn-sm" :class="logAutoScroll?'btn-primary':'btn-secondary'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?'${t('logAutoScroll','Auto-scroll')}: ON':'${t('logAutoScroll','Auto-scroll')}: OFF'"></span></button>`;
     html += `<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">${t('logCopy','Copy')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="confirm('Clear all logs?') && clearLogs()">${t('logClear','Clear')}</button>`;
     html += `<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">${t('logDownload','Download')}</button>`;
     html += '</div></div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines" style="max-height:calc(100vh - 320px);overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6">';
@@ -466,52 +472,6 @@ window.monitorRenderMixin = {
           plugins:{legend:{display:false},tooltip:{backgroundColor:tooltipBg,titleColor:textColor,bodyColor:textColor,borderColor:tooltipBorder,borderWidth:1,padding:8,displayColors:false,callbacks:{title:(items)=>'Step '+items[0].parsed.x,label:(item)=>item.dataset.label+': '+item.parsed.y.toFixed(6)}}},
           scales:{x:{type:'linear',min:xMin,max:xMax,grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:8,callback:(v)=>v>=1000?(v/1000).toFixed(0)+'k':v}},y:{grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:6,callback:(v)=>parseFloat(v.toFixed(4))}}}}});
     });
-  },
-
-  renderLogs() {
-    const el=document.getElementById('monitorLogs'); if(!el) return;
-    const t=(k,fb)=>this.t('monitor.'+k)||fb||k;
-    if(!this.logLines.length){el.innerHTML='<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>'+t('noLogsHint','No logs yet')+'</p></div>';return;}
-    const search=(this.logSearch||'').toLowerCase(), level=this.logLevel||'all';
-
-    if(search!==this._prevLogSearch||level!==this._prevLogLevel){
-      this._prevLogSearch=search;
-      this._prevLogLevel=level;
-      this._lastLogLineCount=0;
-      let lines=this._filterLogLines(this.logLines, search, level, true);
-      this._lastLogLineCount=this.logLines.length;
-      let html='<div class="log-lines">';
-      if(!lines.length) html+='<div class="dashboard-empty" style="padding:20px"><p>'+t('noResults','No matches')+'</p></div>';
-      else lines.forEach(({line, index})=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const dl=this._formatLogLine(line, search);html+=`<div class="log-line ${cls}"><span class="log-line-num">${index+1}</span>${dl}</div>`;});
-      html+='</div>';
-      if(!this.logAutoScroll&&this.logLines.length>0){
-        html+=`<button class="btn btn-sm log-scroll-bottom" @click="logAutoScroll=true; renderLogs()" style="position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;margin:4px auto">${t('scrollToBottom','↓ Bottom')}</button>`;
-      }
-      el.innerHTML=html;
-    }else{
-      const newLineCount=this.logLines.length;
-      if(newLineCount<=this._lastLogLineCount) return;
-      const newLines=this.logLines.slice(this._lastLogLineCount);
-      this._lastLogLineCount=newLineCount;
-      const container=el.querySelector('.log-lines');
-      if(!container) return;
-      const frag=document.createDocumentFragment();
-      const startIdx=newLineCount-newLines.length;
-      newLines.forEach((line,i)=>{const lower=line.toLowerCase(),cls=lower.indexOf('error')!==-1||lower.indexOf('traceback')!==-1||lower.indexOf('exception')!==-1?'log-error':lower.indexOf('warning')!==-1||lower.indexOf('warn')!==-1?'log-warn':'';const divEl=document.createElement('div');divEl.className='log-line '+cls;const dl=this._formatLogLine(line, search);divEl.innerHTML='<span class="log-line-num">'+(startIdx+i+1)+'</span>'+dl;frag.appendChild(divEl);});
-      container.appendChild(frag);
-      while(container.children.length>500){container.removeChild(container.firstChild);}
-      if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
-      return;
-    }
-    if(this.logAutoScroll) el.scrollTop=el.scrollHeight;
-    const logLinesDiv=el.querySelector('.log-lines');
-    if(logLinesDiv){
-      logLinesDiv.onscroll=()=>{
-        const atBottom=logLinesDiv.scrollHeight-logLinesDiv.scrollTop-logLinesDiv.clientHeight<30;
-        if(this.logAutoScroll&&!atBottom){this.logAutoScroll=false;}
-        else if(!this.logAutoScroll&&atBottom){this.logAutoScroll=true;}
-      };
-    }
   },
 
   renderHistory() {

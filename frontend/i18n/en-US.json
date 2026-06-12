@@ -2,7 +2,6 @@
   "nav": {
     "monitor": "Monitor",
     "monitorDashboard": "Dashboard",
-    "monitorLogs": "Real-time Logs",
     "training": "Training",
     "loraTraining": "LoRA Training",
     "basic": "Beginner (SD1.5)",
@@ -59,7 +58,6 @@
     "historyDim": "Dim",
     "historyEpochs": "Epochs",
     "logSearch": "Search logs...",
-    "errorsOnly": "Errors only",
     "noResults": "No matching lines",
     "lastTraining": "Last training",
     "outputDir": "Output",

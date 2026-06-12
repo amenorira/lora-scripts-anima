@@ -9,7 +9,7 @@ window.monitorCoreMixin = {
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
   previews: [], previewStep: 0, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
-  logSearch: '', logErrorsOnly: false, logLevel: 'all',
+  logSearch: '', logLevel: 'all', _logContentVersion: 0,
   chartSmoothing: 0.6, monitorTab: 'overview', _chartInstances: null,
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   _monitorAbortCtrl: null,
@@ -148,10 +148,11 @@ window.monitorCoreMixin = {
       if (this.logLines.length > this.logMaxLines) {
         this.logLines.splice(0, this.logLines.length - this.logMaxLines);
       }
+      this._logContentVersion++;
       
       // 更新日志显示
-      if (this.currentRoute === 'monitor-logs') {
-        this.renderLogs();
+      if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'logs') {
+        this.renderDashboard();
       }
     }
   },
@@ -262,7 +263,7 @@ window.monitorCoreMixin = {
           }
           this.trainParams = j.data.train_params||[];
           this.previews = j.data.previews||[];
-          if (j.data.log_lines) this.logLines = j.data.log_lines;
+          if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
         }
         // Notification on training completion
         const prevState = this._prevState || null;
@@ -277,7 +278,6 @@ window.monitorCoreMixin = {
         }
         else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
         if (this.currentRoute==='monitor-dashboard') this.renderDashboard();
-        if (this.currentRoute==='monitor-logs') this.renderLogs();
       }
       if (this._monitorFirstFetch) { this._monitorFirstFetch=false; this.finishProgress(); }
     } catch(e) {
@@ -288,7 +288,7 @@ window.monitorCoreMixin = {
 
   // ── Log helpers ────────────────────────────────────────
   copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => this.toast(this.t('common.copied'))); },
-  clearLogs() { this.logLines = []; this.renderLogs(); },
+  clearLogs() { this.logLines = []; this._logContentVersion = 0; this._tabContentCache = {}; this.renderDashboard(); },
 
   // ── History ────────────────────────────────────────────
   async loadHistory() {
@@ -356,7 +356,7 @@ window.monitorCoreMixin = {
         this.lossSeries = j.data.tensorboard_loss || [];
         this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
-        if (j.data.log_lines) this.logLines = j.data.log_lines;
+        if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
         this.renderDashboard();
       } else {
         this.toast(j.message || 'Failed to load run detail');

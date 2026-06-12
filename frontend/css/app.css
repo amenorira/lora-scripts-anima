@@ -1622,7 +1622,6 @@ input[type="range"]::-webkit-slider-thumb {
 /* Prevent layout flash during content swap: preserve a minimum height
    so the container never collapses to zero while innerHTML is replaced. */
 #monitorDashboard { min-height: 200px; contain: layout style; }
-#monitorLogs { min-height: 200px; contain: layout style; }
 #historyList { min-height: 120px; contain: layout style; }
 #environmentPage { min-height: 300px; contain: layout style; }
 #trainFormContent { min-height: 400px; contain: layout style; }

@@ -61,7 +61,6 @@ window.getVisibleSections = function(trainType) {
 window.ROUTE_CONFIG = {
   'home': { title: 'lora-scripts-anima', subtitle: '' },
   'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
-  'monitor-logs': { titleKey: 'nav.monitorLogs', subtitle: '' },
   'history': { titleKey: 'nav.history', subtitle: '' },
   'train-basic': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'train-master': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },

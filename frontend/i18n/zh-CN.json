@@ -2,7 +2,6 @@
   "nav": {
     "monitor": "训练监控",
     "monitorDashboard": "仪表盘",
-    "monitorLogs": "实时日志",
     "training": "训练",
     "loraTraining": "LoRA 训练",
     "basic": "新手 (SD1.5)",
@@ -59,7 +58,6 @@
     "historyDim": "维度",
     "historyEpochs": "Epochs",
     "logSearch": "搜索日志...",
-    "errorsOnly": "仅错误",
     "noResults": "无匹配行",
     "lastTraining": "上次训练",
     "outputDir": "输出目录",
