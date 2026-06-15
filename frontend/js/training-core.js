@@ -158,6 +158,13 @@ window.trainingCoreMixin = {
 
     // Start training status polling
     this.startTrainingStatusPoll();
+
+    // Apply pending preset if queued by applyPresetNavigate()
+    if (this._pendingPreset) {
+      const pending = this._pendingPreset;
+      this._pendingPreset = null;
+      this.$nextTick(() => this.applyPreset(pending));
+    }
   },
 
   renderTrainingForm(trainType, targetId) {

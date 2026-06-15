@@ -82,7 +82,14 @@ document.addEventListener('alpine:init', () => {
       window.addEventListener('hashchange', () => this.handleRoute());
 
       window.addEventListener('beforeunload', (e) => {
+        // Tag editor: 检查是否有未保存的修改
         if (this.tagEditorModified && this.currentRoute === 'tagEditor') {
+          e.preventDefault();
+          e.returnValue = '';
+          return;
+        }
+        // 训练表单: 检查是否有尚未保存到 localStorage 的变更
+        if (this._formSaveTimer && this.currentRoute && this.currentRoute.startsWith('train-')) {
           e.preventDefault();
           e.returnValue = '';
         }
@@ -390,6 +397,18 @@ document.addEventListener('alpine:init', () => {
     _startHealthCheck() {
       this.checkBackendHealth();
       this._healthTimer = setInterval(() => this.checkBackendHealth(), 5000);
+      // 页面不可见时暂停健康检查，可见时立即恢复
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          clearInterval(this._healthTimer);
+          this._healthTimer = null;
+        } else {
+          if (!this._healthTimer) {
+            this.checkBackendHealth();
+            this._healthTimer = setInterval(() => this.checkBackendHealth(), 5000);
+          }
+        }
+      });
     },
 
     t(key, fallback) {

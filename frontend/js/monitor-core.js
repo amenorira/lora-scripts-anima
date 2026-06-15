@@ -13,6 +13,18 @@ window.monitorCoreMixin = {
   chartSmoothing: 0.6, monitorTab: 'overview', _chartInstances: null,
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   _monitorAbortCtrl: null,
+  _renderRAF: null,  // requestAnimationFrame 节流标记
+
+  // ── 节流渲染：每帧最多渲染一次 Dashboard ──
+  scheduleRender() {
+    if (this._renderRAF) return; // 已有待处理的渲染
+    this._renderRAF = requestAnimationFrame(() => {
+      this._renderRAF = null;
+      if (this.currentRoute === 'monitor-dashboard') {
+        this.renderDashboard();
+      }
+    });
+  },
   _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
 
@@ -29,6 +41,8 @@ window.monitorCoreMixin = {
   // ── SSE Connection ─────────────────────────────────────
   connectMonitorSSE(taskId) {
     if (!taskId || this._eventSource) return;
+    // 清空 lossSeries，避免 SSE 重连后产生重复数据点
+    this.lossSeries = [];
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
       const es = new EventSource(url);
@@ -116,7 +130,7 @@ window.monitorCoreMixin = {
     if (data.status === 'RUNNING') { this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status; }
     else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = 'Idle'; }
     else if (data.status === 'FINISHED' || data.status === 'TERMINATED') { this.isTraining = false; this.isIdle = true; this.statusText = data.status_label || data.status; }
-    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   handleSSEProgress(data) {
@@ -134,7 +148,7 @@ window.monitorCoreMixin = {
       this.monitorData.eta = progress.eta;
       this.monitorData.speed = progress.speed;
     }
-    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   handleSSELogUpdate(data) {
@@ -144,15 +158,15 @@ window.monitorCoreMixin = {
     if (logData.lines && logData.lines.length > 0) {
       this.logLines.push(...logData.lines);
       
-      // 限制日志行数
+      // 限制日志行数（用 slice 替代 splice 避免 O(n) 移动）
       if (this.logLines.length > this.logMaxLines) {
-        this.logLines.splice(0, this.logLines.length - this.logMaxLines);
+        this.logLines = this.logLines.slice(-this.logMaxLines);
       }
       this._logContentVersion++;
       
       // 更新日志显示
       if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'logs') {
-        this.renderDashboard();
+        this.scheduleRender();
       }
     }
   },
@@ -165,7 +179,7 @@ window.monitorCoreMixin = {
     if (hw.system) this.sysInfo = hw.system;
     
     if (this.currentRoute === 'monitor-dashboard') {
-      this.renderDashboard();
+      this.scheduleRender();
     }
   },
 
@@ -191,6 +205,8 @@ window.monitorCoreMixin = {
       }
 
       for (const p of newPoints) {
+        // 去重：跳过与最后一个点相同 step 的数据点
+        if (series.points.length > 0 && series.points[series.points.length - 1].step === p.step) continue;
         series.points.push(p);
         if (series.latest === null || p.value < series.min) series.min = p.value;
         if (series.latest === null || p.value > series.max) series.max = p.value;
@@ -238,6 +254,7 @@ window.monitorCoreMixin = {
     this.disconnectMonitorSSE();
     if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
     if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
+    if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
     this._monitorFirstFetch = false; this._dashboardRendered = false; this._destroyCharts();
   },
   async fetchMonitorStatus() {
@@ -257,13 +274,13 @@ window.monitorCoreMixin = {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
         // 仅在实时模式下更新图表/日志数据（历史模式由 viewRunDetail 管理）
         if (!this.selectedRunDir) {
-          // SSE 连接时由增量推送管理 lossSeries，轮询仅做首次全量加载
+          // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
           if (!this._sseConnected) {
             this.lossSeries = j.data.tensorboard_loss||[];
+            if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
           }
           this.trainParams = j.data.train_params||[];
           this.previews = j.data.previews||[];
-          if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
         }
         // Notification on training completion
         const prevState = this._prevState || null;

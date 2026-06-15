@@ -369,6 +369,8 @@ window.trainingPresetsMixin = {
           result[key] = JSON.parse(val);
         } catch(_) {
           // Fallback: split by comma, strip quotes
+          var inner = val.slice(1,-1).trim();
+          if (inner === '') { result[key] = []; continue; }
           result[key] = inner.split(',').map(s => {
             s = s.trim();
             if ((s.startsWith('"')&&s.endsWith('"'))||(s.startsWith("'")&&s.endsWith("'"))) return s.slice(1,-1);
@@ -506,8 +508,14 @@ window.trainingPresetsMixin = {
     const tt = (preset.metadata && preset.metadata.train_type) || 'anima-lora';
     const routeMap = { 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
     const targetRoute = routeMap[tt] || 'train-anima';
-    this.navigate(targetRoute);
-    // Apply after navigate so buildTrainForm runs first
-    this.$nextTick(() => this.applyPreset(preset));
+
+    if (this.currentRoute === targetRoute) {
+      // Already on target route — form is already built, apply directly
+      this.$nextTick(() => this.applyPreset(preset));
+    } else {
+      // Store preset for deferred application after form initialization
+      this._pendingPreset = preset;
+      this.navigate(targetRoute);
+    }
   }
 };

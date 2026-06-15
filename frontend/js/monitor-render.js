@@ -644,25 +644,11 @@ window.monitorRenderMixin = {
   _applyConfigToTraining(params) {
     // Apply config params to the training form
     if (!params || !this.form) return;
-    const fieldMap = [
-      'pretrained_model_name_or_path',
-      'learning_rate',
-      'network_dim',
-      'max_train_epochs',
-      'train_batch_size',
-      'output_name',
-      'train_data_dir',
-      'network_alpha',
-      'resolution',
-      'lr_scheduler',
-      'optimizer_type',
-      'network_module',
-      'mixed_precision',
-      'save_every_n_epochs',
-      'seed',
-    ];
-    for (const key of fieldMap) {
-      if (params[key] !== undefined && this.form[key] !== undefined) {
+    // 遍历所有参数，将后端返回的值映射到表单中存在的字段
+    for (const key of Object.keys(params)) {
+      // 跳过非表单字段的元数据键
+      if (key === 'sample_prompts' || key.startsWith('_')) continue;
+      if (params[key] !== undefined && params[key] !== null && this.form.hasOwnProperty(key)) {
         this.form[key] = String(params[key]);
       }
     }
