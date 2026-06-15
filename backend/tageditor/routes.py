@@ -197,7 +197,7 @@ async def save_image_tags(data: dict):
     cap = find_caption(p) or p.with_suffix(".txt")
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
-    _invalidate_cache(p.parent)
+    _invalidate_cache(p.parent, None)
     return {"status": "success", "message": "已保存"}
 
 
@@ -226,7 +226,7 @@ async def save_all_tags(data: dict):
     if saved > 0:
         dirs = {Path(item["path"]).parent for item in images if item.get("path")}
         for _d in dirs:
-            _invalidate_cache(_d)
+            _invalidate_cache(_d, None)
     return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
 
 
@@ -268,7 +268,7 @@ async def batch_edit_tags(data: dict):
             modified += 1
 
     if modified > 0:
-        _invalidate_cache(d)
+        _invalidate_cache(d, None)
     return {"status": "success", "data": {"modified": modified, "errors": errors}}
 
 
@@ -333,7 +333,7 @@ async def restore_from_backup(data: dict):
                 pass
 
     if restored > 0:
-        _invalidate_cache(d)
+        _invalidate_cache(d, None)
     return {"status": "success", "data": {"restored": restored}}
 
 

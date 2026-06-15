@@ -150,6 +150,12 @@ window.taggerMixin = {
   async buildTaggerForm() {
     const container = document.getElementById('taggerForm');
     if (!container) return;
+    // Clean up previous event listeners from prior buildTaggerForm calls
+    if (this._taggerAbortController) {
+      this._taggerAbortController.abort();
+    }
+    this._taggerAbortController = new AbortController();
+    const taggerSignal = this._taggerAbortController.signal;
     let models = [];
     if (this._taggerModelsCache && this._taggerModelsCache.length) {
       models = this._taggerModelsCache;
@@ -290,7 +296,7 @@ window.taggerMixin = {
         if (newPresetEl && newPresetEl.value) {
           this.applyCamiePreset(newPresetEl.value);
         }
-      });
+      }, { signal: taggerSignal });
     }
 
     // ── 预设 animaSelect 事件监听 ──
@@ -298,13 +304,13 @@ window.taggerMixin = {
     if (presetEl) {
       presetEl.addEventListener('input', () => {
         this.applyCamiePreset(presetEl.value);
-      });
+      }, { signal: taggerSignal });
     }
     const clPresetEl = document.getElementById('tagger-cl-preset');
     if (clPresetEl) {
       clPresetEl.addEventListener('input', () => {
         this.applyCamiePreset(clPresetEl.value);
-      });
+      }, { signal: taggerSignal });
     }
     // 初始化：为当前模型显式应用默认预设
     if (savedModel === 'camie-tagger-v2' || savedModel === 'cl_tagger_1_02') {
