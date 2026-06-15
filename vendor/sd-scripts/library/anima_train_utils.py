@@ -14,7 +14,8 @@ from tqdm import tqdm
 from PIL import Image
 
 from library.device_utils import init_ipex, clean_memory_on_device, synchronize_device
-from library import anima_models, anima_utils, train_util, qwen_image_autoencoder_kl
+from library import anima_models, anima_utils, checkpoint_io, sampling, qwen_image_autoencoder_kl
+import library.model_io as model_io
 
 init_ipex()
 
@@ -257,14 +258,14 @@ def save_anima_model_on_train_end(
     """Save Anima model at the end of training."""
 
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec_dataclass(
+        sai_metadata = model_io.get_sai_model_spec_dataclass(
             None, args, False, False, False, is_stable_diffusion_ckpt=True, anima="preview"
         ).to_metadata_dict()
         dit_sd = dit.state_dict()
         # Save with 'net.' prefix for ComfyUI compatibility
         anima_utils.save_anima_model(ckpt_file, dit_sd, sai_metadata, save_dtype)
 
-    train_util.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
+    checkpoint_io.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
 
 
 def save_anima_model_on_epoch_end_or_stepwise(
@@ -280,13 +281,13 @@ def save_anima_model_on_epoch_end_or_stepwise(
     """Save Anima model at epoch end or specific steps."""
 
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec_dataclass(
+        sai_metadata = model_io.get_sai_model_spec_dataclass(
             None, args, False, False, False, is_stable_diffusion_ckpt=True, anima="preview"
         ).to_metadata_dict()
         dit_sd = dit.state_dict()
         anima_utils.save_anima_model(ckpt_file, dit_sd, sai_metadata, save_dtype)
 
-    train_util.save_sd_model_on_epoch_end_or_stepwise_common(
+    checkpoint_io.save_sd_model_on_epoch_end_or_stepwise_common(
         args,
         on_epoch_end,
         accelerator,
@@ -430,7 +431,7 @@ def sample_images(
 
     dit.switch_block_swap_for_inference()
 
-    prompts = train_util.load_prompts(args.sample_prompts)
+    prompts = sampling.load_prompts(args.sample_prompts)
     save_dir = os.path.join(args.output_dir, "sample")
     os.makedirs(save_dir, exist_ok=True)
 

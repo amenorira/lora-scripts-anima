@@ -148,7 +148,6 @@ class LoRAInfModule(LoRAModule):
         weight = org_sd["weight"]
         org_dtype = weight.dtype
         org_device = weight.device
-        weight = weight.to(torch.float)  # calc in float
 
         if dtype is None:
             dtype = org_dtype
@@ -158,6 +157,9 @@ class LoRAInfModule(LoRAModule):
         # get up/down weight
         down_weight = sd["lora_down.weight"].to(torch.float).to(device)
         up_weight = sd["lora_up.weight"].to(torch.float).to(device)
+
+        # weight
+        weight = weight.to(torch.float).to(device)  # calc in float
 
         # merge weight
         if len(weight.size()) == 2:
@@ -756,11 +758,11 @@ class LoRANetwork(torch.nn.Module):
 
         if os.path.splitext(file)[1] == ".safetensors":
             from safetensors.torch import save_file
-            from library import train_util
+            import library.model_io as model_io
 
             if metadata is None:
                 metadata = {}
-            model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
+            model_hash, legacy_hash = model_io.precalculate_safetensors_hashes(state_dict, metadata)
             metadata["sshs_model_hash"] = model_hash
             metadata["sshs_legacy_hash"] = legacy_hash
 

@@ -20,8 +20,10 @@ from library import (
     sd3_train_utils,
     strategy_base,
     strategy_lumina,
-    train_util,
+    sampling,
 )
+import library.args as args_util
+import library.model_io as model_io
 from library.utils import setup_logging
 
 setup_logging()
@@ -159,7 +161,7 @@ class LuminaNetworkTrainer(train_network.NetworkTrainer):
                 assert isinstance(tokenize_strategy, strategy_lumina.LuminaTokenizeStrategy)
                 assert isinstance(text_encoding_strategy, strategy_lumina.LuminaTextEncodingStrategy)
 
-                sample_prompts = train_util.load_prompts(args.sample_prompts)
+                sample_prompts = sampling.load_prompts(args.sample_prompts)
                 sample_prompts_te_outputs = {}  # key: prompt, value: text encoder outputs
                 with accelerator.autocast(), torch.no_grad():
                     for prompt_dict in sample_prompts:
@@ -325,7 +327,7 @@ class LuminaNetworkTrainer(train_network.NetworkTrainer):
         return loss
 
     def get_sai_model_spec(self, args):
-        return train_util.get_sai_model_spec(None, args, False, True, False, lumina="lumina2")
+        return model_io.get_sai_model_spec(None, args, False, True, False, lumina="lumina2")
 
     def update_metadata(self, metadata, args):
         metadata["ss_weighting_scheme"] = args.weighting_scheme
@@ -371,7 +373,7 @@ class LuminaNetworkTrainer(train_network.NetworkTrainer):
 
 def setup_parser() -> argparse.ArgumentParser:
     parser = train_network.setup_parser()
-    train_util.add_dit_training_arguments(parser)
+    args_util.add_dit_training_arguments(parser)
     lumina_train_util.add_lumina_train_arguments(parser)
     return parser
 
@@ -379,8 +381,8 @@ def setup_parser() -> argparse.ArgumentParser:
 if __name__ == "__main__":
     parser = setup_parser()
     args = parser.parse_args()
-    train_util.verify_command_line_training_args(args)
-    args = train_util.read_config_from_file(args, parser)
+    args_util.verify_command_line_training_args(args)
+    args = args_util.read_config_from_file(args, parser)
 
     trainer = LuminaNetworkTrainer()
     trainer.train(args)
