@@ -102,7 +102,16 @@
     "stopFailed": "停止训练失败",
     "backToLive": "返回实时",
     "viewingHistory": "查看历史",
-    "trainResult": "训练结果"
+    "trainResult": "训练结果",
+    "exitCode": "退出码",
+    "confirmClearLogs": "确定清空所有日志？",
+    "statusCompleted": "✓ 已完成",
+    "statusFailed": "✗ 失败",
+    "statusError": "✗ 错误",
+    "statusTerminated": "⏹ 已终止",
+    "loadRunFailed": "加载训练详情失败",
+    "runDetailError": "读取训练详情出错",
+    "stepPrefix": "步数 "
   },
   "section": {
     "model": "模型与数据集",
@@ -357,7 +366,12 @@
     "next": "下一个",
     "apply": "应用",
     "confirm": "确认",
-    "noResults": "无结果"
+    "noResults": "无结果",
+    "networkError": "网络错误",
+    "localPicker": "本地选择",
+    "builtinBrowser": "内置浏览",
+    "browseLocal": "浏览本地文件",
+    "searchBuiltin": "搜索内置模型"
   },
   "preset": {
     "title": "预设管理",
@@ -476,7 +490,9 @@
     "hideAll": "隐藏全部",
     "totalTags": "总计标签",
     "collapseAll": "折叠全部",
-    "expandAll": "展开全部"
+    "expandAll": "展开全部",
+    "copyCategoryTags": "复制此分类标签",
+    "tagTruncated": "仅显示前 200 个，共 {total} 个。调高阈值可减少标签。"
   },
   "tagEditor": {
     "title": "标签编辑器",
@@ -709,7 +725,9 @@
     "envLabel": "环境",
     "installLabel": "安装",
     "actionLabel": "操作",
-    "verLabel": "版本"
+    "verLabel": "版本",
+    "connectionLost": "连接丢失，请刷新页面重试",
+    "installFailed": "安装失败"
   },
   "opt": {
     "model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",

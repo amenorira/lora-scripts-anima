@@ -218,7 +218,7 @@ window.monitorRenderMixin = {
       html += '<div class="param-grid">';
       html += `<div class="param-item"><span class="param-label">${t('status','Status')}</span><span class="param-value" style="color:${tr.status==='completed'?'var(--success)':'var(--danger)'}">${tr.status||'?'}</span></div>`;
       if (tr.duration_str) html += `<div class="param-item"><span class="param-label">${t('duration','Duration')}</span><span class="param-value">${tr.duration_str}</span></div>`;
-      if (tr.exit_code != null) html += `<div class="param-item"><span class="param-label">Exit Code</span><span class="param-value">${tr.exit_code}</span></div>`;
+      if (tr.exit_code != null) html += `<div class="param-item"><span class="param-label">${t('monitor.exitCode','Exit Code')}</span><span class="param-value">${tr.exit_code}</span></div>`;
       html += '</div></div>';
     }
 
@@ -294,7 +294,7 @@ window.monitorRenderMixin = {
     });
     html += `<button type="button" class="btn btn-sm" :class="logAutoScroll?'btn-primary':'btn-secondary'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?'${t('logAutoScroll','Auto-scroll')}: ON':'${t('logAutoScroll','Auto-scroll')}: OFF'"></span></button>`;
     html += `<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">${t('logCopy','Copy')}</button>`;
-    html += `<button type="button" class="btn btn-sm btn-secondary" @click="confirm('Clear all logs?') && clearLogs()">${t('logClear','Clear')}</button>`;
+    html += `<button type="button" class="btn btn-sm btn-secondary" @click="confirm('${t('monitor.confirmClearLogs','Clear all logs?').replace(/'/g,"\\'")}') && clearLogs()">${t('logClear','Clear')}</button>`;
     html += `<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">${t('logDownload','Download')}</button>`;
     html += '</div></div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines" style="max-height:calc(100vh - 320px);overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6">';
@@ -480,7 +480,7 @@ window.monitorRenderMixin = {
         plugins:[{id:'gradientFill'+id,beforeDatasetsDraw(chart){const{gctx,chartArea}=chart;if(!chartArea)return;const grad=gctx.createLinearGradient(0,chartArea.top,0,chartArea.bottom);grad.addColorStop(0,color+'40');grad.addColorStop(1,color+'05');chart.data.datasets[0].backgroundColor=grad;}}],
         data:{datasets:[{label:s.name,data:chartData,borderColor:color,fill:true,tension:0.3,pointRadius:0,pointHitRadius:8,pointHoverRadius:5,pointHoverBackgroundColor:color,borderWidth:1.8}]},
         options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},layout:{padding:{top:4,right:8,bottom:0,left:0}},
-          plugins:{legend:{display:false},tooltip:{backgroundColor:tooltipBg,titleColor:textColor,bodyColor:textColor,borderColor:tooltipBorder,borderWidth:1,padding:8,displayColors:false,callbacks:{title:(items)=>'Step '+items[0].parsed.x,label:(item)=>item.dataset.label+': '+item.parsed.y.toFixed(6)}}},
+          plugins:{legend:{display:false},tooltip:{backgroundColor:tooltipBg,titleColor:textColor,bodyColor:textColor,borderColor:tooltipBorder,borderWidth:1,padding:8,displayColors:false,callbacks:{title:(items)=>t('monitor.stepPrefix','Step ')+items[0].parsed.x,label:(item)=>item.dataset.label+': '+item.parsed.y.toFixed(6)}}},
           scales:{x:{type:'linear',min:xMin,max:xMax,grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:8,callback:(v)=>v>=1000?(v/1000).toFixed(0)+'k':v}},y:{grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:6,callback:(v)=>parseFloat(v.toFixed(4))}}}}});
     });
   },
@@ -522,7 +522,7 @@ window.monitorRenderMixin = {
         html += '<div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + this.esc(h.time);
         if (h.status) {
           const statusColors = {completed: 'var(--success)', failed: 'var(--danger)', error: 'var(--danger)', terminated: 'var(--text-tertiary)'};
-          const statusLabels = {completed: '✓ Completed', failed: '✗ Failed', error: '✗ Error', terminated: '⏹ Terminated'};
+          const statusLabels = {completed: t('monitor.statusCompleted','✓ Completed'), failed: t('monitor.statusFailed','✗ Failed'), error: t('monitor.statusError','✗ Error'), terminated: t('monitor.statusTerminated','⏹ Terminated')};
           const color = statusColors[h.status] || 'var(--text-tertiary)';
           const label = statusLabels[h.status] || h.status;
           html += `<span class="badge" style="font-size:10px;background:${color};color:#fff;padding:1px 6px;border-radius:3px">${label}</span>`;

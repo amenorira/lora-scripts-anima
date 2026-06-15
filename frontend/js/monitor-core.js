@@ -131,7 +131,7 @@ window.monitorCoreMixin = {
       this.disconnectMonitorSSE();
     }
     if (data.status === 'RUNNING') { this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status; }
-    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = 'Idle'; }
+    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle','Idle'); }
     else if (data.status === 'FINISHED' || data.status === 'TERMINATED') { this.isTraining = false; this.isIdle = true; this.statusText = data.status_label || data.status; }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
@@ -296,7 +296,7 @@ window.monitorCoreMixin = {
             this.connectMonitorSSE(tid);
           }
         }
-        else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+        else if (j.data.state==='IDLE') { this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle','Idle'); }
         if (this.currentRoute==='monitor-dashboard') this.renderDashboard();
       }
       if (this._monitorFirstFetch) { this._monitorFirstFetch=false; this.finishProgress(); }
@@ -379,10 +379,10 @@ window.monitorCoreMixin = {
         if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
         this.renderDashboard();
       } else {
-        this.toast(j.message || 'Failed to load run detail');
+        this.toast(j.message || this.t('monitor.loadRunFailed','Failed to load run detail'));
       }
     } catch (e) {
-      this.toast('Error loading run detail');
+      this.toast(this.t('monitor.runDetailError','Error loading run detail'));
     } finally {
       this.finishProgress();
     }

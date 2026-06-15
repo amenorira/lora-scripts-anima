@@ -284,7 +284,7 @@ window.trainingTomlMixin = {
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
-      if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+      if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle','Idle'); }
       else {
         this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted'));
         // 弹出适配器警告（如有）

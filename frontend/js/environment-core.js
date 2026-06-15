@@ -59,7 +59,7 @@ window.environmentCoreMixin = {
         if (retries >= MAX_RETRIES) {
           a._stopPolling();
           const busyKey = prefix + 'Busy'; a[busyKey] = false;
-          a[logKey] += '\n[ERROR] 连接丢失，请刷新页面重试 / Connection lost, please refresh';
+          a[logKey] += '\n[ERROR] ' + a.t('environment.connectionLost','Connection lost, please refresh');
           a.finishProgress(); a.renderEnvironment();
           return;
         }
@@ -113,7 +113,7 @@ window.environmentCoreMixin = {
         const r = await fetch('/api/flash-attention/install', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:url||null,source:this.faSource||'default'}) });
         const result = await r.json();
         if (result.success && result.job_id) { this.faInstallJobId = result.job_id; this._startPolling(result.job_id, 'fa'); }
-        else { this.faBusy = false; this.faError = result.error||'Install failed'; this.finishProgress(); this.renderEnvironment(); }
+        else { this.faBusy = false; this.faError = result.error||this.t('environment.installFailed','Install failed'); this.finishProgress(); this.renderEnvironment(); }
       } catch (e) { this.faBusy = false; this.faError = String(e); this.finishProgress(); this.renderEnvironment(); }
     });
   },
@@ -126,7 +126,7 @@ window.environmentCoreMixin = {
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
     try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
       if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._startPolling(result.job_id, 'xf'); }
-      else { this.xfBusy = false; this.xfError = result.error||'Install failed'; this.finishProgress(); this.renderEnvironment(); }
+      else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed','Install failed'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
   },
 

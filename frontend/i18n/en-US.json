@@ -102,7 +102,16 @@
     "stopFailed": "Failed to stop training",
     "backToLive": "Back to live",
     "viewingHistory": "Viewing history",
-    "trainResult": "Training Result"
+    "trainResult": "Training Result",
+    "exitCode": "Exit Code",
+    "confirmClearLogs": "Clear all logs?",
+    "statusCompleted": "✓ Completed",
+    "statusFailed": "✗ Failed",
+    "statusError": "✗ Error",
+    "statusTerminated": "⏹ Terminated",
+    "loadRunFailed": "Failed to load run detail",
+    "runDetailError": "Error loading run detail",
+    "stepPrefix": "Step "
   },
   "section": {
     "model": "Model & Dataset",
@@ -357,7 +366,12 @@
     "next": "Next",
     "apply": "Apply",
     "confirm": "Confirm",
-    "noResults": "No results"
+    "noResults": "No results",
+    "networkError": "Network error",
+    "localPicker": "Local picker",
+    "builtinBrowser": "Built-in browser",
+    "browseLocal": "Browse local files",
+    "searchBuiltin": "Search built-in models"
   },
   "preset": {
     "title": "Preset Management",
@@ -476,7 +490,9 @@
     "hideAll": "Hide All",
     "totalTags": "Total Tags",
     "collapseAll": "Collapse All",
-    "expandAll": "Expand All"
+    "expandAll": "Expand All",
+    "copyCategoryTags": "Copy category tags",
+    "tagTruncated": "Showing first 200 of {total}. Raise threshold to reduce tags."
   },
   "tagEditor": {
     "title": "Tag Editor",
@@ -709,7 +725,9 @@
     "envLabel": "Env",
     "installLabel": "Install",
     "actionLabel": "Actions",
-    "verLabel": "Ver"
+    "verLabel": "Ver",
+    "connectionLost": "Connection lost, please refresh",
+    "installFailed": "Install failed"
   },
   "opt": {
     "model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
