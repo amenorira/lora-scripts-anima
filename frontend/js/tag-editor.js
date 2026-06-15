@@ -1386,17 +1386,21 @@ window.tagEditorMixin = {
   _teUpdateFreq(oldTags, newTags) {
     var oldList = _teParseTags(oldTags);
     var newList = _teParseTags(newTags);
-    var removed = oldList.filter(function(t) { return newList.indexOf(t) === -1; });
-    var added = newList.filter(function(t) { return oldList.indexOf(t) === -1; });
+    var newSet = new Set(newList);
+    var oldSet = new Set(oldList);
+    var removed = oldList.filter(function(t) { return !newSet.has(t); });
+    var added = newList.filter(function(t) { return !oldSet.has(t); });
     if (removed.length === 0 && added.length === 0) return;
+    // Build a Map index for O(1) lookup instead of .find() O(n)
+    var freqMap = new Map(this.tagEditorTagFreq.map(function(f) { return [f.tag, f]; }));
     var self = this;
     removed.forEach(function(t) {
-      var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
+      var item = freqMap.get(t);
       if (item && item.count > 0) item.count--;
     });
     added.forEach(function(t) {
-      var item = self.tagEditorTagFreq.find(function(f) { return f.tag === t; });
-      if (item) { item.count++; } else { self.tagEditorTagFreq.push({ tag: t, count: 1 }); }
+      var item = freqMap.get(t);
+      if (item) { item.count++; } else { var newEntry = { tag: t, count: 1 }; self.tagEditorTagFreq.push(newEntry); freqMap.set(t, newEntry); }
     });
     this.tagEditorTagFreq = this.tagEditorTagFreq.filter(function(f) { return f.count > 0; });
     this.tagEditorMaxFreq = this.tagEditorTagFreq.reduce(function(max, f) { return Math.max(max, f.count); }, 0);

@@ -19,6 +19,7 @@ Tag Editor API 路由
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import shutil
@@ -74,7 +75,7 @@ async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    images = get_cached_scan_images(dir_path, recursive=recursive)
+    images = await asyncio.to_thread(get_cached_scan_images, dir_path, recursive)
     dir_name = dir_path.name or str(dir_path)
 
     return {
@@ -94,7 +95,7 @@ async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    tags_data, total_images = count_tags(dir_path, recursive=recursive)
+    tags_data, total_images = await asyncio.to_thread(count_tags, dir_path, recursive)
 
     return {"status": "success", "data": {"tags": tags_data, "total_images": total_images}}
 
@@ -109,7 +110,7 @@ async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True))
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    images = get_cached_scan_images(dir_path, recursive=recursive)
+    images = await asyncio.to_thread(get_cached_scan_images, dir_path, recursive)
     total = len(images)
     with_caption = sum(1 for i in images if i.get("has_caption"))
     without_caption = total - with_caption
@@ -143,7 +144,7 @@ async def tag_autocomplete(
     if not dir_path.exists():
         return {"status": "success", "data": {"suggestions": []}}
 
-    suggestions = get_autocomplete(dir_path, prefix, limit=limit, recursive=recursive)
+    suggestions = await asyncio.to_thread(get_autocomplete, dir_path, prefix, limit, recursive)
     return {"status": "success", "data": {"suggestions": suggestions}}
 
 
@@ -163,7 +164,7 @@ async def filter_images(data: dict):
     exclude_tags = set(data.get("exclude_tags", []))
     search_text = (data.get("search", "") or "").strip().lower()
 
-    images = get_cached_scan_images(d, recursive=data.get("recursive", True))
+    images = await asyncio.to_thread(get_cached_scan_images, d, data.get("recursive", True))
     matched = []
 
     for img in images:

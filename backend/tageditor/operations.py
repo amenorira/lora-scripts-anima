@@ -38,6 +38,8 @@ def apply_operation(tags: str, operation: str, args: dict) -> tuple[str, str | N
         elif operation == "regex_replace":
             pattern = args.get("pattern", "")
             replace = args.get("replace", "")
+            if not pattern:
+                return tags, None
             try:
                 lst = tag_list(tags)
                 result = [re.sub(pattern, replace, t) for t in lst]

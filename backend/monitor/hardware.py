@@ -15,7 +15,7 @@ _gpu_sample: dict | None = None
 _gpu_sample_lock = threading.Lock()
 _sys_sample: dict | None = None
 _sys_sample_lock = threading.Lock()
-_SAMPLE_TTL = 1.0
+_SAMPLE_TTL = 5.0
 _sample_started = False
 
 

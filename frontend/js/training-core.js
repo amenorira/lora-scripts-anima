@@ -670,8 +670,8 @@ window.trainingCoreMixin = {
   // Canonical HTML escape for '-delimited attributes (also escapes single quotes).
   escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
   // JS string escape for embedding values into @click="func('...')" etc.
-  escapeJsString(s) { if (s == null) return ''; return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); },
-  escJson(obj) { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); } catch (e) { console.error('escJson failed:', e); return btoa('{"options":[]}'); } },
+  escapeJsString(s) { if (s == null) return ''; return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'); },
+  escJson(obj) { try { return btoa(new TextEncoder().encode(JSON.stringify(obj)).reduce((s,b)=>s+String.fromCharCode(b),'')); } catch (e) { console.error('escJson failed:', e); return btoa('{"options":[]}'); } },
 
   /** Coerce a string value that looks like a number into an actual number for TOML/API.
    *  Returns the coerced value, or the original value if not coercible. */

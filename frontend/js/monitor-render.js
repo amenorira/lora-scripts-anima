@@ -462,12 +462,23 @@ window.monitorRenderMixin = {
       if(!canvas||!s.points||s.points.length<2) return;
       let points=s.points;
       if(smoothing>0){points=[];let ema=s.points[0].value,alpha=1-smoothing;s.points.forEach((p,i)=>{if(i===0)ema=p.value;else ema=alpha*p.value+(1-alpha)*ema;points.push({step:p.step,value:ema});});}
-      const xs=points.map(p=>p.step), xMin=Math.min(...xs), xMax=Math.max(...xs), color=colors[idx%colors.length], ctx=canvas.getContext('2d');
-      if(this._chartInstances[id]){try{this._chartInstances[id].destroy()}catch(_){}}
+      const xs=points.map(p=>p.step), xMin=Math.min(...xs), xMax=Math.max(...xs), color=colors[idx%colors.length];
+      const chartData=points.map(p=>({x:p.step,y:p.value}));
 
+      // Incremental update: reuse existing Chart instance instead of destroy+recreate
+      const existing=this._chartInstances[id];
+      if(existing){
+        existing.data.datasets[0].data=chartData;
+        existing.options.scales.x.min=xMin;
+        existing.options.scales.x.max=xMax;
+        existing.update('none');
+        return;
+      }
+
+      const ctx=canvas.getContext('2d');
       this._chartInstances[id]=new Chart(ctx,{type:'line',
         plugins:[{id:'gradientFill'+id,beforeDatasetsDraw(chart){const{gctx,chartArea}=chart;if(!chartArea)return;const grad=gctx.createLinearGradient(0,chartArea.top,0,chartArea.bottom);grad.addColorStop(0,color+'40');grad.addColorStop(1,color+'05');chart.data.datasets[0].backgroundColor=grad;}}],
-        data:{datasets:[{label:s.name,data:points.map(p=>({x:p.step,y:p.value})),borderColor:color,fill:true,tension:0.3,pointRadius:0,pointHitRadius:8,pointHoverRadius:5,pointHoverBackgroundColor:color,borderWidth:1.8}]},
+        data:{datasets:[{label:s.name,data:chartData,borderColor:color,fill:true,tension:0.3,pointRadius:0,pointHitRadius:8,pointHoverRadius:5,pointHoverBackgroundColor:color,borderWidth:1.8}]},
         options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},layout:{padding:{top:4,right:8,bottom:0,left:0}},
           plugins:{legend:{display:false},tooltip:{backgroundColor:tooltipBg,titleColor:textColor,bodyColor:textColor,borderColor:tooltipBorder,borderWidth:1,padding:8,displayColors:false,callbacks:{title:(items)=>'Step '+items[0].parsed.x,label:(item)=>item.dataset.label+': '+item.parsed.y.toFixed(6)}}},
           scales:{x:{type:'linear',min:xMin,max:xMax,grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:8,callback:(v)=>v>=1000?(v/1000).toFixed(0)+'k':v}},y:{grid:{color:gridColor},ticks:{color:textColor,font:{size:10},maxTicksLimit:6,callback:(v)=>parseFloat(v.toFixed(4))}}}}});

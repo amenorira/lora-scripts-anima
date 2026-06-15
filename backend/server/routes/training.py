@@ -53,14 +53,14 @@ def get_sample_prompts(config: dict):
     train_data_dir = config["train_data_dir"]
     sub_dir = [dir for dir in glob(os.path.join(train_data_dir, '*')) if os.path.isdir(dir)]
 
-    positive_prompts = config.pop('positive_prompts', None)
-    negative_prompts = config.pop('negative_prompts', '')
-    sample_width = config.pop('sample_width', 512)
-    sample_height = config.pop('sample_height', 512)
-    sample_cfg = config.pop('sample_cfg', 7)
-    sample_seed = config.pop('sample_seed', 2333)
-    sample_steps = config.pop('sample_steps', 24)
-    randomly_choice_prompt = config.pop('randomly_choice_prompt', False)
+    positive_prompts = config.get('positive_prompts', None)
+    negative_prompts = config.get('negative_prompts', '')
+    sample_width = config.get('sample_width', 512)
+    sample_height = config.get('sample_height', 512)
+    sample_cfg = config.get('sample_cfg', 7)
+    sample_seed = config.get('sample_seed', 2333)
+    sample_steps = config.get('sample_steps', 24)
+    randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
         if len(sub_dir) != 1:
@@ -228,7 +228,7 @@ async def create_toml_file(request: Request):
         try:
             positive_prompt, sample_prompts_arg = get_sample_prompts(config=config)
 
-            if positive_prompt is not None and train_utils.is_promopt_like(sample_prompts_arg):
+            if positive_prompt is not None and train_utils.is_prompt_like(sample_prompts_arg):
                 # 样本提示词也放入运行文件夹
                 os.makedirs(run_dir, exist_ok=True)
                 sample_prompts_file = os.path.join(run_dir, "prompts.txt")

@@ -33,7 +33,7 @@ def date(i: Info, fmt='%Y%m%d') -> str:
     return datetime.now().strftime(fmt)
 
 
-pattern = re.compile(r'\[([\w:]+)\]')
+pattern = re.compile(r'\[([^\[\]]+)\]')
 
 # all function must returns string or raise TypeError or ValueError
 # other errors will cause the extension error

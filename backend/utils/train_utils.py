@@ -86,7 +86,7 @@ MODEL_SIGNATURE = [
 ]
 
 
-def is_promopt_like(s):
+def is_prompt_like(s):
     for p in ["--n", "--s", "--l", "--d"]:
         if p in s:
             return True

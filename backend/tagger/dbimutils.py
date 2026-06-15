@@ -6,17 +6,19 @@ from PIL import Image
 
 
 def smart_imread(img, flag=cv2.IMREAD_UNCHANGED):
-    if img.endswith(".gif"):
+    if img.lower().endswith(".gif"):
         img = Image.open(img)
         img = img.convert("RGB")
         img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     else:
         img = cv2.imread(img, flag)
+        if img is None:
+            raise IOError(f"Failed to read image: {img}")
     return img
 
 
 def smart_24bit(img):
-    if img.dtype is np.dtype(np.uint16):
+    if img.dtype == np.dtype(np.uint16):
         img = (img / 257).astype(np.uint8)
 
     if len(img.shape) == 2:

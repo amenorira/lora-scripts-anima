@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,13 +14,15 @@ from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-# ── scan_history 缓存 ────────────────────────────────────
+# ── 缓存 + 线程安全锁 ────────────────────────────────────
+_history_cache_lock = threading.Lock()
 _history_cache: tuple[float, list[dict]] | None = None
 _HISTORY_CACHE_TTL = 30  # 秒
 
 
 # ── 预览样本 ──────────────────────────────────────────────
 
+_previews_cache_lock = threading.Lock()
 _previews_cache: tuple[float, str, list[dict]] | None = None
 _PREVIEWS_CACHE_TTL = 5.0
 
@@ -29,8 +32,9 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
     global _previews_cache
     now = time.time()
     cache_key = output_dir or ""
-    if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
-        return _previews_cache[2]
+    with _previews_cache_lock:
+        if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
+            return _previews_cache[2]
 
     roots: list[Path] = []
     if output_dir:
@@ -69,7 +73,8 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
             "url": f"/preview-image?path={rel}",
             "size": p.stat().st_size,
         })
-    _previews_cache = (now, cache_key, result)
+    with _previews_cache_lock:
+        _previews_cache = (now, cache_key, result)
     return result
 
 
@@ -99,8 +104,9 @@ def scan_history() -> list[dict]:
     """扫描训练记录：优先从 output/*/config.toml（运行文件夹），回退到 config/autosave/"""
     global _history_cache
     now = time.time()
-    if _history_cache and now - _history_cache[0] < _HISTORY_CACHE_TTL:
-        return _history_cache[1]
+    with _history_cache_lock:
+        if _history_cache and now - _history_cache[0] < _HISTORY_CACHE_TTL:
+            return _history_cache[1]
 
     history = []
     seen_names = set()  # 按 output_name+timestamp 去重
@@ -202,7 +208,8 @@ def scan_history() -> list[dict]:
                 "duration": "",
             })
 
-    _history_cache = (time.time(), history)
+    with _history_cache_lock:
+        _history_cache = (time.time(), history)
     return history
 
 
@@ -234,6 +241,7 @@ def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
 
 
 _log_file_cache: dict[str, tuple[float, Path]] = {}
+_log_file_cache_lock = threading.Lock()
 _LOG_FILE_CACHE_TTL = 10.0
 
 
@@ -269,12 +277,19 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
     """读取训练任务的实时日志（tail 方式，高性能）。
     优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
     now = time.time()
-    if task_id in _log_file_cache:
-        cache_time, cached_path = _log_file_cache[task_id]
-        if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
-            lines = _tail_file(cached_path)
-            if lines:
-                return lines
+    with _log_file_cache_lock:
+        if task_id in _log_file_cache:
+            cache_time, cached_path = _log_file_cache[task_id]
+            if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
+                cached_path_ref = cached_path
+            else:
+                cached_path_ref = None
+        else:
+            cached_path_ref = None
+    if cached_path_ref:
+        lines = _tail_file(cached_path_ref)
+        if lines:
+            return lines
     task_id_short = task_id[:8]
 
     # 先在指定目录查找
@@ -283,7 +298,8 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
                                key=lambda p: p.stat().st_mtime, reverse=True):
             lines = _tail_file(log_file)
             if lines:
-                _log_file_cache[task_id] = (now, log_file)
+                with _log_file_cache_lock:
+                    _log_file_cache[task_id] = (now, log_file)
                 return lines
 
     # 回退：扫描所有运行子目录
@@ -297,7 +313,8 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
                                    key=lambda p: p.stat().st_mtime, reverse=True):
                 lines = _tail_file(log_file)
                 if lines:
-                    _log_file_cache[task_id] = (now, log_file)
+                    with _log_file_cache_lock:
+                        _log_file_cache[task_id] = (now, log_file)
                     return lines
 
     return []

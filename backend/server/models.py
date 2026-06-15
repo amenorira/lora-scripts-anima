@@ -53,7 +53,7 @@ class TaggerInterrogateRequest(BaseModel):
         # 确保路径不为空且在合理的文件系统范围内
         if not str(p) or p == p.root:
             raise ValueError(f"Path must not be filesystem root: {v}")
-        return v
+        return str(p)
 
 
 class APIResponse(BaseModel):

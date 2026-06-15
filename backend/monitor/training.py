@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -15,10 +16,12 @@ from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 # 缓存 EventAccumulator 实例，按 log_dir 索引
 # 每次请求检查 event file mtime，仅在文件更新时重新 Reload
 _tb_cache: dict[str, tuple[float, float, Any]] = {}   # {log_dir: (cache_time, event_mtime, EventAccumulator)}
+_tb_cache_lock = threading.Lock()
 _CACHE_TTL = 2.0  # 缓存有效期（秒），避免频繁 Reload
 
 # 增量读取用：按 (log_dir_str, tag) 追踪已推送的最大 step
 _last_seen_step: dict[tuple[str, str], int] = {}
+_last_seen_step_lock = threading.Lock()
 _MAX_SEEN_ENTRIES = 200  # 防止无限增长
 
 
@@ -32,7 +35,8 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
     log_dir_str = str(log_dir)
     event_files = list(log_dir.rglob("events.out.tfevents.*"))
     if not event_files:
-        _tb_cache.pop(log_dir_str, None)
+        with _tb_cache_lock:
+            _tb_cache.pop(log_dir_str, None)
         return None
 
     ef_with_mtime = [(p, p.stat().st_mtime) for p in event_files]
@@ -40,10 +44,11 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
     latest_mtime = ef_with_mtime[0][1]
     now = time.time()
 
-    if log_dir_str in _tb_cache:
-        cache_time, cached_mtime, cached_ea = _tb_cache[log_dir_str]
-        if cached_mtime == latest_mtime and (now - cache_time) < _CACHE_TTL:
-            return cached_ea
+    with _tb_cache_lock:
+        if log_dir_str in _tb_cache:
+            cache_time, cached_mtime, cached_ea = _tb_cache[log_dir_str]
+            if cached_mtime == latest_mtime and (now - cache_time) < _CACHE_TTL:
+                return cached_ea
 
     # 缓存未命中或过期：创建新 accumulator
     try:
@@ -52,11 +57,12 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
             size_guidance={event_accumulator.SCALARS: 0},
         )
         ea.Reload()
-        _tb_cache[log_dir_str] = (now, latest_mtime, ea)
-        # 清理过大的缓存（保留最近 3 个）
-        if len(_tb_cache) > 3:
-            oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
-            del _tb_cache[oldest]
+        with _tb_cache_lock:
+            _tb_cache[log_dir_str] = (now, latest_mtime, ea)
+            # 清理过大的缓存（保留最近 3 个）
+            if len(_tb_cache) > 3:
+                oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
+                del _tb_cache[oldest]
         return ea
     except Exception:
         return None

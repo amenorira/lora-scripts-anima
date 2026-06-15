@@ -645,15 +645,22 @@ window.taggerMixin = {
 
   /** 加载图片文件并生成预览 */
   loadImageFile(file) {
+    if (!file) return;
     this.singleImage.file = file;
     this.singleImage.inferred = false;
     const reader = new FileReader();
+    const fileRef = file; // Capture reference to detect if another file was loaded while reading
     reader.onload = (e) => {
-      this.singleImage.previewUrl = e.target.result;
+      // Only update if the file hasn't changed since we started reading
+      if (this.singleImage.file === fileRef) {
+        this.singleImage.previewUrl = e.target.result;
+      }
     };
     reader.onerror = () => {
-      this.toast(this.t('common.failed') + ': Failed to read image file');
-      this.singleImage.file = null;
+      if (this.singleImage.file === fileRef) {
+        this.toast(this.t('common.failed') + ': Failed to read image file');
+        this.singleImage.file = null;
+      }
     };
     try {
       reader.readAsDataURL(file);

@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+from backend.constants import CONFIG_DIR, REPO_ROOT
 from backend.log import log
 
 class Config:
@@ -36,6 +37,7 @@ class Config:
         except Exception as e:
             log.error(f"Error loading config: {e}")
             self._stored = dict(self._default)
+            self.save_config()
             return
 
     def save_config(self):
@@ -53,9 +55,6 @@ class Config:
 
     def __setitem__(self, key, value):
         self._stored[key] = value
-
-
-from backend.constants import CONFIG_DIR, REPO_ROOT
 
 
 app_config = Config(CONFIG_DIR / "state.json")

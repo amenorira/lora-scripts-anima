@@ -52,5 +52,10 @@ try:
     log.addHandler(fh)
 
 except ModuleNotFoundError:
-    pass
+    # Fallback: ensure log has at least a basic handler so messages aren't silently lost
+    _sh = logging.StreamHandler()
+    _sh.setLevel(logging.INFO)
+    _sh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    log.handlers.clear()
+    log.addHandler(_sh)
 

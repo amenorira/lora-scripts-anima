@@ -162,15 +162,17 @@ async def pick_file(picker_type: str):
 
 
 _files_cache: dict[str, tuple[float, list[dict]]] = {}
+_files_cache_lock = _install_thr.Lock()
 _FILES_CACHE_TTL = 60
 
 
 @router.get("/get_files")
 async def get_files(pick_type) -> APIResponse:
     now = _time.time()
-    cached = _files_cache.get(pick_type)
-    if cached and now - cached[0] < _FILES_CACHE_TTL:
-        return APIResponseSuccess(data={"files": cached[1]})
+    with _files_cache_lock:
+        cached = _files_cache.get(pick_type)
+        if cached and now - cached[0] < _FILES_CACHE_TTL:
+            return APIResponseSuccess(data={"files": cached[1]})
 
     pick_preset = {
         "model-file": {
@@ -230,7 +232,8 @@ async def get_files(pick_type) -> APIResponse:
         return APIResponseFail(message="Invalid request")
 
     dirs = await asyncio.to_thread(list_path_or_files, pick_preset[pick_type])
-    _files_cache[pick_type] = (now, dirs)
+    with _files_cache_lock:
+        _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={
         "files": dirs
     })

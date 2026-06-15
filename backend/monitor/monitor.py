@@ -140,6 +140,10 @@ class TaskMonitor:
                 if current_count > last_count:
                     new_lines = log_lines[last_count:current_count]
                     self._last_log_line[task_id] = current_count
+                elif current_count < last_count:
+                    # Log file was truncated/rotated — reset and send all current lines
+                    new_lines = log_lines
+                    self._last_log_line[task_id] = current_count
                     
                     await event_bus.publish(task_id, {
                         "type": "log_update",

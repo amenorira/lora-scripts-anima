@@ -43,6 +43,7 @@ window.monitorCoreMixin = {
     if (!taskId || this._eventSource) return;
     // 清空 lossSeries，避免 SSE 重连后产生重复数据点
     this.lossSeries = [];
+    this._sseTaskId = taskId;
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
       const es = new EventSource(url);
@@ -78,9 +79,10 @@ window.monitorCoreMixin = {
         if (this._sseRetryTimer) clearTimeout(this._sseRetryTimer);
         this._sseRetryTimer = setTimeout(() => {
           this._sseRetryTimer = null;
-          const currentTaskId = this.monitorData?.active_task?.id;
-          if (currentTaskId && this.monitorData && this.monitorData.state === 'RUNNING') {
-            this.connectMonitorSSE(currentTaskId);
+          // Use saved task ID instead of potentially stale monitorData
+          const reconnectTaskId = this._sseTaskId || this.monitorData?.active_task?.id;
+          if (reconnectTaskId && this.monitorData && this.monitorData.state === 'RUNNING') {
+            this.connectMonitorSSE(reconnectTaskId);
           }
         }, this._sseRetryDelay);
       };
@@ -97,6 +99,7 @@ window.monitorCoreMixin = {
       this._eventSource = null;
     }
     this._sseConnected = false;
+    this._sseTaskId = null;
   },
 
   handleTaskCompletion(prevState, newState) {

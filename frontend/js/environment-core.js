@@ -40,18 +40,31 @@ window.environmentCoreMixin = {
   _startPolling(jobId, prefix) {
     const a = this;
     const logKey = prefix + 'InstallLog', elapsedKey = prefix + 'InstallElapsed';
+    let retries = 0;
+    const MAX_RETRIES = 30;
     a._stopPolling();
     const tick = async () => {
       try {
         const r = await fetch('/api/install-log/' + jobId);
         const data = await r.json();
+        retries = 0; // Reset on success
         a[logKey] = data.lines || ''; a[elapsedKey] = data.elapsed || 0;
         if (data.done) { a._stopPolling(); const busyKey = prefix + 'Busy'; a[busyKey] = false;
           const refreshMap = { fa: 'faRefresh', xf: 'xfRefresh' };
           const refreshFn = refreshMap[prefix]; if (refreshFn) { try { await a[refreshFn](true); } catch (_) {} }
           a.finishProgress(); a.renderEnvironment();
         } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
-      } catch (_) { a._envPollTimer = setTimeout(tick, 2000); }
+      } catch (_) {
+        retries++;
+        if (retries >= MAX_RETRIES) {
+          a._stopPolling();
+          const busyKey = prefix + 'Busy'; a[busyKey] = false;
+          a[logKey] += '\n[ERROR] 连接丢失，请刷新页面重试 / Connection lost, please refresh';
+          a.finishProgress(); a.renderEnvironment();
+          return;
+        }
+        a._envPollTimer = setTimeout(tick, 2000);
+      }
     };
     a._envPollTimer = setTimeout(tick, 500);
   },

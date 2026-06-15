@@ -193,10 +193,18 @@ def get_cached_scan_images(dir_path: Path, recursive: bool = True) -> list[dict]
     return list(data)
 
 
-def _invalidate_cache(dir_path: Path, recursive: bool = True) -> None:
-    cache_key = f"{dir_path.resolve()}:{recursive}"
-    _autocomplete_cache.pop(cache_key, None)
-    _scan_images_cache.pop(cache_key, None)
+def _invalidate_cache(dir_path: Path, recursive: bool | None = None) -> None:
+    """Invalidate caches for the given directory.
+    If recursive is None, clear both recursive=True and recursive=False variants."""
+    if recursive is None:
+        for r in (True, False):
+            cache_key = f"{dir_path.resolve()}:{r}"
+            _autocomplete_cache.pop(cache_key, None)
+            _scan_images_cache.pop(cache_key, None)
+    else:
+        cache_key = f"{dir_path.resolve()}:{recursive}"
+        _autocomplete_cache.pop(cache_key, None)
+        _scan_images_cache.pop(cache_key, None)
 
 
 def get_autocomplete(dir_path: Path, prefix: str, limit: int = 20, recursive: bool = True) -> list[str]:

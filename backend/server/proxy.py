@@ -21,7 +21,13 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
     else:
         raise ValueError(f"Unknown url_type: {url_type}")
 
-    client = httpx.AsyncClient(base_url=f"http://{host}:{port}/", proxies={}, trust_env=False, timeout=360, limits=httpx.Limits(max_connections=10, max_keepalive_connections=5))
+    client = httpx.AsyncClient(
+        base_url=f"http://{host}:{port}/",
+        proxies={},
+        trust_env=False,
+        timeout=httpx.Timeout(total=300, connect=30, read=120, write=30),
+        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+    )
 
     async def _reverse_proxy(request: Request):
         if full_path:
@@ -31,11 +37,17 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
                 path=request.path_params.get("path", ""),
                 query=request.url.query.encode("utf-8")
             )
+        # Filter hop-by-hop headers that should not be forwarded
+        _HOP_BY_HOP = {b'connection', b'keep-alive', b'proxy-authenticate',
+                       b'proxy-authorization', b'te', b'trailers',
+                       b'transfer-encoding', b'upgrade'}
+        filtered_headers = [(k, v) for k, v in request.headers.raw
+                           if k.lower() not in _HOP_BY_HOP]
         rp_req = client.build_request(
-            request.method, url,
-            headers=request.headers.raw,
-            content=request.stream() if request.method != "GET" else None
-        )
+	            request.method, url,
+	            headers=filtered_headers,
+	            content=request.stream() if request.method != "GET" else None
+	        )
         try:
             rp_resp = await client.send(rp_req, stream=True)
         except ConnectError:

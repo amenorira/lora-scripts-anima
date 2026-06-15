@@ -420,13 +420,26 @@ window.trainingPresetsMixin = {
       this.previewPreset = null;
     }
     const data = preset.data;
-    const overrideKeys = Object.keys(data);
-    for (const k of overrideKeys) {
-      if (k === 'model_train_type') {
-        this.form.model_train_type = data.model_train_type;
-        continue;
+    // Temporarily disable the train-type watcher to prevent it from
+    // overwriting preset values via switchTrainType()
+    const savedWatcher = this._trainTypeWatcher;
+    if (savedWatcher) { savedWatcher(); this._trainTypeWatcher = null; }
+    try {
+      const overrideKeys = Object.keys(data);
+      for (const k of overrideKeys) {
+        if (k === 'model_train_type') {
+          this.form.model_train_type = data.model_train_type;
+          continue;
+        }
+        this.form[k] = data[k];
       }
-      this.form[k] = data[k];
+    } finally {
+      // Re-enable the watcher after applying all fields
+      if (savedWatcher) {
+        this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
+          if (newVal !== oldVal) { this.switchTrainType(newVal); }
+        });
+      }
     }
     this.formDefaults = { ...this.form };
     this.formHistory = [this.formDefaults];
