@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import threading
 import time as _time
 
 from pathlib import Path
@@ -162,7 +163,7 @@ async def pick_file(picker_type: str):
 
 
 _files_cache: dict[str, tuple[float, list[dict]]] = {}
-_files_cache_lock = _install_thr.Lock()
+_files_cache_lock = threading.Lock()
 _FILES_CACHE_TTL = 60
 
 
