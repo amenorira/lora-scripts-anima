@@ -25,7 +25,7 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
         base_url=f"http://{host}:{port}/",
         proxies={},
         trust_env=False,
-        timeout=httpx.Timeout(total=300, connect=30, read=120, write=30),
+        timeout=httpx.Timeout(300.0, connect=30, read=120, write=30),
         limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
     )
 
