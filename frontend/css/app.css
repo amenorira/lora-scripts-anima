@@ -2556,7 +2556,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   background: var(--bg-input, var(--bg-surface)); color: var(--text-primary);
   font-family: var(--font-mono, monospace);
 }
-.env-url-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.env-url-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ── Confirm popover ────────────────────────────────────── */
 .env-confirm {
