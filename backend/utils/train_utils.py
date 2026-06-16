@@ -1,10 +1,10 @@
 from enum import Enum
-import glob
 import os
 import re
 import shutil
 import sys
 import json
+from pathlib import Path
 from typing import Dict
 
 from backend.log import log
@@ -243,17 +243,11 @@ def check_training_params(data):
 
 
 def get_total_images(path, recursive=True):
+    image_exts = frozenset({'.jpg', '.jpeg', '.png', '.webp'})
     if recursive:
-        image_files = glob.glob(path + '/**/*.jpg', recursive=True)
-        image_files += glob.glob(path + '/**/*.jpeg', recursive=True)
-        image_files += glob.glob(path + '/**/*.png', recursive=True)
-        image_files += glob.glob(path + '/**/*.webp', recursive=True)
+        return [str(p) for p in Path(path).rglob('*') if p.suffix.lower() in image_exts]
     else:
-        image_files = glob.glob(path + '/*.jpg')
-        image_files += glob.glob(path + '/*.jpeg')
-        image_files += glob.glob(path + '/*.png')
-        image_files += glob.glob(path + '/*.webp')
-    return image_files
+        return [str(p) for p in Path(path).glob('*') if p.suffix.lower() in image_exts]
 
 
 def fix_config_types(config: dict):

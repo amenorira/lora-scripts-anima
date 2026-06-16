@@ -106,8 +106,10 @@ document.addEventListener('alpine:init', () => {
         if (this.theme === 'auto') this.resolveTheme();
       });
 
-      window.addEventListener('resize', () => {
-        if (window.innerWidth > 1100) this.rightPanelOpen = false;
+      // 使用 matchMedia 替代 resize 事件，避免每秒 ~60 次触发
+      const mm = window.matchMedia('(min-width: 1101px)');
+      mm.addEventListener('change', (e) => {
+        if (e.matches) this.rightPanelOpen = false;
       });
 
       this.buildRouteContent();

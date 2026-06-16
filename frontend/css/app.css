@@ -1651,10 +1651,11 @@ input[type="range"]::-webkit-slider-thumb {
   margin-bottom: 10px;
 }
 
-/* Tab content: outline cards (no background, no shadow, keep border + accent) */
+/* Tab content: outline cards — clean, no color accent */
 .monitor-dashboard > .card {
   background: transparent;
   box-shadow: none;
+  border-left: 1px solid var(--border-default);  /* neutralize base 3px stripe */
 }
 .dashboard-empty { text-align: center; padding: 48px 16px; color: var(--text-tertiary); font-size: 13px; font-family: var(--font-sans); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .dashboard-empty svg { width: 40px; height: 40px; opacity: 0.25; margin-bottom: 4px; }
@@ -2813,68 +2814,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-weight: 500;
 }
 
-
-/* Mascot placeholder (no real image — CSS gradient + spinning ring + "anima" wordmark) */
-.home-hero-mascot {
-  width: 220px;
-  height: 220px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, rgba(77, 148, 255, 0.12), rgba(139, 92, 246, 0.12));
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 8px 0 4px;
-  border: 1px solid rgba(77, 148, 255, 0.15);
-}
-[data-theme="dark"] .home-hero-mascot {
-  background: linear-gradient(135deg, rgba(93, 160, 247, 0.14), rgba(167, 139, 250, 0.14));
-  border-color: rgba(93, 160, 247, 0.18);
-}
-.home-hero-mascot-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 160px;
-  height: 160px;
-  margin: -80px 0 0 -80px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  border-top-color: rgba(77, 148, 255, 0.55);
-  border-right-color: rgba(139, 92, 246, 0.35);
-  animation: hero-mascot-spin 12s linear infinite;
-  pointer-events: none;
-}
-[data-theme="dark"] .home-hero-mascot-ring {
-  border-top-color: rgba(93, 160, 247, 0.65);
-  border-right-color: rgba(167, 139, 250, 0.45);
-}
-.home-hero-mascot-label {
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #4d94ff, #8b5cf6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  z-index: 1;
-}
-[data-theme="dark"] .home-hero-mascot-label {
-  background: linear-gradient(135deg, #5da0f7, #a78bfa);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-@keyframes hero-mascot-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .home-hero-mascot-ring { animation: none; }
-}
 
 /* Author + GitHub link row */
 .home-hero-author {

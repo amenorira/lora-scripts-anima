@@ -7,7 +7,6 @@ UI JSON → TOML 转换：白名单过滤 + 字段映射 + 防御性过滤。
 from __future__ import annotations
 
 import math
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,10 @@ SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
 # merged 字段应由 UI 层合并进父字段（如 weight_decay→optimizer_args），adapter 不直接透传
 MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
+
+# ── LyCORIS preset 路径缓存 ─────────────────────────────────
+_LYCORIS_PRESET_PATH = Path(__file__).resolve().parents[2] / "config" / "lycoris_anima_preset.toml"
+_LYCORIS_PRESET_EXISTS = _LYCORIS_PRESET_PATH.exists()
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
@@ -155,7 +158,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
     返回 (adapted_config, warnings)
     """
-    source = deepcopy(config)
+    source = {k: v for k, v in config.items()}  # 扁平结构，dict comprehension 浅拷贝即可
     adapted: dict[str, Any] = {}
     warnings: list[str] = []
 
@@ -182,13 +185,10 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             for item in network_args
         )
         if not has_preset:
-            preset_path = (
-                Path(__file__).resolve().parents[2] / "config" / "lycoris_anima_preset.toml"
-            )
-            # 只有 preset 文件存在时才注入
-            if preset_path.exists():
+            # 只有 preset 文件存在时才注入（路径已缓存）
+            if _LYCORIS_PRESET_EXISTS:
                 source["network_args"] = list(network_args or []) + [
-                    f"preset={preset_path.as_posix()}"
+                    f"preset={_LYCORIS_PRESET_PATH.as_posix()}"
                 ]
 
     # ── 4. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅原生支持的参数）──
@@ -272,9 +272,14 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"
             )
         # weight_decay 安全网：EmoSens 官方默认 0.01
+        # 直接追加到 optimizer_args（weight_decay 是 merged 字段，主循环会跳过）
         wd = source.get("weight_decay")
         if wd is None or wd == "":
-            source["weight_decay"] = 0.01
+            opt_args = source.get("optimizer_args")
+            if not isinstance(opt_args, list):
+                opt_args = []
+            opt_args.append("weight_decay=0.01")
+            source["optimizer_args"] = opt_args
             warnings.append(
                 "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
             )

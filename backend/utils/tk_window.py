@@ -11,11 +11,19 @@ except ImportError:
 
 last_dir = ""
 
+_tk_root = None
 
-def tk_window():
-    window = tkinter.Tk()
-    window.wm_attributes('-topmost', 1)
-    window.withdraw()
+
+def _get_tk_root():
+    """获取或创建共享的 Tk 根实例（避免每次文件对话框重复创建）"""
+    global _tk_root
+    if tkinter is None:
+        return None
+    if _tk_root is None:
+        _tk_root = tkinter.Tk()
+        _tk_root.wm_attributes('-topmost', 1)
+        _tk_root.withdraw()
+    return _tk_root
 
 
 def open_file_selector(
@@ -28,7 +36,7 @@ def open_file_selector(
     elif initialdir == "":
         initialdir = os.getcwd()
     try:
-        tk_window()
+        _get_tk_root()
         filename = askopenfilename(
             initialdir=initialdir, title=title,
             filetypes=filetypes
@@ -46,7 +54,7 @@ def open_directory_selector(initialdir) -> str:
     elif initialdir == "":
         initialdir = os.getcwd()
     try:
-        tk_window()
+        _get_tk_root()
         directory = askdirectory(
             initialdir=initialdir
         )

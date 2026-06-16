@@ -23,14 +23,15 @@ async def load_presets():
             avaliable_presets.clear()
             return
 
-        for preset_name in os.listdir(PRESETS_DIR):
+        preset_names = await asyncio.to_thread(os.listdir, PRESETS_DIR)
+        for preset_name in preset_names:
             preset_path = PRESETS_DIR / preset_name
             if not preset_path.suffix == ".toml":
                 continue
             try:
-                with open(preset_path, encoding="utf-8") as f:
-                    content = f.read()
-                    new_presets.append(toml.loads(content))
+                # 将阻塞文件 I/O 放入线程池，避免阻塞事件循环
+                content = await asyncio.to_thread(preset_path.read_text, encoding="utf-8")
+                new_presets.append(toml.loads(content))
             except (toml.TomlDecodeError, Exception) as e:
                 log.warning(f"Failed to load preset / 预设加载失败: {preset_name} — {e}")
 

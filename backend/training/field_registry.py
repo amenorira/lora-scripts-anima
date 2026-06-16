@@ -165,7 +165,7 @@ FIELDS: list[dict[str, Any]] = [
 # ── Save ──
 {"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml", "required": True},
 {"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder", "required": True},
-{"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "diffusers", "l": "diffusers", "dk": "opt.save_model_as_diffusers"}, {"v": "diffusers_safetensors", "l": "diffusers_safetensors", "dk": "opt.save_model_as_diffusers_safetensors"}]},
+{"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "ckpt", "l": "ckpt", "dk": "opt.save_model_as_ckpt"}]},
 {"key": "save_precision", "type": "select", "default": "fp16", "section": "save", "desc_key": "field.save_precision", "target": "toml", "options": [{"v": "fp16", "l": "fp16", "dk": "opt.save_precision_fp16"}, {"v": "bf16", "l": "bf16", "dk": "opt.save_precision_bf16"}, {"v": "float", "l": "float", "dk": "opt.save_precision_float"}]},
 {"key": "save_every_n_epochs", "type": "number", "default": 2, "section": "save", "desc_key": "field.save_every_n_epochs", "target": "toml", "min": 1},
     {"key": "save_every_n_steps", "type": "number", "default": "", "section": "save", "desc_key": "field.save_every_n_steps", "target": "toml", "min": 1, "hint_key": "field.save_every_n_stepsHint"},
@@ -175,7 +175,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "log_with", "type": "select", "default": "tensorboard", "section": "save", "desc_key": "field.log_with", "target": "toml", "hidden": True, "options": [{"v": "tensorboard", "l": "TensorBoard", "dk": "opt.log_with_tensorboard"}, {"v": "wandb", "l": "Weights & Biases", "dk": "opt.log_with_wandb"}, {"v": "all", "l": "TensorBoard + WandB", "dk": "opt.log_with_all"}]},
 # ── Caption ──
 {"key": "caption_extension", "type": "text", "default": ".txt", "section": "caption", "desc_key": "field.caption_extension", "target": "toml"},
-{"key": "max_token_length", "type": "select", "default": "225", "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": ["sd", "sdxl"], "options": [{"v": "75", "l": "75", "dk": "opt.max_token_length_75"}, {"v": "150", "l": "150", "dk": "opt.max_token_length_150"}, {"v": "225", "l": "225", "dk": "opt.max_token_length_225"}]},
+{"key": "max_token_length", "type": "select", "default": 225, "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": ["sd", "sdxl"], "options": [{"v": 150, "l": "150", "dk": "opt.max_token_length_150"}, {"v": 225, "l": "225", "dk": "opt.max_token_length_225"}]},
 {"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "shuffle_caption", "type": "toggle", "default": True, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
@@ -202,14 +202,24 @@ FIELDS: list[dict[str, Any]] = [
 # 派生集合（供 adapter.py 使用）
 # ═══════════════════════════════════════════════════════════════
 
+_SUPPORTED_FIELDS_CACHE: set[str] | None = None
+_UI_ONLY_FIELDS_CACHE: set[str] | None = None
+
+
 def get_supported_fields() -> set[str]:
-    """返回需要传入 sd-scripts 的字段名集合"""
-    return {f["key"] for f in FIELDS if f["target"] in ("toml", "merged")}
+    """返回需要传入 sd-scripts 的字段名集合（首次调用后缓存）"""
+    global _SUPPORTED_FIELDS_CACHE
+    if _SUPPORTED_FIELDS_CACHE is None:
+        _SUPPORTED_FIELDS_CACHE = {f["key"] for f in FIELDS if f["target"] in ("toml", "merged")}
+    return _SUPPORTED_FIELDS_CACHE
 
 
 def get_ui_only_fields() -> set[str]:
-    """返回仅 UI 使用、不传入 sd-scripts 的字段名集合"""
-    return {f["key"] for f in FIELDS if f["target"] == "ui"}
+    """返回仅 UI 使用、不传入 sd-scripts 的字段名集合（首次调用后缓存）"""
+    global _UI_ONLY_FIELDS_CACHE
+    if _UI_ONLY_FIELDS_CACHE is None:
+        _UI_ONLY_FIELDS_CACHE = {f["key"] for f in FIELDS if f["target"] == "ui"}
+    return _UI_ONLY_FIELDS_CACHE
 
 
 # snake_case → camelCase key mapping for frontend

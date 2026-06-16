@@ -144,7 +144,11 @@ class TaskMonitor:
                     # Log file was truncated/rotated — reset and send all current lines
                     new_lines = log_lines
                     self._last_log_line[task_id] = current_count
-                    
+                else:
+                    new_lines = []
+                
+                # 发布日志增量事件（正常追加和轮转均需推送）
+                if new_lines:
                     await event_bus.publish(task_id, {
                         "type": "log_update",
                         "task_id": task_id,

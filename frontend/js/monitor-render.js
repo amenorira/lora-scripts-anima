@@ -324,8 +324,11 @@ window.monitorRenderMixin = {
 
   _highlightSearch(escapedHtml, escapedSearch) {
     if (!escapedSearch) return escapedHtml;
-    const regex = new RegExp('(' + escapedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-    return escapedHtml.replace(regex, '<mark>$1</mark>');
+    if (!this._searchRegex || this._cachedSearch !== escapedSearch) {
+      this._cachedSearch = escapedSearch;
+      this._searchRegex = new RegExp('(' + escapedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    }
+    return escapedHtml.replace(this._searchRegex, '<mark>$1</mark>');
   },
 
   _formatLogLine(line, search) {

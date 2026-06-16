@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import platform
 import re
@@ -25,19 +27,29 @@ python_bin = sys.executable
 def base_dir_path():
     return Path(__file__).parents[1].absolute()
 
+_GIT_TAG_CACHE: dict[str, str] = {}
+
+
 def git_tag(path: str) -> str:
+    if path in _GIT_TAG_CACHE:
+        return _GIT_TAG_CACHE[path]
     try:
         tag = subprocess.check_output(
             ["git", "-C", path, "describe", "--tags"],
             stderr=subprocess.DEVNULL,
         ).strip().decode("utf-8")
+        _GIT_TAG_CACHE[path] = tag
         return tag
     except Exception:
         try:
             commit = subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"]).strip().decode("utf-8")
-            return f"commit {commit}"
+            result = f"commit {commit}"
+            _GIT_TAG_CACHE[path] = result
+            return result
         except Exception:
-            return "<none>"
+            result = "<none>"
+            _GIT_TAG_CACHE[path] = result
+            return result
 
 
 def check_dirs(dirs: List):
@@ -130,10 +142,35 @@ def _check_version(installed, constraint):
     return True
 
 
+_PKG_VERSION_CACHE: dict[str, str] | None = None
+
+
+def _build_pkg_version_cache() -> dict[str, str]:
+    """构建 package_name → version 的反向映射（O(1) 查找，替代多次 filesystem 遍历）
+    若 distributions() 不可用则回退到空 dict，is_installed 将逐包查找。"""
+    cache: dict[str, str] = {}
+    if not hasattr(importlib_metadata, 'distributions'):
+        return cache  # Python <3.10 回退到逐包查找
+    try:
+        for dist in importlib_metadata.distributions():
+            name = dist.metadata.get("Name", "")
+            version = dist.metadata.get("Version", "")
+            if name:
+                cache[name.lower()] = version
+                # 也注册 normalized 名称（连字符 → 下划线）
+                cache[name.lower().replace('-', '_')] = version
+    except Exception:
+        return {}  # 构建失败时返回空 dict，强制 is_installed 回退到逐包查找
+    return cache
+
+
 def is_installed(package, friendly: str = None):
     #
     # This function was adapted from code written by vladimandic: https://github.com/vladmandic/automatic/commits/master
     #
+    global _PKG_VERSION_CACHE
+    if _PKG_VERSION_CACHE is None:
+        _PKG_VERSION_CACHE = _build_pkg_version_cache()
 
     # Remove brackets and their contents from the line using regular expressions
     # e.g., diffusers[torch]==0.10.2 becomes diffusers==0.10.2
@@ -157,6 +194,20 @@ def is_installed(package, friendly: str = None):
             pkg_name = re.split(r'[<>=!~]', pkg)[0].strip()
             constraint_str = pkg[len(pkg_name):].strip()
 
+            version = None
+            # 从缓存查找（O(1)，如果可用）
+            if _PKG_VERSION_CACHE:
+                version = _PKG_VERSION_CACHE.get(pkg_name.lower())
+                if version is None:
+                    version = _PKG_VERSION_CACHE.get(pkg_name.lower().replace('_', '-'))
+
+            if version is not None:
+                if constraint_str and not _check_version(version, constraint_str):
+                    log.info(f'Package wrong version: {pkg_name} {version} required {constraint_str}')
+                    return False
+                continue
+
+            # 缓存未命中：回退到逐包 metadata 查找（兼容 distributions() 漏报的情况）
             spec = None
             for try_name in (pkg_name, pkg_name.lower(), pkg_name.replace('_', '-')):
                 try:
@@ -164,10 +215,8 @@ def is_installed(package, friendly: str = None):
                     break
                 except importlib_metadata.PackageNotFoundError:
                     continue
-
             if spec is not None:
                 version = spec.metadata["Version"]
-
                 if constraint_str and not _check_version(version, constraint_str):
                     log.info(f'Package wrong version: {pkg_name} {version} required {constraint_str}')
                     return False
@@ -351,19 +400,26 @@ def find_avaliable_ports(port_init: int, port_range: int):
     return None
 
 
-def check_environment():
-    """Check GPU and disk space; log results via RichHandler."""
+_ENV_CHECKED = False
 
-    # GPU check via nvidia-smi
-    try:
-        result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True)
-        if result.returncode == 0 and result.stdout.strip():
-            gpu_info = result.stdout.strip().split('\n')[0]
-            log.info("GPU: %s", gpu_info)
-        else:
+
+def check_environment():
+    """Check GPU and disk space; log results via RichHandler.
+    仅首次调用时执行 nvidia-smi（子进程耗时 ~500ms–2s），后续调用复用结果。"""
+    global _ENV_CHECKED
+
+    # GPU check via nvidia-smi（仅首次）
+    if not _ENV_CHECKED:
+        _ENV_CHECKED = True
+        try:
+            result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                gpu_info = result.stdout.strip().split('\n')[0]
+                log.info("GPU: %s", gpu_info)
+            else:
+                log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+        except FileNotFoundError:
             log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
-    except FileNotFoundError:
-        log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
 
     # Disk space
     try:

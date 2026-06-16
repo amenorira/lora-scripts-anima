@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # 关闭时
+    app_config._flush_config()  # 确保防抖写入在关闭前完成
     await task_monitor.stop()
 
 

@@ -1,8 +1,10 @@
 import os
 import json
 import shutil
+import threading
 from backend.constants import CONFIG_DIR, REPO_ROOT
 from backend.log import log
+
 
 class Config:
 
@@ -12,6 +14,8 @@ class Config:
         self._default = {
             "saved_params": {}
         }
+        self._save_timer: threading.Timer | None = None
+        self._save_lock = threading.Lock()
 
     def load_config(self):
         log.info(f"Loading config from {self.path}")
@@ -24,11 +28,11 @@ class Config:
                 except Exception as e:
                     log.error(f"Migration failed: {e}, using defaults")
                     self._stored = dict(self._default)
-                    self.save_config()
+                    self._flush_config()
                     return
             else:
                 self._stored = dict(self._default)
-                self.save_config()
+                self._flush_config()
                 return
 
         try:
@@ -37,15 +41,27 @@ class Config:
         except Exception as e:
             log.error(f"Error loading config: {e}")
             self._stored = dict(self._default)
-            self.save_config()
+            self._flush_config()
             return
 
-    def save_config(self):
+    def _flush_config(self):
+        """立即写入配置（无防抖）。线程安全：快照数据后写入，避免与 __setitem__ 竞态。"""
+        with self._save_lock:
+            data = dict(self._stored)
         try:
             with open(self.path, "w", encoding="utf-8") as f:
-                json.dump(self._stored, f, indent=4, ensure_ascii=False)
+                json.dump(data, f, indent=4, ensure_ascii=False)
         except Exception as e:
             log.error(f"Error saving config: {e}")
+
+    def save_config(self):
+        """防抖保存：500ms 内多次调用只触发一次写入"""
+        with self._save_lock:
+            if self._save_timer:
+                self._save_timer.cancel()
+            self._save_timer = threading.Timer(0.5, self._flush_config)
+            self._save_timer.daemon = True
+            self._save_timer.start()
 
     def __getitem__(self, key):
         val = self._stored.get(key)
@@ -54,7 +70,8 @@ class Config:
         return val
 
     def __setitem__(self, key, value):
-        self._stored[key] = value
+        with self._save_lock:
+            self._stored[key] = value
 
 
 app_config = Config(CONFIG_DIR / "state.json")

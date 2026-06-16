@@ -24,6 +24,11 @@ _last_seen_step: dict[tuple[str, str], int] = {}
 _last_seen_step_lock = threading.Lock()
 _MAX_SEEN_ENTRIES = 200  # 防止无限增长
 
+# ── Autosave TOML glob 缓存 ─────────────────────────────────
+_autosave_glob_cache: tuple[float, list[Path]] | None = None
+_autosave_glob_cache_lock = threading.Lock()
+_AUTOSAVE_GLOB_TTL = 5.0  # 缓存有效期（秒），训练期间 autosave 不常变
+
 
 def _get_cached_accumulator(log_dir: Path) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
@@ -235,7 +240,8 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
             except Exception:
                 continue
 
-            last_step = _last_seen_step.get((log_dir_str, tag), -1)
+            with _last_seen_step_lock:
+                last_step = _last_seen_step.get((log_dir_str, tag), -1)
             new_points = [
                 {"step": int(e.step), "value": round(float(e.value), 6)}
                 for e in events
@@ -245,23 +251,44 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
                 continue
 
             result[tag] = new_points
-            # 更新 last_seen_step
+            # 更新 last_seen_step（线程安全）
             max_step = max(p["step"] for p in new_points)
-            _last_seen_step[(log_dir_str, tag)] = max_step
+            with _last_seen_step_lock:
+                _last_seen_step[(log_dir_str, tag)] = max_step
 
     # 清理过大的追踪字典（LRU 淘汰最旧的条目）
-    if len(_last_seen_step) > _MAX_SEEN_ENTRIES:
-        oldest_keys = sorted(
-            _last_seen_step.keys(),
-            key=lambda k: _last_seen_step[k],
-        )[: len(_last_seen_step) - _MAX_SEEN_ENTRIES]
-        for key in oldest_keys:
-            del _last_seen_step[key]
+    with _last_seen_step_lock:
+        if len(_last_seen_step) > _MAX_SEEN_ENTRIES:
+            # 单次 O(n) 找到最小值，避免 O(n log n) 排序
+            overflow = len(_last_seen_step) - _MAX_SEEN_ENTRIES
+            for _ in range(overflow):
+                oldest_key = min(_last_seen_step, key=lambda k: _last_seen_step[k])
+                del _last_seen_step[oldest_key]
 
     return result
 
 
 # ── 训练日志解析 ───────────────────────────────────────────
+
+# ── 训练日志解析正则（模块级预编译，避免每次调用重复匹配） ──
+_RE_PROGRESS = re.compile(
+    r"steps:\s*(?P<pct>\d{1,3})%\|.*?\|\s*(?P<step>\d+)\s*/\s*(?P<total>\d+)"
+    r"(?:\s*\[(?P<elapsed>[^<,\]]+)(?:<(?P<eta>[^,\]]+))?[^\]]*\])?"
+)
+_RE_LOSS_CURRENT = re.compile(r"loss/current\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LOSS_AVERAGE = re.compile(r"loss/average\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LOSS_TRAIN = re.compile(r"train_loss\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LOSS_AVR = re.compile(r"avr_loss\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LOSS_GENERIC = re.compile(r"\bloss\b(?!/(current|average|epoch))\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LR = re.compile(r"(?:lr|learning_rate)\s*[=:]\s*([0-9.eE+-]+)")
+_RE_EPOCH = re.compile(r"(?:epoch|Epoch)\s*[:= ]\s*(\d+)(?:\s*/\s*(\d+))?")
+_RE_SPEED = re.compile(r"([0-9.]+)\s*(it/s|s/it)")
+_RE_ERROR_TRACEBACK = re.compile(r"\btraceback\b", re.IGNORECASE)
+_RE_ERROR_CUDA = re.compile(r"cuda out of memory", re.IGNORECASE)
+_RE_ERROR_EXEC = re.compile(r"error executing job", re.IGNORECASE)
+_RE_ERROR_EXIT = re.compile(r"exited with code [1-9]", re.IGNORECASE)
+_RE_ERROR_FAIL = re.compile(r"failed to (?:load|initialize|open|import|download|start|create)", re.IGNORECASE)
+
 
 def parse_log_progress(lines: list[str]) -> dict:
     """从训练日志中解析进度、Loss、LR"""
@@ -269,11 +296,7 @@ def parse_log_progress(lines: list[str]) -> dict:
     info: dict[str, Any] = {}
 
     # 进度: "steps: 45%|████ | 450/1000 [02:30<03:03]"
-    m = re.search(
-        r"steps:\s*(?P<pct>\d{1,3})%\|.*?\|\s*(?P<step>\d+)\s*/\s*(?P<total>\d+)"
-        r"(?:\s*\[(?P<elapsed>[^<,\]]+)(?:<(?P<eta>[^,\]]+))?[^\]]*\])?",
-        text
-    )
+    m = _RE_PROGRESS.search(text)
     if m:
         step = int(m.group("step"))
         total = int(m.group("total"))
@@ -283,35 +306,41 @@ def parse_log_progress(lines: list[str]) -> dict:
         info["eta"] = m.group("eta") or ""
 
     # 按优先级解析 loss：loss/current > loss/average > train_loss > avr_loss > loss
-    loss_preference = ["loss/current", "loss/average", "train_loss", "avr_loss", r"\bloss\b(?!/(current|average|epoch))"]
-    for loss_key in loss_preference:
-        m = re.search(rf"{loss_key}\s*[=:]\s*([0-9.eE+-]+)", text)
+    loss_matchers = [
+        (_RE_LOSS_CURRENT, "loss/current"),
+        (_RE_LOSS_AVERAGE, "loss/average"),
+        (_RE_LOSS_TRAIN, "train_loss"),
+        (_RE_LOSS_AVR, "avr_loss"),
+        (_RE_LOSS_GENERIC, "loss"),
+    ]
+    for pattern, _name in loss_matchers:
+        m = pattern.search(text)
         if m:
             info["loss"] = m.group(1)
             break
 
-    lr_m = re.findall(r"(?:lr|learning_rate)\s*[=:]\s*([0-9.eE+-]+)", text)
+    lr_m = _RE_LR.findall(text)
     if lr_m:
         info["lr"] = lr_m[-1]
 
-    ep_m = re.search(r"(?:epoch|Epoch)\s*[:= ]\s*(\d+)(?:\s*/\s*(\d+))?", text)
+    ep_m = _RE_EPOCH.search(text)
     if ep_m:
         info["epoch"] = f"{ep_m.group(1)}/{ep_m.group(2)}" if ep_m.group(2) else ep_m.group(1)
 
-    speed_m = list(re.finditer(r"([0-9.]+)\s*(it/s|s/it)", text))
+    speed_m = list(_RE_SPEED.finditer(text))
     if speed_m:
         last = speed_m[-1]
         info["speed"] = last.group(1) + last.group(2)
 
-    error_patterns = [
-        r"\btraceback\b", r"cuda out of memory",
-        r"error executing job", r"exited with code [1-9]",
-        r"failed to (?:load|initialize|open|import|download|start|create)",
+    error_matchers = [
+        _RE_ERROR_TRACEBACK, _RE_ERROR_CUDA,
+        _RE_ERROR_EXEC, _RE_ERROR_EXIT,
+        _RE_ERROR_FAIL,
     ]
-    for pattern in error_patterns:
-        if re.search(pattern, text, re.IGNORECASE):
+    for pattern in error_matchers:
+        if pattern.search(text):
             info["has_error"] = True
-            m = re.search(pattern, text, re.IGNORECASE)
+            m = pattern.search(text)
             info["error_msg"] = m.group(0) if m else ""
             break
 
@@ -335,12 +364,21 @@ def _evict_config_cache() -> None:
 
 def latest_train_config(task_id: str | None = None) -> dict:
     """解析最新的 autosave TOML 配置"""
+    global _autosave_glob_cache
     if not CONFIG_AUTOSAVE.exists():
         return {}
-    configs = sorted(
-        CONFIG_AUTOSAVE.glob("*.toml"),
-        key=lambda p: p.stat().st_mtime, reverse=True
-    )
+
+    now = time.time()
+    with _autosave_glob_cache_lock:
+        if _autosave_glob_cache and now - _autosave_glob_cache[0] < _AUTOSAVE_GLOB_TTL:
+            configs = _autosave_glob_cache[1]
+        else:
+            configs = sorted(
+                CONFIG_AUTOSAVE.glob("*.toml"),
+                key=lambda p: p.stat().st_mtime, reverse=True
+            )
+            _autosave_glob_cache = (now, configs)
+
     if not configs:
         return {}
     latest_mtime = configs[0].stat().st_mtime

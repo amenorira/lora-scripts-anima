@@ -156,6 +156,8 @@ async def create_toml_file(request: Request):
         return APIResponseFail(message=f"Unsupported training type: {model_train_type} / 不支持的训练类型: {model_train_type}")
 
     # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
+    # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
+    _ui_config = dict(config)
     try:
         from backend.training import adapt_config, detect_attention_backend
     except ImportError as e:
@@ -206,7 +208,9 @@ async def create_toml_file(request: Request):
 
     suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
 
-    validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], model_train_type)
+    validated, message = await asyncio.to_thread(
+        train_utils.validate_model, config["pretrained_model_name_or_path"], model_train_type
+    )
     if not validated:
         return APIResponseFail(message=message)
 
@@ -219,16 +223,16 @@ async def create_toml_file(request: Request):
                 "Anima LoRA 训练需要填写 Qwen3 编码器路径"
             )
 
-    if "prompt_file" in config and config["prompt_file"].strip() != "":
-        prompt_file = config["prompt_file"].strip()
+    if "prompt_file" in _ui_config and _ui_config["prompt_file"].strip() != "":
+        prompt_file = _ui_config["prompt_file"].strip()
         if not os.path.exists(prompt_file):
             return APIResponseFail(message=f"Prompt file not found / 文件不存在: {prompt_file}")
         config["sample_prompts"] = prompt_file
     else:
         try:
-            positive_prompt, sample_prompts_arg = get_sample_prompts(config=config)
+            positive_prompt, sample_prompts_arg = get_sample_prompts(config=_ui_config)
 
-            if positive_prompt is not None and train_utils.is_prompt_like(sample_prompts_arg):
+            if positive_prompt and train_utils.is_prompt_like(sample_prompts_arg):
                 # 样本提示词也放入运行文件夹
                 os.makedirs(run_dir, exist_ok=True)
                 sample_prompts_file = os.path.join(run_dir, "prompts.txt")
@@ -256,11 +260,11 @@ async def create_toml_file(request: Request):
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
 
-    await asyncio.to_thread(_write_configs)
-    # ──────────────────────────────────────────────────────────
-
-    # ── G: 写入人类可读 run_info.txt ─────────────────────────
-    await asyncio.to_thread(_write_run_info, run_dir, config, model_train_type, timestamp, is_resume)
+    # ── A-2: 并发写入 config + run_info（写入不同文件，无依赖）──
+    await asyncio.gather(
+        asyncio.to_thread(_write_configs),
+        asyncio.to_thread(_write_run_info, run_dir, config, model_train_type, timestamp, is_resume),
+    )
     # ──────────────────────────────────────────────────────────
 
     result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)

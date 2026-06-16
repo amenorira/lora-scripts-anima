@@ -36,8 +36,15 @@ def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+_ATTN_CACHE: list[str] | None = None
+
+
 def _detect_available_attn() -> list[str]:
-    """检测可用的 attention backend"""
+    """检测可用的 attention backend（结果缓存，首次调用后复用）"""
+    global _ATTN_CACHE
+    if _ATTN_CACHE is not None:
+        return _ATTN_CACHE
+
     available = ["torch"]  # torch SDPA 总是可用
 
     # 检测 xformers
@@ -54,6 +61,7 @@ def _detect_available_attn() -> list[str]:
     except ImportError:
         pass
 
+    _ATTN_CACHE = available
     return available
 
 
@@ -180,7 +188,7 @@ def run_train(
 
         try:
             # 打开日志文件用于捕获 stdout
-            with open(log_file, "w", encoding="utf-8", errors="backslashreplace") as lf:
+            with open(log_file, "w", encoding="utf-8", errors="backslashreplace", buffering=1) as lf:
                 task.execute(stdout_file=lf)
                 result = task.communicate()
                 exit_code = result.returncode
@@ -299,11 +307,22 @@ def _write_result_json(
 
 
 def _write_error_tail(log_file: Path, run_dir: Path, task_id_short: str) -> None:
-    """训练失败时，从日志中提取最后 50 行写入 error.log"""
+    """训练失败时，从日志中提取最后 50 行写入 error.log（只读尾部 ~10KB，避免加载整个文件）"""
     try:
         if not log_file.exists():
             return
-        text = log_file.read_text(encoding="utf-8", errors="backslashreplace")
+        # 高效读取文件尾部（不加载整个文件到内存）
+        with open(log_file, "rb") as f:
+            f.seek(0, 2)  # SEEK_END
+            size = f.tell()
+            tail_bytes = max(0, size - 10_240)
+            f.seek(tail_bytes)
+            raw = f.read()
+            # 跳过首行碎片（可能从半行开始）
+            first_newline = raw.find(b"\n")
+            if first_newline >= 0 and tail_bytes > 0:
+                raw = raw[first_newline + 1:]
+            text = raw.decode("utf-8", errors="backslashreplace")
         lines = text.split("\n")
         tail = lines[-50:] if len(lines) > 50 else lines
         error_path = run_dir / "error.log"

@@ -243,6 +243,7 @@ def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
 _log_file_cache: dict[str, tuple[float, Path]] = {}
 _log_file_cache_lock = threading.Lock()
 _LOG_FILE_CACHE_TTL = 10.0
+_LOG_FILE_CACHE_MAX = 50  # 防止无限增长
 
 
 LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
@@ -292,6 +293,14 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
             return lines
     task_id_short = task_id[:8]
 
+    def _cache_log(task_id: str, log_file: Path):
+        """写入缓存并淘汰溢出条目（调用方需持有 _log_file_cache_lock）"""
+        _log_file_cache[task_id] = (now, log_file)
+        if len(_log_file_cache) > _LOG_FILE_CACHE_MAX:
+            # 淘汰最旧的条目（按缓存时间戳）
+            oldest_key = min(_log_file_cache, key=lambda k: _log_file_cache[k][0])
+            del _log_file_cache[oldest_key]
+
     # 先在指定目录查找
     if output_dir and output_dir.exists():
         for log_file in sorted(output_dir.glob(f"train_{task_id_short}*.log"),
@@ -299,7 +308,7 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
             lines = _tail_file(log_file)
             if lines:
                 with _log_file_cache_lock:
-                    _log_file_cache[task_id] = (now, log_file)
+                    _cache_log(task_id, log_file)
                 return lines
 
     # 回退：扫描所有运行子目录
@@ -314,7 +323,7 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
                 lines = _tail_file(log_file)
                 if lines:
                     with _log_file_cache_lock:
-                        _log_file_cache[task_id] = (now, log_file)
+                        _cache_log(task_id, log_file)
                     return lines
 
     return []

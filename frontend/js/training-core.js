@@ -731,7 +731,7 @@ window.trainingCoreMixin = {
       this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null);
       return;
     }
-    this.updateToml();
+    this.updateTomlDebounced();
   },
 
   stepField(key, delta) {
