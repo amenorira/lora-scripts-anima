@@ -1629,8 +1629,33 @@ input[type="range"]::-webkit-slider-thumb {
 #historyList { min-height: 120px; contain: layout style; }
 #environmentPage { min-height: 300px; contain: layout style; }
 #trainFormContent { min-height: 400px; contain: layout style; }
+/* ── Monitor Dashboard — Hybrid Flat/Outline Design ──────── */
+/* Top row: flat cards (no background, border, shadow) */
 .monitor-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.monitor-row .card { flex: 1; min-width: 260px; }
+.monitor-row .card {
+  flex: 1; min-width: 260px;
+  background: transparent;
+  border: none;
+  border-left: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 12px;
+}
+.monitor-row .card-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+/* Tab content: outline cards (no background, no shadow, keep border + accent) */
+.monitor-dashboard > .card {
+  background: transparent;
+  box-shadow: none;
+}
 .dashboard-empty { text-align: center; padding: 48px 16px; color: var(--text-tertiary); font-size: 13px; font-family: var(--font-sans); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .dashboard-empty svg { width: 40px; height: 40px; opacity: 0.25; margin-bottom: 4px; }
 .dashboard-empty p { max-width: 320px; line-height: 1.6; }
