@@ -22,7 +22,7 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 </p>
 
 > ⚠️ **重要提示**  
-> 本项目正在积极开发中（v2.1.0-dev），部分功能可能尚不稳定。如需稳定版本，请关注后续正式发布。
+> 本项目正在积极开发中（v1.0.0-alpha.2），部分功能可能尚不稳定。如需稳定版本，请关注后续正式发布。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。当前 UI 支持 **SDXL** 和 **Anima** 两种模型的 LoRA 训练（SD 1.5 已移除）。
 

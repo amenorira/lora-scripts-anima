@@ -22,7 +22,7 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
 </p>
 
 > ⚠️ **Important Notice**  
-> This project is under active development (v2.1.0-dev). Some features may be unstable. Please check back for a stable release.
+> This project is under active development (v1.0.0-alpha.2). Some features may be unstable. Please check back for a stable release.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports **SDXL** and **Anima** LoRA training (SD 1.5 has been removed).
 
