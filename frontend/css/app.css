@@ -68,8 +68,8 @@
   --duration-fast: 150ms;
   --duration-normal: 250ms;
   --duration-slow: 400ms;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #f0f0f0;
+  --bg-secondary: #f5f5f5;   /* alias: --bg-surface-raised */
+  --bg-tertiary: #f0f0f0;    /* alias: --bg-sunken */
 }
 
 /* ── Dark Theme ──────────────────────────────────────────── */
@@ -120,8 +120,8 @@
   --success: #34d399;
   --warning: #f59e0b;
   --info: #60a5fa;
-  --bg-secondary: #383838;
-  --bg-tertiary: #2a2a2a;
+  --bg-secondary: #383838;   /* alias: --bg-surface-raised */
+  --bg-tertiary: #2a2a2a;    /* alias: --bg-sunken */
 }
 
 /* ── Theme transition (View Transition API crossfade) ────── */
@@ -1636,7 +1636,6 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 1; min-width: 260px;
   background: transparent;
   border: none;
-  border-left: none;
   border-radius: 0;
   box-shadow: none;
   padding: 0 12px;
@@ -2704,7 +2703,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .preset-card {
   padding: 14px 16px;
-  transition: border-color 0.15s, background var(--duration-fast);
+  transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 .preset-card:hover { border-color: var(--accent); }
 .preset-card.active { border-color: var(--accent); background: rgba(80, 120, 255, 0.08); }
