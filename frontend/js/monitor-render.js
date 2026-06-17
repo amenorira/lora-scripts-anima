@@ -456,9 +456,9 @@ window.monitorRenderMixin = {
 
   _drawCharts() {
     if (!this._chartInstances) this._chartInstances={};
-    const isDark=this.resolvedTheme==='dark', gridColor=isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)', textColor=isDark?'#a0a0a0':'#6b7280';
-    const smoothing=this.chartSmoothing||0, colors=['#8b5cf6','#06b6d4','#f59e0b','#10b981'];
-    const tooltipBg=isDark?'#1e1e1e':'#ffffff', tooltipBorder=isDark?'#404040':'#e5e7eb';
+    const isDark=this.resolvedTheme==='dark', gridColor=isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)', textColor=isDark?'#a1a1a6':'#6e6e73';
+    const smoothing=this.chartSmoothing||0, colors=['#BF5AF2','#64D2FF','#FF9F0A','#30D158'];
+    const tooltipBg=isDark?'#1c1c1e':'#ffffff', tooltipBorder=isDark?'#48484a':'#d2d2d7';
 
     this.lossSeries.forEach((s,idx)=>{
       const id='chart-'+s.tag.replace(/[/.]/g,'-'), canvas=document.getElementById(id);
@@ -552,7 +552,7 @@ window.monitorRenderMixin = {
     }
 
     // Config snapshot modal placeholder
-    html += '<div id="configSnapshotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center">';
+    html += '<div id="configSnapshotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:1000;justify-content:center;align-items:center">';
     html += '<div class="card" style="max-width:700px;width:90%;max-height:80vh;overflow:auto;padding:20px;position:relative">';
     html += '<button class="btn btn-sm" @click="closeSnapshotModal()" style="position:absolute;top:12px;right:12px;font-size:18px;line-height:1;padding:4px 8px">&times;</button>';
     html += '<div id="configSnapshotContent"></div>';
