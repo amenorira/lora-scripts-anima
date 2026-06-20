@@ -394,7 +394,7 @@ def _import_flash_attn_tool():
     mod = importlib.util.module_from_spec(spec)
     sys.modules["install_flash_attn"] = mod
     spec.loader.exec_module(mod)
-    return mod.detect_env, mod.current_status, mod.fetch_candidates, mod.install_wheel
+    return mod.detect_env, mod.current_status, mod.fetch_candidates, mod.install_wheel, mod.proxy_download_url
 
 
 @router.get("/flash-attention/status")
@@ -404,7 +404,7 @@ async def flash_attn_status(source: str = "") -> dict:
     """
     import time
     import os as _os
-    detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
+    detect_env, current_status, fetch_candidates, _, _ = _import_flash_attn_tool()
     cache_key = source or "default"
     try:
         status = current_status()
@@ -454,7 +454,7 @@ async def flash_attn_status(source: str = "") -> dict:
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
     """安装 flash_attn wheel（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
-    detect_env, current_status, fetch_candidates, _ = _import_flash_attn_tool()
+    detect_env, current_status, fetch_candidates, _, proxy_download_url = _import_flash_attn_tool()
     try:
         body = await request.json()
         url = body.get("url", None)
@@ -463,9 +463,10 @@ async def flash_attn_install(request: Request) -> dict:
         url = None
         source = "default"
 
+    src = source or "default"
     if url is None:
         env = detect_env()
-        candidates, _ = fetch_candidates(env, source=source or "default")
+        candidates, _ = fetch_candidates(env, source=src)
         url = None
         for c in candidates:
             if c["usable"]:
@@ -474,11 +475,13 @@ async def flash_attn_install(request: Request) -> dict:
         if url is None:
             return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
 
-    if source == "mirror" and url and not url.startswith("https://ghproxy.com/"):
-        url = "https://ghproxy.com/" + url
+    # 用共享逻辑选择下载 URL 的代理。
+    # default 源：直连优先（proxy_download_url 对 default 返回原 URL，由 _start_install_job 重试兜底）；
+    # mirror 源：返回镜像 URL，避免直连下载在受限网络失败。
+    url = proxy_download_url(url, source=src)
 
     import sys
-    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", url])
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "--retries", "3", "--timeout", "60", url])
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 

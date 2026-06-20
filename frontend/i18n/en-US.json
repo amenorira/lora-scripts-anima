@@ -697,6 +697,9 @@
     "sourceDefault": "Official",
     "sourceMirror": "Mirror",
     "sourceFallback": "Alt",
+    "sourceDefaultHint": "Direct to GitHub, auto-fallback to mirrors (recommended)",
+    "sourceMirrorHint": "Use mirrors directly, for when direct access is unreliable",
+    "sourceFallbackHint": "Alternate wheel repository",
     "faNote": {
       "torchMismatch": "PyTorch version mismatch",
       "pythonMismatch": "Python version mismatch",

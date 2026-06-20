@@ -697,6 +697,9 @@
     "sourceDefault": "官方",
     "sourceMirror": "镜像",
     "sourceFallback": "备用",
+    "sourceDefaultHint": "直连 GitHub，失败自动回退镜像（推荐）",
+    "sourceMirrorHint": "直接走镜像，适合直连不稳定时",
+    "sourceFallbackHint": "备用 wheel 仓库",
     "faNote": {
       "torchMismatch": "PyTorch 版本不匹配",
       "pythonMismatch": "Python 版本不匹配",
