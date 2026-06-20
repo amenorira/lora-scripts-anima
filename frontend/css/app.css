@@ -592,6 +592,13 @@ a:hover { text-decoration: underline; }
   color: var(--text-secondary);
   white-space: nowrap;
 }
+/* 训练类型切换提示（B1）：提醒用户切换会改变下方可见参数 */
+.train-type-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-left: 10px;
+  line-height: 1.4;
+}
 
 
 
@@ -911,15 +918,39 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-tertiary);
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
   position: relative;
+  flex-shrink: 0;
 }
 .btn-menu:hover {
-  background: var(--hover-overlay);
+  background: var(--bg-surface-raised);
   color: var(--text-primary);
   border-color: var(--text-sidebar-muted);
 }
 .btn-menu svg { width: 14px; height: 14px; }
+
+/* 训练表单内：点点菜单默认弱化，行 hover 或弹窗可见时凸显；
+   右侧留白使其与 hover 高亮背景分离，不再贴边。 */
+#trainFormContent .field-menu-wrap {
+  margin-left: 6px;
+  margin-right: -2px;
+}
+#trainFormContent .btn-menu {
+  opacity: 0.35;
+  border-color: transparent;
+  background: transparent;
+}
+#trainFormContent .field:hover .btn-menu,
+#trainFormContent .field-menu-wrap:hover .btn-menu {
+  opacity: 1;
+  border-color: var(--border-default);
+}
+/* 键盘聚焦时也可见（可访问性） */
+#trainFormContent .btn-menu:focus-visible {
+  opacity: 1;
+  border-color: var(--accent);
+  outline: none;
+}
 
 /* ── Field menu wrap (hover trigger for popup) ────────────── */
 .field-menu-wrap {
@@ -1207,17 +1238,117 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   box-shadow: none;
 }
 #trainFormContent .card-header {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  letter-spacing: 0.6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
   padding: 22px 0 8px;
   margin-bottom: 4px;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 2px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease, border-bottom-color 0.15s ease;
+}
+#trainFormContent .card-header:hover {
+  color: var(--text-secondary);
 }
 #trainFormContent .card:first-child .card-header {
   padding-top: 0;
 }
+/* 分组标题左侧色条（与导航指示器圆点同色，强化分组身份识别） */
+#trainFormContent .card-header::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: var(--border-default);
+  transition: background 0.2s var(--ease-out);
+}
+/* 各分组色条：加 #trainFormContent 前缀提升优先级，覆盖上方灰色默认 */
+#trainFormContent [data-section="model"] .card-header::before         { background: #4d94ff; }
+#trainFormContent [data-section="network"] .card-header::before       { background: #10b981; }
+#trainFormContent [data-section="training"] .card-header::before      { background: #8b5cf6; }
+#trainFormContent [data-section="optimizer"] .card-header::before     { background: #f59e0b; }
+#trainFormContent [data-section="regularization"] .card-header::before{ background: #f43f5e; }
+#trainFormContent [data-section="performance"] .card-header::before   { background: #6366f1; }
+#trainFormContent [data-section="save"] .card-header::before          { background: #0ea5e9; }
+#trainFormContent [data-section="caption"] .card-header::before       { background: #78716c; }
+#trainFormContent [data-section="preview"] .card-header::before       { background: #ec4899; }
+#trainFormContent [data-section="misc"] .card-header::before          { background: #78716c; }
+/* 折叠箭头（B2）：默认指向下（展开），收起时旋转 -90° */
+#trainFormContent .card-chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.2s var(--ease-out);
+}
+#trainFormContent .card-collapsed .card-chevron {
+  transform: rotate(-90deg);
+}
+/* 分组主体：高度折叠动画由 JS _animateCollapse 驱动（测量 scrollHeight），
+   此处仅声明过渡属性；初始渲染的持久化收起态由下方 .card-collapsed 规则承接。 */
+#trainFormContent .card-body {
+  transition: max-height 0.3s var(--ease-out), opacity 0.25s var(--ease-out);
+}
+/* 初始渲染即为收起态（页面加载 / 切训练类型重建时，无动画直接收起） */
+#trainFormContent .card.card-collapsed > .card-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── 进阶参数折叠区（A3）── */
+#trainFormContent .advanced-fold {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border-default);
+  padding-top: 8px;
+}
+#trainFormContent .advanced-fold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 2px;
+  letter-spacing: 0.4px;
+  transition: color 0.15s ease;
+}
+#trainFormContent .advanced-fold-toggle:hover {
+  color: var(--text-secondary);
+}
+#trainFormContent .advanced-chevron {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  transition: transform 0.2s var(--ease-out);
+}
+#trainFormContent .advanced-fold-collapsed .advanced-chevron {
+  transform: rotate(-90deg);
+}
+#trainFormContent .advanced-count {
+  font-weight: 400;
+  opacity: 0.7;
+}
+#trainFormContent .advanced-fold-body {
+  transition: max-height 0.3s var(--ease-out), opacity 0.25s var(--ease-out);
+}
+/* 初始渲染即为收起态 */
+#trainFormContent .advanced-fold.advanced-fold-collapsed > .advanced-fold-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* Field rows: subtle background on hover */
 #trainFormContent .field {
   border-radius: var(--radius-sm);
@@ -1243,11 +1374,19 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 #trainFormContent .field + .field {
   border-top: none;
 }
-/* Nested fields inside trainFormContent */
+/* 嵌套字段缩进（A2）：按 data-nest-level 递增，加深左边框，区分"开关→选项→子选项"层级 */
 #trainFormContent .field-nested {
   margin-left: 14px;
   padding-left: 12px;
   margin-right: -8px;
+  border-left: 2px dashed var(--border-default);
+}
+/* 层级 ≥2（孙子参数）：额外缩进 + 更深的虚线，强化树形视觉 */
+#trainFormContent .field-nested[data-nest-level="2"],
+#trainFormContent .field-nested[data-nest-level="3"],
+#trainFormContent .field-nested[data-nest-level="4"] {
+  margin-left: 28px;
+  border-left-color: var(--text-sidebar-muted);
 }
 
 /* ── Tagger Form — Flat Design (matching training form) ──── */
@@ -1323,6 +1462,97 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   display: flex; flex-direction: column; overflow: visible;
   position: relative;
 }
+
+/* ── 左侧分组导航轨道（#1）：脱离文档流 fixed 贴在参数区左边缘、垂直居中；
+     收起=框内一列彩色圆点，hover 展开框变宽 + 圆点右侧淡入文字。
+     关键：框（背景/边框/圆点 padding-left）在收起时即存在且展开时恒定不变，
+     展开只让框变宽 + 标签淡入——圆点相对框左边位置永不位移，无"往里缩/往外扩"。 ── */
+.section-rail {
+  position: fixed;
+  left: calc(var(--sidebar-w) + 10px);  /* 贴 main-content 左边缘，内缩 10px 确保圆点完整可见 */
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;                     /* 收起/展开恒定：圆点间距不变 */
+  padding: 6px;                 /* 收起/展开恒定：框内边距不变，圆点相对框左边距离固定 */
+  border-radius: var(--radius-md);
+  width: 34px;                  /* 收起宽度：rail-pad 6 + item-pad 6 + 圆点 10 + 右余量 12 = 圆点居中 */
+  z-index: 50;
+  /* 框：收起时即存在，展开时不变 —— 避免"展开才出框"导致的圆点跳动 */
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
+  transition: width 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out);
+}
+.section-rail.expanded {
+  width: 176px;                 /* 展开仅变宽，框样式/gap/padding 全保持收起态 */
+  box-shadow: var(--shadow-lg);
+}
+.section-rail-item {
+  display: flex;
+  align-items: center;
+  /* 圆点始终靠左（收起/展开一致，永不位移）；框 padding 给圆点留对称内边距 */
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.section-rail-item:hover {
+  background: var(--hover-overlay);
+  color: var(--text-primary);
+}
+/* 圆点：颜色=分组色；当前分组放大 + 高亮环。位置恒定不随展开变。 */
+.section-rail-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+.section-rail-item:hover .section-rail-dot { opacity: 1; }
+.section-rail-item.active .section-rail-dot {
+  opacity: 1;
+  transform: scale(1.25);
+  box-shadow: 0 0 0 3px var(--hover-overlay);
+}
+/* 标签：收起时彻底不占位（display:none）让圆点居中；
+   展开时 display 恢复 + opacity 淡入，从圆点右侧显示。 */
+.section-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: none;                /* 收起：不占位，圆点居中 */
+  opacity: 0;
+  transition: opacity 0.15s var(--ease-out);
+}
+.section-rail.expanded .section-rail-label {
+  display: block;               /* 展开：恢复占位，圆点靠左 */
+  opacity: 1;
+}
+.section-rail.expanded .section-rail-item.active {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* 收起的分组：标签变淡斜体（仅展开时可见） */
+.section-rail-item.collapsed .section-rail-label {
+  opacity: 0.6;
+  font-style: italic;
+}
+
 /* Inner wrapper for route-conditional content (x-if) */
 .panel-inner {
   display: flex; flex-direction: column;
@@ -2260,6 +2490,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   flex-direction: column;
   overflow: hidden;
 }
+/* JS 打开时切换为 fixed 锚定到触发器，避免被 overflow:hidden 祖先裁剪 */
+.anima-select-menu[style*="position: fixed"] {
+  z-index: 10001;
+}
+.anima-select-menu-up .anima-select-menu-scroll {
+  /* 向上展开时仍允许滚动；max-height 由视口约束 */
+  max-height: 40vh;
+}
 
 /* Scrollable options area */
 .anima-select-menu-scroll {
@@ -2267,6 +2505,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px;
+  /* 阻止滚动传播：菜单内滚到边界不连带滚动页面，避免触发 scroll 监听关闭菜单 */
+  overscroll-behavior: contain;
 }
 
 /* Fixed description footer (shows hovered option's desc) */

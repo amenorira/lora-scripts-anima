@@ -308,6 +308,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             )
 
     # ── 5.7. torch.compile 兼容性校验 ────────────────────
+    # 注：Windows + inductor 的稳定性警告放在 5.11 之后，避免在 torch_compile
+    # 即将被 compile 互斥规则关闭时误报警告。
     if source.get("torch_compile"):
         # torch.compile 与 blocks_to_swap 不兼容
         blocks = source.get("blocks_to_swap", 0) or 0
@@ -316,14 +318,6 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             warnings.append(
                 "[Conflict] torch_compile is incompatible with blocks_to_swap; "
                 "disabling torch_compile / torch_compile 与 blocks_to_swap 不兼容，已自动关闭 torch_compile"
-            )
-        # Windows + inductor 警告
-        import sys
-        dynamo_backend = source.get("dynamo_backend", "inductor")
-        if sys.platform == "win32" and dynamo_backend == "inductor":
-            warnings.append(
-                "[Warning] inductor backend may be unstable on Windows; "
-                "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
             )
 
     # ── 5.8. cache_text_encoder_outputs 与 text_encoder_only 互斥 ──
@@ -353,6 +347,65 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "falling back to torch mode / "
             "sageattn 不支持训练，已回退为 torch 模式"
         )
+
+    # ── 5.11. Anima per-block compile (compile_*) 校验 ──
+    # compile 与通用 torch_compile 互斥（anima_train_network.py 注释明确两者不可并用）
+    if source.get("compile") and source.get("torch_compile"):
+        source["torch_compile"] = False
+        warnings.append(
+            "[Conflict] compile (per-block) and torch_compile (accelerate) "
+            "cannot be used together; disabling torch_compile / "
+            "compile（块级编译）与 torch_compile（accelerate 版）不可同时使用，已关闭 torch_compile"
+        )
+    # compile 与 blocks_to_swap 不兼容（编译后的图无法中途换块）
+    if source.get("compile"):
+        blocks = source.get("blocks_to_swap", 0) or 0
+        if blocks > 0:
+            source["compile"] = False
+            warnings.append(
+                "[Conflict] compile is incompatible with blocks_to_swap; "
+                "disabling compile / compile 与 blocks_to_swap 不兼容，已自动关闭 compile"
+            )
+
+    # ── 5.12. unsloth_offload_checkpointing 互斥校验 ──
+    # anima_train_network.py 明确：不可与 cpu_offload_checkpointing 或 blocks_to_swap 同用
+    if source.get("unsloth_offload_checkpointing"):
+        if source.get("cpu_offload_checkpointing"):
+            source["cpu_offload_checkpointing"] = False
+            warnings.append(
+                "[Conflict] unsloth_offload_checkpointing and cpu_offload_checkpointing "
+                "cannot be used together; disabling cpu_offload_checkpointing / "
+                "unsloth_offload_checkpointing 与 cpu_offload_checkpointing 不可同时使用，已关闭后者"
+            )
+        blocks = source.get("blocks_to_swap", 0) or 0
+        if blocks > 0:
+            source["unsloth_offload_checkpointing"] = False
+            warnings.append(
+                "[Conflict] unsloth_offload_checkpointing and blocks_to_swap "
+                "cannot be used together; disabling unsloth_offload_checkpointing / "
+                "unsloth_offload_checkpointing 与 blocks_to_swap 不可同时使用，已关闭前者"
+            )
+
+    # ── 5.13. adaptive_noise_scale 依赖 noise_offset ──
+    # sd-scripts verify_training_args: adaptive_noise_scale requires noise_offset
+    if source.get("adaptive_noise_scale") is not None and not source.get("noise_offset"):
+        source["adaptive_noise_scale"] = None
+        warnings.append(
+            "[Conflict] adaptive_noise_scale requires noise_offset; "
+            "disabling adaptive_noise_scale / "
+            "adaptive_noise_scale 需配合 noise_offset 使用，已关闭 adaptive_noise_scale"
+        )
+
+    # ── 5.14. torch.compile Windows + inductor 稳定性警告 ──
+    # 放在所有 torch_compile/compile 互斥处理之后，仅当 torch_compile 仍启用时报警。
+    if source.get("torch_compile"):
+        import sys
+        dynamo_backend = source.get("dynamo_backend", "inductor")
+        if sys.platform == "win32" and dynamo_backend == "inductor":
+            warnings.append(
+                "[Warning] inductor backend may be unstable on Windows; "
+                "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
+            )
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告

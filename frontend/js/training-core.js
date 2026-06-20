@@ -11,6 +11,16 @@ window.trainingCoreMixin = {
   formHistoryIdx: -1,
   formErrors: {},
 
+  // 分组折叠状态（B2）与进阶参数折叠状态（A3），响应式驱动 UI
+  _sectionCollapsed: {},
+  _advancedCollapsed: {},
+
+  // 分组导航指示器（#1）：当前可见分组列表 + 滚动高亮的当前分组
+  sectionNavList: [],
+  activeSection: '',
+  sectionRailHover: false,
+  _sectionScrollHandler: null,
+
   _formSaveTimer: null,
   _localeChangeHandler: null,
   showFilePickerModalFlag: false,
@@ -171,20 +181,265 @@ window.trainingCoreMixin = {
     const container = document.getElementById(targetId || 'trainFormContent');
     if (!container) return;
     const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
+    // 失效嵌套层级缓存（字段集随训练类型变化）
+    this._nestLevelCache = null;
     let html = '';
     sections.forEach(section => {
-      const fields = section.fields.filter(f => !f.hidden);
+      const allFields = section.fields.filter(f => !f.hidden);
+      // 拆分基础参数与进阶参数（A3）：advanced=true 的字段进入折叠区
+      const basicFields = allFields.filter(f => !f.advanced);
+      const advancedFields = allFields.filter(f => f.advanced);
 
-      html += `<div class="card" data-section="${section.key}">`;
-      html += `<div class="card-header">${this.t(section.titleKey) || section.titleKey}</div>`;
-
-      fields.forEach(field => { html += this.renderField(field); });
-
+      // 分组可折叠（B2）：状态持久化到 localStorage，默认展开
+      const collapsedKey = 'anima-section-collapsed-' + section.key;
+      const isCollapsed = localStorage.getItem(collapsedKey) === '1';
+      html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
+      html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
+      html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+      html += `<span>${this.t(section.titleKey) || section.titleKey}</span>`;
       html += `</div>`;
+      html += `<div class="card-body">`;
+
+      basicFields.forEach(field => { html += this.renderField(field); });
+
+      // 进阶参数折叠区（A3）：仅当本分组存在 advanced 字段时渲染
+      if (advancedFields.length > 0) {
+        const advCollapsedKey = 'anima-advanced-collapsed-' + section.key;
+        const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0'; // 默认收起
+        html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] }">`;
+        html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${section.key}')">`;
+        html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+        html += `<span>${this.t('common.advancedParams')}</span>`;
+        html += `<span class="advanced-count" x-text="'(' + ${advancedFields.length} + ')'"></span>`;
+        html += `</div>`;
+        html += `<div class="advanced-fold-body">`;
+        advancedFields.forEach(field => { html += this.renderField(field); });
+        html += `</div></div>`;
+      }
+
+      html += `</div></div>`;
     });
     container.innerHTML = html;
+    // 初始化折叠状态对象（Alpine 响应式）
+    this._initCollapseState(sections);
+    // 构建右侧分组导航指示器（#1）并绑定滚动高亮
+    this.buildSectionNav();
     // Re-check all conditional fields after render
     this._allShowIfKeys().forEach(k => this.showConditionalFields(k));
+  },
+
+  // ── Section / Advanced collapse state (B2 / A3) ──
+  _initCollapseState(sections) {
+    if (!this._sectionCollapsed) this._sectionCollapsed = {};
+    if (!this._advancedCollapsed) this._advancedCollapsed = {};
+    sections.forEach(s => {
+      if (this._sectionCollapsed[s.key] === undefined) {
+        this._sectionCollapsed[s.key] = localStorage.getItem('anima-section-collapsed-' + s.key) === '1';
+      }
+      const hasAdvanced = s.fields.some(f => f.advanced && !f.hidden);
+      if (hasAdvanced && this._advancedCollapsed[s.key] === undefined) {
+        // 进阶区默认收起（localStorage 存 '0' 表示曾主动展开）
+        this._advancedCollapsed[s.key] = localStorage.getItem('anima-advanced-collapsed-' + s.key) !== '0';
+      }
+    });
+  },
+
+  toggleSection(key) {
+    const willCollapse = !this._sectionCollapsed[key];
+    this._sectionCollapsed[key] = willCollapse;
+    localStorage.setItem('anima-section-collapsed-' + key, willCollapse ? '1' : '0');
+    // 同步导航指示器的折叠状态
+    this.sectionNavList = this.sectionNavList.map(s => s.key === key ? { ...s, collapsed: willCollapse } : s);
+    // 动画：测量 card-body 真实高度 → 锁定 → 过渡到 0/原高
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const body = card && card.querySelector('.card-body');
+    if (body) this._animateCollapse(body, willCollapse);
+  },
+
+  toggleAdvanced(key) {
+    const willCollapse = !this._advancedCollapsed[key];
+    this._advancedCollapsed[key] = willCollapse;
+    localStorage.setItem('anima-advanced-collapsed-' + key, willCollapse ? '1' : '0');
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const fold = card && card.querySelector('.advanced-fold');
+    const body = fold && fold.querySelector('.advanced-fold-body');
+    if (body) this._animateCollapse(body, willCollapse);
+  },
+
+  // ── 统一的高度折叠动画（#3）──
+  // 测量目标 scrollHeight → 起始高度 → 过渡到目标 → 清理 inline 样式。
+  // 与 showConditionalFields 同一手法，避免 max-height:0!important/none 无法动画的问题。
+  _animateCollapse(body, collapsing) {
+    // 清理可能残留的过渡状态
+    body.style.transition = 'none';
+    body.style.maxHeight = '';
+    body.style.opacity = '';
+    const h = body.scrollHeight;
+    if (collapsing) {
+      // 收起：从当前高度 → 0
+      body.style.overflow = 'hidden';
+      body.style.maxHeight = h + 'px';
+      body.style.opacity = '1';
+      void body.offsetHeight; // 强制 reflow
+      body.style.transition = '';
+      requestAnimationFrame(() => {
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+      });
+      const cleanup = () => {
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.transition = '';
+        body.style.overflow = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
+      body.addEventListener('transitionend', onEnd);
+      setTimeout(cleanup, 500);
+    } else {
+      // 展开：从 0 → 目标高度
+      body.style.overflow = 'hidden';
+      body.style.maxHeight = '0px';
+      body.style.opacity = '0';
+      void body.offsetHeight;
+      body.style.transition = '';
+      requestAnimationFrame(() => {
+        body.style.maxHeight = h + 'px';
+        body.style.opacity = '1';
+      });
+      const cleanup = () => {
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.transition = '';
+        body.style.overflow = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
+      body.addEventListener('transitionend', onEnd);
+      setTimeout(cleanup, 500);
+    }
+  },
+
+  // ── 分组导航指示器（#1）──
+  // 构建可见分组列表（含颜色 + 标题），供右侧面板点击跳转与当前分组高亮。
+  buildSectionNav() {
+    const sections = this._allSections();
+    const SECTION_COLORS = {
+      model: '#4d94ff', network: '#10b981', training: '#8b5cf6', optimizer: '#f59e0b',
+      regularization: '#f43f5e', performance: '#6366f1', save: '#0ea5e9',
+      caption: '#78716c', preview: '#ec4899', misc: '#78716c',
+    };
+    this.sectionNavList = sections.map(s => ({
+      key: s.key,
+      title: this.t(s.titleKey) || s.titleKey,
+      color: SECTION_COLORS[s.key] || '#78716c',
+      collapsed: !!this._sectionCollapsed[s.key],
+    }));
+    // 默认激活第一个分组
+    if (this.sectionNavList.length && !this.activeSection) {
+      this.activeSection = this.sectionNavList[0].key;
+    }
+    this._bindSectionScroll();
+    this._bindSectionMouse();
+  },
+
+  // 绑定主内容区滚动监听，更新当前可见分组（节流）
+  _bindSectionScroll() {
+    if (this._sectionScrollHandler) return; // 已绑定
+    const self = this;
+    let ticking = false;
+    this._sectionScrollHandler = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        self._updateActiveSection();
+        ticking = false;
+      });
+    };
+    const scroller = document.querySelector('.main-content');
+    if (scroller) scroller.addEventListener('scroll', this._sectionScrollHandler, { passive: true });
+    // 初次定位
+    this._updateActiveSection();
+  },
+
+  // 绑定鼠标移动监听：鼠标在哪个分组卡片上方，对应圆点亮（节流）。
+  // 性能：mousemove 经 rAF 节流每帧最多一次，9 张卡片 getBoundingClientRect ~亚毫秒，无性能问题。
+  _sectionMouseHandler: null,
+  _bindSectionMouse() {
+    if (this._sectionMouseHandler) return;
+    const self = this;
+    let ticking = false;
+    this._sectionMouseHandler = (e) => {
+      if (ticking) return;
+      ticking = true;
+      const y = e.clientY;
+      requestAnimationFrame(() => {
+        self._updateActiveSectionByY(y);
+        ticking = false;
+      });
+    };
+    const scroller = document.querySelector('.main-content');
+    if (scroller) scroller.addEventListener('mousemove', this._sectionMouseHandler, { passive: true });
+  },
+
+  // 按鼠标 Y 坐标判定当前分组：找到鼠标落入的卡片（含顶部留白），其 data-section 即当前
+  _updateActiveSectionByY(y) {
+    const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
+    if (!cards.length) return;
+    let current = '';
+    // 取最后一个 top <= y 且 bottom >= y 的卡片；若无命中则取鼠标上方最近的卡片
+    let lastAbove = '';
+    cards.forEach(card => {
+      const r = card.getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) current = card.getAttribute('data-section');
+      if (r.top <= y) lastAbove = card.getAttribute('data-section');
+    });
+    if (!current) current = lastAbove || cards[0].getAttribute('data-section');
+    if (current !== this.activeSection) this.activeSection = current;
+  },
+
+  // 离开训练页时解绑滚动/鼠标监听，避免泄漏
+  stopSectionScroll() {
+    if (this._sectionScrollHandler) {
+      const scroller = document.querySelector('.main-content');
+      if (scroller) scroller.removeEventListener('scroll', this._sectionScrollHandler);
+      this._sectionScrollHandler = null;
+    }
+    if (this._sectionMouseHandler) {
+      const scroller = document.querySelector('.main-content');
+      if (scroller) scroller.removeEventListener('mousemove', this._sectionMouseHandler);
+      this._sectionMouseHandler = null;
+    }
+  },
+
+  _updateActiveSection() {
+    const scroller = document.querySelector('.main-content');
+    if (!scroller) return;
+    const offset = 80; // 顶部偏移阈值：分组标题进入此线以下即视为"当前"
+    const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
+    let current = '';
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      // 标题顶部越过偏移线 → 该分组为当前；取最后一个满足条件的
+      if (rect.top - scroller.getBoundingClientRect().top <= offset) {
+        current = card.getAttribute('data-section');
+      }
+    });
+    if (!current && cards.length) current = cards[0].getAttribute('data-section');
+    // 仅更新轨道圆点高亮（activeSection），不再给表单卡片加激活态样式
+    if (current && current !== this.activeSection) this.activeSection = current;
+  },
+
+  // 点击导航项 → 平滑滚动到对应分组顶部
+  scrollToSection(key) {
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const scroller = document.querySelector('.main-content');
+    if (!card || !scroller) return;
+    // 若分组已收起，先展开（否则跳过去看不到内容）
+    if (this._sectionCollapsed[key]) this.toggleSection(key);
+    const target = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
+    scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+    this.activeSection = key;
   },
 
   _allSections() {
@@ -354,7 +609,11 @@ window.trainingCoreMixin = {
     }
 
     // ── Nested detection (child of a showIf parent) ──
+    // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf 父字段的层级 + 1，父级若无 showIf 则为 0。
+    // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
+    const nestLevel = this._nestLevel(field);
     const nestedClass = field.showIf ? ' field-nested' : '';
+    const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
     let controlSection = '';
@@ -369,11 +628,11 @@ window.trainingCoreMixin = {
     }
 
     // ── Assemble ──
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         <div class="field-menu-wrap">
-          <button type="button" class="btn-menu" title="⋯">${_dotsSvg}</button>
+          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" tabindex="-1">${_dotsSvg}</button>
           ${_menuPopupHtml}
         </div>
       </div>
@@ -754,6 +1013,29 @@ window.trainingCoreMixin = {
       if (f) return f;
     }
     return null;
+  },
+
+  // ── Nest level: depth of showIf ancestry (A2) ──
+  // 一个字段的层级 = 其 showIf 父字段层级 + 1；无 showIf 则为 0。
+  // 用于递增缩进与左边框深浅，让"开关→选项→子选项"层级一眼可读。
+  _nestLevelCache: null,
+  _nestLevel(field) {
+    if (!field.showIf) return 0;
+    // 构建一次 key→field 映射，避免重复遍历（render 时调用频繁）
+    if (!this._nestLevelCache) {
+      const map = {};
+      this._allSections().forEach(s => s.fields.forEach(f => { map[f.key] = f; }));
+      this._nestLevelCache = map;
+    }
+    let level = 0;
+    let cur = field;
+    const guard = new Set();
+    while (cur && cur.showIf && !guard.has(cur.key)) {
+      guard.add(cur.key);
+      level += 1;
+      cur = this._nestLevelCache[cur.showIf.key];
+    }
+    return level;
   },
 
   undoField(key) {

@@ -223,6 +223,7 @@ document.addEventListener('alpine:init', () => {
       // Stop training status poll when leaving training page
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
         this.stopTrainingStatusPoll();
+        if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
       this.currentRoute = route;
 
