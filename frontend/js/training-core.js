@@ -20,6 +20,9 @@ window.trainingCoreMixin = {
   activeSection: '',
   sectionRailHover: false,
   _sectionScrollHandler: null,
+  _sectionMouseHandler: null,
+  _sidebarResizeObserver: null,
+  _sidebarResizeHandler: null,
 
   _formSaveTimer: null,
   _localeChangeHandler: null,
@@ -341,6 +344,7 @@ window.trainingCoreMixin = {
     }
     this._bindSectionScroll();
     this._bindSectionMouse();
+    this._bindSidebarResize();
   },
 
   // 绑定主内容区滚动监听，更新当前可见分组（节流）
@@ -364,7 +368,6 @@ window.trainingCoreMixin = {
 
   // 绑定鼠标移动监听：鼠标在哪个分组卡片上方，对应圆点亮（节流）。
   // 性能：mousemove 经 rAF 节流每帧最多一次，9 张卡片 getBoundingClientRect ~亚毫秒，无性能问题。
-  _sectionMouseHandler: null,
   _bindSectionMouse() {
     if (this._sectionMouseHandler) return;
     const self = this;
@@ -398,7 +401,7 @@ window.trainingCoreMixin = {
     if (current !== this.activeSection) this.activeSection = current;
   },
 
-  // 离开训练页时解绑滚动/鼠标监听，避免泄漏
+  // 离开训练页时解绑滚动/鼠标/侧栏监听，避免泄漏
   stopSectionScroll() {
     if (this._sectionScrollHandler) {
       const scroller = document.querySelector('.main-content');
@@ -410,6 +413,41 @@ window.trainingCoreMixin = {
       if (scroller) scroller.removeEventListener('mousemove', this._sectionMouseHandler);
       this._sectionMouseHandler = null;
     }
+    if (this._sidebarResizeObserver) {
+      this._sidebarResizeObserver.disconnect();
+      this._sidebarResizeObserver = null;
+    }
+    if (this._sidebarResizeHandler) {
+      window.removeEventListener('resize', this._sidebarResizeHandler);
+      this._sidebarResizeHandler = null;
+    }
+  },
+
+  // 监听侧栏宽度变化（手动收起/展开、响应式、初始），实时更新 rail 的 left，
+  // 使指示器始终贴在 main-content 左边缘。不依赖 --sidebar-w（手动收起不改该变量）。
+  _bindSidebarResize() {
+    if (this._sidebarResizeObserver) return;
+    const self = this;
+    const update = () => self._updateRailLeft();
+    // ResizeObserver 监听 .sidebar 宽度
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar && typeof ResizeObserver !== 'undefined') {
+      this._sidebarResizeObserver = new ResizeObserver(update);
+      this._sidebarResizeObserver.observe(sidebar);
+    }
+    // 窗口尺寸变化（响应式断点）兜底
+    window.addEventListener('resize', update);
+    this._sidebarResizeHandler = update;
+    // 初次定位
+    this._updateRailLeft();
+  },
+
+  _updateRailLeft() {
+    const sidebar = document.querySelector('.sidebar');
+    const rail = document.querySelector('.section-rail');
+    if (!sidebar || !rail) return;
+    const w = sidebar.getBoundingClientRect().width;
+    rail.style.left = Math.round(w + 10) + 'px';
   },
 
   _updateActiveSection() {
