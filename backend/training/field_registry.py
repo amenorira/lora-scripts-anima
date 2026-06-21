@@ -38,6 +38,11 @@ from typing import Any
 #   auto_value — 自动填值规则（可选）: [{"watch": "key", "when": "val", "set": new_val}, ...]
 #                set 为 null 表示恢复默认值。
 #   advanced   — 是否为进阶参数（可选，默认 false）。
+#   omit_default — 默认值省略（可选，默认 false）。仅当 registry default == sd-scripts
+#                  argparse default 时才可标记 True：前端在值==default 时不传给
+#                  sd-scripts、不在 TOML 预览显示，输入框以淡色 placeholder 提示默认值。
+#                  有意差异字段（learning_rate/mixed_precision/cache_* 等）禁止标记，
+#                  否则不传会让 sd-scripts 用它自己的默认值，训练行为改变。
 
 FIELDS: list[dict[str, Any]] = [
 # ── Model ──
@@ -50,9 +55,9 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
 {"key": "enable_bucket", "type": "toggle", "default": True, "section": "model", "desc_key": "field.enable_bucket", "target": "toml"},
 {"key": "bucket_no_upscale", "type": "toggle", "default": True, "section": "model", "desc_key": "field.bucket_no_upscale", "target": "toml", "show_if": {"key": "enable_bucket", "eq": True}},
-{"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
+{"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
-{"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "show_if": {"key": "enable_bucket", "eq": True}},
+{"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": ["sd", "sdxl"]},
 # clip_skip 在 SDXL 下被 sd-scripts 警告为无效（sdxl_train_util.verify_sdxl_training_args），
 # 仅保留 SD1.5 分组（当前不训练 SD1.5，故界面不显示；旧 preset 的值仍可透传）。
@@ -61,7 +66,7 @@ FIELDS: list[dict[str, Any]] = [
 # 通用网络参数在前（对所有 module 生效）；network_module 作为"算法开关"置于其后，
 # 其 show_if 子参数紧随触发源展开，避免子参数被甩到分组底部造成困惑（A1 重排）。
 {"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
-{"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml"},
+{"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml", "omit_default": True},
 {"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "target": "toml", "min": 1, "max": 256, "step": 1},
 {"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "target": "toml", "min": 1},
 {"key": "network_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.network_weights", "target": "toml", "role": "file-model-saved"},
@@ -69,6 +74,10 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima"]}, "hint_key": "field.network_dropoutHint"},
 {"key": "scale_weight_norms", "type": "number", "section": "network", "desc_key": "field.scale_weight_norms", "target": "toml", "min": 0, "step": 0.01, "hint_key": "field.scale_weight_normsHint", "advanced": True},
 {"key": "network_args_custom", "type": "textarea", "default": "", "section": "network", "desc_key": "field.network_args_custom", "target": "ui", "hint_key": "field.network_args_customHint", "advanced": True},
+# base_weights：训练前把已有 LoRA 权重合并进 base 模型再训练（LoRA 叠加工作流）。
+# sd-scripts argparse nargs="*"，adapter 把逗号分隔字符串转 list。
+{"key": "base_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.base_weights", "target": "toml", "hint_key": "field.base_weightsHint", "advanced": True},
+{"key": "base_weights_multiplier", "type": "text", "default": "", "section": "network", "desc_key": "field.base_weights_multiplier", "target": "toml", "hint_key": "field.base_weights_multiplierHint", "show_if": {"key": "base_weights", "neq": ""}, "advanced": True},
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": ["sd", "sdxl"]}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
     # lycoris.kohya 算法选择器
@@ -95,20 +104,20 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.rs_loraHint", "advanced": True},
 # ── Training Core ──
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "target": "toml", "min": 1},
-{"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1},
-{"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml"},
+{"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1, "omit_default": True},
+{"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1, "omit_default": True},
+{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "omit_default": True},
 {"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
 {"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
     # Anima: Timestep & Weighting (training core for DiT)
     # 注：移除 flux_shift 选项——本项目不训练 Flux，保留会造成"支持 Flux"的误导。
     {"key": "timestep_sampling", "type": "select", "default": "sigmoid", "section": "training", "desc_key": "field.timestep_sampling", "target": "toml", "group": "anima", "options": [{"v": "sigmoid", "l": "sigmoid", "dk": "opt.timestep_sampling_sigmoid"}, {"v": "sigma", "l": "sigma", "dk": "opt.timestep_sampling_sigma"}, {"v": "uniform", "l": "uniform", "dk": "opt.timestep_sampling_uniform"}, {"v": "shift", "l": "shift", "dk": "opt.timestep_sampling_shift"}]},
-    {"key": "sigmoid_scale", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.sigmoid_scale", "target": "toml", "step": 0.001, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift"]}},
-    {"key": "discrete_flow_shift", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.discrete_flow_shift", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "shift"}},
+    {"key": "sigmoid_scale", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.sigmoid_scale", "target": "toml", "step": 0.001, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift"]}, "omit_default": True},
+    {"key": "discrete_flow_shift", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.discrete_flow_shift", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "shift"}, "omit_default": True},
     {"key": "weighting_scheme", "type": "select", "default": "uniform", "section": "training", "desc_key": "field.weighting_scheme", "target": "toml", "group": "anima", "options": [{"v": "uniform", "l": "uniform", "dk": "opt.weighting_scheme_uniform"}, {"v": "sigma_sqrt", "l": "sigma_sqrt", "dk": "opt.weighting_scheme_sigma_sqrt"}, {"v": "logit_normal", "l": "logit_normal", "dk": "opt.weighting_scheme_logit_normal"}, {"v": "mode", "l": "mode", "dk": "opt.weighting_scheme_mode"}, {"v": "cosmap", "l": "cosmap", "dk": "opt.weighting_scheme_cosmap"}, {"v": "none", "l": "none", "dk": "opt.weighting_scheme_none"}]},
-    {"key": "logit_mean", "type": "number", "default": 0.0, "section": "training", "desc_key": "field.logit_mean", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "logit_normal"}},
-    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "logit_normal"}},
-    {"key": "mode_scale", "type": "number", "default": 1.29, "section": "training", "desc_key": "field.mode_scale", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "mode"}},
+    {"key": "logit_mean", "type": "number", "default": 0.0, "section": "training", "desc_key": "field.logit_mean", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "logit_normal"}, "omit_default": True},
+    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "logit_normal"}, "omit_default": True},
+    {"key": "mode_scale", "type": "number", "default": 1.29, "section": "training", "desc_key": "field.mode_scale", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "weighting_scheme", "eq": "mode"}, "omit_default": True},
     # Anima: 时间步范围控制（advanced）
     {"key": "min_timestep", "type": "number", "section": "training", "desc_key": "field.min_timestep", "target": "toml", "min": 0, "max": 999, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.min_timestepHint"},
     {"key": "max_timestep", "type": "number", "default": "", "section": "training", "desc_key": "field.max_timestep", "target": "toml", "min": 1, "max": 1000, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.max_timestepHint"},
@@ -122,12 +131,14 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "cross_attn_lr", "type": "text", "section": "optimizer", "desc_key": "field.cross_attn_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.cross_attn_lrHint"},
     {"key": "mlp_lr", "type": "text", "section": "optimizer", "desc_key": "field.mlp_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.mlp_lrHint"},
     {"key": "mod_lr", "type": "text", "section": "optimizer", "desc_key": "field.mod_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.mod_lrHint"},
+    # llm_adapter_path：与 llm_adapter_lr 配套，Anima 单独的 LLM adapter 权重路径
+    {"key": "llm_adapter_path", "type": "text", "default": "", "section": "optimizer", "desc_key": "field.llm_adapter_path", "target": "toml", "group": "anima", "advanced": True, "role": "file-model", "hint_key": "field.llm_adapter_pathHint"},
     {"key": "llm_adapter_lr", "type": "text", "section": "optimizer", "desc_key": "field.llm_adapter_lr", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.llm_adapter_lrHint"},
 {"key": "lr_scheduler", "type": "select", "default": "cosine_with_restarts", "section": "optimizer", "desc_key": "field.lr_scheduler", "target": "toml", "options": [{"v": "cosine_with_restarts", "l": "cosine_with_restarts", "dk": "opt.lr_scheduler_cosine_with_restarts"}, {"v": "cosine", "l": "cosine", "dk": "opt.lr_scheduler_cosine"}, {"v": "linear", "l": "linear", "dk": "opt.lr_scheduler_linear"}, {"v": "polynomial", "l": "polynomial", "dk": "opt.lr_scheduler_polynomial"}, {"v": "constant", "l": "constant", "dk": "opt.lr_scheduler_constant"}, {"v": "constant_with_warmup", "l": "constant_with_warmup", "dk": "opt.lr_scheduler_constant_with_warmup"}], "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": "constant"}, {"watch": "optimizer_type", "when": "AdamWScheduleFree", "set": "constant"}, {"watch": "optimizer_type", "when": "prodigyplus.ProdigyPlusScheduleFree", "set": "constant"}], "readonly_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens", "_or": ["AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"], "reason_key": "field.lr_scheduler_locked"}},
-{"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "target": "toml", "min": 0, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}], "readonly_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens", "reason_key": "field.lr_warmup_steps_emoLocked"}},
-{"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "target": "toml", "min": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"}},
-{"key": "lr_scheduler_power", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lr_scheduler_power", "target": "toml", "min": 0.1, "step": 0.1, "show_if": {"key": "lr_scheduler", "eq": "polynomial"}},
-{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "step": 0.1, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}]},
+{"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "target": "toml", "min": 0, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}], "readonly_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens", "reason_key": "field.lr_warmup_steps_emoLocked"}, "omit_default": True},
+{"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "target": "toml", "min": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"}, "omit_default": True},
+{"key": "lr_scheduler_power", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lr_scheduler_power", "target": "toml", "min": 0.1, "step": 0.1, "show_if": {"key": "lr_scheduler", "eq": "polynomial"}, "omit_default": True},
+{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "step": 0.1, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}], "omit_default": True},
 {"key": "weight_decay", "type": "number", "section": "optimizer", "desc_key": "field.weight_decay", "target": "merged", "step": 0.001, "hint_key": "field.weight_decayHint", "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0.01}]},
     # EmoSens 专用：收敛灵敏度（stopcoef）
     {"key": "stopcoef", "type": "number", "default": 0.04, "section": "optimizer", "desc_key": "field.stopcoef", "target": "merged", "min": 0.001, "max": 1.0, "step": 0.001, "hint_key": "field.stopcoefHint", "show_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens"}},
@@ -145,24 +156,24 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "came_eps2", "type": "text", "section": "optimizer", "desc_key": "field.came_eps2", "target": "merged", "hint_key": "field.came_eps2Hint", "show_if": {"key": "optimizer_type", "eq": "pytorch_optimizer.CAME"}},
 {"key": "optimizer_args_custom", "type": "textarea", "default": "", "section": "optimizer", "desc_key": "field.optimizer_args_custom", "target": "ui", "hint_key": "field.optimizer_args_customHint", "advanced": True},
 # ── Regularization & Loss ──
-{"key": "loss_type", "type": "select", "default": "l2", "section": "regularization", "desc_key": "field.loss_type", "target": "toml", "options": [{"v": "l2", "l": "L2", "dk": "opt.loss_type_l2"}, {"v": "l1", "l": "L1", "dk": "opt.loss_type_l1"}, {"v": "huber", "l": "Huber", "dk": "opt.loss_type_huber"}, {"v": "smooth_l1", "l": "Smooth L1", "dk": "opt.loss_type_smooth_l1"}]},
-{"key": "huber_schedule", "type": "select", "default": "snr", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}]},
-{"key": "huber_c", "type": "number", "default": 0.1, "section": "regularization", "desc_key": "field.huber_c", "target": "toml", "step": 0.01, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}},
-{"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}},
+{"key": "loss_type", "type": "select", "default": "l2", "section": "regularization", "desc_key": "field.loss_type", "target": "toml", "options": [{"v": "l2", "l": "L2", "dk": "opt.loss_type_l2"}, {"v": "l1", "l": "L1", "dk": "opt.loss_type_l1"}, {"v": "huber", "l": "Huber", "dk": "opt.loss_type_huber"}, {"v": "smooth_l1", "l": "Smooth L1", "dk": "opt.loss_type_smooth_l1"}], "omit_default": True},
+{"key": "huber_schedule", "type": "select", "default": "snr", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}], "omit_default": True},
+{"key": "huber_c", "type": "number", "default": 0.1, "section": "regularization", "desc_key": "field.huber_c", "target": "toml", "step": 0.01, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
+{"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
 {"key": "min_snr_gamma", "type": "number", "section": "regularization", "desc_key": "field.min_snr_gamma", "target": "toml", "step": 0.1, "hint_key": "field.min_snr_gammaHint", "advanced": True},
-{"key": "debiased_estimation_loss", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.debiased_estimation_loss", "target": "toml", "advanced": True},
+{"key": "debiased_estimation_loss", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.debiased_estimation_loss", "target": "toml", "advanced": True, "omit_default": True},
 {"key": "noise_offset", "type": "number", "section": "regularization", "desc_key": "field.noise_offset", "target": "toml", "step": 0.001, "hint_key": "field.noise_offsetHint"},
-{"key": "noise_offset_random_strength", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.noise_offset_random_strength", "target": "toml", "show_if": {"key": "noise_offset", "neq": ""}, "advanced": True},
+{"key": "noise_offset_random_strength", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.noise_offset_random_strength", "target": "toml", "show_if": {"key": "noise_offset", "neq": ""}, "advanced": True, "omit_default": True},
 {"key": "adaptive_noise_scale", "type": "number", "section": "regularization", "desc_key": "field.adaptive_noise_scale", "target": "toml", "step": 0.001, "show_if": {"key": "noise_offset", "neq": ""}, "advanced": True},
 {"key": "multires_noise_iterations", "type": "number", "section": "regularization", "desc_key": "field.multires_noise_iterations", "target": "toml", "min": 0, "step": 1, "group": ["sd", "sdxl"], "advanced": True},
 {"key": "multires_noise_discount", "type": "number", "default": 0.3, "section": "regularization", "desc_key": "field.multires_noise_discount", "target": "toml", "step": 0.01, "show_if": {"key": "multires_noise_iterations", "neq": ""}, "group": ["sd", "sdxl"], "advanced": True},
 {"key": "ip_noise_gamma", "type": "number", "section": "regularization", "desc_key": "field.ip_noise_gamma", "target": "toml", "step": 0.001, "advanced": True},
-{"key": "ip_noise_gamma_random_strength", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.ip_noise_gamma_random_strength", "target": "toml", "show_if": {"key": "ip_noise_gamma", "neq": ""}, "advanced": True},
+{"key": "ip_noise_gamma_random_strength", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.ip_noise_gamma_random_strength", "target": "toml", "show_if": {"key": "ip_noise_gamma", "neq": ""}, "advanced": True, "omit_default": True},
 # zero_terminal_snr 需配合 v_parameterization（sd-scripts 未启用 v_pred 时会警告"结果异常"）
-{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": ["sd", "sdxl"], "show_if": {"key": "v_parameterization", "eq": True}},
+{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": ["sd", "sdxl"], "show_if": {"key": "v_parameterization", "eq": True}, "omit_default": True},
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": ["sd", "sdxl"]},
+{"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": ["sd", "sdxl"], "omit_default": True},
 {"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "sdpa", "l": "sdpa", "dk": "opt.attn_mode_sdpa"}, {"v": "sageattn", "l": "sageattn", "dk": "opt.attn_mode_sageattn"}]},
 {"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True}]},
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
@@ -173,14 +184,17 @@ FIELDS: list[dict[str, Any]] = [
 # 文本编码器输出缓存：默认开启（配合默认 network_train_unet_only=True，纯收益，大幅省显存提速）
 {"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint"},
 {"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml", "auto_value": [{"watch": "cache_text_encoder_outputs_to_disk", "when": True, "set_target": "cache_text_encoder_outputs", "set": True}]},
-{"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": ["sd", "sdxl"]},
-{"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml"},
+{"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": ["sd", "sdxl"], "omit_default": True},
+{"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
     {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima"},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint", "advanced": True},
     {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 32, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.blocks_to_swapHint"},
-    {"key": "unsloth_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.unsloth_offload_checkpointing", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.unsloth_offload_checkpointingHint"},
+    # cpu_offload_checkpointing：梯度检查点时把张量卸载到 CPU 省显存（与 unsloth_offload_checkpointing 互斥）。
+    # adapter.py 已有互斥校验，此前 registry 无字段导致该校验为死代码，此处补全。
+    {"key": "cpu_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cpu_offload_checkpointing", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.cpu_offload_checkpointingHint", "omit_default": True},
+    {"key": "unsloth_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.unsloth_offload_checkpointing", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.unsloth_offload_checkpointingHint", "omit_default": True},
     # torch.compile（通用 accelerate 版，SDXL 用；Anima 请用下方 compile 系列）
     {"key": "torch_compile", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.torch_compile", "target": "toml", "group": ["sd", "sdxl"], "hint_key": "field.torch_compileHint"},
     {"key": "dynamo_backend", "type": "select", "default": "inductor", "section": "performance", "desc_key": "field.dynamo_backend", "target": "toml", "show_if": {"key": "torch_compile", "eq": True}, "hint_key": "field.dynamo_backendHint", "group": ["sd", "sdxl"], "options": [{"v": "inductor", "l": "inductor", "dk": "opt.dynamo_backend_inductor"}, {"v": "eager", "l": "eager", "dk": "opt.dynamo_backend_eager"}, {"v": "cudagraphs", "l": "cudagraphs", "dk": "opt.dynamo_backend_cudagraphs"}]},
@@ -202,9 +216,9 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "save_every_n_epochs", "type": "number", "default": 2, "section": "save", "desc_key": "field.save_every_n_epochs", "target": "toml", "min": 1},
     {"key": "save_every_n_steps", "type": "number", "default": "", "section": "save", "desc_key": "field.save_every_n_steps", "target": "toml", "min": 1, "hint_key": "field.save_every_n_stepsHint"},
     {"key": "save_last_n_epochs", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs", "target": "toml", "min": 1, "hint_key": "field.save_last_n_epochsHint", "advanced": True},
-{"key": "save_state", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state", "target": "toml"},
+{"key": "save_state", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state", "target": "toml", "omit_default": True},
     {"key": "save_last_n_epochs_state", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs_state", "target": "toml", "min": 1, "show_if": {"key": "save_state", "eq": True}},
-    {"key": "save_state_on_train_end", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state_on_train_end", "target": "toml", "advanced": True},
+    {"key": "save_state_on_train_end", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state_on_train_end", "target": "toml", "advanced": True, "omit_default": True},
 {"key": "logging_dir", "type": "text", "default": "./logs", "section": "save", "desc_key": "field.logging_dir", "target": "toml", "hidden": True},
 {"key": "log_with", "type": "select", "default": "tensorboard", "section": "save", "desc_key": "field.log_with", "target": "toml", "hidden": True, "options": [{"v": "tensorboard", "l": "TensorBoard", "dk": "opt.log_with_tensorboard"}, {"v": "wandb", "l": "Weights & Biases", "dk": "opt.log_with_wandb"}, {"v": "all", "l": "TensorBoard + WandB", "dk": "opt.log_with_all"}]},
 # ── Caption ──
@@ -213,8 +227,8 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "shuffle_caption", "type": "toggle", "default": True, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
-{"key": "keep_tokens", "type": "number", "default": 0, "section": "caption", "desc_key": "field.keep_tokens", "target": "toml", "min": 0},
-{"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml"},
+{"key": "keep_tokens", "type": "number", "default": 0, "section": "caption", "desc_key": "field.keep_tokens", "target": "toml", "min": 0, "omit_default": True},
+{"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml", "omit_default": True},
 {"key": "caption_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
 {"key": "caption_dropout_every_n_epochs", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_every_n_epochs", "target": "toml", "min": 0},
 {"key": "caption_tag_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
@@ -268,6 +282,7 @@ _FIELD_KEY_MAP = {
     "readonly_if": "readonlyIf",
     "reason_key": "reasonKey",
     "set_target": "setTarget",
+    "omit_default": "omitDefault",
 }
 
 

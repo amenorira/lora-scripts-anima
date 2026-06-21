@@ -381,71 +381,110 @@ _fa_cache: dict[str, dict] = {}  # key: source name → {candidates, fetch_error
 _fa_cache_lock = _install_thr.Lock()
 _FA_CACHE_TTL = 300  # 5 分钟，避免频繁请求 GitHub API 触发限流
 
+# 环境检测（torch import + nvidia-smi subprocess）较慢且会话内基本不变，做 TTL 缓存。
+# 避免每次进入环境管理页都重复跑 nvidia-smi（最长 10s 超时）。
+_fa_env_cache: dict | None = None
+_fa_env_cache_ts: float = 0.0
+_FA_ENV_CACHE_TTL = 600.0  # 10 分钟
+
+# 缓存 install_flash_attn 工具模块的导出函数，避免每次调用都重新 exec_module。
+_fa_tool_funcs: tuple | None = None
+_fa_tool_lock = _install_thr.Lock()
+
 
 def _import_flash_attn_tool():
-    """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。"""
-    import importlib.util
-    import sys
-    _root = REPO_ROOT
-    _path = _root / "tools" / "install_flash_attn.py"
-    if not _path.exists():
-        raise ImportError(f"install_flash_attn.py not found at {_path}")
-    spec = importlib.util.spec_from_file_location("install_flash_attn", _path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["install_flash_attn"] = mod
-    spec.loader.exec_module(mod)
-    return mod.detect_env, mod.current_status, mod.fetch_candidates, mod.install_wheel, mod.proxy_download_url
+    """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。结果缓存。"""
+    global _fa_tool_funcs
+    with _fa_tool_lock:
+        if _fa_tool_funcs is not None:
+            return _fa_tool_funcs
+        import importlib.util
+        import sys
+        _root = REPO_ROOT
+        _path = _root / "tools" / "install_flash_attn.py"
+        if not _path.exists():
+            raise ImportError(f"install_flash_attn.py not found at {_path}")
+        spec = importlib.util.spec_from_file_location("install_flash_attn", _path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["install_flash_attn"] = mod
+        spec.loader.exec_module(mod)
+        _fa_tool_funcs = (
+            mod.detect_env, mod.current_status, mod.fetch_candidates,
+            mod.install_wheel, mod.proxy_download_url,
+        )
+        return _fa_tool_funcs
+
+
+def _flash_attn_status_sync(cache_key: str) -> dict:
+    """flash_attn 状态检测的同步实现。
+
+    import torch / nvidia-smi / urllib GitHub API 均为阻塞调用，由 flash_attn_status
+    通过 asyncio.to_thread 放到线程池执行，避免阻塞 FastAPI 事件循环——否则会拖慢
+    /api/health 健康检查，触发前端"后端断开"误报。
+    """
+    import time
+    import os as _os
+    detect_env, current_status, fetch_candidates, _, _ = _import_flash_attn_tool()
+
+    # 环境检测做 TTL 缓存：torch import + nvidia-smi 会话内复用，省去重复子进程开销
+    global _fa_env_cache, _fa_env_cache_ts
+    now = time.time()
+    env = _fa_env_cache
+    if env is None or (now - _fa_env_cache_ts) > _FA_ENV_CACHE_TTL:
+        env = detect_env()
+        _fa_env_cache = env
+        _fa_env_cache_ts = now
+
+    status = current_status()
+
+    # 线程安全地读取缓存
+    with _fa_cache_lock:
+        cached = _fa_cache.get(cache_key)
+        cache_expired = cached is None or (now - cached.get("ts", 0)) > _FA_CACHE_TTL
+
+    if cache_expired:
+        candidates, fetch_error = fetch_candidates(env, source=cache_key)
+        from_disk = False
+        # 检测是否来自磁盘缓存（fetch_error 中包含 "回退磁盘缓存" 字样）
+        if fetch_error and "回退磁盘缓存" in str(fetch_error):
+            from_disk = True
+        slim = [
+            {"url": c["url"], "name": c["name"], "notes": c.get("notes", c["notes"]) if isinstance(c, dict) else [], "usable": c["usable"]}
+            for c in candidates[:20]
+        ]
+        # 线程安全地写入缓存
+        with _fa_cache_lock:
+            _fa_cache[cache_key] = {
+                "candidates": slim, "fetch_error": fetch_error,
+                "from_disk": from_disk, "ts": now
+            }
+
+    with _fa_cache_lock:
+        c = _fa_cache[cache_key].copy()
+    token_set = bool(
+        _os.environ.get("FA_GITHUB_TOKEN") or _os.environ.get("GITHUB_TOKEN")
+    )
+    return {
+        "installed": status["installed"], "version": status["version"],
+        "env": env, "candidates": c["candidates"],
+        "fetch_error": c["fetch_error"],
+        "from_disk_cache": c.get("from_disk", False),
+        "token_set": token_set,
+        "source": cache_key,
+    }
 
 
 @router.get("/flash-attention/status")
 async def flash_attn_status(source: str = "") -> dict:
     """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。
     source: 可选 'default'|'mirror'|'fallback'，空则用默认源。
+
+    阻塞操作通过 asyncio.to_thread 放到线程池执行，避免阻塞事件循环导致
+    /api/health 健康检查超时（否则前端会误报"后端断开"）。
     """
-    import time
-    import os as _os
-    detect_env, current_status, fetch_candidates, _, _ = _import_flash_attn_tool()
     cache_key = source or "default"
     try:
-        status = current_status()
-        env = detect_env()
-        now = time.time()
-
-        # 线程安全地读取缓存
-        with _fa_cache_lock:
-            cached = _fa_cache.get(cache_key)
-            cache_expired = cached is None or (now - cached.get("ts", 0)) > _FA_CACHE_TTL
-
-        if cache_expired:
-            candidates, fetch_error = fetch_candidates(env, source=cache_key)
-            from_disk = False
-            # 检测是否来自磁盘缓存（fetch_error 中包含 "回退磁盘缓存" 字样）
-            if fetch_error and "回退磁盘缓存" in str(fetch_error):
-                from_disk = True
-            slim = [
-                {"url": c["url"], "name": c["name"], "notes": c.get("notes", c["notes"]) if isinstance(c, dict) else [], "usable": c["usable"]}
-                for c in candidates[:20]
-            ]
-            # 线程安全地写入缓存
-            with _fa_cache_lock:
-                _fa_cache[cache_key] = {
-                    "candidates": slim, "fetch_error": fetch_error,
-                    "from_disk": from_disk, "ts": now
-                }
-
-        with _fa_cache_lock:
-            c = _fa_cache[cache_key].copy()
-        token_set = bool(
-            _os.environ.get("FA_GITHUB_TOKEN") or _os.environ.get("GITHUB_TOKEN")
-        )
-        return {
-            "installed": status["installed"], "version": status["version"],
-            "env": env, "candidates": c["candidates"],
-            "fetch_error": c["fetch_error"],
-            "from_disk_cache": c.get("from_disk", False),
-            "token_set": token_set,
-            "source": cache_key,
-        }
+        return await asyncio.to_thread(_flash_attn_status_sync, cache_key)
     except Exception as e:
         log.error(f"flash_attn status error: {e}")
         return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(e)}
@@ -454,7 +493,6 @@ async def flash_attn_status(source: str = "") -> dict:
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
     """安装 flash_attn wheel（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
-    detect_env, current_status, fetch_candidates, _, proxy_download_url = _import_flash_attn_tool()
     try:
         body = await request.json()
         url = body.get("url", None)
@@ -465,19 +503,24 @@ async def flash_attn_install(request: Request) -> dict:
 
     src = source or "default"
     if url is None:
-        env = detect_env()
-        candidates, _ = fetch_candidates(env, source=src)
-        url = None
-        for c in candidates:
-            if c["usable"]:
-                url = c["url"]
-                break
+        # detect_env + fetch_candidates 为阻塞调用（nvidia-smi / GitHub API），
+        # 放线程池避免阻塞事件循环导致健康检查超时。
+        def _resolve():
+            detect_env, _, fetch_candidates, _, _ = _import_flash_attn_tool()
+            env = detect_env()
+            candidates, _ = fetch_candidates(env, source=src)
+            for c in candidates:
+                if c["usable"]:
+                    return c["url"]
+            return None
+        url = await asyncio.to_thread(_resolve)
         if url is None:
             return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
 
-    # 用共享逻辑选择下载 URL 的代理。
+    # 用共享逻辑选择下载 URL 的代理（纯函数，无 IO）。
     # default 源：直连优先（proxy_download_url 对 default 返回原 URL，由 _start_install_job 重试兜底）；
     # mirror 源：返回镜像 URL，避免直连下载在受限网络失败。
+    _, _, _, _, proxy_download_url = _import_flash_attn_tool()
     url = proxy_download_url(url, source=src)
 
     import sys
@@ -489,9 +532,10 @@ async def flash_attn_install(request: Request) -> dict:
 #  xformers 环境管理 API
 # ═══════════════════════════════════════════════════════════
 
-@router.get("/xformers/status")
-async def xformers_status() -> dict:
-    """返回 xformers 安装状态 + 基础环境信息。"""
+def _xformers_status_sync() -> dict:
+    """xformers 状态检测的同步实现。import torch 首次加载可能数秒，
+    由 xformers_status 通过 asyncio.to_thread 放线程池执行，避免阻塞事件循环。
+    """
     import importlib.metadata as _imd
     import sys
 
@@ -521,12 +565,123 @@ async def xformers_status() -> dict:
     return {"installed": installed, "version": ver, "env": env}
 
 
+@router.get("/xformers/status")
+async def xformers_status() -> dict:
+    """返回 xformers 安装状态 + 基础环境信息。
+
+    import torch 首次加载可能数秒，通过 asyncio.to_thread 放到线程池，
+    避免阻塞事件循环导致 /api/health 健康检查超时。
+    """
+    return await asyncio.to_thread(_xformers_status_sync)
+
+
 @router.post("/xformers/install")
 async def xformers_install() -> dict:
     """pip install xformers（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
     import sys
     job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "xformers"])
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
+
+
+# ═══════════════════════════════════════════════════════════
+#  Triton 环境检测 API
+# ═══════════════════════════════════════════════════════════
+
+
+def _triton_status_sync() -> dict:
+    """Triton 安装状态检测。torch.compile 的 inductor 后端需要 Triton 生成 GPU 代码。
+    检测顺序：triton（Linux）、triton-windows（Windows 移植版）。两者都无时给出分平台指引。"""
+    import importlib.metadata as _imd
+    import sys
+
+    installed = False
+    ver = None
+    package = None
+    # 先查 triton（Linux）
+    try:
+        ver = _imd.version("triton")
+        installed = True
+        package = "triton"
+    except _imd.PackageNotFoundError:
+        pass
+    # 再查 triton-windows（Windows）
+    if not installed:
+        try:
+            ver = _imd.version("triton-windows")
+            installed = True
+            package = "triton-windows"
+        except _imd.PackageNotFoundError:
+            pass
+
+    platform_note = None
+    if not installed:
+        if sys.platform == "win32":
+            platform_note = (
+                "Triton 未安装。Windows 需先安装 VC++ Redistributable，"
+                "然后在环境管理页一键安装 triton-windows（triton-lang 官方移植 v3.7，版本约束 <3.8） / "
+                "Triton not installed. Windows: install VC++ Redist first, "
+                "then one-click install triton-windows (official triton-lang port v3.7, version <3.8)"
+            )
+        else:
+            platform_note = (
+                "Triton 未安装。Linux 用户: pip install triton / "
+                "Triton not installed. Linux: pip install triton"
+            )
+
+    return {"installed": installed, "version": ver, "package": package, "platform_note": platform_note}
+
+
+@router.get("/triton/status")
+async def triton_status() -> dict:
+    """返回 Triton 安装状态（compile 字段的依赖）。"""
+    return await asyncio.to_thread(_triton_status_sync)
+
+
+@router.post("/triton/install")
+async def triton_install() -> dict:
+    """pip install triton（Linux）或 triton-windows（Windows）。后台执行，通过 /api/install-log/{job_id} 轮询进度。
+
+    根据 PyTorch 版本自动选择兼容的 Triton 版本：
+        PyTorch 2.9  → Triton 3.5
+        PyTorch 2.10 → Triton 3.6
+        PyTorch 2.11 → Triton 3.6
+        PyTorch 2.12 → Triton 3.7
+    Windows 使用 triton-lang 官方移植版（https://github.com/triton-lang/triton-windows）。
+    """
+    import sys
+
+    # 检测 PyTorch 版本以选择兼容的 Triton
+    triton_ver = ""
+    try:
+        from packaging.version import Version
+    except ImportError:
+        Version = None  # fallback: 不带版本约束
+
+    if Version is not None:
+        try:
+            import torch
+            tv = torch.__version__.split("+")[0]  # 去掉 +cu128 后缀
+            v = Version(tv)
+            # PyTorch → Triton 兼容性映射
+            if v >= Version("2.12"):
+                triton_ver = ">=3.7,<3.8"
+            elif v >= Version("2.10"):
+                triton_ver = ">=3.6,<3.7"
+            elif v >= Version("2.9"):
+                triton_ver = ">=3.5,<3.6"
+            # <2.9: 不带版本约束，让 pip 解析
+        except Exception:
+            pass  # torch 未安装或不兼容
+
+    if sys.platform == "win32":
+        pkg = "triton-windows"
+    else:
+        pkg = "triton"
+    if triton_ver:
+        pkg = f"{pkg}{triton_ver}"
+
+    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "-U", "--progress-bar", "on", pkg])
+    return {"success": True, "job_id": job_id, "message": f"Installing {pkg} / 正在安装 {pkg}..."}
 
 
 # ═══════════════════════════════════════════════════════════

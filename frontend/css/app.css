@@ -860,6 +860,10 @@ input[type="checkbox"]:focus-visible {
   font-size: 12px; color: var(--text-tertiary); line-height: 1.45;
   padding-top: 3px;
 }
+.field-hint-warn {
+  font-size: 12px; color: var(--warning, #d97706); line-height: 1.45;
+  padding-top: 3px;
+}
 .field-readonly-warn {
   font-size: 11.5px;
   color: #d97706;
@@ -1462,6 +1466,24 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   display: flex; flex-direction: column; overflow: visible;
   position: relative;
 }
+
+/* 拖拽手柄：贴面板左边缘的竖条，鼠标拖动调整宽度（仅大屏）。
+   right-panel overflow:visible 保证手柄外露搭在 main/panel 交界上。 */
+.panel-resizer {
+  position: absolute;
+  left: -3px;
+  top: 0; bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.panel-resizer:hover,
+.panel-resizer:active { background: var(--accent); }
+/* 拖拽中：全局禁选文本 + 统一 col-resize 光标，避免拖到 main 区时光标闪烁 */
+body.panel-resizing,
+body.panel-resizing * { cursor: col-resize !important; user-select: none !important; }
 
 /* ── 左侧分组导航轨道（#1）：脱离文档流 fixed 贴在参数区左边缘、垂直居中；
      收起=框内一列彩色圆点，hover 展开框变宽 + 圆点右侧淡入文字。
@@ -2337,6 +2359,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
     background: var(--bg-surface);
     display: flex; flex-direction: column;
   }
+  /* 浮层模式固定宽度滑入滑出，拖拽手柄无意义 */
+  .panel-resizer { display: none !important; }
   .right-panel.open {
     transform: translateX(0);
   }
@@ -2722,6 +2746,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-badge-ok  { background: var(--success); color: #fff; }
 .env-badge-warn { background: var(--warning); color: #fff; }
 .env-badge-err  { background: var(--danger); color: #fff; }
+.env-badge-info { background: var(--accent-soft); color: var(--text-secondary); }
+.env-badge-info code { font-family: var(--font-mono); font-size: 10.5px; }
 .env-badge-loading { background: var(--accent-soft); color: var(--text-secondary); }
 
 /* ── Row detail (indented content) ──────────────────────── */

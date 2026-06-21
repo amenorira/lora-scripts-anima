@@ -11,6 +11,12 @@
       var t = localStorage.getItem('anima-theme') || 'auto';
       var d = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+      // 恢复右侧面板宽度（大屏拖拽记忆）：在 CSS 首帧前设 --panel-w，避免刷新时宽度闪现。
+      // 仅大屏生效（≤1100px 浮层模式由媒体查询直接给 width，不读此变量）。
+      var pw = parseInt(localStorage.getItem('anima-panel-w'), 10);
+      if (pw >= 300 && pw <= 760 && window.innerWidth > 1100) {
+        document.documentElement.style.setProperty('--panel-w', pw + 'px');
+      }
     })();
   </script>
   <link rel="stylesheet" href="/anima-ui/css/app.css">
@@ -1264,6 +1270,8 @@
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ open: rightPanelOpen || window.innerWidth > 1100 }">
+      <!-- 拖拽手柄：贴面板左边缘，鼠标拖动调整宽度并持久化（仅大屏启用） -->
+      <div class="panel-resizer" id="panelResizer" x-show="showRightPanel()" title="拖拽调整宽度，双击恢复默认"></div>
       <!-- Training: TOML preview + actions -->
       <template x-if="currentRoute && currentRoute.startsWith('train-')">
         <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">

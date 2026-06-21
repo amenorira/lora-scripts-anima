@@ -44,19 +44,33 @@ window.trainingCoreMixin = {
   currentTrainTypeLabel: 'Anima LoRA',
 
   switchTrainType(v) {
+    // 训练类型变化后，旧的预设对比数据已无意义，清理避免误显示"已修改"标识
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
     // Update display labels and descriptions
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
-    // Auto-set network_module based on train type
+    // 为新训练类型的可见字段补充默认值（已有值保留）。
+    // 切换类型后，新类型专有字段若未初始化会显示空，且 omitDefault 比较失效；
+    // 这里复用 buildTrainForm 的 default 构建逻辑，只填缺失的 key。
+    const newDefaults = this._buildFormDefaults(v);
+    for (const k in newDefaults) {
+      if (this.form[k] === undefined || this.form[k] === null) {
+        this.form[k] = newDefaults[k];
+      }
+    }
+    this.formDefaults = { ...newDefaults };
+
+    // network_module 兼容性修正：anima 用 networks.lora_anima，SDXL 用 networks.lora。
+    // 放在 default 补充之后、渲染之前，确保 animaSelect 组件初始化时读到正确值。
     if (v === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
     } else if (v !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
       this.form.network_module = 'networks.lora';
     }
-    // Also update the default so individual field reset uses the correct value
-    this.formDefaults.network_module = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
 
     // Re-render form with new train type
     this.renderTrainingForm(v, null);
@@ -65,6 +79,40 @@ window.trainingCoreMixin = {
     this.setupReadonlyWatchers();
     this.updateToml();
     this.loadPresets();
+
+    // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
+    // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
+    // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
+    const targetMod = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
+    this.$nextTick(() => {
+      if (this.form.network_module !== targetMod) {
+        this.form.network_module = targetMod;
+        this.updateToml();
+      }
+    });
+  },
+
+  // 构建指定训练类型的字段默认值字典（与 buildTrainForm 共用逻辑）。
+  _buildFormDefaults(trainType) {
+    const defaults = {};
+    const allSections = window.getVisibleSections(trainType);
+    allSections.forEach(s => { s.fields.forEach(f => {
+      const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
+      if (hasExplicitDefault) {
+        defaults[f.key] = f.default;
+      } else if (!f.hidden) {
+        if (f.type === 'toggle') defaults[f.key] = false;
+        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
+        else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
+        else defaults[f.key] = '';
+      }
+    }); });
+    defaults.model_train_type = trainType;
+    // Adjust network_module default based on train type
+    if (trainType === 'anima-lora') {
+      defaults.network_module = 'networks.lora_anima';
+    }
+    return defaults;
   },
 
   // ── Training Form ──────────────────────────────────────
@@ -88,25 +136,7 @@ window.trainingCoreMixin = {
       saved.model_train_type = routeTrainType;
     }
 
-    const defaults = {};
-    const allSections = window.getVisibleSections(trainType);
-    allSections.forEach(s => { s.fields.forEach(f => {
-      const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
-      if (hasExplicitDefault) {
-        defaults[f.key] = f.default;
-      } else if (!f.hidden) {
-        if (f.type === 'toggle') defaults[f.key] = false;
-        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
-        else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
-        else defaults[f.key] = '';
-      }
-    }); });
-    defaults.model_train_type = trainType;
-
-    // Adjust network_module default based on train type
-    if (trainType === 'anima-lora') {
-      defaults.network_module = 'networks.lora_anima';
-    }
+    const defaults = this._buildFormDefaults(trainType);
 
     this.form = { ...defaults, ...(saved || {}) };
     // Ensure model_train_type is valid (saved may have been from another route)
@@ -155,8 +185,9 @@ window.trainingCoreMixin = {
       self._trainTypeWatcher = null;
     }
     self._trainTypeWatcher = self.$watch('form.model_train_type', (newVal, oldVal) => {
-      if (newVal !== oldVal) {
-        self.switchTrainType(newVal);
+      if (newVal !== oldVal && !self._switchInProgress) {
+        self._switchInProgress = true;
+        try { self.switchTrainType(newVal); } finally { self._switchInProgress = false; }
       }
     });
 
@@ -171,6 +202,12 @@ window.trainingCoreMixin = {
 
     // Start training status polling
     this.startTrainingStatusPoll();
+
+    // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
+    // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
+    this.faRefresh(true).catch(() => {});
+    this.xfRefresh(true).catch(() => {});
+    if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
     // Apply pending preset if queued by applyPresetNavigate()
     if (this._pendingPreset) {
@@ -574,6 +611,10 @@ window.trainingCoreMixin = {
         // Dynamic placeholder that updates when optimizer_type changes
         const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
+      } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
+        // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
+        const _phVal = String(field.default).replace(/"/g, '&quot;');
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}">`;
       } else {
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)">`;
       }
@@ -676,17 +717,33 @@ window.trainingCoreMixin = {
       </div>
       ${fullWidthRow}
       <div class="field-diff-info" x-show="formDiffMap && formDiffMap['${dataKey}']" x-cloak>
-        <template x-if="formDiffMap['${dataKey}'].type === 'modified'">
-          <span class="field-diff-change"><span class="field-diff-old" x-text="String(formDiffMap['${dataKey}'].oldVal)"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String(formDiffMap['${dataKey}'].newVal)"></span></span>
+        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified'">
+          <span class="field-diff-change"><span class="field-diff-old" x-text="String((formDiffMap['${dataKey}']||{}).oldVal||'')"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span></span>
         </template>
-        <template x-if="formDiffMap['${dataKey}'].type === 'added'">
-          <span class="field-diff-type-added" x-text="String(formDiffMap['${dataKey}'].newVal)"></span>
+        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added'">
+          <span class="field-diff-type-added" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span>
         </template>
       </div>
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
+      ${this._getEnvHint(dataKey)}
       ${readonlyWarnHtml}
     </div>`;
+  },
+
+  // ── 环境联动提示：检查当前字段值依赖的后端是否已安装（Alpine 响应式）──
+  // x-show 与 faStatus/xfStatus/tritonStatus 及 form 值联动，环境数据异步到达后自动显示。
+  _getEnvHint(dataKey) {
+    switch (dataKey) {
+      case 'attn_mode':
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')||'Flash Attention not installed'}</div>`
+             + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+      case 'xformers':
+        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+      case 'compile':
+        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')||'Triton not installed'}</div>`;
+    }
+    return '';
   },
 
   copyFieldName(key) {
@@ -1006,6 +1063,12 @@ window.trainingCoreMixin = {
     }
 
     this.form[key] = value;
+    // model_train_type 切换：直接调用 switchTrainType，不依赖 $watch
+    //（applyPreset 等流程会临时禁用 watcher，存在未恢复的风险）
+    if (key === 'model_train_type' && value !== oldVal && !this._switchInProgress) {
+      this._switchInProgress = true;
+      try { this.switchTrainType(value); } finally { this._switchInProgress = false; }
+    }
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
 
@@ -1100,6 +1163,10 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
+    // 重置所有参数后，旧的预设对比数据无意义
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
     // Preserve current train type - don't reset it
     const currentTrainType = this.form.model_train_type;
     this.form = { ...this.formDefaults };

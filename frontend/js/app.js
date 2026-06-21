@@ -132,6 +132,8 @@ document.addEventListener('alpine:init', () => {
 
       this._startHealthCheck();
 
+      this._initPanelResizer();
+
       window.__anima = this;
     },
 
@@ -417,6 +419,62 @@ document.addEventListener('alpine:init', () => {
     t(key, fallback) {
       void this.locale;
       return window.t ? window.t(key, fallback) : (fallback||key);
+    },
+
+    // ── Right Panel Resizer ─────────────────────────────────
+    // 鼠标拖拽调整右侧面板宽度并持久化到 localStorage。仅大屏（>1100px）启用，
+    // 浮层模式（≤1100px）固定宽度滑入滑出，拖拽会破坏 fixed 定位体验。
+    // 宽度通过 CSS 变量 --panel-w 应用（而非 element inline width），这样：
+    //   1. 首帧渲染前由 index.html 的 blocking 脚本设好，无刷新闪现；
+    //   2. ≤1100px 媒体查询直接给 .right-panel width，不读 --panel-w，浮层模式不受拖拽值影响。
+    _PANEL_MIN_W: 300,
+    _PANEL_MAX_W: 760,
+    _PANEL_STORAGE_KEY: 'anima-panel-w',
+
+    _applyPanelWidth(px) {
+      document.documentElement.style.setProperty('--panel-w', px + 'px');
+    },
+
+    _initPanelResizer() {
+      const resizer = document.getElementById('panelResizer');
+      if (!resizer) return;
+      // 保存的宽度已由 index.html 的 blocking 脚本在首帧前应用到 --panel-w，这里无需再设。
+
+      // ≤1100px 浮层模式不启用拖拽
+      const mm = window.matchMedia('(min-width: 1101px)');
+      if (!mm.matches) return;
+
+      const clamp = (w) => Math.max(this._PANEL_MIN_W, Math.min(this._PANEL_MAX_W, w));
+
+      const onMove = (e) => {
+        // 面板右边缘贴视口右边 → 宽度 = 视口宽 - 鼠标 x
+        this._applyPanelWidth(clamp(window.innerWidth - e.clientX));
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.classList.remove('panel-resizing');
+        // 持久化最终宽度（从 CSS 变量读回，避免依赖 element style）
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--panel-w').trim();
+        const w = parseInt(raw, 10);
+        if (w >= this._PANEL_MIN_W && w <= this._PANEL_MAX_W) {
+          localStorage.setItem(this._PANEL_STORAGE_KEY, String(w));
+        }
+      };
+
+      resizer.addEventListener('mousedown', (e) => {
+        if (!mm.matches) return; // 拖拽中途切到小屏则忽略
+        e.preventDefault();
+        document.body.classList.add('panel-resizing');
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
+      // 双击手柄：清除自定义宽度，恢复 CSS 默认 clamp
+      resizer.addEventListener('dblclick', () => {
+        document.documentElement.style.removeProperty('--panel-w');
+        localStorage.removeItem(this._PANEL_STORAGE_KEY);
+      });
     },
 
   }));

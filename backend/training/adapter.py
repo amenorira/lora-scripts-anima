@@ -427,6 +427,25 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if key in SUPPORTED_FIELDS:
             if key == "attn_mode" and value in ("", None):
                 continue
+            # base_weights / base_weights_multiplier：sd-scripts argparse nargs="*"，期望 list。
+            # 前端传逗号分隔字符串，这里转成 list（weights→str list，multiplier→float list）。
+            if key in ("base_weights", "base_weights_multiplier") and isinstance(value, str):
+                parts = [p.strip() for p in value.split(",") if p.strip()]
+                if not parts:
+                    continue
+                if key == "base_weights_multiplier":
+                    try:
+                        value = [float(p) for p in parts]
+                    except ValueError:
+                        warnings.append(
+                            f"[Invalid] base_weights_multiplier contains non-numeric value: {value} / "
+                            f"base_weights_multiplier 含非数字值: {value}"
+                        )
+                        continue
+                else:
+                    value = [_normalize_path(p) for p in parts]
+                adapted[key] = value
+                continue
             if isinstance(value, str):
                 value = _normalize_path(value)
             adapted[key] = value
