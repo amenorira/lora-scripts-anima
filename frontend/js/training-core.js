@@ -1183,11 +1183,11 @@ window.trainingCoreMixin = {
    *  Returns the coerced value, or the original value if not coercible. */
   _coerceNum(v) {
     if (typeof v === 'string' && v.trim() !== '' && !isNaN(v) && !v.includes(',')) {
-      const trimmed = v.trim();
-      if (/^-?\d+\.?\d*[eE][+-]?\d+$/.test(trimmed)) {
-        return trimmed; // keep scientific notation as string
-      }
-      return Number(trimmed);
+      // 注意：科学计数法（如 "1e-4"）也走 Number() 转为数值。
+      // 之前刻意保留为字符串会导致 TOML 写成 learning_rate="1e-4"，
+      // 而 sd-scripts 经 --config_file 读 TOML 时不重跑 argparse 的 type=float，
+      // 字符串 LR 直达优化器在 step() 时触发 TypeError。
+      return Number(v.trim());
     }
     return v;
   },

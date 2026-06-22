@@ -27,7 +27,7 @@ logs/*
 !logs/.keep
 
 config/autosave/*
-config/presets/test*.toml
+config/presets/
 config
 
 vendor/sd-scripts/tests/

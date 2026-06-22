@@ -185,10 +185,10 @@ window.trainingTomlMixin = {
     const optArgs = [];
     const optType = form.optimizer_type;
 
-    // 1. 用户自定义参数（直接透传）
+    // 1. 用户自定义参数（直接透传，仅保留含 '=' 的行——sd-scripts 用 arg.split('=') 解析）
     const optCustom = form.optimizer_args_custom;
     if (optCustom && typeof optCustom === 'string') {
-      optArgs.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s));
+      optArgs.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s && s.includes('=')));
     }
 
     // 2. merged 字段规则：[formKey, argKey, defaultsByOptimizer]
@@ -227,7 +227,10 @@ window.trainingTomlMixin = {
       if (fieldDef && fieldDef.showIf && !this._fieldShowIfMet(fieldDef)) continue;
       const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
       if (defVal !== undefined && defVal !== null && String(val) === String(defVal)) continue;
-      const formatted = typeof val === 'boolean' ? String(val).toLowerCase() : String(val);
+      // optimizer_args 的值经 sd-scripts 的 ast.literal_eval 解析，
+      // 布尔必须用 Python 字面量 True/False（小写 true/false 会让 ast 崩溃）。
+      // 注意：network_args 的布尔仍用小写（各 network module 用 == "true" 比较，不走 ast）。
+      const formatted = typeof val === 'boolean' ? (val ? 'True' : 'False') : String(val);
       optArgs.push(rule.arg + '=' + formatted);
     }
 

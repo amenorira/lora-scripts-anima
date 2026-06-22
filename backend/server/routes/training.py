@@ -19,17 +19,7 @@ router = APIRouter()
 
 trainer_mapping = {
     "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
-    "sdxl-finetune": "./vendor/sd-scripts/sdxl_train.py",
-    "sd3-lora": "./vendor/sd-scripts/sd3_train_network.py",
-    "sd3-finetune": "./vendor/sd-scripts/sd3_train.py",
-    "flux-lora": "./vendor/sd-scripts/flux_train_network.py",
-    "flux-finetune": "./vendor/sd-scripts/flux_train.py",
-    "flux-controlnet": "./vendor/sd-scripts/flux_train_control_net.py",
     "anima-lora": "./vendor/sd-scripts/anima_train_network.py",
-    "anima-controlnet": "./vendor/sd-scripts/anima_train_control_net_lllite.py",
-    "hunyuan-lora": "./vendor/sd-scripts/hunyuan_image_train_network.py",
-    "lumina-lora": "./vendor/sd-scripts/lumina_train_network.py",
-    "lumina-finetune": "./vendor/sd-scripts/lumina_train.py",
 }
 
 avaliable_scripts = [
@@ -202,9 +192,8 @@ async def create_toml_file(request: Request):
             config["logging_dir"] = os.path.join(str(run_dir), "log")
     # ──────────────────────────────────────────────────────────
 
-    if model_train_type != "sdxl-finetune":
-        if not train_utils.validate_data_dir(config["train_data_dir"]):
-            return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
+    if not train_utils.validate_data_dir(config["train_data_dir"]):
+        return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
     suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
 

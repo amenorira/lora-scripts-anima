@@ -7,7 +7,6 @@ UI JSON → TOML 转换：白名单过滤 + 字段映射 + 防御性过滤。
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Any
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
@@ -18,17 +17,8 @@ UI_ONLY_FIELDS = get_ui_only_fields()
 # merged 字段应由 UI 层合并进父字段（如 weight_decay→optimizer_args），adapter 不直接透传
 MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 
-# ── LyCORIS preset 路径缓存 ─────────────────────────────────
-_LYCORIS_PRESET_PATH = Path(__file__).resolve().parents[2] / "config" / "lycoris_anima_preset.toml"
-_LYCORIS_PRESET_EXISTS = _LYCORIS_PRESET_PATH.exists()
-
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
-
-# ── T-LoRA 字段映射 ──────────────────────────────────────────
-TLORA_NETWORK_ARG_FIELDS = {
-    "tlora_min_rank", "tlora_rank_schedule", "tlora_orthogonal_init",
-}
 
 # ── LyCORIS 通用字段映射（sd-scripts 原生 LoHa/LoKr 和 lycoris.kohya 均支持）───
 LYCORIS_COMMON_ARG_MAP: dict[str, str] = {
@@ -180,21 +170,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     elif "network_args" in source:
         source.pop("network_args", None)
 
-    # ── 3. LyCORIS preset 补全（networks.loha / networks.lokr）──
-    if source.get("network_module") in ("networks.loha", "networks.lokr"):
-        network_args = source.get("network_args")
-        has_preset = isinstance(network_args, list) and any(
-            isinstance(item, str) and item.strip().startswith("preset=")
-            for item in network_args
-        )
-        if not has_preset:
-            # 只有 preset 文件存在时才注入（路径已缓存）
-            if _LYCORIS_PRESET_EXISTS:
-                source["network_args"] = list(network_args or []) + [
-                    f"preset={_LYCORIS_PRESET_PATH.as_posix()}"
-                ]
-
-    # ── 4. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅原生支持的参数）──
+    # ── 3. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅原生支持的参数）──
     if source.get("network_module") in ("networks.loha", "networks.lokr"):
         network_args = list(source.get("network_args") or [])
         for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
@@ -228,16 +204,6 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 if isinstance(value, bool):
                     value = str(value).lower()
                 network_args.append(f"{arg_key}={value}")
-        if network_args:
-            source["network_args"] = network_args
-
-    # ── 5. T-LoRA 顶层字段 → network_args ─────────────────
-    if source.get("network_module") in ("networks.tlora_anima", "networks.tlora"):
-        network_args = list(source.get("network_args") or [])
-        for field in TLORA_NETWORK_ARG_FIELDS:
-            value = source.pop(field, None)
-            if not _is_empty_value(value):
-                network_args.append(f"{field}={value}")
         if network_args:
             source["network_args"] = network_args
 
@@ -275,12 +241,17 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"
             )
         # weight_decay 安全网：EmoSens 官方默认 0.01
-        # 直接追加到 optimizer_args（weight_decay 是 merged 字段，主循环会跳过）
-        wd = source.get("weight_decay")
-        if wd is None or wd == "":
-            opt_args = source.get("optimizer_args")
-            if not isinstance(opt_args, list):
-                opt_args = []
+        # 注意：前端已把 weight_decay 合并进 optimizer_args 并从顶层删除（merged 字段），
+        # 因此这里检查的是 optimizer_args 中是否已有 weight_decay= 项，而非顶层 weight_decay。
+        # 否则用户自定义值（如 0.02）会被追加的 0.01 覆盖（sd-scripts 顺序解析，后者生效）。
+        opt_args = source.get("optimizer_args")
+        if not isinstance(opt_args, list):
+            opt_args = []
+        has_wd = any(
+            isinstance(a, str) and a.strip().startswith("weight_decay=")
+            for a in opt_args
+        )
+        if not has_wd:
             opt_args.append("weight_decay=0.01")
             source["optimizer_args"] = opt_args
             warnings.append(
@@ -369,6 +340,15 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "[Conflict] compile is incompatible with blocks_to_swap; "
                 "disabling compile / compile 与 blocks_to_swap 不兼容，已自动关闭 compile"
             )
+    # compile_fullgraph 与 split_attn 不兼容（anima_train_network.py assert）
+    # 注意：split_attn 可能被 5.9 的 attn_mode==xformers 自动开启，故此处仍需兜底。
+    if source.get("compile_fullgraph") and source.get("split_attn"):
+        source["compile_fullgraph"] = False
+        warnings.append(
+            "[Conflict] compile_fullgraph is incompatible with split_attn; "
+            "disabling compile_fullgraph / "
+            "compile_fullgraph 与 split_attn 不可同时使用，已关闭 compile_fullgraph"
+        )
 
     # ── 5.12. unsloth_offload_checkpointing 互斥校验 ──
     # anima_train_network.py 明确：不可与 cpu_offload_checkpointing 或 blocks_to_swap 同用
@@ -414,8 +394,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}
     for key, value in source.items():
-        # 跳过纯 UI 字段、合并字段、及已处理的 T-LoRA/LyCORIS 字段
-        if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in TLORA_NETWORK_ARG_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:
+        # 跳过纯 UI 字段、合并字段、及已处理的 LyCORIS 字段
+        if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:
             continue
         # 跳过空值
         if _is_empty_value(value):
