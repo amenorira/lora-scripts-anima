@@ -3,6 +3,20 @@
    Mixin merged into animaApp Alpine component
    ================================================================ */
 
+// 绿色"已填"指示条字段清单：仅这些字段在"非空且非 schema 原始默认值"时显示绿色左边条，
+// 表示关键路径字段已就绪填写。优先级高于橙色 field-changed。
+// 用 field.default（schema 原始默认）而非 formDefaults 做基准，不被预设/导入重置影响。
+window.FILLED_INDICATOR_KEYS = new Set([
+  'pretrained_model_name_or_path', 'vae', 'qwen3', 'train_data_dir',
+  'output_name', 'output_dir',
+]);
+
+// 预填默认值淡色字段清单：仅这些 text 字段在"值==schema 原始默认值"时 input 字色淡化为 placeholder 视觉。
+// 仅含 default 非空的字段（vae/qwen3 默认空，不在此列）。
+window.DEFAULT_DIM_KEYS = new Set([
+  'pretrained_model_name_or_path', 'train_data_dir', 'output_name', 'output_dir',
+]);
+
 window.trainingCoreMixin = {
   // ── State ──────────────────────────────────────────────
   form: {},
@@ -158,10 +172,10 @@ window.trainingCoreMixin = {
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
     this.renderTrainingForm(trainType, null);
-    // Clean up previous watchers
-    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { w(); }); }
-    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { w(); }); }
-    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { w(); }); }
+    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
+    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
+    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
+    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
@@ -253,21 +267,47 @@ window.trainingCoreMixin = {
           if (!doneSubGroups.has(f.subGroup)) {
             doneSubGroups.add(f.subGroup);
             const sg = subGroups.get(f.subGroup);
+            // 子组公共显隐条件：取该子组字段的 showIf 中 network_module 的 eq 值。
+            // kohya 子组所有字段 showIf 均含 network_module eq lycoris.kohya，整个子区块跟随它显隐。
+            const sgShowIf = (sg.basic[0] && sg.basic[0].showIf) || (sg.advanced[0] && sg.advanced[0].showIf);
+            let sgCondMet = true;
+            let sgShowIfAttrs = '';
+            if (sgShowIf) {
+              // 提取 network_module eq 作为容器显隐条件（单条件或数组第一个含 network_module 的条件）
+              const conds = Array.isArray(sgShowIf) ? sgShowIf : [sgShowIf];
+              const nmCond = conds.find(c => c.key === 'network_module');
+              if (nmCond) {
+                sgCondMet = this._evalShowIfCond(nmCond);
+                sgShowIfAttrs = ` data-show-if-key="network_module" data-show-if-eq="${this.escapeAttr(String(nmCond.eq))}"`;
+              }
+            }
+            const sgBlockHidden = sgCondMet ? '' : ' field-hidden';
+            // 子组标题：kohya → "LyCORIS 算法参数"；其他子组用 subGroup 名兜底
+            const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
+            const sgTitle = sgTitleKey ? (this.t(sgTitleKey) || 'LyCORIS') : f.subGroup;
+            // 该子组的高级折叠标题
+            const sgAdvTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupAdvanced' : 'common.inlineAdvancedParams';
+            const sgAdvTitle = this.t(sgAdvTitleKey) || this.t('common.inlineAdvancedParams') || 'More options';
+
+            html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
+            html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
+            html += `<div class="subgroup-body">`;
             // 该子组的基础字段
             sg.basic.forEach(bf => { html += this.renderField(bf); });
-            // 该子组的高级字段 → inline 折叠
+            // 该子组的高级字段 → 子组内折叠（标题区分于全局"显示进阶参数"）
             if (sg.advanced.length > 0) {
               const sgKey = section.key + '--' + f.subGroup;
               html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
               html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
               html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
-              html += `<span>${this.t('common.inlineAdvancedParams')}</span>`;
+              html += `<span>${this.esc(sgAdvTitle)}</span>`;
               html += `<span class="advanced-count">(${sg.advanced.length})</span>`;
               html += `</div>`;
               html += `<div class="advanced-fold-body">`;
               sg.advanced.forEach(af => { html += this.renderField(af); });
               html += `</div></div>`;
             }
+            html += `</div></div>`;
           }
         } else if (!f.advanced) {
           // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
@@ -688,7 +728,13 @@ window.trainingCoreMixin = {
         const _phVal = String(field.default).replace(/"/g, '&quot;');
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}">`;
       } else {
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)">`;
+        // DEFAULT_DIM_KEYS 字段：值==schema 原始默认值时加 is-default class，CSS 淡色模拟 placeholder 视觉
+        // （假留空——值仍保留，不触发必填校验失败、不影响训练流程；改值后 class 移除恢复正常字色）
+        // :class 属性用双引号包裹，内部字符串字面量必须用单引号，内部单引号转义为 \x27。
+        const _dimCls = (window.DEFAULT_DIM_KEYS && window.DEFAULT_DIM_KEYS.has(dataKey) && field.default !== undefined && field.default !== '' && field.default !== null)
+          ? ` :class="{ 'is-default': String(form.${dataKey}) === String('${String(field.default).replace(/'/g, '\\x27')}') }"`
+          : '';
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}>`;
       }
     }
 
@@ -787,7 +833,16 @@ window.trainingCoreMixin = {
     }
 
     // ── Assemble ──
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
+    // 绿色"已填"指示条：仅 FILLED_INDICATOR_KEYS 字段，判定非空且非 schema 原始默认值。
+    // schema default 在渲染期已知，序列化为字面量拼进 Alpine 表达式（运行期无需访问 field 对象）。
+    // 注意：:class 整个属性用双引号包裹，Alpine 表达式内的字符串字面量必须用单引号（双引号会截断 HTML 属性）。
+    // default 值用单引号包裹，内部单引号转义为 \x27 避免破坏表达式。
+    const _filledKey = `'${dataKey.replace(/'/g, '\\x27')}'`;
+    const _filledDefaultLit = field.default !== undefined
+      ? `'${String(field.default).replace(/'/g, '\\x27')}'`
+      : 'undefined';
+    const _filledExpr = `window.FILLED_INDICATOR_KEYS.has(${_filledKey}) && form.${dataKey} !== '' && form.${dataKey} !== null && form.${dataKey} !== undefined && String(form.${dataKey}) !== String(${_filledDefaultLit})`;
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-filled': ${_filledExpr}, 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         <div class="field-menu-wrap">
@@ -959,8 +1014,8 @@ window.trainingCoreMixin = {
   },
 
   setupAutoValueWatchers() {
-    // Clean up previous watchers
-    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { w(); }); }
+    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
+    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._autoValueWatchers = [];
     // Collect all autoValue rules from all visible fields
     const rules = [];
@@ -1032,8 +1087,8 @@ window.trainingCoreMixin = {
   // ── Show If Watchers: listen for parent field changes to show/hide children ──
   setupShowIfWatchers() {
     const self = this;
-    // Clean up previous watchers
-    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { w(); }); }
+    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
+    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._showIfWatchers = [];
     this._allShowIfKeys().forEach(k => {
       // Use a named function for clarity; Alpine re-evaluates on change
@@ -1052,8 +1107,8 @@ window.trainingCoreMixin = {
 
   setupReadonlyWatchers() {
     const self = this;
-    // Clean up previous watchers
-    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { w(); }); }
+    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
+    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._readonlyWatchers = [];
     this._allReadonlyIfKeys().forEach(k => {
       self._readonlyWatchers.push(self.$watch('form.' + k, () => self.updateReadonlyStates()));

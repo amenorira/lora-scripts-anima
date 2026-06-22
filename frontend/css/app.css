@@ -821,6 +821,17 @@ input[type="checkbox"]:focus-visible {
 [data-theme="dark"] .field.field-changed {
   border-left-color: #f59e0b;
 }
+/* ── Filled indicator: green left bar —— 仅指定字段（必填/关键路径字段）
+     判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被预设/导入重置影响）。
+     优先级高于橙色 field-changed：同时命中时绿色覆盖，表示"已就绪填写"。 ── */
+.field.field-filled {
+  border-left-color: #16a34a;
+}
+[data-theme="dark"] .field.field-filled {
+  border-left-color: #4ade80;
+}
+/* 嵌套字段（field-nested）的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
+   用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Field info (parameter name + description, stacked) ──── */
 .field-key {
@@ -847,6 +858,13 @@ input[type="checkbox"]:focus-visible {
 .field-control input[type="text"],
 .field-control input[type="number"] {
   width: 100%;
+}
+/* 预填默认值淡色：值==schema 原始默认值时，input 字色淡化为 placeholder 视觉，
+   提示"这是默认值、尚未自定义"。改值后 class 移除、恢复正常字色。假留空——值仍保留，
+   不触发必填校验失败、不影响训练流程。 */
+.field-control input[type="text"].is-default,
+.field-input-wrap input[type="text"].is-default {
+  color: var(--text-tertiary);
 }
 /* Full-width input row for textarea/path fields */
 .field-input-row {
@@ -905,13 +923,8 @@ input[type="checkbox"]:focus-visible {
   padding-left: 12px;
   border-left: 2px dashed var(--border-default);
 }
-.field-nested.field-changed {
-  border-left-color: #d97706;
-  border-left-style: solid;
-}
-[data-theme="dark"] .field-nested.field-changed {
-  border-left-color: #f59e0b;
-}
+/* 嵌套字段的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
+   用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Menu button (square, 24×24) ─────────────────────────── */
 .btn-menu {
@@ -1307,6 +1320,36 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   pointer-events: none;
 }
 
+/* ── 子组区块（kohya/LyCORIS 算法参数等）──
+   仅用小标题 + 圆点作视觉区分，表明这是某个算法开关（network_module）专属的子参数集合，
+   与分组底部的"显示进阶参数"折叠区分。不加背景色/大色条，保持简洁。 */
+#trainFormContent .subgroup-block {
+  margin: 10px 0 6px;
+  transition: max-height 0.35s var(--ease-out), opacity 0.25s var(--ease-out),
+              margin 0.35s var(--ease-out);
+  max-height: none; opacity: 1;
+}
+#trainFormContent .subgroup-block.field-hidden {
+  max-height: 0 !important; opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+#trainFormContent .subgroup-header {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 2px;
+  font-size: 12px; font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+  user-select: none;
+}
+#trainFormContent .subgroup-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0; opacity: 0.8;
+}
+#trainFormContent .subgroup-body {
+  padding: 0;
+}
+
 /* ── 进阶参数折叠区（A3）── */
 #trainFormContent .advanced-fold {
   margin-top: 8px;
@@ -1398,6 +1441,23 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 #trainFormContent .field-nested[data-nest-level="4"] {
   margin-left: 28px;
   border-left-color: var(--text-sidebar-muted);
+}
+/* 嵌套字段改值指示条：必须放在 #trainFormContent .field-nested 虚线规则之后，
+   且用 .field.field-nested.field-changed (1,0,3) 提升特异性，覆盖上方虚线左边框
+   （含 data-nest-level≥2 的 1,0,2 规则）。否则子字段改值后橙/绿条被虚线灰色压住不显示。 */
+#trainFormContent .field.field-nested.field-changed {
+  border-left-color: #d97706;
+  border-left-style: solid;
+}
+[data-theme="dark"] #trainFormContent .field.field-nested.field-changed {
+  border-left-color: #f59e0b;
+}
+#trainFormContent .field.field-nested.field-filled {
+  border-left-color: #16a34a;
+  border-left-style: solid;
+}
+[data-theme="dark"] #trainFormContent .field.field-nested.field-filled {
+  border-left-color: #4ade80;
 }
 
 /* ── Tagger Form — Flat Design (matching training form) ──── */
@@ -1493,9 +1553,10 @@ body.panel-resizing,
 body.panel-resizing * { cursor: col-resize !important; user-select: none !important; }
 
 /* ── 左侧分组导航轨道（#1）：脱离文档流 fixed 贴在参数区左边缘、垂直居中；
-     收起=框内一列彩色圆点，hover 展开框变宽 + 圆点右侧淡入文字。
-     关键：框（背景/边框/圆点 padding-left）在收起时即存在且展开时恒定不变，
-     展开只让框变宽 + 标签淡入——圆点相对框左边位置永不位移，无"往里缩/往外扩"。 ── */
+     收起=一列彩色圆点（框 chrome 透明，不遮挡表单），hover 展开框变宽 + 框 chrome 淡入 + 圆点右侧淡入文字。
+     关键：框几何（宽度除外）/内边距在收起时即确定且展开时恒定不变，
+     展开只让框变宽 + 背景/边框/阴影/标签淡入——圆点相对框左边位置永不位移，无"往里缩/往外扩"。
+     窄屏（≤700px）整轨隐藏，见响应式断点。 ── */
 .section-rail {
   position: fixed;
   left: calc(var(--sidebar-w) + 10px);  /* 贴 main-content 左边缘，内缩 10px 确保圆点完整可见 */
@@ -1508,14 +1569,20 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   border-radius: var(--radius-md);
   width: 34px;                  /* 收起宽度：rail-pad 6 + item-pad 6 + 圆点 10 + 右余量 12 = 圆点居中 */
   z-index: 50;
-  /* 框：收起时即存在，展开时不变 —— 避免"展开才出框"导致的圆点跳动 */
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-sm);
-  transition: width 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out);
+  /* 收起：框尺寸/内边距恒定但视觉透明——只留圆点，避免窄屏 34px 不透明框遮挡表单文字。
+     展开仅淡入背景/边框/阴影，框几何不变 → 圆点相对框左边永不位移（无"往里缩/往外扩"）。 */
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  transition: width 0.18s var(--ease-out),
+              background-color 0.18s var(--ease-out),
+              border-color 0.18s var(--ease-out),
+              box-shadow 0.18s var(--ease-out);
 }
 .section-rail.expanded {
-  width: 176px;                 /* 展开仅变宽，框样式/gap/padding 全保持收起态 */
+  width: 176px;                 /* 展开仅变宽，gap/padding 全保持收起态 */
+  background: var(--bg-surface);   /* 框 chrome 在此淡入 */
+  border-color: var(--border-default);
   box-shadow: var(--shadow-lg);
 }
 .section-rail-item {
@@ -1883,11 +1950,14 @@ input[type="range"]::-webkit-slider-thumb {
    ═══════════════════════════════════════════════════════════ */
 .monitor-dashboard { padding: 4px 0; }
 /* Prevent layout flash during content swap: preserve a minimum height
-   so the container never collapses to zero while innerHTML is replaced. */
-#monitorDashboard { min-height: 200px; contain: layout style; }
-#historyList { min-height: 120px; contain: layout style; }
-#environmentPage { min-height: 300px; contain: layout style; }
-#trainFormContent { min-height: 400px; contain: layout style; }
+   so the container never collapses to zero while innerHTML is replaced.
+   注意：不含 contain:layout —— layout containment 会使元素成为 fixed 后代的包含块，
+   导致 anima-select 下拉菜单（position:fixed）相对此容器定位而非视口，坐标错位且可能
+   被外层 .main-content 的 overflow 裁剪（下拉框"下面被截断"）。仅保留 style containment。 */
+#monitorDashboard { min-height: 200px; contain: style; }
+#historyList { min-height: 120px; contain: style; }
+#environmentPage { min-height: 300px; contain: style; }
+#trainFormContent { min-height: 400px; contain: style; }
 /* ── Monitor Dashboard — Hybrid Flat/Outline Design ──────── */
 /* Top row: flat cards (no background, border, shadow) */
 .monitor-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -2416,6 +2486,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .sidebar-item .nav-icon { margin: 0; }
   :root { --sidebar-w: 52px; }
   .main-content { padding: 16px 14px; }
+  /* 窄屏：rail 与表单左缘严重重叠（侧栏 52 + 内缩 10 起，圆点压住字段文字 ~8px，
+     34px hover 区吞掉 ~20px）。收起态已透明仍会捕获 hover 展开遮挡，
+     直接隐藏——分组卡片本身可滚动定位，rail 在窄屏属累赘。 */
+  .section-rail { display: none !important; }
   .sidebar-bottom { flex-wrap: wrap; justify-content: center; padding: 4px 2px; gap: 2px; }
   .sidebar-bottom .bottom-btn { padding: 2px; }
 }
