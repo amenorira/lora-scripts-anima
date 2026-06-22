@@ -1313,6 +1313,13 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   border-top: 1px dashed var(--border-default);
   padding-top: 8px;
 }
+/* inline 折叠：无分隔线，紧贴上级基础参数（用于 kohya 子组等） */
+#trainFormContent .advanced-fold--inline {
+  margin-top: 4px;
+  border-top: none;
+  padding-top: 4px;
+  padding-left: 0;
+}
 #trainFormContent .advanced-fold-toggle {
   display: flex;
   align-items: center;

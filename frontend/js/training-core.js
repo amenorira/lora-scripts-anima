@@ -224,15 +224,21 @@ window.trainingCoreMixin = {
     // 失效嵌套层级缓存（字段集随训练类型变化）
     this._nestLevelCache = null;
     let html = '';
-    sections.forEach(section => {
+      sections.forEach(section => {
       const allFields = section.fields.filter(f => !f.hidden);
-      // 拆分基础参数与进阶参数（A3）：advanced=true 的字段进入折叠区
-      const basicFields = allFields.filter(f => !f.advanced);
-      const advancedFields = allFields.filter(f => f.advanced);
+      // 拆分：常规字段（无 subGroup）与 kohya 子组字段
+      const regularFields = allFields.filter(f => !f.subGroup);
+      const subGroupFields = allFields.filter(f => f.subGroup);
+      const regularAdvanced = regularFields.filter(f => f.advanced);
+      // 子组字段按 subGroup 值分组
+      const subGroups = new Map();
+      subGroupFields.forEach(f => {
+        const sg = f.subGroup;
+        if (!subGroups.has(sg)) subGroups.set(sg, { basic: [], advanced: [] });
+        const g = subGroups.get(sg);
+        if (f.advanced) g.advanced.push(f); else g.basic.push(f);
+      });
 
-      // 分组可折叠（B2）：状态持久化到 localStorage，默认展开
-      const collapsedKey = 'anima-section-collapsed-' + section.key;
-      const isCollapsed = localStorage.getItem(collapsedKey) === '1';
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
       html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
       html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
@@ -240,20 +246,47 @@ window.trainingCoreMixin = {
       html += `</div>`;
       html += `<div class="card-body">`;
 
-      basicFields.forEach(field => { html += this.renderField(field); });
+      // 按 FIELDS 顺序渲染：常规 basic、子组 basic、子组 inline 折叠 穿插
+      const doneSubGroups = new Set();
+      allFields.forEach(f => {
+        if (f.subGroup) {
+          if (!doneSubGroups.has(f.subGroup)) {
+            doneSubGroups.add(f.subGroup);
+            const sg = subGroups.get(f.subGroup);
+            // 该子组的基础字段
+            sg.basic.forEach(bf => { html += this.renderField(bf); });
+            // 该子组的高级字段 → inline 折叠
+            if (sg.advanced.length > 0) {
+              const sgKey = section.key + '--' + f.subGroup;
+              html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
+              html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
+              html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+              html += `<span>${this.t('common.inlineAdvancedParams')}</span>`;
+              html += `<span class="advanced-count">(${sg.advanced.length})</span>`;
+              html += `</div>`;
+              html += `<div class="advanced-fold-body">`;
+              sg.advanced.forEach(af => { html += this.renderField(af); });
+              html += `</div></div>`;
+            }
+          }
+        } else if (!f.advanced) {
+          // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
+          html += this.renderField(f);
+        }
+      });
 
-      // 进阶参数折叠区（A3）：仅当本分组存在 advanced 字段时渲染
-      if (advancedFields.length > 0) {
+      // 底部全局高级折叠（仅常规字段中的 advanced）
+      if (regularAdvanced.length > 0) {
         const advCollapsedKey = 'anima-advanced-collapsed-' + section.key;
-        const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0'; // 默认收起
-        html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] }">`;
+        const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0';
+        html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] !== false }">`;
         html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${section.key}')">`;
         html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
         html += `<span>${this.t('common.advancedParams')}</span>`;
-        html += `<span class="advanced-count" x-text="'(' + ${advancedFields.length} + ')'"></span>`;
+        html += `<span class="advanced-count">(${regularAdvanced.length})</span>`;
         html += `</div>`;
         html += `<div class="advanced-fold-body">`;
-        advancedFields.forEach(field => { html += this.renderField(field); });
+        regularAdvanced.forEach(field => { html += this.renderField(field); });
         html += `</div></div>`;
       }
 
@@ -276,11 +309,24 @@ window.trainingCoreMixin = {
       if (this._sectionCollapsed[s.key] === undefined) {
         this._sectionCollapsed[s.key] = localStorage.getItem('anima-section-collapsed-' + s.key) === '1';
       }
-      const hasAdvanced = s.fields.some(f => f.advanced && !f.hidden);
-      if (hasAdvanced && this._advancedCollapsed[s.key] === undefined) {
-        // 进阶区默认收起（localStorage 存 '0' 表示曾主动展开）
+      // 全局高级折叠（无 subGroup 的 advanced 字段）
+      const hasRegularAdvanced = s.fields.some(f => f.advanced && !f.hidden && !f.subGroup);
+      if (hasRegularAdvanced && this._advancedCollapsed[s.key] === undefined) {
         this._advancedCollapsed[s.key] = localStorage.getItem('anima-advanced-collapsed-' + s.key) !== '0';
       }
+      // 子组 inline 高级折叠（有 subGroup 的 advanced 字段）
+      const subGroups = {};
+      s.fields.forEach(f => {
+        if (f.subGroup && f.advanced && !f.hidden) {
+          subGroups[f.subGroup] = true;
+        }
+      });
+      Object.keys(subGroups).forEach(sg => {
+        const sgKey = s.key + '--' + sg;
+        if (this._advancedCollapsed[sgKey] === undefined) {
+          this._advancedCollapsed[sgKey] = localStorage.getItem('anima-advanced-collapsed-' + sgKey) !== '0';
+        }
+      });
     });
   },
 
@@ -300,8 +346,14 @@ window.trainingCoreMixin = {
     const willCollapse = !this._advancedCollapsed[key];
     this._advancedCollapsed[key] = willCollapse;
     localStorage.setItem('anima-advanced-collapsed-' + key, willCollapse ? '1' : '0');
-    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
-    const fold = card && card.querySelector('.advanced-fold');
+    // Try section-level fold first, then fall back to data-adv-key (sub-group inline fold)
+    let fold;
+    if (key.indexOf('--') >= 0) {
+      fold = document.querySelector(`#trainFormContent .advanced-fold[data-adv-key="${this.escapeAttr(key)}"]`);
+    } else {
+      const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+      fold = card && card.querySelector('.advanced-fold:not([data-adv-key])');
+    }
     const body = fold && fold.querySelector('.advanced-fold-body');
     if (body) this._animateCollapse(body, willCollapse);
   },
@@ -524,9 +576,29 @@ window.trainingCoreMixin = {
   _allShowIfKeys() {
     const keys = new Set();
     this._allSections().forEach(s => s.fields.forEach(f => {
-      if (f.showIf) keys.add(f.showIf.key);
+      if (f.showIf) {
+        if (Array.isArray(f.showIf)) {
+          f.showIf.forEach(c => keys.add(c.key));
+        } else {
+          keys.add(f.showIf.key);
+        }
+      }
     }));
     return [...keys];
+  },
+
+  // Evaluate a single show_if condition dict (used by both single and multi-condition)
+  _evalShowIfCond(c) {
+    const pv = this.form[c.key];
+    if (c.eq !== undefined) {
+      if (String(pv) === String(c.eq)) return true;
+      if (c.or && Array.isArray(c.or)) return c.or.some(function(v) { return String(pv) === String(v); });
+      return false;
+    }
+    if (c.neq !== undefined) {
+      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
+    }
+    return true;
   },
 
   renderField(field) {
@@ -639,21 +711,29 @@ window.trainingCoreMixin = {
     let condAttrs = '';
     if (field.showIf) {
       const sf = field.showIf;
-      const parentVal = this.form[sf.key];
-      let condMet = false;
-      condAttrs = ` data-show-if-key="${this.escapeAttr(sf.key)}"`;
-      if (sf.eq !== undefined) {
-        condMet = String(parentVal) === String(sf.eq);
-        condAttrs += ` data-show-if-eq="${this.escapeAttr(sf.eq)}"`;
-        if (sf.or && Array.isArray(sf.or)) {
-          condMet = condMet || sf.or.some(function(v) { return String(parentVal) === String(v); });
-          condAttrs += ` data-show-if-or="${this.escapeAttr(sf.or.join(','))}"`;
+      if (Array.isArray(sf)) {
+        // Multi-condition AND: store JSON for evaluation
+        condAttrs = ` data-show-if-all='${this.esc(JSON.stringify(sf))}'`;
+        const condMet = sf.every(c => this._evalShowIfCond(c));
+        condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
+      } else {
+        // Single condition (existing logic)
+        const parentVal = this.form[sf.key];
+        let condMet = false;
+        condAttrs = ` data-show-if-key="${this.escapeAttr(sf.key)}"`;
+        if (sf.eq !== undefined) {
+          condMet = String(parentVal) === String(sf.eq);
+          condAttrs += ` data-show-if-eq="${this.escapeAttr(sf.eq)}"`;
+          if (sf.or && Array.isArray(sf.or)) {
+            condMet = condMet || sf.or.some(function(v) { return String(parentVal) === String(v); });
+            condAttrs += ` data-show-if-or="${this.escapeAttr(sf.or.join(','))}"`;
+          }
+        } else if (sf.neq !== undefined) {
+          condMet = String(parentVal) !== String(sf.neq) && parentVal !== null && parentVal !== undefined && parentVal !== '';
+          condAttrs += ` data-show-if-neq="${this.escapeAttr(sf.neq)}"`;
         }
-      } else if (sf.neq !== undefined) {
-        condMet = String(parentVal) !== String(sf.neq) && parentVal !== null && parentVal !== undefined && parentVal !== '';
-        condAttrs += ` data-show-if-neq="${this.escapeAttr(sf.neq)}"`;
+        condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
       }
-      condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
     // ── Readonly If ──
@@ -756,6 +836,18 @@ window.trainingCoreMixin = {
     const expectedVal = this.form[parentKey];
     const toAnimate = []; // collect rows that need animation
 
+    // Handle multi-condition show_if (data-show-if-all)
+    document.querySelectorAll(`[data-show-if-all]`).forEach(row => {
+      try {
+        const conditions = JSON.parse(row.getAttribute('data-show-if-all'));
+        // Only re-evaluate if this parentKey is relevant to these conditions
+        if (!conditions.some(c => c.key === parentKey)) return;
+        const match = conditions.every(c => this._evalShowIfCond(c));
+        this._toggleFieldRow(row, match, toAnimate);
+      } catch (e) { /* ignore parse errors */ }
+    });
+
+    // Handle single-condition show_if (data-show-if-key) — existing logic
     document.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
       const eqVal = row.getAttribute('data-show-if-eq');
       const neqVal = row.getAttribute('data-show-if-neq');
@@ -770,30 +862,7 @@ window.trainingCoreMixin = {
         match = String(expectedVal) !== neqVal && String(expectedVal) !== 'null' && String(expectedVal) !== 'undefined' && String(expectedVal) !== '';
       }
 
-      const currentlyHidden = row.classList.contains('field-hidden');
-      if (match === !currentlyHidden) return; // no state change
-
-      // Clean up any in-flight transition
-      row.style.transition = 'none';
-      row.style.maxHeight = '';
-      row.style.transform = '';
-
-      if (!match) {
-        // HIDE: measure → lock height → add .field-hidden to trigger CSS transition
-        row.style.overflow = 'hidden';
-        const h = row.scrollHeight;
-        row.style.maxHeight = h + 'px';
-        row.style.transform = 'translateY(0)';
-        toAnimate.push({ row: row, action: 'hide', height: h });
-      } else {
-        // SHOW: measure target while hidden → start from 0 → animate to full height
-        row.style.overflow = 'hidden';
-        row.classList.remove('field-hidden');
-        const h = row.scrollHeight;
-        row.style.maxHeight = '0px';
-        row.style.transform = 'translateY(-6px)';
-        toAnimate.push({ row: row, action: 'show', height: h });
-      }
+      this._toggleFieldRow(row, match, toAnimate);
     });
 
     if (toAnimate.length === 0) { this.updateToml(); return; }
@@ -833,6 +902,34 @@ window.trainingCoreMixin = {
     });
 
     this.updateToml();
+  },
+
+  // Helper: toggle a field row's visibility and collect animation info
+  _toggleFieldRow(row, match, toAnimate) {
+    const currentlyHidden = row.classList.contains('field-hidden');
+    if (match === !currentlyHidden) return; // no state change
+
+    // Clean up any in-flight transition
+    row.style.transition = 'none';
+    row.style.maxHeight = '';
+    row.style.transform = '';
+
+    if (!match) {
+      // HIDE: measure → lock height → add .field-hidden to trigger CSS transition
+      row.style.overflow = 'hidden';
+      const h = row.scrollHeight;
+      row.style.maxHeight = h + 'px';
+      row.style.transform = 'translateY(0)';
+      toAnimate.push({ row: row, action: 'hide', height: h });
+    } else {
+      // SHOW: measure target while hidden → start from 0 → animate to full height
+      row.style.overflow = 'hidden';
+      row.classList.remove('field-hidden');
+      const h = row.scrollHeight;
+      row.style.maxHeight = '0px';
+      row.style.transform = 'translateY(-6px)';
+      toAnimate.push({ row: row, action: 'show', height: h });
+    }
   },
 
   // ── Auto Value: auto-set field value when watcher field changes ──

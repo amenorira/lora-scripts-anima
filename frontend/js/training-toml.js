@@ -30,15 +30,19 @@ window.trainingTomlMixin = {
     // Map UI field key → network_args key (matching adapter.py mappings)
     const NET_ARG_MAP = {
       lycoris_algo: 'algo', conv_dim: 'conv_dim', conv_alpha: 'conv_alpha',
-      lokr_factor: 'factor', use_cp: 'use_cp', use_scalar: 'use_scalar',
+      lokr_factor: 'factor', use_tucker: 'use_tucker', use_scalar: 'use_scalar',
       decompose_both: 'decompose_both', full_matrix: 'full_matrix', train_norm: 'train_norm',
       rank_dropout: 'rank_dropout', module_dropout: 'module_dropout', dropout: 'dropout',
       dora_wd: 'dora_wd', block_size: 'block_size', constraint: 'constraint',
       rescaled: 'rescaled', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora',
+      lycoris_preset: 'preset', unbalanced_factorization: 'unbalanced_factorization',
+      wd_on_output: 'wd_on_output',
     };
     // Fields only available for lycoris.kohya (not sd-scripts native LoHa/LoKr)
-    const KOHYA_ONLY = new Set(['lycoris_algo','use_cp','use_scalar','decompose_both','full_matrix',
-      'train_norm','dropout','dora_wd','block_size','constraint','rescaled','bypass_mode','rs_lora']);
+    const KOHYA_ONLY = new Set(['lycoris_algo', 'lycoris_preset',
+      'use_scalar', 'decompose_both', 'full_matrix', 'train_norm', 'dropout',
+      'dora_wd', 'block_size', 'constraint', 'rescaled', 'bypass_mode', 'rs_lora',
+      'unbalanced_factorization', 'wd_on_output']);
 
     // 跳过的顶层字段：UI-only、merged 优化器字段（由 _buildOptimizerArgs 合并进 optimizer_args）
     const SKIP_TOP_LEVEL = new Set([
@@ -147,14 +151,24 @@ window.trainingTomlMixin = {
   _fieldShowIfMet(f) {
     const sf = f.showIf;
     if (!sf) return true;
-    const pv = this.form[sf.key];
-    if (sf.eq !== undefined) {
-      if (String(pv) === String(sf.eq)) return true;
-      if (sf.or && Array.isArray(sf.or)) return sf.or.some(function(v) { return String(pv) === String(v); });
+    if (Array.isArray(sf)) {
+      // Multi-condition AND: all conditions must match
+      return sf.every(c => this._evalShowIfCond(c));
+    }
+    // Single condition
+    return this._evalShowIfCond(sf);
+  },
+
+  // Evaluate a single show_if condition
+  _evalShowIfCond(c) {
+    const pv = this.form[c.key];
+    if (c.eq !== undefined) {
+      if (String(pv) === String(c.eq)) return true;
+      if (c.or && Array.isArray(c.or)) return c.or.some(function(v) { return String(pv) === String(v); });
       return false;
     }
-    if (sf.neq !== undefined) {
-      return String(pv) !== String(sf.neq) && pv !== null && pv !== undefined && pv !== '';
+    if (c.neq !== undefined) {
+      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
     }
     return true;
   },

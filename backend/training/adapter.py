@@ -37,11 +37,11 @@ LYCORIS_COMMON_ARG_MAP: dict[str, str] = {
     "lokr_factor": "factor",
     "rank_dropout": "rank_dropout",
     "module_dropout": "module_dropout",
+    "use_tucker": "use_tucker",
 }
 
-# ── 仅 lycoris.kohya 支持的高级字段 ──────────────────────────
+# ── 仅 lycoris.kohya 支持的字段 ──────────────────────────────
 LYCORIS_KOHYA_ONLY_ARG_MAP: dict[str, str] = {
-    "use_cp": "use_cp",
     "use_scalar": "use_scalar",
     "decompose_both": "decompose_both",
     "full_matrix": "full_matrix",
@@ -49,15 +49,18 @@ LYCORIS_KOHYA_ONLY_ARG_MAP: dict[str, str] = {
     "dropout": "dropout",
 }
 
-# ── lycoris.kohya 专有字段映射（算法选择器等）────────────────
+# ── lycoris.kohya 专有字段映射（算法选择器、子折叠高级参数等）──
 LYCORIS_KOHYA_SPECIFIC_ARG_MAP: dict[str, str] = {
     "lycoris_algo": "algo",
+    "lycoris_preset": "preset",
     "dora_wd": "dora_wd",
     "block_size": "block_size",
     "constraint": "constraint",
     "rescaled": "rescaled",
     "bypass_mode": "bypass_mode",
     "rs_lora": "rs_lora",
+    "unbalanced_factorization": "unbalanced_factorization",
+    "wd_on_output": "wd_on_output",
 }
 
 # lycoris.kohya 模块下所有需从顶层 pop 掉的 UI 字段
