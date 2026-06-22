@@ -10,6 +10,7 @@
     python tools/install_flash_attn.py --url URL    # 手动指定 wheel URL 安装
     python tools/install_flash_attn.py --yes        # 非交互：自动选最优并安装
     python tools/install_flash_attn.py --force      # 即使已安装也强制重装
+    python tools/install_flash_attn.py --source mirror  # 强制走镜像源（直连失败时用）
 
 内建功能:
     - 环境自动检测 (Python / PyTorch / CUDA / 平台)
@@ -24,6 +25,9 @@
     - 支持评分排序：精确匹配 > 同大版本 > 不可用
     - 支持 --dry-run 预览模式
     - GitHub API 失败时仍可通过 --url 手动安装
+    - 多镜像源 + 自动回退：default 源直连失败自动换镜像，无需手动切源
+    - 下载 URL 也走代理：pip install 下载阶段同样按代理顺序回退
+    - 指数退避重试：网络瞬断自动重试，抗抖动
 """
 from __future__ import annotations
 
@@ -41,36 +45,94 @@ from pathlib import Path
 from typing import Any, Optional
 
 # ── 配置 ──────────────────────────────────────────────────────────────────
+# 候选 wheel 的两个上游仓库（GitHub Releases API 端点）。
+# bdashore3 是 Windows 专用 wheel 的补充来源，mjun0812 是主力。
+_FA_REPO_APIS: list[str] = [
+    "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
+    "https://api.github.com/repos/bdashore3/flash-attention/releases",
+]
+
+# GitHub 代理前缀列表。直连失败时按序尝试。
+# 注意：ghproxy 类代理对 GitHub API 和 release 下载都生效，前缀拼在原 URL 前即可。
+#   ghproxy.com / https://  →  https://ghproxy.com/https://api.github.com/...
+# 维护时优先放稳定、限速宽松的镜像；"" 表示直连（放最后作为兜底）。
+_FA_PROXIES: list[str] = [
+    "https://ghproxy.com/",
+    "https://gh-proxy.com/",
+    "https://ghproxy.net/",
+    "",  # 直连兜底
+]
+
+# 各 source 语义：
+#   default  → 优先直连 GitHub，失败自动回退镜像（开箱即用，无需用户切源）
+#   mirror   → 直接走镜像（直连已知不可用时手动切到此）
+#   fallback → bdashore3 源优先（主力源异常时的备用仓库）
 SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
     "default": {
-        "primary":  "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
-        "fallback": ["https://api.github.com/repos/bdashore3/flash-attention/releases"],
+        "proxies": ["", "https://ghproxy.com/", "https://gh-proxy.com/", "https://ghproxy.net/"],
+        "repo_apis": list(_FA_REPO_APIS),
     },
     "mirror": {
-        "primary":  "https://ghproxy.com/https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases",
-        "fallback": ["https://ghproxy.com/https://api.github.com/repos/bdashore3/flash-attention/releases"],
+        "proxies": ["https://ghproxy.com/", "https://gh-proxy.com/", "https://ghproxy.net/", ""],
+        "repo_apis": list(_FA_REPO_APIS),
     },
     "fallback": {
-        "primary":  "https://api.github.com/repos/bdashore3/flash-attention/releases",
-        "fallback": ["https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases"],
+        "proxies": ["", "https://ghproxy.com/", "https://gh-proxy.com/"],
+        "repo_apis": list(reversed(_FA_REPO_APIS)),  # bdashore3 优先
     },
 }
 
 
-def get_source_config(source: str) -> tuple[str, list[str]]:
-    """返回 (primary_url, fallback_urls)；未知 source 降级为 default。
+def _proxy_url(proxy: str, target: str) -> str:
+    """用代理前缀包装目标 URL；空 proxy 表示直连，原样返回。
 
-    单一职责：把 source 字符串映射到一组 URL。
-    无副作用、无 IO、可缓存。
+    单一职责：纯函数，输入 (proxy, target) → 包装后的 URL。无 IO。
     """
-    cfg = SOURCE_CONFIGS.get(source) or SOURCE_CONFIGS["default"]
-    return cfg["primary"], list(cfg["fallback"])
+    if not proxy:
+        return target
+    # ghproxy 系约定：前缀 + 完整目标 URL（含 scheme）
+    return proxy + target
+
+
+def get_source_config(source: str) -> dict[str, Any]:
+    """返回 source 的配置 dict；未知 source 降级为 default。无副作用。"""
+    return SOURCE_CONFIGS.get(source) or SOURCE_CONFIGS["default"]
 
 
 def _urls_for(source: str) -> list[str]:
-    """返回 source 对应的 [primary, *fallback] URL 列表，便于循环尝试。"""
-    primary, fallbacks = get_source_config(source)
-    return [primary] + fallbacks
+    """返回 source 对应的所有 API URL 组合（proxy × repo_api），去重保序，便于循环尝试。
+
+    每个组合 = proxy 前缀 + repo_api URL。default 源会先直连再镜像，
+    mirror 源会先镜像再直连。这样首次使用也能在受限网络自动连通，无需手动切源。
+    """
+    cfg = get_source_config(source)
+    seen: set[str] = set()
+    urls: list[str] = []
+    for proxy in cfg["proxies"]:
+        for api in cfg["repo_apis"]:
+            u = _proxy_url(proxy, api)
+            if u not in seen:
+                seen.add(u)
+                urls.append(u)
+    return urls
+
+
+def proxy_download_url(url: str, source: str = "default") -> str:
+    """为 wheel 下载 URL 选择首选代理（取 source 代理列表的第一项）。
+
+    GitHub release 下载（github.com/.../releases/download/... 或
+    objects.githubusercontent.com）在受限网络下比 API 更易失败。
+    本函数按 source 的代理偏好包装下载 URL：
+      - default 源：代理列表首项为 ""（直连），返回原 URL；
+      - mirror  源：代理列表首项为镜像，返回镜像 URL。
+    后端单次 pip install 用此函数选首选源；失败由 _start_install_job 重试兜底。
+    CLI 的 install_wheel 会自行遍历全部代理项做完整回退。
+
+    单一职责：把 download URL 映射到首选代理包装后的 URL。无 IO。
+    """
+    cfg = get_source_config(source)
+    first_proxy = cfg["proxies"][0] if cfg["proxies"] else ""
+    return _proxy_url(first_proxy, url)
 
 # 磁盘缓存（优先使用，API 仅用于增量更新）
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
@@ -302,46 +364,61 @@ def _build_request(url: str, *, etag: Optional[str] = None) -> urllib.request.Re
 
 
 def _try_fetch_api(url: str, source: str) -> tuple[Optional[list], Optional[str], bool]:
-    """尝试从 GitHub API 拉取数据。
+    """尝试从 GitHub API 拉取数据（带指数退避重试，抗瞬断）。
 
     使用 ETag 条件请求：
     - 304 Not Modified → 数据未变，不消耗 rate limit，返回 (None, None, unchanged=True)
     - 200 → 有新数据，保存新 ETag，返回 (data, None, unchanged=False)
-    - 403/其他错误 → 返回 (None, error, unchanged=False)
+    - 403/429 → 限流/拒绝，返回 (None, error, unchanged=False)（明确响应，不重试）
+    - 网络瞬断（超时/连接重置）→ 短退避重试最多 2 次，仍失败返回错误
 
     Args:
-        url: GitHub releases API URL。
+        url: GitHub releases API URL（可能已加代理前缀）。
         source: 候选源标识，决定 ETag 文件路径（按源分 key 避免污染）。
 
     Returns: (data, error, unchanged) — unchanged=True 表示缓存仍然有效
     """
     etag = _load_etag(source)
-    try:
-        req = _build_request(url + "?per_page=100", etag=etag)
-        resp = urllib.request.urlopen(req, timeout=15)
+    # 瞬断重试：对超时/连接错误做短退避，对明确的 HTTP 状态码不重试。
+    max_retries = 2
+    backoff = 1.0  # 秒，指数增长
+    last_err: Optional[str] = None
+    for attempt in range(max_retries + 1):
+        try:
+            req = _build_request(url + "?per_page=100", etag=etag)
+            resp = urllib.request.urlopen(req, timeout=15)
 
-        # 保存新 ETag
-        new_etag = resp.headers.get("ETag") or resp.headers.get("etag")
-        if new_etag:
-            _save_etag(new_etag, source)
+            # 保存新 ETag
+            new_etag = resp.headers.get("ETag") or resp.headers.get("etag")
+            if new_etag:
+                _save_etag(new_etag, source)
 
-        data = json.loads(resp.read())
-        if isinstance(data, list):
-            return data, None, False
+            data = json.loads(resp.read())
+            if isinstance(data, list):
+                return data, None, False
 
-        # GitHub 返回了 dict（错误消息）
-        msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
-        return None, f"GitHub API: {msg}", False
+            # GitHub 返回了 dict（错误消息）
+            msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+            return None, f"GitHub API: {msg}", False
 
-    except urllib.error.HTTPError as exc:
-        if exc.code == 304:
-            # 304 Not Modified — 缓存有效，不消耗 rate limit！
-            return None, None, True
-        if exc.code in (403, 429):
-            return None, f"API rate limited (60/h, cache from {_cache_age_str(source)} still usable): {exc} / API 限流", False
-        return None, str(exc), False
-    except Exception as exc:
-        return None, str(exc), False
+        except urllib.error.HTTPError as exc:
+            if exc.code == 304:
+                # 304 Not Modified — 缓存有效，不消耗 rate limit！
+                return None, None, True
+            if exc.code in (403, 429):
+                return None, f"API rate limited (60/h, cache from {_cache_age_str(source)} still usable): {exc} / API 限流", False
+            return None, str(exc), False
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            # 网络瞬断：超时、连接重置、DNS 失败等 → 退避重试
+            last_err = str(exc)
+            if attempt < max_retries:
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+            return None, last_err, False
+        except Exception as exc:
+            return None, str(exc), False
+    return None, last_err, False
 
 
 def _score_candidate(
@@ -489,7 +566,12 @@ def fetch_candidates(
             if raw_releases is not None:
                 break
         if raw_releases is None:
-            return [], "Cannot connect to GitHub. Check network, or manually paste a wheel URL. / 无法连接 GitHub，请检查网络。你也可以手动粘贴 wheel URL 安装。"
+            return [], (
+                "Cannot connect to GitHub (tried direct + mirrors, all failed). "
+                "Check network, or manually paste a wheel URL. "
+                "/ 无法连接 GitHub（已尝试直连和镜像，均失败）。"
+                "请检查网络，或手动粘贴 wheel URL 安装。"
+            )
 
     if not isinstance(raw_releases, list):
         msg = raw_releases.get("message", str(raw_releases)) if isinstance(raw_releases, dict) else str(raw_releases)
@@ -532,9 +614,12 @@ def fetch_candidates(
     return result, None
 
 
-def find_best_wheel(env: dict[str, Any]) -> Optional[str]:
-    """返回最优可用 wheel URL；没有则返回 None。"""
-    candidates, _ = fetch_candidates(env)
+def find_best_wheel(env: dict[str, Any], source: str = "default") -> Optional[str]:
+    """返回最优可用 wheel URL；没有则返回 None。
+
+    source 决定候选列表来源（含镜像回退），默认 'default'。
+    """
+    candidates, _ = fetch_candidates(env, source=source)
     for c in candidates:
         if c["usable"]:
             return c["url"]
@@ -588,36 +673,63 @@ def uninstall_flash_attn() -> bool:
 
 # ── 安装 ──────────────────────────────────────────────────────────────────
 
-def install_wheel(url: str) -> dict[str, Any]:
-    """pip install 指定的 wheel URL。返回安装结果。"""
-    print(f"\n[INSTALL] pip install {url}")
-    print("       Download + install may take 2-5 min (~150-250 MB)... / 下载 + 安装可能需要 2-5 分钟（约 150-250 MB）...")
-    print()
+def install_wheel(url: str, source: str = "default") -> dict[str, Any]:
+    """pip install 指定的 wheel URL。
 
-    r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", url],
-        capture_output=True,
-        text=True,
+    GitHub release 下载在受限网络下常失败，故按 source 的代理顺序尝试：
+    先用代理 URL 下载，失败再回退直连。source='default' 时优先直连、
+    失败自动换镜像；source='mirror' 时优先镜像。CLI 与后端共用此逻辑。
+    返回安装结果。
+    """
+    # 构建下载候选 URL 列表：按 source 代理顺序，去重保序。
+    cfg = get_source_config(source)
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for proxy in cfg["proxies"]:
+        u = _proxy_url(proxy, url)
+        if u not in seen:
+            seen.add(u)
+            candidates.append(u)
+
+    last_tail = ""
+    for i, dl_url in enumerate(candidates):
+        via = "direct" if dl_url == url else "mirror"
+        print(f"\n[INSTALL] pip install {dl_url}  (attempt {i+1}/{len(candidates)}, {via})")
+        print("       Download + install may take 2-5 min (~150-250 MB)... / 下载 + 安装可能需要 2-5 分钟（约 150-250 MB）...")
+        print()
+
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--retries", "3", "--timeout", "60", dl_url],
+            capture_output=True,
+            text=True,
+        )
+        stdout = r.stdout + r.stderr
+        last_tail = "\n".join(stdout.splitlines()[-40:])
+
+        if r.returncode == 0:
+            try:
+                importlib.invalidate_caches()
+                version = importlib.metadata.version("flash_attn")
+            except Exception:
+                version = None
+
+            return {
+                "installed": True,
+                "version": version,
+                "url": dl_url,
+                "stdout_tail": last_tail,
+                "restart_required": True,
+            }
+        # 失败：打印末尾日志，尝试下一个候选 URL（换代理/直连）
+        print(f"[WARN] pip install via {via} failed, trying next source... / 经 {via} 安装失败，尝试下一个源...")
+        print(last_tail)
+        print()
+
+    # 所有候选 URL 均失败
+    raise RuntimeError(
+        f"pip install failed after trying {len(candidates)} source(s) / "
+        f"尝试 {len(candidates)} 个源后均失败:\n{last_tail}"
     )
-    stdout = r.stdout + r.stderr
-    tail = "\n".join(stdout.splitlines()[-40:])
-
-    if r.returncode != 0:
-        raise RuntimeError(f"pip install failed / 失败:\n{tail}")
-
-    try:
-        importlib.invalidate_caches()
-        version = importlib.metadata.version("flash_attn")
-    except Exception:
-        version = None
-
-    return {
-        "installed": True,
-        "version": version,
-        "url": url,
-        "stdout_tail": tail,
-        "restart_required": True,
-    }
 
 
 # ── 交互式选择 ────────────────────────────────────────────────────────────
@@ -750,6 +862,11 @@ def main(argv: list[str] | None = None) -> int:
         "--yes", "-y", action="store_true",
         help="非交互模式：自动选择最优 wheel 并安装，不询问"
     )
+    parser.add_argument(
+        "--source", default="default",
+        choices=["default", "mirror", "fallback"],
+        help="候选源: default=直连优先自动回退镜像 / mirror=镜像优先 / fallback=备用仓库 (默认 default)"
+    )
     args = parser.parse_args(argv)
 
     # ── 打印环境信息 ──
@@ -840,8 +957,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 拉取候选列表 ──
     if not args.url:
-        print("[QUERY] Fetching candidate wheel list from GitHub Releases... / 从 GitHub Releases 拉取候选 wheel 列表...")
-        candidates, fetch_error = fetch_candidates(env)
+        print(f"[QUERY] Fetching candidate wheel list from GitHub Releases (source={args.source})... / 从 GitHub Releases 拉取候选 wheel 列表（源={args.source}）...")
+        candidates, fetch_error = fetch_candidates(env, source=args.source)
 
         if fetch_error:
             print(f"\n[WARN] Cannot fetch candidate list: {fetch_error} / 无法拉取候选列表")
@@ -872,7 +989,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # ── 选择安装方式：交互式 或 自动 ──
         if args.yes:
-            install_url = find_best_wheel(env)
+            install_url = find_best_wheel(env, source=args.source)
             if not install_url:
                 print("\n[ERROR] No usable wheel (all candidates have Python ABI mismatch) / 无可用 wheel（所有候选 Python ABI 不匹配）")
                 _print_candidates(candidates)
@@ -894,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 安装 ──
     try:
-        result = install_wheel(install_url)
+        result = install_wheel(install_url, source=args.source)
     except RuntimeError as exc:
         print(f"\n[ERROR] {exc}", file=sys.stderr)
         print("\n[TROUBLESHOOT] Common causes: / 常见原因:")

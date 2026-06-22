@@ -437,7 +437,10 @@ window.trainingPresetsMixin = {
       // Re-enable the watcher after applying all fields
       if (savedWatcher) {
         this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
-          if (newVal !== oldVal) { this.switchTrainType(newVal); }
+          if (newVal !== oldVal && !this._switchInProgress) {
+            this._switchInProgress = true;
+            try { this.switchTrainType(newVal); } finally { this._switchInProgress = false; }
+          }
         });
       }
     }

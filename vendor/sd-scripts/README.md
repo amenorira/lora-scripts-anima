@@ -47,6 +47,19 @@ If you find this project helpful, please consider supporting its development via
 
 ### Change History
 
+- **Version 0.11.1 (2026-06-16):**
+    - Added support for torch.compile in Anima LoRA/LLLite training. [PR #2379](https://github.com/kohya-ss/sd-scripts/pull/2379)
+        - It seems to speed up training by about 20%. It requires Triton and MSVC compiler. For details, please refer to the [documentation](./docs/anima_torch_compile.md).
+    - Added 2D-only Qwen-Image VAE. [PR #2382](https://github.com/kohya-ss/sd-scripts/pull/2382)
+        - Based on the suggestion by woct0rdho in [issue #2369](https://github.com/kohya-ss/sd-scripts/issues/2369). Thanks to woct0rdho.
+        - Enabled by specifying `--qwen_image_vae_2d`. The weights are the same as the standard (3D) version.
+        - Expected to speed up latent pre-caching (training itself remains unchanged). For details, please refer to the [documentation](./docs/anima_train_network.md#memory-and-speed--メモリ速度関連).
+    - Added support for LLLite inpainting model training. [PR #2378](https://github.com/kohya-ss/sd-scripts/pull/2378)
+        - For details, please refer to the [documentation](./docs/anima_train_control_net_lllite.md).
+    - Added logging of timestep sampling settings and visualization of timesteps distribution. [PR #2384](https://github.com/kohya-ss/sd-scripts/pull/2384)
+        - Visualization makes it easier to understand how training is conducted at different timesteps.
+        - For details, please refer to the [documentation](./docs/anima_train_network.md#visualizing-the-timestep-distribution).
+
 - **Version 0.11.0 (2026-06-12):**
     - A major internal refactoring of the codebase has been performed to improve code quality and maintainability. [PR #2372](https://github.com/kohya-ss/sd-scripts/pull/2372)
         - We have made efforts to minimize direct impact on users. For details and bug reports, please refer to [this discussion](https://github.com/kohya-ss/sd-scripts/discussions/2358).

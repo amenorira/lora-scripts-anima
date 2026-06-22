@@ -11,6 +11,19 @@ window.trainingCoreMixin = {
   formHistoryIdx: -1,
   formErrors: {},
 
+  // 分组折叠状态（B2）与进阶参数折叠状态（A3），响应式驱动 UI
+  _sectionCollapsed: {},
+  _advancedCollapsed: {},
+
+  // 分组导航指示器（#1）：当前可见分组列表 + 滚动高亮的当前分组
+  sectionNavList: [],
+  activeSection: '',
+  sectionRailHover: false,
+  _sectionScrollHandler: null,
+  _sectionMouseHandler: null,
+  _sidebarResizeObserver: null,
+  _sidebarResizeHandler: null,
+
   _formSaveTimer: null,
   _localeChangeHandler: null,
   showFilePickerModalFlag: false,
@@ -31,19 +44,33 @@ window.trainingCoreMixin = {
   currentTrainTypeLabel: 'Anima LoRA',
 
   switchTrainType(v) {
+    // 训练类型变化后，旧的预设对比数据已无意义，清理避免误显示"已修改"标识
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
     // Update display labels and descriptions
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
-    // Auto-set network_module based on train type
+    // 为新训练类型的可见字段补充默认值（已有值保留）。
+    // 切换类型后，新类型专有字段若未初始化会显示空，且 omitDefault 比较失效；
+    // 这里复用 buildTrainForm 的 default 构建逻辑，只填缺失的 key。
+    const newDefaults = this._buildFormDefaults(v);
+    for (const k in newDefaults) {
+      if (this.form[k] === undefined || this.form[k] === null) {
+        this.form[k] = newDefaults[k];
+      }
+    }
+    this.formDefaults = { ...newDefaults };
+
+    // network_module 兼容性修正：anima 用 networks.lora_anima，SDXL 用 networks.lora。
+    // 放在 default 补充之后、渲染之前，确保 animaSelect 组件初始化时读到正确值。
     if (v === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
     } else if (v !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
       this.form.network_module = 'networks.lora';
     }
-    // Also update the default so individual field reset uses the correct value
-    this.formDefaults.network_module = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
 
     // Re-render form with new train type
     this.renderTrainingForm(v, null);
@@ -52,6 +79,40 @@ window.trainingCoreMixin = {
     this.setupReadonlyWatchers();
     this.updateToml();
     this.loadPresets();
+
+    // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
+    // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
+    // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
+    const targetMod = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
+    this.$nextTick(() => {
+      if (this.form.network_module !== targetMod) {
+        this.form.network_module = targetMod;
+        this.updateToml();
+      }
+    });
+  },
+
+  // 构建指定训练类型的字段默认值字典（与 buildTrainForm 共用逻辑）。
+  _buildFormDefaults(trainType) {
+    const defaults = {};
+    const allSections = window.getVisibleSections(trainType);
+    allSections.forEach(s => { s.fields.forEach(f => {
+      const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
+      if (hasExplicitDefault) {
+        defaults[f.key] = f.default;
+      } else if (!f.hidden) {
+        if (f.type === 'toggle') defaults[f.key] = false;
+        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
+        else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
+        else defaults[f.key] = '';
+      }
+    }); });
+    defaults.model_train_type = trainType;
+    // Adjust network_module default based on train type
+    if (trainType === 'anima-lora') {
+      defaults.network_module = 'networks.lora_anima';
+    }
+    return defaults;
   },
 
   // ── Training Form ──────────────────────────────────────
@@ -75,25 +136,7 @@ window.trainingCoreMixin = {
       saved.model_train_type = routeTrainType;
     }
 
-    const defaults = {};
-    const allSections = window.getVisibleSections(trainType);
-    allSections.forEach(s => { s.fields.forEach(f => {
-      const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
-      if (hasExplicitDefault) {
-        defaults[f.key] = f.default;
-      } else if (!f.hidden) {
-        if (f.type === 'toggle') defaults[f.key] = false;
-        else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
-        else if (f.type === 'select' && f.options && f.options.length) defaults[f.key] = f.options[0].v;
-        else defaults[f.key] = '';
-      }
-    }); });
-    defaults.model_train_type = trainType;
-
-    // Adjust network_module default based on train type
-    if (trainType === 'anima-lora') {
-      defaults.network_module = 'networks.lora_anima';
-    }
+    const defaults = this._buildFormDefaults(trainType);
 
     this.form = { ...defaults, ...(saved || {}) };
     // Ensure model_train_type is valid (saved may have been from another route)
@@ -142,8 +185,9 @@ window.trainingCoreMixin = {
       self._trainTypeWatcher = null;
     }
     self._trainTypeWatcher = self.$watch('form.model_train_type', (newVal, oldVal) => {
-      if (newVal !== oldVal) {
-        self.switchTrainType(newVal);
+      if (newVal !== oldVal && !self._switchInProgress) {
+        self._switchInProgress = true;
+        try { self.switchTrainType(newVal); } finally { self._switchInProgress = false; }
       }
     });
 
@@ -159,6 +203,12 @@ window.trainingCoreMixin = {
     // Start training status polling
     this.startTrainingStatusPoll();
 
+    // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
+    // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
+    this.faRefresh(true).catch(() => {});
+    this.xfRefresh(true).catch(() => {});
+    if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
+
     // Apply pending preset if queued by applyPresetNavigate()
     if (this._pendingPreset) {
       const pending = this._pendingPreset;
@@ -171,20 +221,300 @@ window.trainingCoreMixin = {
     const container = document.getElementById(targetId || 'trainFormContent');
     if (!container) return;
     const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
+    // 失效嵌套层级缓存（字段集随训练类型变化）
+    this._nestLevelCache = null;
     let html = '';
     sections.forEach(section => {
-      const fields = section.fields.filter(f => !f.hidden);
+      const allFields = section.fields.filter(f => !f.hidden);
+      // 拆分基础参数与进阶参数（A3）：advanced=true 的字段进入折叠区
+      const basicFields = allFields.filter(f => !f.advanced);
+      const advancedFields = allFields.filter(f => f.advanced);
 
-      html += `<div class="card" data-section="${section.key}">`;
-      html += `<div class="card-header">${this.t(section.titleKey) || section.titleKey}</div>`;
-
-      fields.forEach(field => { html += this.renderField(field); });
-
+      // 分组可折叠（B2）：状态持久化到 localStorage，默认展开
+      const collapsedKey = 'anima-section-collapsed-' + section.key;
+      const isCollapsed = localStorage.getItem(collapsedKey) === '1';
+      html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
+      html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
+      html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+      html += `<span>${this.t(section.titleKey) || section.titleKey}</span>`;
       html += `</div>`;
+      html += `<div class="card-body">`;
+
+      basicFields.forEach(field => { html += this.renderField(field); });
+
+      // 进阶参数折叠区（A3）：仅当本分组存在 advanced 字段时渲染
+      if (advancedFields.length > 0) {
+        const advCollapsedKey = 'anima-advanced-collapsed-' + section.key;
+        const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0'; // 默认收起
+        html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] }">`;
+        html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${section.key}')">`;
+        html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+        html += `<span>${this.t('common.advancedParams')}</span>`;
+        html += `<span class="advanced-count" x-text="'(' + ${advancedFields.length} + ')'"></span>`;
+        html += `</div>`;
+        html += `<div class="advanced-fold-body">`;
+        advancedFields.forEach(field => { html += this.renderField(field); });
+        html += `</div></div>`;
+      }
+
+      html += `</div></div>`;
     });
     container.innerHTML = html;
+    // 初始化折叠状态对象（Alpine 响应式）
+    this._initCollapseState(sections);
+    // 构建右侧分组导航指示器（#1）并绑定滚动高亮
+    this.buildSectionNav();
     // Re-check all conditional fields after render
     this._allShowIfKeys().forEach(k => this.showConditionalFields(k));
+  },
+
+  // ── Section / Advanced collapse state (B2 / A3) ──
+  _initCollapseState(sections) {
+    if (!this._sectionCollapsed) this._sectionCollapsed = {};
+    if (!this._advancedCollapsed) this._advancedCollapsed = {};
+    sections.forEach(s => {
+      if (this._sectionCollapsed[s.key] === undefined) {
+        this._sectionCollapsed[s.key] = localStorage.getItem('anima-section-collapsed-' + s.key) === '1';
+      }
+      const hasAdvanced = s.fields.some(f => f.advanced && !f.hidden);
+      if (hasAdvanced && this._advancedCollapsed[s.key] === undefined) {
+        // 进阶区默认收起（localStorage 存 '0' 表示曾主动展开）
+        this._advancedCollapsed[s.key] = localStorage.getItem('anima-advanced-collapsed-' + s.key) !== '0';
+      }
+    });
+  },
+
+  toggleSection(key) {
+    const willCollapse = !this._sectionCollapsed[key];
+    this._sectionCollapsed[key] = willCollapse;
+    localStorage.setItem('anima-section-collapsed-' + key, willCollapse ? '1' : '0');
+    // 同步导航指示器的折叠状态
+    this.sectionNavList = this.sectionNavList.map(s => s.key === key ? { ...s, collapsed: willCollapse } : s);
+    // 动画：测量 card-body 真实高度 → 锁定 → 过渡到 0/原高
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const body = card && card.querySelector('.card-body');
+    if (body) this._animateCollapse(body, willCollapse);
+  },
+
+  toggleAdvanced(key) {
+    const willCollapse = !this._advancedCollapsed[key];
+    this._advancedCollapsed[key] = willCollapse;
+    localStorage.setItem('anima-advanced-collapsed-' + key, willCollapse ? '1' : '0');
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const fold = card && card.querySelector('.advanced-fold');
+    const body = fold && fold.querySelector('.advanced-fold-body');
+    if (body) this._animateCollapse(body, willCollapse);
+  },
+
+  // ── 统一的高度折叠动画（#3）──
+  // 测量目标 scrollHeight → 起始高度 → 过渡到目标 → 清理 inline 样式。
+  // 与 showConditionalFields 同一手法，避免 max-height:0!important/none 无法动画的问题。
+  _animateCollapse(body, collapsing) {
+    // 清理可能残留的过渡状态
+    body.style.transition = 'none';
+    body.style.maxHeight = '';
+    body.style.opacity = '';
+    const h = body.scrollHeight;
+    if (collapsing) {
+      // 收起：从当前高度 → 0
+      body.style.overflow = 'hidden';
+      body.style.maxHeight = h + 'px';
+      body.style.opacity = '1';
+      void body.offsetHeight; // 强制 reflow
+      body.style.transition = '';
+      requestAnimationFrame(() => {
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+      });
+      const cleanup = () => {
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.transition = '';
+        body.style.overflow = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
+      body.addEventListener('transitionend', onEnd);
+      setTimeout(cleanup, 500);
+    } else {
+      // 展开：从 0 → 目标高度
+      body.style.overflow = 'hidden';
+      body.style.maxHeight = '0px';
+      body.style.opacity = '0';
+      void body.offsetHeight;
+      body.style.transition = '';
+      requestAnimationFrame(() => {
+        body.style.maxHeight = h + 'px';
+        body.style.opacity = '1';
+      });
+      const cleanup = () => {
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.transition = '';
+        body.style.overflow = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
+      body.addEventListener('transitionend', onEnd);
+      setTimeout(cleanup, 500);
+    }
+  },
+
+  // ── 分组导航指示器（#1）──
+  // 构建可见分组列表（含颜色 + 标题），供右侧面板点击跳转与当前分组高亮。
+  buildSectionNav() {
+    const sections = this._allSections();
+    const SECTION_COLORS = {
+      model: '#4d94ff', network: '#10b981', training: '#8b5cf6', optimizer: '#f59e0b',
+      regularization: '#f43f5e', performance: '#6366f1', save: '#0ea5e9',
+      caption: '#78716c', preview: '#ec4899', misc: '#78716c',
+    };
+    this.sectionNavList = sections.map(s => ({
+      key: s.key,
+      title: this.t(s.titleKey) || s.titleKey,
+      color: SECTION_COLORS[s.key] || '#78716c',
+      collapsed: !!this._sectionCollapsed[s.key],
+    }));
+    // 默认激活第一个分组
+    if (this.sectionNavList.length && !this.activeSection) {
+      this.activeSection = this.sectionNavList[0].key;
+    }
+    this._bindSectionScroll();
+    this._bindSectionMouse();
+    this._bindSidebarResize();
+  },
+
+  // 绑定主内容区滚动监听，更新当前可见分组（节流）
+  _bindSectionScroll() {
+    if (this._sectionScrollHandler) return; // 已绑定
+    const self = this;
+    let ticking = false;
+    this._sectionScrollHandler = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        self._updateActiveSection();
+        ticking = false;
+      });
+    };
+    const scroller = document.querySelector('.main-content');
+    if (scroller) scroller.addEventListener('scroll', this._sectionScrollHandler, { passive: true });
+    // 初次定位
+    this._updateActiveSection();
+  },
+
+  // 绑定鼠标移动监听：鼠标在哪个分组卡片上方，对应圆点亮（节流）。
+  // 性能：mousemove 经 rAF 节流每帧最多一次，9 张卡片 getBoundingClientRect ~亚毫秒，无性能问题。
+  _bindSectionMouse() {
+    if (this._sectionMouseHandler) return;
+    const self = this;
+    let ticking = false;
+    this._sectionMouseHandler = (e) => {
+      if (ticking) return;
+      ticking = true;
+      const y = e.clientY;
+      requestAnimationFrame(() => {
+        self._updateActiveSectionByY(y);
+        ticking = false;
+      });
+    };
+    const scroller = document.querySelector('.main-content');
+    if (scroller) scroller.addEventListener('mousemove', this._sectionMouseHandler, { passive: true });
+  },
+
+  // 按鼠标 Y 坐标判定当前分组：找到鼠标落入的卡片（含顶部留白），其 data-section 即当前
+  _updateActiveSectionByY(y) {
+    const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
+    if (!cards.length) return;
+    let current = '';
+    // 取最后一个 top <= y 且 bottom >= y 的卡片；若无命中则取鼠标上方最近的卡片
+    let lastAbove = '';
+    cards.forEach(card => {
+      const r = card.getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) current = card.getAttribute('data-section');
+      if (r.top <= y) lastAbove = card.getAttribute('data-section');
+    });
+    if (!current) current = lastAbove || cards[0].getAttribute('data-section');
+    if (current !== this.activeSection) this.activeSection = current;
+  },
+
+  // 离开训练页时解绑滚动/鼠标/侧栏监听，避免泄漏
+  stopSectionScroll() {
+    if (this._sectionScrollHandler) {
+      const scroller = document.querySelector('.main-content');
+      if (scroller) scroller.removeEventListener('scroll', this._sectionScrollHandler);
+      this._sectionScrollHandler = null;
+    }
+    if (this._sectionMouseHandler) {
+      const scroller = document.querySelector('.main-content');
+      if (scroller) scroller.removeEventListener('mousemove', this._sectionMouseHandler);
+      this._sectionMouseHandler = null;
+    }
+    if (this._sidebarResizeObserver) {
+      this._sidebarResizeObserver.disconnect();
+      this._sidebarResizeObserver = null;
+    }
+    if (this._sidebarResizeHandler) {
+      window.removeEventListener('resize', this._sidebarResizeHandler);
+      this._sidebarResizeHandler = null;
+    }
+  },
+
+  // 监听侧栏宽度变化（手动收起/展开、响应式、初始），实时更新 rail 的 left，
+  // 使指示器始终贴在 main-content 左边缘。不依赖 --sidebar-w（手动收起不改该变量）。
+  _bindSidebarResize() {
+    if (this._sidebarResizeObserver) return;
+    const self = this;
+    const update = () => self._updateRailLeft();
+    // ResizeObserver 监听 .sidebar 宽度
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar && typeof ResizeObserver !== 'undefined') {
+      this._sidebarResizeObserver = new ResizeObserver(update);
+      this._sidebarResizeObserver.observe(sidebar);
+    }
+    // 窗口尺寸变化（响应式断点）兜底
+    window.addEventListener('resize', update);
+    this._sidebarResizeHandler = update;
+    // 初次定位
+    this._updateRailLeft();
+  },
+
+  _updateRailLeft() {
+    const sidebar = document.querySelector('.sidebar');
+    const rail = document.querySelector('.section-rail');
+    if (!sidebar || !rail) return;
+    const w = sidebar.getBoundingClientRect().width;
+    rail.style.left = Math.round(w + 10) + 'px';
+  },
+
+  _updateActiveSection() {
+    const scroller = document.querySelector('.main-content');
+    if (!scroller) return;
+    const offset = 80; // 顶部偏移阈值：分组标题进入此线以下即视为"当前"
+    const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
+    let current = '';
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      // 标题顶部越过偏移线 → 该分组为当前；取最后一个满足条件的
+      if (rect.top - scroller.getBoundingClientRect().top <= offset) {
+        current = card.getAttribute('data-section');
+      }
+    });
+    if (!current && cards.length) current = cards[0].getAttribute('data-section');
+    // 仅更新轨道圆点高亮（activeSection），不再给表单卡片加激活态样式
+    if (current && current !== this.activeSection) this.activeSection = current;
+  },
+
+  // 点击导航项 → 平滑滚动到对应分组顶部
+  scrollToSection(key) {
+    const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
+    const scroller = document.querySelector('.main-content');
+    if (!card || !scroller) return;
+    // 若分组已收起，先展开（否则跳过去看不到内容）
+    if (this._sectionCollapsed[key]) this.toggleSection(key);
+    const target = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
+    scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+    this.activeSection = key;
   },
 
   _allSections() {
@@ -281,6 +611,10 @@ window.trainingCoreMixin = {
         // Dynamic placeholder that updates when optimizer_type changes
         const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
+      } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
+        // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
+        const _phVal = String(field.default).replace(/"/g, '&quot;');
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}">`;
       } else {
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)">`;
       }
@@ -354,7 +688,11 @@ window.trainingCoreMixin = {
     }
 
     // ── Nested detection (child of a showIf parent) ──
+    // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf 父字段的层级 + 1，父级若无 showIf 则为 0。
+    // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
+    const nestLevel = this._nestLevel(field);
     const nestedClass = field.showIf ? ' field-nested' : '';
+    const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
     let controlSection = '';
@@ -369,27 +707,43 @@ window.trainingCoreMixin = {
     }
 
     // ── Assemble ──
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}>
+    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         <div class="field-menu-wrap">
-          <button type="button" class="btn-menu" title="⋯">${_dotsSvg}</button>
+          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" tabindex="-1">${_dotsSvg}</button>
           ${_menuPopupHtml}
         </div>
       </div>
       ${fullWidthRow}
       <div class="field-diff-info" x-show="formDiffMap && formDiffMap['${dataKey}']" x-cloak>
-        <template x-if="formDiffMap['${dataKey}'].type === 'modified'">
-          <span class="field-diff-change"><span class="field-diff-old" x-text="String(formDiffMap['${dataKey}'].oldVal)"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String(formDiffMap['${dataKey}'].newVal)"></span></span>
+        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified'">
+          <span class="field-diff-change"><span class="field-diff-old" x-text="String((formDiffMap['${dataKey}']||{}).oldVal||'')"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span></span>
         </template>
-        <template x-if="formDiffMap['${dataKey}'].type === 'added'">
-          <span class="field-diff-type-added" x-text="String(formDiffMap['${dataKey}'].newVal)"></span>
+        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added'">
+          <span class="field-diff-type-added" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span>
         </template>
       </div>
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
+      ${this._getEnvHint(dataKey)}
       ${readonlyWarnHtml}
     </div>`;
+  },
+
+  // ── 环境联动提示：检查当前字段值依赖的后端是否已安装（Alpine 响应式）──
+  // x-show 与 faStatus/xfStatus/tritonStatus 及 form 值联动，环境数据异步到达后自动显示。
+  _getEnvHint(dataKey) {
+    switch (dataKey) {
+      case 'attn_mode':
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')||'Flash Attention not installed'}</div>`
+             + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+      case 'xformers':
+        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+      case 'compile':
+        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')||'Triton not installed'}</div>`;
+    }
+    return '';
   },
 
   copyFieldName(key) {
@@ -709,6 +1063,12 @@ window.trainingCoreMixin = {
     }
 
     this.form[key] = value;
+    // model_train_type 切换：直接调用 switchTrainType，不依赖 $watch
+    //（applyPreset 等流程会临时禁用 watcher，存在未恢复的风险）
+    if (key === 'model_train_type' && value !== oldVal && !this._switchInProgress) {
+      this._switchInProgress = true;
+      try { this.switchTrainType(value); } finally { this._switchInProgress = false; }
+    }
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
 
@@ -756,6 +1116,29 @@ window.trainingCoreMixin = {
     return null;
   },
 
+  // ── Nest level: depth of showIf ancestry (A2) ──
+  // 一个字段的层级 = 其 showIf 父字段层级 + 1；无 showIf 则为 0。
+  // 用于递增缩进与左边框深浅，让"开关→选项→子选项"层级一眼可读。
+  _nestLevelCache: null,
+  _nestLevel(field) {
+    if (!field.showIf) return 0;
+    // 构建一次 key→field 映射，避免重复遍历（render 时调用频繁）
+    if (!this._nestLevelCache) {
+      const map = {};
+      this._allSections().forEach(s => s.fields.forEach(f => { map[f.key] = f; }));
+      this._nestLevelCache = map;
+    }
+    let level = 0;
+    let cur = field;
+    const guard = new Set();
+    while (cur && cur.showIf && !guard.has(cur.key)) {
+      guard.add(cur.key);
+      level += 1;
+      cur = this._nestLevelCache[cur.showIf.key];
+    }
+    return level;
+  },
+
   undoField(key) {
     if (this.formHistoryIdx <= 0) return;
     // Walk back through history to find the most recent entry where this key differs
@@ -780,6 +1163,10 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
+    // 重置所有参数后，旧的预设对比数据无意义
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
     // Preserve current train type - don't reset it
     const currentTrainType = this.form.model_train_type;
     this.form = { ...this.formDefaults };

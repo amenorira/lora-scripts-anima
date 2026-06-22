@@ -17,11 +17,13 @@ window.environmentRenderMixin = {
 
     html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
     html += this._renderSdRow(T);
+    html += this._renderTritonRow(T);
     html += `</div>`;
 
     el.innerHTML = html;
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
+    this._bindTritonEvents(el);
     this._bindCardToggle(el);
   },
 
@@ -85,7 +87,7 @@ window.environmentRenderMixin = {
         // Install group
         h += `<div class="env-detail-group"><span class="env-detail-label">${T('installLabel','Install')}</span><div class="env-detail-content" style="flex-direction:column;align-items:flex-start;">`;
         h += `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">`;
-        h += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}">${T('sourceFallback','Alt')}</button></span>`;
+        h += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}" title="${T('sourceDefaultHint','Direct to GitHub, auto-fallback to mirrors')}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}" title="${T('sourceMirrorHint','Use mirrors directly')}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}" title="${T('sourceFallbackHint','Alternate wheel repository')}">${T('sourceFallback','Alt')}</button></span>`;
         if (best) {
           h += `<button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${best.url.replace(/'/g,"\\'")}">${T('installThis','Install this')}</button>`;
           h += `<code style="font-size:10.5px;color:var(--text-tertiary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;" title="${best.name}">${best.name}</code>`;
@@ -168,9 +170,13 @@ window.environmentRenderMixin = {
     const sd = this.sdStatus; const sdLocal = sd?.local || {};
     let h = '';
 
+    // 版本由仓库人工上传维护，不存在"自动更新检查"语义，故不显示状态徽章；
+    // 数据未到时仍显示 Loading，数据到达后展示本地 Tag/Commit 作为版本标识。
     const sdBadge = !sd
       ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : `<span class="env-badge env-badge-ok">${T('sdScriptsUpToDate','Up to date')}</span>`;
+      : sdLocal.tag ? `<span class="env-badge env-badge-info"><code>${sdLocal.tag}</code></span>`
+      : sdLocal.local_commit ? `<span class="env-badge env-badge-info"><code>${sdLocal.local_commit.slice(0,8)}</code></span>`
+      : `<span class="env-badge env-badge-info">${T('sdScriptsLocal','Local')}</span>`;
 
     h += `<details id="env-sdscripts" ${this.sdCardOpen?'open':''} class="env-row">`;
     h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">${T('sdScriptsTitle','sd-scripts')}</span><span class="env-row-subtitle">${T('sdScriptsDesc','kohya-ss/sd-scripts')}</span>${sdBadge}</summary>`;
@@ -188,6 +194,46 @@ window.environmentRenderMixin = {
       h += `<div class="env-detail-group"><span class="env-detail-label">${T('verLabel','Ver')}</span><div class="env-detail-content">${verItems.join(' &middot; ')}</div></div>`;
 
       h += `<div class="env-detail-group"><span class="env-detail-label"></span><div class="env-detail-content"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div></div>`;
+    }
+    h += `</div></details>`;
+    return h;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  //  Triton row
+  // ═══════════════════════════════════════════════════════
+  _renderTritonRow(T) {
+    const tr = this.tritonStatus;
+    let h = '';
+
+    // Busy: installing
+    if (this.tritonBusy) {
+      const elapsed = this._formatElapsed(this.tritonInstallElapsed);
+      const log = this.tritonInstallLog || '';
+      h += `<details id="env-triton" ${this.tritonCardOpen?'open':''} class="env-row">`;
+      h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">Triton</span><span class="env-badge env-badge-loading">${T('installing','Installing...')}</span></summary>`;
+      h += `<div class="env-row-detail"><div class="env-install-progress"><div class="env-install-row"><div class="env-install-spinner"></div><div class="env-progress-info"><span>${T('tritonInstallingHint','Downloading...')}</span><span class="env-progress-time">${elapsed}</span></div></div>${log?`<pre class="env-install-log">${log}</pre>`:''}</div></div></details>`;
+      return h;
+    }
+
+    const trBadge = !tr
+      ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
+      : tr.installed
+        ? `<span class="env-badge env-badge-ok">${T('tritonInstalled','Installed')}${tr.version ? ' &middot; v'+tr.version : ''}${tr.package ? ' &middot; '+tr.package : ''}</span>`
+        : `<span class="env-badge env-badge-warn">${T('tritonNotInstalled','Not installed')}</span>`;
+
+    h += `<details id="env-triton" ${this.tritonCardOpen?'open':''} class="env-row">`;
+    h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">Triton</span><span class="env-row-subtitle">${T('tritonDesc','GPU compile backend for torch.compile')}</span>${trBadge}</summary>`;
+    h += `<div class="env-row-detail">`;
+
+    if (tr) {
+      if (tr.installed) {
+        h += `<div class="env-detail-group"><span class="env-detail-label">${T('verLabel','Ver')}</span><div class="env-detail-content"><span class="env-env-item">${tr.package||'triton'} <em>v${tr.version||'?'}</em></span></div></div>`;
+        h += `<div class="env-detail-group"><span class="env-detail-label">${T('actionLabel','Actions')}</span><div class="env-detail-content"><div class="env-actions"><button id="triton-reinstall-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('reinstall','Reinstall')}</button><button id="triton-refresh-btn" class="btn-icon" ${this.tritonBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div></div>`;
+      } else {
+        h += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Recommended for DiT per-block compile. Windows: pip install triton-windows; Linux: pip install triton')}</div>`;
+        h += `<div class="env-detail-group"><span class="env-detail-label">${T('actionLabel','Actions')}</span><div class="env-detail-content"><div class="env-actions"><button id="triton-install-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('tritonInstallBtn','Install')}</button><button id="triton-refresh-btn" class="btn-icon" ${this.tritonBusy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div></div>`;
+      }
     }
     h += `</div></details>`;
     return h;
@@ -225,14 +271,23 @@ window.environmentRenderMixin = {
     if (xfRefreshBtn) xfRefreshBtn.addEventListener('click', () => a.xfRefresh());
   },
 
+  _bindTritonEvents(el) {
+    const a = window.__anima || this;
+    const installBtn = el.querySelector('#triton-install-btn'), reinstallBtn = el.querySelector('#triton-reinstall-btn'), refreshBtn = el.querySelector('#triton-refresh-btn');
+    if (installBtn) installBtn.addEventListener('click', () => a.tritonInstall());
+    if (reinstallBtn) reinstallBtn.addEventListener('click', () => a.tritonInstall());
+    if (refreshBtn) refreshBtn.addEventListener('click', () => a.tritonRefresh());
+  },
+
   _bindCardToggle(el) {
     const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts'].forEach(id => {
+    ['env-flash-attn','env-xformers','env-sdscripts','env-triton'].forEach(id => {
       const card = el.querySelector('#'+id); if (!card) return;
       card.addEventListener('toggle', () => {
         if (id==='env-flash-attn') a.faCardOpen = card.open;
         else if (id==='env-xformers') a.xfCardOpen = card.open;
-        else a.sdCardOpen = card.open;
+        else if (id==='env-sdscripts') a.sdCardOpen = card.open;
+        else if (id==='env-triton') a.tritonCardOpen = card.open;
         a._envSaveCardState();
       });
     });

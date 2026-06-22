@@ -18,8 +18,12 @@ window.environmentCoreMixin = {
   // ── sd-scripts State ────────────────────────────────
   sdStatus: null,
 
+  // ── Triton State ─────────────────────────────────────
+  tritonStatus: null, tritonBusy: false,
+  tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
+
   // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true,
+  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true,
   _envPollTimer: null,
 
   _envInitCardState() {
@@ -29,11 +33,12 @@ window.environmentCoreMixin = {
         if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
         if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
         if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
+        if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
       }
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen})); } catch (_) {}
   },
 
   // ── Shared install polling ──────────────────────────
@@ -78,15 +83,19 @@ window.environmentCoreMixin = {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
-    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus;
-    if (needsFa || needsXf || needsSd) {
-      el.innerHTML = `<div class="env-loading"><div class="env-spinner"></div><p>`+this.t('environment.loading')+`</p></div>`;
+    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsTriton = !this.tritonStatus;
+    if (needsFa || needsXf || needsSd || needsTriton) {
+      // 立即渲染卡片骨架（4 张卡片 + Loading 徽章），给用户即时结构反馈；
+      // 各卡片数据到达后由 faRefresh/xfRefresh 内的 renderEnvironment 独立刷新，
+      // 比单一 spinner 体验更好，也避免长时间空白被误认为卡死。
+      this.renderEnvironment();
       const tasks = [];
       if (needsFa) tasks.push(this.faRefresh(true));
       if (needsXf) tasks.push(this.xfRefresh(true));
       if (needsSd) tasks.push((async () => {
         try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); } catch (_) { this.sdStatus = null; }
       })());
+      if (needsTriton) tasks.push(this.tritonRefresh(true));
       await Promise.all(tasks);
     }
     this.renderEnvironment(); this.finishProgress();
@@ -128,6 +137,53 @@ window.environmentCoreMixin = {
       if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._startPolling(result.job_id, 'xf'); }
       else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed','Install failed'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
+  },
+
+  // ── Triton Methods ──────────────────────────────────
+  async tritonRefresh(silent) {
+    try { const r = await fetch('/api/triton/status'); this.tritonStatus = await r.json(); } catch (_) { this.tritonStatus = null; }
+    if (!silent) { this.renderEnvironment(); this.finishProgress(); }
+  },
+
+  async tritonInstall() {
+    this.tritonBusy = true; this.tritonInstallLog = ''; this.tritonInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
+    try {
+      const r = await fetch('/api/triton/install', { method: 'POST' });
+      const result = await r.json();
+      if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._startPollingTriton(result.job_id); }
+      else { this.tritonBusy = false; this.toast(this.t('environment.installFailed','Install failed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
+    } catch (e) { this.tritonBusy = false; this.toast(String(e), 'error'); this.finishProgress(); this.renderEnvironment(); }
+  },
+
+  // Triton 专用轮询（prefix = 'triton'，与 xf/fa 共享 _startPolling 逻辑但 prefix 需映射）
+  _startPollingTriton(jobId) {
+    const a = this;
+    const logKey = 'tritonInstallLog', elapsedKey = 'tritonInstallElapsed';
+    let retries = 0;
+    const MAX_RETRIES = 30;
+    a._stopPolling();
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/install-log/' + jobId);
+        const data = await r.json();
+        retries = 0;
+        a[logKey] = data.lines || ''; a[elapsedKey] = data.elapsed || 0;
+        if (data.done) { a._stopPolling(); a.tritonBusy = false;
+          try { await a.tritonRefresh(true); } catch (_) {}
+          a.finishProgress(); a.renderEnvironment();
+        } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
+      } catch (_) {
+        retries++;
+        if (retries >= MAX_RETRIES) {
+          a._stopPolling(); a.tritonBusy = false;
+          a[logKey] += '\n[ERROR] ' + a.t('environment.connectionLost','Connection lost, please refresh');
+          a.finishProgress(); a.renderEnvironment();
+          return;
+        }
+        a._envPollTimer = setTimeout(tick, 2000);
+      }
+    };
+    a._envPollTimer = setTimeout(tick, 500);
   },
 
 };

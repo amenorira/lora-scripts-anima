@@ -14,10 +14,12 @@ window.trainingTomlMixin = {
   _tomlDebounceTimer: null,
 
   // ── TOML ────────────────────────────────────────────────
+  // 按表单分组顺序（getVisibleSections 返回 registry section_order + 字段顺序）
+  // 生成 TOML 行，使预览顺序 == 参数设置面板顺序。network_args 插在 network 分组后，
+  // optimizer_args 插在 optimizer 分组后。omitDefault 字段在值==默认值时跳过（不显示/不传）。
   updateToml() {
     const trainType = this.form.model_train_type || 'anima-lora';
     const allSections = window.getVisibleSections(trainType);
-    const lines = [];
 
     // Collect which LyCORIS UI fields are active (visible in form based on showIf)
     const activeLycorisKeys = new Set();
@@ -38,44 +40,56 @@ window.trainingTomlMixin = {
     const KOHYA_ONLY = new Set(['lycoris_algo','use_cp','use_scalar','decompose_both','full_matrix',
       'train_norm','dropout','dora_wd','block_size','constraint','rescaled','bypass_mode','rs_lora']);
 
-    for (const [k, v] of Object.entries(this.form)) {
-      // Check if this field is visible (not hidden, showIf met)
-      let fieldVisible = false;
-      for (const s of allSections) {
-        const f = (s.fields || []).find(x => x.key === k);
-        if (f) {
-          if (f.hidden) break;
-          if (!f.showIf || this._fieldShowIfMet(f)) fieldVisible = true;
-          break;
+    // 跳过的顶层字段：UI-only、merged 优化器字段（由 _buildOptimizerArgs 合并进 optimizer_args）
+    const SKIP_TOP_LEVEL = new Set([
+      'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
+      'enable_preview','positive_prompts','negative_prompts',
+      'sample_cfg','sample_width','sample_height','sample_seed','sample_steps',
+      'prodigy_d_coef','prodigy_d0','weight_decay','stopcoef',
+      'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
+      'came_ams_bound','came_eps1','came_eps2',
+    ]);
+
+    // 分组桶：key=sectionKey → value=行数组。按 allSections 顺序填充再拼接，保证预览==表单顺序。
+    const sectionLines = {};
+    allSections.forEach(s => { sectionLines[s.key] = []; });
+
+    const pushLine = (sectionKey, line) => {
+      if (sectionLines[sectionKey]) sectionLines[sectionKey].push(line);
+    };
+
+    // 遍历 sections → fields，按表单同序处理
+    for (const section of allSections) {
+      for (const f of (section.fields || [])) {
+        const k = f.key;
+        if (f.hidden) continue;
+        if (f.showIf && !this._fieldShowIfMet(f)) continue;
+        if (SKIP_TOP_LEVEL.has(k) || k.startsWith('_')) continue;
+
+        const v = this.form[k];
+        if (v === '' || v === null || v === undefined) continue;
+
+        // omitDefault：值==默认值时不传/不显示（仅 registry default == sd-scripts default 的字段标记）
+        if (f.omitDefault && f.default !== undefined && String(v) === String(f.default)) continue;
+
+        // Collect LyCORIS UI fields for network_args formatting
+        if (NET_ARG_MAP[k] && (isKohya || (isLycorisNative && !KOHYA_ONLY.has(k)))) {
+          activeLycorisKeys.add(k);
+          continue; // not added as top-level line
         }
-      }
-      if (!fieldVisible) continue;
-      if (k === 'model_train_type' || k.startsWith('_')) continue;
-      if (k === 'sample_prompts' || k === 'optimizer_args_custom' || k === 'network_args_custom') continue;
-      if (v === '' || v === null || v === undefined) continue;
 
-      // Collect LyCORIS UI fields for network_args formatting
-      if (NET_ARG_MAP[k] && (isKohya || (isLycorisNative && !KOHYA_ONLY.has(k)))) {
-        activeLycorisKeys.add(k);
-        continue; // not added as top-level line
-      }
-      // Skip preview-only UI fields and merged optimizer fields
-      if (['enable_preview','positive_prompts','negative_prompts',
-           'sample_cfg','sample_width','sample_height','sample_seed','sample_steps'].includes(k)) continue;
-      if (k === 'prodigy_d_coef' || k === 'prodigy_d0' || k === 'weight_decay' || k === 'stopcoef') continue;
-
-      if (typeof v === 'boolean') { lines.push(`${k} = ${v}`); }
-      else if (typeof v === 'number') { lines.push(`${k} = ${v}`); }
-      else {
-        const coerced = this._coerceNum(v);
-        if (coerced !== v) { lines.push(`${k} = ${coerced}`); }
-        else { lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`); }
+        if (typeof v === 'boolean') { pushLine(section.key, `${k} = ${v}`); }
+        else if (typeof v === 'number') { pushLine(section.key, `${k} = ${v}`); }
+        else {
+          const coerced = this._coerceNum(v);
+          if (coerced !== v) { pushLine(section.key, `${k} = ${coerced}`); }
+          else { pushLine(section.key, `${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`); }
+        }
       }
     }
 
-    // ── Build network_args ──────────────────────────────
+    // ── Build network_args（插在 network 分组末尾）──────────────
     const netArgsArr = [];
-    // Custom network_args
     const netCustom = this.form.network_args_custom;
     if (netCustom && typeof netCustom === 'string') {
       netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s));
@@ -92,15 +106,19 @@ window.trainingTomlMixin = {
     }
     if (netArgsArr.length > 0) {
       const quoted = netArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
-      lines.push(`network_args = [${quoted}]`);
+      pushLine('network', `network_args = [${quoted}]`);
     }
 
-    // ── Build optimizer_args (shared logic) ──────────────
+    // ── Build optimizer_args（插在 optimizer 分组末尾）──────────
     const optArgsArr = this._buildOptimizerArgs(this.form);
     if (optArgsArr.length > 0) {
       const quoted = optArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
-      lines.push(`optimizer_args = [${quoted}]`);
+      pushLine('optimizer', `optimizer_args = [${quoted}]`);
     }
+
+    // ── 按 section_order 拼接所有分组行 ─────────────────────────
+    const lines = [];
+    allSections.forEach(s => { lines.push(...sectionLines[s.key]); });
 
     this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
     const highlighted = lines.map(line => {
@@ -231,8 +249,10 @@ window.trainingTomlMixin = {
     this.statusText = this.t('common.training') + '...';
 
     const validKeys = new Set(['model_train_type']);
+    const fieldDefMap = {}; // key → field def（查 omitDefault/default）
     const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => s.fields.forEach(f => {
+      fieldDefMap[f.key] = f;
       if (!f.showIf || this._fieldShowIfMet(f)) {
         validKeys.add(f.key);
       }
@@ -242,6 +262,9 @@ window.trainingTomlMixin = {
     for (const [k, v] of Object.entries(this.form)) {
       if (!validKeys.has(k)) continue;
       if (v === '' || v === null || v === undefined) continue;
+      // omitDefault：值==默认值时不传（与预览一致，避免 sd-scripts 收到冗余的默认值）
+      const fd = fieldDefMap[k];
+      if (fd && fd.omitDefault && fd.default !== undefined && String(v) === String(fd.default)) continue;
       payload[k] = v;
     }
     for (const [k, v] of Object.entries(payload)) {
