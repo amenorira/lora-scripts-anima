@@ -1334,6 +1334,13 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin: 0;
   pointer-events: none;
 }
+/* 仅 advanced 字段的子组（无 basic）：折叠容器自身跟随模块显隐 */
+#trainFormContent .advanced-fold--inline.field-hidden {
+  max-height: 0 !important; opacity: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
 #trainFormContent .subgroup-header {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 2px;

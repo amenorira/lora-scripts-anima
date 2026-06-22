@@ -267,9 +267,10 @@ window.trainingCoreMixin = {
           if (!doneSubGroups.has(f.subGroup)) {
             doneSubGroups.add(f.subGroup);
             const sg = subGroups.get(f.subGroup);
-            // 子组公共显隐条件：取该子组字段的 showIf 中 network_module 的 eq 值。
+            // 子组公共显隐条件：取该子组字段的 showIf/showIfAny 中 network_module 的 eq 值。
             // kohya 子组所有字段 showIf 均含 network_module eq lycoris.kohya，整个子区块跟随它显隐。
-            const sgShowIf = (sg.basic[0] && sg.basic[0].showIf) || (sg.advanced[0] && sg.advanced[0].showIf);
+            const sgShowIf = (sg.basic[0] && (sg.basic[0].showIf || sg.basic[0].showIfAny))
+              || (sg.advanced[0] && (sg.advanced[0].showIf || sg.advanced[0].showIfAny));
             let sgCondMet = true;
             let sgShowIfAttrs = '';
             if (sgShowIf) {
@@ -282,22 +283,36 @@ window.trainingCoreMixin = {
               }
             }
             const sgBlockHidden = sgCondMet ? '' : ' field-hidden';
-            // 子组标题：kohya → "LyCORIS 算法参数"；其他子组用 subGroup 名兜底
-            const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
-            const sgTitle = sgTitleKey ? (this.t(sgTitleKey) || 'LyCORIS') : f.subGroup;
             // 该子组的高级折叠标题
             const sgAdvTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupAdvanced' : 'common.inlineAdvancedParams';
             const sgAdvTitle = this.t(sgAdvTitleKey) || this.t('common.inlineAdvancedParams') || 'More options';
 
-            html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
-            html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
-            html += `<div class="subgroup-body">`;
-            // 该子组的基础字段
-            sg.basic.forEach(bf => { html += this.renderField(bf); });
-            // 该子组的高级字段 → 子组内折叠（标题区分于全局"显示进阶参数"）
-            if (sg.advanced.length > 0) {
+            if (sg.basic.length > 0) {
+              // 有 basic 字段：渲染完整子组盒子（标题 + body + advanced 折叠）
+              const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
+              const sgTitle = sgTitleKey ? (this.t(sgTitleKey) || 'LyCORIS') : f.subGroup;
+              html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
+              html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
+              html += `<div class="subgroup-body">`;
+              sg.basic.forEach(bf => { html += this.renderField(bf); });
+              if (sg.advanced.length > 0) {
+                const sgKey = section.key + '--' + f.subGroup;
+                html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
+                html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
+                html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
+                html += `<span>${this.esc(sgAdvTitle)}</span>`;
+                html += `<span class="advanced-count">(${sg.advanced.length})</span>`;
+                html += `</div>`;
+                html += `<div class="advanced-fold-body">`;
+                sg.advanced.forEach(af => { html += this.renderField(af); });
+                html += `</div></div>`;
+              }
+              html += `</div></div>`;
+            } else if (sg.advanced.length > 0) {
+              // 仅 advanced 字段：不渲染子组盒子/标题，直接渲染独立的高级折叠块。
+              // 折叠容器自身带 network_module 显隐属性，模块切换时整体跟随显隐。
               const sgKey = section.key + '--' + f.subGroup;
-              html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
+              html += `<div class="advanced-fold advanced-fold--inline${sgBlockHidden}"${sgShowIfAttrs} data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
               html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
               html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
               html += `<span>${this.esc(sgAdvTitle)}</span>`;
@@ -307,7 +322,6 @@ window.trainingCoreMixin = {
               sg.advanced.forEach(af => { html += this.renderField(af); });
               html += `</div></div>`;
             }
-            html += `</div></div>`;
           }
         } else if (!f.advanced) {
           // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
@@ -623,6 +637,10 @@ window.trainingCoreMixin = {
           keys.add(f.showIf.key);
         }
       }
+      if (f.showIfAny) {
+        // OR-of-ANDs: list[list[dict]] — 收集每个内层 AND 组里的所有 key
+        f.showIfAny.forEach(group => group.forEach(c => keys.add(c.key)));
+      }
     }));
     return [...keys];
   },
@@ -780,6 +798,11 @@ window.trainingCoreMixin = {
         }
         condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
       }
+    } else if (field.showIfAny) {
+      // OR-of-ANDs: list[list[dict]] — 任一内层 AND 组全成立即显示
+      condAttrs = ` data-show-if-any='${this.esc(JSON.stringify(field.showIfAny))}'`;
+      const condMet = field.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
+      condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
     // ── Readonly If ──
@@ -813,11 +836,11 @@ window.trainingCoreMixin = {
       }
     }
 
-    // ── Nested detection (child of a showIf parent) ──
-    // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf 父字段的层级 + 1，父级若无 showIf 则为 0。
+    // ── Nested detection (child of a showIf/showIfAny parent) ──
+    // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf/showIfAny 父字段的层级 + 1，父级若无则为 0。
     // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
     const nestLevel = this._nestLevel(field);
-    const nestedClass = field.showIf ? ' field-nested' : '';
+    const nestedClass = (field.showIf || field.showIfAny) ? ' field-nested' : '';
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
@@ -898,6 +921,17 @@ window.trainingCoreMixin = {
         // Only re-evaluate if this parentKey is relevant to these conditions
         if (!conditions.some(c => c.key === parentKey)) return;
         const match = conditions.every(c => this._evalShowIfCond(c));
+        this._toggleFieldRow(row, match, toAnimate);
+      } catch (e) { /* ignore parse errors */ }
+    });
+
+    // Handle OR-of-ANDs show_if (data-show-if-any)
+    document.querySelectorAll(`[data-show-if-any]`).forEach(row => {
+      try {
+        const groups = JSON.parse(row.getAttribute('data-show-if-any'));
+        // Only re-evaluate if this parentKey appears in any AND group
+        if (!groups.some(group => group.some(c => c.key === parentKey))) return;
+        const match = groups.some(group => group.every(c => this._evalShowIfCond(c)));
         this._toggleFieldRow(row, match, toAnimate);
       } catch (e) { /* ignore parse errors */ }
     });
@@ -1268,12 +1302,12 @@ window.trainingCoreMixin = {
     return null;
   },
 
-  // ── Nest level: depth of showIf ancestry (A2) ──
-  // 一个字段的层级 = 其 showIf 父字段层级 + 1；无 showIf 则为 0。
+  // ── Nest level: depth of showIf/showIfAny ancestry (A2) ──
+  // 一个字段的层级 = 其 showIf/showIfAny 父字段层级 + 1；无则为 0。
   // 用于递增缩进与左边框深浅，让"开关→选项→子选项"层级一眼可读。
   _nestLevelCache: null,
   _nestLevel(field) {
-    if (!field.showIf) return 0;
+    if (!field.showIf && !field.showIfAny) return 0;
     // 构建一次 key→field 映射，避免重复遍历（render 时调用频繁）
     if (!this._nestLevelCache) {
       const map = {};
@@ -1283,10 +1317,18 @@ window.trainingCoreMixin = {
     let level = 0;
     let cur = field;
     const guard = new Set();
-    while (cur && cur.showIf && !guard.has(cur.key)) {
+    while (cur && (cur.showIf || cur.showIfAny) && !guard.has(cur.key)) {
       guard.add(cur.key);
       level += 1;
-      cur = this._nestLevelCache[cur.showIf.key];
+      // 确定父字段 key：showIf dict → .key；showIf 数组(AND) → 无明确父级(终止);
+      // showIfAny → 取第一个 AND 组的第一个 key 作为父级近似
+      let parentKey;
+      if (cur.showIf) {
+        parentKey = Array.isArray(cur.showIf) ? undefined : cur.showIf.key;
+      } else if (cur.showIfAny) {
+        parentKey = cur.showIfAny[0] && cur.showIfAny[0][0] && cur.showIfAny[0][0].key;
+      }
+      cur = parentKey ? this._nestLevelCache[parentKey] : undefined;
     }
     return level;
   },

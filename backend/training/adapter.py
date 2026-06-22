@@ -20,7 +20,8 @@ MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
 
-# ── LyCORIS 通用字段映射（sd-scripts 原生 LoHa/LoKr 和 lycoris.kohya 均支持）───
+# ── LyCORIS 通用字段映射（conv_dim/conv_alpha/rank_dropout/module_dropout 三模块均支持；
+#    lokr_factor→factor 仅 LoKr 消费；use_tucker 仅 lora/loha/lokr 消费。按模块/algo 过滤见下方分支）───
 LYCORIS_COMMON_ARG_MAP: dict[str, str] = {
     "conv_dim": "conv_dim",
     "conv_alpha": "conv_alpha",
@@ -170,21 +171,49 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     elif "network_args" in source:
         source.pop("network_args", None)
 
-    # ── 3. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅原生支持的参数）──
-    if source.get("network_module") in ("networks.loha", "networks.lokr"):
+    # ── 3. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅各模块原生支持的参数）──
+    # vendor loha.py 不读 factor（module_kwargs 无 factor），仅 vendor lokr.py 消费。
+    # 故 lokr_factor 仅在 networks.lokr 下透传；use_tucker/conv_dim/conv_alpha/rank_dropout/module_dropout 两者均支持。
+    _NATIVE_LOHA_ARG_MAP = {
+        "conv_dim": "conv_dim", "conv_alpha": "conv_alpha",
+        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
+        "use_tucker": "use_tucker",
+    }
+    _NATIVE_LOKR_ARG_MAP = dict(LYCORIS_COMMON_ARG_MAP)  # 含 lokr_factor→factor
+    _NATIVE_MODULE_ARG_MAP = {
+        "networks.loha": _NATIVE_LOHA_ARG_MAP,
+        "networks.lokr": _NATIVE_LOKR_ARG_MAP,
+    }
+    if source.get("network_module") in _NATIVE_MODULE_ARG_MAP:
+        arg_map = _NATIVE_MODULE_ARG_MAP[source["network_module"]]
         network_args = list(source.get("network_args") or [])
-        for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
+        for ui_field, arg_key in arg_map.items():
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
+                if isinstance(value, bool):
+                    value = str(value).lower()
                 network_args.append(f"{arg_key}={value}")
         if network_args:
             source["network_args"] = network_args
 
     # ── 4.5. lycoris.kohya 字段 → network_args（通用 + kohya特有 + kohya专有）───
+    # 按 algo 过滤：避免传无效参数给忽略它的模块（与 field_registry show_if/show_if_any 对齐）。
+    _LYCORIS_ALGO_FACTOR_ONLY = {"lokr"}
+    _LYCORIS_ALGO_TUCKER_OK = {"lora", "loha", "lokr"}
+    _LYCORIS_ALGO_SCALAR_OK = {"lora", "loha", "lokr", "glora"}  # use_scalar
+    _LYCORIS_ALGO_BLOCK_SIZE_OK = {"dylora"}  # block_size 入参仅 dylora 消费
+    _LYCORIS_ALGO_RS_LORA_OK = {"lora", "loha", "lokr", "glora"}  # rs_lora
     if source.get("network_module") == "lycoris.kohya":
+        algo = (source.get("lycoris_algo") or "lora").lower()
         network_args = list(source.get("network_args") or [])
         # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
         for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
+            if ui_field == "block_size" and algo not in _LYCORIS_ALGO_BLOCK_SIZE_OK:
+                source.pop(ui_field, None)
+                continue
+            if ui_field == "rs_lora" and algo not in _LYCORIS_ALGO_RS_LORA_OK:
+                source.pop(ui_field, None)
+                continue
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 if isinstance(value, bool):
@@ -192,6 +221,13 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 network_args.append(f"{arg_key}={value}")
         # 通用 LyCORIS 字段（conv_dim, rank_dropout 等，sd-scripts 原生也支持）
         for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
+            # algo 过滤：lokr_factor 仅 lokr；use_tucker 仅 lora/loha/lokr
+            if ui_field == "lokr_factor" and algo not in _LYCORIS_ALGO_FACTOR_ONLY:
+                source.pop(ui_field, None)  # 仍需 pop，避免泄漏到白名单透传
+                continue
+            if ui_field == "use_tucker" and algo not in _LYCORIS_ALGO_TUCKER_OK:
+                source.pop(ui_field, None)
+                continue
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 if isinstance(value, bool):
@@ -199,6 +235,9 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 network_args.append(f"{arg_key}={value}")
         # 仅 lycoris.kohya 支持的高级字段（use_cp, decompose_both 等）
         for ui_field, arg_key in LYCORIS_KOHYA_ONLY_ARG_MAP.items():
+            if ui_field == "use_scalar" and algo not in _LYCORIS_ALGO_SCALAR_OK:
+                source.pop(ui_field, None)
+                continue
             value = source.pop(ui_field, None)
             if not _is_empty_value(value):
                 if isinstance(value, bool):
@@ -313,16 +352,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "xformers 注意力模式需要 split_attn，已自动开启"
         )
 
-    # ── 5.10. sageattn 不支持训练 ──
-    if source.get("attn_mode") == "sageattn":
-        source["attn_mode"] = "torch"
-        warnings.append(
-            "[Warning] sageattn does not support training; "
-            "falling back to torch mode / "
-            "sageattn 不支持训练，已回退为 torch 模式"
-        )
-
-    # ── 5.11. Anima per-block compile (compile_*) 校验 ──
+    # ── 5.10. Anima per-block compile (compile_*) 校验 ──
     # compile 与通用 torch_compile 互斥（anima_train_network.py 注释明确两者不可并用）
     if source.get("compile") and source.get("torch_compile"):
         source["torch_compile"] = False
@@ -350,7 +380,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "compile_fullgraph 与 split_attn 不可同时使用，已关闭 compile_fullgraph"
         )
 
-    # ── 5.12. unsloth_offload_checkpointing 互斥校验 ──
+    # ── 5.11. unsloth_offload_checkpointing 互斥校验 ──
     # anima_train_network.py 明确：不可与 cpu_offload_checkpointing 或 blocks_to_swap 同用
     if source.get("unsloth_offload_checkpointing"):
         if source.get("cpu_offload_checkpointing"):
@@ -369,7 +399,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "unsloth_offload_checkpointing 与 blocks_to_swap 不可同时使用，已关闭前者"
             )
 
-    # ── 5.13. adaptive_noise_scale 依赖 noise_offset ──
+    # ── 5.12. adaptive_noise_scale 依赖 noise_offset ──
     # sd-scripts verify_training_args: adaptive_noise_scale requires noise_offset
     if source.get("adaptive_noise_scale") is not None and not source.get("noise_offset"):
         source["adaptive_noise_scale"] = None
@@ -379,7 +409,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "adaptive_noise_scale 需配合 noise_offset 使用，已关闭 adaptive_noise_scale"
         )
 
-    # ── 5.14. torch.compile Windows + inductor 稳定性警告 ──
+    # ── 5.13. torch.compile Windows + inductor 稳定性警告 ──
     # 放在所有 torch_compile/compile 互斥处理之后，仅当 torch_compile 仍启用时报警。
     if source.get("torch_compile"):
         import sys

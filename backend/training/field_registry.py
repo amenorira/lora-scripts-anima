@@ -27,7 +27,11 @@ from typing import Any
 #   role       — 文件选择器类型（可选）: file-model, file-folder, file-model-saved
 #   options    — select 选项列表（可选）
 #   show_if    — 条件显示（可选）: {"key": "...", "eq": ...} 或 {"key": "...", "neq": ...}
-#                可带 "_or" 键表示多值匹配任一
+#                可带 "_or" 键表示多值匹配任一。
+#                多条件 AND：传 list[dict]，所有条件同时成立才显示。
+#   show_if_any — 条件显示（可选，OR-of-ANDs）: list[list[dict]]，外层 OR、内层 AND。
+#                任一内层 AND 组全部成立即显示。用于"原生模块 OR (lycoris + 特定 algo)"
+#                这类跨两个字段的复合条件。show_if 与 show_if_any 互斥。
 #   hint_key   — 提示文本 i18n 键（可选）
 #   step       — number 步长（可选）
 #   min        — 最小值（可选）
@@ -71,30 +75,41 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima"]}, "hint_key": "field.network_dropoutHint"},
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
-    # LyCORIS 共享：conv_dim/conv_alpha/lokr_factor/rank_dropout/module_dropout/use_tucker（loha/lokr/lycoris.kohya）
+    # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开。
+    # 不带 sub_group → 渲染为常规 inline 子参数（不包在"LyCORIS 算法参数"子组盒子里）。
+    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},
+    {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}, {"v": "ia3", "l": "ia3", "dk": "opt.lycoris_preset_ia3"}]},
+    # LyCORIS 共享：conv_dim/conv_alpha/rank_dropout/module_dropout（loha/lokr/lycoris.kohya 均支持）。
+    # lokr_factor 仅 LoKr 消费、use_tucker 仅 lora/loha/lokr 消费，见各自 show_if_any。
     {"key": "conv_dim", "type": "number", "section": "network", "desc_key": "field.conv_dim", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_dimHint"},
     {"key": "conv_alpha", "type": "number", "section": "network", "desc_key": "field.conv_alpha", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_alphaHint"},
-    {"key": "lokr_factor", "type": "number", "default": -1, "section": "network", "desc_key": "field.lokr_factor", "target": "ui", "min": -1, "step": 1, "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}, "hint_key": "field.lokr_factorHint"},
+    # lokr_factor → sd-scripts factor：仅 LoKr 算法消费（vendor lokr.py 读 kwargs["factor"]；
+    # vendor loha.py 不读；lycoris 仅 LokrModule.__init__ 有 factor 参数）。
+    # 故显示条件为 OR-of-ANDs：原生 networks.lokr，或 lycoris.kohya + algo=lokr。
+    {"key": "lokr_factor", "type": "number", "default": -1, "section": "network", "desc_key": "field.lokr_factor", "target": "ui", "min": -1, "step": 1, "show_if_any": [[{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}]], "hint_key": "field.lokr_factorHint", "omit_default": True},
     {"key": "rank_dropout", "type": "number", "section": "network", "desc_key": "field.rank_dropout", "target": "ui", "min": 0, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}},
     {"key": "module_dropout", "type": "number", "section": "network", "desc_key": "field.module_dropout", "target": "ui", "min": 0, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}},
-    {"key": "use_tucker", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_tucker", "target": "ui", "show_if": {"key": "network_module", "eq": "networks.loha", "_or": ["networks.lokr", "lycoris.kohya"]}, "hint_key": "field.use_tuckerHint"},
-    # lycoris.kohya 基础子参数（show_if: kohya, sub_group: "kohya" — 渲染为子组：基础字段 + 子折叠）
-    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "sub_group": "kohya", "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},
-    {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "sub_group": "kohya", "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}, {"v": "ia3", "l": "ia3", "dk": "opt.lycoris_preset_ia3"}]},
-    {"key": "use_scalar", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_scalar", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "sub_group": "kohya"},
-    {"key": "decompose_both", "type": "toggle", "default": False, "section": "network", "desc_key": "field.decompose_both", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "sub_group": "kohya"},
-    {"key": "dropout", "type": "number", "section": "network", "desc_key": "field.lycoris_dropout", "target": "ui", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "sub_group": "kohya", "hint_key": "field.lycoris_dropoutHint"},
-    # lycoris.kohya 高级子参数（show_if: kohya + algo 特定；advanced: true, sub_group: "kohya" → 渲染在子折叠内）
-    {"key": "full_matrix", "type": "toggle", "default": False, "section": "network", "desc_key": "field.full_matrix", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "advanced": True, "sub_group": "kohya"},
-    {"key": "train_norm", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_norm", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya"},
-    {"key": "dora_wd", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dora_wd", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.dora_wdHint", "advanced": True, "sub_group": "kohya"},
-    {"key": "block_size", "type": "number", "default": 4, "section": "network", "desc_key": "field.block_size", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "advanced": True, "sub_group": "kohya"},
-    {"key": "constraint", "type": "number", "default": 0, "step": 0.1, "section": "network", "desc_key": "field.constraint", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "hint_key": "field.constraintHint", "advanced": True, "sub_group": "kohya"},
-    {"key": "rescaled", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rescaled", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "advanced": True, "sub_group": "kohya"},
-    {"key": "bypass_mode", "type": "toggle", "default": False, "section": "network", "desc_key": "field.bypass_mode", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya"},
-    {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.rs_loraHint", "advanced": True, "sub_group": "kohya"},
-    {"key": "unbalanced_factorization", "type": "toggle", "default": False, "section": "network", "desc_key": "field.unbalanced_factorization", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "advanced": True, "sub_group": "kohya"},
-    {"key": "wd_on_output", "type": "toggle", "default": True, "section": "network", "desc_key": "field.wd_on_output", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.wd_on_outputHint", "advanced": True, "sub_group": "kohya"},
+    # use_tucker：仅 Conv2d 3x3+ 的 Tucker 分解有效。原生 loha/lokr 模块消费；
+    # lycoris 仅 LoCon/Loha/Lokr 模块消费（dylora/glora/ia3/diag-oft/boft 签名有但忽略）。
+    # 故显示条件为 OR-of-ANDs：原生 loha/lokr，或 lycoris.kohya + algo∈{lora,loha,lokr}。
+    {"key": "use_tucker", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_tucker", "target": "ui", "show_if_any": [[{"key": "network_module", "eq": "networks.loha"}], [{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}]], "hint_key": "field.use_tuckerHint", "omit_default": True},
+    # lycoris.kohya 其他基础子参数（inline，无 sub_group；advanced 子参数保留 sub_group 形成下方"LyCORIS 高级"折叠）
+    {"key": "use_scalar", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_scalar", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr", "glora"]}], "omit_default": True},
+    {"key": "decompose_both", "type": "toggle", "default": False, "section": "network", "desc_key": "field.decompose_both", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "omit_default": True},
+    {"key": "dropout", "type": "number", "section": "network", "desc_key": "field.lycoris_dropout", "target": "ui", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.lycoris_dropoutHint"},
+    # lycoris.kohya 高级子参数（show_if: kohya + algo 特定；advanced: true, sub_group: "kohya" → 渲染为"LyCORIS 高级"子折叠）
+    {"key": "full_matrix", "type": "toggle", "default": False, "section": "network", "desc_key": "field.full_matrix", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "train_norm", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_norm", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "dora_wd", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dora_wd", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.dora_wdHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "block_size", "type": "number", "default": 4, "section": "network", "desc_key": "field.block_size", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "dylora"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "constraint", "type": "number", "default": 0, "step": 0.1, "section": "network", "desc_key": "field.constraint", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "hint_key": "field.constraintHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "rescaled", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rescaled", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "bypass_mode", "type": "toggle", "default": False, "section": "network", "desc_key": "field.bypass_mode", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr", "glora"]}], "hint_key": "field.rs_loraHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "unbalanced_factorization", "type": "toggle", "default": False, "section": "network", "desc_key": "field.unbalanced_factorization", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
+    # wd_on_output：DoRA 权重分解的作用维度（输出 vs 输入）。仅 dora_wd=True（开启 DoRA）时生效，
+    # 故显示条件追加 dora_wd=True（lycoris 各模块仅在 self.wd 为真时才读 wd_on_out）。
+    {"key": "wd_on_output", "type": "toggle", "default": True, "section": "network", "desc_key": "field.wd_on_output", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}, {"key": "dora_wd", "eq": True}], "hint_key": "field.wd_on_outputHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
     # ── 通用高级参数（所有 module 可见，advanced: true）──
     # base_weights：训练前把已有 LoRA 权重合并进 base 模型再训练（LoRA 叠加工作流）。
     # sd-scripts argparse nargs="*"，adapter 把逗号分隔字符串转 list。
@@ -131,14 +146,14 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "target": "toml", "min": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"}, "omit_default": True},
 {"key": "lr_scheduler_power", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lr_scheduler_power", "target": "toml", "min": 0.1, "step": 0.1, "show_if": {"key": "lr_scheduler", "eq": "polynomial"}, "omit_default": True},
 {"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "step": 0.1, "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0}], "omit_default": True},
-{"key": "weight_decay", "type": "number", "section": "optimizer", "desc_key": "field.weight_decay", "target": "merged", "step": 0.001, "hint_key": "field.weight_decayHint", "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0.01}]},
+{"key": "weight_decay", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.weight_decay", "target": "merged", "step": 0.001, "hint_key": "field.weight_decayHint", "auto_value": [{"watch": "optimizer_type", "when": "vendor.emo_optimizer.emosens.EmoSens", "set": 0.01}]},
     # EmoSens 专用：收敛灵敏度（stopcoef）
     {"key": "stopcoef", "type": "number", "default": 0.04, "section": "optimizer", "desc_key": "field.stopcoef", "target": "merged", "min": 0.001, "max": 1.0, "step": 0.001, "hint_key": "field.stopcoefHint", "show_if": {"key": "optimizer_type", "eq": "vendor.emo_optimizer.emosens.EmoSens"}},
 {"key": "prodigy_d_coef", "type": "text", "default": "1.0", "section": "optimizer", "desc_key": "field.prodigy_d_coef", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "Prodigy", "_or": ["prodigyplus.ProdigyPlusScheduleFree"]}},
 {"key": "prodigy_d0", "type": "text", "default": "", "section": "optimizer", "desc_key": "field.prodigy_d0", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "Prodigy", "_or": ["prodigyplus.ProdigyPlusScheduleFree"]}},
 # ── Optimizer Merged: betas / eps ──
-{"key": "betas", "type": "text", "section": "optimizer", "desc_key": "field.betas", "target": "merged", "hint_key": "field.betasHint", "show_if": {"key": "optimizer_type", "eq": "AdamW", "_or": ["AdamW8bit", "PagedAdamW8bit", "Lion", "Lion8bit", "PagedLion8bit", "pytorch_optimizer.CAME", "vendor.emo_optimizer.emosens.EmoSens"]}},
-{"key": "eps", "type": "text", "section": "optimizer", "desc_key": "field.eps", "target": "merged", "hint_key": "field.epsHint", "show_if": {"key": "optimizer_type", "eq": "AdamW", "_or": ["AdamW8bit", "PagedAdamW8bit", "pytorch_optimizer.CAME", "vendor.emo_optimizer.emosens.EmoSens"]}},
+{"key": "betas", "type": "text", "section": "optimizer", "desc_key": "field.betas", "target": "merged", "hint_key": "field.betasHint", "show_if": {"key": "optimizer_type", "eq": "AdamW", "_or": ["AdamW8bit", "PagedAdamW8bit", "Lion", "Lion8bit", "PagedLion8bit", "pytorch_optimizer.CAME", "vendor.emo_optimizer.emosens.EmoSens", "AdamWScheduleFree", "Prodigy", "prodigyplus.ProdigyPlusScheduleFree"]}},
+{"key": "eps", "type": "text", "section": "optimizer", "desc_key": "field.eps", "target": "merged", "hint_key": "field.epsHint", "show_if": {"key": "optimizer_type", "eq": "AdamW", "_or": ["AdamW8bit", "PagedAdamW8bit", "vendor.emo_optimizer.emosens.EmoSens", "AdamWScheduleFree", "Prodigy", "prodigyplus.ProdigyPlusScheduleFree"]}},
 # ── CAME 专用参数 ──
 {"key": "came_weight_decouple", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.came_weight_decouple", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "pytorch_optimizer.CAME"}},
 {"key": "came_fixed_decay", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.came_fixed_decay", "target": "merged", "show_if": {"key": "optimizer_type", "eq": "pytorch_optimizer.CAME"}},
@@ -166,7 +181,7 @@ FIELDS: list[dict[str, Any]] = [
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": "sdxl"},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": "sdxl", "omit_default": True},
-{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "sdpa", "l": "sdpa", "dk": "opt.attn_mode_sdpa"}, {"v": "sageattn", "l": "sageattn", "dk": "opt.attn_mode_sageattn"}]},
+{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "sdpa", "l": "sdpa", "dk": "opt.attn_mode_sdpa"}]},
 {"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True}]},
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
     {"key": "cuda_allow_tf32", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_allow_tf32", "target": "toml", "group": "anima", "hint_key": "field.cuda_allow_tf32Hint"},
@@ -268,6 +283,7 @@ _FIELD_KEY_MAP = {
     "desc_key": "descKey",
     "hint_key": "hintKey",
     "show_if": "showIf",
+    "show_if_any": "showIfAny",
     "label_key": "labelKey",
     "dk": "dKey",
     "auto_value": "autoValue",
@@ -316,6 +332,14 @@ def _to_camel(field: dict) -> dict:
                 {("or" if sk == "_or" else ("neq" if sk == "neq" else sk)): sv
                  for sk, sv in cond.items()}
                 for cond in v
+            ]
+        elif k == "show_if_any" and isinstance(v, list):
+            # OR-of-ANDs: list[list[dict]] → 外层 OR，内层 AND 组各自转换
+            result[new_key] = [
+                [{("or" if sk == "_or" else ("neq" if sk == "neq" else sk)): sv
+                  for sk, sv in cond.items()}
+                 for cond in group]
+                for group in v
             ]
         elif k == "readonly_if" and isinstance(v, dict):
             # Convert readonly_if similarly to show_if

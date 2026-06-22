@@ -21,7 +21,7 @@ window.trainingTomlMixin = {
     const trainType = this.form.model_train_type || 'anima-lora';
     const allSections = window.getVisibleSections(trainType);
 
-    // Collect which LyCORIS UI fields are active (visible in form based on showIf)
+    // Collect which LyCORIS UI fields are active (visible in form based on showIf/showIfAny)
     const activeLycorisKeys = new Set();
     const networkModule = this.form.network_module || '';
     const isKohya = networkModule === 'lycoris.kohya';
@@ -67,7 +67,7 @@ window.trainingTomlMixin = {
       for (const f of (section.fields || [])) {
         const k = f.key;
         if (f.hidden) continue;
-        if (f.showIf && !this._fieldShowIfMet(f)) continue;
+        if (!this._fieldShowIfMet(f)) continue;
         if (SKIP_TOP_LEVEL.has(k) || k.startsWith('_')) continue;
 
         const v = this.form[k];
@@ -101,8 +101,10 @@ window.trainingTomlMixin = {
     // LyCORIS UI fields → key=value
     for (const k of activeLycorisKeys) {
       const v = this.form[k];
-      // Match adapter.py _is_empty_value: skip None, false, NaN, empty strings
-      if (v === null || v === undefined || v === false || v === '') continue;
+      // 与 adapter.py _is_empty_value 对齐：跳过 None/undefined/空串/NaN。
+      // 注意：布尔 False 不跳过（adapter 明确"toggle 关闭时应显式传入 false"）。
+      // 默认值已在收集阶段（omitDefault）过滤，此处剩下的都是用户显式设置的非默认值。
+      if (v === null || v === undefined || v === '') continue;
       if (typeof v === 'number' && isNaN(v)) continue;
       const argKey = NET_ARG_MAP[k];
       const val = typeof v === 'boolean' ? String(v).toLowerCase() : String(v);
@@ -150,13 +152,19 @@ window.trainingTomlMixin = {
   // Helper: check if a field's showIf condition is met
   _fieldShowIfMet(f) {
     const sf = f.showIf;
-    if (!sf) return true;
-    if (Array.isArray(sf)) {
-      // Multi-condition AND: all conditions must match
-      return sf.every(c => this._evalShowIfCond(c));
+    if (sf) {
+      if (Array.isArray(sf)) {
+        // Multi-condition AND: all conditions must match
+        return sf.every(c => this._evalShowIfCond(c));
+      }
+      // Single condition
+      return this._evalShowIfCond(sf);
     }
-    // Single condition
-    return this._evalShowIfCond(sf);
+    if (f.showIfAny) {
+      // OR-of-ANDs: 任一内层 AND 组全成立
+      return f.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
+    }
+    return true;
   },
 
   // Evaluate a single show_if condition
@@ -205,11 +213,14 @@ window.trainingTomlMixin = {
         'Lion': '0.9,0.99', 'Lion8bit': '0.9,0.99', 'PagedLion8bit': '0.9,0.99',
         'pytorch_optimizer.CAME': '0.9,0.999,0.9999',
         'vendor.emo_optimizer.emosens.EmoSens': '0.9,0.995',
+        'AdamWScheduleFree': '0.9,0.999',
+        'Prodigy': '0.9,0.999', 'prodigyplus.ProdigyPlusScheduleFree': '0.9,0.99',
       }},
       { form: 'eps', arg: 'eps', defaults: DEFS.eps || {
         'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
-        'pytorch_optimizer.CAME': '1e-16',
         'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
+        'AdamWScheduleFree': '1e-8',
+        'Prodigy': '1e-8', 'prodigyplus.ProdigyPlusScheduleFree': '1e-8',
       }},
       { form: 'came_weight_decouple', arg: 'weight_decouple', defaults: DEFS.came_weight_decouple || { 'pytorch_optimizer.CAME': true } },
       { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: DEFS.came_fixed_decay || { 'pytorch_optimizer.CAME': false } },
@@ -222,9 +233,9 @@ window.trainingTomlMixin = {
     for (const rule of MERGED_RULES) {
       const val = form[rule.form];
       if (val === undefined || val === null || val === '') continue;
-      // Skip fields whose showIf condition is not met (hidden fields)
+      // Skip fields whose showIf/showIfAny condition is not met (hidden fields)
       const fieldDef = this.findFieldDef(rule.form);
-      if (fieldDef && fieldDef.showIf && !this._fieldShowIfMet(fieldDef)) continue;
+      if (fieldDef && !this._fieldShowIfMet(fieldDef)) continue;
       const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
       if (defVal !== undefined && defVal !== null && String(val) === String(defVal)) continue;
       // optimizer_args 的值经 sd-scripts 的 ast.literal_eval 解析，
@@ -270,7 +281,7 @@ window.trainingTomlMixin = {
     const allSections = window.getVisibleSections(trainType);
     allSections.forEach(s => s.fields.forEach(f => {
       fieldDefMap[f.key] = f;
-      if (!f.showIf || this._fieldShowIfMet(f)) {
+      if (this._fieldShowIfMet(f)) {
         validKeys.add(f.key);
       }
     }));
