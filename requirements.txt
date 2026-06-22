@@ -28,4 +28,6 @@ setuptools>=68,<82
 lycoris-lora==3.4.0
 
 # ── ONNX 推理（WD14 tagger 需要，GPU 版包含 CPU 支持）──
-onnxruntime-gpu
+# 固定 1.20.1 匹配当前 torch+cu128（CUDA 12.x + cuDNN 9）。
+# setup_onnxruntime() 会按 torch 实际 CUDA 版本动态升降级，此处为静态兜底。
+onnxruntime-gpu==1.20.1

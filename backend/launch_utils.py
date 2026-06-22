@@ -250,6 +250,31 @@ def setup_windows_bitsandbytes():
         run_pip(f"install {bnb_package}", bnb_package, live=True)
 
 
+# onnxruntime-gpu 与 CUDA 的版本对应（仅列项目用到的组合）
+# 1.20.1 需 CUDA 12.x + cuDNN 9；1.27.0 需 CUDA 13 + cuDNN 9
+_ORT_VERSION_BY_CUDA_MAJOR = {
+    "12": "1.20.1",
+    "13": "1.27.0",
+}
+
+
+def _resolve_ort_version_for_torch() -> Optional[str]:
+    """根据已安装 torch 的 CUDA 版本返回兼容的 onnxruntime-gpu 版本。
+
+    torch 未安装（首次启动可能还在装）或读不到 CUDA 后缀时返回 None，
+    交由调用方走"不约束版本"的原有路径。
+    """
+    try:
+        import torch  # noqa: F401
+        m = re.search(r"\+cu(\d+)", torch.__version__)
+        if not m:
+            return None
+        cuda_major = m.group(1)[:-1] if len(m.group(1)) > 1 else m.group(1)
+        return _ORT_VERSION_BY_CUDA_MAJOR.get(cuda_major)
+    except Exception:
+        return None
+
+
 def setup_onnxruntime(
         onnx_version: Optional[str] = None,
         index_url: Optional[str] = None
@@ -259,7 +284,15 @@ def setup_onnxruntime(
         if libc_ver[0] == "glibc" and libc_ver[1] <= "2.27":
             onnx_version = "1.16.3"
 
-    onnx_version = os.environ.get("ONNXRUNTIME_VERSION", onnx_version)
+    # 环境变量优先（保留覆盖入口），其次按 torch CUDA 版本动态匹配
+    env_ver = os.environ.get("ONNXRUNTIME_VERSION")
+    if env_ver:
+        onnx_version = env_ver
+    elif onnx_version is None:
+        resolved = _resolve_ort_version_for_torch()
+        if resolved:
+            onnx_version = resolved
+            log.info(f"resolved onnxruntime-gpu=={resolved} from torch CUDA build")
 
     if onnx_version and not is_installed(f"onnxruntime-gpu=={onnx_version}"):
         log.info("uninstalling wrong onnxruntime version")

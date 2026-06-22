@@ -71,7 +71,10 @@ class WaifuDiffusionInterrogator(Interrogator):
 
         self.model = InferenceSession(str(model_path), providers=providers, sess_options=opts)
 
-        log.info(f'Loaded {self.name} model from {model_path}')
+        device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
+        log.info(f'Loaded {self.name} model from {model_path} (device: {device})')
+        if device == "CPU":
+            log.info('  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
 
         self.tags = pd.read_csv(tags_path)
 

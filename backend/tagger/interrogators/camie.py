@@ -79,6 +79,8 @@ class CamieTaggerInterrogator(Interrogator):
             else "CPU"
         )
         print(f"Loaded {self.name} model from {model_path} (device: {device})")
+        if device == "CPU":
+            print("  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。")
 
         # ── Parse metadata JSON ──────────────────────────────
         with open(metadata_path, "r", encoding="utf-8") as f:
