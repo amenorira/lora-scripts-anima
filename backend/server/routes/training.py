@@ -111,7 +111,9 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
             f"Output Name:  {config.get('output_name', '?')}",
             f"Resolution:   {config.get('resolution', '?')}",
             f"Batch Size:   {config.get('train_batch_size', '?')}",
-            f"LR:           {config.get('learning_rate', '?')}",
+            f"LR:           {config.get('learning_rate', '?')}"
+            + (f"  (unet={config['unet_lr']})" if config.get('unet_lr') else "")
+            + (f"  (te={config['text_encoder_lr']})" if config.get('text_encoder_lr') else ""),
             f"Optimizer:    {config.get('optimizer_type', '?')}",
             f"Network Dim:  {config.get('network_dim', '?')}",
             f"Network Alpha:{config.get('network_alpha', '?')}",

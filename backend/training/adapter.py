@@ -257,6 +257,16 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "自动关闭 text_encoder_only"
         )
         source["network_train_text_encoder_only"] = False
+        te_only = False
+
+    # 学习率 ↔ 训练开关联动兜底（与前端 training-core.js setField 同步）：
+    # sd-scripts 取值链：unet_lr/text_encoder_lr 非空时覆盖 learning_rate，为空则回退 learning_rate。
+    # 被开关排除的训练目标，其分量学习率应清空（不写 TOML），避免残留值误导用户以为生效，
+    # 也让 learning_rate 作为唯一总学习率正确生效。
+    if unet_only and not _is_empty_value(source.get("text_encoder_lr")):
+        source["text_encoder_lr"] = ""
+    if te_only and not _is_empty_value(source.get("unet_lr")):
+        source["unet_lr"] = ""
 
     # ── 5.6. EmoSens 优化器：强制 lr_scheduler + 模型感知 LR ──
     _EMO_OPTIMIZERS = {"vendor.emo_optimizer.emosens.EmoSens"}
@@ -267,18 +277,35 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             warnings.append(
                 "EmoSens: lr_scheduler forced to constant (内部自动管理学习率)"
             )
-        # 根据模型架构调整学习率（仅当前端未正确预填时）
+        # 根据模型架构调整学习率（仅纠 learning_rate 总学习率；分量留空会自动回退到它）。
+        # Anima(DiT) 用 0.1，SDXL 用 1.0。
         model_type = source.get("model_train_type", "sdxl-lora")
+        emo_target = "0.1" if model_type == "anima-lora" else "1.0"
+        ref_other = "1.0" if model_type == "anima-lora" else "0.1"
+        # learning_rate：当前值恰好是另一架构的默认（即未被用户改过）时纠正
         lr = source.get("learning_rate", "1.0")
         try:
-            lr_val = float(lr)
+            lr_cur = float(lr)
         except (ValueError, TypeError):
-            lr_val = 1.0
-        if model_type == "anima-lora" and abs(lr_val - 1.0) < 1e-6:
-            source["learning_rate"] = "0.1"
+            lr_cur = 1.0
+        if abs(lr_cur - float(ref_other)) < 1e-6:
+            source["learning_rate"] = emo_target
             warnings.append(
-                "EmoSens + Anima(DiT): learning_rate auto-adjusted to 0.1 (Transformer 推荐值)"
+                f"EmoSens + {model_type}: learning_rate auto-adjusted to {emo_target}"
             )
+        # 注：不主动改 unet_lr / text_encoder_lr——它们留空（默认）会自动回退到
+        # learning_rate（即 emo_target），这正是 EmoSens 推荐用法（全層同一 LR）。
+        # EmoSens 的 emoPulse（每步实际 lr）仅由 learning_rate（→emoScope）+ loss 决定，
+        # 每个 param_group 被初始化时拿到的分量 lr 会在第一步 step 后被 emoPulse 统一覆盖，
+        # 故手填的分量 lr 对 EmoSens 实际无效。若用户填了任意分量，仅作温和提示。
+        for _lr_key in ("unet_lr", "text_encoder_lr"):
+            if not _is_empty_value(source.get(_lr_key)):
+                warnings.append(
+                    f"EmoSens: {_lr_key} is set but has no effect (EmoSens uses learning_rate "
+                    f"as the single base rate for all params); consider clearing it / "
+                    f"EmoSens 仅以 learning_rate 作唯一样本生成动态 LR，分量 LR 不会生效，建议清空"
+                )
+                break  # 提一次即可
         # weight_decay 安全网：EmoSens 官方默认 0.01
         # 注意：前端已把 weight_decay 合并进 optimizer_args 并从顶层删除（merged 字段），
         # 因此这里检查的是 optimizer_args 中是否已有 weight_decay= 项，而非顶层 weight_decay。
@@ -298,18 +325,23 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             )
 
     # ── 5.6b. Prodigy 优化器：锁定 learning_rate ─────────
+    # D-adaptation 要求 LR=1.0 作缩放因子。三个 LR 字段（learning_rate / unet_lr / text_encoder_lr）
+    # 非空时都必须为 1.0——分量非空会覆盖 learning_rate，故只锁 learning_rate 不够。
     _PRODIGY_OPTIMIZERS = {"Prodigy", "prodigyplus.ProdigyPlusScheduleFree"}
     if source.get("optimizer_type") in _PRODIGY_OPTIMIZERS:
-        lr = source.get("learning_rate", "1.0")
-        try:
-            lr_val = float(lr)
-        except (ValueError, TypeError):
-            lr_val = 1.0
-        if abs(lr_val - 1.0) > 1e-6:
-            source["learning_rate"] = "1.0"
-            warnings.append(
-                "Prodigy: learning_rate forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
-            )
+        for _lr_key in ("learning_rate", "unet_lr", "text_encoder_lr"):
+            _lr = source.get(_lr_key)
+            if _is_empty_value(_lr):
+                continue  # 分量留空 → 回退 learning_rate（已是 1.0），无需处理
+            try:
+                _lr_val = float(_lr)
+            except (ValueError, TypeError):
+                _lr_val = 1.0
+            if abs(_lr_val - 1.0) > 1e-6:
+                source[_lr_key] = "1.0"
+                warnings.append(
+                    f"Prodigy: {_lr_key} forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
+                )
 
     # ── 5.6c. ScheduleFree 优化器：锁定 lr_scheduler ─────
     _SCHEDULEFREE_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
@@ -337,6 +369,9 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     if source.get("cache_text_encoder_outputs") and source.get("network_train_text_encoder_only"):
         source["network_train_text_encoder_only"] = False
         source["network_train_unet_only"] = True
+        # 同 5.5 联动：被排除的文本编码器分量学习率清空（不写 TOML）
+        if not _is_empty_value(source.get("text_encoder_lr")):
+            source["text_encoder_lr"] = ""
         warnings.append(
             "[Conflict] cache_text_encoder_outputs and network_train_text_encoder_only "
             "are incompatible; forcing unet_only=True, text_encoder_only=False / "

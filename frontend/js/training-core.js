@@ -1258,17 +1258,34 @@ window.trainingCoreMixin = {
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
 
-    // Mutual exclusion: network_train_unet_only and network_train_text_encoder_only
+    // 学习率 ↔ 训练开关联动（与 adapter.py 同步）：
+    // sd-scripts 取值链：unet_lr/text_encoder_lr 非空 → 覆盖 learning_rate；为空 → 回退 learning_rate。
+    // 故把"被开关排除的部分"对应的分量学习率清空，让 learning_rate 成为唯一生效的总学习率，
+    // 也避免把不参与训练的分量的残留值写进 TOML（误导用户以为生效）。
+    //   unet_only=true     → 清空 text_encoder_lr（不训练文本编码器）
+    //   text_encoder_only=true → 清空 unet_lr（不训练 U-Net）
+    //   两者都 false（训练两者）→ 分量各保留，learning_rate 仅作未填分量的回退值
+    const _setLRField = (k, v) => {
+      // 仅在值变化时改，避免触发无意义的响应式更新与递归 watcher
+      if (this.form[k] !== v) {
+        this.form[k] = v;
+        // 同步 formDefaults，使复位/对比逻辑一致（与 autoValue 处理同款）
+        this.formDefaults[k] = v;
+      }
+    };
     if (key === 'network_train_unet_only' && value === true) {
       this.form['network_train_text_encoder_only'] = false;
+      _setLRField('text_encoder_lr', '');
     }
     if (key === 'network_train_text_encoder_only' && value === true) {
       this.form['network_train_unet_only'] = false;
+      _setLRField('unet_lr', '');
     }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
       this.form['network_train_unet_only'] = true;
       this.form['network_train_text_encoder_only'] = false;
+      _setLRField('text_encoder_lr', '');
     }
 
     // Clear error for this field on change and re-render to update UI
