@@ -2793,24 +2793,18 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   flex-shrink: 0; display: flex; align-items: center; padding-top: 2px;
 }
 
-/* ── Card (replaces flat row; status color stripe) ──────── */
+/* ── Card (replaces flat row) ───────────────────────────── */
 .env-card {
   display: block;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-left: 3px solid var(--border-default);
   border-radius: var(--radius-md);
   margin-bottom: 8px;
   overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .env-card:hover { border-color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
-/* 状态色条：折叠时也能一眼看状态 */
-.env-card-ok      { border-left-color: var(--success); }
-.env-card-warn    { border-left-color: var(--warning); }
-.env-card-err     { border-left-color: var(--danger); }
-.env-card-loading { border-left-color: var(--accent); }
-.env-card-idle    { border-left-color: var(--border-default); }
+/* 状态由 env-badge 徽标承载（ok/warn/err/loading），无需色条 */
 
 .env-card[open] { background: var(--bg-surface); }
 .env-card[open] .env-card-header { border-bottom: 1px solid var(--border-default); }

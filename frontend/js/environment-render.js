@@ -2,7 +2,7 @@
    environment-render.js — renderEnvironment + event bindings
    Mixin merged into animaApp Alpine component
 
-   设计：扁平 row → 状态色条卡片（env-card）；抽取共享 helper
+   设计：扁平 row → 卡片（env-card）；抽取共享 helper
    （_renderDetailGroup / _renderProgressPanel / _renderLog / _renderRefreshBtn）
    消除四处重复 HTML + 内联 style。日志可读性为核心目标。
    ================================================================ */
@@ -40,7 +40,7 @@ window.environmentRenderMixin = {
   //  Shared render helpers（消除重复 HTML + 内联 style）
   // ═══════════════════════════════════════════════════════
 
-  // 卡片外框：统一 details + 状态色条。state ∈ ok/warn/err/loading/idle。
+  // 卡片外框：统一 details。state ∈ ok/warn/err/loading/idle，状态由 env-badge 承载。
   _renderCardOpen(id, state, open, summaryInner) {
     return `<details id="${id}" class="env-card env-card-${state}" ${open?'open':''}><summary class="env-card-header">${summaryInner}</summary><div class="env-card-body">`;
   },
