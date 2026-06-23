@@ -784,7 +784,20 @@
 		"actionLabel": "Actions",
 		"verLabel": "Ver",
 		"connectionLost": "Connection lost, please refresh",
-		"installFailed": "Install failed"
+		"installFailed": "Install failed",
+		"animaModel": {
+			"title": "Anima Models",
+			"file": "File",
+			"desc": "Description",
+			"status": "Status",
+			"downloaded": "Downloaded",
+			"notDownloaded": "Not downloaded",
+			"downloading": "Downloading",
+			"pending": "Pending",
+			"failed": "Failed",
+			"downloadAll": "Download All",
+			"progressLog": "Progress Log"
+		}
 	},
 	"opt": {
 		"model_train_type_sdxl-lora": "Stable Diffusion XL series LoRA training",
@@ -897,20 +910,7 @@
 		"compile_mode_max_autotune_no_cudagraphs": "Max tune without CUDA Graphs",
 		"compile_dynamic_auto": "Auto (default)",
 		"compile_dynamic_true": "Enable dynamic shapes (needs VS2022 C++ on Windows)",
-		"compile_dynamic_false": "Disable dynamic shapes",
-		"animaModel": {
-			"title": "Anima Models",
-			"file": "File",
-			"desc": "Description",
-			"status": "Status",
-			"downloaded": "Downloaded",
-			"notDownloaded": "Not downloaded",
-			"downloading": "Downloading",
-			"pending": "Pending",
-			"failed": "Failed",
-			"downloadAll": "Download All",
-			"progressLog": "Progress Log"
-		}
+		"compile_dynamic_false": "Disable dynamic shapes"
 	},
 	"training": {
 		"startTraining": "Start Training",

@@ -784,7 +784,20 @@
 		"actionLabel": "操作",
 		"verLabel": "版本",
 		"connectionLost": "连接丢失，请刷新页面重试",
-		"installFailed": "安装失败"
+		"installFailed": "安装失败",
+		"animaModel": {
+			"title": "Anima 模型",
+			"file": "文件",
+			"desc": "描述",
+			"status": "状态",
+			"downloaded": "已下载",
+			"notDownloaded": "未下载",
+			"downloading": "下载中",
+			"pending": "排队中",
+			"failed": "失败",
+			"downloadAll": "一键下载全部",
+			"progressLog": "下载日志"
+		}
 	},
 	"opt": {
 		"model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
@@ -897,20 +910,7 @@
 		"compile_mode_max_autotune_no_cudagraphs": "最大调优（禁用 CUDA Graph）",
 		"compile_dynamic_auto": "自动（默认）",
 		"compile_dynamic_true": "启用动态形状（Windows 需 VS2022 C++）",
-		"compile_dynamic_false": "禁用动态形状",
-		"animaModel": {
-			"title": "Anima 模型",
-			"file": "文件",
-			"desc": "描述",
-			"status": "状态",
-			"downloaded": "已下载",
-			"notDownloaded": "未下载",
-			"downloading": "下载中",
-			"pending": "排队中",
-			"failed": "失败",
-			"downloadAll": "一键下载全部",
-			"progressLog": "下载日志"
-		}
+		"compile_dynamic_false": "禁用动态形状"
 	},
 	"training": {
 		"startTraining": "开始训练",
