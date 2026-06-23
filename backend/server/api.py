@@ -488,6 +488,13 @@ def _start_download_job(only_file: str | None = None) -> str:
                 progress_bar.stop()
             except Exception:
                 pass
+            # rich Progress.stop() 不保证换行，光标可能停在进度条行尾
+            try:
+                import sys as _sys
+                _sys.stderr.write("\n")
+                _sys.stderr.flush()
+            except Exception:
+                pass
 
     _install_thr.Thread(target=_run, daemon=True).start()
     return job_id

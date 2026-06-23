@@ -110,5 +110,13 @@ def tagger_hub_download(
         except Exception:
             pass
 
+    # rich Progress.stop() 不保证换行，光标可能停在进度条行尾导致下一行日志叠在上面
+    try:
+        import sys as _sys
+        _sys.stderr.write("\n")
+        _sys.stderr.flush()
+    except Exception:
+        pass
+
     log.info(f"[tagger-dl] {filename} 下载完成: {dest}")
     return dest
