@@ -568,6 +568,6 @@ def make_progress_bar(console=None):
         _PlainDownloadColumn(),
         TransferSpeedColumn(),
         console=console,
-        transient=False,   # 完成后保留进度行，便于回看
+        transient=True,    # 完成后自动清除进度条，由日志行承接最终状态
         expand=False,
     )
