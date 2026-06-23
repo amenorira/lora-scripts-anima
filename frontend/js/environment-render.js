@@ -20,10 +20,15 @@ window.environmentRenderMixin = {
     html += this._renderTritonRow(T);
     html += `</div>`;
 
+    html += `<div class="env-section"><div class="env-section-header">${T('animaModel.title', 'Anima Models')}</div>`;
+    html += this._renderAnimaModelRow(T);
+    html += `</div>`;
+
     el.innerHTML = html;
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
     this._bindTritonEvents(el);
+    this._bindAnimaModelEvents(el);
     this._bindCardToggle(el);
   },
 
@@ -237,6 +242,100 @@ window.environmentRenderMixin = {
     }
     h += `</div></details>`;
     return h;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  //  Anima 模型下载 row
+  // ═══════════════════════════════════════════════════════
+  _renderAnimaModelRow(T) {
+    const files = this.animaModelStatus || [];
+    const progress = this.animaModelProgress;
+    const busy = this.animaModelBusy;
+    const error = this.animaModelError;
+    let h = '';
+
+    // 简洁的单卡片版本（不使用 details 折叠，始终可见）
+    h += `<div id="env-anima-model" class="env-row env-card-flat">`;
+    h += `<div class="env-row-detail">`;
+
+    // 错误提示
+    if (error) h += `<div class="env-msg env-msg-err"><pre>${error}</pre></div>`;
+
+    // 文件清单表
+    h += `<table class="env-model-table"><thead><tr>
+      <th>${T('animaModel.file', 'File')}</th>
+      <th>${T('animaModel.desc', 'Description')}</th>
+      <th>${T('animaModel.status', 'Status')}</th>
+      </tr></thead><tbody>`;
+
+    const p = progress || {};
+    const curFile = p.filename || '';
+    let allDone = true;
+
+    for (const f of files) {
+      let statusHtml = '';
+      if (busy && curFile === f.filename) {
+        // 正在下载此文件
+        const pct = p.total > 0 ? Math.round(p.downloaded * 100 / p.total) : 0;
+        const downloadedGB = (p.downloaded / (1024**3)).toFixed(2);
+        const totalGB = (p.total / (1024**3)).toFixed(2);
+        const speed = p.speed || 0;
+        statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${pct}%</span>
+          <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
+          <span class="env-model-speed">${speed.toFixed(1)} MB/s &middot; ${downloadedGB}/${totalGB} GB</span>`;
+        allDone = false;
+      } else if (busy) {
+        // 下载中但当前不是此文件（其他文件在排队）
+        if (f.exists) {
+          statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded', 'Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
+        } else {
+          statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.pending', 'Pending')}</span>`;
+          allDone = false;
+        }
+      } else if (f.exists) {
+        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded', 'Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
+      } else if (busy && p.phase === 'error') {
+        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed', 'Failed')}</span>`;
+        allDone = false;
+      } else {
+        statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.notDownloaded', 'Not downloaded')}</span>`;
+        allDone = false;
+      }
+      h += `<tr>
+        <td><code>${f.filename}</code></td>
+        <td><span class="env-text-dim">${f.desc || ''}</span></td>
+        <td>${statusHtml}</td>
+        </tr>`;
+    }
+
+    // Loading 占位（status 还没拉回来）
+    if (!files.length) {
+      h += `<tr><td colspan="3"><span class="env-badge env-badge-loading">${T('loading', 'Loading...')}</span></td></tr>`;
+    }
+    h += `</tbody></table>`;
+
+    // 操作按钮
+    h += `<div class="env-detail-group" style="margin-top:8px;"><div class="env-detail-content">
+      <div class="env-actions">
+        <button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${busy ? T('animaModel.downloading', 'Downloading...') : T('animaModel.downloadAll', 'Download All')}</button>
+        <button id="anima-model-refresh-btn" class="btn-icon" ${busy?'disabled':''} title="${T('refresh', 'Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+      </div></div></div>`;
+
+    // 下载 log（折叠）
+    if (busy && this.animaModelLog) {
+      h += `<details class="env-model-log-wrap"><summary>${T('animaModel.progressLog', 'Progress Log')}</summary><pre class="env-install-log">${this.animaModelLog}</pre></details>`;
+    }
+
+    h += `</div></div>`;
+    return h;
+  },
+
+  _bindAnimaModelEvents(el) {
+    const a = window.__anima || this;
+    const dlBtn = el.querySelector('#anima-model-dl-btn');
+    const refreshBtn = el.querySelector('#anima-model-refresh-btn');
+    if (dlBtn) dlBtn.addEventListener('click', () => a.animaModelDownload(null));
+    if (refreshBtn) refreshBtn.addEventListener('click', () => a.animaModelRefresh());
   },
 
   // ═══════════════════════════════════════════════════════

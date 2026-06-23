@@ -11,7 +11,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 
-from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT, TOOLS_DIR
+from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, SD_MODELS_DIR, VENDOR_ROOT, TOOLS_DIR
 from backend import launch_utils
 from backend.server.config import app_config
 from backend.server.models import (APIResponse, APIResponseFail,
@@ -178,7 +178,7 @@ async def get_files(pick_type) -> APIResponse:
     pick_preset = {
         "model-file": {
             "type": "file",
-            "path": "./sd-models",
+            "path": "./models",
             "filter": "(.safetensors|.ckpt|.pt)"
         },
         "model-saved-file": {
@@ -371,6 +371,157 @@ async def install_log(job_id: str, tail: int = 20) -> dict:
         "returncode": job.get("returncode"),
         "elapsed": _install_time.time() - job.get("start", 0),
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  Anima 模型下载 API（环境管理页）
+#
+#  与 _install_jobs 平行但独立：模型下载走 Python 线程 + HF Hub
+#  进度回调（非子进程），需要结构化百分比/速度，不能套用 pip log。
+# ═══════════════════════════════════════════════════════════
+
+_download_jobs: dict[str, dict] = {}
+_download_jobs_lock = _install_thr.Lock()
+
+
+def _cleanup_download_jobs():
+    """清理 10 分钟前完成的下载任务。"""
+    now = _install_time.time()
+    with _download_jobs_lock:
+        for jid in [k for k, v in _download_jobs.items()
+                    if v.get("done") and now - v.get("start", 0) > 600]:
+            del _download_jobs[jid]
+
+
+def _start_download_job(only_file: str | None = None) -> str:
+    """启动 Anima 模型下载后台线程，返回 job_id。
+
+    only_file: 若指定，只下载该文件名（用于失败后单文件重试）。
+    """
+    _root = REPO_ROOT
+    _path = _root / "tools" / "download_anima_model.py"
+    if not _path.exists():
+        raise RuntimeError(f"download_anima_model.py not found at {_path}")
+    import importlib.util
+    import sys
+    if "download_anima_model" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("download_anima_model", _path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["download_anima_model"] = mod
+        spec.loader.exec_module(mod)
+    mod = sys.modules["download_anima_model"]
+
+    # 选择文件清单
+    if only_file:
+        files = [(f, d) for f, d in mod.ANIMA_FILES if f == only_file]
+        if not files:
+            raise RuntimeError(f"未知文件: {only_file}")
+    else:
+        files = mod.ANIMA_FILES
+
+    job_id = _install_uuid().hex[:12]
+    shared_progress: dict = {}
+    log_lines: list[str] = []  # 简短环形缓冲，前端轮询时一并返回
+
+    with _download_jobs_lock:
+        _download_jobs[job_id] = {
+            "start": _install_time.time(),
+            "done": False,
+            "progress": shared_progress,   # 线程内原地更新
+            "log": log_lines,
+            "only_file": only_file,
+        }
+
+    def _run():
+        def _on_log(msg: str):
+            # 滚动保留最近 50 行
+            log_lines.append(msg)
+            if len(log_lines) > 50:
+                del log_lines[: len(log_lines) - 50]
+        try:
+            paths = mod.download_anima_files(
+                dest_dir=SD_MODELS_DIR,
+                progress=shared_progress,
+                on_log=_on_log,
+                files=files,
+            )
+            # 判定整体成功：若指定了 only_file，要求该文件成功；否则要求全部成功
+            if only_file:
+                ok = any(p != Path(".") for p in paths)
+            else:
+                ok = all(p != Path(".") for p in paths)
+            with _download_jobs_lock:
+                _download_jobs[job_id]["done"] = True
+                _download_jobs[job_id]["success"] = ok
+                shared_progress.setdefault("phase", "done" if ok else "error")
+        except Exception as e:
+            log_lines.append(f"[ERROR] {e}")
+            with _download_jobs_lock:
+                shared_progress.update({"phase": "error", "error": str(e)})
+                _download_jobs[job_id]["done"] = True
+                _download_jobs[job_id]["success"] = False
+
+    _install_thr.Thread(target=_run, daemon=True).start()
+    return job_id
+
+
+@router.get("/anima-model/status")
+async def anima_model_status() -> dict:
+    """扫描 models/ 目录，返回 Anima 各核心文件已下载/未下载状态。"""
+    _cleanup_download_jobs()
+    import sys
+    mod = sys.modules.get("download_anima_model")
+    if mod is None:
+        # 还未触发下载工具导入，按需加载
+        import importlib.util
+        _path = REPO_ROOT / "tools" / "download_anima_model.py"
+        spec = importlib.util.spec_from_file_location("download_anima_model", _path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["download_anima_model"] = mod
+        spec.loader.exec_module(mod)
+
+    files = await asyncio.to_thread(mod.list_local_anima_files, SD_MODELS_DIR)
+    return APIResponseSuccess(data={"files": files})
+
+
+@router.post("/anima-model/download")
+async def anima_model_download(request: Request) -> dict:
+    """启动后台模型下载。body 可选 {'file': '<filename>'} 仅下载单个文件。返回 job_id。"""
+    only_file = None
+    try:
+        body = await request.json()
+        only_file = body.get("file") or None
+    except Exception:
+        pass
+    # 已有任务进行中则拒绝
+    with _download_jobs_lock:
+        running = [j for j, v in _download_jobs.items() if not v.get("done")]
+    if running:
+        return APIResponseFail(message="已有下载任务进行中 / A download is already running")
+    try:
+        job_id = await asyncio.to_thread(_start_download_job, only_file)
+    except Exception as e:
+        return APIResponseFail(message=str(e))
+    return APIResponseSuccess(data={"job_id": job_id})
+
+
+@router.get("/anima-model/progress/{job_id}")
+async def anima_model_progress(job_id: str) -> dict:
+    """轮询下载进度。返回结构化 progress + 文本 log + done 标志。"""
+    _cleanup_download_jobs()
+    with _download_jobs_lock:
+        job = _download_jobs.get(job_id)
+        if job:
+            job = {
+                "progress": dict(job.get("progress", {})),
+                "log": list(job.get("log", [])),
+                "done": job.get("done", False),
+                "success": job.get("success"),
+                "elapsed": _install_time.time() - job.get("start", 0),
+            }
+    if not job:
+        return {"done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
+    return job
 
 
 # ═══════════════════════════════════════════════════════════

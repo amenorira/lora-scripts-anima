@@ -22,8 +22,16 @@ window.environmentCoreMixin = {
   tritonStatus: null, tritonBusy: false,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
 
+  // ── Anima 模型 State ────────────────────────────────
+  animaModelStatus: null,   // models/ 下已有文件清单 [{filename, desc, exists, size_gb}]
+  animaModelBusy: false,
+  animaModelJobId: null,
+  animaModelProgress: null, // 后端 progress 字段
+  animaModelLog: '',
+  animaModelError: null,
+
   // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true,
+  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
   _envPollTimer: null,
 
   _envInitCardState() {
@@ -34,11 +42,12 @@ window.environmentCoreMixin = {
         if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
         if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
         if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
+        if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
       }
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen})); } catch (_) {}
   },
 
   // ── Shared install polling ──────────────────────────
@@ -83,9 +92,10 @@ window.environmentCoreMixin = {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
-    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsTriton = !this.tritonStatus;
-    if (needsFa || needsXf || needsSd || needsTriton) {
-      // 立即渲染卡片骨架（4 张卡片 + Loading 徽章），给用户即时结构反馈；
+    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsTriton = !this.tritonStatus,
+          needsAnimaModel = !this.animaModelStatus;
+    if (needsFa || needsXf || needsSd || needsTriton || needsAnimaModel) {
+      // 立即渲染卡片骨架（4 张卡片 + Anima 模型卡 + Loading 徽章），给用户即时结构反馈；
       // 各卡片数据到达后由 faRefresh/xfRefresh 内的 renderEnvironment 独立刷新，
       // 比单一 spinner 体验更好，也避免长时间空白被误认为卡死。
       this.renderEnvironment();
@@ -96,6 +106,7 @@ window.environmentCoreMixin = {
         try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); } catch (_) { this.sdStatus = null; }
       })());
       if (needsTriton) tasks.push(this.tritonRefresh(true));
+      if (needsAnimaModel) tasks.push(this.animaModelRefresh(true));
       await Promise.all(tasks);
     }
     this.renderEnvironment(); this.finishProgress();
@@ -177,6 +188,73 @@ window.environmentCoreMixin = {
         if (retries >= MAX_RETRIES) {
           a._stopPolling(); a.tritonBusy = false;
           a[logKey] += '\n[ERROR] ' + a.t('environment.connectionLost','Connection lost, please refresh');
+          a.finishProgress(); a.renderEnvironment();
+          return;
+        }
+        a._envPollTimer = setTimeout(tick, 2000);
+      }
+    };
+    a._envPollTimer = setTimeout(tick, 500);
+  },
+
+  // ── Anima 模型下载 Methods ──────────────────────────
+  async animaModelRefresh(silent) {
+    this.animaModelError = null;
+    try {
+      const r = await fetch('/api/anima-model/status');
+      const data = await r.json();
+      this.animaModelStatus = data.data ? data.data.files : null;
+    } catch (e) { this.animaModelError = String(e); this.animaModelStatus = null; }
+    if (!silent) { this.renderEnvironment(); this.finishProgress(); }
+  },
+
+  async animaModelDownload(file) {
+    this.animaModelBusy = true; this.animaModelError = null;
+    this.animaModelLog = ''; this.animaModelProgress = null;
+    this.startProgress(); this.renderEnvironment();
+    try {
+      const body = file ? JSON.stringify({file}) : '{}';
+      const r = await fetch('/api/anima-model/download', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body
+      });
+      const result = await r.json();
+      if (result.success && result.job_id) {
+        this.animaModelJobId = result.job_id;
+        this._startAnimaModelPolling(result.job_id);
+      } else {
+        this.animaModelBusy = false;
+        this.animaModelError = result.message || this.t('environment.installFailed', 'Download failed');
+        this.finishProgress(); this.renderEnvironment();
+      }
+    } catch (e) {
+      this.animaModelBusy = false;
+      this.animaModelError = String(e);
+      this.finishProgress(); this.renderEnvironment();
+    }
+  },
+
+  _startAnimaModelPolling(jobId) {
+    const a = this;
+    let retries = 0;
+    const MAX_RETRIES = 60;
+    a._stopPolling();
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/anima-model/progress/' + jobId);
+        const data = await r.json();
+        retries = 0;
+        a.animaModelProgress = data.progress || null;
+        a.animaModelLog = (data.log || []).join('\n');
+        if (data.done) {
+          a._stopPolling(); a.animaModelBusy = false;
+          try { await a.animaModelRefresh(true); } catch (_) {}
+          a.finishProgress(); a.renderEnvironment();
+        } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
+      } catch (_) {
+        retries++;
+        if (retries >= MAX_RETRIES) {
+          a._stopPolling(); a.animaModelBusy = false;
+          a.animaModelError = a.t('environment.connectionLost', 'Connection lost, please refresh');
           a.finishProgress(); a.renderEnvironment();
           return;
         }

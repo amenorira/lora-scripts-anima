@@ -31,3 +31,8 @@ lycoris-lora==3.4.0
 # 固定 1.20.1 匹配当前 torch+cu128（CUDA 12.x + cuDNN 9）。
 # setup_onnxruntime() 会按 torch 实际 CUDA 版本动态升降级，此处为静态兜底。
 onnxruntime-gpu==1.20.1
+
+# ── Anima 模型下载（环境管理页一键下载基础模型到 models/）──
+# hf-xet 独立包：启用 HF Xet 多线程分块下载，未装时 huggingface_hub 自动回退普通 HTTP。
+# 不用 huggingface-hub[xet] 是因为 is_installed 会去掉 [xet]，导致本体已装时永远不触发安装。
+hf-xet

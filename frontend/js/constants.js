@@ -35,7 +35,7 @@ window.UI_CONSTANTS = {
   ],
 
   FILE_PICKER: {
-    MODEL_FILE: { type: 'file', path: './sd-models', filter: '(.safetensors|.ckpt|.pt)' },
+    MODEL_FILE: { type: 'file', path: './models', filter: '(.safetensors|.ckpt|.pt)' },
     MODEL_SAVED_FILE: { type: 'file', path: './output', filter: '(.safetensors|.ckpt|.pt)' },
     TRAIN_DIR: { type: 'folder', path: './train', filter: null },
   },

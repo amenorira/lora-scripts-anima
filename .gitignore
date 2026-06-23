@@ -13,8 +13,8 @@ cache/*
 
 huggingface/
 
-sd-models/*
-!sd-models/.gitkeep
+models/*
+!models/.gitkeep
 
 config/state.json
 

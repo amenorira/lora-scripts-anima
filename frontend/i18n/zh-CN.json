@@ -897,7 +897,20 @@
 		"compile_mode_max_autotune_no_cudagraphs": "最大调优（禁用 CUDA Graph）",
 		"compile_dynamic_auto": "自动（默认）",
 		"compile_dynamic_true": "启用动态形状（Windows 需 VS2022 C++）",
-		"compile_dynamic_false": "禁用动态形状"
+		"compile_dynamic_false": "禁用动态形状",
+		"animaModel": {
+			"title": "Anima 模型",
+			"file": "文件",
+			"desc": "描述",
+			"status": "状态",
+			"downloaded": "已下载",
+			"notDownloaded": "未下载",
+			"downloading": "下载中",
+			"pending": "排队中",
+			"failed": "失败",
+			"downloadAll": "一键下载全部",
+			"progressLog": "下载日志"
+		}
 	},
 	"training": {
 		"startTraining": "开始训练",

@@ -51,7 +51,7 @@ from typing import Any
 FIELDS: list[dict[str, Any]] = [
 # ── Model ──
 {"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
-{"key": "pretrained_model_name_or_path", "type": "text", "default": "./sd-models/model.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
+{"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/model.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
 {"key": "vae", "type": "text", "default": "", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "hint_key": "field.vaeHint", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "hint_key": "field.qwen3Hint", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
