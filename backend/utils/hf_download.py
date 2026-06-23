@@ -28,11 +28,11 @@ from typing import Callable, Optional
 # ── 下载参数 ──────────────────────────────────────────
 _CHUNK = 1024 * 1024              # 1 MB / chunk
 _COPY_BUF = 8 * 1024 * 1024       # 合并分块时的读写缓冲
-_CONNECT_TIMEOUT = 10             # 连接建立超时（短，避免 huggingface.co 间歇慢卡死）
+_CONNECT_TIMEOUT = 5              # 连接建立超时（5s 够判断通不通，短了快切镜像）
 _READ_TIMEOUT = 60
-_HEAD_TIMEOUT = (10, 8)           # HEAD/探测请求超时（连接10s，读取8s）
-_MAX_RETRIES = 3                  # 单分块网络错误重试次数
-_RETRY_BACKOFF = 3.0              # 重试退避基数（秒）
+_HEAD_TIMEOUT = (5, 5)            # HEAD/探测请求超时（连接5s，读取5s）
+_MAX_RETRIES = 1                  # 单分块网络错误重试次数（端点级切换兜底，分块只需快速失败）
+_RETRY_BACKOFF = 1.0              # 重试退避基数（秒）
 
 # 多线程分块下载
 _MAX_PARTS = 8                    # 最多 8 个并发分块
