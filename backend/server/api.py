@@ -481,7 +481,7 @@ async def anima_model_status() -> dict:
         spec.loader.exec_module(mod)
 
     files = await asyncio.to_thread(mod.list_local_anima_files, SD_MODELS_DIR)
-    return APIResponseSuccess(data={"files": files})
+    return {"files": files}
 
 
 @router.post("/anima-model/download")
@@ -497,12 +497,12 @@ async def anima_model_download(request: Request) -> dict:
     with _download_jobs_lock:
         running = [j for j, v in _download_jobs.items() if not v.get("done")]
     if running:
-        return APIResponseFail(message="已有下载任务进行中 / A download is already running")
+        return {"success": False, "message": "已有下载任务进行中 / A download is already running"}
     try:
         job_id = await asyncio.to_thread(_start_download_job, only_file)
     except Exception as e:
-        return APIResponseFail(message=str(e))
-    return APIResponseSuccess(data={"job_id": job_id})
+        return {"success": False, "message": str(e)}
+    return {"success": True, "job_id": job_id}
 
 
 @router.get("/anima-model/progress/{job_id}")

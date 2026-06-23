@@ -203,7 +203,7 @@ window.environmentCoreMixin = {
     try {
       const r = await fetch('/api/anima-model/status');
       const data = await r.json();
-      this.animaModelStatus = data.data ? data.data.files : null;
+      this.animaModelStatus = data.files || null;
     } catch (e) { this.animaModelError = String(e); this.animaModelStatus = null; }
     if (!silent) { this.renderEnvironment(); this.finishProgress(); }
   },
