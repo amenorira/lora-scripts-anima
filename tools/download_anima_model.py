@@ -65,6 +65,9 @@ class _StderrTqdmCapture:
         self._p = progress
         self._lock = lock
 
+    def isatty(self) -> bool:
+        return False  # 非 tty，tqdm 不用彩色/\r，行尾用 \n
+
     def write(self, s: str):
         self._orig.write(s)  # 透传，不丢日志
         try:
@@ -248,6 +251,12 @@ def download_anima_files(
     file_total = len(files)
     lock = threading.Lock()
     progress = progress if progress is not None else {}
+
+    # 强制启用 huggingface_hub 的 tqdm（否则日志级别可能关掉它）
+    import logging as _logging
+    _hf_logger = _logging.getLogger("huggingface_hub.file_download")
+    _old_level = _hf_logger.level
+    _hf_logger.setLevel(_logging.INFO)
 
     def _log(msg: str):
         if on_log:
