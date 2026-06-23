@@ -502,11 +502,22 @@ def _start_download_job(only_file: str | None = None) -> str:
 
 @router.get("/anima-model/status")
 async def anima_model_status() -> dict:
-    """扫描 models/ 目录，返回 Anima 各核心文件已下载/未下载状态。"""
+    """扫描 models/ 目录，返回 Anima 各核心文件已下载/未下载状态。
+
+    附带 dest_dir / 每文件 dest_path（相对仓库根，如 models/xxx.safetensors），
+    供前端显示"下载到哪里"的说明。
+    """
     _cleanup_download_jobs()
     from tools.download_anima_model import list_local_anima_files
     files = await asyncio.to_thread(list_local_anima_files, SD_MODELS_DIR)
-    return {"files": files}
+    # SD_MODELS_DIR 相对仓库根的路径（如 "models"），用于前端展示目标目录
+    try:
+        dest_dir_rel = SD_MODELS_DIR.relative_to(REPO_ROOT).as_posix() + "/"
+    except ValueError:
+        dest_dir_rel = "models/"
+    for f in files:
+        f["dest_path"] = dest_dir_rel + f.get("filename", "")
+    return {"files": files, "dest_dir": dest_dir_rel}
 
 
 @router.post("/anima-model/download")
@@ -586,9 +597,158 @@ def _import_flash_attn_tool():
         spec.loader.exec_module(mod)
         _fa_tool_funcs = (
             mod.detect_env, mod.current_status, mod.fetch_candidates,
-            mod.install_wheel, mod.proxy_download_url,
+            mod.install_wheel, mod.proxy_download_url, mod.download_urls_for,
         )
         return _fa_tool_funcs
+
+
+# ═══════════════════════════════════════════════════════════
+#  Flash Attention "下载+安装" 结构化进度任务
+#
+#  与 Anima 的 _download_jobs 平行：FA 先预下载 wheel 到临时文件（多分块/续传/速度），
+#  再 pip install 本地文件。下载阶段给前端真实百分比/速度（旧方案 pip 非 TTY 不输出实时
+#  进度的根因修复），安装阶段为短 spinner + 逐行捕获 pip 输出。
+# ═══════════════════════════════════════════════════════════
+
+_fa_jobs: dict[str, dict] = {}
+_fa_jobs_lock = _install_thr.Lock()
+
+
+def _cleanup_fa_jobs():
+    """清理 10 分钟前完成的 FA 安装任务。"""
+    now = _install_time.time()
+    with _fa_jobs_lock:
+        for jid in [k for k, v in _fa_jobs.items()
+                    if v.get("done") and now - v.get("start", 0) > 600]:
+            del _fa_jobs[jid]
+
+
+def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str:
+    """启动 FA 安装后台线程：预下载 wheel → pip install 本地文件。返回 job_id。
+
+    progress dict 写入 stage（downloading/installing/done/error）+ 下载阶段的结构化
+    百分比/速度/大小；安装阶段把 pip stdout 逐行写入 log_lines。
+    临时 wheel 在 finally 删除，绝不残留。
+    """
+    from backend.utils.hf_download import download_url_with_fallback, cleanup_temp
+
+    job_id = _install_uuid().hex[:12]
+    shared_progress: dict = {"stage": "downloading", "filename": wheel_name}
+    log_lines: list[str] = []
+
+    with _fa_jobs_lock:
+        _fa_jobs[job_id] = {
+            "start": _install_time.time(),
+            "done": False,
+            "progress": shared_progress,
+            "log": log_lines,
+            "source": source,
+            "wheel_name": wheel_name,
+        }
+
+    def _run():
+        import sys
+        tmp_path: str | None = None
+        try:
+            # ── 下载阶段：预下载 wheel 到临时文件 ──
+            log_lines.append(f"[DOWNLOAD] {wheel_name}  ({len(download_urls)} 源候选 / source(s))")
+            tmp_fd, tmp_path = _install_tmp.mkstemp(suffix=".whl", prefix="anima_fa_")
+            os.close(tmp_fd)
+            dest = Path(tmp_path)
+
+            def _on_log(msg: str):
+                log_lines.append(msg)
+                try:
+                    log.info(f"[fa-install] {msg}")
+                except Exception:
+                    pass
+
+            def _on_progress(_line: str):
+                pass  # 进度已写入 shared_progress，前端轮询读取
+
+            # 清理上一次 mkstemp 的空文件，交给下载引擎管理 .partN/.partial
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+            download_url_with_fallback(
+                download_urls, dest,
+                progress=shared_progress, lock=_fa_jobs_lock,
+                on_log=_on_log, on_progress=_on_progress,
+                file_index=0, file_total=1, label=wheel_name,
+            )
+            dl_size = dest.stat().st_size
+            log_lines.append(f"[DOWNLOAD] 完成 / Done ({dl_size / (1024**2):.1f} MB)")
+
+            # ── 安装阶段：pip install 本地文件 ──
+            with _fa_jobs_lock:
+                shared_progress.update({"stage": "installing", "filename": wheel_name,
+                                        "downloaded": dl_size, "total": dl_size, "speed": 0.0})
+            log_lines.append(f"[INSTALL] pip install {dest.name}  (本地文件，约 10-30s)")
+
+            proc = _install_sp.Popen(
+                [sys.executable, "-m", "pip", "install", "--retries", "3", "--timeout", "60",
+                 str(dest)],
+                stdout=_install_sp.PIPE, stderr=_install_sp.STDOUT, text=True,
+                encoding="utf-8", errors="replace",
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    log_lines.append(line)
+            proc.wait()
+
+            if proc.returncode == 0:
+                with _fa_jobs_lock:
+                    shared_progress.update({"stage": "done", "filename": wheel_name,
+                                            "downloaded": dl_size, "total": dl_size, "speed": 0.0})
+                log_lines.append("[INSTALL] 安装成功 / Successfully installed")
+                with _fa_jobs_lock:
+                    _fa_jobs[job_id]["success"] = True
+            else:
+                with _fa_jobs_lock:
+                    shared_progress.update({"stage": "error", "filename": wheel_name,
+                                            "error": f"pip exit code {proc.returncode}"})
+                log_lines.append(f"[ERROR] pip 安装失败，退出码 {proc.returncode} / install failed")
+                with _fa_jobs_lock:
+                    _fa_jobs[job_id]["success"] = False
+        except Exception as e:
+            log_lines.append(f"[ERROR] {type(e).__name__}: {e}")
+            with _fa_jobs_lock:
+                shared_progress.update({"stage": "error", "error": str(e)})
+                _fa_jobs[job_id]["success"] = False
+        finally:
+            # 删除临时 wheel，绝不残留
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            with _fa_jobs_lock:
+                _fa_jobs[job_id]["done"] = True
+
+    _install_thr.Thread(target=_run, daemon=True).start()
+    return job_id
+
+
+@router.get("/flash-attention/progress/{job_id}")
+async def flash_attn_progress(job_id: str) -> dict:
+    """轮询 FA 安装进度。返回结构化 progress + 文本 log + done 标志。"""
+    _cleanup_fa_jobs()
+    with _fa_jobs_lock:
+        job = _fa_jobs.get(job_id)
+        if job:
+            job = {
+                "progress": dict(job.get("progress", {})),
+                "log": list(job.get("log", [])),
+                "done": job.get("done", False),
+                "success": job.get("success"),
+                "elapsed": _install_time.time() - job.get("start", 0),
+            }
+    if not job:
+        return {"done": True, "progress": {"stage": "error", "error": "Job not found / 任务不存在"}, "log": []}
+    return job
 
 
 def _flash_attn_status_sync(cache_key: str) -> dict:
@@ -600,7 +760,7 @@ def _flash_attn_status_sync(cache_key: str) -> dict:
     """
     import time
     import os as _os
-    detect_env, current_status, fetch_candidates, _, _ = _import_flash_attn_tool()
+    detect_env, current_status, fetch_candidates, _, _, _ = _import_flash_attn_tool()
 
     # 环境检测做 TTL 缓存：torch import + nvidia-smi 会话内复用，省去重复子进程开销
     global _fa_env_cache, _fa_env_cache_ts
@@ -668,39 +828,46 @@ async def flash_attn_status(source: str = "") -> dict:
 
 @router.post("/flash-attention/install")
 async def flash_attn_install(request: Request) -> dict:
-    """安装 flash_attn wheel（后台执行，通过 /api/install-log/{job_id} 轮询进度）。"""
+    """安装 flash_attn wheel（后台执行，通过 /api/flash-attention/progress/{job_id} 轮询进度）。
+
+    流程：预下载 wheel 到临时文件（多分块/续传/速度，结构化进度）→
+    pip install 本地文件（解包+写入，输出逐行捕获）。下载阶段给前端真实百分比/速度，
+    安装阶段为短 spinner。比旧方案（pip 直接安装远端 URL，非 TTY 下 pip 不输出实时进度）
+    进度可见性更好。
+    """
     try:
         body = await request.json()
-        url = body.get("url", None)
+        manual_url = body.get("url", None)  # 前端传入的原始 URL；None = 自动匹配
         source = body.get("source", "default")
     except Exception:
-        url = None
+        manual_url = None
         source = "default"
 
     src = source or "default"
-    if url is None:
+    if manual_url is None:
         # detect_env + fetch_candidates 为阻塞调用（nvidia-smi / GitHub API），
         # 放线程池避免阻塞事件循环导致健康检查超时。
         def _resolve():
-            detect_env, _, fetch_candidates, _, _ = _import_flash_attn_tool()
+            detect_env, _, fetch_candidates, _, _, _ = _import_flash_attn_tool()
             env = detect_env()
             candidates, _ = fetch_candidates(env, source=src)
             for c in candidates:
                 if c["usable"]:
-                    return c["url"]
-            return None
-        url = await asyncio.to_thread(_resolve)
-        if url is None:
+                    return c["url"], c.get("name", "")
+            return None, None
+        resolved = await asyncio.to_thread(_resolve)
+        wheel_url, wheel_name = resolved[0], resolved[1]
+        if wheel_url is None:
             return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
+        # 自动安装：按 source 代理顺序生成全部变体（直连/镜像回退），交给下载引擎按序尝试
+        _, _, _, _, _, download_urls_for = _import_flash_attn_tool()
+        download_urls = download_urls_for(wheel_url, src)
+    else:
+        # 手动 URL：仅 [url]，避免代理前缀破坏非 GitHub 链接
+        wheel_name = manual_url.rsplit("/", 1)[-1] or "flash_attn.whl"
+        download_urls = [manual_url]
 
-    # 用共享逻辑选择下载 URL 的代理（纯函数，无 IO）。
-    # default 源：直连优先（proxy_download_url 对 default 返回原 URL，由 _start_install_job 重试兜底）；
-    # mirror 源：返回镜像 URL，避免直连下载在受限网络失败。
-    _, _, _, _, proxy_download_url = _import_flash_attn_tool()
-    url = proxy_download_url(url, source=src)
-
-    import sys
-    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "--retries", "3", "--timeout", "60", url])
+    job_id = _start_fa_job(download_urls, wheel_name, src)
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 

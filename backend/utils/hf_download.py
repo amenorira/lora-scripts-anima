@@ -329,6 +329,62 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
     raise last_err if last_err else RuntimeError("download failed")
 
 
+def download_url_with_fallback(urls: list[str], dest: Path, *,
+                               progress: dict | None = None,
+                               lock: Optional[threading.Lock] = None,
+                               on_log: Optional[Callable[[str], None]] = None,
+                               on_progress: Optional[Callable[[str], None]] = None,
+                               file_index: int = 0, file_total: int = 1,
+                               label: Optional[str] = None) -> Path:
+    """按序尝试多个 URL 下载同一文件（多分块并发 + 续传 + 进度上报）。
+
+    urls: 按优先级排序的下载候选 URL 列表（端点回退 / 镜像代理变体均可）。
+    前一个 URL 失败时清理其临时分块，切换下一个；最后一个失败才抛异常。
+    内部复用 _download_one_endpoint（URL 通用，非 HF 专属）。
+    进度写入共享 progress dict（线程安全），供前端轮询。
+
+    参数:
+        urls: 候选 URL 列表（至少 1 个）
+        dest: 落盘目标路径
+        progress: 线程间共享的进度 dict；每次更新原地覆盖
+        lock: 保护 progress 的锁（可传入后端共享锁，使读取端与之互斥）
+        on_log: 事件日志回调（开始/完成/失败/端点切换），换行打印
+        on_progress: 单行进度回调（百分比+速度），供控制台 \\r 或 rich Progress
+        file_index/file_total: 批量下载时的序号/总数，写入 progress 供前端显示
+        label: 切换日志里显示的文件标识；默认取 dest.name
+
+    返回最终落盘 Path；失败抛异常。
+    """
+    if not urls:
+        raise ValueError("urls must not be empty / urls 不能为空")
+
+    lock = lock if lock is not None else threading.Lock()
+    progress = progress if progress is not None else {}
+    label = label or dest.name
+
+    def _log(m):
+        if on_log:
+            try: on_log(m)
+            except Exception: pass
+
+    last_err: Exception | None = None
+    for u_idx, url in enumerate(urls):
+        is_last = u_idx == len(urls) - 1
+        try:
+            return _download_one_endpoint(
+                url, dest, progress, lock, on_log, on_progress,
+                file_index=file_index, file_total=file_total,
+            )
+        except Exception as e:
+            last_err = e
+            # 清理本端点尝试留下的临时分块，避免下个 URL 续传坏数据
+            cleanup_temp(dest)
+            if is_last:
+                raise
+            _log(f"{label}: 源 {url} 失败 / failed ({type(e).__name__}), 切换备用源 / switching to fallback...")
+    raise last_err if last_err else RuntimeError("download failed")
+
+
 def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
                      progress: dict | None = None,
                      lock: Optional[threading.Lock] = None,
@@ -341,6 +397,9 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
     主端点（HF_ENDPOINT/huggingface.co）连不上/超时时自动切 hf-mirror.com 重试。
     total 已知 → 多分块；未知 → 单连接兜底（从 GET 响应头补全 total）。
     进度写入共享 progress dict（线程安全），供前端轮询。
+
+    本函数是 download_url_with_fallback 的 HF 专属薄封装：把 HF 端点列表解析成
+    URL 列表后委托通用入口执行，端点回退语义不变。
 
     参数:
         repo_id: HF 仓库 id（如 circlestone-labs/Anima）
@@ -355,32 +414,18 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
 
     返回最终落盘 Path；失败抛异常。
     """
-    lock = lock if lock is not None else threading.Lock()
-    progress = progress if progress is not None else {}
-
-    def _log(m):
-        if on_log:
-            try: on_log(m)
-            except Exception: pass
-
-    endpoints = _endpoints_for_download()
-    last_err: Exception | None = None
-    for ep_idx, endpoint in enumerate(endpoints):
-        url = _resolve_url(repo_id, hf_path, revision=revision, endpoint=endpoint)
-        is_last = ep_idx == len(endpoints) - 1
-        try:
-            return _download_one_endpoint(
-                url, dest, progress, lock, on_log, on_progress,
-                file_index=file_index, file_total=file_total,
-            )
-        except Exception as e:
-            last_err = e
-            # 清理本端点尝试留下的临时分块，避免下个端点续传坏数据
-            cleanup_temp(dest)
-            if is_last:
-                raise
-            _log(f"{hf_path}: 端点 / Endpoint {endpoint} 失败 / failed ({type(e).__name__}), 切换备用源 / switching to fallback...")
-    raise last_err if last_err else RuntimeError("download failed")
+    # HF 端点列表 → resolve URL 列表，交给通用下载入口（端点回退语义不变）
+    urls = [
+        _resolve_url(repo_id, hf_path, revision=revision, endpoint=endpoint)
+        for endpoint in _endpoints_for_download()
+    ]
+    return download_url_with_fallback(
+        urls, dest,
+        progress=progress, lock=lock,
+        on_log=on_log, on_progress=on_progress,
+        file_index=file_index, file_total=file_total,
+        label=hf_path,
+    )
 
 
 def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading.Lock,

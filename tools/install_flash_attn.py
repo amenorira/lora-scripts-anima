@@ -134,6 +134,28 @@ def proxy_download_url(url: str, source: str = "default") -> str:
     first_proxy = cfg["proxies"][0] if cfg["proxies"] else ""
     return _proxy_url(first_proxy, url)
 
+
+def download_urls_for(url: str, source: str = "default") -> list[str]:
+    """为 wheel 下载 URL 生成全部代理变体候选（去重保序）。
+
+    按 source 的代理顺序包装下载 URL，供"预下载 wheel 再本地安装"流程
+    在 download_url_with_fallback 里按序尝试：先首选源，失败自动切下一个。
+      - default 源：先直连再镜像；
+      - mirror  源：先镜像再直连。
+    与 CLI install_wheel 的候选构造逻辑一致（提取为复用函数）。
+
+    单一职责：纯函数，输入 (url, source) → 候选 URL 列表。无 IO。
+    """
+    cfg = get_source_config(source)
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for proxy in cfg["proxies"]:
+        u = _proxy_url(proxy, url)
+        if u not in seen:
+            seen.add(u)
+            candidates.append(u)
+    return candidates
+
 # 磁盘缓存（优先使用，API 仅用于增量更新）
 _FA_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 
@@ -682,14 +704,7 @@ def install_wheel(url: str, source: str = "default") -> dict[str, Any]:
     返回安装结果。
     """
     # 构建下载候选 URL 列表：按 source 代理顺序，去重保序。
-    cfg = get_source_config(source)
-    candidates: list[str] = []
-    seen: set[str] = set()
-    for proxy in cfg["proxies"]:
-        u = _proxy_url(proxy, url)
-        if u not in seen:
-            seen.add(u)
-            candidates.append(u)
+    candidates = download_urls_for(url, source)
 
     last_tail = ""
     for i, dl_url in enumerate(candidates):

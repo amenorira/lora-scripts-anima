@@ -721,6 +721,10 @@
 		"reinstall": "重新安装（自动匹配）",
 		"installing": "正在安装...",
 		"installingHint": "正在下载并安装（约 2-5 分钟，~150MB）...",
+		"downloading": "下载中",
+		"connecting": "连接中",
+		"faStageDownloading": "下载中",
+		"faStageInstalling": "安装中（解包+写入，约 10-30s）...",
 		"confirmAutoInstall": "将自动从 GitHub Releases 匹配最优 wheel 并安装，确认？",
 		"confirmUrlInstall": "将从指定 URL 安装 Flash Attention，确认？",
 		"githubApiFail": "GitHub API 不可用",
@@ -758,6 +762,7 @@
 		"xfRestartHint": "xformers 是编译扩展，安装后需重启 GUI 才能生效。",
 		"sectionAccel": "加速库",
 		"sectionCore": "训练核心",
+		"sectionModels": "模型",
 		"sectionCorePlaceholder": "即将推出 — sd-scripts 版本、PyTorch、CUDA 等环境信息",
 		"xfInstallInfo": "pip install xformers，自动匹配当前环境的预编译 wheel（支持 pip 镜像加速）。",
 		"sdScriptsTitle": "sd-scripts",
@@ -803,7 +808,9 @@
 			"redownload": "重新下载",
 			"downloadAll": "一键下载全部",
 			"downloadAllAgain": "重新下载全部",
-			"progressLog": "下载日志"
+			"progressLog": "下载日志",
+			"destHint": "模型将下载到 models/ 目录，训练时作为底模 / text encoder / VAE 引用。",
+			"fileOf": "第 {i}/{n} 个文件"
 		}
 	},
 	"opt": {

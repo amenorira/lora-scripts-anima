@@ -721,6 +721,10 @@
 		"reinstall": "Reinstall (auto-match)",
 		"installing": "Installing...",
 		"installingHint": "Downloading & installing (2-5 min, ~150MB)...",
+		"downloading": "Downloading",
+		"connecting": "Connecting",
+		"faStageDownloading": "Downloading",
+		"faStageInstalling": "Installing (unpack + write, ~10-30s)...",
 		"confirmAutoInstall": "Auto-match best wheel from GitHub Releases and install?",
 		"confirmUrlInstall": "Install Flash Attention from this URL?",
 		"githubApiFail": "GitHub API unavailable",
@@ -758,6 +762,7 @@
 		"xfRestartHint": "xformers is a compiled extension. After install, restart the GUI for changes to take effect.",
 		"sectionAccel": "Acceleration",
 		"sectionCore": "Training Core",
+		"sectionModels": "Models",
 		"sectionCorePlaceholder": "Coming soon — sd-scripts version, PyTorch, CUDA & environment info",
 		"xfInstallInfo": "pip install xformers, auto-matching the correct prebuilt wheel for your environment (supports pip mirrors).",
 		"sdScriptsTitle": "sd-scripts",
@@ -803,7 +808,9 @@
 			"redownload": "Redownload",
 			"downloadAll": "Download All",
 			"downloadAllAgain": "Re-download All",
-			"progressLog": "Progress Log"
+			"progressLog": "Progress Log",
+			"destHint": "Models download to the models/ directory, used as base / text encoder / VAE during training.",
+			"fileOf": "File {i}/{n}"
 		}
 	},
 	"opt": {
