@@ -14,6 +14,7 @@ from huggingface_hub import hf_hub_download
 from dataclasses import dataclass
 from backend.tagger import dbimutils, format
 from backend.tagger.interrogators.base import Interrogator
+from backend.tagger.tagger_download import tagger_hub_download
 from backend.log import log
 
 
@@ -141,11 +142,13 @@ class CLTaggerInterrogator(Interrogator):
 
     def download(self) -> Tuple[os.PathLike, os.PathLike]:
         log.info(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
+        repo_id = self.kwargs['repo_id']
+        cache_dir = self.kwargs.get('cache_dir')
 
-        model_path = Path(hf_hub_download(
-            **self.kwargs, filename=self.model_path))
-        tag_mapping_path = Path(hf_hub_download(
-            **self.kwargs, filename=self.tag_mapping_path))
+        model_path = Path(tagger_hub_download(
+            repo_id=repo_id, filename=self.model_path, cache_dir=cache_dir))
+        tag_mapping_path = Path(tagger_hub_download(
+            repo_id=repo_id, filename=self.tag_mapping_path, cache_dir=cache_dir))
         return model_path, tag_mapping_path
 
     def load(self) -> None:

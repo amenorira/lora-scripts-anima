@@ -1,20 +1,17 @@
 #!/usr/bin/env python
-"""Anima 模型下载工具。
+"""Anima 模型下载工具（薄封装）。
 
 从 Hugging Face Hub 下载 lora-scripts-anima 所需的基础模型文件（底模 / text encoder / VAE）
 落到本地 `models/` 目录，供训练直接 `pretrained_model_name_or_path` 等字段引用。
 
-设计要点:
-    - 逐文件 `hf_hub_download` 下载，开启 hf[xet] 多线程分块加速（未安装时自动回退普通 HTTP）。
-    - 通过自定义进度回调把 `downloaded / total / speed` 写入外部共享 dict（线程安全），
-      供 FastAPI 后台线程轮询并经 `/api/install-log/{job_id}` 暴露给前端。
-    - 尊重 `HF_ENDPOINT` 环境变量，方便 AutoDL 学术加速 / 自建镜像用户切换源。
-    - 失败降级：单文件下载失败仅记录 phase=error，不崩主进程。
+本文件只保留 Anima 专属内容（文件清单、批量下载编排、本地扫描、CLI），
+通用 HF 流式下载核心（多分块/续传/端点回退/进度上报/rich Progress）在
+backend/utils/hf_download.py，由 api.py / tagger_download.py / 本文件共用。
 
 用法（库内调用，由 backend/server/api.py 封装）:
     from tools.download_anima_model import download_anima_files, ANIMA_FILES
     progress = {}   # 由调用方提供，线程间共享
-    download_anima_files(progress=progress, on_log=log_fn)
+    download_anima_files(progress=progress, on_log=log_fn, on_progress=bar_fn)
 
 CLI 调试:
     python tools/download_anima_model.py --dest ./models
@@ -23,82 +20,18 @@ CLI 调试:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Callable, Optional
 
+# 让 tools/ 作为脚本直接运行时也能 import 到 backend 包
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# ── tqdm stderr 捕获：解析 huggingface_hub 的进度条输出 ──
-# hf_hub_download 用 tqdm 往 stderr 写进度，格式类似：
-#   anima-base-v1.0.safetensors:  45%|██▌     | 1.20G/2.66G [00:15<00:18, 85.2MB/s]
-# 通过替换 sys.stderr 截获并解析，把 bytes/speed 回填到共享 progress dict。
+from backend.utils.hf_download import download_hf_file, cleanup_temp  # noqa: E402
 
-_TQDM_RE = re.compile(
-    r'(\d+)%\s*\|.*?\|\s*'          # percentage
-    r'([\d.]+)\s*([kMGTP]?i?B?)\s*/\s*([\d.]+)\s*([kMGTP]?i?B?)\s*'  # downloaded / total
-    r'\[.*?,\s*([\d.]+)\s*([kMGTP]?i?B?)/s\]'  # speed
-)
-
-_SIZE_UNITS: dict[str, int] = {
-    "": 1, "B": 1,
-    "k": 1024, "kB": 1024, "KiB": 1024,
-    "M": 1024**2, "MB": 1024**2, "MiB": 1024**2,
-    "G": 1024**3, "GB": 1024**3, "GiB": 1024**3,
-    "T": 1024**4, "TB": 1024**4, "TiB": 1024**4,
-    "P": 1024**5, "PB": 1024**5, "PiB": 1024**5,
-}
-
-
-def _parse_size(val: str, unit: str) -> float:
-    return float(val) * _SIZE_UNITS.get(unit, 1)
-
-
-class _StderrTqdmCapture:
-    """替换 sys.stderr，解析 tqdm 输出 → 更新共享 progress dict。"""
-
-    def __init__(self, original_stderr, progress: dict, lock: threading.Lock):
-        self._orig = original_stderr
-        self._p = progress
-        self._lock = lock
-
-    def isatty(self) -> bool:
-        return False  # 非 tty，tqdm 不用彩色/\r，行尾用 \n
-
-    def write(self, s: str):
-        self._orig.write(s)  # 透传，不丢日志
-        try:
-            m = _TQDM_RE.search(s)
-            if m:
-                downloaded = _parse_size(m.group(2), m.group(3))
-                total = _parse_size(m.group(4), m.group(5))
-                speed = _parse_size(m.group(6), m.group(7)) / (1024**2)  # MB/s
-                with self._lock:
-                    self._p.update({
-                        "downloaded": int(downloaded),
-                        "total": int(total),
-                        "speed": round(speed, 2),
-                    })
-            elif '%' in s and '|' in s:
-                # tqdm 行但正则没匹配 → 记录供调试
-                with self._lock:
-                    raw = self._p.get("_tqdm_raw", "")
-                    self._p["_tqdm_raw"] = (raw + s.strip()[-120:])[-500:]
-        except Exception:
-            pass
-
-    def flush(self):
-        self._orig.flush()
-
-    def __enter__(self):
-        sys.stderr = self
-        return self
-
-    def __exit__(self, *args):
-        sys.stderr = self._orig
 
 # ── Anima 核心文件清单 ──
 # (HF repo 内路径, 本地文件名, 用途说明)
@@ -109,168 +42,50 @@ ANIMA_FILES: list[tuple[str, str, str]] = [
     ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE"),
 ]
 
-# 尝试导入项目缓存目录（供非 local_dir 模式使用）
-try:
-    from backend.constants import HF_CACHE_DIR as _DEFAULT_CACHE_DIR
-except ImportError:
-    _DEFAULT_CACHE_DIR = Path("huggingface")
 # anima_comparison.json 是 ComfyUI 工作流文件，训练不需要，不下。
 
 # HF 仓库
 ANIMA_REPO_ID = "circlestone-labs/Anima"
 
 
-class _ProgressCallback:
-    """huggingface_hub tqdm 兼容回调。
-
-    hf_hub_download 在新版接受 `tqdm` 参数（需要一个类 tqdm 接口的对象），
-    在老版则使用 `DownloadArtifact` 内置回调。这里实现最小子集：
-    `__call__`（旧 API）+ `update(n)` / `total` setter（新 API），
-    把回调写入外部共享 dict。
-    """
-
-    def __init__(
-        self,
-        progress: dict,
-        filename: str,
-        file_index: int,
-        file_total: int,
-        lock: threading.Lock,
-    ):
-        self._p = progress
-        self._lock = lock
-        self._filename = filename
-        self._file_index = file_index
-        self._file_total = file_total
-        self._downloaded = 0
-        self._total = 0
-        self._last_ts = time.time()
-        self._last_bytes = 0
-        # 兼容 tqdm-like 接口
-        self.n = 0
-        self.total = 0
-
-    def _push(self):
-        now = time.time()
-        dt = now - self._last_ts
-        if dt >= 0.3:
-            speed = (self._downloaded - self._last_bytes) / max(dt, 1e-6) / (1024 ** 2)
-            self._last_ts = now
-            self._last_bytes = self._downloaded
-        else:
-            speed = self._p.get("speed", 0.0)
-        with self._lock:
-            self._p.update({
-                "filename": self._filename,
-                "file_index": self._file_index,
-                "file_total": self._file_total,
-                "downloaded": self._downloaded,
-                "total": self._total,
-                "speed": round(speed, 2),
-                "phase": "downloading",
-            })
-
-    # 旧 API：hf_hub_download(..., tqdm=cb) 时每次进度条更新调用 cb(arguments)
-    def __call__(self, arguments):
-        # arguments 是 huggingface_hub 历史上传过的 dict 或 tqdm-like；尽量兼容
-        try:
-            n = getattr(arguments, "n", None)
-            total = getattr(arguments, "total", None)
-            if n is None and isinstance(arguments, dict):
-                n = arguments.get("n")
-                total = arguments.get("total")
-            if n is not None:
-                self._downloaded = int(n)
-            if total is not None:
-                self._total = int(total)
-        except Exception:
-            pass
-        self._push()
-
-    # 新 API（tqdm-like）：直接对象方法
-    def update(self, n=1):
-        self._downloaded += int(n)
-        self._push()
-
-    def reset(self, total=None):
-        self._downloaded = 0
-        if total is not None:
-            self._total = int(total)
-
-    def close(self):
-        with self._lock:
-            self._p.update({
-                "filename": self._filename,
-                "file_index": self._file_index,
-                "file_total": self._file_total,
-                "downloaded": self._total if self._total else self._downloaded,
-                "total": self._total,
-                "speed": 0.0,
-                "phase": "file_done",
-            })
-
-
-def _hf_hub_download_compat(
-    repo_id: str,
-    filename: str,
-    local_dir: Path,
-    cb: _ProgressCallback,
-    use_local_dir: bool = True,
-) -> Path:
-    """hf_hub_download 兼容封装。
-
-    若 use_local_dir=True: 下载到 local_dir（如 models/），
-      产生 .cache/huggingface/ 子目录，tqdm 输出可能不完整。
-    若 use_local_dir=False: 走标准缓存目录（项目 huggingface/），
-      http_get/xet_get 的 tqdm 输出正常，之后再 copy2 到目标位置。
-    """
-    from huggingface_hub import hf_hub_download
-    kwargs: dict = dict(repo_id=repo_id, filename=filename)
-    if use_local_dir:
-        local_dir.mkdir(parents=True, exist_ok=True)
-        kwargs["local_dir"] = str(local_dir)
-    else:
-        # 使用项目 HF 缓存目录（huggingface/），不需要 local_dir
-        kwargs["cache_dir"] = str(_DEFAULT_CACHE_DIR)
-    for tqdm_kw in ("tqdm",):
-        try:
-            return Path(hf_hub_download(tqdm=cb, **kwargs))
-        except TypeError:
-            break
-    return Path(hf_hub_download(**kwargs))
-
-
 def download_anima_files(
     dest_dir: Path,
     progress: dict | None = None,
     on_log: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[str], None]] = None,
     repo_id: str = ANIMA_REPO_ID,
     files: list[tuple[str, str, str]] | None = None,
+    progress_lock: Optional[threading.Lock] = None,
 ) -> list[Path]:
     """逐文件下载 Anima 模型，把进度写入共享 progress dict。
 
     参数:
         dest_dir: 落盘目录（通常 = SD_MODELS_DIR），所有文件最终平铺在此目录下
         progress: 线程间共享的进度 dict（由后端提供），每次更新原地覆盖
-        on_log: 文本日志回调（写一行字符串），可选
+        on_log: 事件日志回调（文件开始/完成/失败/重试），换行打印
+        on_progress: 单行进度回调（百分比+速度），由调用方以 \\r 原地刷新；可空
         repo_id: HF 仓库 id
         files: [(hf_path, local_name, desc)]，默认 ANIMA_FILES
+        progress_lock: 保护 progress dict 的锁；传入后端共享锁可使读取端与之互斥，
+                       避免轮询时 "dictionary changed during iteration"。默认自建本地锁。
 
     返回每个文件落盘的绝对路径列表。失败文件对应路径为空 Path('.')。
     """
     files = files or ANIMA_FILES  # type: ignore[assignment]
     file_total = len(files)
-    lock = threading.Lock()
+    lock = progress_lock if progress_lock is not None else threading.Lock()
     progress = progress if progress is not None else {}
 
-    # 强制启用 huggingface_hub 的 tqdm（否则日志级别可能关掉它）
-    import logging as _logging
-    _hf_logger = _logging.getLogger("huggingface_hub.file_download")
-    _old_level = _hf_logger.level
-    _hf_logger.setLevel(_logging.INFO)
-    # 双保险：同时设置环境变量确保 Xet 下载也启用进度
-    _old_disable = os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS")
-    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
+    # 让前端能区分"本次要下的文件"（排队中）与"不相关的文件"（显示静态状态）
+    batch_names = [local_name for _, local_name, _ in files]
+    with lock:
+        progress.update({
+            "phase": "downloading",
+            "file_index": 0,
+            "file_total": file_total,
+            "batch": batch_names,
+            "filename": files[0][1] if files else "",
+        })
 
     def _log(msg: str):
         if on_log:
@@ -279,29 +94,28 @@ def download_anima_files(
             except Exception:
                 pass
 
-    # 磁盘空间预检
+    # 磁盘空间预检（粗略：要求至少 1GB，避免下到一半才报磁盘满）
     try:
         usage = shutil.disk_usage(dest_dir)
         if usage.free < 1024 ** 3:
             with lock:
                 progress.update({
-                    "phase": "error",
-                    "filename": "",
-                    "file_index": 0,
-                    "file_total": file_total,
+                    "phase": "error", "filename": "",
+                    "file_index": 0, "file_total": file_total,
                     "error": f"磁盘剩余 {usage.free // (1024**3)} GB < 1GB",
                 })
             _log(f"[ERROR] 磁盘空间不足：剩余 {usage.free // (1024**3)} GB")
-            return [Path(".")]*file_total
+            return [Path(".")] * file_total
     except OSError:
         pass
 
+    dest_dir.mkdir(parents=True, exist_ok=True)
     results: list[Path] = []
     for i, (hf_path, local_name, desc) in enumerate(files):
         _log(f"[{i+1}/{file_total}] 下载 {local_name} ({desc}) ...")
         with lock:
             progress.update({
-                "filename": local_name,  # UI 显示用
+                "filename": local_name,
                 "file_index": i,
                 "file_total": file_total,
                 "downloaded": 0,
@@ -309,18 +123,16 @@ def download_anima_files(
                 "speed": 0.0,
                 "phase": "downloading",
             })
-        cb = _ProgressCallback(progress, local_name, i, file_total, lock)
+        dest = dest_dir / local_name
         try:
-            # 不用 local_dir: 走标准缓存路径 → http_get/xet_get 内部 tqdm 正常输出
-            # 下载后 copy2 到 models/ 根目录
-            with _StderrTqdmCapture(sys.stderr, progress, lock):
-                path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb, use_local_dir=False)
-            cb.close()
-            flat_path = dest_dir / local_name
-            if path != flat_path:
-                shutil.copy2(str(path), str(flat_path))
-            results.append(flat_path)
-            _log(f"[{i+1}/{file_total}] 已下载: {flat_path}")
+            path = download_hf_file(
+                repo_id, hf_path, dest,
+                progress=progress, lock=lock,
+                on_log=on_log, on_progress=on_progress,
+                file_index=i, file_total=file_total,
+            )
+            results.append(path)
+            _log(f"[{i+1}/{file_total}] 已下载: {path}")
         except Exception as e:
             with lock:
                 progress.update({
@@ -332,9 +144,17 @@ def download_anima_files(
                 })
             _log(f"[{i+1}/{file_total}] 失败: {e}")
             results.append(Path("."))
+            # 清理该文件的临时分块，避免孤儿占用磁盘（分块内重试已覆盖瞬时网络错误）
+            cleanup_temp(dest)
+
     # 全部完成
     with lock:
-        progress.update({"phase": "done", "file_index": file_total, "file_total": file_total, "speed": 0.0})
+        progress.update({
+            "phase": "done",
+            "file_index": file_total,
+            "file_total": file_total,
+            "speed": 0.0,
+        })
     return results
 
 
@@ -373,13 +193,30 @@ def main():
     # 尊重 HF_ENDPOINT（如已 export HF_ENDPOINT=https://hf-mirror.com）
     print(f"HF_ENDPOINT = {os.environ.get('HF_ENDPOINT', '(default)')}")
 
+    is_tty = sys.stdout.isatty()
+
+    def _cli_progress(line: str):
+        if is_tty:
+            sys.stdout.write("\r" + line)
+            sys.stdout.flush()
+
+    def _cli_log(msg: str):
+        if is_tty:
+            # 先清掉正在刷新的进度行，再换行打印事件
+            sys.stdout.write("\r" + " " * 100 + "\r")
+        print(msg, flush=True)
+
     progress: dict = {}
     paths = download_anima_files(
         dest_dir=dest,
         progress=progress,
-        on_log=lambda m: print(m, flush=True),
+        on_log=_cli_log,
+        on_progress=_cli_progress,
         files=files,
     )
+    if is_tty:
+        sys.stdout.write("\r" + " " * 100 + "\r")
+        sys.stdout.flush()
     print("\n结果:")
     for (fname, _), p in zip(files, paths):
         print(f"  {fname:32s} -> {p if p != Path('.') else '失败'}")

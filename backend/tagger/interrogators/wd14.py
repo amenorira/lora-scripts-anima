@@ -14,6 +14,7 @@ from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 from backend.tagger.interrogators.base import Interrogator
 from backend.tagger import dbimutils, format
+from backend.tagger.tagger_download import tagger_hub_download
 from backend.log import log
 
 
@@ -32,11 +33,13 @@ class WaifuDiffusionInterrogator(Interrogator):
 
     def download(self) -> Tuple[os.PathLike, os.PathLike]:
         log.info(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
+        repo_id = self.kwargs['repo_id']
+        cache_dir = self.kwargs.get('cache_dir')
 
-        model_path = Path(hf_hub_download(
-            **self.kwargs, filename=self.model_path))
-        tags_path = Path(hf_hub_download(
-            **self.kwargs, filename=self.tags_path))
+        model_path = Path(tagger_hub_download(
+            repo_id=repo_id, filename=self.model_path, cache_dir=cache_dir))
+        tags_path = Path(tagger_hub_download(
+            repo_id=repo_id, filename=self.tags_path, cache_dir=cache_dir))
         return model_path, tags_path
 
     def load(self) -> None:

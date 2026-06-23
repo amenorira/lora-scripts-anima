@@ -787,6 +787,7 @@
 		"installFailed": "安装失败",
 		"animaModel": {
 			"title": "Anima 模型",
+			"subtitle": "底模 / Text encoder / VAE",
 			"file": "文件",
 			"desc": "描述",
 			"status": "状态",
@@ -794,8 +795,14 @@
 			"notDownloaded": "未下载",
 			"downloading": "下载中",
 			"pending": "排队中",
+			"connecting": "连接中",
 			"failed": "失败",
+			"allReady": "全部就绪",
+			"incomplete": "未齐全",
+			"download": "下载",
+			"redownload": "重新下载",
 			"downloadAll": "一键下载全部",
+			"downloadAllAgain": "重新下载全部",
 			"progressLog": "下载日志"
 		}
 	},

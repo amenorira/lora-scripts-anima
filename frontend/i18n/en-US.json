@@ -787,6 +787,7 @@
 		"installFailed": "Install failed",
 		"animaModel": {
 			"title": "Anima Models",
+			"subtitle": "Base / text encoder / VAE",
 			"file": "File",
 			"desc": "Description",
 			"status": "Status",
@@ -794,8 +795,14 @@
 			"notDownloaded": "Not downloaded",
 			"downloading": "Downloading",
 			"pending": "Pending",
+			"connecting": "Connecting",
 			"failed": "Failed",
+			"allReady": "All ready",
+			"incomplete": "Incomplete",
+			"download": "Download",
+			"redownload": "Redownload",
 			"downloadAll": "Download All",
+			"downloadAllAgain": "Re-download All",
 			"progressLog": "Progress Log"
 		}
 	},

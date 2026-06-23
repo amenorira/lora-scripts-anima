@@ -19,6 +19,8 @@ from PIL import Image
 from huggingface_hub import hf_hub_download
 
 from backend.tagger.interrogators.base import Interrogator
+from backend.tagger.tagger_download import tagger_hub_download
+from backend.log import log
 
 
 class CamieTaggerInterrogator(Interrogator):
@@ -39,14 +41,14 @@ class CamieTaggerInterrogator(Interrogator):
     def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs.get("repo_id", "Camais03/camie-tagger-v2")
         cache_dir = self.kwargs.get("cache_dir", None)
-        print(f"Loading {self.name} model from {repo_id}")
+        log.info(f"Loading {self.name} model from {repo_id}")
 
-        model_path = Path(hf_hub_download(
+        model_path = Path(tagger_hub_download(
             repo_id=repo_id,
             filename=self.model_filename,
             cache_dir=cache_dir,
         ))
-        metadata_path = Path(hf_hub_download(
+        metadata_path = Path(tagger_hub_download(
             repo_id=repo_id,
             filename=self.metadata_filename,
             cache_dir=cache_dir,

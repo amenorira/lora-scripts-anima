@@ -29,6 +29,7 @@ window.environmentCoreMixin = {
   animaModelProgress: null, // 后端 progress 字段
   animaModelLog: '',
   animaModelError: null,
+  animaModelLogOpen: false, // 日志折叠状态（持久化，避免轮询重渲染被收起）
 
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
@@ -43,11 +44,12 @@ window.environmentCoreMixin = {
         if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
         if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
         if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
+        if (typeof s.animaModelLog === 'boolean') this.animaModelLogOpen = s.animaModelLog;
       }
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
   },
 
   // ── Shared install polling ──────────────────────────
@@ -212,6 +214,7 @@ window.environmentCoreMixin = {
     if (this.animaModelBusy) return; // 防止重复点击
     this.animaModelBusy = true; this.animaModelError = null;
     this.animaModelLog = ''; this.animaModelProgress = null;
+    this.animaModelLogOpen = false;  // 新任务默认收起日志，用户可手动展开
     this.startProgress(); this.renderEnvironment();
     try {
       const body = file ? JSON.stringify({file}) : '{}';

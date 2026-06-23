@@ -252,90 +252,130 @@ window.environmentRenderMixin = {
     const progress = this.animaModelProgress;
     const busy = this.animaModelBusy;
     const error = this.animaModelError;
+    const p = progress || {};
+    const curFile = p.filename || '';
+    const batch = Array.isArray(p.batch) ? p.batch : null;
+    const phase = p.phase || '';
     let h = '';
 
-    // 简洁的单卡片版本（不使用 details 折叠，始终可见）
-    h += `<div id="env-anima-model" class="env-row env-card-flat">`;
+    // 卡片标题行 + 整体状态徽标 + 一键下载/刷新
+    // 用 details 保持与其它卡片一致的折叠语义，但仍可平铺展示文件列表。
+    const allReady = files.length > 0 && files.every(f => f.exists);
+    const cardBadge = error
+      ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+      : !files.length
+        ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
+        : allReady
+          ? `<span class="env-badge env-badge-ok">${T('animaModel.allReady','All ready')}</span>`
+          : busy
+            ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
+            : `<span class="env-badge env-badge-warn">${T('animaModel.incomplete','Incomplete')}</span>`;
+
+    h += `<details id="env-anima-model" ${this.animaModelCardOpen?'open':''} class="env-row env-row-anima">`;
+    h += `<summary class="env-row-summary"><span class="env-row-arrow">&#9654;</span><span class="env-row-title">${T('animaModel.title','Anima Models')}</span><span class="env-row-subtitle">${T('animaModel.subtitle','Base / text encoder / VAE')}</span>${cardBadge}</summary>`;
     h += `<div class="env-row-detail">`;
 
     // 错误提示
-    if (error) h += `<div class="env-msg env-msg-err"><pre>${error}</pre></div>`;
+    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
 
-    // 文件清单表
-    h += `<table class="env-model-table"><thead><tr>
-      <th>${T('animaModel.file', 'File')}</th>
-      <th>${T('animaModel.desc', 'Description')}</th>
-      <th>${T('animaModel.status', 'Status')}</th>
-      </tr></thead><tbody>`;
-
-    const p = progress || {};
-    const curFile = p.filename || '';
-    let allDone = true;
+    // ── 文件清单（逐文件卡片，带单文件下载按钮）──
+    h += `<div class="env-model-list">`;
 
     for (const f of files) {
+      const inBatch = !batch || batch.includes(f.filename);
+      const isCurrent = busy && curFile === f.filename;
+      const isQueued = busy && inBatch && !isCurrent;
       let statusHtml = '';
-      if (busy && curFile === f.filename) {
-        // 正在下载此文件
-        if (p.total > 0) {
-          const pct = Math.round(p.downloaded * 100 / p.total);
-          const downloadedGB = (p.downloaded / (1024**3)).toFixed(2);
-          const totalGB = (p.total / (1024**3)).toFixed(2);
-          const speed = p.speed || 0;
-          statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${pct}%</span>
+      let actionHtml = '';
+      let rowCls = 'env-model-item';
+
+      if (isCurrent && p.total > 0) {
+        // 正在下载此文件，有字节进度
+        const pct = Math.max(0, Math.min(100, Math.round(p.downloaded * 100 / p.total)));
+        const dl = (p.downloaded / (1024**3)).toFixed(2);
+        const tot = (p.total / (1024**3)).toFixed(2);
+        const speed = p.speed || 0;
+        rowCls += ' env-model-item-active';
+        statusHtml = `<div class="env-model-progress">
             <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
-            <span class="env-model-speed">${speed.toFixed(1)} MB/s &middot; ${downloadedGB}/${totalGB} GB</span>`;
-        } else {
-          // huggingface_hub 0.34.3 不支持传入 tqdm 回调，拿不到字节进度；显示简化状态
-          const idx = p.file_index != null ? (p.file_index + 1) : '?';
-          const total = p.file_total || '?';
-          statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${idx}/${total}...</span>
-            <div class="env-model-progress-bar env-model-progress-indeterminate"><div></div></div>`;
-        }
-        allDone = false;
-      } else if (busy) {
-        // 下载中但当前不是此文件（其他文件在排队）
-        if (f.exists) {
-          statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded', 'Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
-        } else {
-          statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.pending', 'Pending')}</span>`;
-          allDone = false;
-        }
+            <div class="env-model-progress-meta">
+              <span class="env-model-pct">${pct}%</span>
+              <span class="env-model-speed">${speed.toFixed(1)} MB/s &middot; ${dl}/${tot} GB</span>
+            </div>
+          </div>`;
+      } else if (isCurrent) {
+        // 正在下载但还没拿到 total（HEAD/连接阶段）
+        rowCls += ' env-model-item-active';
+        const idx = p.file_index != null ? (p.file_index + 1) : '?';
+        const tt = p.file_total || '?';
+        statusHtml = `<div class="env-model-progress">
+            <div class="env-model-progress-bar env-model-progress-indeterminate"><div></div></div>
+            <div class="env-model-progress-meta">
+              <span class="env-badge env-badge-loading">${T('animaModel.connecting','Connecting')} ${idx}/${tt}</span>
+            </div>
+          </div>`;
+      } else if (isQueued) {
+        // 本次任务排队中（尚未轮到）
+        rowCls += ' env-model-item-queued';
+        statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending','Pending')}</span>`;
       } else if (f.exists) {
-        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded', 'Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
-      } else if (!busy && p.phase === 'error' && (curFile === f.filename || !curFile)) {
-        // 下载线程报错，显示失败标记（不依赖 busy，因为 done 后 busy 已置 false）
-        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed', 'Failed')}</span>`;
-        allDone = false;
+        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
+      } else if (!busy && phase === 'error' && curFile === f.filename) {
+        // 本次任务里此文件失败
+        rowCls += ' env-model-item-failed';
+        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
+      } else if (!busy && inBatch && phase === 'done') {
+        // 本次任务正常结束但该文件没落盘 → 视为失败
+        rowCls += ' env-model-item-failed';
+        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
       } else {
-        statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.notDownloaded', 'Not downloaded')}</span>`;
-        allDone = false;
+        statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.notDownloaded','Not downloaded')}</span>`;
       }
-      h += `<tr>
-        <td><code>${f.filename}</code></td>
-        <td><span class="env-text-dim">${f.desc || ''}</span></td>
-        <td>${statusHtml}</td>
-        </tr>`;
+
+      // 操作按钮：每行可单独下载
+      if (isCurrent || isQueued) {
+        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" disabled>${T('animaModel.downloading','Downloading')}</button>`;
+      } else if (f.exists) {
+        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" data-file="${this.esc(f.filename)}" ${busy?'disabled':''} title="${T('animaModel.redownload','Redownload')}">${T('animaModel.redownload','Redownload')}</button>`;
+      } else {
+        actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-file="${this.esc(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
+      }
+
+      h += `<div class="${rowCls}">
+        <div class="env-model-item-top">
+          <div class="env-model-item-main">
+            <div class="env-model-item-name"><code title="${this.esc(f.filename)}">${this.esc(f.filename)}</code></div>
+            <div class="env-model-item-desc">${this.esc(f.desc || '')}</div>
+          </div>
+          <div class="env-model-item-action">${actionHtml}</div>
+        </div>
+        <div class="env-model-item-status">${statusHtml}</div>
+      </div>`;
     }
 
     // Loading 占位（status 还没拉回来）
     if (!files.length) {
-      h += `<tr><td colspan="3"><span class="env-badge env-badge-loading">${T('loading', 'Loading...')}</span></td></tr>`;
+      h += `<div class="env-model-item"><span class="env-badge env-badge-loading">${T('loading','Loading...')}</span></div>`;
     }
-    h += `</tbody></table>`;
+    h += `</div>`; // .env-model-list
 
-    // 操作按钮
-    h += `<div class="env-detail-group" style="margin-top:8px;"><div class="env-detail-content">
+    // ── 底部操作栏：一键下载全部 + 刷新 ──
+    const hasMissing = files.some(f => !f.exists);
+    const dlAllLabel = busy
+      ? T('animaModel.downloading','Downloading...')
+      : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
+    h += `<div class="env-detail-group env-model-toolbar"><div class="env-detail-content">
       <div class="env-actions">
-        <button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${busy ? T('animaModel.downloading', 'Downloading...') : T('animaModel.downloadAll', 'Download All')}</button>
-        <button id="anima-model-refresh-btn" class="btn-icon" ${busy?'disabled':''} title="${T('refresh', 'Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        <button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${dlAllLabel}</button>
+        <button id="anima-model-refresh-btn" class="btn-icon" ${busy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
       </div></div></div>`;
 
-    // 下载 log（折叠），busy 或刚失败时展示
-    if ((busy || this.animaModelError) && this.animaModelLog) {
-      h += `<details class="env-model-log-wrap"><summary>${T('animaModel.progressLog', 'Progress Log')}</summary><pre class="env-install-log">${this.animaModelLog}</pre></details>`;
+    // ── 下载日志（可折叠，状态持久化避免重渲染被收起）──
+    if (this.animaModelLog) {
+      h += `<details class="env-model-log-wrap" id="env-anima-model-log" ${this.animaModelLogOpen?'open':''}><summary>${T('animaModel.progressLog','Progress Log')}</summary><pre class="env-install-log env-model-log" id="env-anima-model-log-pre">${this.esc(this.animaModelLog)}</pre></details>`;
     }
 
-    h += `</div></div>`;
+    h += `</div></details>`;
     return h;
   },
 
@@ -353,6 +393,29 @@ window.environmentRenderMixin = {
       }
     }
     if (refreshBtn) refreshBtn.addEventListener('click', () => a.animaModelRefresh());
+
+    // 逐文件下载按钮
+    el.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file));
+    });
+
+    // 日志折叠持久化 + 自动滚到底
+    const logDet = el.querySelector('#env-anima-model-log');
+    if (logDet) {
+      logDet.addEventListener('toggle', () => {
+        a.animaModelLogOpen = logDet.open;
+        a._envSaveCardState();
+        if (logDet.open) {
+          const pre = logDet.querySelector('#env-anima-model-log-pre');
+          if (pre) pre.scrollTop = pre.scrollHeight;
+        }
+      });
+      // 默认展开时也滚到底（轮询期间新日志不断追加）
+      if (logDet.open) {
+        const pre = logDet.querySelector('#env-anima-model-log-pre');
+        if (pre) pre.scrollTop = pre.scrollHeight;
+      }
+    }
   },
 
   // ═══════════════════════════════════════════════════════
@@ -397,13 +460,14 @@ window.environmentRenderMixin = {
 
   _bindCardToggle(el) {
     const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts','env-triton'].forEach(id => {
+    ['env-flash-attn','env-xformers','env-sdscripts','env-triton','env-anima-model'].forEach(id => {
       const card = el.querySelector('#'+id); if (!card) return;
       card.addEventListener('toggle', () => {
         if (id==='env-flash-attn') a.faCardOpen = card.open;
         else if (id==='env-xformers') a.xfCardOpen = card.open;
         else if (id==='env-sdscripts') a.sdCardOpen = card.open;
         else if (id==='env-triton') a.tritonCardOpen = card.open;
+        else if (id==='env-anima-model') a.animaModelCardOpen = card.open;
         a._envSaveCardState();
       });
     });

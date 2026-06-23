@@ -398,26 +398,15 @@ def _start_download_job(only_file: str | None = None) -> str:
 
     only_file: 若指定，只下载该文件名（用于失败后单文件重试）。
     """
-    _root = REPO_ROOT
-    _path = _root / "tools" / "download_anima_model.py"
-    if not _path.exists():
-        raise RuntimeError(f"download_anima_model.py not found at {_path}")
-    import importlib.util
-    import sys
-    if "download_anima_model" not in sys.modules:
-        spec = importlib.util.spec_from_file_location("download_anima_model", _path)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["download_anima_model"] = mod
-        spec.loader.exec_module(mod)
-    mod = sys.modules["download_anima_model"]
+    from tools.download_anima_model import ANIMA_FILES, download_anima_files
 
     # 选择文件清单
     if only_file:
-        files = [(h, l, d) for h, l, d in mod.ANIMA_FILES if l == only_file or h == only_file]
+        files = [(h, l, d) for h, l, d in ANIMA_FILES if l == only_file or h == only_file]
         if not files:
             raise RuntimeError(f"未知文件: {only_file}")
     else:
-        files = mod.ANIMA_FILES
+        files = ANIMA_FILES
 
     job_id = _install_uuid().hex[:12]
     shared_progress: dict = {}
@@ -433,19 +422,53 @@ def _start_download_job(only_file: str | None = None) -> str:
         }
 
     def _run():
+        from backend.utils.hf_download import make_progress_bar
+        try:
+            from backend.log import console as _rich_console
+        except Exception:
+            _rich_console = None
+        progress_bar = make_progress_bar(console=_rich_console)
+        # task_id 由 on_progress 在首次拿到 filename/total 时惰性创建
+        state = {"task_id": None}
+
         def _on_log(msg: str):
-            # 滚动保留最近 50 行
+            # 事件日志：滚动保留最近 50 行 + 打到服务器控制台（换行）
             log_lines.append(msg)
             if len(log_lines) > 50:
                 del log_lines[: len(log_lines) - 50]
+            try:
+                log.info(f"[anima-dl] {msg}")
+            except Exception:
+                pass
+
+        def _on_progress(line: str):
+            try:
+                with _download_jobs_lock:
+                    p = dict(shared_progress)
+                fn = p.get("filename") or "?"
+                total = int(p.get("total") or 0)
+                done = int(p.get("downloaded") or 0)
+                speed = float(p.get("speed") or 0.0)
+                if state["task_id"] is None:
+                    state["task_id"] = progress_bar.add_task(fn, total=total or None, completed=done)
+                else:
+                    progress_bar.update(state["task_id"], description=fn,
+                                        total=total or None, completed=done)
+                    if speed:
+                        progress_bar.tasks[state["task_id"]].speed = speed
+            except Exception:
+                pass
+
+        progress_bar.start()
         try:
-            paths = mod.download_anima_files(
+            paths = download_anima_files(
                 dest_dir=SD_MODELS_DIR,
                 progress=shared_progress,
                 on_log=_on_log,
+                on_progress=_on_progress,
                 files=files,
+                progress_lock=_download_jobs_lock,
             )
-            # 判定整体成功：若指定了 only_file，要求该文件成功；否则要求全部成功
             if only_file:
                 ok = any(p != Path(".") for p in paths)
             else:
@@ -460,6 +483,11 @@ def _start_download_job(only_file: str | None = None) -> str:
                 shared_progress.update({"phase": "error", "error": str(e)})
                 _download_jobs[job_id]["done"] = True
                 _download_jobs[job_id]["success"] = False
+        finally:
+            try:
+                progress_bar.stop()
+            except Exception:
+                pass
 
     _install_thr.Thread(target=_run, daemon=True).start()
     return job_id
@@ -469,18 +497,8 @@ def _start_download_job(only_file: str | None = None) -> str:
 async def anima_model_status() -> dict:
     """扫描 models/ 目录，返回 Anima 各核心文件已下载/未下载状态。"""
     _cleanup_download_jobs()
-    import sys
-    mod = sys.modules.get("download_anima_model")
-    if mod is None:
-        # 还未触发下载工具导入，按需加载
-        import importlib.util
-        _path = REPO_ROOT / "tools" / "download_anima_model.py"
-        spec = importlib.util.spec_from_file_location("download_anima_model", _path)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["download_anima_model"] = mod
-        spec.loader.exec_module(mod)
-
-    files = await asyncio.to_thread(mod.list_local_anima_files, SD_MODELS_DIR)
+    from tools.download_anima_model import list_local_anima_files
+    files = await asyncio.to_thread(list_local_anima_files, SD_MODELS_DIR)
     return {"files": files}
 
 

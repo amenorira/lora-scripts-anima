@@ -2839,24 +2839,77 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-badge-loading { background: var(--accent-soft); color: var(--text-secondary); }
 
 /* ── Anima 模型下载卡 ──────────────────────────────── */
-.env-model-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.env-model-table th { text-align: left; padding: 4px 8px; color: var(--text-tertiary); font-weight: 500; border-bottom: 1px solid var(--border-default); }
-.env-model-table td { padding: 6px 8px; vertical-align: middle; }
-.env-model-table code { font-family: var(--font-mono); font-size: 11px; }
+.env-model-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.env-model-item {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; border: 1px solid var(--border-default);
+  border-radius: 6px; background: var(--bg-surface);
+  transition: border-color 0.15s, background 0.15s;
+}
+.env-model-item:hover { border-color: var(--accent); }
+/* 顶行：名称+描述（左）与操作按钮（右）始终对齐 */
+.env-model-item-top {
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.env-model-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.env-model-item-name code {
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--text-primary); font-weight: 550;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+}
+.env-model-item-desc { font-size: 11px; color: var(--text-tertiary); line-height: 1.35; }
+.env-model-item-action { flex-shrink: 0; align-self: flex-start; }
+/* 状态行：徽标或进度条，独占整行，避免与按钮错位 */
+.env-model-item-status { min-width: 0; }
+.env-model-item-status .env-badge { margin: 0; }
 
-.env-model-progress-bar { height: 6px; background: var(--accent-muted); border-radius: 3px; margin: 4px 0; overflow: hidden; }
-.env-model-progress-bar div { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
-.env-model-progress-indeterminate div { width: 30% !important; animation: env-model-indeterminate 1.5s ease-in-out infinite; }
+/* 下载中：柔和高亮（边框 + 浅底色，不加粗色条） */
+.env-model-item-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.env-model-item-queued { opacity: 0.7; }
+.env-model-item-failed { border-color: var(--danger); }
+
+/* 进度条 + 百分比 + 速度（状态行内，整行宽度） */
+.env-model-progress { width: 100%; }
+.env-model-progress-bar {
+  height: 6px; background: var(--accent-muted); border-radius: 3px;
+  overflow: hidden; position: relative;
+}
+.env-model-progress-bar > div {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.env-model-progress-indeterminate > div {
+  width: 30% !important; position: absolute;
+  animation: env-model-indeterminate 1.5s ease-in-out infinite;
+}
 @keyframes env-model-indeterminate {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+.env-model-progress-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 3px;
+}
+.env-model-pct {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--accent);
+}
+.env-model-speed { font-size: 10.5px; color: var(--text-tertiary); font-family: var(--font-mono); }
 
-.env-model-speed { font-size: 10.5px; color: var(--text-tertiary); }
-.env-model-log-wrap { margin-top: 6px; }
-.env-model-log-wrap summary { font-size: 11px; color: var(--text-tertiary); cursor: pointer; }
-.env-model-log-wrap pre { font-size: 10.5px; max-height: 200px; overflow-y: auto; margin-top: 4px; }
-.env-card-flat { padding: 12px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); }
+/* 底部工具栏 */
+.env-model-toolbar { margin-top: 10px; }
+
+/* 下载日志 */
+.env-model-log-wrap { margin-top: 8px; }
+.env-model-log-wrap summary { font-size: 11px; color: var(--text-tertiary); cursor: pointer; user-select: none; }
+.env-model-log-wrap summary:hover { color: var(--text-secondary); }
+.env-model-log {
+  font-size: 10.5px; max-height: 220px; overflow-y: auto; margin-top: 4px;
+  white-space: pre-wrap; word-break: break-all;
+}
 
 /* ── Row detail (indented content) ──────────────────────── */
 .env-row-detail {
