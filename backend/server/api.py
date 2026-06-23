@@ -413,7 +413,7 @@ def _start_download_job(only_file: str | None = None) -> str:
 
     # 选择文件清单
     if only_file:
-        files = [(f, d) for f, d in mod.ANIMA_FILES if f == only_file]
+        files = [(h, l, d) for h, l, d in mod.ANIMA_FILES if l == only_file or h == only_file]
         if not files:
             raise RuntimeError(f"未知文件: {only_file}")
     else:

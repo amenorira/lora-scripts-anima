@@ -29,12 +29,13 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-# ── Anima 核心文件清单（写死；以后再加别的就改这里）──
-# (filename, 用途说明)
-ANIMA_FILES: list[tuple[str, str]] = [
-    ("anima-base-v1.0.safetensors",  "底模 / Base diffusion model"),
-    ("qwen_3_06b_base.safetensors",  "Text encoder (Qwen3-0.6B)"),
-    ("qwen_image_vae.safetensors",   "VAE"),
+# ── Anima 核心文件清单 ──
+# (HF repo 内路径, 本地文件名, 用途说明)
+# HF 仓库里文件在 split_files/ 子目录下，本地统一落到 models/ 根目录。
+ANIMA_FILES: list[tuple[str, str, str]] = [
+    ("split_files/diffusion_models/anima-base-v1.0.safetensors", "anima-base-v1.0.safetensors", "底模 / Base diffusion model"),
+    ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)"),
+    ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE"),
 ]
 # anima_comparison.json 是 ComfyUI 工作流文件，训练不需要，不下。
 
@@ -166,20 +167,20 @@ def download_anima_files(
     progress: dict | None = None,
     on_log: Optional[Callable[[str], None]] = None,
     repo_id: str = ANIMA_REPO_ID,
-    files: list[tuple[str, str]] | None = None,
+    files: list[tuple[str, str, str]] | None = None,
 ) -> list[Path]:
     """逐文件下载 Anima 模型，把进度写入共享 progress dict。
 
     参数:
-        dest_dir: 落盘目录（通常 = SD_MODELS_DIR）
+        dest_dir: 落盘目录（通常 = SD_MODELS_DIR），所有文件最终平铺在此目录下
         progress: 线程间共享的进度 dict（由后端提供），每次更新原地覆盖
         on_log: 文本日志回调（写一行字符串），可选
         repo_id: HF 仓库 id
-        files: [(filename, desc)]，默认 ANIMA_FILES
+        files: [(hf_path, local_name, desc)]，默认 ANIMA_FILES
 
     返回每个文件落盘的绝对路径列表。失败文件对应路径为空 Path('.')。
     """
-    files = files or ANIMA_FILES
+    files = files or ANIMA_FILES  # type: ignore[assignment]
     file_total = len(files)
     lock = threading.Lock()
     progress = progress if progress is not None else {}
@@ -191,17 +192,17 @@ def download_anima_files(
             except Exception:
                 pass
 
-    # 磁盘空间预检（按 3 个文件合计 ~12GB 估算，宽松一点）
+    # 磁盘空间预检
     try:
-        usage = shutil.disk_usage(dest_dir.parent if dest_dir.exists() else dest_dir)
-        if usage.free < 1024 ** 3:  # < 1GB
+        usage = shutil.disk_usage(dest_dir)
+        if usage.free < 1024 ** 3:
             with lock:
                 progress.update({
                     "phase": "error",
                     "filename": "",
                     "file_index": 0,
                     "file_total": file_total,
-                    "error": f"磁盘剩余 {usage.free // (1024**3)} GB < 1GB，不足以下载 Anima 模型",
+                    "error": f"磁盘剩余 {usage.free // (1024**3)} GB < 1GB",
                 })
             _log(f"[ERROR] 磁盘空间不足：剩余 {usage.free // (1024**3)} GB")
             return [Path(".")]*file_total
@@ -209,11 +210,11 @@ def download_anima_files(
         pass
 
     results: list[Path] = []
-    for i, (fname, desc) in enumerate(files):
-        _log(f"[{i+1}/{file_total}] 下载 {fname} ({desc}) ...")
+    for i, (hf_path, local_name, desc) in enumerate(files):
+        _log(f"[{i+1}/{file_total}] 下载 {local_name} ({desc}) ...")
         with lock:
             progress.update({
-                "filename": fname,
+                "filename": local_name,  # UI 显示用
                 "file_index": i,
                 "file_total": file_total,
                 "downloaded": 0,
@@ -221,17 +222,33 @@ def download_anima_files(
                 "speed": 0.0,
                 "phase": "downloading",
             })
-        cb = _ProgressCallback(progress, fname, i, file_total, lock)
+        cb = _ProgressCallback(progress, local_name, i, file_total, lock)
         try:
-            path = _hf_hub_download_compat(repo_id, fname, dest_dir, cb)
+            path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb)
             cb.close()
+            # 下载后用 move 把文件从嵌套子目录挪到 models/ 根目录
+            flat_path = dest_dir / local_name
+            if path != flat_path:
+                shutil.move(str(path), str(flat_path))
+                # 清理父目录链（删掉空子目录）
+                _pdir = path.parent
+                while _pdir != dest_dir and _pdir.parent != _pdir:
+                    try:
+                        if not any(_pdir.iterdir()):
+                            _pdir.rmdir()
+                        else:
+                            break
+                    except OSError:
+                        break
+                    _pdir = _pdir.parent
+                path = flat_path
             results.append(path)
-            _log(f"[{i+1}/{file_total}] 已下载: {path}")
+            _log(f"[{i+1}/{file_total}] 已下载: {flat_path}")
         except Exception as e:
             with lock:
                 progress.update({
                     "phase": "error",
-                    "filename": fname,
+                    "filename": local_name,
                     "file_index": i,
                     "file_total": file_total,
                     "error": f"{type(e).__name__}: {e}",
@@ -245,14 +262,14 @@ def download_anima_files(
 
 
 def list_local_anima_files(dest_dir: Path) -> list[dict]:
-    """扫描 models/ 下与 ANIMA_FILES 同名的文件，返回 {filename, exists, size_gb}。"""
+    """扫描 models/ 下与 ANIMA_FILES 同名的文件，返回 {filename, desc, exists, size_gb}。"""
     out = []
-    for fname, desc in ANIMA_FILES:
-        p = dest_dir / fname
+    for _hf_path, local_name, desc in ANIMA_FILES:
+        p = dest_dir / local_name
         if p.exists() and p.is_file():
-            out.append({"filename": fname, "desc": desc, "exists": True, "size_gb": round(p.stat().st_size / (1024**3), 2)})
+            out.append({"filename": local_name, "desc": desc, "exists": True, "size_gb": round(p.stat().st_size / (1024**3), 2)})
         else:
-            out.append({"filename": fname, "desc": desc, "exists": False, "size_gb": 0})
+            out.append({"filename": local_name, "desc": desc, "exists": False, "size_gb": 0})
     return out
 
 
@@ -261,7 +278,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Download Anima base models to ./models/")
     parser.add_argument("--dest", default="./models", help="目标目录（默认 ./models）")
-    parser.add_argument("--file", default=None, help="只下某个文件名")
+    parser.add_argument("--file", default=None, help="只下某个文件名（本地名或 HF 路径）")
     args = parser.parse_args()
 
     dest = Path(args.dest).resolve()
@@ -269,9 +286,9 @@ def main():
 
     files = ANIMA_FILES
     if args.file:
-        files = [(f, d) for f, d in ANIMA_FILES if f == args.file]
+        files = [(h, l, d) for h, l, d in ANIMA_FILES if l == args.file or h == args.file]
         if not files:
-            print(f"未知文件: {args.file}，可选: {[f for f,_ in ANIMA_FILES]}")
+            print(f"未知文件: {args.file}，可选: {[l for _,l,_ in ANIMA_FILES]}")
             return
 
     print(f"dest = {dest}")
