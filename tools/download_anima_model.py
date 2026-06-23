@@ -43,8 +43,14 @@ _TQDM_RE = re.compile(
     r'\[.*?,\s*([\d.]+)\s*([kMGTP]?i?B?)/s\]'  # speed
 )
 
-_SIZE_UNITS: dict[str, int] = {"": 1, "B": 1, "kB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4,
-                                 "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
+_SIZE_UNITS: dict[str, int] = {
+    "": 1, "B": 1,
+    "k": 1024, "kB": 1024, "KiB": 1024,
+    "M": 1024**2, "MB": 1024**2, "MiB": 1024**2,
+    "G": 1024**3, "GB": 1024**3, "GiB": 1024**3,
+    "T": 1024**4, "TB": 1024**4, "TiB": 1024**4,
+    "P": 1024**5, "PB": 1024**5, "PiB": 1024**5,
+}
 
 
 def _parse_size(val: str, unit: str) -> float:
