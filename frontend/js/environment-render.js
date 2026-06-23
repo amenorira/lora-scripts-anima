@@ -335,7 +335,15 @@ window.environmentRenderMixin = {
     const a = window.__anima || this;
     const dlBtn = el.querySelector('#anima-model-dl-btn');
     const refreshBtn = el.querySelector('#anima-model-refresh-btn');
-    if (dlBtn) dlBtn.addEventListener('click', () => a.animaModelDownload(null));
+    if (dlBtn) {
+      const fn = a.animaModelDownload;
+      if (typeof fn === 'function') {
+        dlBtn.addEventListener('click', () => fn.call(a, null));
+      } else {
+        // 方法未找到：在按钮旁边插入错误提示
+        dlBtn.insertAdjacentHTML('afterend', '<span style="color:red;font-size:11px">[ERR: animaModelDownload not found]</span>');
+      }
+    }
     if (refreshBtn) refreshBtn.addEventListener('click', () => a.animaModelRefresh());
   },
 
