@@ -108,6 +108,12 @@ ANIMA_FILES: list[tuple[str, str, str]] = [
     ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)"),
     ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE"),
 ]
+
+# 尝试导入项目缓存目录（供非 local_dir 模式使用）
+try:
+    from backend.constants import HF_CACHE_DIR as _DEFAULT_CACHE_DIR
+except ImportError:
+    _DEFAULT_CACHE_DIR = Path("huggingface")
 # anima_comparison.json 是 ComfyUI 工作流文件，训练不需要，不下。
 
 # HF 仓库
@@ -209,27 +215,28 @@ def _hf_hub_download_compat(
     filename: str,
     local_dir: Path,
     cb: _ProgressCallback,
+    use_local_dir: bool = True,
 ) -> Path:
-    """调用 hf_hub_download，跨 huggingface_hub 版本尽量兼容 tqdm 参数名。
+    """hf_hub_download 兼容封装。
 
-    新版（>=0.21）支持 `tqdm` 参数；老版本回调通过 `DownloadConfig`。
-    这里尝试 `tqdm=cb`，失败则降级无进度下载（速度不显示，但能下）。
+    若 use_local_dir=True: 下载到 local_dir（如 models/），
+      产生 .cache/huggingface/ 子目录，tqdm 输出可能不完整。
+    若 use_local_dir=False: 走标准缓存目录（项目 huggingface/），
+      http_get/xet_get 的 tqdm 输出正常，之后再 copy2 到目标位置。
     """
     from huggingface_hub import hf_hub_download
-    local_dir.mkdir(parents=True, exist_ok=True)
-    kwargs = dict(
-        repo_id=repo_id,
-        filename=filename,
-        local_dir=str(local_dir),
-    )
-    # tqdm 参数在不同版本兼容名不同，依次尝试
+    kwargs: dict = dict(repo_id=repo_id, filename=filename)
+    if use_local_dir:
+        local_dir.mkdir(parents=True, exist_ok=True)
+        kwargs["local_dir"] = str(local_dir)
+    else:
+        # 使用项目 HF 缓存目录（huggingface/），不需要 local_dir
+        kwargs["cache_dir"] = str(_DEFAULT_CACHE_DIR)
     for tqdm_kw in ("tqdm",):
         try:
             return Path(hf_hub_download(tqdm=cb, **kwargs))
         except TypeError:
-            # 该版本不支持此参数
             break
-    # 无进度降级
     return Path(hf_hub_download(**kwargs))
 
 
@@ -261,6 +268,9 @@ def download_anima_files(
     _hf_logger = _logging.getLogger("huggingface_hub.file_download")
     _old_level = _hf_logger.level
     _hf_logger.setLevel(_logging.INFO)
+    # 双保险：同时设置环境变量确保 Xet 下载也启用进度
+    _old_disable = os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS")
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
 
     def _log(msg: str):
         if on_log:
@@ -301,20 +311,15 @@ def download_anima_files(
             })
         cb = _ProgressCallback(progress, local_name, i, file_total, lock)
         try:
-            # 下载到临时目录，避免 split_files/ 子目录污染 models/
-            tmp_dir = dest_dir / ".anima_tmp"
-            if tmp_dir.exists():
-                shutil.rmtree(str(tmp_dir), ignore_errors=True)
+            # 不用 local_dir: 走标准缓存路径 → http_get/xet_get 内部 tqdm 正常输出
+            # 下载后 copy2 到 models/ 根目录
             with _StderrTqdmCapture(sys.stderr, progress, lock):
-                path = _hf_hub_download_compat(repo_id, hf_path, tmp_dir, cb)
+                path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb, use_local_dir=False)
             cb.close()
-            # 从临时目录挪到 models/ 根目录（平铺）
             flat_path = dest_dir / local_name
             if path != flat_path:
-                shutil.move(str(path), str(flat_path))
-            shutil.rmtree(str(tmp_dir), ignore_errors=True)
-            path = flat_path
-            results.append(path)
+                shutil.copy2(str(path), str(flat_path))
+            results.append(flat_path)
             _log(f"[{i+1}/{file_total}] 已下载: {flat_path}")
         except Exception as e:
             with lock:
