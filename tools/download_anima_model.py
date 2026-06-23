@@ -301,26 +301,19 @@ def download_anima_files(
             })
         cb = _ProgressCallback(progress, local_name, i, file_total, lock)
         try:
-            # 用 stderr 截获器解析 tqdm 输出，拿到实时 bytes/speed
+            # 下载到临时目录，避免 split_files/ 子目录污染 models/
+            tmp_dir = dest_dir / ".anima_tmp"
+            if tmp_dir.exists():
+                shutil.rmtree(str(tmp_dir), ignore_errors=True)
             with _StderrTqdmCapture(sys.stderr, progress, lock):
-                path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb)
+                path = _hf_hub_download_compat(repo_id, hf_path, tmp_dir, cb)
             cb.close()
-            # 下载后用 move 把文件从嵌套子目录挪到 models/ 根目录
+            # 从临时目录挪到 models/ 根目录（平铺）
             flat_path = dest_dir / local_name
             if path != flat_path:
                 shutil.move(str(path), str(flat_path))
-                # 清理父目录链（删掉空子目录）
-                _pdir = path.parent
-                while _pdir != dest_dir and _pdir.parent != _pdir:
-                    try:
-                        if not any(_pdir.iterdir()):
-                            _pdir.rmdir()
-                        else:
-                            break
-                    except OSError:
-                        break
-                    _pdir = _pdir.parent
-                path = flat_path
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+            path = flat_path
             results.append(path)
             _log(f"[{i+1}/{file_total}] 已下载: {flat_path}")
         except Exception as e:
