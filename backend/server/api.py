@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import os
 import re
 import threading
@@ -28,10 +29,16 @@ from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tasks import tm
 from backend.utils import train_utils
 from backend.utils.devices import printable_devices
-from backend.utils.tk_window import (open_directory_selector,
+from backend.utils.tk_window import (is_available as tk_is_available,
+                                      open_directory_selector,
                                       open_file_selector)
 
 router = APIRouter()
+
+# tkinter 非线程安全：Tk root 与对话框必须在同一线程，否则偶发"对话框不弹出 /
+# main thread is not in main loop"。这里用单工作线程执行器把所有原生选择器调用
+# 串行化到固定线程，根治本地选择器"有时不生效"。单 worker 也保证同一时刻只有一个对话框。
+_tk_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="tk-picker")
 
 
 _git_version_cache: str | None = None
@@ -145,17 +152,22 @@ async def list_tagger_models():
 
 @router.get("/pick_file")
 async def pick_file(picker_type: str):
+    if not tk_is_available():
+        return APIResponseFail(message="unavailable")
     if picker_type == "folder":
-        coro = asyncio.to_thread(open_directory_selector, "")
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "")
     elif picker_type == "model-file":
         file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt"), ("all files", "*.*")]
-        coro = asyncio.to_thread(open_file_selector, "", "Select file", file_types)
+
+        def _pick():
+            return open_file_selector("", "Select file", file_types)
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
     else:
         return APIResponseFail(message=f"Invalid picker_type: {picker_type}")
 
     result = await coro
     if result == "":
-        return APIResponseFail(message="User cancelled / 用户取消")
+        return APIResponseFail(message="cancelled")
 
     return APIResponseSuccess(data={
         "path": result

@@ -1494,5 +1494,39 @@
   </div>
 </div>
 
+<!-- ── Built-in File Picker Modal ─────────────────────── -->
+<!-- builtinFilePicker() 拉取 /api/get_files 列表后置 showFilePickerModalFlag=true 弹出。
+     之前该 flag 无对应模板，按钮形同失效；此处补全弹窗。 -->
+<div class="modal-overlay" x-show="showFilePickerModalFlag" @click.self="showFilePickerModalFlag = false"
+     @keydown.escape.window="showFilePickerModalFlag = false" x-cloak>
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span x-text="t('common.builtinBrowser')">Built-in browser</span>
+      <button class="btn-icon" @click="showFilePickerModalFlag = false" :aria-label="t('common.close')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="max-height:60vh;overflow-y:auto;padding:12px 16px">
+      <div class="modal-field" style="margin-bottom:10px">
+        <input type="text" class="input" x-model="_pickerFilter" :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
+      </div>
+      <p class="text-muted text-sm" style="padding:6px 2px" x-show="filteredPickerFiles.length === 0"
+         x-text="t('common.pickerEmpty','No files found')"></p>
+      <template x-for="f in filteredPickerFiles" :key="f.path">
+        <div class="config-list-item" @click="pickFileFromModal(f)" :title="f.path">
+          <div style="min-width:0;flex:1">
+            <div class="config-name" x-text="f.name"></div>
+            <div class="text-xs text-muted" x-text="f.path" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          </div>
+          <span class="text-xs text-muted" x-show="f.size && f.size !== 0" x-text="f.size" style="flex-shrink:0"></span>
+        </div>
+      </template>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="showFilePickerModalFlag = false" x-text="t('common.cancel')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

@@ -14,6 +14,11 @@ last_dir = ""
 _tk_root = None
 
 
+def is_available() -> bool:
+    """tkinter 是否可用（导入失败时为 False，前端据此区分"不可用"与"用户取消"）。"""
+    return tkinter is not None
+
+
 def _get_tk_root():
     """获取或创建共享的 Tk 根实例（避免每次文件对话框重复创建）"""
     global _tk_root

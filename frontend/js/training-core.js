@@ -12,9 +12,10 @@ window.FILLED_INDICATOR_KEYS = new Set([
 ]);
 
 // 预填默认值淡色字段清单：仅这些 text 字段在"值==schema 原始默认值"时 input 字色淡化为 placeholder 视觉。
-// 仅含 default 非空的字段（vae/qwen3 默认空，不在此列）。
+// 三个 Anima 底模字段默认指向环境管理页可下载的文件（非空），纳入此清单以提示"仍为推荐默认值"。
 window.DEFAULT_DIM_KEYS = new Set([
-  'pretrained_model_name_or_path', 'train_data_dir', 'output_name', 'output_dir',
+  'pretrained_model_name_or_path', 'vae', 'qwen3',
+  'train_data_dir', 'output_name', 'output_dir',
 ]);
 
 window.trainingCoreMixin = {
@@ -1478,8 +1479,19 @@ window.trainingCoreMixin = {
     try {
       const r = await fetch('/api/pick_file?picker_type='+type);
       const d = await r.json();
-      if (d.status==='success'&&d.data&&d.data.path) this.setField(key, d.data.path);
-    } catch(e) { this.toast(this.t('common.localPickerNA')); }
+      if (d.status==='success'&&d.data&&d.data.path) {
+        this.setField(key, d.data.path);
+      } else {
+        // 非 success：后端用 message 区分"unavailable"(tkinter 不可用) 与 "cancelled"(用户取消)。
+        // 给出反馈，避免点击后毫无响应被误认为"不生效"。
+        const msg = String(d.message || '');
+        if (msg.indexOf('unavailable') !== -1) {
+          this.toast(this.t('common.localPickerNA'), 'error');
+        } else {
+          this.toast(this.t('common.localPickerCancelled','Cancelled'));
+        }
+      }
+    } catch(e) { this.toast(this.t('common.localPickerNA'), 'error'); }
   },
 
   async builtinFilePicker(key, role) {
