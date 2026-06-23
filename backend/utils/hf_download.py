@@ -318,7 +318,7 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
                 progress.update({"filename": filename, "file_index": file_index,
                                  "file_total": file_total, "downloaded": got, "total": stream_total or got,
                                  "speed": 0.0, "phase": "file_done"})
-            _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [完成]")
+            _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [完成 / Done]")
             return dest
         except Exception as e:
             last_err = e
@@ -379,7 +379,7 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
             cleanup_temp(dest)
             if is_last:
                 raise
-            _log(f"{hf_path}: 端点 {endpoint} 失败 ({type(e).__name__})，切换备用源重试...")
+            _log(f"{hf_path}: 端点 / Endpoint {endpoint} 失败 / failed ({type(e).__name__}), 切换备用源 / switching to fallback...")
     raise last_err if last_err else RuntimeError("download failed")
 
 
@@ -495,7 +495,7 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
         got = dest.stat().st_size
         if got != total:
             raise IOError(f"大小不匹配: {got} != {total}")
-        _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(total)} [完成]")
+        _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(total)} [完成 / Done]")
         return dest
     except Exception:
         stop.set()

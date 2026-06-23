@@ -104,7 +104,7 @@ def download_anima_files(
                     "file_index": 0, "file_total": file_total,
                     "error": f"磁盘剩余 {usage.free // (1024**3)} GB < 1GB",
                 })
-            _log(f"[ERROR] 磁盘空间不足：剩余 {usage.free // (1024**3)} GB")
+            _log(f"[ERROR] 磁盘空间不足 / Insufficient disk space: {usage.free // (1024**3)} GB remaining")
             return [Path(".")] * file_total
     except OSError:
         pass
@@ -112,7 +112,7 @@ def download_anima_files(
     dest_dir.mkdir(parents=True, exist_ok=True)
     results: list[Path] = []
     for i, (hf_path, local_name, desc) in enumerate(files):
-        _log(f"[{i+1}/{file_total}] 下载 {local_name} ({desc}) ...")
+        _log(f"[{i+1}/{file_total}] 下载 / Downloading {local_name} ({desc}) ...")
         with lock:
             progress.update({
                 "filename": local_name,
@@ -132,7 +132,7 @@ def download_anima_files(
                 file_index=i, file_total=file_total,
             )
             results.append(path)
-            _log(f"[{i+1}/{file_total}] 已下载: {path}")
+            _log(f"[{i+1}/{file_total}] 已下载 / Downloaded: {path}")
         except Exception as e:
             with lock:
                 progress.update({
@@ -142,7 +142,7 @@ def download_anima_files(
                     "file_total": file_total,
                     "error": f"{type(e).__name__}: {e}",
                 })
-            _log(f"[{i+1}/{file_total}] 失败: {e}")
+            _log(f"[{i+1}/{file_total}] 失败 / Failed: {e}")
             results.append(Path("."))
             # 清理该文件的临时分块，避免孤儿占用磁盘（分块内重试已覆盖瞬时网络错误）
             cleanup_temp(dest)
