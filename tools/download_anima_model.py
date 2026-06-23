@@ -23,11 +23,69 @@ CLI 调试:
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
+
+
+# ── tqdm stderr 捕获：解析 huggingface_hub 的进度条输出 ──
+# hf_hub_download 用 tqdm 往 stderr 写进度，格式类似：
+#   anima-base-v1.0.safetensors:  45%|██▌     | 1.20G/2.66G [00:15<00:18, 85.2MB/s]
+# 通过替换 sys.stderr 截获并解析，把 bytes/speed 回填到共享 progress dict。
+
+_TQDM_RE = re.compile(
+    r'(\d+)%\s*\|.*?\|\s*'          # percentage
+    r'([\d.]+)\s*([kMGTP]?i?B?)\s*/\s*([\d.]+)\s*([kMGTP]?i?B?)\s*'  # downloaded / total
+    r'\[.*?,\s*([\d.]+)\s*([kMGTP]?i?B?)/s\]'  # speed
+)
+
+_SIZE_UNITS: dict[str, int] = {"": 1, "B": 1, "kB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4,
+                                 "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
+
+
+def _parse_size(val: str, unit: str) -> float:
+    return float(val) * _SIZE_UNITS.get(unit, 1)
+
+
+class _StderrTqdmCapture:
+    """替换 sys.stderr，解析 tqdm 输出 → 更新共享 progress dict。"""
+
+    def __init__(self, original_stderr, progress: dict, lock: threading.Lock):
+        self._orig = original_stderr
+        self._p = progress
+        self._lock = lock
+
+    def write(self, s: str):
+        self._orig.write(s)  # 透传，不丢日志
+        try:
+            m = _TQDM_RE.search(s)
+            if m:
+                pct = int(m.group(1))
+                downloaded = _parse_size(m.group(2), m.group(3))
+                total = _parse_size(m.group(4), m.group(5))
+                speed = _parse_size(m.group(6), m.group(7)) / (1024**2)  # MB/s
+                with self._lock:
+                    self._p.update({
+                        "downloaded": int(downloaded),
+                        "total": int(total),
+                        "speed": round(speed, 2),
+                    })
+        except Exception:
+            pass
+
+    def flush(self):
+        self._orig.flush()
+
+    def __enter__(self):
+        sys.stderr = self
+        return self
+
+    def __exit__(self, *args):
+        sys.stderr = self._orig
 
 # ── Anima 核心文件清单 ──
 # (HF repo 内路径, 本地文件名, 用途说明)
@@ -224,7 +282,9 @@ def download_anima_files(
             })
         cb = _ProgressCallback(progress, local_name, i, file_total, lock)
         try:
-            path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb)
+            # 用 stderr 截获器解析 tqdm 输出，拿到实时 bytes/speed
+            with _StderrTqdmCapture(sys.stderr, progress, lock):
+                path = _hf_hub_download_compat(repo_id, hf_path, dest_dir, cb)
             cb.close()
             # 下载后用 move 把文件从嵌套子目录挪到 models/ 根目录
             flat_path = dest_dir / local_name
