@@ -73,7 +73,6 @@ class _StderrTqdmCapture:
         try:
             m = _TQDM_RE.search(s)
             if m:
-                pct = int(m.group(1))
                 downloaded = _parse_size(m.group(2), m.group(3))
                 total = _parse_size(m.group(4), m.group(5))
                 speed = _parse_size(m.group(6), m.group(7)) / (1024**2)  # MB/s
@@ -83,6 +82,11 @@ class _StderrTqdmCapture:
                         "total": int(total),
                         "speed": round(speed, 2),
                     })
+            elif '%' in s and '|' in s:
+                # tqdm 行但正则没匹配 → 记录供调试
+                with self._lock:
+                    raw = self._p.get("_tqdm_raw", "")
+                    self._p["_tqdm_raw"] = (raw + s.strip()[-120:])[-500:]
         except Exception:
             pass
 
