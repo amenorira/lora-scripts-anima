@@ -209,6 +209,7 @@ window.environmentCoreMixin = {
   },
 
   async animaModelDownload(file) {
+    if (this.animaModelBusy) return; // 防止重复点击
     this.animaModelBusy = true; this.animaModelError = null;
     this.animaModelLog = ''; this.animaModelProgress = null;
     this.startProgress(); this.renderEnvironment();
@@ -247,6 +248,11 @@ window.environmentCoreMixin = {
         a.animaModelLog = (data.log || []).join('\n');
         if (data.done) {
           a._stopPolling(); a.animaModelBusy = false;
+          // 检查下载线程是否报错
+          const phase = (data.progress || {}).phase;
+          if (phase === 'error') {
+            a.animaModelError = (data.progress || {}).error || data.log?.[data.log.length-1] || 'Download failed';
+          }
           try { await a.animaModelRefresh(true); } catch (_) {}
           a.finishProgress(); a.renderEnvironment();
         } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }

@@ -294,7 +294,8 @@ window.environmentRenderMixin = {
         }
       } else if (f.exists) {
         statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded', 'Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
-      } else if (busy && p.phase === 'error') {
+      } else if (!busy && p.phase === 'error' && (curFile === f.filename || !curFile)) {
+        // 下载线程报错，显示失败标记（不依赖 busy，因为 done 后 busy 已置 false）
         statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed', 'Failed')}</span>`;
         allDone = false;
       } else {
@@ -321,8 +322,8 @@ window.environmentRenderMixin = {
         <button id="anima-model-refresh-btn" class="btn-icon" ${busy?'disabled':''} title="${T('refresh', 'Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
       </div></div></div>`;
 
-    // 下载 log（折叠）
-    if (busy && this.animaModelLog) {
+    // 下载 log（折叠），busy 或刚失败时展示
+    if ((busy || this.animaModelError) && this.animaModelLog) {
       h += `<details class="env-model-log-wrap"><summary>${T('animaModel.progressLog', 'Progress Log')}</summary><pre class="env-install-log">${this.animaModelLog}</pre></details>`;
     }
 
