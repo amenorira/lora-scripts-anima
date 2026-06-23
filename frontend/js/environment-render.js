@@ -276,13 +276,21 @@ window.environmentRenderMixin = {
       let statusHtml = '';
       if (busy && curFile === f.filename) {
         // 正在下载此文件
-        const pct = p.total > 0 ? Math.round(p.downloaded * 100 / p.total) : 0;
-        const downloadedGB = (p.downloaded / (1024**3)).toFixed(2);
-        const totalGB = (p.total / (1024**3)).toFixed(2);
-        const speed = p.speed || 0;
-        statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${pct}%</span>
-          <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
-          <span class="env-model-speed">${speed.toFixed(1)} MB/s &middot; ${downloadedGB}/${totalGB} GB</span>`;
+        if (p.total > 0) {
+          const pct = Math.round(p.downloaded * 100 / p.total);
+          const downloadedGB = (p.downloaded / (1024**3)).toFixed(2);
+          const totalGB = (p.total / (1024**3)).toFixed(2);
+          const speed = p.speed || 0;
+          statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${pct}%</span>
+            <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
+            <span class="env-model-speed">${speed.toFixed(1)} MB/s &middot; ${downloadedGB}/${totalGB} GB</span>`;
+        } else {
+          // huggingface_hub 0.34.3 不支持传入 tqdm 回调，拿不到字节进度；显示简化状态
+          const idx = p.file_index != null ? (p.file_index + 1) : '?';
+          const total = p.file_total || '?';
+          statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.downloading', 'Downloading')} ${idx}/${total}...</span>
+            <div class="env-model-progress-bar env-model-progress-indeterminate"><div></div></div>`;
+        }
         allDone = false;
       } else if (busy) {
         // 下载中但当前不是此文件（其他文件在排队）

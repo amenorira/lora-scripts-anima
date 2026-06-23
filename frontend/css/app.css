@@ -2838,6 +2838,26 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-badge-info code { font-family: var(--font-mono); font-size: 10.5px; }
 .env-badge-loading { background: var(--accent-soft); color: var(--text-secondary); }
 
+/* ── Anima 模型下载卡 ──────────────────────────────── */
+.env-model-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.env-model-table th { text-align: left; padding: 4px 8px; color: var(--text-tertiary); font-weight: 500; border-bottom: 1px solid var(--border-default); }
+.env-model-table td { padding: 6px 8px; vertical-align: middle; }
+.env-model-table code { font-family: var(--font-mono); font-size: 11px; }
+
+.env-model-progress-bar { height: 6px; background: var(--accent-muted); border-radius: 3px; margin: 4px 0; overflow: hidden; }
+.env-model-progress-bar div { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+.env-model-progress-indeterminate div { width: 30% !important; animation: env-model-indeterminate 1.5s ease-in-out infinite; }
+@keyframes env-model-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.env-model-speed { font-size: 10.5px; color: var(--text-tertiary); }
+.env-model-log-wrap { margin-top: 6px; }
+.env-model-log-wrap summary { font-size: 11px; color: var(--text-tertiary); cursor: pointer; }
+.env-model-log-wrap pre { font-size: 10.5px; max-height: 200px; overflow-y: auto; margin-top: 4px; }
+.env-card-flat { padding: 12px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); }
+
 /* ── Row detail (indented content) ──────────────────────── */
 .env-row-detail {
   padding: 6px 4px 10px 28px;
