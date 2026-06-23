@@ -83,9 +83,12 @@ def run_tensorboard():
             args.tensorboard_host, args.tensorboard_port,
         )
     except Exception as e:
-        log.error(f"TensorBoard failed to start: {e}")
-        # 不静默吞掉异常，让用户感知
-        raise
+        # TensorBoard 是辅助服务：缺失/端口占用/无 GPU 环境都可能起不来，
+        # 不应让它拖死主 GUI。降级为 warning，主服务照常启动。
+        log.warning(
+            "TensorBoard disabled: %s / TensorBoard 已禁用: %s"
+            " (用 --disable-tensorboard 可隐藏此提示)", e, e,
+        )
 
 def launch():
     log.info("Starting lora-scripts-anima GUI / 正在启动...")

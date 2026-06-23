@@ -453,6 +453,11 @@ def check_environment():
                 log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
         except FileNotFoundError:
             log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+        except PermissionError:
+            # 某些容器（如 AutoDL）nvidia-smi 存在但无执行权限，不应阻断启动
+            log.warning("nvidia-smi permission denied -- skipping GPU probe / 无权限执行 nvidia-smi，跳过 GPU 探测")
+        except OSError:
+            log.warning("nvidia-smi not executable -- no NVIDIA GPU or driver? / 无法执行 nvidia-smi")
 
     # Disk space
     try:
