@@ -48,7 +48,7 @@ window.trainingTomlMixin = {
     const SKIP_TOP_LEVEL = new Set([
       'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
       'enable_preview','positive_prompts','negative_prompts',
-      'sample_cfg','sample_width','sample_height','sample_seed','sample_steps',
+      'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','weight_decay','stopcoef',
       'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
       'came_ams_bound','came_eps1','came_eps2',
@@ -308,13 +308,15 @@ window.trainingTomlMixin = {
           payload.positive_prompts = sp.substring(0, nIdx).trim();
           const rest = sp.substring(nIdx + 5);
           const wIdx = rest.indexOf(' --w '), hIdx = rest.indexOf(' --h '),
-                lIdx = rest.indexOf(' --l '), sIdx = rest.indexOf(' --s '), dIdx = rest.indexOf(' --d ');
+                lIdx = rest.indexOf(' --l '), sIdx = rest.indexOf(' --s '), dIdx = rest.indexOf(' --d '),
+                fsIdx = rest.indexOf(' --fs ');
           payload.negative_prompts = (wIdx > 0 ? rest.substring(0, wIdx) : rest).trim();
           if (wIdx > 0) payload.sample_width = parseInt(rest.substring(wIdx + 5)) || 512;
           if (hIdx > 0) payload.sample_height = parseInt(rest.substring(hIdx + 5)) || 512;
           if (lIdx > 0) payload.sample_cfg = parseInt(rest.substring(lIdx + 5)) || 7;
           if (sIdx > 0) payload.sample_steps = parseInt(rest.substring(sIdx + 5)) || 24;
           if (dIdx > 0) payload.sample_seed = parseInt(rest.substring(dIdx + 5)) || 2333;
+          if (fsIdx > 0) payload.sample_flow_shift = parseFloat(rest.substring(fsIdx + 5)) || 3.0;
         } else {
           payload.positive_prompts = sp;
         }

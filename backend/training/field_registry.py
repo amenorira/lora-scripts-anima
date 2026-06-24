@@ -255,15 +255,33 @@ FIELDS: list[dict[str, Any]] = [
 # ── Preview ──
 {"key": "enable_preview", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.enable_preview", "target": "ui"},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "negative_prompts", "type": "text", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "sample_sampler", "type": "select", "default": "euler_a", "section": "preview", "desc_key": "field.sample_sampler", "target": "toml", "show_if": {"key": "enable_preview", "eq": True}, "options": [{"v": "euler_a", "l": "euler_a", "dk": "opt.sample_sampler_euler_a"}, {"v": "euler", "l": "euler", "dk": "opt.sample_sampler_euler"}, {"v": "ddim", "l": "ddim", "dk": "opt.sample_sampler_ddim"}, {"v": "dpmsolver++", "l": "dpmsolver++", "dk": "opt.sample_sampler_dpmsolver_plus"}, {"v": "heun", "l": "heun", "dk": "opt.sample_sampler_heun"}]},
-{"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "sample_cfg", "type": "number", "default": 7, "section": "preview", "desc_key": "field.sample_cfg", "target": "ui", "min": 1, "max": 30, "show_if": {"key": "enable_preview", "eq": True}},
+{"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。
+    # Anima 采样写死 Euler flow-match，sample_sampler 是假参数，故按 group:sdxl 隐藏。
+    {"key": "sample_sampler", "type": "select", "default": "euler_a", "section": "preview", "desc_key": "field.sample_sampler", "hint_key": "field.sample_samplerHint", "target": "toml", "group": "sdxl", "show_if": {"key": "enable_preview", "eq": True}, "options": [
+        {"v": "euler_a", "l": "euler_a", "dk": "opt.sample_sampler_euler_a"},
+        {"v": "euler", "l": "euler", "dk": "opt.sample_sampler_euler"},
+        {"v": "ddim", "l": "ddim", "dk": "opt.sample_sampler_ddim"},
+        {"v": "lms", "l": "lms", "dk": "opt.sample_sampler_lms"},
+        {"v": "heun", "l": "heun", "dk": "opt.sample_sampler_heun"},
+        {"v": "dpmsolver++", "l": "dpmsolver++", "dk": "opt.sample_sampler_dpmsolver_plus"},
+        {"v": "dpmsingle", "l": "dpmsingle", "dk": "opt.sample_sampler_dpmsingle"},
+        {"v": "dpm_2", "l": "dpm_2", "dk": "opt.sample_sampler_dpm_2"},
+        {"v": "dpm_2_a", "l": "dpm_2_a", "dk": "opt.sample_sampler_dpm_2_a"},
+        {"v": "pndm", "l": "pndm", "dk": "opt.sample_sampler_pndm"},
+    ]},
+    {"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_every_n_steps", "type": "number", "default": "", "section": "preview", "desc_key": "field.sample_every_n_steps", "target": "toml", "min": 1, "advanced": True, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_at_first", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.sample_at_first", "target": "toml", "advanced": True, "omit_default": True, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_cfg", "type": "number", "default": 7, "section": "preview", "desc_key": "field.sample_cfg", "target": "ui", "min": 1, "max": 30, "show_if": {"key": "enable_preview", "eq": True}},
 # 预览分辨率默认 1024（SDXL/Anima 训练基准），原 512 在高分辨率模型下采样不具代表性
-{"key": "sample_width", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_width", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "sample_height", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_height", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "sample_seed", "type": "number", "default": 2333, "section": "preview", "desc_key": "field.sample_seed", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
-{"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_width", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_width", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_height", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_height", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_seed", "type": "number", "default": 2333, "section": "preview", "desc_key": "field.sample_seed", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
+    # Anima flow-match 采样时间表 shift（类比 Karras 的 sigma 偏移）。
+    # 由 get_sample_prompts 拼成 --fs 传入 sd-scripts；SDXL 不读，故 group:anima 仅 Anima 显示。
+    {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "step": 0.1, "show_if": {"key": "enable_preview", "eq": True}},
 ]
 
 

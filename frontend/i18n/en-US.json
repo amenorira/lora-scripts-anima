@@ -212,16 +212,16 @@
 		"caption_dropout_every_n_epochs": "Drop all tags every N epochs",
 		"caption_tag_dropout_rate": "Probability of dropping individual tags",
 		"enable_preview": "Enable training preview images",
-		"sample_prompts": "Preview prompts. Supports --n neg, --w, --h, --l, --s, --d",
-		"sample_promptsHint": "Format: prompt --n negative --w 512 --h 512 --l 7 --s 24 --d 2333",
-		"sample_sampler": "Sampler for preview images",
+		"sample_prompts": "Positive prompt. What you want the preview to depict — tags or natural language.",
+		"sample_promptsHint": "e.g. 1girl, smile, cherry blossoms",
+		"sample_sampler": "Sampler for preview images (SDXL only; Anima is fixed to Euler flow-match)",
 		"sample_every_n_epochs": "Generate previews every N epochs",
 		"sample_cfg": "CFG Scale",
 		"sample_width": "Preview width",
 		"sample_height": "Preview height",
 		"sample_seed": "Preview seed",
 		"sample_steps": "Preview steps",
-		"negative_prompts": "Negative prompts",
+		"negative_prompts": "Negative prompt. What you do not want in the preview image.",
 		"mixed_precision": "Training precision. RTX 30+ can use bf16.",
 		"xformers": "Enable xformers (SD/SDXL)",
 		"sdpa": "Enable SDPA attention (SD/SDXL)",
@@ -335,7 +335,12 @@
 		"ip_noise_gamma_random_strength": "Random strength for input perturbation noise",
 		"cache_text_encoder_outputsHint": "Strongly recommended: caches text encoder outputs to save VRAM and speed up (needs unet_only)",
 		"network_dropoutHint": "Incompatible with LyCORIS dropout; only for networks.lora",
-		"scale_weight_normsHint": "Usually empty; set 1 for max-norm regularization when overfitting"
+		"scale_weight_normsHint": "Usually empty; set 1 for max-norm regularization when overfitting",
+		"sample_samplerHint": "SDXL only. Anima always samples with Euler flow-match; this option is ignored.",
+		"sample_every_n_steps": "Generate previews every N steps",
+		"sample_at_first": "Generate a preview before training starts",
+		"sample_flow_shift": "Flow Shift (Anima only)",
+		"sample_flow_shiftHint": "Time-shift for Anima flow-match sampling (akin to Karras shift), default 3.0. Anima only; SDXL ignores it."
 	},
 	"common": {
 		"startTraining": "Start Training",
@@ -927,7 +932,12 @@
 		"compile_mode_max_autotune_no_cudagraphs": "Max tune without CUDA Graphs",
 		"compile_dynamic_auto": "Auto (default)",
 		"compile_dynamic_true": "Enable dynamic shapes (needs VS2022 C++ on Windows)",
-		"compile_dynamic_false": "Disable dynamic shapes"
+		"compile_dynamic_false": "Disable dynamic shapes",
+		"sample_sampler_lms": "LMS discrete sampler",
+		"sample_sampler_dpmsingle": "DPM-Solver Singlestep, single-step DPM solver",
+		"sample_sampler_dpm_2": "DPM-2 2nd-order sampler",
+		"sample_sampler_dpm_2_a": "DPM-2 Ancestral, stochastic DPM-2",
+		"sample_sampler_pndm": "PNDM pseudo numerical sampler"
 	},
 	"training": {
 		"startTraining": "Start Training",

@@ -50,6 +50,7 @@ def get_sample_prompts(config: dict):
     sample_cfg = config.get('sample_cfg', 7)
     sample_seed = config.get('sample_seed', 2333)
     sample_steps = config.get('sample_steps', 24)
+    sample_flow_shift = config.get('sample_flow_shift', 3.0)
     randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
@@ -73,7 +74,8 @@ def get_sample_prompts(config: dict):
     sample_prompts_arg = (
         f'{positive_prompts} --n {negative_prompts} '
         f'--w {sample_width} --h {sample_height} '
-        f'--l {sample_cfg} --s {sample_steps} --d {sample_seed}'
+        f'--l {sample_cfg} --s {sample_steps} --d {sample_seed} '
+        f'--fs {sample_flow_shift}'
     )
     return positive_prompts, sample_prompts_arg
 
