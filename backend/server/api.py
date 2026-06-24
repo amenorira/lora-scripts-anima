@@ -2,6 +2,7 @@ import asyncio
 import concurrent.futures
 import os
 import re
+import shutil
 import threading
 import time as _time
 
@@ -660,13 +661,27 @@ def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str
 
     def _run():
         import sys
-        tmp_path: str | None = None
+        tmp_dir: str | None = None
         try:
-            # ── 下载阶段：预下载 wheel 到临时文件 ──
+            # ── 下载阶段：预下载 wheel 到临时目录（用真实 wheel 文件名落盘）──
+            # 用真实文件名而非 mkstemp 的随机名：pip 会校验 wheel 文件名格式
+            # ({name}-{ver}-{pythontag}-{abitag}-{platformtag}.whl)，随机名会被
+            # pip 拒绝（"Invalid wheel filename"）。下载引擎的 .partN/.partial
+            # 也落在这个临时目录里，finally 用 rmtree 一并清理。
             log_lines.append(f"[DOWNLOAD] {wheel_name}  ({len(download_urls)} 源候选 / source(s))")
-            tmp_fd, tmp_path = _install_tmp.mkstemp(suffix=".whl", prefix="anima_fa_")
-            os.close(tmp_fd)
-            dest = Path(tmp_path)
+            tmp_dir = _install_tmp.mkdtemp(prefix="anima_fa_")
+            dest = Path(tmp_dir) / wheel_name
+
+            # 控制台 rich 进度条（与 Anima 同款）：_on_progress 把结构化 progress 驱到 rich，
+            # 否则控制台下载阶段只有"[DOWNLOAD]"事件行，长时间无进度反馈。进度也写入
+            # shared_progress 供前端轮询，这里只是把同样的数据额外渲染到服务器控制台。
+            from backend.utils.hf_download import make_progress_bar
+            try:
+                from backend.log import console as _rich_console
+            except Exception:
+                _rich_console = None
+            progress_bar = make_progress_bar(console=_rich_console)
+            state = {"task_id": None}
 
             def _on_log(msg: str):
                 log_lines.append(msg)
@@ -676,14 +691,25 @@ def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str
                     pass
 
             def _on_progress(_line: str):
-                pass  # 进度已写入 shared_progress，前端轮询读取
+                # 轮询 shared_progress 里的结构化字段驱动 rich 进度条
+                try:
+                    with _fa_jobs_lock:
+                        p = dict(shared_progress)
+                    fn = p.get("filename") or wheel_name
+                    total = int(p.get("total") or 0)
+                    done = int(p.get("downloaded") or 0)
+                    speed = float(p.get("speed") or 0.0)
+                    if state["task_id"] is None:
+                        state["task_id"] = progress_bar.add_task(fn, total=total or None, completed=done)
+                    else:
+                        progress_bar.update(state["task_id"], description=fn,
+                                            total=total or None, completed=done)
+                        if speed:
+                            progress_bar.tasks[state["task_id"]].speed = speed
+                except Exception:
+                    pass
 
-            # 清理上一次 mkstemp 的空文件，交给下载引擎管理 .partN/.partial
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-
+            progress_bar.start()
             download_url_with_fallback(
                 download_urls, dest,
                 progress=shared_progress, lock=_fa_jobs_lock,
@@ -731,12 +757,19 @@ def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str
                 shared_progress.update({"stage": "error", "error": str(e)})
                 _fa_jobs[job_id]["success"] = False
         finally:
-            # 删除临时 wheel，绝不残留
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
+            # 停止 rich 进度条，避免光标卡在进度行 & 补换行
+            try:
+                progress_bar.stop()
+            except Exception:
+                pass
+            try:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
+            except Exception:
+                pass
+            # 删除临时 wheel 目录（连 wheel 文件 + .partN/.partial 一起），绝不残留
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
             with _fa_jobs_lock:
                 _fa_jobs[job_id]["done"] = True
 
@@ -875,8 +908,11 @@ async def flash_attn_install(request: Request) -> dict:
         _, _, _, _, _, download_urls_for = _import_flash_attn_tool()
         download_urls = download_urls_for(wheel_url, src)
     else:
-        # 手动 URL：仅 [url]，避免代理前缀破坏非 GitHub 链接
-        wheel_name = manual_url.rsplit("/", 1)[-1] or "flash_attn.whl"
+        # 手动 URL：仅 [url]，避免代理前缀破坏非 GitHub 链接。
+        # 文件名做 URL 解码（GitHub release URL 末段常为 %2B 等 percent-encoding），
+        # 否则落盘名含 %2B 会破坏 pip 的 wheel 文件名解析。
+        from urllib.parse import unquote
+        wheel_name = unquote(manual_url.rsplit("/", 1)[-1]) or "flash_attn.whl"
         download_urls = [manual_url]
 
     job_id = _start_fa_job(download_urls, wheel_name, src)

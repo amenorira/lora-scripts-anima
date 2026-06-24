@@ -29,15 +29,25 @@ from typing import Callable, Optional
 _CHUNK = 1024 * 1024              # 1 MB / chunk
 _COPY_BUF = 8 * 1024 * 1024       # 合并分块时的读写缓冲
 _CONNECT_TIMEOUT = 5              # 连接建立超时（5s 够判断通不通，短了快切镜像）
-_READ_TIMEOUT = 60
+_READ_TIMEOUT = 30                # 读超时：弱网下慢速/卡死的连接更快触发，加速端点切换
+                                 #  30s 对 1MB chunk 仍宽松（要求 >34KB/s，正常下载远超此）
 _HEAD_TIMEOUT = (5, 5)            # HEAD/探测请求超时（连接5s，读取5s）
-_MAX_RETRIES = 1                  # 单分块网络错误重试次数（端点级切换兜底，分块只需快速失败）
+_MAX_RETRIES = 2                  # 单分块网络错误重试次数（配合端点级回退，抗弱网抖动）
 _RETRY_BACKOFF = 1.0              # 重试退避基数（秒）
 
 # 多线程分块下载
 _MAX_PARTS = 8                    # 最多 8 个并发分块
 _PART_MIN = 32 * 1024 * 1024      # 单分块最小 32MB，文件更小则单线程
 _REPORT_INTERVAL = 0.3            # 进度条 / 共享 progress 刷新间隔（秒）
+
+
+class IntegrityError(IOError):
+    """下载内容完整性错误（大小校验失败 / 坏分块 / 内容截断）。
+
+    与普通网络错误区分：端点切换时遇到 IntegrityError 才清理已下的 .partN/
+    .partial（坏数据不能续传），普通网络瞬断则保留以供下个端点跨源续传——
+    否则弱网下每个端点都断在半路会反复清零，永远下不完。
+    """
 
 
 def _hf_endpoint() -> str:
@@ -212,7 +222,9 @@ def _download_part(url: str, part_file: Path, range_start: int, range_end: int,
             if got >= part_size:
                 part_bytes[part_index] = part_size
                 return
-            raise IOError(f"part {part_index} short: {got}/{part_size}")
+            raise IntegrityError(f"part {part_index} short: {got}/{part_size}")
+        except IntegrityError:
+            raise  # 坏分块重试无意义：清理由端点级 fallback 做
         except Exception as e:
             last_err = e
             if attempt < _MAX_RETRIES:
@@ -308,18 +320,27 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
                                                  "total": stream_total, "speed": round(speed, 2),
                                                  "phase": "downloading"})
                             if on_progress:
-                                try: on_progress(_format_progress_line(filename, -1, downloaded, stream_total, speed))
+                                try:
+                                    pct = int(downloaded * 100 / stream_total) if stream_total > 0 else -1
+                                    on_progress(_format_progress_line(filename, pct, downloaded, stream_total, speed))
                                 except Exception: pass
                             last_rep = now
                             last_bytes = downloaded
+            got = partial.stat().st_size
+            # 大小校验：stream_total 已知但实际下载量不匹配 → 内容截断/坏数据，
+            # 属 IntegrityError（触发端点切换时清理，避免坏分块当续传基准），
+            # 而非普通网络瞬断（保留以跨源续传）。
+            if stream_total > 0 and got != stream_total:
+                raise IntegrityError(f"{filename}: 大小不匹配 {got} != {stream_total}")
             os.replace(str(partial), str(dest))
-            got = dest.stat().st_size
             with lock:
                 progress.update({"filename": filename, "file_index": file_index,
                                  "file_total": file_total, "downloaded": got, "total": stream_total or got,
                                  "speed": 0.0, "phase": "file_done"})
             _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [完成 / Done]")
             return dest
+        except IntegrityError:
+            raise  # 坏数据重试无意义：清空 partial 由端点级 fallback 处理
         except Exception as e:
             last_err = e
             if attempt < _MAX_RETRIES:
@@ -339,7 +360,10 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
     """按序尝试多个 URL 下载同一文件（多分块并发 + 续传 + 进度上报）。
 
     urls: 按优先级排序的下载候选 URL 列表（端点回退 / 镜像代理变体均可）。
-    前一个 URL 失败时清理其临时分块，切换下一个；最后一个失败才抛异常。
+    前一个 URL 失败时按错误类型分别处理：
+      - 网络瞬断 → 保留 .partN/.partial，下个端点跨源续传（弱网鲁棒性关键）；
+      - 完整性错误 → 清理坏分块后从下个端点重头下（避免坏数据污染最终文件）。
+    最后一个 URL 失败才抛异常。
     内部复用 _download_one_endpoint（URL 通用，非 HF 专属）。
     进度写入共享 progress dict（线程安全），供前端轮询。
 
@@ -375,13 +399,21 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
                 url, dest, progress, lock, on_log, on_progress,
                 file_index=file_index, file_total=file_total,
             )
-        except Exception as e:
+        except IntegrityError as e:
+            # 坏数据：必须清理 .partN/.partial，否则下个端点会接着坏分块续传导致最终文件损坏
             last_err = e
-            # 清理本端点尝试留下的临时分块，避免下个 URL 续传坏数据
             cleanup_temp(dest)
             if is_last:
                 raise
-            _log(f"{label}: 源 {url} 失败 / failed ({type(e).__name__}), 切换备用源 / switching to fallback...")
+            _log(f"{label}: 源 {url} 完整性错误 / integrity error, 已清理并切换重下 / cleared, restarting from next source...")
+            continue
+        except Exception as e:
+            last_err = e
+            # 普通网络瞬断：保留 .partN/.partial，下个端点可跨源续传（弱网鲁棒性关键）——
+            # 多分块按字节范围命名、与 URL 无关，新端点 Range 从 start+done 续传天然成立。
+            if is_last:
+                raise
+            _log(f"{label}: 源 {url} 网络中断 / network error ({type(e).__name__}), 保留进度切换备用源续传 / keeping progress, resuming from next source...")
     raise last_err if last_err else RuntimeError("download failed")
 
 
@@ -539,7 +571,7 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
 
         got = dest.stat().st_size
         if got != total:
-            raise IOError(f"大小不匹配: {got} != {total}")
+            raise IntegrityError(f"大小不匹配: {got} != {total}")
         _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(total)} [完成 / Done]")
         return dest
     except Exception:

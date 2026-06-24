@@ -92,6 +92,21 @@ window.environmentCoreMixin = {
   _stopPolling() { if (this._envPollTimer) { clearTimeout(this._envPollTimer); this._envPollTimer = null; } },
   _formatElapsed(sec) { const m = Math.floor(sec/60), s = Math.floor(sec%60); return m+':'+String(s).padStart(2,'0'); },
 
+  // 字节数 → 人类可读，自适应单位（对齐后端 _human_bytes 风格，但带单位名）。
+  // 239MB 显示 "239.11 MB" 而非 "0.23 GB"；5.2GB 仍显示 "5.20 GB"。
+  _humanBytes(b) {
+    if (!b || b < 0 || !isFinite(b)) return '0 B';
+    const units = [['B',1],['KB',1024],['MB',1048576],['GB',1073741824],['TB',1099511627776]];
+    for (let i = units.length-1; i >= 0; i--) {
+      if (b >= units[i][1]) {
+        const v = b / units[i][1];
+        const s = v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+        return s + ' ' + units[i][0];
+      }
+    }
+    return b + ' B';
+  },
+
   // ── 共享进度轮询 ────────────────────────────────────
   // 合并 FA / Anima 的轮询逻辑：fetch progress 端点 → 更新 state → done 时回调。
   // opts: { url, onUpdate(data), onDone(data), maxRetries }

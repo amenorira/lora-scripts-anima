@@ -34,6 +34,20 @@ window.environmentRenderMixin = {
     this._bindTritonEvents(el);
     this._bindAnimaModelEvents(el);
     this._bindCardToggle(el);
+    this._autoScrollLogs(el);
+  },
+
+  // 每次 renderEnvironment 用 innerHTML 全量重建 DOM，新建的 .env-log 容器
+  // scrollTop 重置为 0（回顶部）；安装/下载日志是增量追加，用户要看最新行，
+  // 所以渲染后把所有可见的 .env-log 滚到底部。仅滚"正在更新"的活跃日志，
+  // 静态卡片里的日志若用户手动滚到中间则不强制（这里无活跃态时可忽略，影响小）。
+  _autoScrollLogs(el) {
+    el.querySelectorAll('.env-log').forEach(pre => {
+      // 仅当容器有滚动高度（内容溢出）时才有意义
+      if (pre.scrollHeight > pre.clientHeight) {
+        pre.scrollTop = pre.scrollHeight;
+      }
+    });
   },
 
   // ═══════════════════════════════════════════════════════
@@ -71,14 +85,14 @@ window.environmentRenderMixin = {
     const elapsed = this._formatElapsed(opts.elapsed || 0);
     let bar = '', meta = '';
 
-    if (stage === 'downloading' && opts.totalGB != null && opts.totalGB > 0) {
+    if (stage === 'downloading' && opts.totalBytes != null && opts.totalBytes > 0) {
       const pct = opts.pct != null ? opts.pct : 0;
       bar = `<div class="env-progress-bar"><div style="width:${pct}%"></div></div>`;
-      meta = `<span class="env-progress-pct">${pct}%</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${(opts.downloadedGB||0).toFixed(2)}/${(opts.totalGB||0).toFixed(2)} GB</span>`;
+      meta = `<span class="env-progress-pct">${pct}%</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${this._humanBytes(opts.downloadedBytes||0)}/${this._humanBytes(opts.totalBytes||0)}</span>`;
     } else if (stage === 'downloading') {
       // 有速度但 total 未知（单连接兜底阶段）
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
-      meta = `<span class="env-progress-stage">${T('downloading','Downloading')}</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${(opts.downloadedGB||0).toFixed(2)} GB</span>`;
+      meta = `<span class="env-progress-stage">${T('downloading','Downloading')}</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${this._humanBytes(opts.downloadedBytes||0)}</span>`;
     } else if (stage === 'connecting') {
       const idx = opts.fileIndex || '?', tt = opts.fileTotal || '?';
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
@@ -139,8 +153,8 @@ window.environmentRenderMixin = {
         h += this._renderProgressPanel({
           stage: 'downloading', pct,
           speedMB: p.speed || 0,
-          downloadedGB: (p.downloaded||0) / (1024**3),
-          totalGB: (p.total||0) / (1024**3),
+          downloadedBytes: p.downloaded||0,
+          totalBytes: p.total||0,
           elapsed: this.faInstallElapsed,
         });
       } else if (stage === 'downloading') {
@@ -418,7 +432,7 @@ window.environmentRenderMixin = {
             <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
             <div class="env-model-progress-meta">
               <span class="env-model-pct">${pct}%</span>
-              <span class="env-model-speed">${(p.speed||0).toFixed(1)} MB/s &middot; ${((p.downloaded||0)/(1024**3)).toFixed(2)}/${((p.total||0)/(1024**3)).toFixed(2)} GB</span>
+              <span class="env-model-speed">${(p.speed||0).toFixed(1)} MB/s &middot; ${this._humanBytes(p.downloaded||0)}/${this._humanBytes(p.total||0)}</span>
             </div>
           </div>`;
       } else if (isCurrent) {
@@ -437,7 +451,7 @@ window.environmentRenderMixin = {
         rowCls += ' env-model-item-queued';
         statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending','Pending')}</span>`;
       } else if (f.exists) {
-        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')} &middot; ${Number(f.size_gb||0).toFixed(2)} GB</span>`;
+        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')} &middot; ${this._humanBytes((f.size_gb||0)*1073741824)}</span>`;
       } else if (!busy && phase === 'error' && curFile === f.filename) {
         // 本次任务里此文件失败
         rowCls += ' env-model-item-failed';
