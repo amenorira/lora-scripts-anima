@@ -1,5 +1,4 @@
 @echo off
-echo lora-scripts-anima
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title lora-scripts-anima
@@ -96,16 +95,7 @@ goto :launch
 set HF_HOME=huggingface
 set PYTHONUTF8=1
 
-REM Quick torch sanity check
-echo Checking torch...
-venv\Scripts\python.exe -c "import torch, torchvision" 2>nul
-if !errorlevel! neq 0 (
-    echo [Notice] venv exists but torch missing -- repairing...
-    goto :install
-)
-
 :launch
-echo Starting...
 venv\Scripts\python.exe gui.py %*
 pause
 exit /b 0

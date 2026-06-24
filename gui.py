@@ -7,12 +7,15 @@ import signal
 import subprocess
 import sys
 
-# Immediate feedback before heavy imports (torch, fastapi, rich)
-print("Initializing...", flush=True)
+# Set up the logger first so the very first console line is timestamped.
+# (rich is light enough to import before the heavy torch/fastapi stack.)
+from backend.log import log
+
+# Immediate timestamped feedback while the heavy imports (torch, fastapi) load.
+log.info("Initializing / 正在初始化（加载依赖）…")
 
 from backend.launch_utils import (base_dir_path, catch_exception, check_environment, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
-from backend.log import log
 
 # Windows: use SelectorEventLoop to avoid Proactor "ConnectionResetError" noise
 if sys.platform == "win32":

@@ -14,8 +14,6 @@ for arg in "$@"; do
     fi
 done
 
-echo "lora-scripts-anima"
-
 # -- Bootstrap: verify Python exists --
 PYTHON_BIN=""
 if command -v python3 &>/dev/null; then
@@ -77,16 +75,10 @@ do_install() {
     echo "[Done] Installation complete!"
 }
 
-# -- Venv check with broken-venv detection --
+# -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-if [ -f "$VENV_PYTHON" ]; then
-    echo "Checking torch..."
-    if ! "$VENV_PYTHON" -c "import torch, torchvision" 2>/dev/null; then
-        echo "[Notice] venv exists but torch missing -- repairing..."
-        do_install
-    fi
-else
+if [ ! -f "$VENV_PYTHON" ]; then
     echo "[Notice] Virtual environment (venv) not found."
     if [ "$QUIET" = "1" ]; then
         echo "  --quiet mode: auto-installing..."
@@ -105,6 +97,4 @@ else
 fi
 
 # -- Launch --
-echo "Starting..."
-
 "$VENV_PYTHON" gui.py "$@"
