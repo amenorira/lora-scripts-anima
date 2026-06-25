@@ -24,8 +24,7 @@ pillow>=10.0
 # ── 构建工具（TensorBoard 依赖 pkg_resources，setuptools>=82 已移除该模块）──
 setuptools>=68,<82
 
-# ── 训练扩展（vendor/sd-scripts 代码需要但 vendor/requirements.txt 未声明）──
-lycoris-lora==3.4.0
+# ── 训练扩展（已由 vendor/lycoris/ vendored，无需 pip 安装）──
 
 # ── ONNX 推理（WD14 tagger 需要，GPU 版包含 CPU 支持）──
 # 固定 1.20.1 匹配当前 torch+cu128（CUDA 12.x + cuDNN 9）。
