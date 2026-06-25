@@ -79,11 +79,16 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
     env["ANIMA_OUTPUT_DIR"] = output_dir
     env["ANIMA_TASK_ID"] = task_id
 
-    # 确保项目根目录在 Python path 中（支持 vendor.emo_optimizer 等自定义模块）
+    # 确保项目根目录 + vendor/ 在 Python path 最前面
+    # vendor/ 须排在 site-packages 之前，使 vendored 版本（lycoris 等）优先于 pip 旧版
     repo_root = str(REPO_ROOT)
+    vendor_root = str(REPO_ROOT / "vendor")
     existing_pypath = env.get("PYTHONPATH", "")
-    if repo_root not in existing_pypath.split(os.pathsep):
-        env["PYTHONPATH"] = repo_root + (os.pathsep + existing_pypath if existing_pypath else "")
+    new_paths = [vendor_root, repo_root]
+    for p in existing_pypath.split(os.pathsep):
+        if p and p not in new_paths:
+            new_paths.append(p)
+    env["PYTHONPATH"] = os.pathsep.join(new_paths)
 
     return env
 
