@@ -237,7 +237,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
     # ── 预览样本 ──
-    checkpoints_dir = str(abs_run_dir / "checkpoints")
+    checkpoints_dir = str(abs_run_dir / "outputs")
     result["previews"] = await asyncio.to_thread(newest_previews, checkpoints_dir)
 
     # ── 训练日志 ──

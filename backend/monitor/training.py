@@ -135,7 +135,7 @@ def read_tensorboard_loss(
         log_sub = rd / "log"
         if log_sub.is_dir():
             log_dirs.append(log_sub)
-        # 兼容：run_dir 本身就是 checkpoints 父目录
+        # 兼容：run_dir 本身就是 outputs 父目录
         if not log_dirs:
             for candidate in [rd, rd.parent]:
                 log_sub2 = candidate / "log"

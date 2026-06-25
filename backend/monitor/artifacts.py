@@ -28,7 +28,7 @@ _PREVIEWS_CACHE_TTL = 5.0
 
 
 def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]:
-    """扫描最新的训练样本图（checkpoints/sample/ → sample/ → output_dir 根）"""
+    """扫描最新的训练样本图（outputs/sample/ → sample/ → output_dir 根）"""
     global _previews_cache
     now = time.time()
     cache_key = output_dir or ""

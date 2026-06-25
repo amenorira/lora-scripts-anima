@@ -125,7 +125,7 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
             "",
             f"Full config:  config.toml",
             f"Training log: train_*.log",
-            f"Checkpoints:  checkpoints/",
+            f"Checkpoints:  outputs/",
         ]
         info_path = os.path.join(run_dir, "run_info.txt")
         with open(info_path, "w", encoding="utf-8") as f:
@@ -183,14 +183,14 @@ async def create_toml_file(request: Request):
     if not is_resume:
         run_dir = os.path.join(output_base, run_dir_name)
         os.makedirs(run_dir, exist_ok=True)
-        # sd-scripts 原生写入 checkpoints/（模型 + 样本图），log/ 单独指定
-        config["output_dir"] = os.path.join(run_dir, "checkpoints")
+        # sd-scripts 原生写入 outputs/（模型 + 样本图），log/ 单独指定
+        config["output_dir"] = os.path.join(run_dir, "outputs")
         config["logging_dir"] = os.path.join(run_dir, "log")
     else:
-        # 续训时保持原 output_dir（含 checkpoints/），但日志也放到对应 run 目录
-        run_dir = config.get("output_dir", os.path.join(output_base, run_dir_name, "checkpoints"))
-        # run_dir 在续训时是 checkpoints/ 的父目录
-        if "checkpoints" in str(run_dir):
+        # 续训时保持原 output_dir，但日志也放到对应 run 目录
+        run_dir = config.get("output_dir", os.path.join(output_base, run_dir_name, "outputs"))
+        # run_dir 在续训时是 outputs/ 的父目录（兼容旧版 checkpoints/）
+        if "outputs" in str(run_dir) or "checkpoints" in str(run_dir):
             run_dir = os.path.dirname(str(run_dir))
         if "logging_dir" not in config:
             config["logging_dir"] = os.path.join(str(run_dir), "log")
