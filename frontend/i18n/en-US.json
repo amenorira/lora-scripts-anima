@@ -125,7 +125,13 @@
 		"batchSize": "Batch Size",
 		"outputName": "Output Name",
 		"elapsed": "Elapsed",
-		"remaining": "Remaining"
+		"remaining": "Remaining",
+		"ranking": "Ranking",
+		"modelRanking": "Model Ranking",
+		"lossTrend": "Loss Trend",
+		"modelFiles": "model files",
+		"noModelFiles": "No model files",
+		"noRankingHint": "Complete training runs to see model ranking by loss"
 	},
 	"section": {
 		"model": "Model & Dataset",

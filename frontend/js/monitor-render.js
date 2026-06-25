@@ -1,32 +1,20 @@
 /* ================================================================
-   monitor-render.js — Dashboard rendering (three-tier update)
+   monitor-render.js — Dashboard rendering (compact statusbar + rings + ranking)
    Mixin merged into animaApp Alpine component
 
    更新策略（消除闪烁）：
-     1. 外壳层（状态/GPU/系统卡 或 历史横幅）：仅在首次/历史模式切换时构建，
-        之后每 tick 原地打补丁（_patchCardValues）。
+     1. 外壳层（单行信息条 + 资源圆环 或 历史横幅）：仅在首次/历史模式切换时构建，
+        之后每 tick 原地打补丁（_patchStatusbar）。
      2. 标签页内容：每个标签独立脏判断，仅自身数据变化时重建。
-     3. 日志：增量 DOM 追加 + 保留滚动位置（修复"自动回顶"）。
-     4. 图表：实例只创建一次，数据变化仅 update('none')，<2 点显示占位。
+     3. 日志：增量 DOM 追加 + 保留滚动位置。
+     4. 概览 sparkline：纯 SVG 折线，原地更新 path。
+   无 Chart.js 依赖。
    ================================================================ */
 
 window.monitorRenderMixin = {
-  // ── 占位图表标签（无数据时显示）──
-  _placeholderTags(t) {
-    return [
-      {tag:'loss/average', name: t('chartLossAverage','loss average'), latest:null, points:[]},
-      {tag:'loss/current', name: t('chartLossCurrent','loss current'), latest:null, points:[]},
-      {tag:'loss/epoch_average', name: t('chartLossEpochAvg','loss epoch average'), latest:null, points:[]},
-      {tag:'lr/unet', name: t('chartLrUnet','lr unet'), latest:null, points:[]},
-    ];
-  },
-
-  // ── 性能指标等级（语义重定义：训练仪表盘里高利用率=好）──
-  // 返回 'ok' | 'warn' | 'danger' | 'muted'
-  _gradeLoad(pct)  { return (pct||0) < 20 ? 'muted' : 'ok'; },        // GPU 利用率：低=未充分利用，高=满载工作
-  _gradeVram(pct)  { return (pct||0) < 92 ? 'ok' : 'warn'; },         // VRAM：接近满=OOM 风险
-  _gradeCpuRam(pct){ return (pct||0) < 85 ? 'ok' : 'warn'; },         // CPU/RAM：接近满=风险
-  _gradeTemp(temp) { return temp == null ? '' : (temp < 75 ? 'ok' : temp < 85 ? 'warn' : 'danger'); }, // 温度：高温才是危险
+  // ── 资源指标等级（低=绿 ok / 高=橙 warn，无深红）──
+  _ringGrade(pct, mid) { return (pct||0) >= mid ? 'warn' : 'ok'; },
+  _ringGradeTemp(temp) { return temp == null ? '' : (temp >= 80 ? 'warn' : 'ok'); },
 
   // ═══════════════════════════════════════════════════════════
   //  主入口：renderDashboard
@@ -45,25 +33,19 @@ window.monitorRenderMixin = {
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory) {
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
-      this._builtTab = null;        // 外壳重建后强制标签重建
-      this._builtChartsSig = null;  // 图表签名重置
+      this._builtTab = null;
       let shell = '<div class="monitor-dashboard">';
       if (isHistory) {
         shell += this._historyBannerHtml(d, t);
       } else {
-        shell += '<div class="monitor-row" id="monitorCardsRow">';
-        shell += this._statusCard(d, t);
-        if (sys) shell += this._systemCard(sys, t);
-        if (gpu) shell += this._gpuCard(gpu, t);
-        shell += '</div>';
+        shell += this._statusbarHtml(d, gpu, sys, t);
       }
       shell += '<div id="monitorTabContent"></div>';
       shell += '</div>';
       el.innerHTML = shell;
-      if (!isHistory) this._initShellBars();
     } else if (!isHistory) {
-      // ── 2. 外壳值原地打补丁（每 tick，不重建 DOM）──
-      this._patchCardValues(d, gpu, sys, t);
+      // ── 2. 外壳原地打补丁（每 tick，不重建 DOM）──
+      this._patchStatusbar(d, gpu, sys, t);
     }
 
     // ── 3. 标签页内容 ──
@@ -71,58 +53,179 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  标签页分发
+  //  外壳：单行紧凑信息条 + 资源圆环
   // ═══════════════════════════════════════════════════════════
-  _renderTab(tab, d, gpu, sys, t, isHistory) {
-    const contentEl = document.getElementById('monitorTabContent');
-    if (!contentEl) return;
-    const tabChanged = this._builtTab !== tab;
+  _statusbarHtml(d, gpu, sys, t) {
+    const stateCode = d.state || 'IDLE';
+    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
+    const state = stateLabels[stateCode] || stateCode;
+    const isTraining = stateCode === 'RUNNING';
+    const stateColor = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
 
-    if (tab === 'logs') {
-      this._renderLogs(contentEl, d, t, tabChanged);
-      this._builtTab = 'logs';
-      return;
-    }
-    if (tab === 'charts') {
-      this._renderCharts(contentEl, d, t, tabChanged);
-      this._builtTab = 'charts';
-      return;
-    }
-    if (tab === 'overview') {
-      const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '');
-      if (tabChanged || this._builtOverviewSig !== sig) {
-        this._builtOverviewSig = sig;
-        contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
+    let html = '<div class="m-statusbar">';
+    // 左：状态 + 进度
+    html += '<div class="m-sb-left">';
+    html += '<span class="m-sb-state" data-field="state" style="color:' + stateColor + '">' + this.esc(state) + '</span>';
+    if (isTraining) {
+      if (d.percent > 0) {
+        html += '<div class="m-sb-progress"><div class="m-sb-bar" data-bar="progress" style="width:' + (d.percent||0) + '%"></div></div>';
+        html += '<span class="m-sb-pct" data-field="pct">' + (d.percent||0) + '%</span>';
       }
-      this._builtTab = 'overview';
-      return;
     }
-    if (tab === 'samples') {
-      // 预览步进越界保护
-      if (this.previews.length && this.previewStep >= this.previews.length) this.previewStep = Math.max(0, this.previews.length - 1);
-      const sig = 'sm:' + (this.previews.length) + ':' + (this.previewStep);
-      if (tabChanged || this._builtSamplesSig !== sig) {
-        this._builtSamplesSig = sig;
-        contentEl.innerHTML = this._renderSamplesTab(t);
-      }
-      this._builtTab = 'samples';
-      return;
+    html += '</div>';
+
+    // 中：关键指标（训练中）
+    if (isTraining) {
+      html += '<div class="m-sb-metrics">';
+      html += '<span class="m-sb-m" data-field="step">' + this.esc(t('step','Steps')) + ' <b>' + (d.step != null ? d.step : '?') + '/' + (d.total_steps||'?') + '</b></span>';
+      html += '<span class="m-sb-m" data-field="loss">loss <b>' + (d.loss != null ? this.esc(String(d.loss)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m" data-field="lr">lr <b>' + (d.lr != null ? this.esc(String(d.lr)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m" data-field="epoch">ep <b>' + (d.epoch != null ? this.esc(String(d.epoch)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><span class="m-sb-icon">⏱</span><b data-field="elapsed">' + (d.elapsed ? this.esc(String(d.elapsed)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><span class="m-sb-icon">⏳</span><b data-field="eta">' + (d.eta ? this.esc(String(d.eta)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><span class="m-sb-icon">⚡</span><b data-field="speed">' + (d.speed ? this.esc(String(d.speed)) : '--') + '</b></span>';
+      html += '</div>';
+    } else if (d.last_config && d.last_config.name) {
+      const lc = d.last_config;
+      html += '<div class="m-sb-metrics">';
+      html += '<span class="m-sb-m">' + this.esc(t('lastTraining','Last')) + ': <b>' + this.esc(lc.name) + '</b></span>';
+      html += '<span class="m-sb-m">' + this.esc(lc.model) + ' · LR ' + this.esc(lc.lr) + ' · Dim ' + this.esc(lc.dim) + '</span>';
+      html += '</div>';
+    } else if (stateCode === 'IDLE') {
+      html += '<div class="m-sb-metrics"><span class="m-sb-m m-sb-hint">' + this.esc(t('noTrainingHint','Start a training task to see real-time progress here')) + '</span></div>';
     }
-    if (tab === 'outputs') {
-      // 首次进入 outputs 时自动加载文件列表
-      if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0);
-      if (tabChanged || this._builtOutputsSig !== sig) {
-        this._builtOutputsSig = sig;
-        contentEl.innerHTML = this._renderOutputsTab(t);
-      }
-      this._builtTab = 'outputs';
-      return;
+    if (d.has_error) html += '<span class="m-sb-error">' + this.esc(d.error_msg || t('error','Error')) + '</span>';
+
+    // 右：资源监控面板（环形 + 型号 + 详细数值）
+    html += '<div class="m-sb-right">';
+    if (isTraining) html += '<button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button>';
+    if (gpu) html += this._gpuPanel(gpu, t);
+    if (sys) html += this._sysPanel(sys, t);
+    html += '</div>';
+    html += '</div>';
+    return html;
+  },
+
+  // GPU 资源面板：型号 + 环形行 + 数值行
+  _gpuPanel(gpu, t) {
+    const loadPct = gpu.gpu_load_pct || 0;
+    const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
+    const temp = gpu.temperature_c;
+    let html = '<div class="m-res-panel" data-res="gpu">';
+    // 型号标题（完整显示，允许换行）
+    if (gpu.name) html += '<div class="m-res-name">' + this.esc(gpu.name) + '</div>';
+    // 环形行
+    html += '<div class="m-res-rings">';
+    html += this._ringSvg('load', Math.round(loadPct), '%', this._ringGrade(loadPct, 90), t('gpuLoad','Load'));
+    html += this._ringSvg('vram', Math.round(vramPct), '%', this._ringGrade(vramPct, 92), t('vramUsed','VRAM'));
+    if (temp != null) html += this._ringSvg('temp', temp, '°', this._ringGradeTemp(temp), t('gpuTemp','Temp'));
+    html += '</div>';
+    // 数值行：VRAM 绝对值 + 功率
+    html += '<div class="m-res-details">';
+    html += '<span data-field="vram-text">' + gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'MB</span>';
+    if (gpu.power_w != null) html += '<span data-field="power-text">' + gpu.power_w + 'W</span>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+  },
+
+  // 系统资源面板：CPU 型号 + 环形行 + 数值行
+  _sysPanel(sys, t) {
+    let html = '<div class="m-res-panel" data-res="sys">';
+    if (sys.cpu_name) html += '<div class="m-res-name">' + this.esc(sys.cpu_name) + '</div>';
+    html += '<div class="m-res-rings">';
+    html += this._ringSvg('cpu', Math.round(sys.cpu_pct), '%', this._ringGrade(sys.cpu_pct, 85), t('cpu','CPU'));
+    html += this._ringSvg('ram', Math.round(sys.ram_pct), '%', this._ringGrade(sys.ram_pct, 85), t('ram','RAM'));
+    html += '</div>';
+    html += '<div class="m-res-details">';
+    html += '<span data-field="ram-text">' + sys.ram_used_gb + '/' + sys.ram_total_gb + 'GB</span>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+  },
+
+  // SVG 环形进度（半径 16，stroke 3）
+  _ringSvg(key, value, unit, grade, label) {
+    const r = 16, c = 2 * Math.PI * r;
+    // value 是百分比或温度；温度映射到 0-100（0-100℃）
+    const pct = unit === '°' ? Math.min(100, (value / 100) * 100) : Math.max(0, Math.min(100, value));
+    const offset = c * (1 - pct / 100);
+    const display = unit === '°' ? value + '°' : Math.round(value) + unit;
+    return `<div class="m-ring m-ring-${grade}" data-ring="${key}">
+      <svg viewBox="0 0 40 40" width="40" height="40">
+        <circle class="m-ring-bg" cx="20" cy="20" r="${r}" fill="none" stroke-width="3"/>
+        <circle class="m-ring-fg" cx="20" cy="20" r="${r}" fill="none" stroke-width="3"
+          stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"
+          data-ring-offset="${offset.toFixed(2)}" data-ring-c="${c.toFixed(2)}"
+          transform="rotate(-90 20 20)"/>
+        <text class="m-ring-val" x="20" y="23" text-anchor="middle" data-ring-val>${this.esc(display)}</text>
+      </svg>
+      <span class="m-ring-label">${this.esc(label)}</span>
+    </div>`;
+  },
+
+  // ── 外壳原地打补丁 ──
+  _patchStatusbar(d, gpu, sys, t) {
+    const bar = document.querySelector('.m-statusbar');
+    if (!bar) return;
+    const stateCode = d.state || 'IDLE';
+    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
+    const state = stateLabels[stateCode] || stateCode;
+    const isTraining = stateCode === 'RUNNING';
+    const stateColor = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
+    const stateEl = bar.querySelector('[data-field="state"]');
+    if (stateEl) { stateEl.textContent = state; stateEl.style.color = stateColor; }
+    // 进度条 + 百分比
+    const progressBar = bar.querySelector('[data-bar="progress"]');
+    if (progressBar && d.percent != null) progressBar.style.width = d.percent + '%';
+    const pctEl = bar.querySelector('[data-field="pct"]');
+    if (pctEl && d.percent != null) pctEl.textContent = d.percent + '%';
+    // 步数
+    const stepEl = bar.querySelector('[data-field="step"]');
+    if (stepEl && d.step != null) stepEl.innerHTML = this.esc(t('step','Steps')) + ' <b>' + d.step + '/' + (d.total_steps||'?') + '</b>';
+    // 指标纯文本
+    const _set = (key, val) => {
+      const e = bar.querySelector('[data-field="' + key + '"] b, [data-field="' + key + '"]');
+      if (e && e.tagName === 'B') e.textContent = (val != null && val !== '') ? this.esc(String(val)) : '--';
+    };
+    _set('loss', d.loss); _set('lr', d.lr); _set('epoch', d.epoch);
+    const elEl = bar.querySelector('[data-field="elapsed"] b'); if (elEl) elEl.textContent = d.elapsed ? this.esc(String(d.elapsed)) : '--';
+    const etaEl = bar.querySelector('[data-field="eta"] b'); if (etaEl) etaEl.textContent = d.eta ? this.esc(String(d.eta)) : '--';
+    const spdEl = bar.querySelector('[data-field="speed"] b'); if (spdEl) spdEl.textContent = d.speed ? this.esc(String(d.speed)) : '--';
+    // 圆环 + 数值原地更新
+    if (gpu) {
+      this._patchRing('load', Math.round(gpu.gpu_load_pct || 0), '%', this._ringGrade(gpu.gpu_load_pct||0, 90));
+      const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
+      this._patchRing('vram', vramPct, '%', this._ringGrade(vramPct, 92));
+      if (gpu.temperature_c != null) this._patchRing('temp', gpu.temperature_c, '°', this._ringGradeTemp(gpu.temperature_c));
+      // 绝对值 + 功率
+      const vramText = bar.querySelector('[data-field="vram-text"]');
+      if (vramText) vramText.textContent = gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'MB';
+      const pwText = bar.querySelector('[data-field="power-text"]');
+      if (pwText) pwText.textContent = (gpu.power_w != null ? gpu.power_w + 'W' : '');
+    }
+    if (sys) {
+      this._patchRing('cpu', Math.round(sys.cpu_pct), '%', this._ringGrade(sys.cpu_pct, 85));
+      this._patchRing('ram', Math.round(sys.ram_pct), '%', this._ringGrade(sys.ram_pct, 85));
+      const ramText = bar.querySelector('[data-field="ram-text"]');
+      if (ramText) ramText.textContent = sys.ram_used_gb + '/' + sys.ram_total_gb + 'GB';
     }
   },
 
+  _patchRing(key, value, unit, grade) {
+    const ring = document.querySelector('.m-ring[data-ring="' + key + '"]');
+    if (!ring) return;
+    const pct = unit === '°' ? Math.min(100, value) : Math.max(0, Math.min(100, value));
+    const fg = ring.querySelector('.m-ring-fg');
+    const c = fg ? parseFloat(fg.dataset.ringC) : 0;
+    if (fg) fg.style.strokeDashoffset = (c * (1 - pct / 100)).toFixed(2);
+    const valEl = ring.querySelector('[data-ring-val]');
+    if (valEl) valEl.textContent = unit === '°' ? value + '°' : value + unit;
+    ring.className = 'm-ring m-ring-' + grade;
+  },
+
   // ═══════════════════════════════════════════════════════════
-  //  外壳：历史横幅
+  //  外壳：历史横幅（轻量信息条风格）
   // ═══════════════════════════════════════════════════════════
   _historyBannerHtml(d, t) {
     const runName = (d.config && d.config.output_name) || (this.selectedRunDir.split('/').pop() || '');
@@ -144,182 +247,81 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  外壳：状态卡 / GPU 卡 / 系统卡
+  //  标签页分发
   // ═══════════════════════════════════════════════════════════
-  _statusCard(d, t) {
-    const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
-    const state = stateLabels[stateCode] || stateCode;
-    const isTraining = stateCode === 'RUNNING';
-    const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
-    let html = '<div class="card card-status flex-1"><div class="card-header">' + this.esc(t('status','Status')) + '</div>';
-    html += '<div class="m-state" data-field="state" style="color:' + color + '">' + this.esc(state) + '</div>';
-    if (isTraining) {
-      // 进度条 + 百分比右贴
-      if (d.percent > 0) {
-        html += '<div class="m-progress-row"><div class="monitor-bar-track m-progress"><div class="monitor-bar-fill ok" data-bar="progress" style="width:' + (d.percent||0) + '%"></div></div>';
-        html += '<span class="m-progress-pct" data-field="pct">' + (d.percent||0) + '%</span></div>';
+  _renderTab(tab, d, gpu, sys, t, isHistory) {
+    const contentEl = document.getElementById('monitorTabContent');
+    if (!contentEl) return;
+    const tabChanged = this._builtTab !== tab;
+
+    if (tab === 'logs') {
+      this._renderLogs(contentEl, d, t, tabChanged);
+      this._builtTab = 'logs';
+      return;
+    }
+    if (tab === 'ranking') {
+      if (tabChanged && !this.rankingItems.length && !this.rankingLoading) this.loadRanking();
+      const sig = 'rk:' + (this.rankingItems.length) + ':' + (this.rankingLoading?1:0);
+      if (tabChanged || this._builtRankingSig !== sig) {
+        this._builtRankingSig = sig;
+        contentEl.innerHTML = this._renderRankingTab(t);
       }
-      // 步数行
-      html += '<div class="m-step-row" data-field="step">' + this.esc(t('step','Steps')) + ': <b>' + (d.step != null ? d.step : '?') + ' / ' + (d.total_steps||'?') + '</b></div>';
-      // 指标网格 3 列：Loss / LR / Epoch
-      html += '<div class="m-stat-grid">';
-      html += '<div class="m-stat-cell"><span class="m-stat-label">' + this.esc(t('loss','Loss')) + '</span><span class="m-stat-val" data-field="loss">' + (d.loss != null ? this.esc(String(d.loss)) : '--') + '</span></div>';
-      html += '<div class="m-stat-cell"><span class="m-stat-label">' + this.esc(t('lr','LR')) + '</span><span class="m-stat-val" data-field="lr">' + (d.lr != null ? this.esc(String(d.lr)) : '--') + '</span></div>';
-      html += '<div class="m-stat-cell"><span class="m-stat-label">' + this.esc(t('epoch','Epoch')) + '</span><span class="m-stat-val" data-field="epoch">' + (d.epoch != null ? this.esc(String(d.epoch)) : '--') + '</span></div>';
-      html += '</div>';
-      // 时间行：已运行 + 剩余并排
-      html += '<div class="m-time-row">';
-      html += '<span class="m-time-item"><span class="m-time-icon">⏱</span>' + this.esc(t('elapsed','Elapsed')) + ': <b data-field="elapsed">' + (d.elapsed ? this.esc(String(d.elapsed)) : '--') + '</b></span>';
-      html += '<span class="m-time-item"><span class="m-time-icon">⏳</span>' + this.esc(t('remaining','Remaining')) + ': <b data-field="eta">' + (d.eta ? this.esc(String(d.eta)) : '--') + '</b></span>';
-      html += '</div>';
-      // 速度行
-      if (d.speed) html += '<div class="m-speed-row"><span class="m-time-icon">⚡</span>' + this.esc(t('speed','Speed')) + ': <b data-field="speed">' + this.esc(String(d.speed)) + '</b></div>';
-      html += '<button class="btn btn-sm m-stop-btn" @click="stopTraining()">' + this.esc(t('stopTraining','Stop Training')) + '</button>';
-    } else if (d.last_config && d.last_config.name) {
-      const lc = d.last_config;
-      html += '<div class="m-last">' + this.esc(t('lastTraining','Last')) + ': <b>' + this.esc(lc.name) + '</b></div>';
-      html += '<div class="m-last-sub">' + this.esc(lc.model) + ' · LR:' + this.esc(lc.lr) + ' · Dim:' + this.esc(lc.dim) + ' · ' + this.esc(t('historyEpochs','Epochs')) + ':' + this.esc(lc.epochs) + '</div>';
-    } else if (stateCode === 'IDLE' && !d.last_config) {
-      html += '<div class="m-idle-hint">' + this.esc(t('noTrainingHint','Start a training task to see real-time progress here')) + '</div>';
-      html += '<button class="btn btn-primary m-go-train" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining','Go to Training')) + '</button>';
+      this._builtTab = 'ranking';
+      return;
     }
-    if (d.has_error) html += '<div class="m-error">' + this.esc(d.error_msg || t('error','Error')) + '</div>';
-    html += '</div>';
-    return html;
-  },
-
-  _gpuCard(gpu, t) {
-    const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
-    const loadPct = gpu.gpu_load_pct || 0;
-    const vramGrade = this._gradeVram(vramPct);
-    const loadGrade = this._gradeLoad(loadPct);
-    let html = '<div class="card card-gpu flex-1"><div class="card-header">' + this.esc(t('gpu','GPU')) + '</div>';
-    html += '<div class="m-gpu-name">' + this.esc(gpu.name || 'GPU') + '</div>';
-    html += '<div class="monitor-stat">' + this.esc(t('vramUsed','VRAM')) + ': <b class="' + vramGrade + '" data-field="vram-text">' + gpu.vram_used_mb + ' MB (' + Math.round(vramPct) + '%) / ' + gpu.vram_total_mb + ' MB</b></div>';
-    html += '<div class="monitor-bar-track"><div class="monitor-bar-fill ' + vramGrade + '" data-bar="vram" data-target="' + vramPct + '"></div></div>';
-    html += '<div class="monitor-stat" style="margin-top:8px">' + this.esc(t('gpuLoad','Load')) + ': <b class="' + loadGrade + '" data-field="load-text">' + Math.round(loadPct) + '%</b></div>';
-    html += '<div class="monitor-bar-track"><div class="monitor-bar-fill ' + loadGrade + '" data-bar="load" data-target="' + loadPct + '"></div></div>';
-    if (gpu.temperature_c != null) {
-      const tGrade = this._gradeTemp(gpu.temperature_c);
-      html += '<div class="monitor-stat" style="margin-top:8px">' + this.esc(t('gpuTemp','Temp')) + ': <b class="' + tGrade + '" data-field="temp-text">' + gpu.temperature_c + '°C</b></div>';
-    }
-    if (gpu.power_w != null) html += '<div class="monitor-stat">' + this.esc(t('gpuPower','Power')) + ': <b>' + gpu.power_w + 'W</b></div>';
-    html += '</div>';
-    return html;
-  },
-
-  _systemCard(sys, t) {
-    const cpuGrade = this._gradeCpuRam(sys.cpu_pct);
-    const ramGrade = this._gradeCpuRam(sys.ram_pct);
-    let html = '<div class="card card-system flex-1"><div class="card-header">' + this.esc(t('system','System')) + '</div>';
-    if (sys.cpu_name) html += '<div class="m-cpu-name">' + this.esc(sys.cpu_name) + '</div>';
-    html += '<div class="monitor-stat">' + this.esc(t('cpu','CPU')) + ': <b class="' + cpuGrade + '" data-field="cpu-text">' + Math.round(sys.cpu_pct) + '%</b></div>';
-    html += '<div class="monitor-bar-track"><div class="monitor-bar-fill ' + cpuGrade + '" data-bar="cpu" data-target="' + sys.cpu_pct + '"></div></div>';
-    html += '<div class="monitor-stat" style="margin-top:8px">' + this.esc(t('ram','RAM')) + ': <b class="' + ramGrade + '" data-field="ram-text">' + sys.ram_used_gb + ' GB (' + sys.ram_pct + '%) / ' + sys.ram_total_gb + ' GB</b></div>';
-    html += '<div class="monitor-bar-track"><div class="monitor-bar-fill ' + ramGrade + '" data-bar="ram" data-target="' + sys.ram_pct + '"></div></div>';
-    html += '</div>';
-    return html;
-  },
-
-  // 外壳首次构建后初始化进度条（无动画跳到目标值）
-  _initShellBars() {
-    const el = document.getElementById('monitorDashboard');
-    if (!el) return;
-    el.querySelectorAll('.monitor-bar-fill[data-bar]').forEach(bar => {
-      bar.style.transition = 'none';
-      bar.style.width = (bar.dataset.target || 0) + '%';
-      requestAnimationFrame(() => { bar.style.transition = ''; });
-    });
-  },
-
-  // ── 外壳值原地打补丁（每 tick）──
-  _patchCardValues(d, gpu, sys, t) {
-    const statusEl = document.querySelector('.card-status');
-    if (statusEl) {
-      const stateCode = d.state || 'IDLE';
-      const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
-      const state = stateLabels[stateCode] || stateCode;
-      const isTraining = stateCode === 'RUNNING';
-      const color = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
-      const stateEl = statusEl.querySelector('[data-field="state"]');
-      if (stateEl) { stateEl.textContent = state; stateEl.style.color = color; }
-      // 进度条 + 百分比
-      const progressBar = statusEl.querySelector('.monitor-bar-fill[data-bar="progress"]');
-      if (progressBar && d.percent != null) progressBar.style.width = d.percent + '%';
-      const pctEl = statusEl.querySelector('[data-field="pct"]');
-      if (pctEl && d.percent != null) pctEl.textContent = d.percent + '%';
-      // 步数行
-      const stepEl = statusEl.querySelector('[data-field="step"]');
-      if (stepEl && d.step != null) stepEl.innerHTML = this.esc(t('step','Steps')) + ': <b>' + d.step + ' / ' + (d.total_steps||'?') + '</b>';
-      // 指标网格：Loss / LR / Epoch（纯文本更新，保留 data-field 容器）
-      const _setVal = (key, val) => {
-        const el = statusEl.querySelector('[data-field="' + key + '"]');
-        if (el) el.textContent = (val != null && val !== '') ? this.esc(String(val)) : '--';
-      };
-      _setVal('loss', d.loss); _setVal('lr', d.lr); _setVal('epoch', d.epoch);
-      // 时间行：已运行 + 剩余
-      _setVal('elapsed', d.elapsed); _setVal('eta', d.eta);
-      // 速度行
-      _setVal('speed', d.speed);
-    }
-
-    if (gpu) {
-      const gpuEl = document.querySelector('.card-gpu');
-      if (gpuEl) {
-        const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
-        const loadPct = gpu.gpu_load_pct || 0;
-        const vramGrade = this._gradeVram(vramPct), loadGrade = this._gradeLoad(loadPct);
-        const vramBar = gpuEl.querySelector('[data-bar="vram"]');
-        if (vramBar) { vramBar.dataset.target = vramPct; vramBar.className = 'monitor-bar-fill ' + vramGrade; vramBar.style.width = vramPct + '%'; }
-        const loadBar = gpuEl.querySelector('[data-bar="load"]');
-        if (loadBar) { loadBar.dataset.target = loadPct; loadBar.className = 'monitor-bar-fill ' + loadGrade; loadBar.style.width = loadPct + '%'; }
-        const vramText = gpuEl.querySelector('[data-field="vram-text"]');
-        if (vramText) { vramText.textContent = gpu.vram_used_mb + ' MB (' + Math.round(vramPct) + '%) / ' + gpu.vram_total_mb + ' MB'; vramText.className = vramGrade; }
-        const loadText = gpuEl.querySelector('[data-field="load-text"]');
-        if (loadText) { loadText.textContent = Math.round(loadPct) + '%'; loadText.className = loadGrade; }
-        if (gpu.temperature_c != null) {
-          const tGrade = this._gradeTemp(gpu.temperature_c);
-          const tempText = gpuEl.querySelector('[data-field="temp-text"]');
-          if (tempText) { tempText.textContent = gpu.temperature_c + '°C'; tempText.className = tGrade; }
-        }
+    if (tab === 'overview') {
+      const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length) + ':' + (this._sparkDirty?1:0);
+      if (tabChanged || this._builtOverviewSig !== sig) {
+        this._builtOverviewSig = sig;
+        contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
+        this._sparkDirty = false;
       }
+      this._builtTab = 'overview';
+      return;
     }
-
-    if (sys) {
-      const sysEl = document.querySelector('.card-system');
-      if (sysEl) {
-        const cpuPct = sys.cpu_pct, ramPct = sys.ram_pct;
-        const cpuGrade = this._gradeCpuRam(cpuPct), ramGrade = this._gradeCpuRam(ramPct);
-        const cpuBar = sysEl.querySelector('[data-bar="cpu"]');
-        if (cpuBar) { cpuBar.dataset.target = cpuPct; cpuBar.className = 'monitor-bar-fill ' + cpuGrade; cpuBar.style.width = cpuPct + '%'; }
-        const ramBar = sysEl.querySelector('[data-bar="ram"]');
-        if (ramBar) { ramBar.dataset.target = ramPct; ramBar.className = 'monitor-bar-fill ' + ramGrade; ramBar.style.width = ramPct + '%'; }
-        const cpuText = sysEl.querySelector('[data-field="cpu-text"]');
-        if (cpuText) { cpuText.textContent = Math.round(cpuPct) + '%'; cpuText.className = cpuGrade; }
-        const ramText = sysEl.querySelector('[data-field="ram-text"]');
-        if (ramText) { ramText.textContent = sys.ram_used_gb + ' GB (' + ramPct + '%) / ' + sys.ram_total_gb + ' GB'; ramText.className = ramGrade; }
+    if (tab === 'samples') {
+      if (this.previews.length && this.previewStep >= this.previews.length) this.previewStep = Math.max(0, this.previews.length - 1);
+      const sig = 'sm:' + (this.previews.length) + ':' + (this.previewStep);
+      if (tabChanged || this._builtSamplesSig !== sig) {
+        this._builtSamplesSig = sig;
+        contentEl.innerHTML = this._renderSamplesTab(t);
       }
+      this._builtTab = 'samples';
+      return;
     }
-
-    // 图表增量更新（若当前在图表标签或数据脏）
-    if (this._chartsDirty || this.monitorTab === 'charts') this._syncCharts();
+    if (tab === 'outputs') {
+      if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
+      const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0);
+      if (tabChanged || this._builtOutputsSig !== sig) {
+        this._builtOutputsSig = sig;
+        contentEl.innerHTML = this._renderOutputsTab(t);
+      }
+      this._builtTab = 'outputs';
+      return;
+    }
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  概览标签
+  //  概览标签（含 sparkline 迷你趋势图）
   // ═══════════════════════════════════════════════════════════
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
     if (isHistory && d.train_result) {
       const tr = d.train_result;
-      html += '<div class="card" style="margin-top:12px"><div class="card-header">' + this.esc(t('trainResult','Training Result')) + '</div><div class="param-grid">';
+      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('trainResult','Training Result')) + '</div><div class="param-grid">';
       html += '<div class="param-item"><span class="param-label">' + this.esc(t('status','Status')) + '</span><span class="param-value" style="color:' + (tr.status==='completed'?'var(--success)':'var(--danger)') + '">' + this.esc(tr.status||'?') + '</span></div>';
       if (tr.duration_str) html += '<div class="param-item"><span class="param-label">' + this.esc(t('duration','Duration')) + '</span><span class="param-value">' + this.esc(tr.duration_str) + '</span></div>';
       if (tr.exit_code != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('monitor.exitCode','Exit Code')) + '</span><span class="param-value">' + tr.exit_code + '</span></div>';
       html += '</div></div>';
     }
-    html += '<div class="card card-params" style="margin-top:12px"><div class="card-header">' + this.esc(t('trainParams','Parameters')) + '</div>';
+
+    // ── sparkline 迷你趋势图（loss/average）──
+    const lossSeries = this._getLossSeriesForSpark();
+    if (lossSeries && lossSeries.points && lossSeries.points.length >= 2) {
+      html += this._sparklineHtml(lossSeries, t);
+    }
+
+    html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
     if (this.trainParams.length) {
       html += '<div class="param-grid">';
       this.trainParams.forEach(p => { html += '<div class="param-item"><span class="param-label">' + this.esc(p.label) + '</span><span class="param-value">' + this.esc(p.value) + '</span></div>'; });
@@ -329,7 +331,7 @@ window.monitorRenderMixin = {
     }
     html += '</div>';
     if (this.previews.length) {
-      html += '<div class="card card-preview" style="margin-top:12px"><div class="card-header">' + this.esc(t('previewSamples','Preview')) + '</div><div class="preview-grid">';
+      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div><div class="preview-grid">';
       this.previews.slice(0, 6).forEach(p => {
         html += '<div class="preview-item" @click="monitorTab=\'samples\';renderDashboard()" style="cursor:pointer"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy"/><span class="preview-name">' + this.esc(p.name) + '</span></div>';
       });
@@ -338,14 +340,57 @@ window.monitorRenderMixin = {
     return html;
   },
 
+  _getLossSeriesForSpark() {
+    if (!this.lossSeries || !this.lossSeries.length) return null;
+    // 优先 loss/average，其次 loss/current，其次第一个 loss tag
+    return this.lossSeries.find(s => s.tag === 'loss/average')
+      || this.lossSeries.find(s => s.tag === 'loss/current')
+      || this.lossSeries.find(s => s.tag && s.tag.startsWith('loss/'))
+      || null;
+  },
+
+  _sparklineHtml(series, t) {
+    const points = this._smoothedSparkPoints(series.points);
+    const w = 100, h = 28;
+    const xs = points.map(p => p.step);
+    const ys = points.map(p => p.value);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const xRange = xMax - xMin || 1;
+    const yRange = yMax - yMin || 1;
+    const path = points.map((p, i) => {
+      const x = ((p.step - xMin) / xRange) * w;
+      const y = h - ((p.value - yMin) / yRange) * (h - 4) - 2;
+      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }).join(' ');
+    const latest = series.latest != null ? series.latest.toFixed(4) : '--';
+    const name = series.name || 'loss';
+    let html = '<div class="m-sparkline-section">';
+    html += '<div class="m-section-title">' + this.esc(t('lossTrend','Loss Trend')) + ' · ' + this.esc(name) + ' <span class="m-sparkline-latest">' + latest + '</span>';
+    html += '<span class="m-section-title-right"><label class="m-smooth-label">' + this.esc(t('smooth','Smooth')) + ' <input type="number" class="m-smooth-input" min="0" max="0.99" step="0.01" x-model="sparkSmoothing" @input="sparkSmoothing=$event.target.value;_sparkDirty=true;renderDashboard()" value="' + (this.sparkSmoothing||0) + '"></label></span>';
+    html += '</div>';
+    html += '<svg class="m-sparkline" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><path d="' + path + '"/></svg>';
+    html += '</div>';
+    return html;
+  },
+
+  _smoothedSparkPoints(points) {
+    const sm = this.sparkSmoothing || 0;
+    if (sm <= 0 || !points || points.length <= 1) return points || [];
+    const out = [];
+    let ema = points[0].value;
+    const alpha = 1 - sm;
+    points.forEach((p, i) => { if (i === 0) ema = p.value; else ema = alpha * p.value + (1 - alpha) * ema; out.push({ step: p.step, value: ema }); });
+    return out;
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  日志标签（增量追加 + 保留滚动位置）
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
-    let html = '<div class="card card-logs" style="margin-top:12px">';
-    html += '<div class="card-header m-logs-header">';
-    html += '<span>' + this.esc(t('logTitle','Real-time Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this.logLines.length + '</span></span>';
-    html += '<div class="m-logs-tools">';
+    let html = '<div class="m-section" style="margin-top:12px">';
+    html += '<div class="m-section-title">' + this.esc(t('logTitle','Real-time Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this.logLines.length + '</span></div>';
+    html += '<div class="m-section-tools">';
     html += '<input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
     const levels = ['all','info','warn','error'];
     const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
@@ -356,14 +401,13 @@ window.monitorRenderMixin = {
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
-    html += '</div></div>';
+    html += '</div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines">';
     html += '<button type="button" class="log-scroll-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()" style="display:none">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
     html += '</div></div>';
     return html;
   },
 
-  // 日志行是否匹配过滤
   _logLineMatches(line, search, level) {
     const lower = line.toLowerCase();
     if (search && lower.indexOf(search) === -1) return false;
@@ -384,7 +428,6 @@ window.monitorRenderMixin = {
     const shellInDom = !!contentEl.querySelector('#monitorDashboardLogs');
 
     if (tabChanged || !shellInDom) {
-      // 构建日志标签外壳（含搜索框等头部 + 滚动容器）
       contentEl.innerHTML = this._logsTabShellHtml(t);
       this._renderedLogFilterKey = filterKey;
       this._renderedLogCount = 0;
@@ -392,7 +435,6 @@ window.monitorRenderMixin = {
       this._populateLogs(contentEl, search, level, true);
       this._bindLogScroll(contentEl);
     } else {
-      // 外壳已存在：按需重建或增量追加
       const filterChanged = this._renderedLogFilterKey !== filterKey;
       const trimmed = this.logLines.length < this._renderedLogCount;
       if (filterChanged || trimmed || this._forceLogRebuild) {
@@ -403,19 +445,16 @@ window.monitorRenderMixin = {
       } else if (this.logLines.length > this._renderedLogCount) {
         this._populateLogs(contentEl, search, level, false);
       }
-      // 更新计数
       const countEl = contentEl.querySelector('[data-field="log-count"]');
       if (countEl) countEl.textContent = this.logLines.length;
     }
     this._afterLogsRender(contentEl);
   },
 
-  // 填充日志行：isFull=true 清空后全量，false 仅追加新增
   _populateLogs(contentEl, search, level, isFull) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
     if (isFull) {
-      // 清空已有日志行与空态（保留滚动到底按钮）
       container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
     }
     const lines = this.logLines;
@@ -455,7 +494,6 @@ window.monitorRenderMixin = {
         frag.appendChild(empty);
       }
     }
-    // 滚动到底按钮保持在容器末尾
     const btn = container.querySelector('.log-scroll-bottom');
     if (btn) container.insertBefore(frag, btn); else container.appendChild(frag);
     this._renderedLogCount = lines.length;
@@ -489,7 +527,6 @@ window.monitorRenderMixin = {
   _afterLogsRender(contentEl) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
-    // 仅当用户在底部（或开启自动滚动）时滚到底；用户上滚阅读时保持原位（修复"回顶"）
     if (this.logAutoScroll || this._logAtBottom) {
       container.scrollTop = container.scrollHeight;
       this._logAtBottom = true;
@@ -527,114 +564,68 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  图表标签（实例复用 + 占位 + 消除竞态）
+  //  模型排行榜标签
   // ═══════════════════════════════════════════════════════════
-  _renderCharts(contentEl, d, t, tabChanged) {
-    const tags = this.lossSeries.length ? this.lossSeries : this._placeholderTags(t);
-    const tagSig = tags.map(s => s.tag).join(',');
-    if (tabChanged || this._builtChartsSig !== tagSig) {
-      this._builtChartsSig = tagSig;
-      // 标签集合变化：重建 canvas HTML 并销毁旧实例
-      this._destroyCharts();
-      contentEl.innerHTML = this._chartsTabShellHtml(tags, t);
-    }
-    // 同步图表数据（创建/更新/占位），每次调用都安全
-    this._syncCharts();
-    this._chartsDirty = false;
-  },
+  _renderRankingTab(t) {
+    let html = '<div class="m-section" style="margin-top:12px">';
+    html += '<div class="m-section-title"><span>' + this.esc(t('modelRanking','Model Ranking')) + ' <span class="m-logs-count">' + this.rankingItems.length + '</span></span>';
+    html += '<span class="m-section-title-right"><button type="button" class="btn btn-sm btn-secondary" @click="loadRanking()">' + this.esc(t('refresh','Refresh')) + '</button></span></div>';
 
-  _chartsTabShellHtml(tags, t) {
-    let html = '<div class="card card-charts"><div class="card-header m-charts-header"><span>' + this.esc(t('lossCurve','Loss/LR')) + '</span>';
-    html += '<label class="m-smooth"><span>' + this.esc(t('smooth','Smooth')) + '</span><input type="range" min="0" max="0.99" step="0.01" x-model="chartSmoothing" @input="chartSmoothing=$event.target.value;_syncCharts()" @change="renderDashboard()" value="' + (this.chartSmoothing||0) + '"></label></div>';
-    html += '<div class="chart-grid">';
-    tags.forEach(s => {
-      const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
-      html += '<div class="chart-panel" id="panel-' + id + '"><div class="chart-title">' + this.esc(s.name) + ' <span class="chart-val">' + (s.latest != null ? s.latest.toFixed(4) : '--') + '</span></div><canvas id="' + id + '" width="360" height="200"></canvas><div class="chart-placeholder">' + this.esc(this.t('monitor.waitingData','Waiting for data…')) + '</div></div>';
-    });
-    html += '</div></div>';
+    if (this.rankingLoading) {
+      html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';
+    } else if (this.rankingItems.length) {
+      html += '<div class="m-ranking-list">';
+      this.rankingItems.forEach((item, idx) => {
+        const runDirJs = this.escapeJsString(item.run_dir || '');
+        const loss = item.final_loss != null ? Number(item.final_loss).toFixed(4) : '--';
+        const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
+        const stClass = statusColors[item.status] || 'muted';
+        const modelCount = (item.model_files || []).length;
+        const totalSize = (item.model_files || []).reduce((s, f) => s + (f.size || 0), 0);
+        html += '<div class="m-ranking-item' + (idx === 0 && item.final_loss != null ? ' m-ranking-top' : '') + '">';
+        // 排名
+        html += '<div class="m-ranking-rank">' + (item.final_loss != null ? '#' + (idx + 1) : '–') + '</div>';
+        // 主体
+        html += '<div class="m-ranking-body" @click="viewRunDetail(\'' + runDirJs + '\')">';
+        html += '<div class="m-ranking-name"><b>' + this.esc(item.output_name || '') + '</b>';
+        if (item.status) html += ' <span class="m-badge m-badge-' + stClass + '">' + this.esc(item.status) + '</span>';
+        html += '</div>';
+        html += '<div class="m-ranking-meta">' + this.esc(t('historyModel','Model')) + ': ' + this.esc(item.lr || '?') + ' LR · Dim ' + this.esc(item.dim || '?') + ' · ' + this.esc(t('historyEpochs','Epochs')) + ' ' + this.esc(item.epochs || '?') + ' · ' + this.esc(item.duration || '--') + ' · ' + this.esc(item.time || '') + '</div>';
+        html += '</div>';
+        // loss
+        html += '<div class="m-ranking-loss"><span class="m-ranking-loss-label">loss</span><b>' + loss + '</b></div>';
+        // 模型文件 + 下载
+        html += '<div class="m-ranking-files">';
+        if (modelCount > 0) {
+          html += '<span class="m-ranking-files-count">' + modelCount + ' ' + this.esc(t('modelFiles','model files')) + ' · ' + this._formatFileSize(totalSize) + '</span>';
+          html += '<button class="btn btn-sm btn-secondary" @click.stop="downloadAllOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '">⬇</button>';
+        } else {
+          html += '<span class="m-ranking-files-count m-muted">' + this.esc(t('noModelFiles','No model files')) + '</span>';
+        }
+        html += '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><p>' + this.esc(t('noRankingHint','Complete training runs to see model ranking by loss')) + '</p></div>';
+    }
+    html += '</div>';
     return html;
   },
 
-  _smoothedPoints(s) {
-    const smoothing = this.chartSmoothing || 0;
-    if (smoothing <= 0 || !s.points || s.points.length <= 1) return s.points || [];
-    const out = [];
-    let ema = s.points[0].value;
-    const alpha = 1 - smoothing;
-    s.points.forEach((p, i) => { if (i === 0) ema = p.value; else ema = alpha * p.value + (1 - alpha) * ema; out.push({ step: p.step, value: ema }); });
-    return out;
+  _formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0; let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
   },
-
-  // 统一同步：有≥2点则创建/更新实例，<2点则显示占位（幂等，可每帧调用）
-  _syncCharts() {
-    if (!this._chartInstances) this._chartInstances = {};
-    const isDark = this.resolvedTheme === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-    const textColor = isDark ? '#a1a1a6' : '#6e6e73';
-    const tooltipBg = isDark ? '#1c1c1e' : '#ffffff';
-    const tooltipBorder = isDark ? '#48484a' : '#d2d2d7';
-    const colors = ['#BF5AF2','#64D2FF','#FF9F0A','#30D158','#FF453A','#5DA0F7'];
-    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
-
-    this.lossSeries.forEach((s, idx) => {
-      const id = 'chart-' + s.tag.replace(/[/.]/g, '-');
-      const canvas = document.getElementById(id);
-      if (!canvas) return;
-      const panel = canvas.closest('.chart-panel');
-      const hasEnough = s.points && s.points.length >= 2;
-      let chart = this._chartInstances[id];
-      const valEl = panel ? panel.querySelector('.chart-val') : null;
-
-      if (!hasEnough) {
-        // 数据不足：销毁实例（若有）并显示占位
-        if (chart) { try { chart.destroy(); } catch(_){} delete this._chartInstances[id]; chart = null; }
-        if (panel) panel.classList.add('chart-empty');
-        if (valEl) valEl.textContent = '--';
-        return;
-      }
-      if (panel) panel.classList.remove('chart-empty');
-      const points = this._smoothedPoints(s);
-      const chartData = points.map(p => ({ x: p.step, y: p.value }));
-      const xs = points.map(p => p.step);
-      const xMin = Math.min(...xs), xMax = Math.max(...xs);
-      const color = colors[idx % colors.length];
-
-      if (!chart) {
-        const ctx = canvas.getContext('2d');
-        this._chartInstances[id] = new Chart(ctx, {
-          type: 'line',
-          plugins: [{ id: 'gradientFill' + id, beforeDatasetsDraw(chart) { const { ctx: gctx, chartArea } = chart; if (!chartArea) return; const grad = gctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); grad.addColorStop(0, color + '40'); grad.addColorStop(1, color + '05'); chart.data.datasets[0].backgroundColor = grad; } }],
-          data: { datasets: [{ label: s.name, data: chartData, borderColor: color, fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 8, pointHoverRadius: 5, pointHoverBackgroundColor: color, borderWidth: 1.8 }] },
-          options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'nearest', intersect: false }, layout: { padding: { top: 4, right: 8, bottom: 0, left: 0 } },
-            plugins: { legend: { display: false }, tooltip: { backgroundColor: tooltipBg, titleColor: textColor, bodyColor: textColor, borderColor: tooltipBorder, borderWidth: 1, padding: 8, displayColors: false, callbacks: { title: (items) => t('stepPrefix','Step ') + items[0].parsed.x, label: (item) => item.dataset.label + ': ' + item.parsed.y.toFixed(6) } } },
-            scales: { x: { type: 'linear', min: xMin, max: xMax, grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 }, maxTicksLimit: 8, callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } }, y: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 }, maxTicksLimit: 6, callback: (v) => parseFloat(v.toFixed(4)) } } } }
-        });
-        chart = this._chartInstances[id];
-      } else {
-        chart.data.datasets[0].data = chartData;
-        chart.data.datasets[0].label = s.name;
-        chart.options.scales.x.min = xMin;
-        chart.options.scales.x.max = xMax;
-        chart.update('none');
-      }
-      if (valEl && s.latest != null) valEl.textContent = s.latest.toFixed(4);
-    });
-
-    // 占位标签（无 lossSeries 时）—— 确保占位显示
-    if (!this.lossSeries.length) {
-      document.querySelectorAll('.chart-panel').forEach(p => p.classList.add('chart-empty'));
-    }
-  },
-
-  // 兼容旧调用名
-  _updateCharts() { this._syncCharts(); },
-  _drawCharts() { this._syncCharts(); },
 
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
   _renderSamplesTab(t) {
-    let html = '<div class="card card-preview"><div class="card-header">' + this.esc(t('previewSamples','Preview')) + '</div>';
+    let html = '<div class="m-section"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div>';
     if (this.previews.length) {
       const step = Math.min(this.previewStep, this.previews.length - 1);
       const p = this.previews[step] || this.previews[0];
@@ -658,16 +649,15 @@ window.monitorRenderMixin = {
   //  输出标签
   // ═══════════════════════════════════════════════════════════
   _renderOutputsTab(t) {
-    let html = '<div class="card card-outputs" style="margin-top:12px">';
-    html += '<div class="card-header m-outputs-header">';
-    html += '<span>' + this.esc(t('outputs','Training Outputs')) + '</span>';
-    html += '<div class="m-outputs-tools">';
+    let html = '<div class="m-section" style="margin-top:12px">';
+    html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + '</span></div>';
+    html += '<div class="m-section-tools">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()">' + this.esc(t('refresh','Refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()">' + this.esc(t('selectAll','Select All')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('deselectAll','Deselect All')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button>';
     html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()">' + this.esc(t('downloadAll','Download All')) + '</button>';
-    html += '</div></div>';
+    html += '</div>';
 
     if (this.outputFilesLoading) {
       html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';
@@ -698,14 +688,6 @@ window.monitorRenderMixin = {
     return html;
   },
 
-  _formatFileSize(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0; let size = bytes;
-    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-    return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
-  },
-
   _formatFileTime(mtime) {
     if (!mtime) return '';
     const d = new Date(mtime * 1000);
@@ -730,8 +712,6 @@ window.monitorRenderMixin = {
     }
 
     let html = '';
-
-    // 运行中任务卡片（置顶高亮）
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
@@ -744,7 +724,6 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
-    // 工具栏：搜索 + 状态筛选
     if (this.historyItems && this.historyItems.length) {
       html += '<div class="hist-toolbar">';
       html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('monitor.searchHistory','Search history...')) + '" @input.debounce.200ms="renderHistory()">';
@@ -759,7 +738,6 @@ window.monitorRenderMixin = {
       items.forEach(h => {
         const runDirJs = this.escapeJsString(h.run_dir || '');
         html += '<div class="card history-card">';
-        // 头部：时间 + 状态徽章 + 时长
         html += '<div class="hist-card-head">';
         html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
         if (h.status) {
@@ -769,14 +747,12 @@ window.monitorRenderMixin = {
         }
         if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
         html += '</div>';
-        // 主体：可点击查看详情
         html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';
         html += '<div class="hist-name"><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc(h.model || '') + '</div>';
         html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(h.dim || '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
         if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
         html += '</div>';
-        // 操作按钮
         if (h.run_dir) {
           html += '<div class="hist-actions">';
           html += '<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails', 'View Details')) + '</button>';
@@ -791,13 +767,10 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
-    // 配置快照弹窗占位
     html += '<div id="configSnapshotModal" class="modal-overlay" style="display:none"><div class="modal" style="max-width:700px"><div class="modal-header"><span>' + this.esc(t('configSnapshot','Config Snapshot')) + '</span><button class="btn btn-sm" @click="closeSnapshotModal()" style="font-size:18px;line-height:1;padding:4px 8px">&times;</button></div><div class="modal-body" id="configSnapshotContent"></div></div></div>';
-
     el.innerHTML = html;
   },
 
-  // 从历史页直接下载某次训练的全部产物
   async downloadRunOutputs(runDir) {
     if (!runDir) return;
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));

@@ -10,8 +10,9 @@ window.monitorCoreMixin = {
   previews: [], previewStep: 0, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [], logMaxLines: 5000,
   logSearch: '', logLevel: 'all', _logContentVersion: 0,
-  chartSmoothing: 0.6, monitorTab: 'overview', _chartInstances: null,
+  sparkSmoothing: 0.6, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
+  rankingItems: [], rankingLoading: false,
   _monitorAbortCtrl: null,
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
@@ -20,8 +21,8 @@ window.monitorCoreMixin = {
   _renderedLogFilterKey: '',   // 已渲染时使用的 filter key（搜索+级别）
   _logAtBottom: true,          // 用户当前是否在底部（决定追加后是否滚底）
 
-  // ── 图表脏标记（loss_update 触发，由 scheduleRender 合并处理）──
-  _chartsDirty: false,
+  // ── sparkline 脏标记（loss_update 触发，概览页 sparkline 用）──
+  _sparkDirty: false,
 
   // ── 历史页筛选状态 ──
   historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
@@ -68,7 +69,7 @@ window.monitorCoreMixin = {
     if (!taskId || this._eventSource) return;
     // 清空 lossSeries，避免 SSE 重连后产生重复数据点
     this.lossSeries = [];
-    this._chartsDirty = true;
+    this._sparkDirty = true;
     this._sseTaskId = taskId;
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
@@ -266,8 +267,8 @@ window.monitorCoreMixin = {
       }
     }
 
-    // 标记图表脏，交由 scheduleRender 合并处理（避免在 SSE handler 内直调绕过节流）
-    this._chartsDirty = true;
+    // 标记 sparkline 脏，交由 scheduleRender 合并处理
+    this._sparkDirty = true;
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
@@ -290,7 +291,6 @@ window.monitorCoreMixin = {
     this._shellBuilt = false;
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
-    this._destroyCharts();
   },
   async fetchMonitorStatus() {
     // Abort previous in-flight request to prevent stale data overwriting fresh data
@@ -312,7 +312,7 @@ window.monitorCoreMixin = {
           // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
           if (!this._sseConnected) {
             this.lossSeries = j.data.tensorboard_loss||[];
-            this._chartsDirty = true;
+            this._sparkDirty = true;
             if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
           }
           this.trainParams = j.data.train_params||[];
@@ -394,10 +394,22 @@ window.monitorCoreMixin = {
     } finally { this.finishProgress(); }
   },
 
-  _destroyCharts() {
-    if (!this._chartInstances) return;
-    Object.values(this._chartInstances).forEach(c => { try{c.destroy()}catch(_){} });
-    this._chartInstances = {};
+  // ── Ranking（模型排行榜）──────────────────────────────
+  async loadRanking() {
+    this.rankingLoading = true;
+    try {
+      const r = await fetch('/api/monitor/ranking');
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.rankingItems = j.data || [];
+      }
+    } catch (e) {
+      this.rankingItems = [];
+    } finally {
+      this.rankingLoading = false;
+      this._rankingDirty = true;
+      this.renderDashboard();
+    }
   },
 
   // ── Stop Training ─────────────────────────────────────
@@ -434,6 +446,7 @@ window.monitorCoreMixin = {
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
     this._forceLogRebuild = true;
+    this._sparkDirty = true;
     this.navigate('monitor-dashboard');
     // 等待 DOM 就绪后拉取数据
     await this.$nextTick();
@@ -448,7 +461,7 @@ window.monitorCoreMixin = {
       if (j.status === 'success') {
         this.runDetailData = j.data;
         this.lossSeries = j.data.tensorboard_loss || [];
-        this._chartsDirty = true;
+        this._sparkDirty = true;
         this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
         // 重置预览步进，避免越界
@@ -476,6 +489,7 @@ window.monitorCoreMixin = {
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
     this._forceLogRebuild = true;
+    this._sparkDirty = true;
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
     this.startMonitorPolling();

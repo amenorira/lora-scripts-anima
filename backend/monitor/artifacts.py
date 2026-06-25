@@ -240,6 +240,102 @@ def scan_history() -> list[dict]:
     return history
 
 
+# ── 模型排行榜 ────────────────────────────────────────────
+
+_ranking_cache_lock = threading.Lock()
+_ranking_cache: tuple[float, list[dict]] | None = None
+_RANKING_CACHE_TTL = 30  # 秒
+
+
+def scan_ranking() -> list[dict]:
+    """扫描所有历史训练 run，聚合 final_loss + 模型文件，按 final_loss 升序排序。
+
+    每项返回:
+      {run_dir, output_name, status, duration, final_loss, model_files[{name,path,size}],
+       time, lr, dim, epochs, train_type}
+    final_loss 取 TensorBoard loss/average 的 latest 值（无则 None，排末尾）。
+    """
+    global _ranking_cache
+    now = time.time()
+    with _ranking_cache_lock:
+        if _ranking_cache and now - _ranking_cache[0] < _RANKING_CACHE_TTL:
+            return _ranking_cache[1]
+
+    # 复用 scan_history 的基础数据（已含 status/duration/lr/dim/epochs/run_dir/time）
+    base = scan_history()
+    if not base:
+        with _ranking_cache_lock:
+            _ranking_cache = (time.time(), [])
+        return []
+
+    # 延迟导入避免循环依赖
+    from backend.monitor.training import read_tensorboard_loss
+
+    items: list[dict] = []
+    for h in base:
+        run_dir_rel = h.get("run_dir", "")
+        if not run_dir_rel:
+            continue
+        run_dir_abs = (REPO_ROOT / run_dir_rel).resolve()
+
+        # final_loss：从该 run 的 TB 读 loss/average latest
+        final_loss = None
+        try:
+            series = read_tensorboard_loss(run_dir=str(run_dir_abs))
+            for s in series:
+                if s.get("tag") in ("loss/average", "loss/current", "loss/epoch_average"):
+                    final_loss = s.get("latest")
+                    break
+        except Exception:
+            pass
+
+        # 模型文件：扫描 run 目录的 .safetensors/.pt/.pth
+        model_files = []
+        try:
+            for p in _iter_dir(run_dir_abs):
+                if not p.is_file():
+                    continue
+                if p.suffix.lower() in LORA_EXTENSIONS:
+                    try:
+                        rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
+                    except ValueError:
+                        rel = str(p).replace("\\", "/")
+                    model_files.append({
+                        "name": p.name,
+                        "path": rel,
+                        "size": p.stat().st_size,
+                    })
+        except OSError:
+            pass
+
+        items.append({
+            "run_dir": run_dir_rel,
+            "output_name": h.get("name", ""),
+            "status": h.get("status", ""),
+            "duration": h.get("duration", ""),
+            "final_loss": final_loss,
+            "model_files": model_files,
+            "time": h.get("time", ""),
+            "lr": h.get("lr", "?"),
+            "dim": h.get("dim", "?"),
+            "epochs": h.get("epochs", "?"),
+        })
+
+    # 按 final_loss 升序（None 排末尾）；同 loss 按时间倒序
+    items.sort(key=lambda x: (x["final_loss"] is None, x["final_loss"] if x["final_loss"] is not None else 0))
+
+    with _ranking_cache_lock:
+        _ranking_cache = (time.time(), items)
+    return items
+
+
+def invalidate_ranking_cache() -> None:
+    """失效排行榜缓存。"""
+    global _ranking_cache
+    with _ranking_cache_lock:
+        _ranking_cache = None
+
+
 # ── 训练日志读取 ──────────────────────────────────────────
 
 # 日志 tail 读取的最大字节数（约 500-1000 行）

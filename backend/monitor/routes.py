@@ -20,7 +20,10 @@ from backend.monitor.training import (
     read_tensorboard_loss, parse_log_progress,
     latest_train_config, extract_train_params,
 )
-from backend.monitor.artifacts import newest_previews, scan_history, read_train_log, _parse_toml_config, list_output_files
+from backend.monitor.artifacts import (
+    newest_previews, scan_history, read_train_log, _parse_toml_config,
+    list_output_files, scan_ranking, invalidate_ranking_cache,
+)
 from backend.monitor.snapshot import find_run_dir_by_task_id
 from backend.tasks import tm
 
@@ -203,6 +206,13 @@ async def monitor_history():
     return {"status": "success", "data": {"running": running, "history": history}}
 
 
+@router.get("/monitor/ranking")
+async def monitor_ranking():
+    """模型排行榜：所有历史 run 按 final_loss 升序排序，含模型文件列表。"""
+    data = await asyncio.to_thread(scan_ranking)
+    return {"status": "success", "data": data}
+
+
 @router.post("/monitor/history/delete")
 async def delete_history_run(request: Request):
     """删除一条历史训练记录（删除其 run 目录）。
@@ -252,9 +262,10 @@ async def delete_history_run(request: Request):
     except OSError as e:
         return {"status": "error", "message": f"Failed to delete: {e}"}
 
-    # 失效历史缓存
+    # 失效历史缓存 + 排行榜缓存
     from backend.monitor.artifacts import invalidate_history_cache
     invalidate_history_cache()
+    invalidate_ranking_cache()
     return {"status": "success", "message": "Deleted / 已删除"}
 
 

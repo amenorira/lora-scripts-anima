@@ -20,7 +20,6 @@
     })();
   </script>
   <link rel="stylesheet" href="/anima-ui/css/app.css">
-  <script src="/anima-ui/js/vendor/chart.umd.min.js" defer></script>
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -232,8 +231,8 @@
                   x-text="t('monitor.overview','Overview')">Overview</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'logs' }" @click="monitorTab='logs'; renderDashboard()"
                   x-text="t('monitor.logTitle','Logs')">Logs</button>
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'charts' }" @click="monitorTab='charts'; renderDashboard()"
-                  x-text="t('monitor.charts','Charts')">Charts</button>
+          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'ranking' }" @click="monitorTab='ranking'; renderDashboard()"
+                  x-text="t('monitor.ranking','Ranking')">Ranking</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'samples' }" @click="monitorTab='samples'; renderDashboard()"
                   x-text="t('monitor.samples','Samples')">Samples</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }" @click="monitorTab='outputs'; renderDashboard()"

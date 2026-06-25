@@ -125,7 +125,13 @@
 		"batchSize": "批次大小",
 		"outputName": "输出名称",
 		"elapsed": "已运行",
-		"remaining": "剩余"
+		"remaining": "剩余",
+		"ranking": "排行榜",
+		"modelRanking": "模型排行榜",
+		"lossTrend": "Loss 趋势",
+		"modelFiles": "个模型文件",
+		"noModelFiles": "无模型文件",
+		"noRankingHint": "完成训练后按 loss 排序显示模型"
 	},
 	"section": {
 		"model": "模型与数据集",
