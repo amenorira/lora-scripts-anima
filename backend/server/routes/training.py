@@ -189,8 +189,8 @@ async def create_toml_file(request: Request):
     else:
         # 续训时保持原 output_dir，但日志也放到对应 run 目录
         run_dir = config.get("output_dir", os.path.join(output_base, run_dir_name, "outputs"))
-        # run_dir 在续训时是 outputs/ 的父目录（兼容旧版 checkpoints/）
-        if "outputs" in str(run_dir) or "checkpoints" in str(run_dir):
+        # run_dir 在续训时是 outputs/ 的父目录
+        if "outputs" in str(run_dir):
             run_dir = os.path.dirname(str(run_dir))
         if "logging_dir" not in config:
             config["logging_dir"] = os.path.join(str(run_dir), "log")
