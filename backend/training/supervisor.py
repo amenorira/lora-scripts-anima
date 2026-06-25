@@ -90,6 +90,10 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
             new_paths.append(p)
     env["PYTHONPATH"] = os.pathsep.join(new_paths)
 
+    # 抑制 HuggingFace tokenizers 在 DataLoader fork 时刷屏的 "parallelism disabled" 警告
+    if "TOKENIZERS_PARALLELISM" not in env:
+        env["TOKENIZERS_PARALLELISM"] = "true"
+
     return env
 
 
