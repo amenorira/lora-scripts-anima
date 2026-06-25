@@ -304,6 +304,7 @@ def parse_log_progress(lines: list[str]) -> dict:
         info["total_steps"] = total
         info["percent"] = min(100.0, round(step * 100 / total, 2)) if total else 0
         info["eta"] = m.group("eta") or ""
+        info["elapsed"] = m.group("elapsed") or ""
 
     # 按优先级解析 loss：loss/current > loss/average > train_loss > avr_loss > loss
     loss_matchers = [

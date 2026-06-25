@@ -62,8 +62,15 @@ def _git_version() -> str:
 
 @router.get("/health")
 async def health_check():
-    """Lightweight connectivity check — returns OK immediately."""
-    return {"status": "ok"}
+    """Lightweight connectivity check — returns OK + training active flag."""
+    from backend.tasks import tm
+    tasks = tm.dump()
+    active_task = next((t for t in tasks if t.get("status") == "RUNNING"), None)
+    return {
+        "status": "ok",
+        "training_active": active_task is not None,
+        "task_id": active_task["id"] if active_task else None,
+    }
 
 
 @router.get("/version")

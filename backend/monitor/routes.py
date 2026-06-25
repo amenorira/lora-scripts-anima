@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import (
@@ -21,11 +21,12 @@ from backend.monitor.training import (
     latest_train_config, extract_train_params,
 )
 from backend.monitor.artifacts import newest_previews, scan_history, read_train_log, _parse_toml_config, list_output_files
+from backend.monitor.snapshot import find_run_dir_by_task_id
 from backend.tasks import tm
 
 router = APIRouter()
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = REPO_ROOT / "output"
 
 STATE_LABELS = {
@@ -94,7 +95,7 @@ async def monitor_status(task_id: str = Query("")):
         if log_lines:
             progress = await asyncio.to_thread(parse_log_progress, log_lines)
             for key in ("step", "total_steps", "percent", "loss",
-                         "lr", "epoch", "eta", "speed",
+                         "lr", "epoch", "eta", "elapsed", "speed",
                          "has_error", "error_msg"):
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
@@ -202,6 +203,61 @@ async def monitor_history():
     return {"status": "success", "data": {"running": running, "history": history}}
 
 
+@router.post("/monitor/history/delete")
+async def delete_history_run(request: Request):
+    """删除一条历史训练记录（删除其 run 目录）。
+
+    请求体: {"run_dir": "output/my_lora_20260625-171200"}
+    安全约束：run_dir 必须位于 output/ 之下，且必须包含 config.toml（确认为训练目录）。
+    运行中的任务目录禁止删除。
+    """
+    import shutil
+
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "error", "message": "Invalid request body"}
+    run_dir = (body or {}).get("run_dir", "")
+    if not run_dir:
+        return {"status": "error", "message": "run_dir is required"}
+
+    abs_run_dir = (REPO_ROOT / run_dir).resolve()
+    try:
+        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return {"status": "error", "message": "Invalid run_dir / 无效路径"}
+
+    if not abs_run_dir.is_dir():
+        return {"status": "error", "message": "Run directory not found / 目录不存在"}
+
+    # 确认是训练目录（含 config.toml 或 task_meta.json）
+    if not (abs_run_dir / "config.toml").exists() and not (abs_run_dir / "task_meta.json").exists():
+        return {"status": "error", "message": "Not a training directory / 非训练目录"}
+
+    # 禁止删除运行中任务的目录
+    task_meta = abs_run_dir / "task_meta.json"
+    if task_meta.exists():
+        try:
+            meta = json.loads(task_meta.read_text(encoding="utf-8"))
+            tid = meta.get("task_id")
+            if tid:
+                tasks = tm.dump()
+                if any(t.get("id") == tid and t.get("status") == "RUNNING" for t in tasks):
+                    return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    try:
+        await asyncio.to_thread(shutil.rmtree, abs_run_dir)
+    except OSError as e:
+        return {"status": "error", "message": f"Failed to delete: {e}"}
+
+    # 失效历史缓存
+    from backend.monitor.artifacts import invalidate_history_cache
+    invalidate_history_cache()
+    return {"status": "success", "message": "Deleted / 已删除"}
+
+
 @router.get("/monitor/run-detail")
 async def monitor_run_detail(run_dir: str = Query("")):
     """获取指定历史训练的详情：Loss/LR 图表 + 日志 + 配置参数 + 预览样本。
@@ -236,9 +292,8 @@ async def monitor_run_detail(run_dir: str = Query("")):
     # ── TensorBoard Loss/LR 图表 ──
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
-    # ── 预览样本 ──
-    checkpoints_dir = str(abs_run_dir / "outputs")
-    result["previews"] = await asyncio.to_thread(newest_previews, checkpoints_dir)
+    # ── 预览样本（扁平结构：run_dir/sample/，兼容旧 outputs/sample/）──
+    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir))
 
     # ── 训练日志 ──
     # 先尝试通过 task_id 日志文件
@@ -252,7 +307,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
                 result["log_lines"] = log_lines[-300:]
                 progress = parse_log_progress(log_lines)
                 for key in ("step", "total_steps", "percent", "loss",
-                             "lr", "epoch", "eta", "speed",
+                             "lr", "epoch", "eta", "elapsed", "speed",
                              "has_error", "error_msg"):
                     if key in progress and progress[key] is not None:
                         result[key] = progress[key]
@@ -316,46 +371,70 @@ async def is_training_active():
     }
 
 
+def _resolve_run_dir(run_dir: str, task_id: str) -> Path | None:
+    """解析 run 目录：优先 run_dir，回退用 task_id 反查 task_meta.json 映射。
+
+    返回绝对路径（若合法且存在），否则 None。
+    """
+    if run_dir:
+        rd = Path(run_dir)
+        if not rd.is_absolute():
+            rd = (REPO_ROOT / run_dir).resolve()
+        try:
+            rd.relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            return None
+        return rd if rd.is_dir() else None
+    # 回退：用 task_id 在 output/*/task_meta.json 中反查
+    mapped = find_run_dir_by_task_id(task_id) if task_id else None
+    if mapped:
+        rd = Path(mapped)
+        return rd if rd.is_dir() else None
+    return None
+
+
 @router.get("/monitor/outputs")
-async def monitor_outputs(task_id: str = Query("")):
-    """获取训练任务的输出文件列表"""
-    if not task_id:
-        return {"status": "error", "message": "task_id is required"}
-    data = await asyncio.to_thread(list_output_files, task_id)
+async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
+    """获取训练运行的输出文件列表。
+
+    优先按 run_dir 解析（live 模式前端传 monitorData.output_dir，历史模式传 selectedRunDir）；
+    若仅提供 task_id，则通过 task_meta.json 反查 run 目录。
+    """
+    rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
+    if not rd:
+        return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
+    data = await asyncio.to_thread(list_output_files, str(rd))
     return {"status": "success", "data": data}
 
 
 @router.get("/monitor/outputs/download")
-async def download_outputs(task_id: str = Query(""), files: str = Query("")):
-    """下载输出文件（zip 格式）。files 为逗号分隔的文件路径列表，为空则下载全部。"""
+async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), files: str = Query("")):
+    """下载输出文件（zip 格式）。files 为逗号分隔的相对路径列表，为空则下载全部。"""
     import tempfile
     import zipfile
     import urllib.parse
     from fastapi.responses import FileResponse
     from starlette.background import BackgroundTask
 
-    if not task_id:
-        return {"status": "error", "message": "task_id is required"}
-
-    task_dir = OUTPUT_DIR / task_id
-    if not task_dir.exists() or not task_dir.is_dir():
-        return {"status": "error", "message": "Task output directory not found"}
+    rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
+    if not rd:
+        return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
 
     # 解析要下载的文件列表
     if files:
         file_list = [urllib.parse.unquote(f.strip()) for f in files.split(",") if f.strip()]
     else:
-        # 下载全部
+        # 下载全部（跳过隐藏目录）
         file_list = []
-        for p in task_dir.rglob("*"):
+        for p in rd.rglob("*"):
             if p.is_file():
-                try:
-                    file_list.append(str(p.relative_to(task_dir)).replace("\\", "/"))
-                except ValueError:
-                    pass
+                parts = p.relative_to(rd).parts
+                if any(part.startswith(".") or part.startswith("__") for part in parts):
+                    continue
+                file_list.append(str(p.relative_to(rd)).replace("\\", "/"))
 
     if not file_list:
-        return {"status": "error", "message": "No files to download"}
+        return {"status": "error", "message": "No files to download / 无可下载文件"}
 
     def _is_safe_path(path: Path, allowed_dir: Path) -> bool:
         return path.resolve().is_relative_to(allowed_dir.resolve())
@@ -368,8 +447,8 @@ async def download_outputs(task_id: str = Query(""), files: str = Query("")):
     try:
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
             for rel_path in file_list:
-                abs_path = (task_dir / rel_path).resolve()
-                if not _is_safe_path(abs_path, task_dir):
+                abs_path = (rd / rel_path).resolve()
+                if not _is_safe_path(abs_path, rd):
                     continue
                 if abs_path.is_file():
                     zf.write(abs_path, rel_path)
@@ -377,13 +456,37 @@ async def download_outputs(task_id: str = Query(""), files: str = Query("")):
         tmp_path.unlink(missing_ok=True)
         return {"status": "error", "message": f"Failed to create zip: {str(e)}"}
 
-    zip_name = f"{task_id}_outputs.zip"
+    zip_name = f"{rd.name}_outputs.zip"
     return FileResponse(
         tmp_path,
         media_type="application/zip",
         filename=zip_name,
         background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
     )
+
+
+@router.get("/monitor/outputs/download-file")
+async def download_single_output(path: str = Query("")):
+    """下载单个输出文件（直接返回原始文件，无需打包 zip）。"""
+    import mimetypes
+    import urllib.parse
+    from fastapi.responses import FileResponse
+
+    if not path:
+        return {"status": "error", "message": "path is required"}
+
+    decoded = urllib.parse.unquote(path)
+    p = (REPO_ROOT / decoded).resolve()
+    # 安全约束：必须在 output/ 之下
+    try:
+        p.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return {"status": "error", "message": "Invalid path / 无效路径"}
+    if not p.is_file():
+        return {"status": "error", "message": "File not found / 文件不存在"}
+
+    mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    return FileResponse(p, media_type=mt, filename=p.name)
 
 
 @router.get("/monitor/snapshot")

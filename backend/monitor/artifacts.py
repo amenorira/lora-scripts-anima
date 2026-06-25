@@ -14,10 +14,35 @@ from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
+# 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
+_HIDDEN_PREFIXES = (".", "__")
+
+
+def _is_hidden(name: str) -> bool:
+    """判断目录/文件名是否为隐藏或缓存项（.开头 或 __开头）。"""
+    return name.startswith(_HIDDEN_PREFIXES)
+
+
+def _iter_dir(root: Path):
+    """安全遍历目录树：rglob 替代，跳过隐藏/缓存子目录与文件。"""
+    for p in root.rglob("*"):
+        # 检查路径中任一成分是否为隐藏目录
+        if any(_is_hidden(part) for part in p.relative_to(root).parts):
+            continue
+        yield p
+
+
 # ── 缓存 + 线程安全锁 ────────────────────────────────────
 _history_cache_lock = threading.Lock()
 _history_cache: tuple[float, list[dict]] | None = None
 _HISTORY_CACHE_TTL = 30  # 秒
+
+
+def invalidate_history_cache() -> None:
+    """失效历史记录缓存（删除/新增记录后调用）。"""
+    global _history_cache
+    with _history_cache_lock:
+        _history_cache = None
 
 
 # ── 预览样本 ──────────────────────────────────────────────
@@ -28,7 +53,7 @@ _PREVIEWS_CACHE_TTL = 5.0
 
 
 def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]:
-    """扫描最新的训练样本图（outputs/sample/ → sample/ → output_dir 根）"""
+    """扫描最新的训练样本图（扁平结构：run_dir/sample/ → run_dir/；兼容旧 outputs/sample/）"""
     global _previews_cache
     now = time.time()
     cache_key = output_dir or ""
@@ -39,8 +64,9 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
     roots: list[Path] = []
     if output_dir:
         od = Path(output_dir)
-        roots.extend([od / "sample", od])           # checkpoints/sample/, checkpoints/
-        roots.append(od.parent / "sample")           # run_dir/sample/ (兼容旧结构)
+        roots.extend([od / "sample", od])           # 扁平: run_dir/sample/, run_dir/
+        roots.append(od / "outputs" / "sample")     # 兼容旧结构: run_dir/outputs/sample/
+        roots.append(od / "outputs")                # 兼容旧结构: run_dir/outputs/
     roots.extend([OUTPUT_DIR / "sample", OUTPUT_DIR])
 
     found: list[Path] = []
@@ -48,14 +74,15 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
     for root in roots:
         if not root.exists():
             continue
-        for p in sorted(root.rglob("*"),
-                        key=lambda x: x.stat().st_mtime if x.is_file() else 0,
-                        reverse=True):
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p not in seen:
-                seen.add(p)
-                found.append(p)
-                if len(found) >= limit * 2:
-                    break
+        for p in _iter_dir(root):
+            if not p.is_file():
+                continue
+            if p.suffix.lower() not in IMAGE_EXTENSIONS or p in seen:
+                continue
+            seen.add(p)
+            found.append(p)
+            if len(found) >= limit * 2:
+                break
         if len(found) >= limit:
             break
 
@@ -70,7 +97,7 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
             rel = str(p)
         result.append({
             "name": p.name,
-            "url": f"/preview-image?path={rel}",
+            "url": f"/api/monitor/preview-image?path={rel}",
             "size": p.stat().st_size,
         })
     with _previews_cache_lock:
@@ -114,7 +141,7 @@ def scan_history() -> list[dict]:
     # ── 优先：扫描运行文件夹（每个训练一个目录） ──
     if OUTPUT_DIR.exists():
         for run_dir in sorted(OUTPUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if not run_dir.is_dir():
+            if not run_dir.is_dir() or _is_hidden(run_dir.name):
                 continue
             config_file = run_dir / "config.toml"
             if not config_file.exists():
@@ -247,30 +274,60 @@ _LOG_FILE_CACHE_MAX = 50  # 防止无限增长
 
 
 LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
+# 日志/元数据文件在输出列表中归为"其他"分类，便于前端区分模型/样本/日志
+META_FILES = {"config.toml", "run_info.txt", "prompts.txt", "result.json",
+              "error.log", "task_meta.json"}
 
 
-def list_output_files(task_id: str) -> list[dict]:
-    """列出指定训练任务的输出文件。
-    扫描 output/<task_id>/ 目录，返回文件名、路径、大小、修改时间、是否为 LoRA 文件"""
-    task_dir = OUTPUT_DIR / task_id
-    if not task_dir.exists() or not task_dir.is_dir():
+def list_output_files(run_dir: str) -> list[dict]:
+    """列出指定训练运行目录的输出文件。
+
+    参数 run_dir 为相对于项目根的路径（如 output/my_lora_20260625-171200），
+    或绝对路径。返回文件名、相对路径、大小、修改时间、是否为 LoRA 文件、分类。
+    """
+    rd = Path(run_dir)
+    if not rd.is_absolute():
+        rd = (REPO_ROOT / run_dir).resolve()
+    # 安全约束：必须在 output/ 之下
+    try:
+        rd.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return []
+    if not rd.exists() or not rd.is_dir():
         return []
 
     result = []
-    for p in sorted(task_dir.rglob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+    for p in _iter_dir(rd):
         if not p.is_file():
             continue
         try:
             rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
         except ValueError:
             rel = str(p).replace("\\", "/")
+        suffix = p.suffix.lower()
+        is_lora = suffix in LORA_EXTENSIONS
+        is_image = suffix in IMAGE_EXTENSIONS
+        if is_lora:
+            category = "model"
+        elif is_image:
+            category = "sample"
+        elif p.name in META_FILES or suffix in {".log", ".txt"}:
+            category = "log"
+        elif "events.out.tfevents" in p.name or suffix == ".tfevents":
+            category = "tensorboard"
+        else:
+            category = "other"
         result.append({
             "name": p.name,
             "path": rel,
             "size": p.stat().st_size,
             "mtime": p.stat().st_mtime,
-            "is_lora": p.suffix.lower() in LORA_EXTENSIONS,
+            "is_lora": is_lora,
+            "category": category,
         })
+    # 模型文件优先，其次样本，再日志，最后其他；同类按修改时间倒序
+    cat_order = {"model": 0, "sample": 1, "log": 2, "tensorboard": 3, "other": 4}
+    result.sort(key=lambda f: (cat_order.get(f["category"], 9), -f["mtime"]))
     return result
 
 

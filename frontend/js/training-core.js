@@ -1534,6 +1534,23 @@ window.trainingCoreMixin = {
 
   // ── Training Status Polling ──────────────────────────────
   async checkTrainingBlocked() {
+    // 优先复用 /api/health 已采集的 trainingActive（减少冗余请求）；
+    // 但 activeTaskId 需要单独获取，故仅在阻塞状态变化或首次时请求 is-active
+    const fromHealth = this.trainingActive;
+    if (fromHealth != null) {
+      this.trainingBlocked = fromHealth;
+      if (fromHealth && !this.activeTaskId) {
+        // 仅在判定为阻塞且尚无 task_id 时补一次请求拿 task_id
+        try {
+          const r = await fetch('/api/monitor/is-active');
+          const d = await r.json();
+          if (d.status === 'success') this.activeTaskId = d.data.task_id || null;
+        } catch (_) { this.activeTaskId = null; }
+      } else if (!fromHealth) {
+        this.activeTaskId = null;
+      }
+      return;
+    }
     try {
       const r = await fetch('/api/monitor/is-active');
       const d = await r.json();

@@ -37,6 +37,8 @@ document.addEventListener('alpine:init', () => {
     backendDisconnectedDuration: '',
     _healthTimer: null,
     _disconnectedTimer: null,
+    // 训练状态（由 /api/health 返回，驱动侧栏连接指示器三态）
+    trainingActive: false,
 
     // ── Mixin spread ──────────────────────────────────────
     ...(window.monitorCoreMixin || {}),
@@ -373,13 +375,23 @@ document.addEventListener('alpine:init', () => {
         const r = await fetch('/api/health', { signal: controller.signal });
         clearTimeout(timeout);
         if (r.ok) {
-          if (!this.backendConnected) {
+          let prevConnected = this.backendConnected;
+          let prevTraining = this.trainingActive;
+          try {
+            const d = await r.json();
+            this.trainingActive = !!(d && d.training_active);
+          } catch (_) { /* 老版本后端仅返回 {status:ok}，保持原 trainingActive */ }
+          if (!prevConnected) {
             this.backendConnected = true;
             this.backendDisconnectedAt = null;
             this.backendDisconnectedDuration = '';
             clearInterval(this._disconnectedTimer);
             this._disconnectedTimer = null;
             this.toast(this.t('common.backendReconnectedToast'), 'success');
+          }
+          // 训练开始时提示一次（避免重复 toast）
+          if (this.trainingActive && !prevTraining && prevConnected) {
+            // 不弹窗，仅靠指示器颜色变化体现；保留钩子
           }
         } else {
           this._markDisconnected();

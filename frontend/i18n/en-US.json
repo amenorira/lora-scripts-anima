@@ -110,7 +110,22 @@
 		"statusTerminated": "⏹ Terminated",
 		"loadRunFailed": "Failed to load run detail",
 		"runDetailError": "Error loading run detail",
-		"stepPrefix": "Step "
+		"stepPrefix": "Step ",
+		"waitingData": "Waiting for data…",
+		"viewDashboard": "View Dashboard",
+		"searchHistory": "Search history...",
+		"confirmDeleteRun": "Delete this training record? The output folder will be removed. This cannot be undone.",
+		"runDeleted": "Record deleted",
+		"deleteFailed": "Failed to delete",
+		"prev": "Prev",
+		"next": "Next",
+		"rawConfig": "Raw Config (TOML)",
+		"copyConfig": "Copy Config",
+		"duration": "Duration",
+		"batchSize": "Batch Size",
+		"outputName": "Output Name",
+		"elapsed": "Elapsed",
+		"remaining": "Remaining"
 	},
 	"section": {
 		"model": "Model & Dataset",
@@ -424,7 +439,10 @@
 		"lycorisSubgroupAdvanced": "LyCORIS advanced parameters",
 		"trainTypeHint": "Switching training type will adjust the visible parameters below",
 		"fieldActions": "Field actions",
-		"sectionNav": "Sections"
+		"sectionNav": "Sections",
+		"trainingInProgress": "Training in progress",
+		"download": "Download",
+		"delete": "Delete"
 	},
 	"preset": {
 		"title": "Preset Management",

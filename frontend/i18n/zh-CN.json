@@ -110,7 +110,22 @@
 		"statusTerminated": "⏹ 已终止",
 		"loadRunFailed": "加载训练详情失败",
 		"runDetailError": "读取训练详情出错",
-		"stepPrefix": "步数 "
+		"stepPrefix": "步数 ",
+		"waitingData": "等待数据…",
+		"viewDashboard": "查看仪表盘",
+		"searchHistory": "搜索历史记录...",
+		"confirmDeleteRun": "确定删除该训练记录？将删除其输出文件夹，操作不可撤销。",
+		"runDeleted": "记录已删除",
+		"deleteFailed": "删除失败",
+		"prev": "上一个",
+		"next": "下一个",
+		"rawConfig": "原始配置 (TOML)",
+		"copyConfig": "复制配置",
+		"duration": "时长",
+		"batchSize": "批次大小",
+		"outputName": "输出名称",
+		"elapsed": "已运行",
+		"remaining": "剩余"
 	},
 	"section": {
 		"model": "模型与数据集",
@@ -424,7 +439,10 @@
 		"lycorisSubgroupAdvanced": "LyCORIS 高级参数",
 		"trainTypeHint": "切换训练类型将自动调整下方可见参数",
 		"fieldActions": "字段操作",
-		"sectionNav": "参数分组"
+		"sectionNav": "参数分组",
+		"trainingInProgress": "训练进行中",
+		"download": "下载",
+		"delete": "删除"
 	},
 	"preset": {
 		"title": "预设管理",

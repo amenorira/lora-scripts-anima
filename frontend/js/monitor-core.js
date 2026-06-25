@@ -1,5 +1,5 @@
 /* ================================================================
-   monitor-core.js — State, polling, history
+   monitor-core.js — State, polling, SSE, history, outputs
    Mixin merged into animaApp Alpine component
    ================================================================ */
 
@@ -14,6 +14,17 @@ window.monitorCoreMixin = {
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   _monitorAbortCtrl: null,
   _renderRAF: null,  // requestAnimationFrame 节流标记
+
+  // ── 日志增量渲染状态 ──
+  _renderedLogCount: 0,        // 已渲染到 DOM 的日志行数
+  _renderedLogFilterKey: '',   // 已渲染时使用的 filter key（搜索+级别）
+  _logAtBottom: true,          // 用户当前是否在底部（决定追加后是否滚底）
+
+  // ── 图表脏标记（loss_update 触发，由 scheduleRender 合并处理）──
+  _chartsDirty: false,
+
+  // ── 历史页筛选状态 ──
+  historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
 
   // ── 节流渲染：每帧最多渲染一次 Dashboard ──
   scheduleRender() {
@@ -38,11 +49,26 @@ window.monitorCoreMixin = {
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
   runDetailData: null,    // 历史训练详情缓存
 
+  // ── 当前输出文件列表对应的 run 目录（live 用 monitorData.output_dir，历史用 selectedRunDir）──
+  get currentOutputRunDir() {
+    if (this.selectedRunDir) return this.selectedRunDir;
+    if (this.monitorData && this.monitorData.output_dir) {
+      // 规范化为正斜杠相对路径
+      let od = String(this.monitorData.output_dir).replace(/\\/g, '/').replace(/^\.\//, '');
+      // 排除 output 根目录这种回退值（必须是 run 子目录才返回，如 output/<name>_<ts>）
+      if (od && od !== 'output' && od !== './output' && od.indexOf('output/') === 0 && od.split('/').length >= 2) {
+        return od;
+      }
+    }
+    return '';
+  },
+
   // ── SSE Connection ─────────────────────────────────────
   connectMonitorSSE(taskId) {
     if (!taskId || this._eventSource) return;
     // 清空 lossSeries，避免 SSE 重连后产生重复数据点
     this.lossSeries = [];
+    this._chartsDirty = true;
     this._sseTaskId = taskId;
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
@@ -139,7 +165,7 @@ window.monitorCoreMixin = {
   handleSSEProgress(data) {
     if (!data || !data.data || this.selectedRunDir) return;
     const progress = data.data;
-    
+
     // 更新 monitorData 中的进度字段
     if (this.monitorData) {
       this.monitorData.step = progress.step;
@@ -149,6 +175,7 @@ window.monitorCoreMixin = {
       this.monitorData.lr = progress.lr;
       this.monitorData.epoch = progress.epoch;
       this.monitorData.eta = progress.eta;
+      this.monitorData.elapsed = progress.elapsed;
       this.monitorData.speed = progress.speed;
     }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
@@ -157,17 +184,17 @@ window.monitorCoreMixin = {
   handleSSELogUpdate(data) {
     if (!data || !data.data || this.selectedRunDir) return;
     const logData = data.data;
-    
+
     if (logData.lines && logData.lines.length > 0) {
       this.logLines.push(...logData.lines);
-      
+
       // 限制日志行数（用 slice 替代 splice 避免 O(n) 移动）
       if (this.logLines.length > this.logMaxLines) {
         this.logLines = this.logLines.slice(-this.logMaxLines);
       }
       this._logContentVersion++;
-      
-      // 更新日志显示
+
+      // 更新日志显示（仅当前在日志标签页时）
       if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'logs') {
         this.scheduleRender();
       }
@@ -177,10 +204,10 @@ window.monitorCoreMixin = {
   handleSSEHardware(data) {
     if (!data || !data.data) return;
     const hw = data.data;
-    
+
     if (hw.gpu) this.gpuInfo = hw.gpu;
     if (hw.system) this.sysInfo = hw.system;
-    
+
     if (this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
     }
@@ -239,9 +266,9 @@ window.monitorCoreMixin = {
       }
     }
 
-    if (typeof this._updateCharts === 'function') {
-      this._updateCharts();
-    }
+    // 标记图表脏，交由 scheduleRender 合并处理（避免在 SSE handler 内直调绕过节流）
+    this._chartsDirty = true;
+    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   // ── Polling ────────────────────────────────────────────
@@ -258,7 +285,12 @@ window.monitorCoreMixin = {
     if (this.monitorTimer) { clearInterval(this.monitorTimer); this.monitorTimer = null; }
     if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
     if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
-    this._monitorFirstFetch = false; this._dashboardRendered = false; this._destroyCharts();
+    this._monitorFirstFetch = false;
+    this._dashboardRendered = false;
+    this._shellBuilt = false;
+    this._renderedLogCount = 0;
+    this._renderedLogFilterKey = '';
+    this._destroyCharts();
   },
   async fetchMonitorStatus() {
     // Abort previous in-flight request to prevent stale data overwriting fresh data
@@ -280,6 +312,7 @@ window.monitorCoreMixin = {
           // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
           if (!this._sseConnected) {
             this.lossSeries = j.data.tensorboard_loss||[];
+            this._chartsDirty = true;
             if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
           }
           this.trainParams = j.data.train_params||[];
@@ -308,7 +341,12 @@ window.monitorCoreMixin = {
 
   // ── Log helpers ────────────────────────────────────────
   copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => this.toast(this.t('common.copied'))); },
-  clearLogs() { this.logLines = []; this._logContentVersion = 0; this._tabContentCache = {}; this.renderDashboard(); },
+  clearLogs() {
+    this.logLines = []; this._logContentVersion = 0;
+    this._renderedLogCount = 0; this._renderedLogFilterKey = '';
+    this._forceLogRebuild = true;
+    this.renderDashboard();
+  },
 
   // ── History ────────────────────────────────────────────
   async loadHistory() {
@@ -322,6 +360,38 @@ window.monitorCoreMixin = {
       this.renderHistory();
     } catch(e) { this.toast(this.t('monitor.historyLoadError') || 'Failed to load history', 'error'); }
     finally { this.finishProgress(); }
+  },
+
+  get filteredHistoryItems() {
+    const q = (this.historySearch||'').toLowerCase().trim();
+    const filter = this.historyFilter || 'all';
+    return (this.historyItems||[]).filter(h => {
+      if (filter !== 'all' && (h.status||'') !== filter) return false;
+      if (!q) return true;
+      const hay = ((h.name||'') + ' ' + (h.model||'') + ' ' + (h.dataset||'') + ' ' + (h.time||'')).toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+  },
+
+  async deleteHistoryRun(runDir) {
+    if (!runDir) return;
+    if (!confirm(this.t('monitor.confirmDeleteRun','Delete this training record? The output folder will be removed.'))) return;
+    try {
+      this.startProgress();
+      const r = await fetch('/api/monitor/history/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_dir: runDir })
+      });
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.toast(this.t('monitor.runDeleted','Record deleted'), 'success');
+        await this.loadHistory();
+      } else {
+        this.toast(j.message || this.t('monitor.deleteFailed','Failed to delete'), 'error');
+      }
+    } catch(e) {
+      this.toast(this.t('monitor.deleteFailed','Failed to delete'), 'error');
+    } finally { this.finishProgress(); }
   },
 
   _destroyCharts() {
@@ -360,6 +430,10 @@ window.monitorCoreMixin = {
     this.selectedRunDir = runDir;
     this.runDetailData = null;
     this.monitorTab = 'overview';
+    this._shellBuilt = false;
+    this._renderedLogCount = 0;
+    this._renderedLogFilterKey = '';
+    this._forceLogRebuild = true;
     this.navigate('monitor-dashboard');
     // 等待 DOM 就绪后拉取数据
     await this.$nextTick();
@@ -374,9 +448,15 @@ window.monitorCoreMixin = {
       if (j.status === 'success') {
         this.runDetailData = j.data;
         this.lossSeries = j.data.tensorboard_loss || [];
+        this._chartsDirty = true;
         this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
+        // 重置预览步进，避免越界
+        this.previewStep = 0;
         if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
+        this._renderedLogCount = 0;
+        this._renderedLogFilterKey = '';
+        this._forceLogRebuild = true;
         this.renderDashboard();
       } else {
         this.toast(j.message || this.t('monitor.loadRunFailed','Failed to load run detail'));
@@ -392,6 +472,10 @@ window.monitorCoreMixin = {
     /** 返回实时监控模式 */
     this.selectedRunDir = null;
     this.runDetailData = null;
+    this._shellBuilt = false;
+    this._renderedLogCount = 0;
+    this._renderedLogFilterKey = '';
+    this._forceLogRebuild = true;
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
     this.startMonitorPolling();
@@ -399,25 +483,27 @@ window.monitorCoreMixin = {
 
   // ── Output Files ──────────────────────────────────────
   async loadOutputFiles() {
-    const taskId = this.monitorData?.active_task?.id || '';
-    if (!taskId) {
+    const runDir = this.currentOutputRunDir;
+    if (!runDir) {
       this.outputFiles = [];
       this.outputFilesSelected = {};
       return;
     }
     this.outputFilesLoading = true;
     try {
-      const r = await fetch('/api/monitor/outputs?task_id=' + encodeURIComponent(taskId));
+      const r = await fetch('/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
       if (j.status === 'success') {
         this.outputFiles = j.data || [];
         this.outputFilesSelected = {};
+      } else {
+        this.outputFiles = [];
       }
     } catch (e) {
       this.outputFiles = [];
     } finally {
       this.outputFilesLoading = false;
-      this._tabContentCache = {};
+      this._outputsDirty = true;
       this.renderDashboard();
     }
   },
@@ -428,19 +514,19 @@ window.monitorCoreMixin = {
     } else {
       this.outputFilesSelected[path] = true;
     }
-    this._tabContentCache = {};
+    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
   selectAllOutputFiles() {
     this.outputFiles.forEach(f => { this.outputFilesSelected[f.path] = true; });
-    this._tabContentCache = {};
+    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
   deselectAllOutputFiles() {
     this.outputFilesSelected = {};
-    this._tabContentCache = {};
+    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
@@ -448,22 +534,37 @@ window.monitorCoreMixin = {
     return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
   },
 
+  // 用隐藏 <a download> 触发下载，避免 window.open 被拦截 / 返回 JSON 错误页
+  _triggerDownload(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.remove(); }, 1000);
+  },
+
   async downloadSelectedOutputs() {
-    const taskId = this.monitorData?.active_task?.id || '';
-    if (!taskId) return;
+    const runDir = this.currentOutputRunDir;
+    if (!runDir) return;
     const selected = this.selectedOutputFiles;
     if (!selected.length) {
       this.toast(this.t('monitor.selectFilesFirst') || 'Please select files first');
       return;
     }
     const filesParam = selected.map(f => encodeURIComponent(f)).join(',');
-    window.open('/api/monitor/outputs/download?task_id=' + encodeURIComponent(taskId) + '&files=' + filesParam);
+    this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir) + '&files=' + filesParam);
   },
 
   async downloadAllOutputs() {
-    const taskId = this.monitorData?.active_task?.id || '';
-    if (!taskId) return;
-    window.open('/api/monitor/outputs/download?task_id=' + encodeURIComponent(taskId));
+    const runDir = this.currentOutputRunDir;
+    if (!runDir) return;
+    this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));
+  },
+
+  downloadSingleOutput(path) {
+    if (!path) return;
+    this._triggerDownload('/api/monitor/outputs/download-file?path=' + encodeURIComponent(path));
   }
 
 };

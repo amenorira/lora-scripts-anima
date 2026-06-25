@@ -169,15 +169,15 @@ def run_train(
     task_id = task.task_id
     task_id_short = task_id[:8]
 
-    # Save config snapshot
+    # Save task metadata into run directory (task_id ↔ run_dir mapping)
     try:
-        save_config_snapshot(task_id, toml_path, extra_info={
+        save_config_snapshot(task_id, toml_path, run_dir=od, extra_info={
             "trainer_file": trainer_file,
             "gpu_ids": gpu_ids,
             "output_dir": od,
         })
     except Exception as e:
-        log.warning(f"Failed to save config snapshot / 保存配置快照失败: {e}")
+        log.warning(f"Failed to save task metadata / 保存任务元数据失败: {e}")
 
     env = _build_train_env(output_dir=od, task_id=task_id)
     env.update(env_extra)
@@ -187,6 +187,9 @@ def run_train(
     run_dir = Path(od)
     run_dir.mkdir(parents=True, exist_ok=True)
     log_file = run_dir / f"train_{task_id_short}.log"
+
+    # ── 读取 run 元信息（用于控制台启动/结束简短信息）──
+    run_meta = _read_run_meta(run_dir, trainer_file)
 
     def _run():
         import json as _json
@@ -225,13 +228,16 @@ def run_train(
         if status != "completed":
             _write_error_tail(log_file, run_dir, task_id_short)
 
+        # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
+        _log_run_end(status, run_meta, duration, exit_code, task_id_short)
+
     coro = asyncio.to_thread(_run)
     task_handle = asyncio.create_task(coro)
     task_handle.add_done_callback(
         lambda t: log.error(f"Training background task crashed / 后台训练任务异常: {t.exception()}") if t.exception() else None
     )
 
-    log.info(f"Training started / 训练已启动: {task_id_short} ({Path(toml_path).name})")
+    _log_run_start(run_meta, task_id_short, run_dir)
 
     return {
         "status": "success",
@@ -342,3 +348,92 @@ def _write_error_tail(log_file: Path, run_dir: Path, task_id_short: str) -> None
         log.info(f"Error log written / 错误日志已写入: {error_path.name} (task={task_id_short})")
     except OSError as e:
         log.warning(f"Failed to write error.log / 写入失败: {e}")
+
+
+# ── 控制台启动/结束简短信息辅助 ──────────────────────────────
+
+def _read_run_meta(run_dir: Path, trainer_file: str) -> dict:
+    """从 run 目录的 config.toml 读取关键元信息（用于控制台简短日志）。
+
+    返回 {"output_name", "model", "train_type", "epochs", "total_steps"}；
+    读取失败时返回空字段，不抛异常。
+    """
+    import re
+    meta = {"output_name": "", "model": "", "train_type": "", "epochs": "", "total_steps": ""}
+    # 训练类型从 trainer_file 推断
+    if "anima" in trainer_file:
+        meta["train_type"] = "anima-lora"
+    elif "sdxl" in trainer_file:
+        meta["train_type"] = "sdxl-lora"
+    config_file = run_dir / "config.toml"
+    if not config_file.exists():
+        return meta
+    try:
+        text = config_file.read_text(encoding="utf-8", errors="replace")
+        for key in ("output_name", "pretrained_model_name_or_path",
+                    "max_train_epochs", "max_train_steps"):
+            m = re.search(rf'^{key}\s*=\s*["\']?(?P<v>[^"\'\n#]+)["\']?\s*$', text, re.MULTILINE)
+            if m:
+                v = m.group("v").strip().strip('"').strip("'")
+                if key == "output_name":
+                    meta["output_name"] = v
+                elif key == "pretrained_model_name_or_path":
+                    meta["model"] = Path(v).name if v else ""
+                elif key == "max_train_epochs":
+                    meta["epochs"] = v
+                elif key == "max_train_steps":
+                    meta["total_steps"] = v
+    except OSError:
+        pass
+    return meta
+
+
+def _fmt_duration(seconds: float) -> str:
+    """格式化时长为紧凑形式：3m 17s / 45s / 1h 2m"""
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m {s % 60}s"
+    return f"{s // 3600}h {(s % 3600) // 60}m"
+
+
+def _log_run_start(meta: dict, task_id_short: str, run_dir: Path) -> None:
+    """训练开始：控制台输出带元信息的简短行（时间戳由 rich handler 自动附加）。"""
+    parts = []
+    if meta.get("output_name"):
+        parts.append(meta["output_name"])
+    if meta.get("train_type"):
+        parts.append(f"({meta['train_type']})")
+    if meta.get("model"):
+        parts.append(f"模型 {meta['model']}")
+    # 输出目录用相对项目根的形式（更简短）
+    try:
+        rel = str(run_dir).replace("\\", "/")
+        # 取 output/ 之后的部分
+        if "/output/" in rel:
+            rel = "output/" + rel.split("/output/", 1)[1]
+        parts.append(f"输出 {rel}")
+    except Exception:
+        pass
+    parts.append(f"task={task_id_short}")
+    detail = " · ".join(parts) if parts else f"task={task_id_short}"
+    log.info(f"训练已启动 / Training started: {detail}")
+
+
+def _log_run_end(status: str, meta: dict, duration: float, exit_code: int, task_id_short: str) -> None:
+    """训练结束：控制台输出带时长/步数/退出码的简短行。"""
+    dur = _fmt_duration(duration)
+    name = meta.get("output_name") or f"task={task_id_short}"
+    if status == "completed":
+        step_info = ""
+        if meta.get("total_steps"):
+            step_info = f" · {meta['total_steps']}/{meta['total_steps']} 步"
+        elif meta.get("epochs"):
+            step_info = f" · {meta['epochs']} epochs"
+        log.info(f"训练完成 / Training completed: {name} · 用时 {dur}{step_info} · exit {exit_code}")
+    elif status == "timeout":
+        log.error(f"训练超时 / Training timed out: {name} · 用时 {dur} · task={task_id_short}")
+    else:
+        # failed / error
+        log.error(f"训练失败 / Training failed: {name} · 用时 {dur} · exit {exit_code} · 错误日志见 error.log · task={task_id_short}")
