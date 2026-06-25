@@ -280,8 +280,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         # 根据模型架构调整学习率（仅纠 learning_rate 总学习率；分量留空会自动回退到它）。
         # Anima(DiT) 用 0.1，SDXL 用 1.0。
         model_type = source.get("model_train_type", "sdxl-lora")
-        emo_target = "0.1" if model_type == "anima-lora" else "1.0"
-        ref_other = "1.0" if model_type == "anima-lora" else "0.1"
+        emo_target = 0.1 if model_type == "anima-lora" else 1.0
+        ref_other = 1.0 if model_type == "anima-lora" else 0.1
         # learning_rate：当前值恰好是另一架构的默认（即未被用户改过）时纠正
         lr = source.get("learning_rate", "1.0")
         try:
@@ -338,7 +338,7 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             except (ValueError, TypeError):
                 _lr_val = 1.0
             if abs(_lr_val - 1.0) > 1e-6:
-                source[_lr_key] = "1.0"
+                source[_lr_key] = 1.0
                 warnings.append(
                     f"Prodigy: {_lr_key} forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
                 )
