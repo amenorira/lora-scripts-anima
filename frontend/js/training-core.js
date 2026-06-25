@@ -1446,9 +1446,14 @@ window.trainingCoreMixin = {
       }
     }
     // Cross-field: min_timestep < max_timestep (Anima)
-    if (this.form.min_timestep !== undefined && this.form.max_timestep !== undefined) {
-      const minT = Number(this.form.min_timestep);
-      const maxT = Number(this.form.max_timestep);
+    // 注意：min_timestep/max_timestep 默认都是空串（registry 无显式默认 / default=""）。
+    // Number('') === 0 而非 NaN，必须先排除空串/非数字字符串，否则两个空值会被当作 0>=0 误判为错误。
+    const minTsRaw = this.form.min_timestep;
+    const maxTsRaw = this.form.max_timestep;
+    if (minTsRaw !== '' && minTsRaw !== null && minTsRaw !== undefined &&
+        maxTsRaw !== '' && maxTsRaw !== null && maxTsRaw !== undefined) {
+      const minT = Number(minTsRaw);
+      const maxT = Number(maxTsRaw);
       if (!isNaN(minT) && !isNaN(maxT) && minT >= maxT) {
         errors.min_timestep = this.t('common.minTimestepError') || 'Min timestep must be less than max timestep';
       }
