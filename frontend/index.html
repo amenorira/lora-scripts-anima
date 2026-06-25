@@ -1515,7 +1515,7 @@
       <template x-for="f in filteredPickerFiles" :key="f.path">
         <div class="config-list-item" @click="pickFileFromModal(f)" :title="f.path">
           <div style="min-width:0;flex:1">
-            <div class="config-name" x-text="f.name"></div>
+            <div class="config-name" x-text="f.name || ''"></div>
             <div class="text-xs text-muted" x-text="f.path" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
           </div>
           <span class="text-xs text-muted" x-show="f.size && f.size !== 0" x-text="f.size" style="flex-shrink:0"></span>
