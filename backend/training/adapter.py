@@ -268,15 +268,14 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     if te_only and not _is_empty_value(source.get("unet_lr")):
         source["unet_lr"] = ""
 
-    # ── 5.6. EmoSens 优化器：强制 lr_scheduler + 模型感知 LR ──
+    # ── 5.6. EmoSens 优化器：注入 EmoPulse 透传调度器 + 模型感知 LR ──
+    # EmoSens 在 optimizer.step() 内部已将 group['lr'] 设为动态 emoPulse。
+    # 必须用透传调度器替代传统调度器（constant/cosine 等会覆写 emoPulse）。
+    # 前端 auto_value 已锁定 lr_scheduler_type=EmoPulse，此处为安全兜底。
     _EMO_OPTIMIZERS = {"vendor.emo_optimizer.emosens.EmoSens"}
     if source.get("optimizer_type") in _EMO_OPTIMIZERS:
-        # 强制 lr_scheduler = constant（忽略用户可能的残留值）
-        if source.get("lr_scheduler") != "constant":
-            source["lr_scheduler"] = "constant"
-            warnings.append(
-                "EmoSens: lr_scheduler forced to constant (内部自动管理学习率)"
-            )
+        source["lr_scheduler_type"] = "vendor.emo_optimizer.emopulse_scheduler.EmoPulse"
+        source["lr_scheduler"] = "constant"
         # 根据模型架构调整学习率（仅纠 learning_rate 总学习率；分量留空会自动回退到它）。
         # Anima(DiT) 用 0.1，SDXL 用 1.0。
         model_type = source.get("model_train_type", "sdxl-lora")
