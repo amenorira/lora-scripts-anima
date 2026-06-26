@@ -41,10 +41,11 @@ if !errorlevel! neq 0 (
 )
 
 REM -- pip mirror bypass (PEP 517 subprocess fallback) --
-REM 下方每条 pip install 已用 -i https://pypi.org/simple 命令行强制主源为官方 PyPI
-REM （优先级最高，压过 pip.conf 与环境变量）。但 PEP 517 构建子进程
-REM （vendor/sd-scripts 的 sdist 构建）不继承命令行参数，只继承环境，故仍需清空
-REM PIP_* index/trusted-host 变量兜底，使其同样回退默认 https://pypi.org/simple。
+REM Every pip install below forces the base index to official PyPI via
+REM -i https://pypi.org/simple (highest priority, overrides pip.conf and env
+REM vars). But PEP 517 build subprocesses (vendor/sd-scripts sdist builds) do
+REM not inherit CLI args, only the environment, so still strip PIP_* index /
+REM trusted-host vars as a fallback so they also fall back to default PyPI.
 set _PIP_STRIPPED=0
 for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST) do (
     if defined %%v (
@@ -84,7 +85,7 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 echo [1/3] Installing PyTorch 2.10.0+cu128...
-REM 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
+REM Pre-lock setuptools to prevent PyTorch pulling in 82+, then [3/3] downgrading it.
 venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q -i https://pypi.org/simple
 if !errorlevel! neq 0 (echo [ERROR] setuptools pre-lock failed. && pause && exit /b 1)
 venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -i https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128
