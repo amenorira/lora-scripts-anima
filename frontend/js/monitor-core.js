@@ -12,7 +12,7 @@ window.monitorCoreMixin = {
   logSearch: '', logLevel: 'all', _logContentVersion: 0,
   sparkSmoothing: 0.6, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
-  rankingItems: [], rankingLoading: false,
+  outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
   _monitorAbortCtrl: null,
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
@@ -394,24 +394,6 @@ window.monitorCoreMixin = {
     } finally { this.finishProgress(); }
   },
 
-  // ── Ranking（模型排行榜）──────────────────────────────
-  async loadRanking() {
-    this.rankingLoading = true;
-    try {
-      const r = await fetch('/api/monitor/ranking');
-      const j = await r.json();
-      if (j.status === 'success') {
-        this.rankingItems = j.data || [];
-      }
-    } catch (e) {
-      this.rankingItems = [];
-    } finally {
-      this.rankingLoading = false;
-      this._rankingDirty = true;
-      this.renderDashboard();
-    }
-  },
-
   // ── Stop Training ─────────────────────────────────────
   async stopTraining() {
     if (!this.monitorData || !this.monitorData.active_task) return;
@@ -546,6 +528,44 @@ window.monitorCoreMixin = {
 
   get selectedOutputFiles() {
     return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
+  },
+
+  // 模型存档排序：仅对 category=='model' 排序，其余文件保持原序分区。
+  // 返回 { models: [...], others: [...] }。无 loss 的模型项按当前方向排末尾。
+  _sortedOutputs() {
+    const files = this.outputFiles || [];
+    const models = files.filter(f => f.category === 'model');
+    const others = files.filter(f => f.category !== 'model');
+    const key = this.outputSortKey || 'loss';
+    const dir = this.outputSortDir === 'desc' ? -1 : 1;
+    const sorted = models.slice().sort((a, b) => {
+      let va, vb;
+      if (key === 'loss') {
+        va = (a.ckpt_loss == null) ? Infinity : a.ckpt_loss;
+        vb = (b.ckpt_loss == null) ? Infinity : b.ckpt_loss;
+      } else if (key === 'time') {
+        va = a.mtime || 0; vb = b.mtime || 0;
+      } else if (key === 'size') {
+        va = a.size || 0; vb = b.size || 0;
+      } else { // name
+        va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase();
+        if (va < vb) return dir;
+        if (va > vb) return -dir;
+        return 0;
+      }
+      return (va - vb) * dir;
+    });
+    return { models: sorted, others };
+  },
+
+  setOutputSort(key) {
+    if (this.outputSortKey === key) {
+      this.outputSortDir = this.outputSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.outputSortKey = key;
+      this.outputSortDir = (key === 'loss' || key === 'name') ? 'asc' : 'desc';
+    }
+    this.renderDashboard();
   },
 
   // 用隐藏 <a download> 触发下载，避免 window.open 被拦截 / 返回 JSON 错误页

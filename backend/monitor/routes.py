@@ -22,7 +22,7 @@ from backend.monitor.training import (
 )
 from backend.monitor.artifacts import (
     newest_previews, scan_history, read_train_log, _parse_toml_config,
-    list_output_files, scan_ranking, invalidate_ranking_cache,
+    list_output_files, enrich_model_files_with_loss,
 )
 from backend.monitor.snapshot import find_run_dir_by_task_id
 from backend.tasks import tm
@@ -206,13 +206,6 @@ async def monitor_history():
     return {"status": "success", "data": {"running": running, "history": history}}
 
 
-@router.get("/monitor/ranking")
-async def monitor_ranking():
-    """模型排行榜：所有历史 run 按 final_loss 升序排序，含模型文件列表。"""
-    data = await asyncio.to_thread(scan_ranking)
-    return {"status": "success", "data": data}
-
-
 @router.post("/monitor/history/delete")
 async def delete_history_run(request: Request):
     """删除一条历史训练记录（删除其 run 目录）。
@@ -262,10 +255,9 @@ async def delete_history_run(request: Request):
     except OSError as e:
         return {"status": "error", "message": f"Failed to delete: {e}"}
 
-    # 失效历史缓存 + 排行榜缓存
+    # 失效历史缓存
     from backend.monitor.artifacts import invalidate_history_cache
     invalidate_history_cache()
-    invalidate_ranking_cache()
     return {"status": "success", "message": "Deleted / 已删除"}
 
 
@@ -414,8 +406,13 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
     if not rd:
         return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
-    data = await asyncio.to_thread(list_output_files, str(rd))
-    return {"status": "success", "data": data}
+    # 并发读取文件列表 + TensorBoard loss series，再合并给模型文件注入 ckpt_loss
+    files, tb_series = await asyncio.gather(
+        asyncio.to_thread(list_output_files, str(rd)),
+        asyncio.to_thread(read_tensorboard_loss, run_dir=str(rd)),
+    )
+    enrich_model_files_with_loss(files, tb_series)
+    return {"status": "success", "data": files}
 
 
 @router.get("/monitor/outputs/download")

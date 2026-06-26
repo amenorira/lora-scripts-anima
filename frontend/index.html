@@ -231,8 +231,6 @@
                   x-text="t('monitor.overview','Overview')">Overview</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'logs' }" @click="monitorTab='logs'; renderDashboard()"
                   x-text="t('monitor.logTitle','Logs')">Logs</button>
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'ranking' }" @click="monitorTab='ranking'; renderDashboard()"
-                  x-text="t('monitor.ranking','Ranking')">Ranking</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'samples' }" @click="monitorTab='samples'; renderDashboard()"
                   x-text="t('monitor.samples','Samples')">Samples</button>
           <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }" @click="monitorTab='outputs'; renderDashboard()"

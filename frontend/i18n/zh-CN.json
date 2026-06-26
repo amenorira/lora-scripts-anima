@@ -126,12 +126,17 @@
 		"outputName": "输出名称",
 		"elapsed": "已运行",
 		"remaining": "剩余",
-		"ranking": "排行榜",
-		"modelRanking": "模型排行榜",
 		"lossTrend": "Loss 趋势",
-		"modelFiles": "个模型文件",
-		"noModelFiles": "无模型文件",
-		"noRankingHint": "完成训练后按 loss 排序显示模型"
+		"modelCheckpoints": "模型存档",
+		"otherFiles": "其他文件",
+		"sortLoss": "Loss",
+		"sortTime": "时间",
+		"sortSize": "大小",
+		"sortName": "名称",
+		"ckptEpoch": "Epoch {n}",
+		"ckptStep": "Step {n}",
+		"ckptFinal": "最终",
+		"noModelFiles": "暂无模型文件"
 	},
 	"section": {
 		"model": "模型与数据集",

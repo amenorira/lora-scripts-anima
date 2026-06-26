@@ -2000,7 +2000,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 0; padding: 0; margin-bottom: 16px;
 }
 /* Universal section title: flex row, left text + right extras */
-.m-section-title { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+.m-section-title { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.2px; margin-bottom: 8px; }
 .m-section-title-right { display: flex; align-items: center; gap: 8px; }
 /* Tools row below title (logs/outputs action buttons) */
 .m-section-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
@@ -2139,27 +2139,35 @@ input[type="range"]::-webkit-slider-thumb {
 .m-sparkline { width: 100%; height: 32px; display: block; }
 .m-sparkline path { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 
-/* ── 模型排行榜 ── */
-.m-ranking-list { display: flex; flex-direction: column; gap: 4px; }
-.m-ranking-item {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
-  border-radius: var(--radius-sm); background: var(--bg-surface);
-  border: 1px solid var(--border-default); transition: background 0.15s;
+/* ── 输出：模型存档区（checkpoint badge + loss + 排序）── */
+.m-ckpt-section { margin-top: 4px; }
+.m-ckpt-sort { gap: 4px; }
+.m-sort-btn {
+  font-size: 10.5px; font-weight: 500; color: var(--text-tertiary);
+  padding: 2px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+  font-family: inherit; white-space: nowrap;
 }
-.m-ranking-item:hover { background: var(--hover-overlay); }
-.m-ranking-top { border-left: 3px solid var(--success); }
-.m-ranking-rank { font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; color: var(--text-tertiary); min-width: 32px; text-align: center; }
-.m-ranking-top .m-ranking-rank { color: var(--success); }
-.m-ranking-body { flex: 1; min-width: 0; cursor: pointer; }
-.m-ranking-name { font-size: 13px; margin-bottom: 2px; }
-.m-ranking-name b { font-weight: 600; }
-.m-ranking-meta { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.m-ranking-loss { display: flex; flex-direction: column; align-items: flex-end; min-width: 70px; }
-.m-ranking-loss-label { font-size: 9px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.3px; }
-.m-ranking-loss b { font-size: 15px; font-weight: 700; font-family: 'Consolas', monospace; color: var(--accent); }
-.m-ranking-files { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 90px; }
-.m-ranking-files-count { font-size: 10.5px; color: var(--text-tertiary); white-space: nowrap; }
-.m-ranking-files-count.m-muted { font-style: italic; opacity: 0.7; }
+.m-sort-btn:hover { color: var(--text-secondary); border-color: var(--text-tertiary); }
+.m-sort-btn.active { color: var(--accent); border-color: var(--accent); }
+.m-sort-arrow { font-size: 10px; }
+
+.m-ckpt-badge {
+  font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+  flex-shrink: 0; white-space: nowrap;
+}
+.m-ckpt-epoch { background: var(--accent-muted, rgba(99,102,241,0.15)); color: var(--accent); }
+.m-ckpt-step { background: var(--accent-muted, rgba(99,102,241,0.15)); color: var(--accent); }
+.m-ckpt-final { background: var(--success-muted, rgba(34,197,94,0.15)); color: var(--success); }
+
+.m-ckpt-loss {
+  font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; font-family: 'Consolas', 'Menlo', monospace;
+  white-space: nowrap; min-width: 78px; text-align: right;
+}
+.m-ckpt-loss b { color: var(--accent); font-weight: 600; }
+.m-ckpt-loss.m-muted b { color: var(--text-tertiary); font-weight: 400; }
+
+.m-ckpt-best { border-left: 3px solid var(--success); padding-left: 9px; }
 
 /* ── 样本预览 ── */
 .preview-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

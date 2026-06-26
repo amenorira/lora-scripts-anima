@@ -1,5 +1,5 @@
 /* ================================================================
-   monitor-render.js — Dashboard rendering (compact statusbar + rings + ranking)
+   monitor-render.js — Dashboard rendering (compact statusbar + rings + outputs)
    Mixin merged into animaApp Alpine component
 
    更新策略（消除闪烁）：
@@ -259,16 +259,6 @@ window.monitorRenderMixin = {
       this._builtTab = 'logs';
       return;
     }
-    if (tab === 'ranking') {
-      if (tabChanged && !this.rankingItems.length && !this.rankingLoading) this.loadRanking();
-      const sig = 'rk:' + (this.rankingItems.length) + ':' + (this.rankingLoading?1:0);
-      if (tabChanged || this._builtRankingSig !== sig) {
-        this._builtRankingSig = sig;
-        contentEl.innerHTML = this._renderRankingTab(t);
-      }
-      this._builtTab = 'ranking';
-      return;
-    }
     if (tab === 'overview') {
       const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length) + ':' + (this._sparkDirty?1:0);
       if (tabChanged || this._builtOverviewSig !== sig) {
@@ -291,7 +281,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0);
+      const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir);
       if (tabChanged || this._builtOutputsSig !== sig) {
         this._builtOutputsSig = sig;
         contentEl.innerHTML = this._renderOutputsTab(t);
@@ -563,56 +553,6 @@ window.monitorRenderMixin = {
     this.toast(this.t('common.downloaded','Downloaded!'));
   },
 
-  // ═══════════════════════════════════════════════════════════
-  //  模型排行榜标签
-  // ═══════════════════════════════════════════════════════════
-  _renderRankingTab(t) {
-    let html = '<div class="m-section" style="margin-top:12px">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('modelRanking','Model Ranking')) + ' <span class="m-logs-count">' + this.rankingItems.length + '</span></span>';
-    html += '<span class="m-section-title-right"><button type="button" class="btn btn-sm btn-secondary" @click="loadRanking()">' + this.esc(t('refresh','Refresh')) + '</button></span></div>';
-
-    if (this.rankingLoading) {
-      html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';
-    } else if (this.rankingItems.length) {
-      html += '<div class="m-ranking-list">';
-      this.rankingItems.forEach((item, idx) => {
-        const runDirJs = this.escapeJsString(item.run_dir || '');
-        const loss = item.final_loss != null ? Number(item.final_loss).toFixed(4) : '--';
-        const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
-        const stClass = statusColors[item.status] || 'muted';
-        const modelCount = (item.model_files || []).length;
-        const totalSize = (item.model_files || []).reduce((s, f) => s + (f.size || 0), 0);
-        html += '<div class="m-ranking-item' + (idx === 0 && item.final_loss != null ? ' m-ranking-top' : '') + '">';
-        // 排名
-        html += '<div class="m-ranking-rank">' + (item.final_loss != null ? '#' + (idx + 1) : '–') + '</div>';
-        // 主体
-        html += '<div class="m-ranking-body" @click="viewRunDetail(\'' + runDirJs + '\')">';
-        html += '<div class="m-ranking-name"><b>' + this.esc(item.output_name || '') + '</b>';
-        if (item.status) html += ' <span class="m-badge m-badge-' + stClass + '">' + this.esc(item.status) + '</span>';
-        html += '</div>';
-        html += '<div class="m-ranking-meta">' + this.esc(t('historyModel','Model')) + ': ' + this.esc(item.lr || '?') + ' LR · Dim ' + this.esc(item.dim || '?') + ' · ' + this.esc(t('historyEpochs','Epochs')) + ' ' + this.esc(item.epochs || '?') + ' · ' + this.esc(item.duration || '--') + ' · ' + this.esc(item.time || '') + '</div>';
-        html += '</div>';
-        // loss
-        html += '<div class="m-ranking-loss"><span class="m-ranking-loss-label">loss</span><b>' + loss + '</b></div>';
-        // 模型文件 + 下载
-        html += '<div class="m-ranking-files">';
-        if (modelCount > 0) {
-          html += '<span class="m-ranking-files-count">' + modelCount + ' ' + this.esc(t('modelFiles','model files')) + ' · ' + this._formatFileSize(totalSize) + '</span>';
-          html += '<button class="btn btn-sm btn-secondary" @click.stop="downloadAllOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '">⬇</button>';
-        } else {
-          html += '<span class="m-ranking-files-count m-muted">' + this.esc(t('noModelFiles','No model files')) + '</span>';
-        }
-        html += '</div>';
-        html += '</div>';
-      });
-      html += '</div>';
-    } else {
-      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><p>' + this.esc(t('noRankingHint','Complete training runs to see model ranking by loss')) + '</p></div>';
-    }
-    html += '</div>';
-    return html;
-  },
-
   _formatFileSize(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -661,13 +601,75 @@ window.monitorRenderMixin = {
 
     if (this.outputFilesLoading) {
       html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';
-    } else if (this.outputFiles.length) {
-      const selectedCount = this.selectedOutputFiles.length;
-      if (selectedCount > 0) {
-        html += '<div class="m-outputs-selected">' + this.esc(t('selected','Selected')) + ': ' + selectedCount + ' / ' + this.outputFiles.length + '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    if (!this.outputFiles.length) {
+      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>' + this.esc(t('noOutputsHint','Training outputs will appear here after saving')) + '</p></div>';
+      html += '</div>';
+      return html;
+    }
+
+    const selectedCount = this.selectedOutputFiles.length;
+    if (selectedCount > 0) {
+      html += '<div class="m-outputs-selected">' + this.esc(t('selected','Selected')) + ': ' + selectedCount + ' / ' + this.outputFiles.length + '</div>';
+    }
+
+    const { models, others } = this._sortedOutputs();
+
+    // ── 模型存档区（带 loss + 排序）──
+    html += '<div class="m-ckpt-section">';
+    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints','Model Checkpoints')) + (models.length ? ' <span class="m-logs-count">' + models.length + '</span>' : '') + '</span>';
+    html += '<span class="m-section-title-right m-ckpt-sort">';
+    const sortKeys = [['loss', t('sortLoss','Loss')], ['time', t('sortTime','Time')], ['size', t('sortSize','Size')], ['name', t('sortName','Name')]];
+    sortKeys.forEach(k => {
+      const active = this.outputSortKey === k[0];
+      html += '<button type="button" class="m-sort-btn' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + k[0] + '\')">' + this.esc(k[1]);
+      if (active) html += ' <span class="m-sort-arrow">' + (this.outputSortDir === 'asc' ? '↑' : '↓') + '</span>';
+      html += '</button>';
+    });
+    html += '</span></div>';
+
+    if (models.length) {
+      // 找出 loss 最低的模型（仅当按 loss 升序时高亮，避免歧义）
+      let bestPath = null;
+      if (this.outputSortKey === 'loss' && this.outputSortDir === 'asc') {
+        let best = null;
+        models.forEach(f => { if (f.ckpt_loss != null && (best === null || f.ckpt_loss < best)) { best = f.ckpt_loss; bestPath = f.path; } });
       }
       html += '<div class="output-list">';
-      this.outputFiles.forEach(f => {
+      models.forEach(f => {
+        const isSelected = !!this.outputFilesSelected[f.path];
+        const fpJs = this.escapeJsString(f.path);
+        const isBest = f.path === bestPath;
+        html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+        html += '<span class="output-name">' + this.esc(f.name) + '</span>';
+        // checkpoint badge
+        const badge = this._ckptBadgeHtml(f, t);
+        if (badge) html += badge; else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
+        // loss
+        const lossTxt = f.ckpt_loss != null ? Number(f.ckpt_loss).toFixed(4) : '--';
+        html += '<span class="m-ckpt-loss' + (f.ckpt_loss == null ? ' m-muted' : '') + '">loss <b>' + this.esc(lossTxt) + '</b></span>';
+        html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
+        html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '">⬇</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles','No model files')) + '</p></div>';
+    }
+    html += '</div>';
+
+    // ── 其他文件区（样本/日志/配置/TB，不排序）──
+    if (others.length) {
+      html += '<div class="m-ckpt-section" style="margin-top:12px">';
+      html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles','Other Files')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
+      html += '<div class="output-list">';
+      others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
@@ -681,11 +683,24 @@ window.monitorRenderMixin = {
         html += '</div>';
       });
       html += '</div>';
-    } else {
-      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>' + this.esc(t('noOutputsHint','Training outputs will appear here after saving')) + '</p></div>';
+      html += '</div>';
     }
     html += '</div>';
     return html;
+  },
+
+  // checkpoint 类型 → 小标签（Epoch N / Step N / 最终）
+  _ckptBadgeHtml(f, t) {
+    if (f.ckpt_type === 'epoch' && f.ckpt_epoch != null) {
+      return '<span class="m-ckpt-badge m-ckpt-epoch">' + this.esc(t('ckptEpoch','Epoch {n}').replace('{n}', f.ckpt_epoch)) + '</span>';
+    }
+    if (f.ckpt_type === 'step' && f.ckpt_step != null) {
+      return '<span class="m-ckpt-badge m-ckpt-step">' + this.esc(t('ckptStep','Step {n}').replace('{n}', f.ckpt_step)) + '</span>';
+    }
+    if (f.ckpt_type === 'final') {
+      return '<span class="m-ckpt-badge m-ckpt-final">' + this.esc(t('ckptFinal','Final')) + '</span>';
+    }
+    return '';
   },
 
   _formatFileTime(mtime) {

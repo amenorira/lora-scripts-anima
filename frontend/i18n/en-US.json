@@ -126,12 +126,17 @@
 		"outputName": "Output Name",
 		"elapsed": "Elapsed",
 		"remaining": "Remaining",
-		"ranking": "Ranking",
-		"modelRanking": "Model Ranking",
 		"lossTrend": "Loss Trend",
-		"modelFiles": "model files",
-		"noModelFiles": "No model files",
-		"noRankingHint": "Complete training runs to see model ranking by loss"
+		"modelCheckpoints": "Model Checkpoints",
+		"otherFiles": "Other Files",
+		"sortLoss": "Loss",
+		"sortTime": "Time",
+		"sortSize": "Size",
+		"sortName": "Name",
+		"ckptEpoch": "Epoch {n}",
+		"ckptStep": "Step {n}",
+		"ckptFinal": "Final",
+		"noModelFiles": "No model files"
 	},
 	"section": {
 		"model": "Model & Dataset",

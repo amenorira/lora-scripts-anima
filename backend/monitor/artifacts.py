@@ -240,100 +240,115 @@ def scan_history() -> list[dict]:
     return history
 
 
-# ── 模型排行榜 ────────────────────────────────────────────
+# ── Checkpoint 解析（文件名 → epoch/step 编号）──────────────
+# 命名约定见 vendor/sd-scripts/library/checkpoint_io.py:
+#   epoch 存档: {name}-{:06d}.{ext}      → my_lora-000003.safetensors
+#   step  存档: {name}-step{:08d}.{ext}  → my_lora-step00001000.safetensors
+#   最终  存档: {name}.{ext}             → my_lora.safetensors / last.safetensors
 
-_ranking_cache_lock = threading.Lock()
-_ranking_cache: tuple[float, list[dict]] | None = None
-_RANKING_CACHE_TTL = 30  # 秒
+_RE_CKPT_EPOCH = re.compile(r"^(?P<name>.+)-(?P<epoch>\d{6})\.(?:safetensors|pt|pth)$")
+_RE_CKPT_STEP = re.compile(r"^(?P<name>.+)-step(?P<step>\d{8})\.(?:safetensors|pt|pth)$")
 
 
-def scan_ranking() -> list[dict]:
-    """扫描所有历史训练 run，聚合 final_loss + 模型文件，按 final_loss 升序排序。
+def parse_checkpoint(name: str) -> dict | None:
+    """从模型文件名解析 checkpoint 类型与编号。
 
-    每项返回:
-      {run_dir, output_name, status, duration, final_loss, model_files[{name,path,size}],
-       time, lr, dim, epochs, train_type}
-    final_loss 取 TensorBoard loss/average 的 latest 值（无则 None，排末尾）。
+    返回:
+      {'type': 'epoch', 'epoch_no': N, 'step': None} |
+      {'type': 'step',  'epoch_no': None, 'step': S} |
+      {'type': 'final', 'epoch_no': None, 'step': None} |
+      None（非 .safetensors/.pt/.pth 或无法识别）
     """
-    global _ranking_cache
-    now = time.time()
-    with _ranking_cache_lock:
-        if _ranking_cache and now - _ranking_cache[0] < _RANKING_CACHE_TTL:
-            return _ranking_cache[1]
+    if not name:
+        return None
+    suffix = name.rsplit(".", 1)[-1].lower()
+    if ("." + suffix) not in LORA_EXTENSIONS:
+        return None
+    m = _RE_CKPT_STEP.search(name)
+    if m:
+        return {"type": "step", "epoch_no": None, "step": int(m.group("step"))}
+    m = _RE_CKPT_EPOCH.search(name)
+    if m:
+        return {"type": "epoch", "epoch_no": int(m.group("epoch")), "step": None}
+    # 无数字后缀的模型文件 → 最终存档
+    return {"type": "final", "epoch_no": None, "step": None}
 
-    # 复用 scan_history 的基础数据（已含 status/duration/lr/dim/epochs/run_dir/time）
-    base = scan_history()
-    if not base:
-        with _ranking_cache_lock:
-            _ranking_cache = (time.time(), [])
-        return []
 
-    # 延迟导入避免循环依赖
-    from backend.monitor.training import read_tensorboard_loss
+# loss/epoch_average 每 epoch 末追加一次，第 N 个点对应第 N 个 epoch。
+# 见 vendor/sd-scripts/train_network.py:1803-1804（loss_recorder.moving_average + epoch_logging）。
+_LOSS_EPOCH_AVG = "loss/epoch_average"
 
-    items: list[dict] = []
-    for h in base:
-        run_dir_rel = h.get("run_dir", "")
-        if not run_dir_rel:
+
+def _find_nearest_point(points: list[dict], target_step: int) -> float | None:
+    """在已按 step 升序的 points 中找离 target_step 最近的点的 value。"""
+    if not points:
+        return None
+    lo, hi = 0, len(points) - 1
+    # 二分找左边界
+    while lo < hi:
+        mid = (lo + hi) >> 1
+        if points[mid]["step"] < target_step:
+            lo = mid + 1
+        else:
+            hi = mid
+    # lo 是首个 step >= target 的点；比较 lo 与 lo-1 谁更近
+    best_idx = lo
+    if lo > 0 and abs(points[lo - 1]["step"] - target_step) <= abs(points[lo]["step"] - target_step):
+        best_idx = lo - 1
+    return points[best_idx]["value"]
+
+
+def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict]) -> list[dict]:
+    """给 list_output_files 的结果中 model 类文件补充对应 loss。
+
+    依赖 list_output_files 已写入的 ckpt_type/ckpt_epoch/ckpt_step 字段。
+    在每个 model 文件 dict 上增加:
+      ckpt_loss (float|None)  — 匹配到的 TensorBoard loss 值
+
+    匹配规则:
+      epoch 存档 → loss/epoch_average 第 N 个点（N = epoch_no）
+      step  存档 → loss/current（优先）/loss/average 中 step 最接近的点
+      最终存档 → loss/average 的 latest
+    无 TB 数据或无法匹配时 ckpt_loss = None。非 model 文件不动。
+    """
+    if not files:
+        return files
+    # 预取常用 series，避免重复扫描
+    epoch_avg = None
+    step_series = None
+    avg_latest = None
+    if tb_series:
+        for s in tb_series:
+            tag = s.get("tag")
+            if tag == _LOSS_EPOCH_AVG and epoch_avg is None:
+                epoch_avg = s.get("points") or []
+            if tag == "loss/average":
+                avg_latest = s.get("latest")
+            # step 存档优先用 loss/current，其次 loss/average
+            if tag == "loss/current":
+                step_series = s.get("points") or []
+            elif step_series is None and tag == "loss/average":
+                step_series = s.get("points") or []
+
+    for f in files:
+        if f.get("category") != "model":
             continue
-        run_dir_abs = (REPO_ROOT / run_dir_rel).resolve()
-
-        # final_loss：从该 run 的 TB 读 loss/average latest
-        final_loss = None
+        ckpt_type = f.get("ckpt_type")
+        loss = None
         try:
-            series = read_tensorboard_loss(run_dir=str(run_dir_abs))
-            for s in series:
-                if s.get("tag") in ("loss/average", "loss/current", "loss/epoch_average"):
-                    final_loss = s.get("latest")
-                    break
-        except Exception:
-            pass
-
-        # 模型文件：扫描 run 目录的 .safetensors/.pt/.pth
-        model_files = []
-        try:
-            for p in _iter_dir(run_dir_abs):
-                if not p.is_file():
-                    continue
-                if p.suffix.lower() in LORA_EXTENSIONS:
-                    try:
-                        rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
-                    except ValueError:
-                        rel = str(p).replace("\\", "/")
-                    model_files.append({
-                        "name": p.name,
-                        "path": rel,
-                        "size": p.stat().st_size,
-                    })
-        except OSError:
-            pass
-
-        items.append({
-            "run_dir": run_dir_rel,
-            "output_name": h.get("name", ""),
-            "status": h.get("status", ""),
-            "duration": h.get("duration", ""),
-            "final_loss": final_loss,
-            "model_files": model_files,
-            "time": h.get("time", ""),
-            "lr": h.get("lr", "?"),
-            "dim": h.get("dim", "?"),
-            "epochs": h.get("epochs", "?"),
-        })
-
-    # 按 final_loss 升序（None 排末尾）；同 loss 按时间倒序
-    items.sort(key=lambda x: (x["final_loss"] is None, x["final_loss"] if x["final_loss"] is not None else 0))
-
-    with _ranking_cache_lock:
-        _ranking_cache = (time.time(), items)
-    return items
-
-
-def invalidate_ranking_cache() -> None:
-    """失效排行榜缓存。"""
-    global _ranking_cache
-    with _ranking_cache_lock:
-        _ranking_cache = None
+            if ckpt_type == "epoch" and f.get("ckpt_epoch") is not None and epoch_avg:
+                # 第 N 个 epoch → 第 N 个点（1-based）；epoch 号从 1 起，文件名 000003 = 第 3 epoch
+                idx = f["ckpt_epoch"] - 1
+                if 0 <= idx < len(epoch_avg):
+                    loss = epoch_avg[idx].get("value")
+            elif ckpt_type == "step" and f.get("ckpt_step") is not None:
+                loss = _find_nearest_point(step_series or [], f["ckpt_step"])
+            elif ckpt_type == "final":
+                loss = avg_latest
+        except (KeyError, IndexError, TypeError):
+            loss = None
+        f["ckpt_loss"] = loss
+    return files
 
 
 # ── 训练日志读取 ──────────────────────────────────────────
@@ -413,14 +428,27 @@ def list_output_files(run_dir: str) -> list[dict]:
             category = "tensorboard"
         else:
             category = "other"
-        result.append({
+        entry = {
             "name": p.name,
             "path": rel,
             "size": p.stat().st_size,
             "mtime": p.stat().st_mtime,
             "is_lora": is_lora,
             "category": category,
-        })
+        }
+        # 模型文件：从文件名解析 checkpoint 编号（loss 由路由层注入，需 TB series）
+        if is_lora:
+            info = parse_checkpoint(p.name)
+            if info:
+                entry["ckpt_type"] = info["type"]
+                entry["ckpt_epoch"] = info["epoch_no"]
+                entry["ckpt_step"] = info["step"]
+            else:
+                entry["ckpt_type"] = None
+                entry["ckpt_epoch"] = None
+                entry["ckpt_step"] = None
+                entry["ckpt_loss"] = None
+        result.append(entry)
     # 模型文件优先，其次样本，再日志，最后其他；同类按修改时间倒序
     cat_order = {"model": 0, "sample": 1, "log": 2, "tensorboard": 3, "other": 4}
     result.sort(key=lambda f: (cat_order.get(f["category"], 9), -f["mtime"]))
