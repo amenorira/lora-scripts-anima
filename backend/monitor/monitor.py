@@ -19,7 +19,7 @@ from typing import Any
 from backend.core.event_bus import event_bus
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
-from backend.monitor.artifacts import read_train_log
+from backend.monitor.artifacts import read_train_log, find_train_log_path
 from backend.tasks import tm, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class TaskMonitor:
         self._poll_interval = 1.0  # 轮询间隔（秒）
         self._log_push_lines = 1000  # 单次推送日志行数上限
         self._last_status: dict[str, str] = {}  # task_id -> last_status
-        self._last_log_line: dict[str, int] = {}  # task_id -> last_log_line_count
+        self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
         # 控制台进度条状态
         self._console_progress = None
         self._progress_task_id = None
@@ -239,20 +239,23 @@ class TaskMonitor:
         await self._collect_hardware()
     
     async def _collect_task_data(self, task_id: str) -> None:
-        """收集任务进度和日志增量（合并为一次日志文件读取）"""
+        """收集任务进度和日志增量"""
         try:
-            # 读取日志文件（一次 I/O）
+            train_config = latest_train_config(task_id)
+            output_dir = train_config.get("output_dir")
+            output_dir_path = Path(output_dir) if output_dir else None
+
+            # ── 进度解析：从日志 tail 读取（快速，只解析最近内容）──
             log_lines = await asyncio.to_thread(
-                self._read_task_log, task_id
+                read_train_log, task_id, output_dir_path
             )
-            
+
             if log_lines:
-                # 解析进度
+                # 解析并发布进度事件
                 progress = await asyncio.to_thread(
                     parse_log_progress, log_lines
                 )
-                
-                # 发布进度事件
+
                 await event_bus.publish(task_id, {
                     "type": "progress",
                     "task_id": task_id,
@@ -271,45 +274,73 @@ class TaskMonitor:
                     }
                 })
 
-                # 控制台单行进度条（需要 output_name 作为描述）
+                # 控制台进度条
                 try:
-                    train_config = latest_train_config(task_id)
                     self._update_console_progress(
                         task_id, progress, train_config.get("output_name", "")
                     )
                 except Exception:
                     pass
 
-                # 计算日志增量
-                last_count = self._last_log_line.get(task_id, 0)
-                current_count = len(log_lines)
-                
-                if current_count > last_count:
-                    new_lines = log_lines[last_count:current_count]
-                    self._last_log_line[task_id] = current_count
-                elif current_count < last_count:
-                    # Log file was truncated/rotated — reset and send all current lines
-                    new_lines = log_lines
-                    self._last_log_line[task_id] = current_count
-                else:
-                    new_lines = []
-                
-                # 发布日志增量事件（正常追加和轮转均需推送）
-                if new_lines:
-                    await event_bus.publish(task_id, {
-                        "type": "log_update",
-                        "task_id": task_id,
-                        "data": {
-                            "lines": new_lines[-self._log_push_lines:],
-                            "total": current_count,
-                            "truncated": len(new_lines) > self._log_push_lines
-                        }
-                    })
-            
-            # TB 增量 loss 数据推送（独立于日志读取）
+            # ── 日志增量：按文件字节偏移读取，避免 tail 行数漂移 ──
+            new_lines = await asyncio.to_thread(
+                self._read_log_delta, task_id, output_dir_path
+            )
+            if new_lines:
+                await event_bus.publish(task_id, {
+                    "type": "log_update",
+                    "task_id": task_id,
+                    "data": {
+                        "lines": new_lines[-self._log_push_lines:],
+                        "total": -1,  # total 不再有意义（字节偏移模式下）
+                        "truncated": len(new_lines) > self._log_push_lines
+                    }
+                })
+
+            # TB 增量 loss 数据推送
             await self._collect_tb_incremental(task_id)
         except Exception as e:
             logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
+
+    def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> list[str] | None:
+        """从上次读取位置读取日志文件增量内容，返回新增行列表。
+        使用字节偏移追踪，不受 _tail_file 大小限制影响。"""
+        try:
+            log_path = find_train_log_path(task_id, output_dir_path)
+            if not log_path:
+                return None
+
+            last_pos = self._last_log_pos.get(task_id, 0)
+            file_size = log_path.stat().st_size
+
+            # 文件被截断/轮转：重置偏移
+            if file_size < last_pos:
+                last_pos = 0
+
+            if file_size <= last_pos:
+                return None  # 无新内容
+
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                f.seek(last_pos)
+                content = f.read()
+                new_pos = f.tell()
+                self._last_log_pos[task_id] = new_pos
+
+            if not content:
+                return None
+
+            lines = content.split("\n")
+            # 如果 last_pos=0（首次读取或截断后），可能是完整文件读取；
+            # 否则是增量读取，末尾空行往往是 write buffer 产生的半行
+            if last_pos > 0 and lines and lines[-1] == "":
+                lines.pop()
+
+            return lines if lines else None
+        except OSError:
+            return None
+        except Exception:
+            logger.debug(f"读取日志增量失败 (task_id={task_id})", exc_info=True)
+            return None
 
     async def _collect_tb_incremental(self, task_id: str) -> None:
         """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到 SSE"""
@@ -350,23 +381,10 @@ class TaskMonitor:
         except Exception as e:
             logger.debug(f"收集硬件信息失败: {e}")
     
-    def _read_task_log(self, task_id: str) -> list[str] | None:
-        """读取任务日志"""
-        try:
-            train_config = latest_train_config(task_id)
-            output_dir = train_config.get("output_dir")
-            log_lines = read_train_log(
-                task_id,
-                Path(output_dir) if output_dir else None
-            )
-            return log_lines or None
-        except Exception:
-            return None
-    
     def _cleanup_task(self, task_id: str) -> None:
         """清理任务状态"""
         self._last_status.pop(task_id, None)
-        self._last_log_line.pop(task_id, None)
+        self._last_log_pos.pop(task_id, None)
         logger.debug(f"清理任务状态: {task_id}")
 
 

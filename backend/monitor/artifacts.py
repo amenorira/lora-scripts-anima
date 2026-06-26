@@ -455,6 +455,52 @@ def list_output_files(run_dir: str) -> list[dict]:
     return result
 
 
+def find_train_log_path(task_id: str, output_dir: Path | None = None) -> Path | None:
+    """查找训练日志文件路径（不读取内容）。
+    优先从指定 output_dir 查找，否则扫描 output/ 子目录。结果写入路径缓存。"""
+    now = time.time()
+    task_id_short = task_id[:8]
+
+    def _cache_log_path(tid: str, log_file: Path):
+        """写入路径缓存（调用方需持有 _log_file_cache_lock）"""
+        _log_file_cache[tid] = (now, log_file)
+        if len(_log_file_cache) > _LOG_FILE_CACHE_MAX:
+            oldest_key = min(_log_file_cache, key=lambda k: _log_file_cache[k][0])
+            del _log_file_cache[oldest_key]
+
+    # 先查缓存
+    with _log_file_cache_lock:
+        if task_id in _log_file_cache:
+            cache_time, cached_path = _log_file_cache[task_id]
+            if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
+                return cached_path
+
+    # 在指定目录查找
+    if output_dir and output_dir.exists():
+        for log_file in sorted(output_dir.glob(f"train_{task_id_short}*.log"),
+                               key=lambda p: p.stat().st_mtime, reverse=True):
+            if log_file.stat().st_size > 0:
+                with _log_file_cache_lock:
+                    _cache_log_path(task_id, log_file)
+                return log_file
+
+    # 回退：扫描所有运行子目录
+    if OUTPUT_DIR.exists():
+        for run_dir in sorted(OUTPUT_DIR.iterdir(),
+                              key=lambda p: p.stat().st_mtime if p.is_dir() else 0,
+                              reverse=True):
+            if not run_dir.is_dir():
+                continue
+            for log_file in sorted(run_dir.glob(f"train_{task_id_short}*.log"),
+                                   key=lambda p: p.stat().st_mtime, reverse=True):
+                if log_file.stat().st_size > 0:
+                    with _log_file_cache_lock:
+                        _cache_log_path(task_id, log_file)
+                    return log_file
+
+    return None
+
+
 def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
     """读取训练任务的实时日志（tail 方式，高性能）。
     优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
@@ -472,39 +518,12 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
         lines = _tail_file(cached_path_ref)
         if lines:
             return lines
-    task_id_short = task_id[:8]
 
-    def _cache_log(task_id: str, log_file: Path):
-        """写入缓存并淘汰溢出条目（调用方需持有 _log_file_cache_lock）"""
-        _log_file_cache[task_id] = (now, log_file)
-        if len(_log_file_cache) > _LOG_FILE_CACHE_MAX:
-            # 淘汰最旧的条目（按缓存时间戳）
-            oldest_key = min(_log_file_cache, key=lambda k: _log_file_cache[k][0])
-            del _log_file_cache[oldest_key]
-
-    # 先在指定目录查找
-    if output_dir and output_dir.exists():
-        for log_file in sorted(output_dir.glob(f"train_{task_id_short}*.log"),
-                               key=lambda p: p.stat().st_mtime, reverse=True):
-            lines = _tail_file(log_file)
-            if lines:
-                with _log_file_cache_lock:
-                    _cache_log(task_id, log_file)
-                return lines
-
-    # 回退：扫描所有运行子目录
-    if OUTPUT_DIR.exists():
-        for run_dir in sorted(OUTPUT_DIR.iterdir(),
-                              key=lambda p: p.stat().st_mtime if p.is_dir() else 0,
-                              reverse=True):
-            if not run_dir.is_dir():
-                continue
-            for log_file in sorted(run_dir.glob(f"train_{task_id_short}*.log"),
-                                   key=lambda p: p.stat().st_mtime, reverse=True):
-                lines = _tail_file(log_file)
-                if lines:
-                    with _log_file_cache_lock:
-                        _cache_log(task_id, log_file)
-                    return lines
+    # 使用 find_train_log_path 定位文件
+    log_path = find_train_log_path(task_id, output_dir)
+    if log_path:
+        lines = _tail_file(log_path)
+        if lines:
+            return lines
 
     return []

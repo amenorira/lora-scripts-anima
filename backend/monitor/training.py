@@ -296,8 +296,10 @@ def parse_log_progress(lines: list[str]) -> dict:
     info: dict[str, Any] = {}
 
     # 进度: "steps: 45%|████ | 450/1000 [02:30<03:03]"
-    m = _RE_PROGRESS.search(text)
-    if m:
+    # 取最后一个匹配（最新进度），而不是 search() 返回的第一个
+    progress_matches = list(_RE_PROGRESS.finditer(text))
+    if progress_matches:
+        m = progress_matches[-1]
         step = int(m.group("step"))
         total = int(m.group("total"))
         info["step"] = step
@@ -307,6 +309,7 @@ def parse_log_progress(lines: list[str]) -> dict:
         info["elapsed"] = m.group("elapsed") or ""
 
     # 按优先级解析 loss：loss/current > loss/average > train_loss > avr_loss > loss
+    # 每个模式取最后一次匹配（最新值），避免取到日志开头的旧数据
     loss_matchers = [
         (_RE_LOSS_CURRENT, "loss/current"),
         (_RE_LOSS_AVERAGE, "loss/average"),
@@ -315,17 +318,19 @@ def parse_log_progress(lines: list[str]) -> dict:
         (_RE_LOSS_GENERIC, "loss"),
     ]
     for pattern, _name in loss_matchers:
-        m = pattern.search(text)
-        if m:
-            info["loss"] = m.group(1)
+        loss_matches = list(pattern.finditer(text))
+        if loss_matches:
+            info["loss"] = loss_matches[-1].group(1)
             break
 
     lr_m = _RE_LR.findall(text)
     if lr_m:
         info["lr"] = lr_m[-1]
 
-    ep_m = _RE_EPOCH.search(text)
-    if ep_m:
+    # epoch 取最后一次匹配（最新值）
+    ep_matches = list(_RE_EPOCH.finditer(text))
+    if ep_matches:
+        ep_m = ep_matches[-1]
         info["epoch"] = f"{ep_m.group(1)}/{ep_m.group(2)}" if ep_m.group(2) else ep_m.group(1)
 
     speed_m = list(_RE_SPEED.finditer(text))
