@@ -276,13 +276,6 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     if source.get("optimizer_type") in _EMO_OPTIMIZERS:
         source["lr_scheduler_type"] = "vendor.emo_optimizer.emopulse_scheduler.EmoPulse"
         source["lr_scheduler"] = "constant"
-    # lr_scheduler_type 非空时，lr_scheduler 被 sd-scripts 忽略，不写 TOML
-    if not _is_empty_value(source.get("lr_scheduler_type")):
-        source.pop("lr_scheduler", None)
-    # ScheduleFree 优化器自带 dummy scheduler，不允许外部调度器
-    _SF_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
-    if source.get("optimizer_type") in _SF_OPTIMIZERS:
-        source.pop("lr_scheduler_type", None)
         # 根据模型架构调整学习率（仅纠 learning_rate 总学习率；分量留空会自动回退到它）。
         # Anima(DiT) 用 0.1，SDXL 用 1.0。
         model_type = source.get("model_train_type", "sdxl-lora")
@@ -329,6 +322,17 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             warnings.append(
                 "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
             )
+
+    # lr_scheduler_type 非空时，内置 lr_scheduler 被 sd-scripts 忽略，不写 TOML
+    if not _is_empty_value(source.get("lr_scheduler_type")):
+        source.pop("lr_scheduler", None)
+        source.pop("lr_warmup_steps", None)
+        source.pop("lr_scheduler_num_cycles", None)
+        source.pop("lr_scheduler_power", None)
+    # ScheduleFree 优化器自带 dummy scheduler，不允许外部调度器
+    _SF_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
+    if source.get("optimizer_type") in _SF_OPTIMIZERS:
+        source.pop("lr_scheduler_type", None)
 
     # ── 5.6b. Prodigy 优化器：锁定 learning_rate ─────────
     # D-adaptation 要求 LR=1.0 作缩放因子。三个 LR 字段（learning_rate / unet_lr / text_encoder_lr）
