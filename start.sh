@@ -43,12 +43,30 @@ if [ "$IS64" = "32" ]; then
 fi
 
 # -- pip mirror HTTPS upgrade --
-# 镜像源经 HTTPS 通常比 HTTP 快且可靠（HTTP 可能被限速/劫持），但 pip 23+ 还会把
-# HTTP 索引当不安全主机静默忽略，导致 "from versions: none"。故把宿主注入的
-# PIP_INDEX_URL / PIP_EXTRA_INDEX_URL 中 http:// 改写成 https://，并登记
-# PIP_TRUSTED_HOST。环境变量优先级高于 pip.conf，且被 PEP 517 构建子进程
-# （vendor/sd-scripts sdist）与 gui.py 运行时 pip 继承。HTTPS/默认源不受影响。
+# 镜像源经 HTTPS 通常比 HTTP 快且可靠（HTTP 可能被限速/劫持），且 pip 23+ 会把
+# HTTP 索引当不安全主机静默忽略，导致 "from versions: none"。HTTP 镜像可能由
+# pip.conf（如 AutoDL 的 /etc/pip.conf）或 PIP_* 环境变量注入。本函数两路处理：
+#  (1) 改写 pip.conf：把 index-url / extra-index-url 的 http:// 改成 https://，
+#      覆盖所有已知位置（/etc、~/.pip、~/.config/pip、venv 内）。一次改完，主进程、
+#      PEP 517 构建子进程（vendor/sd-scripts sdist）、gui.py 运行时 pip 全部受益。
+#  (2) 升级环境变量：把 PIP_INDEX_URL / PIP_EXTRA_INDEX_URL 的 http:// 改成 https://
+#      并登记 PIP_TRUSTED_HOST（去重），兜底源来自环境变量的情况。
+# HTTPS/默认源不受影响。AutoDL 为 root + 临时容器，改 /etc/pip.conf 无副作用。
 _fix_pip_mirror() {
+    local changed=0
+    # (1) 改写 pip.conf 中的 http:// -> https://
+    local confs="/etc/pip.conf $HOME/.pip/pip.conf $HOME/.config/pip/pip.conf $SCRIPT_DIR/venv/pip.conf"
+    for conf in $confs; do
+        [ -f "$conf" ] || continue
+        [ -w "$conf" ] || continue
+        if grep -qiE '^(index-url|extra-index-url)[[:space:]]*=[[:space:]]*http://' "$conf"; then
+            # 只替换配置值中的 http://，不动注释行
+            sed -i -E 's/^((index-url|extra-index-url)[[:space:]]*=[[:space:]]*)http:\/\//\1https:\/\//I' "$conf"
+            changed=1
+            echo "[Setup] Upgraded HTTP mirror to HTTPS in $conf"
+        fi
+    done
+    # (2) 升级环境变量（兜底）
     local hosts=""
     for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
         local val="${!var}"
@@ -65,7 +83,8 @@ _fix_pip_mirror() {
             case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
         done
         export PIP_TRUSTED_HOST="${merged# }"
-        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# }"
+        changed=1
+        echo "[Setup] Upgraded HTTP pip mirror env var to HTTPS; trusted-host: ${merged# }"
     fi
 }
 
