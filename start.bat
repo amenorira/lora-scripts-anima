@@ -40,20 +40,28 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-REM -- pip mirror bypass (PEP 517 subprocess fallback) --
-REM Every pip install below forces the base index to official PyPI via
-REM -i https://pypi.org/simple (highest priority, overrides pip.conf and env
-REM vars). But PEP 517 build subprocesses (vendor/sd-scripts sdist builds) do
-REM not inherit CLI args, only the environment, so still strip PIP_* index /
-REM trusted-host vars as a fallback so they also fall back to default PyPI.
-set _PIP_STRIPPED=0
-for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST) do (
+REM -- pip mirror HTTPS upgrade --
+REM Mirrors are usually faster and more reliable over HTTPS than HTTP (HTTP may
+REM be rate-limited or hijacked), and pip 23+ silently ignores HTTP indexes as
+REM untrusted hosts, causing "from versions: none". So rewrite http:// to https://
+REM in PIP_INDEX_URL / PIP_EXTRA_INDEX_URL and register PIP_TRUSTED_HOST. Env vars
+REM override pip.conf and are inherited by PEP 517 build subprocesses
+REM (vendor/sd-scripts sdist) and gui.py runtime pip. HTTPS/default sources untouched.
+set _PIP_FIXED=0
+for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL) do (
     if defined %%v (
-        set "%%v="
-        set _PIP_STRIPPED=1
+        set "_val=!%%v!"
+        if "!_val:~0,7!"=="http://" if not "!_val:~7!"=="" (
+            for /f "delims=/" %%h in ("!_val:~7!") do set "_host=%%h"
+            set "_probe= !PIP_TRUSTED_HOST! "
+            echo !_probe!| findstr /i /c:" !_host! " >nul
+            if errorlevel 1 set "PIP_TRUSTED_HOST=!PIP_TRUSTED_HOST! !_host!" & set _PIP_FIXED=1
+            set "%%v=https://!_val:~7!"
+        )
     )
 )
-if "!_PIP_STRIPPED!"=="1" echo [Setup] Stripped pip mirror env vars; using official PyPI.
+if "!_PIP_FIXED!"=="1" for /f "tokens=* delims= " %%a in ("!PIP_TRUSTED_HOST!") do set "PIP_TRUSTED_HOST=%%a"
+if "!_PIP_FIXED!"=="1" echo [Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: !PIP_TRUSTED_HOST!
 
 REM -- Venv check --
 if exist "venv\Scripts\python.exe" goto :run_venv
@@ -81,25 +89,25 @@ if not exist "venv\Scripts\python.exe" (
     python -m venv venv
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
     echo Upgrading pip...
-    venv\Scripts\python.exe -m pip install --upgrade pip -q -i https://pypi.org/simple
+    venv\Scripts\python.exe -m pip install --upgrade pip -q
 )
 
 echo [1/3] Installing PyTorch 2.10.0+cu128...
 REM Pre-lock setuptools to prevent PyTorch pulling in 82+, then [3/3] downgrading it.
-venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q -i https://pypi.org/simple
+venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q
 if !errorlevel! neq 0 (echo [ERROR] setuptools pre-lock failed. && pause && exit /b 1)
-venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -i https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128
+venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
 pushd vendor\sd-scripts
-..\..\venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.org/simple
+..\..\venv\Scripts\python.exe -m pip install -r requirements.txt
 set _SD_RC=!errorlevel!
 popd
 if !_SD_RC! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
 
 echo [3/3] Installing project deps...
-venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.org/simple
+venv\Scripts\python.exe -m pip install -r requirements.txt
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!

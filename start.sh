@@ -42,17 +42,31 @@ if [ "$IS64" = "32" ]; then
     exit 1
 fi
 
-# -- pip mirror bypass (PEP 517 subprocess fallback) --
-# 下方每条 pip install 已用 -i https://pypi.org/simple 命令行强制主源为官方 PyPI
-# （优先级最高，压过 pip.conf 与环境变量）。但 PEP 517 构建子进程
-# （vendor/sd-scripts 的 sdist 构建）不继承命令行参数，只继承环境，故仍需清空
-# PIP_* index/trusted-host 变量兜底，使其同样回退默认 https://pypi.org/simple。
-_strip_pip_mirrors() {
-    local had=0
-    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST; do
-        if [ -n "${!var}" ]; then had=1; unset "$var"; fi
+# -- pip mirror HTTPS upgrade --
+# 镜像源经 HTTPS 通常比 HTTP 快且可靠（HTTP 可能被限速/劫持），但 pip 23+ 还会把
+# HTTP 索引当不安全主机静默忽略，导致 "from versions: none"。故把宿主注入的
+# PIP_INDEX_URL / PIP_EXTRA_INDEX_URL 中 http:// 改写成 https://，并登记
+# PIP_TRUSTED_HOST。环境变量优先级高于 pip.conf，且被 PEP 517 构建子进程
+# （vendor/sd-scripts sdist）与 gui.py 运行时 pip 继承。HTTPS/默认源不受影响。
+_fix_pip_mirror() {
+    local hosts=""
+    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
+        local val="${!var}"
+        if [ -n "$val" ] && [[ "$val" == http://* ]]; then
+            local rest="${val#http://}"
+            [ -n "$rest" ] || continue
+            export "$var=https://$rest"
+            hosts="$hosts ${rest%%/*}"
+        fi
     done
-    [ "$had" = "1" ] && echo "[Setup] Stripped pip mirror env vars; using official PyPI."
+    if [ -n "$hosts" ]; then
+        local merged="$PIP_TRUSTED_HOST"
+        for h in $hosts; do
+            case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
+        done
+        export PIP_TRUSTED_HOST="${merged# }"
+        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# }"
+    fi
 }
 
 # -- Install function --
@@ -68,20 +82,20 @@ do_install() {
         echo "Creating venv..."
         $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
         echo "Upgrading pip..."
-        "$VENV_PYTHON" -m pip install --upgrade pip -q -i https://pypi.org/simple 2>/dev/null
+        "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
     echo "[1/3] Installing PyTorch 2.10.0+cu128..."
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
-    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q -i https://pypi.org/simple || { echo "[ERROR] setuptools pre-lock failed."; exit 1; }
-    "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -i https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128
+    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed."; exit 1; }
+    "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
     echo "[2/3] Installing sd-scripts dependencies..."
-    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt -i https://pypi.org/simple) || { echo "[ERROR] sd-scripts dependencies install failed."; exit 1; }
+    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed."; exit 1; }
 
     echo "[3/3] Installing project dependencies..."
-    "$VENV_PYTHON" -m pip install -r requirements.txt -i https://pypi.org/simple
+    "$VENV_PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
 
     echo ""
@@ -91,7 +105,7 @@ do_install() {
 # -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-_strip_pip_mirrors
+_fix_pip_mirror
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "[Notice] Virtual environment (venv) not found."
     if [ "$QUIET" = "1" ]; then
