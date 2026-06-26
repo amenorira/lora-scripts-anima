@@ -42,33 +42,19 @@ if [ "$IS64" = "32" ]; then
     exit 1
 fi
 
-# -- pip mirror hardening --
-# pip 23+ silently ignores HTTP package indexes as "untrusted hosts", which
-# surfaces as "Could not find a version ... (from versions: none)". AutoDL and
-# some CN mirrors expose HTTP URLs via PIP_INDEX_URL. Upgrade any HTTP mirror to
-# HTTPS and register it as a trusted host. Env vars take priority over pip.conf,
-# so this overrides the host's HTTP config; and since exports are inherited by
-# PEP 517 build subprocesses and by gui.py's runtime pip, this also fixes sdist
-# builds (e.g. vendor/sd-scripts) and dynamic installs (e.g. onnxruntime).
-_fix_pip_mirror() {
-    local hosts=""
-    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
-        local val="${!var}"
-        if [ -n "$val" ] && [[ "$val" == http://* ]]; then
-            local rest="${val#http://}"
-            [ -n "$rest" ] || continue
-            export "$var=https://$rest"
-            hosts="$hosts ${rest%%/*}"
-        fi
+# -- pip mirror bypass --
+# 安装依赖一律走官方 PyPI，无视宿主注入的镜像（如 AutoDL 的 HTTP 阿里源——
+# pip 23+ 还会把它当不安全主机静默忽略）。镜像可能慢或滞后，官方索引经多数
+# 云出口已足够快。torch 的 +cu128 轮子仍由下方硬编码的 --extra-index-url 取得
+# （命令行参数，不受环境变量影响）。清空所有 PIP_* index/trusted-host 变量，
+# 使主 pip 调用、PEP 517 构建子进程（vendor/sd-scripts sdist）与 gui.py 运行时
+# pip 统一回退到默认 https://pypi.org/simple。
+_strip_pip_mirrors() {
+    local had=0
+    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST; do
+        if [ -n "${!var}" ]; then had=1; unset "$var"; fi
     done
-    if [ -n "$hosts" ]; then
-        local merged="$PIP_TRUSTED_HOST"
-        for h in $hosts; do
-            case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
-        done
-        export PIP_TRUSTED_HOST="${merged# }"
-        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# }"
-    fi
+    [ "$had" = "1" ] && echo "[Setup] Stripped pip mirror env vars; using official PyPI."
 }
 
 # -- Install function --
@@ -107,7 +93,7 @@ do_install() {
 # -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-_fix_pip_mirror
+_strip_pip_mirrors
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "[Notice] Virtual environment (venv) not found."
     if [ "$QUIET" = "1" ]; then

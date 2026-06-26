@@ -40,28 +40,20 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-REM -- pip mirror hardening --
-REM pip 23+ silently ignores HTTP package indexes as "untrusted hosts", which
-REM surfaces as "Could not find a version ... (from versions: none)". AutoDL and
-REM some CN mirrors expose HTTP URLs via PIP_INDEX_URL. Upgrade any HTTP mirror
-REM to HTTPS + trusted-host. Env vars take priority over pip.conf, so this
-REM overrides the host's HTTP config; exports also propagate to PEP 517 build
-REM subprocesses and gui.py's runtime pip, fixing sdist builds and dynamic installs.
-set _PIP_FIXED=0
-for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL) do (
+REM -- pip mirror bypass --
+REM 安装依赖一律走官方 PyPI，无视宿主注入的镜像（如 AutoDL 的 HTTP 阿里源——
+REM pip 23+ 还会把它当不安全主机静默忽略）。清空所有 PIP_* index/trusted-host
+REM 变量，使主 pip 调用、PEP 517 构建子进程（vendor/sd-scripts）与 gui.py 运行时
+REM pip 统一回退到默认 https://pypi.org/simple。torch 的 +cu128 轮子仍由下方
+REM 硬编码的 --extra-index-url 取得（命令行参数，不受环境变量影响）。
+set _PIP_STRIPPED=0
+for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST) do (
     if defined %%v (
-        set "_val=!%%v!"
-        if "!_val:~0,7!"=="http://" if not "!_val:~7!"=="" (
-            for /f "delims=/" %%h in ("!_val:~7!") do set "_host=%%h"
-            set "_probe= !PIP_TRUSTED_HOST! "
-            echo !_probe!| findstr /i /c:" !_host! " >nul
-            if errorlevel 1 set "PIP_TRUSTED_HOST=!PIP_TRUSTED_HOST! !_host!" & set _PIP_FIXED=1
-            set "%%v=https://!_val:~7!"
-        )
+        set "%%v="
+        set _PIP_STRIPPED=1
     )
 )
-if "!_PIP_FIXED!"=="1" for /f "tokens=* delims= " %%a in ("!PIP_TRUSTED_HOST!") do set "PIP_TRUSTED_HOST=%%a"
-if "!_PIP_FIXED!"=="1" echo [Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: !PIP_TRUSTED_HOST!
+if "!_PIP_STRIPPED!"=="1" echo [Setup] Stripped pip mirror env vars; using official PyPI.
 
 REM -- Venv check --
 if exist "venv\Scripts\python.exe" goto :run_venv
