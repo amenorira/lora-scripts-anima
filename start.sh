@@ -42,6 +42,35 @@ if [ "$IS64" = "32" ]; then
     exit 1
 fi
 
+# -- pip mirror hardening --
+# pip 23+ silently ignores HTTP package indexes as "untrusted hosts", which
+# surfaces as "Could not find a version ... (from versions: none)". AutoDL and
+# some CN mirrors expose HTTP URLs via PIP_INDEX_URL. Upgrade any HTTP mirror to
+# HTTPS and register it as a trusted host. Env vars take priority over pip.conf,
+# so this overrides the host's HTTP config; and since exports are inherited by
+# PEP 517 build subprocesses and by gui.py's runtime pip, this also fixes sdist
+# builds (e.g. vendor/sd-scripts) and dynamic installs (e.g. onnxruntime).
+_fix_pip_mirror() {
+    local hosts=""
+    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
+        local val="${!var}"
+        if [ -n "$val" ] && [[ "$val" == http://* ]]; then
+            local rest="${val#http://}"
+            [ -n "$rest" ] || continue
+            export "$var=https://$rest"
+            hosts="$hosts ${rest%%/*}"
+        fi
+    done
+    if [ -n "$hosts" ]; then
+        local merged="$PIP_TRUSTED_HOST"
+        for h in $hosts; do
+            case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
+        done
+        export PIP_TRUSTED_HOST="${merged# }"
+        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# }"
+    fi
+}
+
 # -- Install function --
 do_install() {
     echo ""
@@ -60,7 +89,7 @@ do_install() {
 
     echo "[1/3] Installing PyTorch 2.10.0+cu128..."
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
-    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q
+    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed."; exit 1; }
     "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
 
@@ -78,6 +107,7 @@ do_install() {
 # -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
+_fix_pip_mirror
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "[Notice] Virtual environment (venv) not found."
     if [ "$QUIET" = "1" ]; then
