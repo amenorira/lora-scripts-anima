@@ -6,10 +6,11 @@
 // ── Alpine App ─────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
 
-  Alpine.data('animaApp', () => ({
+  Alpine.data('animaApp', () => {
+    const data = {
 
-    // ── State ──────────────────────────────────────────────
-    version: '...',
+      // ── State ──────────────────────────────────────────────
+      version: '...',
     theme: 'auto',
     resolvedTheme: 'light',
     currentRoute: 'home',
@@ -38,20 +39,9 @@ document.addEventListener('alpine:init', () => {
     _healthTimer: null,
     _disconnectedTimer: null,
     // 训练状态（由 /api/health 返回，驱动侧栏连接指示器三态）
-    trainingActive: false,
+      trainingActive: false,
 
-    // ── Mixin spread ──────────────────────────────────────
-    ...(window.monitorCoreMixin || {}),
-    ...(window.monitorRenderMixin || {}),
-    ...(window.environmentCoreMixin || {}),
-    ...(window.environmentRenderMixin || {}),
-    ...(window.trainingCoreMixin || {}),
-    ...(window.trainingTomlMixin || {}),
-    ...(window.trainingPresetsMixin || {}),
-    ...(window.taggerMixin || {}),
-    ...(window.tagEditorMixin || {}),
-
-    // ── Init ───────────────────────────────────────────────
+      // ── Init ───────────────────────────────────────────────
     async init() {
       // Initialize I18N first — must be ready before any t() call
       I18N.init();
@@ -487,8 +477,32 @@ document.addEventListener('alpine:init', () => {
         document.documentElement.style.removeProperty('--panel-w');
         localStorage.removeItem(this._PANEL_STORAGE_KEY);
       });
-    },
+    },  // _initPanelResizer
 
-  }));
+  };  // end data object
 
-});
+  // ── Merge mixins preserving getters/setters ──────────────────
+  // IMPORTANT: ...spread evaluates getters to static values.
+  // Object.defineProperties preserves them as reactive getters.
+  const _mixinSources = [
+    window.monitorCoreMixin,
+    window.monitorRenderMixin,
+    window.environmentCoreMixin,
+    window.environmentRenderMixin,
+    window.trainingCoreMixin,
+    window.trainingTomlMixin,
+    window.trainingPresetsMixin,
+    window.taggerMixin,
+    window.tagEditorMixin,
+  ];
+  for (const _src of _mixinSources) {
+    if (_src) {
+      Object.defineProperties(data, Object.getOwnPropertyDescriptors(_src));
+    }
+  }
+
+  return data;
+
+});  // Alpine.data('animaApp', ...)
+
+});  // alpine:init

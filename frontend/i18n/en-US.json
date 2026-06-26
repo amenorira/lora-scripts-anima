@@ -104,10 +104,10 @@
 		"trainResult": "Training Result",
 		"exitCode": "Exit Code",
 		"confirmClearLogs": "Clear all logs?",
-		"statusCompleted": "✓ Completed",
-		"statusFailed": "✗ Failed",
-		"statusError": "✗ Error",
-		"statusTerminated": "⏹ Terminated",
+		"statusCompleted": "Completed",
+		"statusFailed": "Failed",
+		"statusError": "Error",
+		"statusTerminated": "Terminated",
 		"loadRunFailed": "Failed to load run detail",
 		"runDetailError": "Error loading run detail",
 		"stepPrefix": "Step ",
@@ -136,7 +136,9 @@
 		"ckptEpoch": "Epoch {n}",
 		"ckptStep": "Step {n}",
 		"ckptFinal": "Final",
-		"noModelFiles": "No model files"
+			"noModelFiles": "No model files",
+			"scrollToBottom": "↓ Bottom",
+			"scrollToTop": "↑ Top"
 	},
 	"section": {
 		"model": "Model & Dataset",

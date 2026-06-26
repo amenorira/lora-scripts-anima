@@ -102,7 +102,7 @@ async def monitor_status(task_id: str = Query("")):
                          "has_error", "error_msg"):
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
-            result["log_lines"] = log_lines[-300:]
+            result["log_lines"] = log_lines
 
     if train_config.get("output_dir"):
         result["output_dir"] = train_config["output_dir"]
@@ -131,7 +131,7 @@ async def monitor_status(task_id: str = Query("")):
 
         log_lines = await asyncio.to_thread(read_train_log, active.get("id", ""))
         if log_lines:
-            result["log_lines"] = log_lines[-300:]
+            result["log_lines"] = log_lines
 
     return {"status": "success", "data": result}
 
@@ -300,38 +300,52 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     # ── 训练日志 ──
     # 先尝试通过 task_id 日志文件
-    log_files = list(abs_run_dir.glob("train_*.log"))
-    if log_files:
-        latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
-        try:
-            from backend.monitor.artifacts import _tail_file
-            log_lines = _tail_file(latest_log)
-            if log_lines:
-                result["log_lines"] = log_lines[-300:]
-                progress = parse_log_progress(log_lines)
-                for key in ("step", "total_steps", "percent", "loss",
-                             "lr", "epoch", "eta", "elapsed", "speed",
-                             "has_error", "error_msg"):
-                    if key in progress and progress[key] is not None:
-                        result[key] = progress[key]
-        except Exception:
-            pass
+    def _read_log_and_progress(run_dir_path: Path) -> tuple[list[str] | None, dict]:
+        log_files = list(run_dir_path.glob("train_*.log"))
+        if log_files:
+            latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
+            try:
+                from backend.monitor.artifacts import _tail_file
+                log_lines = _tail_file(latest_log)
+                if log_lines:
+                    progress = parse_log_progress(log_lines)
+                    return log_lines, progress
+            except Exception:
+                pass
+        return None, {}
+
+    log_lines, progress = await asyncio.to_thread(_read_log_and_progress, abs_run_dir)
+    if log_lines:
+        result["log_lines"] = log_lines  # 最多 2000 行
+        for key in ("step", "total_steps", "percent", "loss",
+                     "lr", "epoch", "eta", "elapsed", "speed",
+                     "has_error", "error_msg"):
+            if key in progress and progress[key] is not None:
+                result[key] = progress[key]
 
     # ── result.json（训练结果）──
-    result_file = abs_run_dir / "result.json"
-    if result_file.exists():
-        try:
-            result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    def _read_meta_files(run_dir_path: Path) -> tuple[dict | None, str | None]:
+        train_result = None
+        run_info = None
+        result_file = run_dir_path / "result.json"
+        if result_file.exists():
+            try:
+                train_result = json.loads(result_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        info_file = run_dir_path / "run_info.txt"
+        if info_file.exists():
+            try:
+                run_info = info_file.read_text(encoding="utf-8")
+            except Exception:
+                pass
+        return train_result, run_info
 
-    # ── run_info.txt ──
-    info_file = abs_run_dir / "run_info.txt"
-    if info_file.exists():
-        try:
-            result["run_info"] = info_file.read_text(encoding="utf-8")
-        except Exception:
-            pass
+    train_result, run_info = await asyncio.to_thread(_read_meta_files, abs_run_dir)
+    if train_result is not None:
+        result["train_result"] = train_result
+    if run_info is not None:
+        result["run_info"] = run_info
 
     return {"status": "success", "data": result}
 
@@ -411,18 +425,17 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
         asyncio.to_thread(list_output_files, str(rd)),
         asyncio.to_thread(read_tensorboard_loss, run_dir=str(rd)),
     )
-    enrich_model_files_with_loss(files, tb_series)
+    enrich_model_files_with_loss(files, tb_series, str(rd))
     return {"status": "success", "data": files}
 
 
 @router.get("/monitor/outputs/download")
 async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), files: str = Query("")):
-    """下载输出文件（zip 格式）。files 为逗号分隔的相对路径列表，为空则下载全部。"""
+    """下载输出文件（zip 格式，流式传输）。files 为逗号分隔的相对路径列表，为空则下载全部。"""
     import tempfile
     import zipfile
     import urllib.parse
-    from fastapi.responses import FileResponse
-    from starlette.background import BackgroundTask
+    from fastapi.responses import StreamingResponse
 
     rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
     if not rd:
@@ -444,32 +457,39 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
     if not file_list:
         return {"status": "error", "message": "No files to download / 无可下载文件"}
 
-    def _is_safe_path(path: Path, allowed_dir: Path) -> bool:
-        return path.resolve().is_relative_to(allowed_dir.resolve())
+    zip_name = f"{rd.name}_outputs.zip"
 
-    # 创建临时文件（不占用内存）
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    tmp.close()
-    tmp_path = Path(tmp.name)
+    # 打包 ZIP 到临时文件（在独立线程池中，不阻塞事件循环）
+    # 使用 ZIP_STORED（不压缩）：模型文件已高度优化，DEFLATE 几乎无效且耗时
+    def _build_zip(run_dir_path: Path, paths: list[str]) -> Path:
+        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        tmp.close()
+        dst = Path(tmp.name)
+        try:
+            with zipfile.ZipFile(dst, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
+                for rel in paths:
+                    abs_path = (run_dir_path / rel).resolve()
+                    if not abs_path.resolve().is_relative_to(run_dir_path.resolve()):
+                        continue
+                    if abs_path.is_file():
+                        zf.write(abs_path, rel)
+        except Exception:
+            dst.unlink(missing_ok=True)
+            raise
+        return dst
 
     try:
-        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-            for rel_path in file_list:
-                abs_path = (rd / rel_path).resolve()
-                if not _is_safe_path(abs_path, rd):
-                    continue
-                if abs_path.is_file():
-                    zf.write(abs_path, rel_path)
+        tmp_path = await asyncio.to_thread(_build_zip, rd, file_list)
     except Exception as e:
-        tmp_path.unlink(missing_ok=True)
         return {"status": "error", "message": f"Failed to create zip: {str(e)}"}
 
-    zip_name = f"{rd.name}_outputs.zip"
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
     return FileResponse(
         tmp_path,
         media_type="application/zip",
         filename=zip_name,
-        background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
+        background=BackgroundTask(lambda p=tmp_path: p.unlink(missing_ok=True)),
     )
 
 

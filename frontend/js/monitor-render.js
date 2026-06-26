@@ -7,7 +7,6 @@
         之后每 tick 原地打补丁（_patchStatusbar）。
      2. 标签页内容：每个标签独立脏判断，仅自身数据变化时重建。
      3. 日志：增量 DOM 追加 + 保留滚动位置。
-     4. 概览 sparkline：纯 SVG 折线，原地更新 path。
    无 Chart.js 依赖。
    ================================================================ */
 
@@ -26,7 +25,7 @@ window.monitorRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const gpu = isHistory ? null : this.gpuInfo;
     const sys = isHistory ? null : this.sysInfo;
-    const t = (k,fb) => this.t('monitor.'+k)||fb||k;
+    const t = (k,fb) => { const fullKey = k.includes('.') ? k : ('monitor.'+k); return this.t(fullKey)||fb||k; };
     const tab = this.monitorTab||'overview';
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
@@ -81,9 +80,9 @@ window.monitorRenderMixin = {
       html += '<span class="m-sb-m" data-field="loss">loss <b>' + (d.loss != null ? this.esc(String(d.loss)) : '--') + '</b></span>';
       html += '<span class="m-sb-m" data-field="lr">lr <b>' + (d.lr != null ? this.esc(String(d.lr)) : '--') + '</b></span>';
       html += '<span class="m-sb-m" data-field="epoch">ep <b>' + (d.epoch != null ? this.esc(String(d.epoch)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><span class="m-sb-icon">⏱</span><b data-field="elapsed">' + (d.elapsed ? this.esc(String(d.elapsed)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><span class="m-sb-icon">⏳</span><b data-field="eta">' + (d.eta ? this.esc(String(d.eta)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><span class="m-sb-icon">⚡</span><b data-field="speed">' + (d.speed ? this.esc(String(d.speed)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><b data-field="elapsed">' + (d.elapsed ? this.esc(String(d.elapsed)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 10"/></svg><b data-field="eta">' + (d.eta ? this.esc(String(d.eta)) : '--') + '</b></span>';
+      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><b data-field="speed">' + (d.speed ? this.esc(String(d.speed)) : '--') + '</b></span>';
       html += '</div>';
     } else if (d.last_config && d.last_config.name) {
       const lc = d.last_config;
@@ -230,7 +229,7 @@ window.monitorRenderMixin = {
   _historyBannerHtml(d, t) {
     const runName = (d.config && d.config.output_name) || (this.selectedRunDir.split('/').pop() || '');
     let html = '<div class="m-history-banner">';
-    html += '<span class="m-history-icon">📜</span>';
+    html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory','Viewing history')) + '</span>';
     html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
     if (d.train_result) {
@@ -260,11 +259,10 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length) + ':' + (this._sparkDirty?1:0);
+      const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length);
       if (tabChanged || this._builtOverviewSig !== sig) {
         this._builtOverviewSig = sig;
         contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
-        this._sparkDirty = false;
       }
       this._builtTab = 'overview';
       return;
@@ -283,8 +281,13 @@ window.monitorRenderMixin = {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
       const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir);
       if (tabChanged || this._builtOutputsSig !== sig) {
+        // Preserve scroll position across re-renders
+        const scrollEl = contentEl.querySelector('.m-outputs-scroll');
+        const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
         contentEl.innerHTML = this._renderOutputsTab(t);
+        const newScrollEl = contentEl.querySelector('.m-outputs-scroll');
+        if (newScrollEl) newScrollEl.scrollTop = scrollTop;
       }
       this._builtTab = 'outputs';
       return;
@@ -292,86 +295,66 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  概览标签（含 sparkline 迷你趋势图）
+  //  概览标签
   // ═══════════════════════════════════════════════════════════
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
+
+    // ── 实时训练状态（仅在训练中显示）──
+    const isRunning = d.state === 'RUNNING';
+    if (isRunning) {
+      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('status','Training Status')) + '</div><div class="param-grid">';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('step','Steps')) + '</span><span class="param-value">' + (d.step||'?') + ' / ' + (d.total_steps||'?') + ' (' + (d.percent||0) + '%)</span></div>';
+      if (d.loss != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('loss','Loss')) + '</span><span class="param-value">' + this.esc(String(d.loss)) + '</span></div>';
+      if (d.lr != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('lr','LR')) + '</span><span class="param-value">' + this.esc(String(d.lr)) + '</span></div>';
+      if (d.epoch != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('epoch','Epoch')) + '</span><span class="param-value">' + this.esc(String(d.epoch)) + '</span></div>';
+      if (d.elapsed) html += '<div class="param-item"><span class="param-label">' + this.esc(t('elapsed','Elapsed')) + '</span><span class="param-value">' + this.esc(d.elapsed) + '</span></div>';
+      if (d.eta) html += '<div class="param-item"><span class="param-label">' + this.esc(t('remaining','Remaining')) + '</span><span class="param-value">' + this.esc(d.eta) + '</span></div>';
+      if (d.speed) html += '<div class="param-item"><span class="param-label">' + this.esc(t('speed','Speed')) + '</span><span class="param-value">' + this.esc(d.speed) + '</span></div>';
+      html += '</div></div>';
+    }
+
+    // ── 历史训练结果 ──
     if (isHistory && d.train_result) {
       const tr = d.train_result;
       html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('trainResult','Training Result')) + '</div><div class="param-grid">';
       html += '<div class="param-item"><span class="param-label">' + this.esc(t('status','Status')) + '</span><span class="param-value" style="color:' + (tr.status==='completed'?'var(--success)':'var(--danger)') + '">' + this.esc(tr.status||'?') + '</span></div>';
       if (tr.duration_str) html += '<div class="param-item"><span class="param-label">' + this.esc(t('duration','Duration')) + '</span><span class="param-value">' + this.esc(tr.duration_str) + '</span></div>';
       if (tr.exit_code != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('monitor.exitCode','Exit Code')) + '</span><span class="param-value">' + tr.exit_code + '</span></div>';
+      // Show final loss if available from lossSeries
+      if (this.lossSeries && this.lossSeries.length && isHistory) {
+        const avgSeries = this.lossSeries.find(s => s.tag === 'loss/average');
+        if (avgSeries && avgSeries.latest != null) {
+          html += '<div class="param-item"><span class="param-label">' + this.esc(t('loss','Final Loss')) + '</span><span class="param-value">' + Number(avgSeries.latest).toFixed(4) + '</span></div>';
+        }
+      }
       html += '</div></div>';
     }
 
-    // ── sparkline 迷你趋势图（loss/average）──
-    const lossSeries = this._getLossSeriesForSpark();
-    if (lossSeries && lossSeries.points && lossSeries.points.length >= 2) {
-      html += this._sparklineHtml(lossSeries, t);
+    // ── 上次训练配置（空闲时显示）──
+    if (!isRunning && !isHistory && d.last_config && d.last_config.name) {
+      const lc = d.last_config;
+      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('lastTraining','Last Training')) + '</div><div class="param-grid">';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('outputName','Name')) + '</span><span class="param-value">' + this.esc(lc.name) + '</span></div>';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyModel','Model')) + '</span><span class="param-value">' + this.esc(lc.model||'') + '</span></div>';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyLR','LR')) + '</span><span class="param-value">' + this.esc(lc.lr||'') + '</span></div>';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyDim','Dim')) + '</span><span class="param-value">' + this.esc(lc.dim||'') + '</span></div>';
+      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyEpochs','Epochs')) + '</span><span class="param-value">' + this.esc(lc.epochs||'') + '</span></div>';
+      html += '</div></div>';
     }
 
+    // ── 训练参数 ──
     html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
     if (this.trainParams.length) {
       html += '<div class="param-grid">';
       this.trainParams.forEach(p => { html += '<div class="param-item"><span class="param-label">' + this.esc(p.label) + '</span><span class="param-value">' + this.esc(p.value) + '</span></div>'; });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div>';
+      html += '<div class="dashboard-empty"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div>';
     }
     html += '</div>';
-    if (this.previews.length) {
-      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div><div class="preview-grid">';
-      this.previews.slice(0, 6).forEach(p => {
-        html += '<div class="preview-item" @click="monitorTab=\'samples\';renderDashboard()" style="cursor:pointer"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy"/><span class="preview-name">' + this.esc(p.name) + '</span></div>';
-      });
-      html += '</div></div>';
-    }
+
     return html;
-  },
-
-  _getLossSeriesForSpark() {
-    if (!this.lossSeries || !this.lossSeries.length) return null;
-    // 优先 loss/average，其次 loss/current，其次第一个 loss tag
-    return this.lossSeries.find(s => s.tag === 'loss/average')
-      || this.lossSeries.find(s => s.tag === 'loss/current')
-      || this.lossSeries.find(s => s.tag && s.tag.startsWith('loss/'))
-      || null;
-  },
-
-  _sparklineHtml(series, t) {
-    const points = this._smoothedSparkPoints(series.points);
-    const w = 100, h = 28;
-    const xs = points.map(p => p.step);
-    const ys = points.map(p => p.value);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
-    const xRange = xMax - xMin || 1;
-    const yRange = yMax - yMin || 1;
-    const path = points.map((p, i) => {
-      const x = ((p.step - xMin) / xRange) * w;
-      const y = h - ((p.value - yMin) / yRange) * (h - 4) - 2;
-      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
-    }).join(' ');
-    const latest = series.latest != null ? series.latest.toFixed(4) : '--';
-    const name = series.name || 'loss';
-    let html = '<div class="m-sparkline-section">';
-    html += '<div class="m-section-title">' + this.esc(t('lossTrend','Loss Trend')) + ' · ' + this.esc(name) + ' <span class="m-sparkline-latest">' + latest + '</span>';
-    html += '<span class="m-section-title-right"><label class="m-smooth-label">' + this.esc(t('smooth','Smooth')) + ' <input type="number" class="m-smooth-input" min="0" max="0.99" step="0.01" x-model="sparkSmoothing" @input="sparkSmoothing=$event.target.value;_sparkDirty=true;renderDashboard()" value="' + (this.sparkSmoothing||0) + '"></label></span>';
-    html += '</div>';
-    html += '<svg class="m-sparkline" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><path d="' + path + '"/></svg>';
-    html += '</div>';
-    return html;
-  },
-
-  _smoothedSparkPoints(points) {
-    const sm = this.sparkSmoothing || 0;
-    if (sm <= 0 || !points || points.length <= 1) return points || [];
-    const out = [];
-    let ema = points[0].value;
-    const alpha = 1 - sm;
-    points.forEach((p, i) => { if (i === 0) ema = p.value; else ema = alpha * p.value + (1 - alpha) * ema; out.push({ step: p.step, value: ema }); });
-    return out;
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -390,11 +373,11 @@ window.monitorRenderMixin = {
     html += '<button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop','↑ Top')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
     html += '</div>';
-    html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines">';
-    html += '<button type="button" class="log-scroll-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()" style="display:none">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
-    html += '</div></div>';
+    html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
     return html;
   },
 
@@ -456,7 +439,19 @@ window.monitorRenderMixin = {
       const line = lines[i];
       if (!this._logLineMatches(line, search, level)) continue;
       const lo = line.toLowerCase();
-      const cls = (lo.indexOf('error') !== -1 || lo.indexOf('traceback') !== -1) ? 'log-error' : (lo.indexOf('warning') !== -1 ? 'log-warn' : '');
+      // VSCode-style severity classification
+      let cls = '';
+      if (/\b(error|critical|fatal|exception)\b/i.test(line) || lo.indexOf('traceback') !== -1) {
+        cls = 'log-error';
+      } else if (/\bwarn(?:ing)?\b/i.test(line)) {
+        cls = 'log-warn';
+      } else if (/\binfo\b/i.test(line)) {
+        cls = 'log-info';
+      } else if (/\bdebug\b/i.test(line)) {
+        cls = 'log-debug';
+      } else if (/\b(?:success|completed|saved|finished|done)\b/i.test(line)) {
+        cls = 'log-ok';
+      }
       const div = document.createElement('div');
       div.className = 'log-line ' + cls;
       const num = document.createElement('span');
@@ -464,7 +459,7 @@ window.monitorRenderMixin = {
       num.textContent = (i + 1);
       const span = document.createElement('span');
       span.className = 'log-line-text';
-      span.innerHTML = this._formatLogLine(line, search);
+      this._highlightLogLine(span, line, search);
       div.appendChild(num);
       div.appendChild(span);
       frag.appendChild(div);
@@ -484,8 +479,8 @@ window.monitorRenderMixin = {
         frag.appendChild(empty);
       }
     }
-    const btn = container.querySelector('.log-scroll-bottom');
-    if (btn) container.insertBefore(frag, btn); else container.appendChild(frag);
+    const navBtns = container.querySelector('.log-nav-buttons');
+    if (navBtns) container.insertBefore(frag, navBtns); else container.appendChild(frag);
     this._renderedLogCount = lines.length;
   },
 
@@ -498,20 +493,32 @@ window.monitorRenderMixin = {
       this._logAtBottom = atBottom;
       if (this.logAutoScroll && !atBottom) this.logAutoScroll = false;
       else if (!this.logAutoScroll && atBottom) this.logAutoScroll = true;
-      this._updateLogScrollButton(contentEl);
+      this._updateLogNavButtons(contentEl);
     };
+  },
+
+  _scrollLogsToTop() {
+    const container = document.querySelector('#monitorDashboardLogs');
+    if (container) { container.scrollTop = 0; this._logAtBottom = false; this.logAutoScroll = false; }
+    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
   },
 
   _scrollLogsToBottom() {
     const container = document.querySelector('#monitorDashboardLogs');
     if (container) { container.scrollTop = container.scrollHeight; this._logAtBottom = true; }
-    this._updateLogScrollButton(document.getElementById('monitorTabContent'));
+    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
   },
 
-  _updateLogScrollButton(contentEl) {
+  _updateLogNavButtons(contentEl) {
     if (!contentEl) return;
-    const btn = contentEl.querySelector('.log-scroll-bottom');
-    if (btn) btn.style.display = this._logAtBottom ? 'none' : 'flex';
+    const container = contentEl.querySelector('#monitorDashboardLogs');
+    if (!container) return;
+    const atTop = container.scrollTop < 30;
+    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+    const topBtn = contentEl.querySelector('.log-nav-btn-top');
+    const bottomBtn = contentEl.querySelector('.log-nav-btn-bottom');
+    if (topBtn) topBtn.style.display = atTop ? 'none' : '';
+    if (bottomBtn) bottomBtn.style.display = atBottom ? 'none' : '';
   },
 
   _afterLogsRender(contentEl) {
@@ -521,22 +528,77 @@ window.monitorRenderMixin = {
       container.scrollTop = container.scrollHeight;
       this._logAtBottom = true;
     }
-    this._updateLogScrollButton(contentEl);
+    this._updateLogNavButtons(contentEl);
   },
 
-  _highlightSearch(escapedHtml, escapedSearch) {
-    if (!escapedSearch) return escapedHtml;
-    if (!this._searchRegex || this._cachedSearch !== escapedSearch) {
-      this._cachedSearch = escapedSearch;
-      this._searchRegex = new RegExp('(' + escapedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  // VSCode-style token regex (single unified pattern, ordered by priority)
+  _LOG_TOKEN_RE: (() => {
+    const ts  = '(\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?|\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?)';
+    const lvl = '\\[(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL|FATAL)\\]';
+    const kw  = '\\b(Traceback|raise|Exception|Error|assert)\\b';
+    const path= '([\\/][^\\s]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin))';
+    return new RegExp(ts + '|' + lvl + '|' + kw + '|' + path, 'gi');
+  })(),
+
+  _highlightLogLine(rootEl, lineText, search) {
+    /** Build DOM children for a log line — text nodes + highlighted spans.
+     *  No innerHTML, no escaping bugs. */
+    const re = this._LOG_TOKEN_RE;
+    let lastIdx = 0;
+    let m;
+    const frag = document.createDocumentFragment();
+    while ((m = re.exec(lineText)) !== null) {
+      // Plain text before match
+      if (m.index > lastIdx) {
+        frag.appendChild(document.createTextNode(lineText.slice(lastIdx, m.index)));
+      }
+      // Highlighted token
+      const span = document.createElement('span');
+      const token = m[0];
+      if (m[1]) { // timestamp
+        span.className = 'log-ts';
+      } else if (m[2]) { // log level [INFO] etc
+        span.className = 'log-lvl log-lvl-' + m[2].toUpperCase();
+      } else if (m[3]) { // keyword
+        span.className = 'log-kw';
+      } else if (m[4]) { // file path
+        span.className = 'log-path';
+      }
+      span.textContent = token;
+      frag.appendChild(span);
+      lastIdx = re.lastIndex;
     }
-    return escapedHtml.replace(this._searchRegex, '<mark>$1</mark>');
+    // Remaining plain text
+    if (lastIdx < lineText.length) {
+      frag.appendChild(document.createTextNode(lineText.slice(lastIdx)));
+    }
+    // Apply search highlight
+    if (search) {
+      this._highlightSearchInDOM(frag, search);
+    }
+    rootEl.appendChild(frag);
   },
 
-  _formatLogLine(line, search) {
-    let displayLine = this.esc(line);
-    if (search) displayLine = this._highlightSearch(displayLine, this.esc(search));
-    return displayLine;
+  _highlightSearchInDOM(frag, search) {
+    /** Walk text nodes and wrap search matches in <mark> */
+    const walker = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const lower = search.toLowerCase();
+    for (const node of nodes) {
+      const text = node.textContent;
+      const idx = text.toLowerCase().indexOf(lower);
+      if (idx === -1) continue;
+      const parent = node.parentNode;
+      const before = document.createTextNode(text.slice(0, idx));
+      const mark = document.createElement('mark');
+      mark.textContent = text.slice(idx, idx + search.length);
+      const after = document.createTextNode(text.slice(idx + search.length));
+      parent.insertBefore(before, node);
+      parent.insertBefore(mark, node);
+      parent.insertBefore(after, node);
+      parent.removeChild(node);
+    }
   },
 
   downloadLogs() {
@@ -565,17 +627,21 @@ window.monitorRenderMixin = {
   //  样本标签
   // ═══════════════════════════════════════════════════════════
   _renderSamplesTab(t) {
+    const isHistory = !!this.selectedRunDir;
+    const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
+    const showPreviews = this.previews.length && (isHistory || d.state === 'RUNNING');
+
     let html = '<div class="m-section"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div>';
-    if (this.previews.length) {
+    if (showPreviews) {
       const step = Math.min(this.previewStep, this.previews.length - 1);
       const p = this.previews[step] || this.previews[0];
-      html += '<div class="preview-controls"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1);renderDashboard()" :disabled="previewStep<=0">← ' + this.esc(this.t('monitor.prev','Prev')) + '</button>';
-      html += '<span class="preview-step">Step <b x-text="previewStep+1"></b> / ' + this.previews.length + '</span>';
-      html += '<button class="btn btn-sm" @click="previewStep=Math.min(' + (this.previews.length - 1) + ',previewStep+1);renderDashboard()" :disabled="previewStep>=' + (this.previews.length - 1) + '">' + this.esc(this.t('monitor.next','Next')) + ' →</button></div>';
-      html += '<div class="preview-grid">';
-      html += '<div class="preview-item preview-main"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy" onclick="window.open(\'' + this.esc(p.url).replace(/'/g, '&#39;') + '\')"/><span>' + this.esc(p.name) + '</span></div>';
+      html += '<div class="preview-controls"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1);renderDashboard()" :disabled="previewStep<=0">← ' + this.esc(t('prev','Prev')) + '</button>';
+      html += '<span class="preview-step">' + (step + 1) + ' / ' + this.previews.length + '</span>';
+      html += '<button class="btn btn-sm" @click="previewStep=Math.min(' + (this.previews.length - 1) + ',previewStep+1);renderDashboard()" :disabled="previewStep>=' + (this.previews.length - 1) + '">' + this.esc(t('next','Next')) + ' →</button></div>';
+      html += '<div class="preview-main"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy"/><div class="preview-main-label">' + this.esc(this._parseSampleInfo(p.name)) + '</div></div>';
+      html += '<div class="preview-strip">';
       this.previews.forEach((pv, i) => {
-        html += '<div class="preview-item preview-thumb' + (i === step ? ' active' : '') + '" @click="previewStep=' + i + ';renderDashboard()"><img src="' + this.esc(pv.url) + '" alt="' + this.esc(pv.name) + '" loading="lazy"/></div>';
+        html += '<div class="preview-thumb' + (i === step ? ' active' : '') + '" @click="previewStep=' + i + ';renderDashboard()"><img src="' + this.esc(pv.url) + '" alt="' + this.esc(pv.name) + '" loading="lazy"/><span>' + this.esc(this._parseSampleInfo(pv.name)) + '</span></div>';
       });
       html += '</div>';
     } else {
@@ -585,11 +651,41 @@ window.monitorRenderMixin = {
     return html;
   },
 
+  _parseSampleInfo(filename) {
+    // Parse epoch from filename like "nanahira_e000004_00_..."
+    const em = filename.match(/[eE](\d{6})/);
+    const epoch = em ? parseInt(em[1], 10) : null;
+    if (epoch == null) return filename;
+
+    // Try to get loss for this epoch from TensorBoard data
+    let lossStr = '';
+    if (this.lossSeries) {
+      const epochAvg = this.lossSeries.find(s => s.tag === 'loss/epoch_average');
+      if (epochAvg && epochAvg.points && epoch >= 1 && epoch <= epochAvg.points.length) {
+        const loss = epochAvg.points[epoch - 1].value;
+        lossStr = '  loss ' + loss.toFixed(4);
+      }
+    }
+
+    // Try to get step count from train params
+    let stepStr = '';
+    if (this.trainParams && this.trainParams.length) {
+      const epochsParam = this.trainParams.find(p => p.label && p.label.toLowerCase().includes('epoch'));
+      const epochTotal = epochsParam ? parseInt(epochsParam.value, 10) : 0;
+      if (epochTotal > 0 && this.monitorData && this.monitorData.total_steps) {
+        const stepsPerEpoch = Math.round(this.monitorData.total_steps / epochTotal);
+        stepStr = '  ~' + (epoch * stepsPerEpoch) + ' steps';
+      }
+    }
+
+    return 'Epoch ' + epoch + stepStr + lossStr;
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  输出标签
   // ═══════════════════════════════════════════════════════════
   _renderOutputsTab(t) {
-    let html = '<div class="m-section" style="margin-top:12px">';
+    let html = '<div class="m-section m-outputs-section">';
     html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + '</span></div>';
     html += '<div class="m-section-tools">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()">' + this.esc(t('refresh','Refresh')) + '</button>';
@@ -616,6 +712,9 @@ window.monitorRenderMixin = {
       html += '<div class="m-outputs-selected">' + this.esc(t('selected','Selected')) + ': ' + selectedCount + ' / ' + this.outputFiles.length + '</div>';
     }
 
+    // Scrollable content
+    html += '<div class="m-outputs-scroll">';
+
     const { models, others } = this._sortedOutputs();
 
     // ── 模型存档区（带 loss + 排序）──
@@ -632,7 +731,6 @@ window.monitorRenderMixin = {
     html += '</span></div>';
 
     if (models.length) {
-      // 找出 loss 最低的模型（仅当按 loss 升序时高亮，避免歧义）
       let bestPath = null;
       if (this.outputSortKey === 'loss' && this.outputSortDir === 'asc') {
         let best = null;
@@ -645,17 +743,15 @@ window.monitorRenderMixin = {
         const isBest = f.path === bestPath;
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
-        html += '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+        html += this._fileIconSvg(f);
         html += '<span class="output-name">' + this.esc(f.name) + '</span>';
-        // checkpoint badge
         const badge = this._ckptBadgeHtml(f, t);
         if (badge) html += badge; else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
-        // loss
         const lossTxt = f.ckpt_loss != null ? Number(f.ckpt_loss).toFixed(4) : '--';
         html += '<span class="m-ckpt-loss' + (f.ckpt_loss == null ? ' m-muted' : '') + '">loss <b>' + this.esc(lossTxt) + '</b></span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '">⬇</button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
@@ -664,7 +760,7 @@ window.monitorRenderMixin = {
     }
     html += '</div>';
 
-    // ── 其他文件区（样本/日志/配置/TB，不排序）──
+    // ── 其他文件区 ──
     if (others.length) {
       html += '<div class="m-ckpt-section" style="margin-top:12px">';
       html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles','Other Files')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
@@ -674,19 +770,47 @@ window.monitorRenderMixin = {
         const fpJs = this.escapeJsString(f.path);
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
-        html += '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+        html += this._fileIconSvg(f);
         html += '<span class="output-name">' + this.esc(f.name) + '</span>';
         if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '">⬇</button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
       html += '</div>';
     }
-    html += '</div>';
+    html += '</div>'; // m-outputs-scroll
+    html += '</div>'; // m-section
     return html;
+  },
+
+  _fileIconSvg(f) {
+    const cat = f.category || '';
+    const ext = (f.name || '').split('.').pop().toLowerCase();
+    // Weight icon for model files
+    if (cat === 'model') {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+    }
+    // Image icon for samples
+    if (cat === 'sample' || ['png','jpg','jpeg','webp','gif'].includes(ext)) {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    }
+    // Chart icon for tensorboard
+    if (cat === 'tensorboard' || ext === 'tfevents') {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
+    }
+    // Document icon for logs and text files
+    if (cat === 'log' || ['txt','log','md'].includes(ext)) {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+    }
+    // Gear icon for config files
+    if (['toml','json','yaml','yml'].includes(ext)) {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+    }
+    // Default folder icon
+    return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
   },
 
   // checkpoint 类型 → 小标签（Epoch N / Step N / 最终）
@@ -715,18 +839,21 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   renderHistory() {
     const el = document.getElementById('historyList');
-    if (!el) return;
-    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    try {
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
     const hasRunning = this.runningTask && this.runningTask.status === 'RUNNING';
     const items = this.filteredHistoryItems;
     const hasHistory = items && items.length;
 
     if (!hasRunning && !hasHistory && !(this.historyItems && this.historyItems.length)) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + this.esc(t('historyNoRecords', 'No training history')) + '</p><p class="m-empty-sub">' + this.esc(t('historyWillAppear', 'Records will appear after training')) + '</p></div>';
+      el.innerHTML = 
+        '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + this.esc(t('historyNoRecords', 'No training history')) + '</p><p class="m-empty-sub">' + this.esc(t('historyWillAppear', 'Records will appear after training')) + '</p></div>';
       return;
     }
 
     let html = '';
+    // Persistent diagnostic banner
+    
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
@@ -735,14 +862,14 @@ window.monitorRenderMixin = {
       html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
       html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
-      html += '<div class="hist-actions"><button class="btn btn-sm btn-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('monitor.viewDashboard','View Dashboard')) + '</button></div>';
+      html += '<div class="hist-actions"><button class="btn btn-sm btn-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
       html += '</div>';
     }
 
     if (this.historyItems && this.historyItems.length) {
       html += '<div class="hist-toolbar">';
-      html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('monitor.searchHistory','Search history...')) + '" @input.debounce.200ms="renderHistory()">';
-      const filters = [['all', t('logLevelAll','All')], ['completed', t('monitor.statusCompleted','Completed')], ['failed', t('monitor.statusFailed','Failed')], ['terminated', t('monitor.statusTerminated','Terminated')]];
+      html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('searchHistory','Search history...')) + '" @input.debounce.200ms="renderHistory()">';
+      const filters = [['all', t('logLevelAll','All')], ['completed', t('statusCompleted','Completed')], ['failed', t('statusFailed','Failed')], ['terminated', t('statusTerminated','Terminated')]];
       filters.forEach(f => {
         html += '<button type="button" class="hist-filter-btn" :class="{active:historyFilter===\'' + f[0] + '\'}" @click="historyFilter=\'' + f[0] + '\';renderHistory()">' + this.esc(f[1]) + '</button>';
       });
@@ -757,7 +884,7 @@ window.monitorRenderMixin = {
         html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
         if (h.status) {
           const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
-          const statusLabels = { completed: t('monitor.statusCompleted','✓ Completed'), failed: t('monitor.statusFailed','✗ Failed'), error: t('monitor.statusError','✗ Error'), terminated: t('monitor.statusTerminated','⏹ Terminated') };
+          const statusLabels = { completed: t('statusCompleted','✓ Completed'), failed: t('statusFailed','✗ Failed'), error: t('statusError','✗ Error'), terminated: t('statusTerminated','⏹ Terminated') };
           html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '">' + this.esc(statusLabels[h.status] || h.status) + '</span>';
         }
         if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
@@ -772,9 +899,9 @@ window.monitorRenderMixin = {
           html += '<div class="hist-actions">';
           html += '<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails', 'View Details')) + '</button>';
           html += '<button class="btn btn-sm btn-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig', 'View Config')) + '</button>';
-          html += '<button class="btn btn-sm btn-secondary" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '">⬇</button>';
+          html += '<button class="btn btn-sm btn-secondary" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
           html += '<button class="btn btn-sm" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig', 'Reuse')) + '</button>';
-          html += '<button class="btn btn-sm btn-danger hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('common.delete','Delete')) + '">✕</button>';
+          html += '<button class="btn btn-sm btn-danger hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('common.delete','Delete')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
           html += '</div>';
         }
         html += '</div>';
@@ -784,6 +911,9 @@ window.monitorRenderMixin = {
 
     html += '<div id="configSnapshotModal" class="modal-overlay" style="display:none"><div class="modal" style="max-width:700px"><div class="modal-header"><span>' + this.esc(t('configSnapshot','Config Snapshot')) + '</span><button class="btn btn-sm" @click="closeSnapshotModal()" style="font-size:18px;line-height:1;padding:4px 8px">&times;</button></div><div class="modal-body" id="configSnapshotContent"></div></div></div>';
     el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') || 'Error displaying history. Check browser console (F12).' : 'Error displaying history. Check browser console (F12).') + '</p></div>';
+    }
   },
 
   async downloadRunOutputs(runDir) {
@@ -792,7 +922,7 @@ window.monitorRenderMixin = {
   },
 
   async viewSnapshot(runDir) {
-    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
@@ -813,7 +943,7 @@ window.monitorRenderMixin = {
     const modal = document.getElementById('configSnapshotModal');
     const content = document.getElementById('configSnapshotContent');
     if (!modal || !content) return;
-    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
 
     let html = '';
     if (snapshot.params) {
@@ -854,7 +984,7 @@ window.monitorRenderMixin = {
   },
 
   async reuseConfig(runDir) {
-    const t = (k, fb) => this.t('monitor.' + k) || fb || k;
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));

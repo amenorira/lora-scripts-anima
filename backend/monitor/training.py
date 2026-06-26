@@ -44,9 +44,11 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
             _tb_cache.pop(log_dir_str, None)
         return None
 
+    # 使用最新 event file 的所在目录（EventAccumulator 不递归搜索子目录）
     ef_with_mtime = [(p, p.stat().st_mtime) for p in event_files]
     ef_with_mtime.sort(key=lambda x: x[1], reverse=True)
-    latest_mtime = ef_with_mtime[0][1]
+    latest_ef_path, latest_mtime = ef_with_mtime[0]
+    event_dir = str(latest_ef_path.parent)  # 实际包含 event file 的目录
     now = time.time()
 
     with _tb_cache_lock:
@@ -58,7 +60,7 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
     # 缓存未命中或过期：创建新 accumulator
     try:
         ea = event_accumulator.EventAccumulator(
-            log_dir_str,
+            event_dir,
             size_guidance={event_accumulator.SCALARS: 0},
         )
         ea.Reload()

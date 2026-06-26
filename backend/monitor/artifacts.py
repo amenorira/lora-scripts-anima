@@ -298,18 +298,11 @@ def _find_nearest_point(points: list[dict], target_step: int) -> float | None:
     return points[best_idx]["value"]
 
 
-def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict]) -> list[dict]:
+def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict], run_dir: str = "") -> list[dict]:
     """给 list_output_files 的结果中 model 类文件补充对应 loss。
-
-    依赖 list_output_files 已写入的 ckpt_type/ckpt_epoch/ckpt_step 字段。
-    在每个 model 文件 dict 上增加:
-      ckpt_loss (float|None)  — 匹配到的 TensorBoard loss 值
-
-    匹配规则:
-      epoch 存档 → loss/epoch_average 第 N 个点（N = epoch_no）
-      step  存档 → loss/current（优先）/loss/average 中 step 最接近的点
-      最终存档 → loss/average 的 latest
-    无 TB 数据或无法匹配时 ckpt_loss = None。非 model 文件不动。
+    
+    优先从 TensorBoard 读取；TB 无数据时回退到解析训练日志（从保存检查点
+    之前的进度行提取 avr_loss/loss）。
     """
     if not files:
         return files
@@ -324,11 +317,12 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict]) -> li
                 epoch_avg = s.get("points") or []
             if tag == "loss/average":
                 avg_latest = s.get("latest")
-            # step 存档优先用 loss/current，其次 loss/average
             if tag == "loss/current":
                 step_series = s.get("points") or []
             elif step_series is None and tag == "loss/average":
                 step_series = s.get("points") or []
+
+    has_tb_loss = bool(epoch_avg or step_series or avg_latest)
 
     for f in files:
         if f.get("category") != "model":
@@ -337,7 +331,6 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict]) -> li
         loss = None
         try:
             if ckpt_type == "epoch" and f.get("ckpt_epoch") is not None and epoch_avg:
-                # 第 N 个 epoch → 第 N 个点（1-based）；epoch 号从 1 起，文件名 000003 = 第 3 epoch
                 idx = f["ckpt_epoch"] - 1
                 if 0 <= idx < len(epoch_avg):
                     loss = epoch_avg[idx].get("value")
@@ -348,17 +341,104 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict]) -> li
         except (KeyError, IndexError, TypeError):
             loss = None
         f["ckpt_loss"] = loss
+
+    # 回退：TensorBoard 无数据时从训练日志提取
+    if not has_tb_loss and run_dir:
+        log_losses = _parse_log_checkpoint_losses(run_dir)
+        for f in files:
+            if f.get("category") != "model" or f.get("ckpt_loss") is not None:
+                continue
+            name = f.get("name", "")
+            if name in log_losses:
+                f["ckpt_loss"] = log_losses[name]
+
     return files
+
+
+def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
+    """从训练日志中提取每个检查点保存前的 loss 值。
+    
+    解析模式：在 'saving checkpoint' 行之前查找 'avr_loss=X.XXX' 或 'loss=X.XXX'。
+    返回 {文件名: loss值} 字典。
+    """
+    rd = Path(run_dir)
+    if not rd.is_absolute():
+        rd = (REPO_ROOT / run_dir).resolve()
+    if not rd.is_dir():
+        return {}
+
+    # 查找训练日志文件
+    log_files = sorted(rd.glob("train_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not log_files:
+        return {}
+
+    lines = _tail_file(log_files[0])
+    if not lines:
+        return {}
+
+    re_loss = re.compile(r'(?:avr_loss|loss)[:=]\s*([\d.]+)')
+    # 匹配: saving checkpoint: .../name-000002.safetensors 或 name-step00001000.safetensors
+    re_save = re.compile(
+        r'saving\s+checkpoint.*?[/\\](?P<name>[\w.-]+?)(?:-step(?P<step>\d{8})|-(?P<epoch>\d{6}))\.safetensors'
+    )
+    # 也匹配最终存档（无数字后缀的 safetensors）
+    re_final = re.compile(
+        r'saving\s+checkpoint.*?[/\\](?P<name>[\w.-]+)\.safetensors\s*$'
+    )
+
+    losses: dict[str, float] = {}
+    for i, line in enumerate(lines):
+        m = re_save.search(line)
+        if m:
+            fname = m.group(0).split('/')[-1].split('\\')[-1].strip()
+            # 向前查找 loss
+            for j in range(i - 1, max(i - 6, -1), -1):
+                lm = re_loss.search(lines[j])
+                if lm:
+                    losses[fname] = float(lm.group(1))
+                    break
+            continue
+        m = re_final.search(line)
+        if m:
+            fname = m.group(0).split('/')[-1].split('\\')[-1].strip()
+            for j in range(i - 1, max(i - 6, -1), -1):
+                lm = re_loss.search(lines[j])
+                if lm:
+                    losses[fname] = float(lm.group(1))
+                    break
+
+    return losses
 
 
 # ── 训练日志读取 ──────────────────────────────────────────
 
 # 日志 tail 读取的最大字节数（约 500-1000 行）
-_LOG_TAIL_BYTES = 64 * 1024
+_LOG_TAIL_BYTES = 4 * 1024 * 1024  # 4 MiB — 覆盖完整训练日志
+
+# ANSI 转义序列正则（颜色、光标控制、清屏等）
+_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+
+
+def _clean_log_text(text: str) -> str:
+    """清理训练日志中的终端控制字符：
+    - 移除 ANSI 转义序列（颜色、光标移动等）
+    - 处理 \\r 覆盖（tqdm 进度条）：每行只保留最后一次覆盖的结果
+    """
+    # 移除 ANSI CSI 序列
+    text = _ANSI_RE.sub('', text)
+    # 处理 \r（tqdm 在同一行反复覆盖）：每段取最终值
+    if '\r' in text:
+        cleaned_lines = []
+        for line in text.split('\n'):
+            if '\r' in line:
+                line = line.split('\r')[-1]
+            cleaned_lines.append(line)
+        text = '\n'.join(cleaned_lines)
+    return text
 
 
 def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
-    """高效读取文件尾部内容（不加载整个文件到内存）"""
+    """高效读取文件尾部内容（不加载整个文件到内存），并清理终端控制字符"""
     try:
         size = path.stat().st_size
         if size == 0:
@@ -366,14 +446,17 @@ def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             if size <= max_bytes:
                 f.seek(0)
-                return f.read().split("\n")
-            f.seek(size - max_bytes)
-            # 丢弃第一行（可能是不完整的行）
-            content = f.read()
-            first_newline = content.find("\n")
-            if first_newline >= 0:
-                content = content[first_newline + 1:]
-            return content.split("\n")
+                content = f.read()
+            else:
+                f.seek(size - max_bytes)
+                # 丢弃第一行（可能是不完整的行）
+                content = f.read()
+                first_newline = content.find("\n")
+                if first_newline >= 0:
+                    content = content[first_newline + 1:]
+        # 清理 ANSI + \r 覆盖
+        content = _clean_log_text(content)
+        return content.split("\n")
     except OSError:
         return []
 

@@ -104,10 +104,10 @@
 		"trainResult": "训练结果",
 		"exitCode": "退出码",
 		"confirmClearLogs": "确定清空所有日志？",
-		"statusCompleted": "✓ 已完成",
-		"statusFailed": "✗ 失败",
-		"statusError": "✗ 错误",
-		"statusTerminated": "⏹ 已终止",
+		"statusCompleted": "已完成",
+		"statusFailed": "失败",
+		"statusError": "错误",
+		"statusTerminated": "已终止",
 		"loadRunFailed": "加载训练详情失败",
 		"runDetailError": "读取训练详情出错",
 		"stepPrefix": "步数 ",
@@ -136,7 +136,9 @@
 		"ckptEpoch": "Epoch {n}",
 		"ckptStep": "Step {n}",
 		"ckptFinal": "最终",
-		"noModelFiles": "暂无模型文件"
+			"noModelFiles": "暂无模型文件",
+			"scrollToBottom": "↓ 回到底部",
+			"scrollToTop": "↑ 回到顶部"
 	},
 	"section": {
 		"model": "模型与数据集",

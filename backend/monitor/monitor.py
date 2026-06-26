@@ -19,7 +19,7 @@ from typing import Any
 from backend.core.event_bus import event_bus
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
-from backend.monitor.artifacts import read_train_log, find_train_log_path
+from backend.monitor.artifacts import read_train_log, find_train_log_path, _clean_log_text
 from backend.tasks import tm, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class TaskMonitor:
         self._running = False
         self._task: asyncio.Task | None = None
         self._poll_interval = 1.0  # 轮询间隔（秒）
-        self._log_push_lines = 1000  # 单次推送日志行数上限
+        self._log_push_lines = 5000  # 单次推送日志行数上限
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
         # 控制台进度条状态
@@ -329,6 +329,8 @@ class TaskMonitor:
             if not content:
                 return None
 
+            # 清理 ANSI 转义序列 + tqdm 进度条 \r 覆盖
+            content = _clean_log_text(content)
             lines = content.split("\n")
             # 如果 last_pos=0（首次读取或截断后），可能是完整文件读取；
             # 否则是增量读取，末尾空行往往是 write buffer 产生的半行

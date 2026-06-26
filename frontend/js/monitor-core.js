@@ -8,9 +8,8 @@ window.monitorCoreMixin = {
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
   previews: [], previewStep: 0, historyItems: [], runningTask: null,
-  logAutoScroll: true, logLines: [], logMaxLines: 5000,
-  logSearch: '', logLevel: 'all', _logContentVersion: 0,
-  sparkSmoothing: 0.6, monitorTab: 'overview',
+  logAutoScroll: true, logLines: [], logMaxLines: 100000,
+  logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
   _monitorAbortCtrl: null,
@@ -21,8 +20,6 @@ window.monitorCoreMixin = {
   _renderedLogFilterKey: '',   // 已渲染时使用的 filter key（搜索+级别）
   _logAtBottom: true,          // 用户当前是否在底部（决定追加后是否滚底）
 
-  // ── sparkline 脏标记（loss_update 触发，概览页 sparkline 用）──
-  _sparkDirty: false,
 
   // ── 历史页筛选状态 ──
   historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
@@ -69,7 +66,6 @@ window.monitorCoreMixin = {
     if (!taskId || this._eventSource) return;
     // 清空 lossSeries，避免 SSE 重连后产生重复数据点
     this.lossSeries = [];
-    this._sparkDirty = true;
     this._sseTaskId = taskId;
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
@@ -267,8 +263,6 @@ window.monitorCoreMixin = {
       }
     }
 
-    // 标记 sparkline 脏，交由 scheduleRender 合并处理
-    this._sparkDirty = true;
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
@@ -312,8 +306,7 @@ window.monitorCoreMixin = {
           // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
           if (!this._sseConnected) {
             this.lossSeries = j.data.tensorboard_loss||[];
-            this._sparkDirty = true;
-            if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
+                    if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
           }
           this.trainParams = j.data.train_params||[];
           this.previews = j.data.previews||[];
@@ -357,9 +350,12 @@ window.monitorCoreMixin = {
         this.runningTask = d.data.running || null;
         this.historyItems = d.data.history || [];
       }
-      this.renderHistory();
-    } catch(e) { this.toast(this.t('monitor.historyLoadError') || 'Failed to load history', 'error'); }
-    finally { this.finishProgress(); }
+    } catch(e) {
+      this.toast(this.t('monitor.historyLoadError') || 'Failed to load history', 'error');
+    } finally {
+      try { this.renderHistory(); } catch (e) {}
+      this.finishProgress();
+    }
   },
 
   get filteredHistoryItems() {
@@ -428,7 +424,6 @@ window.monitorCoreMixin = {
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
     this._forceLogRebuild = true;
-    this._sparkDirty = true;
     this.navigate('monitor-dashboard');
     // 等待 DOM 就绪后拉取数据
     await this.$nextTick();
@@ -443,8 +438,7 @@ window.monitorCoreMixin = {
       if (j.status === 'success') {
         this.runDetailData = j.data;
         this.lossSeries = j.data.tensorboard_loss || [];
-        this._sparkDirty = true;
-        this.trainParams = j.data.train_params || [];
+            this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
         // 重置预览步进，避免越界
         this.previewStep = 0;
@@ -471,7 +465,6 @@ window.monitorCoreMixin = {
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
     this._forceLogRebuild = true;
-    this._sparkDirty = true;
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
     this.startMonitorPolling();

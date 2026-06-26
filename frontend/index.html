@@ -186,7 +186,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' }">
+	          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard' }">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
@@ -221,7 +221,7 @@
       </div>
 
       <!-- Route: Monitor Dashboard -->
-      <div x-show="currentRoute === 'monitor-dashboard'" x-cloak>
+      <div x-show="currentRoute === 'monitor-dashboard'" x-cloak class="route-monitor-dashboard">
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
         </div>
