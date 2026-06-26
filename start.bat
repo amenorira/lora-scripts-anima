@@ -40,12 +40,11 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-REM -- pip mirror bypass --
-REM 安装依赖一律走官方 PyPI，无视宿主注入的镜像（如 AutoDL 的 HTTP 阿里源——
-REM pip 23+ 还会把它当不安全主机静默忽略）。清空所有 PIP_* index/trusted-host
-REM 变量，使主 pip 调用、PEP 517 构建子进程（vendor/sd-scripts）与 gui.py 运行时
-REM pip 统一回退到默认 https://pypi.org/simple。torch 的 +cu128 轮子仍由下方
-REM 硬编码的 --extra-index-url 取得（命令行参数，不受环境变量影响）。
+REM -- pip mirror bypass (PEP 517 subprocess fallback) --
+REM 下方每条 pip install 已用 -i https://pypi.org/simple 命令行强制主源为官方 PyPI
+REM （优先级最高，压过 pip.conf 与环境变量）。但 PEP 517 构建子进程
+REM （vendor/sd-scripts 的 sdist 构建）不继承命令行参数，只继承环境，故仍需清空
+REM PIP_* index/trusted-host 变量兜底，使其同样回退默认 https://pypi.org/simple。
 set _PIP_STRIPPED=0
 for %%v in (PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST) do (
     if defined %%v (
@@ -81,25 +80,25 @@ if not exist "venv\Scripts\python.exe" (
     python -m venv venv
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
     echo Upgrading pip...
-    venv\Scripts\python.exe -m pip install --upgrade pip -q
+    venv\Scripts\python.exe -m pip install --upgrade pip -q -i https://pypi.org/simple
 )
 
 echo [1/3] Installing PyTorch 2.10.0+cu128...
 REM 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
-venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q
+venv\Scripts\python.exe -m pip install "setuptools>=68,<82" -q -i https://pypi.org/simple
 if !errorlevel! neq 0 (echo [ERROR] setuptools pre-lock failed. && pause && exit /b 1)
-venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+venv\Scripts\python.exe -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 -i https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128
 if !errorlevel! neq 0 (echo [ERROR] PyTorch install failed. && pause && exit /b 1)
 
 echo [2/3] Installing sd-scripts deps...
 pushd vendor\sd-scripts
-..\..\venv\Scripts\python.exe -m pip install -r requirements.txt
+..\..\venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.org/simple
 set _SD_RC=!errorlevel!
 popd
 if !_SD_RC! neq 0 (echo [ERROR] sd-scripts deps failed. && pause && exit /b 1)
 
 echo [3/3] Installing project deps...
-venv\Scripts\python.exe -m pip install -r requirements.txt
+venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.org/simple
 if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 
 echo [Done] Installation complete!
