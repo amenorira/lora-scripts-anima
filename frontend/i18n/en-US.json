@@ -215,7 +215,7 @@
 		"lr_warmup_steps_emoLocked": "EmoSens does not require external warmup, locked to 0",
 		"lr_scheduler_locked": "This optimizer manages LR internally; scheduler is overridden (EmoSens→EmoPulse, ScheduleFree→dummy)",
 		"lr_scheduler_type": "External scheduler (dot-path). Overrides lr_scheduler when set.",
-		"lr_scheduler_type_locked": "EmoSens already computes emoPulse internally, locked to emoPulse pass-through",
+		"lr_scheduler_type_locked": "This optimizer manages LR internally; external scheduler is overridden (EmoSens→EmoPulse, ScheduleFree→dummy)",
 		"learning_rate_prodigyLocked": "Prodigy uses lr as a D-adaptation scaling factor, fixed at 1.0",
 		"unet_lr_prodigyLocked": "Prodigy requires all learning rates at 1.0 (D-adaptation scaling), U-Net rate locked",
 		"text_encoder_lr_prodigyLocked": "Prodigy requires all learning rates at 1.0 (D-adaptation scaling), text encoder rate locked",

@@ -215,7 +215,7 @@
 		"lr_warmup_steps_emoLocked": "EmoSens 不需要外部预热步骤，此参数已锁定为 0",
 		"lr_scheduler_locked": "此优化器内部管理学习率，调度器已被接管（EmoSens→EmoPulse，ScheduleFree→dummy）",
 		"lr_scheduler_type": "外部调度器（模块路径）。设置后覆盖上方 lr_scheduler。",
-		"lr_scheduler_type_locked": "EmoSens 内部已计算 emoPulse，已锁定为 emoPulse 透传调度器",
+		"lr_scheduler_type_locked": "此优化器内部管理学习率，外部调度器已被接管（EmoSens→EmoPulse，ScheduleFree→dummy）",
 		"learning_rate_prodigyLocked": "Prodigy 使用 lr 作为 D-adaptation 缩放因子，必须固定为 1.0",
 		"unet_lr_prodigyLocked": "Prodigy 要求所有学习率均为 1.0（D-adaptation 缩放因子），U-Net 学习率已锁定",
 		"text_encoder_lr_prodigyLocked": "Prodigy 要求所有学习率均为 1.0（D-adaptation 缩放因子），文本编码器学习率已锁定",
