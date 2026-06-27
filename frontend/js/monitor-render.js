@@ -25,7 +25,7 @@ window.monitorRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const gpu = isHistory ? null : this.gpuInfo;
     const sys = isHistory ? null : this.sysInfo;
-    const t = (k,fb) => { const fullKey = k.includes('.') ? k : ('monitor.'+k); return this.t(fullKey)||fb||k; };
+    const t = (k,fb) => { const fullKey = k.includes('.') ? k : ('monitor.'+k); return this.t(fullKey, fb)||fb||k; };
     const tab = this.monitorTab||'overview';
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
@@ -362,22 +362,53 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
     let html = '<div class="m-section" style="margin-top:12px">';
-    html += '<div class="m-section-title">' + this.esc(t('logTitle','Real-time Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this.logLines.length + '</span></div>';
-    html += '<div class="m-section-tools">';
-    html += '<input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
-    const levels = ['all','info','warn','error'];
-    const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
-    levels.forEach(l => {
-      html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
-    });
-    html += '<button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop','↑ Top')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
+    const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
+    html += '<div class="m-section-title">' + this.esc(t(titleKey,'Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span></div>';
+    html += '<div class="m-section-tools m-logs-tools">';
+    // 模式切换：实时尾部（内存缓冲）↔ 完整日志（后端分页）
+    if (this.logMode === 'full') {
+      html += '<button type="button" class="btn btn-sm" @click="setLogMode(\'tail\')">← ' + this.esc(t('logTailMode','Live tail')) + '</button>';
+    } else {
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode','Full log')) + '</button>';
+    }
+    // tail 模式工具
+    if (this.logMode !== 'full') {
+      html += '<input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
+      const levels = ['all','info','warn','error'];
+      const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
+      levels.forEach(l => {
+        html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
+      });
+      html += '<button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop','↑ Top')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
+    }
     html += '</div>';
+    // full 模式分页工具栏
+    if (this.logMode === 'full') html += this._logFullToolbarHtml(t);
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
+    return html;
+  },
+
+  // 完整日志分页工具栏（reactive：fetchLogSlice 更新状态后自动刷新文本）
+  _logFullToolbarHtml(t) {
+    let html = '<div class="m-section-tools m-logs-full-tools">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage','‹ Prev')) + '</button>';
+    html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button>';
+    html += '<input type="number" class="m-logs-goto" min="1" placeholder="' + this.esc(t('gotoLine','行号')) + '" @keydown.enter="logFullGotoLine($event.target.value)" style="width:80px">';
+    html += '<input type="text" class="m-logs-search" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','搜索全文件...')) + '" @keydown.enter="searchFullLog(logFullQuery)" style="width:150px">';
+    html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
+    html += '<span class="m-logs-match" x-text="logFullMatchText()"></span>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
+    html += '</span>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh','Refresh')) + '</button>';
+    html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" x-show="!selectedRunDir" @click="followFullTail()">↓ ' + this.esc(t('logFollow','Follow tail')) + '</button>';
+    html += '</div>';
     return html;
   },
 
@@ -395,117 +426,297 @@ window.monitorRenderMixin = {
   },
 
   _renderLogs(contentEl, d, t, tabChanged) {
-    const search = (this.logSearch || '').toLowerCase();
-    const level = this.logLevel || 'all';
-    const filterKey = search + '|' + level;
     const shellInDom = !!contentEl.querySelector('#monitorDashboardLogs');
+    const shellStale = this._builtLogMode !== this.logMode;
 
-    if (tabChanged || !shellInDom) {
+    // ── 首次 / 标签切换 / 模式切换：重建外壳 + 全量填充 ──
+    if (tabChanged || !shellInDom || shellStale) {
+      this._builtLogMode = this.logMode;
       contentEl.innerHTML = this._logsTabShellHtml(t);
-      this._renderedLogFilterKey = filterKey;
+      this._renderedLogFilterKey = '';
       this._renderedLogCount = 0;
+      this._logTrimK = 0;
       this._forceLogRebuild = false;
-      this._populateLogs(contentEl, search, level, true);
+      this._logChunking = false;
+      this._populateLogs(contentEl, true);
+      // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
+      if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
+        this._logFullNeedsResync = false;
+        this._logFullLoaded = true;
+        this.fetchLogSlice({ tail: true });
+      }
       this._bindLogScroll(contentEl);
-    } else {
-      const filterChanged = this._renderedLogFilterKey !== filterKey;
-      const trimmed = this.logLines.length < this._renderedLogCount;
-      if (filterChanged || trimmed || this._forceLogRebuild) {
-        this._renderedLogFilterKey = filterKey;
-        this._renderedLogCount = 0;
-        this._forceLogRebuild = false;
-        this._populateLogs(contentEl, search, level, true);
-      } else if (this.logLines.length > this._renderedLogCount) {
-        this._populateLogs(contentEl, search, level, false);
-      }
-      const countEl = contentEl.querySelector('[data-field="log-count"]');
-      if (countEl) countEl.textContent = this.logLines.length;
-    }
-    this._afterLogsRender(contentEl);
-  },
-
-  _populateLogs(contentEl, search, level, isFull) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    if (isFull) {
-      container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
-    }
-    const lines = this.logLines;
-    const start = isFull ? 0 : this._renderedLogCount;
-
-    // 增量模式：行数少，直接渲染
-    if (!isFull) {
-      const frag = document.createDocumentFragment();
-      let appended = 0;
-      for (let i = start; i < lines.length; i++) {
-        if (!this._logLineMatches(lines[i], search, level)) continue;
-        frag.appendChild(this._buildLogLineDom(lines[i], i, search));
-        appended++;
-      }
-      container.appendChild(frag);
-      if (container.querySelector('.log-empty') && appended > 0) {
-        container.querySelector('.log-empty').remove();
-      }
-      this._renderedLogCount = lines.length;
+      // tail 全量是分帧的，末帧自会滚底；此处仅在非分帧（full/空）时按需滚动
+      this._afterLogsRender(contentEl, this.logMode === 'tail' && !this._logChunking);
       return;
     }
 
-    // 全量渲染：分帧处理，每帧 CHUNK 行，不阻塞 UI
+    // ── full 模式：末页 SSE 增量 + 翻页静态；首屏/重连自动拉取末页 ──
+    if (this.logMode === 'full') {
+      // 首屏未加载或 SSE 重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
+      if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
+        this._logFullNeedsResync = false;
+        this._logFullLoaded = true;
+        this.fetchLogSlice({ tail: true });
+      }
+      if (this._logFullSlide) {
+        this._logFullSlide = false;
+        this._populateFullSlide(contentEl);
+      } else if (this._forceLogRebuild) {
+        this._forceLogRebuild = false;
+        this._populateLogs(contentEl, true);
+      }
+      this._updateLogCount(contentEl);
+      return;
+    }
+
+    // ── tail 模式 ──
+    const search = (this.logSearch || '').toLowerCase();
+    const level = this.logLevel || 'all';
+    const filterKey = search + '|' + level;
+    const filterChanged = this._renderedLogFilterKey !== filterKey;
+    const trimmed = this.logLines.length < this._renderedLogCount;
+    const wasDirty = this._logDirty;
+
+    // Fix3：非脏且无过滤/裁剪/强制重建 → 跳过日志重排（progress/hardware/loss 不再触碰日志 DOM）
+    if (!wasDirty && !filterChanged && !trimmed && !this._forceLogRebuild) {
+      this._updateLogCount(contentEl);
+      return;
+    }
+
+    if (filterChanged || trimmed || this._forceLogRebuild) {
+      this._renderedLogFilterKey = filterKey;
+      this._renderedLogCount = 0;
+      this._logTrimK = 0;
+      this._forceLogRebuild = false;
+      this._populateLogs(contentEl, true);          // 分帧全量重建
+      this._logDirty = false;
+      this._updateLogCount(contentEl);
+      this._afterLogsRender(contentEl, !this._logChunking); // 末帧自滚底
+      return;
+    }
+
+    // Fix1：分帧进行中 → 跳过增量（循环实时读 logLines 会吸收新行；裁剪已取消分帧并置 forceRebuild）
+    if (this._logChunking) {
+      this._logDirty = false;
+      this._updateLogCount(contentEl);
+      return;
+    }
+
+    // 增量 / 滑窗（Fix2）
+    if (wasDirty && (this.logLines.length > this._renderedLogCount || this._logTrimK > 0)) {
+      this._populateLogs(contentEl, false);
+    }
+    this._logDirty = false;
+    this._updateLogCount(contentEl);
+    this._afterLogsRender(contentEl, wasDirty);
+  },
+
+  _populateLogs(contentEl, isFullRebuild) {
+    if (this.logMode === 'full') { this._populateFullLogs(contentEl); return; }
+    const search = (this.logSearch || '').toLowerCase();
+    const level = this.logLevel || 'all';
+    if (isFullRebuild) this._populateTailFull(contentEl, search, level);
+    else this._populateTailIncremental(contentEl, search, level);
+  },
+
+  // 行号由 CSS counter（.log-line::before）按 DOM 位置自动生成；full 模式由
+  // counter-reset=offset 给出绝对行号。故此处不再创建 num span。
+  _buildLogLineDom(line, search, extraClass) {
+    const div = document.createElement('div');
+    div.className = 'log-line' + (extraClass ? ' ' + extraClass : '');
+    const span = document.createElement('span');
+    span.className = 'log-line-text';
+    this._highlightLogLine(span, line, search);
+    div.appendChild(span);
+    return div;
+  },
+
+  // ── tail：分帧全量重建（Fix1 _logChunking 防竞态；末帧自滚底）──
+  _populateTailFull(contentEl, search, level) {
+    const container = contentEl.querySelector('#monitorDashboardLogs');
+    if (!container) return;
+    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
+    container.style.counterReset = 'logline 0';   // tail：缓冲内相对行号 1..n
+    const lines = this.logLines;
     const CHUNK = 400;
     const self = this;
-    let i = start;
+    this._logChunking = true;
+    let i = 0;
     let firstChunk = true;
 
     function renderChunk() {
+      if (!self._logChunking) return;             // 已被取消（裁剪打断 → forceRebuild）
       const frag = document.createDocumentFragment();
       let count = 0;
       while (i < lines.length && count < CHUNK) {
         if (self._logLineMatches(lines[i], search, level)) {
-          frag.appendChild(self._buildLogLineDom(lines[i], i, search));
+          frag.appendChild(self._buildLogLineDom(lines[i], search));
         }
         i++; count++;
       }
       if (firstChunk) {
-        // 首帧先显示空状态（避免白屏），再追加内容
         if (lines.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self.t('monitor.noLogsHint','No logs yet')) + '</p>';
+          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self.t('monitor.noLogsHint') || 'No logs yet') + '</p>';
           container.appendChild(empty);
           self._renderedLogCount = lines.length;
+          self._logChunking = false;
+          self._afterLogsRender(contentEl, false);
           return;
         }
         firstChunk = false;
       }
       container.appendChild(frag);
       self._renderedLogCount = Math.min(i, lines.length);
-
       if (i < lines.length) {
-        // 还有更多行，下一帧继续
         requestAnimationFrame(renderChunk);
-      } else if (!container.querySelector('.log-line') && lines.length > 0) {
-        // 所有行都过滤掉了
-        const empty = document.createElement('div');
-        empty.className = 'log-empty dashboard-empty';
-        empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults','No matches')) + '</p>';
-        container.appendChild(empty);
+      } else {
+        self._logChunking = false;
+        if (!container.querySelector('.log-line') && lines.length > 0) {
+          const empty = document.createElement('div');
+          empty.className = 'log-empty dashboard-empty';
+          empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults') || 'No matches') + '</p>';
+          container.appendChild(empty);
+        }
+        self._afterLogsRender(contentEl, true);   // 末帧：按需滚底
       }
     }
     requestAnimationFrame(renderChunk);
   },
 
-  _buildLogLineDom(line, lineIndex, search) {
-    const div = document.createElement('div');
-    div.className = 'log-line';
-    const num = document.createElement('span');
-    num.className = 'log-line-num';
-    num.textContent = (lineIndex + 1);
-    const span = document.createElement('span');
-    span.className = 'log-line-text';
-    this._highlightLogLine(span, line, search);
-    div.appendChild(num);
-    div.appendChild(span);
-    return div;
+  // ── tail：增量 + 滑窗（Fix2 删顶补底，O(新增) 而非 O(缓冲)）──
+  _populateTailIncremental(contentEl, search, level) {
+    const container = contentEl.querySelector('#monitorDashboardLogs');
+    if (!container) return;
+    const lines = this.logLines;
+
+    // 滑窗删顶：环形缓冲裁掉头部 K 行 → 同步删除 DOM 前 K 个 .log-line。
+    // CSS counter 自动重编 surviving 行号，无需 JS 重编。仅在 DOM 已同步时执行。
+    if (this._logTrimK > 0) {
+      const k = Math.min(this._logTrimK, this._renderedLogCount);
+      let remove = k;
+      while (remove-- > 0) {
+        const first = container.querySelector('.log-line');
+        if (!first) break;
+        first.remove();
+      }
+      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
+      this._logTrimK = 0;
+      const emp = container.querySelector('.log-empty');
+      if (emp) emp.remove();
+    }
+
+    // 补底：追加新行
+    const start = this._renderedLogCount;
+    if (start < lines.length) {
+      const frag = document.createDocumentFragment();
+      let appended = 0;
+      for (let i = start; i < lines.length; i++) {
+        if (!this._logLineMatches(lines[i], search, level)) continue;
+        frag.appendChild(this._buildLogLineDom(lines[i], search));
+        appended++;
+      }
+      container.appendChild(frag);
+      const emp = container.querySelector('.log-empty');
+      if (emp && appended > 0) emp.remove();
+      this._renderedLogCount = lines.length;
+    }
+  },
+
+  // ── full：完整日志分页渲染（≤ 一页，静态，绝对行号）──
+  _populateFullLogs(contentEl) {
+    const container = contentEl.querySelector('#monitorDashboardLogs');
+    if (!container) return;
+    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
+    const offset = this.logFullOffset || 0;
+    container.style.counterReset = 'logline ' + offset;  // 首行显示 offset+1
+    const lines = this.logFullLines || [];
+    if (this.logFullLoading || !lines.length) {
+      const empty = document.createElement('div');
+      empty.className = 'log-empty dashboard-empty';
+      const msg = this.logFullLoading ? (this.t('monitor.loading') || 'Loading...') : (this.t('monitor.noLogsHint') || 'No logs');
+      empty.innerHTML = '<p>' + this.esc(msg) + '</p>';
+      container.appendChild(empty);
+      this._renderedLogCount = 0;
+      return;
+    }
+    const search = this.logFullQuery || '';
+    const matchSet = search ? new Set(this.logFullMatches) : null;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < lines.length; i++) {
+      const cls = (matchSet && matchSet.has(offset + i)) ? 'log-line-match' : '';
+      frag.appendChild(this._buildLogLineDom(lines[i], search, cls));
+    }
+    container.appendChild(frag);
+    this._renderedLogCount = lines.length;
+    // 跟随（实时末页 / 历史停在末尾）滚底；浏览历史页时停在顶部
+    container.scrollTop = (this.logAutoScroll || this._logAtBottom) ? container.scrollHeight : 0;
+  },
+
+  // ── full：实时增量 slide（O(新行) 删除顶部 evicted + 追加底部新行，零 HTTP）──
+  _populateFullSlide(contentEl) {
+    const container = contentEl.querySelector('#monitorDashboardLogs');
+    if (!container) return;
+    const lines = this.logFullLines;
+
+    // 删顶：handleSSELogUpdate 中已 splice + bump offset；同步删除 DOM 前 K 个 .log-line
+    if (this._logFullEvictK > 0) {
+      const k = Math.min(this._logFullEvictK, this._renderedLogCount);
+      let remove = k;
+      while (remove-- > 0) {
+        const first = container.querySelector('.log-line');
+        if (!first) break;
+        first.remove();
+      }
+      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
+      this._logFullEvictK = 0;
+      const emp = container.querySelector('.log-empty');
+      if (emp) emp.remove();
+    }
+    // 更新 counter-reset 使 surviving 节点绝对行号与新的 logFullOffset 一致
+    container.style.counterReset = 'logline ' + (this.logFullOffset || 0);
+
+    // 补底：追加新行（词内搜索高亮，不加行级 match 背景——match_indices 来自后端快照不覆盖增量行）
+    const start = this._renderedLogCount;
+    if (start < lines.length) {
+      const search = this.logFullQuery || '';
+      const frag = document.createDocumentFragment();
+      let appended = 0;
+      for (let i = start; i < lines.length; i++) {
+        frag.appendChild(this._buildLogLineDom(lines[i], search));
+        appended++;
+      }
+      container.appendChild(frag);
+      const emp = container.querySelector('.log-empty');
+      if (emp && appended > 0) emp.remove();
+      this._renderedLogCount = lines.length;
+    }
+    // 跟随则滚底
+    if (this.logAutoScroll || this._logAtBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  },
+
+  _updateLogCount(contentEl) {
+    const countEl = contentEl.querySelector('[data-field="log-count"]');
+    if (countEl) countEl.textContent = this._logDisplayCount();
+  },
+  _logDisplayCount() {
+    return this.logMode === 'full' ? (this.logFullTotal || 0) : this.logLines.length;
+  },
+  // 完整日志工具栏文本（reactive：x-text 调用）
+  logFullRangeText() {
+    const total = this.logFullTotal || 0;
+    if (!total) return '0 / 0';
+    const off = this.logFullOffset || 0;
+    const end = Math.min(off + (this.logFullLines ? this.logFullLines.length : 0), total);
+    return (off + 1) + '–' + end + ' / ' + total;
+  },
+  logFullMatchText() {
+    const n = this.logFullMatches ? this.logFullMatches.length : 0;
+    return (this.logFullMatchIdx >= 0 ? (this.logFullMatchIdx + 1) : 0) + '/' + n;
   },
 
   _bindLogScroll(contentEl) {
@@ -545,10 +756,11 @@ window.monitorRenderMixin = {
     if (bottomBtn) bottomBtn.style.display = atBottom ? 'none' : '';
   },
 
-  _afterLogsRender(contentEl) {
+  _afterLogsRender(contentEl, doScroll) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
-    if (this.logAutoScroll || this._logAtBottom) {
+    // Fix3：仅在有新日志（doScroll）时才设 scrollTop，避免大 DOM 上每帧强制 reflow
+    if (doScroll && (this.logAutoScroll || this._logAtBottom)) {
       container.scrollTop = container.scrollHeight;
       this._logAtBottom = true;
     }
@@ -557,13 +769,18 @@ window.monitorRenderMixin = {
 
   // ═══════════════════════════════════════════════════════════
   //  VSCode-style log tokenizer — single regex, one pass per line
-  //  Groups: 1=ts 2=lvl 3=path 4=module 5=exc 6=const 7=num 8=unit 9=kw
+  //  Groups: 1=str 2=url 3=domain 4=hex 5=ts 6=lvl 7=path 8=mod 9=exc
+  //         10=const 11=num 12=unit 13=kw 14=empty 15=stack
   // ═══════════════════════════════════════════════════════════
   _LOG_TOKEN_RE: (() => {
-    const ts   = '(\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?|\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b)';
+    // ts 用非捕获括号：(外层 wrapper 已是捕获组 g5，若 ts 再用捕获括号会吞掉 g6，
+    // 把 lvl 挤到 g7 → 级别被误染为 log-path 绿色、g===6 重映射失效。)
+    const ts   = '(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?|\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b)';
     const lvl  = '(?:ALERT|CRITICAL|EMERGENCY|FATAL|ERROR|FAILURE|FAIL|Fatal|HINT|INFORMATION|NOTICE|Info|WARNING|Warn|DEBUG|Debug|TRACE|Trace|INFO|WARN)\\b';
-    const path = '(?:[\\w.@()-]+[\\/\\\\])*[\\w.@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin|csv|tsv|pb|h5|onnx|java|kt|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp|cs|rb|php|swift)(?::\\d+)?';
-    const mod  = '\\b[a-zA-Z_]\\w*(?:\\.\\w+)+\\b';
+    // Fix5：dir 段允许点（后接分隔符，无歧义）；文件名 stem 拆为「无点段+.」序列，
+    //   消除与 \\.(ext) 边界的互相回溯；重复次数有界，杜绝病态 O(n²)。
+    const path = '(?:[\\w.@()-]+[\\/\\\\]){0,10}(?:[\\w@()-]+\\.){0,12}[\\w@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin|csv|tsv|pb|h5|onnx|java|kt|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp|cs|rb|php|swift)(?::\\d+)?';
+    const mod  = '\\b[a-zA-Z_]\\w*(?:\\.\\w+){1,20}\\b';
     const exc  = '\\b[A-Z]\\w*(?:Error|Exception|Warning|Fault)\\b';
     const cnst = '\\b(?:true|false|null|undefined|none|NaN|Inf(?:inity)?|N\\/A)\\b';
     const num  = '(?<![\\w.])(?:[+-]?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)';
@@ -572,7 +789,8 @@ window.monitorRenderMixin = {
     return new RegExp(
       '(`[^`]*`|"[^"]*"|\'(?:\\\\.|[^\'\\\\])*\')' +  // group 1: quoted strings
       '|(https?:\\/\\/[^\\s,;)\\]}>]+)' +               // group 2: URLs
-      '|(\\b(?:[\\w-]+\\.)+(?:com|org|net|io|dev|co|ai|app|gg|xyz|me|info|biz|tv|cc)(?:\\/[^\\s,;)\\]}>]*)?)' + // group 3: domains
+      // Fix5：domain 段有界重复 + TLD 后置 (?![\\w]) 边界，固化匹配
+      '|(\\b(?:[\\w-]+\\.){1,10}(?:com|org|net|io|dev|co|ai|app|gg|xyz|me|info|biz|tv|cc)(?![\\w])(?:\\/[^\\s,;)\\]}>]*)?)' + // group 3: domains
       '|(\\b[0-9a-f]{40}\\b|\\b[0-9a-f]{10}\\b|\\b[0-9a-f]{7}\\b|\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b|\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b|\\b0x[0-9a-f]+\\b)' + // group 4: hex
       '|(' + ts + ')' +                                  // group 5: timestamp
       '|(' + lvl + ')' +                                 // group 6: log level
@@ -600,7 +818,7 @@ window.monitorRenderMixin = {
       'log-lvl-fix',  // 6: log level (class set below from match)
       'log-path',     // 7: file path
       'log-module',   // 8: module path
-      'log-exc',      // 9: exception name
+      'log-exc',      // 9: exception
       'log-const',    // 10: constant
       'log-num',      // 11: number
       'log-unit',     // 12: unit
@@ -609,13 +827,18 @@ window.monitorRenderMixin = {
       'log-exc',      // 15: stack trace "at "
     ];
     const re = this._LOG_TOKEN_RE;
+    const lower = search ? search.toLowerCase() : '';
+    // Fix4：把 search 高亮并入分词 pass —— 对任意文本段（纯文本或 token 内）按
+    //   search 切分并包 <mark>，省掉原先每行一次 TreeWalker 二次遍历。
+    const appendText = (parent, text) => {
+      if (!lower) { parent.appendChild(document.createTextNode(text)); return; }
+      this._appendHighlighted(parent, text, search, lower);
+    };
     let lastIdx = 0;
     let m;
     const frag = document.createDocumentFragment();
     while ((m = re.exec(lineText)) !== null) {
-      if (m.index > lastIdx) {
-        frag.appendChild(document.createTextNode(lineText.slice(lastIdx, m.index)));
-      }
+      if (m.index > lastIdx) appendText(frag, lineText.slice(lastIdx, m.index));
       // Find which group matched
       let cls = '';
       for (let g = 1; g < m.length; g++) {
@@ -634,40 +857,32 @@ window.monitorRenderMixin = {
       if (cls) {
         const span = document.createElement('span');
         span.className = cls;
-        span.textContent = m[0];
+        appendText(span, m[0]);   // token 内命中 search 也高亮（mark 仅加背景，保留 token 颜色）
         frag.appendChild(span);
       } else {
-        frag.appendChild(document.createTextNode(m[0]));
+        appendText(frag, m[0]);
       }
       lastIdx = re.lastIndex;
     }
-    if (lastIdx < lineText.length) {
-      frag.appendChild(document.createTextNode(lineText.slice(lastIdx)));
-    }
-    if (search) { this._highlightSearchInDOM(frag, search); }
+    if (lastIdx < lineText.length) appendText(frag, lineText.slice(lastIdx));
     rootEl.appendChild(frag);
   },
 
-  _highlightSearchInDOM(frag, search) {
-    /** Walk text nodes and wrap search matches in <mark> */
-    const walker = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    const lower = search.toLowerCase();
-    for (const node of nodes) {
-      const text = node.textContent;
-      const idx = text.toLowerCase().indexOf(lower);
-      if (idx === -1) continue;
-      const parent = node.parentNode;
-      const before = document.createTextNode(text.slice(0, idx));
+  // 把 text 追加到 parent，其中命中 search 的片段包 <mark>（一次线性扫描）
+  _appendHighlighted(parent, text, search, lower) {
+    if (!lower) { parent.appendChild(document.createTextNode(text)); return; }
+    const lowerText = text.toLowerCase();
+    let from = 0, idx = lowerText.indexOf(lower, from);
+    if (idx === -1) { parent.appendChild(document.createTextNode(text)); return; }
+    while (idx !== -1) {
+      if (idx > from) parent.appendChild(document.createTextNode(text.slice(from, idx)));
       const mark = document.createElement('mark');
       mark.textContent = text.slice(idx, idx + search.length);
-      const after = document.createTextNode(text.slice(idx + search.length));
-      parent.insertBefore(before, node);
-      parent.insertBefore(mark, node);
-      parent.insertBefore(after, node);
-      parent.removeChild(node);
+      parent.appendChild(mark);
+      from = idx + search.length;
+      idx = lowerText.indexOf(lower, from);
     }
+    if (from < text.length) parent.appendChild(document.createTextNode(text.slice(from)));
   },
 
   downloadLogs() {
@@ -909,7 +1124,7 @@ window.monitorRenderMixin = {
   renderHistory() {
     const el = document.getElementById('historyList');
     try {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
     const hasRunning = this.runningTask && this.runningTask.status === 'RUNNING';
     const items = this.filteredHistoryItems;
     const hasHistory = items && items.length;
@@ -991,7 +1206,7 @@ window.monitorRenderMixin = {
   },
 
   async viewSnapshot(runDir) {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
@@ -1012,7 +1227,7 @@ window.monitorRenderMixin = {
     const modal = document.getElementById('configSnapshotModal');
     const content = document.getElementById('configSnapshotContent');
     if (!modal || !content) return;
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
 
     let html = '';
     if (snapshot.params) {
@@ -1053,7 +1268,7 @@ window.monitorRenderMixin = {
   },
 
   async reuseConfig(runDir) {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey) || fb || k; };
+    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));

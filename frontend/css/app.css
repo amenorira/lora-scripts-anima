@@ -2042,8 +2042,8 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 0;
 }
 [data-theme="dark"] .monitor-logs-container {
-  --log-bg: #1e1e1e;
-  --log-fg: #d4d4d4;
+  --log-bg: #121314;   /* VSCode 2026 Dark — editor.background */
+  --log-fg: #BBBEBF;   /* VSCode 2026 Dark — editor.foreground */
 }
 [data-theme="light"] .monitor-logs-container {
   --log-bg: #ffffff;
@@ -2057,49 +2057,55 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 0 8px 0 0; border-radius: 0; transition: none;
   display: flex; align-items: flex-start;
   line-height: 1.6;
+  counter-increment: logline;          /* 行号由 CSS counter 按 DOM 位置生成 */
 }
-.log-line:hover { background: rgba(128,128,128,0.08); }
-/* Line numbers — VSCode gutter style */
-.log-line-num {
+/* VSCode 2026 — list.hoverBackground (#1e1f20) */
+.log-line:hover { background: #1e1f20; }
+/* 完整日志搜索命中行：行底高亮 */
+.log-line.log-line-match { background: rgba(72, 160, 199, 0.10); }
+/* Line numbers — VSCode gutter (editorLineNumber.foreground #858889)。
+   counter-reset 由 .monitor-logs-container 提供；full 模式 JS 设 counter-reset=offset 得绝对行号。 */
+.monitor-logs-container { counter-reset: logline 0; }
+.log-line::before {
+  content: counter(logline);
   display: inline-block; min-width: 48px; padding: 0 12px 0 4px;
-  text-align: right; color: #858585; user-select: none;
+  text-align: right; color: #858889; user-select: none;
   font-size: 12px; flex-shrink: 0; line-height: 1.6;
-  opacity: 1;
 }
-[data-theme="light"] .log-line-num { color: #999; }
+[data-theme="light"] .log-line::before { color: #999; }
 .log-line-text { flex: 1; min-width: 0; }
-/* ═══════ Inline syntax tokens — exact VSCode Dark+ theme colors ═══════ */
-/* Log levels: VSCode — plain colored text, no badge, no background */
+/* ═══════ Inline syntax tokens — VSCode 2026 Dark (2026-dark.json) ═══════ */
+/* Log levels: VSCode colors log severity via the token.*-token scopes.
+   Plain colored text — no badge, no background (matches VSCode log view). */
 .log-lvl { }
-.log-lvl-INFO, .log-lvl-info         { color: #b5cea8; }  /* markup.inserted */
+.log-lvl-INFO, .log-lvl-info         { color: #6796E6; }  /* token.info-token  */
 .log-lvl-WARNING, .log-lvl-warn,
-.log-lvl-WARN                        { color: #ce9178; }  /* markup.deleted */
+.log-lvl-WARN                        { color: #CD9731; }  /* token.warn-token  */
 .log-lvl-ERROR, .log-lvl-error,
-.log-lvl-CRITICAL, .log-lvl-FATAL    { color: #d16969; font-weight: 700; }  /* string.regexp + strong */
-.log-lvl-DEBUG, .log-lvl-debug       { color: #569cd6; }  /* markup.changed */
-/* comment */
-.log-ts   { color: #6A9955; }
+.log-lvl-CRITICAL, .log-lvl-FATAL    { color: #F44747; }  /* token.error-token */
+.log-lvl-DEBUG, .log-lvl-debug       { color: #B267E6; }  /* token.debug-token */
+/* comment — timestamps & units render muted like VSCode metadata */
+.log-ts   { color: #8b949e; }
 /* string */
-.log-str  { color: #ce9178; }
-/* constant.numeric */
-.log-num  { color: #b5cea8; }
-/* constant.language */
-.log-const, .log-hex { color: #569cd6; }
+.log-str  { color: #a5d6ff; }
+/* constant.numeric / constant.language */
+.log-num  { color: #79c0ff; }
+.log-const, .log-hex { color: #79c0ff; }
 /* keyword / storage */
-.log-kw   { color: #569cd6; }
+.log-kw   { color: #ff7b72; }
 /* string.regexp */
-.log-regexp { color: #d16969; }
-/* support.type.exception */
-.log-exc  { color: #4EC9B0; }
-/* comment (file paths match comment color) */
-.log-path { color: #6A9955; }
-/* Python / Java qualified names */
-.log-module { color: #9cdcfe; }
+.log-regexp { color: #a5d6ff; }
+/* message.error / invalid — exception names are error-type tokens */
+.log-exc  { color: #ffa198; }
+/* entity.name.tag — file paths render green (linkable in VSCode) */
+.log-path { color: #7ee787; }
+/* entity.name.function — qualified module / dotted names */
+.log-module { color: #d2a8ff; }
 /* unit suffix: dimmed numeric */
 .log-unit  { color: #8b949e; }
-/* URL: blue underline */
-.log-url   { color: #3794ff; }
-.log-punct { color: #808080; }
+/* URL — textLink.foreground */
+.log-url   { color: #48A0C7; }
+.log-punct { color: #8b949e; }
 
 /* Light theme overrides */
 [data-theme="light"] .log-lvl-INFO, [data-theme="light"] .log-lvl-info { color: #098658; }
@@ -2119,7 +2125,6 @@ input[type="range"]::-webkit-slider-thumb {
 [data-theme="light"] .log-module { color: #0451a5; }
 [data-theme="light"] .log-unit { color: #6a737d; }
 [data-theme="light"] .log-url  { color: #006ab1; }
-.log-line-num { display: inline-block; min-width: 36px; padding-right: 8px; text-align: right; color: var(--text-tertiary); user-select: none; opacity: 0.5; font-size: 10px; flex-shrink: 0; }
 .log-line mark {
   background: rgba(230, 180, 80, 0.35);
   color: inherit; border-radius: 2px; padding: 0 1px;
@@ -2135,6 +2140,16 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: var(--radius-sm); border: 1px solid var(--border-input);
   background: var(--bg-input); color: var(--text-primary);
 }
+/* 完整日志分页工具栏 */
+.m-logs-tools { flex-wrap: wrap; gap: 4px; }
+.m-logs-full-tools { align-items: center; gap: 4px; }
+.m-logs-range {
+  font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums;
+  min-width: 88px; text-align: center; white-space: nowrap;
+}
+.m-logs-goto { font-size: 11.5px; padding: 3px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); }
+.m-logs-match { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; min-width: 34px; text-align: center; }
+.m-logs-match-nav { display: inline-flex; align-items: center; gap: 2px; }
 
 /* ── History ────────────────────────────────────────────── */
 .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }

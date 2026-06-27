@@ -41,7 +41,9 @@ window.UI_CONSTANTS = {
   },
 
   LOG: {
-    MAX_LINES: 5000,
+    MAX_LINES: 5000,        // 内存环形缓冲上限（实时尾部 DOM 渲染行数）
+    FULL_PAGE_SIZE: 1000,   // 「完整日志」模式每页拉取行数
+    MAX_MATCHES: 5000,      // 后端单次搜索返回的匹配行号上限（对齐 _LOG_SLICE_MAX_MATCHES）
   },
 };
 

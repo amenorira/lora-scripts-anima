@@ -23,6 +23,7 @@ from backend.monitor.training import (
 from backend.monitor.artifacts import (
     newest_previews, scan_history, read_train_log, _parse_toml_config,
     list_output_files, enrich_model_files_with_loss, _clean_log_text,
+    find_run_log_path, find_train_log_path, read_log_slice,
 )
 from backend.monitor.snapshot import find_run_dir_by_task_id
 from backend.tasks import tm
@@ -31,6 +32,10 @@ router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = REPO_ROOT / "output"
+
+# run-detail 仅回传日志尾部行数（与前端 LOG.MAX_LINES 对齐）；完整日志经
+# /monitor/log-slice 分页拉取，避免大日志全量回传撑爆响应。
+_LOG_DETAIL_TAIL_LINES = 5000
 
 STATE_LABELS = {
     "RUNNING": "Training / 训练中",
@@ -299,15 +304,18 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir))
 
     # ── 训练日志 ──
-    # 历史记录：读取完整文件，不做 tail 截断
+    # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），
+    # 但只回传尾部 _LOG_DETAIL_TAIL_LINES 行；完整日志由前端「完整日志」模式
+    # 经 /monitor/log-slice 分页拉取，避免大日志全量回传。
     def _read_log_and_progress(run_dir_path: Path) -> tuple[list[str] | None, dict]:
-        log_files = list(run_dir_path.glob("train_*.log"))
-        if log_files:
-            latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
+        latest_log = find_run_log_path(run_dir_path)
+        if latest_log:
             try:
                 content = latest_log.read_text(encoding="utf-8", errors="replace")
                 content = _clean_log_text(content)
                 log_lines = content.split("\n")
+                if log_lines and log_lines[-1] == "":
+                    log_lines.pop()  # 文件以 \n 结尾产生的末尾空行
                 if log_lines:
                     progress = parse_log_progress(log_lines)
                     return log_lines, progress
@@ -317,7 +325,8 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     log_lines, progress = await asyncio.to_thread(_read_log_and_progress, abs_run_dir)
     if log_lines:
-        result["log_lines"] = log_lines
+        result["log_total"] = len(log_lines)
+        result["log_lines"] = log_lines[-_LOG_DETAIL_TAIL_LINES:]
         for key in ("step", "total_steps", "percent", "loss",
                      "lr", "epoch", "eta", "elapsed", "speed",
                      "has_error", "error_msg"):
@@ -349,6 +358,46 @@ async def monitor_run_detail(run_dir: str = Query("")):
         result["run_info"] = run_info
 
     return {"status": "success", "data": result}
+
+
+@router.get("/monitor/log-slice")
+async def monitor_log_slice(
+    run_dir: str = Query(""),
+    task_id: str = Query(""),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=2000),
+    q: str = Query(""),
+    tail: bool = Query(False),
+):
+    """完整日志分页 / 搜索（前端「完整日志」模式用）。
+
+    run_dir（历史训练目录，相对路径）或 task_id（实时任务）二选一定位日志文件。
+    返回磁盘日志的指定行区间 + 可选全文件搜索匹配行号，使前端可在不把整文件
+    载入 DOM 的前提下浏览/搜索任意位置。文件为训练期间的快照，前端按需手动刷新。
+    tail=True 时定位到文件末尾（实时任务首次进入、未知 total 时用）。
+    """
+    log_path: Path | None = None
+    if run_dir:
+        abs_run_dir = (REPO_ROOT / run_dir).resolve()
+        try:
+            abs_run_dir.relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            return {"status": "error", "message": "Invalid run_dir / 无效路径"}
+        if abs_run_dir.is_dir():
+            log_path = find_run_log_path(abs_run_dir)
+    elif task_id:
+        train_config = latest_train_config(task_id)
+        output_dir = train_config.get("output_dir")
+        output_dir_path = Path(output_dir) if output_dir else None
+        log_path = find_train_log_path(task_id, output_dir_path)
+    else:
+        return {"status": "error", "message": "run_dir or task_id is required"}
+
+    if not log_path:
+        return {"status": "error", "message": "Log file not found / 日志文件未找到"}
+
+    data = await asyncio.to_thread(read_log_slice, log_path, offset, limit, q, tail)
+    return {"status": "success", "data": data}
 
 
 @router.get("/monitor/preview-image")

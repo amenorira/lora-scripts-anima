@@ -610,3 +610,71 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
             return lines
 
     return []
+
+
+# 完整日志分页：单次搜索返回的匹配行号上限（避免超大文件撑爆响应）
+_LOG_SLICE_MAX_MATCHES = 5000
+
+
+def find_run_log_path(run_dir_path: Path) -> Path | None:
+    """在历史训练目录中查找最新的训练日志文件（不读取内容）。"""
+    try:
+        log_files = list(run_dir_path.glob("train_*.log"))
+        if log_files:
+            return max(log_files, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        pass
+    return None
+
+
+def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
+                   query: str = "", tail: bool = False) -> dict:
+    """读取日志文件的指定行区间（分页）+ 可选全文件搜索。
+
+    磁盘文件是完整日志的真相源：读取全文 → 清理终端控制字符 → 按行切片返回，
+    使前端「完整日志」模式可在不把整文件载入 DOM 的前提下浏览/搜索任意位置。
+
+    返回 {total, offset, limit, lines, query, match_indices}：
+      - total: 文件总行数
+      - lines: [offset, offset+limit) 区间的行
+      - match_indices: query 非空时，全文件匹配行的索引（上限 _LOG_SLICE_MAX_MATCHES），
+        供前端「上一/下一匹配」跳转。
+      - tail: 为 True 时定位到文件末尾（offset = max(0, total-limit)）；用于实时任务
+        首次进入完整日志模式（此时前端未知 total，无法自行计算尾部 offset）。
+    """
+    empty = {"total": 0, "offset": offset, "limit": limit,
+             "lines": [], "query": query, "match_indices": []}
+    try:
+        if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
+            return empty
+        content = log_path.read_text(encoding="utf-8", errors="replace")
+        content = _clean_log_text(content)
+        lines = content.split("\n")
+        # 文件以换行结尾时产生末尾空行，去掉以保持行号与文件实际行一致
+        if lines and lines[-1] == "":
+            lines.pop()
+        total = len(lines)
+
+        match_indices: list[int] = []
+        if query:
+            ql = query.lower()
+            for i, line in enumerate(lines):
+                if ql in line.lower():
+                    match_indices.append(i)
+                    if len(match_indices) >= _LOG_SLICE_MAX_MATCHES:
+                        break
+
+        if tail:
+            offset = max(0, total - max(1, limit))
+        offset = max(0, min(offset, total))
+        end = min(offset + max(1, limit), total)
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "lines": lines[offset:end],
+            "query": query,
+            "match_indices": match_indices,
+        }
+    except Exception:
+        return empty
