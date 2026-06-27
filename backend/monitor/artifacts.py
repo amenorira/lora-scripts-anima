@@ -412,8 +412,8 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
 
 # ── 训练日志读取 ──────────────────────────────────────────
 
-# 日志 tail 读取的最大字节数（约 500-1000 行）
-_LOG_TAIL_BYTES = 4 * 1024 * 1024  # 4 MiB — 覆盖完整训练日志
+# 日志 tail 读取的最大字节数（live 监控轮询回退用，约 20000+ 行）
+_LOG_TAIL_BYTES = 2 * 1024 * 1024  # 2 MiB
 
 # ANSI 转义序列正则（颜色、光标控制、清屏等）
 _ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')

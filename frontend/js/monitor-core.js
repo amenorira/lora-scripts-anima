@@ -8,7 +8,7 @@ window.monitorCoreMixin = {
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
   previews: [], previewStep: 0, historyItems: [], runningTask: null,
-  logAutoScroll: true, logLines: [], logMaxLines: 100000,
+  logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
@@ -184,11 +184,6 @@ window.monitorCoreMixin = {
 
     if (logData.lines && logData.lines.length > 0) {
       this.logLines.push(...logData.lines);
-
-      // 限制日志行数（用 slice 替代 splice 避免 O(n) 移动）
-      if (this.logLines.length > this.logMaxLines) {
-        this.logLines = this.logLines.slice(-this.logMaxLines);
-      }
       this._logContentVersion++;
 
       // 更新日志显示（仅当前在日志标签页时）
@@ -442,10 +437,16 @@ window.monitorCoreMixin = {
         this.previews = j.data.previews || [];
         // 重置预览步进，避免越界
         this.previewStep = 0;
-        if (j.data.log_lines) { this.logLines = j.data.log_lines; this._logContentVersion++; }
+        if (j.data.log_lines) {
+          this.logLines = j.data.log_lines;
+          this._logContentVersion++;
+        }
         this._renderedLogCount = 0;
         this._renderedLogFilterKey = '';
         this._forceLogRebuild = true;
+        // 历史记录：停在顶部查看，不自动滚到底部
+        this.logAutoScroll = false;
+        this._logAtBottom = false;
         this.renderDashboard();
       } else {
         this.toast(j.message || this.t('monitor.loadRunFailed','Failed to load run detail'));

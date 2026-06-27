@@ -2050,21 +2050,15 @@ input[type="range"]::-webkit-slider-thumb {
   --log-fg: #1e1e1e;
 }
 .log-lines { display: flex; flex-direction: column; }
+.log-vpad-top, .log-vpad-bottom {
+  flex-shrink: 0; width: 100%;
+}
 .log-line {
   padding: 0 8px 0 0; border-radius: 0; transition: none;
   display: flex; align-items: flex-start;
-  line-height: 1.6; min-height: 1.6em;
-  content-visibility: auto; contain-intrinsic-size: auto 1.6em;
+  line-height: 1.6;
 }
 .log-line:hover { background: rgba(128,128,128,0.08); }
-/* VSCode: only text color changes for severity — no borders, no backgrounds */
-.log-line.log-error .log-line-text { color: #f44747; }
-.log-line.log-warn  .log-line-text { color: #cca700; }
-.log-line.log-ok    .log-line-text { color: #6a9955; }
-.log-line.log-info  .log-line-text { color: var(--log-fg, var(--text-primary)); }
-.log-line.log-debug .log-line-text { opacity: 0.6; }
-[data-theme="light"] .log-line.log-error .log-line-text { color: #a31515; }
-[data-theme="light"] .log-line.log-warn  .log-line-text { color: #795e26; }
 /* Line numbers — VSCode gutter style */
 .log-line-num {
   display: inline-block; min-width: 48px; padding: 0 12px 0 4px;
@@ -2074,26 +2068,57 @@ input[type="range"]::-webkit-slider-thumb {
 }
 [data-theme="light"] .log-line-num { color: #999; }
 .log-line-text { flex: 1; min-width: 0; }
-/* ═══════ Inline syntax tokens ═══════ */
-.log-lvl { font-weight: 600; font-size: 0.85em; padding: 0 3px; border-radius: 3px; white-space: nowrap; }
-.log-lvl-INFO, .log-lvl-info    { color: #4fc3f7; background: rgba(79,195,247,0.12); }
+/* ═══════ Inline syntax tokens — exact VSCode Dark+ theme colors ═══════ */
+/* Log levels: VSCode — plain colored text, no badge, no background */
+.log-lvl { }
+.log-lvl-INFO, .log-lvl-info         { color: #b5cea8; }  /* markup.inserted */
 .log-lvl-WARNING, .log-lvl-warn,
-.log-lvl-WARN                   { color: #cca700; background: rgba(204,167,0,0.15); }
+.log-lvl-WARN                        { color: #ce9178; }  /* markup.deleted */
 .log-lvl-ERROR, .log-lvl-error,
-.log-lvl-CRITICAL, .log-lvl-FATAL { color: #f44747; background: rgba(244,71,71,0.15); }
-.log-lvl-DEBUG, .log-lvl-debug  { color: #888; background: rgba(128,128,128,0.1); }
-.log-ts   { color: #858585; }
-.log-kw   { color: #c586c0; font-weight: 600; }
+.log-lvl-CRITICAL, .log-lvl-FATAL    { color: #d16969; font-weight: 700; }  /* string.regexp + strong */
+.log-lvl-DEBUG, .log-lvl-debug       { color: #569cd6; }  /* markup.changed */
+/* comment */
+.log-ts   { color: #6A9955; }
+/* string */
 .log-str  { color: #ce9178; }
+/* constant.numeric */
 .log-num  { color: #b5cea8; }
-.log-metric { color: #4fc3f7; font-weight: 500; }
-.log-path { color: #6a9955; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
-/* Dark theme overrides for light-theme tokens */
+/* constant.language */
+.log-const, .log-hex { color: #569cd6; }
+/* keyword / storage */
+.log-kw   { color: #569cd6; }
+/* string.regexp */
+.log-regexp { color: #d16969; }
+/* support.type.exception */
+.log-exc  { color: #4EC9B0; }
+/* comment (file paths match comment color) */
+.log-path { color: #6A9955; }
+/* Python / Java qualified names */
+.log-module { color: #9cdcfe; }
+/* unit suffix: dimmed numeric */
+.log-unit  { color: #8b949e; }
+/* URL: blue underline */
+.log-url   { color: #3794ff; }
+.log-punct { color: #808080; }
+
+/* Light theme overrides */
+[data-theme="light"] .log-lvl-INFO, [data-theme="light"] .log-lvl-info { color: #098658; }
+[data-theme="light"] .log-lvl-WARNING, [data-theme="light"] .log-lvl-warn,
+[data-theme="light"] .log-lvl-WARN { color: #a31515; }
+[data-theme="light"] .log-lvl-ERROR, [data-theme="light"] .log-lvl-error,
+[data-theme="light"] .log-lvl-CRITICAL, [data-theme="light"] .log-lvl-FATAL { color: #a31515; font-weight: 700; }
+[data-theme="light"] .log-lvl-DEBUG, [data-theme="light"] .log-lvl-debug { color: #0451a5; }
 [data-theme="light"] .log-ts   { color: #999; }
-[data-theme="light"] .log-kw   { color: #af00db; }
 [data-theme="light"] .log-str  { color: #a31515; }
 [data-theme="light"] .log-num  { color: #098658; }
+[data-theme="light"] .log-const, [data-theme="light"] .log-hex { color: #0451a5; }
+[data-theme="light"] .log-kw   { color: #0451a5; }
+[data-theme="light"] .log-regexp { color: #a31515; }
+[data-theme="light"] .log-exc  { color: #267f99; }
 [data-theme="light"] .log-path { color: #267f99; }
+[data-theme="light"] .log-module { color: #0451a5; }
+[data-theme="light"] .log-unit { color: #6a737d; }
+[data-theme="light"] .log-url  { color: #006ab1; }
 .log-line-num { display: inline-block; min-width: 36px; padding-right: 8px; text-align: right; color: var(--text-tertiary); user-select: none; opacity: 0.5; font-size: 10px; flex-shrink: 0; }
 .log-line mark {
   background: rgba(230, 180, 80, 0.35);

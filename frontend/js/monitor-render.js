@@ -432,62 +432,86 @@ window.monitorRenderMixin = {
     }
     const lines = this.logLines;
     const start = isFull ? 0 : this._renderedLogCount;
-    const frag = document.createDocumentFragment();
-    let appended = 0;
 
-    for (let i = start; i < lines.length; i++) {
-      const line = lines[i];
-      if (!this._logLineMatches(line, search, level)) continue;
-      const lo = line.toLowerCase();
-      // VSCode-style severity classification
-      let cls = '';
-      if (/\b(error|critical|fatal|exception)\b/i.test(line) || lo.indexOf('traceback') !== -1) {
-        cls = 'log-error';
-      } else if (/\bwarn(?:ing)?\b/i.test(line)) {
-        cls = 'log-warn';
-      } else if (/\binfo\b/i.test(line)) {
-        cls = 'log-info';
-      } else if (/\bdebug\b/i.test(line)) {
-        cls = 'log-debug';
-      } else if (/\b(?:success|completed|saved|finished|done)\b/i.test(line)) {
-        cls = 'log-ok';
+    // 增量模式：行数少，直接渲染
+    if (!isFull) {
+      const frag = document.createDocumentFragment();
+      let appended = 0;
+      for (let i = start; i < lines.length; i++) {
+        if (!this._logLineMatches(lines[i], search, level)) continue;
+        frag.appendChild(this._buildLogLineDom(lines[i], i, search));
+        appended++;
       }
-      const div = document.createElement('div');
-      div.className = 'log-line ' + cls;
-      const num = document.createElement('span');
-      num.className = 'log-line-num';
-      num.textContent = (i + 1);
-      const span = document.createElement('span');
-      span.className = 'log-line-text';
-      this._highlightLogLine(span, line, search);
-      div.appendChild(num);
-      div.appendChild(span);
-      frag.appendChild(div);
-      appended++;
+      container.appendChild(frag);
+      if (container.querySelector('.log-empty') && appended > 0) {
+        container.querySelector('.log-empty').remove();
+      }
+      this._renderedLogCount = lines.length;
+      return;
     }
 
-    if (isFull) {
-      if (lines.length === 0) {
+    // 全量渲染：分帧处理，每帧 CHUNK 行，不阻塞 UI
+    const CHUNK = 400;
+    const self = this;
+    let i = start;
+    let firstChunk = true;
+
+    function renderChunk() {
+      const frag = document.createDocumentFragment();
+      let count = 0;
+      while (i < lines.length && count < CHUNK) {
+        if (self._logLineMatches(lines[i], search, level)) {
+          frag.appendChild(self._buildLogLineDom(lines[i], i, search));
+        }
+        i++; count++;
+      }
+      if (firstChunk) {
+        // 首帧先显示空状态（避免白屏），再追加内容
+        if (lines.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'log-empty dashboard-empty';
+          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self.t('monitor.noLogsHint','No logs yet')) + '</p>';
+          container.appendChild(empty);
+          self._renderedLogCount = lines.length;
+          return;
+        }
+        firstChunk = false;
+      }
+      container.appendChild(frag);
+      self._renderedLogCount = Math.min(i, lines.length);
+
+      if (i < lines.length) {
+        // 还有更多行，下一帧继续
+        requestAnimationFrame(renderChunk);
+      } else if (!container.querySelector('.log-line') && lines.length > 0) {
+        // 所有行都过滤掉了
         const empty = document.createElement('div');
         empty.className = 'log-empty dashboard-empty';
-        empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + this.esc(this.t('monitor.noLogsHint','No logs yet')) + '</p>';
-        frag.appendChild(empty);
-      } else if (appended === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'log-empty dashboard-empty';
-        empty.innerHTML = '<p>' + this.esc(this.t('monitor.noResults','No matches')) + '</p>';
-        frag.appendChild(empty);
+        empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults','No matches')) + '</p>';
+        container.appendChild(empty);
       }
     }
-    const navBtns = container.querySelector('.log-nav-buttons');
-    if (navBtns) container.insertBefore(frag, navBtns); else container.appendChild(frag);
-    this._renderedLogCount = lines.length;
+    requestAnimationFrame(renderChunk);
+  },
+
+  _buildLogLineDom(line, lineIndex, search) {
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    const num = document.createElement('span');
+    num.className = 'log-line-num';
+    num.textContent = (lineIndex + 1);
+    const span = document.createElement('span');
+    span.className = 'log-line-text';
+    this._highlightLogLine(span, line, search);
+    div.appendChild(num);
+    div.appendChild(span);
+    return div;
   },
 
   _bindLogScroll(contentEl) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
-    this._logAtBottom = true;
+    if (!this.selectedRunDir) this._logAtBottom = true;
     container.onscroll = () => {
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
       this._logAtBottom = atBottom;
@@ -531,51 +555,96 @@ window.monitorRenderMixin = {
     this._updateLogNavButtons(contentEl);
   },
 
-  // VSCode-style token regex (single unified pattern, ordered by priority)
+  // ═══════════════════════════════════════════════════════════
+  //  VSCode-style log tokenizer — single regex, one pass per line
+  //  Groups: 1=ts 2=lvl 3=path 4=module 5=exc 6=const 7=num 8=unit 9=kw
+  // ═══════════════════════════════════════════════════════════
   _LOG_TOKEN_RE: (() => {
-    const ts  = '(\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?|\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?)';
-    const lvl = '\\[(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL|FATAL)\\]';
-    const kw  = '\\b(Traceback|raise|Exception|Error|assert)\\b';
-    const path= '([\\/][^\\s]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin))';
-    return new RegExp(ts + '|' + lvl + '|' + kw + '|' + path, 'gi');
+    const ts   = '(\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?|\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b)';
+    const lvl  = '(?:ALERT|CRITICAL|EMERGENCY|FATAL|ERROR|FAILURE|FAIL|Fatal|HINT|INFORMATION|NOTICE|Info|WARNING|Warn|DEBUG|Debug|TRACE|Trace|INFO|WARN)\\b';
+    const path = '(?:[\\w.@()-]+[\\/\\\\])*[\\w.@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin|csv|tsv|pb|h5|onnx|java|kt|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp|cs|rb|php|swift)(?::\\d+)?';
+    const mod  = '\\b[a-zA-Z_]\\w*(?:\\.\\w+)+\\b';
+    const exc  = '\\b[A-Z]\\w*(?:Error|Exception|Warning|Fault)\\b';
+    const cnst = '\\b(?:true|false|null|undefined|none|NaN|Inf(?:inity)?|N\\/A)\\b';
+    const num  = '(?<![\\w.])(?:[+-]?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)';
+    const unit = '(?<=\\d)(?:it\\/s|s\\/it|[sm]s|us|ns|GiB|MiB|KiB|GB|MB|KB|TB|B|%)';
+    const kw   = '\\b(?:Traceback|raise|assert|failed|failure|abort|killed|OOM|CUDA out of memory|memory)\\b';
+    return new RegExp(
+      '(`[^`]*`|"[^"]*"|\'(?:\\\\.|[^\'\\\\])*\')' +  // group 1: quoted strings
+      '|(https?:\\/\\/[^\\s,;)\\]}>]+)' +               // group 2: URLs
+      '|(\\b(?:[\\w-]+\\.)+(?:com|org|net|io|dev|co|ai|app|gg|xyz|me|info|biz|tv|cc)(?:\\/[^\\s,;)\\]}>]*)?)' + // group 3: domains
+      '|(\\b[0-9a-f]{40}\\b|\\b[0-9a-f]{10}\\b|\\b[0-9a-f]{7}\\b|\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b|\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b|\\b0x[0-9a-f]+\\b)' + // group 4: hex
+      '|(' + ts + ')' +                                  // group 5: timestamp
+      '|(' + lvl + ')' +                                 // group 6: log level
+      '|(' + path + ')' +                                // group 7: file path
+      '|(' + mod + ')' +                                 // group 8: module path
+      '|(' + exc + ')' +                                 // group 9: exception
+      '|(' + cnst + ')' +                                // group 10: constant
+      '|(' + num + ')' +                                 // group 11: number
+      '|(' + unit + ')' +                                // group 12: unit
+      '|(' + kw + ')' +                                  // group 13: keyword
+      '|(\\{\\s*\\}|\\[\\s*\\])' +                       // group 14: empty object/array
+      '|(^\\s*at\\s+)',                                  // group 15: stack trace
+      'gi'
+    );
   })(),
 
   _highlightLogLine(rootEl, lineText, search) {
-    /** Build DOM children for a log line — text nodes + highlighted spans.
-     *  No innerHTML, no escaping bugs. */
+    const classes = [
+      null,           // 0: (unused)
+      'log-str',      // 1: quoted string
+      'log-url',      // 2: URL
+      'log-url',      // 3: domain
+      'log-hex',      // 4: hex/UUID/MAC
+      'log-ts',       // 5: timestamp
+      'log-lvl-fix',  // 6: log level (class set below from match)
+      'log-path',     // 7: file path
+      'log-module',   // 8: module path
+      'log-exc',      // 9: exception name
+      'log-const',    // 10: constant
+      'log-num',      // 11: number
+      'log-unit',     // 12: unit
+      'log-kw',       // 13: keyword
+      'log-punct',    // 14: empty obj/arr
+      'log-exc',      // 15: stack trace "at "
+    ];
     const re = this._LOG_TOKEN_RE;
     let lastIdx = 0;
     let m;
     const frag = document.createDocumentFragment();
     while ((m = re.exec(lineText)) !== null) {
-      // Plain text before match
       if (m.index > lastIdx) {
         frag.appendChild(document.createTextNode(lineText.slice(lastIdx, m.index)));
       }
-      // Highlighted token
-      const span = document.createElement('span');
-      const token = m[0];
-      if (m[1]) { // timestamp
-        span.className = 'log-ts';
-      } else if (m[2]) { // log level [INFO] etc
-        span.className = 'log-lvl log-lvl-' + m[2].toUpperCase();
-      } else if (m[3]) { // keyword
-        span.className = 'log-kw';
-      } else if (m[4]) { // file path
-        span.className = 'log-path';
+      // Find which group matched
+      let cls = '';
+      for (let g = 1; g < m.length; g++) {
+        if (m[g] !== undefined) {
+          cls = classes[g];
+          if (g === 6) { // log level — map to specific VSCode class
+            const lv = m[g].toUpperCase();
+            if (/^(ERROR|CRITICAL|FATAL|ALERT|EMERGENCY|FAILURE|FAIL)$/.test(lv)) cls = 'log-lvl log-lvl-ERROR';
+            else if (/^(WARNING|WARN)$/.test(lv)) cls = 'log-lvl log-lvl-WARN';
+            else if (/^(INFO|INFORMATION|NOTICE|HINT)$/.test(lv)) cls = 'log-lvl log-lvl-INFO';
+            else if (/^(DEBUG|TRACE)$/.test(lv)) cls = 'log-lvl log-lvl-DEBUG';
+          }
+          break;
+        }
       }
-      span.textContent = token;
-      frag.appendChild(span);
+      if (cls) {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = m[0];
+        frag.appendChild(span);
+      } else {
+        frag.appendChild(document.createTextNode(m[0]));
+      }
       lastIdx = re.lastIndex;
     }
-    // Remaining plain text
     if (lastIdx < lineText.length) {
       frag.appendChild(document.createTextNode(lineText.slice(lastIdx)));
     }
-    // Apply search highlight
-    if (search) {
-      this._highlightSearchInDOM(frag, search);
-    }
+    if (search) { this._highlightSearchInDOM(frag, search); }
     rootEl.appendChild(frag);
   },
 

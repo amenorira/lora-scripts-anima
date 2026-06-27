@@ -22,7 +22,7 @@ from backend.monitor.training import (
 )
 from backend.monitor.artifacts import (
     newest_previews, scan_history, read_train_log, _parse_toml_config,
-    list_output_files, enrich_model_files_with_loss,
+    list_output_files, enrich_model_files_with_loss, _clean_log_text,
 )
 from backend.monitor.snapshot import find_run_dir_by_task_id
 from backend.tasks import tm
@@ -299,14 +299,15 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir))
 
     # ── 训练日志 ──
-    # 先尝试通过 task_id 日志文件
+    # 历史记录：读取完整文件，不做 tail 截断
     def _read_log_and_progress(run_dir_path: Path) -> tuple[list[str] | None, dict]:
         log_files = list(run_dir_path.glob("train_*.log"))
         if log_files:
             latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
             try:
-                from backend.monitor.artifacts import _tail_file
-                log_lines = _tail_file(latest_log)
+                content = latest_log.read_text(encoding="utf-8", errors="replace")
+                content = _clean_log_text(content)
+                log_lines = content.split("\n")
                 if log_lines:
                     progress = parse_log_progress(log_lines)
                     return log_lines, progress
@@ -316,7 +317,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     log_lines, progress = await asyncio.to_thread(_read_log_and_progress, abs_run_dir)
     if log_lines:
-        result["log_lines"] = log_lines  # 最多 2000 行
+        result["log_lines"] = log_lines
         for key in ("step", "total_steps", "percent", "loss",
                      "lr", "epoch", "eta", "elapsed", "speed",
                      "has_error", "error_msg"):

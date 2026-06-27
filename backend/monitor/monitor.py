@@ -19,7 +19,7 @@ from typing import Any
 from backend.core.event_bus import event_bus
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
-from backend.monitor.artifacts import read_train_log, find_train_log_path, _clean_log_text
+from backend.monitor.artifacts import find_train_log_path, _clean_log_text
 from backend.tasks import tm, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,6 @@ class TaskMonitor:
         self._running = False
         self._task: asyncio.Task | None = None
         self._poll_interval = 1.0  # 轮询间隔（秒）
-        self._log_push_lines = 5000  # 单次推送日志行数上限
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
         # 控制台进度条状态
@@ -245,15 +244,15 @@ class TaskMonitor:
             output_dir = train_config.get("output_dir")
             output_dir_path = Path(output_dir) if output_dir else None
 
-            # ── 进度解析：从日志 tail 读取（快速，只解析最近内容）──
-            log_lines = await asyncio.to_thread(
-                read_train_log, task_id, output_dir_path
+            # ── 日志增量：按文件字节偏移读取（单次 I/O，同时用于进度解析）──
+            new_lines = await asyncio.to_thread(
+                self._read_log_delta, task_id, output_dir_path
             )
 
-            if log_lines:
-                # 解析并发布进度事件
+            if new_lines:
+                # 从增量行中解析进度（无需额外 4MB tail 读取）
                 progress = await asyncio.to_thread(
-                    parse_log_progress, log_lines
+                    parse_log_progress, new_lines
                 )
 
                 await event_bus.publish(task_id, {
@@ -282,18 +281,13 @@ class TaskMonitor:
                 except Exception:
                     pass
 
-            # ── 日志增量：按文件字节偏移读取，避免 tail 行数漂移 ──
-            new_lines = await asyncio.to_thread(
-                self._read_log_delta, task_id, output_dir_path
-            )
-            if new_lines:
                 await event_bus.publish(task_id, {
                     "type": "log_update",
                     "task_id": task_id,
                     "data": {
-                        "lines": new_lines[-self._log_push_lines:],
-                        "total": -1,  # total 不再有意义（字节偏移模式下）
-                        "truncated": len(new_lines) > self._log_push_lines
+                        "lines": new_lines,
+                        "total": len(new_lines),
+                        "truncated": False
                     }
                 })
 
