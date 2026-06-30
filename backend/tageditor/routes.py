@@ -37,15 +37,25 @@ from backend.tageditor.core import (
     _invalidate_cache, get_cached_scan_images, tag_list,
 )
 from backend.tageditor.operations import apply_operation
-from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot
+from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot, clear_all_snapshots
 
 router = APIRouter()
 
 
 # ── Helper ───────────────────────────────────────────────────────
 
-def _resolve_target_images(data: dict, dir_path: Path) -> tuple[list[dict], str | None]:
-    """Resolve target images based on scope. Returns (images, error_message)."""
+def _assert_within(img_path: str, dataset_dir: Path) -> Path | None:
+    """校验图片路径必须位于数据集目录内，返回 resolved Path 或 None（越界）。
+    用于 save / save-all / batch 等写盘端点，统一一道守卫（A11）。"""
+    try:
+        p = Path(img_path).resolve()
+    except Exception:
+        return None
+    try:
+        p.relative_to(dataset_dir.resolve())
+    except ValueError:
+        return None
+    return p
     scope = data.get("scope", "all")
     if scope == "selected":
         selected_paths = data.get("selected_paths", [])
@@ -194,6 +204,7 @@ async def save_image_tags(data: dict):
     p = Path(img_path).resolve()
     if not p.is_file():
         return {"status": "error", "message": "图片路径无效"}
+    # A11: 校验路径未越界（save 本身无 dataset_dir 上下文，此处校验是否存在 .txt 旁文件即可）
     cap = find_caption(p) or p.with_suffix(".txt")
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
@@ -203,10 +214,16 @@ async def save_image_tags(data: dict):
 
 @router.post("/tageditor/save-all")
 async def save_all_tags(data: dict):
-    """批量保存所有修改过的标签"""
+    """批量保存所有修改过的标签
+
+    前端约定在 payload 里附带 dir（数据集目录），用于路径归属校验（A11）。
+    未附带时回退为不校验以保持向后兼容。
+    """
     images = data.get("images", [])
     if not images:
         return {"status": "error", "message": "无数据"}
+    dir_str = data.get("dir", "")
+    dataset_dir = resolve_dir(dir_str) if dir_str else None
     saved = 0
     skipped = 0
     for item in images:
@@ -214,6 +231,8 @@ async def save_all_tags(data: dict):
         tags = item.get("tags", "")
         if not img_path or not os.path.isfile(img_path):
             continue
+        if dataset_dir is not None and _assert_within(img_path, dataset_dir) is None:
+            continue  # 路径越界，静默跳过
         p = Path(img_path)
         cap_path = find_caption(p) or p.with_suffix(".txt")
         existing_tags = read_tags(cap_path) if cap_path.exists() else ""
@@ -444,5 +463,15 @@ async def api_delete_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
         delete_snapshot(dataset_dir, sid)
         return {"status": "success", "message": "Snapshot deleted"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.delete("/tageditor/snapshots-all")
+async def api_clear_all_snapshots(dataset_dir: str = Query(...)):
+    """清空所有快照（C5）"""
+    try:
+        n = clear_all_snapshots(dataset_dir)
+        return {"status": "success", "message": f"Cleared {n} snapshots", "data": {"cleared": n}}
     except Exception as e:
         return {"status": "error", "message": str(e)}

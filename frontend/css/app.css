@@ -2453,6 +2453,13 @@ input[type="range"]::-webkit-slider-thumb {
 .te-tag-ch.removed { background: rgba(239,68,68,0.12); color: rgb(220,38,38); text-decoration: line-through; }
 .te-tag-ch.unchanged { background: transparent; color: var(--text-tertiary); }
 .te-tag-ch.reorder { background: var(--accent-soft); color: var(--accent); font-style: italic; font-size: 10px; }
+.te-tag-ch.more { background: var(--surface-2, rgba(0,0,0,0.04)); color: var(--text-muted); cursor: pointer; font-size: 10px; border: 1px dashed var(--border-default); }
+.te-tag-ch.more:hover { color: var(--text-primary); border-color: var(--accent); }
+.te-history-step-future { font-size: 9px; color: var(--text-muted); }
+.te-history-step.future { opacity: 0.5; }
+.te-history-reorder { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; padding-left: 2px; border-left: 2px solid var(--accent-soft); }
+.te-snapshot-clear-btn { background: transparent; border: 1px solid var(--border-default); color: var(--text-muted); cursor: pointer; border-radius: 3px; }
+.te-snapshot-clear-btn:hover { color: var(--danger, #e53e3e); border-color: var(--danger, #e53e3e); }
 
 /* ===== Grid ===== */
 .te-grid-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; overflow: hidden; }
@@ -2475,6 +2482,8 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card-check input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
 .te-card-check input[type=checkbox]:checked::after { content: ''; position: absolute; left: 3px; top: 0; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .te-card-mod { position: absolute; top: 4px; right: 4px; z-index: 3; color: var(--warning); opacity: 0.85; }
+.te-card-nocap { position: absolute; top: 4px; left: 4px; z-index: 3; color: var(--danger, #e53e3e); opacity: 0.85; }
+.te-card.te-card-no-cap { outline: 1px dashed var(--text-muted); outline-offset: -3px; }
 .te-card-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; background: rgba(0,0,0,0.55); z-index: 2; opacity: 0; transition: opacity 0.1s; pointer-events: none; }
 .te-card:hover .te-card-overlay { opacity: 1; }
 .te-card-name { font-size: 10px; color: rgba(255,255,255,0.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
