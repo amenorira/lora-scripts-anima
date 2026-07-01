@@ -837,6 +837,25 @@ window.trainingCoreMixin = {
       }
     }
 
+    // ── Readonly If Any ──
+    // list[dict]：任一条件（eq/neq）成立即锁定。用于多 key 的互斥（如 cache×caption）。
+    // reason 来自 field 顶层 readonlyReasonKey（list 容纳不下 reason）。
+    if (!field.readonlyIf && field.readonlyIfAny && Array.isArray(field.readonlyIfAny)) {
+      // 复用 show_if 的条件求值语义（eq/neq/空串判定完全一致），readonly 互斥方向一样。
+      const met = field.readonlyIfAny.some(c => this._evalShowIfCond(c));
+      readonlyAttrs = ` data-readonly-if-any='${this.esc(JSON.stringify(field.readonlyIfAny))}'`;
+      if (field.readonlyReasonKey) {
+        readonlyAttrs += ` data-readonly-if-reason="${this.escapeAttr(field.readonlyReasonKey)}"`;
+      }
+      if (met) {
+        readonlyAttrs += ` data-readonly-if-active="1"`;
+        const reasonText = field.readonlyReasonKey ? this.t(field.readonlyReasonKey) : '';
+        if (reasonText) {
+          readonlyWarnHtml = `<div class="field-readonly-warn">${reasonText}</div>`;
+        }
+      }
+    }
+
     // ── Nested detection (child of a showIf/showIfAny parent) ──
     // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf/showIfAny 父字段的层级 + 1，父级若无则为 0。
     // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
@@ -1136,6 +1155,10 @@ window.trainingCoreMixin = {
     const keys = new Set();
     this._allSections().forEach(s => s.fields.forEach(f => {
       if (f.readonlyIf) keys.add(f.readonlyIf.key);
+      // readonlyIfAny: 任一条件中的 key 都需监听，互斥字段变化要及时刷新锁定态
+      if (f.readonlyIfAny && Array.isArray(f.readonlyIfAny)) {
+        f.readonlyIfAny.forEach(c => { if (c && c.key) keys.add(c.key); });
+      }
     }));
     return [...keys];
   },
@@ -1156,21 +1179,9 @@ window.trainingCoreMixin = {
 
   updateReadonlyStates() {
     const self = this;
-    document.querySelectorAll('[data-readonly-if-key]').forEach(row => {
-      const key = row.getAttribute('data-readonly-if-key');
-      const eqVal = row.getAttribute('data-readonly-if-eq');
-      const orVals = (row.getAttribute('data-readonly-if-or') || '').split(',').filter(Boolean);
-      const neqVal = row.getAttribute('data-readonly-if-neq');
-      const parentVal = self.form[key];
-
-      let met = false;
-      if (eqVal !== null) {
-        met = String(parentVal) === eqVal;
-        if (!met && orVals.length > 0) met = orVals.indexOf(String(parentVal)) !== -1;
-      } else if (neqVal !== null) {
-        met = String(parentVal) !== neqVal && String(parentVal) !== 'null' && String(parentVal) !== 'undefined' && String(parentVal) !== '';
-      }
-
+    // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
+    // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
+    const apply = (row, met, reasonKey) => {
       // Always apply full state (idempotent) to handle re-renders correctly
       if (met) {
         row.setAttribute('data-readonly-if-active', '1');
@@ -1180,7 +1191,6 @@ window.trainingCoreMixin = {
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
         // Ensure warning text exists (deduplicate: remove any stale ones first)
-        const reasonKey = row.getAttribute('data-readonly-if-reason');
         const text = reasonKey ? self.t(reasonKey) : '';
         // Remove ALL existing warnings in this row to avoid duplication
         row.querySelectorAll('.field-readonly-warn').forEach(el => el.remove());
@@ -1202,6 +1212,33 @@ window.trainingCoreMixin = {
         const warnEl = row.querySelector('.field-readonly-warn');
         if (warnEl) warnEl.remove();
       }
+    };
+
+    // 单 key readonly_if：eq/neq/or
+    document.querySelectorAll('[data-readonly-if-key]').forEach(row => {
+      const key = row.getAttribute('data-readonly-if-key');
+      const eqVal = row.getAttribute('data-readonly-if-eq');
+      const orVals = (row.getAttribute('data-readonly-if-or') || '').split(',').filter(Boolean);
+      const neqVal = row.getAttribute('data-readonly-if-neq');
+      const parentVal = self.form[key];
+
+      let met = false;
+      if (eqVal !== null) {
+        met = String(parentVal) === eqVal;
+        if (!met && orVals.length > 0) met = orVals.indexOf(String(parentVal)) !== -1;
+      } else if (neqVal !== null) {
+        met = String(parentVal) !== neqVal && String(parentVal) !== 'null' && String(parentVal) !== 'undefined' && String(parentVal) !== '';
+      }
+      apply(row, met, row.getAttribute('data-readonly-if-reason'));
+    });
+
+    // 多 key readonly_if_any：list[dict]，任一条件（eq/neq）成立即锁定。
+    // 求值语义与 _evalShowIfCond 一致（空串/null 不视为"非默认值"，避免误锁）。
+    document.querySelectorAll('[data-readonly-if-any]').forEach(row => {
+      let conds = [];
+      try { conds = JSON.parse(row.getAttribute('data-readonly-if-any') || '[]'); } catch (e) { /* 防御损坏 */ }
+      const met = Array.isArray(conds) && conds.some(c => self._evalShowIfCond(c));
+      apply(row, met, row.getAttribute('data-readonly-if-reason'));
     });
   },
 
@@ -1287,6 +1324,17 @@ window.trainingCoreMixin = {
       this.form['network_train_unet_only'] = true;
       this.form['network_train_text_encoder_only'] = false;
       _setLRField('text_encoder_lr', '');
+    }
+    // Caption 互斥项开启 → 自动关掉 cache_text_encoder_outputs（连 to_disk 一起关，
+    // 否则后端兜底会因 to_disk=true 强制 cache=true 与 shuffle 冲突）。
+    // sd-scripts is_text_encoder_output_cacheable() 在 shuffle_caption 或 caption_tag_dropout_rate>0 时返回 false。
+    if (key === 'shuffle_caption' && value === true && this.form['cache_text_encoder_outputs']) {
+      this.form['cache_text_encoder_outputs'] = false;
+      this.form['cache_text_encoder_outputs_to_disk'] = false;
+    }
+    if (key === 'caption_tag_dropout_rate' && Number(value) > 0 && this.form['cache_text_encoder_outputs']) {
+      this.form['cache_text_encoder_outputs'] = false;
+      this.form['cache_text_encoder_outputs_to_disk'] = false;
     }
 
     // Clear error for this field on change and re-render to update UI

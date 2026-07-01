@@ -195,7 +195,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "optimizer_args_custom", "type": "textarea", "default": "", "section": "optimizer", "desc_key": "field.optimizer_args_custom", "target": "ui", "hint_key": "field.optimizer_args_customHint", "advanced": True},
 # ── Regularization & Loss ──
 {"key": "loss_type", "type": "select", "default": "l2", "section": "regularization", "desc_key": "field.loss_type", "target": "toml", "options": [{"v": "l2", "l": "L2", "dk": "opt.loss_type_l2"}, {"v": "l1", "l": "L1", "dk": "opt.loss_type_l1"}, {"v": "huber", "l": "Huber", "dk": "opt.loss_type_huber"}, {"v": "smooth_l1", "l": "Smooth L1", "dk": "opt.loss_type_smooth_l1"}], "omit_default": True},
-{"key": "huber_schedule", "type": "select", "default": "snr", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}], "omit_default": True},
+{"key": "huber_schedule", "type": "select", "default": "exponential", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr", "group": "sdxl"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}], "omit_default": True},
 {"key": "huber_c", "type": "number", "default": 0.1, "section": "regularization", "desc_key": "field.huber_c", "target": "toml", "step": 0.01, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
 {"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
 # 噪声/损失正则化族（仅 SDXL 路径消费；Anima 走 rectified-flow，flux_train_utils.get_noisy_model_input_and_timesteps
@@ -222,8 +222,14 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "cache_latents", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents", "target": "toml"},
 {"key": "cache_latents_to_disk", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents_to_disk", "target": "toml"},
 # 文本编码器输出缓存：默认开启（配合默认 network_train_unet_only=True，纯收益，大幅省显存提速）
-{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint"},
-{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml", "auto_value": [{"watch": "cache_text_encoder_outputs_to_disk", "when": True, "set_target": "cache_text_encoder_outputs", "set": True}]},
+# cache_text_encoder_outputs 与 caption dropout/shuffle 互斥（sd-scripts is_text_encoder_output_cacheable
+# 在 shuffle_caption / caption_tag_dropout_rate>0 时返回 false → anima_train_network.py assert 失败）。
+# 双重保护：前端 setField 联动自动关 cache（caption 互斥项激活时）+ readonly_if_any 锁定防用户回开
+# （任一互斥项激活期间 cache 开关灰显，光自动关不够，用户还能手动再开回 true）。
+{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
+# to_disk 联动 cache=true 已由 sd-scripts 后端兜底（anima_train_network.py:56-58），前端 auto_value 规则
+# 曾经 watch 自身导致用户把 to_disk 切回 false 时把 cache 复位为 default=True（switchTrainType 后被偷开），删除。
+{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml"},
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
@@ -266,7 +272,9 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "max_token_length", "type": "select", "default": 225, "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": "sdxl", "options": [{"v": 150, "l": "150", "dk": "opt.max_token_length_150"}, {"v": 225, "l": "225", "dk": "opt.max_token_length_225"}]},
 {"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "step": 1, "group": "anima"},
 {"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "step": 1, "group": "anima"},
-{"key": "shuffle_caption", "type": "toggle", "default": True, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
+# shuffle_caption 与 cache_text_encoder_outputs 互斥：默认关闭以让推荐默认 cache=true 可用。
+# 用户主动开启 shuffle 时会触发 cache 的 readonly 锁定（见 performance 段对 cache_text_encoder_outputs 的注释）。
+{"key": "shuffle_caption", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
 {"key": "keep_tokens", "type": "number", "default": 0, "section": "caption", "desc_key": "field.keep_tokens", "target": "toml", "min": 0, "omit_default": True},
 {"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml", "omit_default": True},
 {"key": "caption_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
@@ -339,7 +347,9 @@ _FIELD_KEY_MAP = {
     "dk": "dKey",
     "auto_value": "autoValue",
     "readonly_if": "readonlyIf",
+    "readonly_if_any": "readonlyIfAny",
     "reason_key": "reasonKey",
+    "readonly_reason_key": "readonlyReasonKey",
     "set_target": "setTarget",
     "omit_default": "omitDefault",
     "sub_group": "subGroup",
@@ -403,6 +413,12 @@ def _to_camel(field: dict) -> dict:
                 else:
                     converted[rk] = rv
             result[new_key] = converted
+        elif k == "readonly_if_any" and isinstance(v, list):
+            # list[dict]: 任一条件（eq/neq）成立即锁定。reason_key 单独留在 field 顶层。
+            result[new_key] = [
+                {("neq" if ck == "neq" else ck): cv for ck, cv in cond.items()}
+                for cond in v
+            ]
         elif k == "auto_value" and isinstance(v, list):
             result[new_key] = [
                 {_FIELD_KEY_MAP.get(ik, ik): iv for ik, iv in item.items()}

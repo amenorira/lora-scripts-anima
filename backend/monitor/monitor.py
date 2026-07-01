@@ -92,7 +92,11 @@ def _build_console_progress():
         _StepColumn(),
         _MetaColumn(),
         console=_console,
-        transient=False,  # 结束后保留最终一行
+        # transient=True：训练中任意外部 log（RichHandler 共用同一 console）会让 rich Live
+        # 暂停渲染进度条——transient=False 会定格保留该行，导致每次 log 后上面多一条不动的
+        # 残影进度条。transient=True 在暂停时清除当前行，log 在该行打印后进度条重新在原行
+        # 刷新，不留残影。训练结束时这条不再保留，最终完成信息由 supervisor._log_run_end 输出。
+        transient=True,
     )
 
 
@@ -133,12 +137,18 @@ class TaskMonitor:
         logger.info("任务监控器已停止")
 
     def _stop_console_progress(self) -> None:
-        """停止控制台进度条（结束后保留最终一行）"""
+        """停止控制台进度条（结束后保留最终一行）。
+
+        旧实例因 transient=False 在 stop 时会保留最终一行渲染在终端；
+        必须把实例引用也置 None，否则任务切换时复用同一 Progress 重新 start()+add_task()
+        会在旧保留行之上再叠一行，导致出现两条进度条（一条不动的残留 + 一条新刷新）。
+        """
         if self._console_progress and self._console_progress.live.is_started:
             try:
                 self._console_progress.stop()
             except Exception:
                 pass
+        self._console_progress = None
         self._progress_task_id = None
         self._progress_active_task = None
 
