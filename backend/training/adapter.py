@@ -17,6 +17,14 @@ UI_ONLY_FIELDS = get_ui_only_fields()
 # merged 字段应由 UI 层合并进父字段（如 weight_decay→optimizer_args），adapter 不直接透传
 MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 
+# 字段 group→train_type 兜底过滤映射（防前端绕过/历史 form 残留）。
+# group 为 str 或 list；值 "all"（或缺省）对所有 train_type 通用。
+# 仅 SDXL 路径消费的字段（noise_offset/min_snr_gamma/multires_noise_* 等）对 anima-lora 是死参数，
+# 若残留进入提交会经 sd-scripts argparse 接住、train_network.py:555-559 把 argv 默认值/原值刷进元数据，
+# 产生看似"启用了噪声正则化"的误导。此处按 model_train_type 兜底剔除不匹配 group 的字段。
+_FIELD_GROUP_MAP = {f["key"]: f.get("group") for f in FIELDS}
+_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
+
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
 
@@ -171,9 +179,20 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     elif "network_args" in source:
         source.pop("network_args", None)
 
-    # ── 3. LyCORIS 通用字段 → network_args（networks.loha / networks.lokr，仅各模块原生支持的参数）──
-    # vendor loha.py 不读 factor（module_kwargs 无 factor），仅 vendor lokr.py 消费。
-    # 故 lokr_factor 仅在 networks.lokr 下透传；use_tucker/conv_dim/conv_alpha/rank_dropout/module_dropout 两者均支持。
+    # ── 3. 原生模块字段 → network_args（按各模块实际支持的参数透传）──
+    # sd-scripts 各 create_network 的真实消费面（已逐行核对）：
+    #   - networks.lora：conv_dim/conv_alpha（LoCon：3x3 Conv2d 专属 rank，lora.py:435/939-957）、
+    #     rank_dropout/module_dropout（lora.py:469-474）。不读 use_tucker/factor。
+    #   - networks.lora_anima：仅 rank_dropout/module_dropout（lora_anima.py:40-46）。
+    #     不读 conv_dim/conv_alpha（create_modules 无 conv_lora_dim 分支，Linear 与 Conv2d 共用 lora_dim）。
+    #   - networks.loha / networks.lokr：全支持（含 use_tucker；lokr 额外 factor）。
+    _NATIVE_LORA_ARG_MAP = {
+        "conv_dim": "conv_dim", "conv_alpha": "conv_alpha",
+        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
+    }
+    _NATIVE_LORA_ANIMA_ARG_MAP = {
+        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
+    }
     _NATIVE_LOHA_ARG_MAP = {
         "conv_dim": "conv_dim", "conv_alpha": "conv_alpha",
         "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
@@ -181,6 +200,8 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     }
     _NATIVE_LOKR_ARG_MAP = dict(LYCORIS_COMMON_ARG_MAP)  # 含 lokr_factor→factor
     _NATIVE_MODULE_ARG_MAP = {
+        "networks.lora": _NATIVE_LORA_ARG_MAP,
+        "networks.lora_anima": _NATIVE_LORA_ANIMA_ARG_MAP,
         "networks.loha": _NATIVE_LOHA_ARG_MAP,
         "networks.lokr": _NATIVE_LOKR_ARG_MAP,
     }
@@ -464,6 +485,20 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 "[Warning] inductor backend may be unstable on Windows; "
                 "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
             )
+
+    # ── 5.14. 按 train_type 兜底过滤 group 不匹配字段 ───────────
+    # 前端 getVisibleSections 已按 group 字段过滤，此处为后端防线：防历史 form 残留值或裸 POST 旁路
+    # 把 SDXL-only 死参数（noise_offset/min_snr/multires_noise_* 等）带入 anima 训练。
+    # 不报警（正常流程根本不该有）；仅在 group 不匹配时静默 pop，避免污染 TOML 与训练产物元数据。
+    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
+    if train_group:
+        for key in list(source.keys()):
+            field_group = _FIELD_GROUP_MAP.get(key)
+            if not field_group or field_group == "all":
+                continue
+            groups = [field_group] if isinstance(field_group, str) else list(field_group)
+            if train_group not in groups:
+                source.pop(key, None)
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
