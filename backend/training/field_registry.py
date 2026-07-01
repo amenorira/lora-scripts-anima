@@ -78,7 +78,8 @@ FIELDS: list[dict[str, Any]] = [
 # create_network（train_network.py:1081-1093）。四个原生模块签名一致均消费 neuron_dropout
 # （lora.py:423 / lora_anima.py:232 / loha.py:406 / lokr.py:400）。LyCORIS 与下方专用 dropout 同槽
 # （train_network.py:1081 "dropout in net_kwargs" 检测：专用 dropout 在 network_args 中先占槽 → network_dropout 不再注入）。
-{"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.network_dropoutHint"},
+# 故为顶层 Network 参数，不带 show_if（与 network_dim/network_alpha 同级），对所有模块可见。
+{"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "hint_key": "field.network_dropoutHint"},
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
     # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开。
