@@ -276,7 +276,7 @@ FIELDS: list[dict[str, Any]] = [
 # 用户主动开启 shuffle 时会触发 cache 的 readonly 锁定（见 performance 段对 cache_text_encoder_outputs 的注释）。
 {"key": "shuffle_caption", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
 {"key": "keep_tokens", "type": "number", "default": 0, "section": "caption", "desc_key": "field.keep_tokens", "target": "toml", "min": 0, "omit_default": True},
-{"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml", "omit_default": True},
+{"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml", "omit_default": True, "group": "sdxl"},  # Anima 的 AnimaTokenizeStrategy 未实现 tokenize_with_weights，对 Anima 无效
 {"key": "caption_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
 {"key": "caption_dropout_every_n_epochs", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_every_n_epochs", "target": "toml", "min": 0},
 {"key": "caption_tag_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
