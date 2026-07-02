@@ -409,6 +409,8 @@ window.monitorCoreMixin = {
     if (this.runningTask) return this.runningTask.id || null;
     return this.taskId || null;
   },
+  /** 是否存在可拉取的实时/历史日志源（无训练且非历史模式时为 false） */
+  _hasLogSource() { return !!(this._logSliceRunDir() || this._logSliceTaskId()); },
 
   /** 切换 tail/full 模式 */
   async setLogMode(mode) {
@@ -446,14 +448,17 @@ window.monitorCoreMixin = {
     this.renderDashboard();
   },
 
-  /** 拉取完整日志分页：offset/tail/q 三选一驱动 */
+  /** 拉取完整日志分页：offset/tail/q 三选一驱动。
+   *  opts.silent=true 时若无可拉取日志源则静默返回（不弹错误提示），
+   *  用于进入日志标签时的自动末页拉取。用户主动点击工具栏按钮
+   *  不传 silent，仍会在无源时给出 toast 反馈。 */
   async fetchLogSlice(opts) {
     opts = opts || {};
     const limit = this._logPageSize();
     const runDir = this._logSliceRunDir();
     const taskId = this._logSliceTaskId();
     if (!runDir && !taskId) {
-      this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
+      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
       return;
     }
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
@@ -495,10 +500,10 @@ window.monitorCoreMixin = {
         }
         this._forceLogRebuild = true;
       } else {
-        this.toast(j.message || this.t('monitor.logSliceError','Failed to load log slice'), 'error');
+        if (!opts.silent) this.toast(j.message || this.t('monitor.logSliceError','Failed to load log slice'), 'error');
       }
     } catch (e) {
-      this.toast(this.t('monitor.logSliceError','Failed to load log slice'), 'error');
+      if (!opts.silent) this.toast(this.t('monitor.logSliceError','Failed to load log slice'), 'error');
     } finally {
       this.logFullLoading = false;
       this.renderDashboard();

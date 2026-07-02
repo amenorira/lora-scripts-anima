@@ -441,9 +441,15 @@ window.monitorRenderMixin = {
       this._populateLogs(contentEl, true);
       // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
       if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
-        this._logFullNeedsResync = false;
-        this._logFullLoaded = true;
-        this.fetchLogSlice({ tail: true });
+        // 无日志源（无训练且非历史模式）→ 不触发拉取，避免 toast 误报；保持空态文案。
+        // 不标记 _logFullLoaded，以便后续训练启动/SSE 重连时自动重新拉取。
+        if (!this._hasLogSource()) {
+          this._logFullNeedsResync = false;
+        } else {
+          this._logFullNeedsResync = false;
+          this._logFullLoaded = true;
+          this.fetchLogSlice({ tail: true, silent: true });
+        }
       }
       this._bindLogScroll(contentEl);
       // tail 全量是分帧的，末帧自会滚底；此处仅在非分帧（full/空）时按需滚动
@@ -455,9 +461,13 @@ window.monitorRenderMixin = {
     if (this.logMode === 'full') {
       // 首屏未加载或 SSE 重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
       if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
-        this._logFullNeedsResync = false;
-        this._logFullLoaded = true;
-        this.fetchLogSlice({ tail: true });
+        if (!this._hasLogSource()) {
+          this._logFullNeedsResync = false;  // 留待有源时再拉
+        } else {
+          this._logFullNeedsResync = false;
+          this._logFullLoaded = true;
+          this.fetchLogSlice({ tail: true, silent: true });
+        }
       }
       if (this._logFullSlide) {
         this._logFullSlide = false;
@@ -559,7 +569,7 @@ window.monitorRenderMixin = {
         if (lines.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self.t('monitor.noLogsHint') || 'No logs yet') + '</p>';
+          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self._logEmptyMessage(false)) + '</p>';
           container.appendChild(empty);
           self._renderedLogCount = lines.length;
           self._logChunking = false;
@@ -636,7 +646,7 @@ window.monitorRenderMixin = {
     if (this.logFullLoading || !lines.length) {
       const empty = document.createElement('div');
       empty.className = 'log-empty dashboard-empty';
-      const msg = this.logFullLoading ? (this.t('monitor.loading') || 'Loading...') : (this.t('monitor.noLogsHint') || 'No logs');
+      const msg = this._logEmptyMessage(!!this.logFullLoading);
       empty.innerHTML = '<p>' + this.esc(msg) + '</p>';
       container.appendChild(empty);
       this._renderedLogCount = 0;
@@ -705,6 +715,18 @@ window.monitorRenderMixin = {
   },
   _logDisplayCount() {
     return this.logMode === 'full' ? (this.logFullTotal || 0) : this.logLines.length;
+  },
+  /** 日志空态文案：按场景区分（实时无训练 / 实时训练中等待输出 / 历史无日志 / 加载中） */
+  _logEmptyMessage(isLoading) {
+    if (isLoading) return this.t('monitor.loading') || 'Loading...';
+    if (this.selectedRunDir) {
+      return this.t('monitor.noLogsHistoryHint') || 'No log file in this run';
+    }
+    const state = (this.monitorData && this.monitorData.state) || 'IDLE';
+    if (state === 'RUNNING') {
+      return this.t('monitor.noLogsRunningHint') || 'Waiting for log output from training...';
+    }
+    return this.t('monitor.noLogsIdleHint') || 'Start a training task to see real-time logs here';
   },
   // 完整日志工具栏文本（reactive：x-text 调用）
   logFullRangeText() {
@@ -913,7 +935,10 @@ window.monitorRenderMixin = {
   _renderSamplesTab(t) {
     const isHistory = !!this.selectedRunDir;
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
-    const showPreviews = this.previews.length && (isHistory || d.state === 'RUNNING');
+    // 有样本即展示（包含：实时训练中 / 已结束的当前任务 / 历史记录）。
+    // 实时模式下后端 /monitor/status 会按真实 run_dir 返回当前任务的样本，
+    // 故此处不再用 state==='RUNNING' 限定，避免 IDLE 时把上一轮的样本藏起。
+    const showPreviews = this.previews.length > 0;
 
     let html = '<div class="m-section"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div>';
     if (showPreviews) {
@@ -929,7 +954,19 @@ window.monitorRenderMixin = {
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>' + this.esc(t('noPreviewHint','Preview images appear during training')) + '</p></div>';
+      // 区分空态场景：实时无训练 / 实时训练中未生成样本 / 历史记录无样本
+      let hintKey, hintFallback;
+      if (isHistory) {
+        hintKey = 'monitor.noPreviewHistoryHint';
+        hintFallback = 'No preview samples in this run';
+      } else if (d.state === 'RUNNING') {
+        hintKey = 'monitor.noPreviewRunningHint';
+        hintFallback = 'Preview images will appear after the first sample step';
+      } else {
+        hintKey = 'monitor.noPreviewHint';
+        hintFallback = 'Preview images appear during training';
+      }
+      html += '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><p>' + this.esc(t(hintKey, hintFallback)) + '</p></div>';
     }
     html += '</div>';
     return html;

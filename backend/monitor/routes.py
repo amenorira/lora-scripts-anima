@@ -72,36 +72,98 @@ async def monitor_status(task_id: str = Query("")):
         "error_msg": None,
     }
 
-    train_config = await asyncio.to_thread(latest_train_config)
-    result["train_params"] = extract_train_params(train_config)
-    result["previews"] = await asyncio.to_thread(newest_previews, train_config.get("output_dir"))
-
+    # 解析当前任务的真实运行目录：优先用活动任务的 task_id 反查
+    # task_meta.json（目标值），autosave TOML 仅作回退（前端修改表单后
+    # autosave 的 output_dir 可能指向尚未启动的新目录，此时用它取样本/日志
+    # 会落到其它记录的样本上——Bug：样本显示成其它训练记录的样本）。
     tasks = tm.dump()
-    # 只返回运行中的任务，避免暴露所有已完成/已终止任务
-    result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
-
-    if not tasks:
-        return {"status": "success", "data": result}
 
     active = None
     for t in reversed(tasks):
         if t.get("status") == "RUNNING":
             active = t
             break
-    if not active:
+    if not active and tasks:
         active = tasks[-1]
+
+    active_task_id = active.get("id", "") if active else ""
+
+    # 1) 活动/最后一项任务的真实 run_dir（task_meta.json 反查）
+    resolved_run_dir: str | None = None
+    if active_task_id:
+        mapped = await asyncio.to_thread(find_run_dir_by_task_id, active_task_id)
+        if mapped:
+            resolved_run_dir = mapped
+
+    # 2) autosave TOML（参数面板 + 缺失 task_meta 时的回退）
+    train_config = await asyncio.to_thread(latest_train_config)
+    autosave_output_dir = train_config.get("output_dir")
+
+    # 若未反查到 run_dir，且 autosave output_dir 指向真实存在的 run 子目录，
+    # 才回退使用它（避免指向尚未创建的新目录时误取全局样本）
+    if resolved_run_dir is None and autosave_output_dir:
+        ad = Path(autosave_output_dir)
+        try:
+            ad_rel = ad.resolve().relative_to(OUTPUT_DIR.resolve())
+            # 必须是 output/<name>_<ts> 这种 run 子目录（至少 1 段），且确实存在
+            if len(ad_rel.parts) >= 1 and ad.is_dir():
+                resolved_run_dir = str(autosave_output_dir).replace("\\", "/")
+        except (ValueError, OSError):
+            pass
+
+    # 产物目录：用真实 run_dir 取样本/日志；无则 None（前端展示空态）
+    artifacts_dir: Path | None = None
+    if resolved_run_dir:
+        rd = Path(resolved_run_dir)
+        if not rd.is_absolute():
+            rd = (REPO_ROOT / rd).resolve()
+        if rd.is_dir():
+            artifacts_dir = rd
+
+    # 预览样本：严格限定在该 run 目录下，避免漂移到其它记录
+    result["previews"] = await asyncio.to_thread(
+        newest_previews, str(artifacts_dir) if artifacts_dir else None
+    )
+    # 训练参数：优先取该 run 的 config.toml，回退 autosave
+    result["train_params"] = await asyncio.to_thread(
+        _extract_train_params_for_run, artifacts_dir, train_config
+    )
+
+    # 只返回运行中的任务，避免暴露所有已完成/已终止任务
+    result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
+
+    if not tasks:
+        if artifacts_dir:
+            result["output_dir"] = str(artifacts_dir.relative_to(REPO_ROOT)).replace("\\", "/")
+        else:
+            result["output_dir"] = str(OUTPUT_DIR)
+        return {"status": "success", "data": result}
 
     result["active_task"] = active
     active_status = active.get("status", "UNKNOWN")
     result["state"] = active_status
     result["state_label"] = STATE_LABELS.get(active_status, active_status)
 
-    if active_status == "RUNNING":
-        # 从运行文件夹读取日志
-        active_output_dir = train_config.get("output_dir", str(OUTPUT_DIR))
-        log_lines = await asyncio.to_thread(read_train_log, active.get("id", ""), Path(active_output_dir) if active_output_dir else None)
+    if artifacts_dir:
+        result["output_dir"] = str(artifacts_dir.relative_to(REPO_ROOT)).replace("\\", "/")
+    elif autosave_output_dir:
+        result["output_dir"] = str(autosave_output_dir).replace("\\", "/")
+    else:
+        result["output_dir"] = str(OUTPUT_DIR)
+
+    # 从真实 run 目录读取日志 + 进度
+    def _read_run_log_and_progress(run_dir_path: Path) -> tuple[list[str], dict]:
+        latest_log = find_run_log_path(run_dir_path)
+        if not latest_log:
+            return [], {}
+        lines = read_train_log(active_task_id, run_dir_path)
+        if not lines:
+            return [], {}
+        return lines, parse_log_progress(lines)
+
+    if active_status == "RUNNING" and artifacts_dir:
+        log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, artifacts_dir)
         if log_lines:
-            progress = await asyncio.to_thread(parse_log_progress, log_lines)
             for key in ("step", "total_steps", "percent", "loss",
                          "lr", "epoch", "eta", "elapsed", "speed",
                          "has_error", "error_msg"):
@@ -109,36 +171,72 @@ async def monitor_status(task_id: str = Query("")):
                     result[key] = progress[key]
             result["log_lines"] = log_lines
 
-    if train_config.get("output_dir"):
-        result["output_dir"] = train_config["output_dir"]
-    else:
-        result["output_dir"] = str(OUTPUT_DIR)
+    if active_status != "RUNNING":
+        # 上一轮训练摘要：优先用真实 run_dir 的 config/result
+        if artifacts_dir:
+            run_cfg = await asyncio.to_thread(_resolve_run_config_params, artifacts_dir)
+            if run_cfg:
+                result["last_config"] = run_cfg
+            elif train_config:
+                result["last_config"] = _last_config_from_autosave(train_config)
+        elif train_config:
+            result["last_config"] = _last_config_from_autosave(train_config)
 
-    if active_status != "RUNNING" and train_config:
-        result["last_config"] = {
-            "name": train_config.get("output_name", ""),
-            "model": Path(
-                train_config.get("pretrained_model_name_or_path", "")
-            ).name or "Unknown",
-            "lr": train_config.get("learning_rate", "?"),
-            "dim": train_config.get("network_dim", "?"),
-            "epochs": train_config.get("max_train_epochs", "?"),
-        }
-
-        # 尝试读取 result.json 获取完成状态
-        try:
-            output_dir_path = Path(train_config.get("output_dir", str(OUTPUT_DIR)))
-            result_file = output_dir_path / "result.json"
+        # result.json + 尾部日志
+        if artifacts_dir:
+            result_file = artifacts_dir / "result.json"
             if result_file.exists():
-                result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-        log_lines = await asyncio.to_thread(read_train_log, active.get("id", ""))
-        if log_lines:
-            result["log_lines"] = log_lines
+                try:
+                    result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            log_lines, _ = await asyncio.to_thread(_read_run_log_and_progress, artifacts_dir)
+            if log_lines:
+                result["log_lines"] = log_lines
 
     return {"status": "success", "data": result}
+
+
+def _last_config_from_autosave(train_config: dict) -> dict:
+    """从 autosave TOML 提取上次训练摘要（回退路径）"""
+    return {
+        "name": train_config.get("output_name", ""),
+        "model": Path(
+            train_config.get("pretrained_model_name_or_path", "")
+        ).name or "Unknown",
+        "lr": train_config.get("learning_rate", "?"),
+        "dim": train_config.get("network_dim", "?"),
+        "epochs": train_config.get("max_train_epochs", "?"),
+    }
+
+
+def _resolve_run_config_params(run_dir: Path) -> dict | None:
+    """从 run_dir/config.toml 提取上次训练摘要（真实来源，优于 autosave）"""
+    config_file = run_dir / "config.toml"
+    if not config_file.exists():
+        return None
+    params = _parse_toml_config(config_file)
+    if not params:
+        return None
+    model_path = params.get("pretrained_model_name_or_path", "")
+    return {
+        "name": params.get("output_name", run_dir.name),
+        "model": Path(model_path).name if model_path else "Unknown",
+        "lr": params.get("learning_rate", "?"),
+        "dim": params.get("network_dim", "?"),
+        "epochs": params.get("max_train_epochs", "?"),
+    }
+
+
+def _extract_train_params_for_run(run_dir: Path | None, autosave_config: dict) -> list[dict]:
+    """优先从 run_dir/config.toml 提取训练参数，回退到 autosave TOML"""
+    if run_dir is not None:
+        config_file = run_dir / "config.toml"
+        if config_file.exists():
+            params = _parse_toml_config(config_file)
+            if params:
+                return extract_train_params(params)
+    return extract_train_params(autosave_config)
 
 
 @router.get("/monitor/loss")
@@ -149,8 +247,9 @@ async def monitor_loss(run_dir: str = Query("")):
 
 @router.get("/monitor/previews")
 async def monitor_previews(task_id: str = Query("")):
-    train_config = await asyncio.to_thread(latest_train_config)
-    data = await asyncio.to_thread(newest_previews, train_config.get("output_dir"))
+    # 优先用参数中的 task_id 反查真实 run_dir；回退到活动任务；再回退 autosave。
+    output_dir = await asyncio.to_thread(_resolve_live_output_dir, task_id)
+    data = await asyncio.to_thread(newest_previews, output_dir)
     return {"status": "success", "data": data}
 
 
@@ -159,6 +258,35 @@ async def monitor_config():
     train_config = await asyncio.to_thread(latest_train_config)
     data = await asyncio.to_thread(extract_train_params, train_config)
     return {"status": "success", "data": data}
+
+
+def _resolve_live_output_dir(task_id: str = "") -> str | None:
+    """定位「当前活动训练」的真实产物目录。
+    优先级：参数 task_id → 活动任务 task_id（反查 task_meta.json）→ autosave TOML。
+    autosave 仅在其 output_dir 指向真实存在的子目录时才回退使用，避免漂移到全局样本。
+    """
+    tid = task_id or ""
+    if not tid:
+        tasks = tm.dump()
+        for t in reversed(tasks):
+            if t.get("status") == "RUNNING":
+                tid = t.get("id", "")
+                break
+    if tid:
+        mapped = find_run_dir_by_task_id(tid)
+        if mapped and Path(mapped).is_dir():
+            return mapped
+    cfg = latest_train_config()
+    autosave_od = cfg.get("output_dir")
+    if autosave_od:
+        ad = Path(autosave_od)
+        try:
+            ad_rel = ad.resolve().relative_to(OUTPUT_DIR.resolve())
+            if len(ad_rel.parts) >= 1 and ad.is_dir():
+                return autosave_od
+        except (ValueError, OSError):
+            pass
+    return None
 
 
 @router.post("/monitor/stop")
