@@ -186,7 +186,7 @@
 		"bucket_no_upscale": "Do not upscale images in buckets",
 		"min_bucket_reso": "Minimum bucket resolution",
 		"max_bucket_reso": "Maximum bucket resolution",
-		"bucket_reso_steps": "Bucket resolution step size (SDXL can use 32)",
+		"bucket_reso_steps": "ARB bucket resolution step (must be a multiple of the model's min step: Anima 16 / SDXL 64)",
 		"output_name": "Model save name",
 		"output_dir": "Model output directory",
 		"save_model_as": "Model save format",

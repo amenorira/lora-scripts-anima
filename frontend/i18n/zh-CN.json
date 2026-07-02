@@ -186,7 +186,7 @@
 		"bucket_no_upscale": "arb 桶不放大图片",
 		"min_bucket_reso": "arb 桶最小分辨率",
 		"max_bucket_reso": "arb 桶最大分辨率",
-		"bucket_reso_steps": "arb 桶分辨率划分单位，SDXL 可以使用 32",
+		"bucket_reso_steps": "ARB 桶分辨率划分单位（必须为模型最小步长的整数倍：Anima 16 / SDXL 64）",
 		"output_name": "模型保存名称",
 		"output_dir": "模型保存文件夹",
 		"save_model_as": "模型保存格式",
