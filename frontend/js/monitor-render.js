@@ -139,8 +139,10 @@ window.monitorRenderMixin = {
     const fullName = sys.cpu_name || t('cpu','CPU');
     let html = '<div class="m-res-chip" data-res="sys">';
     html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<div class="m-res-stats">';
     html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('cpu','CPU')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.cpu_pct) + '" data-field="cpu-pct">' + Math.round(sys.cpu_pct) + '%</span></span>';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('ram','RAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.ram_pct) + '" data-field="ram-pct">' + Math.round(sys.ram_pct) + '%</span><span class="m-res-stat-sub" data-field="ram-text">' + sys.ram_used_gb + '/' + sys.ram_total_gb + 'G</span></span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('ram','RAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.ram_pct) + '" data-field="ram-pct">' + Math.round(sys.ram_pct) + '%</span><span class="m-res-stat-sub" data-field="ram-text">' + sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G</span></span>';
+    html += '</div>';
     html += '</div>';
     return html;
   },
@@ -153,10 +155,12 @@ window.monitorRenderMixin = {
     const fullName = gpu.name || 'GPU';
     let html = '<div class="m-res-chip" data-res="gpu">';
     html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<div class="m-res-stats">';
     html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuLoad','Load')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(loadPct) + '" data-field="load-pct">' + Math.round(loadPct) + '%</span></span>';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('vramUsed','VRAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(vramPct) + '" data-field="vram-pct">' + Math.round(vramPct) + '%</span><span class="m-res-stat-sub" data-field="vram-text">' + gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'M</span></span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('vramUsed','VRAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(vramPct) + '" data-field="vram-pct">' + Math.round(vramPct) + '%</span><span class="m-res-stat-sub" data-field="vram-text">' + (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G</span></span>';
     if (temp != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuTemp','Temp')) + '</span><span class="m-res-stat-val m-res-' + this._resGradeTemp(temp) + '" data-field="temp-val">' + temp + '°</span></span>';
     if (gpu.power_w != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuPower','Power')) + '</span><span class="m-res-stat-val" data-field="power-text">' + gpu.power_w + 'W</span></span>';
+    html += '</div>';
     html += '</div>';
     return html;
   },
@@ -181,14 +185,14 @@ window.monitorRenderMixin = {
       _set('load-pct', Math.round(gpu.gpu_load_pct || 0) + '%', this._resGrade(gpu.gpu_load_pct||0));
       const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
       _set('vram-pct', vramPct + '%', this._resGrade(vramPct));
-      _set('vram-text', gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'M');
+      _set('vram-text', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G');
       if (gpu.temperature_c != null) _set('temp-val', gpu.temperature_c + '°', this._resGradeTemp(gpu.temperature_c));
       if (gpu.power_w != null) _set('power-text', gpu.power_w + 'W');
     }
     if (sys) {
       _set('cpu-pct', Math.round(sys.cpu_pct) + '%', this._resGrade(sys.cpu_pct));
       _set('ram-pct', Math.round(sys.ram_pct) + '%', this._resGrade(sys.ram_pct));
-      _set('ram-text', sys.ram_used_gb + '/' + sys.ram_total_gb + 'G');
+      _set('ram-text', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G');
     }
   },
 

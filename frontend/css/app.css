@@ -2246,30 +2246,43 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── 页头右侧资源监控（内联功能条，无卡片装饰，共享 header 行）── */
 .monitor-resbar {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: flex-end; gap: 16px;
   flex-wrap: wrap; justify-content: flex-end;
 }
 [x-cloak] .monitor-resbar { display: none; }
-/* 单个设备组：无背景/边框/阴影，纯内联 */
+/* 单个设备组：型号在上、指标在下（纵向），无背景/边框/阴影 */
 .m-res-chip {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
   font-size: 12.5px; line-height: 1.2;
 }
 .m-res-chip + .m-res-chip { border-left: 1px solid var(--border-default); padding-left: 16px; }
 .m-res-chip-name {
   font-size: 12px; font-weight: 600; color: var(--text-secondary);
-  white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.m-res-chip:hover .m-res-chip-name { overflow: visible; }
+/* 指标行：若干「标签 + 数值」横向排列 */
+.m-res-stats { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 /* 单个指标：标签 + 数值（+ 可选子数值） */
 .m-res-stat { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 .m-res-stat-label { font-size: 11px; color: var(--text-tertiary); }
-.m-res-stat-val { font-family: 'Consolas', 'Menlo', monospace; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.m-res-stat-val {
+  font-family: 'Consolas', 'Menlo', monospace; font-size: 13px; font-weight: 600; color: var(--text-primary);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+/* 数值右对齐 + 按字段限定最小宽度，避免位数变化时整行抖动 */
+.m-res-stat-val[data-field$="-pct"] { min-width: 4ch; }       /* CPU/RAM/负载/显存 百分比 */
+.m-res-stat-val[data-field="temp-val"] { min-width: 4ch; }    /* 温度 */
+.m-res-stat-val[data-field="power-text"] { min-width: 6ch; }  /* 功耗 */
 /* 状态颜色等级（三档，柔和配色，独立于全局 danger/warning） */
 .m-res-stat-val.m-res-ok { color: var(--res-ok); }
 .m-res-stat-val.m-res-warn { color: var(--res-warn); }
 .m-res-stat-val.m-res-danger { color: var(--res-danger); }
-.m-res-stat-sub { font-family: 'Consolas', 'Menlo', monospace; font-size: 11px; color: var(--text-tertiary); }
+.m-res-stat-sub {
+  font-family: 'Consolas', 'Menlo', monospace; font-size: 11px; color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.m-res-stat-sub[data-field="ram-text"] { min-width: 12ch; }   /* 已用/总量 G */
+.m-res-stat-sub[data-field="vram-text"] { min-width: 12ch; }  /* 已用/总量 M */
 
 /* ── 输出：模型存档区（checkpoint badge + loss + 排序）── */
 .m-ckpt-section { margin-top: 4px; }
