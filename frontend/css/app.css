@@ -16,6 +16,11 @@
   --warning: #ea580c;
   --info: #3b82f6;
 
+  /* 资源监控状态色（柔和，独立于全局 --danger/--warning） */
+  --res-ok: #10b981;      /* 正常：绿 */
+  --res-warn: #d97706;    /* 偏高：暖橙 */
+  --res-danger: #e0585a;  /* 过高：柔和红 */
+
   --bg-root: #f9f9f9;
   --bg-surface: #ffffff;
   --bg-surface-raised: #f5f5f5;
@@ -123,6 +128,12 @@
   --danger: #ff6b6b;
   --danger-hover: #f05555;
   --danger-soft: rgba(255, 107, 107, 0.12);
+
+  /* 资源监控状态色（暗色主题调亮，保持柔和） */
+  --res-ok: #34d399;
+  --res-warn: #fbbf24;
+  --res-danger: #f87171;
+
   --bg-secondary: #383838;   /* alias: --bg-surface-raised */
   --bg-tertiary: #2a2a2a;    /* alias: --bg-sunken */
 }
@@ -1988,6 +1999,13 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 1; min-height: 0;
   padding: 16px 28px 0;
 }
+/* Dashboard 页头：标题左 / 资源监控右，共享同一行（不增加高度） */
+.route-monitor-dashboard .page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.route-monitor-dashboard .page-header .page-title { margin-bottom: 0; }
 .monitor-dashboard { padding: 4px 0; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #monitorDashboard { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 #monitorTabContent { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -2009,8 +2027,18 @@ input[type="range"]::-webkit-slider-thumb {
 .dashboard-empty { text-align: center; padding: 48px 16px; color: var(--text-tertiary); font-size: 13px; font-family: var(--font-sans); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .dashboard-empty svg { width: 40px; height: 40px; opacity: 0.25; margin-bottom: 4px; }
 .dashboard-empty p { max-width: 320px; line-height: 1.6; }
+/* 紧凑空态变体（参数等空态，降低垂直占用） */
+.dashboard-empty.dashboard-empty-compact { padding: 18px 16px; gap: 4px; }
+.dashboard-empty.dashboard-empty-compact svg { width: 28px; height: 28px; margin-bottom: 2px; }
+.dashboard-empty.dashboard-empty-compact p { max-width: 280px; font-size: 12.5px; }
 
-.param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 16px; padding: 4px 0; }
+/* 参数分组：每组带二级标题，标题下接 param-grid */
+.param-group { margin-bottom: 14px; }
+.param-group:last-child { margin-bottom: 0; }
+.param-group-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.2px; margin-bottom: 6px; text-transform: none; }
+.param-group > .param-grid { padding: 2px 0; }
+
+.param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; padding: 4px 0; }
 .param-item { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border-default); }
 .param-label { color: var(--text-secondary); white-space: nowrap; }
 .param-value { font-weight: 600; color: var(--text-primary); text-align: right; font-family: 'Consolas', 'Menlo', monospace; }
@@ -2190,11 +2218,11 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── 单行紧凑信息条 ── */
 .m-statusbar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 8px 0; margin-bottom: 12px;
+  padding: 5px 0; margin-bottom: 8px;
   border-bottom: 1px solid var(--border-default);
   font-size: 12.5px;
 }
-.m-sb-left { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.m-sb-left { display: flex; align-items: center; gap: 8px; min-width: 100px; }
 .m-sb-state { font-size: 13px; font-weight: 700; transition: color 0.5s var(--ease-out); white-space: nowrap; }
 .m-sb-progress { width: 100px; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
 .m-sb-bar { height: 100%; background: var(--success); border-radius: 3px; transition: width 0.9s cubic-bezier(0.25,0.8,0.25,1); }
@@ -2210,20 +2238,38 @@ input[type="range"]::-webkit-slider-thumb {
 .m-sb-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .m-sb-stop { background: var(--danger); color: #fff; border: none; }
 
-/* ── SVG 环形进度（资源监控，低绿高橙无深红）── */
-.m-ring { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.m-ring svg { display: block; }
-.m-ring-bg { stroke: var(--bg-input); }
-.m-ring-ok .m-ring-fg { stroke: var(--success); transition: stroke-dashoffset 0.8s var(--ease-out), stroke 0.5s; }
-.m-ring-warn .m-ring-fg { stroke: var(--warning); transition: stroke-dashoffset 0.8s var(--ease-out), stroke 0.5s; }
-.m-ring-val { font-size: 9px; font-weight: 700; font-family: 'Consolas', monospace; fill: var(--text-primary); }
-.m-ring-label { font-size: 9px; color: var(--text-tertiary); letter-spacing: 0.3px; }
-
-/* ── 资源面板（环形 + 型号 + 数值）── */
+/* ── 资源面板（历史/旧版备用）── */
 .m-res-panel { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); max-width: 230px; }
 .m-res-name { font-size: 11px; font-weight: 600; color: var(--text-secondary); line-height: 1.3; word-break: break-word; }
 .m-res-rings { display: flex; gap: 10px; align-items: flex-start; }
 .m-res-details { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10px; font-family: 'Consolas', 'Menlo', monospace; color: var(--text-tertiary); }
+
+/* ── 页头右侧资源监控（内联功能条，无卡片装饰，共享 header 行）── */
+.monitor-resbar {
+  display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+[x-cloak] .monitor-resbar { display: none; }
+/* 单个设备组：无背景/边框/阴影，纯内联 */
+.m-res-chip {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; line-height: 1.2;
+}
+.m-res-chip + .m-res-chip { border-left: 1px solid var(--border-default); padding-left: 16px; }
+.m-res-chip-name {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+}
+.m-res-chip:hover .m-res-chip-name { overflow: visible; }
+/* 单个指标：标签 + 数值（+ 可选子数值） */
+.m-res-stat { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.m-res-stat-label { font-size: 11px; color: var(--text-tertiary); }
+.m-res-stat-val { font-family: 'Consolas', 'Menlo', monospace; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+/* 状态颜色等级（三档，柔和配色，独立于全局 danger/warning） */
+.m-res-stat-val.m-res-ok { color: var(--res-ok); }
+.m-res-stat-val.m-res-warn { color: var(--res-warn); }
+.m-res-stat-val.m-res-danger { color: var(--res-danger); }
+.m-res-stat-sub { font-family: 'Consolas', 'Menlo', monospace; font-size: 11px; color: var(--text-tertiary); }
 
 /* ── 输出：模型存档区（checkpoint badge + loss + 排序）── */
 .m-ckpt-section { margin-top: 4px; }

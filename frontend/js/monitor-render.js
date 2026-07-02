@@ -11,9 +11,6 @@
    ================================================================ */
 
 window.monitorRenderMixin = {
-  // ── 资源指标等级（低=绿 ok / 高=橙 warn，无深红）──
-  _ringGrade(pct, mid) { return (pct||0) >= mid ? 'warn' : 'ok'; },
-  _ringGradeTemp(temp) { return temp == null ? '' : (temp >= 80 ? 'warn' : 'ok'); },
 
   // ═══════════════════════════════════════════════════════════
   //  主入口：renderDashboard
@@ -42,9 +39,16 @@ window.monitorRenderMixin = {
       shell += '<div id="monitorTabContent"></div>';
       shell += '</div>';
       el.innerHTML = shell;
+      // 页头右侧资源监控（仅实时模式；历史模式不渲染，#monitorResbar 由 x-show 隐藏）
+      if (!isHistory) {
+        const resbarEl = document.getElementById('monitorResbar');
+        if (resbarEl) resbarEl.innerHTML = this._resbarHtml(gpu, sys, t);
+        this._patchResbar(gpu, sys, t);
+      }
     } else if (!isHistory) {
       // ── 2. 外壳原地打补丁（每 tick，不重建 DOM）──
       this._patchStatusbar(d, gpu, sys, t);
+      this._patchResbar(gpu, sys, t);
     }
 
     // ── 3. 标签页内容 ──
@@ -90,77 +94,102 @@ window.monitorRenderMixin = {
       html += '<span class="m-sb-m">' + this.esc(t('lastTraining','Last')) + ': <b>' + this.esc(lc.name) + '</b></span>';
       html += '<span class="m-sb-m">' + this.esc(lc.model) + ' · LR ' + this.esc(lc.lr) + ' · Dim ' + this.esc(lc.dim) + '</span>';
       html += '</div>';
-    } else if (stateCode === 'IDLE') {
-      html += '<div class="m-sb-metrics"><span class="m-sb-m m-sb-hint">' + this.esc(t('noTrainingHint','Start a training task to see real-time progress here')) + '</span></div>';
     }
+    // idle 时 statusbar 仅显示左侧「空闲」状态标签，不再额外渲染 hint 行，节省垂直空间
     if (d.has_error) html += '<span class="m-sb-error">' + this.esc(d.error_msg || t('error','Error')) + '</span>';
 
-    // 右：资源监控面板（环形 + 型号 + 详细数值）
-    html += '<div class="m-sb-right">';
-    if (isTraining) html += '<button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button>';
-    if (gpu) html += this._gpuPanel(gpu, t);
-    if (sys) html += this._sysPanel(sys, t);
-    html += '</div>';
+    // 右：仅训练中显示停止按钮（资源监控已移至页面头部 #monitorResbar）
+    if (isTraining) {
+      html += '<div class="m-sb-right"><button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button></div>';
+    }
     html += '</div>';
     return html;
   },
 
-  // GPU 资源面板：型号 + 环形行 + 数值行
-  _gpuPanel(gpu, t) {
+  // ═══════════════════════════════════════════════════════════
+  //  右上角常驻资源芯片（写入 #monitorResbar）
+  // ═══════════════════════════════════════════════════════════
+  _resbarHtml(gpu, sys, t) {
+    if (!gpu && !sys) return '';
+    let html = '';
+    if (sys) html += this._sysChip(sys, t);
+    if (gpu) html += this._gpuChip(gpu, t);
+    return html;
+  },
+
+  // 资源数值颜色等级（统一阈值）
+  //   百分比类：≥75% warn(橙)，≥90% danger(红)
+  //   温度：    ≥70℃ warn(橙)，≥85℃ danger(红)
+  // 返回 'ok'(绿) / 'warn'(橙) / 'danger'(红)
+  _resGrade(pct) {
+    const v = pct || 0;
+    if (v >= 90) return 'danger';
+    if (v >= 75) return 'warn';
+    return 'ok';
+  },
+  _resGradeTemp(temp) {
+    if (temp == null) return 'ok';
+    if (temp >= 85) return 'danger';
+    if (temp >= 70) return 'warn';
+    return 'ok';
+  },
+
+  // 系统资源组：型号 + CPU/内存 文字数值
+  _sysChip(sys, t) {
+    const fullName = sys.cpu_name || t('cpu','CPU');
+    let html = '<div class="m-res-chip" data-res="sys">';
+    html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('cpu','CPU')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.cpu_pct) + '" data-field="cpu-pct">' + Math.round(sys.cpu_pct) + '%</span></span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('ram','RAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.ram_pct) + '" data-field="ram-pct">' + Math.round(sys.ram_pct) + '%</span><span class="m-res-stat-sub" data-field="ram-text">' + sys.ram_used_gb + '/' + sys.ram_total_gb + 'G</span></span>';
+    html += '</div>';
+    return html;
+  },
+
+  // GPU 资源组：型号 + 负载/显存/温度 文字数值
+  _gpuChip(gpu, t) {
     const loadPct = gpu.gpu_load_pct || 0;
     const vramPct = gpu.vram_total_mb > 0 ? (gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
     const temp = gpu.temperature_c;
-    let html = '<div class="m-res-panel" data-res="gpu">';
-    // 型号标题（完整显示，允许换行）
-    if (gpu.name) html += '<div class="m-res-name">' + this.esc(gpu.name) + '</div>';
-    // 环形行
-    html += '<div class="m-res-rings">';
-    html += this._ringSvg('load', Math.round(loadPct), '%', this._ringGrade(loadPct, 90), t('gpuLoad','Load'));
-    html += this._ringSvg('vram', Math.round(vramPct), '%', this._ringGrade(vramPct, 92), t('vramUsed','VRAM'));
-    if (temp != null) html += this._ringSvg('temp', temp, '°', this._ringGradeTemp(temp), t('gpuTemp','Temp'));
-    html += '</div>';
-    // 数值行：VRAM 绝对值 + 功率
-    html += '<div class="m-res-details">';
-    html += '<span data-field="vram-text">' + gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'MB</span>';
-    if (gpu.power_w != null) html += '<span data-field="power-text">' + gpu.power_w + 'W</span>';
-    html += '</div>';
+    const fullName = gpu.name || 'GPU';
+    let html = '<div class="m-res-chip" data-res="gpu">';
+    html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuLoad','Load')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(loadPct) + '" data-field="load-pct">' + Math.round(loadPct) + '%</span></span>';
+    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('vramUsed','VRAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(vramPct) + '" data-field="vram-pct">' + Math.round(vramPct) + '%</span><span class="m-res-stat-sub" data-field="vram-text">' + gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'M</span></span>';
+    if (temp != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuTemp','Temp')) + '</span><span class="m-res-stat-val m-res-' + this._resGradeTemp(temp) + '" data-field="temp-val">' + temp + '°</span></span>';
+    if (gpu.power_w != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuPower','Power')) + '</span><span class="m-res-stat-val" data-field="power-text">' + gpu.power_w + 'W</span></span>';
     html += '</div>';
     return html;
   },
 
-  // 系统资源面板：CPU 型号 + 环形行 + 数值行
-  _sysPanel(sys, t) {
-    let html = '<div class="m-res-panel" data-res="sys">';
-    if (sys.cpu_name) html += '<div class="m-res-name">' + this.esc(sys.cpu_name) + '</div>';
-    html += '<div class="m-res-rings">';
-    html += this._ringSvg('cpu', Math.round(sys.cpu_pct), '%', this._ringGrade(sys.cpu_pct, 85), t('cpu','CPU'));
-    html += this._ringSvg('ram', Math.round(sys.ram_pct), '%', this._ringGrade(sys.ram_pct, 85), t('ram','RAM'));
-    html += '</div>';
-    html += '<div class="m-res-details">';
-    html += '<span data-field="ram-text">' + sys.ram_used_gb + '/' + sys.ram_total_gb + 'GB</span>';
-    html += '</div>';
-    html += '</div>';
-    return html;
-  },
-
-  // SVG 环形进度（半径 16，stroke 3）
-  _ringSvg(key, value, unit, grade, label) {
-    const r = 16, c = 2 * Math.PI * r;
-    // value 是百分比或温度；温度映射到 0-100（0-100℃）
-    const pct = unit === '°' ? Math.min(100, (value / 100) * 100) : Math.max(0, Math.min(100, value));
-    const offset = c * (1 - pct / 100);
-    const display = unit === '°' ? value + '°' : Math.round(value) + unit;
-    return `<div class="m-ring m-ring-${grade}" data-ring="${key}">
-      <svg viewBox="0 0 40 40" width="40" height="40">
-        <circle class="m-ring-bg" cx="20" cy="20" r="${r}" fill="none" stroke-width="3"/>
-        <circle class="m-ring-fg" cx="20" cy="20" r="${r}" fill="none" stroke-width="3"
-          stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"
-          data-ring-offset="${offset.toFixed(2)}" data-ring-c="${c.toFixed(2)}"
-          transform="rotate(-90 20 20)"/>
-        <text class="m-ring-val" x="20" y="23" text-anchor="middle" data-ring-val>${this.esc(display)}</text>
-      </svg>
-      <span class="m-ring-label">${this.esc(label)}</span>
-    </div>`;
+  _patchResbar(gpu, sys, t) {
+    const bar = document.getElementById('monitorResbar');
+    if (!bar) return;
+    // 若结构未就绪或 GPU 可用性切换，则重建
+    const hasGpuChip = !!bar.querySelector('[data-res="gpu"]');
+    const hasSysChip = !!bar.querySelector('[data-res="sys"]');
+    if ((!!gpu) !== hasGpuChip || (!!sys) !== hasSysChip) {
+      bar.innerHTML = this._resbarHtml(gpu, sys, t);
+    }
+    // 更新数值文本 + 颜色等级 class
+    const _set = (key, val, grade) => {
+      const e = bar.querySelector('[data-field="' + key + '"]');
+      if (!e) return;
+      e.textContent = val;
+      if (grade) e.className = 'm-res-stat-val m-res-' + grade;
+    };
+    if (gpu) {
+      _set('load-pct', Math.round(gpu.gpu_load_pct || 0) + '%', this._resGrade(gpu.gpu_load_pct||0));
+      const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
+      _set('vram-pct', vramPct + '%', this._resGrade(vramPct));
+      _set('vram-text', gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'M');
+      if (gpu.temperature_c != null) _set('temp-val', gpu.temperature_c + '°', this._resGradeTemp(gpu.temperature_c));
+      if (gpu.power_w != null) _set('power-text', gpu.power_w + 'W');
+    }
+    if (sys) {
+      _set('cpu-pct', Math.round(sys.cpu_pct) + '%', this._resGrade(sys.cpu_pct));
+      _set('ram-pct', Math.round(sys.ram_pct) + '%', this._resGrade(sys.ram_pct));
+      _set('ram-text', sys.ram_used_gb + '/' + sys.ram_total_gb + 'G');
+    }
   },
 
   // ── 外壳原地打补丁 ──
@@ -191,36 +220,7 @@ window.monitorRenderMixin = {
     const elEl = bar.querySelector('[data-field="elapsed"] b'); if (elEl) elEl.textContent = d.elapsed ? this.esc(String(d.elapsed)) : '--';
     const etaEl = bar.querySelector('[data-field="eta"] b'); if (etaEl) etaEl.textContent = d.eta ? this.esc(String(d.eta)) : '--';
     const spdEl = bar.querySelector('[data-field="speed"] b'); if (spdEl) spdEl.textContent = d.speed ? this.esc(String(d.speed)) : '--';
-    // 圆环 + 数值原地更新
-    if (gpu) {
-      this._patchRing('load', Math.round(gpu.gpu_load_pct || 0), '%', this._ringGrade(gpu.gpu_load_pct||0, 90));
-      const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
-      this._patchRing('vram', vramPct, '%', this._ringGrade(vramPct, 92));
-      if (gpu.temperature_c != null) this._patchRing('temp', gpu.temperature_c, '°', this._ringGradeTemp(gpu.temperature_c));
-      // 绝对值 + 功率
-      const vramText = bar.querySelector('[data-field="vram-text"]');
-      if (vramText) vramText.textContent = gpu.vram_used_mb + '/' + gpu.vram_total_mb + 'MB';
-      const pwText = bar.querySelector('[data-field="power-text"]');
-      if (pwText) pwText.textContent = (gpu.power_w != null ? gpu.power_w + 'W' : '');
-    }
-    if (sys) {
-      this._patchRing('cpu', Math.round(sys.cpu_pct), '%', this._ringGrade(sys.cpu_pct, 85));
-      this._patchRing('ram', Math.round(sys.ram_pct), '%', this._ringGrade(sys.ram_pct, 85));
-      const ramText = bar.querySelector('[data-field="ram-text"]');
-      if (ramText) ramText.textContent = sys.ram_used_gb + '/' + sys.ram_total_gb + 'GB';
-    }
-  },
-
-  _patchRing(key, value, unit, grade) {
-    const ring = document.querySelector('.m-ring[data-ring="' + key + '"]');
-    if (!ring) return;
-    const pct = unit === '°' ? Math.min(100, value) : Math.max(0, Math.min(100, value));
-    const fg = ring.querySelector('.m-ring-fg');
-    const c = fg ? parseFloat(fg.dataset.ringC) : 0;
-    if (fg) fg.style.strokeDashoffset = (c * (1 - pct / 100)).toFixed(2);
-    const valEl = ring.querySelector('[data-ring-val]');
-    if (valEl) valEl.textContent = unit === '°' ? value + '°' : value + unit;
-    ring.className = 'm-ring m-ring-' + grade;
+    // 资源圆环补丁由 _patchResbar 负责（写入 #monitorResbar）
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -343,16 +343,39 @@ window.monitorRenderMixin = {
       html += '</div></div>';
     }
 
-    // ── 训练参数 ──
-    html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
+    // ── 训练参数（按 group 分组渲染：基础 / 网络 / 训练）──
     if (this.trainParams.length) {
-      html += '<div class="param-grid">';
-      this.trainParams.forEach(p => { html += '<div class="param-item"><span class="param-label">' + this.esc(p.label) + '</span><span class="param-value">' + this.esc(p.value) + '</span></div>'; });
+      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
+      // 按 group 归集；若无 group 字段则归入单一组（向后兼容旧后端响应）
+      const groups = {};
+      const groupOrder = ['basic', 'network', 'training'];
+      this.trainParams.forEach(p => {
+        const g = p.group || '';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(p);
+      });
+      const orderedKeys = Object.keys(groups).sort((a, b) => {
+        const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+      orderedKeys.forEach(g => {
+        const hasGroupLabel = g && groupOrder.includes(g) && orderedKeys.length > 1;
+        if (hasGroupLabel) {
+          const titleKey = 'paramGroup' + g.charAt(0).toUpperCase() + g.slice(1);
+          html += '<div class="param-group"><div class="param-group-title">' + this.esc(t(titleKey, g)) + '</div><div class="param-grid">';
+        } else {
+          html += '<div class="param-group"><div class="param-grid">';
+        }
+        groups[g].forEach(p => { html += '<div class="param-item"><span class="param-label">' + this.esc(p.label) + '</span><span class="param-value">' + this.esc(p.value) + '</span></div>'; });
+        html += '</div></div>';
+      });
       html += '</div>';
-    } else {
-      html += '<div class="dashboard-empty"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div>';
+    } else if (!isRunning) {
+      // 空闲且无参数：单条紧凑空态提示（不再占用大块垂直空间）
+      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
+      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div>';
+      html += '</div>';
     }
-    html += '</div>';
 
     return html;
   },

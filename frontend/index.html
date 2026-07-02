@@ -224,6 +224,8 @@
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak class="route-monitor-dashboard">
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
+          <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
+          <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
         </div>
         <!-- Monitor Tabs -->
         <div class="monitor-tabs">

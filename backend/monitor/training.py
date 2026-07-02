@@ -436,7 +436,7 @@ def extract_train_params(config: dict) -> list[dict]:
         return []
     params = []
 
-    def _add(label: str, key: str, fmt: str = ""):
+    def _add(label: str, key: str, group: str, fmt: str = ""):
         v = config.get(key)
         if v is None or v == "":
             return
@@ -446,27 +446,28 @@ def extract_train_params(config: dict) -> list[dict]:
                 v = f"{n:.2e}" if n < 0.001 else str(n)
             except ValueError:
                 pass
-        params.append({"label": label, "value": str(v)})
+        params.append({"label": label, "value": str(v), "group": group})
 
-    _add("Learning Rate / 学习率", "learning_rate", "lr")
-    _add("UNet LR", "unet_lr", "lr")
-    _add("Optimizer / 优化器", "optimizer_type")
-    _add("Scheduler / 调度器", "lr_scheduler")
-    _add("Rank (dim) / 维度", "network_dim")
-    _add("Alpha", "network_alpha")
-    _add("Epochs / 轮数", "max_train_epochs")
-    _add("Resolution / 分辨率", "resolution")
-    _add("Seed / 种子", "seed")
+    # 分组：basic（基础）/ network（网络）/ training（训练）
+    _add("Learning Rate / 学习率", "learning_rate", "basic", "lr")
+    _add("UNet LR", "unet_lr", "basic", "lr")
+    _add("Optimizer / 优化器", "optimizer_type", "basic")
+    _add("Scheduler / 调度器", "lr_scheduler", "basic")
+    _add("Rank (dim) / 维度", "network_dim", "network")
+    _add("Alpha", "network_alpha", "network")
+    _add("Epochs / 轮数", "max_train_epochs", "training")
+    _add("Resolution / 分辨率", "resolution", "training")
+    _add("Seed / 种子", "seed", "training")
 
     warmup = config.get("lr_warmup_steps", "")
     if warmup and warmup not in ("0", "0.0"):
-        params.append({"label": "Warmup", "value": f"{warmup} 步"})
+        params.append({"label": "Warmup", "value": f"{warmup} 步", "group": "training"})
 
     if config.get("full_bf16") == "true":
-        params.append({"label": "精度", "value": "BF16"})
+        params.append({"label": "精度", "value": "BF16", "group": "training"})
     elif config.get("full_fp16") == "true":
-        params.append({"label": "精度", "value": "FP16"})
+        params.append({"label": "精度", "value": "FP16", "group": "training"})
     elif config.get("mixed_precision"):
-        params.append({"label": "精度", "value": config["mixed_precision"].upper()})
+        params.append({"label": "精度", "value": config["mixed_precision"].upper(), "group": "training"})
 
     return params
