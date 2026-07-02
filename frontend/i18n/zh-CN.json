@@ -234,6 +234,7 @@
 		"optimizer_args_customHint": "一行一对 key=value，传递给训练器的 --optimizer_args",
 		"lr_scheduler_emoLocked": "EmoSens 内部自动管理学习率调度，此参数已锁定为 constant",
 		"lr_warmup_steps_emoLocked": "EmoSens 不需要外部预热步骤，此参数已锁定为 0",
+		"max_grad_norm_emoLocked": "EmoSens 自带 emoPulse 动态步长抑制梯度发散，外部梯度裁剪已禁用（锁定为 0）",
 		"lr_scheduler_locked": "此优化器内部管理学习率，调度器已被接管（EmoSens→EmoPulse，ScheduleFree→dummy）",
 		"lr_scheduler_type": "外部调度器（模块路径）。设置后覆盖上方 lr_scheduler。",
 		"lr_scheduler_type_locked": "此优化器内部管理学习率，外部调度器已被接管（EmoSens→EmoPulse，ScheduleFree→dummy）",

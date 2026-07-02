@@ -234,6 +234,7 @@
 		"optimizer_args_customHint": "One key=value per line, passed to trainer's --optimizer_args",
 		"lr_scheduler_emoLocked": "EmoSens manages LR scheduling internally, locked to constant",
 		"lr_warmup_steps_emoLocked": "EmoSens does not require external warmup, locked to 0",
+		"max_grad_norm_emoLocked": "EmoSens uses emoPulse dynamic step to suppress gradient divergence; external clipping disabled (locked to 0)",
 		"lr_scheduler_locked": "This optimizer manages LR internally; scheduler is overridden (EmoSens→EmoPulse, ScheduleFree→dummy)",
 		"lr_scheduler_type": "External scheduler (dot-path). Overrides lr_scheduler when set.",
 		"lr_scheduler_type_locked": "This optimizer manages LR internally; external scheduler is overridden (EmoSens→EmoPulse, ScheduleFree→dummy)",

@@ -238,6 +238,9 @@ window.trainingCoreMixin = {
     const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
     // 失效嵌套层级缓存（字段集随训练类型变化）
     this._nestLevelCache = null;
+    // 进阶参数计数映射：countKey → [field objects]，供 _updateAdvancedCounts 运行期重算。
+    // 渲染期建立后，showConditionalFields 切换字段显隐时用 _fieldVisible 按表单状态重计括号数字。
+    this._advCountFields = {};
     let html = '';
       sections.forEach(section => {
       const allFields = section.fields.filter(f => !f.hidden);
@@ -298,11 +301,13 @@ window.trainingCoreMixin = {
               sg.basic.forEach(bf => { html += this.renderField(bf); });
               if (sg.advanced.length > 0) {
                 const sgKey = section.key + '--' + f.subGroup;
+                const sgAdvVisible = sg.advanced.filter(af => this._fieldVisible(af)).length;
+                this._advCountFields[sgKey] = sg.advanced;
                 html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
                 html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
                 html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
                 html += `<span>${this.esc(sgAdvTitle)}</span>`;
-                html += `<span class="advanced-count">(${sg.advanced.length})</span>`;
+                html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
                 html += `</div>`;
                 html += `<div class="advanced-fold-body">`;
                 sg.advanced.forEach(af => { html += this.renderField(af); });
@@ -313,11 +318,13 @@ window.trainingCoreMixin = {
               // 仅 advanced 字段：不渲染子组盒子/标题，直接渲染独立的高级折叠块。
               // 折叠容器自身带 network_module 显隐属性，模块切换时整体跟随显隐。
               const sgKey = section.key + '--' + f.subGroup;
+              const sgAdvVisible = sg.advanced.filter(af => this._fieldVisible(af)).length;
+              this._advCountFields[sgKey] = sg.advanced;
               html += `<div class="advanced-fold advanced-fold--inline${sgBlockHidden}"${sgShowIfAttrs} data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
               html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
               html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
               html += `<span>${this.esc(sgAdvTitle)}</span>`;
-              html += `<span class="advanced-count">(${sg.advanced.length})</span>`;
+              html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
               html += `</div>`;
               html += `<div class="advanced-fold-body">`;
               sg.advanced.forEach(af => { html += this.renderField(af); });
@@ -334,11 +341,13 @@ window.trainingCoreMixin = {
       if (regularAdvanced.length > 0) {
         const advCollapsedKey = 'anima-advanced-collapsed-' + section.key;
         const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0';
+        const regularAdvVisible = regularAdvanced.filter(f => this._fieldVisible(f)).length;
+        this._advCountFields[section.key] = regularAdvanced;
         html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] !== false }">`;
         html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${section.key}')">`;
         html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
         html += `<span>${this.t('common.advancedParams')}</span>`;
-        html += `<span class="advanced-count">(${regularAdvanced.length})</span>`;
+        html += `<span class="advanced-count" data-adv-count-key="${section.key}">(${regularAdvVisible})</span>`;
         html += `</div>`;
         html += `<div class="advanced-fold-body">`;
         regularAdvanced.forEach(field => { html += this.renderField(field); });
@@ -655,10 +664,30 @@ window.trainingCoreMixin = {
       return false;
     }
     if (c.neq !== undefined) {
-      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
+      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && String(pv) !== '';
     }
     return true;
   },
+
+  // 字段在当前表单状态下是否「实际可见」——综合 showIf / showIfAny 求值。
+  // 用于进阶参数计数：被条件隐藏的 advanced 字段不计入括号数字，避免计数虚高。
+  // renderField 渲染期与 showConditionalFields 运行期共用同一判定逻辑。
+  _fieldVisible(field) {
+    if (field.hidden) return false;
+    if (field.showIf) {
+      const sf = field.showIf;
+      if (Array.isArray(sf)) {
+        if (!sf.every(c => this._evalShowIfCond(c))) return false;
+      } else {
+        if (!this._evalShowIfCond(sf)) return false;
+      }
+    }
+    if (field.showIfAny) {
+      if (!field.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)))) return false;
+    }
+    return true;
+  },
+
 
   renderField(field) {
     const val = this.form[field.key];
@@ -930,9 +959,26 @@ window.trainingCoreMixin = {
     });
   },
 
+  // 重算所有进阶参数折叠块的括号计数：仅统计当前表单状态下实际可见的 advanced 字段。
+  // 渲染期在 _advCountFields 建立了 countKey→[fields] 映射，这里按 _fieldVisible 重计并
+  // 写入对应 [data-adv-count-key] span 的文本。不依赖 DOM field-hidden 类，避免动画时序竞态。
+  _updateAdvancedCounts() {
+    const map = this._advCountFields;
+    if (!map) return;
+    document.querySelectorAll('#trainFormContent [data-adv-count-key]').forEach(span => {
+      const key = span.getAttribute('data-adv-count-key');
+      const fields = map[key];
+      if (!fields) return;
+      const visible = fields.filter(f => this._fieldVisible(f)).length;
+      span.textContent = '(' + visible + ')';
+    });
+  },
+
   showConditionalFields(parentKey) {
     const expectedVal = this.form[parentKey];
     const toAnimate = []; // collect rows that need animation
+    // 进阶参数计数随字段显隐联动重算（按表单状态，与 DOM 动画时序无关）。
+    this._updateAdvancedCounts();
 
     // Handle multi-condition show_if (data-show-if-all)
     document.querySelectorAll(`[data-show-if-all]`).forEach(row => {
