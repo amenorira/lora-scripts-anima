@@ -573,6 +573,47 @@ window.trainingPresetsMixin = {
     return c;
   },
 
+  // ── TOML 预览（与训练侧边栏同款语法着色）──
+  get presetEditorToml() {
+    const lines = [];
+    for (const e of this.presetEditor.entries) {
+      if (e.hidden) continue;
+      if (e.custom) {
+        // 自定义键按字符串输出
+        lines.push(`${e.key} = ${typeof e.value === 'string' ? '"' + String(e.value).replace(/\\/g,'\\\\').replace(/"/g,'\\"') + '"' : String(e.value)}`);
+        continue;
+      }
+      const v = e.value;
+      if (v === '' || v === null || v === undefined) continue;
+      if (typeof v === 'boolean') {
+        lines.push(`${e.key} = ${v}`);
+      } else if (typeof v === 'number') {
+        lines.push(`${e.key} = ${v}`);
+      } else if (Array.isArray(v)) {
+        const arr = v.map(x => {
+          const s = String(x);
+          if (s.startsWith('"') || s.startsWith("'")) return s;
+          return /^\d+\.?\d*$/.test(s) ? s : `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`;
+        }).join(', ');
+        lines.push(`${e.key} = [${arr}]`);
+      } else {
+        const s = String(v);
+        lines.push(`${e.key} = "${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
+      }
+    }
+    // 语法着色（与 updateToml 同款）
+    const highlighted = lines.map(line => {
+      if (line.startsWith('#')) return `<span class="toml-comment">${this.esc(line)}</span>`;
+      const eq = line.indexOf('=');
+      if (eq === -1) return this.esc(line);
+      const key = line.substring(0, eq).trim();
+      const val = line.substring(eq + 1).trim();
+      const valCls = (val.startsWith('"') || val.startsWith("'")) ? 'toml-str' : 'toml-num';
+      return `<span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> <span class="${valCls}">${this.esc(val)}</span>`;
+    }).join('\n');
+    return highlighted || '<span class="toml-comment"># (empty)</span>';
+  },
+
   // 对比 Tab：勾选差异项后选择性应用
   applyPresetDiffSelected(selectedKeys) {
     const data = {};

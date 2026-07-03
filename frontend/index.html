@@ -1355,6 +1355,9 @@
                   <button class="preset-tab" :class="{ active: presetEditor.tab === 'diff' }"
                           @click="presetEditor.tab = 'diff'; presetDiffSelected = []"
                           x-text="t('preset.tabDiff')">Compare</button>
+                  <button class="preset-tab" :class="{ active: presetEditor.tab === 'preview' }"
+                          @click="presetEditor.tab = 'preview'"
+                          x-text="t('preset.tabToml')">TOML</button>
                 </div>
 
                 <!-- Tab: 元信息 -->
@@ -1566,19 +1569,24 @@
                           <span class="preset-diff-type" x-text="t('preset.diff.' + d.type)"></span>
                           <div class="preset-diff-values">
                             <template x-if="d.type === 'modified'">
-                              <span><span class="diff-old" x-text="String(d.oldVal ?? '')"></span> <span class="diff-arrow">&rarr;</span> <span class="diff-new" x-text="String(d.newVal ?? '')"></span></span>
+                              <span><span class="diff-label" x-text="t('preset.diff.formVal')"></span><span class="diff-old" x-text="String(d.oldVal ?? '')"></span> <span class="diff-arrow">&rarr;</span> <span class="diff-label" x-text="t('preset.diff.presetVal')"></span><span class="diff-new" x-text="String(d.newVal ?? '')"></span></span>
                             </template>
                             <template x-if="d.type === 'added'">
-                              <span class="diff-new" x-text="String(d.newVal ?? '')"></span>
+                              <span><span class="diff-label" x-text="t('preset.diff.presetVal')"></span><span class="diff-new" x-text="String(d.newVal ?? '')"></span></span>
                             </template>
                             <template x-if="d.type === 'removed'">
-                              <span class="diff-old" x-text="String(d.oldVal ?? '')"></span>
+                              <span><span class="diff-label" x-text="t('preset.diff.formVal')"></span><span class="diff-old" x-text="String(d.oldVal ?? '')"></span></span>
                             </template>
                           </div>
                         </div>
                       </div>
                     </template>
                   </div>
+                </div>
+
+                <!-- Tab: TOML 预览 -->
+                <div class="preset-tab-body" x-show="presetEditor.tab === 'preview'">
+                  <div class="preset-toml-preview" x-html="presetEditorToml"></div>
                 </div>
 
                 <!-- 底部操作区 -->

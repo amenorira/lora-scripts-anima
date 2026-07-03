@@ -979,6 +979,7 @@ input[type="checkbox"]:focus-visible {
 .diff-old { text-decoration: line-through; color: #e05555; }
 .diff-arrow { color: var(--text-tertiary); margin: 0 4px; }
 .diff-new { color: #55e055; font-weight: 500; }
+.diff-label { font-size: 10px; color: var(--text-tertiary); margin-right: 3px; font-weight: 400; }
 .diff-stat-removed { color: #e05555; }
 .badge-train-type {
   font-size: 10px; padding: 1px 6px; border-radius: 3px;
@@ -1903,6 +1904,17 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .panel-preview .toml-num { color: var(--text-preview-num); }
 .panel-preview .toml-str { color: var(--text-preview-str); }
 .panel-preview .toml-comment { color: var(--text-preview-comment); font-style: italic; }
+/* 预设编辑器 TOML 预览（与训练侧边同款着色） */
+.preset-toml-preview {
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
+  color: var(--text-primary); white-space: pre-wrap; word-break: break-all;
+  overflow-y: auto; min-height: 60px;
+}
+.preset-toml-preview .toml-key { color: var(--text-preview-key); }
+.preset-toml-preview .toml-eq { color: var(--text-preview-eq); }
+.preset-toml-preview .toml-num { color: var(--text-preview-num); }
+.preset-toml-preview .toml-str { color: var(--text-preview-str); }
+.preset-toml-preview .toml-comment { color: var(--text-preview-comment); font-style: italic; }
 
 .panel-actions {
   padding: 10px 12px; border-top: 1px solid var(--border-default);
