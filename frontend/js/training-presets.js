@@ -1,288 +1,794 @@
 /* ================================================================
-   training-presets.js — Presets, param save/load, confirm modal
+   training-presets.js — Preset workspace (双栏 + 解耦编辑器)
    Mixin merged into animaApp Alpine component
+
+   设计要点：
+   - 编辑器维护独立 presetEditor.entries，与主训练表单 this.form 完全解耦，
+     不再劫持 form/formDefaults/formHistory，根治旧 Edit 模式副作用。
+   - 字段元信息复用 window.TRAIN_SECTIONS (buildFieldMap)。
+   - Apply 前快照 this.form，应用后弹"撤销"toast。
+   - 导入走后端 /api/presets/parse（替代前端残废的 parseToml）。
    ================================================================ */
 
 window.trainingPresetsMixin = {
+  // ── 列表/筛选 ─────────────────────────────────────────
+  allPresets: [],
+  presets: [],
+  presetsLoading: false,
+  presetSearch: '',
+  presetTypeFilter: 'all',        // 'all' | 'anima-lora' | 'sdxl-lora'
+  presetSort: 'name',             // 'name' | 'type' | 'params'
+  presetSelectedName: '',
+  presetBatchMode: false,
+  selectedPresets: [],
+
+  // ── 当前应用中的预设徽标（保留供 header preset-badge 复用）──
+  currentPreset: null,
+  currentPresetName: '',
+
+  // ── 对比/差异高亮（保留供 training-core 表单高亮联动）──
+  previewPreset: null,
+  diffCounts: { modified: 0, added: 0 },
+  formDiffMap: null,
+
+  // ── 编辑器状态 ─────────────────────────────────────────
+  presetEditor: {
+    mode: 'view',                 // 'view' | 'edit' | 'new'
+    tab: 'meta',                  // 'meta' | 'params' | 'diff'
+    meta: { name: '', version: '1.0', author: '', train_type: 'anima-lora', description: '' },
+    entries: [],                  // [{key, value, def, sectionKey, sectionTitleKey, sectionTitle, advanced, subGroup, hidden, custom, type}]
+    paramSearch: '',
+    sectionCollapsed: {},         // section 折叠状态
+    advancedCollapsed: {}         // advanced 折叠状态（key: sectionKey 或 sectionKey--subGroup）
+  },
+
+  // ── 兼容字段（旧弹窗已移除，保留以避免外部赋值报错）──
   showLoadModal: false,
   showSaveModal: false,
+  showEditModal: false,
   showConfirmModal: false,
   confirmTitle: '',
   confirmMessage: '',
   confirmCallback: null,
-  savePresetName: '',
-  savePresetDesc: '',
-  presets: [],
-  allPresets: [],
-  presetsLoading: false,
-  currentPreset: null,
-  currentPresetName: '',
-  previewPreset: null,
-  diffCounts: { modified: 0, added: 0 },
-  formDiffMap: null,
-  showEditModal: false,
-  editPresetTarget: null,
-  batchMode: false,
-  selectedPresets: [],
-  renamingPreset: null,
-  renameNewName: '',
-  // ── Param Save/Load (server presets) ──────────────────
-  openSavePresetModal() {
-    this.savePresetName = this.form.output_name || '';
-    this.savePresetDesc = '';
-    this.showSaveModal = true;
+
+  // ── 对比勾选 ───────────────────────────────────────────
+  presetDiffSelected: [],
+
+  // ── 内部 ───────────────────────────────────────────────
+  _presetFieldMap: null,
+  _editingOriginalName: '',
+  _preApplySnapshot: null,
+  _importedPreset: null,
+  showPresetImportModal: false,
+
+  // ══════════════════════════════════════════════════════
+  // 列表加载与筛选
+  // ══════════════════════════════════════════════════════
+  async loadPresets() {
+    this.presetsLoading = true;
+    try {
+      const r = await fetch('/api/presets');
+      const d = await r.json();
+      if (d.status === 'success' && d.data && d.data.presets) {
+        this.allPresets = d.data.presets;
+        this._refreshFilteredPresets();
+      }
+    } catch (e) { /* ignore */ }
+    finally { this.presetsLoading = false; }
   },
 
-  async confirmSavePreset() {
-    const name = (this.savePresetName || '').trim();
-    if (!name) { this.toast(this.t('common.enterConfigName')); return; }
+  _refreshFilteredPresets() {
     const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
-    const trainType = routeCfg.trainType || this.form.model_train_type || 'anima-lora';
+    const currentType = routeCfg.trainType || (this.form && this.form.model_train_type) || 'anima-lora';
+    this.presets = this.allPresets.filter(p =>
+      p && p.metadata && (!p.metadata.train_type || p.metadata.train_type === currentType)
+    );
+  },
+
+  // 列表展示用：应用搜索/过滤/排序后的预设
+  get filteredPresetList() {
+    const q = (this.presetSearch || '').toLowerCase().trim();
+    let list = this.allPresets.filter(p => {
+      if (!p || !p.metadata) return false;
+      if (this.presetTypeFilter !== 'all') {
+        const tt = p.metadata.train_type || 'anima-lora';
+        if (tt !== this.presetTypeFilter) return false;
+      }
+      if (q) {
+        const hay = (
+          (p.metadata.name || '') + ' ' +
+          (p.metadata.description || '') + ' ' +
+          (p.metadata.train_type || '')
+        ).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    const sort = this.presetSort;
+    list = list.slice().sort((a, b) => {
+      if (sort === 'type') {
+        const ta = (a.metadata.train_type || '');
+        const tb = (b.metadata.train_type || '');
+        return (ta < tb ? -1 : ta > tb ? 1 : 0) || a.metadata.name.localeCompare(b.metadata.name);
+      }
+      if (sort === 'params') {
+        const pa = Object.keys(a.data || {}).length;
+        const pb = Object.keys(b.data || {}).length;
+        return (pb - pa) || a.metadata.name.localeCompare(b.metadata.name);
+      }
+      return a.metadata.name.localeCompare(b.metadata.name);
+    });
+    return list;
+  },
+
+  // ══════════════════════════════════════════════════════
+  // 选中 / 模式切换
+  // ══════════════════════════════════════════════════════
+  selectPreset(p) {
+    if (!p) { this.presetSelectedName = ''; return; }
+    this.presetSelectedName = p.metadata.name;
+    this._enterViewMode(p);
+  },
+
+  _enterViewMode(p) {
+    const tt = (p.metadata && p.metadata.train_type) || 'anima-lora';
+    this._presetFieldMap = this.buildFieldMap(tt);
+    this.presetEditor.mode = 'view';
+    this.presetEditor.tab = 'meta';
+    this.presetEditor.meta = {
+      name: p.metadata.name || '',
+      version: p.metadata.version || '1.0',
+      author: p.metadata.author || '',
+      train_type: p.metadata.train_type || tt,
+      description: p.metadata.description || ''
+    };
+    this.presetEditor.entries = this._buildEntries(p.data || {}, tt);
+    this.presetEditor.paramSearch = '';
+    this.presetEditor.sectionCollapsed = {};
+    this.presetEditor.advancedCollapsed = {};
+  },
+
+  openPresetNew() {
+    const tt = (ROUTE_CONFIG[this.currentRoute] || {}).trainType ||
+               (this.form && this.form.model_train_type) || 'anima-lora';
+    this._presetFieldMap = this.buildFieldMap(tt);
+    this.presetEditor.mode = 'new';
+    this.presetEditor.tab = 'meta';
+    this.presetEditor.meta = { name: '', version: '1.0', author: '', train_type: tt, description: '' };
+    // 新建预设默认填入当前训练表单值，方便基于现有配置保存
+    const seedData = (this.form ? { ...this.form } : {});
+    this.presetEditor.entries = this._buildEntries(seedData, tt);
+    this.presetEditor.paramSearch = '';
+    this.presetEditor.sectionCollapsed = {};
+    this.presetEditor.advancedCollapsed = {};
+    this.presetSelectedName = '';
+  },
+
+  openPresetEdit(p) {
+    if (!p) return;
+    this.presetSelectedName = p.metadata.name;
+    const tt = (p.metadata && p.metadata.train_type) || 'anima-lora';
+    this._presetFieldMap = this.buildFieldMap(tt);
+    this._editingOriginalName = p.metadata.name;
+    this.presetEditor.mode = 'edit';
+    this.presetEditor.tab = 'meta';
+    this.presetEditor.meta = {
+      name: p.metadata.name || '',
+      version: p.metadata.version || '1.0',
+      author: p.metadata.author || '',
+      train_type: p.metadata.train_type || tt,
+      description: p.metadata.description || ''
+    };
+    this.presetEditor.entries = this._buildEntries(JSON.parse(JSON.stringify(p.data || {})), tt);
+    this.presetEditor.paramSearch = '';
+    this.presetEditor.sectionCollapsed = {};
+    this.presetEditor.advancedCollapsed = {};
+  },
+
+  cancelPresetEditor() {
+    if (this.presetSelectedName) {
+      const p = this.allPresets.find(x => x.metadata.name === this.presetSelectedName);
+      if (p) { this._enterViewMode(p); return; }
+    }
+    this.presetEditor.mode = 'view';
+    this.presetEditor.entries = [];
+  },
+
+  // ══════════════════════════════════════════════════════
+  // 字段元信息
+  // ══════════════════════════════════════════════════════
+  buildFieldMap(trainType) {
+    const sections = window.getVisibleSections(trainType || 'anima-lora');
+    const map = {};
+    sections.forEach(s => {
+      (s.fields || []).forEach(f => {
+        if (!f.hidden) map[f.key] = Object.assign({}, f, { _sectionKey: s.key, _sectionTitleKey: s.titleKey });
+      });
+    });
+    return map;
+  },
+
+  _buildEntries(data, trainType) {
+    // 以该 train_type 的可见字段全集为渲染基础（与训练表单一致），
+    // 值用预设 data 覆盖默认；预设里多出的非可见字段归入"自定义"分组。
+    // 保留 section 与字段的【原生顺序】，不再用 localeCompare。
+    const sections = window.getVisibleSections(trainType || 'anima-lora');
+    const customTitle = this.t('preset.customKeys');
+    const seen = new Set();
+    const entries = [];
+    sections.forEach(s => {
+      (s.fields || []).forEach(f => {
+        if (f.hidden && f.key !== 'model_train_type') {
+          // hidden 字段（logging_dir/log_with 等）：保留数据用于保存，但不显示。
+          // 仍生成 entry，渲染时由 hidden 标志跳过。
+          seen.add(f.key);
+          entries.push({
+            key: f.key, value: data[f.key] !== undefined ? data[f.key] : (f.default !== undefined ? f.default : ''),
+            def: f, sectionKey: s.key, sectionTitleKey: s.titleKey, sectionTitle: this.t(s.titleKey) || s.key,
+            advanced: !!f.advanced, subGroup: f.subGroup || null, hidden: true, custom: false, type: f.type || 'text'
+          });
+          return;
+        }
+        seen.add(f.key);
+        let value = data[f.key];
+        if (value === undefined || value === null) {
+          if (f.default !== undefined && f.default !== null && f.default !== '') value = f.default;
+          else if (f.type === 'toggle') value = false;
+          else if (f.type === 'select' && f.options && f.options.length) value = f.options[0].v;
+          else value = '';
+        }
+        entries.push({
+          key: f.key, value, def: f, sectionKey: s.key, sectionTitleKey: s.titleKey, sectionTitle: this.t(s.titleKey) || s.key,
+          advanced: !!f.advanced, subGroup: f.subGroup || null, hidden: !!f.hidden, custom: false, type: f.type || 'text'
+        });
+      });
+    });
+    // 预设里多出的、不在可见字段集的 key → 自定义分组
+    Object.keys(data).forEach(k => {
+      if (seen.has(k)) return;
+      let value = data[k];
+      let type = 'text';
+      if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+        type = 'textarea';
+        try { value = JSON.stringify(value); } catch (_) { /* keep */ }
+      }
+      entries.push({
+        key: k, value, def: null, sectionKey: 'custom', sectionTitleKey: '', sectionTitle: customTitle,
+        advanced: false, subGroup: null, hidden: false, custom: true, type
+      });
+    });
+    return entries;
+  },
+
+  // 参数编辑 Tab 分组：按 section 原生顺序，每 section 拆 basic / advanced / subGroup
+  presetEditorGroups() {
+    const search = (this.presetEditor.paramSearch || '').toLowerCase().trim();
+    const sections = window.getVisibleSections(this.presetEditor.meta.train_type || 'anima-lora');
+    const sectionOrder = sections.map(s => s.key);
+    const groups = [];
+    const idx = {};
+    const ensure = (sectionKey, sectionTitle) => {
+      if (idx[sectionKey] === undefined) {
+        idx[sectionKey] = groups.length;
+        groups.push({ sectionKey, sectionTitle, basic: [], advanced: [], subGroups: {} });
+      }
+      return idx[sectionKey];
+    };
+    // 自定义分组单独追加（不参与 sectionOrder）
+    ensure('custom', this.t('preset.customKeys'));
+
+    for (const e of this.presetEditor.entries) {
+      if (e.hidden) continue; // hidden 字段不渲染
+      if (search) {
+        const label = (e.def && e.def.descKey) ? (this.t(e.def.descKey) || '') : '';
+        const hay = (e.key + ' ' + label + ' ' + String(e.value)).toLowerCase();
+        if (!hay.includes(search)) continue;
+      }
+      const gi = ensure(e.sectionKey, e.sectionTitle);
+      const g = groups[gi];
+      if (e.subGroup) {
+        if (!g.subGroups[e.subGroup]) g.subGroups[e.subGroup] = { name: e.subGroup, basic: [], advanced: [] };
+        (e.advanced ? g.subGroups[e.subGroup].advanced : g.subGroups[e.subGroup].basic).push(e);
+      } else {
+        (e.advanced ? g.advanced : g.basic).push(e);
+      }
+    }
+    // 按 sectionOrder 排序，custom 放最后
+    groups.sort((a, b) => {
+      if (a.sectionKey === 'custom') return 1;
+      if (b.sectionKey === 'custom') return -1;
+      const ai = sectionOrder.indexOf(a.sectionKey);
+      const bi = sectionOrder.indexOf(b.sectionKey);
+      return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+    });
+    // 过滤空 section
+    return groups.filter(g => g.basic.length || g.advanced.length || Object.keys(g.subGroups).length);
+  },
+
+  // 子组标题
+  presetSubGroupTitle(name) {
+    if (name === 'kohya') return this.t('common.lycorisSubgroupTitle') || 'LyCORIS';
+    return name;
+  },
+
+  // 字段描述（i18n，含 train-type 后缀回退，与训练表单 renderField 一致）
+  presetFieldDesc(e) {
+    if (!e || !e.def || !e.def.descKey) return e ? e.key : '';
+    const tt = this.presetEditor.meta.train_type || 'anima-lora';
+    const suffix = tt === 'anima-lora' ? '_anima' : (tt === 'sdxl-lora' ? '_sdxl' : '');
+    const specific = this.t(e.def.descKey + suffix);
+    if (specific && specific !== (e.def.descKey + suffix)) return specific;
+    return this.t(e.def.descKey) || e.def.descKey || e.key;
+  },
+
+  // 字段 hint
+  presetFieldHint(e) {
+    if (!e || !e.def || !e.def.hintKey) return '';
+    return this.t(e.def.hintKey) || '';
+  },
+
+  // textarea / 文件路径字段用全宽布局（info 在上、控件在下），与训练表 isFullWidth 一致
+  presetFieldFullWidth(e) {
+    if (!e) return false;
+    if (e.type === 'textarea') return true;
+    if (e.def && e.def.role && String(e.def.role).startsWith('file-')) return true;
+    return false;
+  },
+
+  // ── 条件显隐：基于 presetEditor.entries 求值（与训练表 _evalShowIfCond/_fieldVisible 等价）──
+  // 按 key 在 entries 中查值。entries 是 Alpine 深响应式数组，访问 entry.value 建立依赖。
+  _presetEntryValue(key) {
+    const arr = this.presetEditor.entries;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i].key === key) return arr[i].value;
+    }
+    return undefined;
+  },
+
+  presetEvalCond(c) {
+    const pv = this._presetEntryValue(c.key);
+    if (c.eq !== undefined) {
+      if (String(pv) === String(c.eq)) return true;
+      if (c.or && Array.isArray(c.or)) return c.or.some(v => String(pv) === String(v));
+      return false;
+    }
+    if (c.neq !== undefined) {
+      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && String(pv) !== '';
+    }
+    return true;
+  },
+
+  // 字段在当前预设值下是否可见（综合 showIf/showIfAny）
+  presetFieldVisible(e) {
+    if (!e || e.hidden) return false;
+    const def = e.def;
+    if (def && def.showIf) {
+      const sf = def.showIf;
+      if (Array.isArray(sf)) {
+        if (!sf.every(c => this.presetEvalCond(c))) return false;
+      } else {
+        if (!this.presetEvalCond(sf)) return false;
+      }
+    }
+    if (def && def.showIfAny) {
+      if (!def.showIfAny.some(group => group.every(c => this.presetEvalCond(c)))) return false;
+    }
+    return true;
+  },
+
+  // 子组级显隐：取该子组字段的 network_module eq 条件
+  presetSubGroupVisible(grpSectionKey, sgName) {
+    const arr = this.presetEditor.entries;
+    for (let i = 0; i < arr.length; i++) {
+      const e = arr[i];
+      if (e.subGroup === sgName && e.def) {
+        const sf = e.def.showIf || (e.def.showIfAny && e.def.showIfAny[0] && e.def.showIfAny[0][0]);
+        if (sf && sf.key === 'network_module') {
+          return this.presetEvalCond(sf);
+        }
+      }
+    }
+    return true;
+  },
+
+  // select 控件选项（统一为 [{label, options:[{v,l}]}]）
+  presetFieldOptions(def) {
+    if (!def) return [];
+    if (def.options) return [{ label: '', options: def.options }];
+    if (def.groups) return def.groups.map(g => ({ label: this.t(g.labelKey) || '', options: g.options }));
+    return [];
+  },
+
+  togglePresetSection(sk) {
+    const cur = this.presetEditor.sectionCollapsed[sk];
+    this.presetEditor.sectionCollapsed = { ...this.presetEditor.sectionCollapsed, [sk]: !cur };
+  },
+
+  isPresetSectionCollapsed(sk) {
+    return !!this.presetEditor.sectionCollapsed[sk];
+  },
+
+  togglePresetAdvanced(key) {
+    const cur = this.presetEditor.advancedCollapsed[key];
+    this.presetEditor.advancedCollapsed = { ...this.presetEditor.advancedCollapsed, [key]: !cur };
+  },
+
+  isPresetAdvancedCollapsed(key) {
+    // 默认折叠（与训练表单一致：undefined 视为折叠）
+    return this.presetEditor.advancedCollapsed[key] !== false;
+  },
+
+  // ══════════════════════════════════════════════════════
+  // 保存（含重命名）
+  // ══════════════════════════════════════════════════════
+  async savePresetFromEditor() {
+    const meta = this.presetEditor.meta;
+    const name = (meta.name || '').trim();
+    if (!name) { this.toast(this.t('common.enterConfigName')); return; }
+    const data = {};
+    for (const e of this.presetEditor.entries) data[e.key] = e.value;
+
+    // 编辑模式下若改名，先调 rename 删旧文件、写新名（含旧 data），再 save 覆盖 data
+    if (this.presetEditor.mode === 'edit' && this._editingOriginalName && this._editingOriginalName !== name) {
+      try {
+        const rr = await fetch('/api/presets/' + encodeURIComponent(this._editingOriginalName) + '/rename', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_name: name })
+        });
+        const rd = await rr.json();
+        if (rd.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (rd.message || '')); return; }
+      } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); return; }
+    }
+
     try {
       const r = await fetch('/api/presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name, description: this.savePresetDesc || '',
-          train_type: trainType, data: { ...this.form }
+          name: name,
+          description: meta.description || '',
+          version: meta.version || '1.0',
+          author: meta.author || '',
+          train_type: meta.train_type || '',
+          data: data
         })
       });
       const d = await r.json();
       if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
-      this.showSaveModal = false;
-      this.currentPresetName = name;
-      this.currentPreset = { metadata: { name }, data: { ...this.form } };
+      this._editingOriginalName = '';
       await this.loadPresets();
+      const saved = this.allPresets.find(p => p.metadata.name === name);
+      this.presetSelectedName = name;
+      if (saved) this._enterViewMode(saved);
+      this.currentPresetName = name;
+      this.currentPreset = saved || { metadata: { ...meta }, data };
       this.toast(this.t('common.saved'));
     } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
   },
 
-  cancelSavePreset() {
-    this.showSaveModal = false;
-    this.savePresetName = '';
-    this.savePresetDesc = '';
+  // ══════════════════════════════════════════════════════
+  // 应用预设到训练表单（带快照撤销）
+  // ══════════════════════════════════════════════════════
+  // 从右栏应用：用当前编辑器 data/meta 构造临时 preset
+  applyPresetFromEditor() {
+    const data = {};
+    for (const e of this.presetEditor.entries) data[e.key] = e.value;
+    const preset = { metadata: { ...this.presetEditor.meta }, data };
+    this.applyPresetWithSnapshot(preset);
   },
 
-  loadPresetFromList(preset) {
-    if (!preset) return;
-    this.applyPreset(preset);
-    this.showLoadModal = false;
+  // 从列表应用：直接用原 preset
+  applyPresetFromList(p) {
+    if (!p) return;
+    this.applyPresetWithSnapshot(p);
   },
 
-  togglePreview(preset) {
-    this.previewPreset = (this.previewPreset && this.previewPreset.metadata.name === preset.metadata.name) ? null : preset;
+  applyPresetWithSnapshot(preset) {
+    if (!preset || !preset.data) return;
+    // 快照当前 form（深拷贝），用于撤销
+    try { this._preApplySnapshot = JSON.parse(JSON.stringify(this.form || {})); }
+    catch (_) { this._preApplySnapshot = null; }
+    const count = Object.keys(preset.data || {}).length;
+    const name = (preset.metadata && preset.metadata.name) || '';
+    this.applyPresetNavigate(preset);
+    this.toastWithAction(
+      this.t('preset.appliedN').replace('{n}', count).replace('{name}', name),
+      this.t('preset.undo'),
+      () => this.undoApplyPreset(),
+      'success'
+    );
   },
 
-  previewParamCount(preset) {
-    if (!preset || !preset.data) return 0;
-    return Object.keys(preset.data).length;
-  },
-
-  previewTopKeys(preset) {
-    if (!preset || !preset.data) return [];
-    return Object.keys(preset.data).slice(0, 8);
-  },
-
-  openEditModal(preset) {
-    if (!preset || !preset.data || !this.form) return;
-    this.editPresetTarget = preset;
-    this._formBeforeEdit = { ...this.form };
-    this._defaultsBeforeEdit = { ...this.formDefaults };
-    this._historyBeforeEdit = [...this.formHistory];
-    this._historyIdxBeforeEdit = this.formHistoryIdx;
-    this.form = { ...preset.data };
+  undoApplyPreset() {
+    if (!this._preApplySnapshot) { this.toast(this.t('preset.noSnapshot')); return; }
+    this.form = JSON.parse(JSON.stringify(this._preApplySnapshot));
     this.formDefaults = { ...this.form };
     this.formHistory = [this.formDefaults];
     this.formHistoryIdx = 0;
-    this.showEditModal = true;
-    this.updateToml();
-    this.$nextTick(() => {
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', 'editPresetFormContent');
-      const mb = document.querySelector('.modal-edit-preset .modal-body');
-      if (mb) mb.scrollTop = 0;
-    });
-  },
-
-  async saveEditedPreset() {
-    const preset = this.editPresetTarget;
-    if (!preset) return;
-    const trainType = this.form.model_train_type || 'anima-lora';
-    try {
-      const r = await fetch('/api/presets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: preset.metadata.name,
-          description: preset.metadata.description || '',
-          train_type: trainType,
-          data: { ...this.form }
-        })
-      });
-      const d = await r.json();
-      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
-      this.showEditModal = false;
-      this.editPresetTarget = null;
-      await this.loadPresets();
-      this.toast(this.t('common.saved'));
-    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
-    finally {
-      if (this._formBeforeEdit) {
-        this.form = { ...this._formBeforeEdit };
-        this.formDefaults = { ...this._defaultsBeforeEdit };
-        this.formHistory = [...this._historyBeforeEdit];
-        this.formHistoryIdx = this._historyIdxBeforeEdit;
-      }
-      this._formBeforeEdit = null;
-      this._defaultsBeforeEdit = null;
-      this._historyBeforeEdit = null;
-      this.updateToml();
-      this.rebuildForm();
-    }
-  },
-
-  cancelEditPreset() {
-    this.showEditModal = false;
-    this.editPresetTarget = null;
-    if (this._formBeforeEdit) {
-      this.form = { ...this._formBeforeEdit };
-      this.formDefaults = { ...this._defaultsBeforeEdit };
-      this.formHistory = [...this._historyBeforeEdit];
-      this.formHistoryIdx = this._historyIdxBeforeEdit;
-    }
-    this._formBeforeEdit = null;
-    this._defaultsBeforeEdit = null;
-    this._historyBeforeEdit = null;
+    this.formDiffMap = null;
+    this.diffCounts = { modified: 0, added: 0 };
+    this.previewPreset = null;
+    this.currentPreset = null;
+    this.currentPresetName = '';
+    this._preApplySnapshot = null;
     this.updateToml();
     this.rebuildForm();
+    this.toast(this.t('preset.undone'));
   },
 
-  startRename(preset) {
-    this.renamingPreset = preset;
-    this.renameNewName = preset.metadata.name || '';
-    this.$nextTick(() => {
-      const el = document.getElementById('renameInput');
-      if (el) { el.focus(); el.select(); }
-    });
-  },
-
-  async confirmRename() {
-    const preset = this.renamingPreset;
-    const newName = (this.renameNewName || '').trim();
-    if (!preset || !newName || newName === preset.metadata.name) {
-      this.renamingPreset = null;
-      return;
+  // ══════════════════════════════════════════════════════
+  // 对比当前训练表单
+  // ══════════════════════════════════════════════════════
+  // 计算编辑器 data 与当前 this.form 的差异列表
+  get presetEditorDiffList() {
+    const cur = this.form || {};
+    const data = {};
+    for (const e of this.presetEditor.entries) data[e.key] = e.value;
+    const out = [];
+    const allKeys = new Set([...Object.keys(cur), ...Object.keys(data)]);
+    for (const k of allKeys) {
+      const cv = cur[k];
+      const pv = data[k];
+      if (pv === undefined) {
+        out.push({ key: k, type: 'removed', oldVal: cv, newVal: undefined });
+      } else if (cv === undefined) {
+        out.push({ key: k, type: 'added', oldVal: undefined, newVal: pv });
+      } else if (String(cv) !== String(pv)) {
+        out.push({ key: k, type: 'modified', oldVal: cv, newVal: pv });
+      }
     }
-    try {
-      const r = await fetch('/api/presets/' + encodeURIComponent(preset.metadata.name) + '/rename', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_name: newName })
-      });
-      const d = await r.json();
-      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
-      this.renamingPreset = null;
-      await this.loadPresets();
-      this.toast(this.t('common.saved'));
-    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
+    // 修改/新增优先，再按 key
+    const rank = { modified: 0, added: 1, removed: 2 };
+    out.sort((a, b) => (rank[a.type] - rank[b.type]) || a.key.localeCompare(b.key));
+    return out;
   },
 
-  cancelRename() {
-    this.renamingPreset = null;
-    this.renameNewName = '';
+  get presetEditorDiffCounts() {
+    const list = this.presetEditorDiffList;
+    const c = { modified: 0, added: 0, removed: 0 };
+    for (const d of list) c[d.type]++;
+    return c;
+  },
+
+  // 对比 Tab：勾选差异项后选择性应用
+  applyPresetDiffSelected(selectedKeys) {
+    const data = {};
+    for (const e of this.presetEditor.entries) {
+      if (selectedKeys.indexOf(e.key) >= 0) data[e.key] = e.value;
+    }
+    if (Object.keys(data).length === 0) return;
+    // 快照
+    try { this._preApplySnapshot = JSON.parse(JSON.stringify(this.form || {})); }
+    catch (_) { this._preApplySnapshot = null; }
+    // 选择性覆盖（不切训练类型，避免跨路由复杂度）
+    const savedWatcher = this._trainTypeWatcher;
+    if (savedWatcher) { savedWatcher(); this._trainTypeWatcher = null; }
+    try {
+      for (const k of Object.keys(data)) this.form[k] = data[k];
+    } finally {
+      if (savedWatcher) {
+        this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
+          if (newVal !== oldVal && !this._switchInProgress) {
+            this._switchInProgress = true;
+            try { this.switchTrainType(newVal); } finally { this._switchInProgress = false; }
+          }
+        });
+      }
+    }
+    this.formDefaults = { ...this.form };
+    this.formHistory = [this.formDefaults];
+    this.formHistoryIdx = 0;
+    this.updateToml();
+    this.rebuildForm();
+    this.toastWithAction(
+      this.t('preset.diffAppliedN').replace('{n}', Object.keys(data).length),
+      this.t('preset.undo'),
+      () => this.undoApplyPreset(),
+      'success'
+    );
+  },
+
+  // ══════════════════════════════════════════════════════
+  // 删除 / 批量删除
+  // ══════════════════════════════════════════════════════
+  confirmDeletePreset(p) {
+    if (!p || !p.metadata || !p.metadata.name) return;
+    const name = p.metadata.name;
+    const self = this;
+    this.openConfirm(
+      this.t('preset.confirmDelete'),
+      this.t('preset.confirmDeleteMsg') + ': ' + name,
+      async function () {
+        try {
+          const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
+          const d = await r.json();
+          if (d.status !== 'success') { self.toast(self.t('common.failed') + ': ' + (d.message || '')); return; }
+          if (self.presetSelectedName === name) { self.presetSelectedName = ''; self.presetEditor.entries = []; self.presetEditor.mode = 'view'; }
+          await self.loadPresets();
+          self.toast(d.message || self.t('preset.cleared'));
+        } catch (e) { self.toast(self.t('common.failed') + ': ' + e.message); }
+      }
+    );
   },
 
   toggleBatchMode() {
-    this.batchMode = !this.batchMode;
+    this.presetBatchMode = !this.presetBatchMode;
     this.selectedPresets = [];
   },
 
-  togglePresetSelection(preset) {
-    const name = preset.metadata.name;
+  togglePresetSelection(p) {
+    const name = p.metadata.name;
     const idx = this.selectedPresets.indexOf(name);
-    if (idx >= 0) {
-      this.selectedPresets.splice(idx, 1);
-    } else {
-      this.selectedPresets.push(name);
-    }
+    if (idx >= 0) this.selectedPresets.splice(idx, 1);
+    else this.selectedPresets.push(name);
   },
 
-  isPresetSelected(preset) {
-    return this.selectedPresets.indexOf(preset.metadata.name) >= 0;
+  isPresetSelected(p) {
+    return this.selectedPresets.indexOf(p.metadata.name) >= 0;
   },
 
   selectAllPresets() {
-    this.selectedPresets = this.allPresets.map(p => p.metadata.name);
+    this.selectedPresets = this.filteredPresetList.map(p => p.metadata.name);
   },
 
   deselectAllPresets() {
     this.selectedPresets = [];
   },
 
-  async batchDeletePresets() {
+  batchDeletePresets() {
     if (this.selectedPresets.length === 0) return;
     const self = this;
+    const names = [...this.selectedPresets];
     this.openConfirm(
       this.t('preset.batchDelete'),
-      this.t('preset.confirmBatchDelete').replace('{n}', self.selectedPresets.length),
-      async function() {
-        const names = [...self.selectedPresets];
-        let deleted = 0;
-        for (const name of names) {
-          try {
-            const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
-            const d = await r.json();
-            if (d.status === 'success') deleted++;
-          } catch (e) { /* continue */ }
-        }
-        const total = names.length;
-        self.batchMode = false;
-        self.selectedPresets = [];
-        await self.loadPresets();
-        self.toast(self.t('preset.deletedCount').replace('{deleted}', deleted).replace('{total}', total));
+      this.t('preset.confirmBatchDelete').replace('{n}', names.length),
+      async function () {
+        try {
+          const r = await fetch('/api/presets/batch_delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ names: names })
+          });
+          const d = await r.json();
+          if (d.status !== 'success') { self.toast(self.t('common.failed') + ': ' + (d.message || '')); return; }
+          const deleted = (d.data && d.data.deleted) || 0;
+          const failed = (d.data && d.data.failed) || [];
+          self.presetBatchMode = false;
+          self.selectedPresets = [];
+          // 清理已删的选中预设
+          if (names.indexOf(self.presetSelectedName) >= 0) {
+            self.presetSelectedName = '';
+            self.presetEditor.entries = [];
+            self.presetEditor.mode = 'view';
+          }
+          await self.loadPresets();
+          if (failed.length) {
+            self.toast(self.t('preset.deletedCount').replace('{deleted}', deleted).replace('{total}', names.length) + ' · ' + failed.join(', '));
+          } else {
+            self.toast(self.t('preset.deletedCount').replace('{deleted}', deleted).replace('{total}', names.length));
+          }
+        } catch (e) { self.toast(self.t('common.failed') + ': ' + e.message); }
       }
     );
   },
 
-  enterDiffMode() {
-    const preset = this.previewPreset;
-    if (!preset) return;
-    const diffMap = {};
-    let modified = 0, added = 0;
-    const currentForm = this.form || {};
-    const presetData = preset.data || {};
-    const allKeys = new Set([...Object.keys(currentForm), ...Object.keys(presetData)]);
-    for (const k of allKeys) {
-      const cv = currentForm[k];
-      const pv = presetData[k];
-      if (pv === undefined) continue;
-      if (cv === undefined) {
-        diffMap[k] = { type: 'added', newVal: pv }; added++;
-      } else if (String(cv) !== String(pv)) {
-        diffMap[k] = { type: 'modified', oldVal: cv, newVal: pv }; modified++;
-      }
-    }
-    this.formDiffMap = diffMap;
-    this.diffCounts = { modified, added };
-    this.showLoadModal = false;
-    this.rebuildForm();
+  // ══════════════════════════════════════════════════════
+  // 导入 / 导出
+  // ══════════════════════════════════════════════════════
+  // 预设页：导入文件 → 后端解析 → 分流（保存为新预设 / 填入当前训练表单）
+  importPresetFile() {
+    document.getElementById('presetFileInput').click();
   },
 
-  applyDiffPreset() {
-    if (!this.previewPreset) return;
-    this.applyPreset(this.previewPreset);
-    this.formDiffMap = null;
-    this.diffCounts = { modified: 0, added: 0 };
-    this.previewPreset = null;
+  handlePresetFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    const self = this;
+    reader.onload = async (e) => {
+      try {
+        const r = await fetch('/api/presets/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: e.target.result })
+        });
+        const d = await r.json();
+        if (d.status !== 'success') { self.toast(self.t('common.failed') + ': ' + (d.message || '')); return; }
+        self._importedPreset = { metadata: d.data.metadata || {}, data: d.data.data || {} };
+        self.showPresetImportModal = true;
+      } catch (err) { self.toast(self.t('common.parseError') + ': ' + err.message); }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   },
 
-  cancelDiff() {
-    this.formDiffMap = null;
-    this.diffCounts = { modified: 0, added: 0 };
-    this.previewPreset = null;
-    this.rebuildForm();
+  // 导入分流：作为新预设保存
+  async importAsNewPreset() {
+    const imp = this._importedPreset;
+    if (!imp) return;
+    const name = (imp.metadata.name || '').trim();
+    if (!name) { this.toast(this.t('common.enterConfigName')); return; }
+    try {
+      const r = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          description: imp.metadata.description || '',
+          version: imp.metadata.version || '1.0',
+          author: imp.metadata.author || '',
+          train_type: imp.metadata.train_type || '',
+          data: imp.data
+        })
+      });
+      const d = await r.json();
+      if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
+      this.showPresetImportModal = false;
+      this._importedPreset = null;
+      await this.loadPresets();
+      const saved = this.allPresets.find(p => p.metadata.name === name);
+      if (saved) this.selectPreset(saved);
+      this.toast(this.t('common.imported'));
+    } catch (e) { this.toast(this.t('common.failed') + ': ' + e.message); }
   },
 
-  // ── Confirm Modal ─────────────────────────────────────
+  // 导入分流：仅填入当前训练表单
+  importIntoForm() {
+    const imp = this._importedPreset;
+    if (!imp) return;
+    this.applyPresetWithSnapshot({ metadata: imp.metadata, data: imp.data });
+    this.showPresetImportModal = false;
+    this._importedPreset = null;
+  },
+
+  cancelPresetImport() {
+    this.showPresetImportModal = false;
+    this._importedPreset = null;
+  },
+
+  // 训练页右侧面板：导出当前表单为 TOML 文件下载
+  downloadConfig() {
+    const blob = new Blob([this.tomlRaw], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (this.form.output_name || 'config') + '.toml'; a.click();
+    URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'));
+  },
+
+  // 训练页右侧面板：导入 TOML 文件填表（走后端解析）
+  importConfigFile() { document.getElementById('configFileInput').click(); },
+
+  handleConfigFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    const self = this;
+    reader.onload = async (e) => {
+      try {
+        const r = await fetch('/api/presets/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: e.target.result })
+        });
+        const d = await r.json();
+        if (d.status !== 'success') { self.toast(self.t('common.parseError') + ': ' + (d.message || '')); return; }
+        const parsed = d.data.data || {};
+        if (Object.keys(parsed).length === 0) { self.toast(self.t('common.invalidToml')); return; }
+        self.form = { ...self.formDefaults, ...parsed };
+        self.formDefaults = { ...self.form };
+        self.formHistory = [self.formDefaults]; self.formHistoryIdx = 0;
+        self.updateToml(); self.rebuildForm();
+        self.toast(self.t('common.imported'));
+      } catch (err) { self.toast(self.t('common.parseError') + ': ' + err.message); }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  },
+
+  // ══════════════════════════════════════════════════════
+  // Confirm Modal
+  // ══════════════════════════════════════════════════════
   openConfirm(title, message, callback) {
     this.confirmTitle = title;
     this.confirmMessage = message;
@@ -300,118 +806,44 @@ window.trainingPresetsMixin = {
     this.confirmCallback = null;
   },
 
-  async deletePresetFromList(preset) {
-    if (!preset || !preset.metadata || !preset.metadata.name) return;
-    const name = preset.metadata.name;
-    const self = this;
-    this.openConfirm(
-      this.t('preset.confirmDelete'),
-      this.t('preset.confirmDeleteMsg') + ': ' + name,
-      async function() {
-        try {
-          const r = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
-          const d = await r.json();
-          if (d.status !== 'success') { self.toast(self.t('common.failed') + ': ' + (d.message || '')); return; }
-          await self.loadPresets();
-          self.toast(d.message || self.t('preset.cleared'));
-        } catch (e) { self.toast(self.t('common.failed') + ': ' + e.message); }
-      }
-    );
-  },
-
-  downloadConfig() {
-    const blob = new Blob([this.tomlRaw], {type:'text/plain'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = (this.form.output_name||'config')+'.toml'; a.click();
-    URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'));
-  },
-
-  importConfigFile() { document.getElementById('configFileInput').click(); },
-
-  handleConfigFileImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const parsed = this.parseToml(e.target.result);
-        if (Object.keys(parsed).length===0) { this.toast(this.t('common.invalidToml')); return; }
-        this.form = { ...this.formDefaults, ...parsed };
-        this.formDefaults = { ...this.form };
-        this.formHistory = [this.formDefaults]; this.formHistoryIdx = 0;
-        this.updateToml(); this.rebuildForm();
-        this.toast(this.t('common.imported'));
-      } catch(err) { this.toast(this.t('common.parseError')+': '+err.message); }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  },
-
-  parseToml(text) {
-    const result = {};
-    for (const line of text.split('\n')) {
-      const t = line.trim();
-      if (!t||t.startsWith('#')) continue;
-      const eq = t.indexOf('=');
-      if (eq===-1) continue;
-      const key = t.substring(0,eq).trim();
-      let val = t.substring(eq+1).trim();
-      if (val==='true') { result[key]=true; continue; }
-      if (val==='false') { result[key]=false; continue; }
-      // Inline array: ["a", "b"] or ['a', 'b']
-      if (val.startsWith('[') && val.endsWith(']')) {
-        try {
-          // Normalize TOML array to JSON: unquoted strings → quoted
-          const inner = val.slice(1,-1).trim();
-          if (inner === '') { result[key] = []; continue; }
-          // Try native JSON parse first (works if all items are quoted)
-          result[key] = JSON.parse(val);
-        } catch(_) {
-          // Fallback: split by comma, strip quotes
-          var inner = val.slice(1,-1).trim();
-          if (inner === '') { result[key] = []; continue; }
-          result[key] = inner.split(',').map(s => {
-            s = s.trim();
-            if ((s.startsWith('"')&&s.endsWith('"'))||(s.startsWith("'")&&s.endsWith("'"))) return s.slice(1,-1);
-            return s;
-          }).filter(s => s);
-        }
-        continue;
-      }
-      if (!isNaN(val)&&val!=='') { result[key]=Number(val); continue; }
-      if ((val.startsWith('"')&&val.endsWith('"'))||(val.startsWith("'")&&val.endsWith("'"))) { result[key]=val.slice(1,-1); continue; }
-      result[key]=val;
+  // ══════════════════════════════════════════════════════
+  // toast + 可操作按钮
+  // ══════════════════════════════════════════════════════
+  toastWithAction(message, actionLabel, actionCallback, type) {
+    const c = document.getElementById('toastContainer');
+    if (!c) { this.toast(message, type); return; }
+    const el = document.createElement('div');
+    el.className = 'toast toast-action';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    if (type) el.classList.add(type);
+    let icon = '';
+    if (type === 'success') {
+      icon = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#30D158" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
     }
-    return result;
+    el.innerHTML = icon + '<span class="toast-action-msg"></span><button type="button" class="toast-action-btn"></button>';
+    el.querySelector('.toast-action-msg').textContent = message;
+    const btn = el.querySelector('.toast-action-btn');
+    btn.textContent = actionLabel;
+    const self = this;
+    let done = false;
+    btn.addEventListener('click', function () {
+      if (done) return; done = true;
+      clearTimeout(timer);
+      el.classList.add('out');
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+      try { actionCallback.call(self); } catch (_) { /* ignore */ }
+    });
+    c.appendChild(el);
+    const timer = setTimeout(function () {
+      el.classList.add('out');
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+    }, 5200);
   },
 
-  // Called after buildTrainForm to show a toast about auto-loaded params
-  _markAutoLoaded() {
-    if (this._autoLoaded) return;
-    if (!this.autoLoadHistory || !this.currentRoute.startsWith('train-')) return;
-    this._autoLoaded = true;
-    this.toast(this.t('common.autoLoadedHistory'));
-  },
-
-  // ── Presets ────────────────────────────────────────────
-  async loadPresets() {
-    this.presetsLoading = true;
-    try {
-      const r = await fetch('/api/presets');
-      const d = await r.json();
-      if (d.status === 'success' && d.data && d.data.presets) {
-        this.allPresets = d.data.presets;
-        const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
-        const currentType = routeCfg.trainType || this.form.model_train_type || 'anima-lora';
-        this.presets = d.data.presets.filter(p =>
-          p && p.metadata && (!p.metadata.train_type || p.metadata.train_type === currentType)
-        );
-      }
-    } catch (e) { /* ignore */ }
-    finally { this.presetsLoading = false; }
-  },
-
+  // ══════════════════════════════════════════════════════
+  // applyPreset 内核（保留旧实现，被 applyPresetWithSnapshot 包装）
+  // ══════════════════════════════════════════════════════
   applyPreset(preset) {
     if (!preset || !preset.data) return;
     if (this.formDiffMap) {
@@ -420,8 +852,7 @@ window.trainingPresetsMixin = {
       this.previewPreset = null;
     }
     const data = preset.data;
-    // Temporarily disable the train-type watcher to prevent it from
-    // overwriting preset values via switchTrainType()
+    // 临时禁用 train-type watcher，避免 switchTrainType 覆盖预设值
     const savedWatcher = this._trainTypeWatcher;
     if (savedWatcher) { savedWatcher(); this._trainTypeWatcher = null; }
     try {
@@ -434,7 +865,6 @@ window.trainingPresetsMixin = {
         this.form[k] = data[k];
       }
     } finally {
-      // Re-enable the watcher after applying all fields
       if (savedWatcher) {
         this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
           if (newVal !== oldVal && !this._switchInProgress) {
@@ -451,9 +881,25 @@ window.trainingPresetsMixin = {
     this.currentPresetName = (preset.metadata && preset.metadata.name) || '';
     this.updateToml();
     this.rebuildForm();
-    this.toast(this.t('preset.loaded') + ': ' + this.currentPresetName);
   },
 
+  applyPresetNavigate(preset) {
+    if (!preset || !preset.data) return;
+    const tt = (preset.metadata && preset.metadata.train_type) || 'anima-lora';
+    const routeMap = { 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
+    const targetRoute = routeMap[tt] || 'train-anima';
+
+    if (this.currentRoute === targetRoute) {
+      this.$nextTick(() => this.applyPreset(preset));
+    } else {
+      this._pendingPreset = preset;
+      this.navigate(targetRoute);
+    }
+  },
+
+  // ══════════════════════════════════════════════════════
+  // header preset-badge 快速切换（保留）
+  // ══════════════════════════════════════════════════════
   switchPreset(dir) {
     if (this.presets.length < 2) return;
     let idx = this.presets.findIndex(p => p === this.currentPreset);
@@ -518,20 +964,11 @@ window.trainingPresetsMixin = {
     this.toast(this.t('preset.cleared'));
   },
 
-  applyPresetNavigate(preset) {
-    if (!preset || !preset.data) return;
-    // Determine target route from preset train_type
-    const tt = (preset.metadata && preset.metadata.train_type) || 'anima-lora';
-    const routeMap = { 'sdxl-lora': 'train-basic', 'anima-lora': 'train-anima' };
-    const targetRoute = routeMap[tt] || 'train-anima';
-
-    if (this.currentRoute === targetRoute) {
-      // Already on target route — form is already built, apply directly
-      this.$nextTick(() => this.applyPreset(preset));
-    } else {
-      // Store preset for deferred application after form initialization
-      this._pendingPreset = preset;
-      this.navigate(targetRoute);
-    }
+  // Called after buildTrainForm to show a toast about auto-loaded params
+  _markAutoLoaded() {
+    if (this._autoLoaded) return;
+    if (!this.autoLoadHistory || !this.currentRoute.startsWith('train-')) return;
+    this._autoLoaded = true;
+    this.toast(this.t('common.autoLoadedHistory'));
   }
 };

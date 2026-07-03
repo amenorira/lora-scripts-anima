@@ -81,3 +81,11 @@ class PresetSaveRequest(BaseModel):
 
 class PresetRenameRequest(BaseModel):
     new_name: str
+
+
+class PresetBatchDeleteRequest(BaseModel):
+    names: List[str]
+
+
+class PresetParseRequest(BaseModel):
+    content: str

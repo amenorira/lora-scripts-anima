@@ -787,46 +787,235 @@ input[type="checkbox"]:focus-visible {
 .log-level-btn:hover { border-color: var(--border-input); color: var(--text-primary); }
 .log-level-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-/* ── Preset Cards ────────────────────────────────────────── */
+/* ── Preset Page (双栏布局) ──────────────────────────────── */
 
-.preset-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
+.preset-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+.preset-page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; padding-bottom: 10px;
 }
-.preset-card {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
-  background: var(--bg-surface-raised);
+.preset-page-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.preset-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid var(--border-default);
 }
-.preset-card:hover {
-  border-color: var(--accent);
+.preset-toolbar-spacer { flex: 1; }
+.preset-search { position: relative; flex: 1; min-width: 160px; max-width: 320px; }
+.preset-search-icon {
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-tertiary); pointer-events: none;
+}
+.preset-search-input { padding-left: 28px !important; width: 100%; }
+
+.preset-batchbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; margin-top: 8px;
+  background: var(--bg-secondary); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); font-size: 12px;
+}
+
+/* 双栏主体 */
+.preset-workspace {
+  display: grid; grid-template-columns: 280px 1fr;
+  gap: 14px; flex: 1; min-height: 0; margin-top: 10px;
+}
+
+/* 左栏列表 */
+.preset-list {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  background: var(--bg-surface); overflow-y: auto; min-height: 120px;
+}
+.preset-empty { padding: 24px 12px; text-align: center; }
+.preset-list-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--duration-fast);
+}
+.preset-list-item:last-child { border-bottom: none; }
+.preset-list-item:hover { background: var(--accent-muted); }
+.preset-list-item.selected {
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
-.preset-card.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent);
+.preset-list-item.checked { background: var(--danger-soft); }
+.preset-list-check { padding-top: 2px; }
+.preset-list-main { min-width: 0; flex: 1; }
+.preset-list-name-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 2px;
 }
-.preset-card-name {
-  font-size: 13px; font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 3px;
+.preset-list-name {
+  font-weight: 600; font-size: 13.5px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.preset-card.active .preset-card-name { color: var(--accent); }
-.preset-card-desc {
-  font-size: 11.5px; color: var(--text-tertiary);
-  line-height: 1.4; margin-bottom: 6px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden;
+.preset-list-item.selected .preset-list-name { color: var(--accent); }
+.preset-list-desc {
+  font-size: 11.5px; color: var(--text-tertiary); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px;
 }
-.preset-card-meta {
-  display: flex; justify-content: space-between;
-  font-size: 11px; color: var(--text-tertiary);
+.preset-list-meta { font-size: 11px; color: var(--text-tertiary); }
+
+/* 右栏详情 */
+.preset-detail {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  background: var(--bg-surface); display: flex; flex-direction: column;
+  min-height: 120px; overflow: hidden;
 }
+.preset-detail-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; color: var(--text-tertiary); padding: 32px;
+}
+.preset-detail-empty-icon svg { width: 36px; height: 36px; opacity: 0.5; }
+
+.preset-detail-inner {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+}
+.preset-detail-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border-default);
+}
+.preset-detail-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.preset-detail-name-input { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; }
+.preset-detail-name-input:disabled {
+  font-weight: 600; font-size: 15px; color: var(--text-primary);
+  background: transparent; border-color: transparent; cursor: default; opacity: 1;
+}
+.preset-detail-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Tabs */
+.preset-tabs {
+  display: flex; gap: 2px; padding: 0 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.preset-tab {
+  appearance: none; background: transparent; border: none; cursor: pointer;
+  font-size: 13px; color: var(--text-secondary);
+  padding: 8px 14px; border-bottom: 2px solid transparent;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+.preset-tab:hover { color: var(--text-primary); }
+.preset-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+
+.preset-tab-body {
+  flex: 1; overflow-y: auto; padding: 14px; min-height: 0;
+}
+
+/* Meta tab */
+.preset-meta-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px; margin-bottom: 10px;
+}
+
+/* Params tab */
+.preset-param-toolbar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.preset-param-toolbar .preset-search { max-width: 280px; }
+
+/* ── 预设参数编辑器：直接复用训练表单 .field 系列（通过 :is 扩展）── */
+.preset-form-scope .card { margin-bottom: 8px; }
+.preset-form-scope .card-body { padding: 4px 10px; }
+/* 字段行结构与训练表统一：.field / .field-row / .field-info / .field-key / .field-desc /
+   .field-control / .field-hint / .field-input-row 全部复用同名 class，样式由
+   :is(#trainFormContent, .preset-form-scope) 规则提供，保证视觉完全一致。 */
+/* custom 键行：左侧加柔和标记条（仅预设编辑器特有） */
+.preset-form-scope .field.preset-field-custom { border-left: 3px solid var(--bg-tertiary); padding-left: 12px; }
+.badge-custom {
+  font-size: 10px; padding: 0 5px; border-radius: 3px; margin-left: 6px;
+  background: var(--bg-tertiary); color: var(--text-tertiary); vertical-align: middle;
+}
+/* 字段键用等宽字体显示原始 key */
+.preset-form-scope .field-key { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--accent); letter-spacing: 0; }
+/* 全宽字段（textarea / 文件路径）：info 在上、控件在下，独占整行 */
+.preset-form-scope .field.field-row.field-fullwidth { flex-wrap: wrap; align-items: flex-start; }
+.preset-form-scope .field.field-row.field-fullwidth > .field-info { flex: 1 1 100%; min-width: 0; }
+.preset-form-scope .field.field-row.field-fullwidth > .field-control { flex: 1 1 100%; width: 100%; margin-top: 6px; justify-content: stretch; }
+.preset-form-scope .field.field-row.field-fullwidth > .field-control .input { width: 100%; min-width: 0; max-width: none; }
+.preset-form-scope .field.field-fullwidth > .field-hint { flex: 1 1 100%; }
+/* subgroup / advanced-fold 在预设编辑器内的内边距微调 */
+.preset-form-scope .subgroup-block { margin: 4px 0; }
+.preset-form-scope .advanced-fold { margin-top: 4px; }
+.preset-form-scope .advanced-fold-body { padding-left: 10px; }
+
+/* toggle（紧凑开关，复用原样式） */
+.preset-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+.preset-toggle input { display: none; }
+.preset-toggle-track {
+  width: 32px; height: 18px; border-radius: 10px; background: var(--bg-tertiary);
+  border: 1px solid var(--border-input); position: relative; transition: background var(--duration-fast);
+}
+.preset-toggle-track::after {
+  content: ''; position: absolute; top: 1px; left: 1px;
+  width: 14px; height: 14px; border-radius: 50%; background: var(--bg-surface);
+  box-shadow: var(--shadow-sm); transition: transform var(--duration-fast);
+}
+.preset-toggle input:checked + .preset-toggle-track { background: var(--accent); border-color: var(--accent); }
+.preset-toggle input:checked + .preset-toggle-track::after { transform: translateX(14px); }
+.preset-toggle input:disabled + .preset-toggle-track { opacity: 0.6; cursor: default; }
+
+/* Diff tab */
+.preset-diff-summary {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 10px; background: var(--bg-secondary);
+  border-radius: var(--radius-sm); margin-bottom: 10px;
+}
+.preset-diff-actions { display: flex; gap: 6px; margin-bottom: 10px; }
+.preset-diff-list { display: flex; flex-direction: column; gap: 4px; }
+.preset-diff-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle); font-size: 12px;
+}
+.preset-diff-row.diff-modified { border-left: 3px solid #e8d44d; }
+.preset-diff-row.diff-added { border-left: 3px solid #55e055; }
+.preset-diff-row.diff-removed { border-left: 3px solid #e05555; opacity: 0.7; }
+.preset-diff-check { padding-top: 2px; }
+.preset-diff-content { flex: 1; min-width: 0; }
+.preset-diff-key { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 500; word-break: break-all; }
+.preset-diff-type {
+  display: inline-block; margin-left: 6px; font-size: 10px; padding: 0 5px;
+  border-radius: 3px; color: var(--text-tertiary); background: var(--bg-tertiary);
+}
+.preset-diff-values { margin-top: 2px; color: var(--text-secondary); word-break: break-all; }
+.diff-old { text-decoration: line-through; color: #e05555; }
+.diff-arrow { color: var(--text-tertiary); margin: 0 4px; }
+.diff-new { color: #55e055; font-weight: 500; }
+.diff-stat-removed { color: #e05555; }
+.badge-train-type {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  background: var(--bg-tertiary); color: var(--text-tertiary);
+}
+.btn-danger-text { color: #e05555; }
+.btn-danger-text:hover { background: rgba(224,85,85,0.1); }
+
+/* Footer */
+.preset-detail-footer {
+  padding: 10px 14px; border-top: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.preset-footer-row { display: flex; align-items: center; gap: 6px; }
+.preset-footer-spacer { flex: 1; }
+
+/* ── 响应式：窄屏堆叠 ────────────────────────────────────── */
+@media (max-width: 900px) {
+  .preset-workspace { grid-template-columns: 1fr; }
+  .preset-list { max-height: 200px; }
+}
+
+/* ── toast + action button ──────────────────────────────── */
+.toast-action { display: flex; align-items: center; gap: 10px; padding-right: 8px; }
+.toast-action-msg { flex: 1; min-width: 0; }
+.toast-action-btn {
+  appearance: none; border: 1px solid var(--border-input);
+  background: var(--bg-surface); color: var(--accent);
+  font-size: 12px; font-weight: 600; padding: 3px 10px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: background var(--duration-fast);
+  flex-shrink: 0;
+}
+.toast-action-btn:hover { background: var(--accent-soft); }
 /* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
   padding: 10px 0 10px 10px;
@@ -975,7 +1164,7 @@ input[type="checkbox"]:focus-visible {
 
 /* 训练表单内：点点菜单默认弱化，行 hover 或弹窗可见时凸显；
    右侧留白使其与 hover 高亮背景分离，不再贴边。 */
-#trainFormContent .field-menu-wrap {
+:is(#trainFormContent, .preset-form-scope) .field-menu-wrap {
   margin-left: 6px;
   margin-right: -2px;
 }
@@ -984,8 +1173,8 @@ input[type="checkbox"]:focus-visible {
   border-color: transparent;
   background: transparent;
 }
-#trainFormContent .field:hover .btn-menu,
-#trainFormContent .field-menu-wrap:hover .btn-menu {
+:is(#trainFormContent, .preset-form-scope) .field:hover .btn-menu,
+:is(#trainFormContent, .preset-form-scope) .field-menu-wrap:hover .btn-menu {
   opacity: 1;
   border-color: var(--border-default);
 }
@@ -1272,7 +1461,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 
 
 /* ── Training Form — Flat Design (no card boxes) ─────────── */
-#trainFormContent .card {
+:is(#trainFormContent, .preset-form-scope) .card {
   background: transparent;
   border: none;
   border-left: none;
@@ -1281,7 +1470,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin-bottom: 0;
   box-shadow: none;
 }
-#trainFormContent .card-header {
+:is(#trainFormContent, .preset-form-scope) .card-header {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1296,14 +1485,14 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   user-select: none;
   transition: color 0.15s ease, border-bottom-color 0.15s ease;
 }
-#trainFormContent .card-header:hover {
+:is(#trainFormContent, .preset-form-scope) .card-header:hover {
   color: var(--text-secondary);
 }
-#trainFormContent .card:first-child .card-header {
+:is(#trainFormContent, .preset-form-scope) .card:first-child .card-header {
   padding-top: 0;
 }
 /* 分组标题左侧色条（与导航指示器圆点同色，强化分组身份识别） */
-#trainFormContent .card-header::before {
+:is(#trainFormContent, .preset-form-scope) .card-header::before {
   content: '';
   width: 4px;
   height: 16px;
@@ -1313,34 +1502,34 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   transition: background 0.2s var(--ease-out);
 }
 /* 各分组色条：加 #trainFormContent 前缀提升优先级，覆盖上方灰色默认 */
-#trainFormContent [data-section="model"] .card-header::before         { background: #4d94ff; }
-#trainFormContent [data-section="network"] .card-header::before       { background: #10b981; }
-#trainFormContent [data-section="training"] .card-header::before      { background: #8b5cf6; }
-#trainFormContent [data-section="optimizer"] .card-header::before     { background: #f59e0b; }
-#trainFormContent [data-section="regularization"] .card-header::before{ background: #f43f5e; }
-#trainFormContent [data-section="performance"] .card-header::before   { background: #6366f1; }
-#trainFormContent [data-section="save"] .card-header::before          { background: #0ea5e9; }
-#trainFormContent [data-section="caption"] .card-header::before       { background: #78716c; }
-#trainFormContent [data-section="preview"] .card-header::before       { background: #ec4899; }
-#trainFormContent [data-section="misc"] .card-header::before          { background: #78716c; }
+:is(#trainFormContent, .preset-form-scope) [data-section="model"] .card-header::before         { background: #4d94ff; }
+:is(#trainFormContent, .preset-form-scope) [data-section="network"] .card-header::before       { background: #10b981; }
+:is(#trainFormContent, .preset-form-scope) [data-section="training"] .card-header::before      { background: #8b5cf6; }
+:is(#trainFormContent, .preset-form-scope) [data-section="optimizer"] .card-header::before     { background: #f59e0b; }
+:is(#trainFormContent, .preset-form-scope) [data-section="regularization"] .card-header::before{ background: #f43f5e; }
+:is(#trainFormContent, .preset-form-scope) [data-section="performance"] .card-header::before   { background: #6366f1; }
+:is(#trainFormContent, .preset-form-scope) [data-section="save"] .card-header::before          { background: #0ea5e9; }
+:is(#trainFormContent, .preset-form-scope) [data-section="caption"] .card-header::before       { background: #78716c; }
+:is(#trainFormContent, .preset-form-scope) [data-section="preview"] .card-header::before       { background: #ec4899; }
+:is(#trainFormContent, .preset-form-scope) [data-section="misc"] .card-header::before          { background: #78716c; }
 /* 折叠箭头（B2）：默认指向下（展开），收起时旋转 -90° */
-#trainFormContent .card-chevron {
+:is(#trainFormContent, .preset-form-scope) .card-chevron {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
   color: var(--text-tertiary);
   transition: transform 0.2s var(--ease-out);
 }
-#trainFormContent .card-collapsed .card-chevron {
+:is(#trainFormContent, .preset-form-scope) .card-collapsed .card-chevron {
   transform: rotate(-90deg);
 }
 /* 分组主体：高度折叠动画由 JS _animateCollapse 驱动（测量 scrollHeight），
    此处仅声明过渡属性；初始渲染的持久化收起态由下方 .card-collapsed 规则承接。 */
-#trainFormContent .card-body {
+:is(#trainFormContent, .preset-form-scope) .card-body {
   transition: max-height 0.3s var(--ease-out), opacity 0.25s var(--ease-out);
 }
 /* 初始渲染即为收起态（页面加载 / 切训练类型重建时，无动画直接收起） */
-#trainFormContent .card.card-collapsed > .card-body {
+:is(#trainFormContent, .preset-form-scope) .card.card-collapsed > .card-body {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
@@ -1350,25 +1539,25 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 /* ── 子组区块（kohya/LyCORIS 算法参数等）──
    仅用小标题 + 圆点作视觉区分，表明这是某个算法开关（network_module）专属的子参数集合，
    与分组底部的"显示进阶参数"折叠区分。不加背景色/大色条，保持简洁。 */
-#trainFormContent .subgroup-block {
+:is(#trainFormContent, .preset-form-scope) .subgroup-block {
   margin: 10px 0 6px;
   transition: max-height 0.35s var(--ease-out), opacity 0.25s var(--ease-out),
               margin 0.35s var(--ease-out);
   max-height: none; opacity: 1;
 }
-#trainFormContent .subgroup-block.field-hidden {
+:is(:is(#trainFormContent, .preset-form-scope), .preset-form-scope) .subgroup-block.field-hidden {
   max-height: 0 !important; opacity: 0;
   margin: 0;
   pointer-events: none;
 }
 /* 仅 advanced 字段的子组（无 basic）：折叠容器自身跟随模块显隐 */
-#trainFormContent .advanced-fold--inline.field-hidden {
+:is(:is(#trainFormContent, .preset-form-scope), .preset-form-scope) .advanced-fold--inline.field-hidden {
   max-height: 0 !important; opacity: 0;
   margin: 0;
   padding: 0;
   pointer-events: none;
 }
-#trainFormContent .subgroup-header {
+:is(#trainFormContent, .preset-form-scope) .subgroup-header {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 2px;
   font-size: 12px; font-weight: 700;
@@ -1376,28 +1565,28 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   letter-spacing: 0.2px;
   user-select: none;
 }
-#trainFormContent .subgroup-dot {
+:is(#trainFormContent, .preset-form-scope) .subgroup-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0; opacity: 0.8;
 }
-#trainFormContent .subgroup-body {
+:is(#trainFormContent, .preset-form-scope) .subgroup-body {
   padding: 0;
 }
 
 /* ── 进阶参数折叠区（A3）── */
-#trainFormContent .advanced-fold {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold {
   margin-top: 8px;
   border-top: 1px dashed var(--border-default);
   padding-top: 8px;
 }
 /* inline 折叠：无分隔线，紧贴上级基础参数（用于 kohya 子组等） */
-#trainFormContent .advanced-fold--inline {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold--inline {
   margin-top: 4px;
   border-top: none;
   padding-top: 4px;
   padding-left: 0;
 }
-#trainFormContent .advanced-fold-toggle {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold-toggle {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1410,27 +1599,27 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   letter-spacing: 0.4px;
   transition: color 0.15s ease;
 }
-#trainFormContent .advanced-fold-toggle:hover {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold-toggle:hover {
   color: var(--text-secondary);
 }
-#trainFormContent .advanced-chevron {
+:is(#trainFormContent, .preset-form-scope) .advanced-chevron {
   width: 11px;
   height: 11px;
   flex-shrink: 0;
   transition: transform 0.2s var(--ease-out);
 }
-#trainFormContent .advanced-fold-collapsed .advanced-chevron {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold-collapsed .advanced-chevron {
   transform: rotate(-90deg);
 }
-#trainFormContent .advanced-count {
+:is(#trainFormContent, .preset-form-scope) .advanced-count {
   font-weight: 400;
   opacity: 0.7;
 }
-#trainFormContent .advanced-fold-body {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold-body {
   transition: max-height 0.3s var(--ease-out), opacity 0.25s var(--ease-out);
 }
 /* 初始渲染即为收起态 */
-#trainFormContent .advanced-fold.advanced-fold-collapsed > .advanced-fold-body {
+:is(#trainFormContent, .preset-form-scope) .advanced-fold.advanced-fold-collapsed > .advanced-fold-body {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
@@ -1438,14 +1627,14 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 
 /* Field rows: subtle background on hover */
-#trainFormContent .field {
+:is(#trainFormContent, .preset-form-scope) .field {
   border-radius: var(--radius-sm);
   padding: 10px 8px 10px 10px;
   margin: 0 -8px;
   transition: background 0.12s ease, border-left-color 0.25s var(--ease-out);
 }
 /* Restore conditional-field transitions */
-#trainFormContent .field-conditional {
+:is(#trainFormContent, .preset-form-scope) .field-conditional {
   overflow: visible;
   transition: max-height 0.35s var(--ease-out),
               opacity 0.25s var(--ease-out),
@@ -1456,10 +1645,10 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
               transform 0.3s var(--ease-out),
               border-top-width 0.35s var(--ease-out);
 }
-#trainFormContent .field:hover {
+:is(#trainFormContent, .preset-form-scope) .field:hover {
   background: var(--hover-overlay);
 }
-#trainFormContent .field + .field {
+:is(#trainFormContent, .preset-form-scope) .field + .field {
   border-top: none;
 }
 /* 嵌套字段缩进（A2）：按 data-nest-level 递增，加深左边框，区分"开关→选项→子选项"层级 */
@@ -3516,23 +3705,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   }
 }
 
-/* ── Preset Preview Card ─────────────────────────────── */
-.preset-preview-card {
-  background: var(--bg-surface-raised); border: 1px solid var(--border-default);
-  border-radius: 6px; padding: 10px 12px; margin: 4px 0 8px 0;
-}
-.preset-preview-params { margin-bottom: 8px; }
-.preset-preview-param {
-  display: flex; gap: 8px; padding: 1px 0; font-size: 12px;
-}
-.preset-preview-key { color: var(--accent); font-weight: 500; max-width: 40%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.preset-preview-val { color: var(--text-secondary); word-break: break-word; overflow-wrap: anywhere; min-width: 0; }
-.badge { font-size: 11px; padding: 0 5px; border-radius: 3px; }
-.badge-on { background: rgba(85,224,85,0.15); color: #55e055; }
-.badge-off { background: rgba(224,85,85,0.15); color: #e05555; }
-.preset-preview-actions { display: flex; gap: 6px; }
-
-/* ── Preset Diff Highlighting ────────────────────────── */
+/* ── Preset Diff Highlighting (training form 联动) ────── */
 .field-diff-modified { border-left-color: #e8d44d !important; background: rgba(232,212,77,0.06); }
 .field-diff-added { border-left-color: #55e055 !important; background: rgba(85,224,85,0.06); }
 .field-diff-info { font-size: 11px; padding: 2px 0 2px 12px; color: var(--text-tertiary); }
@@ -3542,7 +3715,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .field-diff-new { color: #55e055; font-weight: 500; }
 .field-diff-type-added { color: #55e055; font-weight: 500; }
 
-/* ── Diff Toolbar ─────────────────────────────────────── */
+/* ── Diff Toolbar (主表单顶部对比 bar) ─────────────────── */
 .diff-toolbar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 8px 14px; margin-bottom: 12px;
@@ -3554,56 +3727,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .diff-stat-modified { color: #e8d44d; }
 .diff-stat-added { color: #55e055; }
 .diff-toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
-
-/* ── Edit preset modal ─────────────────────────────────── */
-.modal-edit-preset { max-width: 800px; width: 95vw; }
-
-/* ── Preset card redesign ──────────────────────────────── */
-.preset-card-wrap {
-  position: relative;
-  margin-bottom: 8px;
-}
-.preset-card-wrap.selected .preset-card {
-  border-color: var(--accent);
-  background: rgba(80, 120, 255, 0.05);
-}
-.preset-card {
-  padding: 14px 16px;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
-}
-.preset-card:hover { border-color: var(--accent); }
-.preset-card.active { border-color: var(--accent); background: rgba(80, 120, 255, 0.08); }
-.preset-card-check {
-  position: absolute; top: 14px; left: 14px; z-index: 2;
-}
-.preset-card-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;
-}
-.preset-card-name { font-weight: 600; font-size: 15px; color: var(--text-primary); }
-.preset-card-type { flex-shrink: 0; }
-.preset-card-desc { font-size: 12px; color: var(--text-tertiary); margin-bottom: 6px; }
-.preset-card-meta { font-size: 11px; color: var(--text-tertiary); margin-bottom: 8px; }
-.preset-card-actions {
-  display: flex; gap: 4px; flex-wrap: wrap;
-  border-top: 1px solid var(--border-default); padding-top: 8px;
-}
-.badge-train-type {
-  font-size: 10px; padding: 1px 6px; border-radius: 3px;
-  background: var(--bg-tertiary); color: var(--text-tertiary);
-}
-.btn-danger-text { color: #e05555; }
-.btn-danger-text:hover { background: rgba(224,85,85,0.1); }
-
-/* ── Batch toolbar ─────────────────────────────────────── */
-.batch-toolbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 12px; margin-bottom: 12px;
-  background: var(--bg-secondary); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 12px;
-}
-
-/* ── Batch mode card padding ───────────────────────────── */
-.preset-card-wrap .preset-card { padding-left: 38px; }
 
 /* ── Input sm ──────────────────────────────────────────── */
 .input-sm { font-size: 13px; padding: 4px 8px; min-height: unset; }

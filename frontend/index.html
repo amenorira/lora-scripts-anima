@@ -324,9 +324,9 @@
                     x-text="t('preset.diff.addedCount').replace('{n}', diffCounts.added)"></span>
             </span>
             <div class="diff-toolbar-actions">
-              <button class="btn btn-primary btn-sm" @click="applyDiffPreset()"
-                      x-text="t('preset.diff.apply')">Apply</button>
-              <button class="btn btn-ghost btn-sm" @click="cancelDiff()"
+              <button class="btn btn-primary btn-sm" @click="undoApplyPreset()"
+                      x-text="t('preset.undo')">Undo</button>
+              <button class="btn btn-ghost btn-sm" @click="clearPreset()"
                       x-text="t('preset.diff.cancel')">Cancel</button>
             </div>
           </div>
@@ -1241,91 +1241,377 @@
 
       <!-- Route: Presets -->
       <div x-show="currentRoute === 'presets'" x-cloak>
-        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <div>
-            <h1 class="page-title" x-text="t('preset.title')" style="margin-bottom:0">Preset Management</h1>
-            <p class="page-subtitle" x-text="t('preset.subtitle')">Manage and apply training presets</p>
+        <div class="preset-page">
+          <!-- 页头 -->
+          <div class="preset-page-header">
+            <div>
+              <h1 class="page-title" x-text="t('preset.title')" style="margin-bottom:2px">Preset Management</h1>
+              <p class="page-subtitle" x-text="t('preset.subtitle')">Manage and apply training presets</p>
+            </div>
+            <div class="preset-page-actions">
+              <button class="btn btn-ghost btn-sm" @click="importPresetFile()"
+                      x-text="t('preset.importFile')">Import File</button>
+              <button class="btn btn-primary btn-sm" @click="openPresetNew()"
+                      x-text="t('preset.newPreset')">New Preset</button>
+            </div>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" x-show="!batchMode" @click="toggleBatchMode()"
+
+          <!-- 工具栏：搜索 + 过滤 + 排序 + 批量 -->
+          <div class="preset-toolbar">
+            <div class="preset-search">
+              <svg class="preset-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="input input-sm preset-search-input" x-model="presetSearch"
+                     :placeholder="t('preset.searchPlaceholder')">
+            </div>
+            <select class="input input-sm" x-model="presetTypeFilter" :title="t('preset.typeFilter')">
+              <option value="all" x-text="t('preset.typeAll')">All Types</option>
+              <option value="anima-lora">Anima LoRA</option>
+              <option value="sdxl-lora">SDXL LoRA</option>
+            </select>
+            <select class="input input-sm" x-model="presetSort" :title="t('preset.sortBy')">
+              <option value="name" x-text="t('preset.sortName')">Name</option>
+              <option value="type" x-text="t('preset.sortType')">Type</option>
+              <option value="params" x-text="t('preset.sortParams')">Param Count</option>
+            </select>
+            <div class="preset-toolbar-spacer"></div>
+            <button class="btn btn-ghost btn-sm" x-show="!presetBatchMode" @click="toggleBatchMode()"
                     x-text="t('preset.batchDelete')">Batch Delete</button>
-            <button class="btn btn-ghost btn-sm" x-show="batchMode" @click="toggleBatchMode()"
+            <button class="btn btn-ghost btn-sm" x-show="presetBatchMode" @click="toggleBatchMode()"
                     x-text="t('common.cancel')">Cancel</button>
-            <button class="btn btn-primary btn-sm" @click="importConfigFile()" x-show="!batchMode"
-                    x-text="t('preset.importPreset')">Import</button>
           </div>
-        </div>
-        <!-- Batch toolbar -->
-        <div class="batch-toolbar" x-show="batchMode" x-cloak>
-          <button class="btn btn-ghost btn-sm" @click="selectAllPresets()" x-text="t('preset.selectAll')">Select All</button>
-          <button class="btn btn-ghost btn-sm" @click="deselectAllPresets()" x-text="t('preset.deselectAll')">Deselect All</button>
-          <span class="text-sm text-muted" x-text="t('preset.selectedCount').replace('{n}', selectedPresets.length)"></span>
-          <button class="btn btn-danger btn-sm" @click="batchDeletePresets()"
-                  :disabled="selectedPresets.length === 0" x-text="t('preset.deleteSelected')">Delete Selected</button>
-        </div>
-        <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
-        <div class="preset-cards" id="presetCards">
-          <template x-for="p in allPresets" :key="p.metadata.name">
-            <div class="preset-card-wrap" :class="{ 'selected': batchMode && isPresetSelected(p) }">
-              <!-- Batch checkbox -->
-              <div class="preset-card-check" x-show="batchMode">
-                <input type="checkbox" :checked="isPresetSelected(p)" @click.stop="togglePresetSelection(p)">
-              </div>
-              <!-- Card body -->
-              <div class="preset-card" @click="batchMode ? togglePresetSelection(p) : togglePreview(p)"
-                   :class="{ active: currentPreset && currentPreset.metadata.name === p.metadata.name }">
-                <div class="preset-card-header">
-                  <!-- Inline rename -->
-                  <div x-show="renamingPreset && renamingPreset.metadata.name === p.metadata.name" style="display:flex;gap:4px">
-                    <input id="renameInput" type="text" class="input input-sm" x-model="renameNewName"
-                           @keydown.enter="confirmRename()" @keydown.escape="cancelRename()"
-                           @click.stop="">
-                    <button class="btn btn-primary btn-sm" @click.stop="confirmRename()" x-text="t('common.save')">Save</button>
-                    <button class="btn btn-ghost btn-sm" @click.stop="cancelRename()" x-text="t('common.cancel')">Cancel</button>
+
+          <!-- 批量删除工具栏 -->
+          <div class="preset-batchbar" x-show="presetBatchMode" x-cloak>
+            <button class="btn btn-ghost btn-sm" @click="selectAllPresets()" x-text="t('preset.selectAll')">Select All</button>
+            <button class="btn btn-ghost btn-sm" @click="deselectAllPresets()" x-text="t('preset.deselectAll')">Deselect</button>
+            <span class="text-sm text-muted" x-text="t('preset.selectedCount').replace('{n}', selectedPresets.length)"></span>
+            <button class="btn btn-danger btn-sm" @click="batchDeletePresets()"
+                    :disabled="selectedPresets.length === 0" x-text="t('preset.deleteSelected')">Delete Selected</button>
+          </div>
+
+          <!-- 双栏主体 -->
+          <div class="preset-workspace">
+            <!-- 左栏：预设列表 -->
+            <div class="preset-list">
+              <p class="text-muted text-sm preset-empty" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
+              <p class="text-muted text-sm preset-empty" x-show="allPresets.length > 0 && filteredPresetList.length === 0" x-text="t('preset.noMatch')">No matching presets</p>
+              <template x-for="p in filteredPresetList" :key="p.metadata.name">
+                <div class="preset-list-item" :class="{ 'selected': !presetBatchMode && presetSelectedName === p.metadata.name, 'checked': presetBatchMode && isPresetSelected(p) }"
+                     @click="presetBatchMode ? togglePresetSelection(p) : selectPreset(p)">
+                  <div class="preset-list-check" x-show="presetBatchMode">
+                    <input type="checkbox" :checked="isPresetSelected(p)" @click.stop="togglePresetSelection(p)">
                   </div>
-                  <!-- Normal display -->
-                  <div x-show="!renamingPreset || renamingPreset.metadata.name !== p.metadata.name"
-                       class="preset-card-name" x-text="p.metadata.name"></div>
-                  <div class="preset-card-type">
-                    <span class="badge badge-train-type" x-text="(p.metadata && p.metadata.train_type) || 'anima-lora'"></span>
+                  <div class="preset-list-main">
+                    <div class="preset-list-name-row">
+                      <span class="preset-list-name" x-text="p.metadata.name"></span>
+                      <span class="badge badge-train-type" x-text="(p.metadata && p.metadata.train_type) || 'anima-lora'"></span>
+                    </div>
+                    <div class="preset-list-desc" x-text="p.metadata.description || ''"></div>
+                    <div class="preset-list-meta">
+                      <span x-text="t('preset.paramsCount').replace('{n}', Object.keys(p.data || {}).length)"></span>
+                    </div>
                   </div>
                 </div>
-                <div class="preset-card-desc" x-text="p.metadata.description || ''"></div>
-                <div class="preset-card-meta">
-                  <span x-text="t('preset.paramsCount').replace('{n}', Object.keys(p.data || {}).length)"></span>
+              </template>
+            </div>
+
+            <!-- 右栏：详情/编辑面板 -->
+            <div class="preset-detail">
+              <!-- 空态 -->
+              <div class="preset-detail-empty" x-show="!presetSelectedName && presetEditor.mode !== 'new'">
+                <div class="preset-detail-empty-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v4H4z"/><path d="M4 12h16v8H4z"/></svg>
                 </div>
-                <!-- Action buttons -->
-                <div class="preset-card-actions" x-show="!batchMode" @click.stop>
-                  <button class="btn btn-ghost btn-sm" @click.stop="openEditModal(p)" x-text="t('preset.edit')">Edit</button>
-                  <button class="btn btn-ghost btn-sm" @click.stop="applyPresetNavigate(p)" x-text="t('preset.apply')">Apply</button>
-                  <button class="btn btn-ghost btn-sm" @click.stop="startRename(p)" x-text="t('preset.rename')">Rename</button>
-                  <button class="btn btn-ghost btn-sm btn-danger-text" @click.stop="deletePresetFromList(p)" x-text="t('preset.delete')">Delete</button>
-                </div>
+                <p class="text-muted" x-text="t('preset.selectHint')">Select a preset on the left</p>
               </div>
-              <!-- Preview card -->
-              <div x-show="previewPreset && previewPreset.metadata.name === p.metadata.name && !batchMode"
-                   class="preset-preview-card" x-transition>
-                <div class="preset-preview-params">
-                  <template x-for="k in previewTopKeys(p)" :key="k">
-                    <div class="preset-preview-param">
-                      <code class="preset-preview-key" x-text="k"></code>
-                      <span class="preset-preview-val">
-                        <template x-if="typeof p.data[k] === 'boolean'">
-                          <span class="badge" :class="p.data[k] ? 'badge-on' : 'badge-off'" x-text="p.data[k] ? 'true' : 'false'"></span>
+
+              <!-- 详情/编辑 -->
+              <div class="preset-detail-inner" x-show="presetSelectedName || presetEditor.mode === 'new'">
+                <!-- 标题区 -->
+                <div class="preset-detail-header">
+                  <div class="preset-detail-title">
+                    <input type="text" class="input preset-detail-name-input"
+                           x-model="presetEditor.meta.name"
+                           :disabled="presetEditor.mode === 'view'"
+                           :placeholder="t('preset.namePlaceholder')">
+                    <span class="badge badge-train-type" x-text="presetEditor.meta.train_type || 'anima-lora'"></span>
+                  </div>
+                  <div class="preset-detail-header-actions">
+                    <button class="btn btn-primary btn-sm" @click="applyPresetFromEditor()"
+                            x-show="presetEditor.mode === 'edit' || presetEditor.mode === 'new'"
+                            x-text="t('preset.applyToForm')">Apply to Form</button>
+                    <button class="btn btn-primary btn-sm" @click="applyPresetFromList(allPresets.find(x=>x.metadata.name===presetSelectedName))"
+                            x-show="presetEditor.mode === 'view' && presetSelectedName"
+                            x-text="t('preset.applyToForm')">Apply to Form</button>
+                  </div>
+                </div>
+
+                <!-- Tab 切换 -->
+                <div class="preset-tabs">
+                  <button class="preset-tab" :class="{ active: presetEditor.tab === 'meta' }"
+                          @click="presetEditor.tab = 'meta'" x-text="t('preset.tabMeta')">Metadata</button>
+                  <button class="preset-tab" :class="{ active: presetEditor.tab === 'params' }"
+                          @click="presetEditor.tab = 'params'" x-text="t('preset.tabParams')">Parameters</button>
+                  <button class="preset-tab" :class="{ active: presetEditor.tab === 'diff' }"
+                          @click="presetEditor.tab = 'diff'; presetDiffSelected = []"
+                          x-text="t('preset.tabDiff')">Compare</button>
+                </div>
+
+                <!-- Tab: 元信息 -->
+                <div class="preset-tab-body" x-show="presetEditor.tab === 'meta'">
+                  <div class="preset-meta-grid">
+                    <div class="modal-field">
+                      <label class="modal-field-label" x-text="t('preset.name')">Name</label>
+                      <input type="text" class="input" x-model="presetEditor.meta.name"
+                             :disabled="presetEditor.mode === 'view'"
+                             :placeholder="t('preset.namePlaceholder')">
+                    </div>
+                    <div class="modal-field">
+                      <label class="modal-field-label" x-text="t('preset.trainType')">Train Type</label>
+                      <select class="input" x-model="presetEditor.meta.train_type" disabled>
+                        <option value="anima-lora">Anima LoRA</option>
+                        <option value="sdxl-lora">SDXL LoRA</option>
+                      </select>
+                    </div>
+                    <div class="modal-field">
+                      <label class="modal-field-label" x-text="t('preset.version')">Version</label>
+                      <input type="text" class="input" x-model="presetEditor.meta.version"
+                             :disabled="presetEditor.mode === 'view'" placeholder="1.0">
+                    </div>
+                    <div class="modal-field">
+                      <label class="modal-field-label" x-text="t('preset.author')">Author</label>
+                      <input type="text" class="input" x-model="presetEditor.meta.author"
+                             :disabled="presetEditor.mode === 'view'">
+                    </div>
+                  </div>
+                  <div class="modal-field">
+                    <label class="modal-field-label" x-text="t('preset.description')">Description</label>
+                    <textarea class="input" x-model="presetEditor.meta.description" rows="3"
+                              :disabled="presetEditor.mode === 'view'"
+                              :placeholder="t('preset.descPlaceholder')" style="resize:vertical"></textarea>
+                  </div>
+                </div>
+
+                <!-- Tab: 参数编辑 -->
+                <div class="preset-tab-body preset-form-scope" x-show="presetEditor.tab === 'params'">
+                  <div class="preset-param-toolbar">
+                    <div class="preset-search">
+                      <svg class="preset-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <input type="text" class="input input-sm preset-search-input" x-model="presetEditor.paramSearch"
+                             :placeholder="t('preset.searchParams')">
+                    </div>
+                    <span class="text-xs text-muted" x-text="t('preset.paramsCount').replace('{n}', presetEditor.entries.length)"></span>
+                  </div>
+                  <p class="text-muted text-sm preset-empty" x-show="presetEditorGroups().length === 0" x-text="t('preset.noMatchParams')">No matching parameters</p>
+                  <template x-for="grp in presetEditorGroups()" :key="grp.sectionKey">
+                    <div class="card" :data-section="grp.sectionKey" :class="{ 'card-collapsed': isPresetSectionCollapsed(grp.sectionKey) }">
+                      <div class="card-header" @click="togglePresetSection(grp.sectionKey)">
+                        <svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                        <span x-text="grp.sectionTitle"></span>
+                      </div>
+                      <div class="card-body">
+                        <!-- basic 字段 -->
+                        <template x-for="e in grp.basic" :key="e.key">
+                          <div class="field field-row" :class="{ 'preset-field-custom': e.custom, 'field-fullwidth': presetFieldFullWidth(e) }" x-show="presetFieldVisible(e)" x-transition.opacity>
+                            <div class="field-info">
+                              <div class="field-key">
+                                <span x-text="e.key"></span>
+                                <span class="badge badge-custom" x-show="e.custom" x-text="t('preset.customKey')">custom</span>
+                              </div>
+                              <div class="field-desc" x-text="presetFieldDesc(e)"></div>
+                            </div>
+                            <div class="field-control">
+                              <template x-if="e.type === 'toggle'">
+                                <label class="preset-toggle">
+                                  <input type="checkbox" x-model="e.value" :disabled="presetEditor.mode === 'view'">
+                                  <span class="preset-toggle-track"></span>
+                                </label>
+                              </template>
+                              <template x-if="e.type === 'select'">
+                                <select class="input input-sm" x-model="e.value" :disabled="presetEditor.mode === 'view'">
+                                  <template x-for="g in presetFieldOptions(e.def)" :key="g.label || '__nogroup'">
+                                    <template x-if="!g.label">
+                                      <template x-for="opt in g.options" :key="opt.v">
+                                        <option :value="opt.v" x-text="opt.l"></option>
+                                      </template>
+                                    </template>
+                                    <template x-if="g.label">
+                                      <optgroup :label="g.label">
+                                        <template x-for="opt in g.options" :key="opt.v">
+                                          <option :value="opt.v" x-text="opt.l"></option>
+                                        </template>
+                                      </optgroup>
+                                    </template>
+                                  </template>
+                                </select>
+                              </template>
+                              <template x-if="e.type === 'number'">
+                                <input type="number" class="input input-sm" x-model.number="e.value"
+                                       :min="e.def && e.def.min !== undefined ? e.def.min : null"
+                                       :max="e.def && e.def.max !== undefined ? e.def.max : null"
+                                       :step="e.def && e.def.step !== undefined ? e.def.step : null"
+                                       :disabled="presetEditor.mode === 'view'">
+                              </template>
+                              <template x-if="e.type === 'textarea'">
+                                <textarea class="input input-sm" rows="2" x-model="e.value"
+                                          :disabled="presetEditor.mode === 'view'" style="resize:vertical;font-family:var(--font-mono)"></textarea>
+                              </template>
+                              <template x-if="e.type === 'text'">
+                                <input type="text" class="input input-sm" x-model="e.value"
+                                       :disabled="presetEditor.mode === 'view'">
+                              </template>
+                            </div>
+                            <div class="field-hint" x-show="presetFieldHint(e)" x-text="presetFieldHint(e)"></div>
+                          </div>
                         </template>
-                        <template x-if="typeof p.data[k] !== 'boolean'">
-                          <span x-text="String(p.data[k])"></span>
+                        <!-- 子组（subGroup，如 kohya） -->
+                        <template x-for="(sg, sgKey) in grp.subGroups" :key="sgKey">
+                          <div class="subgroup-block" x-show="presetSubGroupVisible(grp.sectionKey, sg.name)" x-transition.opacity>
+                            <div class="subgroup-header"><span class="subgroup-dot"></span><span x-text="presetSubGroupTitle(sg.name)"></span></div>
+                            <div class="subgroup-body">
+                              <template x-for="e in sg.basic" :key="e.key">
+                                <div class="field field-row" :class="{ 'preset-field-custom': e.custom, 'field-fullwidth': presetFieldFullWidth(e) }" x-show="presetFieldVisible(e)" x-transition.opacity>
+                                  <div class="field-info"><div class="field-key"><span x-text="e.key"></span></div><div class="field-desc" x-text="presetFieldDesc(e)"></div></div>
+                                  <div class="field-control">
+                                    <template x-if="e.type === 'toggle'"><label class="preset-toggle"><input type="checkbox" x-model="e.value" :disabled="presetEditor.mode === 'view'"><span class="preset-toggle-track"></span></label></template>
+                                    <template x-if="e.type === 'select'"><select class="input input-sm" x-model="e.value" :disabled="presetEditor.mode === 'view'"><template x-for="g in presetFieldOptions(e.def)" :key="g.label||'__n'"><template x-if="!g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></template><template x-if="g.label"><optgroup :label="g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></optgroup></template></template></select></template>
+                                    <template x-if="e.type === 'number'"><input type="number" class="input input-sm" x-model.number="e.value" :min="e.def&&e.def.min!==undefined?e.def.min:null" :max="e.def&&e.def.max!==undefined?e.def.max:null" :step="e.def&&e.def.step!==undefined?e.def.step:null" :disabled="presetEditor.mode==='view'"></template>
+                                    <template x-if="e.type === 'textarea'"><textarea class="input input-sm" rows="2" x-model="e.value" :disabled="presetEditor.mode==='view'" style="resize:vertical;font-family:var(--font-mono)"></textarea></template>
+                                    <template x-if="e.type === 'text'"><input type="text" class="input input-sm" x-model="e.value" :disabled="presetEditor.mode==='view'"></template>
+                                  </div>
+                                  <div class="field-hint" x-show="presetFieldHint(e)" x-text="presetFieldHint(e)"></div>
+                                </div>
+                              </template>
+                              <!-- 子组 advanced 折叠 -->
+                              <div class="advanced-fold advanced-fold--inline" :class="{ 'advanced-fold-collapsed': isPresetAdvancedCollapsed(grp.sectionKey+'--'+sg.name) }" x-show="sg.advanced.filter(e=>presetFieldVisible(e)).length > 0">
+                                <div class="advanced-fold-toggle" @click="togglePresetAdvanced(grp.sectionKey+'--'+sg.name)">
+                                  <svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                                  <span x-text="t('common.inlineAdvancedParams') || 'More options'"></span>
+                                  <span class="advanced-count" x-text="'(' + sg.advanced.filter(e=>presetFieldVisible(e)).length + ')'"></span>
+                                </div>
+                                <div class="advanced-fold-body">
+                                  <template x-for="e in sg.advanced" :key="e.key">
+                                    <div class="field field-row" :class="{ 'preset-field-custom': e.custom, 'field-fullwidth': presetFieldFullWidth(e) }" x-show="presetFieldVisible(e)" x-transition.opacity>
+                                      <div class="field-info"><div class="field-key"><span x-text="e.key"></span></div><div class="field-desc" x-text="presetFieldDesc(e)"></div></div>
+                                      <div class="field-control">
+                                        <template x-if="e.type === 'toggle'"><label class="preset-toggle"><input type="checkbox" x-model="e.value" :disabled="presetEditor.mode === 'view'"><span class="preset-toggle-track"></span></label></template>
+                                        <template x-if="e.type === 'select'"><select class="input input-sm" x-model="e.value" :disabled="presetEditor.mode === 'view'"><template x-for="g in presetFieldOptions(e.def)" :key="g.label||'__n'"><template x-if="!g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></template><template x-if="g.label"><optgroup :label="g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></optgroup></template></template></select></template>
+                                        <template x-if="e.type === 'number'"><input type="number" class="input input-sm" x-model.number="e.value" :min="e.def&&e.def.min!==undefined?e.def.min:null" :max="e.def&&e.def.max!==undefined?e.def.max:null" :step="e.def&&e.def.step!==undefined?e.def.step:null" :disabled="presetEditor.mode==='view'"></template>
+                                        <template x-if="e.type === 'textarea'"><textarea class="input input-sm" rows="2" x-model="e.value" :disabled="presetEditor.mode==='view'" style="resize:vertical;font-family:var(--font-mono)"></textarea></template>
+                                        <template x-if="e.type === 'text'"><input type="text" class="input input-sm" x-model="e.value" :disabled="presetEditor.mode==='view'"></template>
+                                      </div>
+                                      <div class="field-hint" x-show="presetFieldHint(e)" x-text="presetFieldHint(e)"></div>
+                                    </div>
+                                  </template>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </template>
-                      </span>
+                        <!-- section 级 advanced 折叠 -->
+                        <div class="advanced-fold" :class="{ 'advanced-fold-collapsed': isPresetAdvancedCollapsed(grp.sectionKey) }" x-show="grp.advanced.filter(e=>presetFieldVisible(e)).length > 0">
+                          <div class="advanced-fold-toggle" @click="togglePresetAdvanced(grp.sectionKey)">
+                            <svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                            <span x-text="t('common.advancedParams') || 'Advanced'"></span>
+                            <span class="advanced-count" x-text="'(' + grp.advanced.filter(e=>presetFieldVisible(e)).length + ')'"></span>
+                          </div>
+                          <div class="advanced-fold-body">
+                            <template x-for="e in grp.advanced" :key="e.key">
+                              <div class="field field-row" :class="{ 'preset-field-custom': e.custom, 'field-fullwidth': presetFieldFullWidth(e) }" x-show="presetFieldVisible(e)" x-transition.opacity>
+                                <div class="field-info"><div class="field-key"><span x-text="e.key"></span><span class="badge badge-custom" x-show="e.custom" x-text="t('preset.customKey')">custom</span></div><div class="field-desc" x-text="presetFieldDesc(e)"></div></div>
+                                <div class="field-control">
+                                  <template x-if="e.type === 'toggle'"><label class="preset-toggle"><input type="checkbox" x-model="e.value" :disabled="presetEditor.mode === 'view'"><span class="preset-toggle-track"></span></label></template>
+                                  <template x-if="e.type === 'select'"><select class="input input-sm" x-model="e.value" :disabled="presetEditor.mode === 'view'"><template x-for="g in presetFieldOptions(e.def)" :key="g.label||'__n'"><template x-if="!g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></template><template x-if="g.label"><optgroup :label="g.label"><template x-for="opt in g.options" :key="opt.v"><option :value="opt.v" x-text="opt.l"></option></template></optgroup></template></template></select></template>
+                                  <template x-if="e.type === 'number'"><input type="number" class="input input-sm" x-model.number="e.value" :min="e.def&&e.def.min!==undefined?e.def.min:null" :max="e.def&&e.def.max!==undefined?e.def.max:null" :step="e.def&&e.def.step!==undefined?e.def.step:null" :disabled="presetEditor.mode==='view'"></template>
+                                  <template x-if="e.type === 'textarea'"><textarea class="input input-sm" rows="2" x-model="e.value" :disabled="presetEditor.mode==='view'" style="resize:vertical;font-family:var(--font-mono)"></textarea></template>
+                                  <template x-if="e.type === 'text'"><input type="text" class="input input-sm" x-model="e.value" :disabled="presetEditor.mode==='view'"></template>
+                                </div>
+                                <div class="field-hint" x-show="presetFieldHint(e)" x-text="presetFieldHint(e)"></div>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </template>
-                  <div class="text-xs text-muted" style="margin-top:4px"
-                       x-show="previewParamCount(p) > 8"
-                       x-text="t('preset.andMore').replace('{n}', previewParamCount(p) - 8)"></div>
+                </div>
+
+                <!-- Tab: 对比当前表单 -->
+                <div class="preset-tab-body" x-show="presetEditor.tab === 'diff'">
+                  <div class="preset-diff-summary">
+                    <span class="diff-stat-modified" x-show="presetEditorDiffCounts.modified > 0"
+                          x-text="t('preset.diff.modifiedCount').replace('{n}', presetEditorDiffCounts.modified)"></span>
+                    <span class="diff-stat-added" x-show="presetEditorDiffCounts.added > 0"
+                          x-text="t('preset.diff.addedCount').replace('{n}', presetEditorDiffCounts.added)"></span>
+                    <span class="diff-stat-removed" x-show="presetEditorDiffCounts.removed > 0"
+                          x-text="t('preset.diff.removedCount').replace('{n}', presetEditorDiffCounts.removed)"></span>
+                    <span class="text-muted text-sm" x-show="presetEditorDiffCounts.modified + presetEditorDiffCounts.added + presetEditorDiffCounts.removed === 0"
+                          x-text="t('preset.diff.empty')">No differences</span>
+                  </div>
+                  <div class="preset-diff-actions" x-show="presetEditorDiffCounts.modified + presetEditorDiffCounts.added > 0">
+                    <button class="btn btn-ghost btn-sm" @click="presetDiffSelected = presetEditorDiffList.filter(d=>d.type!=='removed').map(d=>d.key)"
+                            x-text="t('preset.diff.selectAll')">Select All Changes</button>
+                    <button class="btn btn-primary btn-sm" @click="applyPresetDiffSelected(presetDiffSelected)"
+                            :disabled="presetDiffSelected.length === 0"
+                            x-text="t('preset.diff.applySelected')">Apply Selected</button>
+                  </div>
+                  <div class="preset-diff-list">
+                    <template x-for="d in presetEditorDiffList" :key="d.key">
+                      <div class="preset-diff-row" :class="'diff-' + d.type">
+                        <label class="preset-diff-check" x-show="d.type !== 'removed'">
+                          <input type="checkbox" :value="d.key" x-model="presetDiffSelected">
+                        </label>
+                        <div class="preset-diff-content">
+                          <code class="preset-diff-key" x-text="d.key"></code>
+                          <span class="preset-diff-type" x-text="t('preset.diff.' + d.type)"></span>
+                          <div class="preset-diff-values">
+                            <template x-if="d.type === 'modified'">
+                              <span><span class="diff-old" x-text="String(d.oldVal ?? '')"></span> <span class="diff-arrow">&rarr;</span> <span class="diff-new" x-text="String(d.newVal ?? '')"></span></span>
+                            </template>
+                            <template x-if="d.type === 'added'">
+                              <span class="diff-new" x-text="String(d.newVal ?? '')"></span>
+                            </template>
+                            <template x-if="d.type === 'removed'">
+                              <span class="diff-old" x-text="String(d.oldVal ?? '')"></span>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- 底部操作区 -->
+                <div class="preset-detail-footer">
+                  <template x-if="presetEditor.mode === 'view'">
+                    <div class="preset-footer-row">
+                      <button class="btn btn-ghost btn-sm" @click="openPresetEdit(allPresets.find(x=>x.metadata.name===presetSelectedName))"
+                              x-text="t('preset.edit')">Edit</button>
+                      <button class="btn btn-ghost btn-sm" @click="openPresetNew()"
+                              x-text="t('preset.duplicate')">Duplicate</button>
+                      <div class="preset-footer-spacer"></div>
+                      <button class="btn btn-ghost btn-sm btn-danger-text" @click="confirmDeletePreset(allPresets.find(x=>x.metadata.name===presetSelectedName))"
+                              x-text="t('preset.delete')">Delete</button>
+                    </div>
+                  </template>
+                  <template x-if="presetEditor.mode === 'edit'">
+                    <div class="preset-footer-row">
+                      <button class="btn btn-ghost btn-sm" @click="cancelPresetEditor()" x-text="t('common.cancel')">Cancel</button>
+                      <div class="preset-footer-spacer"></div>
+                      <button class="btn btn-primary btn-sm" @click="savePresetFromEditor()" x-text="t('common.save')">Save</button>
+                    </div>
+                  </template>
+                  <template x-if="presetEditor.mode === 'new'">
+                    <div class="preset-footer-row">
+                      <button class="btn btn-ghost btn-sm" @click="cancelPresetEditor()" x-text="t('common.cancel')">Cancel</button>
+                      <div class="preset-footer-spacer"></div>
+                      <button class="btn btn-primary btn-sm" @click="savePresetFromEditor()" x-text="t('preset.savePreset')">Save Preset</button>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
-          </template>
+          </div>
         </div>
       </div>
 
@@ -1348,8 +1634,8 @@
           <div class="panel-actions">
             <div class="btn-row">
               <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
-              <button class="btn btn-ghost btn-sm" @click="openSavePresetModal()" x-text="t('common.save')">Save</button>
-              <button class="btn btn-ghost btn-sm" @click="showLoadModal = true" x-text="t('common.load')">Load</button>
+              <button class="btn btn-ghost btn-sm" @click="navigate('presets'); $nextTick(() => openPresetNew())" x-text="t('common.save')">Save</button>
+              <button class="btn btn-ghost btn-sm" @click="navigate('presets')" x-text="t('common.load')">Load</button>
             </div>
             <div class="btn-row">
               <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
@@ -1431,113 +1717,36 @@
 <!-- ── Toast Container ──────────────────────────────────── -->
 <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
 
-<!-- ── Hidden file input for importing config ───────────── -->
+<!-- ── Hidden file inputs for importing ─────────────────── -->
 <input type="file" id="configFileInput" accept=".toml,.json" style="display:none" @change="handleConfigFileImport($event)">
+<input type="file" id="presetFileInput" accept=".toml,.json" style="display:none" @change="handlePresetFileImport($event)">
 
-<!-- ── Save Preset Modal ────────────────────────────────── -->
-<div class="modal-overlay" x-show="showSaveModal" @click.self="cancelSavePreset()" x-cloak>
+<!-- ── Import Preset Disambiguation Modal ───────────────── -->
+<div class="modal-overlay" x-show="showPresetImportModal" @click.self="cancelPresetImport()" x-cloak>
   <div class="modal" style="max-width:440px">
     <div class="modal-header">
-      <span x-text="t('preset.saveAsPreset')">Save as Preset</span>
-      <button class="btn-icon" @click="cancelSavePreset()" aria-label="Close">
+      <span x-text="t('preset.importTitle')">Import Preset</span>
+      <button class="btn-icon" @click="cancelPresetImport()" aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <div class="modal-field">
+      <p class="text-sm" x-text="t('preset.importParsedAs') + ': ' + ((_importedPreset && _importedPreset.metadata && _importedPreset.metadata.name) || '')"></p>
+      <p class="text-muted text-sm" style="margin-top:4px">
+        <span x-text="t('preset.paramsCount').replace('{n}', _importedPreset ? Object.keys(_importedPreset.data||{}).length : 0)"></span>
+      </p>
+      <div class="modal-field" style="margin-top:14px" x-show="_importedPreset && (!_importedPreset.metadata || !_importedPreset.metadata.name)">
         <label class="modal-field-label" x-text="t('preset.name')">Name</label>
-        <input type="text" class="input" x-model="savePresetName" :placeholder="t('preset.namePlaceholder')">
+        <input type="text" class="input" @input="if(_importedPreset){ _importedPreset.metadata = _importedPreset.metadata || {}; _importedPreset.metadata.name = $event.target.value; }"
+               :value="(_importedPreset && _importedPreset.metadata && _importedPreset.metadata.name) || ''"
+               :placeholder="t('preset.namePlaceholder')">
       </div>
-      <div class="modal-field">
-        <label class="modal-field-label" x-text="t('preset.description')">Description</label>
-        <textarea class="input" x-model="savePresetDesc" :placeholder="t('preset.descPlaceholder')" rows="3" style="resize:vertical"></textarea>
-      </div>
+      <p class="text-muted text-sm" x-text="t('preset.importChooseAction')" style="margin-top:14px"></p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" @click="cancelSavePreset()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-primary btn-sm" @click="confirmSavePreset()" x-text="t('common.save')">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Load Preset Modal ────────────────────────────────── -->
-<div class="modal-overlay" x-show="showLoadModal" @click.self="showLoadModal = false" x-cloak>
-  <div class="modal">
-    <div class="modal-header">
-      <span x-text="t('preset.loadPreset')">Load Preset</span>
-      <button class="btn-icon" @click="showLoadModal = false" aria-label="Close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="modal-body" style="max-height:60vh;overflow-y:auto">
-      <p class="text-muted text-sm" x-show="allPresets.length === 0" x-text="t('preset.empty')">No presets available</p>
-      <template x-for="p in allPresets" :key="p.metadata.name">
-        <div>
-          <div class="config-list-item" @click="togglePreview(p)"
-               style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-            <div style="min-width:0">
-              <div class="config-name" x-text="p.metadata.name" style="font-weight:600"></div>
-              <div class="text-sm text-muted" x-text="p.metadata.description || ''" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-              <span class="text-xs text-muted" x-text="t('preset.paramsCount').replace('{n}', Object.keys(p.data || {}).length)"></span>
-              <button class="btn-icon" @click.stop="deletePresetFromList(p)" :title="t('preset.delete')" :aria-label="'Delete ' + p.metadata.name" style="opacity:0.4">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
-            </div>
-          </div>
-          <!-- Preview card -->
-          <div x-show="previewPreset && previewPreset.metadata.name === p.metadata.name"
-               class="preset-preview-card" x-transition>
-            <div class="preset-preview-params">
-              <template x-for="k in previewTopKeys(p)" :key="k">
-                <div class="preset-preview-param">
-                  <code class="preset-preview-key" x-text="k"></code>
-                  <span class="preset-preview-val">
-                    <template x-if="typeof p.data[k] === 'boolean'">
-                      <span class="badge" :class="p.data[k] ? 'badge-on' : 'badge-off'" x-text="p.data[k] ? 'true' : 'false'"></span>
-                    </template>
-                    <template x-if="typeof p.data[k] !== 'boolean'">
-                      <span x-text="String(p.data[k])"></span>
-                    </template>
-                  </span>
-                </div>
-              </template>
-              <div class="text-xs text-muted" style="margin-top:4px"
-                   x-show="previewParamCount(p) > 8"
-                   x-text="t('preset.andMore').replace('{n}', previewParamCount(p) - 8)"></div>
-            </div>
-            <div class="preset-preview-actions">
-              <button class="btn btn-ghost btn-sm" @click.stop="applyPreset(p); showLoadModal = false"
-                      x-text="t('preset.apply')">Apply</button>
-              <button class="btn btn-ghost btn-sm" @click.stop="enterDiffMode()"
-                      x-text="t('preset.compare')">Compare</button>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" @click="showLoadModal = false" x-text="t('common.close')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Edit Preset Modal ────────────────────────────────── -->
-<div class="modal-overlay" x-show="showEditModal" @click.self="cancelEditPreset()" x-cloak>
-  <div class="modal modal-edit-preset">
-    <div class="modal-header">
-      <span x-text="t('preset.editPreset') + ': ' + (editPresetTarget ? editPresetTarget.metadata.name : '')">Edit Preset</span>
-      <button class="btn-icon" @click="cancelEditPreset()" aria-label="Close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="modal-body" style="max-height:75vh;overflow-y:auto;padding:0">
-      <div id="editPresetFormContent"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" @click="cancelEditPreset()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-primary btn-sm" @click="saveEditedPreset()" x-text="t('common.save')">Save</button>
+      <button class="btn btn-ghost btn-sm" @click="cancelPresetImport()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-ghost btn-sm" @click="importIntoForm()" x-text="t('preset.importIntoForm')">Fill Form Only</button>
+      <button class="btn btn-primary btn-sm" @click="importAsNewPreset()" x-text="t('preset.importAsNew')">Save as Preset</button>
     </div>
   </div>
 </div>
