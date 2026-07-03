@@ -110,7 +110,6 @@ cd lora-scripts-anima
 | `--listen` | bool | false | 启用监听模式（允许外部访问） |
 | `--skip-prepare-environment` | bool | false | 跳过环境准备步骤 |
 | `--disable-tensorboard` | bool | false | 禁用 TensorBoard |
-
 | `--tensorboard-host` | str | "127.0.0.1" | TensorBoard 主机 |
 | `--tensorboard-port` | int | 6006 | TensorBoard 端口 |
 | `--localization` | str | | 界面本地化设置 |
