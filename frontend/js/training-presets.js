@@ -538,7 +538,11 @@ window.trainingPresetsMixin = {
   get presetEditorDiffList() {
     const cur = this.form || {};
     const data = {};
-    for (const e of this.presetEditor.entries) data[e.key] = e.value;
+    const customKeys = new Set();
+    for (const e of this.presetEditor.entries) {
+      data[e.key] = e.value;
+      if (e.custom) customKeys.add(e.key);
+    }
     // 仅比较预设原始 data 中的 key，忽略 _buildEntries 自动填充的默认字段（避免虚增差异）
     const compareKeys = this._presetDataKeys || new Set(Object.keys(data));
     const out = [];
@@ -548,7 +552,10 @@ window.trainingPresetsMixin = {
       if (pv === undefined) {
         out.push({ key: k, type: 'removed', oldVal: cv, newVal: undefined });
       } else if (cv === undefined) {
-        out.push({ key: k, type: 'added', oldVal: undefined, newVal: pv });
+        // 仅自定义键标"新增"；标准字段若表单未初始化（首次启动未进训练页）则不产生假警报
+        if (customKeys.has(k)) {
+          out.push({ key: k, type: 'added', oldVal: undefined, newVal: pv });
+        }
       } else if (String(cv) !== String(pv)) {
         out.push({ key: k, type: 'modified', oldVal: cv, newVal: pv });
       }
