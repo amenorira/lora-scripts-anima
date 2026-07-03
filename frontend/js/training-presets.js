@@ -58,6 +58,7 @@ window.trainingPresetsMixin = {
   _presetFieldMap: null,
   _editingOriginalName: '',
   _preApplySnapshot: null,
+  _presetDataKeys: null,    // 当前选中预设的原始 data key 集合（仅用于对比 Tab 限定比较范围）
   _importedPreset: null,
   showPresetImportModal: false,
 
@@ -133,6 +134,8 @@ window.trainingPresetsMixin = {
   _enterViewMode(p) {
     const tt = (p.metadata && p.metadata.train_type) || 'anima-lora';
     this._presetFieldMap = this.buildFieldMap(tt);
+    const data = p.data || {};
+    this._presetDataKeys = new Set(Object.keys(data));
     this.presetEditor.mode = 'view';
     this.presetEditor.tab = 'meta';
     this.presetEditor.meta = {
@@ -142,7 +145,7 @@ window.trainingPresetsMixin = {
       train_type: p.metadata.train_type || tt,
       description: p.metadata.description || ''
     };
-    this.presetEditor.entries = this._buildEntries(p.data || {}, tt);
+    this.presetEditor.entries = this._buildEntries(data, tt);
     this.presetEditor.paramSearch = '';
     this.presetEditor.sectionCollapsed = {};
     this.presetEditor.advancedCollapsed = {};
@@ -152,11 +155,12 @@ window.trainingPresetsMixin = {
     const tt = (ROUTE_CONFIG[this.currentRoute] || {}).trainType ||
                (this.form && this.form.model_train_type) || 'anima-lora';
     this._presetFieldMap = this.buildFieldMap(tt);
+    const seedData = (this.form ? { ...this.form } : {});
+    this._presetDataKeys = new Set(Object.keys(seedData));
     this.presetEditor.mode = 'new';
     this.presetEditor.tab = 'meta';
     this.presetEditor.meta = { name: '', version: '1.0', author: '', train_type: tt, description: '' };
     // 新建预设默认填入当前训练表单值，方便基于现有配置保存
-    const seedData = (this.form ? { ...this.form } : {});
     this.presetEditor.entries = this._buildEntries(seedData, tt);
     this.presetEditor.paramSearch = '';
     this.presetEditor.sectionCollapsed = {};
@@ -170,6 +174,8 @@ window.trainingPresetsMixin = {
     const tt = (p.metadata && p.metadata.train_type) || 'anima-lora';
     this._presetFieldMap = this.buildFieldMap(tt);
     this._editingOriginalName = p.metadata.name;
+    const data = JSON.parse(JSON.stringify(p.data || {}));
+    this._presetDataKeys = new Set(Object.keys(data));
     this.presetEditor.mode = 'edit';
     this.presetEditor.tab = 'meta';
     this.presetEditor.meta = {
@@ -179,7 +185,7 @@ window.trainingPresetsMixin = {
       train_type: p.metadata.train_type || tt,
       description: p.metadata.description || ''
     };
-    this.presetEditor.entries = this._buildEntries(JSON.parse(JSON.stringify(p.data || {})), tt);
+    this.presetEditor.entries = this._buildEntries(data, tt);
     this.presetEditor.paramSearch = '';
     this.presetEditor.sectionCollapsed = {};
     this.presetEditor.advancedCollapsed = {};
@@ -410,7 +416,9 @@ window.trainingPresetsMixin = {
 
   togglePresetAdvanced(key) {
     const cur = this.presetEditor.advancedCollapsed[key];
-    this.presetEditor.advancedCollapsed = { ...this.presetEditor.advancedCollapsed, [key]: !cur };
+    // undefined（首次）→ false（展开）；true→false；false→true
+    const next = cur === undefined ? false : !cur;
+    this.presetEditor.advancedCollapsed = { ...this.presetEditor.advancedCollapsed, [key]: next };
   },
 
   isPresetAdvancedCollapsed(key) {
@@ -457,10 +465,16 @@ window.trainingPresetsMixin = {
       const d = await r.json();
       if (d.status !== 'success') { this.toast(this.t('common.failed') + ': ' + (d.message || '')); return; }
       this._editingOriginalName = '';
+      // 保存前记下原始 key 集（不包含 _buildEntries 自动填充的默认字段）
+      const originalKeys = new Set(this._presetDataKeys || []);
       await this.loadPresets();
       const saved = this.allPresets.find(p => p.metadata.name === name);
       this.presetSelectedName = name;
-      if (saved) this._enterViewMode(saved);
+      if (saved) {
+        this._enterViewMode(saved);
+        // 恢复原始 key 集，避免重新加载后 _presetDataKeys 被全量字段（140+）撑大
+        this._presetDataKeys = originalKeys;
+      }
       this.currentPresetName = name;
       this.currentPreset = saved || { metadata: { ...meta }, data };
       this.toast(this.t('common.saved'));
@@ -525,9 +539,10 @@ window.trainingPresetsMixin = {
     const cur = this.form || {};
     const data = {};
     for (const e of this.presetEditor.entries) data[e.key] = e.value;
+    // 仅比较预设原始 data 中的 key，忽略 _buildEntries 自动填充的默认字段（避免虚增差异）
+    const compareKeys = this._presetDataKeys || new Set(Object.keys(data));
     const out = [];
-    const allKeys = new Set([...Object.keys(cur), ...Object.keys(data)]);
-    for (const k of allKeys) {
+    for (const k of compareKeys) {
       const cv = cur[k];
       const pv = data[k];
       if (pv === undefined) {

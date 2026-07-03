@@ -928,32 +928,29 @@ input[type="checkbox"]:focus-visible {
 }
 /* 字段键用等宽字体显示原始 key */
 .preset-form-scope .field-key { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--accent); letter-spacing: 0; }
-/* 全宽字段（textarea / 文件路径）：info 在上、控件在下，独占整行 */
-.preset-form-scope .field.field-row.field-fullwidth { flex-wrap: wrap; align-items: flex-start; }
+/* 所有预设编辑器字段行允许 flex-wrap，让提示/hint 自然换行到下一行 */
+.preset-form-scope .field.field-row { flex-wrap: wrap; }
+/* .field-hint 始终独占整行（在 field-row 外或内皆可） */
+.preset-form-scope .field-hint { flex: 1 1 100%; width: 100%; }
+/* 全宽字段（textarea / 文件路径）：info 在上、控件在下 */
+.preset-form-scope .field.field-row.field-fullwidth { align-items: flex-start; }
 .preset-form-scope .field.field-row.field-fullwidth > .field-info { flex: 1 1 100%; min-width: 0; }
 .preset-form-scope .field.field-row.field-fullwidth > .field-control { flex: 1 1 100%; width: 100%; margin-top: 6px; justify-content: stretch; }
 .preset-form-scope .field.field-row.field-fullwidth > .field-control .input { width: 100%; min-width: 0; max-width: none; }
-.preset-form-scope .field.field-fullwidth > .field-hint { flex: 1 1 100%; }
+/* 预设编辑器输入框统一宽度（右栏较窄，需约束） */
+.preset-form-scope .field-control { min-width: 140px; }
+.preset-form-scope .field-control .input { width: 100%; }
+.preset-form-scope .field-control select.input { min-width: 180px; }
+.preset-form-scope .field-control input[type="number"].input { min-width: 100px; }
+/* 消除训练表 .field 的 margin:0 -8px 在编辑器窄容器中的溢出声 */
+.preset-form-scope .field { margin: 0; }
 /* subgroup / advanced-fold 在预设编辑器内的内边距微调 */
 .preset-form-scope .subgroup-block { margin: 4px 0; }
 .preset-form-scope .advanced-fold { margin-top: 4px; }
 .preset-form-scope .advanced-fold-body { padding-left: 10px; }
 
 /* toggle（紧凑开关，复用原样式） */
-.preset-toggle { display: inline-flex; align-items: center; cursor: pointer; }
-.preset-toggle input { display: none; }
-.preset-toggle-track {
-  width: 32px; height: 18px; border-radius: 10px; background: var(--bg-tertiary);
-  border: 1px solid var(--border-input); position: relative; transition: background var(--duration-fast);
-}
-.preset-toggle-track::after {
-  content: ''; position: absolute; top: 1px; left: 1px;
-  width: 14px; height: 14px; border-radius: 50%; background: var(--bg-surface);
-  box-shadow: var(--shadow-sm); transition: transform var(--duration-fast);
-}
-.preset-toggle input:checked + .preset-toggle-track { background: var(--accent); border-color: var(--accent); }
-.preset-toggle input:checked + .preset-toggle-track::after { transform: translateX(14px); }
-.preset-toggle input:disabled + .preset-toggle-track { opacity: 0.6; cursor: default; }
+
 
 /* Diff tab */
 .preset-diff-summary {
