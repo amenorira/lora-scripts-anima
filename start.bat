@@ -130,11 +130,14 @@ if !errorlevel! neq 0 (echo [ERROR] Project deps failed. && pause && exit /b 1)
 echo [Done] Installation complete!
 set HF_HOME=huggingface
 set PYTHONUTF8=1
+REM 默认走 hf-mirror.com 镜像加速；国外用户可 set HF_ENDPOINT=https://huggingface.co 回直连
+if not defined HF_ENDPOINT set HF_ENDPOINT=https://hf-mirror.com
 goto :launch
 
 :run_venv
 set HF_HOME=huggingface
 set PYTHONUTF8=1
+if not defined HF_ENDPOINT set HF_ENDPOINT=https://hf-mirror.com
 
 :launch
 venv\Scripts\python.exe gui.py %*
