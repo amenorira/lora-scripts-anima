@@ -7,7 +7,7 @@ window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
-  previews: [], previewStep: 0, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
@@ -364,7 +364,10 @@ window.monitorCoreMixin = {
             if (j.data.log_lines) { this.logLines = j.data.log_lines.slice(-this._logCap()); this._logContentVersion++; this._logDirty = true; }
           }
           this.trainParams = j.data.train_params||[];
+          const _prevLen = this.previews.length;
+          const _wasAtEnd = _prevLen === 0 || this.previewStep >= _prevLen - 1;
           this.previews = j.data.previews||[];
+          this._followLatestPreview(_wasAtEnd);
         }
         // Notification on training completion
         const prevState = this._prevState || null;
@@ -550,6 +553,46 @@ window.monitorCoreMixin = {
     this.fetchLogSlice({});
   },
 
+  // ── 预览样本刷新 ────────────────────────────────────────
+  async refreshPreviews() {
+    /** 主动重新拉取预览样本（绕过后端 5s 缓存），并自动跟随到最新一张。 */
+    if (this.previewsLoading) return;
+    this.previewsLoading = true;
+    const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
+    try {
+      let url = '/api/monitor/previews?refresh=1';
+      if (this.selectedRunDir) {
+        url += '&run_dir=' + encodeURIComponent(this.selectedRunDir);
+      } else if (this.taskId) {
+        url += '&task_id=' + encodeURIComponent(this.taskId);
+      }
+      const r = await fetch(url);
+      const j = await r.json();
+      if (j.status === 'success') {
+        this.previews = j.data || [];
+        this._followLatestPreview(wasAtEnd);
+      }
+    } catch (e) {
+      /* 静默失败，不打扰用户 */
+    } finally {
+      this.previewsLoading = false;
+      this.renderDashboard();
+    }
+  },
+
+  // 预览列表更新后调整 previewStep：
+  //   - 之前停在末尾（或为空）→ 跟随到新的末尾，确保最新样本第一时间可见
+  //   - 否则保持当前选中（clamp 防越界）
+  _followLatestPreview(wasAtEnd) {
+    const n = this.previews.length;
+    if (n === 0) { this.previewStep = 0; return; }
+    if (wasAtEnd) {
+      this.previewStep = n - 1;
+    } else if (this.previewStep > n - 1) {
+      this.previewStep = n - 1;
+    }
+  },
+
   // ── History ────────────────────────────────────────────
   async loadHistory() {
     try {
@@ -649,8 +692,8 @@ window.monitorCoreMixin = {
         this.lossSeries = j.data.tensorboard_loss || [];
             this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
-        // 重置预览步进，避免越界
-        this.previewStep = 0;
+        // 历史记录进入时定位到最新样本（末尾）
+        this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
         if (j.data.log_lines) {
           // 后端已截断为尾部 _LOG_DETAIL_TAIL_LINES 行；slice(-cap) 防御性兜底
           this.logLines = j.data.log_lines.slice(-this._logCap());

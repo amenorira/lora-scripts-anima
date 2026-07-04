@@ -52,14 +52,19 @@ _previews_cache: tuple[float, str, list[dict]] | None = None
 _PREVIEWS_CACHE_TTL = 5.0
 
 
-def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]:
-    """扫描最新的训练样本图（扁平结构：run_dir/sample/ → run_dir/；兼容旧 outputs/sample/）"""
+def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh: bool = False) -> list[dict]:
+    """扫描最新的训练样本图（扁平结构：run_dir/sample/ → run_dir/；兼容旧 outputs/sample/）
+
+    limit: 返回的最新样本数量上限；0 表示返回全部（按 mtime 升序，最新在末尾）。
+    force_refresh: True 时跳过 5s 缓存，立即重新扫描磁盘并覆盖缓存。
+    """
     global _previews_cache
     now = time.time()
     cache_key = output_dir or ""
-    with _previews_cache_lock:
-        if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
-            return _previews_cache[2]
+    if not force_refresh:
+        with _previews_cache_lock:
+            if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
+                return _previews_cache[2]
 
     roots: list[Path] = []
     if output_dir:
@@ -81,13 +86,13 @@ def newest_previews(output_dir: str | None = None, limit: int = 6) -> list[dict]
                 continue
             seen.add(p)
             found.append(p)
-            if len(found) >= limit * 2:
+            if limit and len(found) >= limit * 2:
                 break
-        if len(found) >= limit:
+        if limit and len(found) >= limit:
             break
 
     found.sort(key=lambda p: p.stat().st_mtime)
-    selected = found[-limit:] if len(found) > limit else found
+    selected = found[-limit:] if limit else found
 
     result = []
     for p in selected:

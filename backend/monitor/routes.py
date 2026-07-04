@@ -122,7 +122,7 @@ async def monitor_status(task_id: str = Query("")):
 
     # 预览样本：严格限定在该 run 目录下，避免漂移到其它记录
     result["previews"] = await asyncio.to_thread(
-        newest_previews, str(artifacts_dir) if artifacts_dir else None
+        newest_previews, str(artifacts_dir) if artifacts_dir else None, 0
     )
     # 训练参数：优先取该 run 的 config.toml，回退 autosave
     result["train_params"] = await asyncio.to_thread(
@@ -246,10 +246,25 @@ async def monitor_loss(run_dir: str = Query("")):
 
 
 @router.get("/monitor/previews")
-async def monitor_previews(task_id: str = Query("")):
-    # 优先用参数中的 task_id 反查真实 run_dir；回退到活动任务；再回退 autosave。
-    output_dir = await asyncio.to_thread(_resolve_live_output_dir, task_id)
-    data = await asyncio.to_thread(newest_previews, output_dir)
+async def monitor_previews(
+    task_id: str = Query(""),
+    run_dir: str = Query(""),
+    refresh: int = Query(0),
+):
+    # 解析预览样本目录：
+    #   task_id 非空 → 反查活动任务的真实 run_dir（实时模式）
+    #   否则 run_dir 非空 → 直接用该 run_dir（历史模式）
+    #   都为空 → 回退到活动任务 / autosave
+    if task_id:
+        output_dir = await asyncio.to_thread(_resolve_live_output_dir, task_id)
+    elif run_dir:
+        rd = Path(run_dir)
+        if not rd.is_absolute():
+            rd = (REPO_ROOT / rd).resolve()
+        output_dir = str(rd) if rd.is_dir() else None
+    else:
+        output_dir = await asyncio.to_thread(_resolve_live_output_dir, "")
+    data = await asyncio.to_thread(newest_previews, output_dir, 0, bool(refresh))
     return {"status": "success", "data": data}
 
 
@@ -429,7 +444,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
     # ── 预览样本（扁平结构：run_dir/sample/，兼容旧 outputs/sample/）──
-    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir))
+    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir), 0)
 
     # ── 训练日志 ──
     # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），

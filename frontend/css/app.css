@@ -2515,6 +2515,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── 样本预览 ── */
 .preview-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .preview-step { font-size: 13px; color: var(--text-secondary); }
+.preview-refresh-btn { margin-left: auto; }
 .preview-main { margin-bottom: 12px; text-align: center; }
 .preview-main img { max-height: 50vh; max-width: 100%; object-fit: contain; border-radius: 6px; background: var(--bg-preview); }
 .preview-main-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }

@@ -973,7 +973,8 @@ window.monitorRenderMixin = {
       const p = this.previews[step] || this.previews[0];
       html += '<div class="preview-controls"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1);renderDashboard()" :disabled="previewStep<=0">← ' + this.esc(t('prev','Prev')) + '</button>';
       html += '<span class="preview-step">' + (step + 1) + ' / ' + this.previews.length + '</span>';
-      html += '<button class="btn btn-sm" @click="previewStep=Math.min(' + (this.previews.length - 1) + ',previewStep+1);renderDashboard()" :disabled="previewStep>=' + (this.previews.length - 1) + '">' + this.esc(t('next','Next')) + ' →</button></div>';
+      html += '<button class="btn btn-sm" @click="previewStep=Math.min(' + (this.previews.length - 1) + ',previewStep+1);renderDashboard()" :disabled="previewStep>=' + (this.previews.length - 1) + '">' + this.esc(t('next','Next')) + ' →</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary preview-refresh-btn" @click="refreshPreviews()" :disabled="previewsLoading">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : ('⟳ ' + this.esc(t('refresh','Refresh')))) + '</button></div>';
       html += '<div class="preview-main"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy"/><div class="preview-main-label">' + this.esc(this._parseSampleInfo(p.name)) + '</div></div>';
       html += '<div class="preview-strip">';
       this.previews.forEach((pv, i) => {
