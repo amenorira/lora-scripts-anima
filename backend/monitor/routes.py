@@ -197,6 +197,19 @@ async def monitor_status(task_id: str = Query("")):
     return {"status": "success", "data": result}
 
 
+def _fmt_summary_lr(v) -> str:
+    """格式化摘要中的学习率：小量值用科学计数法，其余去尾零。"""
+    if v is None or v == "" or v == "?":
+        return "?"
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if 0 < abs(n) < 0.001:
+        return f"{n:.2e}"
+    return str(n)
+
+
 def _last_config_from_autosave(train_config: dict) -> dict:
     """从 autosave TOML 提取上次训练摘要（回退路径）"""
     return {
@@ -204,7 +217,7 @@ def _last_config_from_autosave(train_config: dict) -> dict:
         "model": Path(
             train_config.get("pretrained_model_name_or_path", "")
         ).name or "Unknown",
-        "lr": train_config.get("learning_rate", "?"),
+        "lr": _fmt_summary_lr(train_config.get("learning_rate", "?")),
         "dim": train_config.get("network_dim", "?"),
         "epochs": train_config.get("max_train_epochs", "?"),
     }
@@ -222,7 +235,7 @@ def _resolve_run_config_params(run_dir: Path) -> dict | None:
     return {
         "name": params.get("output_name", run_dir.name),
         "model": Path(model_path).name if model_path else "Unknown",
-        "lr": params.get("learning_rate", "?"),
+        "lr": _fmt_summary_lr(params.get("learning_rate", "?")),
         "dim": params.get("network_dim", "?"),
         "epochs": params.get("max_train_epochs", "?"),
     }

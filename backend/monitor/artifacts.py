@@ -7,6 +7,7 @@ import json
 import re
 import threading
 import time
+import tomllib
 from datetime import datetime
 from pathlib import Path
 
@@ -112,24 +113,27 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
 
 # ── 历史记录 ──────────────────────────────────────────────
 
-def _parse_toml_config(path: Path) -> dict | None:
-    """从 TOML 配置文件中提取关键参数"""
+def _load_toml(path: Path) -> dict | None:
+    """用 tomllib 真实解析 TOML 文件，返回完整 dict（含数组/布尔/数字原生类型）。
+
+    替代早期手写 regex 解析器——旧版只能识别约 9 个硬编码 key 且对引号/数组处理粗糙，
+    导致历史记录与监控页只能显示极少参数。改用标准库 tomllib 后可拿到全部字段。
+    """
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        params = {}
-        for key in ["output_name", "pretrained_model_name_or_path",
-                     "learning_rate", "network_dim", "network_alpha",
-                     "max_train_epochs", "model_train_type", "output_dir",
-                     "train_data_dir"]:
-            m = re.search(
-                rf'^{key}\s*=\s*["\']?(?P<v>[^"\'\n#]+)["\']?\s*$',
-                text, re.MULTILINE
-            )
-            if m:
-                params[key] = m.group("v").strip().strip('"').strip("'")
-        return params
-    except (OSError, Exception):
+        with path.open("rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError, Exception):
         return None
+
+
+def _parse_toml_config(path: Path) -> dict | None:
+    """从 TOML 配置文件中解析全部参数（完整 dict）。
+
+    保留旧函数名以避免改动多个调用方；返回值从「9 个 key 的字符串 dict」
+    升级为「完整原生类型 dict」。所有消费方均通过 ``.get(key)`` 取值并自行
+    兜底/转字符串，因此类型变化向后兼容。
+    """
+    return _load_toml(path)
 
 
 def scan_history() -> list[dict]:
@@ -192,6 +196,7 @@ def scan_history() -> list[dict]:
                 "model": model_name,
                 "lr": params.get("learning_rate", "?"),
                 "dim": params.get("network_dim", "?"),
+                "alpha": params.get("network_alpha", ""),
                 "epochs": params.get("max_train_epochs", "?"),
                 "dataset": params.get("train_data_dir", ""),
                 "status": status,
@@ -234,6 +239,7 @@ def scan_history() -> list[dict]:
                 "model": model_name,
                 "lr": params.get("learning_rate", "?"),
                 "dim": params.get("network_dim", "?"),
+                "alpha": params.get("network_alpha", ""),
                 "epochs": params.get("max_train_epochs", "?"),
                 "dataset": params.get("train_data_dir", ""),
                 "status": "",

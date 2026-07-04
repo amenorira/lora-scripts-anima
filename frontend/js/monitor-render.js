@@ -304,6 +304,35 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  概览标签
   // ═══════════════════════════════════════════════════════════
+
+  // 训练参数标签：用字段 key 名（简洁，与训练表单 field-key 一致）。
+  // network_args/optimizer_args 子项用 label_raw（如 algo/preset）。
+  // 兼容旧后端响应（p.label 直接用）。
+  _paramLabel(p) {
+    if (p.label_raw) return this.esc(p.label_raw);
+    if (p.label) return this.esc(p.label);
+    return this.esc(p.key || '');
+  },
+
+  // 训练参数 hover title：用 desc_key 取 i18n 完整描述句，供鼠标悬停提示。
+  _paramTitle(p, t) {
+    if (p.desc_key) {
+      const v = t(p.desc_key, '');
+      return v && v !== p.desc_key ? v : '';
+    }
+    return '';
+  },
+
+  // 训练参数值 HTML：toggle 类型渲染 ✓/✕ 徽标，其余正常转义显示。
+  _paramValueHtml(p) {
+    const v = String(p.value == null ? '' : p.value);
+    if (p.type === 'toggle') {
+      const on = v === 'true' || v === 'True';
+      return '<span class="param-toggle ' + (on ? 'on' : 'off') + '">' + (on ? '✓' : '✕') + '</span>';
+    }
+    return this.esc(v);
+  },
+
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
 
@@ -350,14 +379,63 @@ window.monitorRenderMixin = {
       html += '</div></div>';
     }
 
-    // ── 训练参数（按 group 分组渲染：基础 / 网络 / 训练）──
+    // ── 训练参数：顶部关键参数高亮卡 + 下方按 section 分组完整展示 ──
     if (this.trainParams.length) {
+      // 兼容新旧响应：新结构 {key,desc_key,value,section,type}，旧结构 {label,value,group}
+      const byKey = {};
+      this.trainParams.forEach(p => { if (p.key) byKey[p.key] = p; });
+
+      // 关键参数：9 个核心字段，模型在高亮卡内取 basename 显示
+      const keyDefs = [
+        { key: 'pretrained_model_name_or_path', labelKey: 'field.pretrained_model_name_or_path', short: 'historyModel', basename: true },
+        { key: 'learning_rate', labelKey: 'field.learning_rate', short: 'historyLR' },
+        { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
+        { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
+        { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
+        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer' },
+        { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
+        { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
+        { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
+      ];
+      const keyItems = [];
+      keyDefs.forEach(kd => {
+        const p = byKey[kd.key];
+        if (!p) return;
+        let val = String(p.value == null ? '' : p.value);
+        if (kd.basename) {
+          const parts = val.replace(/\\/g, '/').split('/');
+          val = parts[parts.length - 1] || val;
+        }
+        if (!val) return;
+        // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
+        keyItems.push({ label: t(kd.short, kd.key), title: t(kd.labelKey, ''), value: val, type: p.type });
+      });
+
       html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
-      // 按 group 归集；若无 group 字段则归入单一组（向后兼容旧后端响应）
+
+      // 关键参数高亮卡
+      if (keyItems.length) {
+        html += '<div class="param-keygrid">';
+        keyItems.forEach(it => {
+          const titleAttr = it.title && it.title !== it.label ? ' title="' + this.esc(it.title) + '"' : '';
+          html += '<div class="param-key-item"' + titleAttr + '><span class="param-key-label">' + this.esc(it.label) + '</span><span class="param-key-value">';
+          if (it.type === 'toggle') {
+            html += this._paramValueHtml({ value: it.value, type: 'toggle' });
+          } else {
+            html += this.esc(it.value);
+          }
+          html += '</span></div>';
+        });
+        html += '</div>';
+      }
+
+      // 全量分组：按 section 归集（新响应用 p.section，旧响应用 p.group 兜底）
       const groups = {};
-      const groupOrder = ['basic', 'network', 'training'];
+      const groupOrder = ['model', 'network', 'training', 'optimizer',
+                          'regularization', 'caption', 'performance', 'save', 'preview',
+                          'basic', 'network', 'training']; // 旧 group 兜底
       this.trainParams.forEach(p => {
-        const g = p.group || '';
+        const g = p.section || p.group || '';
         if (!groups[g]) groups[g] = [];
         groups[g].push(p);
       });
@@ -366,16 +444,26 @@ window.monitorRenderMixin = {
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
       });
       orderedKeys.forEach(g => {
-        const hasGroupLabel = g && groupOrder.includes(g) && orderedKeys.length > 1;
-        if (hasGroupLabel) {
+        // 新 section 用 t('section.<g>') 取本地化组标题；旧 group 用 paramGroup<Cap> 兜底
+        let groupTitle = '';
+        if (g && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(g)) {
+          groupTitle = t('section.' + g, g);
+        } else if (g) {
           const titleKey = 'paramGroup' + g.charAt(0).toUpperCase() + g.slice(1);
-          html += '<div class="param-group"><div class="param-group-title">' + this.esc(t(titleKey, g)) + '</div><div class="param-grid">';
+          groupTitle = t(titleKey, g);
+        }
+        if (groupTitle) {
+          html += '<div class="param-group"><div class="param-group-title">' + this.esc(groupTitle) + '</div><div class="param-grid">';
         } else {
           html += '<div class="param-group"><div class="param-grid">';
         }
-        groups[g].forEach(p => { html += '<div class="param-item"><span class="param-label">' + this.esc(p.label) + '</span><span class="param-value">' + this.esc(p.value) + '</span></div>'; });
+        groups[g].forEach(p => {
+          const title = this._paramTitle(p, t);
+          html += '<div class="param-item"><span class="param-label"' + (title ? ' title="' + this.esc(title) + '"' : '') + '>' + this._paramLabel(p) + '</span><span class="param-value">' + this._paramValueHtml(p) + '</span></div>';
+        });
         html += '</div></div>';
       });
+
       html += '</div>';
     } else if (!isRunning) {
       // 空闲且无参数：单条紧凑空态提示（不再占用大块垂直空间）
@@ -1286,7 +1374,7 @@ window.monitorRenderMixin = {
       html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="badge badge-running">' + this.esc(t('training', 'Training') || 'Training') + '</span></div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
-      html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
+      html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
       html += '<div class="hist-actions"><button class="btn btn-sm btn-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
       html += '</div>';
@@ -1318,7 +1406,7 @@ window.monitorRenderMixin = {
         html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';
         html += '<div class="hist-name"><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc(h.model || '') + '</div>';
-        html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(h.dim || '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
+        html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(h.dim || '') + (h.alpha ? ' / α ' + this.esc(h.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
         if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
         html += '</div>';
         if (h.run_dir) {
@@ -1374,17 +1462,38 @@ window.monitorRenderMixin = {
     let html = '';
     if (snapshot.params) {
       const p = snapshot.params;
-      html += '<div class="param-grid" style="margin-bottom:16px">';
-      const keyParams = [
-        { label: t('historyModel', 'Model'), value: p.pretrained_model_name_or_path || '' },
-        { label: t('historyLR', 'Learning Rate'), value: p.learning_rate || '' },
-        { label: t('historyDim', 'Network Dim'), value: p.network_dim || '' },
-        { label: t('historyEpochs', 'Epochs'), value: p.max_train_epochs || '' },
-        { label: t('batchSize', 'Batch Size'), value: p.train_batch_size || '' },
-        { label: t('outputName', 'Output Name'), value: p.output_name || '' },
+      // 关键参数高亮卡（与概览页同款）：模型取 basename，9 个核心字段
+      const keyDefs = [
+        { key: 'pretrained_model_name_or_path', labelKey: 'field.pretrained_model_name_or_path', short: 'historyModel', basename: true },
+        { key: 'learning_rate', labelKey: 'field.learning_rate', short: 'historyLR' },
+        { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
+        { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
+        { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
+        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer' },
+        { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
+        { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
+        { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
       ];
-      keyParams.forEach(kv => { if (kv.value) html += '<div class="param-item"><span class="param-label">' + this.esc(kv.label) + '</span><span class="param-value">' + this.esc(String(kv.value)) + '</span></div>'; });
-      html += '</div>';
+      const keyItems = [];
+      keyDefs.forEach(kd => {
+        const raw = p[kd.key];
+        if (raw == null || raw === '') return;
+        let val = String(raw);
+        if (kd.basename) {
+          const parts = val.replace(/\\/g, '/').split('/');
+          val = parts[parts.length - 1] || val;
+        }
+        // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
+        keyItems.push({ label: t(kd.short, kd.key), title: t(kd.labelKey, ''), value: val });
+      });
+      if (keyItems.length) {
+        html += '<div class="param-keygrid" style="margin-bottom:16px">';
+        keyItems.forEach(it => {
+          const titleAttr = it.title && it.title !== it.label ? ' title="' + this.esc(it.title) + '"' : '';
+          html += '<div class="param-key-item"' + titleAttr + '><span class="param-key-label">' + this.esc(it.label) + '</span><span class="param-key-value">' + this.esc(it.value) + '</span></div>';
+        });
+        html += '</div>';
+      }
     }
     if (snapshot.content) {
       html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig', 'Raw Config (TOML)')) + '</summary>';

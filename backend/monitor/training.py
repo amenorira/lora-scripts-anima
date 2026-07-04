@@ -6,11 +6,13 @@ from __future__ import annotations
 import re
 import threading
 import time
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
+from backend.training.field_registry import FIELDS as _REGISTRY_FIELDS
 
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引
@@ -395,33 +397,10 @@ def latest_train_config(task_id: str | None = None) -> dict:
         return _latest_config_cache[cache_key]
     for cfg_path in configs[:3]:
         try:
-            text = cfg_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+            with cfg_path.open("rb") as f:
+                params = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError, Exception):
             continue
-
-        params = {}
-        str_keys = ["output_dir", "output_name", "optimizer_type", "lr_scheduler",
-                     "network_module", "resolution", "mixed_precision"]
-        num_keys = ["max_train_epochs", "max_train_steps", "learning_rate",
-                     "network_dim", "network_alpha", "train_batch_size",
-                     "gradient_accumulation_steps", "lr_warmup_steps", "seed"]
-        bool_keys = ["gradient_checkpointing", "full_bf16", "full_fp16"]
-
-        for key in str_keys:
-            # 匹配引号字符串，支持转义引号和行内注释
-            m = re.search(rf'^{key}\s*=\s*"(?P<v>(?:[^"\\]|\\.)*)"\s*(?:#.*)?$', text, re.MULTILINE)
-            if not m:
-                m = re.search(rf"^{key}\s*=\s*'(?P<v>(?:[^'\\]|\\.)*)'\s*(?:#.*)?$", text, re.MULTILINE)
-            if m:
-                params[key] = m.group("v")
-        for key in num_keys:
-            m = re.search(rf'^{key}\s*=\s*(?P<v>-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(?:#.*)?$', text, re.MULTILINE)
-            if m:
-                params[key] = m.group("v")
-        for key in bool_keys:
-            m = re.search(rf'^{key}\s*=\s*(?P<v>true|false)\s*$', text, re.MULTILINE | re.IGNORECASE)
-            if m:
-                params[key] = m.group("v").lower()
 
         if params:
             _latest_config_cache[cache_key] = params
@@ -430,44 +409,107 @@ def latest_train_config(task_id: str | None = None) -> dict:
     return {}
 
 
+def _format_param_value(key: str, v: Any, field: dict | None) -> str:
+    """将 TOML 原生值格式化为展示字符串。
+
+    - 布尔 → "true"/"false"（前端 toggle 字段会渲染为 ✓/✕ 徽标，此处保留可读文本兜底）
+    - list → 逗号连接的字符串
+    - learning_rate/unet_lr/text_encoder_lr 等小学习率用科学计数法
+    - 路径类字段保留原值
+    """
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, list):
+        return ", ".join(str(x) for x in v)
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        # 学习率类字段：小量值用科学计数法更易读
+        if key in ("learning_rate", "unet_lr", "text_encoder_lr") and 0 < abs(v) < 0.001:
+            return f"{float(v):.2e}"
+        return str(v)
+    return str(v)
+
+
+# 预构建 registry 索引：key → field 元数据（仅 target=toml 且非 hidden 的字段）
+_REGISTRY_INDEX: dict[str, dict] = {
+    f["key"]: f for f in _REGISTRY_FIELDS
+    if f.get("target") == "toml" and not f.get("hidden")
+}
+# section 输出顺序（与 field_registry.get_fields_json 一致）
+_SECTION_ORDER = ["model", "network", "training", "optimizer",
+                  "regularization", "caption", "performance", "save", "preview"]
+
+
 def extract_train_params(config: dict) -> list[dict]:
-    """从 TOML 配置提取关键训练参数"""
+    """从 TOML 配置提取结构化训练参数，按 registry 分组输出。
+
+    返回条目格式（供前端分组渲染 + 本地化标签）::
+
+        {key, desc_key, value, section, advanced, type, label_raw?}
+
+    - ``desc_key`` — registry 字段的 i18n 键，前端 ``t(desc_key)`` 取本地化标签
+    - ``section``   — registry 分组（model/network/.../preview），前端 ``t('section.'+s)`` 取组标题
+    - ``type``      — 字段输入类型（toggle → 前端渲染 ✓/✕ 徽标）
+    - ``advanced``  — 是否进阶参数（本次平铺显示，保留供未来折叠）
+    - ``label_raw`` — 仅 network_args/optimizer_args 解析出的 ``algo=lokr`` 这类自定义项：
+                      无 desc_key，直接显示键名作为标签
+    """
     if not config:
         return []
-    params = []
 
-    def _add(label: str, key: str, group: str, fmt: str = ""):
-        v = config.get(key)
-        if v is None or v == "":
-            return
-        if fmt == "lr":
-            try:
-                n = float(v)
-                v = f"{n:.2e}" if n < 0.001 else str(n)
-            except ValueError:
-                pass
-        params.append({"label": label, "value": str(v), "group": group})
+    params: list[dict] = []
+    seen_keys: set[str] = set()
 
-    # 分组：basic（基础）/ network（网络）/ training（训练）
-    _add("Learning Rate / 学习率", "learning_rate", "basic", "lr")
-    _add("UNet LR", "unet_lr", "basic", "lr")
-    _add("Optimizer / 优化器", "optimizer_type", "basic")
-    _add("Scheduler / 调度器", "lr_scheduler", "basic")
-    _add("Rank (dim) / 维度", "network_dim", "network")
-    _add("Alpha", "network_alpha", "network")
-    _add("Epochs / 轮数", "max_train_epochs", "training")
-    _add("Resolution / 分辨率", "resolution", "training")
-    _add("Seed / 种子", "seed", "training")
+    # 1) registry 字段：按 section 顺序遍历，保证分组与字段顺序稳定
+    #    hidden 字段（如 logging_dir/log_with）在前端表单不展示，但训练时仍写入
+    #    config.toml 并实际生效——只要 config 里存在且非空就显示，避免遗漏生效配置。
+    for section in _SECTION_ORDER:
+        for f in _REGISTRY_FIELDS:
+            if f.get("target") != "toml":
+                continue
+            if f["section"] != section:
+                continue
+            key = f["key"]
+            if key not in config:
+                continue
+            v = config[key]
+            if v is None or v == "":
+                continue
+            entry = {
+                "key": key,
+                "desc_key": f.get("desc_key", ""),
+                "value": _format_param_value(key, v, f),
+                "section": section,
+                "advanced": bool(f.get("advanced", False)),
+                "type": f.get("type", "text"),
+            }
+            params.append(entry)
+            seen_keys.add(key)
 
-    warmup = config.get("lr_warmup_steps", "")
-    if warmup and warmup not in ("0", "0.0"):
-        params.append({"label": "Warmup", "value": f"{warmup} 步", "group": "training"})
-
-    if config.get("full_bf16") == "true":
-        params.append({"label": "精度", "value": "BF16", "group": "training"})
-    elif config.get("full_fp16") == "true":
-        params.append({"label": "精度", "value": "FP16", "group": "training"})
-    elif config.get("mixed_precision"):
-        params.append({"label": "精度", "value": config["mixed_precision"].upper(), "group": "training"})
+    # 2) network_args / optimizer_args：adapter 折叠的 LyCORIS/优化器子参数数组
+    #    形如 ["algo=lokr", "preset=attn-mlp"] → 拆成独立条目，归入对应 section
+    for arr_key, section in (("network_args", "network"), ("optimizer_args", "optimizer")):
+        arr = config.get(arr_key)
+        if not isinstance(arr, list) or not arr:
+            continue
+        for item in arr:
+            s = str(item).strip()
+            if not s:
+                continue
+            if "=" in s:
+                k, _, val = s.partition("=")
+                k = k.strip()
+                val = val.strip()
+            else:
+                k, val = s, "true"
+            # 跳过空键（如纯标志位无值时 k 已是值，仍展示）
+            params.append({
+                "key": f"{arr_key}.{k}",
+                "desc_key": "",
+                "value": val,
+                "section": section,
+                "advanced": True,
+                "type": "text",
+                "label_raw": k,
+            })
 
     return params
