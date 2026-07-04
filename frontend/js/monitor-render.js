@@ -37,6 +37,7 @@ window.monitorRenderMixin = {
         shell += this._statusbarHtml(d, gpu, sys, t);
       }
       shell += '<div id="monitorTabContent"></div>';
+      shell += this._previewLightboxHtml(t);
       shell += '</div>';
       el.innerHTML = shell;
       // 页头右侧资源监控（仅实时模式；历史模式不渲染，#monitorResbar 由 x-show 隐藏）
@@ -272,11 +273,13 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'samples') {
-      if (this.previews.length && this.previewStep >= this.previews.length) this.previewStep = Math.max(0, this.previews.length - 1);
-      const sig = 'sm:' + (this.previews.length) + ':' + (this.previewStep);
+      const sig = 'sm:' + (this.previews.length) + ':' + (this.previewsLoading?1:0);
       if (tabChanged || this._builtSamplesSig !== sig) {
+        // 保留滚动位置（轮询追加样本时不在视觉上跳回顶部）
+        const scrollTop = contentEl.scrollTop || 0;
         this._builtSamplesSig = sig;
         contentEl.innerHTML = this._renderSamplesTab(t);
+        contentEl.scrollTop = scrollTop;
       }
       this._builtTab = 'samples';
       return;
@@ -962,23 +965,22 @@ window.monitorRenderMixin = {
   _renderSamplesTab(t) {
     const isHistory = !!this.selectedRunDir;
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
-    // 有样本即展示（包含：实时训练中 / 已结束的当前任务 / 历史记录）。
-    // 实时模式下后端 /monitor/status 会按真实 run_dir 返回当前任务的样本，
-    // 故此处不再用 state==='RUNNING' 限定，避免 IDLE 时把上一轮的样本藏起。
     const showPreviews = this.previews.length > 0;
+    const lastIdx = this.previews.length - 1;
 
-    let html = '<div class="m-section"><div class="m-section-title">' + this.esc(t('previewSamples','Preview')) + '</div>';
+    let html = '<div class="m-section"><div class="m-section-title" style="justify-content:flex-start;gap:10px;">' + this.esc(t('previewSamples','Preview'));
     if (showPreviews) {
-      const step = Math.min(this.previewStep, this.previews.length - 1);
-      const p = this.previews[step] || this.previews[0];
-      html += '<div class="preview-controls"><button class="btn btn-sm" @click="previewStep=Math.max(0,previewStep-1);renderDashboard()" :disabled="previewStep<=0">← ' + this.esc(t('prev','Prev')) + '</button>';
-      html += '<span class="preview-step">' + (step + 1) + ' / ' + this.previews.length + '</span>';
-      html += '<button class="btn btn-sm" @click="previewStep=Math.min(' + (this.previews.length - 1) + ',previewStep+1);renderDashboard()" :disabled="previewStep>=' + (this.previews.length - 1) + '">' + this.esc(t('next','Next')) + ' →</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary preview-refresh-btn" @click="refreshPreviews()" :disabled="previewsLoading">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : ('⟳ ' + this.esc(t('refresh','Refresh')))) + '</button></div>';
-      html += '<div class="preview-main"><img src="' + this.esc(p.url) + '" alt="' + this.esc(p.name) + '" loading="lazy"/><div class="preview-main-label">' + this.esc(this._parseSampleInfo(p.name)) + '</div></div>';
-      html += '<div class="preview-strip">';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : ('⟳ ' + this.esc(t('refresh','Refresh')))) + '</button>';
+    }
+    html += '</div>';
+    if (showPreviews) {
+      html += '<div class="preview-grid">';
       this.previews.forEach((pv, i) => {
-        html += '<div class="preview-thumb' + (i === step ? ' active' : '') + '" @click="previewStep=' + i + ';renderDashboard()"><img src="' + this.esc(pv.url) + '" alt="' + this.esc(pv.name) + '" loading="lazy"/><span>' + this.esc(this._parseSampleInfo(pv.name)) + '</span></div>';
+        html += '<div class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
+        if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
+        html += '<img src="' + this.esc(pv.url) + '" alt="' + this.esc(pv.name) + '" loading="lazy"/>';
+        html += '<div class="preview-grid-item-label">' + this.esc(this._parseSampleInfo(pv.name)) + '</div>';
+        html += '</div>';
       });
       html += '</div>';
     } else {
@@ -998,6 +1000,81 @@ window.monitorRenderMixin = {
     }
     html += '</div>';
     return html;
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  //  预览灯箱：DOM 模板 + 开/关/翻页
+  // ═══════════════════════════════════════════════════════════
+  _previewLightboxHtml(t) {
+    // 在 shell 阶段注入一次；通过 .open 类切换显隐，开/关/翻页仅原地填充。
+    return '<div class="preview-lightbox" id="previewLightbox" x-cloak @click="closePreviewLightbox()">'
+      + '<button type="button" class="preview-lightbox-close" @click.stop="closePreviewLightbox()" aria-label="' + this.esc(t('close','Close')) + '">×</button>'
+      + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev','Prev')) + '">‹</button>'
+      + '<div class="preview-lightbox-inner" @click.stop>'
+      + '<img class="preview-lightbox-img" id="previewLightboxImg" alt=""/>'
+      + '<div class="preview-lightbox-bar">'
+      + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
+      + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
+      + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate','navigate')) + ' · Esc ' + this.esc(t('close','Close')) + '</span>'
+      + '</div>'
+      + '</div>'
+      + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next','Next')) + '">›</button>'
+      + '</div>';
+  },
+
+  openPreviewLightbox(i) {
+    if (!this.previews.length) return;
+    this.previewStep = Math.max(0, Math.min(i, this.previews.length - 1));
+    const box = document.getElementById('previewLightbox');
+    if (!box) return;
+    box.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    this._updatePreviewLightbox();
+    if (!this._lightboxKeyHandler) {
+      this._lightboxKeyHandler = (e) => {
+        if (e.key === 'ArrowLeft') { this.previewLightboxNav(-1); }
+        else if (e.key === 'ArrowRight') { this.previewLightboxNav(1); }
+        else if (e.key === 'Escape') { this.closePreviewLightbox(); }
+      };
+    }
+    document.addEventListener('keydown', this._lightboxKeyHandler);
+  },
+
+  closePreviewLightbox() {
+    const box = document.getElementById('previewLightbox');
+    if (box) box.classList.remove('open');
+    document.body.style.overflow = '';
+    if (this._lightboxKeyHandler) document.removeEventListener('keydown', this._lightboxKeyHandler);
+  },
+
+  previewLightboxNav(dir) {
+    if (!this.previews.length) return;
+    const n = this.previews.length;
+    let next = this.previewStep + dir;
+    if (next < 0) next = 0;
+    else if (next > n - 1) next = n - 1;
+    if (next === this.previewStep) return;
+    this.previewStep = next;
+    this._updatePreviewLightbox();
+  },
+
+  _updatePreviewLightbox() {
+    const n = this.previews.length;
+    if (!n) return;
+    const p = this.previews[this.previewStep] || this.previews[0];
+    const img = document.getElementById('previewLightboxImg');
+    if (img) { img.src = p.url; img.alt = p.name; }
+    const c = document.getElementById('previewLightboxCounter');
+    if (c) c.textContent = (this.previewStep + 1) + ' / ' + n;
+    const lbl = document.getElementById('previewLightboxLabel');
+    if (lbl) lbl.textContent = this._parseSampleInfo(p.name);
+    const box = document.getElementById('previewLightbox');
+    if (box) {
+      const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
+      const nextBtn = box.querySelector('.preview-lightbox-nav.next');
+      if (prevBtn) prevBtn.disabled = this.previewStep <= 0;
+      if (nextBtn) nextBtn.disabled = this.previewStep >= n - 1;
+    }
   },
 
   _parseSampleInfo(filename) {
