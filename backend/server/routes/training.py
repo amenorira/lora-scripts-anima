@@ -71,12 +71,26 @@ def get_sample_prompts(config: dict):
         except IOError:
             log.error(f"Failed to read prompt file / 读取失败: {sample_prompt_file}")
 
-    sample_prompts_arg = (
-        f'{positive_prompts} --n {negative_prompts} '
+    # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
+    negative_prompts = negative_prompts.replace(chr(10), ", ") if negative_prompts else ""
+
+    param_suffix = (
+        f'--n {negative_prompts} '
         f'--w {sample_width} --h {sample_height} '
         f'--l {sample_cfg} --s {sample_steps} --d {sample_seed} '
         f'--fs {sample_flow_shift}'
     )
+
+    if positive_prompts and positive_prompts.strip():
+        # Multi-line: treat each non-empty line as a separate sample entry
+        lines = [ln.strip() for ln in positive_prompts.strip().splitlines() if ln.strip()]
+        sample_prompts_arg = chr(10).join(f'{line} {param_suffix}' for line in lines)
+    else:
+        sample_prompts_arg = ''
+
+    if positive_prompts and not positive_prompts.strip():
+        positive_prompts = None
+
     return positive_prompts, sample_prompts_arg
 
 

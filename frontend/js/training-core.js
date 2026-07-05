@@ -1,4 +1,4 @@
-/* ================================================================
+﻿/* ================================================================
    training-core.js — State, Form building, File pickers
    Mixin merged into animaApp Alpine component
    ================================================================ */
@@ -759,6 +759,9 @@ window.trainingCoreMixin = {
       inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"></textarea>`;
+      if (dataKey === "positive_prompts") {
+        inputHtml += this._positivePromptCountHint(dataKey);
+      }
     } else if (field.type === 'stepper' || field.type === 'number') {
       const sStep = field.step || 1;
       inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
@@ -957,6 +960,18 @@ window.trainingCoreMixin = {
     navigator.clipboard.writeText(key).then(() => {
       this.toast(this.t('common.paramCopied') || 'Copied');
     });
+  },
+
+  // positive prompts line count hint: real-time sample count below textarea
+  _positivePromptCountHint(dataKey) {
+    var h = [];
+    h.push('<div class="field-hint field-hint-warn" x-show="(form.');
+    h.push(dataKey);
+    h.push(" || '').split('\\n').filter(function(l){return l.trim()}).length >= 2\"");
+    h.push(" x-text=\"t('field.samplePromptsCountHint').replaceAll('{n}', (form.");
+    h.push(dataKey);
+    h.push(" || '').split('\\n').filter(function(l){return l.trim()}).length)\"></div>");
+    return h.join('');
   },
 
   // 重算所有进阶参数折叠块的括号计数：仅统计当前表单状态下实际可见的 advanced 字段。

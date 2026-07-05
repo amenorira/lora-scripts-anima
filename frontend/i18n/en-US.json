@@ -165,9 +165,9 @@
 		"ckptEpoch": "Epoch {n}",
 		"ckptStep": "Step {n}",
 		"ckptFinal": "Final",
-			"noModelFiles": "No model files",
-			"scrollToBottom": "↓ Bottom",
-			"scrollToTop": "↑ Top"
+		"noModelFiles": "No model files",
+		"scrollToBottom": "↓ Bottom",
+		"scrollToTop": "↑ Top"
 	},
 	"section": {
 		"model": "Model & Dataset",
@@ -404,7 +404,8 @@
 		"sample_every_n_steps": "Generate previews every N steps",
 		"sample_at_first": "Generate a preview before training starts",
 		"sample_flow_shift": "Flow Shift (Anima only)",
-		"sample_flow_shiftHint": "Time-shift for Anima flow-match sampling (akin to Karras shift), default 3.0. Anima only; SDXL ignores it."
+		"sample_flow_shiftHint": "Time-shift for Anima flow-match sampling (akin to Karras shift), default 3.0. Anima only; SDXL ignores it.",
+		"samplePromptsCountHint": "{n} prompt lines → {n} preview images per sample"
 	},
 	"common": {
 		"startTraining": "Start Training",
@@ -490,7 +491,6 @@
 		"fieldActions": "Field actions",
 		"sectionNav": "Sections",
 		"trainingInProgress": "Training in progress",
-		"download": "Download",
 		"delete": "Delete"
 	},
 	"preset": {

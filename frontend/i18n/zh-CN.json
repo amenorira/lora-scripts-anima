@@ -165,9 +165,9 @@
 		"ckptEpoch": "Epoch {n}",
 		"ckptStep": "Step {n}",
 		"ckptFinal": "最终",
-			"noModelFiles": "暂无模型文件",
-			"scrollToBottom": "↓ 回到底部",
-			"scrollToTop": "↑ 回到顶部"
+		"noModelFiles": "暂无模型文件",
+		"scrollToBottom": "↓ 回到底部",
+		"scrollToTop": "↑ 回到顶部"
 	},
 	"section": {
 		"model": "模型与数据集",
@@ -404,7 +404,8 @@
 		"sample_every_n_steps": "每 N 步生成一次预览图",
 		"sample_at_first": "训练开始前先出一张预览图",
 		"sample_flow_shift": "Flow Shift（仅 Anima）",
-		"sample_flow_shiftHint": "Anima flow-match 采样的时间表偏移（类比 Karras shift），默认 3.0；仅 Anima 生效，SDXL 忽略。"
+		"sample_flow_shiftHint": "Anima flow-match 采样的时间表偏移（类比 Karras shift），默认 3.0；仅 Anima 生效，SDXL 忽略。",
+		"samplePromptsCountHint": "{n} 行提示词，每次采样将生成 {n} 张预览图"
 	},
 	"common": {
 		"startTraining": "开始训练",
@@ -490,7 +491,6 @@
 		"fieldActions": "字段操作",
 		"sectionNav": "参数分组",
 		"trainingInProgress": "训练进行中",
-		"download": "下载",
 		"delete": "删除"
 	},
 	"preset": {
