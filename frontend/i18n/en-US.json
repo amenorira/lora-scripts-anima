@@ -87,6 +87,7 @@
 		"noPreviewHint": "Preview images will appear during training",
 		"noPreviewRunningHint": "No samples yet — they appear after the first sample step",
 		"noPreviewHistoryHint": "No preview samples in this run",
+		"showOlderSamples": "Show older samples",
 		"noLogsHint": "No logs yet",
 		"noLogsRunningHint": "Waiting for log output from training...",
 		"noLogsIdleHint": "Start a training task to see real-time logs here",

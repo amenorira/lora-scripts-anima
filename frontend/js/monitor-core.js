@@ -7,7 +7,7 @@ window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
   gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
-  previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewVisibleCount: 36, previewPageSize: 36, previewsLoading: false, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
@@ -560,7 +560,7 @@ window.monitorCoreMixin = {
     this.previewsLoading = true;
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     try {
-      let url = '/api/monitor/previews?refresh=1';
+      let url = '/api/monitor/previews?refresh=1&limit=300';
       if (this.selectedRunDir) {
         url += '&run_dir=' + encodeURIComponent(this.selectedRunDir);
       } else if (this.taskId) {
@@ -591,6 +591,12 @@ window.monitorCoreMixin = {
     } else if (this.previewStep > n - 1) {
       this.previewStep = n - 1;
     }
+  },
+
+  showMorePreviews() {
+    const step = this.previewPageSize || 36;
+    this.previewVisibleCount = Math.min(this.previews.length, (this.previewVisibleCount || step) + step);
+    this.renderDashboard();
   },
 
   // ── History ────────────────────────────────────────────
@@ -692,6 +698,7 @@ window.monitorCoreMixin = {
         this.lossSeries = j.data.tensorboard_loss || [];
             this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
+        this.previewVisibleCount = this.previewPageSize || 36;
         // 历史记录进入时定位到最新样本（末尾）
         this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
         if (j.data.log_lines) {
@@ -740,6 +747,7 @@ window.monitorCoreMixin = {
     this.logMode = 'full';
     this._logFullLoaded = false;
     this.logTotal = 0;
+    this.previewVisibleCount = this.previewPageSize || 36;
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
     this.startMonitorPolling();

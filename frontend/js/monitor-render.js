@@ -1055,6 +1055,10 @@ window.monitorRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const showPreviews = this.previews.length > 0;
     const lastIdx = this.previews.length - 1;
+    const pageSize = this.previewPageSize || 36;
+    const visibleCount = Math.min(this.previews.length, this.previewVisibleCount || pageSize);
+    const startIdx = Math.max(0, this.previews.length - visibleCount);
+    const visiblePreviews = this.previews.slice(startIdx);
 
     let html = '<div class="m-section"><div class="m-section-title" style="justify-content:flex-start;gap:10px;">' + this.esc(t('previewSamples','Preview'));
     if (showPreviews) {
@@ -1062,11 +1066,16 @@ window.monitorRenderMixin = {
     }
     html += '</div>';
     if (showPreviews) {
+      if (startIdx > 0) {
+        html += '<div class="preview-controls"><button type="button" class="btn btn-sm btn-secondary" @click="showMorePreviews()">' + this.esc(t('monitor.showOlderSamples','Show older samples')) + '</button><span class="preview-step">' + (startIdx + 1) + '-' + this.previews.length + ' / ' + this.previews.length + '</span></div>';
+      }
       html += '<div class="preview-grid">';
-      this.previews.forEach((pv, i) => {
+      visiblePreviews.forEach((pv, offset) => {
+        const i = startIdx + offset;
+        const thumbUrl = pv.thumb_url || pv.url;
         html += '<div class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
-        html += '<img src="' + this.esc(pv.url) + '" alt="' + this.esc(pv.name) + '" loading="lazy"/>';
+        html += '<img src="' + this.esc(thumbUrl) + '" alt="' + this.esc(pv.name) + '" loading="lazy" decoding="async"/>';
         html += '<div class="preview-grid-item-label">' + this.esc(this._parseSampleInfo(pv.name)) + '</div>';
         html += '</div>';
       });

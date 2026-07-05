@@ -87,6 +87,7 @@
 		"noPreviewHint": "训练开始后将在此显示预览图",
 		"noPreviewRunningHint": "训练中尚未生成样本，首个 sample step 后将在此显示",
 		"noPreviewHistoryHint": "本次训练未生成预览样本",
+		"showOlderSamples": "显示更早样本",
 		"noLogsHint": "暂无日志",
 		"noLogsRunningHint": "等待训练输出日志...",
 		"noLogsIdleHint": "启动训练后，实时日志将在此显示",

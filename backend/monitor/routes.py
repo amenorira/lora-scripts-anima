@@ -32,6 +32,8 @@ router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = REPO_ROOT / "output"
+CACHE_DIR = REPO_ROOT / "cache"
+PREVIEW_THUMB_DIR = CACHE_DIR / "preview-thumbs"
 
 # run-detail 仅回传日志尾部行数（与前端 LOG.MAX_LINES 对齐）；完整日志经
 # /monitor/log-slice 分页拉取，避免大日志全量回传撑爆响应。
@@ -122,7 +124,7 @@ async def monitor_status(task_id: str = Query("")):
 
     # 预览样本：严格限定在该 run 目录下，避免漂移到其它记录
     result["previews"] = await asyncio.to_thread(
-        newest_previews, str(artifacts_dir) if artifacts_dir else None, 0
+        newest_previews, str(artifacts_dir) if artifacts_dir else None, 300
     )
     # 训练参数：优先取该 run 的 config.toml，回退 autosave
     result["train_params"] = await asyncio.to_thread(
@@ -263,6 +265,7 @@ async def monitor_previews(
     task_id: str = Query(""),
     run_dir: str = Query(""),
     refresh: int = Query(0),
+    limit: int = Query(300, ge=1, le=1000),
 ):
     # 解析预览样本目录：
     #   task_id 非空 → 反查活动任务的真实 run_dir（实时模式）
@@ -277,7 +280,7 @@ async def monitor_previews(
         output_dir = str(rd) if rd.is_dir() else None
     else:
         output_dir = await asyncio.to_thread(_resolve_live_output_dir, "")
-    data = await asyncio.to_thread(newest_previews, output_dir, 0, bool(refresh))
+    data = await asyncio.to_thread(newest_previews, output_dir, limit, bool(refresh))
     return {"status": "success", "data": data}
 
 
@@ -457,7 +460,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
     # ── 预览样本（扁平结构：run_dir/sample/，兼容旧 outputs/sample/）──
-    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir), 0)
+    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir), 300)
 
     # ── 训练日志 ──
     # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），
@@ -557,8 +560,9 @@ async def monitor_log_slice(
 
 
 @router.get("/monitor/preview-image")
-async def monitor_preview_image(path: str = Query("")):
+async def monitor_preview_image(path: str = Query(""), thumb: bool = Query(False)):
     """预览图片代理 — 仅允许 output/ 和 logs/ 目录下的文件"""
+    import hashlib
     import mimetypes
     import urllib.parse
     from fastapi.responses import FileResponse
@@ -575,8 +579,30 @@ async def monitor_preview_image(path: str = Query("")):
     if not p.is_file():
         return {"status": "error", "message": "文件不存在"}
 
+    headers = {"Cache-Control": "public, max-age=86400"}
+
+    if thumb:
+        try:
+            from PIL import Image, ImageOps
+
+            st = p.stat()
+            key_src = f"{p}|{st.st_mtime_ns}|{st.st_size}|320"
+            key = hashlib.sha1(key_src.encode("utf-8", errors="ignore")).hexdigest()
+            thumb_path = PREVIEW_THUMB_DIR / f"{key}.jpg"
+            if not thumb_path.exists():
+                PREVIEW_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+                with Image.open(p) as img:
+                    img = ImageOps.exif_transpose(img)
+                    img.thumbnail((320, 320))
+                    if img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
+                    img.save(thumb_path, format="JPEG", quality=82, optimize=True)
+            return FileResponse(thumb_path, media_type="image/jpeg", headers=headers)
+        except Exception:
+            pass
+
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-    return FileResponse(p, media_type=mt)
+    return FileResponse(p, media_type=mt, headers=headers)
 
 
 @router.get("/monitor/is-active")

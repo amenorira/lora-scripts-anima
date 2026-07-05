@@ -61,19 +61,35 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
     """
     global _previews_cache
     now = time.time()
-    cache_key = output_dir or ""
+    cache_key = f"{output_dir or ''}|{int(limit or 0)}"
     if not force_refresh:
         with _previews_cache_lock:
             if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
                 return _previews_cache[2]
 
     roots: list[Path] = []
+    if not output_dir:
+        with _previews_cache_lock:
+            _previews_cache = (now, cache_key, [])
+        return []
     if output_dir:
         od = Path(output_dir)
+        try:
+            od_resolved = od.resolve()
+            output_root = OUTPUT_DIR.resolve()
+            od_resolved.relative_to(output_root)
+            if od_resolved == output_root:
+                with _previews_cache_lock:
+                    _previews_cache = (now, cache_key, [])
+                return []
+            od = od_resolved
+        except (ValueError, OSError):
+            with _previews_cache_lock:
+                _previews_cache = (now, cache_key, [])
+            return []
         roots.extend([od / "sample", od])           # 扁平: run_dir/sample/, run_dir/
         roots.append(od / "outputs" / "sample")     # 兼容旧结构: run_dir/outputs/sample/
         roots.append(od / "outputs")                # 兼容旧结构: run_dir/outputs/
-    roots.extend([OUTPUT_DIR / "sample", OUTPUT_DIR])
 
     found: list[Path] = []
     seen: set[Path] = set()
@@ -87,10 +103,6 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
                 continue
             seen.add(p)
             found.append(p)
-            if limit and len(found) >= limit * 2:
-                break
-        if limit and len(found) >= limit:
-            break
 
     found.sort(key=lambda p: p.stat().st_mtime)
     selected = found[-limit:] if limit else found
@@ -104,6 +116,7 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
         result.append({
             "name": p.name,
             "url": f"/api/monitor/preview-image?path={rel}",
+            "thumb_url": f"/api/monitor/preview-image?thumb=1&path={rel}",
             "size": p.stat().st_size,
         })
     with _previews_cache_lock:
