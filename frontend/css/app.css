@@ -2350,8 +2350,8 @@ input[type="range"]::-webkit-slider-thumb {
 .monitor-logs-container {
   font-family: 'Consolas', 'Cascadia Code', 'Menlo', 'Courier New', monospace;
   font-size: 13px; line-height: 1.6;
-  flex: 1; min-height: 0; overflow-y: auto;
-  white-space: pre-wrap; overflow-wrap: break-word;
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
   background: var(--log-bg, var(--surface-default));
   color: var(--log-fg, var(--text-primary));
   border-top: 1px solid var(--border-default);
@@ -2372,6 +2372,8 @@ input[type="range"]::-webkit-slider-thumb {
 .log-line {
   padding: 0 8px 0 0; border-radius: 0; transition: none;
   display: flex; align-items: flex-start;
+  min-width: 0; width: 100%;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
   line-height: 1.6;
   counter-increment: logline;          /* 行号由 CSS counter 按 DOM 位置生成 */
 }
@@ -2383,13 +2385,34 @@ input[type="range"]::-webkit-slider-thumb {
    counter-reset 由 .monitor-logs-container 提供；full 模式 JS 设 counter-reset=offset 得绝对行号。 */
 .monitor-logs-container { counter-reset: logline 0; }
 .log-line::before {
-  content: counter(logline);
+  content: attr(data-line-no);
   display: inline-block; min-width: 48px; padding: 0 12px 0 4px;
   text-align: right; color: #858889; user-select: none;
   font-size: 12px; flex-shrink: 0; line-height: 1.6;
 }
 [data-theme="light"] .log-line::before { color: #999; }
-.log-line-text { flex: 1; min-width: 0; }
+.log-line-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+.log-line-text-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+.log-line-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.log-line-source {
+  flex: 0 0 auto;
+  max-width: min(34%, 280px);
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* ═══════ Inline syntax tokens — VSCode 2026 Dark (2026-dark.json) ═══════ */
 /* Log levels: VSCode colors log severity via the token.*-token scopes.
    Plain colored text — no badge, no background (matches VSCode log view). */
@@ -2421,6 +2444,11 @@ input[type="range"]::-webkit-slider-thumb {
 .log-unit  { color: #8b949e; }
 /* URL — textLink.foreground */
 .log-url   { color: #48A0C7; }
+.log-path, .log-module, .log-url, .log-hex {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
 .log-punct { color: #8b949e; }
 
 /* Light theme overrides */
@@ -2447,7 +2475,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 [data-theme="dark"] .log-line mark { background: rgba(230, 180, 80, 0.3); }
 [data-theme="light"] .log-line mark { background: rgba(200, 150, 20, 0.25); }
-.log-line-text { flex: 1; min-width: 0; }
+.log-line-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
 .log-empty { padding: 32px; }
 .log-empty.dashboard-empty p { margin: 0; }
 .m-logs-count { font-size: 10px; color: var(--text-tertiary); font-weight: 400; margin-left: 4px; }
@@ -2456,14 +2484,17 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: var(--radius-sm); border: 1px solid var(--border-input);
   background: var(--bg-input); color: var(--text-primary);
 }
+.m-logs-search-full { width: 180px; max-width: min(220px, 42vw); }
 /* 完整日志分页工具栏 */
-.m-logs-tools { flex-wrap: wrap; gap: 4px; }
+.m-logs-tools { flex-wrap: wrap; gap: 4px; align-items: center; }
+.m-logs-tools .btn { min-height: 26px; white-space: nowrap; }
+.m-logs-tools .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .m-logs-full-tools { align-items: center; gap: 4px; }
 .m-logs-range {
   font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums;
   min-width: 88px; text-align: center; white-space: nowrap;
 }
-.m-logs-goto { font-size: 11.5px; padding: 3px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); }
+.m-logs-goto { width: 84px; font-size: 11.5px; padding: 3px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); }
 .m-logs-match { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; min-width: 34px; text-align: center; }
 .m-logs-match-nav { display: inline-flex; align-items: center; gap: 2px; }
 

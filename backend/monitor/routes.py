@@ -4,6 +4,8 @@
   GET  /api/monitor/status        — 聚合监控状态
   GET  /api/monitor/history        — 历史训练记录
   GET  /api/monitor/run-detail     — 指定训练的图表 + 日志 + 配置
+  GET  /api/monitor/log-slice      — 完整训练日志分页读取
+  GET  /api/monitor/log-download   — 下载完整训练日志
   GET  /api/monitor/preview-image  — 预览图片代理
 """
 from __future__ import annotations
@@ -45,6 +47,27 @@ STATE_LABELS = {
     "TERMINATED": "Terminated / 已终止",
     "CREATED": "Pending / 等待启动",
 }
+
+
+def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | None:
+    """Resolve a monitor log path from a history run directory or live task id."""
+    if run_dir:
+        abs_run_dir = (REPO_ROOT / run_dir).resolve()
+        try:
+            abs_run_dir.relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            return None
+        if abs_run_dir.is_dir():
+            return find_run_log_path(abs_run_dir)
+        return None
+
+    if task_id:
+        train_config = latest_train_config(task_id)
+        output_dir = train_config.get("output_dir")
+        output_dir_path = Path(output_dir) if output_dir else None
+        return find_train_log_path(task_id, output_dir_path)
+
+    return None
 
 
 @router.get("/monitor/status")
@@ -535,28 +558,34 @@ async def monitor_log_slice(
     载入 DOM 的前提下浏览/搜索任意位置。文件为训练期间的快照，前端按需手动刷新。
     tail=True 时定位到文件末尾（实时任务首次进入、未知 total 时用）。
     """
-    log_path: Path | None = None
-    if run_dir:
-        abs_run_dir = (REPO_ROOT / run_dir).resolve()
-        try:
-            abs_run_dir.relative_to(OUTPUT_DIR.resolve())
-        except ValueError:
-            return {"status": "error", "message": "Invalid run_dir / 无效路径"}
-        if abs_run_dir.is_dir():
-            log_path = find_run_log_path(abs_run_dir)
-    elif task_id:
-        train_config = latest_train_config(task_id)
-        output_dir = train_config.get("output_dir")
-        output_dir_path = Path(output_dir) if output_dir else None
-        log_path = find_train_log_path(task_id, output_dir_path)
-    else:
+    if not run_dir and not task_id:
         return {"status": "error", "message": "run_dir or task_id is required"}
 
+    log_path = _resolve_monitor_log_path(run_dir, task_id)
     if not log_path:
         return {"status": "error", "message": "Log file not found / 日志文件未找到"}
 
     data = await asyncio.to_thread(read_log_slice, log_path, offset, limit, q, tail)
     return {"status": "success", "data": data}
+
+
+@router.get("/monitor/log-download")
+async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query("")):
+    """下载完整训练日志（实时任务或历史 run 均可）。"""
+    from fastapi.responses import FileResponse
+
+    if not run_dir and not task_id:
+        return {"status": "error", "message": "run_dir or task_id is required"}
+
+    log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
+    if not log_path or not log_path.is_file():
+        return {"status": "error", "message": "Log file not found / 日志文件未找到"}
+
+    return FileResponse(
+        log_path,
+        media_type="text/plain",
+        filename=log_path.name,
+    )
 
 
 @router.get("/monitor/preview-image")

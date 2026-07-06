@@ -391,7 +391,10 @@ window.monitorCoreMixin = {
   },
 
   // ── Log helpers ────────────────────────────────────────
-  copyLogs() { navigator.clipboard.writeText(this.logLines.join('\n')).then(() => this.toast(this.t('common.copied'))); },
+  copyLogs() {
+    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
+    navigator.clipboard.writeText(lines.join('\n')).then(() => this.toast(this.t('common.copied')));
+  },
   clearLogs() {
     this.logLines = []; this._logContentVersion = 0;
     this._renderedLogCount = 0; this._renderedLogFilterKey = '';
@@ -444,10 +447,21 @@ window.monitorCoreMixin = {
   },
 
   /** 回到完整日志末尾并恢复跟随（实时增量刷新）。浏览历史页后用它回到 live 末尾。 */
-  followFullTail() {
+  followFullTail(opts) {
+    opts = opts || {};
+    if (!this._hasLogSource()) {
+      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
+      return;
+    }
     this.logAutoScroll = true;
     this._logAtBottom = true;
     this._logFullNeedsResync = true;    // 触发 resync：重拉末页（补回浏览期间的新行）
+    if (opts.fetchNow) {
+      this._logFullNeedsResync = false;
+      this._logFullLoaded = true;
+      this.fetchLogSlice({ tail: true, silent: !!opts.silent });
+      return;
+    }
     this.renderDashboard();
   },
 
@@ -461,13 +475,14 @@ window.monitorCoreMixin = {
     const runDir = this._logSliceRunDir();
     const taskId = this._logSliceTaskId();
     if (!runDir && !taskId) {
+      this.logFullLoading = false;
       if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
       return;
     }
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
     let offset = this.logFullOffset;
     if (opts.offset !== undefined) offset = opts.offset;
-    else if (opts.matchIdx !== undefined && this.logFullMatches.length) {
+    else if (opts.matchIdx !== undefined && this.logFullMatches.length && q === this.logFullQuery) {
       // 跳到指定匹配行所在页
       const m = this.logFullMatches[opts.matchIdx];
       offset = Math.floor(m / limit) * limit;
@@ -489,17 +504,39 @@ window.monitorCoreMixin = {
       const j = await r.json();
       if (j.status === 'success' && j.data) {
         const d = j.data;
+        const nextLines = d.lines || [];
+        const nextMatches = d.match_indices || [];
+        if (opts.matchIdx !== undefined && nextMatches.length && !opts._matchJumpResolved) {
+          const idx = Math.max(0, Math.min(opts.matchIdx, nextMatches.length - 1));
+          const target = nextMatches[idx];
+          const pageEnd = d.offset + nextLines.length;
+          if (target < d.offset || target >= pageEnd) {
+            this.logFullMatches = nextMatches;
+            this.logFullMatchIdx = idx;
+            await this.fetchLogSlice({
+              offset: Math.floor(target / limit) * limit,
+              q,
+              _matchIdx: idx,
+              _matchJumpResolved: true,
+            });
+            return;
+          }
+        }
         this.logFullOffset = d.offset;
         this.logFullTotal = d.total;
-        this.logFullLines = d.lines || [];
-        this.logFullMatches = d.match_indices || [];
+        this.logFullLines = nextLines;
+        this.logFullMatches = nextMatches;
         this.logFullQuery = q;
         // 更新 logTotal（live 模式首次探得）
         if (!this.selectedRunDir) this.logTotal = d.total;
-        if (opts.matchIdx === undefined) {
+        if (opts._matchIdx !== undefined) {
+          this.logFullMatchIdx = opts._matchIdx;
+        } else if (opts.matchIdx === undefined) {
           // 非「跳匹配」操作：若当前 offset 落在某匹配所在页，定位到该页首个匹配
           const cur = this.logFullMatches.findIndex(mi => mi >= d.offset && mi < d.offset + this.logFullLines.length);
           this.logFullMatchIdx = cur;
+        } else {
+          this.logFullMatchIdx = Math.max(0, Math.min(opts.matchIdx, this.logFullMatches.length - 1));
         }
         this._forceLogRebuild = true;
       } else {
@@ -516,12 +553,21 @@ window.monitorCoreMixin = {
   /** 完整日志搜索（全文件） */
   searchFullLog(q) {
     const query = (q !== undefined ? String(q) : '').trim();
-    if (!query) { this.toast(this.t('monitor.enterSearch','Enter a search term'), 'error'); return; }
-    this.logAutoScroll = false; this._logAtBottom = false;
+    this.logAutoScroll = false;
+    this._logAtBottom = false;
+    if (!query) {
+      this.logFullQuery = '';
+      this.logFullMatches = [];
+      this.logFullMatchIdx = -1;
+      this.fetchLogSlice({ q: '' });
+      return;
+    }
     this.fetchLogSlice({ q: query, matchIdx: 0 });
   },
 
   /** 完整日志翻页 */
+  logFullFirstPage() { if (this.logFullTotal > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: 0 }); } },
+  logFullLastPage() { this.followFullTail({ fetchNow: true }); },
   logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
   logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
   logFullGotoLine(n) {

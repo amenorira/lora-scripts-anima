@@ -483,14 +483,10 @@ window.monitorRenderMixin = {
     const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
     html += '<div class="m-section-title">' + this.esc(t(titleKey,'Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span></div>';
     html += '<div class="m-section-tools m-logs-tools">';
-    // 模式切换：实时尾部（内存缓冲）↔ 完整日志（后端分页）
     if (this.logMode === 'full') {
-      html += '<button type="button" class="btn btn-sm" @click="setLogMode(\'tail\')">← ' + this.esc(t('logTailMode','Live tail')) + '</button>';
+      html += this._logFullToolbarHtml(t);
     } else {
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode','Full log')) + '</button>';
-    }
-    // tail 模式工具
-    if (this.logMode !== 'full') {
       html += '<input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
       const levels = ['all','info','warn','error'];
       const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
@@ -505,28 +501,30 @@ window.monitorRenderMixin = {
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
     }
     html += '</div>';
-    // full 模式分页工具栏
-    if (this.logMode === 'full') html += this._logFullToolbarHtml(t);
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
     return html;
   },
 
-  // 完整日志分页工具栏（reactive：fetchLogSlice 更新状态后自动刷新文本）
+  // 完整日志工具栏：一层操作，直接覆盖浏览、搜索、复制和下载。
   _logFullToolbarHtml(t) {
-    let html = '<div class="m-section-tools m-logs-full-tools">';
+    let html = '';
+    const tailLabel = this.selectedRunDir ? t('logBottom','Bottom') : t('logLiveTail','Live tail');
+    html += '<button type="button" class="btn btn-sm btn-primary log-follow-btn" @click="logFullLastPage()">↓ ' + this.esc(tailLabel) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullOffset<=0">' + this.esc(t('firstPage','Top')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage','‹ Prev')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button>';
-    html += '<input type="number" class="m-logs-goto" min="1" placeholder="' + this.esc(t('gotoLine','行号')) + '" @keydown.enter="logFullGotoLine($event.target.value)" style="width:80px">';
-    html += '<input type="text" class="m-logs-search" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','搜索全文件...')) + '" @keydown.enter="searchFullLog(logFullQuery)" style="width:150px">';
+    html += '<input type="number" class="m-logs-goto" min="1" placeholder="' + this.esc(t('gotoLine','Line')) + '" @keydown.enter="logFullGotoLine($event.target.value)">';
+    html += '<input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','Search full file...')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search','Search')) + '</button>';
     html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
     html += '<span class="m-logs-match" x-text="logFullMatchText()"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
     html += '</span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh','Refresh')) + '</button>';
-    html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" x-show="!selectedRunDir" @click="followFullTail()">↓ ' + this.esc(t('logFollow','Follow tail')) + '</button>';
-    html += '</div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('copyPage','Copy page')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog','Download full log')) + '</button>';
     return html;
   },
 
@@ -650,14 +648,79 @@ window.monitorRenderMixin = {
 
   // 行号由 CSS counter（.log-line::before）按 DOM 位置自动生成；full 模式由
   // counter-reset=offset 给出绝对行号。故此处不再创建 num span。
-  _buildLogLineDom(line, search, extraClass) {
+  _buildLogLineDom(line, search, extraClass, lineNo) {
     const div = document.createElement('div');
     div.className = 'log-line' + (extraClass ? ' ' + extraClass : '');
+    if (lineNo != null) div.dataset.lineNo = String(lineNo);
     const span = document.createElement('span');
     span.className = 'log-line-text';
-    this._highlightLogLine(span, line, search);
+    const richSource = this._splitRichLogSource(line);
+    if (richSource) {
+      span.className += ' log-line-text-split';
+      const main = document.createElement('span');
+      main.className = 'log-line-main';
+      const source = document.createElement('span');
+      source.className = 'log-line-source';
+      this._highlightLogLine(main, richSource.main, search);
+      this._highlightLogLine(source, richSource.source, search);
+      span.appendChild(main);
+      span.appendChild(source);
+    } else {
+      this._highlightLogLine(span, line, search);
+    }
     div.appendChild(span);
     return div;
+  },
+
+  _splitRichLogSource(lineText) {
+    const text = String(lineText || '');
+    const pathTail = '((?:[A-Za-z]:[\\\\/])?(?:[\\w.@()-]+[\\\\/\\\\]){0,10}(?:[\\w@()-]+\\.){0,12}[\\w@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp)(?::\\d+)?)';
+    let m;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (normalized.indexOf('\n') >= 0) {
+      m = normalized.match(new RegExp('^(.*)\\n[ \\t]*' + pathTail + '\\s*$', 's'));
+    } else {
+      // Rich console pads the source column with a long run of spaces. In narrow
+      // containers that padding wraps visually; split it into a real right column.
+      m = normalized.match(new RegExp('^(.*?)[ \\t]{3,}' + pathTail + '\\s*$'));
+    }
+    if (!m) return null;
+    const main = m[1].replace(/\n[ \t]*$/g, '').trimEnd();
+    const source = m[2].trim();
+    if (!main || !source) return null;
+    return { main, source };
+  },
+
+  _isRichContinuationLine(lineText) {
+    const text = String(lineText || '');
+    if (!text.trim()) return false;
+    if (!/^[ \t]{20,}\S/.test(text)) return false;
+    if (this._splitRichLogSource(text)) return false;
+    return true;
+  },
+
+  _coalesceRichLogLines(lines, baseOffset) {
+    const src = lines || [];
+    const out = [];
+    for (let i = 0; i < src.length; i++) {
+      const startIdx = i;
+      let text = String(src[i] || '');
+      const richSource = this._splitRichLogSource(text);
+      if (richSource) {
+        let main = richSource.main;
+        let j = i + 1;
+        while (j < src.length && this._isRichContinuationLine(src[j])) {
+          main += ' ' + String(src[j] || '').trim();
+          j++;
+        }
+        if (j > i + 1) {
+          text = main + '        ' + richSource.source;
+          i = j - 1;
+        }
+      }
+      out.push({ text, lineNo: (baseOffset || 0) + startIdx + 1 });
+    }
+    return out;
   },
 
   // ── tail：分帧全量重建（Fix1 _logChunking 防竞态；末帧自滚底）──
@@ -667,6 +730,7 @@ window.monitorRenderMixin = {
     container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
     container.style.counterReset = 'logline 0';   // tail：缓冲内相对行号 1..n
     const lines = this.logLines;
+    const entries = this._coalesceRichLogLines(lines, 0);
     const CHUNK = 400;
     const self = this;
     this._logChunking = true;
@@ -677,14 +741,15 @@ window.monitorRenderMixin = {
       if (!self._logChunking) return;             // 已被取消（裁剪打断 → forceRebuild）
       const frag = document.createDocumentFragment();
       let count = 0;
-      while (i < lines.length && count < CHUNK) {
-        if (self._logLineMatches(lines[i], search, level)) {
-          frag.appendChild(self._buildLogLineDom(lines[i], search));
+      while (i < entries.length && count < CHUNK) {
+        const item = entries[i];
+        if (self._logLineMatches(item.text, search, level)) {
+          frag.appendChild(self._buildLogLineDom(item.text, search, '', item.lineNo));
         }
         i++; count++;
       }
       if (firstChunk) {
-        if (lines.length === 0) {
+        if (entries.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'log-empty dashboard-empty';
           empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self._logEmptyMessage(false)) + '</p>';
@@ -697,17 +762,18 @@ window.monitorRenderMixin = {
         firstChunk = false;
       }
       container.appendChild(frag);
-      self._renderedLogCount = Math.min(i, lines.length);
-      if (i < lines.length) {
+      self._renderedLogCount = Math.min(i, entries.length);
+      if (i < entries.length) {
         requestAnimationFrame(renderChunk);
       } else {
         self._logChunking = false;
-        if (!container.querySelector('.log-line') && lines.length > 0) {
+        if (!container.querySelector('.log-line') && entries.length > 0) {
           const empty = document.createElement('div');
           empty.className = 'log-empty dashboard-empty';
           empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults') || 'No matches') + '</p>';
           container.appendChild(empty);
         }
+        self._renderedLogCount = lines.length;
         self._afterLogsRender(contentEl, true);   // 末帧：按需滚底
       }
     }
@@ -743,7 +809,7 @@ window.monitorRenderMixin = {
       let appended = 0;
       for (let i = start; i < lines.length; i++) {
         if (!this._logLineMatches(lines[i], search, level)) continue;
-        frag.appendChild(this._buildLogLineDom(lines[i], search));
+        frag.appendChild(this._buildLogLineDom(lines[i], search, '', i + 1));
         appended++;
       }
       container.appendChild(frag);
@@ -761,7 +827,8 @@ window.monitorRenderMixin = {
     const offset = this.logFullOffset || 0;
     container.style.counterReset = 'logline ' + offset;  // 首行显示 offset+1
     const lines = this.logFullLines || [];
-    if (this.logFullLoading || !lines.length) {
+    const entries = this._coalesceRichLogLines(lines, offset);
+    if (this.logFullLoading || !entries.length) {
       const empty = document.createElement('div');
       empty.className = 'log-empty dashboard-empty';
       const msg = this._logEmptyMessage(!!this.logFullLoading);
@@ -773,9 +840,9 @@ window.monitorRenderMixin = {
     const search = this.logFullQuery || '';
     const matchSet = search ? new Set(this.logFullMatches) : null;
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < lines.length; i++) {
-      const cls = (matchSet && matchSet.has(offset + i)) ? 'log-line-match' : '';
-      frag.appendChild(this._buildLogLineDom(lines[i], search, cls));
+    for (const item of entries) {
+      const cls = (matchSet && matchSet.has(item.lineNo - 1)) ? 'log-line-match' : '';
+      frag.appendChild(this._buildLogLineDom(item.text, search, cls, item.lineNo));
     }
     container.appendChild(frag);
     this._renderedLogCount = lines.length;
@@ -813,7 +880,7 @@ window.monitorRenderMixin = {
       const frag = document.createDocumentFragment();
       let appended = 0;
       for (let i = start; i < lines.length; i++) {
-        frag.appendChild(this._buildLogLineDom(lines[i], search));
+        frag.appendChild(this._buildLogLineDom(lines[i], search, '', (this.logFullOffset || 0) + i + 1));
         appended++;
       }
       container.appendChild(frag);
@@ -1026,7 +1093,21 @@ window.monitorRenderMixin = {
   },
 
   downloadLogs() {
-    const content = this.logLines.join('\n');
+    if (this.logMode === 'full') {
+      const runDir = this._logSliceRunDir ? this._logSliceRunDir() : null;
+      const taskId = this._logSliceTaskId ? this._logSliceTaskId() : null;
+      if (runDir || taskId) {
+        const params = new URLSearchParams();
+        if (runDir) params.set('run_dir', runDir);
+        else params.set('task_id', taskId);
+        this._triggerDownload('/api/monitor/log-download?' + params.toString());
+        this.toast(this.t('monitor.logDownloadStarted','Download started'));
+        return;
+      }
+    }
+
+    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
+    const content = lines.join('\n');
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

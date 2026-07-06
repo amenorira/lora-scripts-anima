@@ -448,6 +448,9 @@ def _clean_log_text(text: str) -> str:
     - 移除 ANSI 转义序列（颜色、光标移动等）
     - 处理 \\r 覆盖（tqdm 进度条）：每行只保留最后一次覆盖的结果
     """
+    # 二进制切片读取不会像文本模式那样自动把 CRLF 归一化；先处理 Windows
+    # 换行，避免下面的 tqdm "\r 覆盖" 逻辑误删正常行内容。
+    text = text.replace("\r\n", "\n")
     # 移除 ANSI CSI 序列
     text = _ANSI_RE.sub('', text)
     # 处理 \r（tqdm 在同一行反复覆盖）：每段取最终值
@@ -638,6 +641,121 @@ def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
 
 # 完整日志分页：单次搜索返回的匹配行号上限（避免超大文件撑爆响应）
 _LOG_SLICE_MAX_MATCHES = 5000
+_LOG_INDEX_CACHE_MAX = 20
+_LOG_INDEX_CHUNK_BYTES = 1024 * 1024
+_log_index_cache_lock = threading.Lock()
+_log_index_cache: dict[str, tuple[int, int, list[int], float]] = {}
+
+
+def _scan_line_start_offsets(path: Path, start: int = 0) -> tuple[list[int], int]:
+    """Return newline-following byte offsets and the byte position scanned to."""
+    offsets: list[int] = []
+    pos = start
+    with open(path, "rb") as f:
+        f.seek(start)
+        while True:
+            chunk = f.read(_LOG_INDEX_CHUNK_BYTES)
+            if not chunk:
+                break
+            search_from = 0
+            while True:
+                idx = chunk.find(b"\n", search_from)
+                if idx < 0:
+                    break
+                offsets.append(pos + idx + 1)
+                search_from = idx + 1
+            pos += len(chunk)
+    return offsets, pos
+
+
+def _get_log_line_offsets(log_path: Path) -> tuple[list[int], int]:
+    """Get cached line-start byte offsets for a log file.
+
+    offsets[0] is always 0. Additional offsets point at the first byte after
+    every newline. The cache is incremental for growing live logs, so tail/page
+    reads do not rebuild the whole index on every request.
+    """
+    stat = log_path.stat()
+    size = stat.st_size
+    mtime_ns = stat.st_mtime_ns
+    key = str(log_path.resolve())
+    now = time.time()
+
+    with _log_index_cache_lock:
+        cached = _log_index_cache.get(key)
+        if cached:
+            cached_mtime_ns, cached_size, cached_offsets, _ = cached
+            if cached_size == size and cached_mtime_ns == mtime_ns:
+                _log_index_cache[key] = (cached_mtime_ns, cached_size, cached_offsets, now)
+                return cached_offsets, size
+            if size > cached_size:
+                base_offsets = cached_offsets
+                start = cached_size
+            else:
+                base_offsets = [0]
+                start = 0
+        else:
+            base_offsets = [0]
+            start = 0
+
+    new_offsets, scanned_size = _scan_line_start_offsets(log_path, start)
+    offsets = base_offsets + new_offsets
+    if not offsets:
+        offsets = [0]
+
+    with _log_index_cache_lock:
+        try:
+            mtime_ns = log_path.stat().st_mtime_ns
+        except OSError:
+            pass
+        _log_index_cache[key] = (mtime_ns, scanned_size, offsets, now)
+        if len(_log_index_cache) > _LOG_INDEX_CACHE_MAX:
+            oldest_key = min(_log_index_cache, key=lambda k: _log_index_cache[k][3])
+            del _log_index_cache[oldest_key]
+    return offsets, scanned_size
+
+
+def _log_line_count(offsets: list[int], size: int) -> int:
+    if size <= 0:
+        return 0
+    if offsets and offsets[-1] == size:
+        return max(0, len(offsets) - 1)
+    return len(offsets)
+
+
+def _read_log_lines_by_offset(log_path: Path, offsets: list[int], size: int,
+                              start_line: int, end_line: int) -> list[str]:
+    if start_line >= end_line:
+        return []
+    start_byte = offsets[start_line]
+    end_byte = offsets[end_line] if end_line < len(offsets) else size
+    if end_byte <= start_byte:
+        return []
+    with open(log_path, "rb") as f:
+        f.seek(start_byte)
+        raw = f.read(end_byte - start_byte)
+    content = raw.decode("utf-8", errors="replace")
+    content = _clean_log_text(content)
+    lines = content.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines[:end_line - start_line]
+
+
+def _search_log_matches(log_path: Path, query: str) -> list[int]:
+    matches: list[int] = []
+    if not query:
+        return matches
+    ql = query.lower()
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        for i, raw_line in enumerate(f):
+            line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+            line = _clean_log_text(line)
+            if ql in line.lower():
+                matches.append(i)
+                if len(matches) >= _LOG_SLICE_MAX_MATCHES:
+                    break
+    return matches
 
 
 def find_run_log_path(run_dir_path: Path) -> Path | None:
@@ -655,8 +773,8 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
                    query: str = "", tail: bool = False) -> dict:
     """读取日志文件的指定行区间（分页）+ 可选全文件搜索。
 
-    磁盘文件是完整日志的真相源：读取全文 → 清理终端控制字符 → 按行切片返回，
-    使前端「完整日志」模式可在不把整文件载入 DOM 的前提下浏览/搜索任意位置。
+    磁盘文件是完整日志的真相源：使用换行字节偏移索引定位页面，仅读取当前页
+    内容；搜索按行流式扫描，避免大日志被整体载入内存。
 
     返回 {total, offset, limit, lines, query, match_indices}：
       - total: 文件总行数
@@ -671,32 +789,21 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
             return empty
-        content = log_path.read_text(encoding="utf-8", errors="replace")
-        content = _clean_log_text(content)
-        lines = content.split("\n")
-        # 文件以换行结尾时产生末尾空行，去掉以保持行号与文件实际行一致
-        if lines and lines[-1] == "":
-            lines.pop()
-        total = len(lines)
+        offsets, size = _get_log_line_offsets(log_path)
+        total = _log_line_count(offsets, size)
 
-        match_indices: list[int] = []
-        if query:
-            ql = query.lower()
-            for i, line in enumerate(lines):
-                if ql in line.lower():
-                    match_indices.append(i)
-                    if len(match_indices) >= _LOG_SLICE_MAX_MATCHES:
-                        break
+        match_indices = _search_log_matches(log_path, query) if query else []
 
         if tail:
             offset = max(0, total - max(1, limit))
         offset = max(0, min(offset, total))
         end = min(offset + max(1, limit), total)
+        lines = _read_log_lines_by_offset(log_path, offsets, size, offset, end)
         return {
             "total": total,
             "offset": offset,
             "limit": limit,
-            "lines": lines[offset:end],
+            "lines": lines,
             "query": query,
             "match_indices": match_indices,
         }
