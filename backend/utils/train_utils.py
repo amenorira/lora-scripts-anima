@@ -250,6 +250,19 @@ def get_total_images(path, recursive=True):
         return [str(p) for p in Path(path).glob('*') if p.suffix.lower() in image_exts]
 
 
+def count_images(path, recursive=True, stop_after=None):
+    """统计图片数量；达到 stop_after 时提前返回，避免为简单阈值判断构造完整路径列表。"""
+    image_exts = frozenset({'.jpg', '.jpeg', '.png', '.webp'})
+    iterator = Path(path).rglob('*') if recursive else Path(path).glob('*')
+    count = 0
+    for image_path in iterator:
+        if image_path.is_file() and image_path.suffix.lower() in image_exts:
+            count += 1
+            if stop_after is not None and count >= stop_after:
+                return count
+    return count
+
+
 def fix_config_types(config: dict):
     keep_float_params = ["guidance_scale", "sigmoid_scale", "discrete_flow_shift"]
     for k in keep_float_params:

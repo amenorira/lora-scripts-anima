@@ -167,11 +167,14 @@ class TaskManager:
     def create_task(self, command: List[str], environ: Optional[dict] = None) -> Optional[Task]:
         """原子操作：检查并发限制 + 创建任务"""
         with self._lock:
-            running_count = sum(1 for t in self.tasks.values() if t.status == TaskStatus.RUNNING)
-            if running_count >= self.max_concurrent:
+            active_count = sum(
+                1 for t in self.tasks.values()
+                if t.status in (TaskStatus.CREATED, TaskStatus.RUNNING)
+            )
+            if active_count >= self.max_concurrent:
                 log.error(
-                    f"Unable to create task: {running_count} tasks running, max {self.max_concurrent}. "
-                    f"/ 无法创建任务：已有 {running_count} 个任务运行中，最大并发 {self.max_concurrent}。"
+                    f"Unable to create task: {active_count} tasks active, max {self.max_concurrent}. "
+                    f"/ 无法创建任务：已有 {active_count} 个任务占用槽位，最大并发 {self.max_concurrent}。"
                 )
                 return None
 

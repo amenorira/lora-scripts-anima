@@ -99,8 +99,8 @@ FIELDS: list[dict[str, Any]] = [
     # rank_dropout/module_dropout：四个原生模块 + lycoris.kohya 均从 kwargs 读取并消费
     # （lora.py:469-474 / lora_anima.py:40-46 / loha.py:48-53 / lokr.py:48-53 / kohya.py:45-46）。
     # 与 neuron dropout (network_dropout) 为不同正则化手段，可叠加。
-    {"key": "rank_dropout", "type": "number", "section": "network", "desc_key": "field.rank_dropout", "target": "ui", "min": 0, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}},
-    {"key": "module_dropout", "type": "number", "section": "network", "desc_key": "field.module_dropout", "target": "ui", "min": 0, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}},
+    {"key": "rank_dropout", "type": "number", "section": "network", "desc_key": "field.rank_dropout", "target": "ui", "min": 0, "max": 0.99, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}},
+    {"key": "module_dropout", "type": "number", "section": "network", "desc_key": "field.module_dropout", "target": "ui", "min": 0, "max": 1, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}},
     # use_tucker：仅 Conv2d 3x3+ 的 Tucker 分解有效。原生 loha/lokr 模块消费；
     # lycoris 仅 LoCon/Loha/Lokr 模块消费（dylora/glora/ia3/diag-oft/boft 签名有但忽略）。
     # 故显示条件为 OR-of-ANDs：原生 loha/lokr，或 lycoris.kohya + algo∈{lora,loha,lokr}。
@@ -143,7 +143,7 @@ FIELDS: list[dict[str, Any]] = [
     # 注：移除 flux_shift 选项——本项目不训练 Flux，保留会造成"支持 Flux"的误导。
     {"key": "timestep_sampling", "type": "select", "default": "sigmoid", "section": "training", "desc_key": "field.timestep_sampling", "target": "toml", "group": "anima", "options": [{"v": "sigmoid", "l": "sigmoid", "dk": "opt.timestep_sampling_sigmoid"}, {"v": "sigma", "l": "sigma", "dk": "opt.timestep_sampling_sigma"}, {"v": "uniform", "l": "uniform", "dk": "opt.timestep_sampling_uniform"}, {"v": "shift", "l": "shift", "dk": "opt.timestep_sampling_shift"}]},
     {"key": "sigmoid_scale", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.sigmoid_scale", "target": "toml", "step": 0.001, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift"]}, "omit_default": True},
-    {"key": "discrete_flow_shift", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.discrete_flow_shift", "target": "toml", "step": 0.01, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "shift"}, "omit_default": True},
+    {"key": "discrete_flow_shift", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.discrete_flow_shift", "target": "toml", "min": 0.01, "step": 0.01, "group": "anima", "show_if": {"key": "timestep_sampling", "eq": "shift", "_or": ["sigma"]}, "omit_default": True},
     {"key": "weighting_scheme", "type": "select", "default": "uniform", "section": "training", "desc_key": "field.weighting_scheme", "target": "toml", "group": "anima", "options": [{"v": "uniform", "l": "uniform", "dk": "opt.weighting_scheme_uniform"}, {"v": "sigma_sqrt", "l": "sigma_sqrt", "dk": "opt.weighting_scheme_sigma_sqrt"}, {"v": "logit_normal", "l": "logit_normal", "dk": "opt.weighting_scheme_logit_normal"}, {"v": "mode", "l": "mode", "dk": "opt.weighting_scheme_mode"}, {"v": "cosmap", "l": "cosmap", "dk": "opt.weighting_scheme_cosmap"}, {"v": "none", "l": "none", "dk": "opt.weighting_scheme_none"}]},
     {"key": "logit_mean", "type": "number", "default": 0.0, "section": "training", "desc_key": "field.logit_mean", "target": "toml", "step": 0.01, "group": "anima", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True},
     {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "target": "toml", "step": 0.01, "group": "anima", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True},
@@ -236,7 +236,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
     {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima"},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint", "advanced": True},
-    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 32, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.blocks_to_swapHint"},
+    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 8, "step": 1, "group": "anima", "advanced": True, "hint_key": "field.blocks_to_swapHint"},
     # cpu_offload_checkpointing：梯度检查点时把张量卸载到 CPU 省显存（与 unsloth_offload_checkpointing 互斥）。
     # adapter.py 已有互斥校验，此前 registry 无字段导致该校验为死代码，此处补全。
     {"key": "cpu_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cpu_offload_checkpointing", "target": "toml", "group": "anima", "advanced": True, "hint_key": "field.cpu_offload_checkpointingHint", "omit_default": True},
@@ -270,16 +270,16 @@ FIELDS: list[dict[str, Any]] = [
 # ── Caption ──
 {"key": "caption_extension", "type": "text", "default": ".txt", "section": "caption", "desc_key": "field.caption_extension", "target": "toml"},
 {"key": "max_token_length", "type": "select", "default": 225, "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": "sdxl", "options": [{"v": 150, "l": "150", "dk": "opt.max_token_length_150"}, {"v": 225, "l": "225", "dk": "opt.max_token_length_225"}]},
-{"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "step": 1, "group": "anima"},
-{"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "step": 1, "group": "anima"},
+{"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima"},
+{"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima"},
 # shuffle_caption 与 cache_text_encoder_outputs 互斥：默认关闭以让推荐默认 cache=true 可用。
 # 用户主动开启 shuffle 时会触发 cache 的 readonly 锁定（见 performance 段对 cache_text_encoder_outputs 的注释）。
 {"key": "shuffle_caption", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},
 {"key": "keep_tokens", "type": "number", "default": 0, "section": "caption", "desc_key": "field.keep_tokens", "target": "toml", "min": 0, "omit_default": True},
 {"key": "weighted_captions", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.weighted_captions", "target": "toml", "omit_default": True, "group": "sdxl"},  # Anima 的 AnimaTokenizeStrategy 未实现 tokenize_with_weights，对 Anima 无效
-{"key": "caption_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
+{"key": "caption_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_rate", "target": "toml", "min": 0, "max": 1, "step": 0.01},
 {"key": "caption_dropout_every_n_epochs", "type": "number", "section": "caption", "desc_key": "field.caption_dropout_every_n_epochs", "target": "toml", "min": 0},
-{"key": "caption_tag_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "step": 0.01},
+{"key": "caption_tag_dropout_rate", "type": "number", "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "max": 1, "step": 0.01},
 # ── Preview ──
 {"key": "enable_preview", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.enable_preview", "target": "ui"},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},

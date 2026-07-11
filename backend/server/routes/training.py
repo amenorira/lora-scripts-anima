@@ -154,8 +154,12 @@ async def create_toml_file(request: Request):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     json_data = await request.body()
 
-    config: dict = json.loads(json_data.decode("utf-8"))
-    train_utils.fix_config_types(config)
+    try:
+        config: dict = json.loads(json_data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(config, dict):
+        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
 
     gpu_ids = config.pop("gpu_ids", None)
 
@@ -168,10 +172,20 @@ async def create_toml_file(request: Request):
     # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
     _ui_config = dict(config)
     try:
-        from backend.training import adapt_config, detect_attention_backend
+        from backend.training import adapt_config, detect_attention_backend, validate_training_config
     except ImportError as e:
         log.error(f"[Adapter] Failed to import training adapter / 训练适配器导入失败: {e}")
         return APIResponseFail(message=f"Training adapter import error / 训练适配器导入错误: {e}")
+
+    validation_errors = validate_training_config(config)
+    if validation_errors:
+        return APIResponseFail(
+            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
+        )
+    try:
+        train_utils.fix_config_types(config)
+    except (TypeError, ValueError) as e:
+        return APIResponseFail(message=f"Invalid numeric value / 数字参数无效: {e}")
 
     adapted_config, adapter_warnings = adapt_config(config)
     for w in adapter_warnings:
@@ -186,7 +200,7 @@ async def create_toml_file(request: Request):
             config["attn_mode"] = attn_actual
     # ──────────────────────────────────────────────────────────
 
-    # ── Per-run folder: isolate each training run ──────────────
+    # ── Per-run folder: resolve paths now, create only after validation ──
     output_name = config.get("output_name", "my_lora")
     safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
     run_dir_name = f"{safe_name}_{timestamp}"
@@ -195,24 +209,20 @@ async def create_toml_file(request: Request):
     # 用户设置的基础输出目录（默认 ./output），后端自动在其下创建子文件夹
     output_base = config.get("output_dir", "./output")
 
-    if not is_resume:
-        run_dir = os.path.join(output_base, run_dir_name)
-        os.makedirs(run_dir, exist_ok=True)
-        # 扁平结构：模型 .safetensors 直接写入 run 目录顶层，sample/ 与 log/ 为子目录
-        config["output_dir"] = run_dir
-        config["logging_dir"] = os.path.join(run_dir, "log")
-    else:
-        # 续训时保持原 output_dir
-        run_dir = config.get("output_dir", os.path.join(output_base, run_dir_name))
-        # run_dir 在续训时已是 run 目录顶层（扁平结构）
-        if "logging_dir" not in config:
-            config["logging_dir"] = os.path.join(str(run_dir), "log")
+    run_dir = (
+        os.path.join(output_base, run_dir_name)
+        if not is_resume
+        else config.get("output_dir", os.path.join(output_base, run_dir_name))
+    )
     # ──────────────────────────────────────────────────────────
 
     if not train_utils.validate_data_dir(config["train_data_dir"]):
         return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
-    suggest_cpu_threads = 8 if len(await asyncio.to_thread(train_utils.get_total_images, config["train_data_dir"])) > 200 else 2
+    image_count = await asyncio.to_thread(
+        train_utils.count_images, config["train_data_dir"], True, 201
+    )
+    suggest_cpu_threads = 8 if image_count > 200 else 2
 
     validated, message = await asyncio.to_thread(
         train_utils.validate_model, config["pretrained_model_name_or_path"], model_train_type
@@ -228,7 +238,13 @@ async def create_toml_file(request: Request):
                 message="Qwen3 path is required for Anima LoRA training / "
                 "Anima LoRA 训练需要填写 Qwen3 编码器路径"
             )
+        if not os.path.exists(qwen3_path):
+            return APIResponseFail(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}")
+        vae_path = config.get("vae", "").strip()
+        if not os.path.exists(vae_path):
+            return APIResponseFail(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
 
+    sample_prompts_arg = ""
     if "prompt_file" in _ui_config and _ui_config["prompt_file"].strip() != "":
         prompt_file = _ui_config["prompt_file"].strip()
         if not os.path.exists(prompt_file):
@@ -237,19 +253,26 @@ async def create_toml_file(request: Request):
     else:
         try:
             positive_prompt, sample_prompts_arg = get_sample_prompts(config=_ui_config)
-
-            if positive_prompt and train_utils.is_prompt_like(sample_prompts_arg):
-                # 样本提示词也放入运行文件夹
-                os.makedirs(run_dir, exist_ok=True)
-                sample_prompts_file = os.path.join(run_dir, "prompts.txt")
-                with open(sample_prompts_file, "w", encoding="utf-8") as f:
-                    f.write(sample_prompts_arg)
-                config["sample_prompts"] = sample_prompts_file
-                log.info(f"Wrote prompts to file {sample_prompts_file}")
+            if not positive_prompt or not train_utils.is_prompt_like(sample_prompts_arg):
+                sample_prompts_arg = ""
 
         except ValueError as e:
             log.error(f"Error while processing prompts: {e}")
             return APIResponseFail(message=str(e))
+
+    if not is_resume:
+        os.makedirs(run_dir, exist_ok=True)
+        config["output_dir"] = run_dir
+        config["logging_dir"] = os.path.join(run_dir, "log")
+    elif "logging_dir" not in config:
+        config["logging_dir"] = os.path.join(str(run_dir), "log")
+
+    if sample_prompts_arg:
+        sample_prompts_file = os.path.join(run_dir, "prompts.txt")
+        with open(sample_prompts_file, "w", encoding="utf-8") as f:
+            f.write(sample_prompts_arg)
+        config["sample_prompts"] = sample_prompts_file
+        log.info(f"Wrote prompts to file {sample_prompts_file}")
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
     autosave_dir = os.path.join(os.getcwd(), "config", "autosave")

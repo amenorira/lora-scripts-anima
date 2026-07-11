@@ -67,7 +67,8 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
             if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
                 return _previews_cache[2]
 
-    roots: list[Path] = []
+    recursive_roots: list[Path] = []
+    flat_roots: list[Path] = []
     if not output_dir:
         with _previews_cache_lock:
             _previews_cache = (now, cache_key, [])
@@ -87,17 +88,26 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
             with _previews_cache_lock:
                 _previews_cache = (now, cache_key, [])
             return []
-        roots.extend([od / "sample", od])           # 扁平: run_dir/sample/, run_dir/
-        roots.append(od / "outputs" / "sample")     # 兼容旧结构: run_dir/outputs/sample/
-        roots.append(od / "outputs")                # 兼容旧结构: run_dir/outputs/
+        recursive_roots.extend([od / "sample", od / "outputs" / "sample"])
+        flat_roots.extend([od, od / "outputs"])
 
     found: list[Path] = []
     seen: set[Path] = set()
-    for root in roots:
+    for root in recursive_roots:
         if not root.exists():
             continue
         for p in _iter_dir(root):
             if not p.is_file():
+                continue
+            if p.suffix.lower() not in IMAGE_EXTENSIONS or p in seen:
+                continue
+            seen.add(p)
+            found.append(p)
+    for root in flat_roots:
+        if not root.exists():
+            continue
+        for p in root.iterdir():
+            if not p.is_file() or _is_hidden(p.name):
                 continue
             if p.suffix.lower() not in IMAGE_EXTENSIONS or p in seen:
                 continue
