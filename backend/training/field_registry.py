@@ -54,8 +54,8 @@ FIELDS: list[dict[str, Any]] = [
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
 # 用户下载后即可直接开训，无需手动填写；路径与 ANIMA_FILES 的本地文件名保持一致。
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
-{"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "hint_key": "field.vaeHint", "requiredGroups": ["anima"]},
-{"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "hint_key": "field.qwen3Hint", "required": True},
+{"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
+{"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
 {"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "target": "toml", "role": "file-folder"},
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
@@ -286,7 +286,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
     # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。
     # Anima 采样写死 Euler flow-match，sample_sampler 是假参数，故按 group:sdxl 隐藏。
-    {"key": "sample_sampler", "type": "select", "default": "euler_a", "section": "preview", "desc_key": "field.sample_sampler", "hint_key": "field.sample_samplerHint", "target": "toml", "group": "sdxl", "show_if": {"key": "enable_preview", "eq": True}, "options": [
+    {"key": "sample_sampler", "type": "select", "default": "euler_a", "section": "preview", "desc_key": "field.sample_sampler", "target": "toml", "group": "sdxl", "show_if": {"key": "enable_preview", "eq": True}, "options": [
         {"v": "euler_a", "l": "euler_a", "dk": "opt.sample_sampler_euler_a"},
         {"v": "euler", "l": "euler", "dk": "opt.sample_sampler_euler"},
         {"v": "ddim", "l": "ddim", "dk": "opt.sample_sampler_ddim"},
