@@ -124,5 +124,19 @@ class ScanOptimizationTests(unittest.TestCase):
             self.assertEqual({item["name"] for item in previews}, {"sample.png", "root.png"})
 
 
+class MonitorFrontendContractTests(unittest.TestCase):
+    def test_leaving_history_clears_cached_logs(self):
+        monitor_core = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
+        reset_body = monitor_core.split("resetRunDetailState() {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("this.logLines = [];", reset_body)
+        self.assertIn("this.logFullLines = [];", reset_body)
+        self.assertIn("this._logSliceRequestSeq++;", reset_body)
+
+    def test_route_exit_uses_history_state_reset(self):
+        app_js = Path("frontend/js/app.js").read_text(encoding="utf-8")
+        self.assertIn("this.resetRunDetailState();", app_js)
+
+
 if __name__ == "__main__":
     unittest.main()

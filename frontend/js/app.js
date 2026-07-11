@@ -247,8 +247,12 @@ document.addEventListener('alpine:init', () => {
       const r = this.currentRoute;
       if (!r.startsWith('monitor-')) {
         this.stopMonitorPolling();
-        this.selectedRunDir = null;
-        this.runDetailData = null;
+        if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
+          this.resetRunDetailState();
+        } else {
+          this.selectedRunDir = null;
+          this.runDetailData = null;
+        }
       }
       // Stop tagger polling if navigating away (backend task continues)
       if (r !== 'tagger' && this.taggerRunning) {

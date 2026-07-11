@@ -37,6 +37,7 @@ window.monitorCoreMixin = {
   _logFullNeedsResync: false,  // SSE 重连后需全量 resync（防丢事件）
   _logFullSlide: false,        // full 模式实时增量 slide 待执行
   _logFullEvictK: 0,           // full 模式 slide 删顶行数
+  _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
 
 
   // ── 历史页筛选状态 ──
@@ -479,6 +480,8 @@ window.monitorCoreMixin = {
       if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
       return;
     }
+    const requestSeq = ++this._logSliceRequestSeq;
+    const sourceKey = runDir ? ('run:' + runDir) : ('task:' + taskId);
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
     let offset = this.logFullOffset;
     if (opts.offset !== undefined) offset = opts.offset;
@@ -502,6 +505,10 @@ window.monitorCoreMixin = {
     try {
       const r = await fetch('/api/monitor/log-slice?' + params.toString());
       const j = await r.json();
+      const currentRunDir = this._logSliceRunDir();
+      const currentTaskId = this._logSliceTaskId();
+      const currentSourceKey = currentRunDir ? ('run:' + currentRunDir) : (currentTaskId ? ('task:' + currentTaskId) : '');
+      if (requestSeq !== this._logSliceRequestSeq || sourceKey !== currentSourceKey) return;
       if (j.status === 'success' && j.data) {
         const d = j.data;
         const nextLines = d.lines || [];
@@ -543,10 +550,13 @@ window.monitorCoreMixin = {
         if (!opts.silent) this.toast(j.message || this.t('monitor.logSliceError','Failed to load log slice'), 'error');
       }
     } catch (e) {
+      if (requestSeq !== this._logSliceRequestSeq) return;
       if (!opts.silent) this.toast(this.t('monitor.logSliceError','Failed to load log slice'), 'error');
     } finally {
-      this.logFullLoading = false;
-      this.renderDashboard();
+      if (requestSeq === this._logSliceRequestSeq) {
+        this.logFullLoading = false;
+        this.renderDashboard();
+      }
     }
   },
 
@@ -780,10 +790,25 @@ window.monitorCoreMixin = {
     }
   },
 
-  clearRunDetail() {
-    /** 返回实时监控模式 */
+  resetRunDetailState() {
+    /** 清除历史运行详情及其派生缓存，防止返回实时监控后继续显示历史数据。 */
+    this._logSliceRequestSeq++;
     this.selectedRunDir = null;
     this.runDetailData = null;
+    this.lossSeries = [];
+    this.trainParams = [];
+    this.previews = [];
+    this.previewStep = 0;
+    this.outputFiles = [];
+    this.outputFilesSelected = {};
+    this.logLines = [];
+    this.logFullLines = [];
+    this.logFullOffset = 0;
+    this.logFullTotal = 0;
+    this.logFullMatches = [];
+    this.logFullQuery = '';
+    this.logFullMatchIdx = -1;
+    this.logFullLoading = false;
     this._shellBuilt = false;
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
@@ -792,10 +817,20 @@ window.monitorCoreMixin = {
     this._forceLogRebuild = true;
     this.logMode = 'full';
     this._logFullLoaded = false;
+    this._logFullNeedsResync = false;
+    this._logFullSlide = false;
+    this._logFullEvictK = 0;
     this.logTotal = 0;
     this.previewVisibleCount = this.previewPageSize || 36;
+    this._logContentVersion++;
+  },
+
+  clearRunDetail() {
+    /** 返回实时监控模式 */
     // 强制刷新：先停止再重启轮询
     this.stopMonitorPolling();
+    this.resetRunDetailState();
+    this.renderDashboard();
     this.startMonitorPolling();
   },
 
