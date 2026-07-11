@@ -201,6 +201,10 @@ window.tagEditorMixin = {
   _tePathIndex: null,
   _teQuickCountNoTag: undefined,
   _teQuickCountMod: undefined,
+  _teFreqIndex: null,
+  _teFreqFinalizeScheduled: false,
+  _teHistoryState: null,
+  _teResponsiveInitialized: false,
 
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
@@ -218,6 +222,31 @@ window.tagEditorMixin = {
   _teInvalidateDiff() {
     this._teCachedDiffKey = -2;
     this._teCachedDiffResult = null;
+  },
+  _teRebuildFreqIndex() {
+    var index = new Map();
+    for (var i = 0; i < this.tagEditorTagFreq.length; i++) {
+      index.set(this.tagEditorTagFreq[i].tag, this.tagEditorTagFreq[i]);
+    }
+    this._teFreqIndex = index;
+  },
+  _teClearFreqData() {
+    this.tagEditorTagFreq = [];
+    this.tagEditorMaxFreq = 0;
+    this._teFreqIndex = new Map();
+    this._teInvalidateFreq();
+  },
+  _teScheduleFreqFinalize() {
+    if (this._teFreqFinalizeScheduled) return;
+    this._teFreqFinalizeScheduled = true;
+    var self = this;
+    queueMicrotask(function() {
+      self._teFreqFinalizeScheduled = false;
+      self.tagEditorTagFreq = self.tagEditorTagFreq.filter(function(item) { return item.count > 0; });
+      self.tagEditorMaxFreq = self.tagEditorTagFreq.reduce(function(max, item) { return Math.max(max, item.count); }, 0);
+      self._teRebuildFreqIndex();
+      self._teInvalidateFreq();
+    });
   },
   _teGetModified() {
     var orig = this.tagEditorOriginal;
@@ -329,9 +358,14 @@ window.tagEditorMixin = {
       this.tagEditorModified = false;
       this._teModifiedCount = 0;
         this.tagEditorSelected = [];
+        if (!this._teResponsiveInitialized) {
+          this._teResponsiveInitialized = true;
+          if (window.innerWidth < 1000) this.tagEditorLeftCollapsed = true;
+        }
         this.tagEditorPage = 1;
         this.tagEditorHistory = [];
         this.tagEditorHistoryIdx = -1;
+        this._teHistoryState = {};
         this.tagEditorTagSelection = [];
         this.tagEditorExcludedTags = [];
         this._teInvalidateFilter();
@@ -339,7 +373,14 @@ window.tagEditorMixin = {
         this._teSearchLoading = false;
         this.tagEditorRegexError = false;
         this._teDraftSavedAt = '';
-        await this.tagEditorLoadTagFreq();
+        if (Array.isArray(j.data.tags)) {
+          this.tagEditorTagFreq = j.data.tags;
+          this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
+          this._teRebuildFreqIndex();
+          this._teInvalidateFreq();
+        } else {
+          await this.tagEditorLoadTagFreq();
+        }
         this.tagEditorLoadSnapshots();
         this._teCheckDraft();
         this._teStartAutoSave();
@@ -362,9 +403,14 @@ window.tagEditorMixin = {
       if (j.status === 'success') {
         this.tagEditorTagFreq = j.data.tags || [];
         this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
+        this._teRebuildFreqIndex();
         this._teInvalidateFreq();
+      } else {
+        this._teClearFreqData();
       }
-    } catch (e) { this.tagEditorTagFreq = []; this.tagEditorMaxFreq = 0; }
+    } catch (e) {
+      this._teClearFreqData();
+    }
   },
 
   tagEditorReloadDir() {
@@ -799,6 +845,14 @@ window.tagEditorMixin = {
     this._updateEditorPanel();
   },
 
+  tagEditorSelectFiltered() {
+    var filtered = this.tagEditorGetFiltered();
+    this.tagEditorSelected = filtered.map(function(img) { return img.path; });
+    this._teCachedSelectedStatsKey = '';
+    this._teCachedSelectedStats = null;
+    this._updateEditorPanel();
+  },
+
   tagEditorSelectInvert() {
     var filtered = this.tagEditorGetFiltered();
     var pageStart = (this.tagEditorPage - 1) * this.tagEditorPageSize;
@@ -1157,7 +1211,6 @@ window.tagEditorMixin = {
     // 作用域不可见时静默无效会令用户困惑（A7）。
     var affected = 0;
     var self = this;
-    this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag + ' (pending)', affected: 0 });
     this.tagEditorImages.forEach(function(img) {
       var tags = _teParseTags(img.tags);
       var idx = tags.indexOf(oldTag);
@@ -1170,6 +1223,7 @@ window.tagEditorMixin = {
     });
     if (affected > 0) {
       this._teInvalidateFilter();
+      this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: affected });
       this.toast(this.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', affected));
     } else {
       this.toast(this.t('tagEditor.inlineRenameNone'), 'warning');
@@ -1387,45 +1441,54 @@ window.tagEditorMixin = {
 
   // ===== Undo/Redo =====
   _tePushHistory(meta) {
-    // D1: 历史项 = { meta:{type,desc,affected}, snapshot:{path:tags} }
-    // meta 由调用方提供；不提供时回退为"编辑"类型 + affected=改动图数。
+    // 历史项仅保存本步骤发生变化的路径，避免每一步复制全部已修改图片。
     if (this.tagEditorHistoryIdx < this.tagEditorHistory.length - 1) {
       this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
     }
-    var checkpoint = {};
+    var previous = this._teHistoryState || {};
+    var current = {};
     var modified = this._teGetModified();
-    for (var i = 0; i < modified.length; i++) {
-      checkpoint[modified[i].path] = modified[i].tags;
-    }
-    var finalMeta = meta || { type: 'edit', desc: this.t('tagEditor.historyStepText'), affected: modified.length };
+    for (var i = 0; i < modified.length; i++) current[modified[i].path] = modified[i].tags;
+    var changes = {};
+    var paths = {};
+    Object.keys(previous).forEach(function(path) { paths[path] = true; });
+    Object.keys(current).forEach(function(path) { paths[path] = true; });
+    Object.keys(paths).forEach(function(path) {
+      var before = Object.prototype.hasOwnProperty.call(previous, path) ? previous[path] : null;
+      var after = Object.prototype.hasOwnProperty.call(current, path) ? current[path] : null;
+      if (before !== after) changes[path] = { before: before, after: after };
+    });
+    this._teHistoryState = current;
+    var changedPaths = Object.keys(changes);
+    if (changedPaths.length === 0) return;
+    var finalMeta = meta || { type: 'edit', desc: this.t('tagEditor.historyStepText'), affected: changedPaths.length };
     // D2: 合并连续细步（同类型 + 同 path + 1.2s 内的 text/reorder/add）合并为一步，避免历史膨胀
     var now = Date.now();
     var last = this.tagEditorHistory[this.tagEditorHistory.length - 1];
-    if (last && last.meta && this._teShouldMergeHistory(last.meta, finalMeta, last._ts, now, modified)) {
-      last.snapshot = checkpoint;  // 更新快照
+    if (last && last.meta && this._teShouldMergeHistory(last, finalMeta, now, changes)) {
+      var mergePath = changedPaths[0];
+      last.changes[mergePath].after = changes[mergePath].after;
       last._ts = now;
-      // 合并描述（保留类型，累加 affected 已无意义，直接更新描述）
       last.meta = finalMeta;
       this._teInvalidateDiff();
       return;
     }
-    this.tagEditorHistory.push({ meta: finalMeta, snapshot: checkpoint, _ts: now });
+    this.tagEditorHistory.push({ meta: finalMeta, changes: changes, _ts: now });
     if (this.tagEditorHistory.length > 200) { this.tagEditorHistory.shift(); if (this.tagEditorHistoryIdx >= 0) this.tagEditorHistoryIdx = Math.max(0, this.tagEditorHistoryIdx - 1); }
     this.tagEditorHistoryIdx = this.tagEditorHistory.length - 1;
     this._teInvalidateDiff();
   },
 
-  _teShouldMergeHistory(prevMeta, newMeta, prevTs, now, modified) {
-    if (!prevMeta || !newMeta) return false;
-    if (now - prevTs > 1200) return false;  // 1.2s 窗口
+  _teShouldMergeHistory(previousItem, newMeta, now, changes) {
+    if (!previousItem || !previousItem.meta || !newMeta || !previousItem.changes) return false;
+    if (now - previousItem._ts > 1200) return false;  // 1.2s 窗口
     // 仅合并单图细粒度操作（text / reorder / add / remove）
     var mergeableTypes = ['text', 'reorder', 'add', 'remove', 'edit'];
     if (mergeableTypes.indexOf(newMeta.type) === -1) return false;
-    if (newMeta.type !== prevMeta.type) return false;
-    // 必须作用于同一张图（合并窗口内仅对单图连续操作有意义）
-    if (!modified || modified.length !== 1) return false;
-    // 取上一步快照影响的图集合来判断是否同图
-    return true;
+    if (newMeta.type !== previousItem.meta.type) return false;
+    var previousPaths = Object.keys(previousItem.changes);
+    var newPaths = Object.keys(changes);
+    return previousPaths.length === 1 && newPaths.length === 1 && previousPaths[0] === newPaths[0];
   },
 
   // 取历史项的快照字段（兼容旧格式 —— 旧 history 项直接是 {path:tags}）
@@ -1437,16 +1500,22 @@ window.tagEditorMixin = {
 
   tagEditorUndo() {
     if (this.tagEditorHistoryIdx < 0) return;
+    var item = this.tagEditorHistory[this.tagEditorHistoryIdx];
+    if (item && item.changes) this._teApplyHistoryChanges(item.changes, 'before');
+    else {
+      var checkpoint = this.tagEditorHistoryIdx > 0 ? this._teSnapOf(this.tagEditorHistory[this.tagEditorHistoryIdx - 1]) : {};
+      this._teApplyCheckpoint(checkpoint);
+    }
     this.tagEditorHistoryIdx--;
-    var checkpoint = this.tagEditorHistoryIdx >= 0 ? this._teSnapOf(this.tagEditorHistory[this.tagEditorHistoryIdx]) : {};
-    this._teApplyCheckpoint(checkpoint);
   },
 
   tagEditorRedo() {
     if (this.tagEditorHistoryIdx >= this.tagEditorHistory.length - 1) return;
-    this.tagEditorHistoryIdx++;
-    var checkpoint = this._teSnapOf(this.tagEditorHistory[this.tagEditorHistoryIdx]);
-    this._teApplyCheckpoint(checkpoint);
+    var nextIdx = this.tagEditorHistoryIdx + 1;
+    var item = this.tagEditorHistory[nextIdx];
+    if (item && item.changes) this._teApplyHistoryChanges(item.changes, 'after');
+    else this._teApplyCheckpoint(this._teSnapOf(item));
+    this.tagEditorHistoryIdx = nextIdx;
   },
 
   tagEditorJumpToHistory(idx) {
@@ -1454,7 +1523,19 @@ window.tagEditorMixin = {
       this.tagEditorHistoryDetailIdx = -1;
       return;
     }
-    this._teApplyCheckpoint(this._teSnapOf(this.tagEditorHistory[idx]));
+    if (this.tagEditorHistory.every(function(item) { return !!item.changes; })) {
+      if (idx < this.tagEditorHistoryIdx) {
+        for (var down = this.tagEditorHistoryIdx; down > idx; down--) {
+          this._teApplyHistoryChanges(this.tagEditorHistory[down].changes, 'before');
+        }
+      } else {
+        for (var up = this.tagEditorHistoryIdx + 1; up <= idx; up++) {
+          this._teApplyHistoryChanges(this.tagEditorHistory[up].changes, 'after');
+        }
+      }
+    } else {
+      this._teApplyCheckpoint(this._teSnapOf(this.tagEditorHistory[idx]));
+    }
     this.tagEditorHistoryIdx = idx;
     this.tagEditorHistoryDetailIdx = -1;
   },
@@ -1469,7 +1550,23 @@ window.tagEditorMixin = {
     // D7: 缓存 diff 结果，切换 step 才重算
     if (stepIdx === this._teCachedDiffKey && this._teCachedDiffResult) return this._teCachedDiffResult;
     if (stepIdx < 0 || stepIdx >= this.tagEditorHistory.length) return [];
-    var after = this._teSnapOf(this.tagEditorHistory[stepIdx]);
+    var historyItem = this.tagEditorHistory[stepIdx];
+    if (historyItem && historyItem.changes) {
+      var directDiff = [];
+      var selfDirect = this;
+      Object.keys(historyItem.changes).forEach(function(path) {
+        var change = historyItem.changes[path];
+        var beforeTags = change.before == null ? (selfDirect.tagEditorOriginal[path] || '') : change.before;
+        var afterTags = change.after == null ? (selfDirect.tagEditorOriginal[path] || '') : change.after;
+        var itemDiff = selfDirect._teBuildTagDiff(path, beforeTags, afterTags);
+        if (itemDiff) directDiff.push(itemDiff);
+      });
+      directDiff.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      this._teCachedDiffKey = stepIdx;
+      this._teCachedDiffResult = directDiff;
+      return directDiff;
+    }
+    var after = this._teSnapOf(historyItem);
     var before = stepIdx > 0 ? this._teSnapOf(this.tagEditorHistory[stepIdx - 1]) : {};
     var original = this.tagEditorOriginal;
     var allPaths = {};
@@ -1481,38 +1578,53 @@ window.tagEditorMixin = {
       var beforeTags = before.hasOwnProperty(path) ? before[path] : (original[path] || '');
       var afterTags = after.hasOwnProperty(path) ? after[path] : (original[path] || '');
       if (beforeTags === afterTags) return;
-      var beforeList = _teParseTags(beforeTags);
-      var afterList = _teParseTags(afterTags);
-      var added = afterList.filter(function(t) { return beforeList.indexOf(t) === -1; });
-      var removed = beforeList.filter(function(t) { return afterList.indexOf(t) === -1; });
-      var unchanged = afterList.filter(function(t) { return beforeList.indexOf(t) !== -1; });
-      var reordered = (added.length === 0 && removed.length === 0 && beforeTags !== afterTags);
-      // D4: 计算重排位移（item.from → item.to）以便可视化"谁从哪移到哪"
-      var reorderMap = null;
-      if (reordered) {
-        reorderMap = [];
-        for (var ai = 0; ai < afterList.length; ai++) {
-          var fromIdx = beforeList.indexOf(afterList[ai]);
-          if (fromIdx !== -1 && fromIdx !== ai) reorderMap.push({ tag: afterList[ai], from: fromIdx, to: ai });
-        }
-      }
-      if (added.length > 0 || removed.length > 0 || reordered) {
-        var img = self._teFindByPath(path);
-        diff.push({
-          path: path,
-          name: img ? img.name : path,
-          added: added,
-          removed: removed,
-          unchanged: unchanged,
-          reordered: reordered,
-          reorderMap: reorderMap
-        });
-      }
+      var itemDiff = self._teBuildTagDiff(path, beforeTags, afterTags);
+      if (itemDiff) diff.push(itemDiff);
     });
     diff.sort(function(a, b) { return a.name.localeCompare(b.name); });
     this._teCachedDiffKey = stepIdx;
     this._teCachedDiffResult = diff;
     return diff;
+  },
+
+  _teBuildTagDiff(path, beforeTags, afterTags) {
+    var beforeList = _teParseTags(beforeTags);
+    var afterList = _teParseTags(afterTags);
+    var added = afterList.filter(function(tag) { return beforeList.indexOf(tag) === -1; });
+    var removed = beforeList.filter(function(tag) { return afterList.indexOf(tag) === -1; });
+    var unchanged = afterList.filter(function(tag) { return beforeList.indexOf(tag) !== -1; });
+    var reordered = added.length === 0 && removed.length === 0 && beforeTags !== afterTags;
+    var reorderMap = null;
+    if (reordered) {
+      reorderMap = [];
+      for (var i = 0; i < afterList.length; i++) {
+        var fromIdx = beforeList.indexOf(afterList[i]);
+        if (fromIdx !== -1 && fromIdx !== i) reorderMap.push({ tag: afterList[i], from: fromIdx, to: i });
+      }
+    }
+    if (added.length === 0 && removed.length === 0 && !reordered) return null;
+    var img = this._teFindByPath(path);
+    return { path: path, name: img ? img.name : path, added: added, removed: removed,
+      unchanged: unchanged, reordered: reordered, reorderMap: reorderMap };
+  },
+
+  _teApplyHistoryChanges(changes, direction) {
+    var paths = Object.keys(changes || {});
+    for (var i = 0; i < paths.length; i++) {
+      var path = paths[i];
+      var img = this._teFindByPath(path);
+      if (!img) continue;
+      var value = changes[path][direction];
+      var desired = value == null ? (this.tagEditorOriginal[path] || '') : value;
+      if (img.tags !== desired) this._teUpdateImageTags(img, desired);
+    }
+    var state = {};
+    var modified = this._teGetModified();
+    for (var j = 0; j < modified.length; j++) state[modified[j].path] = modified[j].tags;
+    this._teHistoryState = state;
+    this._teInvalidateFilter();
+    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this._updateEditorPanel();
   },
 
   _teApplyCheckpoint(checkpoint) {
@@ -1535,6 +1647,10 @@ window.tagEditorMixin = {
     });
     this.tagEditorModified = hasAnyMod;
     this._teRecountModified();
+    var state = {};
+    var modified = this._teGetModified();
+    for (var i = 0; i < modified.length; i++) state[modified[i].path] = modified[i].tags;
+    this._teHistoryState = state;
     this._teInvalidateFilter();
     this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
     this._updateEditorPanel();
@@ -1548,8 +1664,8 @@ window.tagEditorMixin = {
     var removed = oldList.filter(function(t) { return !newSet.has(t); });
     var added = newList.filter(function(t) { return !oldSet.has(t); });
     if (removed.length === 0 && added.length === 0) return;
-    // Build a Map index for O(1) lookup instead of .find() O(n)
-    var freqMap = new Map(this.tagEditorTagFreq.map(function(f) { return [f.tag, f]; }));
+    if (!this._teFreqIndex) this._teRebuildFreqIndex();
+    var freqMap = this._teFreqIndex;
     var self = this;
     removed.forEach(function(t) {
       var item = freqMap.get(t);
@@ -1559,9 +1675,7 @@ window.tagEditorMixin = {
       var item = freqMap.get(t);
       if (item) { item.count++; } else { var newEntry = { tag: t, count: 1 }; self.tagEditorTagFreq.push(newEntry); freqMap.set(t, newEntry); }
     });
-    this.tagEditorTagFreq = this.tagEditorTagFreq.filter(function(f) { return f.count > 0; });
-    this.tagEditorMaxFreq = this.tagEditorTagFreq.reduce(function(max, f) { return Math.max(max, f.count); }, 0);
-    this._teInvalidateFreq();
+    this._teScheduleFreqFinalize();
   },
 
   // ===== Core Edit Helper =====
@@ -1640,6 +1754,7 @@ window.tagEditorMixin = {
       this.tagEditorModified = this._teModifiedCount > 0;
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
+      this._teHistoryState = {};
       this.tagEditorSaving = false;
       this._teIsSaving = false;
       this._teSaveProgress = 0;
@@ -1782,6 +1897,10 @@ window.tagEditorMixin = {
             });
             self.tagEditorModified = true;
             self._teRecountModified();
+            var restoredState = {};
+            var restoredModified = self._teGetModified();
+            for (var i = 0; i < restoredModified.length; i++) restoredState[restoredModified[i].path] = restoredModified[i].tags;
+            self._teHistoryState = restoredState;
             self._teInvalidateFilter();
             self.toast(self.t('tagEditor.autoSaveRestored'));
           };

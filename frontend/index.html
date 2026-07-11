@@ -554,13 +554,15 @@
         </div>
 
         <!-- Confirm dialog -->
-        <div x-show="tagEditorConfirmOpen" class="te-confirm" @click.self="tagEditorConfirmOpen = false; tagEditorConfirmCb = null" x-transition>
+        <div x-show="tagEditorConfirmOpen" class="te-confirm" role="dialog" aria-modal="true"
+          :aria-label="tagEditorConfirmMsg" @click.self="tagEditorConfirmOpen = false; tagEditorConfirmCb = null"
+          x-effect="if (tagEditorConfirmOpen) $nextTick(() => $refs.teConfirmPrimary?.focus())" x-transition>
           <div class="te-confirm-box">
             <div class="te-confirm-msg" x-text="tagEditorConfirmMsg"></div>
             <div class="te-confirm-btns">
               <button class="btn btn-ghost btn-sm" @click="tagEditorConfirmOpen = false; tagEditorConfirmCb = null"
                 x-text="t('common.cancel')"></button>
-              <button class="btn btn-primary btn-sm" @click="let cb = tagEditorConfirmCb; tagEditorConfirmOpen = false; tagEditorConfirmCb = null; if (cb) cb()"
+              <button class="btn btn-primary btn-sm" x-ref="teConfirmPrimary" @click="let cb = tagEditorConfirmCb; tagEditorConfirmOpen = false; tagEditorConfirmCb = null; if (cb) cb()"
                 x-text="t('common.confirm')"></button>
             </div>
           </div>
@@ -678,7 +680,9 @@
               </button>
             </div>
             <span class="te-topbar-sep"></span>
-            <button class="te-topbar-btn" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectAll')"></button>
+            <button class="te-topbar-btn" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectPage')"></button>
+            <button class="te-topbar-btn" @click="tagEditorSelectFiltered()" x-show="tagEditorFilteredCount() > tagEditorPageSize"
+              x-text="t('tagEditor.selectFiltered')"></button>
             <button class="te-topbar-btn" @click="tagEditorSelectInvert()" x-text="t('tagEditor.selectInvert')"></button>
             <button class="te-topbar-btn" @click="tagEditorSelected = []" x-text="t('tagEditor.selectNone')"></button>
             <span class="te-topbar-sep"></span>
@@ -851,7 +855,7 @@
                   <div class="te-history-detail-header">
                     <span>
                       <span x-text="'#' + (tagEditorHistoryDetailIdx + 1)"></span>
-                      <span style="margin-left:8px;color:var(--text-muted);font-size:11px" x-text="(tagEditorHistory[tagEditorHistoryDetailIdx].meta && tagEditorHistory[tagEditorHistoryDetailIdx].meta.desc) || ''"></span>
+                      <span style="margin-left:8px;color:var(--text-muted);font-size:11px" x-text="tagEditorHistory[tagEditorHistoryDetailIdx]?.meta?.desc || ''"></span>
                     </span>
                     <span style="display:flex;gap:4px;align-items:center">
                       <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px"
@@ -995,7 +999,7 @@
                     </div>
                   </div>
                   <div class="te-editor-preview">
-                    <img :src="tagEditorGetSelectedImg()?.thumbnail" :alt="tagEditorGetSelectedImg()?.name">
+                    <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail" :alt="tagEditorGetSelectedImg()?.name">
                   </div>
                   <div class="te-editor-toolbar">
                     <div class="te-editor-view">

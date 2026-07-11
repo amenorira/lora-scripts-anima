@@ -681,6 +681,7 @@
 		"selection": "All",
 		"selectAll": "Select All",
 		"selectPage": "Select Page",
+		"selectFiltered": "Select All Results",
 		"selectNone": "Deselect All",
 		"selectInvert": "Invert",
 		"selected": "{n} selected",

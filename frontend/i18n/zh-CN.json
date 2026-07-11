@@ -681,6 +681,7 @@
 		"selection": "全部",
 		"selectAll": "全选",
 		"selectPage": "选当前页",
+		"selectFiltered": "选择全部筛选结果",
 		"selectNone": "全不选",
 		"selectInvert": "反选",
 		"selected": "{n} 已选中",

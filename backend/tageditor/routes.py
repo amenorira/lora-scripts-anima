@@ -30,11 +30,12 @@ from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from backend.constants import REPO_ROOT
-from backend.log import log
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
-    scan_images, scan_selected_images, count_tags, get_autocomplete, IMAGE_EXTENSIONS,
-    _invalidate_cache, get_cached_scan_images, tag_list,
+    scan_selected_images, get_autocomplete, IMAGE_EXTENSIONS,
+    _invalidate_cache, _invalidate_caches_for_path,
+    get_cached_scan_images, get_cached_scan_dataset,
+    get_thumbnail_path, tag_list,
 )
 from backend.tageditor.operations import apply_operation
 from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot, clear_all_snapshots
@@ -56,19 +57,20 @@ def _assert_within(img_path: str, dataset_dir: Path) -> Path | None:
     except ValueError:
         return None
     return p
+
+
+def _resolve_target_images(data: dict, dir_path: Path) -> tuple[list[dict], str | None]:
+    """根据批量操作作用域解析目标图片，并约束路径位于数据集目录内。"""
     scope = data.get("scope", "all")
-    if scope == "selected":
+    if scope in {"selected", "filtered"}:
         selected_paths = data.get("selected_paths", [])
         if not selected_paths:
-            return [], "未选中任何图片"
+            message = "未选中任何图片" if scope == "selected" else "筛选结果为空"
+            return [], message
         return scan_selected_images(dir_path, set(selected_paths)), None
-    elif scope == "filtered":
-        selected_paths = data.get("selected_paths", [])
-        if not selected_paths:
-            return [], "筛选结果为空"
-        return scan_selected_images(dir_path, set(selected_paths)), None
-    else:
-        return scan_images(dir_path), None
+    if scope == "all":
+        return get_cached_scan_images(dir_path, data.get("recursive", True)), None
+    return [], "无效的批量操作作用域"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -85,13 +87,13 @@ async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    images = await asyncio.to_thread(get_cached_scan_images, dir_path, recursive)
+    images, tags = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
     dir_name = dir_path.name or str(dir_path)
 
     return {
         "status": "success",
         "data": {"dir": str(dir_path), "dir_name": dir_name,
-                  "count": len(images), "images": images}
+                  "count": len(images), "images": images, "tags": tags}
     }
 
 
@@ -105,7 +107,8 @@ async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir_path.exists():
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
-    tags_data, total_images = await asyncio.to_thread(count_tags, dir_path, recursive)
+    images, tags_data = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
+    total_images = len(images)
 
     return {"status": "success", "data": {"tags": tags_data, "total_images": total_images}}
 
@@ -208,7 +211,7 @@ async def save_image_tags(data: dict):
     cap = find_caption(p) or p.with_suffix(".txt")
     if not write_tags(cap, tags):
         return {"status": "error", "message": "写入标签文件失败"}
-    _invalidate_cache(p.parent, None)
+    _invalidate_caches_for_path(p)
     return {"status": "success", "message": "已保存"}
 
 
@@ -224,28 +227,35 @@ async def save_all_tags(data: dict):
         return {"status": "error", "message": "无数据"}
     dir_str = data.get("dir", "")
     dataset_dir = resolve_dir(dir_str) if dir_str else None
-    saved = 0
-    skipped = 0
-    for item in images:
-        img_path = item.get("path", "")
-        tags = item.get("tags", "")
-        if not img_path or not os.path.isfile(img_path):
-            continue
-        if dataset_dir is not None and _assert_within(img_path, dataset_dir) is None:
-            continue  # 路径越界，静默跳过
-        p = Path(img_path)
-        cap_path = find_caption(p) or p.with_suffix(".txt")
-        existing_tags = read_tags(cap_path) if cap_path.exists() else ""
-        if existing_tags == tags.strip():
-            skipped += 1
-            continue
-        if not write_tags(cap_path, tags):
-            continue
-        saved += 1
+    def _save_items() -> tuple[int, int]:
+        saved_count = 0
+        skipped_count = 0
+        for item in images:
+            img_path = item.get("path", "")
+            tags = item.get("tags", "")
+            if not img_path or not os.path.isfile(img_path):
+                continue
+            if dataset_dir is not None and _assert_within(img_path, dataset_dir) is None:
+                continue  # 路径越界，静默跳过
+            p = Path(img_path)
+            cap_path = find_caption(p) or p.with_suffix(".txt")
+            existing_tags = read_tags(cap_path) if cap_path.exists() else ""
+            if existing_tags == tags.strip():
+                skipped_count += 1
+                continue
+            if not write_tags(cap_path, tags):
+                continue
+            saved_count += 1
+        return saved_count, skipped_count
+
+    saved, skipped = await asyncio.to_thread(_save_items)
     if saved > 0:
-        dirs = {Path(item["path"]).parent for item in images if item.get("path")}
-        for _d in dirs:
-            _invalidate_cache(_d, None)
+        if dataset_dir is not None:
+            _invalidate_cache(dataset_dir, None)
+        else:
+            dirs = {Path(item["path"]).parent for item in images if item.get("path")}
+            for _d in dirs:
+                _invalidate_cache(_d, None)
     return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
 
 
@@ -262,29 +272,32 @@ async def batch_edit_tags(data: dict):
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
 
-    target_images, err = _resolve_target_images(data, d)
+    target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
     if err:
         return {"status": "error", "message": err}
 
-    modified = 0
-    errors = []
-
-    for img in target_images:
-        img_path_str = img.get("path", "")
-        if not img_path_str:
-            continue
-        p = Path(img_path_str)
-        cap = find_caption(p) or p.with_suffix(".txt")
-        tags = read_tags(cap) if cap.exists() else ""
-        new_tags, err = apply_operation(tags, operation, args)
-        if err:
-            errors.append(f"{img.get('name', '?')}: {err}")
-            continue
-        if new_tags != tags:
-            if not write_tags(cap, new_tags):
-                errors.append(f"{img.get('name', '?')}: 写入失败")
+    def _apply_batch() -> tuple[int, list[str]]:
+        modified_count = 0
+        operation_errors = []
+        for img in target_images:
+            img_path_str = img.get("path", "")
+            if not img_path_str:
                 continue
-            modified += 1
+            p = Path(img_path_str)
+            cap = find_caption(p) or p.with_suffix(".txt")
+            tags = read_tags(cap) if cap.exists() else ""
+            new_tags, operation_error = apply_operation(tags, operation, args)
+            if operation_error:
+                operation_errors.append(f"{img.get('name', '?')}: {operation_error}")
+                continue
+            if new_tags != tags:
+                if not write_tags(cap, new_tags):
+                    operation_errors.append(f"{img.get('name', '?')}: 写入失败")
+                    continue
+                modified_count += 1
+        return modified_count, operation_errors
+
+    modified, errors = await asyncio.to_thread(_apply_batch)
 
     if modified > 0:
         _invalidate_cache(d, None)
@@ -304,28 +317,32 @@ async def preview_batch_edit(data: dict):
     if not d.exists():
         return {"status": "error", "message": "目录不存在"}
 
-    target_images, err = _resolve_target_images(data, d)
+    target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
     if err:
         return {"status": "error", "message": err}
 
-    preview_data = []
-    for img in target_images:
-        cap_path = img.get("path", "")
-        if not cap_path:
-            continue
-        p = Path(cap_path)
-        cap = find_caption(p) or p.with_suffix(".txt")
-        tags = read_tags(cap) if cap.exists() else ""
-        new_tags, err = apply_operation(tags, operation, args)
-        if err:
-            continue
-        if new_tags != tags:
-            preview_data.append({
-                "path": img.get("path"),
-                "name": img.get("name"),
-                "old_tags": tags,
-                "new_tags": new_tags,
-            })
+    def _build_preview() -> list[dict]:
+        preview_items = []
+        for img in target_images:
+            cap_path = img.get("path", "")
+            if not cap_path:
+                continue
+            p = Path(cap_path)
+            cap = find_caption(p) or p.with_suffix(".txt")
+            tags = read_tags(cap) if cap.exists() else ""
+            new_tags, operation_error = apply_operation(tags, operation, args)
+            if operation_error:
+                continue
+            if new_tags != tags:
+                preview_items.append({
+                    "path": img.get("path"),
+                    "name": img.get("name"),
+                    "old_tags": tags,
+                    "new_tags": new_tags,
+                })
+        return preview_items
+
+    preview_data = await asyncio.to_thread(_build_preview)
 
     return {"status": "success", "data": {"modified_count": len(preview_data), "preview": preview_data}}
 
@@ -412,7 +429,7 @@ async def download_dataset_zip(dir: str = Query("")):
 
 
 @router.get("/tageditor/thumbnail")
-async def tag_editor_thumbnail(path: str = Query("")):
+async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=128, le=1600)):
     """标签编辑器缩略图代理"""
     import urllib.parse
     import mimetypes
@@ -425,8 +442,16 @@ async def tag_editor_thumbnail(path: str = Query("")):
     if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
         return PlainTextResponse("", status_code=404)
 
-    mt = mimetypes.guess_type(p.name)[0] or "image/jpeg"
-    return FileResponse(p, media_type=mt)
+    try:
+        thumb_path = await asyncio.to_thread(get_thumbnail_path, p, size)
+        return FileResponse(
+            thumb_path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+    except Exception:
+        mt = mimetypes.guess_type(p.name)[0] or "image/jpeg"
+        return FileResponse(p, media_type=mt, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @router.post("/tageditor/snapshots")
@@ -452,6 +477,7 @@ async def api_restore_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
         ok = restore_snapshot(dataset_dir, sid)
         if ok:
+            _invalidate_cache(resolve_dir(dataset_dir), None)
             return {"status": "success", "message": "Snapshot restored"}
         return {"status": "error", "message": "Snapshot not found"}
     except Exception as e:

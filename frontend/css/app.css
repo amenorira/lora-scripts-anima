@@ -3093,7 +3093,7 @@ input[type="range"]::-webkit-slider-thumb {
   .te-sidebar { width: 160px; }
   .te-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
-@media (max-width: 700px) {
+@media (max-width: 820px) {
   .te-sidebar { width: 100%; max-height: 35vh; border-right: none; border-bottom: 1px solid var(--border-default); }
   .te-sidebar.collapsed { max-height: 0; width: 100%; }
   .te-main { flex-direction: column; }
