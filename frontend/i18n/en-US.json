@@ -188,6 +188,22 @@
 		"misc": "Other Settings",
 		"preview": "Preview"
 	},
+	"stepEstimate": {
+		"label": "TRAINING STEP CALCULATION",
+		"total": "Estimated total: {steps} steps",
+		"calculating": "Scanning the dataset and calculating...",
+		"selectDataset": "Select a dataset directory to calculate automatically",
+		"failed": "Unable to calculate training steps",
+		"recalculate": "Recalculate",
+		"imageTerm": "{images} images × {repeats} repeats",
+		"imageFormula": "{images} source images: [{terms}] = {samples} training samples",
+		"bucketFormula": "{samples} samples go into {buckets} size buckets; split each bucket by Batch {batch} = {batches} batches/epoch",
+		"batchFormula": "⌈{samples} samples ÷ Batch {batch}⌉ = {batches} batches/epoch",
+		"epochFormula": "Batch {batch} × accumulation {accumulation} = effective Batch {effectiveBatch}; per epoch: ⌈{batches} batches ÷ accumulation {accumulation}⌉ = {steps} steps",
+		"epochFormulaMultiGpu": "Batch {batch} × accumulation {accumulation} × {gpus} GPUs = effective Batch {effectiveBatch}; per epoch: ⌈{batches} batches ÷ {gpus} GPUs ÷ accumulation {accumulation}⌉ = {steps} steps",
+		"totalFormula": "Total: {steps} steps/epoch × {epochs} Epoch = {total} steps",
+		"sdScriptsNote": "Uses the same bucket and ceiling rules as sd-scripts; recalculated before training starts."
+	},
 	"field": {
 		"pretrained_model_name_or_path": "Base model file path",
 		"pretrained_model_name_or_path_anima": "Anima base model path (Cosmos-Predict2-2B derived)",
@@ -214,7 +230,7 @@
 		"save_state": "Save training state for resuming later",
 		"save_last_n_epochs_state": "Only keep last N epochs of training state",
 		"max_train_epochs": "Maximum training epochs",
-		"train_batch_size": "Batch size. Higher = more VRAM usage.",
+		"train_batch_size": "Images processed by each GPU at once; higher uses more VRAM and combines with accumulation to set the effective Batch",
 		"gradient_accumulation_steps": "Gradient accumulation steps",
 		"gradient_checkpointing": "Gradient checkpointing (trade time for VRAM)",
 		"network_train_unet_only": "Train backbone only (recommended for LoRA)",

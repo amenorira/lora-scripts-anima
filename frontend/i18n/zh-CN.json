@@ -188,6 +188,22 @@
 		"misc": "其他设置",
 		"preview": "预览采样"
 	},
+	"stepEstimate": {
+		"label": "训练步数计算",
+		"total": "预计总步数：{steps} 步",
+		"calculating": "正在扫描训练集并计算...",
+		"selectDataset": "选择训练集目录后自动计算",
+		"failed": "无法计算训练步数",
+		"recalculate": "重新计算",
+		"imageTerm": "{images} 张 × 重复 {repeats}",
+		"imageFormula": "原图共 {images} 张：[{terms}] = {samples} 个训练样本",
+		"bucketFormula": "{samples} 个样本按尺寸分到 {buckets} 个桶；每个桶分别 ÷ Batch {batch} = {batches} 批/轮",
+		"batchFormula": "⌈{samples} 个样本 ÷ Batch {batch}⌉ = {batches} 批/轮",
+		"epochFormula": "Batch {batch} × 梯度累积 {accumulation} = 理论等效 Batch {effectiveBatch}；每轮：⌈{batches} 批 ÷ 梯度累积 {accumulation}⌉ = {steps} 步",
+		"epochFormulaMultiGpu": "Batch {batch} × 梯度累积 {accumulation} × {gpus} 张 GPU = 理论等效 Batch {effectiveBatch}；每轮：⌈{batches} 批 ÷ {gpus} 张 GPU ÷ 梯度累积 {accumulation}⌉ = {steps} 步",
+		"totalFormula": "总计：{steps} 步/轮 × {epochs} Epoch = {total} 步",
+		"sdScriptsNote": "按 sd-scripts 的分桶与向上取整规则计算；开始训练前会再算一次。"
+	},
 	"field": {
 		"pretrained_model_name_or_path": "底模文件路径",
 		"pretrained_model_name_or_path_anima": "Anima 底模文件路径（Cosmos-Predict2-2B 衍生模型）",
@@ -214,7 +230,7 @@
 		"save_state": "保存训练状态，配合 resume 参数可以继续从某个状态训练",
 		"save_last_n_epochs_state": "仅保存最后 n epoch 的训练状态",
 		"max_train_epochs": "最大训练 epoch（轮数）",
-		"train_batch_size": "批量大小，越高显存占用越高",
+		"train_batch_size": "每张 GPU 单次处理的图片数；越大越占显存，并与梯度累积共同决定理论等效 Batch",
 		"gradient_accumulation_steps": "梯度累加步数（等效增大 batch size，不增加显存）",
 		"gradient_checkpointing": "梯度检查点（用时间换显存，DiT 模型推荐开启）",
 		"network_train_unet_only": "仅训练主干网络（LoRA 训练推荐开启）",

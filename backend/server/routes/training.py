@@ -10,6 +10,7 @@ import toml
 from fastapi import APIRouter, BackgroundTasks, Request
 
 from backend.training import run_train
+from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend import launch_utils
 from backend.server.models import APIResponseFail, APIResponseSuccess
 from backend.log import log
@@ -28,6 +29,25 @@ avaliable_scripts = [
     "networks/merge_lora.py",
     "tools/merge_models.py",
 ]
+
+
+@router.post("/training/estimate")
+async def estimate_steps(request: Request):
+    try:
+        config = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(config, dict):
+        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+
+    try:
+        estimate = await asyncio.to_thread(estimate_training_steps, config)
+    except StepEstimateError as exc:
+        return APIResponseFail(message=str(exc))
+    except Exception as exc:
+        log.exception("Failed to estimate training steps / 训练步数预估失败")
+        return APIResponseFail(message=f"Failed to estimate training steps / 训练步数预估失败: {exc}")
+    return APIResponseSuccess(data=estimate)
 
 
 def get_sample_prompts(config: dict):
@@ -191,6 +211,17 @@ async def create_toml_file(request: Request):
     for w in adapter_warnings:
         log.warning(f"[Adapter] {w}")
     config = adapted_config
+
+    estimate_config = dict(config)
+    if gpu_ids is not None:
+        estimate_config["gpu_ids"] = gpu_ids
+    try:
+        await asyncio.to_thread(estimate_training_steps, estimate_config)
+    except StepEstimateError as exc:
+        return APIResponseFail(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
+    except Exception as exc:
+        log.exception("Failed to estimate training steps before launch / 启动前训练步数计算失败")
+        return APIResponseFail(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
 
     if "attn_mode" in config:
         attn_requested = config.get("attn_mode", "torch")

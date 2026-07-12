@@ -51,6 +51,13 @@ window.trainingCoreMixin = {
   trainingBlocked: false,
   activeTaskId: null,
 
+  stepEstimate: null,
+  stepEstimateLoading: false,
+  stepEstimateError: '',
+  _stepEstimateTimer: null,
+  _stepEstimateRequestSeq: 0,
+  _stepEstimateSignature: '',
+
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
@@ -189,6 +196,7 @@ window.trainingCoreMixin = {
       self._formWatcher = null;
     }
     self._formWatcher = self.$watch('form', () => {
+      self.scheduleStepEstimate();
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
@@ -230,6 +238,200 @@ window.trainingCoreMixin = {
       this._pendingPreset = null;
       this.$nextTick(() => this.applyPreset(pending));
     }
+    this.scheduleStepEstimate();
+  },
+
+  _stepEstimatePayload() {
+    const keys = [
+      'model_train_type', 'train_data_dir', 'resolution', 'enable_bucket',
+      'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
+      'train_batch_size', 'gradient_accumulation_steps', 'max_train_epochs', 'gpu_ids',
+    ];
+    const payload = {};
+    keys.forEach(key => {
+      const value = this.form[key];
+      if (value !== undefined && value !== null && value !== '') payload[key] = value;
+    });
+    return payload;
+  },
+
+  scheduleStepEstimate() {
+    const payload = this._stepEstimatePayload();
+    const signature = JSON.stringify(payload);
+    if (signature === this._stepEstimateSignature) return;
+
+    this._stepEstimateSignature = signature;
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    const requestSeq = ++this._stepEstimateRequestSeq;
+
+    if (!String(payload.train_data_dir || '').trim()) {
+      this.stepEstimate = null;
+      this.stepEstimateLoading = false;
+      this.stepEstimateError = this.t('stepEstimate.selectDataset', 'Select a dataset directory to calculate steps');
+      return;
+    }
+
+    this.stepEstimateLoading = true;
+    this.stepEstimateError = '';
+    this._stepEstimateTimer = setTimeout(() => {
+      this._stepEstimateTimer = null;
+      this._requestStepEstimate(requestSeq, payload);
+    }, 500);
+  },
+
+  async refreshStepEstimate(force) {
+    const payload = this._stepEstimatePayload();
+    this._stepEstimateSignature = JSON.stringify(payload);
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    const requestSeq = ++this._stepEstimateRequestSeq;
+
+    if (!String(payload.train_data_dir || '').trim()) {
+      this.stepEstimate = null;
+      this.stepEstimateLoading = false;
+      this.stepEstimateError = this.t('stepEstimate.selectDataset', 'Select a dataset directory to calculate steps');
+      return null;
+    }
+
+    this.stepEstimateLoading = true;
+    this.stepEstimateError = '';
+    return this._requestStepEstimate(requestSeq, payload);
+  },
+
+  async _requestStepEstimate(requestSeq, payload) {
+    try {
+      const response = await fetch('/api/training/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (requestSeq !== this._stepEstimateRequestSeq) return null;
+      if (!response.ok || result.status !== 'success' || !result.data) {
+        this.stepEstimate = null;
+        this.stepEstimateError = result.message || this.t('stepEstimate.failed', 'Unable to calculate training steps');
+        return null;
+      }
+      this.stepEstimate = result.data;
+      this.stepEstimateError = '';
+      return result.data;
+    } catch (error) {
+      if (requestSeq !== this._stepEstimateRequestSeq) return null;
+      this.stepEstimate = null;
+      this.stepEstimateError = `${this.t('common.requestFailed', 'Request failed')}: ${error.message}`;
+      return null;
+    } finally {
+      if (requestSeq === this._stepEstimateRequestSeq) this.stepEstimateLoading = false;
+    }
+  },
+
+  _stepEstimateText(key, fallback, values) {
+    void this.locale;
+    let text = this.t(key, fallback);
+    Object.entries(values || {}).forEach(([name, value]) => {
+      text = text.replaceAll(`{${name}}`, String(value));
+    });
+    return text;
+  },
+
+  stepEstimateTitle() {
+    if (!this.stepEstimate) return '';
+    return this._stepEstimateText('stepEstimate.total', 'Estimated total: {steps} steps', {
+      steps: this.stepEstimate.total_steps,
+    });
+  },
+
+  stepEstimateImageFormula() {
+    if (!this.stepEstimate) return '';
+    const terms = this.stepEstimate.subsets.map(subset => this._stepEstimateText(
+      'stepEstimate.imageTerm', '{images} images × {repeats} repeats',
+      { images: subset.image_count, repeats: subset.repeats }
+    ));
+    return this._stepEstimateText(
+      'stepEstimate.imageFormula', '{images} source images: [{terms}] = {samples} training samples',
+      {
+        images: this.stepEstimate.original_images,
+        terms: terms.join(' + '),
+        samples: this.stepEstimate.repeated_samples,
+      }
+    );
+  },
+
+  stepEstimateBatchFormula() {
+    const estimate = this.stepEstimate;
+    if (!estimate) return '';
+    if (estimate.enable_bucket) {
+      return this._stepEstimateText(
+        'stepEstimate.bucketFormula',
+        '{samples} samples → {buckets} size buckets; split each bucket by Batch {batch} = {batches} batches/epoch',
+        {
+          samples: estimate.repeated_samples,
+          buckets: estimate.bucket_count,
+          batch: estimate.batch_size,
+          batches: estimate.batches_per_epoch,
+        }
+      );
+    }
+    return this._stepEstimateText(
+      'stepEstimate.batchFormula',
+      '⌈{samples} samples ÷ Batch {batch}⌉ = {batches} batches/epoch',
+      {
+        samples: estimate.repeated_samples,
+        batch: estimate.batch_size,
+        batches: estimate.batches_per_epoch,
+      }
+    );
+  },
+
+  stepEstimateEpochFormula() {
+    const estimate = this.stepEstimate;
+    if (!estimate) return '';
+    const key = estimate.gpu_processes > 1 ? 'stepEstimate.epochFormulaMultiGpu' : 'stepEstimate.epochFormula';
+    const fallback = estimate.gpu_processes > 1
+      ? 'Batch {batch} × accumulation {accumulation} × {gpus} GPUs = effective Batch {effectiveBatch}; per epoch: ⌈{batches} batches ÷ {gpus} GPUs ÷ accumulation {accumulation}⌉ = {steps} steps'
+      : 'Batch {batch} × accumulation {accumulation} = effective Batch {effectiveBatch}; per epoch: ⌈{batches} batches ÷ accumulation {accumulation}⌉ = {steps} steps';
+    return this._stepEstimateText(key, fallback, {
+      batch: estimate.batch_size,
+      batches: estimate.batches_per_epoch,
+      gpus: estimate.gpu_processes,
+      accumulation: estimate.gradient_accumulation_steps,
+      effectiveBatch: estimate.batch_size * estimate.gradient_accumulation_steps * estimate.gpu_processes,
+      steps: estimate.steps_per_epoch,
+    });
+  },
+
+  stepEstimateTotalFormula() {
+    const estimate = this.stepEstimate;
+    if (!estimate) return '';
+    return this._stepEstimateText(
+      'stepEstimate.totalFormula',
+      'Total: {steps} steps/epoch × {epochs} Epoch = {total} steps',
+      { steps: estimate.steps_per_epoch, epochs: estimate.epochs, total: estimate.total_steps }
+    );
+  },
+
+  renderStepEstimatePanel() {
+    return `<div class="step-estimate-panel" :class="{ 'is-loading': stepEstimateLoading, 'is-error': !!stepEstimateError }">
+      <div class="step-estimate-head">
+        <div class="step-estimate-heading">
+          <span class="step-estimate-label" x-text="t('stepEstimate.label')"></span>
+          <strong class="step-estimate-total" x-show="stepEstimate" x-text="stepEstimateTitle()"></strong>
+          <span class="step-estimate-status" x-show="!stepEstimate && stepEstimateLoading" x-text="t('stepEstimate.calculating')"></span>
+          <span class="step-estimate-status step-estimate-status-error" x-show="!stepEstimate && !stepEstimateLoading" x-text="stepEstimateError"></span>
+        </div>
+        <button type="button" class="step-estimate-refresh" @click="refreshStepEstimate(true)" :disabled="stepEstimateLoading" :title="t('stepEstimate.recalculate')" :aria-label="t('stepEstimate.recalculate')">
+          <svg :class="{ spinning: stepEstimateLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
+        </button>
+      </div>
+      <div class="step-estimate-formula" x-show="stepEstimate">
+        <div class="step-estimate-line"><span class="step-estimate-number">1</span><span x-text="stepEstimateImageFormula()"></span></div>
+        <div class="step-estimate-line"><span class="step-estimate-number">2</span><span x-text="stepEstimateBatchFormula()"></span></div>
+        <div class="step-estimate-line"><span class="step-estimate-number">3</span><span x-text="stepEstimateEpochFormula()"></span></div>
+        <div class="step-estimate-line step-estimate-line-total"><span class="step-estimate-number">4</span><span x-text="stepEstimateTotalFormula()"></span></div>
+        <div class="step-estimate-note" x-text="t('stepEstimate.sdScriptsNote')"></div>
+      </div>
+    </div>`;
   },
 
   renderTrainingForm(trainType, targetId) {
@@ -263,6 +465,7 @@ window.trainingCoreMixin = {
       html += `<span>${this.t(section.titleKey) || section.titleKey}</span>`;
       html += `</div>`;
       html += `<div class="card-body">`;
+      if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
       // 按 FIELDS 顺序渲染：常规 basic、子组 basic、子组 inline 折叠 穿插
       const doneSubGroups = new Set();

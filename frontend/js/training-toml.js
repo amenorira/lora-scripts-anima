@@ -250,7 +250,7 @@ window.trainingTomlMixin = {
 
   // ── Training ───────────────────────────────────────────
   async startTraining() {
-    if (this.isTraining) return;
+    if (this.isTraining || this.trainingStarting) return;
 
     // Form validation before starting
     if (!this.validateForm()) {
@@ -273,6 +273,16 @@ window.trainingTomlMixin = {
     }
 
     this.trainingStarting = true;
+    const estimate = await this.refreshStepEstimate(true);
+    if (!estimate) {
+      this.toast(
+        this.stepEstimateError || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+        'error'
+      );
+      this.trainingStarting = false;
+      return;
+    }
+
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
 
