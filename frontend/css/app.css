@@ -2659,20 +2659,16 @@ input[type="range"]::-webkit-slider-thumb {
   border-bottom: 1px solid var(--border-default);
   font-size: 12.5px;
 }
-.m-sb-left { display: flex; align-items: center; gap: 8px; min-width: 100px; }
+.m-sb-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .m-sb-state { font-size: 13px; font-weight: 700; transition: color 0.5s var(--ease-out); white-space: nowrap; }
 .m-sb-progress { width: 100px; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
 .m-sb-bar { height: 100%; background: var(--success); border-radius: 3px; transition: width 0.9s cubic-bezier(0.25,0.8,0.25,1); }
 .m-sb-pct { font-size: 11px; font-weight: 600; font-family: 'Consolas', monospace; color: var(--text-secondary); }
-.m-sb-metrics { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 1; }
-.m-sb-m { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
-.m-sb-m b { font-family: 'Consolas', monospace; color: var(--text-primary); font-weight: 600; }
-.m-sb-icon-svg { width: 12px; height: 12px; opacity: 0.7; margin-right: 2px; flex-shrink: 0; vertical-align: middle; }
 .m-history-icon-svg { width: 16px; height: 16px; opacity: 0.7; margin-right: 6px; flex-shrink: 0; }
 .output-dl-btn svg, .hist-delete svg { vertical-align: middle; }
-.m-sb-hint { color: var(--text-tertiary); font-style: italic; }
 .m-sb-error { color: var(--danger); font-size: 12px; }
-.m-sb-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.m-sb-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.m-sb-progress[hidden], .m-sb-pct[hidden], .m-sb-error[hidden], .m-sb-right[hidden] { display: none; }
 .m-sb-stop { background: var(--danger); color: #fff; border: none; }
 
 /* ── 资源面板（历史/旧版备用）── */

@@ -170,6 +170,10 @@ window.monitorCoreMixin = {
     if (!data) return;
     const prevState = this._prevState;
     this._prevState = data.status;
+    if (this.monitorData) {
+      this.monitorData.state = data.status;
+      this.monitorData.state_label = data.status_label || data.status;
+    }
     this.handleTaskCompletion(prevState, data.status);
     if (prevState === 'RUNNING' && data.status !== 'RUNNING') {
       this.disconnectMonitorSSE();
@@ -184,17 +188,14 @@ window.monitorCoreMixin = {
     if (!data || !data.data || this.selectedRunDir) return;
     const progress = data.data;
 
-    // 更新 monitorData 中的进度字段
+    // 只合并事件中实际存在的有效字段，避免增量日志用 null 清空旧状态。
     if (this.monitorData) {
-      this.monitorData.step = progress.step;
-      this.monitorData.total_steps = progress.total_steps;
-      this.monitorData.percent = progress.percent;
-      this.monitorData.loss = progress.loss;
-      this.monitorData.lr = progress.lr;
-      this.monitorData.epoch = progress.epoch;
-      this.monitorData.eta = progress.eta;
-      this.monitorData.elapsed = progress.elapsed;
-      this.monitorData.speed = progress.speed;
+      const fields = ['step', 'total_steps', 'percent', 'loss', 'lr', 'epoch', 'eta', 'elapsed', 'speed', 'has_error', 'error_msg'];
+      fields.forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(progress, key) && progress[key] != null && progress[key] !== '') {
+          this.monitorData[key] = progress[key];
+        }
+      });
     }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },

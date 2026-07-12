@@ -34,7 +34,7 @@ window.monitorRenderMixin = {
       if (isHistory) {
         shell += this._historyBannerHtml(d, t);
       } else {
-        shell += this._statusbarHtml(d, gpu, sys, t);
+        shell += this._statusbarHtml(d, t);
       }
       shell += '<div id="monitorTabContent"></div>';
       shell += this._previewLightboxHtml(t);
@@ -48,7 +48,7 @@ window.monitorRenderMixin = {
       }
     } else if (!isHistory) {
       // ── 2. 外壳原地打补丁（每 tick，不重建 DOM）──
-      this._patchStatusbar(d, gpu, sys, t);
+      this._patchStatusbar(d, t);
       this._patchResbar(gpu, sys, t);
     }
 
@@ -59,7 +59,7 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  外壳：单行紧凑信息条 + 资源圆环
   // ═══════════════════════════════════════════════════════════
-  _statusbarHtml(d, gpu, sys, t) {
+  _statusbarHtml(d, t) {
     const stateCode = d.state || 'IDLE';
     const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
     const state = stateLabels[stateCode] || stateCode;
@@ -67,42 +67,17 @@ window.monitorRenderMixin = {
     const stateColor = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
 
     let html = '<div class="m-statusbar">';
-    // 左：状态 + 进度
+    // 左：状态 + 总进度。详细指标只在下方“训练状态”展示，避免重复和不同步。
     html += '<div class="m-sb-left">';
     html += '<span class="m-sb-state" data-field="state" style="color:' + stateColor + '">' + this.esc(state) + '</span>';
-    if (isTraining) {
-      if (d.percent > 0) {
-        html += '<div class="m-sb-progress"><div class="m-sb-bar" data-bar="progress" style="width:' + (d.percent||0) + '%"></div></div>';
-        html += '<span class="m-sb-pct" data-field="pct">' + (d.percent||0) + '%</span>';
-      }
-    }
+    html += '<div class="m-sb-progress" data-role="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + (d.percent||0) + '"' + (isTraining ? '' : ' hidden') + '><div class="m-sb-bar" data-bar="progress" style="width:' + (d.percent||0) + '%"></div></div>';
+    html += '<span class="m-sb-pct" data-field="pct"' + (isTraining ? '' : ' hidden') + '>' + (d.percent||0) + '%</span>';
     html += '</div>';
 
-    // 中：关键指标（训练中）
-    if (isTraining) {
-      html += '<div class="m-sb-metrics">';
-      html += '<span class="m-sb-m" data-field="step">' + this.esc(t('step','Steps')) + ' <b>' + (d.step != null ? d.step : '?') + '/' + (d.total_steps||'?') + '</b></span>';
-      html += '<span class="m-sb-m" data-field="loss">loss <b>' + (d.loss != null ? this.esc(String(d.loss)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m" data-field="lr">lr <b>' + (d.lr != null ? this.esc(String(d.lr)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m" data-field="epoch">ep <b>' + (d.epoch != null ? this.esc(String(d.epoch)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><b data-field="elapsed">' + (d.elapsed ? this.esc(String(d.elapsed)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 10"/></svg><b data-field="eta">' + (d.eta ? this.esc(String(d.eta)) : '--') + '</b></span>';
-      html += '<span class="m-sb-m"><svg class="m-sb-icon-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><b data-field="speed">' + (d.speed ? this.esc(String(d.speed)) : '--') + '</b></span>';
-      html += '</div>';
-    } else if (d.last_config && d.last_config.name) {
-      const lc = d.last_config;
-      html += '<div class="m-sb-metrics">';
-      html += '<span class="m-sb-m">' + this.esc(t('lastTraining','Last')) + ': <b>' + this.esc(lc.name) + '</b></span>';
-      html += '<span class="m-sb-m">' + this.esc(lc.model) + ' · LR ' + this.esc(lc.lr) + ' · Dim ' + this.esc(lc.dim) + '</span>';
-      html += '</div>';
-    }
-    // idle 时 statusbar 仅显示左侧「空闲」状态标签，不再额外渲染 hint 行，节省垂直空间
-    if (d.has_error) html += '<span class="m-sb-error">' + this.esc(d.error_msg || t('error','Error')) + '</span>';
+    html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error','Error')) + '</span>';
 
-    // 右：仅训练中显示停止按钮（资源监控已移至页面头部 #monitorResbar）
-    if (isTraining) {
-      html += '<div class="m-sb-right"><button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button></div>';
-    }
+    // 按钮节点常驻，仅切换 hidden，避免状态变化时重建 Alpine 事件绑定。
+    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button></div>';
     html += '</div>';
     return html;
   },
@@ -198,7 +173,7 @@ window.monitorRenderMixin = {
   },
 
   // ── 外壳原地打补丁 ──
-  _patchStatusbar(d, gpu, sys, t) {
+  _patchStatusbar(d, t) {
     const bar = document.querySelector('.m-statusbar');
     if (!bar) return;
     const stateCode = d.state || 'IDLE';
@@ -209,23 +184,23 @@ window.monitorRenderMixin = {
     const stateEl = bar.querySelector('[data-field="state"]');
     if (stateEl) { stateEl.textContent = state; stateEl.style.color = stateColor; }
     // 进度条 + 百分比
+    const progressWrap = bar.querySelector('[data-role="progress"]');
     const progressBar = bar.querySelector('[data-bar="progress"]');
-    if (progressBar && d.percent != null) progressBar.style.width = d.percent + '%';
+    const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
+    if (progressWrap) {
+      progressWrap.hidden = !isTraining;
+      progressWrap.setAttribute('aria-valuenow', String(percent));
+    }
+    if (progressBar) progressBar.style.width = percent + '%';
     const pctEl = bar.querySelector('[data-field="pct"]');
-    if (pctEl && d.percent != null) pctEl.textContent = d.percent + '%';
-    // 步数
-    const stepEl = bar.querySelector('[data-field="step"]');
-    if (stepEl && d.step != null) stepEl.innerHTML = this.esc(t('step','Steps')) + ' <b>' + d.step + '/' + (d.total_steps||'?') + '</b>';
-    // 指标纯文本
-    const _set = (key, val) => {
-      const e = bar.querySelector('[data-field="' + key + '"] b, [data-field="' + key + '"]');
-      if (e && e.tagName === 'B') e.textContent = (val != null && val !== '') ? this.esc(String(val)) : '--';
-    };
-    _set('loss', d.loss); _set('lr', d.lr); _set('epoch', d.epoch);
-    const elEl = bar.querySelector('[data-field="elapsed"] b'); if (elEl) elEl.textContent = d.elapsed ? this.esc(String(d.elapsed)) : '--';
-    const etaEl = bar.querySelector('[data-field="eta"] b'); if (etaEl) etaEl.textContent = d.eta ? this.esc(String(d.eta)) : '--';
-    const spdEl = bar.querySelector('[data-field="speed"] b'); if (spdEl) spdEl.textContent = d.speed ? this.esc(String(d.speed)) : '--';
-    // 资源圆环补丁由 _patchResbar 负责（写入 #monitorResbar）
+    if (pctEl) { pctEl.hidden = !isTraining; pctEl.textContent = percent + '%'; }
+    const actions = bar.querySelector('[data-role="actions"]');
+    if (actions) actions.hidden = !isTraining;
+    const errorEl = bar.querySelector('[data-role="error"]');
+    if (errorEl) {
+      errorEl.hidden = !d.has_error;
+      errorEl.textContent = d.error_msg || t('error','Error');
+    }
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -264,11 +239,12 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length);
+      const sig = 'ov:' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length);
       if (tabChanged || this._builtOverviewSig !== sig) {
         this._builtOverviewSig = sig;
         contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
       }
+      this._patchOverviewStatus(d);
       this._builtTab = 'overview';
       return;
     }
@@ -333,6 +309,25 @@ window.monitorRenderMixin = {
     return this.esc(v);
   },
 
+  _patchOverviewStatus(d) {
+    if (!d || d.state !== 'RUNNING') return;
+    const root = document.getElementById('monitorTabContent');
+    if (!root) return;
+    const values = {
+      step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + (d.percent != null ? d.percent : 0) + '%)',
+      loss: d.loss != null ? d.loss : '--',
+      lr: d.lr != null ? d.lr : '--',
+      epoch: d.epoch != null ? d.epoch : '--',
+      elapsed: d.elapsed || '--',
+      eta: d.eta || '--',
+      speed: d.speed || '--',
+    };
+    Object.keys(values).forEach(key => {
+      const el = root.querySelector('[data-live-field="' + key + '"]');
+      if (el) el.textContent = String(values[key]);
+    });
+  },
+
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
 
@@ -340,13 +335,18 @@ window.monitorRenderMixin = {
     const isRunning = d.state === 'RUNNING';
     if (isRunning) {
       html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('status','Training Status')) + '</div><div class="param-grid">';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('step','Steps')) + '</span><span class="param-value">' + (d.step||'?') + ' / ' + (d.total_steps||'?') + ' (' + (d.percent||0) + '%)</span></div>';
-      if (d.loss != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('loss','Loss')) + '</span><span class="param-value">' + this.esc(String(d.loss)) + '</span></div>';
-      if (d.lr != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('lr','LR')) + '</span><span class="param-value">' + this.esc(String(d.lr)) + '</span></div>';
-      if (d.epoch != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('epoch','Epoch')) + '</span><span class="param-value">' + this.esc(String(d.epoch)) + '</span></div>';
-      if (d.elapsed) html += '<div class="param-item"><span class="param-label">' + this.esc(t('elapsed','Elapsed')) + '</span><span class="param-value">' + this.esc(d.elapsed) + '</span></div>';
-      if (d.eta) html += '<div class="param-item"><span class="param-label">' + this.esc(t('remaining','Remaining')) + '</span><span class="param-value">' + this.esc(d.eta) + '</span></div>';
-      if (d.speed) html += '<div class="param-item"><span class="param-label">' + this.esc(t('speed','Speed')) + '</span><span class="param-value">' + this.esc(d.speed) + '</span></div>';
+      const liveFields = [
+        ['step', t('step','Steps'), (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + (d.percent != null ? d.percent : 0) + '%)'],
+        ['loss', t('loss','Loss'), d.loss != null ? d.loss : '--'],
+        ['lr', t('lr','LR'), d.lr != null ? d.lr : '--'],
+        ['epoch', t('epoch','Epoch'), d.epoch != null ? d.epoch : '--'],
+        ['elapsed', t('elapsed','Elapsed'), d.elapsed || '--'],
+        ['eta', t('remaining','Remaining'), d.eta || '--'],
+        ['speed', t('speed','Speed'), d.speed || '--'],
+      ];
+      liveFields.forEach(item => {
+        html += '<div class="param-item"><span class="param-label">' + this.esc(item[1]) + '</span><span class="param-value" data-live-field="' + item[0] + '">' + this.esc(String(item[2])) + '</span></div>';
+      });
       html += '</div></div>';
     }
 

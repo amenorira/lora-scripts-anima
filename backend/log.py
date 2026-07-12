@@ -5,6 +5,9 @@ from logging.handlers import RotatingFileHandler
 
 log = logging.getLogger('anima-trainer')
 log.setLevel(logging.DEBUG)
+# 应用日志由本模块统一输出；禁止继续传播给 uvicorn/sd-scripts 配置的 root handler，
+# 否则同一条记录会以两种格式打印两遍。
+log.propagate = False
 
 try:
     from rich.console import Console
@@ -58,4 +61,3 @@ except ModuleNotFoundError:
     _sh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
     log.handlers.clear()
     log.addHandler(_sh)
-

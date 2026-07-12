@@ -72,7 +72,10 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
     # 防止系统 site-packages 污染
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONWARNINGS"] = "ignore::FutureWarning,ignore::UserWarning"
+    env["PYTHONWARNINGS"] = (
+        "ignore::FutureWarning,ignore::UserWarning,"
+        "ignore:invalid escape sequence:SyntaxWarning"
+    )
     env["ACCELERATE_DISABLE_RICH"] = "1"
 
     # 训练输出目录
@@ -207,18 +210,18 @@ def run_train(
                 if result.returncode != 0:
                     status = "failed"
                     error_msg = f"exit code {result.returncode}"
-                    log.error(f"Training failed / 训练失败 (task={task_id_short}, exit={result.returncode})")
                 else:
                     status = "completed"
-                    log.info(f"Training completed / 训练完成 (task={task_id_short})")
         except subprocess.TimeoutExpired:
             status = "timeout"
             error_msg = "Training timed out / 训练超时"
-            log.error(f"Training timed out / 训练超时 (task={task_id_short})")
         except Exception as e:
             status = "error"
             error_msg = str(e)[:500]
-            log.error(f"Training exception / 训练异常 (task={task_id_short}): {e}")
+            log.debug(
+                "Training exception / 训练异常 (task=%s): %s",
+                task_id_short, e, exc_info=True,
+            )
 
         duration = time.time() - start_time
 

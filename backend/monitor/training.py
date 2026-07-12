@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -14,10 +15,14 @@ from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 from backend.training.field_registry import FIELDS as _REGISTRY_FIELDS
 
+# TensorBoard 的 DirectoryWatcher 会在每次读到当前 event 文件末尾时输出
+# "No path found after ..."。这是正常轮询状态，不应污染训练控制台。
+logging.getLogger("tensorboard").setLevel(logging.WARNING)
+
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引
 # 每次请求检查 event file mtime，仅在文件更新时重新 Reload
-_tb_cache: dict[str, tuple[float, float, Any]] = {}   # {log_dir: (cache_time, event_mtime, EventAccumulator)}
+_tb_cache: dict[str, tuple[float, float, str, Any]] = {}
 _tb_cache_lock = threading.Lock()
 _CACHE_TTL = 2.0  # 缓存有效期（秒），避免频繁 Reload
 
@@ -55,9 +60,21 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
 
     with _tb_cache_lock:
         if log_dir_str in _tb_cache:
-            cache_time, cached_mtime, cached_ea = _tb_cache[log_dir_str]
-            if cached_mtime == latest_mtime and (now - cache_time) < _CACHE_TTL:
+            cache_time, cached_mtime, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
+            if cached_event_dir == event_dir and (now - cache_time) < _CACHE_TTL:
                 return cached_ea
+
+            if cached_event_dir == event_dir and cached_mtime == latest_mtime:
+                _tb_cache[log_dir_str] = (now, cached_mtime, cached_event_dir, cached_ea)
+                return cached_ea
+
+            if cached_event_dir == event_dir:
+                try:
+                    cached_ea.Reload()
+                    _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, cached_ea)
+                    return cached_ea
+                except Exception:
+                    _tb_cache.pop(log_dir_str, None)
 
     # 缓存未命中或过期：创建新 accumulator
     try:
@@ -67,7 +84,7 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         )
         ea.Reload()
         with _tb_cache_lock:
-            _tb_cache[log_dir_str] = (now, latest_mtime, ea)
+            _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, ea)
             # 清理过大的缓存（保留最近 3 个）
             if len(_tb_cache) > 3:
                 oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
@@ -283,7 +300,7 @@ _RE_LOSS_CURRENT = re.compile(r"loss/current\s*[=:]\s*([0-9.eE+-]+)")
 _RE_LOSS_AVERAGE = re.compile(r"loss/average\s*[=:]\s*([0-9.eE+-]+)")
 _RE_LOSS_TRAIN = re.compile(r"train_loss\s*[=:]\s*([0-9.eE+-]+)")
 _RE_LOSS_AVR = re.compile(r"avr_loss\s*[=:]\s*([0-9.eE+-]+)")
-_RE_LOSS_GENERIC = re.compile(r"\bloss\b(?!/(current|average|epoch))\s*[=:]\s*([0-9.eE+-]+)")
+_RE_LOSS_GENERIC = re.compile(r"\bloss\b(?!/(?:current|average|epoch))\s*[=:]\s*([0-9.eE+-]+)")
 _RE_LR = re.compile(r"(?:lr|learning_rate)\s*[=:]\s*([0-9.eE+-]+)")
 _RE_EPOCH = re.compile(r"(?:epoch|Epoch)\s*[:= ]\s*(\d+)(?:\s*/\s*(\d+))?")
 _RE_SPEED = re.compile(r"([0-9.]+)\s*(it/s|s/it)")
@@ -337,7 +354,8 @@ def parse_log_progress(lines: list[str]) -> dict:
         ep_m = ep_matches[-1]
         info["epoch"] = f"{ep_m.group(1)}/{ep_m.group(2)}" if ep_m.group(2) else ep_m.group(1)
 
-    speed_m = list(_RE_SPEED.finditer(text))
+    # 速度必须来自同一条最新训练进度，不能从缓存、下载等其他 tqdm 行误抓。
+    speed_m = list(_RE_SPEED.finditer(m.group(0))) if progress_matches else []
     if speed_m:
         last = speed_m[-1]
         info["speed"] = last.group(1) + last.group(2)

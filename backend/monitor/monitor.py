@@ -24,6 +24,11 @@ from backend.tasks import tm, TaskStatus
 
 logger = logging.getLogger(__name__)
 
+_PROGRESS_FIELDS = (
+    "step", "total_steps", "percent", "loss", "lr", "epoch",
+    "eta", "elapsed", "speed", "has_error", "error_msg",
+)
+
 
 def _build_console_progress():
     """构建控制台训练进度条（rich Progress），列：描述 | ASCII进度条 | 百分比 | 步数 | 速度 | 时间 | loss | lr | epoch。
@@ -109,6 +114,7 @@ class TaskMonitor:
         self._poll_interval = 1.0  # 轮询间隔（秒）
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
+        self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
         # 控制台进度条状态
         self._console_progress = None
         self._progress_task_id = None
@@ -137,12 +143,7 @@ class TaskMonitor:
         logger.info("任务监控器已停止")
 
     def _stop_console_progress(self) -> None:
-        """停止控制台进度条（结束后保留最终一行）。
-
-        旧实例因 transient=False 在 stop 时会保留最终一行渲染在终端；
-        必须把实例引用也置 None，否则任务切换时复用同一 Progress 重新 start()+add_task()
-        会在旧保留行之上再叠一行，导致出现两条进度条（一条不动的残留 + 一条新刷新）。
-        """
+        """停止并清除动态进度行，开始/结束日志由 supervisor 单独保留。"""
         if self._console_progress and self._console_progress.live.is_started:
             try:
                 self._console_progress.stop()
@@ -159,15 +160,15 @@ class TaskMonitor:
         if not total:
             return  # 无总步数时不显示进度条
         try:
+            # 任务切换：停止旧进度条，重新开始
+            if self._progress_active_task and self._progress_active_task != task_id:
+                self._stop_console_progress()
+
             # 惰性创建进度条实例
             if self._console_progress is None:
                 self._console_progress = _build_console_progress()
 
             cp = self._console_progress
-            # 任务切换：停止旧进度条，重新开始
-            if self._progress_active_task and self._progress_active_task != task_id:
-                self._stop_console_progress()
-
             # 首次启动进度条
             if not cp.live.is_started:
                 cp.start()
@@ -198,6 +199,15 @@ class TaskMonitor:
         except Exception:
             # 控制台进度条是辅助显示，不应影响监控主流程
             pass
+
+    def _merge_progress(self, task_id: str, updates: dict) -> dict:
+        """合并增量进度；空值不能覆盖之前已经解析到的有效字段。"""
+        current = self._last_progress.setdefault(task_id, {})
+        for key, value in updates.items():
+            if key not in _PROGRESS_FIELDS or value is None or value == "":
+                continue
+            current[key] = value
+        return dict(current)
     
     async def _monitor_loop(self) -> None:
         """主监控循环"""
@@ -261,35 +271,22 @@ class TaskMonitor:
 
             if new_lines:
                 # 从增量行中解析进度（无需额外 4MB tail 读取）
-                progress = await asyncio.to_thread(
+                parsed_progress = await asyncio.to_thread(
                     parse_log_progress, new_lines
                 )
+                if parsed_progress:
+                    progress = self._merge_progress(task_id, parsed_progress)
+                    payload = {key: progress[key] for key in _PROGRESS_FIELDS if key in progress}
+                    await event_bus.publish(task_id, {
+                        "type": "progress",
+                        "task_id": task_id,
+                        "data": payload,
+                    })
 
-                await event_bus.publish(task_id, {
-                    "type": "progress",
-                    "task_id": task_id,
-                    "data": {
-                        "step": progress.get("step", 0),
-                        "total_steps": progress.get("total_steps", 0),
-                        "percent": progress.get("percent", 0),
-                        "loss": progress.get("loss"),
-                        "lr": progress.get("lr"),
-                        "epoch": progress.get("epoch"),
-                        "eta": progress.get("eta"),
-                        "elapsed": progress.get("elapsed"),
-                        "speed": progress.get("speed"),
-                        "has_error": progress.get("has_error", False),
-                        "error_msg": progress.get("error_msg"),
-                    }
-                })
-
-                # 控制台进度条
-                try:
+                    # 控制台始终更新同一个 Rich Live 任务，不保留历史进度行。
                     self._update_console_progress(
                         task_id, progress, train_config.get("output_name", "")
                     )
-                except Exception:
-                    pass
 
                 await event_bus.publish(task_id, {
                     "type": "log_update",
@@ -302,7 +299,11 @@ class TaskMonitor:
                 })
 
             # TB 增量 loss 数据推送
-            await self._collect_tb_incremental(task_id)
+            await self._collect_tb_incremental(
+                task_id,
+                run_dir=output_dir,
+                output_name=train_config.get("output_name", ""),
+            )
         except Exception as e:
             logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
 
@@ -348,18 +349,33 @@ class TaskMonitor:
             logger.debug(f"读取日志增量失败 (task_id={task_id})", exc_info=True)
             return None
 
-    async def _collect_tb_incremental(self, task_id: str) -> None:
+    async def _collect_tb_incremental(
+        self,
+        task_id: str,
+        run_dir: str | None = None,
+        output_name: str = "",
+    ) -> None:
         """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到 SSE"""
         try:
-            train_config = latest_train_config(task_id)
-            output_dir = train_config.get("output_dir")
-            if not output_dir:
+            if not run_dir:
                 return
             tb_points = await asyncio.to_thread(
                 read_tensorboard_incremental,
-                run_dir=output_dir,
+                run_dir=run_dir,
             )
             if tb_points:
+                tb_progress: dict[str, str] = {}
+                for tag in ("loss/current", "loss/average"):
+                    if tb_points.get(tag):
+                        tb_progress["loss"] = f"{float(tb_points[tag][-1]['value']):.6g}"
+                        break
+                if tb_points.get("lr/unet"):
+                    lr = float(tb_points["lr/unet"][-1]["value"])
+                    tb_progress["lr"] = f"{lr:.4e}" if 0 < abs(lr) < 0.001 else f"{lr:.6g}"
+                if tb_progress:
+                    progress = self._merge_progress(task_id, tb_progress)
+                    self._update_console_progress(task_id, progress, output_name)
+
                 await event_bus.publish(task_id, {
                     "type": "loss_update",
                     "task_id": task_id,
@@ -391,6 +407,7 @@ class TaskMonitor:
         """清理任务状态"""
         self._last_status.pop(task_id, None)
         self._last_log_pos.pop(task_id, None)
+        self._last_progress.pop(task_id, None)
         logger.debug(f"清理任务状态: {task_id}")
 
 
