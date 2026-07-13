@@ -24,7 +24,7 @@ from backend.monitor.training import (
 )
 from backend.monitor.artifacts import (
     newest_previews, scan_history, read_train_log, _parse_toml_config,
-    list_output_files, enrich_model_files_with_loss, _clean_log_text,
+    list_output_files, enrich_model_files_with_loss, read_clean_log_lines,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
 from backend.monitor.snapshot import find_run_dir_by_task_id
@@ -493,11 +493,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
         latest_log = find_run_log_path(run_dir_path)
         if latest_log:
             try:
-                content = latest_log.read_text(encoding="utf-8", errors="replace")
-                content = _clean_log_text(content)
-                log_lines = content.split("\n")
-                if log_lines and log_lines[-1] == "":
-                    log_lines.pop()  # 文件以 \n 结尾产生的末尾空行
+                log_lines = read_clean_log_lines(latest_log)
                 if log_lines:
                     progress = parse_log_progress(log_lines)
                     return log_lines, progress

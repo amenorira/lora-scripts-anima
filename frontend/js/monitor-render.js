@@ -24,31 +24,43 @@ window.monitorRenderMixin = {
     const sys = isHistory ? null : this.sysInfo;
     const t = (k,fb) => { const fullKey = k.includes('.') ? k : ('monitor.'+k); return this.t(fullKey, fb)||fb||k; };
     const tab = this.monitorTab||'overview';
+    const locale = String(this.locale || (window.I18N && window.I18N.getLocale ? window.I18N.getLocale() : ''));
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
-    if (!this._shellBuilt || this._shellHistoryMode !== isHistory) {
+    if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
+      this._shellLocale = locale;
       this._builtTab = null;
       let shell = '<div class="monitor-dashboard">';
-      if (isHistory) {
-        shell += this._historyBannerHtml(d, t);
-      } else {
-        shell += this._statusbarHtml(d, t);
-      }
       shell += '<div id="monitorTabContent"></div>';
       shell += this._previewLightboxHtml(t);
       shell += '</div>';
       el.innerHTML = shell;
-      // 页头右侧资源监控（仅实时模式；历史模式不渲染，#monitorResbar 由 x-show 隐藏）
-      if (!isHistory) {
-        const resbarEl = document.getElementById('monitorResbar');
-        if (resbarEl) resbarEl.innerHTML = this._resbarHtml(gpu, sys, t);
-        this._patchResbar(gpu, sys, t);
+    }
+
+    // ── 2. 粘性控制台：挂在 Dashboard 滚动区之外，每 tick 只做局部补丁 ──
+    const controlEl = document.getElementById('monitorControlbar');
+    if (controlEl) {
+      const controlMode = isHistory ? 'history' : 'live';
+      const controlSignature = isHistory
+        ? [controlMode, locale, this.selectedRunDir || '', d.config && d.config.output_name || '', d.train_result && d.train_result.status || '', d.train_result && d.train_result.duration_str || ''].join(':')
+        : [controlMode, locale].join(':');
+      if (this._controlbarSignature !== controlSignature || !controlEl.firstElementChild) {
+        this._controlbarMode = controlMode;
+        this._controlbarSignature = controlSignature;
+        controlEl.innerHTML = isHistory ? this._historyBannerHtml(d, t) : this._statusbarHtml(d, t);
       }
-    } else if (!isHistory) {
-      // ── 2. 外壳原地打补丁（每 tick，不重建 DOM）──
-      this._patchStatusbar(d, t);
+      if (!isHistory) this._patchStatusbar(d, t);
+    }
+
+    // 页头右侧资源监控（仅实时模式；历史模式由 x-show 隐藏）
+    if (!isHistory) {
+      const resbarEl = document.getElementById('monitorResbar');
+      if (resbarEl && (!resbarEl.firstElementChild || this._resbarLocale !== locale)) {
+        this._resbarLocale = locale;
+        resbarEl.innerHTML = this._resbarHtml(gpu, sys, t);
+      }
       this._patchResbar(gpu, sys, t);
     }
 
@@ -57,29 +69,38 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  外壳：单行紧凑信息条 + 资源圆环
+  //  外壳：任务控制条
   // ═══════════════════════════════════════════════════════════
   _statusbarHtml(d, t) {
     const stateCode = d.state || 'IDLE';
     const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
-    const stateColor = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
+    const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
+    const stepText = (d.step != null ? d.step : 0) + ' / ' + (d.total_steps != null ? d.total_steps : 0);
+    const connection = this._monitorConnectionMeta(t, stateCode);
 
-    let html = '<div class="m-statusbar">';
-    // 左：状态 + 总进度。详细指标只在下方“训练状态”展示，避免重复和不同步。
-    html += '<div class="m-sb-left">';
-    html += '<span class="m-sb-state" data-field="state" style="color:' + stateColor + '">' + this.esc(state) + '</span>';
-    html += '<div class="m-sb-progress" data-role="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + (d.percent||0) + '"' + (isTraining ? '' : ' hidden') + '><div class="m-sb-bar" data-bar="progress" style="width:' + (d.percent||0) + '%"></div></div>';
-    html += '<span class="m-sb-pct" data-field="pct"' + (isTraining ? '' : ' hidden') + '>' + (d.percent||0) + '%</span>';
+    let html = '<div class="m-statusbar" data-state="' + this.esc(stateCode.toLowerCase()) + '">';
+    html += '<div class="m-sb-identity">';
+    html += '<span class="m-sb-state-icon" aria-hidden="true"></span>';
+    html += '<div class="m-sb-state-copy"><strong class="m-sb-state" data-field="state">' + this.esc(state) + '</strong><span class="m-sb-connection" data-role="connection" data-tone="' + connection.tone + '" role="status" aria-live="polite"><i aria-hidden="true"></i><span data-field="connection">' + this.esc(connection.label) + '</span></span></div>';
     html += '</div>';
-
+    html += '<div class="m-sb-progress-block" data-role="progress"' + (isTraining ? '' : ' hidden') + '>';
+    html += '<div class="m-sb-progress-meta"><span data-field="step">' + this.esc(stepText) + '</span><strong data-field="pct">' + percent + '%</strong></div>';
+    html += '<div class="m-sb-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '"><div class="m-sb-bar" data-bar="progress" style="width:' + percent + '%"></div></div>';
+    html += '</div>';
     html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error','Error')) + '</span>';
-
-    // 按钮节点常驻，仅切换 hidden，避免状态变化时重建 Alpine 事件绑定。
-    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()">' + this.esc(t('stopTraining','Stop')) + '</button></div>';
+    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isTraining ? ' hidden' : '') + '>' + this.esc(t('readyToTrain','Ready for a new training run')) + '</div>';
+    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining','Stop')) + '</button></div>';
     html += '</div>';
     return html;
+  },
+
+  _monitorConnectionMeta(t, stateCode) {
+    if (stateCode !== 'RUNNING') return { label: t('standby','Standby'), tone: 'muted' };
+    if (this._sseConnected) return { label: t('liveConnected','Live stream connected'), tone: 'ok' };
+    if (this._eventSource || this._sseRetryTimer) return { label: t('reconnecting','Reconnecting…'), tone: 'warn' };
+    return { label: t('pollingFallback','Polling fallback'), tone: 'warn' };
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -114,10 +135,10 @@ window.monitorRenderMixin = {
   _sysChip(sys, t) {
     const fullName = sys.cpu_name || t('cpu','CPU');
     let html = '<div class="m-res-chip" data-res="sys">';
-    html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('cpu','CPU')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.cpu_pct) + '" data-field="cpu-pct">' + Math.round(sys.cpu_pct) + '%</span></span>';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('ram','RAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(sys.ram_pct) + '" data-field="ram-pct">' + Math.round(sys.ram_pct) + '%</span><span class="m-res-stat-sub" data-field="ram-text">' + sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G</span></span>';
+    html += this._resMeterHtml('cpu', t('cpu','CPU'), sys.cpu_pct, 'cpu-pct');
+    html += this._resMeterHtml('ram', t('ram','RAM'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
     html += '</div>';
     html += '</div>';
     return html;
@@ -130,14 +151,23 @@ window.monitorRenderMixin = {
     const temp = gpu.temperature_c;
     const fullName = gpu.name || 'GPU';
     let html = '<div class="m-res-chip" data-res="gpu">';
-    html += '<span class="m-res-chip-name">' + this.esc(fullName) + '</span>';
+    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuLoad','Load')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(loadPct) + '" data-field="load-pct">' + Math.round(loadPct) + '%</span></span>';
-    html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('vramUsed','VRAM')) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(vramPct) + '" data-field="vram-pct">' + Math.round(vramPct) + '%</span><span class="m-res-stat-sub" data-field="vram-text">' + (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G</span></span>';
+    html += this._resMeterHtml('gpu', t('gpuLoad','Load'), loadPct, 'load-pct');
+    html += this._resMeterHtml('vram', t('vramUsed','VRAM'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
     if (temp != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuTemp','Temp')) + '</span><span class="m-res-stat-val m-res-' + this._resGradeTemp(temp) + '" data-field="temp-val">' + temp + '°</span></span>';
     if (gpu.power_w != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuPower','Power')) + '</span><span class="m-res-stat-val" data-field="power-text">' + gpu.power_w + 'W</span></span>';
     html += '</div>';
     html += '</div>';
+    return html;
+  },
+
+  _resMeterHtml(kind, label, pct, valueField, subText, subField) {
+    const value = Math.max(0, Math.min(100, Number(pct) || 0));
+    let html = '<span class="m-res-stat m-res-meter" data-meter="' + kind + '">';
+    html += '<span class="m-res-stat-line"><span class="m-res-stat-label">' + this.esc(label) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(value) + '" data-field="' + valueField + '">' + Math.round(value) + '%</span>';
+    if (subText) html += '<span class="m-res-stat-sub" data-field="' + subField + '">' + this.esc(subText) + '</span>';
+    html += '</span><span class="m-res-mini"><i data-meter-fill="' + kind + '" style="width:' + value + '%"></i></span></span>';
     return html;
   },
 
@@ -157,10 +187,16 @@ window.monitorRenderMixin = {
       e.textContent = val;
       if (grade) e.className = 'm-res-stat-val m-res-' + grade;
     };
+    const _meter = (key, val) => {
+      const e = bar.querySelector('[data-meter-fill="' + key + '"]');
+      if (e) e.style.width = Math.max(0, Math.min(100, Number(val) || 0)) + '%';
+    };
     if (gpu) {
       _set('load-pct', Math.round(gpu.gpu_load_pct || 0) + '%', this._resGrade(gpu.gpu_load_pct||0));
+      _meter('gpu', gpu.gpu_load_pct || 0);
       const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
       _set('vram-pct', vramPct + '%', this._resGrade(vramPct));
+      _meter('vram', vramPct);
       _set('vram-text', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G');
       if (gpu.temperature_c != null) _set('temp-val', gpu.temperature_c + '°', this._resGradeTemp(gpu.temperature_c));
       if (gpu.power_w != null) _set('power-text', gpu.power_w + 'W');
@@ -168,6 +204,8 @@ window.monitorRenderMixin = {
     if (sys) {
       _set('cpu-pct', Math.round(sys.cpu_pct) + '%', this._resGrade(sys.cpu_pct));
       _set('ram-pct', Math.round(sys.ram_pct) + '%', this._resGrade(sys.ram_pct));
+      _meter('cpu', sys.cpu_pct);
+      _meter('ram', sys.ram_pct);
       _set('ram-text', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G');
     }
   },
@@ -180,22 +218,32 @@ window.monitorRenderMixin = {
     const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
-    const stateColor = isTraining ? 'var(--success)' : (d.has_error ? 'var(--danger)' : 'var(--text-secondary)');
+    bar.dataset.state = stateCode.toLowerCase();
     const stateEl = bar.querySelector('[data-field="state"]');
-    if (stateEl) { stateEl.textContent = state; stateEl.style.color = stateColor; }
+    if (stateEl) stateEl.textContent = state;
     // 进度条 + 百分比
-    const progressWrap = bar.querySelector('[data-role="progress"]');
+    const progressBlock = bar.querySelector('[data-role="progress"]');
+    const progressWrap = bar.querySelector('.m-sb-progress');
     const progressBar = bar.querySelector('[data-bar="progress"]');
     const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
     if (progressWrap) {
-      progressWrap.hidden = !isTraining;
       progressWrap.setAttribute('aria-valuenow', String(percent));
     }
+    if (progressBlock) progressBlock.hidden = !isTraining;
     if (progressBar) progressBar.style.width = percent + '%';
     const pctEl = bar.querySelector('[data-field="pct"]');
-    if (pctEl) { pctEl.hidden = !isTraining; pctEl.textContent = percent + '%'; }
+    if (pctEl) pctEl.textContent = percent + '%';
+    const stepEl = bar.querySelector('[data-field="step"]');
+    if (stepEl) stepEl.textContent = (d.step != null ? d.step : 0) + ' / ' + (d.total_steps != null ? d.total_steps : 0);
+    const connection = this._monitorConnectionMeta(t, stateCode);
+    const connectionWrap = bar.querySelector('[data-role="connection"]');
+    const connectionEl = bar.querySelector('[data-field="connection"]');
+    if (connectionWrap) connectionWrap.dataset.tone = connection.tone;
+    if (connectionEl) connectionEl.textContent = connection.label;
     const actions = bar.querySelector('[data-role="actions"]');
     if (actions) actions.hidden = !isTraining;
+    const idleCopy = bar.querySelector('[data-role="idle-copy"]');
+    if (idleCopy) idleCopy.hidden = isTraining;
     const errorEl = bar.querySelector('[data-role="error"]');
     if (errorEl) {
       errorEl.hidden = !d.has_error;
@@ -207,7 +255,7 @@ window.monitorRenderMixin = {
   //  外壳：历史横幅（轻量信息条风格）
   // ═══════════════════════════════════════════════════════════
   _historyBannerHtml(d, t) {
-    const runName = (d.config && d.config.output_name) || (this.selectedRunDir.split('/').pop() || '');
+    const runName = (d.config && d.config.output_name) || ((this.selectedRunDir || '').split(/[\\/]/).pop() || '');
     let html = '<div class="m-history-banner">';
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory','Viewing history')) + '</span>';
@@ -216,7 +264,8 @@ window.monitorRenderMixin = {
       const st = d.train_result.status || '';
       const dur = d.train_result.duration_str || '';
       const stClass = st === 'completed' ? 'ok' : (st === 'failed' ? 'danger' : 'muted');
-      html += '<span class="m-badge m-badge-' + stClass + '">' + this.esc(st) + '</span>';
+      const stLabel = st === 'completed' ? t('statusCompleted','Completed') : (st === 'failed' ? t('statusFailed','Failed') : (st === 'terminated' ? t('statusTerminated','Terminated') : st));
+      html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
       if (dur) html += '<span class="m-history-dur">' + this.esc(dur) + '</span>';
     }
     html += '<div class="m-history-spacer"></div>';
@@ -239,17 +288,19 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '') + ':' + (this.lossSeries.length);
+      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '');
       if (tabChanged || this._builtOverviewSig !== sig) {
         this._builtOverviewSig = sig;
         contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
+        delete contentEl.dataset.diagnosticVersion;
+        delete contentEl.dataset.paramQuery;
       }
-      this._patchOverviewStatus(d);
+      this._patchOverviewStatus(d, t, isHistory);
       this._builtTab = 'overview';
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + (this.previews.length) + ':' + (this.previewsLoading?1:0);
+      const sig = 'sm:' + this._shellLocale + ':' + (this.previews.length) + ':' + (this.previewsLoading?1:0);
       if (tabChanged || this._builtSamplesSig !== sig) {
         // 保留滚动位置（轮询追加样本时不在视觉上跳回顶部）
         const scrollTop = contentEl.scrollTop || 0;
@@ -262,7 +313,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir);
+      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir);
       if (tabChanged || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = contentEl.querySelector('.m-outputs-scroll');
@@ -309,196 +360,467 @@ window.monitorRenderMixin = {
     return this.esc(v);
   },
 
-  _patchOverviewStatus(d) {
-    if (!d || d.state !== 'RUNNING') return;
+  _patchOverviewStatus(d, t, isHistory) {
+    if (!d) return;
     const root = document.getElementById('monitorTabContent');
     if (!root) return;
+    const percent = isHistory && d.train_result && d.train_result.status === 'completed'
+      ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const values = {
-      step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + (d.percent != null ? d.percent : 0) + '%)',
-      loss: d.loss != null ? d.loss : '--',
-      lr: d.lr != null ? d.lr : '--',
+      step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)',
+      loss: d.loss != null ? d.loss : this._seriesLatest('loss/average', '--'),
+      lr: d.lr != null ? d.lr : this._seriesLatest('lr/unet', '--'),
       epoch: d.epoch != null ? d.epoch : '--',
-      elapsed: d.elapsed || '--',
-      eta: d.eta || '--',
+      elapsed: d.elapsed || (isHistory && d.train_result && d.train_result.duration_str) || '--',
+      eta: isHistory ? '—' : (d.eta || '--'),
       speed: d.speed || '--',
     };
     Object.keys(values).forEach(key => {
       const el = root.querySelector('[data-live-field="' + key + '"]');
       if (el) el.textContent = String(values[key]);
     });
+    const progress = root.querySelector('[data-overview-progress]');
+    const progressValue = root.querySelector('[data-overview-percent]');
+    if (progress) progress.style.width = percent + '%';
+    if (progressValue) progressValue.textContent = percent + '%';
+    this._patchTrainingDiagnostics(root, t, d, isHistory);
+    const paramQuery = String(this.monitorParamQuery || '').trim().toLowerCase();
+    if (paramQuery && root.dataset.paramQuery !== paramQuery) {
+      root.dataset.paramQuery = paramQuery;
+      this.filterMonitorParams();
+    }
   },
 
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
-
-    // ── 实时训练状态（仅在训练中显示）──
     const isRunning = d.state === 'RUNNING';
-    if (isRunning) {
-      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('status','Training Status')) + '</div><div class="param-grid">';
-      const liveFields = [
-        ['step', t('step','Steps'), (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + (d.percent != null ? d.percent : 0) + '%)'],
-        ['loss', t('loss','Loss'), d.loss != null ? d.loss : '--'],
-        ['lr', t('lr','LR'), d.lr != null ? d.lr : '--'],
-        ['epoch', t('epoch','Epoch'), d.epoch != null ? d.epoch : '--'],
-        ['elapsed', t('elapsed','Elapsed'), d.elapsed || '--'],
-        ['eta', t('remaining','Remaining'), d.eta || '--'],
-        ['speed', t('speed','Speed'), d.speed || '--'],
-      ];
-      liveFields.forEach(item => {
-        html += '<div class="param-item"><span class="param-label">' + this.esc(item[1]) + '</span><span class="param-value" data-live-field="' + item[0] + '">' + this.esc(String(item[2])) + '</span></div>';
-      });
-      html += '</div></div>';
-    }
-
-    // ── 历史训练结果 ──
-    if (isHistory && d.train_result) {
-      const tr = d.train_result;
-      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('trainResult','Training Result')) + '</div><div class="param-grid">';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('status','Status')) + '</span><span class="param-value" style="color:' + (tr.status==='completed'?'var(--success)':'var(--danger)') + '">' + this.esc(tr.status||'?') + '</span></div>';
-      if (tr.duration_str) html += '<div class="param-item"><span class="param-label">' + this.esc(t('duration','Duration')) + '</span><span class="param-value">' + this.esc(tr.duration_str) + '</span></div>';
-      if (tr.exit_code != null) html += '<div class="param-item"><span class="param-label">' + this.esc(t('monitor.exitCode','Exit Code')) + '</span><span class="param-value">' + tr.exit_code + '</span></div>';
-      // Show final loss if available from lossSeries
-      if (this.lossSeries && this.lossSeries.length && isHistory) {
-        const avgSeries = this.lossSeries.find(s => s.tag === 'loss/average');
-        if (avgSeries && avgSeries.latest != null) {
-          html += '<div class="param-item"><span class="param-label">' + this.esc(t('loss','Final Loss')) + '</span><span class="param-value">' + Number(avgSeries.latest).toFixed(4) + '</span></div>';
-        }
-      }
-      html += '</div></div>';
-    }
-
-    // ── 上次训练配置（空闲时显示）──
-    if (!isRunning && !isHistory && d.last_config && d.last_config.name) {
-      const lc = d.last_config;
-      html += '<div class="m-section"><div class="m-section-title">' + this.esc(t('lastTraining','Last Training')) + '</div><div class="param-grid">';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('outputName','Name')) + '</span><span class="param-value">' + this.esc(lc.name) + '</span></div>';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyModel','Model')) + '</span><span class="param-value">' + this.esc(lc.model||'') + '</span></div>';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyLR','LR')) + '</span><span class="param-value">' + this.esc(lc.lr||'') + '</span></div>';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyDim','Dim')) + '</span><span class="param-value">' + this.esc(lc.dim||'') + '</span></div>';
-      html += '<div class="param-item"><span class="param-label">' + this.esc(t('historyEpochs','Epochs')) + '</span><span class="param-value">' + this.esc(lc.epochs||'') + '</span></div>';
-      html += '</div></div>';
-    }
-
-    // ── 训练参数：顶部关键参数高亮卡 + 下方按 section 分组完整展示 ──
-    if (this.trainParams.length) {
-      // 兼容新旧响应：新结构 {key,desc_key,value,section,type}，旧结构 {label,value,group}
-      const byKey = {};
-      this.trainParams.forEach(p => { if (p.key) byKey[p.key] = p; });
-
-      // 关键参数：9 个核心字段，模型在高亮卡内取 basename 显示
-      const keyDefs = [
-        { key: 'pretrained_model_name_or_path', labelKey: 'field.pretrained_model_name_or_path', short: 'historyModel', basename: true },
-        { key: 'learning_rate', labelKey: 'field.learning_rate', short: 'historyLR' },
-        { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
-        { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
-        { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
-        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer' },
-        { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
-        { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
-        { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
-      ];
-      const keyItems = [];
-      keyDefs.forEach(kd => {
-        const p = byKey[kd.key];
-        if (!p) return;
-        let val = String(p.value == null ? '' : p.value);
-        if (kd.basename) {
-          const parts = val.replace(/\\/g, '/').split('/');
-          val = parts[parts.length - 1] || val;
-        }
-        if (!val) return;
-        // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
-        keyItems.push({ label: t(kd.short, kd.key), title: t(kd.labelKey, ''), value: val, type: p.type });
-      });
-
-      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
-
-      // 关键参数高亮卡
-      if (keyItems.length) {
-        html += '<div class="param-keygrid">';
-        keyItems.forEach(it => {
-          const titleAttr = it.title && it.title !== it.label ? ' title="' + this.esc(it.title) + '"' : '';
-          html += '<div class="param-key-item"' + titleAttr + '><span class="param-key-label">' + this.esc(it.label) + '</span><span class="param-key-value">';
-          if (it.type === 'toggle') {
-            html += this._paramValueHtml({ value: it.value, type: 'toggle' });
-          } else {
-            html += this.esc(it.value);
-          }
-          html += '</span></div>';
-        });
-        html += '</div>';
-      }
-
-      // 全量分组：按 section 归集（新响应用 p.section，旧响应用 p.group 兜底）
-      const groups = {};
-      const groupOrder = ['model', 'network', 'training', 'optimizer',
-                          'regularization', 'caption', 'performance', 'save', 'preview',
-                          'basic', 'network', 'training']; // 旧 group 兜底
-      this.trainParams.forEach(p => {
-        const g = p.section || p.group || '';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(p);
-      });
-      const orderedKeys = Object.keys(groups).sort((a, b) => {
-        const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
-        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-      });
-      orderedKeys.forEach(g => {
-        // 新 section 用 t('section.<g>') 取本地化组标题；旧 group 用 paramGroup<Cap> 兜底
-        let groupTitle = '';
-        if (g && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(g)) {
-          groupTitle = t('section.' + g, g);
-        } else if (g) {
-          const titleKey = 'paramGroup' + g.charAt(0).toUpperCase() + g.slice(1);
-          groupTitle = t(titleKey, g);
-        }
-        if (groupTitle) {
-          html += '<div class="param-group"><div class="param-group-title">' + this.esc(groupTitle) + '</div><div class="param-grid">';
-        } else {
-          html += '<div class="param-group"><div class="param-grid">';
-        }
-        groups[g].forEach(p => {
-          const title = this._paramTitle(p, t);
-          html += '<div class="param-item"><span class="param-label"' + (title ? ' title="' + this.esc(title) + '"' : '') + '>' + this._paramLabel(p) + '</span><span class="param-value">' + this._paramValueHtml(p) + '</span></div>';
-        });
-        html += '</div></div>';
-      });
-
-      html += '</div>';
-    } else if (!isRunning) {
-      // 空闲且无参数：单条紧凑空态提示（不再占用大块垂直空间）
-      html += '<div class="m-section" style="margin-top:12px"><div class="m-section-title">' + this.esc(t('trainParams','Parameters')) + '</div>';
-      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div>';
-      html += '</div>';
-    }
-
+    const hasPreview = this.previews.length > 0;
+    html += '<div class="m-overview-grid' + (hasPreview ? '' : ' no-preview') + '">';
+    html += this._overviewMetricsHtml(d, t, isHistory, isRunning);
+    html += this._trainingDiagnosticsHtml(t);
+    if (hasPreview) html += this._latestSampleCardHtml(t);
+    html += '</div>';
+    if (this.trainParams.length) html += this._parametersConsoleHtml(t);
+    else if (!isRunning) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainParams','Parameters')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div></div>';
     return html;
+  },
+
+  _overviewMetricsHtml(d, t, isHistory, isRunning) {
+    const tr = d.train_result || {};
+    const completed = isHistory && tr.status === 'completed';
+    const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
+    const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average', '--');
+    const lr = d.lr != null ? d.lr : this._seriesLatest('lr/unet', '--');
+    let html = '<section class="m-console-card m-overview-metrics">';
+    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary','Run summary') : t('liveMetrics','Live metrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? (tr.status || t('finished','Finished')) : (isRunning ? t('live','Live') : t('standby','Standby'))) + '</span></div>';
+    if (!isRunning && !isHistory) {
+      html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain','Ready for a new training run')) + '</strong><span>' + this.esc(t('readyToTrainHint','Configure a preset and start training to see live telemetry.')) + '</span></div></div>';
+      html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining','Go to training')) + ' →</button>';
+      if (d.last_config && d.last_config.name) {
+        const lc = d.last_config;
+        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining','Last training')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · LR ' + (lc.lr || '--') + ' · ' + (lc.epochs || '--') + ' Epochs') + '</small></div>';
+      }
+      html += '</section>';
+      return html;
+    }
+    html += '<div class="m-overview-progress-head"><div><span>' + this.esc(t('overallProgress','Overall progress')) + '</span><strong data-live-field="step">' + this.esc((d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)') + '</strong></div><b data-overview-percent>' + percent + '%</b></div>';
+    html += '<div class="m-overview-progress"><i data-overview-progress style="width:' + percent + '%"></i></div>';
+    const metrics = [
+      ['loss', t('loss','Loss'), loss], ['lr', t('lr','LR'), lr],
+      ['epoch', t('epoch','Epoch'), d.epoch != null ? d.epoch : '--'], ['speed', t('speed','Speed'), d.speed || '--'],
+      ['elapsed', t('elapsed','Elapsed'), d.elapsed || tr.duration_str || '--'], ['eta', t('remaining','Remaining'), isHistory ? '—' : (d.eta || '--')],
+    ];
+    html += '<div class="m-live-metrics">';
+    metrics.forEach((item, idx) => {
+      html += '<div class="m-live-metric' + (idx < 2 ? ' primary' : '') + '"><span>' + this.esc(item[1]) + '</span><strong data-live-field="' + item[0] + '">' + this.esc(String(item[2])) + '</strong></div>';
+    });
+    html += '</div></section>';
+    return html;
+  },
+
+  _seriesLatest(tag, fallback) {
+    const series = (this.lossSeries || []).find(item => item.tag === tag);
+    if (!series) return fallback;
+    const value = series.latest != null ? series.latest : (series.points && series.points.length ? series.points[series.points.length - 1].value : null);
+    if (value == null || !Number.isFinite(Number(value))) return fallback;
+    const number = Number(value);
+    return Math.abs(number) > 0 && Math.abs(number) < 0.001 ? number.toExponential(3) : number.toFixed(4);
+  },
+
+  _trainingDiagnosticPoints() {
+    const series = (this.lossSeries || []).find(item => item.tag === 'loss/average')
+      || (this.lossSeries || []).find(item => item.tag === 'loss/current');
+    const byStep = new Map();
+    ((series && series.points) || []).forEach(point => {
+      const rawStep = point && point.step;
+      const rawValue = point && point.value;
+      const step = Number(rawStep);
+      const value = Number(rawValue);
+      if (rawStep !== null && rawStep !== '' && rawStep !== undefined && rawValue !== null && rawValue !== '' && rawValue !== undefined && Number.isFinite(step) && Number.isFinite(value)) {
+        byStep.set(step, { step, value });
+      }
+    });
+    return {
+      tag: series ? series.tag : 'loss/average',
+      points: Array.from(byStep.values()).sort((left, right) => left.step - right.step),
+    };
+  },
+
+  _trainingDiagnosticRules() {
+    return {
+      minimumPoints: 6,
+      windowRatio: 0.15,
+      windowMin: 12,
+      windowMax: 60,
+      reboundChange: 3,
+      volatileCv: 12,
+      convergingChange: -2,
+      plateauAbsChange: 1,
+      plateauCv: 4,
+    };
+  },
+
+  _trainingDiagnostics(points) {
+    const rules = this._trainingDiagnosticRules();
+    let sourceTag = 'loss/average';
+    let clean;
+    if (Array.isArray(points)) {
+      const byStep = new Map();
+      points.forEach(point => {
+        const rawStep = point && point.step;
+        const rawValue = point && point.value;
+        const step = Number(rawStep);
+        const value = Number(rawValue);
+        if (rawStep !== null && rawStep !== '' && rawStep !== undefined && rawValue !== null && rawValue !== '' && rawValue !== undefined && Number.isFinite(step) && Number.isFinite(value)) {
+          byStep.set(step, { step, value });
+        }
+      });
+      clean = Array.from(byStep.values()).sort((left, right) => left.step - right.step);
+    } else {
+      const source = this._trainingDiagnosticPoints();
+      sourceTag = source.tag;
+      clean = source.points;
+    }
+
+    const base = {
+      code: 'insufficient', tone: 'muted', sourceTag, count: clean.length,
+      windowSize: 0, latestStep: clean.length ? clean[clean.length - 1].step : null,
+      recentMean: null, previousMean: null, changePct: null, volatilityPct: null,
+      bestValue: null, bestStep: null, gapFromBestPct: null,
+      previousStartStep: null, previousEndStep: null, recentStartStep: null, recentEndStep: null,
+    };
+    if (!clean.length) return base;
+
+    let best = clean[0];
+    clean.forEach(point => { if (point.value <= best.value) best = point; });
+    base.bestValue = best.value;
+    base.bestStep = best.step;
+    base.gapFromBestPct = (clean[clean.length - 1].value - best.value) / Math.max(Math.abs(best.value), 1e-12) * 100;
+    if (clean.length < rules.minimumPoints) return base;
+
+    const desiredWindow = Math.max(rules.windowMin, Math.min(rules.windowMax, Math.round(clean.length * rules.windowRatio)));
+    const windowSize = Math.min(desiredWindow, Math.floor(clean.length / 2));
+    const recent = clean.slice(-windowSize);
+    const previous = clean.slice(-windowSize * 2, -windowSize);
+    const mean = values => values.reduce((sum, point) => sum + point.value, 0) / values.length;
+    const recentMean = mean(recent);
+    const previousMean = mean(previous);
+    const variance = recent.reduce((sum, point) => sum + Math.pow(point.value - recentMean, 2), 0) / recent.length;
+    const changePct = (recentMean - previousMean) / Math.max(Math.abs(previousMean), 1e-12) * 100;
+    const volatilityPct = Math.sqrt(variance) / Math.max(Math.abs(recentMean), 1e-12) * 100;
+    Object.assign(base, {
+      windowSize, recentMean, previousMean, changePct, volatilityPct,
+      previousStartStep: previous[0].step,
+      previousEndStep: previous[previous.length - 1].step,
+      recentStartStep: recent[0].step,
+      recentEndStep: recent[recent.length - 1].step,
+    });
+
+    if (changePct >= rules.reboundChange) Object.assign(base, { code: 'rebound', tone: 'danger' });
+    else if (volatilityPct >= rules.volatileCv) Object.assign(base, { code: 'volatile', tone: 'danger' });
+    else if (changePct <= rules.convergingChange) Object.assign(base, { code: 'converging', tone: 'ok' });
+    else if (Math.abs(changePct) < rules.plateauAbsChange && volatilityPct < rules.plateauCv) Object.assign(base, { code: 'plateau', tone: 'warn' });
+    else Object.assign(base, { code: 'steady', tone: 'neutral' });
+    return base;
+  },
+
+  _formatDiagnosticValue(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '--';
+    if (Math.abs(number) > 0 && Math.abs(number) < 0.001) return number.toExponential(3);
+    return number.toFixed(4);
+  },
+
+  _formatDiagnosticPercent(value, signed) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '--';
+    const normalized = Math.abs(number) < 0.05 ? 0 : number;
+    return (signed && normalized > 0 ? '+' : '') + normalized.toFixed(1) + '%';
+  },
+
+  _diagnosticText(t, code, kind) {
+    const copy = {
+      insufficient: {
+        label: ['diagnosticInsufficient', '数据不足'],
+        summary: ['diagnosticInsufficientSummary', '至少需要 6 个有效 Loss 点才能判断近期趋势。'],
+        advice: ['diagnosticInsufficientAdvice', '训练开始后诊断会随 Loss 数据自动更新。'],
+      },
+      converging: {
+        label: ['diagnosticConverging', '训练 Loss 持续下降'],
+        summary: ['diagnosticConvergingSummary', '近期训练 Loss 均值持续下降，优化目标仍在改善。'],
+        advice: ['diagnosticConvergingAdvice', '可保持当前配置继续观察，并用固定提示词样本确认实际质量变化。'],
+      },
+      plateau: {
+        label: ['diagnosticPlateau', '进入平台期'],
+        summary: ['diagnosticPlateauSummary', '近期变化很小且波动受控，Loss 可能进入平台期。'],
+        advice: ['diagnosticPlateauAdvice', '结合样本质量判断是否继续；需要细节时打开 TensorBoard。'],
+      },
+      rebound: {
+        label: ['diagnosticRebound', '近期反弹'],
+        summary: ['diagnosticReboundSummary', '近期 Loss 均值明显高于前一窗口。'],
+        advice: ['diagnosticReboundAdvice', '先观察下一 Epoch；若持续反弹，再检查学习率与数据。'],
+      },
+      volatile: {
+        label: ['diagnosticVolatile', '波动异常'],
+        summary: ['diagnosticVolatileSummary', '近期 Loss 离散度偏高，训练稳定性需要关注。'],
+        advice: ['diagnosticVolatileAdvice', '优先检查学习率、batch size 和异常样本，不要仅凭单点终止。'],
+      },
+      steady: {
+        label: ['diagnosticSteady', '平稳运行'],
+        summary: ['diagnosticSteadySummary', '近期波动可控，但改善幅度暂不显著。'],
+        advice: ['diagnosticSteadyAdvice', '继续关注样本质量和后续窗口变化。'],
+      },
+    };
+    const item = copy[code] || copy.insufficient;
+    return t(item[kind][0], item[kind][1]);
+  },
+
+  _fillDiagnosticTemplate(template, values) {
+    let result = String(template || '');
+    Object.keys(values).forEach(key => {
+      result = result.split('{' + key + '}').join(String(values[key]));
+    });
+    return result;
+  },
+
+  _diagnosticEvidence(t, diagnostic) {
+    const rules = this._trainingDiagnosticRules();
+    const values = {
+      count: diagnostic.count,
+      minimum: rules.minimumPoints,
+      window: diagnostic.windowSize,
+      change: this._formatDiagnosticPercent(diagnostic.changePct, true),
+      magnitude: this._formatDiagnosticPercent(Math.abs(Number(diagnostic.changePct)), false),
+      volatility: this._formatDiagnosticPercent(diagnostic.volatilityPct, false),
+      rebound: rules.reboundChange,
+      volatile: rules.volatileCv,
+      converging: Math.abs(rules.convergingChange),
+      plateauChange: rules.plateauAbsChange,
+      plateauVolatility: rules.plateauCv,
+    };
+    const copy = {
+      insufficient: ['diagnosticEvidenceInsufficient', '当前 {count} 个有效点；至少 {minimum} 个点后才会比较两个相邻窗口。'],
+      converging: ['diagnosticEvidenceConverging', '近期窗口均值下降 {magnitude}，达到 ≤ -{converging}% 的下降条件；波动 {volatility} 未达到 {volatile}% 异常阈值。'],
+      plateau: ['diagnosticEvidencePlateau', '窗口均值变化绝对值 {magnitude} < {plateauChange}%，且波动 {volatility} < {plateauVolatility}%，符合平台期条件。'],
+      rebound: ['diagnosticEvidenceRebound', '近期窗口均值上升 {magnitude}，达到 ≥ +{rebound}% 的反弹条件；反弹规则优先判定。'],
+      volatile: ['diagnosticEvidenceVolatile', '近期波动系数 {volatility}，达到 ≥ {volatile}% 的异常条件；同期均值变化为 {change}。'],
+      steady: ['diagnosticEvidenceSteady', '均值变化 {change}、波动 {volatility}，未命中下降、反弹、异常波动或平台期条件。'],
+    };
+    const item = copy[diagnostic.code] || copy.insufficient;
+    return this._fillDiagnosticTemplate(t(item[0], item[1]), values);
+  },
+
+  _diagnosticWindowEvidence(t, diagnostic) {
+    if (!diagnostic.windowSize) return t('diagnosticWindowPending','等待建立两个相邻统计窗口');
+    return this._fillDiagnosticTemplate(
+      t('diagnosticWindowEvidence','Step {recentStart}–{recentEnd} 对比 Step {previousStart}–{previousEnd} · 每窗 {window} 点'),
+      {
+        recentStart: Math.round(diagnostic.recentStartStep),
+        recentEnd: Math.round(diagnostic.recentEndStep),
+        previousStart: Math.round(diagnostic.previousStartStep),
+        previousEnd: Math.round(diagnostic.previousEndStep),
+        window: diagnostic.windowSize,
+      }
+    );
+  },
+
+  _trainingDiagnosticsHtml(t) {
+    const rules = this._trainingDiagnosticRules();
+    let html = '<section class="m-console-card m-training-diagnostics">';
+    html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics','训练诊断')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle','窗口统计 · 自动判读')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard','打开 TensorBoard')) + '</button></div>';
+    html += '<div class="m-diagnostic-body">';
+    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal','收敛信号')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
+    html += '<div class="m-diagnostic-metrics">';
+    const metrics = [
+      ['change', t('recentLossChange','近期变化'), t('comparedPreviousWindow','对比上一窗口')],
+      ['volatility', t('lossVolatility','波动系数'), t('lowerIsMoreStable','越低越稳定')],
+      ['best', t('bestLoss','最低观测 Loss'), t('bestObservedValue','已观测最低值')],
+      ['gap', t('gapFromBest','距最低值'), t('latestVsBest','最新值对比最低值')],
+    ];
+    metrics.forEach(metric => {
+      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
+    });
+    html += '</div></div>';
+    html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence','判定依据')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
+    html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice','建议')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
+    html += '<details class="m-diagnostic-method"><summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01"/></svg>' + this.esc(t('diagnosticMethodTitle','算法依据与适用边界')) + '</span><small>' + this.esc(t('diagnosticMethodMeta','工程预警 · 非质量评分')) + '</small><svg class="m-diagnostic-method-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary>';
+    html += '<div class="m-diagnostic-method-content">';
+    html += '<p class="m-diagnostic-boundary"><strong>' + this.esc(t('diagnosticScopeTitle','适用边界')) + '</strong><span>' + this.esc(t('diagnosticScopeText','仅分析训练 Loss，不评价样本图或验证 Loss；不能判断成图质量、过拟合或最佳 checkpoint，也不会自动终止训练。')) + '</span></p>';
+    const methodItems = [
+      [t('diagnosticMethodSource','数据源'), t('diagnosticMethodSourceText','优先使用 TensorBoard loss/average（训练器移动平均，通常约覆盖一个 Epoch）；缺失时回退噪声更大的 loss/current。')],
+      [t('diagnosticMethodWindow','统计窗口'), t('diagnosticMethodWindowText','比较两个相邻等长窗口的均值；目标窗口为数据点的 15%，限制在 12–60 点，短序列各取可用数据的一半。')],
+      [t('diagnosticMethodVolatility','波动系数'), t('diagnosticMethodVolatilityText','近期窗口标准差 ÷ 近期均值绝对值；它衡量相对抖动，不是质量分数。')],
+    ];
+    html += '<div class="m-diagnostic-method-grid">';
+    methodItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><p>' + this.esc(item[1]) + '</p></div>'; });
+    html += '</div><div class="m-diagnostic-rule-title">' + this.esc(t('diagnosticRuleOrder','按顺序命中第一条规则')) + '</div><div class="m-diagnostic-rules">';
+    const ruleItems = [
+      [t('diagnosticRuleRebound','近期反弹'), this._fillDiagnosticTemplate(t('diagnosticRuleReboundCondition','均值变化 ≥ +{value}%'), { value: rules.reboundChange })],
+      [t('diagnosticRuleVolatile','波动偏高'), this._fillDiagnosticTemplate(t('diagnosticRuleVolatileCondition','波动系数 ≥ {value}%'), { value: rules.volatileCv })],
+      [t('diagnosticRuleConverging','Loss 下降'), this._fillDiagnosticTemplate(t('diagnosticRuleConvergingCondition','均值变化 ≤ {value}%'), { value: rules.convergingChange })],
+      [t('diagnosticRulePlateau','平台期'), this._fillDiagnosticTemplate(t('diagnosticRulePlateauCondition','|变化| < {change}% · 波动 < {volatility}%'), { change: rules.plateauAbsChange, volatility: rules.plateauCv })],
+      [t('diagnosticRuleSteady','无明显趋势'), t('diagnosticRuleOtherwise','其余情况')],
+    ];
+    ruleItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><code>' + this.esc(item[1]) + '</code></div>'; });
+    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote','长训练历史可能经过面向显示的降采样；需要完整曲线、缩放和逐点分析时请打开 TensorBoard。')) + '</p></div></details>';
+    html += '</section>';
+    return html;
+  },
+
+  _patchTrainingDiagnostics(root, t, d, isHistory) {
+    const diagnostic = this._trainingDiagnostics();
+    const isPreviousRun = !isHistory && (!d || d.state !== 'RUNNING') && diagnostic.count > 0;
+    const context = isHistory ? 'history' : (isPreviousRun ? 'previous' : 'live');
+    const version = String(this.lossDataVersion) + ':' + String(this._shellLocale || '') + ':' + context;
+    if (root.dataset.diagnosticVersion === version) return;
+    root.dataset.diagnosticVersion = version;
+    const setText = (field, value) => {
+      const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
+      if (element) element.textContent = value;
+    };
+    setText('title', isPreviousRun ? t('previousTrainingDiagnostics','上次训练诊断') : t('trainingDiagnostics','训练诊断'));
+    setText('subtitle', isPreviousRun ? t('previousDiagnosticSubtitle','上次训练数据 · 自动判读') : t('diagnosticSubtitle','窗口统计 · 自动判读'));
+    const verdict = root.querySelector('.m-diagnostic-verdict');
+    if (verdict) verdict.dataset.diagnosticTone = diagnostic.tone;
+    setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
+    setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
+    setText('advice', this._diagnosticText(t, diagnostic.code, 'advice'));
+    setText('evidence', this._diagnosticEvidence(t, diagnostic));
+    setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
+    setText('source', diagnostic.sourceTag === 'loss/current' ? t('currentLossSource','原始 Loss') : t('averageLossSource','平均 Loss'));
+    setText('through-step', diagnostic.latestStep == null ? t('waitingData','等待数据…') : t('throughStep','截至 Step {n}').replace('{n}', Math.round(diagnostic.latestStep)));
+    setText('change', this._formatDiagnosticPercent(diagnostic.changePct, true));
+    setText('volatility', this._formatDiagnosticPercent(diagnostic.volatilityPct, false));
+    setText('best', this._formatDiagnosticValue(diagnostic.bestValue));
+    setText('gap', this._formatDiagnosticPercent(diagnostic.gapFromBestPct, true));
+    setText('change-meta', diagnostic.windowSize ? t('windowComparison','最近 {n} 点 vs 前一窗口').replace('{n}', diagnostic.windowSize) : t('needsMorePoints','至少需要 6 个点'));
+    setText('volatility-meta', diagnostic.windowSize ? t('recentWindowPoints','最近 {n} 个点').replace('{n}', diagnostic.windowSize) : t('lowerIsMoreStable','越低越稳定'));
+    setText('best-meta', diagnostic.bestStep == null ? t('bestObservedValue','已观测最低值') : t('atStep','出现于 Step {n}').replace('{n}', Math.round(diagnostic.bestStep)));
+    setText('gap-meta', t('latestVsBest','最新值对比最低值'));
+    const changeMetric = root.querySelector('[data-diagnostic-metric="change"]');
+    const volatilityMetric = root.querySelector('[data-diagnostic-metric="volatility"]');
+    const gapMetric = root.querySelector('[data-diagnostic-metric="gap"]');
+    const rules = this._trainingDiagnosticRules();
+    if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
+    if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
+    if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : (diagnostic.gapFromBestPct >= 10 ? 'danger' : (diagnostic.gapFromBestPct <= 2 ? 'ok' : 'neutral'));
+  },
+
+  _latestSampleCardHtml(t) {
+    const index = this.previews.length - 1;
+    const preview = this.previews[index];
+    const imageUrl = preview.thumb_url || preview.url;
+    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample','Latest sample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll','View all')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')"><img src="' + this.esc(imageUrl) + '" alt="' + this.esc(preview.name) + '" decoding="async"/><span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
+  },
+
+  _parametersConsoleHtml(t) {
+    const byKey = {};
+    this.trainParams.forEach(param => { if (param.key) byKey[param.key] = param; });
+    const keyDefs = [
+      { key: 'pretrained_model_name_or_path', short: 'historyModel', basename: true }, { key: 'learning_rate', short: 'historyLR' },
+      { key: 'network_dim', short: 'historyDim' }, { key: 'network_alpha', short: 'historyAlpha' },
+      { key: 'max_train_epochs', short: 'historyEpochs' }, { key: 'optimizer_type', short: 'historyOptimizer' },
+      { key: 'train_batch_size', short: 'historyBatch' }, { key: 'resolution', short: 'historyResolution' }, { key: 'seed', short: 'historySeed' },
+    ];
+    let html = '<section class="m-console-card m-parameters-console"><div class="m-card-heading"><div><span>' + this.esc(t('trainParams','Parameters')) + '</span><small>' + this.trainParams.length + ' ' + this.esc(t('items','items')) + '</small></div></div>';
+    html += '<div class="param-keygrid">';
+    keyDefs.forEach(definition => {
+      const param = byKey[definition.key];
+      if (!param || param.value == null || param.value === '') return;
+      let value = String(param.value);
+      if (definition.basename) { const parts = value.replace(/\\/g, '/').split('/'); value = parts[parts.length - 1] || value; }
+      html += '<div class="param-key-item"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value">' + this._paramValueHtml({ value, type: param.type }) + '</span></div>';
+    });
+    html += '</div>';
+    html += '<div class="m-param-toolbar"><label class="m-param-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch','Search parameters…')) + '" aria-label="' + this.esc(t('parameterSearch','Search parameters')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"/></label><span class="m-param-match" data-param-match></span><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(true)">' + this.esc(t('expandAll','Expand all')) + '</button><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(false)">' + this.esc(t('collapseAll','Collapse all')) + '</button></div>';
+    const groups = {};
+    const order = ['model','network','training','optimizer','regularization','caption','performance','save','preview','basic'];
+    this.trainParams.forEach(param => { const group = param.section || param.group || ''; (groups[group] || (groups[group] = [])).push(param); });
+    const keys = Object.keys(groups).sort((a, b) => { const ai = order.indexOf(a), bi = order.indexOf(b); return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi); });
+    html += '<div class="m-param-groups">';
+    keys.forEach(group => {
+      const groupTitle = group && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(group) ? t('section.' + group, group) : (group || t('other','Other'));
+      html += '<details class="m-param-group"><summary><span>' + this.esc(groupTitle) + '</span><small>' + groups[group].length + '</small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="m-param-list">';
+      groups[group].forEach(param => {
+        const rawLabel = param.label_raw || param.label || param.key || '';
+        const searchText = (rawLabel + ' ' + (param.value == null ? '' : param.value)).toLowerCase();
+        const title = this._paramTitle(param, t);
+        html += '<div class="m-param-row" data-param-row data-search="' + this.esc(searchText) + '"><span class="param-label"' + (title ? ' title="' + this.esc(title) + '"' : '') + '>' + this._paramLabel(param) + '</span><span class="param-value">' + this._paramValueHtml(param) + '</span></div>';
+      });
+      html += '</div></details>';
+    });
+    html += '</div></section>';
+    return html;
+  },
+
+  filterMonitorParams() {
+    const root = document.getElementById('monitorTabContent');
+    if (!root) return;
+    const query = String(this.monitorParamQuery || '').trim().toLowerCase();
+    let matches = 0;
+    root.querySelectorAll('[data-param-row]').forEach(row => {
+      const show = !query || String(row.dataset.search || '').includes(query);
+      row.hidden = !show;
+      if (show) matches++;
+    });
+    root.querySelectorAll('.m-param-group').forEach(group => {
+      const count = group.querySelectorAll('[data-param-row]:not([hidden])').length;
+      group.hidden = query ? count === 0 : false;
+      if (query && count > 0) group.open = true;
+    });
+    const result = root.querySelector('[data-param-match]');
+    if (result) result.textContent = query ? matches + ' ' + (this.t('monitor.matches','matches') || 'matches') : '';
+  },
+
+  setMonitorParamGroups(open) {
+    const root = document.getElementById('monitorTabContent');
+    if (!root) return;
+    root.querySelectorAll('.m-param-group:not([hidden])').forEach(group => { group.open = !!open; });
   },
 
   // ═══════════════════════════════════════════════════════════
   //  日志标签（增量追加 + 保留滚动位置）
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
-    let html = '<div class="m-section" style="margin-top:12px">';
+    let html = '<div class="m-section m-logs-section">';
     const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
-    html += '<div class="m-section-title">' + this.esc(t(titleKey,'Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span></div>';
+    html += '<div class="m-section-title"><span>' + this.esc(t(titleKey,'Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span></span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode','History') : t('live','Live')) + '</span></div>';
     html += '<div class="m-section-tools m-logs-tools">';
     if (this.logMode === 'full') {
       html += this._logFullToolbarHtml(t);
     } else {
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode','Full log')) + '</button>';
-      html += '<input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
+      html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode','Full log')) + '</button><button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button></div>';
+      html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
       const levels = ['all','info','warn','error'];
       const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
       levels.forEach(l => {
         html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
       });
-      html += '<button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
+      html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop','↑ Top')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button></div>';
     }
     html += '</div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
@@ -509,21 +831,20 @@ window.monitorRenderMixin = {
   _logFullToolbarHtml(t) {
     let html = '';
     const tailLabel = this.selectedRunDir ? t('logBottom','Bottom') : t('logLiveTail','Live tail');
-    html += '<button type="button" class="btn btn-sm btn-primary log-follow-btn" @click="logFullLastPage()">↓ ' + this.esc(tailLabel) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullOffset<=0">' + this.esc(t('firstPage','Top')) + '</button>';
+    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-primary log-follow-btn" @click="logFullLastPage()">↓ ' + this.esc(tailLabel) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage','Top')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage','‹ Prev')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button>';
-    html += '<input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','Search full file...')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button></div>';
+    html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','Search full file...')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search','Search')) + '</button>';
     html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
     html += '<span class="m-logs-match" x-text="logFullMatchText()"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
-    html += '</span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh','Refresh')) + '</button>';
+    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh','Refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('copyPage','Copy page')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog','Download full log')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog','Download full log')) + '</button></div>';
     return html;
   },
 
@@ -542,11 +863,12 @@ window.monitorRenderMixin = {
 
   _renderLogs(contentEl, d, t, tabChanged) {
     const shellInDom = !!contentEl.querySelector('#monitorDashboardLogs');
-    const shellStale = this._builtLogMode !== this.logMode;
+    const shellStale = this._builtLogMode !== this.logMode || this._builtLogLocale !== this._shellLocale;
 
     // ── 首次 / 标签切换 / 模式切换：重建外壳 + 全量填充 ──
     if (tabChanged || !shellInDom || shellStale) {
       this._builtLogMode = this.logMode;
+      this._builtLogLocale = this._shellLocale;
       contentEl.innerHTML = this._logsTabShellHtml(t);
       this._renderedLogFilterKey = '';
       this._renderedLogCount = 0;
@@ -1140,9 +1462,9 @@ window.monitorRenderMixin = {
     const startIdx = Math.max(0, this.previews.length - visibleCount);
     const visiblePreviews = this.previews.slice(startIdx);
 
-    let html = '<div class="m-section"><div class="m-section-title" style="justify-content:flex-start;gap:10px;">' + this.esc(t('previewSamples','Preview'));
+    let html = '<div class="m-section m-samples-section"><div class="m-section-title"><span>' + this.esc(t('previewSamples','Preview')) + (showPreviews ? ' <span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</span>';
     if (showPreviews) {
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : ('⟳ ' + this.esc(t('refresh','Refresh')))) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading"><svg class="m-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 10a7 7 0 0 0-12-3L4 11m16 2-2.5 4a7 7 0 0 1-12-3"/></svg>' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button>';
     }
     html += '</div>';
     if (showPreviews) {
@@ -1153,11 +1475,11 @@ window.monitorRenderMixin = {
       visiblePreviews.forEach((pv, offset) => {
         const i = startIdx + offset;
         const thumbUrl = pv.thumb_url || pv.url;
-        html += '<div class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
+        html += '<button type="button" class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
         html += '<img src="' + this.esc(thumbUrl) + '" alt="' + this.esc(pv.name) + '" loading="lazy" decoding="async"/>';
-        html += '<div class="preview-grid-item-label">' + this.esc(this._parseSampleInfo(pv.name)) + '</div>';
-        html += '</div>';
+        html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small>' + this.esc(pv.name) + '</small></span>';
+        html += '</button>';
       });
       html += '</div>';
     } else {
@@ -1289,12 +1611,11 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _renderOutputsTab(t) {
     let html = '<div class="m-section m-outputs-section">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + '</span></div>';
-    html += '<div class="m-section-tools">';
+    html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + (this.outputFiles.length ? ' <span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</span></div>';
+    html += '<div class="m-section-tools m-output-tools">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()">' + this.esc(t('refresh','Refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()">' + this.esc(t('selectAll','Select All')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('deselectAll','Deselect All')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button>';
     html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()">' + this.esc(t('downloadAll','Download All')) + '</button>';
     html += '</div>';
 
@@ -1311,9 +1632,7 @@ window.monitorRenderMixin = {
     }
 
     const selectedCount = this.selectedOutputFiles.length;
-    if (selectedCount > 0) {
-      html += '<div class="m-outputs-selected">' + this.esc(t('selected','Selected')) + ': ' + selectedCount + ' / ' + this.outputFiles.length + '</div>';
-    }
+    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected','Selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button></div>';
 
     // Scrollable content
     html += '<div class="m-outputs-scroll">';
@@ -1334,12 +1653,8 @@ window.monitorRenderMixin = {
     html += '</span></div>';
 
     if (models.length) {
-      let bestPath = null;
-      if (this.outputSortKey === 'loss' && this.outputSortDir === 'asc') {
-        let best = null;
-        models.forEach(f => { if (f.ckpt_loss != null && (best === null || f.ckpt_loss < best)) { best = f.ckpt_loss; bestPath = f.path; } });
-      }
-      html += '<div class="output-list">';
+      const bestPath = this._bestCheckpointPath(models);
+      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span><span>' + this.esc(t('fileName','File')) + '</span><span>' + this.esc(t('checkpoint','Checkpoint')) + '</span><span>' + this.esc(t('loss','Loss')) + '</span><span>' + this.esc(t('sortSize','Size')) + '</span><span>' + this.esc(t('modifiedTime','Modified')) + '</span><span>' + this.esc(t('actions','Actions')) + '</span></div>';
       models.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
@@ -1347,11 +1662,15 @@ window.monitorRenderMixin = {
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name">' + this.esc(f.name) + '</span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss','Lowest loss')) + '</small>' : '') + '</span>';
         const badge = this._ckptBadgeHtml(f, t);
-        if (badge) html += badge; else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
-        const lossTxt = f.ckpt_loss != null ? Number(f.ckpt_loss).toFixed(4) : '--';
-        html += '<span class="m-ckpt-loss' + (f.ckpt_loss == null ? ' m-muted' : '') + '">loss <b>' + this.esc(lossTxt) + '</b></span>';
+        if (badge) html += badge;
+        else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
+        else html += '<span class="m-ckpt-badge m-muted">—</span>';
+        const numericLoss = Number(f.ckpt_loss);
+        const hasLoss = f.ckpt_loss != null && Number.isFinite(numericLoss);
+        const lossTxt = hasLoss ? numericLoss.toFixed(4) : '--';
+        html += '<span class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
         html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
@@ -1367,15 +1686,17 @@ window.monitorRenderMixin = {
     if (others.length) {
       html += '<div class="m-ckpt-section" style="margin-top:12px">';
       html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles','Other Files')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
-      html += '<div class="output-list">';
+      html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span><span>' + this.esc(t('fileName','File')) + '</span><span>' + this.esc(t('fileType','Type')) + '</span><span>' + this.esc(t('sortSize','Size')) + '</span><span>' + this.esc(t('modifiedTime','Modified')) + '</span><span>' + this.esc(t('actions','Actions')) + '</span></div>';
       others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
+        const extension = (f.name || '').includes('.') ? (f.name || '').split('.').pop().toUpperCase() : '';
+        const fileType = f.is_lora ? 'LoRA' : (f.category || extension || '—');
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name">' + this.esc(f.name) + '</span>';
-        if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + '</span>';
+        html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
         html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
@@ -1387,6 +1708,23 @@ window.monitorRenderMixin = {
     html += '</div>'; // m-outputs-scroll
     html += '</div>'; // m-section
     return html;
+  },
+
+  _bestCheckpointPath(models) {
+    let bestPath = null;
+    let bestLoss = Infinity;
+    let bestTime = -Infinity;
+    (models || []).forEach(file => {
+      const loss = Number(file.ckpt_loss);
+      if (file.ckpt_loss == null || !Number.isFinite(loss)) return;
+      const time = Number(file.mtime) || 0;
+      if (loss < bestLoss || (loss === bestLoss && time > bestTime)) {
+        bestLoss = loss;
+        bestTime = time;
+        bestPath = file.path;
+      }
+    });
+    return bestPath;
   },
 
   _fileIconSvg(f) {
@@ -1460,12 +1798,12 @@ window.monitorRenderMixin = {
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
-      html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="badge badge-running">' + this.esc(t('training', 'Training') || 'Training') + '</span></div>';
+      html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training', 'Training') || 'Training') + '</span></div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
       html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
-      html += '<div class="hist-actions"><button class="btn btn-sm btn-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
+      html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
       html += '</div>';
     }
 
@@ -1487,8 +1825,8 @@ window.monitorRenderMixin = {
         html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
         if (h.status) {
           const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
-          const statusLabels = { completed: t('statusCompleted','✓ Completed'), failed: t('statusFailed','✗ Failed'), error: t('statusError','✗ Error'), terminated: t('statusTerminated','⏹ Terminated') };
-          html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '">' + this.esc(statusLabels[h.status] || h.status) + '</span>';
+          const statusLabels = { completed: t('statusCompleted','Completed'), failed: t('statusFailed','Failed'), error: t('statusError','Error'), terminated: t('statusTerminated','Terminated') };
+          html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || h.status) + '</span>';
         }
         if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
         html += '</div>';
@@ -1500,11 +1838,12 @@ window.monitorRenderMixin = {
         html += '</div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
-          html += '<button class="btn btn-sm btn-secondary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails', 'View Details')) + '</button>';
-          html += '<button class="btn btn-sm btn-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig', 'View Config')) + '</button>';
-          html += '<button class="btn btn-sm btn-secondary" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
-          html += '<button class="btn btn-sm" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig', 'Reuse')) + '</button>';
-          html += '<button class="btn btn-sm btn-danger hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('common.delete','Delete')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+          html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails', 'View Details')) + '</button>';
+          html += '<button class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig', 'View Config')) + '</button>';
+          html += '<button class="hist-action hist-action-secondary" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig', 'Reuse')) + '</button>';
+          html += '<span class="hist-actions-spacer" aria-hidden="true"></span>';
+          html += '<button class="hist-action hist-action-icon hist-download" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '" aria-label="' + this.esc(t('downloadAll','Download All')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('common.delete','Delete')) + '" aria-label="' + this.esc(t('common.delete','Delete')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
           html += '</div>';
         }
         html += '</div>';

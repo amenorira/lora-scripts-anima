@@ -474,26 +474,40 @@ def _clean_log_text(text: str) -> str:
     return text
 
 
+def read_clean_log_lines(path: Path) -> list[str]:
+    """Read a terminal log without universal-newline conversion changing CR overwrites."""
+    content = path.read_bytes().decode("utf-8", errors="replace")
+    content = _clean_log_text(content)
+    lines = content.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
     """高效读取文件尾部内容（不加载整个文件到内存），并清理终端控制字符"""
     try:
         size = path.stat().st_size
         if size == 0:
             return []
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, "rb") as f:
             if size <= max_bytes:
                 f.seek(0)
-                content = f.read()
+                raw = f.read()
             else:
                 f.seek(size - max_bytes)
                 # 丢弃第一行（可能是不完整的行）
-                content = f.read()
-                first_newline = content.find("\n")
+                raw = f.read()
+                first_newline = raw.find(b"\n")
                 if first_newline >= 0:
-                    content = content[first_newline + 1:]
+                    raw = raw[first_newline + 1:]
+        content = raw.decode("utf-8", errors="replace")
         # 清理 ANSI + \r 覆盖
         content = _clean_log_text(content)
-        return content.split("\n")
+        lines = content.split("\n")
+        if lines and lines[-1] == "":
+            lines.pop()
+        return lines
     except OSError:
         return []
 

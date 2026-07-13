@@ -214,7 +214,7 @@
               <span class="home-badge-l">License</span><span class="home-badge-v home-badge-v-license">AGPL-3.0</span>
             </a>
             <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/releases" target="_blank" rel="noopener">
-              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release">v1.1.0</span>
+              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release">v1.1.1</span>
             </a>
           </div>
 
@@ -223,23 +223,48 @@
 
       <!-- Route: Monitor Dashboard -->
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak class="route-monitor-dashboard">
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
-          <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
-          <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
+        <div class="monitor-sticky-stack">
+          <div class="page-header">
+            <div class="monitor-page-heading">
+              <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
+              <span class="monitor-page-kicker" x-text="t('monitor.consoleSubtitle','Training control center')">Training control center</span>
+            </div>
+            <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
+            <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
+          </div>
+          <div id="monitorControlbar"></div>
+          <!-- Monitor Tabs -->
+          <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs','Dashboard views')">
+            <button id="monitor-tab-overview" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'overview' }"
+                    :aria-selected="monitorTab === 'overview'" :tabindex="monitorTab === 'overview' ? 0 : -1" aria-controls="monitorDashboard"
+                    @click="setMonitorTab('overview')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span x-text="t('monitor.overview','Overview')">Overview</span>
+            </button>
+            <button id="monitor-tab-logs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'logs' }"
+                    :aria-selected="monitorTab === 'logs'" :tabindex="monitorTab === 'logs' ? 0 : -1" aria-controls="monitorDashboard"
+                    @click="setMonitorTab('logs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+              <span x-text="t('monitor.logTitle','Logs')">Logs</span>
+              <span class="monitor-tab-count" x-show="(logFullTotal || logTotal || logLines.length) > 0" x-text="logFullTotal || logTotal || logLines.length"></span>
+            </button>
+            <button id="monitor-tab-samples" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'samples' }"
+                    :aria-selected="monitorTab === 'samples'" :tabindex="monitorTab === 'samples' ? 0 : -1" aria-controls="monitorDashboard"
+                    @click="setMonitorTab('samples')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
+              <span x-text="t('monitor.samples','Samples')">Samples</span>
+              <span class="monitor-tab-count" x-show="previews.length > 0" x-text="previews.length"></span>
+            </button>
+            <button id="monitor-tab-outputs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }"
+                    :aria-selected="monitorTab === 'outputs'" :tabindex="monitorTab === 'outputs' ? 0 : -1" aria-controls="monitorDashboard"
+                    @click="setMonitorTab('outputs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg>
+              <span x-text="t('monitor.outputs','Outputs')">Outputs</span>
+              <span class="monitor-tab-count" x-show="outputFiles.length > 0" x-text="outputFiles.length"></span>
+            </button>
+          </div>
         </div>
-        <!-- Monitor Tabs -->
-        <div class="monitor-tabs">
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'overview' }" @click="monitorTab='overview'; renderDashboard()"
-                  x-text="t('monitor.overview','Overview')">Overview</button>
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'logs' }" @click="monitorTab='logs'; renderDashboard()"
-                  x-text="t('monitor.logTitle','Logs')">Logs</button>
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'samples' }" @click="monitorTab='samples'; renderDashboard()"
-                  x-text="t('monitor.samples','Samples')">Samples</button>
-          <button type="button" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }" @click="monitorTab='outputs'; renderDashboard()"
-                  x-text="t('monitor.outputs','Outputs')">Outputs</button>
-        </div>
-        <div id="monitorDashboard"></div>
+        <div id="monitorDashboard" role="tabpanel" :aria-labelledby="'monitor-tab-' + monitorTab"></div>
       </div>
 
       <!-- Route: History -->
@@ -445,7 +470,7 @@
                              style="flex:1;height:4px;accent-color:var(--accent)"
                              @input="document.getElementById('single-init-th-val').value = parseFloat($event.target.value).toFixed(2)">
                       <input type="number" id="single-init-th-val" min="0" max="1" step="0.01" value="0.50"
-                             style="width:50px;font-size:12px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px"
+                             style="width:50px;font-size:12px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px"
                              @change="document.getElementById('single-init-threshold').value = parseFloat($event.target.value)">
                     </div>
                   </div>
@@ -486,7 +511,7 @@
                         <input type="number" min="0" max="1" step="0.01"
                                x-model.number="singleImage.globalThreshold"
                                @change="applyGlobalThreshold()"
-                               style="width:52px;font-size:12px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
+                               style="width:52px;font-size:12px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
                       </div>
                     </div>
                     <div style="display:flex;gap:6px;margin-top:4px">
@@ -518,7 +543,7 @@
                         <input type="number" min="0" max="1" step="0.01"
                                x-model.number="cat.threshold"
                                @change="recalcCategoryThreshold(key)"
-                               style="width:50px;font-size:11px;border:1px solid var(--border-input);border-radius:4px;text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
+                               style="width:50px;font-size:11px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
                       </div>
                       <div class="cat-panel-body">
                         <div class="tag-list">

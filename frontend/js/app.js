@@ -124,6 +124,7 @@ document.addEventListener('alpine:init', () => {
         else this.pageSubtitle = cfg.subtitle || '';
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
+        if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
       });
 
       if (this.autoLoadHistory) {

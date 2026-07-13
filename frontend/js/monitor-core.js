@@ -6,10 +6,11 @@
 window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null, monitorTimer: null, monitorPollMs: 2000,
-  gpuInfo: null, sysInfo: null, lossSeries: [], trainParams: [],
+  gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
   previews: [], previewStep: 0, previewVisibleCount: 36, previewPageSize: 36, previewsLoading: false, historyItems: [], runningTask: null,
   logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
+  monitorParamQuery: '',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
   _monitorAbortCtrl: null,
@@ -53,6 +54,24 @@ window.monitorCoreMixin = {
       }
     });
   },
+  setMonitorTab(tab, focusTab) {
+    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    if (!tabs.includes(tab)) return;
+    this.monitorTab = tab;
+    this.renderDashboard();
+    if (focusTab) {
+      requestAnimationFrame(() => {
+        const tabEl = document.getElementById('monitor-tab-' + tab);
+        if (tabEl) tabEl.focus();
+      });
+    }
+  },
+  moveMonitorTab(delta) {
+    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    const current = Math.max(0, tabs.indexOf(this.monitorTab));
+    const next = (current + delta + tabs.length) % tabs.length;
+    this.setMonitorTab(tabs[next], true);
+  },
   _prevState: null,
   _monitorRequestSeq: 0,  // 递增请求序列号，丢弃过期响应
 
@@ -83,8 +102,7 @@ window.monitorCoreMixin = {
   // ── SSE Connection ─────────────────────────────────────
   connectMonitorSSE(taskId) {
     if (!taskId || this._eventSource) return;
-    // 清空 lossSeries，避免 SSE 重连后产生重复数据点
-    this.lossSeries = [];
+    // 保留轮询已载入的完整曲线；增量处理会跳过重连时可能重复的旧 step。
     this._sseTaskId = taskId;
     const url = '/api/monitor/stream?task_id=' + encodeURIComponent(taskId);
     try {
@@ -113,6 +131,7 @@ window.monitorCoreMixin = {
         this._logFullNeedsResync = true;
         if (this._monitorAbortCtrl) { this._monitorAbortCtrl.abort(); this._monitorAbortCtrl = null; }
         if (this._sseRetryTimer) { clearTimeout(this._sseRetryTimer); this._sseRetryTimer = null; }
+        if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       };
 
       es.onerror = () => {
@@ -129,10 +148,12 @@ window.monitorCoreMixin = {
             this.connectMonitorSSE(reconnectTaskId);
           }
         }, this._sseRetryDelay);
+        if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       };
     } catch(_) {
       this._eventSource = null;
       this._sseConnected = false;
+      if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
     }
   },
 
@@ -263,6 +284,7 @@ window.monitorCoreMixin = {
     if (!data || !data.points || this.selectedRunDir) return;
 
     const points = data.points;
+    let changed = false;
 
     for (const [tag, newPoints] of Object.entries(points)) {
       if (!newPoints || !newPoints.length) continue;
@@ -281,9 +303,10 @@ window.monitorCoreMixin = {
       }
 
       for (const p of newPoints) {
-        // 去重：跳过与最后一个点相同 step 的数据点
-        if (series.points.length > 0 && series.points[series.points.length - 1].step === p.step) continue;
+        // 去重：重连后服务端若重放旧点，不把曲线追加成乱序或重复数据。
+        if (series.points.length > 0 && Number(p.step) <= Number(series.points[series.points.length - 1].step)) continue;
         series.points.push(p);
+        changed = true;
         if (series.latest === null || p.value < series.min) series.min = p.value;
         if (series.latest === null || p.value > series.max) series.max = p.value;
         series.latest = p.value;
@@ -312,6 +335,7 @@ window.monitorCoreMixin = {
       }
     }
 
+    if (changed) this.lossDataVersion++;
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
@@ -363,6 +387,7 @@ window.monitorCoreMixin = {
           // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
           if (!this._sseConnected) {
             this.lossSeries = j.data.tensorboard_loss||[];
+            this.lossDataVersion++;
             if (j.data.log_lines) { this.logLines = j.data.log_lines.slice(-this._logCap()); this._logContentVersion++; this._logDirty = true; }
           }
           this.trainParams = j.data.train_params||[];
@@ -577,7 +602,13 @@ window.monitorCoreMixin = {
   },
 
   /** 完整日志翻页 */
-  logFullFirstPage() { if (this.logFullTotal > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: 0 }); } },
+  async logFullFirstPage() {
+    if (this.logFullLoading || this.logFullTotal <= 0) return;
+    this.logAutoScroll = false;
+    this._logAtBottom = false;
+    if (this.logFullOffset > 0) await this.fetchLogSlice({ offset: 0 });
+    requestAnimationFrame(() => this._scrollLogsToTop());
+  },
   logFullLastPage() { this.followFullTail({ fetchNow: true }); },
   logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
   logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
@@ -726,9 +757,22 @@ window.monitorCoreMixin = {
   // ── Run Detail (查看历史训练) ─────────────────────────
   async viewRunDetail(runDir) {
     /** 查看指定历史训练的详情（图表 + 日志 + 配置） */
+    this._logSliceRequestSeq++;
+    this.logLines = [];
+    this.logTotal = 0;
+    this.logFullLines = [];
+    this.logFullOffset = 0;
+    this.logFullTotal = 0;
+    this.logFullMatches = [];
+    this.logFullQuery = '';
+    this.logFullMatchIdx = -1;
+    this.logFullLoading = false;
+    this._logContentVersion++;
+    this._logDirty = true;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
     this.monitorTab = 'overview';
+    this.monitorParamQuery = '';
     this._shellBuilt = false;
     this._renderedLogCount = 0;
     this._renderedLogFilterKey = '';
@@ -747,18 +791,17 @@ window.monitorCoreMixin = {
       if (j.status === 'success') {
         this.runDetailData = j.data;
         this.lossSeries = j.data.tensorboard_loss || [];
-            this.trainParams = j.data.train_params || [];
+        this.lossDataVersion++;
+        this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
         this.previewVisibleCount = this.previewPageSize || 36;
         // 历史记录进入时定位到最新样本（末尾）
         this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
-        if (j.data.log_lines) {
-          // 后端已截断为尾部 _LOG_DETAIL_TAIL_LINES 行；slice(-cap) 防御性兜底
-          this.logLines = j.data.log_lines.slice(-this._logCap());
-          this.logTotal = j.data.log_total || this.logLines.length;
-          this._logContentVersion++;
-          this._logDirty = true;
-        }
+        // 后端已截断为尾部 _LOG_DETAIL_TAIL_LINES 行；slice(-cap) 防御性兜底
+        this.logLines = Array.isArray(j.data.log_lines) ? j.data.log_lines.slice(-this._logCap()) : [];
+        this.logTotal = Number.isFinite(Number(j.data.log_total)) ? Number(j.data.log_total) : this.logLines.length;
+        this._logContentVersion++;
+        this._logDirty = true;
         this._renderedLogCount = 0;
         this._renderedLogFilterKey = '';
         this._logTrimK = 0;
@@ -791,7 +834,9 @@ window.monitorCoreMixin = {
     this.selectedRunDir = null;
     this.runDetailData = null;
     this.lossSeries = [];
+    this.lossDataVersion++;
     this.trainParams = [];
+    this.monitorParamQuery = '';
     this.previews = [];
     this.previewStep = 0;
     this.outputFiles = [];
