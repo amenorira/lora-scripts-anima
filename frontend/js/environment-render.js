@@ -499,8 +499,7 @@ window.environmentRenderMixin = {
     const dlAllLabel = busy
       ? T('animaModel.downloading','Downloading...')
       : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
-    h += this._renderDetailGroup('',
-      `<div class="env-actions"><button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${dlAllLabel}</button>${this._renderRefreshBtn('anima-model-refresh-btn', busy)}</div>`);
+    h += `<div class="env-model-footer"><div class="env-actions"><button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${dlAllLabel}</button>${this._renderRefreshBtn('anima-model-refresh-btn', busy)}</div></div>`;
 
     // ── 下载日志（可折叠，状态持久化避免重渲染被收起）──
     if (this.animaModelLog) {

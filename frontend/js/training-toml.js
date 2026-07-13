@@ -276,7 +276,7 @@ window.trainingTomlMixin = {
     const estimate = await this.refreshStepEstimate(true);
     if (!estimate) {
       this.toast(
-        this.stepEstimateError || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+        this.stepEstimateErrorText() || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
         'error'
       );
       this.trainingStarting = false;

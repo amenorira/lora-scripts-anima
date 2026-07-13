@@ -514,7 +514,6 @@ window.monitorRenderMixin = {
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage','‹ Prev')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button>';
-    html += '<input type="number" class="m-logs-goto" min="1" placeholder="' + this.esc(t('gotoLine','Line')) + '" @keydown.enter="logFullGotoLine($event.target.value)">';
     html += '<input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','Search full file...')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search','Search')) + '</button>';
     html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';

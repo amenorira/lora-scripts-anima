@@ -267,6 +267,16 @@ class TrainingStepEstimatorTests(unittest.TestCase):
             with self.assertRaises(StepEstimateError):
                 estimate_training_steps(self._config(root))
 
+    def test_missing_dataset_exposes_localizable_error_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing = Path(temp_dir) / "missing_dataset"
+
+            with self.assertRaises(StepEstimateError) as context:
+                estimate_training_steps(self._config(missing))
+
+            self.assertEqual(context.exception.code, "datasetNotFound")
+            self.assertEqual(context.exception.params, {"path": str(missing)})
+
 
 class MonitorFrontendContractTests(unittest.TestCase):
     def test_leaving_history_clears_cached_logs(self):
@@ -290,6 +300,8 @@ class MonitorFrontendContractTests(unittest.TestCase):
         forced_refresh = training_core.split("async refreshStepEstimate(force) {", 1)[1].split("\n  },", 1)[0]
         self.assertIn("self.scheduleStepEstimate();", watcher)
         self.assertIn("fetch('/api/training/estimate'", training_core)
+        self.assertIn("stepEstimate.errors.${code}", training_core)
+        self.assertIn('x-text="stepEstimateErrorText()"', training_core)
         self.assertIn("const estimate = await this.refreshStepEstimate(true);", training_toml)
         self.assertEqual(scheduled_refresh.count("this.stepEstimate = null;"), 1)
         self.assertEqual(forced_refresh.count("this.stepEstimate = null;"), 1)

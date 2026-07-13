@@ -186,7 +186,8 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-	          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard' }">
+	          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-transitioning': routeTransitioning }"
+              :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
@@ -292,21 +293,23 @@
                   <path d="m6 9 6 6 6-6"/>
                 </svg>
               </button>
-              <div class="anima-select-menu" x-show="open" x-transition>
-                <div class="anima-select-menu-scroll">
-                  <template x-for="(opt, oIdx) in flatOptions" :key="opt.v">
-                    <div class="anima-select-option" :class="{ active: opt.v === value }"
-                         @click="select(opt.v)"
-                         @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()">
-                      <span x-text="opt.l" :title="opt.l"></span>
-                      <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    </div>
-                  </template>
+              <template x-if="open">
+                <div class="anima-select-menu">
+                  <div class="anima-select-menu-scroll">
+                    <template x-for="(opt, oIdx) in flatOptions" :key="opt.v">
+                      <div class="anima-select-option" :class="{ active: opt.v === value }"
+                           @click="select(opt.v)"
+                           @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()">
+                        <span x-text="opt.l" :title="opt.l"></span>
+                        <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>
                 </div>
-                <div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>
-              </div>
+              </template>
             </div>
             <span class="train-type-hint" x-text="t('common.trainTypeHint')"></span>
           </div>
@@ -334,7 +337,7 @@
                收起=一列彩色圆点，hover 展开覆盖在表单上方（不挤压布局） -->
           <nav class="section-rail" :class="{ expanded: sectionRailHover }"
                @mouseenter="sectionRailHover = true" @mouseleave="sectionRailHover = false"
-               x-show="sectionNavList.length > 0" :aria-label="t('common.sectionNav')">
+               x-show="currentRoute && currentRoute.startsWith('train-') && sectionNavList.length > 0" :aria-label="t('common.sectionNav')">
             <template x-for="s in sectionNavList" :key="s.key">
               <button type="button" class="section-rail-item"
                       :class="{ active: activeSection === s.key, collapsed: s.collapsed }"
@@ -1633,7 +1636,7 @@
     </main>
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
-    <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ open: rightPanelOpen || window.innerWidth > 1100 }">
+    <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ open: rightPanelOpen || isWideScreen }">
       <!-- 拖拽手柄：贴面板左边缘，鼠标拖动调整宽度并持久化（仅大屏启用） -->
       <div class="panel-resizer" id="panelResizer" x-show="showRightPanel()" title="拖拽调整宽度，双击恢复默认"></div>
       <!-- Training: TOML preview + actions -->

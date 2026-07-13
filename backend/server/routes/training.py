@@ -36,17 +36,29 @@ async def estimate_steps(request: Request):
     try:
         config = await request.json()
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+        return APIResponseFail(
+            message="Invalid JSON request / 请求 JSON 格式无效",
+            data={"errorCode": "invalidJson", "errorParams": {}},
+        )
     if not isinstance(config, dict):
-        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+        return APIResponseFail(
+            message="Training configuration must be an object / 训练参数必须是对象",
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
 
     try:
         estimate = await asyncio.to_thread(estimate_training_steps, config)
     except StepEstimateError as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code, "errorParams": exc.params},
+        )
     except Exception as exc:
         log.exception("Failed to estimate training steps / 训练步数预估失败")
-        return APIResponseFail(message=f"Failed to estimate training steps / 训练步数预估失败: {exc}")
+        return APIResponseFail(
+            message=f"Failed to estimate training steps / 训练步数预估失败: {exc}",
+            data={"errorCode": "failed", "errorParams": {}},
+        )
     return APIResponseSuccess(data=estimate)
 
 

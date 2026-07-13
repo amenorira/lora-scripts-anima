@@ -41,6 +41,11 @@ window.trainingCoreMixin = {
 
   _formSaveTimer: null,
   _localeChangeHandler: null,
+  _trainFormMountedRoute: '',
+  _trainFormLocale: '',
+  _conditionalMotionQueue: null,
+  _conditionalMotionTimer: null,
+  _conditionalMotionEpoch: 0,
   showFilePickerModalFlag: false,
   _pickerKey: '',
   _pickerFiles: [],
@@ -53,7 +58,7 @@ window.trainingCoreMixin = {
 
   stepEstimate: null,
   stepEstimateLoading: false,
-  stepEstimateError: '',
+  stepEstimateError: null,
   _stepEstimateTimer: null,
   _stepEstimateRequestSeq: 0,
   _stepEstimateSignature: '',
@@ -137,10 +142,90 @@ window.trainingCoreMixin = {
     return defaults;
   },
 
+  suspendTrainForm(route) {
+    if (!route || !route.startsWith('train-')) return;
+
+    clearTimeout(this._formSaveTimer);
+    this._formSaveTimer = null;
+    try {
+      localStorage.setItem('anima-form-' + route, JSON.stringify(this.form));
+    } catch (e) {}
+
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    this._stepEstimateRequestSeq += 1;
+    this._stepEstimateSignature = '';
+    this.stepEstimateLoading = false;
+    this.stopSectionScroll();
+  },
+
+  _disposeTrainForm() {
+    clearTimeout(this._formSaveTimer);
+    this._formSaveTimer = null;
+    if (this._trainFormMountedRoute) {
+      try {
+        localStorage.setItem('anima-form-' + this._trainFormMountedRoute, JSON.stringify(this.form));
+      } catch (e) {}
+    }
+
+    const dispose = (key) => {
+      if (typeof this[key] === 'function') this[key]();
+      this[key] = null;
+    };
+    dispose('_formWatcher');
+    dispose('_trainTypeWatcher');
+    ['_autoValueWatchers', '_showIfWatchers', '_readonlyWatchers'].forEach(key => {
+      (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
+      this[key] = [];
+    });
+    if (this._localeChangeHandler) {
+      window.removeEventListener('locale-changed', this._localeChangeHandler);
+      this._localeChangeHandler = null;
+    }
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    this._stepEstimateRequestSeq += 1;
+    this._stepEstimateSignature = '';
+    this.stepEstimateLoading = false;
+    clearTimeout(this._conditionalMotionTimer);
+    this._conditionalMotionTimer = null;
+    this._conditionalMotionQueue = null;
+    this._conditionalMotionEpoch += 1;
+    this.stopSectionScroll();
+
+    const container = document.getElementById('trainFormContent');
+    if (container) container.replaceChildren();
+    this.sectionNavList = [];
+    this.activeSection = '';
+    this._trainFormMountedRoute = '';
+    this._trainFormLocale = '';
+  },
+
+  _resumeTrainForm(route) {
+    const container = document.getElementById('trainFormContent');
+    if (!container || !container.childElementCount) return false;
+    if (this._trainFormMountedRoute !== route || this._trainFormLocale !== this.locale) return false;
+
+    this.buildSectionNav();
+    this.startTrainingStatusPoll();
+    this.scheduleStepEstimate();
+    this.$nextTick(() => this.updateToml());
+
+    if (this._pendingPreset) {
+      const pending = this._pendingPreset;
+      this._pendingPreset = null;
+      this.$nextTick(() => this.applyPreset(pending));
+    }
+    return true;
+  },
+
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
     this._autoLoaded = false; // Reset so _markAutoLoaded can run again
     const r = this.currentRoute;
+    if (this._resumeTrainForm(r)) return;
+    if (this._trainFormMountedRoute) this._disposeTrainForm();
+
     const cfg = ROUTE_CONFIG[r] || {};
     const routeTrainType = cfg.trainType || 'anima-lora';
 
@@ -180,6 +265,8 @@ window.trainingCoreMixin = {
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
     this.renderTrainingForm(trainType, null);
+    this._trainFormMountedRoute = r;
+    this._trainFormLocale = this.locale;
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
     if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
@@ -268,12 +355,15 @@ window.trainingCoreMixin = {
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
       this.stepEstimateLoading = false;
-      this.stepEstimateError = this.t('stepEstimate.selectDataset', 'Select a dataset directory to calculate steps');
+      this._setStepEstimateError(
+        'stepEstimate.selectDataset',
+        'Select a dataset directory to calculate steps'
+      );
       return;
     }
 
     this.stepEstimateLoading = true;
-    this.stepEstimateError = '';
+    this.stepEstimateError = null;
     this._stepEstimateTimer = setTimeout(() => {
       this._stepEstimateTimer = null;
       this._requestStepEstimate(requestSeq, payload);
@@ -290,12 +380,15 @@ window.trainingCoreMixin = {
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
       this.stepEstimateLoading = false;
-      this.stepEstimateError = this.t('stepEstimate.selectDataset', 'Select a dataset directory to calculate steps');
+      this._setStepEstimateError(
+        'stepEstimate.selectDataset',
+        'Select a dataset directory to calculate steps'
+      );
       return null;
     }
 
     this.stepEstimateLoading = true;
-    this.stepEstimateError = '';
+    this.stepEstimateError = null;
     return this._requestStepEstimate(requestSeq, payload);
   },
 
@@ -310,16 +403,20 @@ window.trainingCoreMixin = {
       if (requestSeq !== this._stepEstimateRequestSeq) return null;
       if (!response.ok || result.status !== 'success' || !result.data) {
         this.stepEstimate = null;
-        this.stepEstimateError = result.message || this.t('stepEstimate.failed', 'Unable to calculate training steps');
+        this._setStepEstimateErrorFromResult(result);
         return null;
       }
       this.stepEstimate = result.data;
-      this.stepEstimateError = '';
+      this.stepEstimateError = null;
       return result.data;
     } catch (error) {
       if (requestSeq !== this._stepEstimateRequestSeq) return null;
       this.stepEstimate = null;
-      this.stepEstimateError = `${this.t('common.requestFailed', 'Request failed')}: ${error.message}`;
+      this._setStepEstimateError(
+        'stepEstimate.errors.requestFailed',
+        'Request failed: {message}',
+        { message: error.message }
+      );
       return null;
     } finally {
       if (requestSeq === this._stepEstimateRequestSeq) this.stepEstimateLoading = false;
@@ -333,6 +430,53 @@ window.trainingCoreMixin = {
       text = text.replaceAll(`{${name}}`, String(value));
     });
     return text;
+  },
+
+  _setStepEstimateError(key, fallback, params, localizeLegacy) {
+    this.stepEstimateError = {
+      key: key || '',
+      fallback: fallback || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+      params: params && typeof params === 'object' ? params : {},
+      localizeLegacy: !!localizeLegacy,
+    };
+  },
+
+  _localizeLegacyStepEstimateMessage(message) {
+    void this.locale;
+    const text = String(message || '');
+    const separator = ' / ';
+    const separatorIndex = text.indexOf(separator);
+    if (separatorIndex < 0) return text;
+    return this.locale === 'zh-CN'
+      ? text.slice(separatorIndex + separator.length)
+      : text.slice(0, separatorIndex);
+  },
+
+  _setStepEstimateErrorFromResult(result) {
+    const errorData = result && result.data && typeof result.data === 'object' ? result.data : {};
+    const code = typeof errorData.errorCode === 'string' ? errorData.errorCode : '';
+    const params = errorData.errorParams && typeof errorData.errorParams === 'object'
+      ? errorData.errorParams
+      : {};
+    this._setStepEstimateError(
+      code ? `stepEstimate.errors.${code}` : '',
+      result && result.message
+        ? result.message
+        : this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+      params,
+      !code
+    );
+  },
+
+  stepEstimateErrorText() {
+    const error = this.stepEstimateError;
+    if (!error) return '';
+    if (typeof error === 'string') return error;
+    if (!error.key) {
+      const fallback = error.fallback || this.t('stepEstimate.failed', 'Unable to calculate training steps');
+      return error.localizeLegacy ? this._localizeLegacyStepEstimateMessage(fallback) : fallback;
+    }
+    return this._stepEstimateText(error.key, error.fallback, error.params);
   },
 
   stepEstimateTitle() {
@@ -418,7 +562,7 @@ window.trainingCoreMixin = {
           <span class="step-estimate-label" x-text="t('stepEstimate.label')"></span>
           <strong class="step-estimate-total" x-show="stepEstimate" x-text="stepEstimateTitle()"></strong>
           <span class="step-estimate-status" x-show="!stepEstimate && stepEstimateLoading" x-text="t('stepEstimate.calculating')"></span>
-          <span class="step-estimate-status step-estimate-status-error" x-show="!stepEstimate && !stepEstimateLoading" x-text="stepEstimateError"></span>
+          <span class="step-estimate-status step-estimate-status-error" x-show="!stepEstimate && !stepEstimateLoading" x-text="stepEstimateErrorText()"></span>
         </div>
         <button type="button" class="step-estimate-refresh" @click="refreshStepEstimate(true)" :disabled="stepEstimateLoading" :title="t('stepEstimate.recalculate')" :aria-label="t('stepEstimate.recalculate')">
           <svg :class="{ spinning: stepEstimateLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
@@ -722,39 +866,17 @@ window.trainingCoreMixin = {
     this._updateActiveSection();
   },
 
-  // 绑定鼠标移动监听：鼠标在哪个分组卡片上方，对应圆点亮（节流）。
-  // 性能：mousemove 经 rAF 节流每帧最多一次，9 张卡片 getBoundingClientRect ~亚毫秒，无性能问题。
+  // 鼠标进入分组时更新对应圆点，不读取整页卡片布局。
   _bindSectionMouse() {
     if (this._sectionMouseHandler) return;
-    const self = this;
-    let ticking = false;
     this._sectionMouseHandler = (e) => {
-      if (ticking) return;
-      ticking = true;
-      const y = e.clientY;
-      requestAnimationFrame(() => {
-        self._updateActiveSectionByY(y);
-        ticking = false;
-      });
+      const card = e.target.closest && e.target.closest('#trainFormContent .card[data-section]');
+      if (!card) return;
+      const section = card.getAttribute('data-section');
+      if (section && section !== this.activeSection) this.activeSection = section;
     };
     const scroller = document.querySelector('.main-content');
-    if (scroller) scroller.addEventListener('mousemove', this._sectionMouseHandler, { passive: true });
-  },
-
-  // 按鼠标 Y 坐标判定当前分组：找到鼠标落入的卡片（含顶部留白），其 data-section 即当前
-  _updateActiveSectionByY(y) {
-    const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
-    if (!cards.length) return;
-    let current = '';
-    // 取最后一个 top <= y 且 bottom >= y 的卡片；若无命中则取鼠标上方最近的卡片
-    let lastAbove = '';
-    cards.forEach(card => {
-      const r = card.getBoundingClientRect();
-      if (y >= r.top && y <= r.bottom) current = card.getAttribute('data-section');
-      if (r.top <= y) lastAbove = card.getAttribute('data-section');
-    });
-    if (!current) current = lastAbove || cards[0].getAttribute('data-section');
-    if (current !== this.activeSection) this.activeSection = current;
+    if (scroller) scroller.addEventListener('pointerover', this._sectionMouseHandler, { passive: true });
   },
 
   // 离开训练页时解绑滚动/鼠标/侧栏监听，避免泄漏
@@ -766,7 +888,7 @@ window.trainingCoreMixin = {
     }
     if (this._sectionMouseHandler) {
       const scroller = document.querySelector('.main-content');
-      if (scroller) scroller.removeEventListener('mousemove', this._sectionMouseHandler);
+      if (scroller) scroller.removeEventListener('pointerover', this._sectionMouseHandler);
       this._sectionMouseHandler = null;
     }
     if (this._sidebarResizeObserver) {
@@ -958,7 +1080,7 @@ window.trainingCoreMixin = {
       fc.hasOptionDescs = !!hasOptionDescs;
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const descPanelHtml = fc.hasOptionDescs ? `<div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>` : '';
-      const menuHtml = `<div class="anima-select-menu" x-show="open" x-transition><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div>`;
+      const menuHtml = `<template x-if="open"><div class="anima-select-menu"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div></template>`;
       inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"></textarea>`;
@@ -1193,13 +1315,15 @@ window.trainingCoreMixin = {
   },
 
   showConditionalFields(parentKey) {
+    const container = document.getElementById('trainFormContent');
+    if (!container) { this.updateToml(); return; }
     const expectedVal = this.form[parentKey];
-    const toAnimate = []; // collect rows that need animation
+    const toAnimate = [];
     // 进阶参数计数随字段显隐联动重算（按表单状态，与 DOM 动画时序无关）。
     this._updateAdvancedCounts();
 
     // Handle multi-condition show_if (data-show-if-all)
-    document.querySelectorAll(`[data-show-if-all]`).forEach(row => {
+    container.querySelectorAll(`[data-show-if-all]`).forEach(row => {
       try {
         const conditions = JSON.parse(row.getAttribute('data-show-if-all'));
         // Only re-evaluate if this parentKey is relevant to these conditions
@@ -1210,7 +1334,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle OR-of-ANDs show_if (data-show-if-any)
-    document.querySelectorAll(`[data-show-if-any]`).forEach(row => {
+    container.querySelectorAll(`[data-show-if-any]`).forEach(row => {
       try {
         const groups = JSON.parse(row.getAttribute('data-show-if-any'));
         // Only re-evaluate if this parentKey appears in any AND group
@@ -1221,7 +1345,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle single-condition show_if (data-show-if-key) — existing logic
-    document.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
+    container.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
       const eqVal = row.getAttribute('data-show-if-eq');
       const neqVal = row.getAttribute('data-show-if-neq');
       const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
@@ -1239,70 +1363,359 @@ window.trainingCoreMixin = {
     });
 
     if (toAnimate.length === 0) { this.updateToml(); return; }
-
-    // Single forced layout read, then apply all animations in one frame
-    toAnimate.forEach(item => { void item.row.offsetHeight; });
-
-    // Double RAF ensures browser has processed layout before starting transitions
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        toAnimate.forEach(item => {
-          const row = item.row;
-          row.style.transition = ''; // restore CSS transition
-          if (item.action === 'hide') {
-            row.classList.add('field-hidden');
-          } else {
-            row.style.maxHeight = item.height + 'px';
-            row.style.transform = 'translateY(0)';
-          }
-
-          let timerId = null;
-          const cleanup = function() {
-            if (timerId) { clearTimeout(timerId); timerId = null; }
-            row.style.maxHeight = '';
-            row.style.transform = '';
-            row.style.transition = '';
-            row.style.overflow = '';
-            row.removeEventListener('transitionend', onEnd);
-          };
-          const onEnd = function(e) {
-            if (e.propertyName === 'max-height') cleanup();
-          };
-          row.addEventListener('transitionend', onEnd);
-          timerId = setTimeout(cleanup, 500);
-        });
-      });
-    });
-
+    this._queueConditionalMotion(toAnimate);
     this.updateToml();
   },
 
-  // Helper: toggle a field row's visibility and collect animation info
+  // 只记录最终目标；同一轮 Alpine watcher 产生的多项变化会合并为一次布局切换。
   _toggleFieldRow(row, match, toAnimate) {
-    const currentlyHidden = row.classList.contains('field-hidden');
-    if (match === !currentlyHidden) return; // no state change
+    const targetVisible = row._conditionalTargetVisible;
+    const currentlyVisible = !row.classList.contains('field-hidden') && !row.classList.contains('field-motion-exit');
+    if (targetVisible === match) return;
+    if (targetVisible === undefined && currentlyVisible === match) return;
+    row._conditionalTargetVisible = match;
+    toAnimate.push({ row, match });
+  },
 
-    // Clean up any in-flight transition
-    row.style.transition = 'none';
-    row.style.maxHeight = '';
-    row.style.transform = '';
+  _queueConditionalMotion(items) {
+    if (!(this._conditionalMotionQueue instanceof Map)) this._conditionalMotionQueue = new Map();
+    items.forEach(item => this._conditionalMotionQueue.set(item.row, item.match));
+    if (this._conditionalMotionTimer) return;
 
-    if (!match) {
-      // HIDE: measure → lock height → add .field-hidden to trigger CSS transition
-      row.style.overflow = 'hidden';
-      const h = row.scrollHeight;
-      row.style.maxHeight = h + 'px';
-      row.style.transform = 'translateY(0)';
-      toAnimate.push({ row: row, action: 'hide', height: h });
-    } else {
-      // SHOW: measure target while hidden → start from 0 → animate to full height
-      row.style.overflow = 'hidden';
-      row.classList.remove('field-hidden');
-      const h = row.scrollHeight;
-      row.style.maxHeight = '0px';
-      row.style.transform = 'translateY(-6px)';
-      toAnimate.push({ row: row, action: 'show', height: h });
+    const epoch = this._conditionalMotionEpoch;
+    this._conditionalMotionTimer = setTimeout(() => {
+      this._conditionalMotionTimer = null;
+      if (epoch !== this._conditionalMotionEpoch) return;
+      const queue = this._conditionalMotionQueue;
+      this._conditionalMotionQueue = null;
+      if (!queue) return;
+      const changes = [];
+      queue.forEach((match, row) => {
+        if (row && row.isConnected) changes.push({ row, match });
+      });
+      this._runConditionalMotion(changes, epoch);
+    }, 0);
+  },
+
+  _runConditionalMotion(changes, epoch) {
+    if (!changes.length || epoch !== this._conditionalMotionEpoch) return;
+    const container = document.getElementById('trainFormContent');
+    if (!container) return;
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canAnimate = !reduceMotion && typeof Element !== 'undefined'
+      && Element.prototype && typeof Element.prototype.animate === 'function';
+    if (!canAnimate) {
+      changes.forEach(item => this._setConditionalState(item.row, item.match));
+      return;
     }
+
+    const changedRows = new Set(changes.map(item => item.row));
+    const primary = [];
+    const deferredByPrimary = new Map();
+
+    changes.forEach(item => {
+      const row = item.row;
+      const exitingAncestor = row.parentElement && row.parentElement.closest('.field-motion-exit');
+      if (exitingAncestor && !changedRows.has(exitingAncestor)) {
+        this._deferConditionalChange(exitingAncestor, row, item.match);
+        return;
+      }
+
+      const hiddenAncestor = row.parentElement
+        && row.parentElement.closest('.field-hidden, .advanced-fold-collapsed, .card-collapsed');
+      if (hiddenAncestor && !changedRows.has(hiddenAncestor)) {
+        this._setConditionalState(row, item.match);
+        return;
+      }
+
+      let owner = null;
+      let parent = row.parentElement;
+      while (parent && parent !== container) {
+        if (changedRows.has(parent)) owner = parent;
+        parent = parent.parentElement;
+      }
+      if (owner) {
+        if (!deferredByPrimary.has(owner)) deferredByPrimary.set(owner, []);
+        deferredByPrimary.get(owner).push(item);
+      } else {
+        primary.push(item);
+      }
+    });
+
+    deferredByPrimary.forEach((items, owner) => {
+      items.forEach(item => this._deferConditionalChange(owner, item.row, item.match));
+    });
+    if (!primary.length) return;
+
+    const layoutParents = new Set();
+    primary.forEach(item => {
+      if (item.row.parentElement) layoutParents.add(item.row.parentElement);
+      const card = item.row.closest('.card');
+      if (card && card.parentElement) layoutParents.add(card.parentElement);
+      this._cancelConditionalVisibilityAnimation(item.row);
+    });
+
+    const before = this._captureConditionalLayout(layoutParents, true);
+    const entering = new Set();
+    const exiting = new Set();
+
+    primary.forEach(item => {
+      const row = item.row;
+      if (item.match) {
+        this._restoreConditionalExit(row);
+        row.classList.remove('field-hidden');
+        row.setAttribute('aria-hidden', 'false');
+        this._applyConditionalDeferredChanges(row);
+        entering.add(row);
+        return;
+      }
+
+      if (row.classList.contains('field-hidden')) {
+        this._setConditionalState(row, false);
+        this._applyConditionalDeferredChanges(row);
+        return;
+      }
+      const rect = before.get(row) || row.getBoundingClientRect();
+      this._prepareConditionalExit(row, rect);
+      exiting.add(row);
+    });
+
+    const after = this._captureConditionalLayout(layoutParents, false);
+    this._playConditionalFlip(before, after, entering);
+    this._animateConditionalEntries(entering);
+    this._animateConditionalExits(exiting, epoch);
+  },
+
+  _captureConditionalLayout(parents, cancelExisting) {
+    const layout = new Map();
+    parents.forEach(parent => {
+      if (!parent || !parent.isConnected) return;
+      Array.from(parent.children).forEach(element => {
+        if (cancelExisting && element._conditionalLayoutAnimation) {
+          clearTimeout(element._conditionalLayoutTimer);
+          element._conditionalLayoutTimer = null;
+          element._conditionalLayoutAnimation.cancel();
+          element._conditionalLayoutAnimation = null;
+          element.classList.remove('field-motion-moving');
+        }
+        if (element.classList.contains('field-hidden') || element.classList.contains('field-motion-exit')) return;
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.position === 'fixed') return;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        layout.set(element, {
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom,
+        });
+      });
+    });
+    return layout;
+  },
+
+  _playConditionalFlip(before, after, entering) {
+    const scroller = document.getElementById('mainContent');
+    const viewport = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    let animationCount = 0;
+    after.forEach((nextRect, element) => {
+      const prevRect = before.get(element);
+      if (!prevRect || entering.has(element) || animationCount >= 36) return;
+      const dx = prevRect.left - nextRect.left;
+      const dy = prevRect.top - nextRect.top;
+      if (Math.abs(dx) < 0.75 && Math.abs(dy) < 0.75) return;
+      const inView = nextRect.bottom >= viewport.top - 140 && nextRect.top <= viewport.bottom + 140;
+      const wasInView = prevRect.bottom >= viewport.top - 140 && prevRect.top <= viewport.bottom + 140;
+      if (!inView && !wasInView) return;
+      if (getComputedStyle(element).transform !== 'none') return;
+
+      if (element._conditionalLayoutAnimation) element._conditionalLayoutAnimation.cancel();
+      element.classList.add('field-motion-moving');
+      const animation = element.animate([
+        { transform: `translate3d(${dx}px, ${dy}px, 0)` },
+        { transform: 'translate3d(0, 0, 0)' },
+      ], {
+        duration: 190,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      });
+      element._conditionalLayoutAnimation = animation;
+      animationCount += 1;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(element._conditionalLayoutTimer);
+        element._conditionalLayoutTimer = null;
+        if (element._conditionalLayoutAnimation === animation) {
+          element._conditionalLayoutAnimation = null;
+          animation.cancel();
+          element.classList.remove('field-motion-moving');
+        }
+      };
+      element._conditionalLayoutTimer = setTimeout(finish, 260);
+      animation.finished.then(finish).catch(() => {});
+    });
+  },
+
+  _animateConditionalEntries(rows) {
+    rows.forEach(row => {
+      if (!row.isConnected || row._conditionalTargetVisible !== true) return;
+      row.classList.add('field-motion-entering');
+      const animation = row.animate([
+        { opacity: 0, transform: 'translate3d(0, -6px, 0)' },
+        { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+      ], {
+        duration: 180,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      });
+      row._conditionalVisibilityAnimation = animation;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(row._conditionalVisibilityTimer);
+        row._conditionalVisibilityTimer = null;
+        if (row._conditionalVisibilityAnimation === animation) {
+          row._conditionalVisibilityAnimation = null;
+          animation.cancel();
+          row.classList.remove('field-motion-entering');
+        }
+      };
+      row._conditionalVisibilityTimer = setTimeout(finish, 240);
+      animation.finished.then(finish).catch(() => {});
+    });
+  },
+
+  _animateConditionalExits(rows, epoch) {
+    rows.forEach(row => {
+      if (!row.isConnected || row._conditionalTargetVisible !== false) return;
+      const animation = row.animate([
+        { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+        { opacity: 0, transform: 'translate3d(0, -4px, 0)' },
+      ], {
+        duration: 125,
+        easing: 'cubic-bezier(0.4, 0, 1, 1)',
+        fill: 'forwards',
+      });
+      row._conditionalVisibilityAnimation = animation;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(row._conditionalVisibilityTimer);
+        row._conditionalVisibilityTimer = null;
+        if (row._conditionalVisibilityAnimation !== animation) return;
+        row._conditionalVisibilityAnimation = null;
+        if (epoch !== this._conditionalMotionEpoch || !row.isConnected) {
+          animation.cancel();
+          this._restoreConditionalExit(row);
+          return;
+        }
+        if (row._conditionalTargetVisible === false) {
+          row.classList.add('field-hidden');
+          row.setAttribute('aria-hidden', 'true');
+          animation.cancel();
+          this._applyConditionalDeferredChanges(row);
+          this._restoreConditionalExit(row);
+        } else {
+          animation.cancel();
+          this._restoreConditionalExit(row);
+          row.classList.remove('field-hidden');
+          row.setAttribute('aria-hidden', 'false');
+          this._applyConditionalDeferredChanges(row);
+        }
+      };
+      row._conditionalVisibilityTimer = setTimeout(finish, 190);
+      animation.finished.then(finish).catch(() => {});
+    });
+  },
+
+  _prepareConditionalExit(row, rect) {
+    this._restoreConditionalExit(row);
+    const properties = [
+      'position', 'top', 'left', 'width', 'height', 'minHeight', 'maxHeight',
+      'margin', 'overflow', 'opacity', 'transform', 'transformOrigin', 'transition',
+      'visibility', 'pointerEvents', 'zIndex', 'boxSizing', 'backgroundColor',
+      'contain', 'willChange',
+    ];
+    const inline = {};
+    properties.forEach(property => { inline[property] = row.style[property]; });
+    row._conditionalExitInline = inline;
+    row.classList.remove('field-hidden', 'field-motion-entering');
+    row.classList.add('field-motion-exit');
+    row.setAttribute('aria-hidden', 'true');
+    row.style.position = 'fixed';
+    row.style.top = `${rect.top}px`;
+    row.style.left = `${rect.left}px`;
+    row.style.width = `${Math.max(0, rect.right - rect.left)}px`;
+    row.style.height = `${Math.max(0, rect.bottom - rect.top)}px`;
+    row.style.minHeight = '0';
+    row.style.maxHeight = `${Math.max(0, rect.bottom - rect.top)}px`;
+    row.style.margin = '0';
+    row.style.overflow = 'hidden';
+    row.style.opacity = '1';
+    row.style.transform = 'translate3d(0, 0, 0)';
+    row.style.transformOrigin = 'top left';
+    row.style.transition = 'none';
+    row.style.visibility = 'visible';
+    row.style.pointerEvents = 'none';
+    row.style.zIndex = '60';
+    row.style.boxSizing = 'border-box';
+    row.style.backgroundColor = 'var(--bg-surface)';
+    row.style.contain = 'paint';
+    row.style.willChange = 'transform, opacity';
+  },
+
+  _restoreConditionalExit(row) {
+    const inline = row._conditionalExitInline;
+    if (inline) {
+      Object.keys(inline).forEach(property => { row.style[property] = inline[property]; });
+      delete row._conditionalExitInline;
+    }
+    row.classList.remove('field-motion-exit');
+  },
+
+  _cancelConditionalVisibilityAnimation(row) {
+    clearTimeout(row._conditionalVisibilityTimer);
+    row._conditionalVisibilityTimer = null;
+    if (row._conditionalVisibilityAnimation) {
+      row._conditionalVisibilityAnimation.cancel();
+      row._conditionalVisibilityAnimation = null;
+    }
+    row.classList.remove('field-motion-entering');
+  },
+
+  _setConditionalState(row, visible) {
+    if (!row || !row.isConnected) return;
+    this._cancelConditionalVisibilityAnimation(row);
+    if (visible) {
+      this._restoreConditionalExit(row);
+      row.classList.remove('field-hidden');
+      row.setAttribute('aria-hidden', 'false');
+    } else {
+      row.classList.add('field-hidden');
+      row.setAttribute('aria-hidden', 'true');
+      this._restoreConditionalExit(row);
+    }
+    row.classList.remove('field-motion-entering');
+  },
+
+  _deferConditionalChange(owner, row, match) {
+    if (!(owner._conditionalDeferredChanges instanceof Map)) owner._conditionalDeferredChanges = new Map();
+    owner._conditionalDeferredChanges.set(row, match);
+  },
+
+  _applyConditionalDeferredChanges(owner) {
+    const deferred = owner._conditionalDeferredChanges;
+    if (!(deferred instanceof Map)) return;
+    delete owner._conditionalDeferredChanges;
+    deferred.forEach((match, row) => {
+      const target = typeof row._conditionalTargetVisible === 'boolean'
+        ? row._conditionalTargetVisible
+        : match;
+      this._setConditionalState(row, target);
+    });
   },
 
   // ── Auto Value: auto-set field value when watcher field changes ──

@@ -581,12 +581,6 @@ window.monitorCoreMixin = {
   logFullLastPage() { this.followFullTail({ fetchNow: true }); },
   logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
   logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
-  logFullGotoLine(n) {
-    const ln = parseInt(n, 10);
-    if (isNaN(ln) || ln < 1) return;
-    this.logAutoScroll = false; this._logAtBottom = false;
-    this.fetchLogSlice({ offset: Math.max(0, (ln - 1) - ((ln - 1) % this._logPageSize())) });
-  },
   /** 上一/下一匹配行 */
   logFullPrevMatch() {
     if (!this.logFullMatches.length) return;

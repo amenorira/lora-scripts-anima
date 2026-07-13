@@ -14,6 +14,11 @@ from backend.constants import SD_SCRIPTS_DIR
 class StepEstimateError(ValueError):
     """Raised when an exact step estimate cannot be produced."""
 
+    def __init__(self, message: str, *, code: str = "failed", **params: Any):
+        super().__init__(message)
+        self.code = code
+        self.params = params
+
 
 @lru_cache(maxsize=1)
 def _sd_dataset_helpers():
@@ -29,13 +34,25 @@ def _sd_dataset_helpers():
 def _positive_int(config: dict[str, Any], key: str, default: int) -> int:
     value = config.get(key, default)
     if isinstance(value, bool):
-        raise StepEstimateError(f"{key} must be a positive integer / {key} 必须是正整数")
+        raise StepEstimateError(
+            f"{key} must be a positive integer / {key} 必须是正整数",
+            code="positiveInteger",
+            field=key,
+        )
     try:
         numeric = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise StepEstimateError(f"{key} must be a positive integer / {key} 必须是正整数") from exc
+        raise StepEstimateError(
+            f"{key} must be a positive integer / {key} 必须是正整数",
+            code="positiveInteger",
+            field=key,
+        ) from exc
     if numeric < 1 or not math.isfinite(numeric) or not numeric.is_integer():
-        raise StepEstimateError(f"{key} must be a positive integer / {key} 必须是正整数")
+        raise StepEstimateError(
+            f"{key} must be a positive integer / {key} 必须是正整数",
+            code="positiveInteger",
+            field=key,
+        )
     return int(numeric)
 
 
@@ -48,13 +65,15 @@ def _parse_resolution(value: Any) -> tuple[int, int]:
         resolution = tuple(int(str(part).strip()) for part in parts)
     except (TypeError, ValueError) as exc:
         raise StepEstimateError(
-            "resolution must be one or two positive integers / 分辨率必须是一到两个正整数"
+            "resolution must be one or two positive integers / 分辨率必须是一到两个正整数",
+            code="invalidResolution",
         ) from exc
     if len(resolution) == 1:
         resolution = (resolution[0], resolution[0])
     if len(resolution) != 2 or min(resolution) < 1:
         raise StepEstimateError(
-            "resolution must be one or two positive integers / 分辨率必须是一到两个正整数"
+            "resolution must be one or two positive integers / 分辨率必须是一到两个正整数",
+            code="invalidResolution",
         )
     return resolution
 
@@ -63,13 +82,22 @@ def _gpu_processes(gpu_ids: Any) -> int:
     if not gpu_ids:
         return 1
     if not isinstance(gpu_ids, (list, tuple)):
-        raise StepEstimateError("gpu_ids must be a list / gpu_ids 必须是列表")
+        raise StepEstimateError(
+            "gpu_ids must be a list / gpu_ids 必须是列表",
+            code="gpuIdsMustBeList",
+        )
     try:
         normalized = [int(gpu_id) for gpu_id in gpu_ids]
     except (TypeError, ValueError) as exc:
-        raise StepEstimateError("gpu_ids contains an invalid value / gpu_ids 包含无效值") from exc
+        raise StepEstimateError(
+            "gpu_ids contains an invalid value / gpu_ids 包含无效值",
+            code="invalidGpuId",
+        ) from exc
     if len(normalized) != len(set(normalized)):
-        raise StepEstimateError("gpu_ids contains duplicates / gpu_ids 不能包含重复项")
+        raise StepEstimateError(
+            "gpu_ids contains duplicates / gpu_ids 不能包含重复项",
+            code="duplicateGpuIds",
+        )
     return max(1, len(normalized))
 
 
@@ -80,11 +108,15 @@ def _cached_image_size(image_path: str, _size: int, _modified_ns: int) -> tuple[
         width, height = get_image_size(None, image_path)
     except Exception as exc:
         raise StepEstimateError(
-            f"Unable to read image size: {image_path} / 无法读取图片尺寸: {image_path}"
+            f"Unable to read image size: {image_path} / 无法读取图片尺寸: {image_path}",
+            code="imageSizeUnreadable",
+            path=image_path,
         ) from exc
     if width < 1 or height < 1:
         raise StepEstimateError(
-            f"Invalid image size: {image_path} / 图片尺寸无效: {image_path}"
+            f"Invalid image size: {image_path} / 图片尺寸无效: {image_path}",
+            code="invalidImageSize",
+            path=image_path,
         )
     return width, height
 
@@ -94,7 +126,9 @@ def _read_image_size(image_path: str) -> tuple[int, int]:
         stat = Path(image_path).stat()
     except OSError as exc:
         raise StepEstimateError(
-            f"Unable to read image: {image_path} / 无法读取图片: {image_path}"
+            f"Unable to read image: {image_path} / 无法读取图片: {image_path}",
+            code="imageUnreadable",
+            path=image_path,
         ) from exc
     return _cached_image_size(image_path, stat.st_size, stat.st_mtime_ns)
 
@@ -133,11 +167,13 @@ def _adjust_bucket_range(
         max_bucket_reso += bucket_reso_steps - max_bucket_reso % bucket_reso_steps
     if min(resolution) < min_bucket_reso:
         raise StepEstimateError(
-            "min_bucket_reso must not exceed the training resolution / 最小桶分辨率不能大于训练分辨率"
+            "min_bucket_reso must not exceed the training resolution / 最小桶分辨率不能大于训练分辨率",
+            code="minBucketTooLarge",
         )
     if max(resolution) > max_bucket_reso:
         raise StepEstimateError(
-            "max_bucket_reso must cover the training resolution / 最大桶分辨率必须覆盖训练分辨率"
+            "max_bucket_reso must cover the training resolution / 最大桶分辨率必须覆盖训练分辨率",
+            code="maxBucketTooSmall",
         )
     return min_bucket_reso, max_bucket_reso
 
@@ -145,22 +181,31 @@ def _adjust_bucket_range(
 def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
     """Return an exact pre-training step estimate for the current DreamBooth directory UI."""
     if not isinstance(config, dict):
-        raise StepEstimateError("Training configuration must be an object / 训练参数必须是对象")
+        raise StepEstimateError(
+            "Training configuration must be an object / 训练参数必须是对象",
+            code="invalidConfig",
+        )
 
     train_data_value = config.get("train_data_dir")
     if not train_data_value:
-        raise StepEstimateError("Select a training dataset directory / 请选择训练数据集目录")
+        raise StepEstimateError(
+            "Select a training dataset directory / 请选择训练数据集目录",
+            code="datasetRequired",
+        )
     train_data_dir = Path(str(train_data_value))
     if not train_data_dir.is_dir():
         raise StepEstimateError(
-            f"Dataset directory not found: {train_data_dir} / 数据集目录不存在: {train_data_dir}"
+            f"Dataset directory not found: {train_data_dir} / 数据集目录不存在: {train_data_dir}",
+            code="datasetNotFound",
+            path=str(train_data_dir),
         )
 
     BucketManager, glob_images, _ = _sd_dataset_helpers()
     subsets = _dataset_subsets(train_data_dir, glob_images)
     if not subsets:
         raise StepEstimateError(
-            "No valid image folder found (example: 5_character) / 未找到有效图片目录（例如 5_character）"
+            "No valid image folder found (example: 5_character) / 未找到有效图片目录（例如 5_character）",
+            code="noValidImageFolder",
         )
 
     resolution = _parse_resolution(config.get("resolution", "1024,1024"))
@@ -189,7 +234,11 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
             if not bucket_no_upscale:
                 bucket_manager.make_buckets()
         except (AssertionError, ValueError) as exc:
-            raise StepEstimateError(f"Invalid bucket settings / 分桶参数无效: {exc}") from exc
+            raise StepEstimateError(
+                f"Invalid bucket settings / 分桶参数无效: {exc}",
+                code="invalidBucketSettings",
+                detail=str(exc),
+            ) from exc
     else:
         bucket_reso_steps = None
         min_bucket_reso = None
@@ -211,7 +260,9 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
                 bucket_resolution, _, _ = bucket_manager.select_bucket(width, height)
             except (AssertionError, ValueError, ZeroDivisionError) as exc:
                 raise StepEstimateError(
-                    f"Unable to assign image to a bucket: {image_path} / 图片无法分桶: {image_path}"
+                    f"Unable to assign image to a bucket: {image_path} / 图片无法分桶: {image_path}",
+                    code="bucketAssignmentFailed",
+                    path=image_path,
                 ) from exc
             bucket_samples[bucket_resolution] += subset["repeats"]
 

@@ -22,12 +22,18 @@ document.addEventListener('alpine:init', () => {
     showLangDropdown: false,
     sidebarCollapsed: false,
     rightPanelOpen: false,
+    isWideScreen: window.innerWidth > 1100,
+    _routeScrollPositions: {},
+    routeTransitioning: false,
+    _routeTransitionSeq: 0,
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
     _progressInterval: null,
     _progressResetTimer: null,
+    _progressFinishTimer: null,
     _progressStartTime: 0,
+    _progressSeq: 0,
 
     // UI Settings
     autoLoadHistory: true,
@@ -100,7 +106,9 @@ document.addEventListener('alpine:init', () => {
 
       // 使用 matchMedia 替代 resize 事件，避免每秒 ~60 次触发
       const mm = window.matchMedia('(min-width: 1101px)');
+      this.isWideScreen = mm.matches;
       mm.addEventListener('change', (e) => {
+        this.isWideScreen = e.matches;
         if (e.matches) this.rightPanelOpen = false;
       });
 
@@ -165,40 +173,57 @@ document.addEventListener('alpine:init', () => {
     startProgress() {
       clearInterval(this._progressInterval);
       clearTimeout(this._progressResetTimer);
+      clearTimeout(this._progressFinishTimer);
+      const progressSeq = ++this._progressSeq;
       this._progressStartTime = Date.now();
-      this.progressPercent = 0;
+      // Start above zero so Alpine can paint the bar before a heavy route mounts.
+      this.progressPercent = 8;
       var stages = (window.UI_CONSTANTS && window.UI_CONSTANTS.PROGRESS_STAGES) || [{ duration: 300, max: 30 }, { duration: 1700, max: 65 }, { duration: Infinity, max: 90 }];
       var t1 = stages[0].duration, m1 = stages[0].max;
       var t2 = stages[1].duration, m2 = stages[1].max;
       var maxPct = stages[2].max;
 
       this._progressInterval = setInterval(() => {
+        if (progressSeq !== this._progressSeq) return;
         var elapsed = Date.now() - this._progressStartTime;
         if (elapsed < t1) {
-          this.progressPercent = Math.round((elapsed / t1) * m1);
+          this.progressPercent = Math.max(8, Math.round((elapsed / t1) * m1));
         } else if (elapsed < t1 + t2) {
           this.progressPercent = Math.round(m1 + ((elapsed - t1) / t2) * (m2 - m1));
         } else {
           this.progressPercent = Math.round(m2 + ((elapsed - t1 - t2) / (elapsed - t1 - t2 + 200)) * (maxPct - m2));
         }
         if (this.progressPercent > maxPct) this.progressPercent = maxPct;
-      }, 100);
+      }, 80);
     },
 
     finishProgress() {
       clearInterval(this._progressInterval);
       this._progressInterval = null;
-      this.progressPercent = 100;
-      this._progressResetTimer = setTimeout(() => {
-        this.progressPercent = 0;
-      }, 900);
+      clearTimeout(this._progressFinishTimer);
+      const progressSeq = this._progressSeq;
+      const elapsed = Date.now() - this._progressStartTime;
+      const complete = () => {
+        if (progressSeq !== this._progressSeq) return;
+        this.progressPercent = 100;
+        this._progressResetTimer = setTimeout(() => {
+          if (progressSeq === this._progressSeq) this.progressPercent = 0;
+        }, 520);
+      };
+      // Prevent a sub-frame flash while still keeping route feedback crisp.
+      this._progressFinishTimer = setTimeout(complete, Math.max(0, 160 - elapsed));
     },
 
     // ── Routing ─────────────────────────────────────────────
     navigate(route) {
       if (!this._teConfirmNav(route)) return;
+      if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
+        this.showLoadModal = false;
+        return;
+      }
+      this.routeTransitioning = true;
+      this.startProgress();
       window.location.hash = route;
-      this.handleRoute();
     },
 
     handleRoute() {
@@ -210,6 +235,27 @@ document.addEventListener('alpine:init', () => {
         this.showLoadModal = false;
         return;
       }
+      const transitionSeq = ++this._routeTransitionSeq;
+      if (!this.routeTransitioning) {
+        this.routeTransitioning = true;
+        this.startProgress();
+      }
+
+      // The training form mounts hundreds of controls. Leave a short paint
+      // window so the active nav state, content fade and progress bar become
+      // visible before that work starts. A timer also keeps routing reliable
+      // in background tabs, where requestAnimationFrame may be paused.
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const mountDelay = route.startsWith('train-') && !reduceMotion ? 48 : 16;
+      setTimeout(() => {
+        if (transitionSeq !== this._routeTransitionSeq) return;
+        this._commitRoute(route, prev, transitionSeq);
+      }, mountDelay);
+    },
+
+    _commitRoute(route, prev, transitionSeq) {
+      const mainContent = document.getElementById('mainContent');
+      if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
       // Cleanup tag editor resources when leaving
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
@@ -217,7 +263,8 @@ document.addEventListener('alpine:init', () => {
       // Stop training status poll when leaving training page
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
         this.stopTrainingStatusPoll();
-        if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
+        if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
+        else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
       this.currentRoute = route;
 
@@ -228,11 +275,16 @@ document.addEventListener('alpine:init', () => {
       else this.pageSubtitle = cfg.subtitle || '';
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
-      this.buildRouteContent();
-      // Start training status poll when entering training page
-      if (route.startsWith('train-')) {
-        this.startTrainingStatusPoll();
-      }
+      const progressManagedByRoute = this.buildRouteContent({ routeTransition: true });
+      const restoreScrollTop = this._routeScrollPositions[route] || 0;
+      this.$nextTick(() => setTimeout(() => {
+        if (transitionSeq === this._routeTransitionSeq && this.currentRoute === route) {
+          const scroller = document.getElementById('mainContent');
+          if (scroller) scroller.scrollTop = restoreScrollTop;
+          this.routeTransitioning = false;
+          if (!progressManagedByRoute) this.finishProgress();
+        }
+      }, 16));
       this.showLoadModal = false;
     },
 
@@ -243,8 +295,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Route Content Builder ───────────────────────────────
-    buildRouteContent() {
+    buildRouteContent(options) {
       const r = this.currentRoute;
+      const routeTransition = !!(options && options.routeTransition);
+      let progressManagedByRoute = false;
       if (!r.startsWith('monitor-')) {
         this.stopMonitorPolling();
         if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
@@ -266,24 +320,29 @@ document.addEventListener('alpine:init', () => {
         this.buildTaggerForm();
       } else if (r === 'tagEditor') {
         this.tagEditorLoad();
+        progressManagedByRoute = true;
       } else if (r === 'settings') {
         this.loadUISettings();
       } else if (r === 'monitor-dashboard') {
-        this.startProgress();
+        if (!routeTransition) this.startProgress();
         this.startMonitorPolling();
+        progressManagedByRoute = true;
         // renderDashboard() is called by fetchMonitorStatus() when data arrives
       } else if (r === 'history') {
-        this.startProgress();
+        if (!routeTransition) this.startProgress();
         this.loadHistory();
+        progressManagedByRoute = true;
       } else if (r === 'environment') {
-        this.startProgress();
+        if (!routeTransition) this.startProgress();
         this.buildEnvironmentPage();
+        progressManagedByRoute = true;
       } else if (r === 'presets') {
         this.loadPresets();
       } else if (r === 'tensorboard') {
         this.stopMonitorPolling();
         this.renderTensorBoardPage();
       }
+      return progressManagedByRoute;
     },
 
     // ── UI Settings ────────────────────────────────────────
