@@ -71,8 +71,10 @@ lora-scripts-anima/
 
 ### 必要依赖
 
-- Python 3.10+ 和 Git
+- 64 位 Python 3.10–3.12（推荐 3.12）和 Git
 - **PyTorch ≥ 2.10.0 + CUDA 12.8**（安装脚本自动配置，兼容 RTX 30/40/50 全系列）
+
+> Python 3.13/3.14 暂不支持：项目固定依赖中的部分 Windows wheel 尚不兼容。Windows 安装器会优先复用合格的 `venv`，否则通过 Python Launcher 自动选择 3.12，并跳过 Microsoft Store 的 Python 占位符。如果用户只有新版 Python，安装器可为当前用户并行安装官方 Python 3.12；已有版本无需卸载，也不会更改默认 PATH。
 
 | GPU 系列 | 最低 PyTorch | 推荐 CUDA |
 |----------|:----------:|:---------:|

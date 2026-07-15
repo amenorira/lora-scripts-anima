@@ -7,38 +7,17 @@ set _QUIET=0
 for %%a in (%*) do if /i "%%a"=="--quiet" set _QUIET=1
 for %%a in (%*) do if /i "%%a"=="-q" set _QUIET=1
 
-REM -- Bootstrap: verify Python exists --
-set _PYPATH=
-for /f "tokens=*" %%i in ('where python 2^>nul') do if "!_PYPATH!"=="" set _PYPATH=%%i
-
-if "!_PYPATH!"=="" (
-    echo [FAIL] Python is not installed or not in PATH.
-    echo        Download: https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe
-    pause
-    exit /b 1
-)
-
-echo !_PYPATH! | findstr /i "WindowsApps" >nul
-if !errorlevel! equ 0 (
-    echo [FAIL] Microsoft Store Python placeholder detected.
-    pause
-    exit /b 1
-)
-
-python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+REM -- Bootstrap: select a compatible 64-bit Python (3.10-3.12) --
+REM Prefer an existing compatible venv, then Python Launcher 3.12. If only a
+REM newer Python exists, offer a side-by-side per-user Python 3.12 install.
+call :select_python
 if !errorlevel! neq 0 (
-    for /f "tokens=*" %%i in ('python --version 2^>^&1') do set _PYVER=%%i
-    echo [FAIL] !_PYVER! - Python 3.10+ required.
     pause
     exit /b 1
 )
 
-python -c "import sys; sys.exit(0 if sys.maxsize > 2**32 else 1)" >nul 2>&1
-if !errorlevel! neq 0 (
-    echo [FAIL] 32-bit Python detected. 64-bit required.
-    pause
-    exit /b 1
-)
+echo [Setup] Using Python from !_PYTHON_SOURCE!: !_PYTHON_EXE!
+"!_PYTHON_EXE!" --version
 
 REM -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
 REM Do not modify host pip.ini / original env values; take over via process env
@@ -49,11 +28,11 @@ REM Logic: probe index-url/extra-index-url via `pip config get` (read-only) --
 REM   http://  -> export https:// equivalent + register PIP_TRUSTED_HOST (upgrade)
 REM   https:// -> leave as-is (already safe)
 REM   none     -> leave as-is (use official PyPI)
-REM No built-in mirror; auto-adapts CN/abroad. Probe uses system python (available
-REM before venv exists); host pip.conf is the same regardless of which python reads it.
+REM No built-in mirror; auto-adapts CN/abroad. Probe uses the selected Python;
+REM host pip.conf is the same regardless of which compatible interpreter reads it.
 set _PIP_FIXED=0
 for %%k in (global.index-url global.extra-index-url) do (
-    for /f "delims=" %%v in ('python -m pip config get %%k 2^>nul') do (
+    for /f "delims=" %%v in ('"!_PYTHON_EXE!" -m pip config get %%k 2^>nul') do (
         set "_val=%%v"
         if "!_val:~0,7!"=="http://" if not "!_val:~7!"=="" (
             for /f "delims=/" %%h in ("!_val:~7!") do set "_host=%%h"
@@ -103,7 +82,7 @@ set PIP_PREFER_BINARY=1
 
 if not exist "venv\Scripts\python.exe" (
     echo Creating venv...
-    python -m venv venv
+    "!_PYTHON_EXE!" -m venv venv
     if !errorlevel! neq 0 (echo [ERROR] Failed to create venv. && pause && exit /b 1)
     echo Upgrading pip...
     venv\Scripts\python.exe -m pip install --upgrade pip -q
@@ -142,4 +121,117 @@ if not defined HF_ENDPOINT set HF_ENDPOINT=https://hf-mirror.com
 :launch
 venv\Scripts\python.exe gui.py %*
 pause
+exit /b 0
+
+:select_python
+set "_PYTHON_EXE="
+set "_PYTHON_SOURCE="
+
+REM A valid project venv must win even if the host's `python` is a Store alias.
+if exist "venv\Scripts\python.exe" (
+    "venv\Scripts\python.exe" -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] < (3,13) and sys.maxsize > 2**32 else 1)" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo [FAIL] Existing venv uses an unsupported Python version or architecture.
+        "venv\Scripts\python.exe" --version 2>nul
+        echo        Supported: 64-bit Python 3.10-3.12 ^(3.12 recommended^).
+        echo        Rename or remove only this project's "venv" folder, then rerun start.bat.
+        exit /b 1
+    )
+    set "_PYTHON_EXE=%CD%\venv\Scripts\python.exe"
+    set "_PYTHON_SOURCE=existing venv"
+    exit /b 0
+)
+
+REM Prefer Python Launcher so Python 3.12 can coexist with Python 3.13/3.14.
+for %%v in (3.12 3.11 3.10) do (
+    if not defined _PYTHON_EXE (
+        for /f "delims=" %%i in ('py -%%v -c "import sys; print(sys.executable)" 2^>nul') do (
+            call :try_python_candidate "%%i" "Python Launcher"
+        )
+    )
+)
+
+REM Check common per-user locations even when py.exe is unavailable.
+if not defined _PYTHON_EXE call :try_python_candidate "%LocalAppData%\Programs\Python\Python312\python.exe" "per-user install"
+if not defined _PYTHON_EXE call :try_python_candidate "%LocalAppData%\Python\pythoncore-3.12-64\python.exe" "Python install manager"
+if not defined _PYTHON_EXE call :try_python_candidate "%ProgramFiles%\Python312\python.exe" "system install"
+
+REM Scan every PATH result. Do not stop at a Microsoft Store placeholder.
+for %%c in (python3.12.exe python3.11.exe python3.10.exe python3.exe python.exe) do (
+    if not defined _PYTHON_EXE (
+        for /f "delims=" %%i in ('where %%c 2^>nul') do (
+            if not defined _PYTHON_EXE (
+                call :try_path_candidate "%%i"
+            )
+        )
+    )
+)
+
+if defined _PYTHON_EXE exit /b 0
+
+echo [Notice] No compatible 64-bit Python installation was found.
+echo          Required: Python 3.10-3.12 ^(Python 3.12 recommended^).
+echo          Python 3.13/3.14 may remain installed, but cannot create this venv.
+echo.
+if "!_QUIET!"=="1" (
+    set "_PY_INSTALL_CHOICE=1"
+) else (
+    echo    1. Install Python 3.12 for the current user ^(recommended^)
+    echo    2. Exit
+    set /p _PY_INSTALL_CHOICE="Enter option (1/2): "
+)
+
+if not "!_PY_INSTALL_CHOICE!"=="1" (
+    echo [FAIL] Compatible Python is required. Existing Python versions do not need removal.
+    exit /b 1
+)
+
+call :install_python312
+exit /b !errorlevel!
+
+:try_path_candidate
+set "_CANDIDATE=%~1"
+echo(!_CANDIDATE!| findstr /i /c:"WindowsApps" >nul
+if errorlevel 1 call :try_python_candidate "!_CANDIDATE!" "PATH"
+exit /b 0
+
+:try_python_candidate
+set "_CANDIDATE=%~1"
+if not exist "!_CANDIDATE!" exit /b 0
+"!_CANDIDATE!" -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] < (3,13) and sys.maxsize > 2**32 else 1)" >nul 2>&1
+if !errorlevel! equ 0 (
+    set "_PYTHON_EXE=!_CANDIDATE!"
+    set "_PYTHON_SOURCE=%~2"
+)
+exit /b 0
+
+:install_python312
+set "_PYTHON_INSTALL_URL=https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
+set "_PYTHON_INSTALLER=%TEMP%\python-3.12.10-amd64.exe"
+set "_PYTHON_INSTALL_DIR=%LocalAppData%\Programs\Python\Python312"
+
+echo [Setup] Downloading official Python 3.12.10 installer...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:_PYTHON_INSTALL_URL -OutFile $env:_PYTHON_INSTALLER; $sig=Get-AuthenticodeSignature -LiteralPath $env:_PYTHON_INSTALLER; if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*Python Software Foundation*') { throw 'Python installer signature verification failed' }"
+if !errorlevel! neq 0 (
+    echo [ERROR] Python 3.12 download or signature verification failed.
+    echo         Manual download: !_PYTHON_INSTALL_URL!
+    exit /b 1
+)
+
+echo [Setup] Installing Python 3.12 for the current user ^(side by side^)...
+start /wait "" "!_PYTHON_INSTALLER!" /quiet InstallAllUsers=0 AssociateFiles=0 Shortcuts=0 PrependPath=0 Include_launcher=0 Include_test=0 Include_doc=0 Include_tcltk=0 TargetDir="!_PYTHON_INSTALL_DIR!"
+set "_PYTHON_INSTALL_RC=!errorlevel!"
+del /q "!_PYTHON_INSTALLER!" >nul 2>&1
+if not "!_PYTHON_INSTALL_RC!"=="0" (
+    echo [ERROR] Python 3.12 installer failed with code !_PYTHON_INSTALL_RC!.
+    exit /b 1
+)
+
+call :try_python_candidate "!_PYTHON_INSTALL_DIR!\python.exe" "automatic per-user install"
+if not defined _PYTHON_EXE (
+    echo [ERROR] Python 3.12 installation completed, but python.exe was not found.
+    exit /b 1
+)
+
+echo [Done] Python 3.12 installed without changing the default PATH.
 exit /b 0

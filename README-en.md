@@ -71,8 +71,10 @@ lora-scripts-anima/
 
 ### Prerequisites
 
-- Python 3.10+ and Git
+- 64-bit Python 3.10–3.12 (3.12 recommended) and Git
 - **PyTorch ≥ 2.10.0 + CUDA 12.8** (auto-configured by install scripts, compatible with RTX 30/40/50 series)
+
+> Python 3.13/3.14 are not supported yet because some pinned dependencies do not provide compatible Windows wheels. The Windows installer first reuses a compatible `venv`; otherwise it selects Python 3.12 through the Python Launcher and skips Microsoft Store Python placeholders. If only a newer Python is installed, the installer can add the official Python 3.12 for the current user side by side without changing the default PATH.
 
 | GPU Series | Min PyTorch | Recommended CUDA |
 |------------|:----------:|:----------------:|

@@ -7,6 +7,23 @@ import signal
 import subprocess
 import sys
 
+# Keep direct `python gui.py` launches from entering dependency repair with an
+# unsupported interpreter. start.bat/start.sh can select a compatible Python
+# without requiring users to uninstall newer system versions.
+if not ((3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32):
+    current = platform.python_version()
+    launcher = "start.bat" if sys.platform == "win32" else "start.sh"
+    print(
+        f"[FAIL] Unsupported Python {current} or non-64-bit interpreter.\n"
+        "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended).\n"
+        f"       Please run {launcher}; it will select a compatible Python "
+        "without removing newer versions.\n"
+        f"       当前 Python {current} 不受支持，请运行 {launcher}；"
+        "启动脚本会选择兼容的 Python，且不会卸载现有新版 Python。",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
 # Set up the logger first so the very first console line is timestamped.
 # (rich is light enough to import before the heavy torch/fastapi stack.)
 from backend.log import log

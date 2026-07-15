@@ -14,33 +14,49 @@ for arg in "$@"; do
     fi
 done
 
-# -- Bootstrap: verify Python exists --
+# -- Bootstrap: select a compatible 64-bit Python (3.10-3.12) --
+# Prefer an existing compatible venv, then a versioned interpreter. Python
+# 3.13/3.14 cannot install some pinned wheels used by this project.
+_is_supported_python() {
+    "$1" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32 else 1)' >/dev/null 2>&1
+}
+
 PYTHON_BIN=""
-if command -v python3 &>/dev/null; then
-    PYTHON_BIN="python3"
-elif command -v python &>/dev/null; then
-    PYTHON_BIN="python"
+PYTHON_SOURCE=""
+
+if [ -f "$VENV_PYTHON" ]; then
+    if ! _is_supported_python "$VENV_PYTHON"; then
+        echo "[FAIL] Existing venv uses an unsupported Python version or architecture."
+        "$VENV_PYTHON" --version 2>/dev/null || true
+        echo "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended)."
+        echo "       Rename or remove only this project's 'venv' folder, then rerun start.sh."
+        exit 1
+    fi
+    PYTHON_BIN="$VENV_PYTHON"
+    PYTHON_SOURCE="existing venv"
+else
+    for candidate in python3.12 python3.11 python3.10 python3 python; do
+        command -v "$candidate" >/dev/null 2>&1 || continue
+        candidate_path="$(command -v "$candidate")"
+        if _is_supported_python "$candidate_path"; then
+            PYTHON_BIN="$candidate_path"
+            PYTHON_SOURCE="$candidate"
+            break
+        fi
+    done
 fi
 
 if [ -z "$PYTHON_BIN" ]; then
-    echo "[FAIL] Python is not installed or not in PATH."
-    echo "       Install Python 3.12: sudo apt install python3.12 python3.12-venv"
-    echo "       Or: https://www.python.org/downloads/"
+    echo "[FAIL] No compatible 64-bit Python installation was found."
+    echo "       Required: Python 3.10-3.12 (Python 3.12 recommended)."
+    echo "       Python 3.13/3.14 may remain installed side by side."
+    echo "       Install Python 3.12 and venv support, for example:"
+    echo "       sudo apt install python3.12 python3.12-venv"
     exit 1
 fi
 
-PYMAJOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
-PYMINOR=$($PYTHON_BIN -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
-if [ "$PYMAJOR" -lt 3 ] 2>/dev/null || { [ "$PYMAJOR" -eq 3 ] && [ "$PYMINOR" -lt 10 ]; }; then
-    echo "[FAIL] Python 3.10+ required (3.12 recommended)."
-    exit 1
-fi
-
-IS64=$($PYTHON_BIN -c "import sys; print('64' if sys.maxsize > 2**32 else '32')" 2>/dev/null || echo "?")
-if [ "$IS64" = "32" ]; then
-    echo "[FAIL] 32-bit Python detected. 64-bit required."
-    exit 1
-fi
+echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN"
+"$PYTHON_BIN" --version
 
 # -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
 # 不修改宿主的 pip.conf / 环境变量原值，只在进程内用环境变量接管。原理：pip 配置
