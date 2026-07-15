@@ -1990,11 +1990,10 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   position: relative;
 }
 
-/* 拖拽手柄：贴面板左边缘的竖条，鼠标拖动调整宽度（仅大屏）。
-   right-panel overflow:visible 保证手柄外露搭在 main/panel 交界上。 */
+/* 拖拽手柄：收在面板左边缘内侧，避免覆盖主内容区的原生滚动条。 */
 .panel-resizer {
   position: absolute;
-  left: -3px;
+  left: 0;
   top: 0; bottom: 0;
   width: 6px;
   cursor: col-resize;
