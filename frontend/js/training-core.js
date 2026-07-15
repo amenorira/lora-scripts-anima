@@ -828,14 +828,16 @@ window.trainingCoreMixin = {
   buildSectionNav() {
     const sections = this._allSections();
     const SECTION_COLORS = {
-      model: '#4d94ff', network: '#10b981', training: '#8b5cf6', optimizer: '#f59e0b',
-      regularization: '#f43f5e', performance: '#6366f1', save: '#0ea5e9',
-      caption: '#78716c', preview: '#ec4899', misc: '#78716c',
+      model: 'var(--section-model)', network: 'var(--section-network)',
+      training: 'var(--section-training)', optimizer: 'var(--section-optimizer)',
+      regularization: 'var(--section-regularization)', performance: 'var(--section-performance)',
+      save: 'var(--section-save)', caption: 'var(--section-caption)',
+      preview: 'var(--section-preview)', misc: 'var(--section-caption)',
     };
     this.sectionNavList = sections.map(s => ({
       key: s.key,
       title: this.t(s.titleKey) || s.titleKey,
-      color: SECTION_COLORS[s.key] || '#78716c',
+      color: SECTION_COLORS[s.key] || 'var(--section-caption)',
       collapsed: !!this._sectionCollapsed[s.key],
     }));
     // 默认激活第一个分组
