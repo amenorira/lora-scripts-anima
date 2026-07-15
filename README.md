@@ -21,8 +21,8 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v1.1.2 正式版已发布**
-> 本次更新优化深浅主题的视觉层级，恢复鲜明前景色，并重做开关与通知反馈。
+> ✅ **v1.1.3 正式版已发布**
+> 本次更新修复 Windows 首次安装的 Python 版本选择与商店占位符问题，并简化启动入口。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。当前 UI 支持 **SDXL** 和 **Anima** 两种模型的 LoRA 训练（SD 1.5 已移除）。
 
@@ -57,12 +57,12 @@ lora-scripts-anima/
 │   ├── training/               ← 训练引擎封装（参数适配、字段注册表、进程管理）
 │   ├── monitor/                ← 训练监控（GPU/系统/日志/预览/历史）
 │   ├── tageditor/              ← 原生标签编辑器
-│   └── tagger/                 ← WD14 标注模块
+│   ├── tagger/                 ← WD14 标注模块
+│   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
 ├── frontend/                   ← Alpine.js SPA 前端
 ├── config/                     ← TOML 配置预设
 ├── tools/                      ← 独立工具（Flash Attn 安装等）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
-├── gui.py                      ← 主入口
 ├── start.bat / start.sh        ← 启动脚本
 └── requirements.txt            ← 项目依赖
 ```
@@ -71,18 +71,22 @@ lora-scripts-anima/
 
 ### 必要依赖
 
-- 64 位 Python 3.10–3.12（推荐 3.12）和 Git
-- **PyTorch ≥ 2.10.0 + CUDA 12.8**（安装脚本自动配置，兼容 RTX 30/40/50 全系列）
+- **Python**：需要 64 位 Python 3.10–3.12（推荐 3.12）
+- **Git**：用于下载和更新项目
+- **PyTorch 2.10.0 + CUDA 12.8**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
 
-> Python 3.13/3.14 暂不支持：项目固定依赖中的部分 Windows wheel 尚不兼容。Windows 安装器会优先复用合格的 `venv`，否则通过 Python Launcher 自动选择 3.12，并跳过 Microsoft Store 的 Python 占位符。如果用户只有新版 Python，安装器可为当前用户并行安装官方 Python 3.12；已有版本无需卸载，也不会更改默认 PATH。
+> **Windows 用户无需提前降级或另外安装 Python。** `venv` 是首次运行 `start.bat` 时自动创建在项目目录中的独立运行环境；如果它已经存在且版本正确，启动器会直接使用，不会重复安装。否则启动器会自动寻找 64 位 Python 3.10–3.12，并跳过 Microsoft Store 的 Python 占位符。如果电脑只有 Python 3.13/3.14，安装器会询问是否为当前用户并行安装官方 Python 3.12；不会卸载现有 Python，也不会修改系统默认 PATH。Windows 标准版 Python 通常已经自带创建 `venv` 的功能。
+>
+> **Linux 用户**需要自行安装 64 位 Python 3.10–3.12。多数 Python 安装已包含创建 `venv` 的功能；只有 Ubuntu/Debian 等系统提示缺少该功能时，才需要额外安装对应的软件包（例如 `python3.12-venv`）。
+>
+> 如果项目中已经存在由 Python 3.13/3.14 创建的不兼容 `venv`，请只删除或重命名项目内的 `venv` 文件夹，再重新运行 `start.bat`。
 
-| GPU 系列 | 最低 PyTorch | 推荐 CUDA |
-|----------|:----------:|:---------:|
-| RTX 30 系 (Ampere) | 2.6.0 | 12.8 |
-| RTX 40 系 (Ada) | 2.6.0 | 12.8 |
-| RTX 50 系 (Blackwell) | **2.8.0** | **12.8** |
+| GPU 系列 | 自动安装的 PyTorch | CUDA |
+|----------|:------------------:|:----:|
+| RTX 30 系 (Ampere) | 2.10.0 | 12.8 |
+| RTX 40 系 (Ada) | 2.10.0 | 12.8 |
+| RTX 50 系 (Blackwell) | 2.10.0 | 12.8 |
 
-> 安装脚本默认 PyTorch 2.10.0 + CUDA 12.8，全系列通用，cp312 有预编译 flash-attn。
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
 ### 克隆仓库

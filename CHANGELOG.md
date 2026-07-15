@@ -2,6 +2,26 @@
 
 本项目的重要版本变更记录于此。
 
+## v1.1.3 - 2026-07-16
+
+改善 Windows 首次安装与启动体验，自动处理不兼容的 Python 版本和 Microsoft Store 占位符，降低新用户误操作入口文件的概率。
+
+### Python 安装与环境选择
+
+- Windows 启动器优先复用兼容的项目 `venv`，否则依次查找 64 位 Python 3.12、3.11 和 3.10，并跳过 Microsoft Store 的 Python 占位符。
+- 当电脑只有 Python 3.13/3.14 时，可为当前用户并行安装官方 Python 3.12，不卸载已有版本，也不修改系统默认 PATH。
+- 自动下载 Python 3.12 时校验 Python Software Foundation 数字签名，失败时停止执行并提供手动下载地址。
+- Linux 启动器同步限制受支持的 Python 版本，并在已有 `venv` 不兼容时给出明确的恢复方法。
+
+### 启动入口与文档
+
+- 将根目录的 `gui.py` 移入 `backend/gui.py`，启动脚本统一通过内部模块启动，避免新用户误点 Python 源文件绕过环境准备。
+- 直接使用不兼容解释器启动内部模块时立即显示友好提示，不再进入依赖修复后因 wheel 不兼容而失败。
+- 更新中英文必要依赖说明，明确 Python、Git、自动安装的 PyTorch/CUDA，以及 Windows 与 Linux 的环境处理差异。
+- 修复训练页滚动条与相邻控件命中区域重叠的问题。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v1.1.2...v1.1.3)
+
 ## v1.1.2 - 2026-07-15
 
 优化深浅主题的视觉层级与操作反馈，在保持中性灰承载面的同时，让文字、分组色和状态色恢复清晰鲜明。

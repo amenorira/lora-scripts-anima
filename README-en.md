@@ -21,8 +21,8 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v1.1.2 is now available**
-> This release refines visual hierarchy across both themes, restores vivid foreground colors, and redesigns switches and notifications.
+> ✅ **v1.1.3 is now available**
+> This release fixes Python selection and Microsoft Store placeholder handling during first-time Windows setup, and simplifies the launch entry point.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports **SDXL** and **Anima** LoRA training (SD 1.5 has been removed).
 
@@ -57,12 +57,12 @@ lora-scripts-anima/
 │   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
 │   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
 │   ├── tageditor/              ← Native tag editor
-│   └── tagger/                 ← WD14 tagging module
+│   ├── tagger/                 ← WD14 tagging module
+│   └── gui.py                  ← Internal GUI entry (called by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
 ├── config/                     ← TOML config presets
 ├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
-├── gui.py                      ← Main entry point
 ├── start.bat / start.sh        ← Launch scripts
 └── requirements.txt            ← Project dependencies
 ```
@@ -71,18 +71,21 @@ lora-scripts-anima/
 
 ### Prerequisites
 
-- 64-bit Python 3.10–3.12 (3.12 recommended) and Git
-- **PyTorch ≥ 2.10.0 + CUDA 12.8** (auto-configured by install scripts, compatible with RTX 30/40/50 series)
+- **Python**: 64-bit Python 3.10–3.12 (3.12 recommended)
+- **Git**: used to download and update the project
+- **PyTorch 2.10.0 + CUDA 12.8**: installed automatically by the startup scripts for RTX 30/40/50 series
 
-> Python 3.13/3.14 are not supported yet because some pinned dependencies do not provide compatible Windows wheels. The Windows installer first reuses a compatible `venv`; otherwise it selects Python 3.12 through the Python Launcher and skips Microsoft Store Python placeholders. If only a newer Python is installed, the installer can add the official Python 3.12 for the current user side by side without changing the default PATH.
+> **Windows users do not need to downgrade or separately install Python first.** A `venv` is the isolated runtime environment created automatically inside the project on the first run of `start.bat`. If it already exists and uses the correct version, the launcher reuses it instead of reinstalling everything. Otherwise, it finds 64-bit Python 3.10–3.12 and skips Microsoft Store Python placeholders. If only Python 3.13/3.14 is installed, it offers to install the official Python 3.12 for the current user side by side without removing existing versions or changing the system default PATH. Standard Windows Python installations normally include `venv` support.
+>
+> **Linux users** must install 64-bit Python 3.10–3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
+>
+> If the project already contains an incompatible `venv` created with Python 3.13/3.14, remove or rename only the project's `venv` folder, then run `start.bat` again.
 
-| GPU Series | Min PyTorch | Recommended CUDA |
-|------------|:----------:|:----------------:|
-| RTX 30 (Ampere) | 2.6.0 | 12.8 |
-| RTX 40 (Ada) | 2.6.0 | 12.8 |
-| RTX 50 (Blackwell) | **2.8.0** | **12.8** |
-
-> Install scripts default to PyTorch 2.10.0 + CUDA 12.8 — all GPUs, cp312 has prebuilt flash-attn.
+| GPU Series | Automatically Installed PyTorch | CUDA |
+|------------|:-------------------------------:|:----:|
+| RTX 30 (Ampere) | 2.10.0 | 12.8 |
+| RTX 40 (Ada) | 2.10.0 | 12.8 |
+| RTX 50 (Blackwell) | 2.10.0 | 12.8 |
 
 ### Clone
 
