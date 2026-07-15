@@ -21,8 +21,8 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v1.1.1 is now available**
-> This release upgrades training monitoring into a professional console, fixes historical log interactions, and adds transparent, explainable Loss trend diagnostics.
+> ✅ **v1.1.2 is now available**
+> This release refines visual hierarchy across both themes, restores vivid foreground colors, and redesigns switches and notifications.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports **SDXL** and **Anima** LoRA training (SD 1.5 has been removed).
 
