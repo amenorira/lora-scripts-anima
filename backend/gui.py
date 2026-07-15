@@ -7,7 +7,7 @@ import signal
 import subprocess
 import sys
 
-# Keep direct `python gui.py` launches from entering dependency repair with an
+# Keep direct module launches from entering dependency repair with an
 # unsupported interpreter. start.bat/start.sh can select a compatible Python
 # without requiring users to uninstall newer system versions.
 if not ((3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32):

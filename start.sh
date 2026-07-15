@@ -61,7 +61,7 @@ echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN"
 # -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
 # 不修改宿主的 pip.conf / 环境变量原值，只在进程内用环境变量接管。原理：pip 配置
 # 优先级为 命令行 -i > PIP_* 环境变量 > pip.conf/pip.ini，故 export 的环境变量能
-# 压过宿主 pip.conf，且被 PEP 517 构建子进程（vendor/sd-scripts sdist）与 gui.py
+# 压过宿主 pip.conf，且被 PEP 517 构建子进程（vendor/sd-scripts sdist）与 backend.gui
 # 运行时 pip 继承，一次接管全程。脚本结束即失效，不留痕。
 #
 # 逻辑：用 pip config get 只读探测当前生效的 index-url / extra-index-url——
@@ -167,4 +167,4 @@ if [ ! -f "$VENV_PYTHON" ]; then
 fi
 
 # -- Launch --
-"$VENV_PYTHON" gui.py "$@"
+"$VENV_PYTHON" -m backend.gui "$@"

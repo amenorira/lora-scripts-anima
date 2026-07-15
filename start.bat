@@ -23,7 +23,7 @@ REM -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
 REM Do not modify host pip.ini / original env values; take over via process env
 REM vars only. pip precedence: CLI -i > PIP_* env > pip.ini, so exported env vars
 REM override host pip.ini and are inherited by PEP 517 build subprocesses
-REM (vendor/sd-scripts sdist) and gui.py runtime pip. Gone when script exits.
+REM (vendor/sd-scripts sdist) and backend.gui runtime pip. Gone when script exits.
 REM Logic: probe index-url/extra-index-url via `pip config get` (read-only) --
 REM   http://  -> export https:// equivalent + register PIP_TRUSTED_HOST (upgrade)
 REM   https:// -> leave as-is (already safe)
@@ -119,7 +119,7 @@ set PYTHONUTF8=1
 if not defined HF_ENDPOINT set HF_ENDPOINT=https://hf-mirror.com
 
 :launch
-venv\Scripts\python.exe gui.py %*
+venv\Scripts\python.exe -m backend.gui %*
 pause
 exit /b 0
 

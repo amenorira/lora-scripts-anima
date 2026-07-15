@@ -32,13 +32,22 @@ class BootstrapContractTests(unittest.TestCase):
     def test_launchers_reject_incompatible_interpreters(self):
         windows_script = (ROOT / "start.bat").read_text(encoding="utf-8")
         linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        gui = (ROOT / "gui.py").read_text(encoding="utf-8")
+        gui = (ROOT / "backend" / "gui.py").read_text(encoding="utf-8")
 
         version_guard = "sys.version_info[:2] < (3,13)"
         self.assertIn(version_guard, windows_script)
         self.assertIn("sys.version_info[:2] < (3, 13)", linux_script)
         self.assertIn("sys.version_info[:2] < (3, 13)", gui)
         self.assertIn("Please run {launcher}", gui)
+
+    def test_gui_is_an_internal_module(self):
+        windows_script = (ROOT / "start.bat").read_text(encoding="utf-8")
+        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
+
+        self.assertFalse((ROOT / "gui.py").exists())
+        self.assertTrue((ROOT / "backend" / "gui.py").is_file())
+        self.assertIn("-m backend.gui", windows_script)
+        self.assertIn("-m backend.gui", linux_script)
 
 
 if __name__ == "__main__":
