@@ -882,7 +882,7 @@ window.trainingPresetsMixin = {
     if (type) el.classList.add(type);
     let icon = '';
     if (type === 'success') {
-      icon = '<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#30D158" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+      icon = '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16.5 9.5"/></svg>';
     }
     el.innerHTML = icon + '<span class="toast-action-msg"></span><button type="button" class="toast-action-btn"></button>';
     el.querySelector('.toast-action-msg').textContent = message;
@@ -894,13 +894,13 @@ window.trainingPresetsMixin = {
       if (done) return; done = true;
       clearTimeout(timer);
       el.classList.add('out');
-      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 140);
       try { actionCallback.call(self); } catch (_) { /* ignore */ }
     });
     c.appendChild(el);
     const timer = setTimeout(function () {
       el.classList.add('out');
-      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 140);
     }, 5200);
   },
 
