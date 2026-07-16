@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import locale
 import os
 import platform
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
-import socket
 import sysconfig
 from pathlib import Path
 from typing import List, Optional
@@ -24,6 +25,33 @@ from backend.log import log
 python_bin = sys.executable
 
 
+def decode_subprocess_output(output: bytes | str | None) -> str:
+    """Decode captured command output without assuming Windows tools emit UTF-8."""
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output
+    try:
+        return output.decode("utf-8")
+    except UnicodeDecodeError:
+        get_encoding = getattr(locale, "getencoding", None)
+        encoding = get_encoding() if get_encoding is not None else locale.getpreferredencoding(False)
+        return output.decode(encoding, errors="replace")
+
+
+def run_capture_text(command, **kwargs) -> subprocess.CompletedProcess:
+    """Run a command with binary pipes, then decode stdout/stderr defensively."""
+    if any(key in kwargs for key in ("capture_output", "stdout", "stderr", "text", "encoding", "errors")):
+        raise TypeError("run_capture_text manages subprocess output arguments")
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        decode_subprocess_output(result.stdout),
+        decode_subprocess_output(result.stderr),
+    )
+
+
 def base_dir_path():
     return Path(__file__).parents[1].absolute()
 
@@ -37,12 +65,15 @@ def git_tag(path: str) -> str:
         tag = subprocess.check_output(
             ["git", "-C", path, "describe", "--tags"],
             stderr=subprocess.DEVNULL,
-        ).strip().decode("utf-8")
+        )
+        tag = decode_subprocess_output(tag).strip()
         _GIT_TAG_CACHE[path] = tag
         return tag
     except Exception:
         try:
-            commit = subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"]).strip().decode("utf-8")
+            commit = decode_subprocess_output(
+                subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"])
+            ).strip()
             result = f"commit {commit}"
             _GIT_TAG_CACHE[path] = result
             return result
@@ -332,7 +363,7 @@ def pip_install(package: str, version: Optional[str] = None, index_url: Optional
 
 def check_run(file: str) -> bool:
     result = subprocess.run([python_bin, file], capture_output=True, shell=False)
-    log.info(result.stdout.decode("utf-8").strip())
+    log.info(decode_subprocess_output(result.stdout).strip())
     return result.returncode == 0
 
 
@@ -445,7 +476,7 @@ def check_environment():
     if not _ENV_CHECKED:
         _ENV_CHECKED = True
         try:
-            result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True)
+            result = run_capture_text(["nvidia-smi", "-L"])
             if result.returncode == 0 and result.stdout.strip():
                 gpu_info = result.stdout.strip().split('\n')[0]
                 log.info("GPU: %s", gpu_info)

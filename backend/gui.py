@@ -7,6 +7,10 @@ import signal
 import subprocess
 import sys
 
+# Install project startup compatibility before importing ML dependencies.
+if sys.platform == "win32":
+    import sitecustomize  # noqa: F401
+
 # Keep direct module launches from entering dependency repair with an
 # unsupported interpreter. start.bat/start.sh can select a compatible Python
 # without requiring users to uninstall newer system versions.

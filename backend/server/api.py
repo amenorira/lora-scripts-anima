@@ -50,10 +50,10 @@ def _git_version() -> str:
     if _git_version_cache is not None:
         return _git_version_cache
     try:
-        import subprocess
-        r = subprocess.run(["git", "describe", "--tags", "--always"],
-                          capture_output=True, text=True,
-                          cwd=str(REPO_ROOT))
+        r = launch_utils.run_capture_text(
+            ["git", "describe", "--tags", "--always"],
+            cwd=str(REPO_ROOT),
+        )
         _git_version_cache = r.stdout.strip() or "dev"
         return _git_version_cache
     except Exception:
@@ -1121,11 +1121,10 @@ def _read_sd_scripts_version() -> dict:
     # ── 第1层：独立 Git 仓库检测 ──────────────────────
     git_dir = sd_root / ".git"
     if git_dir.exists():
-        import subprocess as _sp
         try:
-            r = _sp.run(
+            r = launch_utils.run_capture_text(
                 ["git", "-C", str(sd_root), "rev-parse", "--short", "HEAD"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if r.returncode == 0 and r.stdout.strip():
                 info["local_commit"] = r.stdout.strip()
@@ -1134,9 +1133,9 @@ def _read_sd_scripts_version() -> dict:
             pass
 
         try:
-            r = _sp.run(
+            r = launch_utils.run_capture_text(
                 ["git", "-C", str(sd_root), "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if r.returncode == 0:
                 branch = r.stdout.strip()
@@ -1146,9 +1145,9 @@ def _read_sd_scripts_version() -> dict:
             pass
 
         try:
-            r = _sp.run(
+            r = launch_utils.run_capture_text(
                 ["git", "-C", str(sd_root), "describe", "--tags", "--always"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if r.returncode == 0 and r.stdout.strip():
                 tag_desc = r.stdout.strip()
@@ -1162,9 +1161,9 @@ def _read_sd_scripts_version() -> dict:
             pass
 
         try:
-            r = _sp.run(
+            r = launch_utils.run_capture_text(
                 ["git", "-C", str(sd_root), "log", "-1", "--format=%ci"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if r.returncode == 0 and r.stdout.strip():
                 info["sync_date"] = r.stdout.strip()
@@ -1173,9 +1172,9 @@ def _read_sd_scripts_version() -> dict:
 
         # 尝试获取 remote URL
         try:
-            r = _sp.run(
+            r = launch_utils.run_capture_text(
                 ["git", "-C", str(sd_root), "remote", "get-url", "origin"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if r.returncode == 0:
                 remote = r.stdout.strip()
