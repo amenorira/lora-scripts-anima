@@ -262,17 +262,23 @@ async def batch_delete_presets(req: PresetBatchDeleteRequest):
 
 @router.post("/presets/parse")
 async def parse_preset(req: PresetParseRequest):
-    """解析 TOML 文本为 {metadata, data}，供前端导入预设文件使用。
+    """解析预设 TOML 或训练页导出的扁平 TOML。
 
-    用后端 toml 库替代前端残废的 parseToml（不支持嵌套 section）。
+    预设文件使用 metadata/data 分区；训练页下载文件使用顶层参数。
+    两种格式统一返回 {metadata, data}，供预设页和训练页导入复用。
     """
     try:
         parsed = toml.loads(req.content)
     except toml.TomlDecodeError as e:
         return APIResponseFail(message=f"Invalid TOML / TOML 解析失败: {e}")
 
-    metadata = parsed.get("metadata", {}) or {}
-    data = parsed.get("data", {}) or {}
+    if "metadata" in parsed or "data" in parsed:
+        metadata = parsed.get("metadata", {}) or {}
+        data = parsed.get("data", {}) or {}
+    else:
+        metadata = {}
+        data = parsed
+
     if not isinstance(metadata, dict) or not isinstance(data, dict):
         return APIResponseFail(message="Invalid preset shape / 预设结构无效（需含 metadata/data）")
 
