@@ -63,6 +63,13 @@ window.trainingCoreMixin = {
   _stepEstimateRequestSeq: 0,
   _stepEstimateSignature: '',
 
+  outputPathInfo: null,
+  outputPathInfoLoading: false,
+  outputPathInfoError: '',
+  _outputPathInfoTimer: null,
+  _outputPathInfoRequestSeq: 0,
+  _outputPathInfoSignature: '',
+
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
@@ -156,6 +163,11 @@ window.trainingCoreMixin = {
     this._stepEstimateRequestSeq += 1;
     this._stepEstimateSignature = '';
     this.stepEstimateLoading = false;
+    clearTimeout(this._outputPathInfoTimer);
+    this._outputPathInfoTimer = null;
+    this._outputPathInfoRequestSeq += 1;
+    this._outputPathInfoSignature = '';
+    this.outputPathInfoLoading = false;
     this.stopSectionScroll();
   },
 
@@ -187,6 +199,11 @@ window.trainingCoreMixin = {
     this._stepEstimateRequestSeq += 1;
     this._stepEstimateSignature = '';
     this.stepEstimateLoading = false;
+    clearTimeout(this._outputPathInfoTimer);
+    this._outputPathInfoTimer = null;
+    this._outputPathInfoRequestSeq += 1;
+    this._outputPathInfoSignature = '';
+    this.outputPathInfoLoading = false;
     clearTimeout(this._conditionalMotionTimer);
     this._conditionalMotionTimer = null;
     this._conditionalMotionQueue = null;
@@ -209,6 +226,7 @@ window.trainingCoreMixin = {
     this.buildSectionNav();
     this.startTrainingStatusPoll();
     this.scheduleStepEstimate();
+    this.scheduleOutputPathInfo();
     this.$nextTick(() => this.updateToml());
 
     if (this._pendingPreset) {
@@ -284,6 +302,7 @@ window.trainingCoreMixin = {
     }
     self._formWatcher = self.$watch('form', () => {
       self.scheduleStepEstimate();
+      self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
@@ -312,6 +331,7 @@ window.trainingCoreMixin = {
 
     // Start training status polling
     this.startTrainingStatusPoll();
+    this.scheduleOutputPathInfo();
 
     // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
     // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
@@ -477,6 +497,120 @@ window.trainingCoreMixin = {
       return error.localizeLegacy ? this._localizeLegacyStepEstimateMessage(fallback) : fallback;
     }
     return this._stepEstimateText(error.key, error.fallback, error.params);
+  },
+
+  _outputPathPayload() {
+    return {
+      path: String(this.form.output_dir || './output').trim() || './output',
+      outputName: String(this.form.output_name || 'my_lora').trim() || 'my_lora',
+      resume: !!String(this.form.resume || '').trim(),
+    };
+  },
+
+  scheduleOutputPathInfo() {
+    const payload = this._outputPathPayload();
+    const signature = JSON.stringify(payload);
+    if (signature === this._outputPathInfoSignature) return;
+    this._outputPathInfoSignature = signature;
+    clearTimeout(this._outputPathInfoTimer);
+    this._outputPathInfoTimer = null;
+    const requestSeq = ++this._outputPathInfoRequestSeq;
+    this.outputPathInfo = null;
+    this.outputPathInfoLoading = true;
+    this.outputPathInfoError = '';
+    this._outputPathInfoTimer = setTimeout(() => {
+      this._outputPathInfoTimer = null;
+      this._requestOutputPathInfo(requestSeq, payload);
+    }, 350);
+  },
+
+  async refreshOutputPathInfo(force) {
+    const payload = this._outputPathPayload();
+    const signature = JSON.stringify(payload);
+    if (!force && signature === this._outputPathInfoSignature && this.outputPathInfo && !this.outputPathInfoLoading) {
+      return this.outputPathInfo;
+    }
+    this._outputPathInfoSignature = signature;
+    clearTimeout(this._outputPathInfoTimer);
+    this._outputPathInfoTimer = null;
+    const requestSeq = ++this._outputPathInfoRequestSeq;
+    this.outputPathInfo = null;
+    this.outputPathInfoLoading = true;
+    this.outputPathInfoError = '';
+    return this._requestOutputPathInfo(requestSeq, payload);
+  },
+
+  async _requestOutputPathInfo(requestSeq, payload) {
+    const params = new URLSearchParams({
+      path: payload.path,
+      output_name: payload.outputName,
+      resume: payload.resume ? 'true' : 'false',
+    });
+    try {
+      const response = await fetch('/api/training/output-path-info?' + params.toString());
+      const result = await response.json();
+      if (requestSeq !== this._outputPathInfoRequestSeq) return null;
+      if (!response.ok || result.status !== 'success' || !result.data) {
+        this.outputPathInfo = null;
+        this.outputPathInfoError = (result.data && result.data.errorCode) || 'invalidOutputPath';
+        return null;
+      }
+      this.outputPathInfo = result.data;
+      this.outputPathInfoError = '';
+      return result.data;
+    } catch (error) {
+      if (requestSeq !== this._outputPathInfoRequestSeq) return null;
+      this.outputPathInfo = null;
+      this.outputPathInfoError = 'requestFailed';
+      return null;
+    } finally {
+      if (requestSeq === this._outputPathInfoRequestSeq) this.outputPathInfoLoading = false;
+    }
+  },
+
+  outputPathStatusClass() {
+    const info = this.outputPathInfo;
+    if (this.outputPathInfoError || (info && (!info.available || !info.writable || info.path_is_directory === false))) {
+      return 'is-error';
+    }
+    return 'is-custom';
+  },
+
+  outputPathHintVisible() {
+    const info = this.outputPathInfo;
+    if (this.outputPathInfoError) return true;
+    if (!info) return false;
+    if (!info.available || !info.writable || info.path_is_directory === false) return true;
+    return !info.is_default;
+  },
+
+  outputPathSummaryText() {
+    const info = this.outputPathInfo;
+    if (this.outputPathInfoError === 'invalidOutputPath') {
+      return this.t('training.outputPathInvalid', 'The output path is invalid.');
+    }
+    if (this.outputPathInfoError) {
+      return this.t('training.outputPathCheckFailed', 'Unable to check the output path.');
+    }
+    if (!info) return '';
+    if (info.path_exists && info.path_is_directory === false) {
+      return this.t('training.outputPathNotDirectory', 'The selected output path is a file, not a folder.');
+    }
+    if (!info.available) {
+      return this.t('training.outputPathUnavailable', 'The drive or parent folder is currently unavailable.');
+    }
+    if (!info.writable) {
+      return this.t('training.outputPathNotWritable', 'The output folder is not writable.');
+    }
+    if (info.is_default) return '';
+    return this.t(
+      'training.outputPathCustomSummary',
+      'Models and previews will use this folder; logs and TensorBoard remain managed by the trainer.'
+    );
+  },
+
+  outputPathBlockingText() {
+    return this.outputPathSummaryText() || this.t('training.outputPathCheckFailed', 'Unable to check the output path.');
   },
 
   stepEstimateTitle() {
@@ -1264,6 +1398,7 @@ window.trainingCoreMixin = {
       ${hint ? `<div class="field-hint">${hint}</div>` : ''}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
       ${this._getEnvHint(dataKey)}
+      ${this._getOutputPathHint(dataKey)}
       ${readonlyWarnHtml}
     </div>`;
   },
@@ -1281,6 +1416,13 @@ window.trainingCoreMixin = {
         return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')||'Triton not installed'}</div>`;
     }
     return '';
+  },
+
+  _getOutputPathHint(dataKey) {
+    if (dataKey !== 'output_dir') return '';
+    return `<div class="output-path-hint" x-show="outputPathHintVisible()" :class="outputPathStatusClass()" role="status" aria-live="polite" x-cloak>
+      <div class="output-path-hint-summary"><span class="output-path-hint-dot" aria-hidden="true"></span><span x-text="outputPathSummaryText()"></span></div>
+    </div>`;
   },
 
   copyFieldName(key) {
@@ -1966,6 +2108,9 @@ window.trainingCoreMixin = {
     }
 
     this.form[key] = value;
+    if (key === 'output_dir' || key === 'output_name' || key === 'resume') {
+      this.scheduleOutputPathInfo();
+    }
     // model_train_type 切换：直接调用 switchTrainType，不依赖 $watch
     //（applyPreset 等流程会临时禁用 watcher，存在未恢复的风险）
     if (key === 'model_train_type' && value !== oldVal && !this._switchInProgress) {

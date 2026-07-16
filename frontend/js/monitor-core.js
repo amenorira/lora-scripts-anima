@@ -12,6 +12,7 @@ window.monitorCoreMixin = {
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
+  outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
   outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
   _monitorAbortCtrl: null,
   _renderRAF: null,  // requestAnimationFrame 节流标记
@@ -88,15 +89,28 @@ window.monitorCoreMixin = {
   // ── 当前输出文件列表对应的 run 目录（live 用 monitorData.output_dir，历史用 selectedRunDir）──
   get currentOutputRunDir() {
     if (this.selectedRunDir) return this.selectedRunDir;
-    if (this.monitorData && this.monitorData.output_dir) {
+    if (this.monitorData && (this.monitorData.run_dir || this.monitorData.output_dir)) {
       // 规范化为正斜杠相对路径
-      let od = String(this.monitorData.output_dir).replace(/\\/g, '/').replace(/^\.\//, '');
+      let od = String(this.monitorData.run_dir || this.monitorData.output_dir).replace(/\\/g, '/').replace(/^\.\//, '');
       // 排除 output 根目录这种回退值（必须是 run 子目录才返回，如 output/<name>_<ts>）
       if (od && od !== 'output' && od !== './output' && od.indexOf('output/') === 0 && od.split('/').length >= 2) {
         return od;
       }
     }
     return '';
+  },
+
+  currentArtifactData() {
+    return this.selectedRunDir ? (this.runDetailData || {}) : (this.monitorData || {});
+  },
+
+  _resetOutputFilesForRun(runDir) {
+    this._outputFilesRequestSeq++;
+    this._outputFilesRunDir = runDir || '';
+    this.outputFiles = [];
+    this.outputFilesSelected = {};
+    this.outputFilesError = '';
+    this.outputFilesLoading = false;
   },
 
   // ── SSE Connection ─────────────────────────────────────
@@ -382,6 +396,10 @@ window.monitorCoreMixin = {
       if (seq !== this._monitorRequestSeq) return;
       if (j.status==='success') {
         this.monitorData = j.data; this.gpuInfo = j.data.gpu; this.sysInfo = j.data.system;
+        const liveOutputRunDir = this.currentOutputRunDir;
+        if (this._outputFilesRunDir && this._outputFilesRunDir !== liveOutputRunDir) {
+          this._resetOutputFilesForRun(liveOutputRunDir);
+        }
         // 仅在实时模式下更新图表/日志数据（历史模式由 viewRunDetail 管理）
         if (!this.selectedRunDir) {
           // SSE 连接时由增量推送管理 lossSeries、logLines，轮询仅做首次全量加载
@@ -640,18 +658,27 @@ window.monitorCoreMixin = {
     /** 主动重新拉取预览样本（绕过后端 5s 缓存），并自动跟随到最新一张。 */
     if (this.previewsLoading) return;
     this.previewsLoading = true;
+    const sourceRunDir = this.currentOutputRunDir;
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     try {
       let url = '/api/monitor/previews?refresh=1&limit=300';
-      if (this.selectedRunDir) {
-        url += '&run_dir=' + encodeURIComponent(this.selectedRunDir);
+      const runDir = this.currentOutputRunDir;
+      if (runDir) {
+        url += '&run_dir=' + encodeURIComponent(runDir);
       } else if (this.taskId) {
         url += '&task_id=' + encodeURIComponent(this.taskId);
       }
       const r = await fetch(url);
       const j = await r.json();
+      if (sourceRunDir !== this.currentOutputRunDir) return;
       if (j.status === 'success') {
         this.previews = j.data || [];
+        if (j.meta) {
+          const target = this.currentArtifactData();
+          target.artifact_available = j.meta.artifact_available;
+          if (j.meta.artifact_dir) target.artifact_dir = j.meta.artifact_dir;
+          if (j.meta.preview_enabled !== undefined) target.preview_enabled = j.meta.preview_enabled;
+        }
         this._followLatestPreview(wasAtEnd);
       }
     } catch (e) {
@@ -704,14 +731,14 @@ window.monitorCoreMixin = {
     return (this.historyItems||[]).filter(h => {
       if (filter !== 'all' && (h.status||'') !== filter) return false;
       if (!q) return true;
-      const hay = ((h.name||'') + ' ' + (h.model||'') + ' ' + (h.dataset||'') + ' ' + (h.time||'')).toLowerCase();
+      const hay = ((h.name||'') + ' ' + (h.model||'') + ' ' + (h.dataset||'') + ' ' + (h.time||'') + ' ' + (h.artifact_dir||'')).toLowerCase();
       return hay.indexOf(q) !== -1;
     });
   },
 
   async deleteHistoryRun(runDir) {
     if (!runDir) return;
-    if (!confirm(this.t('monitor.confirmDeleteRun','Delete this training record? The output folder will be removed.'))) return;
+    if (!confirm(this.t('monitor.confirmDeleteRun','Delete the trainer history, logs and TensorBoard data for this run? Models, checkpoints and preview images will be kept.'))) return;
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/history/delete', {
@@ -720,7 +747,7 @@ window.monitorCoreMixin = {
       });
       const j = await r.json();
       if (j.status === 'success') {
-        this.toast(this.t('monitor.runDeleted','Record deleted'), 'success');
+        this.toast(this.t('monitor.runDeleted','History deleted; models and previews were kept.'), 'success');
         await this.loadHistory();
       } else {
         this.toast(j.message || this.t('monitor.deleteFailed','Failed to delete'), 'error');
@@ -771,6 +798,7 @@ window.monitorCoreMixin = {
     this._logDirty = true;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
+    this._resetOutputFilesForRun(runDir);
     this.monitorTab = 'overview';
     this.monitorParamQuery = '';
     this._shellBuilt = false;
@@ -790,6 +818,7 @@ window.monitorCoreMixin = {
       const j = await r.json();
       if (j.status === 'success') {
         this.runDetailData = j.data;
+        this._outputFilesRunDir = runDir;
         this.lossSeries = j.data.tensorboard_loss || [];
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
@@ -841,6 +870,9 @@ window.monitorCoreMixin = {
     this.previewStep = 0;
     this.outputFiles = [];
     this.outputFilesSelected = {};
+    this.outputFilesError = '';
+    this._outputFilesRunDir = '';
+    this._outputFilesRequestSeq++;
     this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
@@ -878,26 +910,48 @@ window.monitorCoreMixin = {
   async loadOutputFiles() {
     const runDir = this.currentOutputRunDir;
     if (!runDir) {
+      this._outputFilesRequestSeq++;
       this.outputFiles = [];
       this.outputFilesSelected = {};
+      this.outputFilesError = 'noRun';
       return;
     }
+    if (this._outputFilesRunDir !== runDir) this._resetOutputFilesForRun(runDir);
+    const requestSeq = ++this._outputFilesRequestSeq;
     this.outputFilesLoading = true;
+    this.outputFilesError = '';
     try {
       const r = await fetch('/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
+      if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
       if (j.status === 'success') {
         this.outputFiles = j.data || [];
         this.outputFilesSelected = {};
+        this.outputFilesError = '';
+        const target = this.currentArtifactData();
+        target.artifact_available = true;
+        if (j.meta && j.meta.artifact_dir) target.artifact_dir = j.meta.artifact_dir;
       } else {
         this.outputFiles = [];
+        this.outputFilesError = (j.data && j.data.artifact_available === false)
+          ? 'artifactUnavailable'
+          : 'loadFailed';
+        if (this.outputFilesError === 'artifactUnavailable') {
+          const target = this.currentArtifactData();
+          target.artifact_available = false;
+          if (j.data && j.data.artifact_dir) target.artifact_dir = j.data.artifact_dir;
+        }
       }
     } catch (e) {
+      if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
       this.outputFiles = [];
+      this.outputFilesError = 'loadFailed';
     } finally {
-      this.outputFilesLoading = false;
-      this._outputsDirty = true;
-      this.renderDashboard();
+      if (requestSeq === this._outputFilesRequestSeq && runDir === this.currentOutputRunDir) {
+        this.outputFilesLoading = false;
+        this._outputsDirty = true;
+        this.renderDashboard();
+      }
     }
   },
 
@@ -995,7 +1049,9 @@ window.monitorCoreMixin = {
 
   downloadSingleOutput(path) {
     if (!path) return;
-    this._triggerDownload('/api/monitor/outputs/download-file?path=' + encodeURIComponent(path));
+    const runDir = this.currentOutputRunDir;
+    if (!runDir) return;
+    this._triggerDownload('/api/monitor/outputs/download-file?run_dir=' + encodeURIComponent(runDir) + '&path=' + encodeURIComponent(path));
   }
 
 };

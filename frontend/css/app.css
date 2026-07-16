@@ -1168,6 +1168,16 @@ input[type="checkbox"]:focus-visible {
   font-size: 12px; color: var(--warning, #d97706); line-height: 1.45;
   padding-top: 3px;
 }
+.output-path-hint {
+  width: 100%; margin-top: 4px;
+  color: var(--warning); font-size: 12px; line-height: 1.45;
+}
+.output-path-hint-summary { display: flex; align-items: flex-start; gap: 6px; }
+.output-path-hint-dot {
+  width: 5px; height: 5px; margin-top: 6px; flex: 0 0 auto;
+  border-radius: 50%; background: currentColor;
+}
+.output-path-hint.is-error { color: var(--danger); }
 .field-readonly-warn {
   font-size: 11.5px;
   color: var(--state-changed);
@@ -2493,6 +2503,7 @@ input[type="range"]::-webkit-slider-thumb {
 .dashboard-empty.dashboard-empty-compact { padding: 18px 16px; gap: 4px; }
 .dashboard-empty.dashboard-empty-compact svg { width: 28px; height: 28px; margin-bottom: 2px; }
 .dashboard-empty.dashboard-empty-compact p { max-width: 280px; font-size: 12.5px; }
+.dashboard-empty.dashboard-empty-danger { color: color-mix(in srgb, var(--danger) 74%, var(--text-secondary)); }
 
 /* ── Dashboard v3 console panels ───────────────────────── */
 .m-console-card {
@@ -2696,6 +2707,22 @@ input[type="range"]::-webkit-slider-thumb {
 .m-output-tools {
   flex-shrink: 0; padding: 7px; border: 1px solid var(--monitor-card-border);
   border-radius: var(--monitor-radius); background: var(--monitor-card-bg);
+}
+.m-output-tools .btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.m-artifact-location {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 0 0 8px; padding: 7px 9px;
+  border: 1px solid var(--monitor-card-border); border-radius: var(--monitor-radius);
+  background: var(--monitor-card-bg); color: var(--text-secondary); font-size: 10.5px;
+}
+.m-artifact-location code {
+  min-width: 120px; flex: 1 1 300px; overflow: hidden; color: var(--text-secondary);
+  font: 10px/1.45 var(--font-mono); text-overflow: ellipsis; white-space: nowrap;
+}
+.m-artifact-location small { flex: 1 0 100%; color: var(--danger); line-height: 1.45; }
+.m-artifact-location.is-offline {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--monitor-card-border));
+  background: color-mix(in srgb, var(--danger) 5%, var(--monitor-card-bg));
 }
 .m-output-selection-bar {
   display: none; position: sticky; top: 0; z-index: 5; align-items: center; justify-content: space-between; gap: 12px;
@@ -3363,6 +3390,9 @@ input[type="range"]::-webkit-slider-thumb {
 .hist-meta { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 .hist-dataset { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
 .hist-rundir { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; word-break: break-all; }
+.hist-artifact { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; word-break: break-all; }
+.hist-artifact.is-offline { color: color-mix(in srgb, var(--danger) 72%, var(--text-secondary)); }
+.history-artifact-offline { border-color: color-mix(in srgb, var(--danger) 24%, var(--border-default)); }
 .hist-actions { display: flex; gap: 3px; margin: 12px -18px -16px; padding: 8px 10px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-surface-raised) 42%, transparent); cursor: default; }
 .hist-action { min-height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); font: 550 11.5px var(--font-sans); cursor: pointer; transition: color var(--duration-fast), border-color var(--duration-fast), background-color var(--duration-fast); }
 .hist-action:hover { color: var(--text-primary); background: var(--hover-overlay); }
@@ -3372,6 +3402,8 @@ input[type="range"]::-webkit-slider-thumb {
 .hist-actions-spacer { flex: 1 1 12px; min-width: 8px; }
 .hist-action-icon { width: 28px; padding: 0; color: var(--text-tertiary); border-color: var(--border-default); }
 .hist-action-icon svg { display: block; }
+.hist-action:disabled { opacity: 0.38; cursor: not-allowed; }
+.hist-action:disabled:hover { color: var(--text-tertiary); border-color: var(--border-default); background: transparent; }
 .hist-delete:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 34%, var(--border-default)); background: var(--danger-soft); }
 .hist-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 

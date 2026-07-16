@@ -10,9 +10,10 @@ import time
 import tomllib
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from backend.constants import REPO_ROOT, OUTPUT_DIR
-from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
+from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
@@ -53,7 +54,12 @@ _previews_cache: tuple[float, str, list[dict]] | None = None
 _PREVIEWS_CACHE_TTL = 5.0
 
 
-def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh: bool = False) -> list[dict]:
+def newest_previews(
+    output_dir: str | None = None,
+    limit: int = 0,
+    force_refresh: bool = False,
+    run_dir: str = "",
+) -> list[dict]:
     """扫描最新的训练样本图（扁平结构：run_dir/sample/ → run_dir/；兼容旧 outputs/sample/）
 
     limit: 返回的最新样本数量上限；0 表示返回全部（按 mtime 升序，最新在末尾）。
@@ -61,7 +67,7 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
     """
     global _previews_cache
     now = time.time()
-    cache_key = f"{output_dir or ''}|{int(limit or 0)}"
+    cache_key = f"{run_dir}|{output_dir or ''}|{int(limit or 0)}"
     if not force_refresh:
         with _previews_cache_lock:
             if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
@@ -74,17 +80,13 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
             _previews_cache = (now, cache_key, [])
         return []
     if output_dir:
-        od = Path(output_dir)
         try:
-            od_resolved = od.resolve()
-            output_root = OUTPUT_DIR.resolve()
-            od_resolved.relative_to(output_root)
-            if od_resolved == output_root:
-                with _previews_cache_lock:
-                    _previews_cache = (now, cache_key, [])
-                return []
-            od = od_resolved
-        except (ValueError, OSError):
+            od = Path(output_dir).resolve()
+        except OSError:
+            with _previews_cache_lock:
+                _previews_cache = (now, cache_key, [])
+            return []
+        if not od.is_dir():
             with _previews_cache_lock:
                 _previews_cache = (now, cache_key, [])
             return []
@@ -120,13 +122,16 @@ def newest_previews(output_dir: str | None = None, limit: int = 0, force_refresh
     result = []
     for p in selected:
         try:
-            rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
+            rel = str(p.relative_to(od)).replace("\\", "/")
         except ValueError:
-            rel = str(p)
+            continue
+        encoded_run = quote(run_dir, safe="")
+        encoded_path = quote(rel, safe="/")
         result.append({
             "name": p.name,
-            "url": f"/api/monitor/preview-image?path={rel}",
-            "thumb_url": f"/api/monitor/preview-image?thumb=1&path={rel}",
+            "path": rel,
+            "url": f"/api/monitor/preview-image?run_dir={encoded_run}&path={encoded_path}",
+            "thumb_url": f"/api/monitor/preview-image?thumb=1&run_dir={encoded_run}&path={encoded_path}",
             "size": p.stat().st_size,
         })
     with _previews_cache_lock:
@@ -160,114 +165,66 @@ def _parse_toml_config(path: Path) -> dict | None:
 
 
 def scan_history() -> list[dict]:
-    """扫描训练记录：优先从 output/*/config.toml（运行文件夹），回退到 config/autosave/"""
+    """扫描内部运行记录；旧跨盘记录会先由 autosave 幂等导入。"""
     global _history_cache
     now = time.time()
     with _history_cache_lock:
         if _history_cache and now - _history_cache[0] < _HISTORY_CACHE_TTL:
             return _history_cache[1]
 
-    history = []
-    seen_names = set()  # 按 output_name+timestamp 去重
-
-    # ── 优先：扫描运行文件夹（每个训练一个目录） ──
-    if OUTPUT_DIR.exists():
-        for run_dir in sorted(OUTPUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if not run_dir.is_dir() or _is_hidden(run_dir.name):
-                continue
-            config_file = run_dir / "config.toml"
-            if not config_file.exists():
-                continue
-
-            params = _parse_toml_config(config_file)
-            if not params:
-                continue
-
+    try:
+        import_legacy_external_runs()
+    except Exception:
+        # 旧记录迁移是增强功能，失败不能影响现有历史页。
+        pass
+    history: list[dict] = []
+    for record in iter_run_records():
+        run_dir = Path(record["run_path"])
+        config_file = run_dir / "config.toml"
+        if not config_file.is_file():
+            continue
+        params = _parse_toml_config(config_file)
+        if not params:
+            continue
+        try:
             st = config_file.stat()
-            key = (params.get("output_name", ""), run_dir.name)
-            if key in seen_names:
-                continue
-            seen_names.add(key)
+        except OSError:
+            continue
 
-            # 模型文件名（取 basename）
-            model_path = params.get("pretrained_model_name_or_path", "")
-            model_name = Path(model_path).name if model_path else "Unknown"
-
-            # 读取 result.json 获取训练状态
-            status = ""
-            duration = ""
-            result_file = run_dir / "result.json"
-            if result_file.exists():
-                try:
-                    rj = json.loads(result_file.read_text(encoding="utf-8"))
-                    status = rj.get("status", "")
-                    duration = rj.get("duration_str", "")
-                except Exception:
-                    pass
-
+        status = ""
+        duration = ""
+        result_file = run_dir / "result.json"
+        if result_file.exists():
             try:
-                rel_run_dir = str(run_dir.relative_to(REPO_ROOT)).replace("\\", "/")
-            except ValueError:
-                rel_run_dir = str(run_dir).replace("\\", "/")
+                result_data = json.loads(result_file.read_text(encoding="utf-8"))
+                status = result_data.get("status", "")
+                duration = result_data.get("duration_str", "")
+            except (OSError, json.JSONDecodeError):
+                pass
 
-            history.append({
-                "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                "timestamp": st.st_mtime,
-                "run_dir": rel_run_dir,
-                "config_file": config_file.name,
-                "name": params.get("output_name", run_dir.name),
-                "model": model_name,
-                "lr": params.get("learning_rate", "?"),
-                "dim": params.get("network_dim", "?"),
-                "alpha": params.get("network_alpha", ""),
-                "epochs": params.get("max_train_epochs", "?"),
-                "dataset": params.get("train_data_dir", ""),
-                "status": status,
-                "duration": duration,
-            })
+        model_path = params.get("pretrained_model_name_or_path", "")
+        history.append({
+            "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "timestamp": st.st_mtime,
+            "run_dir": record["run_dir"],
+            "artifact_dir": record["artifact_dir"],
+            "artifact_available": record["artifact_available"],
+            "artifact_external": record["artifact_external"],
+            "preview_enabled": record["preview_enabled"],
+            "imported": record["imported"],
+            "config_file": config_file.name,
+            "name": params.get("output_name", run_dir.name),
+            "model": Path(model_path).name if model_path else "Unknown",
+            "lr": params.get("learning_rate", "?"),
+            "dim": params.get("network_dim", "?"),
+            "alpha": params.get("network_alpha", ""),
+            "epochs": params.get("max_train_epochs", "?"),
+            "dataset": params.get("train_data_dir", ""),
+            "status": status,
+            "duration": duration,
+        })
 
-    # ── 回退/补充：扫描 autosave（可能有些旧记录只有 toml 没目录） ──
-    if CONFIG_AUTOSAVE.exists():
-        for cfg_path in sorted(CONFIG_AUTOSAVE.glob("*.toml"),
-                               key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
-            # 跳过 prompt 文件
-            if cfg_path.name.endswith("-promopt.txt"):
-                continue
-
-            params = _parse_toml_config(cfg_path)
-            if not params:
-                continue
-
-            key = (params.get("output_name", ""), cfg_path.stem)
-            if key in seen_names:
-                continue
-            seen_names.add(key)
-
-            st = cfg_path.stat()
-            model_path = params.get("pretrained_model_name_or_path", "")
-            model_name = Path(model_path).name if model_path else "Unknown"
-            run_dir = params.get("output_dir", "")
-
-            try:
-                rel_run_dir = str(Path(run_dir).relative_to(REPO_ROOT)).replace("\\", "/") if run_dir else ""
-            except ValueError:
-                rel_run_dir = str(run_dir).replace("\\", "/") if run_dir else ""
-
-            history.append({
-                "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                "timestamp": st.st_mtime,
-                "run_dir": rel_run_dir,
-                "config_file": cfg_path.name,
-                "name": params.get("output_name", cfg_path.stem),
-                "model": model_name,
-                "lr": params.get("learning_rate", "?"),
-                "dim": params.get("network_dim", "?"),
-                "alpha": params.get("network_alpha", ""),
-                "epochs": params.get("max_train_epochs", "?"),
-                "dataset": params.get("train_data_dir", ""),
-                "status": "",
-                "duration": "",
-            })
+    history.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
 
     with _history_cache_lock:
         _history_cache = (time.time(), history)
@@ -525,19 +482,10 @@ META_FILES = {"config.toml", "run_info.txt", "prompts.txt", "result.json",
 
 
 def list_output_files(run_dir: str) -> list[dict]:
-    """列出指定训练运行目录的输出文件。
-
-    参数 run_dir 为相对于项目根的路径（如 output/my_lora_20260625-171200），
-    或绝对路径。返回文件名、相对路径、大小、修改时间、是否为 LoRA 文件、分类。
-    """
+    """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
     rd = Path(run_dir)
     if not rd.is_absolute():
         rd = (REPO_ROOT / run_dir).resolve()
-    # 安全约束：必须在 output/ 之下
-    try:
-        rd.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
-        return []
     if not rd.exists() or not rd.is_dir():
         return []
 
@@ -546,9 +494,9 @@ def list_output_files(run_dir: str) -> list[dict]:
         if not p.is_file():
             continue
         try:
-            rel = str(p.relative_to(REPO_ROOT)).replace("\\", "/")
+            rel = str(p.relative_to(rd)).replace("\\", "/")
         except ValueError:
-            rel = str(p).replace("\\", "/")
+            continue
         suffix = p.suffix.lower()
         is_lora = suffix in LORA_EXTENSIONS
         is_image = suffix in IMAGE_EXTENSIONS

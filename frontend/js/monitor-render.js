@@ -268,6 +268,7 @@ window.monitorRenderMixin = {
       html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
       if (dur) html += '<span class="m-history-dur">' + this.esc(dur) + '</span>';
     }
+    if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
     html += '<button class="btn btn-sm" @click="clearRunDetail()">← ' + this.esc(t('backToLive','Back to live')) + '</button>';
     html += '</div>';
@@ -300,7 +301,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + this._shellLocale + ':' + (this.previews.length) + ':' + (this.previewsLoading?1:0);
+      const sig = 'sm:' + this._shellLocale + ':' + (this.previews.length) + ':' + (this.previewsLoading?1:0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (tabChanged || this._builtSamplesSig !== sig) {
         // 保留滚动位置（轮询追加样本时不在视觉上跳回顶部）
         const scrollTop = contentEl.scrollTop || 0;
@@ -313,7 +314,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir);
+      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir) + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (tabChanged || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = contentEl.querySelector('.m-outputs-scroll');
@@ -1449,6 +1450,16 @@ window.monitorRenderMixin = {
     return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
   },
 
+  _artifactLocationHtml(t, d) {
+    if (!d || d.artifact_available !== false || !d.artifact_dir) return '';
+    let html = '<div class="m-artifact-location is-offline">';
+    html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+    html += '<code title="' + this.esc(d.artifact_dir) + '">' + this.esc(d.artifact_dir) + '</code>';
+    html += '<small>' + this.esc(t('artifactOfflineHint','Logs and TensorBoard are still available. Restore the output path to view models, previews and downloads.')) + '</small>';
+    html += '</div>';
+    return html;
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
@@ -1462,11 +1473,13 @@ window.monitorRenderMixin = {
     const startIdx = Math.max(0, this.previews.length - visibleCount);
     const visiblePreviews = this.previews.slice(startIdx);
 
+    const canRefresh = !!this.currentOutputRunDir;
     let html = '<div class="m-section m-samples-section"><div class="m-section-title"><span>' + this.esc(t('previewSamples','Preview')) + (showPreviews ? ' <span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</span>';
-    if (showPreviews) {
+    if (canRefresh) {
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading"><svg class="m-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 10a7 7 0 0 0-12-3L4 11m16 2-2.5 4a7 7 0 0 1-12-3"/></svg>' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button>';
     }
     html += '</div>';
+    html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
       if (startIdx > 0) {
         html += '<div class="preview-controls"><button type="button" class="btn btn-sm btn-secondary" @click="showMorePreviews()">' + this.esc(t('monitor.showOlderSamples','Show older samples')) + '</button><span class="preview-step">' + (startIdx + 1) + '-' + this.previews.length + ' / ' + this.previews.length + '</span></div>';
@@ -1485,7 +1498,13 @@ window.monitorRenderMixin = {
     } else {
       // 区分空态场景：实时无训练 / 实时训练中未生成样本 / 历史记录无样本
       let hintKey, hintFallback;
-      if (isHistory) {
+      if (d.artifact_dir && d.artifact_available === false) {
+        hintKey = 'monitor.noPreviewArtifactUnavailableHint';
+        hintFallback = 'The output folder is unavailable. Restore the path and refresh to view preview images.';
+      } else if (d.preview_enabled === false) {
+        hintKey = 'monitor.noPreviewDisabledHint';
+        hintFallback = 'Preview generation was not enabled for this run.';
+      } else if (isHistory) {
         hintKey = 'monitor.noPreviewHistoryHint';
         hintFallback = 'No preview samples in this run';
       } else if (d.state === 'RUNNING') {
@@ -1610,13 +1629,18 @@ window.monitorRenderMixin = {
   //  输出标签
   // ═══════════════════════════════════════════════════════════
   _renderOutputsTab(t) {
+    const d = this.currentArtifactData();
+    const runDir = this.currentOutputRunDir;
+    const artifactUnavailable = !!runDir && (d.artifact_available === false || this.outputFilesError === 'artifactUnavailable');
+    const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
     let html = '<div class="m-section m-outputs-section">';
     html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + (this.outputFiles.length ? ' <span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</span></div>';
+    html += this._artifactLocationHtml(t, d);
     html += '<div class="m-section-tools m-output-tools">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()">' + this.esc(t('refresh','Refresh')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()">' + this.esc(t('selectAll','Select All')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('deselectAll','Deselect All')) + '</button>';
-    html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()">' + this.esc(t('downloadAll','Download All')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh','Refresh')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('selectAll','Select All')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll','Deselect All')) + '</button>';
+    html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll','Download All')) + '</button>';
     html += '</div>';
 
     if (this.outputFilesLoading) {
@@ -1626,7 +1650,19 @@ window.monitorRenderMixin = {
     }
 
     if (!this.outputFiles.length) {
-      html += '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>' + this.esc(t('noOutputsHint','Training outputs will appear here after saving')) + '</p></div>';
+      let emptyKey = 'noOutputsHint';
+      let emptyFallback = 'Training outputs will appear here after saving';
+      if (!runDir) {
+        emptyKey = 'noOutputsNoRunHint';
+        emptyFallback = 'Start or select a training run to view its output files.';
+      } else if (artifactUnavailable) {
+        emptyKey = 'noOutputsArtifactUnavailableHint';
+        emptyFallback = 'The output folder is unavailable. Logs and TensorBoard remain available; restore the path to list or download files.';
+      } else if (this.outputFilesError === 'loadFailed') {
+        emptyKey = 'outputFilesLoadFailed';
+        emptyFallback = 'Unable to load output files. Check the folder and try Refresh.';
+      }
+      html += '<div class="dashboard-empty' + (artifactUnavailable ? ' dashboard-empty-danger' : '') + '" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>' + this.esc(t(emptyKey, emptyFallback)) + '</p></div>';
       html += '</div>';
       return html;
     }
@@ -1798,11 +1834,14 @@ window.monitorRenderMixin = {
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
-      html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training', 'Training') || 'Training') + '</span></div>';
+      html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training', 'Training') || 'Training') + '</span>';
+      if (r.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+      html += '</div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
       html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
+      if (r.artifact_available === false && r.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(r.artifact_dir) + '</div>';
       html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
       html += '</div>';
     }
@@ -1820,7 +1859,8 @@ window.monitorRenderMixin = {
       html += '<div class="history-grid">';
       items.forEach(h => {
         const runDirJs = this.escapeJsString(h.run_dir || '');
-        html += '<div class="card history-card">';
+        const artifactOffline = h.artifact_available === false;
+        html += '<div class="card history-card' + (artifactOffline ? ' history-artifact-offline' : '') + '">';
         html += '<div class="hist-card-head">';
         html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
         if (h.status) {
@@ -1829,12 +1869,14 @@ window.monitorRenderMixin = {
           html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || h.status) + '</span>';
         }
         if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
+        if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
         html += '</div>';
         html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';
         html += '<div class="hist-name"><b>' + this.esc(h.name || '') + '</b></div>';
         html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc(h.model || '') + '</div>';
         html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(h.dim || '') + (h.alpha ? ' / α ' + this.esc(h.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
         if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
+        if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
         html += '</div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
@@ -1842,8 +1884,9 @@ window.monitorRenderMixin = {
           html += '<button class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig', 'View Config')) + '</button>';
           html += '<button class="hist-action hist-action-secondary" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig', 'Reuse')) + '</button>';
           html += '<span class="hist-actions-spacer" aria-hidden="true"></span>';
-          html += '<button class="hist-action hist-action-icon hist-download" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(t('downloadAll','Download All')) + '" aria-label="' + this.esc(t('downloadAll','Download All')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
-          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('common.delete','Delete')) + '" aria-label="' + this.esc(t('common.delete','Delete')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+          const downloadTitle = artifactOffline ? t('artifactOfflineHint','Restore the output path to download files.') : t('downloadAll','Download All');
+          html += '<button class="hist-action hist-action-icon hist-download" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(downloadTitle) + '" aria-label="' + this.esc(downloadTitle) + '"' + (artifactOffline ? ' disabled' : '') + '><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('deleteHistoryOnly','Delete history data; keep models and previews')) + '" aria-label="' + this.esc(t('deleteHistoryOnly','Delete history data; keep models and previews')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
           html += '</div>';
         }
         html += '</div>';

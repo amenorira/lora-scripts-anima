@@ -27,13 +27,17 @@ from backend.monitor.artifacts import (
     list_output_files, enrich_model_files_with_loss, read_clean_log_lines,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
-from backend.monitor.snapshot import find_run_dir_by_task_id
+from backend.monitor.run_registry import (
+    find_run_record_by_task_id,
+    load_run_record,
+    mark_run_deleted,
+    resolve_artifact_file,
+)
 from backend.tasks import tm
 
 router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_DIR = REPO_ROOT / "output"
 CACHE_DIR = REPO_ROOT / "cache"
 PREVIEW_THUMB_DIR = CACHE_DIR / "preview-thumbs"
 
@@ -49,34 +53,43 @@ STATE_LABELS = {
 }
 
 
-def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | None:
-    """Resolve a monitor log path from a history run directory or live task id."""
+def _resolve_run_record(run_dir: str = "", task_id: str = "") -> dict | None:
     if run_dir:
-        abs_run_dir = (REPO_ROOT / run_dir).resolve()
-        try:
-            abs_run_dir.relative_to(OUTPUT_DIR.resolve())
-        except ValueError:
-            return None
-        if abs_run_dir.is_dir():
-            return find_run_log_path(abs_run_dir)
-        return None
-
+        return load_run_record(run_dir)
     if task_id:
-        train_config = latest_train_config(task_id)
-        output_dir = train_config.get("output_dir")
-        output_dir_path = Path(output_dir) if output_dir else None
-        return find_train_log_path(task_id, output_dir_path)
-
+        return find_run_record_by_task_id(task_id)
     return None
+
+
+def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | None:
+    """仅通过已登记的内部运行目录定位日志。"""
+    record = _resolve_run_record(run_dir, task_id)
+    if not record:
+        return None
+    run_path = Path(record["run_path"])
+    if task_id:
+        return find_train_log_path(task_id, run_path)
+    return find_run_log_path(run_path)
 
 
 @router.get("/monitor/status")
 async def monitor_status(task_id: str = Query("")):
     """聚合监控端点：GPU + CPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
+    tasks = tm.dump()
+    active = next((item for item in tasks if task_id and item.get("id") == task_id), None)
+    if not active:
+        active = next((item for item in reversed(tasks) if item.get("status") == "RUNNING"), None)
+    if not active and tasks:
+        active = tasks[-1]
+    active_task_id = active.get("id", "") if active else ""
+    record = await asyncio.to_thread(find_run_record_by_task_id, active_task_id) if active_task_id else None
+    run_path = Path(record["run_path"]) if record else None
+    artifact_path = Path(record["artifact_path"]) if record else None
+
     gpu, system, tb_loss = await asyncio.gather(
         asyncio.to_thread(gpu_info),
         asyncio.to_thread(system_info),
-        asyncio.to_thread(read_tensorboard_loss),
+        asyncio.to_thread(read_tensorboard_loss, run_dir=str(run_path) if run_path else None),
     )
     result = {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -95,73 +108,30 @@ async def monitor_status(task_id: str = Query("")):
         "speed": None,
         "has_error": False,
         "error_msg": None,
+        "run_dir": record["run_dir"] if record else "",
+        # 兼容现有前端：output_dir 继续代表内部运行标识，不再暴露任意绝对路径。
+        "output_dir": record["run_dir"] if record else "",
+        "artifact_dir": record["artifact_dir"] if record else "",
+        "artifact_available": bool(record and record["artifact_available"]),
+        "artifact_external": bool(record and record["artifact_external"]),
+        "preview_enabled": record["preview_enabled"] if record else None,
     }
+    train_config = await asyncio.to_thread(latest_train_config, active_task_id or None)
 
-    # 解析当前任务的真实运行目录：优先用活动任务的 task_id 反查
-    # task_meta.json（目标值），autosave TOML 仅作回退（前端修改表单后
-    # autosave 的 output_dir 可能指向尚未启动的新目录，此时用它取样本/日志
-    # 会落到其它记录的样本上——Bug：样本显示成其它训练记录的样本）。
-    tasks = tm.dump()
-
-    active = None
-    for t in reversed(tasks):
-        if t.get("status") == "RUNNING":
-            active = t
-            break
-    if not active and tasks:
-        active = tasks[-1]
-
-    active_task_id = active.get("id", "") if active else ""
-
-    # 1) 活动/最后一项任务的真实 run_dir（task_meta.json 反查）
-    resolved_run_dir: str | None = None
-    if active_task_id:
-        mapped = await asyncio.to_thread(find_run_dir_by_task_id, active_task_id)
-        if mapped:
-            resolved_run_dir = mapped
-
-    # 2) autosave TOML（参数面板 + 缺失 task_meta 时的回退）
-    train_config = await asyncio.to_thread(latest_train_config)
-    autosave_output_dir = train_config.get("output_dir")
-
-    # 若未反查到 run_dir，且 autosave output_dir 指向真实存在的 run 子目录，
-    # 才回退使用它（避免指向尚未创建的新目录时误取全局样本）
-    if resolved_run_dir is None and autosave_output_dir:
-        ad = Path(autosave_output_dir)
-        try:
-            ad_rel = ad.resolve().relative_to(OUTPUT_DIR.resolve())
-            # 必须是 output/<name>_<ts> 这种 run 子目录（至少 1 段），且确实存在
-            if len(ad_rel.parts) >= 1 and ad.is_dir():
-                resolved_run_dir = str(autosave_output_dir).replace("\\", "/")
-        except (ValueError, OSError):
-            pass
-
-    # 产物目录：用真实 run_dir 取样本/日志；无则 None（前端展示空态）
-    artifacts_dir: Path | None = None
-    if resolved_run_dir:
-        rd = Path(resolved_run_dir)
-        if not rd.is_absolute():
-            rd = (REPO_ROOT / rd).resolve()
-        if rd.is_dir():
-            artifacts_dir = rd
-
-    # 预览样本：严格限定在该 run 目录下，避免漂移到其它记录
+    # 预览只读取当前记录登记的产物目录，磁盘离线时返回空并保留明确状态。
     result["previews"] = await asyncio.to_thread(
-        newest_previews, str(artifacts_dir) if artifacts_dir else None, 300
+        newest_previews,
+        str(artifact_path) if record and record["artifact_available"] else None,
+        300,
+        False,
+        record["run_dir"] if record else "",
     )
-    # 训练参数：优先取该 run 的 config.toml，回退 autosave
     result["train_params"] = await asyncio.to_thread(
-        _extract_train_params_for_run, artifacts_dir, train_config
+        _extract_train_params_for_run, run_path, train_config
     )
-
-    # 只返回运行中的任务，避免暴露所有已完成/已终止任务
     result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
 
     if not tasks:
-        if artifacts_dir:
-            result["output_dir"] = str(artifacts_dir.relative_to(REPO_ROOT)).replace("\\", "/")
-        else:
-            result["output_dir"] = str(OUTPUT_DIR)
         return {"status": "success", "data": result}
 
     result["active_task"] = active
@@ -169,14 +139,7 @@ async def monitor_status(task_id: str = Query("")):
     result["state"] = active_status
     result["state_label"] = STATE_LABELS.get(active_status, active_status)
 
-    if artifacts_dir:
-        result["output_dir"] = str(artifacts_dir.relative_to(REPO_ROOT)).replace("\\", "/")
-    elif autosave_output_dir:
-        result["output_dir"] = str(autosave_output_dir).replace("\\", "/")
-    else:
-        result["output_dir"] = str(OUTPUT_DIR)
-
-    # 从真实 run 目录读取日志 + 进度
+    # 从内部 run 目录读取日志 + 进度。
     def _read_run_log_and_progress(run_dir_path: Path) -> tuple[list[str], dict]:
         latest_log = find_run_log_path(run_dir_path)
         if not latest_log:
@@ -186,8 +149,8 @@ async def monitor_status(task_id: str = Query("")):
             return [], {}
         return lines, parse_log_progress(lines)
 
-    if active_status == "RUNNING" and artifacts_dir:
-        log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, artifacts_dir)
+    if active_status == "RUNNING" and run_path:
+        log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, run_path)
         if log_lines:
             for key in ("step", "total_steps", "percent", "loss",
                          "lr", "epoch", "eta", "elapsed", "speed",
@@ -197,9 +160,8 @@ async def monitor_status(task_id: str = Query("")):
             result["log_lines"] = log_lines
 
     if active_status != "RUNNING":
-        # 上一轮训练摘要：优先用真实 run_dir 的 config/result
-        if artifacts_dir:
-            run_cfg = await asyncio.to_thread(_resolve_run_config_params, artifacts_dir)
+        if run_path:
+            run_cfg = await asyncio.to_thread(_resolve_run_config_params, run_path)
             if run_cfg:
                 result["last_config"] = run_cfg
             elif train_config:
@@ -207,15 +169,14 @@ async def monitor_status(task_id: str = Query("")):
         elif train_config:
             result["last_config"] = _last_config_from_autosave(train_config)
 
-        # result.json + 尾部日志
-        if artifacts_dir:
-            result_file = artifacts_dir / "result.json"
+        if run_path:
+            result_file = run_path / "result.json"
             if result_file.exists():
                 try:
                     result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
                 except Exception:
                     pass
-            log_lines, _ = await asyncio.to_thread(_read_run_log_and_progress, artifacts_dir)
+            log_lines, _ = await asyncio.to_thread(_read_run_log_and_progress, run_path)
             if log_lines:
                 result["log_lines"] = log_lines
 
@@ -279,7 +240,11 @@ def _extract_train_params_for_run(run_dir: Path | None, autosave_config: dict) -
 
 @router.get("/monitor/loss")
 async def monitor_loss(run_dir: str = Query("")):
-    data = await asyncio.to_thread(read_tensorboard_loss, run_dir=run_dir or None)
+    record = await asyncio.to_thread(load_run_record, run_dir) if run_dir else None
+    data = await asyncio.to_thread(
+        read_tensorboard_loss,
+        run_dir=str(record["run_path"]) if record else None,
+    )
     return {"status": "success", "data": data}
 
 
@@ -290,21 +255,24 @@ async def monitor_previews(
     refresh: int = Query(0),
     limit: int = Query(300, ge=1, le=1000),
 ):
-    # 解析预览样本目录：
-    #   task_id 非空 → 反查活动任务的真实 run_dir（实时模式）
-    #   否则 run_dir 非空 → 直接用该 run_dir（历史模式）
-    #   都为空 → 回退到活动任务 / autosave
-    if task_id:
-        output_dir = await asyncio.to_thread(_resolve_live_output_dir, task_id)
-    elif run_dir:
-        rd = Path(run_dir)
-        if not rd.is_absolute():
-            rd = (REPO_ROOT / rd).resolve()
-        output_dir = str(rd) if rd.is_dir() else None
-    else:
-        output_dir = await asyncio.to_thread(_resolve_live_output_dir, "")
-    data = await asyncio.to_thread(newest_previews, output_dir, limit, bool(refresh))
-    return {"status": "success", "data": data}
+    record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
+    output_dir = str(record["artifact_path"]) if record and record["artifact_available"] else None
+    data = await asyncio.to_thread(
+        newest_previews,
+        output_dir,
+        limit,
+        bool(refresh),
+        record["run_dir"] if record else "",
+    )
+    return {
+        "status": "success",
+        "data": data,
+        "meta": {
+            "artifact_dir": record["artifact_dir"] if record else "",
+            "artifact_available": bool(record and record["artifact_available"]),
+            "preview_enabled": record["preview_enabled"] if record else None,
+        },
+    }
 
 
 @router.get("/monitor/config")
@@ -314,11 +282,10 @@ async def monitor_config():
     return {"status": "success", "data": data}
 
 
-def _resolve_live_output_dir(task_id: str = "") -> str | None:
-    """定位「当前活动训练」的真实产物目录。
-    优先级：参数 task_id → 活动任务 task_id（反查 task_meta.json）→ autosave TOML。
-    autosave 仅在其 output_dir 指向真实存在的子目录时才回退使用，避免漂移到全局样本。
-    """
+def _resolve_live_record(task_id: str = "", run_dir: str = "") -> dict | None:
+    """通过内部 run_dir 或活动 task_id 定位运行记录。"""
+    if run_dir:
+        return load_run_record(run_dir)
     tid = task_id or ""
     if not tid:
         tasks = tm.dump()
@@ -326,21 +293,7 @@ def _resolve_live_output_dir(task_id: str = "") -> str | None:
             if t.get("status") == "RUNNING":
                 tid = t.get("id", "")
                 break
-    if tid:
-        mapped = find_run_dir_by_task_id(tid)
-        if mapped and Path(mapped).is_dir():
-            return mapped
-    cfg = latest_train_config()
-    autosave_od = cfg.get("output_dir")
-    if autosave_od:
-        ad = Path(autosave_od)
-        try:
-            ad_rel = ad.resolve().relative_to(OUTPUT_DIR.resolve())
-            if len(ad_rel.parts) >= 1 and ad.is_dir():
-                return autosave_od
-        except (ValueError, OSError):
-            pass
-    return None
+    return find_run_record_by_task_id(tid) if tid else None
 
 
 @router.post("/monitor/stop")
@@ -379,13 +332,17 @@ async def monitor_history():
     # 如果运行中任务状态为 RUNNING，补充训练参数
     if running and running.get("status") == "RUNNING":
         train_config = await asyncio.to_thread(latest_train_config)
-        params = extract_train_params(train_config)
+        record = await asyncio.to_thread(find_run_record_by_task_id, running.get("id", ""))
         running["name"] = train_config.get("output_name", "")
         running["model"] = train_config.get("pretrained_model_name_or_path", "")
         running["lr"] = train_config.get("learning_rate", "?")
         running["dim"] = train_config.get("network_dim", "?")
         running["epochs"] = train_config.get("max_train_epochs", "?")
-        running["run_dir"] = train_config.get("output_dir", "")
+        running["run_dir"] = record["run_dir"] if record else ""
+        running["artifact_dir"] = record["artifact_dir"] if record else train_config.get("output_dir", "")
+        running["artifact_available"] = bool(record and record["artifact_available"])
+        running["artifact_external"] = bool(record and record["artifact_external"])
+        running["preview_enabled"] = record["preview_enabled"] if record else None
         running["dataset"] = train_config.get("train_data_dir", "")
     elif running and running.get("status") != "RUNNING":
         running = None  # 已完成/终止的任务不算运行中
@@ -395,14 +352,7 @@ async def monitor_history():
 
 @router.post("/monitor/history/delete")
 async def delete_history_run(request: Request):
-    """删除一条历史训练记录（删除其 run 目录）。
-
-    请求体: {"run_dir": "output/my_lora_20260625-171200"}
-    安全约束：run_dir 必须位于 output/ 之下，且必须包含 config.toml（确认为训练目录）。
-    运行中的任务目录禁止删除。
-    """
-    import shutil
-
+    """删除内部历史/日志，始终保留模型、断点和 sample/。"""
     try:
         body = await request.json()
     except Exception:
@@ -411,41 +361,23 @@ async def delete_history_run(request: Request):
     if not run_dir:
         return {"status": "error", "message": "run_dir is required"}
 
-    abs_run_dir = (REPO_ROOT / run_dir).resolve()
-    try:
-        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
-        return {"status": "error", "message": "Invalid run_dir / 无效路径"}
-
-    if not abs_run_dir.is_dir():
+    record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True)
+    if not record:
         return {"status": "error", "message": "Run directory not found / 目录不存在"}
-
-    # 确认是训练目录（含 config.toml 或 task_meta.json）
-    if not (abs_run_dir / "config.toml").exists() and not (abs_run_dir / "task_meta.json").exists():
-        return {"status": "error", "message": "Not a training directory / 非训练目录"}
-
-    # 禁止删除运行中任务的目录
-    task_meta = abs_run_dir / "task_meta.json"
-    if task_meta.exists():
-        try:
-            meta = json.loads(task_meta.read_text(encoding="utf-8"))
-            tid = meta.get("task_id")
-            if tid:
-                tasks = tm.dump()
-                if any(t.get("id") == tid and t.get("status") == "RUNNING" for t in tasks):
-                    return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
-        except (OSError, json.JSONDecodeError):
-            pass
-
-    try:
-        await asyncio.to_thread(shutil.rmtree, abs_run_dir)
-    except OSError as e:
-        return {"status": "error", "message": f"Failed to delete: {e}"}
+    tid = record.get("task_id")
+    if tid and any(t.get("id") == tid and t.get("status") == "RUNNING" for t in tm.dump()):
+        return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
+    if not await asyncio.to_thread(mark_run_deleted, run_dir):
+        return {"status": "error", "message": "Failed to delete history / 删除历史失败"}
 
     # 失效历史缓存
     from backend.monitor.artifacts import invalidate_history_cache
     invalidate_history_cache()
-    return {"status": "success", "message": "Deleted / 已删除"}
+    return {
+        "status": "success",
+        "message": "History deleted; artifacts preserved / 历史已删除，模型产物已保留",
+        "data": {"artifact_dir": record["artifact_dir"], "artifacts_preserved": True},
+    }
 
 
 @router.get("/monitor/run-detail")
@@ -455,18 +387,20 @@ async def monitor_run_detail(run_dir: str = Query("")):
     if not run_dir:
         return {"status": "error", "message": "run_dir is required"}
 
-    abs_run_dir = (REPO_ROOT / run_dir).resolve()
-
-    # 安全检查：必须在 output/ 下
-    try:
-        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
-        return {"status": "error", "message": "Invalid run_dir / 无效路径"}
-
-    if not abs_run_dir.is_dir():
+    record = await asyncio.to_thread(load_run_record, run_dir)
+    if not record:
         return {"status": "error", "message": "Run directory not found / 训练目录不存在"}
+    abs_run_dir = Path(record["run_path"])
+    artifact_dir = Path(record["artifact_path"])
 
-    result: dict = {"run_dir": run_dir}
+    result: dict = {
+        "run_dir": record["run_dir"],
+        "artifact_dir": record["artifact_dir"],
+        "artifact_available": record["artifact_available"],
+        "artifact_external": record["artifact_external"],
+        "preview_enabled": record["preview_enabled"],
+        "imported": record["imported"],
+    }
 
     # ── 配置参数 ──
     config_file = abs_run_dir / "config.toml"
@@ -483,7 +417,13 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
 
     # ── 预览样本（扁平结构：run_dir/sample/，兼容旧 outputs/sample/）──
-    result["previews"] = await asyncio.to_thread(newest_previews, str(abs_run_dir), 300)
+    result["previews"] = await asyncio.to_thread(
+        newest_previews,
+        str(artifact_dir) if record["artifact_available"] else None,
+        300,
+        False,
+        record["run_dir"],
+    )
 
     # ── 训练日志 ──
     # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），
@@ -585,20 +525,22 @@ async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query(""
 
 
 @router.get("/monitor/preview-image")
-async def monitor_preview_image(path: str = Query(""), thumb: bool = Query(False)):
-    """预览图片代理 — 仅允许 output/ 和 logs/ 目录下的文件"""
+async def monitor_preview_image(
+    run_dir: str = Query(""),
+    path: str = Query(""),
+    thumb: bool = Query(False),
+):
+    """预览图片代理 — 仅允许访问该内部运行记录登记的产物目录。"""
     import hashlib
     import mimetypes
     import urllib.parse
     from fastapi.responses import FileResponse
 
+    if not run_dir or not path:
+        return {"status": "error", "message": "run_dir and path are required"}
     decoded = urllib.parse.unquote(path)
-    p = (REPO_ROOT / decoded).resolve()
-
-    # 使用 relative_to 做安全的路径约束检查（禁止路径遍历）
-    try:
-        p.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
+    p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
+    if not p:
         return {"status": "error", "message": "禁止访问"}
 
     if not p.is_file():
@@ -645,28 +587,6 @@ async def is_training_active():
     }
 
 
-def _resolve_run_dir(run_dir: str, task_id: str) -> Path | None:
-    """解析 run 目录：优先 run_dir，回退用 task_id 反查 task_meta.json 映射。
-
-    返回绝对路径（若合法且存在），否则 None。
-    """
-    if run_dir:
-        rd = Path(run_dir)
-        if not rd.is_absolute():
-            rd = (REPO_ROOT / run_dir).resolve()
-        try:
-            rd.relative_to(OUTPUT_DIR.resolve())
-        except ValueError:
-            return None
-        return rd if rd.is_dir() else None
-    # 回退：用 task_id 在 output/*/task_meta.json 中反查
-    mapped = find_run_dir_by_task_id(task_id) if task_id else None
-    if mapped:
-        rd = Path(mapped)
-        return rd if rd.is_dir() else None
-    return None
-
-
 @router.get("/monitor/outputs")
 async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     """获取训练运行的输出文件列表。
@@ -674,16 +594,31 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     优先按 run_dir 解析（live 模式前端传 monitorData.output_dir，历史模式传 selectedRunDir）；
     若仅提供 task_id，则通过 task_meta.json 反查 run 目录。
     """
-    rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
-    if not rd:
+    record = await asyncio.to_thread(_resolve_run_record, run_dir, task_id)
+    if not record:
         return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
+    if not record["artifact_available"]:
+        return {
+            "status": "error",
+            "message": "Artifact directory unavailable / 产物目录不可用",
+            "data": {"artifact_dir": record["artifact_dir"], "artifact_available": False},
+        }
+    artifact_dir = Path(record["artifact_path"])
+    internal_dir = Path(record["run_path"])
     # 并发读取文件列表 + TensorBoard loss series，再合并给模型文件注入 ckpt_loss
     files, tb_series = await asyncio.gather(
-        asyncio.to_thread(list_output_files, str(rd)),
-        asyncio.to_thread(read_tensorboard_loss, run_dir=str(rd)),
+        asyncio.to_thread(list_output_files, str(artifact_dir)),
+        asyncio.to_thread(read_tensorboard_loss, run_dir=str(internal_dir)),
     )
-    enrich_model_files_with_loss(files, tb_series, str(rd))
-    return {"status": "success", "data": files}
+    enrich_model_files_with_loss(files, tb_series, str(internal_dir))
+    return {
+        "status": "success",
+        "data": files,
+        "meta": {
+            "artifact_dir": record["artifact_dir"],
+            "artifact_available": True,
+        },
+    }
 
 
 @router.get("/monitor/outputs/download")
@@ -692,11 +627,12 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
     import tempfile
     import zipfile
     import urllib.parse
-    from fastapi.responses import StreamingResponse
-
-    rd = await asyncio.to_thread(_resolve_run_dir, run_dir, task_id)
-    if not rd:
+    record = await asyncio.to_thread(_resolve_run_record, run_dir, task_id)
+    if not record:
         return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
+    if not record["artifact_available"]:
+        return {"status": "error", "message": "Artifact directory unavailable / 产物目录不可用"}
+    rd = Path(record["artifact_path"])
 
     # 解析要下载的文件列表
     if files:
@@ -751,21 +687,18 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
 
 
 @router.get("/monitor/outputs/download-file")
-async def download_single_output(path: str = Query("")):
+async def download_single_output(run_dir: str = Query(""), path: str = Query("")):
     """下载单个输出文件（直接返回原始文件，无需打包 zip）。"""
     import mimetypes
     import urllib.parse
     from fastapi.responses import FileResponse
 
-    if not path:
-        return {"status": "error", "message": "path is required"}
+    if not run_dir or not path:
+        return {"status": "error", "message": "run_dir and path are required"}
 
     decoded = urllib.parse.unquote(path)
-    p = (REPO_ROOT / decoded).resolve()
-    # 安全约束：必须在 output/ 之下
-    try:
-        p.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
+    p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
+    if not p:
         return {"status": "error", "message": "Invalid path / 无效路径"}
     if not p.is_file():
         return {"status": "error", "message": "File not found / 文件不存在"}
@@ -795,16 +728,10 @@ async def get_config_from_run(run_dir: str = Query("")):
     if not run_dir:
         return {"status": "error", "message": "run_dir required"}
     
-    abs_run_dir = (REPO_ROOT / run_dir).resolve()
-    
-    # Safety check: must be under output/
-    try:
-        abs_run_dir.relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
-        return {"status": "error", "message": "Invalid run_dir"}
-    
-    if not abs_run_dir.is_dir():
+    record = await asyncio.to_thread(load_run_record, run_dir)
+    if not record:
         return {"status": "error", "message": "Run directory not found"}
+    abs_run_dir = Path(record["run_path"])
     
     config_file = abs_run_dir / "config.toml"
     if not config_file.exists():
@@ -813,12 +740,20 @@ async def get_config_from_run(run_dir: str = Query("")):
     try:
         content = config_file.read_text(encoding="utf-8")
         params = _parse_toml_config(config_file)
+        reusable_params = dict(params or {})
+        # 非续训复用时恢复用户填写的输出根目录，避免继续嵌套上次时间戳目录。
+        if not reusable_params.get("resume"):
+            reusable_params["output_dir"] = record["output_base_dir"]
         return {
             "status": "success",
             "data": {
                 "content": content,
-                "params": params or {},
-                "run_dir": run_dir
+                "params": reusable_params,
+                "run_dir": record["run_dir"],
+                "artifact_dir": record["artifact_dir"],
+                "artifact_available": record["artifact_available"],
+                "artifact_external": record["artifact_external"],
+                "preview_enabled": record["preview_enabled"],
             }
         }
     except Exception as e:

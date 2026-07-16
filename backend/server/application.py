@@ -21,6 +21,7 @@ from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
 from backend.core.event_bus import event_bus
 from backend.monitor.monitor import task_monitor
+from backend.monitor.run_registry import import_legacy_external_runs
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -41,10 +42,23 @@ async def app_startup():
     app_config.load_config()
 
     await load_presets()
+    from backend.log import log as _log
+    try:
+        migration = await asyncio.to_thread(import_legacy_external_runs)
+    except Exception as exc:
+        migration = {}
+        _log.warning(
+            "Legacy external run import skipped: %s / 旧跨盘训练记录导入已跳过: %s",
+            exc, exc,
+        )
     await asyncio.to_thread(check_torch_gpu)
 
     url = f"http://{os.environ.get('ANIMA_HOST', '127.0.0.1')}:{os.environ.get('ANIMA_PORT', '12333')}/"
-    from backend.log import log as _log
+    if migration.get("imported"):
+        _log.info(
+            "Imported %s legacy external run(s) / 已恢复 %s 条旧跨盘训练记录",
+            migration["imported"], migration["imported"],
+        )
     _log.info(
         "Server ready / 服务就绪  @ %s  (Ctrl+Click to open in browser / Ctrl+左键点击可在浏览器中打开)",
         url,

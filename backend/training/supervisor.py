@@ -18,7 +18,7 @@ from typing import Optional
 
 from backend.log import log
 from backend.tasks import tm
-from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
+from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
 
 
@@ -65,7 +65,7 @@ def _detect_available_attn() -> list[str]:
     return available
 
 
-def _build_train_env(output_dir: str, task_id: str) -> dict:
+def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None) -> dict:
     """构建训练子进程的环境变量"""
     env = os.environ.copy()
 
@@ -79,7 +79,8 @@ def _build_train_env(output_dir: str, task_id: str) -> dict:
     env["ACCELERATE_DISABLE_RICH"] = "1"
 
     # 训练输出目录
-    env["ANIMA_OUTPUT_DIR"] = output_dir
+    env["ANIMA_OUTPUT_DIR"] = artifact_dir
+    env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TASK_ID"] = task_id
 
     # 确保项目根目录 + vendor/ 在 Python path 最前面
@@ -115,7 +116,12 @@ def run_train(
     gpu_ids: Optional[list] = None,
     cpu_threads: int = 2,
     extra_args: Optional[list] = None,
+    # output_dir 保留为旧调用兼容；新代码分别传 run_dir / artifact_dir。
     output_dir: str = "",
+    run_dir: str = "",
+    artifact_dir: str = "",
+    output_base_dir: str = "",
+    preview_enabled: bool | None = None,
 ) -> dict:
     """
     启动训练子进程。
@@ -124,8 +130,9 @@ def run_train(
     """
     script = _get_trainer_script(trainer_file)
 
-    # 默认 output 目录
-    od = output_dir or str(Path(toml_path).parent.parent / "output")
+    # 内部运行目录保存日志/配置/TB；产物目录保存模型/断点/sample。
+    control_dir = run_dir or output_dir or str(Path(toml_path).parent.parent / "output")
+    artifacts_dir = artifact_dir or output_dir or control_dir
 
     # ── 1. GPU 校验（在创建任务之前，避免无效 GPU 产生孤儿任务）──
     validated_ids: list[int] = []
@@ -174,25 +181,32 @@ def run_train(
 
     # Save task metadata into run directory (task_id ↔ run_dir mapping)
     try:
-        save_config_snapshot(task_id, toml_path, run_dir=od, extra_info={
+        save_config_snapshot(task_id, toml_path, run_dir=control_dir, artifact_dir=artifacts_dir,
+                             output_base_dir=output_base_dir or str(Path(artifacts_dir).parent), extra_info={
             "trainer_file": trainer_file,
             "gpu_ids": gpu_ids,
-            "output_dir": od,
+            "output_dir": artifacts_dir,
+            "preview_enabled": preview_enabled,
         })
     except Exception as e:
-        log.warning(f"Failed to save task metadata / 保存任务元数据失败: {e}")
+        tm.terminate_task(task_id)
+        log.error(f"Failed to save task metadata / 保存任务元数据失败: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to initialize training monitoring / 初始化训练监控失败: {e}",
+        }
 
-    env = _build_train_env(output_dir=od, task_id=task_id)
+    env = _build_train_env(artifact_dir=artifacts_dir, task_id=task_id, run_dir=control_dir)
     env.update(env_extra)
     task.environ = env  # 更新 task 的环境变量
 
     # 日志文件放在运行文件夹内
-    run_dir = Path(od)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    log_file = run_dir / f"train_{task_id_short}.log"
+    run_path = Path(control_dir)
+    run_path.mkdir(parents=True, exist_ok=True)
+    log_file = run_path / f"train_{task_id_short}.log"
 
     # ── 读取 run 元信息（用于控制台启动/结束简短信息）──
-    run_meta = _read_run_meta(run_dir, trainer_file)
+    run_meta = _read_run_meta(run_path, trainer_file)
 
     def _run():
         import json as _json
@@ -226,10 +240,10 @@ def run_train(
         duration = time.time() - start_time
 
         # ── B: 写入结构化训练结果 ────────────────────────
-        _write_result_json(run_dir, task_id, status, exit_code, error_msg, duration)
+        _write_result_json(run_path, task_id, status, exit_code, error_msg, duration)
         # ── C: 失败时提取尾部错误日志 ─────────────────────
         if status != "completed":
-            _write_error_tail(log_file, run_dir, task_id_short)
+            _write_error_tail(log_file, run_path, task_id_short)
 
         # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
         _log_run_end(status, run_meta, duration, exit_code, task_id_short)
@@ -240,12 +254,16 @@ def run_train(
         lambda t: log.error(f"Training background task crashed / 后台训练任务异常: {t.exception()}") if t.exception() else None
     )
 
-    _log_run_start(run_meta, task_id_short, run_dir)
+    _log_run_start(run_meta, task_id_short, Path(artifacts_dir))
 
     return {
         "status": "success",
         "message": f"Training started / 训练已启动",
-        "data": {"task_id": task_id},
+        "data": {
+            "task_id": task_id,
+            "run_dir": str(run_path),
+            "artifact_dir": str(Path(artifacts_dir)),
+        },
     }
 
 

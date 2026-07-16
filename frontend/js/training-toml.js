@@ -273,6 +273,13 @@ window.trainingTomlMixin = {
     }
 
     this.trainingStarting = true;
+    const outputPathInfo = await this.refreshOutputPathInfo(true);
+    if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
+      this.toast(this.outputPathBlockingText(), 'error');
+      this.trainingStarting = false;
+      return;
+    }
+
     const estimate = await this.refreshStepEstimate(true);
     if (!estimate) {
       this.toast(

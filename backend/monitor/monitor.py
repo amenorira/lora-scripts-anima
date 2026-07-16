@@ -20,6 +20,7 @@ from backend.core.event_bus import event_bus
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
 from backend.monitor.artifacts import find_train_log_path, _clean_log_text
+from backend.monitor.run_registry import find_run_record_by_task_id
 from backend.tasks import tm, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -261,12 +262,13 @@ class TaskMonitor:
         """收集任务进度和日志增量"""
         try:
             train_config = latest_train_config(task_id)
-            output_dir = train_config.get("output_dir")
-            output_dir_path = Path(output_dir) if output_dir else None
+            record = find_run_record_by_task_id(task_id)
+            run_dir = str(record["run_path"]) if record else None
+            run_dir_path = Path(run_dir) if run_dir else None
 
             # ── 日志增量：按文件字节偏移读取（单次 I/O，同时用于进度解析）──
             new_lines = await asyncio.to_thread(
-                self._read_log_delta, task_id, output_dir_path
+                self._read_log_delta, task_id, run_dir_path
             )
 
             if new_lines:
@@ -301,7 +303,7 @@ class TaskMonitor:
             # TB 增量 loss 数据推送
             await self._collect_tb_incremental(
                 task_id,
-                run_dir=output_dir,
+                run_dir=run_dir,
                 output_name=train_config.get("output_name", ""),
             )
         except Exception as e:

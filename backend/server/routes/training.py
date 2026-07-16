@@ -4,11 +4,16 @@ Training routes — POST /run, POST /run_script
 import asyncio
 import json
 import os
+import shutil
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 import toml
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 
+from backend.constants import OUTPUT_DIR
+from backend.monitor.run_registry import resolve_user_path
 from backend.training import run_train
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend import launch_utils
@@ -29,6 +34,103 @@ avaliable_scripts = [
     "networks/merge_lora.py",
     "tools/merge_models.py",
 ]
+
+
+def _safe_output_name(output_name: str) -> str:
+    return "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
+
+
+def _nearest_existing_parent(path: Path) -> Path | None:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate if candidate.exists() else None
+
+
+def _prepare_writable_directory(path: Path) -> bool:
+    """创建目录并进行一次真实写入探针，尽早给出可操作的路径错误。"""
+    existed = path.exists()
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        fd, probe = tempfile.mkstemp(prefix=".anima-write-test-", dir=path)
+        os.close(fd)
+        Path(probe).unlink(missing_ok=True)
+    except OSError:
+        if not existed:
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+        raise
+    return not existed
+
+
+def _prepare_output_directories(*directories: Path) -> None:
+    """依次探测产物与内部目录；失败时回收本次新建的空目录。"""
+    prepared: set[Path] = set()
+    created: list[Path] = []
+    try:
+        for directory in directories:
+            resolved = directory.resolve()
+            if resolved in prepared:
+                continue
+            if _prepare_writable_directory(resolved):
+                created.append(resolved)
+            prepared.add(resolved)
+    except OSError:
+        for directory in reversed(created):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+        raise
+
+
+def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
+    """同步检查路径；由 API 放入工作线程，避免离线盘阻塞事件循环。"""
+    base = resolve_user_path(path or "./output")
+    parent = _nearest_existing_parent(base)
+    available = bool(parent and parent.is_dir())
+    writable = bool(available and parent and os.access(parent, os.W_OK))
+    free_bytes = None
+    if available and parent:
+        try:
+            free_bytes = shutil.disk_usage(parent).free
+        except OSError:
+            pass
+    run_name = f"{_safe_output_name(output_name)}_时间戳"
+    artifact_preview = base if resume else base / run_name
+    monitor_preview = OUTPUT_DIR.resolve() / run_name
+    return {
+        "base_dir": str(base),
+        "preview_dir": str(artifact_preview),
+        "monitor_dir": str(monitor_preview),
+        "is_default": base == OUTPUT_DIR.resolve(),
+        "is_resume": resume,
+        "same_location": artifact_preview == monitor_preview,
+        "path_exists": base.exists(),
+        "path_is_directory": base.is_dir() if base.exists() else None,
+        "available": available,
+        "writable": writable,
+        "free_bytes": free_bytes,
+    }
+
+
+@router.get("/training/output-path-info")
+async def output_path_info(
+    path: str = Query("./output"),
+    output_name: str = Query("my_lora"),
+    resume: bool = Query(False),
+):
+    """返回输出路径预览、盘符状态和剩余空间，不创建目录。"""
+    try:
+        data = await asyncio.to_thread(_inspect_output_path, path, output_name, resume)
+    except (OSError, ValueError) as exc:
+        return APIResponseFail(
+            message=f"Invalid output path / 输出路径无效: {exc}",
+            data={"errorCode": "invalidOutputPath"},
+        )
+    return APIResponseSuccess(data=data)
 
 
 @router.post("/training/estimate")
@@ -171,8 +273,10 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
             "",
             f"Full config:  config.toml",
             f"Training log: train_*.log",
-            f"Model files:  *.safetensors (run root)",
-            f"Samples:      sample/",
+            f"TensorBoard:  {os.path.join(run_dir, 'log')}",
+            f"Artifacts:    {config.get('output_dir', run_dir)}",
+            f"Model files:  {os.path.join(str(config.get('output_dir', run_dir)), '*.safetensors')}",
+            f"Samples:      {os.path.join(str(config.get('output_dir', run_dir)), 'sample')}",
         ]
         info_path = os.path.join(run_dir, "run_info.txt")
         with open(info_path, "w", encoding="utf-8") as f:
@@ -243,20 +347,23 @@ async def create_toml_file(request: Request):
             config["attn_mode"] = attn_actual
     # ──────────────────────────────────────────────────────────
 
-    # ── Per-run folder: resolve paths now, create only after validation ──
+    # ── Per-run folder: internal control data + user-selected artifacts ──
     output_name = config.get("output_name", "my_lora")
-    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
+    safe_name = _safe_output_name(str(output_name))
     run_dir_name = f"{safe_name}_{timestamp}"
     is_resume = bool(config.get("resume", "").strip())
 
-    # 用户设置的基础输出目录（默认 ./output），后端自动在其下创建子文件夹
-    output_base = config.get("output_dir", "./output")
-
-    run_dir = (
-        os.path.join(output_base, run_dir_name)
-        if not is_resume
-        else config.get("output_dir", os.path.join(output_base, run_dir_name))
-    )
+    # 用户设置的路径仅决定模型/断点/sample 的位置；日志、配置、TB 均保存在内部 run_dir。
+    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
+    try:
+        output_base_path = await asyncio.to_thread(resolve_user_path, requested_output_dir)
+    except (OSError, ValueError) as exc:
+        return APIResponseFail(
+            message=f"Invalid output path / 输出路径无效: {exc}",
+            data={"errorCode": "invalidOutputPath"},
+        )
+    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
+    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
     if not train_utils.validate_data_dir(config["train_data_dir"]):
@@ -303,15 +410,28 @@ async def create_toml_file(request: Request):
             log.error(f"Error while processing prompts: {e}")
             return APIResponseFail(message=str(e))
 
-    if not is_resume:
-        os.makedirs(run_dir, exist_ok=True)
-        config["output_dir"] = run_dir
-        config["logging_dir"] = os.path.join(run_dir, "log")
-    elif "logging_dir" not in config:
-        config["logging_dir"] = os.path.join(str(run_dir), "log")
+    try:
+        # 优先检查用户产物目录；磁盘 I/O 放入线程，避免离线盘阻塞 API。
+        await asyncio.to_thread(
+            _prepare_output_directories,
+            artifact_run_dir,
+            internal_run_dir,
+        )
+    except OSError as exc:
+        log.warning("Output directory unavailable / 输出目录不可用: %s", exc)
+        return APIResponseFail(
+            message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
+            data={
+                "errorCode": "outputDirectoryUnavailable",
+                "outputPath": str(artifact_run_dir),
+            },
+        )
+
+    config["output_dir"] = str(artifact_run_dir)
+    config["logging_dir"] = str(internal_run_dir / "log")
 
     if sample_prompts_arg:
-        sample_prompts_file = os.path.join(run_dir, "prompts.txt")
+        sample_prompts_file = str(internal_run_dir / "prompts.txt")
         with open(sample_prompts_file, "w", encoding="utf-8") as f:
             f.write(sample_prompts_arg)
         config["sample_prompts"] = sample_prompts_file
@@ -328,18 +448,27 @@ async def create_toml_file(request: Request):
     def _write_configs():
         with open(toml_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
-        run_config_file = os.path.join(run_dir, "config.toml")
+        run_config_file = str(internal_run_dir / "config.toml")
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
 
     # ── A-2: 并发写入 config + run_info（写入不同文件，无依赖）──
     await asyncio.gather(
         asyncio.to_thread(_write_configs),
-        asyncio.to_thread(_write_run_info, run_dir, config, model_train_type, timestamp, is_resume),
+        asyncio.to_thread(_write_run_info, str(internal_run_dir), config, model_train_type, timestamp, is_resume),
     )
     # ──────────────────────────────────────────────────────────
 
-    result = run_train(toml_file, trainer_file, gpu_ids, suggest_cpu_threads, output_dir=run_dir)
+    result = run_train(
+        toml_file,
+        trainer_file,
+        gpu_ids,
+        suggest_cpu_threads,
+        run_dir=str(internal_run_dir),
+        artifact_dir=str(artifact_run_dir),
+        output_base_dir=requested_output_dir,
+        preview_enabled=bool(_ui_config.get("enable_preview", False)),
+    )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）
     if result.get("status") == "success" and adapter_warnings:
