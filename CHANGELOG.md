@@ -2,6 +2,33 @@
 
 本项目的重要版本变更记录于此。
 
+## v1.3.0 - 2026-07-18
+
+重新设计 Windows 首次启动与安装流程，让直接从 GitHub 下载 ZIP 的新用户也能自动准备运行环境，并将目录安全转换为以后可使用 `git pull` 更新的仓库。
+
+### Windows 首次启动与安装
+
+- 将 `start.bat` 精简为兼容 Windows PowerShell 5.1 的入口，由新的 PowerShell 引导统一处理环境检测、安装、仓库修复和 GUI 启动。
+- 自动复用 64 位 Python 3.10-3.12；缺少兼容版本时可为当前用户安装官方 Python 3.12.10，不替换新版 Python，也不修改默认 Python。
+- Git 优先通过 winget 安装，失败时回退到固定版本的官方 Git for Windows 安装包，并校验 SHA-256 与 Authenticode 签名。
+- 下载阶段显示百分比、大小、实时速度和 ETA；静默安装与创建 `venv` 等阶段显示加载动画和耗时，pip 与 Git 保留原生进度。
+- 安装过程统一使用 English / 中文双语提示，并配置当前用户 PATH、Git Bash Here 及必要的资源管理器右键菜单。
+
+### ZIP 仓库修复与数据保护
+
+- 检测没有 `.git` 的 GitHub ZIP 目录，拉取完整 `main` 与标签，并在源码对齐前将差异文件、远端提交号和清单保存到 `bootstrap-backups/<时间>.zip`。
+- 修复后创建跟踪 `origin/main` 的本地 `main`，设置 `pull.ff=only`，启动器自动重启一次；后续仍由用户手动执行 `git pull`。
+- 源码对齐排除 `venv`、模型、缓存、输出、日志、Hugging Face 数据和整个 `config` 目录，不执行 `git clean` 或硬重置用户目录。
+- 已有有效仓库不会被重设；损坏或来源无法确认的 `.git` 只显示双语警告。Git 安装或修复失败不会阻止训练器继续启动。
+
+### 参数、Linux 与测试
+
+- `--quiet/-q` 保持核心依赖自动安装并默认跳过可选 Git 修改；新增 `--setup-git` 与 `--skip-git-setup` 供非交互或显式跳过场景使用。
+- Linux 启动器补齐 Python、Git 和 ZIP 下载版的中英双语说明，不自动调用发行版包管理器或 `sudo`。
+- 新增 Windows 契约与临时远端集成测试，覆盖中文/空格路径、源码备份、用户数据保护、损坏仓库、下载失败及修复后的普通 `git pull`。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v1.2.0...v1.3.0)
+
 ## v1.2.0 - 2026-07-16
 
 完整支持将训练产物保存到训练器目录外的任意位置，包括同盘跨目录和不同盘符；每条训练可独立选择输出目录，同时保持 TensorBoard、预览、日志和历史监控稳定可用。
