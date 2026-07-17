@@ -9,7 +9,7 @@ import sys
 
 # Install project startup compatibility before importing ML dependencies.
 if sys.platform == "win32":
-    import sitecustomize  # noqa: F401
+    from tools.python_startup import sitecustomize as _sitecustomize  # noqa: F401
 
 # Keep direct module launches from entering dependency repair with an
 # unsupported interpreter. start.bat/start.sh can select a compatible Python

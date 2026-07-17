@@ -22,6 +22,7 @@ $script:SetupGit = $false
 $script:SkipGitSetup = $false
 $script:AssumeYes = $false
 $script:ForwardArgs = @()
+$script:BootstrapExitCode = 0
 $script:ProtectedUserRoots = @(
     ".venv",
     "bootstrap-backups",
@@ -968,7 +969,8 @@ function Invoke-MainBootstrap {
     $repaired = Invoke-OptionalGitBootstrap
     if ($repaired) {
         Write-Text "git_restart" -Color Cyan
-        return 23
+        $script:BootstrapExitCode = 23
+        return
     }
 
     $python = Find-CompatiblePython
@@ -989,7 +991,8 @@ function Invoke-MainBootstrap {
         Write-Text "venv_missing" -Color Yellow
         if (-not (Confirm-RequiredInstall "venv_install_prompt")) {
             Write-Text "cancelled" -Color Yellow
-            return 0
+            $script:BootstrapExitCode = 0
+            return
         }
         Install-ProjectEnvironment $python.Path
     }
@@ -997,11 +1000,19 @@ function Invoke-MainBootstrap {
     $env:HF_HOME = Join-Path $script:RepositoryRoot "huggingface"
     $env:PYTHONUTF8 = "1"
     if (-not $env:HF_ENDPOINT) { $env:HF_ENDPOINT = "https://hf-mirror.com" }
+    $startupHooks = Join-Path $script:RepositoryRoot "tools\python_startup"
+    $pythonPathEntries = @($env:PYTHONPATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($pythonPathEntries -notcontains $startupHooks) {
+        $env:PYTHONPATH = (@($startupHooks) + $pythonPathEntries) -join ';'
+    }
     Write-Text "launching" -Color Cyan
     Set-Location $script:RepositoryRoot
-    & $venvPython -m backend.gui @script:ForwardArgs | Out-Host
-    if ($null -eq $LASTEXITCODE) { return 0 }
-    return $LASTEXITCODE
+    & $venvPython -m backend.gui @script:ForwardArgs
+    if ($null -eq $LASTEXITCODE) {
+        $script:BootstrapExitCode = 0
+    } else {
+        $script:BootstrapExitCode = $LASTEXITCODE
+    }
 }
 
 try {
@@ -1013,7 +1024,8 @@ try {
         exit 0
     }
     if ($script:Action -ne "run") { throw "Unknown bootstrap action: $($script:Action)" }
-    exit (Invoke-MainBootstrap)
+    Invoke-MainBootstrap
+    exit $script:BootstrapExitCode
 } catch {
     Write-Text "fatal_error" @($_.Exception.Message) -Color Red
     exit 1

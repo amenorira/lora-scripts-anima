@@ -83,12 +83,14 @@ def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TASK_ID"] = task_id
 
-    # 确保项目根目录 + vendor/ 在 Python path 最前面
+    # 确保内部启动钩子、项目根目录和 vendor/ 位于 Python path 前面。
+    # python_startup 中的 sitecustomize 会在训练解释器导入 bitsandbytes 前自动加载。
     # vendor/ 须排在 site-packages 之前，使 vendored 版本（lycoris 等）优先于 pip 旧版
     repo_root = str(REPO_ROOT)
     vendor_root = str(REPO_ROOT / "vendor")
+    startup_hooks = str(REPO_ROOT / "tools" / "python_startup")
     existing_pypath = env.get("PYTHONPATH", "")
-    new_paths = [vendor_root, repo_root]
+    new_paths = [startup_hooks, vendor_root, repo_root]
     for p in existing_pypath.split(os.pathsep):
         if p and p not in new_paths:
             new_paths.append(p)

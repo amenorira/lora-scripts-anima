@@ -110,11 +110,19 @@ class BootstrapContractTests(unittest.TestCase):
     def test_gui_is_an_internal_module(self):
         windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
         linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
+        supervisor = (ROOT / "backend" / "training" / "supervisor.py").read_text(encoding="utf-8")
 
         self.assertFalse((ROOT / "gui.py").exists())
         self.assertTrue((ROOT / "backend" / "gui.py").is_file())
-        self.assertIn("-m backend.gui @script:ForwardArgs | Out-Host", windows_script)
+        self.assertIn("-m backend.gui @script:ForwardArgs", windows_script)
+        self.assertNotIn("-m backend.gui @script:ForwardArgs | Out-Host", windows_script)
+        self.assertIn("Invoke-MainBootstrap\n    exit $script:BootstrapExitCode", windows_script)
         self.assertIn("-m backend.gui", linux_script)
+        self.assertFalse((ROOT / "sitecustomize.py").exists())
+        self.assertTrue((ROOT / "tools" / "python_startup" / "sitecustomize.py").is_file())
+        self.assertIn("tools\\python_startup", windows_script)
+        self.assertIn("tools/python_startup", linux_script)
+        self.assertIn('"tools" / "python_startup"', supervisor)
 
 
 if __name__ == "__main__":

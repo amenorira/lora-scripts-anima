@@ -207,6 +207,34 @@ class WindowsBootstrapIntegrationTests(unittest.TestCase):
                 "print('unchanged')\n",
             )
 
+    def test_normal_bootstrap_returns_restart_code_after_zip_repair(self):
+        with tempfile.TemporaryDirectory(prefix="anima bootstrap restart ") as temp:
+            base = Path(temp)
+            remote, old_commit = self.create_remote_history(base)
+            target = base / "zip source"
+            self.extract_old_zip(remote, old_commit, target, base / "old.zip")
+
+            result = self.run_command(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    BOOTSTRAP,
+                    f"--bootstrap-root={target}",
+                    f"--bootstrap-repository-url={remote}",
+                    "--setup-git",
+                    "--quiet",
+                ],
+                cwd=ROOT,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 23, result.stdout)
+            self.assertTrue((target / ".git").is_dir())
+            self.assertIn("restarting the latest bootstrap", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

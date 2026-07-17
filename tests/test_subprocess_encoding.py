@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import sitecustomize  # noqa: F401
+from tools.python_startup import sitecustomize  # noqa: F401
 
 from backend import launch_utils
 
@@ -82,7 +82,7 @@ finally:
         env = os.environ.copy()
         env["PYTHONUTF8"] = "1"
         env["PYTHONPATH"] = os.pathsep.join(
-            [str(ROOT), env.get("PYTHONPATH", "")]
+            [str(ROOT / "tools" / "python_startup"), str(ROOT), env.get("PYTHONPATH", "")]
         ).rstrip(os.pathsep)
 
         result = launch_utils.run_capture_text(
