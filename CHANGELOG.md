@@ -2,6 +2,24 @@
 
 本项目的重要版本变更记录于此。
 
+## v1.3.1 - 2026-07-18
+
+修复 v1.3.0 Windows 启动器接管 GUI 输出后 Rich 日志失去颜色的问题，并将根目录的 Python 自动启动钩子移入内部工具目录。
+
+### 控制台颜色与退出码
+
+- GUI 进程不再经过 PowerShell 的 `Out-Host` 管道，Rich 可以重新识别交互式终端，恢复时间、日志级别和消息的彩色显示。
+- 启动器改用独立状态保存 GUI 退出码，保持正常退出、错误返回以及 ZIP 修复后返回代码 23 自动重启的原有语义。
+- 增加真实 PTY 冒烟验证和正常 ZIP 修复入口测试，确认彩色 ANSI 输出、参数转发与重启返回码均正常。
+
+### 内部 Python 启动钩子
+
+- 将根目录 `sitecustomize.py` 移至 `tools/python_startup/`，避免新用户误点内部兼容文件。
+- Windows、Linux 启动器和训练子进程统一注入内部启动钩子目录；直接运行后端模块时也会显式加载。
+- 保留 bitsandbytes 在 Windows 中文代码页下的兼容修复，并扩展自动加载与子进程编码测试。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.0...v1.3.1)
+
 ## v1.3.0 - 2026-07-18
 
 重新设计 Windows 首次启动与安装流程，让直接从 GitHub 下载 ZIP 的新用户也能自动准备运行环境，并将目录安全转换为以后可使用 `git pull` 更新的仓库。
