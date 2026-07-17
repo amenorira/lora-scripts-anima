@@ -72,10 +72,10 @@ lora-scripts-anima/
 ### 必要依赖
 
 - **Python**：需要 64 位 Python 3.10–3.12（推荐 3.12）
-- **Git**：用于下载和更新项目
+- **Git**：用于下载和更新项目；Windows ZIP 下载版可在首次启动时自动安装
 - **PyTorch 2.10.0 + CUDA 12.8**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
 
-> **Windows 用户无需提前降级或另外安装 Python。** `venv` 是首次运行 `start.bat` 时自动创建在项目目录中的独立运行环境；如果它已经存在且版本正确，启动器会直接使用，不会重复安装。否则启动器会自动寻找 64 位 Python 3.10–3.12，并跳过 Microsoft Store 的 Python 占位符。如果电脑只有 Python 3.13/3.14，安装器会询问是否为当前用户并行安装官方 Python 3.12；不会卸载现有 Python，也不会修改系统默认 PATH。Windows 标准版 Python 通常已经自带创建 `venv` 的功能。
+> **Windows 用户无需提前降级或另外安装 Python/Git。** 首次运行 `start.bat` 时，启动器会自动寻找 64 位 Python 3.10–3.12，并跳过 Microsoft Store 的 Python 占位符。如果电脑只有 Python 3.13/3.14，可按提示为当前用户并行安装官方 Python 3.12；不会卸载现有 Python，也不会修改系统默认 Python。下载过程会显示百分比、大小、速度和 ETA，静默安装阶段会显示加载动画。
 >
 > **Linux 用户**需要自行安装 64 位 Python 3.10–3.12。多数 Python 安装已包含创建 `venv` 的功能；只有 Ubuntu/Debian 等系统提示缺少该功能时，才需要额外安装对应的软件包（例如 `python3.12-venv`）。
 >
@@ -89,7 +89,16 @@ lora-scripts-anima/
 
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
-### 克隆仓库
+### Windows：直接下载 ZIP（小白推荐）
+
+1. 在 GitHub 点击 **Code → Download ZIP**，完整解压后双击 `start.bat`。
+2. 如果目录中没有 `.git`，启动器会询问是否安装 Git for Windows 并修复为可更新仓库；选择推荐项即可。
+3. 修复时会拉取最新 `main`。若 ZIP 源码与最新版不同，待覆盖的源码会先备份到 `bootstrap-backups/<时间>.zip`；`venv`、模型、输出、缓存、日志和整个 `config` 用户配置目录会从源码对齐中排除，不会被覆盖或清理。
+4. 源码更新完成后，启动器会自动重启一次，再创建 `venv` 并安装训练依赖。
+
+Git 安装或仓库修复失败不会阻止训练器启动，下次运行仍可重试。Python 或核心依赖安装失败时则会停止并显示双语错误。
+
+### 使用 Git 克隆
 
 ```sh
 git clone https://github.com/amenorira/lora-scripts-anima.git
@@ -107,6 +116,15 @@ cd lora-scripts-anima
 
 > **RTX 40/50 系显卡用户**：启动脚本会自动检测 flash_attn 状态。如未安装，可在 GUI 的 **环境** 标签页中一键安装。
 
+### 后续更新
+
+完成 ZIP 仓库修复或使用 `git clone` 后，在项目文件夹空白处右键：
+
+- 选择 Windows 的 **在终端中打开**，然后运行 `git pull`；或
+- 选择 **Git Bash Here** 后运行 `git pull`。Windows 11 中该菜单可能位于 **显示更多选项** 内。
+
+仓库使用仅快进更新策略；如果源码被手动修改，`git pull` 会安全停止并提示先处理本地改动，不会自动覆盖。
+
 ## 程序参数
 
 | 参数名称 | 类型 | 默认值 | 描述 |
@@ -120,6 +138,9 @@ cd lora-scripts-anima
 | `--tensorboard-port` | int | 6006 | TensorBoard 端口 |
 | `--localization` | str | | 界面本地化设置 |
 | `--dev` | bool | false | 开发者模式 |
+| `--quiet` / `-q` | bool | false | 自动安装 Python/venv 依赖；默认不执行可选的 Git 仓库修复 |
+| `--setup-git` | bool | false | Windows：非交互执行推荐的 Git 安装/ZIP 仓库修复 |
+| `--skip-git-setup` | bool | false | Windows：本次启动不提示 Git 安装或仓库修复 |
 
 ## Flash Attention 加速
 

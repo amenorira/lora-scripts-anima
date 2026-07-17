@@ -26,10 +26,10 @@ PYTHON_SOURCE=""
 
 if [ -f "$VENV_PYTHON" ]; then
     if ! _is_supported_python "$VENV_PYTHON"; then
-        echo "[FAIL] Existing venv uses an unsupported Python version or architecture."
+        echo "[FAIL] Existing venv uses an unsupported Python version or architecture. / 现有 venv 使用了不受支持的 Python 版本或架构。"
         "$VENV_PYTHON" --version 2>/dev/null || true
-        echo "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended)."
-        echo "       Rename or remove only this project's 'venv' folder, then rerun start.sh."
+        echo "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended). / 支持 64 位 Python 3.10-3.12（推荐 3.12）。"
+        echo "       Rename or remove only this project's 'venv' folder, then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
         exit 1
     fi
     PYTHON_BIN="$VENV_PYTHON"
@@ -47,16 +47,22 @@ else
 fi
 
 if [ -z "$PYTHON_BIN" ]; then
-    echo "[FAIL] No compatible 64-bit Python installation was found."
-    echo "       Required: Python 3.10-3.12 (Python 3.12 recommended)."
-    echo "       Python 3.13/3.14 may remain installed side by side."
-    echo "       Install Python 3.12 and venv support, for example:"
+    echo "[FAIL] No compatible 64-bit Python installation was found. / 未找到兼容的 64 位 Python。"
+    echo "       Required: Python 3.10-3.12 (Python 3.12 recommended). / 需要 Python 3.10-3.12（推荐 3.12）。"
+    echo "       Python 3.13/3.14 may remain installed side by side. / Python 3.13/3.14 可以并行保留。"
+    echo "       Install Python 3.12 and venv support, for example: / 请安装 Python 3.12 和 venv 支持，例如："
     echo "       sudo apt install python3.12 python3.12-venv"
     exit 1
 fi
 
-echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN"
+echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
 "$PYTHON_BIN" --version
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "[Notice] Git was not found. It is optional for launch but required for git pull updates; install it with your distribution package manager. / 未找到 Git；启动训练器不依赖 Git，但使用 git pull 更新时需要，请通过发行版包管理器安装。"
+elif [ ! -e "$SCRIPT_DIR/.git" ]; then
+    echo "[Notice] This appears to be a ZIP download. Automatic ZIP-to-Git repair is currently Windows-only; Linux users should use git clone for updateable installs. / 当前目录看起来是 ZIP 下载版；自动转换为 Git 仓库目前仅支持 Windows，Linux 如需更新请使用 git clone。"
+fi
 
 # -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
 # 不修改宿主的 pip.conf / 环境变量原值，只在进程内用环境变量接管。原理：pip 配置
@@ -104,41 +110,41 @@ _fix_pip_mirror() {
             case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
         done
         export PIP_TRUSTED_HOST="${merged# }"
-        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# }"
+        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# } / 已将 HTTP pip 镜像临时升级为 HTTPS。"
     fi
 }
 
 # -- Install function --
 do_install() {
     echo ""
-    echo "[Install] Starting installation..."
+    echo "[Install] Starting installation... / 开始安装……"
     echo ""
 
     export PIP_DISABLE_PIP_VERSION_CHECK=1
     export PIP_PREFER_BINARY=1
 
     if [ ! -f "$VENV_PYTHON" ]; then
-        echo "Creating venv..."
-        $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv."; exit 1; }
-        echo "Upgrading pip..."
+        echo "Creating venv... / 正在创建 venv……"
+        $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv. / 创建 venv 失败。"; exit 1; }
+        echo "Upgrading pip... / 正在升级 pip……"
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/3] Installing PyTorch 2.10.0+cu128..."
+    echo "[1/3] Installing PyTorch 2.10.0+cu128... / 正在安装 PyTorch 2.10.0+cu128……"
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
-    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed."; exit 1; }
+    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
     "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
-    if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed."; exit 1; fi
+    if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
-    echo "[2/3] Installing sd-scripts dependencies..."
-    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed."; exit 1; }
+    echo "[2/3] Installing sd-scripts dependencies... / 正在安装 sd-scripts 依赖……"
+    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed. / sd-scripts 依赖安装失败。"; exit 1; }
 
-    echo "[3/3] Installing project dependencies..."
+    echo "[3/3] Installing project dependencies... / 正在安装项目依赖……"
     "$VENV_PYTHON" -m pip install -r requirements.txt
-    if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed."; exit 1; fi
+    if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
 
     echo ""
-    echo "[Done] Installation complete!"
+    echo "[Done] Installation complete! / 安装完成！"
 }
 
 # -- Venv check --
@@ -149,17 +155,17 @@ export PYTHONUTF8=1
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 _fix_pip_mirror
 if [ ! -f "$VENV_PYTHON" ]; then
-    echo "[Notice] Virtual environment (venv) not found."
+    echo "[Notice] Virtual environment (venv) not found. / 未找到虚拟环境（venv）。"
     if [ "$QUIET" = "1" ]; then
-        echo "  --quiet mode: auto-installing..."
+        echo "  --quiet mode: auto-installing... / --quiet 模式：自动安装……"
         do_install
     else
-        echo "   1. Install"
-        echo "   2. Exit"
+        echo "   1. Install / 安装"
+        echo "   2. Exit / 退出"
         echo ""
-        read -r -p "Enter option (1/2): " CHOICE
+        read -r -p "Enter option (1/2) / 请输入选项 (1/2): " CHOICE
         if [ "$CHOICE" != "1" ]; then
-            echo "Cancelled."
+            echo "Cancelled. / 已取消。"
             exit 0
         fi
         do_install
@@ -167,4 +173,5 @@ if [ ! -f "$VENV_PYTHON" ]; then
 fi
 
 # -- Launch --
+echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
 "$VENV_PYTHON" -m backend.gui "$@"

@@ -72,10 +72,10 @@ lora-scripts-anima/
 ### Prerequisites
 
 - **Python**: 64-bit Python 3.10–3.12 (3.12 recommended)
-- **Git**: used to download and update the project
+- **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
 - **PyTorch 2.10.0 + CUDA 12.8**: installed automatically by the startup scripts for RTX 30/40/50 series
 
-> **Windows users do not need to downgrade or separately install Python first.** A `venv` is the isolated runtime environment created automatically inside the project on the first run of `start.bat`. If it already exists and uses the correct version, the launcher reuses it instead of reinstalling everything. Otherwise, it finds 64-bit Python 3.10–3.12 and skips Microsoft Store Python placeholders. If only Python 3.13/3.14 is installed, it offers to install the official Python 3.12 for the current user side by side without removing existing versions or changing the system default PATH. Standard Windows Python installations normally include `venv` support.
+> **Windows users do not need to downgrade or preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.10–3.12 and skips Microsoft Store placeholders. If only Python 3.13/3.14 is installed, it can install the official Python 3.12 side by side for the current user without removing newer versions or changing the default Python. Downloads show percentage, size, speed, and ETA; silent installer stages show an activity spinner.
 >
 > **Linux users** must install 64-bit Python 3.10–3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
 >
@@ -87,7 +87,16 @@ lora-scripts-anima/
 | RTX 40 (Ada) | 2.10.0 | 12.8 |
 | RTX 50 (Blackwell) | 2.10.0 | 12.8 |
 
-### Clone
+### Windows: Download ZIP (beginner-friendly)
+
+1. On GitHub, choose **Code → Download ZIP**, fully extract it, and double-click `start.bat`.
+2. If `.git` is missing, the bootstrap asks to install Git for Windows and repair the folder as an updateable repository; choose the recommended option.
+3. Repair fetches the latest `main`. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`; `venv`, models, outputs, caches, logs, and the entire user `config` directory are excluded from source alignment and are never overwritten or cleaned.
+4. After source alignment, the bootstrap restarts once and then creates `venv` and installs the training dependencies.
+
+A Git installation or repository-repair failure only produces a warning and does not block the trainer. Python or core dependency failures stop startup with a bilingual error.
+
+### Clone with Git
 
 ```sh
 git clone https://github.com/amenorira/lora-scripts-anima.git
@@ -105,6 +114,15 @@ First launch automatically creates a virtual environment and installs all depend
 
 > **RTX 40/50 users**: the startup script detects flash_attn status. If not installed, use the GUI **Environment** tab for one-click install.
 
+### Updating later
+
+After ZIP repair or `git clone`, right-click an empty area inside the project folder:
+
+- Choose Windows **Open in Terminal**, then run `git pull`; or
+- Choose **Git Bash Here**, then run `git pull`. On Windows 11 it may appear under **Show more options**.
+
+The repository uses fast-forward-only pulls. If tracked source was edited manually, `git pull` stops safely and asks you to handle the local changes instead of overwriting them.
+
 ## Program Arguments
 
 | Parameter | Type | Default | Description |
@@ -118,6 +136,9 @@ First launch automatically creates a virtual environment and installs all depend
 | `--tensorboard-port` | int | 6006 | TensorBoard port |
 | `--localization` | str | | Interface localization setting |
 | `--dev` | bool | false | Developer mode |
+| `--quiet` / `-q` | bool | false | Automatically install Python/venv dependencies; optional Git repair remains disabled |
+| `--setup-git` | bool | false | Windows: non-interactively perform the recommended Git install/ZIP repair |
+| `--skip-git-setup` | bool | false | Windows: suppress Git installation or repository-repair prompts for this launch |
 
 ## Flash Attention Acceleration
 

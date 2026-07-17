@@ -16,6 +16,7 @@ huggingface/
 models/*
 !models/.gitkeep
 .anima_tmp/
+bootstrap-backups/
 
 config/state.json
 
