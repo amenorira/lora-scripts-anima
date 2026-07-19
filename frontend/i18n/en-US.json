@@ -303,7 +303,7 @@
 		"preview": "Preview"
 	},
 	"stepEstimate": {
-		"label": "TRAINING STEP CALCULATION",
+		"label": "Training step calculation",
 		"total": "Estimated total: {steps} steps",
 		"calculating": "Scanning the dataset and calculating...",
 		"selectDataset": "Select a dataset directory to calculate automatically",
