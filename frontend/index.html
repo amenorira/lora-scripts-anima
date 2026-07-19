@@ -624,6 +624,10 @@
               @keydown.enter="tagEditorLoad(tagEditorDir)">
             <button class="btn btn-primary btn-sm" @click="tagEditorLoad(tagEditorDir)" x-text="t('tagEditor.loadImages')"></button>
             <button class="btn btn-ghost btn-sm" @click="tagEditorLoad(form.train_data_dir)" x-text="t('tagEditor.loadFromTraining')"></button>
+            <button class="btn btn-ghost btn-sm te-recursive-toggle" @click="tagEditorToggleRecursive()"
+              :class="{ active: tagEditorRecursive }"
+              :title="t('tagEditor.recursiveHint')"
+              x-text="t('tagEditor.recursive')"></button>
           </div>
         </div>
 
@@ -648,7 +652,7 @@
               </svg>
             </button>
             <div class="te-search-wrap">
-              <input type="text" :value="tagEditorSearchQuery"
+              <input id="te-search-input" type="text" :value="tagEditorSearchQuery"
                 :placeholder="tagEditorUseRegex ? t('tagEditor.regexSearchPlaceholder') : t('tagEditor.searchPlaceholder')"
                 @input="tagEditorSetSearch($event.target.value)"
                 @keydown.escape="tagEditorClearSearch()"
@@ -713,7 +717,7 @@
             <button class="te-topbar-btn" @click="tagEditorSelectFiltered()" x-show="tagEditorFilteredCount() > tagEditorPageSize"
               x-text="t('tagEditor.selectFiltered')"></button>
             <button class="te-topbar-btn" @click="tagEditorSelectInvert()" x-text="t('tagEditor.selectInvert')"></button>
-            <button class="te-topbar-btn" @click="tagEditorSelected = []" x-text="t('tagEditor.selectNone')"></button>
+            <button class="te-topbar-btn" @click="_teFlushAllPendingTextEdits(); tagEditorSelected = []" x-text="t('tagEditor.selectNone')"></button>
             <span class="te-topbar-sep"></span>
             <button class="te-save-btn" :class="{ dirty: tagEditorModifiedCount() > 0 }" @click="tagEditorSaveAll()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -841,6 +845,7 @@
                       </template>
                     <span class="te-tag-name" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
                       @click="tagEditorSelectTag(item.tag)" x-text="item.tag"></span>
+                    <span class="te-tag-count" x-text="item.count"></span>
                     <button class="te-tag-edit-btn" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
                       @click="tagEditorStartInlineEdit(item.tag, $event)" :title="t('tagEditor.inlineEditHint')">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -848,7 +853,6 @@
                         <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                       </svg>
                     </button>
-                    <span class="te-tag-count" x-text="item.count"></span>
                     <span class="te-tag-excl" @click.stop="tagEditorExcludeTag(item.tag)">&times;</span>
                   </div>
                 </template>
@@ -981,7 +985,7 @@
                     @keydown.space.prevent="tagEditorCardClick(img, idx, $event)">
                     <div class="te-card-thumb">
                       <div class="te-card-skeleton"></div>
-                      <img :src="img.thumbnail" :alt="img.name" loading="lazy"
+                      <img :src="img.thumbnail" :alt="img.rel_path || img.name" loading="lazy"
                         @load="$el.style.opacity='1'; $el.previousElementSibling.style.display='none'"
                         @error="$el.style.opacity='1'; $el.previousElementSibling.style.display='none'"
                         style="opacity:0; transition:opacity 0.2s;">
@@ -997,7 +1001,7 @@
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </div>
                     <div class="te-card-overlay">
-                      <div class="te-card-name" x-text="img.name"></div>
+                      <div class="te-card-name" x-text="img.rel_path || img.name" :title="img.rel_path || img.name"></div>
                       <div class="te-card-tags" x-show="img.tags">
                         <template x-for="tag in (img.tags || '').split(',').slice(0, 3)" :key="tag">
                           <span class="te-card-tag" x-text="tag.trim()"></span>
@@ -1008,7 +1012,7 @@
                 </template>
               </div>
             </div>
-            <div class="te-editor">
+            <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0 }">
               <template x-if="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <div class="te-editor-empty">
                   <span x-text="t('tagEditor.noImageSelected')"></span>
@@ -1017,7 +1021,9 @@
               <template x-if="tagEditorSelected.length === 1">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
-                    <span class="te-editor-name" x-text="tagEditorGetSelectedImg()?.name || ''"></span>
+                    <span class="te-editor-name"
+                      x-text="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name || ''"
+                      :title="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name || ''"></span>
                     <div class="te-editor-nav">
                       <button @click="tagEditorNavDetail(-1)" :disabled="!tagEditorCanNavDetail(-1)" :title="t('tagEditor.prevImage')">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -1028,7 +1034,8 @@
                     </div>
                   </div>
                   <div class="te-editor-preview">
-                    <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail" :alt="tagEditorGetSelectedImg()?.name">
+                    <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail"
+                      :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name">
                   </div>
                   <div class="te-editor-toolbar">
                     <div class="te-editor-view">

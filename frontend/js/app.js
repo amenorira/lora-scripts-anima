@@ -82,6 +82,9 @@ document.addEventListener('alpine:init', () => {
 
       window.addEventListener('beforeunload', (e) => {
         // Tag editor: 检查是否有未保存的修改
+        if (this.currentRoute === 'tagEditor' && typeof this._teFlushAllPendingTextEdits === 'function') {
+          this._teFlushAllPendingTextEdits();
+        }
         if (this.tagEditorModified && this.currentRoute === 'tagEditor') {
           e.preventDefault();
           e.returnValue = '';

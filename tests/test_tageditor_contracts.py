@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -87,7 +88,51 @@ class TagEditorBackendTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["data"]["saved"], 1)
+            self.assertEqual(result["data"]["saved_paths"], [str(image_path.resolve())])
+            self.assertEqual(result["data"]["failed"], [])
             self.assertEqual((root / "sample.txt").read_text(encoding="utf-8"), "cat, smile")
+
+    def test_save_all_reports_each_success_skip_and_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            saved_image = root / "saved.png"
+            skipped_image = root / "skipped.png"
+            failed_image = root / "failed.png"
+            missing_image = root / "missing.png"
+            for image_path in (saved_image, skipped_image, failed_image):
+                image_path.touch()
+            (skipped_image.with_suffix(".txt")).write_text("unchanged", encoding="utf-8")
+
+            real_write_tags = __import__("backend.tageditor.routes", fromlist=["write_tags"]).write_tags
+
+            def selective_write(path, tags):
+                if path == failed_image.with_suffix(".txt"):
+                    return False
+                return real_write_tags(path, tags)
+
+            with patch("backend.tageditor.routes.write_tags", side_effect=selective_write):
+                result = asyncio.run(save_all_tags({
+                    "dir": str(root),
+                    "images": [
+                        {"path": str(saved_image), "tags": "saved"},
+                        {"path": str(skipped_image), "tags": "unchanged"},
+                        {"path": str(failed_image), "tags": "failed"},
+                        {"path": str(missing_image), "tags": "missing"},
+                    ],
+                }))
+
+            data = result["data"]
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(data["saved"], 1)
+            self.assertEqual(data["skipped"], 1)
+            self.assertEqual(data["saved_paths"], [str(saved_image.resolve())])
+            self.assertEqual(data["skipped_paths"], [str(skipped_image.resolve())])
+            self.assertEqual(
+                {item["path"] for item in data["failed"]},
+                {str(failed_image.resolve()), str(missing_image)},
+            )
+            self.assertEqual((root / "saved.txt").read_text(encoding="utf-8"), "saved")
+            self.assertFalse((root / "failed.txt").exists())
 
     def test_single_save_invalidates_recursive_parent_cache(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,7 +168,9 @@ class TagEditorFrontendContractTests(unittest.TestCase):
         css = Path("frontend/css/app.css").read_text(encoding="utf-8")
         html = Path("frontend/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("@media (max-width: 820px)", css)
+        self.assertIn("@media (max-width: 1100px)", css)
+        self.assertIn("width: clamp(300px, 28vw, 360px)", css)
+        self.assertIn("height: clamp(180px, 34vh, 320px)", css)
         self.assertIn("tagEditor.selectPage", html)
         self.assertIn("tagEditor.selectFiltered", html)
         self.assertIn("tagEditorHistory[tagEditorHistoryDetailIdx]?.meta?.desc", html)
@@ -134,6 +181,73 @@ class TagEditorFrontendContractTests(unittest.TestCase):
 
         self.assertIn("this._teFreqIndex = new Map()", clear_body)
         self.assertIn("this._teClearFreqData();", source)
+
+    def test_text_edit_updates_state_immediately_and_only_debounces_history(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        body = source.split("tagEditorDetailTextChange() {", 1)[1].split("\n  },", 1)[0]
+
+        update_index = body.index("this._teUpdateImageTags(img, this.tagEditorDetailText")
+        timeout_index = body.index("setTimeout(function()")
+        self.assertLess(update_index, timeout_index)
+        self.assertIn("{ deferTextHistory: true }", body)
+        self.assertIn("self._teFlushPendingTextEdit(path)", body)
+
+    def test_draft_restore_preserves_empty_original_value(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        body = source.split("_teCheckDraft() {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("Object.prototype.hasOwnProperty.call(item, 'original')", body)
+        self.assertNotIn("item.original || item.tags", body)
+
+    def test_recursive_toggle_batch_scope_and_shortcuts_are_guarded(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
+        html = Path("frontend/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("tagEditorBatchScope: 'selected'", source)
+        toggle_body = source.split("tagEditorToggleRecursive() {", 1)[1].split("\n  },", 1)[0]
+        self.assertIn("tagEditorModifiedCount() > 0", toggle_body)
+        self.assertIn("recursiveUnsavedConfirm", toggle_body)
+        self.assertIn("self._teRemoveDraft()", toggle_body)
+        reload_body = source.split("tagEditorReloadDir() {", 1)[1].split("\n  },", 1)[0]
+        self.assertIn("self._teRemoveDraft()", reload_body)
+        self.assertIn("id=\"te-search-input\"", html)
+        self.assertIn("document.getElementById('te-search-input')", source)
+        self.assertIn("var editableTarget = this._teIsEditableTarget(e.target)", source)
+        self.assertIn("if (editableTarget) return;", source)
+        self.assertIn("this._teFlushAllPendingTextEdits();", source.split("_teConfirmNav(route) {", 1)[1])
+        self.assertIn("typeof this._teFlushAllPendingTextEdits === 'function'", app_source)
+
+    def test_partial_save_resets_history_and_draft_save_skips_active_save(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        save_body = source.split("async _doSaveAll(modified) {", 1)[1].split("\n  },", 1)[0]
+        draft_body = source.split("_teSaveDraft() {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("if (processedCount > 0 || this._teModifiedCount === 0)", save_body)
+        self.assertIn("this.tagEditorHistory = []", save_body)
+        self.assertIn("this.tagEditorHistoryDetailIdx = -1", save_body)
+        self.assertIn("else if (processedCount > 0)", save_body)
+        self.assertIn("!this.tagEditorModified || this._teIsSaving", draft_body)
+
+    def test_relative_paths_are_used_for_search_sort_and_display(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        html = Path("frontend/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("img.rel_path || img.name", source)
+        self.assertIn("name: dimg.rel_path || dimg.name", source)
+        self.assertIn("x-text=\"img.rel_path || img.name\"", html)
+        self.assertIn("tagEditorGetSelectedImg()?.rel_path", html)
+
+    def test_tag_rename_button_reserves_space_without_covering_count(self):
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        html = Path("frontend/index.html").read_text(encoding="utf-8")
+        row = html.split('<div class="te-tag-row"', 1)[1].split('<span class="te-tag-excl"', 1)[0]
+        edit_css = css.split(".te-tag-edit-btn {", 1)[1].split("}", 1)[0]
+
+        self.assertLess(row.index('class="te-tag-count"'), row.index('class="te-tag-edit-btn"'))
+        self.assertIn("flex: 0 0 24px", css)
+        self.assertIn("flex: 0 0 18px", edit_css)
+        self.assertNotIn("position: absolute", edit_css)
 
 
 if __name__ == "__main__":

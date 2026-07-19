@@ -227,36 +227,54 @@ async def save_all_tags(data: dict):
         return {"status": "error", "message": "无数据"}
     dir_str = data.get("dir", "")
     dataset_dir = resolve_dir(dir_str) if dir_str else None
-    def _save_items() -> tuple[int, int]:
-        saved_count = 0
-        skipped_count = 0
+    def _save_items() -> tuple[list[str], list[str], list[dict[str, str]]]:
+        saved_paths: list[str] = []
+        skipped_paths: list[str] = []
+        failed: list[dict[str, str]] = []
         for item in images:
             img_path = item.get("path", "")
             tags = item.get("tags", "")
-            if not img_path or not os.path.isfile(img_path):
+            if not img_path:
+                failed.append({"path": "", "reason": "图片路径无效"})
                 continue
-            if dataset_dir is not None and _assert_within(img_path, dataset_dir) is None:
-                continue  # 路径越界，静默跳过
-            p = Path(img_path)
+            if not os.path.isfile(img_path):
+                failed.append({"path": img_path, "reason": "图片不存在"})
+                continue
+            resolved_path = _assert_within(img_path, dataset_dir) if dataset_dir is not None else Path(img_path).resolve()
+            if resolved_path is None:
+                failed.append({"path": img_path, "reason": "图片不在数据集目录内"})
+                continue
+            p = resolved_path
+            normalized_path = str(p)
             cap_path = find_caption(p) or p.with_suffix(".txt")
             existing_tags = read_tags(cap_path) if cap_path.exists() else ""
             if existing_tags == tags.strip():
-                skipped_count += 1
+                skipped_paths.append(normalized_path)
                 continue
             if not write_tags(cap_path, tags):
+                failed.append({"path": normalized_path, "reason": "写入标签文件失败"})
                 continue
-            saved_count += 1
-        return saved_count, skipped_count
+            saved_paths.append(normalized_path)
+        return saved_paths, skipped_paths, failed
 
-    saved, skipped = await asyncio.to_thread(_save_items)
-    if saved > 0:
+    saved_paths, skipped_paths, failed = await asyncio.to_thread(_save_items)
+    if saved_paths:
         if dataset_dir is not None:
             _invalidate_cache(dataset_dir, None)
         else:
-            dirs = {Path(item["path"]).parent for item in images if item.get("path")}
+            dirs = {Path(path).parent for path in saved_paths}
             for _d in dirs:
                 _invalidate_cache(_d, None)
-    return {"status": "success", "data": {"saved": saved, "skipped": skipped}}
+    return {
+        "status": "success",
+        "data": {
+            "saved": len(saved_paths),
+            "skipped": len(skipped_paths),
+            "saved_paths": saved_paths,
+            "skipped_paths": skipped_paths,
+            "failed": failed,
+        },
+    }
 
 
 @router.post("/tageditor/batch")
