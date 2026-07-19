@@ -477,8 +477,8 @@ _LOG_FILE_CACHE_MAX = 50  # 防止无限增长
 
 LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
 # 日志/元数据文件在输出列表中归为"其他"分类，便于前端区分模型/样本/日志
-META_FILES = {"config.toml", "run_info.txt", "prompts.txt", "result.json",
-              "error.log", "task_meta.json"}
+META_FILES = {"config.toml", "run_info.txt", "output_dir.txt", "prompts.txt", "result.json",
+               "error.log", "task_meta.json"}
 
 
 def list_output_files(run_dir: str) -> list[dict]:

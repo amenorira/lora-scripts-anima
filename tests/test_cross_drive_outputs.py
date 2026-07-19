@@ -121,6 +121,7 @@ class RunRegistryTests(CrossDriveSandbox):
 
                 (internal / "train_task.log").write_text("log", encoding="utf-8")
                 (internal / "result.json").write_text("{}", encoding="utf-8")
+                (internal / "output_dir.txt").write_text(str(artifact), encoding="utf-8")
                 (internal / "log").mkdir()
                 (internal / "log" / "events.out.tfevents.test").write_bytes(b"tb")
                 (artifact / "sample").mkdir(exist_ok=True)
@@ -132,6 +133,7 @@ class RunRegistryTests(CrossDriveSandbox):
                 self.assertTrue(run_registry.mark_run_deleted(internal))
                 self.assertFalse((internal / "config.toml").exists())
                 self.assertFalse((internal / "train_task.log").exists())
+                self.assertFalse((internal / "output_dir.txt").exists())
                 self.assertFalse((internal / "log").exists())
                 self.assertTrue((artifact / "demo.safetensors").exists())
                 self.assertTrue((artifact / "sample" / "preview.png").exists())
@@ -280,6 +282,9 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 saved = tomllib.loads((run_path / "config.toml").read_text(encoding="utf-8"))
                 self.assertEqual(Path(saved["output_dir"]), artifact_path)
                 self.assertEqual(Path(saved["logging_dir"]), run_path / "log")
+                output_dir_reference = (run_path / "output_dir.txt").read_text(encoding="utf-8")
+                self.assertIn(str(artifact_path), output_dir_reference)
+                self.assertIn("模型、检查点、训练状态和预览图", output_dir_reference)
 
                 if same_location:
                     self.assertEqual(artifact_path, run_path)

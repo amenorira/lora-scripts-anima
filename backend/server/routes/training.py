@@ -284,6 +284,20 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
         log.warning(f"Failed to write run_info.txt / 写入失败: {e}")
 
 
+def _write_output_dir_reference(run_dir: str, artifact_dir: str) -> None:
+    """在项目内运行目录写入实际模型产物位置，便于直接从文件管理器定位。"""
+    try:
+        reference_path = Path(run_dir) / "output_dir.txt"
+        reference_path.write_text(
+            "此文件用于定位本次训练的模型产物目录。\n"
+            "模型、检查点、训练状态和预览图保存在：\n"
+            f"{artifact_dir}\n",
+            encoding="utf-8",
+        )
+    except OSError as e:
+        log.warning(f"Failed to write output_dir.txt / 写入失败: {e}")
+
+
 @router.post("/run")
 async def create_toml_file(request: Request):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -451,10 +465,11 @@ async def create_toml_file(request: Request):
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
 
-    # ── A-2: 并发写入 config + run_info（写入不同文件，无依赖）──
+    # ── A-2: 并发写入 config + run 信息（写入不同文件，无依赖）──
     await asyncio.gather(
         asyncio.to_thread(_write_configs),
         asyncio.to_thread(_write_run_info, str(internal_run_dir), config, model_train_type, timestamp, is_resume),
+        asyncio.to_thread(_write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
     )
     # ──────────────────────────────────────────────────────────
 
