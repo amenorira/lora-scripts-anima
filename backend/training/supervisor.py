@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import socket
 import subprocess
 import sys
 import time
@@ -20,20 +19,6 @@ from backend.log import log
 from backend.tasks import tm
 from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
-
-
-def _find_free_port(start: int = 6008, max_attempts: int = 10) -> int | None:
-    """查找可用端口（用于 monitor）"""
-    for offset in range(max_attempts):
-        port = start + offset
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return port
-    return None
-
-
-def _truthy_env(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 _ATTN_CACHE: list[str] | None = None
@@ -211,7 +196,6 @@ def run_train(
     run_meta = _read_run_meta(run_path, trainer_file)
 
     def _run():
-        import json as _json
         start_time = time.time()
         exit_code = -1
         status = "error"

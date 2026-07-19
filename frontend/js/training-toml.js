@@ -167,20 +167,6 @@ window.trainingTomlMixin = {
     return true;
   },
 
-  // Evaluate a single show_if condition
-  _evalShowIfCond(c) {
-    const pv = this.form[c.key];
-    if (c.eq !== undefined) {
-      if (String(pv) === String(c.eq)) return true;
-      if (c.or && Array.isArray(c.or)) return c.or.some(function(v) { return String(pv) === String(v); });
-      return false;
-    }
-    if (c.neq !== undefined) {
-      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
-    }
-    return true;
-  },
-
   copyToml() {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
   },

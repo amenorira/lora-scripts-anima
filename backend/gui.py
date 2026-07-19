@@ -35,7 +35,7 @@ from backend.log import log
 # Immediate timestamped feedback while the heavy imports (torch, fastapi) load.
 log.info("Initializing / 正在初始化（加载依赖）…")
 
-from backend.launch_utils import (base_dir_path, catch_exception, check_environment, git_tag,
+from backend.launch_utils import (base_dir_path, check_environment, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
 
 # Windows: use SelectorEventLoop to avoid Proactor "ConnectionResetError" noise

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from PIL import Image
 from backend.log import log
@@ -47,6 +48,32 @@ CATEGORY_LABELS = {
     "quality": "质量 (Quality)",
     "model": "模型 (Model)",
 }
+
+
+def create_onnx_session(model_path: str | Path):
+    """Create a CUDA-preferred ONNX session with the tagger's shared defaults.
+
+    Importing torch immediately before onnxruntime intentionally loads the CUDA
+    libraries bundled with torch.  Do not make either dependency eager at module
+    import time: tagger models are loaded on demand.
+    """
+    import torch  # noqa: F401  # ensure CUDA libraries are loaded
+    from onnxruntime import InferenceSession
+
+    opts = None
+    try:
+        from onnxruntime import SessionOptions
+
+        opts = SessionOptions()
+        opts.log_severity_level = 3
+    except Exception:
+        pass
+
+    return InferenceSession(
+        str(model_path),
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        sess_options=opts,
+    )
 
 
 class Interrogator:

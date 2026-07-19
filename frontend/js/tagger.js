@@ -12,7 +12,6 @@ window.taggerMixin = {
   _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
   taggerSelectedModel: '',   // 当前选中的 tagger 模型 ID
   taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
-  _taggerPresetInitialized: false,
 
   // ── 单图模式状态 ─────────────────────────────────────
   taggerMode: 'batch',       // 'batch' | 'single'

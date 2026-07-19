@@ -757,30 +757,6 @@ window.monitorCoreMixin = {
     } finally { this.finishProgress(); }
   },
 
-  // ── Stop Training ─────────────────────────────────────
-  async stopTraining() {
-    if (!this.monitorData || !this.monitorData.active_task) return;
-    const taskId = this.monitorData.active_task.id;
-    if (!taskId) return;
-    if (!confirm(this.t('monitor.confirmStop') || 'Are you sure you want to stop training?')) return;
-    try {
-      const r = await fetch('/api/monitor/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId })
-      });
-      const j = await r.json();
-      if (j.status === 'success') {
-        this.toast(this.t('monitor.trainStopped') || 'Training stopped', 'success');
-        this.fetchMonitorStatus();
-      } else {
-        this.toast(j.message || 'Failed to stop training', 'error');
-      }
-    } catch(e) {
-      this.toast(this.t('monitor.stopFailed') || 'Failed to stop training', 'error');
-    }
-  },
-
   // ── Run Detail (查看历史训练) ─────────────────────────
   async viewRunDetail(runDir) {
     /** 查看指定历史训练的详情（图表 + 日志 + 配置） */

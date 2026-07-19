@@ -5,7 +5,7 @@ import re
 from collections import OrderedDict
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,7 @@ from PIL import Image
 from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 
-from backend.tagger import dbimutils, format
+from backend.tagger import format
 from backend.tagger.interrogators.base import Interrogator
 from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator

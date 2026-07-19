@@ -168,7 +168,6 @@ def get_sample_prompts(config: dict):
     """Extract and format sample prompt configuration."""
     import random
     from glob import glob
-    from typing import Optional, Tuple
 
     # backward compatibility
     if "sample_prompts" in config and "positive_prompts" not in config:

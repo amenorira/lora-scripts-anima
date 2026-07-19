@@ -21,7 +21,7 @@ from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
 from backend.monitor.artifacts import find_train_log_path, _clean_log_text
 from backend.monitor.run_registry import find_run_record_by_task_id
-from backend.tasks import tm, TaskStatus
+from backend.tasks import tm
 
 logger = logging.getLogger(__name__)
 

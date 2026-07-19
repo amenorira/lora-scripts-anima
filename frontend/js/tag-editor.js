@@ -310,10 +310,6 @@ window.tagEditorMixin = {
     }
     this._teModifiedCount = Math.max(0, this._teModifiedCount + delta);
   },
-  _teResetModifiedCount() {
-    this._teModifiedCount = 0;
-  },
-
   // ===== Lifecycle =====
   tagEditorCleanup() {
     this._teStopAutoSave();

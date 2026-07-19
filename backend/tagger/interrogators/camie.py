@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from huggingface_hub import hf_hub_download
 
-from backend.tagger.interrogators.base import Interrogator
+from backend.tagger.interrogators.base import Interrogator, create_onnx_session
 from backend.tagger.tagger_download import tagger_hub_download
 from backend.log import log
 
@@ -58,23 +58,7 @@ class CamieTaggerInterrogator(Interrogator):
     def load(self) -> None:
         model_path, metadata_path = self.download()
 
-        import torch  # noqa: ensure CUDA libs loaded
-        from onnxruntime import InferenceSession
-
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        opts = None
-        try:
-            from onnxruntime import SessionOptions
-            opts = SessionOptions()
-            opts.log_severity_level = 3  # suppress verbose logs
-        except Exception:
-            pass
-
-        self.model = InferenceSession(
-            str(model_path),
-            providers=providers,
-            sess_options=opts,
-        )
+        self.model = create_onnx_session(model_path)
 
         device = (
             "CUDA" if "CUDAExecutionProvider" in self.model.get_providers()

@@ -11,7 +11,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from backend.constants import REPO_ROOT, OUTPUT_DIR
+from backend.constants import OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 from backend.training.field_registry import FIELDS as _REGISTRY_FIELDS
 

@@ -1125,7 +1125,7 @@ window.trainingCoreMixin = {
       return false;
     }
     if (c.neq !== undefined) {
-      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && String(pv) !== '';
+      return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
     }
     return true;
   },

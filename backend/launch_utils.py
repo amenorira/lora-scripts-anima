@@ -266,7 +266,6 @@ def setup_windows_bitsandbytes():
     if sys.platform != "win32":
         return
 
-    # bnb_windows_index = os.environ.get("BNB_WINDOWS_INDEX", "https://jihulab.com/api/v4/projects/140618/packages/pypi/simple")
     bnb_package = "bitsandbytes"
     bnb_path = os.path.join(sysconfig.get_paths()["purelib"], "bitsandbytes")
 

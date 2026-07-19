@@ -4,7 +4,7 @@ import re
 from collections import OrderedDict
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,7 @@ from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
 from dataclasses import dataclass
 from backend.tagger import dbimutils, format
-from backend.tagger.interrogators.base import Interrogator
+from backend.tagger.interrogators.base import Interrogator, create_onnx_session
 from backend.tagger.tagger_download import tagger_hub_download
 from backend.log import log
 
@@ -154,19 +154,7 @@ class CLTaggerInterrogator(Interrogator):
     def load(self) -> None:
         model_path, tag_mapping_path = self.download()
 
-        import torch
-        from onnxruntime import InferenceSession
-
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        opts = None
-        try:
-            from onnxruntime import SessionOptions
-            opts = SessionOptions()
-            opts.log_severity_level = 3
-        except Exception:
-            pass
-
-        self.model = InferenceSession(str(model_path), providers=providers, sess_options=opts)
+        self.model = create_onnx_session(model_path)
 
         device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
         log.info(f'Loaded {self.name} model from {model_path} (device: {device})')
@@ -265,17 +253,4 @@ class CLTaggerInterrogator(Interrogator):
         probs = stable_sigmoid(outputs[0])  # Assuming batch size 1
 
         predictions = get_tags(probs, self.tags[0])  # g_labels_data
-        # output_tags = []
-        # if predictions.get("rating"): output_tags.append(predictions["rating"][0][0].replace("_", " "))
-        # if predictions.get("quality"): output_tags.append(predictions["quality"][0][0].replace("_", " "))
-        # # Add other categories, respecting order and filtering meta if needed
-        # for category in ["artist", "character", "copyright", "general", "meta", "model"]:
-        #     tags_in_category = predictions.get(category, [])
-        #     for tag, prob in tags_in_category:
-        #         # Basic meta tag filtering for text output
-        #         if category == "meta" and any(p in tag.lower() for p in ['id', 'commentary', 'request', 'mismatch']):
-        #             continue
-        #         output_tags.append(tag.replace("_", " "))
-        # output_text = ", ".join(output_tags)
-
         return predictions

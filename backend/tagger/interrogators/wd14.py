@@ -12,8 +12,8 @@ import pandas as pd
 from PIL import Image
 from PIL import UnidentifiedImageError
 from huggingface_hub import hf_hub_download
-from backend.tagger.interrogators.base import Interrogator
-from backend.tagger import dbimutils, format
+from backend.tagger.interrogators.base import Interrogator, create_onnx_session
+from backend.tagger import dbimutils
 from backend.tagger.tagger_download import tagger_hub_download
 from backend.log import log
 
@@ -45,34 +45,7 @@ class WaifuDiffusionInterrogator(Interrogator):
     def load(self) -> None:
         model_path, tags_path = self.download()
 
-        # only one of these packages should be installed at a time in any one environment
-        # https://onnxruntime.ai/docs/get-started/with-python.html#install-onnx-runtime
-        # TODO: remove old package when the environment changes?
-        # from backend.launch_utils import is_installed, run_pip
-        # if not is_installed('onnxruntime'):
-        #     package = os.environ.get(
-        #         'ONNXRUNTIME_PACKAGE',
-        #         'onnxruntime-gpu'
-        #     )
-
-        #     run_pip(f'install {package}', 'onnxruntime')
-
-        # Load torch to load cuda libs built in torch for onnxruntime, do not delete this.
-        import torch
-        from onnxruntime import InferenceSession
-
-        # https://onnxruntime.ai/docs/execution-providers/
-        # https://github.com/toriato/stable-diffusion-webui-wd14-tagger/commit/e4ec460122cf674bbf984df30cdb10b4370c1224#r92654958
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        opts = None
-        try:
-            from onnxruntime import SessionOptions
-            opts = SessionOptions()
-            opts.log_severity_level = 3
-        except Exception:
-            pass
-
-        self.model = InferenceSession(str(model_path), providers=providers, sess_options=opts)
+        self.model = create_onnx_session(model_path)
 
         device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
         log.info(f'Loaded {self.name} model from {model_path} (device: {device})')
