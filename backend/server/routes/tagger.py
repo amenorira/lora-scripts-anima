@@ -7,12 +7,13 @@ from io import BytesIO
 from fastapi import APIRouter, File, Form, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from backend.core.realtime import realtime_tasks
 from backend.log import log
 from backend.server.models import APIResponseFail, APIResponseSuccess, TaggerInterrogateRequest
 from backend.tagger.interrogator import (
     available_interrogators,
     cancel_tagger_task,
-    get_tagger_progress,
+    get_tagger_task_snapshot,
     on_interrogate,
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
@@ -60,13 +61,12 @@ async def run_interrogate(req: TaggerInterrogateRequest):
         escape_tag=req.escape_tag,
         unload_model_after_running=True,
     ))
+    await realtime_tasks.register(
+        task_id,
+        "tagger",
+        lambda task_id=task_id: get_tagger_task_snapshot(task_id),
+    )
     return APIResponseSuccess(data={"task_id": task_id})
-
-
-@router.get("/interrogate/progress")
-async def tagger_progress(task_id: str):
-    """Poll tagger task progress."""
-    return APIResponseSuccess(data=get_tagger_progress(task_id))
 
 
 @router.post("/interrogate/stop")

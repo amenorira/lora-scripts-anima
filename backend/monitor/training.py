@@ -16,7 +16,7 @@ from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 from backend.training.field_registry import FIELDS as _REGISTRY_FIELDS
 
 # TensorBoard 的 DirectoryWatcher 会在每次读到当前 event 文件末尾时输出
-# "No path found after ..."。这是正常轮询状态，不应污染训练控制台。
+# "No path found after ..."。这是正常增量读取状态，不应污染训练控制台。
 logging.getLogger("tensorboard").setLevel(logging.WARNING)
 
 # ── TensorBoard Event 缓存 ─────────────────────────────────
@@ -142,7 +142,7 @@ def read_tensorboard_loss(
 ) -> list[dict]:
     """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样。
     若指定 run_dir，仅读取该目录下的 log/；否则扫描 output/*/log/（按 mtime 倒序取最新）。
-    使用缓存避免高频轮询时重复解析 event 文件。"""
+    使用缓存避免高频实时采样时重复解析 event 文件。"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:

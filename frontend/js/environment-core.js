@@ -1,5 +1,5 @@
 /* ================================================================
-   environment-core.js — State, polling, xformers & sd-scripts
+   environment-core.js — State, WebSocket task updates, xformers & sd-scripts
    Mixin merged into animaApp Alpine component
    ================================================================ */
 
@@ -34,11 +34,11 @@ window.environmentCoreMixin = {
   animaModelAggregate: null,// 前端计算的批量整体进度 {pct, fileIndex, fileTotal, label}
   animaModelLog: '',
   animaModelError: null,
-  animaModelLogOpen: false, // 日志折叠状态（持久化，避免轮询重渲染被收起）
+  animaModelLogOpen: false, // 日志折叠状态（持久化，避免实时重渲染被收起）
 
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
-  _envPollTimer: null,
+  _envRealtimeTopics: null,
 
   _envInitCardState() {
     try {
@@ -57,39 +57,119 @@ window.environmentCoreMixin = {
     try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
   },
 
-  // ── Shared install polling ──────────────────────────
-  _startPolling(jobId, prefix) {
-    const a = this;
-    const logKey = prefix + 'InstallLog', elapsedKey = prefix + 'InstallElapsed';
-    let retries = 0;
-    const MAX_RETRIES = 30;
-    a._stopPolling();
-    const tick = async () => {
-      try {
-        const r = await fetch('/api/install-log/' + jobId);
-        const data = await r.json();
-        retries = 0; // Reset on success
-        a[logKey] = data.lines || ''; a[elapsedKey] = data.elapsed || 0;
-        if (data.done) { a._stopPolling(); const busyKey = prefix + 'Busy'; a[busyKey] = false;
-          const refreshMap = { fa: 'faRefresh', xf: 'xfRefresh' };
-          const refreshFn = refreshMap[prefix]; if (refreshFn) { try { await a[refreshFn](true); } catch (_) {} }
-          a.finishProgress(); a.renderEnvironment();
-        } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
-      } catch (_) {
-        retries++;
-        if (retries >= MAX_RETRIES) {
-          a._stopPolling();
-          const busyKey = prefix + 'Busy'; a[busyKey] = false;
-          a[logKey] += '\n[ERROR] ' + a.t('environment.connectionLost','Connection lost, please refresh');
-          a.finishProgress(); a.renderEnvironment();
-          return;
-        }
-        a._envPollTimer = setTimeout(tick, 2000);
-      }
-    };
-    a._envPollTimer = setTimeout(tick, 500);
+  // ── Realtime task bridge ─────────────────────────────
+  _setEnvironmentRealtimeTask(slot, jobId) {
+    if (!this._envRealtimeTopics) this._envRealtimeTopics = {};
+    const next = jobId ? 'task:' + jobId : null;
+    const previous = this._envRealtimeTopics[slot] || null;
+    if (previous === next) return;
+    if (previous) this.realtimeUnsubscribe(previous);
+    this._envRealtimeTopics[slot] = next;
+    if (next) this.realtimeSubscribe(next);
   },
-  _stopPolling() { if (this._envPollTimer) { clearTimeout(this._envPollTimer); this._envPollTimer = null; } },
+
+  _environmentSlotForTopic(topic) {
+    if (!topic || !this._envRealtimeTopics) return null;
+    return Object.keys(this._envRealtimeTopics).find(slot => this._envRealtimeTopics[slot] === topic) || null;
+  },
+
+  handleRealtimeEnvironmentEvent(event) {
+    if (!event || (event.type !== 'task.status' && event.type !== 'task.progress')) return;
+    const slot = this._environmentSlotForTopic(event.topic);
+    if (!slot) return;
+    const envelope = event.payload || {};
+    this._applyEnvironmentRealtimeUpdate(slot, envelope.data || {}, envelope.status || '');
+  },
+
+  applyRealtimeEnvironmentSnapshot(snapshot) {
+    const tracked = snapshot && snapshot.tasks && snapshot.tasks.tracked || [];
+    const slots = {
+      'flash-attention-install': 'fa',
+      'xformers-install': 'xf',
+      'triton-install': 'triton',
+      'model-download': 'animaModel',
+    };
+    for (const task of tracked) {
+      const slot = slots[task.kind];
+      if (!slot || !['CREATED', 'RUNNING'].includes(task.status)) continue;
+      const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
+      const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
+      if (!this[idKey]) this[idKey] = task.task_id;
+      this[busyKey] = true;
+      this._setEnvironmentRealtimeTask(slot, task.task_id);
+      this._applyEnvironmentRealtimeUpdate(slot, task.data || {}, task.status || '');
+    }
+  },
+
+  resetRealtimeEnvironmentState() {
+    const slots = ['fa', 'xf', 'triton', 'animaModel'];
+    const hadTasks = !!(this.faBusy || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.faInstallJobId || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
+    slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
+    const unknown = this.t('monitor.taskStateUnknown', 'Task state unknown');
+    if (this.faBusy || this.faInstallJobId) this.faError = unknown;
+    if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
+    if (this.tritonBusy || this.tritonInstallJobId) this.tritonInstallLog = unknown;
+    if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
+    this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
+    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
+    if (this.currentRoute === 'environment') this.renderEnvironment();
+    return hadTasks;
+  },
+
+  _applyEnvironmentRealtimeUpdate(slot, data, normalizedStatus) {
+    const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(normalizedStatus) || !!data.done;
+    const failed = normalizedStatus === 'FAILED' || data.success === false || data.returncode != null && data.returncode !== 0
+      || (data.progress && (data.progress.stage === 'error' || data.progress.phase === 'error'));
+    if (slot === 'fa') {
+      this.faProgress = data.progress || this.faProgress;
+      this.faLog = Array.isArray(data.log) ? data.log.join('\n') : (data.log || this.faLog);
+      this.faInstallElapsed = data.elapsed || 0;
+    } else if (slot === 'xf') {
+      this.xfInstallLog = data.lines || this.xfInstallLog;
+      this.xfInstallElapsed = data.elapsed || 0;
+    } else if (slot === 'triton') {
+      this.tritonInstallLog = data.lines || this.tritonInstallLog;
+      this.tritonInstallElapsed = data.elapsed || 0;
+    } else if (slot === 'animaModel') {
+      this.animaModelProgress = data.progress || this.animaModelProgress;
+      this.animaModelLog = Array.isArray(data.log) ? data.log.join('\n') : (data.log || this.animaModelLog);
+      this.animaModelAggregate = this._computeAnimaAggregate(this.animaModelProgress);
+    }
+    if (!terminal) {
+      if (this.currentRoute === 'environment') this.renderEnvironment();
+      return;
+    }
+    this._finalizeEnvironmentRealtimeTask(slot, data, failed);
+  },
+
+  _finalizeEnvironmentRealtimeTask(slot, data, failed) {
+    const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
+    const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
+    this[busyKey] = false;
+    this[idKey] = null;
+    this._setEnvironmentRealtimeTask(slot, null);
+    const fallback = this.t('environment.installFailed', 'Install failed');
+    if (slot === 'fa') {
+      if (failed) this.faError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
+      else this.toast(this.t('environment.refreshed'), 'success');
+      this.faRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+    } else if (slot === 'xf') {
+      if (failed) this.xfError = data.error || data.lines || fallback;
+      this.xfRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+    } else if (slot === 'triton') {
+      if (failed) this.tritonInstallLog = (this.tritonInstallLog ? this.tritonInstallLog + '\n' : '') + '[ERROR] ' + fallback;
+      this.tritonRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+    } else if (slot === 'animaModel') {
+      if (failed) {
+        this.animaModelError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
+        this.toast(this.t('environment.installFailed', 'Download failed'), 'error');
+      }
+      this.animaModelRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+    }
+    this.finishProgress();
+    if (this.currentRoute === 'environment') this.renderEnvironment();
+  },
+
   _formatElapsed(sec) { const m = Math.floor(sec/60), s = Math.floor(sec%60); return m+':'+String(s).padStart(2,'0'); },
 
   // 字节数 → 人类可读，自适应单位（对齐后端 _human_bytes 风格，但带单位名）。
@@ -105,44 +185,6 @@ window.environmentCoreMixin = {
       }
     }
     return b + ' B';
-  },
-
-  // ── 共享进度轮询 ────────────────────────────────────
-  // 合并 FA / Anima 的轮询逻辑：fetch progress 端点 → 更新 state → done 时回调。
-  // opts: { url, onUpdate(data), onDone(data), maxRetries }
-  // onUpdate 在每次成功拿到数据时调用（写入 state + renderEnvironment）；
-  // onDone 在 data.done=true 时调用（刷新状态、toast、收尾）。返回是否已停止。
-  _startProgressPolling(jobId, opts) {
-    const a = this;
-    let retries = 0;
-    const MAX_RETRIES = opts.maxRetries || 60;
-    a._stopPolling();
-    const tick = async () => {
-      try {
-        const r = await fetch(opts.url);
-        const data = await r.json();
-        retries = 0;
-        if (typeof opts.onUpdate === 'function') opts.onUpdate(data);
-        if (data.done) {
-          a._stopPolling();
-          if (typeof opts.onDone === 'function') opts.onDone(data);
-        } else {
-          a.renderEnvironment();
-          a._envPollTimer = setTimeout(tick, 1500);
-        }
-      } catch (_) {
-        retries++;
-        if (retries >= MAX_RETRIES) {
-          a._stopPolling();
-          if (typeof opts.onLost === 'function') opts.onLost();
-          else { a.toast(a.t('environment.connectionLost','Connection lost, please refresh'), 'error'); }
-          a.finishProgress(); a.renderEnvironment();
-          return;
-        }
-        a._envPollTimer = setTimeout(tick, 2000);
-      }
-    };
-    a._envPollTimer = setTimeout(tick, 500);
   },
 
   faShowConfirm(msg, callback) { this.faConfirmMsg = msg; this.faConfirmCallback = callback; this.renderEnvironment(); },
@@ -195,37 +237,7 @@ window.environmentCoreMixin = {
         const result = await r.json();
         if (result.success && result.job_id) {
           this.faInstallJobId = result.job_id;
-          this._startProgressPolling(result.job_id, {
-            url: '/api/flash-attention/progress/' + result.job_id,
-            onUpdate: (data) => {
-              this.faProgress = data.progress || null;
-              this.faLog = (data.log || []).join('\n');
-              this.faInstallElapsed = data.elapsed || 0;
-            },
-            onDone: async (data) => {
-              this.faProgress = data.progress || null;
-              this.faLog = (data.log || []).join('\n');
-              this.faInstallElapsed = data.elapsed || 0;
-              const stage = (data.progress || {}).stage;
-              const ok = data.success !== false && stage !== 'error';
-              if (!ok) {
-                this.faError = (data.progress || {}).error
-                  || (data.log && data.log.length ? data.log[data.log.length-1] : '')
-                  || this.t('environment.installFailed','Install failed');
-                this.toast(this.t('environment.installFailed','Install failed'), 'error');
-              } else {
-                this.toast(this.t('environment.refreshed'), 'success');
-              }
-              this.faBusy = false;
-              try { await this.faRefresh(true); } catch (_) {}
-              this.finishProgress(); this.renderEnvironment();
-            },
-            onLost: () => {
-              this.faBusy = false;
-              this.faError = this.t('environment.connectionLost','Connection lost, please refresh');
-              this.finishProgress(); this.renderEnvironment();
-            },
-          });
+          this._setEnvironmentRealtimeTask('fa', result.job_id);
         } else {
           this.faBusy = false; this.faError = result.error||this.t('environment.installFailed','Install failed');
           this.finishProgress(); this.renderEnvironment();
@@ -241,7 +253,7 @@ window.environmentCoreMixin = {
   },
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
     try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
-      if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._startPolling(result.job_id, 'xf'); }
+      if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('xf', result.job_id); }
       else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed','Install failed'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
   },
@@ -257,40 +269,9 @@ window.environmentCoreMixin = {
     try {
       const r = await fetch('/api/triton/install', { method: 'POST' });
       const result = await r.json();
-      if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._startPollingTriton(result.job_id); }
+      if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('triton', result.job_id); }
       else { this.tritonBusy = false; this.toast(this.t('environment.installFailed','Install failed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.tritonBusy = false; this.toast(String(e), 'error'); this.finishProgress(); this.renderEnvironment(); }
-  },
-
-  // Triton 专用轮询（prefix = 'triton'，与 xf/fa 共享 _startPolling 逻辑但 prefix 需映射）
-  _startPollingTriton(jobId) {
-    const a = this;
-    const logKey = 'tritonInstallLog', elapsedKey = 'tritonInstallElapsed';
-    let retries = 0;
-    const MAX_RETRIES = 30;
-    a._stopPolling();
-    const tick = async () => {
-      try {
-        const r = await fetch('/api/install-log/' + jobId);
-        const data = await r.json();
-        retries = 0;
-        a[logKey] = data.lines || ''; a[elapsedKey] = data.elapsed || 0;
-        if (data.done) { a._stopPolling(); a.tritonBusy = false;
-          try { await a.tritonRefresh(true); } catch (_) {}
-          a.finishProgress(); a.renderEnvironment();
-        } else { a.renderEnvironment(); a._envPollTimer = setTimeout(tick, 1500); }
-      } catch (_) {
-        retries++;
-        if (retries >= MAX_RETRIES) {
-          a._stopPolling(); a.tritonBusy = false;
-          a[logKey] += '\n[ERROR] ' + a.t('environment.connectionLost','Connection lost, please refresh');
-          a.finishProgress(); a.renderEnvironment();
-          return;
-        }
-        a._envPollTimer = setTimeout(tick, 2000);
-      }
-    };
-    a._envPollTimer = setTimeout(tick, 500);
   },
 
   // ── Anima 模型下载 Methods ──────────────────────────
@@ -320,7 +301,7 @@ window.environmentCoreMixin = {
       const result = await r.json();
       if (result.success && result.job_id) {
         this.animaModelJobId = result.job_id;
-        this._startAnimaModelPolling(result.job_id);
+        this._setEnvironmentRealtimeTask('animaModel', result.job_id);
       } else {
         this.animaModelBusy = false;
         this.animaModelError = result.message || this.t('environment.installFailed', 'Download failed');
@@ -355,38 +336,6 @@ window.environmentCoreMixin = {
       label: batch ? (p.filename || '') : (p.filename || ''),
       phase: p.phase || '',
     };
-  },
-
-  _startAnimaModelPolling(jobId) {
-    const a = this;
-    a._startProgressPolling(jobId, {
-      url: '/api/anima-model/progress/' + jobId,
-      maxRetries: 60,
-      onUpdate: (data) => {
-        a.animaModelProgress = data.progress || null;
-        a.animaModelLog = (data.log || []).join('\n');
-        a.animaModelAggregate = a._computeAnimaAggregate(data.progress);
-      },
-      onDone: async (data) => {
-        a.animaModelProgress = data.progress || null;
-        a.animaModelLog = (data.log || []).join('\n');
-        a.animaModelAggregate = a._computeAnimaAggregate(data.progress);
-        a.animaModelBusy = false;
-        // 检查下载线程是否报错
-        const phase = (data.progress || {}).phase;
-        if (phase === 'error') {
-          a.animaModelError = (data.progress || {}).error || (data.log && data.log.length ? data.log[data.log.length-1] : '') || 'Download failed';
-          a.toast(a.t('environment.installFailed','Download failed'), 'error');
-        }
-        try { await a.animaModelRefresh(true); } catch (_) {}
-        a.finishProgress(); a.renderEnvironment();
-      },
-      onLost: () => {
-        a.animaModelBusy = false;
-        a.animaModelError = a.t('environment.connectionLost', 'Connection lost, please refresh');
-        a.finishProgress(); a.renderEnvironment();
-      },
-    });
   },
 
 };

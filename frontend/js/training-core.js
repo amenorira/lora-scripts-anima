@@ -224,7 +224,7 @@ window.trainingCoreMixin = {
     if (this._trainFormMountedRoute !== route || this._trainFormLocale !== this.locale) return false;
 
     this.buildSectionNav();
-    this.startTrainingStatusPoll();
+    this.refreshTrainingRealtimeState();
     this.scheduleStepEstimate();
     this.scheduleOutputPathInfo();
     this.$nextTick(() => this.updateToml());
@@ -329,8 +329,8 @@ window.trainingCoreMixin = {
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
 
-    // Start training status polling
-    this.startTrainingStatusPoll();
+    // Synchronize the form once from the shared realtime snapshot.
+    this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
 
     // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
@@ -2404,52 +2404,13 @@ window.trainingCoreMixin = {
     this.showFilePickerModalFlag = false;
   },
 
-  // ── Training Status Polling ──────────────────────────────
-  async checkTrainingBlocked() {
-    // 优先复用 /api/health 已采集的 trainingActive（减少冗余请求）；
-    // 但 activeTaskId 需要单独获取，故仅在阻塞状态变化或首次时请求 is-active
-    const fromHealth = this.trainingActive;
-    if (fromHealth != null) {
-      this.trainingBlocked = fromHealth;
-      if (fromHealth && !this.activeTaskId) {
-        // 仅在判定为阻塞且尚无 task_id 时补一次请求拿 task_id
-        try {
-          const r = await fetch('/api/monitor/is-active');
-          const d = await r.json();
-          if (d.status === 'success') this.activeTaskId = d.data.task_id || null;
-        } catch (_) { this.activeTaskId = null; }
-      } else if (!fromHealth) {
-        this.activeTaskId = null;
-      }
+  // ── Training status from the shared realtime snapshot ─────
+  refreshTrainingRealtimeState() {
+    if (this.realtimeSnapshot && typeof this.applyRealtimeTrainingSnapshot === 'function') {
+      this.applyRealtimeTrainingSnapshot(this.realtimeSnapshot);
       return;
     }
-    try {
-      const r = await fetch('/api/monitor/is-active');
-      const d = await r.json();
-      if (d.status === 'success') {
-        this.trainingBlocked = d.data.active;
-        this.activeTaskId = d.data.task_id || null;
-      }
-    } catch (e) {
-      this.trainingBlocked = false;
-      this.activeTaskId = null;
-    }
-  },
-
-  startTrainingStatusPoll() {
-    this.stopTrainingStatusPoll();
-    this.checkTrainingBlocked();
-    this._trainStatusTimer = setInterval(() => {
-      if (this.currentRoute.startsWith('train-')) {
-        this.checkTrainingBlocked();
-      }
-    }, 5000);
-  },
-
-  stopTrainingStatusPoll() {
-    if (this._trainStatusTimer) {
-      clearInterval(this._trainStatusTimer);
-      this._trainStatusTimer = null;
-    }
+    this.trainingBlocked = !!this.trainingActive;
+    if (!this.trainingBlocked) this.activeTaskId = null;
   }
 };

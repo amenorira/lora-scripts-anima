@@ -1,8 +1,9 @@
-"""Compatibility API router composed from focused route modules.
+"""Aggregate HTTP router for commands and static status reads.
 
-Keep importing :data:`router` from this module stable for the application and
-any external integrations.  The child routers deliberately have no prefixes:
-``application.py`` continues to mount this aggregate at ``/api``.
+Realtime job state is intentionally absent here: it is bootstrapped through
+``/api/realtime/snapshot`` and incrementally delivered by ``/ws/realtime``.
+The child routers have no prefixes because ``application.py`` mounts this
+aggregate at ``/api``.
 """
 
 from fastapi import APIRouter

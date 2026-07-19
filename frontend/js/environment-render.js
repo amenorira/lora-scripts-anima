@@ -541,7 +541,7 @@ window.environmentRenderMixin = {
           if (pre) pre.scrollTop = pre.scrollHeight;
         }
       });
-      // 默认展开时也滚到底（轮询期间新日志不断追加）
+      // 默认展开时也滚到底（实时日志持续追加）
       if (logDet.open) {
         const pre = logDet.querySelector('.env-log');
         if (pre) pre.scrollTop = pre.scrollHeight;

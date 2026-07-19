@@ -1,11 +1,11 @@
 """
-任务监控器：轮询任务状态并发布事件到事件总线。
+任务监控器：每秒采样进程内任务状态并发布实时事件。
 
 功能：
 - 监控任务状态变化
 - 收集训练进度
 - 收集硬件信息
-- 发布事件到事件总线
+- 发布 WebSocket 实时事件
 - 控制台单行训练进度条（rich Progress，含 loss/lr/epoch/已运行/剩余）
 """
 from __future__ import annotations
@@ -16,10 +16,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from backend.core.event_bus import event_bus
+from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
-from backend.monitor.artifacts import find_train_log_path, _clean_log_text
+from backend.monitor.artifacts import find_train_log_path, newest_previews, _clean_log_text
 from backend.monitor.run_registry import find_run_record_by_task_id
 from backend.tasks import tm
 
@@ -29,6 +29,48 @@ _PROGRESS_FIELDS = (
     "step", "total_steps", "percent", "loss", "lr", "epoch",
     "eta", "elapsed", "speed", "has_error", "error_msg",
 )
+_MAX_REALTIME_LOG_CHARS = 48 * 1024
+_MAX_REALTIME_METRIC_POINTS = 256
+
+
+def _bounded_realtime_log_lines(lines: list[str]) -> tuple[list[str], bool]:
+    """Keep a WebSocket log event small while preserving the newest output.
+
+    The full log remains available through the HTTP log-slice endpoint.  This
+    guard prevents a delayed filesystem flush from turning one realtime event
+    into a multi-megabyte JSON frame on a slow link.
+    """
+    if not lines:
+        return [], False
+    kept: list[str] = []
+    used = 0
+    for line in reversed(lines):
+        text = str(line)
+        size = len(text) + 1
+        if kept and used + size > _MAX_REALTIME_LOG_CHARS:
+            break
+        if not kept and size > _MAX_REALTIME_LOG_CHARS:
+            kept.append(text[-_MAX_REALTIME_LOG_CHARS:])
+            return kept, True
+        kept.append(text)
+        used += size
+    kept.reverse()
+    return kept, len(kept) != len(lines)
+
+
+def _bounded_realtime_metrics(points: dict[str, list[dict]]) -> tuple[dict[str, list[dict]], bool]:
+    """Cap a delayed TensorBoard catch-up to a small realtime JSON frame."""
+    bounded: dict[str, list[dict]] = {}
+    truncated = False
+    for tag, series in points.items():
+        if not isinstance(series, list):
+            continue
+        if len(series) > _MAX_REALTIME_METRIC_POINTS:
+            bounded[tag] = series[-_MAX_REALTIME_METRIC_POINTS:]
+            truncated = True
+        else:
+            bounded[tag] = series
+    return bounded, truncated
 
 
 def _build_console_progress():
@@ -112,10 +154,12 @@ class TaskMonitor:
     def __init__(self):
         self._running = False
         self._task: asyncio.Task | None = None
-        self._poll_interval = 1.0  # 轮询间隔（秒）
+        self._sample_interval = 1.0  # 真实采样间隔（秒）
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
+        self._last_preview_check: dict[str, float] = {}
+        self._last_preview_signature: dict[str, str] = {}
         # 控制台进度条状态
         self._console_progress = None
         self._progress_task_id = None
@@ -215,7 +259,7 @@ class TaskMonitor:
         while self._running:
             try:
                 await self._check_all_tasks()
-                await asyncio.sleep(self._poll_interval)
+                await asyncio.sleep(self._sample_interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -237,15 +281,23 @@ class TaskMonitor:
             # 状态变化事件
             if current_status != last_status:
                 self._last_status[task_id] = current_status
-                await event_bus.publish(task_id, {
-                    "type": "status_change",
+                await realtime_hub.publish(task_topic(task_id), "task.status", {
                     "task_id": task_id,
+                    "kind": "training",
                     "status": current_status,
-                    "timestamp": time.time()
+                })
+                await realtime_hub.publish("server", "server.tasks", {
+                    "tasks": tasks,
+                    "training_active": any(item.get("status") in {"CREATED", "RUNNING"} for item in tasks),
                 })
                 
                 # 任务结束时清理
                 if current_status in ("FINISHED", "TERMINATED"):
+                    await realtime_hub.publish(task_topic(task_id), "task.result", {
+                        "task_id": task_id,
+                        "kind": "training",
+                        "status": current_status,
+                    })
                     self._cleanup_task(task_id)
                     # 停止控制台进度条（结束信息由 supervisor 的 log 输出）
                     if self._progress_active_task == task_id:
@@ -255,7 +307,10 @@ class TaskMonitor:
             if current_status == "RUNNING":
                 await self._collect_task_data(task_id)
         
-        # 收集硬件信息（全局）
+        # 现有打标、下载和环境安装任务通过注册表桥接到同一个实时通道。
+        await realtime_tasks.poll()
+
+        # 收集硬件信息（仅在有可见订阅时以 1 Hz 真实采样）
         await self._collect_hardware()
     
     async def _collect_task_data(self, task_id: str) -> None:
@@ -279,9 +334,10 @@ class TaskMonitor:
                 if parsed_progress:
                     progress = self._merge_progress(task_id, parsed_progress)
                     payload = {key: progress[key] for key in _PROGRESS_FIELDS if key in progress}
-                    await event_bus.publish(task_id, {
-                        "type": "progress",
+                    await realtime_hub.publish(task_topic(task_id), "task.progress", {
                         "task_id": task_id,
+                        "kind": "training",
+                        "status": "RUNNING",
                         "data": payload,
                     })
 
@@ -290,13 +346,15 @@ class TaskMonitor:
                         task_id, progress, train_config.get("output_name", "")
                     )
 
-                await event_bus.publish(task_id, {
-                    "type": "log_update",
+                log_lines, log_truncated = _bounded_realtime_log_lines(new_lines)
+                await realtime_hub.publish(task_topic(task_id), "task.log", {
                     "task_id": task_id,
+                    "kind": "training",
+                    "status": "RUNNING",
                     "data": {
-                        "lines": new_lines,
+                        "lines": log_lines,
                         "total": len(new_lines),
-                        "truncated": False
+                        "truncated": log_truncated,
                     }
                 })
 
@@ -306,8 +364,42 @@ class TaskMonitor:
                 run_dir=run_dir,
                 output_name=train_config.get("output_name", ""),
             )
+            await self._collect_preview_update(task_id, record)
         except Exception as e:
             logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
+
+    async def _collect_preview_update(self, task_id: str, record: dict | None) -> None:
+        """Emit a tiny notice when the newest generated preview changes.
+
+        Preview paths are metadata and remain an HTTP read; putting the image
+        itself (or a whole growing preview list) on the realtime socket would
+        make slow connections progressively worse.
+        """
+        if not record or not record.get("artifact_available"):
+            return
+        now = time.monotonic()
+        if now - self._last_preview_check.get(task_id, 0.0) < 2.0:
+            return
+        self._last_preview_check[task_id] = now
+        previews = await asyncio.to_thread(
+            newest_previews,
+            str(record["artifact_path"]),
+            1,
+            False,
+            record.get("run_dir", ""),
+        )
+        latest = previews[-1] if previews else None
+        if not latest:
+            return
+        signature = f"{latest.get('path', '')}:{latest.get('version', '')}"
+        if signature == self._last_preview_signature.get(task_id):
+            return
+        self._last_preview_signature[task_id] = signature
+        await realtime_hub.publish(task_topic(task_id), "task.artifacts", {
+            "task_id": task_id,
+            "kind": "training",
+            "latest_preview": latest,
+        })
 
     def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> list[str] | None:
         """从上次读取位置读取日志文件增量内容，返回新增行列表。
@@ -357,7 +449,7 @@ class TaskMonitor:
         run_dir: str | None = None,
         output_name: str = "",
     ) -> None:
-        """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到 SSE"""
+        """从 TensorBoard event 文件读取增量 loss/lr 数据并推送到实时通道"""
         try:
             if not run_dir:
                 return
@@ -378,11 +470,13 @@ class TaskMonitor:
                     progress = self._merge_progress(task_id, tb_progress)
                     self._update_console_progress(task_id, progress, output_name)
 
-                await event_bus.publish(task_id, {
-                    "type": "loss_update",
+                bounded_points, metrics_truncated = _bounded_realtime_metrics(tb_points)
+                await realtime_hub.publish(task_topic(task_id), "task.metrics", {
                     "task_id": task_id,
-                    "points": tb_points,
-                    "timestamp": time.time(),
+                    "kind": "training",
+                    "status": "RUNNING",
+                    "points": bounded_points,
+                    "truncated": metrics_truncated,
                 })
         except Exception:
             logger.debug(f"TB 增量读取失败 (task_id={task_id})", exc_info=True)
@@ -390,18 +484,17 @@ class TaskMonitor:
     async def _collect_hardware(self) -> None:
         """收集硬件信息"""
         try:
+            if not await realtime_hub.subscriber_count("hardware"):
+                return
             gpu, sys_info = await asyncio.gather(
-                asyncio.to_thread(gpu_info),
-                asyncio.to_thread(system_info)
+                asyncio.to_thread(gpu_info, True),
+                asyncio.to_thread(system_info, True),
             )
-            
-            # 广播硬件信息到所有频道
-            channels = list(event_bus.get_all_channels())
-            for channel in channels:
-                await event_bus.publish(channel, {
-                    "type": "hardware",
-                    "data": {"gpu": gpu, "system": sys_info}
-                })
+            await realtime_hub.publish("hardware", "hardware.sample", {
+                "gpu": gpu,
+                "system": sys_info,
+                "sampled_at": time.time(),
+            })
         except Exception as e:
             logger.debug(f"收集硬件信息失败: {e}")
     
@@ -410,6 +503,8 @@ class TaskMonitor:
         self._last_status.pop(task_id, None)
         self._last_log_pos.pop(task_id, None)
         self._last_progress.pop(task_id, None)
+        self._last_preview_check.pop(task_id, None)
+        self._last_preview_signature.pop(task_id, None)
         logger.debug(f"清理任务状态: {task_id}")
 
 

@@ -53,7 +53,7 @@ def _mark_task_completed(task_id: str):
             _tagger_progress[task_id]["_completed_at"] = time.time()
 
 
-def get_tagger_progress(task_id: str) -> dict:
+def get_tagger_task_snapshot(task_id: str) -> dict:
     with _tagger_progress_lock:
         return _tagger_progress.get(task_id, {"status": "idle", "current": 0, "total": 0, "current_file": "", "logs": []}).copy()
 

@@ -50,6 +50,7 @@ window.trainingPresetsMixin = {
   confirmTitle: '',
   confirmMessage: '',
   confirmCallback: null,
+  confirmActionLabel: '',
 
   // ── 对比勾选 ───────────────────────────────────────────
   presetDiffSelected: [],
@@ -852,21 +853,24 @@ window.trainingPresetsMixin = {
   // ══════════════════════════════════════════════════════
   // Confirm Modal
   // ══════════════════════════════════════════════════════
-  openConfirm(title, message, callback) {
+  openConfirm(title, message, callback, actionLabel = '') {
     this.confirmTitle = title;
     this.confirmMessage = message;
     this.confirmCallback = callback;
+    this.confirmActionLabel = actionLabel;
     this.showConfirmModal = true;
   },
   confirmAction() {
     this.showConfirmModal = false;
     const cb = this.confirmCallback;
     this.confirmCallback = null;
+    this.confirmActionLabel = '';
     if (cb) cb();
   },
   cancelConfirm() {
     this.showConfirmModal = false;
     this.confirmCallback = null;
+    this.confirmActionLabel = '';
   },
 
   // ══════════════════════════════════════════════════════

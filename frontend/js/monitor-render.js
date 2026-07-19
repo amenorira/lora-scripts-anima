@@ -73,7 +73,7 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _statusbarHtml(d, t) {
     const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
+    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'FAILED':t('error','Error'),'CREATED':t('created','Pending'),'UNKNOWN':t('taskStateUnknown','Task state unknown'),'IDLE':t('idle','Idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
@@ -90,6 +90,7 @@ window.monitorRenderMixin = {
     html += '<div class="m-sb-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '"><div class="m-sb-bar" data-bar="progress" style="width:' + percent + '%"></div></div>';
     html += '</div>';
     html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error','Error')) + '</span>';
+    html += '<span class="m-sb-error" data-role="restart"' + (this.realtimeTaskStateUnknown ? '' : ' hidden') + '>' + this.esc(t('taskStateUnknown','Backend restarted; previous live task state is unknown')) + '</span>';
     html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isTraining ? ' hidden' : '') + '>' + this.esc(t('readyToTrain','Ready for a new training run')) + '</div>';
     html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining','Stop')) + '</button></div>';
     html += '</div>';
@@ -97,10 +98,15 @@ window.monitorRenderMixin = {
   },
 
   _monitorConnectionMeta(t, stateCode) {
-    if (stateCode !== 'RUNNING') return { label: t('standby','Standby'), tone: 'muted' };
-    if (this._sseConnected) return { label: t('liveConnected','Live stream connected'), tone: 'ok' };
-    if (this._eventSource || this._sseRetryTimer) return { label: t('reconnecting','Reconnecting…'), tone: 'warn' };
-    return { label: t('pollingFallback','Polling fallback'), tone: 'warn' };
+    if (this.realtimeState === 'online') {
+      return stateCode === 'RUNNING'
+        ? { label: t('liveConnected','Live stream connected'), tone: 'ok' }
+        : { label: t('standby','Standby'), tone: 'muted' };
+    }
+    if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') {
+      return { label: t('realtimeDelayed','Realtime data delayed'), tone: 'warn' };
+    }
+    return { label: t('reconnecting','Reconnecting…'), tone: 'warn' };
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -215,7 +221,7 @@ window.monitorRenderMixin = {
     const bar = document.querySelector('.m-statusbar');
     if (!bar) return;
     const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'CREATED':t('created','Pending'),'IDLE':t('idle','Idle')};
+    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'FAILED':t('error','Error'),'CREATED':t('created','Pending'),'UNKNOWN':t('taskStateUnknown','Task state unknown'),'IDLE':t('idle','Idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     bar.dataset.state = stateCode.toLowerCase();
@@ -249,6 +255,8 @@ window.monitorRenderMixin = {
       errorEl.hidden = !d.has_error;
       errorEl.textContent = d.error_msg || t('error','Error');
     }
+    const restartEl = bar.querySelector('[data-role="restart"]');
+    if (restartEl) restartEl.hidden = !this.realtimeTaskStateUnknown;
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -289,26 +297,32 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (this.previews.length) + ':' + (d.train_result ? d.train_result.status : '');
+      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + this._previewCollectionSignature() + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.train_result ? d.train_result.status : '');
       if (tabChanged || this._builtOverviewSig !== sig) {
+        this._cancelPreviewMediaQueue();
+        this._releasePreviewMediaObjectUrls();
         this._builtOverviewSig = sig;
         contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
         delete contentEl.dataset.diagnosticVersion;
         delete contentEl.dataset.paramQuery;
       }
       this._patchOverviewStatus(d, t, isHistory);
+      this.schedulePreviewMediaLoads(contentEl);
       this._builtTab = 'overview';
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + this._shellLocale + ':' + (this.previews.length) + ':' + (this.previewsLoading?1:0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
+      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (tabChanged || this._builtSamplesSig !== sig) {
-        // 保留滚动位置（轮询追加样本时不在视觉上跳回顶部）
+        // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
         const scrollTop = contentEl.scrollTop || 0;
+        this._cancelPreviewMediaQueue();
+        this._releasePreviewMediaObjectUrls();
         this._builtSamplesSig = sig;
         contentEl.innerHTML = this._renderSamplesTab(t);
         contentEl.scrollTop = scrollTop;
       }
+      this.schedulePreviewMediaLoads(contentEl);
       this._builtTab = 'samples';
       return;
     }
@@ -730,8 +744,22 @@ window.monitorRenderMixin = {
   _latestSampleCardHtml(t) {
     const index = this.previews.length - 1;
     const preview = this.previews[index];
+    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample','Latest sample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll','View all')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')">' + this._previewThumbImageHtml(preview) + '<span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
+  },
+
+  _previewThumbImageHtml(preview) {
     const imageUrl = preview.thumb_url || preview.url;
-    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample','Latest sample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll','View all')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')"><img src="' + this.esc(imageUrl) + '" alt="' + this.esc(preview.name) + '" decoding="async"/><span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
+    const common = ' alt="' + this.esc(preview.name) + '" loading="lazy" decoding="async" fetchpriority="low"';
+    if (this.weakNetworkMode) {
+      return '<img data-preview-url="' + this.esc(imageUrl) + '"' + common + '/>';
+    }
+    return '<img src="' + this.esc(imageUrl) + '"' + common + '/>';
+  },
+
+  _previewCollectionSignature() {
+    return (this.previews || []).map(preview => {
+      return String(preview.path || preview.name || '') + ':' + String(preview.version || preview.thumb_url || '');
+    }).join('|');
   },
 
   _parametersConsoleHtml(t) {
@@ -805,8 +833,8 @@ window.monitorRenderMixin = {
   _logsTabShellHtml(t) {
     let html = '<div class="m-section m-logs-section">';
     const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
-    html += '<div class="m-section-title"><span>' + this.esc(t(titleKey,'Logs')) + ' <span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span></span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode','History') : t('live','Live')) + '</span></div>';
-    html += '<div class="m-section-tools m-logs-tools">';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode','History') : t('live','Live')) + '</span></div>';
+    html += '<div class="m-view-actions m-logs-tools">';
     if (this.logMode === 'full') {
       html += this._logFullToolbarHtml(t);
     } else {
@@ -823,7 +851,7 @@ window.monitorRenderMixin = {
       html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button></div>';
     }
-    html += '</div>';
+    html += '</div></div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
     return html;
   },
@@ -880,7 +908,7 @@ window.monitorRenderMixin = {
       // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
       if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
         // 无日志源（无训练且非历史模式）→ 不触发拉取，避免 toast 误报；保持空态文案。
-        // 不标记 _logFullLoaded，以便后续训练启动/SSE 重连时自动重新拉取。
+        // 不标记 _logFullLoaded，以便后续训练启动/实时重连时自动重新拉取。
         if (!this._hasLogSource()) {
           this._logFullNeedsResync = false;
         } else {
@@ -895,9 +923,9 @@ window.monitorRenderMixin = {
       return;
     }
 
-    // ── full 模式：末页 SSE 增量 + 翻页静态；首屏/重连自动拉取末页 ──
+    // ── full 模式：末页 WebSocket 增量 + 翻页静态；首屏/重连自动拉取末页 ──
     if (this.logMode === 'full') {
-      // 首屏未加载或 SSE 重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
+      // 首屏未加载或实时重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
       if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
         if (!this._hasLogSource()) {
           this._logFullNeedsResync = false;  // 留待有源时再拉
@@ -1178,7 +1206,7 @@ window.monitorRenderMixin = {
     if (!container) return;
     const lines = this.logFullLines;
 
-    // 删顶：handleSSELogUpdate 中已 splice + bump offset；同步删除 DOM 前 K 个 .log-line
+    // 删顶：实时日志处理已 splice + bump offset；同步删除 DOM 前 K 个 .log-line
     if (this._logFullEvictK > 0) {
       const k = Math.min(this._logFullEvictK, this._renderedLogCount);
       let remove = k;
@@ -1468,29 +1496,18 @@ window.monitorRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const showPreviews = this.previews.length > 0;
     const lastIdx = this.previews.length - 1;
-    const pageSize = this.previewPageSize || 36;
-    const visibleCount = Math.min(this.previews.length, this.previewVisibleCount || pageSize);
-    const startIdx = Math.max(0, this.previews.length - visibleCount);
-    const visiblePreviews = this.previews.slice(startIdx);
 
     const canRefresh = !!this.currentOutputRunDir;
-    let html = '<div class="m-section m-samples-section"><div class="m-section-title"><span>' + this.esc(t('previewSamples','Preview')) + (showPreviews ? ' <span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</span>';
-    if (canRefresh) {
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading"><svg class="m-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 10a7 7 0 0 0-12-3L4 11m16 2-2.5 4a7 7 0 0 1-12-3"/></svg>' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button>';
-    }
+    let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples','Preview')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
+    html += '<div class="m-view-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
-      if (startIdx > 0) {
-        html += '<div class="preview-controls"><button type="button" class="btn btn-sm btn-secondary" @click="showMorePreviews()">' + this.esc(t('monitor.showOlderSamples','Show older samples')) + '</button><span class="preview-step">' + (startIdx + 1) + '-' + this.previews.length + ' / ' + this.previews.length + '</span></div>';
-      }
       html += '<div class="preview-grid">';
-      visiblePreviews.forEach((pv, offset) => {
-        const i = startIdx + offset;
-        const thumbUrl = pv.thumb_url || pv.url;
+      this.previews.forEach((pv, i) => {
         html += '<button type="button" class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
-        html += '<img src="' + this.esc(thumbUrl) + '" alt="' + this.esc(pv.name) + '" loading="lazy" decoding="async"/>';
+        html += this._previewThumbImageHtml(pv);
         html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small>' + this.esc(pv.name) + '</small></span>';
         html += '</button>';
       });
@@ -1530,12 +1547,17 @@ window.monitorRenderMixin = {
       + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev','Prev')) + '">‹</button>'
       + '<div class="preview-lightbox-inner" @click.stop>'
       + '<img class="preview-lightbox-img" id="previewLightboxImg" alt=""/>'
-      + '<div class="preview-lightbox-bar">'
-      + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
-      + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
-      + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate','navigate')) + ' · Esc ' + this.esc(t('close','Close')) + '</span>'
-      + '</div>'
-      + '</div>'
+       + '<div class="preview-lightbox-bar">'
+       + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
+       + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
+       + '<div class="preview-lightbox-actions">'
+       + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata','Metadata')) + '</button>'
+       + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal','Open original')) + '</a>'
+       + '</div>'
+       + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate','navigate')) + ' · Esc ' + this.esc(t('close','Close')) + '</span>'
+       + '</div>'
+       + '<pre class="preview-lightbox-metadata" id="previewLightboxMetadata" hidden></pre>'
+       + '</div>'
       + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next','Next')) + '">›</button>'
       + '</div>';
   },
@@ -1561,6 +1583,9 @@ window.monitorRenderMixin = {
   closePreviewLightbox() {
     const box = document.getElementById('previewLightbox');
     if (box) box.classList.remove('open');
+    const image = document.getElementById('previewLightboxImg');
+    if (image) image.removeAttribute('src');
+    if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     document.body.style.overflow = '';
     if (this._lightboxKeyHandler) document.removeEventListener('keydown', this._lightboxKeyHandler);
   },
@@ -1580,8 +1605,15 @@ window.monitorRenderMixin = {
     const n = this.previews.length;
     if (!n) return;
     const p = this.previews[this.previewStep] || this.previews[0];
+    if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     const img = document.getElementById('previewLightboxImg');
-    if (img) { img.src = p.url; img.alt = p.name; }
+    if (img) { img.src = p.inspect_url || p.url; img.alt = p.name; }
+    const original = document.getElementById('previewLightboxOriginal');
+    if (original) {
+      original.hidden = !p.url;
+      if (p.url) original.href = p.url;
+      else original.removeAttribute('href');
+    }
     const c = document.getElementById('previewLightboxCounter');
     if (c) c.textContent = (this.previewStep + 1) + ' / ' + n;
     const lbl = document.getElementById('previewLightboxLabel');
@@ -1634,14 +1666,14 @@ window.monitorRenderMixin = {
     const artifactUnavailable = !!runDir && (d.artifact_available === false || this.outputFilesError === 'artifactUnavailable');
     const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
     let html = '<div class="m-section m-outputs-section">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('outputs','Training Outputs')) + (this.outputFiles.length ? ' <span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</span></div>';
-    html += this._artifactLocationHtml(t, d);
-    html += '<div class="m-section-tools m-output-tools">';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs','Training Outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
+    html += '<div class="m-view-actions">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh','Refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('selectAll','Select All')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll','Deselect All')) + '</button>';
     html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll','Download All')) + '</button>';
-    html += '</div>';
+    html += '</div></div>';
+    html += this._artifactLocationHtml(t, d);
 
     if (this.outputFilesLoading) {
       html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';

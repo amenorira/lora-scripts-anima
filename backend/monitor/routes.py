@@ -1,7 +1,6 @@
 """
 训练监控 API 路由
 
-  GET  /api/monitor/status        — 聚合监控状态
   GET  /api/monitor/history        — 历史训练记录
   GET  /api/monitor/run-detail     — 指定训练的图表 + 日志 + 配置
   GET  /api/monitor/log-slice      — 完整训练日志分页读取
@@ -12,12 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 
-from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import (
     read_tensorboard_loss, parse_log_progress,
     latest_train_config, extract_train_params,
@@ -40,6 +37,7 @@ router = APIRouter()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CACHE_DIR = REPO_ROOT / "cache"
 PREVIEW_THUMB_DIR = CACHE_DIR / "preview-thumbs"
+PREVIEW_INSPECT_DIR = CACHE_DIR / "preview-inspect"
 
 # run-detail 仅回传日志尾部行数（与前端 LOG.MAX_LINES 对齐）；完整日志经
 # /monitor/log-slice 分页拉取，避免大日志全量回传撑爆响应。
@@ -72,10 +70,26 @@ def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | No
     return find_run_log_path(run_path)
 
 
-@router.get("/monitor/status")
-async def monitor_status(task_id: str = Query("")):
-    """聚合监控端点：GPU + CPU + 训练进度 + Loss 曲线 + 预览样本 + 训练参数"""
-    tasks = tm.dump()
+async def build_live_monitor_snapshot(
+    task_id: str = "",
+    *,
+    tasks: list[dict] | None = None,
+    gpu: dict | None = None,
+    system: dict | None = None,
+    detail: bool = True,
+    preview_limit: int = 36,
+    curve_points: int = 500,
+    log_tail_lines: int = 500,
+) -> dict:
+    """Build the live-monitor section of a realtime bootstrap snapshot.
+
+    This is intentionally not an HTTP route. Live state is bootstrapped only
+    through ``/api/realtime/snapshot`` and then updated by ``/ws/realtime``.
+    A compact bootstrap skips disk-heavy curves/logs/preview metadata so the
+    connection indicator is not held hostage by a slow remote link; the
+    dashboard explicitly asks that same snapshot endpoint for ``detail``.
+    """
+    tasks = tm.dump() if tasks is None else tasks
     active = next((item for item in tasks if task_id and item.get("id") == task_id), None)
     if not active:
         active = next((item for item in reversed(tasks) if item.get("status") == "RUNNING"), None)
@@ -86,16 +100,19 @@ async def monitor_status(task_id: str = Query("")):
     run_path = Path(record["run_path"]) if record else None
     artifact_path = Path(record["artifact_path"]) if record else None
 
-    gpu, system, tb_loss = await asyncio.gather(
-        asyncio.to_thread(gpu_info),
-        asyncio.to_thread(system_info),
-        asyncio.to_thread(read_tensorboard_loss, run_dir=str(run_path) if run_path else None),
-    )
+    # Never revive a previous run's curves when this backend has no managed
+    # live task.  After a restart, that would falsely make an untracked
+    # process look like a task this server still owns.
+    tb_loss = await asyncio.to_thread(
+        read_tensorboard_loss,
+        downsample_to=max(64, min(int(curve_points or 500), 2000)),
+        run_dir=str(run_path),
+    ) if detail and run_path else []
     result = {
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "gpu": gpu,
         "system": system,
         "tensorboard_loss": tb_loss,
+        "detail": detail,
         "state": "IDLE",
         "state_label": "Idle / 空闲",
         "step": 0,
@@ -109,20 +126,33 @@ async def monitor_status(task_id: str = Query("")):
         "has_error": False,
         "error_msg": None,
         "run_dir": record["run_dir"] if record else "",
-        # 兼容现有前端：output_dir 继续代表内部运行标识，不再暴露任意绝对路径。
+        # output_dir is an internal run identifier, never an arbitrary local path.
         "output_dir": record["run_dir"] if record else "",
         "artifact_dir": record["artifact_dir"] if record else "",
         "artifact_available": bool(record and record["artifact_available"]),
         "artifact_external": bool(record and record["artifact_external"]),
         "preview_enabled": record["preview_enabled"] if record else None,
     }
+    if not detail:
+        if active:
+            result["active_task"] = active
+            active_status = active.get("status", "UNKNOWN")
+            result["state"] = active_status
+            result["state_label"] = STATE_LABELS.get(active_status, active_status)
+        return result
+
     train_config = await asyncio.to_thread(latest_train_config, active_task_id or None)
 
     # 预览只读取当前记录登记的产物目录，磁盘离线时返回空并保留明确状态。
+    # ``0`` 是完整列表的显式约定；详细仪表盘只传轻量元数据，缩略图仍由
+    # 浏览器按需单独读取。正数调用方保留上限，以兼容需要小型快照的场景。
+    effective_preview_limit = (
+        0 if preview_limit == 0 else max(1, min(preview_limit, 300))
+    )
     result["previews"] = await asyncio.to_thread(
         newest_previews,
         str(artifact_path) if record and record["artifact_available"] else None,
-        300,
+        effective_preview_limit,
         False,
         record["run_dir"] if record else "",
     )
@@ -132,7 +162,7 @@ async def monitor_status(task_id: str = Query("")):
     result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
 
     if not tasks:
-        return {"status": "success", "data": result}
+        return result
 
     result["active_task"] = active
     active_status = active.get("status", "UNKNOWN")
@@ -147,7 +177,7 @@ async def monitor_status(task_id: str = Query("")):
         lines = read_train_log(active_task_id, run_dir_path)
         if not lines:
             return [], {}
-        return lines, parse_log_progress(lines)
+        return lines[-log_tail_lines:], parse_log_progress(lines)
 
     if active_status == "RUNNING" and run_path:
         log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, run_path)
@@ -180,7 +210,7 @@ async def monitor_status(task_id: str = Query("")):
             if log_lines:
                 result["log_lines"] = log_lines
 
-    return {"status": "success", "data": result}
+    return result
 
 
 def _fmt_summary_lr(v) -> str:
@@ -253,7 +283,8 @@ async def monitor_previews(
     task_id: str = Query(""),
     run_dir: str = Query(""),
     refresh: int = Query(0),
-    limit: int = Query(300, ge=1, le=1000),
+    # 0 means the complete metadata list. Media bytes are never included here.
+    limit: int = Query(0, ge=0),
 ):
     record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
     output_dir = str(record["artifact_path"]) if record and record["artifact_available"] else None
@@ -420,7 +451,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     result["previews"] = await asyncio.to_thread(
         newest_previews,
         str(artifact_dir) if record["artifact_available"] else None,
-        300,
+        0,
         False,
         record["run_dir"],
     )
@@ -528,13 +559,15 @@ async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query(""
 async def monitor_preview_image(
     run_dir: str = Query(""),
     path: str = Query(""),
+    variant: str = Query("original"),
     thumb: bool = Query(False),
+    request: Request = None,
 ):
-    """预览图片代理 — 仅允许访问该内部运行记录登记的产物目录。"""
+    """Serve cached thumbnail/inspection variants or the requested original."""
     import hashlib
     import mimetypes
     import urllib.parse
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
 
     if not run_dir or not path:
         return {"status": "error", "message": "run_dir and path are required"}
@@ -546,45 +579,112 @@ async def monitor_preview_image(
     if not p.is_file():
         return {"status": "error", "message": "文件不存在"}
 
-    headers = {"Cache-Control": "public, max-age=86400"}
-
     if thumb:
+        variant = "thumb"
+    if variant not in {"thumb", "inspect", "original"}:
+        return {"status": "error", "message": "Invalid preview variant"}
+
+    st = p.stat()
+    version_key = f"{p}|{st.st_mtime_ns}|{st.st_size}|{variant}"
+    etag = hashlib.sha1(version_key.encode("utf-8", errors="ignore")).hexdigest()
+    headers = {
+        "Cache-Control": "private, max-age=86400, immutable",
+        "ETag": f'"{etag}"',
+    }
+    if request and request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+
+    if variant in {"thumb", "inspect"}:
         try:
             from PIL import Image, ImageOps
 
-            st = p.stat()
-            key_src = f"{p}|{st.st_mtime_ns}|{st.st_size}|320"
+            is_thumb = variant == "thumb"
+            key_src = f"{p}|{st.st_mtime_ns}|{st.st_size}|{variant}|webp-q{82 if is_thumb else 92}"
             key = hashlib.sha1(key_src.encode("utf-8", errors="ignore")).hexdigest()
-            thumb_path = PREVIEW_THUMB_DIR / f"{key}.jpg"
-            if not thumb_path.exists():
-                PREVIEW_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+            cache_dir = PREVIEW_THUMB_DIR if is_thumb else PREVIEW_INSPECT_DIR
+            rendered_path = cache_dir / f"{key}.webp"
+            if not rendered_path.exists():
+                cache_dir.mkdir(parents=True, exist_ok=True)
                 with Image.open(p) as img:
                     img = ImageOps.exif_transpose(img)
-                    img.thumbnail((320, 320))
-                    if img.mode not in ("RGB", "L"):
+                    if is_thumb:
+                        img.thumbnail((320, 320))
+                    if img.mode not in ("RGB", "RGBA", "L"):
                         img = img.convert("RGB")
-                    img.save(thumb_path, format="JPEG", quality=82, optimize=True)
-            return FileResponse(thumb_path, media_type="image/jpeg", headers=headers)
+                    img.save(
+                        rendered_path,
+                        format="WEBP",
+                        quality=82 if is_thumb else 92,
+                        method=6,
+                    )
+            return FileResponse(rendered_path, media_type="image/webp", headers=headers)
         except Exception:
-            pass
+            if variant != "original":
+                return {"status": "error", "message": "Preview conversion failed"}
 
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=mt, headers=headers)
 
 
-@router.get("/monitor/is-active")
-async def is_training_active():
-    """Check if there is an active training task."""
-    tasks = tm.dump()
-    active = any(t['status'] == 'RUNNING' for t in tasks)
-    active_task = next((t for t in tasks if t['status'] == 'RUNNING'), None)
-    return {
-        "status": "success",
-        "data": {
-            "active": active,
-            "task_id": active_task['id'] if active_task else None
-        }
+@router.get("/monitor/preview-metadata")
+async def monitor_preview_metadata(
+    run_dir: str = Query(""),
+    path: str = Query(""),
+    request: Request = None,
+):
+    """Read display-safe PNG text/EXIF metadata without loading the original image."""
+    import hashlib
+    import urllib.parse
+    from fastapi.responses import JSONResponse, Response
+
+    if not run_dir or not path:
+        return {"status": "error", "message": "run_dir and path are required"}
+    decoded = urllib.parse.unquote(path)
+    p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
+    if not p or not p.is_file():
+        return {"status": "error", "message": "File not found / 文件不存在"}
+    stat = p.stat()
+    etag = hashlib.sha1(
+        f"{p}|{stat.st_mtime_ns}|{stat.st_size}|metadata".encode("utf-8", errors="ignore")
+    ).hexdigest()
+    headers = {
+        "Cache-Control": "private, max-age=86400, immutable",
+        "ETag": f'"{etag}"',
     }
+    if request and request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+
+    def _read_metadata() -> dict:
+        from PIL import Image
+
+        with Image.open(p) as image:
+            png_text: dict[str, str] = {}
+            for key, value in image.info.items():
+                if key in {"icc_profile", "exif", "gamma", "dpi"}:
+                    continue
+                if isinstance(value, (str, int, float, bool)):
+                    text = str(value)
+                    png_text[str(key)] = text[:8192]
+            exif: dict[str, str] = {}
+            try:
+                for key, value in image.getexif().items():
+                    exif[str(key)] = str(value)[:8192]
+            except Exception:
+                pass
+            return {
+                "format": image.format,
+                "width": image.width,
+                "height": image.height,
+                "mode": image.mode,
+                "png_text": png_text,
+                "exif": exif,
+            }
+
+    try:
+        data = await asyncio.to_thread(_read_metadata)
+    except Exception as exc:
+        return {"status": "error", "message": f"Metadata read failed: {exc}"}
+    return JSONResponse({"status": "success", "data": data}, headers=headers)
 
 
 @router.get("/monitor/outputs")

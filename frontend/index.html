@@ -25,6 +25,7 @@
   <!-- Feature modules (order matters: config first, app last) -->
   <script src="/anima-ui/js/config.js" defer></script>
   <script src="/anima-ui/js/anima-select.js" defer></script>
+  <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
   <script src="/anima-ui/js/monitor-render.js" defer></script>
   <script src="/anima-ui/js/environment-core.js" defer></script>
@@ -142,11 +143,11 @@
 
     <div class="sidebar-bottom">
       <!-- Backend connectivity + training status indicator (3 states) -->
-      <div class="backend-status" :class="{ connected: backendConnected && !trainingActive, training: backendConnected && trainingActive, disconnected: !backendConnected }"
-           :title="!backendConnected ? t('common.backendDisconnected') : (trainingActive ? t('common.trainingInProgress') : t('common.backendConnected'))">
+      <div class="backend-status" :class="{ connected: realtimeState === 'online' && !trainingActive, training: realtimeState === 'online' && trainingActive, degraded: realtimeState === 'degraded' || realtimeState === 'connecting', disconnected: realtimeState === 'offline' }"
+           :title="realtimeState === 'offline' ? t('common.backendDisconnected') : (realtimeState === 'degraded' || realtimeState === 'connecting' ? t('common.backendDelayed','Realtime data delayed') : (trainingActive ? t('common.trainingInProgress') : t('common.backendConnected'))) ">
         <span class="backend-status-dot"></span>
-        <span class="backend-status-label" x-text="!backendConnected ? t('common.backendDisconnected') : (trainingActive ? t('common.trainingInProgress') : t('common.backendConnected'))"></span>
-        <span class="backend-status-time" x-show="!backendConnected && backendDisconnectedDuration"
+        <span class="backend-status-label" x-text="realtimeState === 'offline' ? t('common.backendDisconnected') : (realtimeState === 'degraded' || realtimeState === 'connecting' ? t('common.backendDelayed','Realtime data delayed') : (trainingActive ? t('common.trainingInProgress') : t('common.backendConnected')))"></span>
+        <span class="backend-status-time" x-show="realtimeState === 'offline' && backendDisconnectedDuration"
               x-text="backendDisconnectedDuration"></span>
       </div>
       <!-- Theme dropdown -->
@@ -1268,6 +1269,18 @@
               </label>
             </div>
           </div>
+          <div class="settings-row">
+            <div class="settings-row-main">
+              <div class="settings-row-label" x-text="t('settings.slowConnectionMode')">Slow connection compatibility</div>
+              <div class="settings-row-desc" x-text="t('settings.slowConnectionModeDesc')">Enabled by default: show the full sample list while loading thumbnails in the background without delaying realtime updates on slow or unstable connections.</div>
+            </div>
+            <div class="settings-row-action">
+              <label class="toggle">
+                <input type="checkbox" :checked="weakNetworkMode" @change="requestWeakNetworkModeChange($event.target.checked, $event.target)">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1803,7 +1816,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-danger btn-sm" @click="confirmAction()" x-text="t('preset.delete')">Delete</button>
+      <button class="btn btn-danger btn-sm" @click="confirmAction()" x-text="confirmActionLabel || t('preset.delete')">Delete</button>
     </div>
   </div>
 </div>

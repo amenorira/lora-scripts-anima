@@ -365,5 +365,50 @@ window.trainingTomlMixin = {
       this.isTraining = false; this.statusText = 'Idle';
       this.toast(this.t('common.trainingStopped'));
     } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
+  },
+
+  applyRealtimeTrainingSnapshot(snapshot) {
+    const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
+    this._applyRealtimeTrainingTasks(managed);
+  },
+
+  handleRealtimeTrainingEvent(event) {
+    if (!event || event.type !== 'server.tasks' || !event.payload) return;
+    this._applyRealtimeTrainingTasks(event.payload.tasks || []);
+  },
+
+  _applyRealtimeTrainingTasks(tasks) {
+    const active = (tasks || []).find(task => task && ['CREATED', 'RUNNING'].includes(task.status));
+    this.trainingActive = !!active;
+    this.trainingBlocked = !!active;
+    this.activeTaskId = active ? active.id : null;
+    if (active) {
+      this.taskId = active.id;
+      this.isTraining = true;
+      this.isIdle = false;
+      this.statusText = active.status_label || (active.status === 'CREATED'
+        ? this.t('monitor.created', 'Pending')
+        : this.t('monitor.training', 'Training'));
+      this.realtimeTaskStateUnknown = false;
+      return;
+    }
+    if (!this.realtimeTaskStateUnknown) {
+      this.isTraining = false;
+      this.isIdle = true;
+      this.taskId = null;
+      this.statusText = this.t('monitor.idle', 'Idle');
+    }
+  },
+
+  resetRealtimeTrainingState() {
+    const wasRunning = !!(this.isTraining || this.taskId || this.activeTaskId || this.trainingBlocked);
+    this.taskId = null;
+    this.activeTaskId = null;
+    this.trainingBlocked = false;
+    this.trainingActive = false;
+    this.isTraining = false;
+    this.isIdle = true;
+    if (wasRunning) this.statusText = this.t('monitor.taskStateUnknown', 'Task state unknown');
+    return wasRunning;
   }
 };

@@ -46,6 +46,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 - **Internationalization (i18n)** — Bilingual UI (676 translation keys), browser language auto-detection, persistent preference
 - **Dark / Light Theme** — Auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
+- **Slow Remote Connection Compatibility** — Same-origin realtime transport, a weak-network thumbnail queue, and versioned browser caching keep previews from competing with live status
 
 ## Project Structure
 
@@ -113,6 +114,15 @@ cd lora-scripts-anima
 First launch automatically creates a virtual environment and installs all dependencies. The GUI opens at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 
 > **RTX 40/50 users**: the startup script detects flash_attn status. If not installed, use the GUI **Environment** tab for one-click install.
+
+### Realtime and Slow Remote Connections
+
+All HTTP requests and realtime traffic use the current page's same Origin. The trainer does not configure SSH, port forwarding, proxies, cloud-platform-specific logic, or an extra realtime port. If you already reach the remote page through your own setup, the browser continues to use that entry point.
+
+- `/ws/realtime` carries only compact JSON state, progress, log increments, and hardware data. Commands, images, files, and metadata remain HTTP requests.
+- The sidebar shows “Backend connected” only after both the WebSocket `ready` message and a realtime snapshot succeed. No valid realtime data for two seconds means “Realtime data delayed”; it changes to “Backend disconnected” only after the socket is closed and the health probe also fails.
+- A backend restart creates a new instance ID. The page clears task, progress, log, curve, and hardware data from the old instance and explicitly marks the previous in-memory task state as unknown. This version does not scan for or take over leftover training processes.
+- **UI Settings → Slow connection compatibility** is enabled by default. It shows the complete sample list for the current run or history record, loads thumbnails one at a time at low priority, and pauses those background requests while realtime data is delayed. Versioned thumbnails can stay in the browser cache for 24 hours; opening the original image remains an explicit user action.
 
 ### Updating later
 

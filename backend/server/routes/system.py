@@ -48,7 +48,10 @@ def _git_version() -> str:
 async def health_check():
     """Lightweight connectivity check — returns OK + training active flag."""
     tasks = tm.dump()
-    active_task = next((task for task in tasks if task.get("status") == "RUNNING"), None)
+    active_task = next(
+        (task for task in tasks if task.get("status") in {"CREATED", "RUNNING"}),
+        None,
+    )
     return {
         "status": "ok",
         "training_active": active_task is not None,
@@ -154,11 +157,6 @@ async def get_files(pick_type) -> APIResponse:
     with _files_cache_lock:
         _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={"files": dirs})
-
-
-@router.get("/tasks", response_model_exclude_none=True)
-async def get_tasks() -> APIResponse:
-    return APIResponseSuccess(data={"tasks": tm.dump()})
 
 
 @router.get("/tasks/terminate/{task_id}", response_model_exclude_none=True)

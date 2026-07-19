@@ -16,6 +16,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 
 from backend.constants import REPO_ROOT, SD_MODELS_DIR
+from backend.core.realtime import realtime_tasks
 from backend.log import log
 
 router = APIRouter()
@@ -67,6 +68,30 @@ def _remove_install_job(job: dict) -> None:
 
 def _cleanup_install_jobs() -> None:
     _prune_finished_jobs(_install_jobs, _install_jobs_lock, _remove_install_job)
+
+
+def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
+    """Read the existing install-job state for the realtime bridge."""
+    _cleanup_install_jobs()
+    with _install_jobs_lock:
+        job = _install_jobs.get(job_id)
+        job = dict(job) if job else None
+    if not job:
+        return {"status": "error", "done": True, "error": "Job not found / 任务不存在"}
+    try:
+        with open(job["log_path"], "r", encoding="utf-8", errors="replace") as file:
+            lines = "".join(file.readlines()[-tail:])
+    except Exception:
+        lines = ""
+    done = bool(job.get("done", False))
+    returncode = job.get("returncode")
+    return {
+        "status": "finished" if done and returncode in (None, 0) else ("error" if done else "running"),
+        "lines": lines,
+        "done": done,
+        "returncode": returncode,
+        "elapsed": time.time() - job.get("start", 0),
+    }
 
 
 def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
@@ -123,29 +148,6 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
     return job_id
 
 
-@router.get("/install-log/{job_id}")
-async def install_log(job_id: str, tail: int = 20) -> dict:
-    """轮询安装进度。返回最新日志行 + 完成状态。"""
-    _cleanup_install_jobs()
-    with _install_jobs_lock:
-        job = _install_jobs.get(job_id)
-        if job:
-            job = dict(job)
-    if not job:
-        return {"lines": "", "done": True, "error": "Job not found / 任务不存在"}
-    try:
-        with open(job["log_path"], "r", encoding="utf-8", errors="replace") as file:
-            lines = "".join(file.readlines()[-tail:])
-    except Exception:
-        lines = ""
-    return {
-        "lines": lines,
-        "done": job.get("done", False),
-        "returncode": job.get("returncode"),
-        "elapsed": time.time() - job.get("start", 0),
-    }
-
-
 # ── Anima model downloads ─────────────────────────────────────
 
 _download_jobs: dict[str, dict] = {}
@@ -154,6 +156,22 @@ _download_jobs_lock = threading.Lock()
 
 def _cleanup_download_jobs() -> None:
     _prune_finished_jobs(_download_jobs, _download_jobs_lock)
+
+
+def _download_job_snapshot(job_id: str) -> dict:
+    _cleanup_download_jobs()
+    with _download_jobs_lock:
+        job = _download_jobs.get(job_id)
+        if job:
+            return {
+                "status": "finished" if job.get("done") and job.get("success") is not False else ("error" if job.get("done") else "running"),
+                "progress": dict(job.get("progress", {})),
+                "log": list(job.get("log", [])),
+                "done": job.get("done", False),
+                "success": job.get("success"),
+                "elapsed": time.time() - job.get("start", 0),
+            }
+    return {"status": "error", "done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
 
 
 def _start_download_job(only_file: str | None = None) -> str:
@@ -284,26 +302,12 @@ async def anima_model_download(request: Request) -> dict:
         job_id = await asyncio.to_thread(_start_download_job, only_file)
     except Exception as exc:
         return {"success": False, "message": str(exc)}
+    await realtime_tasks.register(
+        job_id,
+        "model-download",
+        lambda job_id=job_id: _download_job_snapshot(job_id),
+    )
     return {"success": True, "job_id": job_id}
-
-
-@router.get("/anima-model/progress/{job_id}")
-async def anima_model_progress(job_id: str) -> dict:
-    """轮询下载进度。返回结构化 progress + 文本 log + done 标志。"""
-    _cleanup_download_jobs()
-    with _download_jobs_lock:
-        job = _download_jobs.get(job_id)
-        if job:
-            job = {
-                "progress": dict(job.get("progress", {})),
-                "log": list(job.get("log", [])),
-                "done": job.get("done", False),
-                "success": job.get("success"),
-                "elapsed": time.time() - job.get("start", 0),
-            }
-    if not job:
-        return {"done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
-    return job
 
 
 # ── Flash Attention ───────────────────────────────────────────
@@ -350,6 +354,24 @@ _fa_jobs_lock = threading.Lock()
 
 def _cleanup_fa_jobs() -> None:
     _prune_finished_jobs(_fa_jobs, _fa_jobs_lock)
+
+
+def _fa_job_snapshot(job_id: str) -> dict:
+    _cleanup_fa_jobs()
+    with _fa_jobs_lock:
+        job = _fa_jobs.get(job_id)
+        if job:
+            done = bool(job.get("done", False))
+            success = job.get("success")
+            return {
+                "status": "finished" if done and success is not False else ("error" if done else "running"),
+                "progress": dict(job.get("progress", {})),
+                "log": list(job.get("log", [])),
+                "done": done,
+                "success": success,
+                "elapsed": time.time() - job.get("start", 0),
+            }
+    return {"status": "error", "done": True, "progress": {"stage": "error", "error": "Job not found / 任务不存在"}, "log": []}
 
 
 def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str:
@@ -493,25 +515,6 @@ def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str
     return job_id
 
 
-@router.get("/flash-attention/progress/{job_id}")
-async def flash_attn_progress(job_id: str) -> dict:
-    """轮询 FA 安装进度。返回结构化 progress + 文本 log + done 标志。"""
-    _cleanup_fa_jobs()
-    with _fa_jobs_lock:
-        job = _fa_jobs.get(job_id)
-        if job:
-            job = {
-                "progress": dict(job.get("progress", {})),
-                "log": list(job.get("log", [])),
-                "done": job.get("done", False),
-                "success": job.get("success"),
-                "elapsed": time.time() - job.get("start", 0),
-            }
-    if not job:
-        return {"done": True, "progress": {"stage": "error", "error": "Job not found / 任务不存在"}, "log": []}
-    return job
-
-
 def _flash_attn_status_sync(cache_key: str) -> dict:
     """Synchronous implementation of Flash Attention status detection."""
     detect_env, current_status, fetch_candidates, _, _, _ = _import_flash_attn_tool()
@@ -605,6 +608,11 @@ async def flash_attn_install(request: Request) -> dict:
         download_urls = [manual_url]
 
     job_id = _start_fa_job(download_urls, wheel_name, source)
+    await realtime_tasks.register(
+        job_id,
+        "flash-attention-install",
+        lambda job_id=job_id: _fa_job_snapshot(job_id),
+    )
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
@@ -648,6 +656,11 @@ async def xformers_status() -> dict:
 @router.post("/xformers/install")
 async def xformers_install() -> dict:
     job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "xformers"])
+    await realtime_tasks.register(
+        job_id,
+        "xformers-install",
+        lambda job_id=job_id: _install_job_snapshot(job_id),
+    )
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
@@ -715,4 +728,9 @@ async def triton_install() -> dict:
     if triton_version:
         package = f"{package}{triton_version}"
     job_id = _start_install_job([sys.executable, "-m", "pip", "install", "-U", "--progress-bar", "on", package])
+    await realtime_tasks.register(
+        job_id,
+        "triton-install",
+        lambda job_id=job_id: _install_job_snapshot(job_id),
+    )
     return {"success": True, "job_id": job_id, "message": f"Installing {package} / 正在安装 {package}..."}

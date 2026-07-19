@@ -19,9 +19,9 @@ from backend.server.proxy import router as proxy_router
 from backend.monitor import router as monitor_router
 from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
-from backend.core.event_bus import event_bus
 from backend.monitor.monitor import task_monitor
 from backend.monitor.run_registry import import_legacy_external_runs
+from backend.server.routes.realtime import router as realtime_router
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -68,7 +68,6 @@ async def app_startup():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时
-    event_bus.attach_loop(asyncio.get_running_loop())
     await task_monitor.start()
 
     await app_startup()
@@ -82,6 +81,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(proxy_router)
+app.include_router(realtime_router)
 
 
 # CORS only needed for dev debugging; not required for localhost use
@@ -99,6 +99,10 @@ if os.environ.get("ANIMA_DEV") == "1":
 async def add_cache_control_header(request, call_next):
     response = await call_next(request)
     path = request.url.path
+    # Generated preview variants are immutable for their versioned URL and
+    # must keep their own ETag/cache policy on slow remote links.
+    if path in {"/api/monitor/preview-image", "/api/monitor/preview-metadata"}:
+        return response
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     elif path.startswith("/anima-ui/"):

@@ -7,8 +7,8 @@ window.taggerMixin = {
   // ── State ──────────────────────────────────────────────
   taggerRunning: false,
   taggerStarting: false,
-  taggerPollTimer: null,
   taggerTaskId: null,        // 当前运行中的 task_id，用于停止
+  _taggerRealtimeTopic: null,
   _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
   taggerSelectedModel: '',   // 当前选中的 tagger 模型 ID
   taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
@@ -393,7 +393,7 @@ window.taggerMixin = {
       const d = await r.json();
       if (d.status === 'success' && d.data && d.data.task_id) {
         this.taggerTaskId = d.data.task_id;
-        this.pollTaggerProgress(d.data.task_id);
+        this._setTaggerRealtimeTask(d.data.task_id);
       } else {
         if (panel) { panel.innerHTML = `<div style="color:var(--danger)">Error: ${this.esc(d.message||'Unknown')}</div>`; }
         this.toast(d.message||this.t('common.failed'));
@@ -411,63 +411,80 @@ window.taggerMixin = {
     this.taggerStarting = false;
   },
 
-  async pollTaggerProgress(taskId) {
+  _setTaggerRealtimeTask(taskId) {
+    const next = taskId ? 'task:' + taskId : null;
+    if (next === this._taggerRealtimeTopic) return;
+    if (this._taggerRealtimeTopic) this.realtimeUnsubscribe(this._taggerRealtimeTopic);
+    this._taggerRealtimeTopic = next;
+    if (next) this.realtimeSubscribe(next);
+  },
+
+  handleRealtimeTaggerEvent(event) {
+    if (!event || !this._taggerRealtimeTopic || event.topic !== this._taggerRealtimeTopic) return;
+    if (event.type !== 'task.status' && event.type !== 'task.progress') return;
+    const envelope = event.payload || {};
+    this._renderTaggerRealtimeProgress(envelope.data || {}, envelope.status || '');
+  },
+
+  applyRealtimeTaggerSnapshot(snapshot) {
+    if (!this.taggerTaskId || !snapshot || !snapshot.tasks) return;
+    const tracked = snapshot.tasks.tracked || [];
+    const task = tracked.find(item => item.task_id === this.taggerTaskId);
+    if (task) this._renderTaggerRealtimeProgress(task.data || {}, task.status || '');
+  },
+
+  resetRealtimeTaggerState() {
+    const wasRunning = !!(this.taggerRunning || this.taggerTaskId);
+    this._setTaggerRealtimeTask(null);
+    this.taggerRunning = false;
+    this.taggerStarting = false;
+    this.taggerTaskId = null;
     const panel = this._getTaggerLogPanel();
-    if (!this.taggerRunning) return;
-    let delay = 1500; // 默认轮询间隔
-    try {
-      const r = await fetch(`/api/interrogate/progress?task_id=${taskId}`);
-      const d = await r.json();
-      if (d.status === 'success' && d.data) {
-        const p = d.data;
-        if (panel) {
-          if (p.status === 'done') {
-            // 完成：清理进度行，只保留日志和完成摘要
-            const lines = (p.logs || []).slice(-15);
-            panel.innerHTML = `<div style="padding:8px 10px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600;font-size:13px;margin-bottom:6px">✓ ${this.t('tagger.completed')} — ${p.current}/${p.total} ${this.t('tagger.imagesProcessed')}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
-          } else if (p.status === 'cancelled') {
-            panel.innerHTML = `<div style="color:var(--warning);font-weight:500">⏹ ${this.t('tagger.stop')}</div>`;
-          } else {
-            // 运行中：蓝色进度行 + 最新日志
-            const lines = (p.logs || []).slice(-20);
-            const progressLine = p.total > 0 ? `[${p.current}/${p.total}] ${this.esc(p.current_file || '')}` : this.t('tagger.running');
-            panel.innerHTML = `<div style="margin-bottom:4px;color:var(--accent);font-weight:600">${progressLine}</div>` + lines.map(l => `<div>${this.esc(l)}</div>`).join('');
-          }
-          panel.scrollTop = panel.scrollHeight;
-        }
-        if (p.status === 'done' || p.status === 'cancelled') {
-          this.taggerRunning = false;
-          this.taggerTaskId = null;
-          this.toast(p.status === 'done' ? this.t('tagger.completed') : this.t('tagger.stop'));
-          return;
-        }
-        if (p.status === 'error') {
-          this.taggerRunning = false;
-          this.taggerTaskId = null;
-          this.toast(this.t('common.failed'));
-          return;
-        }
-        // 退避策略：进度停滞时逐步增大间隔，减少无效请求
-        if (p.current > 0 && p.total > 0) {
-          const ratio = p.current / p.total;
-          if (ratio < 0.1) delay = 1500;
-          else if (ratio < 0.5) delay = 2000;
-          else delay = 3000;
-        }
-      }
-    } catch(e) { delay = 3000; /* 网络错误时加大间隔 */ }
-    if (this.taggerRunning) {
-      this.taggerPollTimer = setTimeout(() => this.pollTaggerProgress(taskId), delay);
+    if (wasRunning && panel) {
+      panel.innerHTML = `<div style="color:var(--warning);font-weight:500">${this.t('monitor.taskStateUnknown', 'Task state unknown')}</div>`;
     }
+    return wasRunning;
+  },
+
+  _renderTaggerRealtimeProgress(p, normalizedStatus) {
+    if (!p) return;
+    const panel = this._getTaggerLogPanel();
+    const rawStatus = String(p.status || '').toLowerCase();
+    const completed = rawStatus === 'done' || normalizedStatus === 'FINISHED';
+    const cancelled = rawStatus === 'cancelled' || normalizedStatus === 'TERMINATED';
+    const failed = rawStatus === 'error' || normalizedStatus === 'FAILED';
+    if (panel) {
+      if (completed) {
+        const lines = (p.logs || []).slice(-15);
+        panel.innerHTML = `<div style="padding:8px 10px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600;font-size:13px;margin-bottom:6px">✓ ${this.t('tagger.completed')} — ${p.current || 0}/${p.total || 0} ${this.t('tagger.imagesProcessed')}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
+      } else if (cancelled) {
+        panel.innerHTML = `<div style="color:var(--warning);font-weight:500">⏹ ${this.t('tagger.stop')}</div>`;
+      } else if (failed) {
+        const lines = (p.logs || []).slice(-20);
+        panel.innerHTML = `<div style="color:var(--danger);font-weight:500">${this.esc(p.error_detail || this.t('common.failed'))}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
+      } else {
+        const lines = (p.logs || []).slice(-20);
+        const progressLine = p.total > 0 ? `[${p.current || 0}/${p.total}] ${this.esc(p.current_file || '')}` : this.t('tagger.running');
+        panel.innerHTML = `<div style="margin-bottom:4px;color:var(--accent);font-weight:600">${progressLine}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
+      }
+      panel.scrollTop = panel.scrollHeight;
+    }
+    if (!completed && !cancelled && !failed) return;
+    this.taggerRunning = false;
+    this.taggerTaskId = null;
+    this._setTaggerRealtimeTask(null);
+    if (completed) this.toast(this.t('tagger.completed'));
+    else if (cancelled) this.toast(this.t('tagger.stop'));
+    else this.toast(this.t('common.failed'), 'error');
   },
 
   async stopTagger() {
     this.taggerRunning = false;
-    if (this.taggerPollTimer) { clearTimeout(this.taggerPollTimer); this.taggerPollTimer = null; }
     if (this.taggerTaskId) {
       try { await fetch(`/api/interrogate/stop?task_id=${this.taggerTaskId}`, {method:'POST'}); } catch(e) {}
       this.taggerTaskId = null;
     }
+    this._setTaggerRealtimeTask(null);
     const panel = this._getTaggerLogPanel();
     if (panel) {
       const stopMsg = document.createElement('div');

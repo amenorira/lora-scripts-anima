@@ -8,7 +8,7 @@
 特性：
   - requests 流式下载（绕开 hf_hub_download 在 hf 0.34.3 + hf_xet 下拿不到进度的坑）
   - 多分块并发（Range）+ 续传（.partN/.partial）+ 端点回退（主端点失败切 hf-mirror.com）
-  - 进度/速度精确计算，写入外部共享 progress dict（供前端轮询）
+  - 进度/速度精确计算，写入外部共享 progress dict（供实时任务快照读取）
   - rich Progress 进度条（朴素 ASCII #/. 风格，经 make_progress_bar() 统一构造）
 
 公共 API：
@@ -365,7 +365,7 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
       - 完整性错误 → 清理坏分块后从下个端点重头下（避免坏数据污染最终文件）。
     最后一个 URL 失败才抛异常。
     内部复用 _download_one_endpoint（URL 通用，非 HF 专属）。
-    进度写入共享 progress dict（线程安全），供前端轮询。
+    进度写入共享 progress dict（线程安全），供实时任务快照读取。
 
     参数:
         urls: 候选 URL 列表（至少 1 个）
@@ -428,7 +428,7 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
 
     主端点（HF_ENDPOINT/huggingface.co）连不上/超时时自动切 hf-mirror.com 重试。
     total 已知 → 多分块；未知 → 单连接兜底（从 GET 响应头补全 total）。
-    进度写入共享 progress dict（线程安全），供前端轮询。
+    进度写入共享 progress dict（线程安全），供实时任务快照读取。
 
     本函数是 download_url_with_fallback 的 HF 专属薄封装：把 HF 端点列表解析成
     URL 列表后委托通用入口执行，端点回退语义不变。

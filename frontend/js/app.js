@@ -39,7 +39,8 @@ document.addEventListener('alpine:init', () => {
     autoLoadHistory: true,
 
     // Backend connectivity
-    backendConnected: true,
+    // This becomes true only after WebSocket ready + realtime snapshot.
+    backendConnected: false,
     backendDisconnectedAt: null,
     backendDisconnectedDuration: '',
     _healthTimer: null,
@@ -131,7 +132,7 @@ document.addEventListener('alpine:init', () => {
         setTimeout(() => this._markAutoLoaded(), 500);
       }
 
-      this._startHealthCheck();
+      this.startRealtime();
 
       this._initPanelResizer();
 
@@ -261,9 +262,7 @@ document.addEventListener('alpine:init', () => {
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
       }
-      // Stop training status poll when leaving training page
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
-        this.stopTrainingStatusPoll();
         if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
         else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
@@ -301,7 +300,7 @@ document.addEventListener('alpine:init', () => {
       const routeTransition = !!(options && options.routeTransition);
       let progressManagedByRoute = false;
       if (!r.startsWith('monitor-')) {
-        this.stopMonitorPolling();
+        this.stopMonitorRealtime();
         if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
           this.resetRunDetailState();
         } else {
@@ -309,11 +308,11 @@ document.addEventListener('alpine:init', () => {
           this.runDetailData = null;
         }
       }
-      // Stop tagger polling if navigating away (backend task continues)
+      // Stop rendering a tagger task when leaving; the backend task continues.
       if (r !== 'tagger' && this.taggerRunning) {
         this.taggerRunning = false;
-        if (this.taggerPollTimer) { clearTimeout(this.taggerPollTimer); this.taggerPollTimer = null; }
         this.taggerTaskId = null;
+        if (typeof this._setTaggerRealtimeTask === 'function') this._setTaggerRealtimeTask(null);
       }
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
@@ -326,9 +325,9 @@ document.addEventListener('alpine:init', () => {
         this.loadUISettings();
       } else if (r === 'monitor-dashboard') {
         if (!routeTransition) this.startProgress();
-        this.startMonitorPolling();
+        this.startMonitorRealtime();
         progressManagedByRoute = true;
-        // renderDashboard() is called by fetchMonitorStatus() when data arrives
+        // The dashboard hydrates from the shared realtime snapshot.
       } else if (r === 'history') {
         if (!routeTransition) this.startProgress();
         this.loadHistory();
@@ -340,7 +339,7 @@ document.addEventListener('alpine:init', () => {
       } else if (r === 'presets') {
         this.loadPresets();
       } else if (r === 'tensorboard') {
-        this.stopMonitorPolling();
+        this.stopMonitorRealtime();
         this.renderTensorBoardPage();
       }
       return progressManagedByRoute;
@@ -351,14 +350,43 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
+        if (typeof s.weakNetworkMode === 'boolean') this.weakNetworkMode = s.weakNetworkMode;
       } catch(e){}
       this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
     },
 
     saveUISettings() {
-      localStorage.setItem('anima-ui-settings', JSON.stringify({autoLoadHistory:this.autoLoadHistory}));
+      localStorage.setItem('anima-ui-settings', JSON.stringify({
+        autoLoadHistory: this.autoLoadHistory,
+        weakNetworkMode: this.weakNetworkMode,
+      }));
       this.resolveTheme();
       this.toast(this.t('common.saved'));
+    },
+
+    requestWeakNetworkModeChange(enabled, input) {
+      const next = !!enabled;
+      if (next === this.weakNetworkMode) return;
+      if (next) {
+        this.setWeakNetworkMode(true);
+        return;
+      }
+      // This checkbox is intentionally not x-model-bound: keep it visually
+      // enabled until the user accepts the built-in confirmation dialog.
+      if (input) input.checked = true;
+      this.openConfirm(
+        this.t('settings.disableSlowConnectionTitle', 'Turn off slow connection compatibility?'),
+        this.t('settings.disableSlowConnectionMessage', 'This can slow realtime data on unstable connections.'),
+        () => this.setWeakNetworkMode(false),
+        this.t('settings.disableSlowConnectionConfirm', 'Turn off'),
+      );
+    },
+
+    setWeakNetworkMode(enabled) {
+      this.weakNetworkMode = !!enabled;
+      if (typeof this._cancelPreviewMediaQueue === 'function') this._cancelPreviewMediaQueue();
+      this.saveUISettings();
+      if (typeof this.renderDashboard === 'function') this.renderDashboard();
     },
 
     renderTensorBoardPage() {
@@ -406,7 +434,7 @@ document.addEventListener('alpine:init', () => {
       }, displayDuration);
     },
 
-    // ── Backend Health Check ──────────────────────────────
+    // ── Backend disconnect duration (realtime.js owns connectivity) ─
     _updateDisconnectedDuration() {
       if (!this.backendDisconnectedAt) {
         this.backendDisconnectedDuration = '';
@@ -424,66 +452,6 @@ document.addEventListener('alpine:init', () => {
         const m = Math.floor((elapsed % 3600) / 60);
         this.backendDisconnectedDuration = this.t('common.disconnectedHours').replace('{n}', h).replace('{s}', m);
       }
-    },
-
-    async checkBackendHealth() {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const r = await fetch('/api/health', { signal: controller.signal });
-        clearTimeout(timeout);
-        if (r.ok) {
-          let prevConnected = this.backendConnected;
-          let prevTraining = this.trainingActive;
-          try {
-            const d = await r.json();
-            this.trainingActive = !!(d && d.training_active);
-          } catch (_) { /* 老版本后端仅返回 {status:ok}，保持原 trainingActive */ }
-          if (!prevConnected) {
-            this.backendConnected = true;
-            this.backendDisconnectedAt = null;
-            this.backendDisconnectedDuration = '';
-            clearInterval(this._disconnectedTimer);
-            this._disconnectedTimer = null;
-            this.toast(this.t('common.backendReconnectedToast'), 'success');
-          }
-          // 训练开始时提示一次（避免重复 toast）
-          if (this.trainingActive && !prevTraining && prevConnected) {
-            // 不弹窗，仅靠指示器颜色变化体现；保留钩子
-          }
-        } else {
-          this._markDisconnected();
-        }
-      } catch (e) {
-        this._markDisconnected();
-      }
-    },
-
-    _markDisconnected() {
-      if (this.backendConnected) {
-        this.backendConnected = false;
-        this.backendDisconnectedAt = Date.now();
-        this._updateDisconnectedDuration();
-        this._disconnectedTimer = setInterval(() => this._updateDisconnectedDuration(), 1000);
-        this.toast(this.t('common.backendDisconnectedToast'), 'error');
-      }
-    },
-
-    _startHealthCheck() {
-      this.checkBackendHealth();
-      this._healthTimer = setInterval(() => this.checkBackendHealth(), 5000);
-      // 页面不可见时暂停健康检查，可见时立即恢复
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          clearInterval(this._healthTimer);
-          this._healthTimer = null;
-        } else {
-          if (!this._healthTimer) {
-            this.checkBackendHealth();
-            this._healthTimer = setInterval(() => this.checkBackendHealth(), 5000);
-          }
-        }
-      });
     },
 
     t(key, fallback) {
@@ -553,6 +521,7 @@ document.addEventListener('alpine:init', () => {
   // IMPORTANT: ...spread evaluates getters to static values.
   // Object.defineProperties preserves them as reactive getters.
   const _mixinSources = [
+    window.realtimeMixin,
     window.monitorCoreMixin,
     window.monitorRenderMixin,
     window.environmentCoreMixin,

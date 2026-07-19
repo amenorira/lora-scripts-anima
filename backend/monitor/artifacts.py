@@ -123,16 +123,24 @@ def newest_previews(
     for p in selected:
         try:
             rel = str(p.relative_to(od)).replace("\\", "/")
+            stat = p.stat()
         except ValueError:
+            continue
+        except OSError:
             continue
         encoded_run = quote(run_dir, safe="")
         encoded_path = quote(rel, safe="/")
+        version = f"{stat.st_mtime_ns}-{stat.st_size}"
+        base = f"/api/monitor/preview-image?run_dir={encoded_run}&path={encoded_path}&v={version}"
         result.append({
             "name": p.name,
             "path": rel,
-            "url": f"/api/monitor/preview-image?run_dir={encoded_run}&path={encoded_path}",
-            "thumb_url": f"/api/monitor/preview-image?thumb=1&run_dir={encoded_run}&path={encoded_path}",
-            "size": p.stat().st_size,
+            "url": base + "&variant=original",
+            "inspect_url": base + "&variant=inspect",
+            "thumb_url": base + "&variant=thumb",
+            "metadata_url": f"/api/monitor/preview-metadata?run_dir={encoded_run}&path={encoded_path}&v={version}",
+            "size": stat.st_size,
+            "version": version,
         })
     with _previews_cache_lock:
         _previews_cache = (now, cache_key, result)
@@ -403,7 +411,7 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
 
 # ── 训练日志读取 ──────────────────────────────────────────
 
-# 日志 tail 读取的最大字节数（live 监控轮询回退用，约 20000+ 行）
+# 日志 tail 读取的最大字节数（实时快照读取用，约 20000+ 行）
 _LOG_TAIL_BYTES = 2 * 1024 * 1024  # 2 MiB
 
 # ANSI 转义序列正则（颜色、光标控制、清屏等）

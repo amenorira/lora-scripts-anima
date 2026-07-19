@@ -221,13 +221,15 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertIn("previousTrainingDiagnostics", patch)
         self.assertIn("previousDiagnosticSubtitle", patch)
 
-    def test_sse_reconnect_preserves_loss_and_versions_updates(self):
-        connect = self.core_source.split("connectMonitorSSE(taskId) {", 1)[1].split("\n  },", 1)[0]
-        loss_update = self.core_source.split("handleSSELossUpdate(data) {", 1)[1].split("\n  },", 1)[0]
+    def test_websocket_replay_deduplicates_metric_points(self):
+        realtime_source = Path("frontend/js/realtime.js").read_text(encoding="utf-8")
+        metrics_update = self.core_source.split("handleRealtimeTaskMetrics(data) {", 1)[1].split("\n  },", 1)[0]
 
-        self.assertNotIn("this.lossSeries = [];", connect)
-        self.assertIn("this.lossDataVersion++", loss_update)
-        self.assertIn("Number(p.step) <= Number(series.points[series.points.length - 1].step)", loss_update)
+        self.assertIn("new WebSocket", realtime_source)
+        self.assertIn("op: 'subscribe'", realtime_source)
+        self.assertIn("resync_required", realtime_source)
+        self.assertIn("this.lossDataVersion++", metrics_update)
+        self.assertIn("Number(p.step) <= Number(series.points[series.points.length - 1].step)", metrics_update)
 
     def test_outputs_choose_newer_checkpoint_for_equal_lowest_loss(self):
         body = self.render_source.split("_bestCheckpointPath(models) {", 1)[1].split("\n  },", 1)[0]
@@ -357,6 +359,21 @@ process.stdout.write(JSON.stringify({
         self.assertIn("object-fit: contain", self.css_source)
         self.assertIn("grid-template-columns: 28px 24px minmax(190px, 1fr) 92px 78px 72px 132px 34px", self.css_source)
 
+    def test_secondary_tabs_share_one_left_aligned_header(self):
+        self.assertEqual(self.render_source.count('class="m-view-header"'), 3)
+        self.assertEqual(self.render_source.count('class="m-view-heading"'), 3)
+        self.assertIn('class="m-view-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()"', self.render_source)
+        self.assertNotIn('m-section-title-right"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()"', self.render_source)
+        self.assertNotIn("m-output-tools", self.render_source)
+
+        header = self.css_source.split(".m-view-header {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-height: 42px;", header)
+        self.assertIn("align-items: center;", header)
+        self.assertNotIn("justify-content: space-between", header)
+        actions = self.css_source.split(".m-view-actions {", 1)[1].split("}", 1)[0]
+        self.assertIn("flex-wrap: nowrap;", actions)
+        self.assertIn("overflow-x: auto;", actions)
+
     def test_global_geometry_uses_square_panels_and_subtle_controls(self):
         for declaration in (
             "--radius-panel: 0;",
@@ -375,7 +392,7 @@ process.stdout.write(JSON.stringify({
         self.assertIn("border-radius: var(--radius-sm);", self.css_source.split(".btn {", 1)[1].split("}", 1)[0])
         self.assertIn("border-radius: var(--radius-lg);", self.css_source.split(".modal {", 1)[1].split("}", 1)[0])
 
-    def test_sse_merges_fields_and_updates_state(self):
+    def test_realtime_merges_fields_and_updates_state(self):
         self.assertIn("this.monitorData.state = data.status;", self.core_source)
         self.assertIn("Object.prototype.hasOwnProperty.call(progress, key)", self.core_source)
 

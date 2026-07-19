@@ -105,8 +105,21 @@ def _gpu_info_raw() -> dict | None:
         return None
 
 
-def gpu_info() -> dict | None:
+def gpu_info(force: bool = False) -> dict | None:
+    """Return GPU telemetry.
+
+    ``force=True`` is used only while a visible realtime hardware subscriber
+    exists.  It makes the monitor's one-second cadence a real sample cadence,
+    rather than repeatedly broadcasting a five-second cached value.
+    """
+    global _gpu_sample
     _start_sampler()
+    if force:
+        sample = _gpu_info_raw()
+        if sample is not None:
+            with _gpu_sample_lock:
+                _gpu_sample = sample
+            return sample
     with _gpu_sample_lock:
         if _gpu_sample is not None:
             return _gpu_sample
@@ -162,8 +175,15 @@ def _sys_info_raw() -> dict:
                 "ram_total_gb": 0, "ram_pct": 0}
 
 
-def system_info() -> dict:
+def system_info(force: bool = False) -> dict:
+    """Return system telemetry; see :func:`gpu_info` for ``force`` semantics."""
+    global _sys_sample
     _start_sampler()
+    if force:
+        sample = _sys_info_raw()
+        with _sys_sample_lock:
+            _sys_sample = sample
+        return sample
     with _sys_sample_lock:
         if _sys_sample is not None:
             return _sys_sample

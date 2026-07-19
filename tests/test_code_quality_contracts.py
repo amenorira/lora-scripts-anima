@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ApiRouterContractTests(unittest.TestCase):
-    """The compatibility router must keep every public API route unchanged."""
+    """The aggregate router exposes commands and static status endpoints only."""
 
     expected_routes = {
         ("/health", ("GET",)),
@@ -25,20 +25,15 @@ class ApiRouterContractTests(unittest.TestCase):
         ("/fields", ("GET",)),
         ("/pick_file", ("GET",)),
         ("/get_files", ("GET",)),
-        ("/tasks", ("GET",)),
         ("/tasks/terminate/{task_id}", ("GET",)),
         ("/graphic_cards", ("GET",)),
         ("/sd-scripts/status", ("GET",)),
         ("/interrogate", ("POST",)),
-        ("/interrogate/progress", ("GET",)),
         ("/interrogate/stop", ("POST",)),
         ("/tagger/models", ("GET",)),
         ("/tagger/single", ("POST",)),
-        ("/install-log/{job_id}", ("GET",)),
         ("/anima-model/status", ("GET",)),
         ("/anima-model/download", ("POST",)),
-        ("/anima-model/progress/{job_id}", ("GET",)),
-        ("/flash-attention/progress/{job_id}", ("GET",)),
         ("/flash-attention/status", ("GET",)),
         ("/flash-attention/install", ("POST",)),
         ("/xformers/status", ("GET",)),
