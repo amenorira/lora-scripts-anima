@@ -21,8 +21,8 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v1.3.2 正式版已发布**
-> 本次更新完成无行为变化的代码质量整理：拆分服务端路由、清理无效前端定义，并加强后台任务与标注器回归测试。
+> ✅ **v1.3.3 正式版已发布**
+> 本次更新统一实时通信并改善慢速远程连接体验，同时增强标签编辑器的保存可靠性、快捷操作和响应式布局。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。当前 UI 支持 **SDXL** 和 **Anima** 两种模型的 LoRA 训练（SD 1.5 已移除）。
 
