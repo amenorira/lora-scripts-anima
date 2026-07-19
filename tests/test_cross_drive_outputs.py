@@ -283,8 +283,9 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 self.assertEqual(Path(saved["output_dir"]), artifact_path)
                 self.assertEqual(Path(saved["logging_dir"]), run_path / "log")
                 output_dir_reference = (run_path / "output_dir.txt").read_text(encoding="utf-8")
-                self.assertIn(str(artifact_path), output_dir_reference)
-                self.assertIn("模型、检查点、训练状态和预览图", output_dir_reference)
+                self.assertIn("Artifact directory / 模型产物目录", output_dir_reference)
+                self.assertIn("Models, checkpoints, training states, and previews are saved here.", output_dir_reference)
+                self.assertEqual(output_dir_reference.splitlines()[-1], str(artifact_path))
 
                 if same_location:
                     self.assertEqual(artifact_path, run_path)

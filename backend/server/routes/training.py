@@ -289,8 +289,10 @@ def _write_output_dir_reference(run_dir: str, artifact_dir: str) -> None:
     try:
         reference_path = Path(run_dir) / "output_dir.txt"
         reference_path.write_text(
-            "此文件用于定位本次训练的模型产物目录。\n"
-            "模型、检查点、训练状态和预览图保存在：\n"
+            "Artifact directory / 模型产物目录\n"
+            "Models, checkpoints, training states, and previews are saved here.\n"
+            "模型、检查点、训练状态和预览图保存在此处。\n"
+            "\n"
             f"{artifact_dir}\n",
             encoding="utf-8",
         )
