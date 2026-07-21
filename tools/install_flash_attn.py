@@ -41,6 +41,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import warnings
 from pathlib import Path
 from typing import Any, Optional
 
@@ -669,11 +670,19 @@ def verify_flash_attn() -> tuple[bool, str]:
         try:
             import torch
             from flash_attn import flash_attn_func
-            if torch.cuda.is_available():
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"cudaGetDeviceCount\(\) returned cudaErrorNotSupported.*",
+                    category=UserWarning,
+                )
+                cuda_available = torch.cuda.is_available()
+            if cuda_available:
                 # 极小 tensor 测试，验证 ABI 无问题
                 q = torch.randn(1, 4, 1, 8, device="cuda", dtype=torch.float16)
                 _ = flash_attn_func(q, q, q)
-            return True, "import + CUDA forward test passed / import + CUDA forward 测试通过"
+                return True, "import + CUDA forward test passed / import + CUDA forward 测试通过"
+            return True, "import passed; CUDA forward skipped (GPU unavailable) / import 成功；GPU 不可用，已跳过 CUDA forward 测试"
         except Exception as e:
             # forward 失败但 import 成功 → 可能是显卡不支持或其他运行时问题
             return True, f"import ok but forward test failed: {e} / import 成功，但 forward 测试未通过: {e}"

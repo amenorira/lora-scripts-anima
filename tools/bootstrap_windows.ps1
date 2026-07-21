@@ -953,7 +953,7 @@ function Install-ProjectEnvironment {
     $env:PIP_PREFER_BINARY = "1"
     Write-Text "install_torch" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "setuptools>=68,<82")
-    Invoke-PipInstall $venvPython @("install", "torch==2.10.0+cu128", "torchvision==0.25.0+cu128", "--extra-index-url", "https://download.pytorch.org/whl/cu128")
+    Invoke-PipInstall $venvPython @("install", "torch==2.10.0+cu130", "torchvision==0.25.0+cu130", "--extra-index-url", "https://download.pytorch.org/whl/cu130")
     Write-Text "install_sd" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") (Join-Path $script:RepositoryRoot "vendor\sd-scripts")
     Write-Text "install_project" -Color Cyan
@@ -995,6 +995,12 @@ function Invoke-MainBootstrap {
             return
         }
         Install-ProjectEnvironment $python.Path
+    }
+
+    Set-Location $script:RepositoryRoot
+    & $venvPython -X utf8 -m tools.ensure_runtime
+    if ($LASTEXITCODE -ne 0) {
+        throw (Get-Text "process_failed" @("CUDA 13.0 runtime upgrade", $LASTEXITCODE))
     }
 
     $env:HF_HOME = Join-Path $script:RepositoryRoot "huggingface"

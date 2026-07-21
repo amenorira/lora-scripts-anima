@@ -74,7 +74,7 @@ fi
 #   http://  → export https:// 等价物 + 登记 PIP_TRUSTED_HOST（升级，避免被忽略）
 #   https:// → 不动（已安全）
 #   无/默认  → 不动（走官方 PyPI）
-# 不内置任何镜像，CN/国外自动适配。torch 的 +cu128 轮子仍由命令行
+# 不内置任何镜像，CN/国外自动适配。torch 的 +cu130 轮子仍由命令行
 # --extra-index-url 取得，与镜像源互不干扰。
 _fix_pip_mirror() {
     local hosts=""
@@ -130,10 +130,10 @@ do_install() {
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/3] Installing PyTorch 2.10.0+cu128... / 正在安装 PyTorch 2.10.0+cu128……"
+    echo "[1/3] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
     "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
-    "$VENV_PYTHON" -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
+    "$VENV_PYTHON" -m pip install torch==2.10.0+cu130 torchvision==0.25.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
     echo "[2/3] Installing sd-scripts dependencies... / 正在安装 sd-scripts 依赖……"
@@ -175,6 +175,13 @@ if [ ! -f "$VENV_PYTHON" ]; then
         fi
         do_install
     fi
+fi
+
+# -- Managed CUDA runtime migration --
+"$VENV_PYTHON" -X utf8 -m tools.ensure_runtime
+if [ $? -ne 0 ]; then
+    echo "[ERROR] CUDA 13.0 runtime synchronization failed. / CUDA 13.0 运行时同步失败。"
+    exit 1
 fi
 
 # -- Launch --

@@ -27,9 +27,9 @@ setuptools>=68,<82
 # ── 训练扩展（已由 vendor/lycoris/ vendored，无需 pip 安装）──
 
 # ── ONNX 推理（WD14 tagger 需要，GPU 版包含 CPU 支持）──
-# 固定 1.20.1 匹配当前 torch+cu128（CUDA 12.x + cuDNN 9）。
+# 固定 1.27.0 匹配当前 torch+cu130（CUDA 13.x + cuDNN 9）。
 # setup_onnxruntime() 会按 torch 实际 CUDA 版本动态升降级，此处为静态兜底。
-onnxruntime-gpu==1.20.1
+onnxruntime-gpu==1.27.0
 
 # ── Anima 模型下载（环境管理页一键下载基础模型到 models/）──
 # hf-xet 独立包：启用 HF Xet 多线程分块下载，未装时 huggingface_hub 自动回退普通 HTTP。

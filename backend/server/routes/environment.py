@@ -655,7 +655,27 @@ async def xformers_status() -> dict:
 
 @router.post("/xformers/install")
 async def xformers_install() -> dict:
-    job_id = _start_install_job([sys.executable, "-m", "pip", "install", "--progress-bar", "on", "xformers"])
+    command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        "--no-deps",
+        "--progress-bar",
+        "on",
+        "xformers",
+    ]
+    try:
+        import torch
+
+        match = re.search(r"\+cu(\d+)", torch.__version__)
+        if match:
+            command.extend(["--index-url", f"https://download.pytorch.org/whl/cu{match.group(1)}"])
+    except Exception:
+        pass
+    job_id = _start_install_job(command)
     await realtime_tasks.register(
         job_id,
         "xformers-install",

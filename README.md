@@ -74,7 +74,8 @@ lora-scripts-anima/
 
 - **Python**：需要 64 位 Python 3.10–3.12（推荐 3.12）
 - **Git**：用于下载和更新项目；Windows ZIP 下载版可在首次启动时自动安装
-- **PyTorch 2.10.0 + CUDA 12.8**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
+- **PyTorch 2.10.0 + CUDA 13.0**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
+- **NVIDIA 驱动 R580 或更高版本**：CUDA 13.0 的最低驱动要求
 
 > **Windows 用户无需提前降级或另外安装 Python/Git。** 首次运行 `start.bat` 时，启动器会自动寻找 64 位 Python 3.10–3.12，并跳过 Microsoft Store 的 Python 占位符。如果电脑只有 Python 3.13/3.14，可按提示为当前用户并行安装官方 Python 3.12；不会卸载现有 Python，也不会修改系统默认 Python。下载过程会显示百分比、大小、速度和 ETA，静默安装阶段会显示加载动画。
 >
@@ -84,9 +85,11 @@ lora-scripts-anima/
 
 | GPU 系列 | 自动安装的 PyTorch | CUDA |
 |----------|:------------------:|:----:|
-| RTX 30 系 (Ampere) | 2.10.0 | 12.8 |
-| RTX 40 系 (Ada) | 2.10.0 | 12.8 |
-| RTX 50 系 (Blackwell) | 2.10.0 | 12.8 |
+| RTX 30 系 (Ampere) | 2.10.0 | 13.0 |
+| RTX 40 系 (Ada) | 2.10.0 | 13.0 |
+| RTX 50 系 (Blackwell) | 2.10.0 | 13.0 |
+
+已有 cu128 `venv` 会在下次启动时自动升级；已经安装的 xformers、FlashAttention、Triton 和 bitsandbytes 会同步匹配 cu130，ONNX Runtime GPU 会切换到 CUDA 13 对应版本，未安装的可选库保持不变。无 NVIDIA 显卡的机器仍会安装完整 GPU 环境并正常运行 GUI，仅训练功能需要显卡。
 
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 

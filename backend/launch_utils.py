@@ -270,9 +270,16 @@ def setup_windows_bitsandbytes():
     bnb_path = os.path.join(sysconfig.get_paths()["purelib"], "bitsandbytes")
 
     installed_bnb = is_installed("bitsandbytes")  # don't check version here
-    bnb_cuda_setup = False
-    if os.path.isdir(bnb_path):
-        bnb_cuda_setup = len([f for f in os.listdir(bnb_path) if re.findall(r"libbitsandbytes_cuda.+?\.dll", f)]) != 0
+    try:
+        import torch
+
+        expected_binary = f"libbitsandbytes_cuda{torch.version.cuda.replace('.', '')}.dll" if torch.version.cuda else None
+    except Exception:
+        expected_binary = None
+    binaries = os.listdir(bnb_path) if os.path.isdir(bnb_path) else []
+    bnb_cuda_setup = expected_binary in binaries if expected_binary else any(
+        re.fullmatch(r"libbitsandbytes_cuda.+?\.dll", filename) for filename in binaries
+    )
 
     if not installed_bnb or not bnb_cuda_setup:
         log.error("detected wrong install of bitsandbytes, reinstall it")
@@ -337,9 +344,14 @@ def setup_onnxruntime(
 
 
 def run_pip(command, desc=None, live=False):
+    global _PKG_VERSION_CACHE
     # Use shell=False with list args to avoid shell injection
     cmd = [python_bin, "-m", "pip"] + shlex.split(command)
-    return run(cmd, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=False)
+    try:
+        return run(cmd, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=False)
+    finally:
+        # pip may add, remove, or replace a distribution in this interpreter.
+        _PKG_VERSION_CACHE = None
 
 
 def pip_install(package: str, version: Optional[str] = None, index_url: Optional[str] = None, live: bool = True):

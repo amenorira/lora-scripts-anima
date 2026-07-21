@@ -74,7 +74,8 @@ lora-scripts-anima/
 
 - **Python**: 64-bit Python 3.10–3.12 (3.12 recommended)
 - **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
-- **PyTorch 2.10.0 + CUDA 12.8**: installed automatically by the startup scripts for RTX 30/40/50 series
+- **PyTorch 2.10.0 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
+- **NVIDIA driver R580 or newer**: the CUDA 13.0 minimum
 
 > **Windows users do not need to downgrade or preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.10–3.12 and skips Microsoft Store placeholders. If only Python 3.13/3.14 is installed, it can install the official Python 3.12 side by side for the current user without removing newer versions or changing the default Python. Downloads show percentage, size, speed, and ETA; silent installer stages show an activity spinner.
 >
@@ -84,9 +85,11 @@ lora-scripts-anima/
 
 | GPU Series | Automatically Installed PyTorch | CUDA |
 |------------|:-------------------------------:|:----:|
-| RTX 30 (Ampere) | 2.10.0 | 12.8 |
-| RTX 40 (Ada) | 2.10.0 | 12.8 |
-| RTX 50 (Blackwell) | 2.10.0 | 12.8 |
+| RTX 30 (Ampere) | 2.10.0 | 13.0 |
+| RTX 40 (Ada) | 2.10.0 | 13.0 |
+| RTX 50 (Blackwell) | 2.10.0 | 13.0 |
+
+Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version; optional packages that were not installed remain unchanged. Machines without an NVIDIA GPU still receive the complete GPU environment and can run the GUI; only training requires a GPU.
 
 ### Windows: Download ZIP (beginner-friendly)
 

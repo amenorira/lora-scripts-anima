@@ -1,4 +1,5 @@
 import os
+import warnings
 from backend.log import log
 from packaging.version import Version
 
@@ -10,7 +11,14 @@ def check_torch_gpu():
     try:
         import torch
         log.info(f'Torch {torch.__version__}')
-        if not torch.cuda.is_available():
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"cudaGetDeviceCount\(\) returned cudaErrorNotSupported.*",
+                category=UserWarning,
+            )
+            cuda_available = torch.cuda.is_available()
+        if not cuda_available:
             log.warning("Torch is not able to use GPU. GUI will work, training requires GPU. / Torch 无法使用 GPU，界面可正常使用，但训练需要显卡。")
             if "cpu" in torch.__version__:
                 log.warning("You are using torch CPU version. Training will not work. / 当前使用 CPU 版 PyTorch，无法训练。")
