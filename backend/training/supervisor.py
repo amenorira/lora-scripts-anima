@@ -57,6 +57,8 @@ def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None
     # 防止系统 site-packages 污染
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     env["PYTHONWARNINGS"] = (
         "ignore::FutureWarning,ignore::UserWarning,"
         "ignore:invalid escape sequence:SyntaxWarning"

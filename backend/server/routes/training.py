@@ -328,7 +328,7 @@ async def create_toml_file(request: Request):
         log.error(f"[Adapter] Failed to import training adapter / 训练适配器导入失败: {e}")
         return APIResponseFail(message=f"Training adapter import error / 训练适配器导入错误: {e}")
 
-    validation_errors = validate_training_config(config)
+    validation_errors = validate_training_config(config, gpu_ids=gpu_ids)
     if validation_errors:
         return APIResponseFail(
             message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
@@ -338,7 +338,10 @@ async def create_toml_file(request: Request):
     except (TypeError, ValueError) as e:
         return APIResponseFail(message=f"Invalid numeric value / 数字参数无效: {e}")
 
-    adapted_config, adapter_warnings = adapt_config(config)
+    if gpu_ids is None:
+        adapted_config, adapter_warnings = adapt_config(config)
+    else:
+        adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
     for w in adapter_warnings:
         log.warning(f"[Adapter] {w}")
     config = adapted_config

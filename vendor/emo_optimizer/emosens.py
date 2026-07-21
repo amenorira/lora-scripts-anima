@@ -2,14 +2,23 @@ import torch
 from torch.optim import Optimizer
 import math
 
+from ._console import safe_print
+
 """
-EmoSens v3.9.1 (260520) Standard Edition ECC版(CPU-GPUデータ転送対応含む)
+EmoSens v3.9.1 (260530) Standard Edition ECC版(CPU-GPUデータ転送対応含む)
 shadow-system v3.1 -moment v3.1 emoPulse v3.9 FFT-Swap-Aware dNR-converge
-|学習率推奨値| LoRA:1.0 |FFT/Full-Fine-Tuning| Transformer:0.01, UNET:0.1, etc...
-全層同一LRのため Transformer 等では発散しやすい(FFTは難しい) 事前学習やLoRA等が望ましいです
 これまでの emo系 v3.7～3.8 継承、早期停止関連の効率化やコード修正やコメント最適化等を実施
 Early Stop 判定通知の動的最適化、dNR活用で収束点をユーザー任意で明確化できる(stopcoef)
 ### FFT適応 cuDNN 等でデータ配置を求める仕様により中間テンソル(コピー)生じる(VRAM負荷増) ###
+
+全層同一LRのため Transformer 等では発散しやすい(FFTは難しい) 事前学習やLoRA等が望ましいです
+Recommended Learning Rate(rLR) ／ 学習率推奨値 は以下です
+TF(Transformer), Unet(SD, SDXL, etc), FFT(Full-Fine-Tuneing)
+rLR |Type:LoRA/FFT| TF:0.1/0.01, Unet:1.0/0.1, etc...
+
+usage ／ 使い方
+--optimizer_type=optimizer.emosens.EmoSens
+--optimizer_args "stopcoef=0.07"
 """
 
 # ECC - emo closure capture (Loss-Bypass)
@@ -26,7 +35,7 @@ if not hasattr(torch.optim.Optimizer, "_manual_loss"):
                 pass
         return _old_backward(self, *args, **kwargs)
     torch.Tensor.backward = _new_backward
-    print("🚩 emo-optim success ecc system ...")
+    safe_print("🚩 emo-optim success ecc system ...")
 
 class EmoSens(Optimizer):    # クラス定義＆初期化
     def __init__(self, params,
@@ -224,7 +233,7 @@ class EmoSens(Optimizer):    # クラス定義＆初期化
         if self.stop_base >= 0.3 and scale_base_m <= self.stopcoef:
             self.should_stop = True       # 💡 外部からこれを見て判断可
             if self.notify:               # 💡 収束・安定の「お知らせ」
-                print(f"✨[READY TO STOP]✨")
+                safe_print("✨[READY TO STOP]✨")
         else:
             self.should_stop = False      # 💡 誤判定などの取り消し
 

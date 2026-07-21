@@ -1,7 +1,7 @@
 """
 EmoPulse Scheduler — loss-driven dynamic LR for any optimizer.
 
-Source: https://github.com/muooon/EmoSens (v3.9.0)
+Source: https://github.com/muooon/EmoSens v3.9.1
 
 Two modes:
   - Paired with EmoSens optimizer: pass-through (EmoSens already computes emoPulse
@@ -15,6 +15,8 @@ Usage in TOML:
 """
 import math
 import torch
+
+from ._console import safe_print
 
 
 # ── ECC (emo closure capture) — safely install once ──────────────────────
@@ -148,7 +150,7 @@ class EmoPulse:
         if self.stop_base >= 0.3 and scale_base_m <= self.stopcoef:
             self.should_stop = True
             if self.notify:
-                print("✨[READY TO STOP]✨")
+                safe_print("✨[READY TO STOP]✨")
         else:
             self.should_stop = False
 

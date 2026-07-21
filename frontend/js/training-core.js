@@ -1875,15 +1875,38 @@ window.trainingCoreMixin = {
     return String(this.form[rule.watch]) === String(rule.when);
   },
 
+  /** Preserve explicit values for recommendation-only autoValue rules. */
+  _autoValueRuleCanSet(rule) {
+    if (!rule.setIfDefault) return true;
+    const current = this.form[rule.target];
+    if (current === '' || current === null || current === undefined) return true;
+
+    const field = this.findFieldDef(rule.target);
+    const allowed = [field ? field.default : undefined];
+    this._autoValueRules
+      .filter(candidate => candidate.target === rule.target && candidate.setIfDefault)
+      .forEach(candidate => allowed.push(candidate.set));
+    return allowed.some(value => value !== undefined && String(value) === String(current));
+  },
+
+  _autoValueTargetCanReset(target) {
+    const guarded = this._autoValueRules.find(rule => rule.target === target && rule.setIfDefault);
+    return !guarded || this._autoValueRuleCanSet(guarded);
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
-    this._autoValueRules.forEach(r => {
-      if (this._matchAutoValueRule(r)) {
-        if (r.set !== null && r.set !== undefined) {
-          this.form[r.target] = r.set;
-          this.formDefaults[r.target] = r.set;
+    const targets = new Set(this._autoValueRules.map(rule => rule.target));
+    targets.forEach(target => {
+      const matched = this._autoValueRules.find(
+        rule => rule.target === target && this._matchAutoValueRule(rule)
+      );
+      if (matched && matched.set !== null && matched.set !== undefined) {
+        if (this._autoValueRuleCanSet(matched)) {
+          this.form[matched.target] = matched.set;
         }
+        this.formDefaults[matched.target] = matched.set;
       }
     });
   },
@@ -1896,7 +1919,14 @@ window.trainingCoreMixin = {
     const rules = [];
     this._allSections().forEach(s => s.fields.forEach(f => {
       if (f.autoValue && Array.isArray(f.autoValue)) {
-        f.autoValue.forEach(r => rules.push({ target: r.setTarget || f.key, defaultVal: f.default, watch: r.watch, when: r.when, set: r.set }));
+        f.autoValue.forEach(r => rules.push({
+          target: r.setTarget || f.key,
+          defaultVal: f.default,
+          watch: r.watch,
+          when: r.when,
+          set: r.set,
+          setIfDefault: r.setIfDefault === true,
+        }));
       }
     }));
     this._autoValueRules = rules;
@@ -1931,10 +1961,12 @@ window.trainingCoreMixin = {
           const matched = self._autoValueRules.find(x => x.target === target && self._matchAutoValueRule(x));
           if (matched) {
             if (matched.set !== null && matched.set !== undefined) {
-              self.form[matched.target] = matched.set;
+              if (self._autoValueRuleCanSet(matched)) {
+                self.form[matched.target] = matched.set;
+              }
               self.formDefaults[matched.target] = matched.set;
             }
-          } else {
+          } else if (self._autoValueTargetCanReset(target)) {
             // No rule matches → restore default (also update formDefaults)
             const field = self.findFieldDef(target);
             const defVal = field ? field.default : (self.formDefaults[target]);
@@ -2085,6 +2117,85 @@ window.trainingCoreMixin = {
     return v;
   },
 
+  _automagicFusedConflicts() {
+    const conflicts = [];
+    const gpuIds = this.form.gpu_ids;
+    const accumulation = this.form.gradient_accumulation_steps ?? 1;
+    const maxGradNorm = this.form.max_grad_norm ?? 1;
+    const mixedPrecision = String(this.form.mixed_precision || 'bf16').toLowerCase();
+
+    if (Number(accumulation) !== 1) {
+      conflicts.push({ parameter: 'gradient_accumulation_steps', value: accumulation, required: 1 });
+    }
+    if (Number(maxGradNorm) !== 0) {
+      conflicts.push({ parameter: 'max_grad_norm', value: maxGradNorm, required: 0 });
+    }
+    if (mixedPrecision === 'fp16') {
+      conflicts.push({ parameter: 'mixed_precision', value: mixedPrecision, unsupported: true });
+    }
+    if (Array.isArray(gpuIds) && gpuIds.length > 1) {
+      conflicts.push({ parameter: 'gpu_ids', value: gpuIds.join(','), singleGpu: true });
+    }
+    return conflicts;
+  },
+
+  _automagicFusedHasConflict(conflicts) {
+    return (conflicts || this._automagicFusedConflicts()).length > 0;
+  },
+
+  _automagicFusedConflictText(conflicts) {
+    return conflicts.map(conflict => {
+      let key = 'field.automagic_fusedConflictValue';
+      if (conflict.unsupported) key = 'field.automagic_fusedConflictUnsupported';
+      else if (conflict.singleGpu) key = 'field.automagic_fusedConflictSingleGpu';
+      return this.t(key)
+        .replace('{parameter}', conflict.parameter)
+        .replace('{value}', String(conflict.value))
+        .replace('{required}', String(conflict.required ?? ''));
+    }).join(this.t('field.automagic_fusedConflictSeparator', '; '));
+  },
+
+  _enforceEmosensUiConstraints(changedKey, previousConstraints = null) {
+    const optimizerType = 'vendor.emo_optimizer.emosens.EmoSens';
+    if (this.form.optimizer_type !== optimizerType) return;
+
+    const adjustments = [];
+    // Alpine auto-value watchers can run as soon as optimizer_type changes. Keep
+    // the pre-change values so the user still sees why a value was corrected.
+    const accumulation = previousConstraints?.gradient_accumulation_steps
+      ?? this.form.gradient_accumulation_steps ?? 1;
+    if (Number(accumulation) !== 1) {
+      adjustments.push({ parameter: 'gradient_accumulation_steps', value: accumulation, required: 1 });
+      this.form.gradient_accumulation_steps = 1;
+    }
+
+    const mixedPrecision = String(
+      previousConstraints?.mixed_precision ?? this.form.mixed_precision ?? 'bf16'
+    ).toLowerCase();
+    if (mixedPrecision === 'fp16') {
+      adjustments.push({ parameter: 'mixed_precision', value: mixedPrecision, required: 'bf16' });
+      this.form.mixed_precision = 'bf16';
+    }
+
+    if (adjustments.length > 0) {
+      const details = adjustments.map(item => this.t('field.emosensAdjustedValue')
+        .replace('{parameter}', item.parameter)
+        .replace('{value}', String(item.value))
+        .replace('{required}', String(item.required)))
+        .join(this.t('field.emosensConstraintSeparator', '; '));
+      this.toast(this.t('field.emosensAutoAdjusted').replace('{details}', details), 'warning');
+    }
+
+    const gpuIds = this.form.gpu_ids;
+    if ((changedKey === 'optimizer_type' || changedKey === 'gpu_ids') &&
+        Array.isArray(gpuIds) && gpuIds.length > 1) {
+      this.toast(
+        this.t('field.emosensMultiGpuConflict').replace('{value}', gpuIds.join(',')),
+        'warning'
+      );
+    }
+  },
+
   setField(key, value) {
     const oldVal = this.form[key];
     if (oldVal === value) return;
@@ -2107,7 +2218,29 @@ window.trainingCoreMixin = {
       }
     }
 
+    const emosensPreviousConstraints = key === 'optimizer_type' &&
+      value === 'vendor.emo_optimizer.emosens.EmoSens'
+      ? {
+        gradient_accumulation_steps: this.form.gradient_accumulation_steps,
+        mixed_precision: this.form.mixed_precision,
+      }
+      : null;
+
     this.form[key] = value;
+    if (key === 'optimizer_type' || key === 'gradient_accumulation_steps' ||
+        key === 'mixed_precision' || key === 'gpu_ids') {
+      this._enforceEmosensUiConstraints(key, emosensPreviousConstraints);
+    }
+    const fusedInputs = ['automagic_fused', 'gradient_accumulation_steps', 'max_grad_norm', 'mixed_precision', 'gpu_ids'];
+    const fusedConflicts = fusedInputs.includes(key) && this.form.automagic_fused
+      ? this._automagicFusedConflicts()
+      : [];
+    if (this._automagicFusedHasConflict(fusedConflicts)) {
+      this.form.automagic_fused = false;
+      const details = this._automagicFusedConflictText(fusedConflicts);
+      const message = this.t('field.automagic_fusedAutoDisabled').replace('{details}', details);
+      this.toast(message, 'warning');
+    }
     if (key === 'output_dir' || key === 'output_name' || key === 'resume') {
       this.scheduleOutputPathInfo();
     }

@@ -50,6 +50,8 @@ window.trainingTomlMixin = {
       'enable_preview','positive_prompts','negative_prompts',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','weight_decay','stopcoef',
+      'automagic_min_lr','automagic_max_lr','automagic_beta2',
+      'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
       'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
       'came_ams_bound','came_eps1','came_eps2',
     ]);
@@ -191,6 +193,12 @@ window.trainingTomlMixin = {
     const DEFS = window.OPTIMIZER_DEFAULTS || {};
     const MERGED_RULES = [
       { form: 'weight_decay', arg: 'weight_decay', defaults: Object.assign({ _fallback: null }, DEFS.weight_decay) },
+      { form: 'automagic_min_lr', arg: 'min_lr', defaults: DEFS.automagic_min_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 } },
+      { form: 'automagic_max_lr', arg: 'max_lr', defaults: DEFS.automagic_max_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e-3 } },
+      { form: 'automagic_beta2', arg: 'beta2', defaults: DEFS.automagic_beta2 || { 'vendor.automagic_optimizer.integration.Automagic3': 0.999 } },
+      { form: 'automagic_clip_threshold', arg: 'clip_threshold', defaults: DEFS.automagic_clip_threshold || { 'vendor.automagic_optimizer.integration.Automagic3': 1.0 } },
+      { form: 'automagic_polarity_history', arg: 'polarity_history', defaults: DEFS.automagic_polarity_history || { 'vendor.automagic_optimizer.integration.Automagic3': 8 } },
+      { form: 'automagic_fused', arg: 'fused', defaults: DEFS.automagic_fused || { 'vendor.automagic_optimizer.integration.Automagic3': false } },
       { form: 'stopcoef', arg: 'stopcoef', defaults: DEFS.stopcoef || { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
       { form: 'prodigy_d_coef', arg: 'd_coef', defaults: DEFS.prodigy_d_coef || { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
       { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '', 'prodigyplus.ProdigyPlusScheduleFree': '' } },
@@ -331,6 +339,8 @@ window.trainingTomlMixin = {
     const optArgs = this._buildOptimizerArgs(payload);
     // Remove merged fields from top-level payload (they are now in optimizer_args)
     for (const key of ['optimizer_args_custom','weight_decay','stopcoef','prodigy_d_coef','prodigy_d0',
+                        'automagic_min_lr','automagic_max_lr','automagic_beta2',
+                        'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
                         'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
                         'came_ams_bound','came_eps1','came_eps2']) {
       delete payload[key];

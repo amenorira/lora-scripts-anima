@@ -1,11 +1,16 @@
 """训练配置契约校验。"""
 from __future__ import annotations
 
+import ast
 import math
 import re
 from typing import Any
 
-from backend.training.field_registry import FIELDS
+from backend.training.field_registry import (
+    AUTOMAGIC_OPTIMIZER_TYPE,
+    EMOSENS_OPTIMIZER_TYPE,
+    FIELDS,
+)
 
 
 _TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
@@ -50,7 +55,215 @@ def _validate_resolution(value: Any, train_type: str) -> str | None:
     return None
 
 
-def validate_training_config(config: dict[str, Any]) -> list[str]:
+def _parse_optimizer_args(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    raw_args = config.get("optimizer_args")
+    items: list[Any] = []
+    errors: list[str] = []
+    if raw_args is not None:
+        if isinstance(raw_args, list):
+            items.extend(raw_args)
+        else:
+            errors.append("optimizer_args: must be a list / 必须是列表")
+
+    custom_args = config.get("optimizer_args_custom")
+    if not _is_empty(custom_args):
+        if isinstance(custom_args, str):
+            items.extend(line.strip() for line in custom_args.splitlines() if line.strip())
+        else:
+            errors.append("optimizer_args_custom: must be text / 必须是文本")
+
+    parsed: dict[str, Any] = {}
+    for raw in items:
+        if not isinstance(raw, str) or "=" not in raw:
+            errors.append(f"optimizer_args: invalid item {raw!r} / 参数格式无效")
+            continue
+        key, literal = raw.split("=", 1)
+        key = key.strip()
+        if not key:
+            errors.append(f"optimizer_args: invalid item {raw!r} / 参数名不能为空")
+            continue
+        try:
+            parsed[key] = ast.literal_eval(literal.strip())
+        except (SyntaxError, ValueError):
+            errors.append(f"optimizer_args: {key} must use a Python literal / 必须使用 Python 字面量")
+    return parsed, errors
+
+
+def get_automagic_fused_conflicts(
+    config: dict[str, Any], gpu_ids: Any = None
+) -> list[str]:
+    """Return execution modes that are unsafe for backward-hook updates."""
+    conflicts: list[str] = []
+
+    try:
+        accumulation = float(config.get("gradient_accumulation_steps", 1))
+    except (TypeError, ValueError):
+        accumulation = 1
+    if accumulation != 1:
+        conflicts.append(
+            "gradient_accumulation_steps must be 1 / gradient_accumulation_steps 必须为 1"
+        )
+
+    try:
+        max_grad_norm = float(config.get("max_grad_norm", 1.0))
+    except (TypeError, ValueError):
+        max_grad_norm = 0
+    if max_grad_norm != 0:
+        conflicts.append("max_grad_norm must be 0 / max_grad_norm 必须为 0")
+
+    if str(config.get("mixed_precision", "bf16")).lower() == "fp16":
+        conflicts.append("mixed_precision cannot be fp16 / mixed_precision 不能为 fp16")
+
+    if isinstance(gpu_ids, (list, tuple)) and len(gpu_ids) > 1:
+        conflicts.append("only one GPU is supported / 仅支持单卡")
+
+    return conflicts
+
+
+def get_emosens_conflicts(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
+    """Return execution modes that do not preserve EmoSens ECC semantics."""
+    conflicts: list[str] = []
+
+    try:
+        accumulation = float(config.get("gradient_accumulation_steps", 1))
+    except (TypeError, ValueError):
+        accumulation = 1
+    if accumulation != 1:
+        conflicts.append(
+            "gradient_accumulation_steps must be 1 / gradient_accumulation_steps 必须为 1"
+        )
+
+    if str(config.get("mixed_precision", "bf16")).lower() == "fp16":
+        conflicts.append("mixed_precision cannot be fp16 / mixed_precision 不能为 fp16")
+
+    if isinstance(gpu_ids, (list, tuple)) and len(gpu_ids) > 1:
+        conflicts.append("only one GPU is supported / 仅支持单卡")
+
+    return conflicts
+
+
+def _validate_emosens(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
+    if config.get("optimizer_type") != EMOSENS_OPTIMIZER_TYPE:
+        return []
+
+    errors = [f"EmoSens: {conflict}" for conflict in get_emosens_conflicts(config, gpu_ids)]
+    learning_rate = config.get("learning_rate", 1e-4)
+    try:
+        rate = float(learning_rate)
+    except (TypeError, ValueError):
+        errors.append("learning_rate: must be a number for EmoSens / 使用 EmoSens 时必须是数字")
+    else:
+        if not math.isfinite(rate) or rate <= 0:
+            errors.append(
+                "learning_rate: must be finite and > 0 for EmoSens / "
+                "使用 EmoSens 时必须为有限正数"
+            )
+    return errors
+
+
+def _validate_automagic(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
+    if config.get("optimizer_type") != AUTOMAGIC_OPTIMIZER_TYPE:
+        return []
+
+    args, errors = _parse_optimizer_args(config)
+    supported_args = {
+        "min_lr",
+        "max_lr",
+        "beta2",
+        "eps",
+        "clip_threshold",
+        "weight_decay",
+        "polarity_history",
+        "fused",
+    }
+    for key in sorted(args.keys() - supported_args):
+        errors.append(f"Automagic3 optimizer_args: unsupported argument {key!r} / 不支持此参数")
+
+    top_level_map = {
+        "automagic_min_lr": "min_lr",
+        "automagic_max_lr": "max_lr",
+        "automagic_beta2": "beta2",
+        "automagic_clip_threshold": "clip_threshold",
+        "automagic_polarity_history": "polarity_history",
+        "automagic_fused": "fused",
+        "eps": "eps",
+        "weight_decay": "weight_decay",
+    }
+    for form_key, arg_key in top_level_map.items():
+        if not _is_empty(config.get(form_key)):
+            args[arg_key] = config[form_key]
+
+    defaults = {
+        "min_lr": 1e-8,
+        "max_lr": 1e-3,
+        "beta2": 0.999,
+        "eps": 1e-30,
+        "clip_threshold": 1.0,
+        "weight_decay": 0.0,
+    }
+    numbers: dict[str, float] = {}
+    for key, default in defaults.items():
+        value = args.get(key, default)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            errors.append(f"Automagic3 {key}: must be a number / 必须是数字")
+            continue
+        if not math.isfinite(number):
+            errors.append(f"Automagic3 {key}: must be finite / 必须是有限数字")
+            continue
+        numbers[key] = number
+
+    for key in ("min_lr", "max_lr", "eps", "clip_threshold"):
+        if key in numbers and numbers[key] <= 0:
+            errors.append(f"Automagic3 {key}: must be > 0 / 必须大于 0")
+    if "weight_decay" in numbers and numbers["weight_decay"] < 0:
+        errors.append("Automagic3 weight_decay: must be >= 0 / 不能小于 0")
+    if "beta2" in numbers and not 0 <= numbers["beta2"] < 1:
+        errors.append("Automagic3 beta2: must be in [0, 1) / 必须在 [0, 1) 范围内")
+    fused = args.get("fused", False)
+    if fused not in (False, True, 0, 1):
+        errors.append("Automagic3 fused: must be true or false / 必须是布尔值")
+    elif fused in (True, 1):
+        for conflict in get_automagic_fused_conflicts(config, gpu_ids):
+            errors.append(f"Automagic3 fused: {conflict}")
+
+    history = args.get("polarity_history", 8)
+    try:
+        history_number = float(history)
+        if not history_number.is_integer() or not 2 <= history_number <= 64:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append("Automagic3 polarity_history: must be an integer from 2 to 64 / 必须是 2 到 64 的整数")
+
+    min_lr = numbers.get("min_lr")
+    max_lr = numbers.get("max_lr")
+    if min_lr is not None and max_lr is not None and min_lr > max_lr:
+        errors.append("Automagic3 min_lr: must not exceed max_lr / 不能大于 max_lr")
+
+    start_rates = [("learning_rate", config.get("learning_rate", 1e-4))]
+    start_rates.extend(
+        (key, config[key])
+        for key in ("unet_lr", "text_encoder_lr")
+        if not _is_empty(config.get(key))
+    )
+    for key, value in start_rates:
+        try:
+            rate = float(value)
+        except (TypeError, ValueError):
+            errors.append(f"{key}: must be a number for Automagic3 / 使用 Automagic3 时必须是数字")
+            continue
+        if not math.isfinite(rate) or rate <= 0:
+            errors.append(f"{key}: must be finite and > 0 for Automagic3 / 使用 Automagic3 时必须为有限正数")
+        elif min_lr is not None and max_lr is not None and not min_lr <= rate <= max_lr:
+            errors.append(
+                f"{key}: Automagic3 start LR must be within [{min_lr}, {max_lr}] / "
+                "启动学习率必须位于 min_lr 与 max_lr 之间"
+            )
+    return errors
+
+
+def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     """根据字段注册表与跨字段契约返回所有配置错误。"""
     errors: list[str] = []
     train_type = str(config.get("model_train_type", "sdxl-lora"))
@@ -122,5 +335,8 @@ def validate_training_config(config: dict[str, Any]) -> list[str]:
         multiplier_count = len([part for part in str(multipliers).split(",") if part.strip()])
         if weight_count != multiplier_count:
             errors.append("base_weights_multiplier: count must match base_weights / 数量必须与基底权重一致")
+
+    errors.extend(_validate_automagic(config, gpu_ids))
+    errors.extend(_validate_emosens(config, gpu_ids))
 
     return errors

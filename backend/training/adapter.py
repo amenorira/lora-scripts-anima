@@ -10,7 +10,16 @@ import math
 from typing import Any
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
-from backend.training.field_registry import get_supported_fields, get_ui_only_fields, FIELDS
+from backend.training.field_registry import (
+    AUTOMAGIC_OPTIMIZER_TYPE,
+    AUTOMAGIC_SCHEDULER_TYPE,
+    EMOPULSE_SCHEDULER_TYPE,
+    EMOSENS_OPTIMIZER_TYPE,
+    FIELDS,
+    get_supported_fields,
+    get_ui_only_fields,
+)
+from backend.training.validation import get_automagic_fused_conflicts
 
 SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
@@ -68,6 +77,17 @@ LYCORIS_KOHYA_UI_FIELDS = (
     | set(LYCORIS_KOHYA_ONLY_ARG_MAP.keys())
     | set(LYCORIS_KOHYA_SPECIFIC_ARG_MAP.keys())
 )
+
+AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
+    "automagic_min_lr": "min_lr",
+    "automagic_max_lr": "max_lr",
+    "automagic_beta2": "beta2",
+    "automagic_clip_threshold": "clip_threshold",
+    "automagic_polarity_history": "polarity_history",
+    "automagic_fused": "fused",
+    "eps": "eps",
+    "weight_decay": "weight_decay",
+}
 
 
 def _is_empty_value(value: Any) -> bool:
@@ -154,7 +174,16 @@ def _merge_custom_args(source: dict, custom_key: str, target_key: str) -> None:
         source[target_key] = existing
 
 
-def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def _set_key_value_arg(values: list[str], key: str, value: Any) -> None:
+    """Set one key=value item with last-write-wins ordering."""
+    prefix = f"{key}="
+    values[:] = [item for item in values if not item.strip().startswith(prefix)]
+    if isinstance(value, bool):
+        value = "True" if value else "False"
+    values.append(f"{key}={value}")
+
+
+def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str, Any], list[str]]:
     """
     将 UI JSON 配置转换为 sd-scripts TOML 配置。
 
@@ -167,6 +196,11 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     # ── 1. 合并自定义参数 ──────────────────────────────────
     _merge_custom_args(source, "network_args_custom", "network_args")
     _merge_custom_args(source, "optimizer_args_custom", "optimizer_args")
+    normalized_optimizer_args = _normalize_network_args(source.get("optimizer_args"))
+    if normalized_optimizer_args:
+        source["optimizer_args"] = normalized_optimizer_args
+    else:
+        source.pop("optimizer_args", None)
 
     # ── 2. 规范化 network_args ─────────────────────────────
     merged_network_args: list[str] = []
@@ -293,22 +327,21 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     # EmoSens 在 optimizer.step() 内部已将 group['lr'] 设为动态 emoPulse。
     # 必须用透传调度器替代传统调度器（constant/cosine 等会覆写 emoPulse）。
     # 前端 auto_value 已锁定 lr_scheduler_type=EmoPulse，此处为安全兜底。
-    _EMO_OPTIMIZERS = {"vendor.emo_optimizer.emosens.EmoSens"}
-    if source.get("optimizer_type") in _EMO_OPTIMIZERS:
-        source["lr_scheduler_type"] = "vendor.emo_optimizer.emopulse_scheduler.EmoPulse"
+    if source.get("optimizer_type") == EMOSENS_OPTIMIZER_TYPE:
+        source["lr_scheduler_type"] = EMOPULSE_SCHEDULER_TYPE
         source["lr_scheduler"] = "constant"
-        # 根据模型架构调整学习率（仅纠 learning_rate 总学习率；分量留空会自动回退到它）。
-        # Anima(DiT) 用 0.1，SDXL 用 1.0。
+        # 上游推荐 Anima/DiT LoRA 使用 0.1，SDXL LoRA 使用 1.0。
+        # 仅替换缺失值和界面通用默认值，保留用户明确设置的学习率。
         model_type = source.get("model_train_type", "sdxl-lora")
         emo_target = 0.1 if model_type == "anima-lora" else 1.0
-        ref_other = 1.0 if model_type == "anima-lora" else 0.1
-        # learning_rate：当前值恰好是另一架构的默认（即未被用户改过）时纠正
-        lr = source.get("learning_rate", "1.0")
-        try:
-            lr_cur = float(lr)
-        except (ValueError, TypeError):
-            lr_cur = 1.0
-        if abs(lr_cur - float(ref_other)) < 1e-6:
+        lr = source.get("learning_rate")
+        should_set_recommended = _is_empty_value(lr)
+        if not should_set_recommended:
+            try:
+                should_set_recommended = math.isclose(float(lr), 1e-4)
+            except (ValueError, TypeError):
+                should_set_recommended = False
+        if should_set_recommended:
             source["learning_rate"] = emo_target
             warnings.append(
                 f"EmoSens + {model_type}: learning_rate auto-adjusted to {emo_target}"
@@ -340,8 +373,59 @@ def adapt_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if not has_wd:
             opt_args.append("weight_decay=0.01")
             source["optimizer_args"] = opt_args
+            warnings.append("EmoSens: weight_decay auto-set to 0.01")
+
+    # ── 5.6a. Automagic3：兼容模式 + 实际 LR 透传 ──────────
+    if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
+        opt_args = list(source.get("optimizer_args") or [])
+        reserved_guard = any(item.strip().startswith("fused_guard=") for item in opt_args)
+        opt_args = [item for item in opt_args if not item.strip().startswith("fused_guard=")]
+        if reserved_guard:
             warnings.append(
-                "EmoSens: weight_decay auto-set to 0.01 (官方默认值)"
+                "[Conflict] Automagic3 fused_guard is reserved and was removed / "
+                "Automagic3 fused_guard 是内部参数，已移除"
+            )
+        for form_key, arg_key in AUTOMAGIC_MERGED_ARG_MAP.items():
+            value = source.pop(form_key, None)
+            if not _is_empty_value(value):
+                _set_key_value_arg(opt_args, arg_key, value)
+
+        fused_value = next(
+            (item.split("=", 1)[1].strip().lower() for item in opt_args if item.startswith("fused=")),
+            "false",
+        )
+        fused_requested = fused_value in {"true", "1"}
+        fused_conflicts = get_automagic_fused_conflicts(source, gpu_ids) if fused_requested else []
+        if fused_conflicts:
+            _set_key_value_arg(opt_args, "fused", False)
+            warnings.append(
+                "[Conflict] Automagic3 fused disabled: "
+                + "; ".join(fused_conflicts)
+            )
+        elif fused_requested:
+            _set_key_value_arg(opt_args, "fused", True)
+            _set_key_value_arg(opt_args, "fused_guard", True)
+        else:
+            _set_key_value_arg(opt_args, "fused", False)
+
+        if not any(item.startswith("max_lr=") for item in opt_args):
+            _set_key_value_arg(opt_args, "max_lr", 1e-3)
+        source["optimizer_args"] = _normalize_network_args(opt_args)
+
+        if source.pop("full_bf16", False):
+            warnings.append(
+                "[Conflict] Automagic3 compatibility mode requires FP32 trainable parameters; "
+                "full_bf16 disabled / Automagic3 兼容模式要求可训练参数保持 FP32，已关闭 full_bf16"
+            )
+
+        scheduler_changed = source.get("lr_scheduler_type") != AUTOMAGIC_SCHEDULER_TYPE
+        source["lr_scheduler_type"] = AUTOMAGIC_SCHEDULER_TYPE
+        source["lr_scheduler"] = "constant"
+        source["lr_warmup_steps"] = 0
+        if scheduler_changed:
+            warnings.append(
+                "Automagic3: external scheduler replaced with AutomagicPassthrough "
+                "to preserve and report the internally adapted LR / 已接管外部调度器并透传实际自适应 LR"
             )
 
     # lr_scheduler_type 非空时，内置 lr_scheduler 被 sd-scripts 忽略，不写 TOML

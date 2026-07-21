@@ -51,6 +51,12 @@ window.UI_CONSTANTS = {
 // training-core.js (_OPT_PH) 和 training-toml.js (MERGED_RULES)
 // 均引用此数据，避免重复定义导致不一致。
 window.OPTIMIZER_DEFAULTS = {
+  automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
+  automagic_max_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-3 },
+  automagic_beta2: { 'vendor.automagic_optimizer.integration.Automagic3': 0.999 },
+  automagic_clip_threshold: { 'vendor.automagic_optimizer.integration.Automagic3': 1.0 },
+  automagic_polarity_history: { 'vendor.automagic_optimizer.integration.Automagic3': 8 },
+  automagic_fused: { 'vendor.automagic_optimizer.integration.Automagic3': false },
   betas: {
     'AdamW': '0.9, 0.999', 'AdamW8bit': '0.9, 0.999', 'PagedAdamW8bit': '0.9, 0.999',
     'Lion': '0.9, 0.99', 'Lion8bit': '0.9, 0.99', 'PagedLion8bit': '0.9, 0.99',
@@ -62,11 +68,11 @@ window.OPTIMIZER_DEFAULTS = {
   eps: {
     'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
     'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
+    'vendor.automagic_optimizer.integration.Automagic3': '1e-30',
     'AdamWScheduleFree': '1e-8',
     'Prodigy': '1e-8', 'prodigyplus.ProdigyPlusScheduleFree': '1e-8',
   },
   weight_decay: { 'vendor.emo_optimizer.emosens.EmoSens': '0.01' },
-  max_grad_norm: { 'vendor.emo_optimizer.emosens.EmoSens': '0' },
   stopcoef: { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 },
   came_eps1: { 'pytorch_optimizer.CAME': '1e-30' },
   came_eps2: { 'pytorch_optimizer.CAME': '1e-16' },
