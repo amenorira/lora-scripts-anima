@@ -422,7 +422,7 @@
 		"epsHint": "留空使用默认值：Automagic3 为 1e-30，其他通常为 1e-8",
 		"automagic_min_lr": "最低自适应学习率",
 		"automagic_max_lr": "最高自适应学习率",
-		"automagic_max_lrHint": "限制学习率上升，默认 1e-3；启用 LoRA+ 时，基础学习率乘倍率后的结果也不能超过此值",
+		"automagic_max_lrHint": "数值溢出护栏，不代表建议使用 1e3 学习率；默认 1e3 通常不会限制正常自适应。仅需给控制器设置硬上限时再自行调低",
 		"automagic_beta2": "二阶动量衰减",
 		"automagic_clip_threshold": "内部更新裁剪",
 		"automagic_clip_thresholdHint": "不替代 max_grad_norm",

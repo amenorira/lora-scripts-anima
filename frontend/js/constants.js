@@ -59,7 +59,7 @@ window.OPTIMIZER_DEFAULTS = {
     'vendor.automagic_optimizer.integration.Automagic3': '1e-4',
   },
   automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
-  automagic_max_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-3 },
+  automagic_max_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e3 },
   automagic_beta2: { 'vendor.automagic_optimizer.integration.Automagic3': 0.999 },
   automagic_clip_threshold: { 'vendor.automagic_optimizer.integration.Automagic3': 1.0 },
   automagic_polarity_history: { 'vendor.automagic_optimizer.integration.Automagic3': 8 },

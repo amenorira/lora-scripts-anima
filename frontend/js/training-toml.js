@@ -249,7 +249,7 @@ window.trainingTomlMixin = {
     const MERGED_RULES = [
       { form: 'weight_decay', arg: 'weight_decay', defaults: Object.assign({ _fallback: null }, DEFS.weight_decay) },
       { form: 'automagic_min_lr', arg: 'min_lr', defaults: DEFS.automagic_min_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 } },
-      { form: 'automagic_max_lr', arg: 'max_lr', defaults: DEFS.automagic_max_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e-3 } },
+      { form: 'automagic_max_lr', arg: 'max_lr', defaults: DEFS.automagic_max_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e3 } },
       { form: 'automagic_beta2', arg: 'beta2', defaults: DEFS.automagic_beta2 || { 'vendor.automagic_optimizer.integration.Automagic3': 0.999 } },
       { form: 'automagic_clip_threshold', arg: 'clip_threshold', defaults: DEFS.automagic_clip_threshold || { 'vendor.automagic_optimizer.integration.Automagic3': 1.0 } },
       { form: 'automagic_polarity_history', arg: 'polarity_history', defaults: DEFS.automagic_polarity_history || { 'vendor.automagic_optimizer.integration.Automagic3': 8 } },

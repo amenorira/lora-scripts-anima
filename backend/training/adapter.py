@@ -446,7 +446,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             _set_key_value_arg(opt_args, "fused", False)
 
         if not any(item.startswith("max_lr=") for item in opt_args):
-            _set_key_value_arg(opt_args, "max_lr", 1e-3)
+            _set_key_value_arg(opt_args, "max_lr", 1e3)
         source["optimizer_args"] = _normalize_network_args(opt_args)
 
         if source.pop("full_bf16", False):

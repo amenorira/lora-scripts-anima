@@ -422,7 +422,7 @@
 		"epsHint": "Leave empty for the default: 1e-30 for Automagic3, usually 1e-8 otherwise",
 		"automagic_min_lr": "Minimum adaptive LR",
 		"automagic_max_lr": "Maximum adaptive LR",
-		"automagic_max_lrHint": "Caps LR growth; default 1e-3. With LoRA+, each base LR multiplied by its ratio must also stay below this value.",
+		"automagic_max_lrHint": "A numerical-overflow guard, not a recommended training LR. The default 1e3 normally does not constrain adaptation; lower it only to impose a hard controller ceiling.",
 		"automagic_beta2": "Second-moment decay",
 		"automagic_clip_threshold": "Internal update clip",
 		"automagic_clip_thresholdHint": "Does not replace max_grad_norm",

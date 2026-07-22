@@ -363,7 +363,7 @@ const adafactorCustom = args({
 const automagicDefaults = args({
   optimizer_type: 'vendor.automagic_optimizer.integration.Automagic3',
   automagic_min_lr: '1e-8',
-  automagic_max_lr: '1e-3',
+  automagic_max_lr: '1e3',
   automagic_beta2: 0.999,
   automagic_clip_threshold: 1,
   automagic_polarity_history: 8,

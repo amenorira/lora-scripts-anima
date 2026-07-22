@@ -38,7 +38,7 @@ class Automagic3(_UpstreamAutomagic3):
         params,
         lr: float = 1e-4,
         min_lr: float = 1e-8,
-        max_lr: float = 1e-3,
+        max_lr: float = 1e3,
         beta2: float = 0.999,
         eps: float = 1e-30,
         clip_threshold: float = 1.0,

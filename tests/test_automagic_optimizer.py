@@ -54,6 +54,8 @@ class AutomagicFieldContractTests(unittest.TestCase):
         ]
         self.assertTrue(any(option["v"] == AUTOMAGIC_OPTIMIZER_TYPE for option in optimizer_options))
         self.assertNotIn("lr_scheduler_type", fields)
+        self.assertEqual(fields["automagic_max_lr"]["default"], "1e3")
+        self.assertEqual(fields["automagic_max_lr"]["hintKey"], "field.automagic_max_lrHint")
         for key in (
             "automagic_min_lr",
             "automagic_max_lr",
@@ -97,6 +99,7 @@ class AutomagicFieldContractTests(unittest.TestCase):
             messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
             self.assertIn("optimizer_type_Automagic3", messages["opt"])
             self.assertIn("automagic_max_lr", messages["field"])
+            self.assertIn("1e3", messages["field"]["automagic_max_lrHint"])
             self.assertIn("automagic_fusedLocked", messages["field"])
             self.assertIn("automagic_fusedAutoDisabled", messages["field"])
             self.assertIn("{details}", messages["field"]["automagic_fusedAutoDisabled"])
@@ -362,6 +365,9 @@ class AutomagicRuntimeTests(unittest.TestCase):
         bf16 = torch.nn.Parameter(torch.ones(2, dtype=torch.bfloat16))
         with self.assertRaisesRegex(ValueError, "requires FP32"):
             Automagic3([bf16])
+
+        default_optimizer = Automagic3([fp32])
+        self.assertEqual(default_optimizer.param_groups[0]["max_lr"], 1e3)
 
         with self.assertRaisesRegex(ValueError, "parameter-group lr"):
             Automagic3([{"params": [fp32], "lr": 1e-2}], max_lr=1e-3)
