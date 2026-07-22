@@ -80,7 +80,16 @@ class EmoSensFieldContractTests(unittest.TestCase):
         self.assertTrue(all(rule["setIfDefault"] for rule in emo_rules))
 
         max_grad_norm = fields["max_grad_norm"]
-        self.assertNotIn("autoValue", max_grad_norm)
+        emo_rules = [
+            rule
+            for rule in max_grad_norm.get("autoValue", [])
+            if rule.get("when") == EMOSENS_OPTIMIZER_TYPE
+            or (
+                isinstance(rule.get("watch"), dict)
+                and rule["watch"].get("optimizer_type") == EMOSENS_OPTIMIZER_TYPE
+            )
+        ]
+        self.assertEqual(emo_rules, [])
         self.assertNotIn("readonlyIf", max_grad_norm)
 
     def test_translations_and_vendor_provenance_are_present(self):

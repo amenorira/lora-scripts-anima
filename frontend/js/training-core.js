@@ -264,6 +264,7 @@ window.trainingCoreMixin = {
     const defaults = this._buildFormDefaults(trainType);
 
     this.form = { ...defaults, ...(saved || {}) };
+    this._autoValueApplied = {};
     // Ensure model_train_type is valid (saved may have been from another route)
     if (!validTrainTypes.includes(this.form.model_train_type)) {
       this.form.model_train_type = trainType;
@@ -1334,11 +1335,9 @@ window.trainingCoreMixin = {
     }
 
     // ── Readonly If Any ──
-    // list[dict]：任一条件（eq/neq）成立即锁定。用于多 key 的互斥（如 cache×caption）。
-    // reason 来自 field 顶层 readonlyReasonKey（list 容纳不下 reason）。
+    // OR clauses; nested arrays represent AND groups.
     if (!field.readonlyIf && field.readonlyIfAny && Array.isArray(field.readonlyIfAny)) {
-      // 复用 show_if 的条件求值语义（eq/neq/空串判定完全一致），readonly 互斥方向一样。
-      const met = field.readonlyIfAny.some(c => this._evalShowIfCond(c));
+      const met = this._readonlyIfAnyMet(field.readonlyIfAny);
       readonlyAttrs = ` data-readonly-if-any='${this.esc(JSON.stringify(field.readonlyIfAny))}'`;
       if (field.readonlyReasonKey) {
         readonlyAttrs += ` data-readonly-if-reason="${this.escapeAttr(field.readonlyReasonKey)}"`;
@@ -1867,6 +1866,7 @@ window.trainingCoreMixin = {
 
   // ── Auto Value: auto-set field value when watcher field changes ──
   _autoValueRules: null,
+  _autoValueApplied: null,
 
   /** Check whether a single autoValue rule matches the current form state. */
   _matchAutoValueRule(rule) {
@@ -1884,10 +1884,23 @@ window.trainingCoreMixin = {
     const current = this.form[rule.target];
     if (current === '' || current === null || current === undefined) return true;
 
+    const applied = this._autoValueApplied && this._autoValueApplied[rule.target];
+    if (applied !== undefined && String(applied) === String(current)) return true;
+
     const field = this.findFieldDef(rule.target);
     const allowed = [field ? field.default : undefined];
     this._autoValueRules
-      .filter(candidate => candidate.target === rule.target && candidate.setIfDefault)
+      .filter(candidate => {
+        if (candidate.target !== rule.target || !candidate.setIfDefault) return false;
+        if (candidate.watch === 'optimizer_type') {
+          return String(candidate.when) === String(this.form.optimizer_type);
+        }
+        if (candidate.watch && typeof candidate.watch === 'object' &&
+            Object.prototype.hasOwnProperty.call(candidate.watch, 'optimizer_type')) {
+          return String(candidate.watch.optimizer_type) === String(this.form.optimizer_type);
+        }
+        return true;
+      })
       .forEach(candidate => allowed.push(candidate.set));
     return allowed.some(value => value !== undefined && String(value) === String(current));
   },
@@ -1900,6 +1913,9 @@ window.trainingCoreMixin = {
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
+    if (!this._autoValueApplied || typeof this._autoValueApplied !== 'object') {
+      this._autoValueApplied = {};
+    }
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
       const matched = this._autoValueRules.find(
@@ -1908,6 +1924,7 @@ window.trainingCoreMixin = {
       if (matched && matched.set !== null && matched.set !== undefined) {
         if (this._autoValueRuleCanSet(matched)) {
           this.form[matched.target] = matched.set;
+          this._autoValueApplied[matched.target] = matched.set;
         }
         this.formDefaults[matched.target] = matched.set;
       }
@@ -1918,6 +1935,9 @@ window.trainingCoreMixin = {
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
     if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._autoValueWatchers = [];
+    if (!this._autoValueApplied || typeof this._autoValueApplied !== 'object') {
+      this._autoValueApplied = {};
+    }
     // Collect all autoValue rules from all visible fields
     const rules = [];
     this._allSections().forEach(s => s.fields.forEach(f => {
@@ -1966,6 +1986,7 @@ window.trainingCoreMixin = {
             if (matched.set !== null && matched.set !== undefined) {
               if (self._autoValueRuleCanSet(matched)) {
                 self.form[matched.target] = matched.set;
+                self._autoValueApplied[matched.target] = matched.set;
               }
               self.formDefaults[matched.target] = matched.set;
             }
@@ -1974,6 +1995,7 @@ window.trainingCoreMixin = {
             const field = self.findFieldDef(target);
             const defVal = field ? field.default : (self.formDefaults[target]);
             if (field) self.form[target] = defVal;
+            self._autoValueApplied[target] = defVal;
             self.formDefaults[target] = defVal;
           }
         });
@@ -2009,11 +2031,17 @@ window.trainingCoreMixin = {
   // ── Readonly If: disable fields based on conditions ──
   _allReadonlyIfKeys() {
     const keys = new Set();
+    const collect = clause => {
+      if (Array.isArray(clause)) {
+        clause.forEach(collect);
+      } else if (clause && clause.key) {
+        keys.add(clause.key);
+      }
+    };
     this._allSections().forEach(s => s.fields.forEach(f => {
       if (f.readonlyIf) keys.add(f.readonlyIf.key);
-      // readonlyIfAny: 任一条件中的 key 都需监听，互斥字段变化要及时刷新锁定态
       if (f.readonlyIfAny && Array.isArray(f.readonlyIfAny)) {
-        f.readonlyIfAny.forEach(c => { if (c && c.key) keys.add(c.key); });
+        f.readonlyIfAny.forEach(collect);
       }
     }));
     return [...keys];
@@ -2088,14 +2116,21 @@ window.trainingCoreMixin = {
       apply(row, met, row.getAttribute('data-readonly-if-reason'));
     });
 
-    // 多 key readonly_if_any：list[dict]，任一条件（eq/neq）成立即锁定。
-    // 求值语义与 _evalShowIfCond 一致（空串/null 不视为"非默认值"，避免误锁）。
+    // readonlyIfAny is OR across clauses; nested arrays are AND groups.
     document.querySelectorAll('[data-readonly-if-any]').forEach(row => {
       let conds = [];
       try { conds = JSON.parse(row.getAttribute('data-readonly-if-any') || '[]'); } catch (e) { /* 防御损坏 */ }
-      const met = Array.isArray(conds) && conds.some(c => self._evalShowIfCond(c));
+      const met = self._readonlyIfAnyMet(conds);
       apply(row, met, row.getAttribute('data-readonly-if-reason'));
     });
+  },
+
+  _readonlyIfAnyMet(clauses) {
+    return Array.isArray(clauses) && clauses.some(clause => (
+      Array.isArray(clause)
+        ? clause.every(condition => this._evalShowIfCond(condition))
+        : this._evalShowIfCond(clause)
+    ));
   },
 
   // Canonical HTML escape (text content & "-delimited attributes).
@@ -2202,6 +2237,9 @@ window.trainingCoreMixin = {
   setField(key, value) {
     const oldVal = this.form[key];
     if (oldVal === value) return;
+    if (this._autoValueApplied && Object.prototype.hasOwnProperty.call(this._autoValueApplied, key)) {
+      delete this._autoValueApplied[key];
+    }
     if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) {
       const numVal = Number(value);
       if (!isNaN(numVal)) value = numVal;

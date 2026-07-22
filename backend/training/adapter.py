@@ -19,6 +19,7 @@ from backend.training.field_registry import (
     get_supported_fields,
     get_ui_only_fields,
 )
+from backend.training.optimizer_contracts import normalize_optimizer_config
 from backend.training.validation import get_automagic_fused_conflicts
 
 SUPPORTED_FIELDS = get_supported_fields()
@@ -343,7 +344,10 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     if te_only and not _is_empty_value(source.get("unet_lr")):
         source["unet_lr"] = ""
 
-    # ── 5.6. EmoSens 优化器：内部动态 LR + 模型感知 LR ─────────
+    # ── 5.6. 通用优化器契约：参数合并 + 调度/裁剪规范化 ────────
+    normalize_optimizer_config(source, warnings)
+
+    # ── 5.6a. EmoSens 优化器：内部动态 LR + 模型感知 LR ───────
     # 训练启动钩子会提供无操作 scheduler 接口，避免传统 scheduler 覆写 emoPulse。
     if source.get("optimizer_type") == EMOSENS_OPTIMIZER_TYPE:
         source["lr_scheduler"] = "constant"
@@ -393,7 +397,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             source["optimizer_args"] = opt_args
             warnings.append("EmoSens: weight_decay auto-set to 0.01")
 
-    # ── 5.6a. Automagic3：兼容模式 + 优化器内部 LR ─────────
+    # ── 5.6b. Automagic3：兼容模式 + 优化器内部 LR ─────────
     if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
         opt_args = list(source.get("optimizer_args") or [])
         reserved_guard = any(item.strip().startswith("fused_guard=") for item in opt_args)
@@ -446,34 +450,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             warnings.append(
                 "Automagic3: external LR scheduling disabled; TensorBoard reads the optimizer's "
                 "adaptive LR directly / 已禁用外部学习率调度，TensorBoard 将直接读取优化器的实际自适应 LR"
-            )
-
-    # ── 5.6b. Prodigy 优化器：锁定 learning_rate ─────────
-    # D-adaptation 要求 LR=1.0 作缩放因子。三个 LR 字段（learning_rate / unet_lr / text_encoder_lr）
-    # 非空时都必须为 1.0——分量非空会覆盖 learning_rate，故只锁 learning_rate 不够。
-    _PRODIGY_OPTIMIZERS = {"Prodigy", "prodigyplus.ProdigyPlusScheduleFree"}
-    if source.get("optimizer_type") in _PRODIGY_OPTIMIZERS:
-        for _lr_key in ("learning_rate", "unet_lr", "text_encoder_lr"):
-            _lr = source.get(_lr_key)
-            if _is_empty_value(_lr):
-                continue  # 分量留空 → 回退 learning_rate（已是 1.0），无需处理
-            try:
-                _lr_val = float(_lr)
-            except (ValueError, TypeError):
-                _lr_val = 1.0
-            if abs(_lr_val - 1.0) > 1e-6:
-                source[_lr_key] = 1.0
-                warnings.append(
-                    f"Prodigy: {_lr_key} forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
-                )
-
-    # ── 5.6c. ScheduleFree 优化器：锁定 lr_scheduler ─────
-    _SCHEDULEFREE_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
-    if source.get("optimizer_type") in _SCHEDULEFREE_OPTIMIZERS:
-        if source.get("lr_scheduler") != "constant":
-            source["lr_scheduler"] = "constant"
-            warnings.append(
-                "ScheduleFree: lr_scheduler forced to constant (内部自动管理调度)"
             )
 
     # ── 5.7. torch.compile 兼容性校验 ────────────────────

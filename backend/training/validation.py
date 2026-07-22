@@ -1,7 +1,6 @@
 """训练配置契约校验。"""
 from __future__ import annotations
 
-import ast
 import math
 import re
 from typing import Any
@@ -13,6 +12,10 @@ from backend.training.field_registry import (
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
     LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
+)
+from backend.training.optimizer_contracts import (
+    parse_optimizer_args,
+    validate_optimizer_contract,
 )
 
 
@@ -56,40 +59,6 @@ def _validate_resolution(value: Any, train_type: str) -> str | None:
     if any(dimension <= 0 or dimension % step != 0 for dimension in dimensions):
         return f"resolution must use positive multiples of {step} / 分辨率必须为 {step} 的正整数倍"
     return None
-
-
-def _parse_optimizer_args(config: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    raw_args = config.get("optimizer_args")
-    items: list[Any] = []
-    errors: list[str] = []
-    if raw_args is not None:
-        if isinstance(raw_args, list):
-            items.extend(raw_args)
-        else:
-            errors.append("optimizer_args: must be a list / 必须是列表")
-
-    custom_args = config.get("optimizer_args_custom")
-    if not _is_empty(custom_args):
-        if isinstance(custom_args, str):
-            items.extend(line.strip() for line in custom_args.splitlines() if line.strip())
-        else:
-            errors.append("optimizer_args_custom: must be text / 必须是文本")
-
-    parsed: dict[str, Any] = {}
-    for raw in items:
-        if not isinstance(raw, str) or "=" not in raw:
-            errors.append(f"optimizer_args: invalid item {raw!r} / 参数格式无效")
-            continue
-        key, literal = raw.split("=", 1)
-        key = key.strip()
-        if not key:
-            errors.append(f"optimizer_args: invalid item {raw!r} / 参数名不能为空")
-            continue
-        try:
-            parsed[key] = ast.literal_eval(literal.strip())
-        except (SyntaxError, ValueError):
-            errors.append(f"optimizer_args: {key} must use a Python literal / 必须使用 Python 字面量")
-    return parsed, errors
 
 
 def get_automagic_fused_conflicts(
@@ -164,11 +133,14 @@ def _validate_emosens(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     return errors
 
 
-def _validate_automagic(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
+def _validate_automagic(
+    config: dict[str, Any], parsed_args: dict[str, Any], gpu_ids: Any = None
+) -> list[str]:
     if config.get("optimizer_type") != AUTOMAGIC_OPTIMIZER_TYPE:
         return []
 
-    args, errors = _parse_optimizer_args(config)
+    args = dict(parsed_args)
+    errors: list[str] = []
     supported_args = {
         "min_lr",
         "max_lr",
@@ -351,7 +323,10 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         if weight_count != multiplier_count:
             errors.append("base_weights_multiplier: count must match base_weights / 数量必须与基底权重一致")
 
-    errors.extend(_validate_automagic(config, gpu_ids))
+    parsed_optimizer_args, optimizer_arg_errors = parse_optimizer_args(config)
+    errors.extend(optimizer_arg_errors)
+    errors.extend(validate_optimizer_contract(config, parsed_optimizer_args))
+    errors.extend(_validate_automagic(config, parsed_optimizer_args, gpu_ids))
     errors.extend(_validate_emosens(config, gpu_ids))
 
     return errors

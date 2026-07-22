@@ -53,7 +53,10 @@ window.trainingTomlMixin = {
       'enable_preview','positive_prompts','negative_prompts',
       'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
-      'prodigy_d_coef','prodigy_d0','weight_decay','stopcoef',
+      'prodigy_d_coef','prodigy_d0','prodigy_safeguard_warmup',
+      'prodigyplus_use_stableadamw','schedulefree_warmup_steps',
+      'adafactor_relative_step','adafactor_scale_parameter','adafactor_warmup_init',
+      'adafactor_clip_threshold','adafactor_eps','weight_decay','stopcoef',
       'automagic_min_lr','automagic_max_lr','automagic_beta2',
       'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
       'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
@@ -199,6 +202,23 @@ window.trainingTomlMixin = {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
   },
 
+  _optimizerArgEqualsDefault(value, defaultValue) {
+    if (typeof value === 'boolean' || typeof defaultValue === 'boolean') {
+      return value === defaultValue;
+    }
+
+    const valueText = String(value).trim();
+    const defaultText = String(defaultValue).trim();
+    if (valueText === defaultText) return true;
+    if (!valueText || !defaultText || valueText.includes(',') || defaultText.includes(',')) {
+      return false;
+    }
+
+    const numericValue = Number(valueText);
+    const numericDefault = Number(defaultText);
+    return Number.isFinite(numericValue) && Number.isFinite(numericDefault) && numericValue === numericDefault;
+  },
+
   /**
    * 组装 optimizer_args 数组（公共逻辑，TOML 预览和 startTraining 共用）。
    * merged 字段仅在值 ≠ 优化器默认值时写入。
@@ -227,7 +247,15 @@ window.trainingTomlMixin = {
       { form: 'automagic_fused', arg: 'fused', defaults: DEFS.automagic_fused || { 'vendor.automagic_optimizer.integration.Automagic3': false } },
       { form: 'stopcoef', arg: 'stopcoef', defaults: DEFS.stopcoef || { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
       { form: 'prodigy_d_coef', arg: 'd_coef', defaults: DEFS.prodigy_d_coef || { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
-      { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '', 'prodigyplus.ProdigyPlusScheduleFree': '' } },
+      { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '1e-6', 'prodigyplus.ProdigyPlusScheduleFree': '1e-6' } },
+      { form: 'prodigy_safeguard_warmup', arg: 'safeguard_warmup', defaults: DEFS.prodigy_safeguard_warmup || { 'Prodigy': false } },
+      { form: 'prodigyplus_use_stableadamw', arg: 'use_stableadamw', defaults: DEFS.prodigyplus_use_stableadamw || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
+      { form: 'schedulefree_warmup_steps', arg: 'warmup_steps', defaults: DEFS.schedulefree_warmup_steps || { 'AdamWScheduleFree': 0 } },
+      { form: 'adafactor_relative_step', arg: 'relative_step', defaults: DEFS.adafactor_relative_step || { 'AdaFactor': true } },
+      { form: 'adafactor_scale_parameter', arg: 'scale_parameter', defaults: DEFS.adafactor_scale_parameter || { 'AdaFactor': true } },
+      { form: 'adafactor_warmup_init', arg: 'warmup_init', defaults: DEFS.adafactor_warmup_init || { 'AdaFactor': false } },
+      { form: 'adafactor_clip_threshold', arg: 'clip_threshold', defaults: DEFS.adafactor_clip_threshold || { 'AdaFactor': 1.0 } },
+      { form: 'adafactor_eps', arg: 'eps', defaults: DEFS.adafactor_eps || { 'AdaFactor': '1e-30, 1e-3' } },
       { form: 'betas', arg: 'betas', defaults: DEFS.betas || {
         'AdamW': '0.9,0.999', 'AdamW8bit': '0.9,0.999', 'PagedAdamW8bit': '0.9,0.999',
         'Lion': '0.9,0.99', 'Lion8bit': '0.9,0.99', 'PagedLion8bit': '0.9,0.99',
@@ -257,7 +285,7 @@ window.trainingTomlMixin = {
       const fieldDef = this.findFieldDef(rule.form);
       if (fieldDef && !this._fieldShowIfMet(fieldDef)) continue;
       const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
-      if (defVal !== undefined && defVal !== null && String(val) === String(defVal)) continue;
+      if (defVal !== undefined && defVal !== null && this._optimizerArgEqualsDefault(val, defVal)) continue;
       // optimizer_args 的值经 sd-scripts 的 ast.literal_eval 解析，
       // 布尔必须用 Python 字面量 True/False（小写 true/false 会让 ast 崩溃）。
       // 注意：network_args 的布尔仍用小写（各 network module 用 == "true" 比较，不走 ast）。
@@ -365,6 +393,10 @@ window.trainingTomlMixin = {
     const optArgs = this._buildOptimizerArgs(payload);
     // Remove merged fields from top-level payload (they are now in optimizer_args)
     for (const key of ['optimizer_args_custom','weight_decay','stopcoef','prodigy_d_coef','prodigy_d0',
+                        'prodigy_safeguard_warmup','prodigyplus_use_stableadamw',
+                        'schedulefree_warmup_steps','adafactor_relative_step',
+                        'adafactor_scale_parameter','adafactor_warmup_init',
+                        'adafactor_clip_threshold','adafactor_eps',
                         'automagic_min_lr','automagic_max_lr','automagic_beta2',
                         'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
                         'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',

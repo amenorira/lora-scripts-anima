@@ -365,7 +365,7 @@
         <!-- Train type selector -->
         <div class="train-tab-card">
           <div class="train-type-select-wrap">
-            <label class="train-type-label" x-text="t('opt.model_train_type', 'Training Type')"></label>
+            <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
             <div class="anima-select" style="min-width:200px"
                  x-data="animaSelect({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}, form.model_train_type)"
                  @click.outside="closeOnOutside()"
@@ -1741,7 +1741,7 @@
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
     <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ open: rightPanelOpen || isWideScreen }">
       <!-- 拖拽手柄：贴面板左边缘，鼠标拖动调整宽度并持久化（仅大屏启用） -->
-      <div class="panel-resizer" id="panelResizer" x-show="showRightPanel()" title="拖拽调整宽度，双击恢复默认"></div>
+      <div class="panel-resizer" id="panelResizer" x-show="showRightPanel()" :title="t('common.panelResizeHint')"></div>
       <!-- Training: TOML preview + actions -->
       <template x-if="currentRoute && currentRoute.startsWith('train-')">
         <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">

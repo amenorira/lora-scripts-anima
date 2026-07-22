@@ -3937,6 +3937,46 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .sidebar-bottom .bottom-btn { padding: 2px; }
 }
 
+@media (max-width: 600px) {
+  .train-type-select-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+  .train-type-select-wrap .anima-select {
+    flex: 1 1 180px;
+    min-width: 0 !important;
+  }
+  .train-type-hint {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  #trainFormContent .field-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 8px;
+  }
+  #trainFormContent .field-info {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  #trainFormContent .field-control {
+    flex: 1 1 calc(100% - 32px);
+    min-width: 0;
+    justify-content: flex-end;
+  }
+  #trainFormContent .field-control .anima-select,
+  #trainFormContent .field-control .stepper {
+    width: 100%;
+    min-width: 0;
+  }
+  #trainFormContent .field-menu-wrap {
+    margin-left: auto;
+  }
+}
+
 /* ── Dark mode overrides for light-mode defaults ─────────── */
 [data-theme="dark"] .sidebar-item:hover { background: var(--hover-overlay); }
 [data-theme="dark"] .sidebar-item.active { background: var(--active-overlay); }
