@@ -20,6 +20,7 @@ nvidia-ml-py==13.595.45
 # ── 数据处理 ──
 pandas>=2.0
 pillow>=10.0
+Markdown>=3.5,<4
 
 # ── 构建工具（TensorBoard 依赖 pkg_resources，setuptools>=82 已移除该模块）──
 setuptools>=68,<82

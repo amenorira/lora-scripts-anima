@@ -14,6 +14,8 @@ from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
+    LORAPLUS_NETWORK_MODULES,
+    LORAPLUS_RATIO_KEYS,
     get_supported_fields,
     get_ui_only_fields,
 )
@@ -212,6 +214,24 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         source["network_args"] = normalized_network_args
     elif "network_args" in source:
         source.pop("network_args", None)
+
+    # ── 2.5. LoRA+ UI 字段 → sd-scripts 原生 network_args ──────
+    # enable_loraplus 仅是产品开关，不传给 sd-scripts。真正训练参数严格使用
+    # loraplus_lr_ratio / loraplus_unet_lr_ratio /
+    # loraplus_text_encoder_lr_ratio，并只对已实现 LoRA+ 的原生模块启用。
+    loraplus_enabled = source.pop("enable_loraplus", False) is True
+    if loraplus_enabled and source.get("network_module") in LORAPLUS_NETWORK_MODULES:
+        network_args = list(source.get("network_args") or [])
+        for arg_key in LORAPLUS_RATIO_KEYS:
+            value = source.pop(arg_key, None)
+            if not _is_empty_value(value):
+                _set_key_value_arg(network_args, arg_key, value)
+        normalized_network_args = _normalize_network_args(network_args)
+        if normalized_network_args:
+            source["network_args"] = normalized_network_args
+    else:
+        for arg_key in LORAPLUS_RATIO_KEYS:
+            source.pop(arg_key, None)
 
     # ── 3. 原生模块字段 → network_args（按各模块实际支持的参数透传）──
     # sd-scripts 各 create_network 的真实消费面（已逐行核对）：

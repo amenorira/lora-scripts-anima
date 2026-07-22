@@ -35,4 +35,6 @@ config
 vendor/sd-scripts/tests/
 
 .superpowers
-docs
+docs/*
+!docs/parameters/
+!docs/parameters/**

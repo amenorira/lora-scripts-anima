@@ -1162,6 +1162,9 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = field.hintKey ? this.t(field.hintKey) : '';
+    const docLink = field.docSlug
+      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide', 'Open guide'))}</span></button>`
+      : '';
     const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
     const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;
@@ -1361,11 +1364,11 @@ window.trainingCoreMixin = {
     let fullWidthRow = '';
     if (isFullWidth) {
       // Textarea / path: info on top, input full-width below (outside field-row)
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}</div></div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}</div></div><div class="field-control">${controlHtml}</div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div><div class="field-control">${controlHtml}</div>`;
     }
 
     // ── Assemble ──

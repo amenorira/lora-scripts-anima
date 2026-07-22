@@ -20,6 +20,9 @@ window.trainingTomlMixin = {
   updateToml() {
     const trainType = this.form.model_train_type || 'anima-lora';
     const allSections = window.getVisibleSections(trainType);
+    const fieldByKey = new Map(
+      allSections.flatMap(section => (section.fields || []).map(field => [field.key, field]))
+    );
 
     // Collect which LyCORIS UI fields are active (visible in form based on showIf/showIfAny)
     const activeLycorisKeys = new Set();
@@ -48,6 +51,7 @@ window.trainingTomlMixin = {
     const SKIP_TOP_LEVEL = new Set([
       'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
       'enable_preview','positive_prompts','negative_prompts',
+      'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','weight_decay','stopcoef',
       'automagic_min_lr','automagic_max_lr','automagic_beta2',
@@ -99,6 +103,28 @@ window.trainingTomlMixin = {
     const netCustom = this.form.network_args_custom;
     if (netCustom && typeof netCustom === 'string') {
       netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s));
+    }
+    // LoRA+ uses the exact sd-scripts network_args names. The product toggle is UI-only.
+    const setNetworkArg = (argKey, value) => {
+      const prefix = argKey + '=';
+      for (let i = netArgsArr.length - 1; i >= 0; i--) {
+        if (String(netArgsArr[i]).trim().startsWith(prefix)) netArgsArr.splice(i, 1);
+      }
+      netArgsArr.push(prefix + String(value));
+    };
+    const loraplusToggleField = fieldByKey.get('enable_loraplus');
+    const loraplusEnabled = this.form.enable_loraplus === true
+      && loraplusToggleField
+      && this._fieldShowIfMet(loraplusToggleField);
+    if (loraplusEnabled) {
+      ['loraplus_lr_ratio', 'loraplus_unet_lr_ratio', 'loraplus_text_encoder_lr_ratio'].forEach(argKey => {
+        const ratioField = fieldByKey.get(argKey);
+        if (!ratioField || !this._fieldShowIfMet(ratioField)) return;
+        const value = this.form[argKey];
+        if (value === '' || value === null || value === undefined) return;
+        if (typeof value === 'number' && isNaN(value)) return;
+        setNetworkArg(argKey, value);
+      });
     }
     // LyCORIS UI fields → key=value
     for (const k of activeLycorisKeys) {

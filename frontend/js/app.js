@@ -341,6 +341,10 @@ document.addEventListener('alpine:init', () => {
         progressManagedByRoute = true;
       } else if (r === 'presets') {
         this.loadPresets();
+      } else if (r === 'docs') {
+        if (!routeTransition) this.startProgress();
+        this.loadDocsPage().finally(() => this.finishProgress());
+        progressManagedByRoute = true;
       } else if (r === 'tensorboard') {
         this.stopMonitorRealtime();
         this.renderTensorBoardPage();
@@ -529,6 +533,7 @@ document.addEventListener('alpine:init', () => {
     window.monitorRenderMixin,
     window.environmentCoreMixin,
     window.environmentRenderMixin,
+    window.docsMixin,
     window.trainingCoreMixin,
     window.trainingTomlMixin,
     window.trainingPresetsMixin,

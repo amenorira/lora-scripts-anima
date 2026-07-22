@@ -30,6 +30,7 @@
   <script src="/anima-ui/js/monitor-render.js" defer></script>
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
+  <script src="/anima-ui/js/docs.js" defer></script>
   <script src="/anima-ui/js/training-core.js" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-presets.js" defer></script>
@@ -96,6 +97,16 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </span>
         <span x-text="t('nav.history')">History</span>
+      </a>
+
+      <!-- Documentation -->
+      <div class="sidebar-section-label" x-text="t('nav.documentation')">Documentation</div>
+      <a class="sidebar-item" data-group="docs" :class="{ active: currentRoute === 'docs' }"
+         @click="navigate('docs')" href="javascript:void(0)" :aria-current="currentRoute === 'docs' ? 'page' : null">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </span>
+        <span x-text="t('nav.parameterDocs')">Parameter Guide</span>
       </a>
 
       <!-- Tools -->
@@ -279,6 +290,53 @@
       <!-- Route: TensorBoard -->
       <div x-show="currentRoute === 'tensorboard'" x-cloak style="height:100%">
         <div id="tensorboardFrame" style="height:100%"></div>
+      </div>
+
+      <!-- Route: Parameter documentation -->
+      <div x-show="currentRoute === 'docs'" x-cloak class="docs-page">
+        <div class="page-header docs-page-header">
+          <h1 class="page-title" x-text="t('docs.title')">Parameter Guide</h1>
+          <p class="page-subtitle" x-text="t('docs.subtitle')">Training parameter reference</p>
+        </div>
+
+        <div class="docs-layout">
+          <aside class="docs-index" :aria-label="t('docs.catalog')">
+            <div class="docs-index-title" x-text="t('docs.catalog')">Documents</div>
+            <div class="docs-index-list">
+              <template x-for="doc in docsDocuments" :key="doc.slug">
+                <button type="button" class="docs-index-item"
+                        :class="{ active: docsSelectedSlug === doc.slug }"
+                        @click="selectParameterDoc(doc.slug)">
+                  <span class="docs-index-item-title" x-text="doc.title"></span>
+                  <span class="docs-index-item-summary" x-text="doc.summary"></span>
+                </button>
+              </template>
+              <div class="docs-empty" x-show="!docsLoading && docsDocuments.length === 0 && !docsError"
+                   x-text="t('docs.empty')">No documents</div>
+            </div>
+          </aside>
+
+          <section class="docs-reader" aria-live="polite">
+            <div class="docs-loading" x-show="docsLoading">
+              <span class="spinner"></span>
+              <span x-text="t('docs.loading')">Loading documentation...</span>
+            </div>
+            <div class="docs-error" x-show="docsError" x-cloak>
+              <span x-text="docsError"></span>
+              <button type="button" class="btn btn-ghost btn-sm" @click="loadDocsPage(true)" x-text="t('docs.retry')">Retry</button>
+            </div>
+            <div x-show="docsHtml && !docsLoading && !docsError" x-cloak>
+              <div class="docs-reader-heading" x-show="docsCurrentDocument()">
+                <span class="docs-reader-kicker" x-text="t('docs.parameterReference')">Parameter reference</span>
+                <span class="docs-reader-summary" x-text="docsCurrentDocument() ? docsCurrentDocument().summary : ''"></span>
+              </div>
+              <nav class="docs-toc" x-show="docsToc" x-html="docsToc"
+                   @click="handleDocsContentClick($event)" :aria-label="t('docs.onThisPage')"></nav>
+              <article id="docsArticle" class="markdown-body" x-html="docsHtml"
+                       @click="handleDocsContentClick($event)"></article>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- Route: Training pages (basic/master/anima) -->

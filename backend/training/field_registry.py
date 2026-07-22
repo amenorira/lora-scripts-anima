@@ -51,6 +51,38 @@ from typing import Any
 
 AUTOMAGIC_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic3"
 EMOSENS_OPTIMIZER_TYPE = "vendor.emo_optimizer.emosens.EmoSens"
+LORAPLUS_NETWORK_MODULES = (
+    "networks.lora",
+    "networks.lora_anima",
+    "networks.loha",
+    "networks.lokr",
+)
+LORAPLUS_RATIO_KEYS = (
+    "loraplus_lr_ratio",
+    "loraplus_unet_lr_ratio",
+    "loraplus_text_encoder_lr_ratio",
+)
+LORAPLUS_INCOMPATIBLE_OPTIMIZERS = (
+    "Prodigy",
+    "prodigyplus.ProdigyPlusScheduleFree",
+)
+
+
+def _show_if_one_of(key: str, values: tuple[str, ...]) -> dict[str, Any]:
+    condition: dict[str, Any] = {"key": key, "eq": values[0]}
+    if len(values) > 1:
+        condition["_or"] = list(values[1:])
+    return condition
+
+
+def _loraplus_ratio_show_if() -> list[list[dict[str, Any]]]:
+    return [
+        [
+            {"key": "enable_loraplus", "eq": True},
+            {"key": "network_module", "eq": module},
+        ]
+        for module in LORAPLUS_NETWORK_MODULES
+    ]
 
 
 FIELDS: list[dict[str, Any]] = [
@@ -87,6 +119,12 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "hint_key": "field.network_dropoutHint"},
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
+    # LoRA+ 是 network_args 功能，不是顶层 CLI 参数。UI 开关仅控制是否生成下列三个
+    # sd-scripts 原生参数；支持面与各 network module 的 create_network 实现保持一致。
+    {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "show_if": _show_if_one_of("network_module", LORAPLUS_NETWORK_MODULES), "hint_key": "field.enable_loraplusHint", "auto_value": [{"watch": "optimizer_type", "when": optimizer, "set": False} for optimizer in LORAPLUS_INCOMPATIBLE_OPTIMIZERS], "readonly_if": {**_show_if_one_of("optimizer_type", LORAPLUS_INCOMPATIBLE_OPTIMIZERS), "reason_key": "field.enable_loraplus_optimizerLocked"}, "doc_slug": "lora-plus", "doc_anchor": "overview"},
+    {"key": "loraplus_lr_ratio", "type": "number", "default": 2.0, "section": "network", "desc_key": "field.loraplus_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-lr-ratio"},
+    {"key": "loraplus_unet_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_unet_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_unet_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-unet-lr-ratio"},
+    {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
     # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开。
     # 不带 sub_group → 渲染为常规 inline 子参数（不包在"LyCORIS 算法参数"子组盒子里）。
     {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},
@@ -359,6 +397,8 @@ _FIELD_KEY_MAP = {
     "set_if_default": "setIfDefault",
     "omit_default": "omitDefault",
     "sub_group": "subGroup",
+    "doc_slug": "docSlug",
+    "doc_anchor": "docAnchor",
 }
 
 

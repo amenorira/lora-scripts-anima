@@ -10,6 +10,9 @@ from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
+    LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
+    LORAPLUS_NETWORK_MODULES,
+    LORAPLUS_RATIO_KEYS,
 )
 
 
@@ -315,6 +318,18 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 value = equivalent
             if allowed and value not in allowed:
                 errors.append(f"{key}: unsupported value {value!r} / 不支持的选项")
+
+    if config.get("enable_loraplus") and config.get("network_module") in LORAPLUS_NETWORK_MODULES:
+        if all(_is_empty(config.get(key)) for key in LORAPLUS_RATIO_KEYS):
+            errors.append(
+                "enable_loraplus: at least one LoRA+ ratio is required / "
+                "启用 LoRA+ 后至少需要填写一个学习率倍率"
+            )
+        if config.get("optimizer_type") in LORAPLUS_INCOMPATIBLE_OPTIMIZERS:
+            errors.append(
+                "enable_loraplus: Prodigy optimizers are incompatible with LoRA+ in sd-scripts / "
+                "sd-scripts 不支持 Prodigy 系列优化器与 LoRA+ 组合"
+            )
 
     if not _is_empty(config.get("resolution")):
         resolution_error = _validate_resolution(config["resolution"], train_type)
