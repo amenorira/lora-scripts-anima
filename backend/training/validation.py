@@ -14,6 +14,7 @@ from backend.training.field_registry import (
     LORAPLUS_RATIO_KEYS,
 )
 from backend.training.optimizer_contracts import (
+    ADAFACTOR_OPTIMIZER_TYPE,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
@@ -133,6 +134,69 @@ def _validate_emosens(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     return errors
 
 
+def _effective_optimizer_arg(
+    config: dict[str, Any],
+    parsed_args: dict[str, Any],
+    form_key: str,
+    arg_key: str,
+    default: Any,
+) -> Any:
+    value = config.get(form_key)
+    if not _is_empty(value):
+        return value
+    return parsed_args.get(arg_key, default)
+
+
+def _validate_loraplus(
+    config: dict[str, Any], parsed_optimizer_args: dict[str, Any]
+) -> list[str]:
+    if (
+        config.get("enable_loraplus") is not True
+        or config.get("network_module") not in LORAPLUS_NETWORK_MODULES
+    ):
+        return []
+
+    errors: list[str] = []
+    if all(_is_empty(config.get(key)) for key in LORAPLUS_RATIO_KEYS):
+        errors.append(
+            "enable_loraplus: at least one LoRA+ ratio is required / "
+            "启用 LoRA+ 后至少需要填写一个学习率倍率"
+        )
+
+    optimizer_type = str(config.get("optimizer_type", ""))
+    if optimizer_type in LORAPLUS_INCOMPATIBLE_OPTIMIZERS:
+        errors.append(
+            f"enable_loraplus: {optimizer_type} is incompatible with LoRA+ because it "
+            "cannot preserve distinct parameter-group learning rates / "
+            f"{optimizer_type} 无法保留 LoRA+ 的分组学习率，不能与 LoRA+ 同时使用"
+        )
+
+    if optimizer_type == ADAFACTOR_OPTIMIZER_TYPE:
+        relative_step = _effective_optimizer_arg(
+            config,
+            parsed_optimizer_args,
+            "adafactor_relative_step",
+            "relative_step",
+            True,
+        )
+        warmup_init = _effective_optimizer_arg(
+            config,
+            parsed_optimizer_args,
+            "adafactor_warmup_init",
+            "warmup_init",
+            False,
+        )
+        if relative_step is not False or warmup_init is True:
+            errors.append(
+                "enable_loraplus: AdaFactor relative_step=True or warmup_init=True is "
+                "incompatible with LoRA+; disable both to preserve parameter-group rates / "
+                "AdaFactor 的 relative_step=True 或 warmup_init=True 会破坏 LoRA+ "
+                "分组学习率；请同时关闭两者"
+            )
+
+    return errors
+
+
 def _validate_automagic(
     config: dict[str, Any], parsed_args: dict[str, Any], gpu_ids: Any = None
 ) -> list[str]:
@@ -222,6 +286,7 @@ def _validate_automagic(
         for key in ("unet_lr", "text_encoder_lr")
         if not _is_empty(config.get(key))
     )
+    parsed_start_rates: dict[str, float] = {}
     for key, value in start_rates:
         try:
             rate = float(value)
@@ -235,6 +300,69 @@ def _validate_automagic(
                 f"{key}: Automagic3 start LR must be within [{min_lr}, {max_lr}] / "
                 "启动学习率必须位于 min_lr 与 max_lr 之间"
             )
+        else:
+            parsed_start_rates[key] = rate
+
+    if (
+        config.get("enable_loraplus") is True
+        and config.get("network_module") in LORAPLUS_NETWORK_MODULES
+        and min_lr is not None
+        and max_lr is not None
+    ):
+        # Missing flags follow sd-scripts' store_true defaults: both components train.
+        unet_only = config.get("network_train_unet_only", False) is True
+        text_encoder_only = config.get("network_train_text_encoder_only", False) is True
+        if unet_only and text_encoder_only:
+            text_encoder_only = False  # mirrors adapter conflict normalization
+        if config.get("cache_text_encoder_outputs") is True and text_encoder_only:
+            unet_only = True
+            text_encoder_only = False  # mirrors adapter cache conflict normalization
+
+        component_specs = (
+            (
+                "UNet/DiT",
+                not text_encoder_only,
+                "unet_lr",
+                "loraplus_unet_lr_ratio",
+            ),
+            (
+                "text encoder",
+                not unet_only,
+                "text_encoder_lr",
+                "loraplus_text_encoder_lr_ratio",
+            ),
+        )
+        for component, is_trained, base_key, component_ratio_key in component_specs:
+            if not is_trained:
+                continue
+            ratio_key = (
+                component_ratio_key
+                if not _is_empty(config.get(component_ratio_key))
+                else "loraplus_lr_ratio"
+            )
+            ratio_value = config.get(ratio_key)
+            if _is_empty(ratio_value):
+                continue
+            actual_base_key = (
+                base_key if not _is_empty(config.get(base_key)) else "learning_rate"
+            )
+            base_rate = parsed_start_rates.get(actual_base_key)
+            if base_rate is None:
+                continue
+            try:
+                ratio = float(ratio_value)
+            except (TypeError, ValueError):
+                continue  # generic field validation reports invalid ratio values
+            if not math.isfinite(ratio):
+                continue
+            effective_rate = base_rate * ratio
+            if not min_lr <= effective_rate <= max_lr:
+                errors.append(
+                    f"{ratio_key}: Automagic3 effective {component} LoRA+ LR "
+                    f"{effective_rate:g} ({actual_base_key} {base_rate:g} x ratio {ratio:g}) "
+                    f"must be within [{min_lr:g}, {max_lr:g}] / LoRA+ 倍率后的实际 "
+                    f"{component} 学习率必须位于 min_lr 与 max_lr 之间"
+                )
     return errors
 
 
@@ -291,17 +419,9 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
             if allowed and value not in allowed:
                 errors.append(f"{key}: unsupported value {value!r} / 不支持的选项")
 
-    if config.get("enable_loraplus") and config.get("network_module") in LORAPLUS_NETWORK_MODULES:
-        if all(_is_empty(config.get(key)) for key in LORAPLUS_RATIO_KEYS):
-            errors.append(
-                "enable_loraplus: at least one LoRA+ ratio is required / "
-                "启用 LoRA+ 后至少需要填写一个学习率倍率"
-            )
-        if config.get("optimizer_type") in LORAPLUS_INCOMPATIBLE_OPTIMIZERS:
-            errors.append(
-                "enable_loraplus: Prodigy optimizers are incompatible with LoRA+ in sd-scripts / "
-                "sd-scripts 不支持 Prodigy 系列优化器与 LoRA+ 组合"
-            )
+    parsed_optimizer_args, optimizer_arg_errors = parse_optimizer_args(config)
+    errors.extend(optimizer_arg_errors)
+    errors.extend(_validate_loraplus(config, parsed_optimizer_args))
 
     if not _is_empty(config.get("resolution")):
         resolution_error = _validate_resolution(config["resolution"], train_type)
@@ -323,8 +443,6 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         if weight_count != multiplier_count:
             errors.append("base_weights_multiplier: count must match base_weights / 数量必须与基底权重一致")
 
-    parsed_optimizer_args, optimizer_arg_errors = parse_optimizer_args(config)
-    errors.extend(optimizer_arg_errors)
     errors.extend(validate_optimizer_contract(config, parsed_optimizer_args))
     errors.extend(_validate_automagic(config, parsed_optimizer_args, gpu_ids))
     errors.extend(_validate_emosens(config, gpu_ids))

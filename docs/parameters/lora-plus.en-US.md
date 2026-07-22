@@ -51,14 +51,26 @@ For few-shot character LoRAs, identity details may form sooner. Repeated backgro
 - A high base learning rate that becomes excessive after multiplication.
 - Captions or images containing repeated unwanted details.
 - Low-rank runs or configurations that already converge within the intended budget.
-- Prodigy or DAdapt optimizers. The sd-scripts documentation states that they cannot be combined with LoRA+; this trainer blocks Prodigy and ProdigyPlus while LoRA+ is enabled.
+- Optimizers that take ownership of the learning rate require an explicit check that they preserve independent parameter-group rates.
 
-ScheduleFree and other internally scheduled optimizers can generally hold different parameter-group rates, but their internal dynamics interact with the ratio. AdamW ratios should not be copied blindly.
+<!-- doc-anchor: optimizer-compatibility -->
+## Optimizer compatibility
+
+| Optimizer | LoRA+ status | Notes |
+| --- | --- | --- |
+| AdamW, AdamW8bit, PagedAdamW8bit, Lion, CAME | Supported | Preserve parameter-group rates and provide the most predictable ratio behavior. |
+| AdamWScheduleFree | Supported | Preserves groups, but its internal dynamics affect the live rates. |
+| Automagic3 | Conditional | Every base LR multiplied by its LoRA+ ratio must remain within `min_lr` and `max_lr`. Adaptive behavior can change the ratio between groups during training. |
+| AdaFactor | Manual-LR mode only | Disable both `relative_step` and `warmup_init`. The default relative-step mode ignores group rates, so the UI disables and locks LoRA+ while it is active. |
+| Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve LoRA+ multi-rate semantics; both UI and backend reject this combination. |
+| EmoSens | Unsupported | EmoSens updates all parameters with one global `emoPulse` and rewrites every group to that rate after each step, erasing the LoRA+ ratio. |
+
+Switching to an incompatible mode turns LoRA+ off and shows the lock reason. Backend validation also rejects incompatible combinations submitted by old presets or direct API requests.
 
 <!-- doc-anchor: parameters -->
 ## sd-scripts parameters
 
-The UI toggle is local to this trainer and is never sent to sd-scripts. Only these native `network_args` are emitted.
+The UI toggle is the sole LoRA+ control in this trainer and is never sent to sd-scripts. Only these native `network_args` are emitted. Matching `loraplus_*` entries in advanced custom network arguments are ignored so they cannot bypass UI linkage or backend compatibility checks.
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
@@ -136,4 +148,4 @@ lr/textencoder
 lr/textencoder plus
 ```
 
-The trainer's true-LR reporting layer reads the actual parameter-group rates, so both regular and `plus` TensorBoard series reflect the values used by the optimizer.
+The trainer's true-LR reporting layer reads the actual parameter-group rates, so both regular and `plus` TensorBoard series reflect the values used by the optimizer. For internally adaptive optimizers such as Automagic3 and ScheduleFree, use the live curves instead of assuming that the initial ratio remains constant throughout training.

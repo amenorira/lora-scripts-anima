@@ -119,6 +119,68 @@ class AutomagicValidationTests(unittest.TestCase):
         errors = validate_training_config(config)
         self.assertTrue(any("min_lr" in error for error in errors), errors)
 
+    def test_rejects_loraplus_effective_rate_above_maximum(self):
+        config = valid_automagic_config()
+        config.update(
+            {
+                "enable_loraplus": True,
+                "loraplus_lr_ratio": 2.0,
+                "learning_rate": "1e-3",
+                "automagic_min_lr": "1e-8",
+                "automagic_max_lr": "1e-3",
+            }
+        )
+        errors = validate_training_config(config)
+        self.assertTrue(
+            any("effective UNet/DiT LoRA+ LR" in error for error in errors),
+            errors,
+        )
+
+        config["loraplus_lr_ratio"] = 1.0
+        self.assertEqual(validate_training_config(config), [])
+
+    def test_loraplus_effective_rate_uses_sd_scripts_component_defaults(self):
+        config = valid_automagic_config()
+        config.pop("network_train_unet_only", None)
+        config.pop("network_train_text_encoder_only", None)
+        config.update(
+            {
+                "enable_loraplus": True,
+                "loraplus_lr_ratio": 1.0,
+                "loraplus_text_encoder_lr_ratio": 20.0,
+                "learning_rate": "1e-4",
+                "automagic_max_lr": "1e-3",
+            }
+        )
+
+        errors = validate_training_config(config)
+        self.assertTrue(
+            any("effective text encoder LoRA+ LR" in error for error in errors),
+            errors,
+        )
+
+    def test_loraplus_effective_rate_mirrors_cache_target_normalization(self):
+        config = valid_automagic_config()
+        config.update(
+            {
+                "network_train_unet_only": False,
+                "network_train_text_encoder_only": True,
+                "cache_text_encoder_outputs": True,
+                "enable_loraplus": True,
+                "loraplus_lr_ratio": 1.0,
+                "loraplus_unet_lr_ratio": 20.0,
+                "loraplus_text_encoder_lr_ratio": 1.0,
+                "learning_rate": "1e-4",
+                "automagic_max_lr": "1e-3",
+            }
+        )
+
+        errors = validate_training_config(config)
+        self.assertTrue(
+            any("effective UNet/DiT LoRA+ LR" in error for error in errors),
+            errors,
+        )
+
     def test_rejects_invalid_custom_optimizer_literals(self):
         config = valid_automagic_config()
         for key in (

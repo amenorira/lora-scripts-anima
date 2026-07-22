@@ -51,14 +51,26 @@ LoRA+ 不会增加推理显存，不会改变 `.safetensors` 的使用方法，�
 - 基础学习率已经较高，再乘较大倍率可能导致震荡、细节破坏或泛化下降。
 - 数据含有固定背景、特效、水印、伙伴角色或不准确标签。
 - Rank 很低，或者当前配置已经在预期步数内稳定收敛，收益可能不明显。
-- 使用 Prodigy、DAdapt 等自动调整有效学习率的优化器。sd-scripts 文档明确说明它们不能与 LoRA+ 组合，本训练器会阻止 Prodigy 与 ProdigyPlus 在 LoRA+ 开启时使用。
+- 使用内部接管学习率的优化器时，需要先确认它是否保留各参数组的独立学习率。
 
-ScheduleFree 和其他内部管理学习率的优化器通常能接收不同参数组，但实际倍率会和优化器内部动态共同作用，不能直接套用 AdamW 的经验。
+<!-- doc-anchor: optimizer-compatibility -->
+## 优化器兼容性
+
+| 优化器 | LoRA+ 状态 | 说明 |
+| --- | --- | --- |
+| AdamW、AdamW8bit、PagedAdamW8bit、Lion、CAME | 支持 | 保留各参数组学习率，倍率行为最容易解释。 |
+| AdamWScheduleFree | 支持 | 保留参数组，但内部动态会参与实际学习率变化。 |
+| Automagic3 | 条件支持 | 每个“基础学习率 × LoRA+ 倍率”的结果都必须位于 `min_lr` 与 `max_lr` 之间；训练过程中的组间倍率可能随自适应逻辑变化。 |
+| AdaFactor | 仅手动学习率模式支持 | 必须关闭 `relative_step` 与 `warmup_init`。默认相对步长模式会忽略参数组学习率，界面会自动关闭并锁定 LoRA+。 |
+| Prodigy、ProdigyPlus | 不支持 | 当前 sd-scripts 训练路径不能可靠保留 LoRA+ 多学习率语义，界面与后端都会阻止该组合。 |
+| EmoSens | 不支持 | EmoSens 使用单一全局 `emoPulse` 更新所有参数，并在每步后统一各参数组学习率，因此 LoRA+ 倍率会失效。 |
+
+切换到不兼容模式时，界面会自动关闭 LoRA+ 并显示锁定原因。后端仍会拒绝旧预设或手工 API 提交形成的不兼容组合。
 
 <!-- doc-anchor: parameters -->
 ## sd-scripts 参数
 
-界面的“启用 LoRA+”是本训练器的控制开关，不会传给 sd-scripts。真正写入 `network_args` 的只有下面三个原生参数。
+界面的“启用 LoRA+”是本训练器的唯一控制开关，不会传给 sd-scripts。真正写入 `network_args` 的只有下面三个原生参数。高级“自定义网络参数”中的同名 `loraplus_*` 会被忽略，避免绕过界面联动和后端兼容性校验。
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
@@ -136,4 +148,4 @@ lr/textencoder
 lr/textencoder plus
 ```
 
-训练器的真实学习率记录层会读取各参数组的实际学习率，因此 TensorBoard 中的普通曲线与 `plus` 曲线都能反映优化器当前使用的数值。
+训练器的真实学习率记录层会读取各参数组的实际学习率，因此 TensorBoard 中的普通曲线与 `plus` 曲线都能反映优化器当前使用的数值。对 Automagic3、ScheduleFree 等内部动态优化器，应以曲线中的实时值为准，不要假定训练全过程始终保持初始倍率。

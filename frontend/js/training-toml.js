@@ -102,10 +102,19 @@ window.trainingTomlMixin = {
     }
 
     // ── Build network_args（插在 network 分组末尾）──────────────
+    const LORAPLUS_ARG_KEYS = [
+      'loraplus_lr_ratio',
+      'loraplus_unet_lr_ratio',
+      'loraplus_text_encoder_lr_ratio',
+    ];
+    const isManagedLoraplusArg = item => {
+      const key = String(item).split('=', 1)[0].trim();
+      return LORAPLUS_ARG_KEYS.includes(key);
+    };
     const netArgsArr = [];
     const netCustom = this.form.network_args_custom;
     if (netCustom && typeof netCustom === 'string') {
-      netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s));
+      netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s && !isManagedLoraplusArg(s)));
     }
     // LoRA+ uses the exact sd-scripts network_args names. The product toggle is UI-only.
     const setNetworkArg = (argKey, value) => {
@@ -120,7 +129,7 @@ window.trainingTomlMixin = {
       && loraplusToggleField
       && this._fieldShowIfMet(loraplusToggleField);
     if (loraplusEnabled) {
-      ['loraplus_lr_ratio', 'loraplus_unet_lr_ratio', 'loraplus_text_encoder_lr_ratio'].forEach(argKey => {
+      LORAPLUS_ARG_KEYS.forEach(argKey => {
         const ratioField = fieldByKey.get(argKey);
         if (!ratioField || !this._fieldShowIfMet(ratioField)) return;
         const value = this.form[argKey];

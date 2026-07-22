@@ -184,6 +184,16 @@ def _set_key_value_arg(values: list[str], key: str, value: Any) -> None:
     values.append(f"{key}={value}")
 
 
+def _remove_key_value_args(values: list[str], keys: tuple[str, ...]) -> list[str]:
+    """Remove product-managed key=value arguments from an advanced argument list."""
+    managed = set(keys)
+    return [
+        item
+        for item in values
+        if item.split("=", 1)[0].strip() not in managed
+    ]
+
+
 def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str, Any], list[str]]:
     """
     将 UI JSON 配置转换为 sd-scripts TOML 配置。
@@ -211,6 +221,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         merged_network_args.extend(source["network_args"])
 
     normalized_network_args = _normalize_network_args(merged_network_args)
+    # LoRA+ ratios are product-managed fields. Always remove advanced/raw copies first,
+    # then add back only the values controlled by the enabled UI switch below.
+    normalized_network_args = _remove_key_value_args(
+        normalized_network_args, LORAPLUS_RATIO_KEYS
+    )
     if normalized_network_args:
         source["network_args"] = normalized_network_args
     elif "network_args" in source:

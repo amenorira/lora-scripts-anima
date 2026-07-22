@@ -73,6 +73,7 @@ LORAPLUS_RATIO_KEYS = (
 LORAPLUS_INCOMPATIBLE_OPTIMIZERS = (
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
+    EMOSENS_OPTIMIZER_TYPE,
 )
 
 
@@ -91,6 +92,37 @@ def _loraplus_ratio_show_if() -> list[list[dict[str, Any]]]:
         ]
         for module in LORAPLUS_NETWORK_MODULES
     ]
+
+
+def _loraplus_auto_disable_rules() -> list[dict[str, Any]]:
+    rules = [
+        {"watch": "optimizer_type", "when": optimizer, "set": False}
+        for optimizer in LORAPLUS_INCOMPATIBLE_OPTIMIZERS
+    ]
+    rules.append(
+        {
+            "watch": {
+                "optimizer_type": ADAFACTOR_OPTIMIZER_TYPE,
+                "adafactor_relative_step": True,
+            },
+            "set": False,
+        }
+    )
+    return rules
+
+
+def _loraplus_readonly_conditions() -> list[dict[str, Any] | list[dict[str, Any]]]:
+    conditions: list[dict[str, Any] | list[dict[str, Any]]] = [
+        {"key": "optimizer_type", "eq": optimizer}
+        for optimizer in LORAPLUS_INCOMPATIBLE_OPTIMIZERS
+    ]
+    conditions.append(
+        [
+            {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE},
+            {"key": "adafactor_relative_step", "eq": True},
+        ]
+    )
+    return conditions
 
 
 FIELDS: list[dict[str, Any]] = [
@@ -129,7 +161,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
     # LoRA+ 是 network_args 功能，不是顶层 CLI 参数。UI 开关仅控制是否生成下列三个
     # sd-scripts 原生参数；支持面与各 network module 的 create_network 实现保持一致。
-    {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "show_if": _show_if_one_of("network_module", LORAPLUS_NETWORK_MODULES), "hint_key": "field.enable_loraplusHint", "auto_value": [{"watch": "optimizer_type", "when": optimizer, "set": False} for optimizer in LORAPLUS_INCOMPATIBLE_OPTIMIZERS], "readonly_if": {**_show_if_one_of("optimizer_type", LORAPLUS_INCOMPATIBLE_OPTIMIZERS), "reason_key": "field.enable_loraplus_optimizerLocked"}, "doc_slug": "lora-plus", "doc_anchor": "overview"},
+    {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "show_if": _show_if_one_of("network_module", LORAPLUS_NETWORK_MODULES), "hint_key": "field.enable_loraplusHint", "auto_value": _loraplus_auto_disable_rules(), "readonly_if_any": _loraplus_readonly_conditions(), "readonly_reason_key": "field.enable_loraplus_optimizerLocked", "doc_slug": "lora-plus", "doc_anchor": "overview"},
     {"key": "loraplus_lr_ratio", "type": "number", "default": 2.0, "section": "network", "desc_key": "field.loraplus_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-lr-ratio"},
     {"key": "loraplus_unet_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_unet_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_unet_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-unet-lr-ratio"},
     {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
@@ -238,7 +270,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "schedulefree_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.schedulefree_warmup_steps", "target": "merged", "min": 0, "step": 1, "show_if": {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, "hint_key": "field.schedulefree_warmup_stepsHint"},
 {"key": "adafactor_relative_step", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_relative_step", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_relative_stepHint"},
 {"key": "adafactor_scale_parameter", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_scale_parameter", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False}]},
-{"key": "adafactor_warmup_init", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.adafactor_warmup_init", "target": "merged", "show_if": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}], "hint_key": "field.adafactor_warmup_initHint"},
+{"key": "adafactor_warmup_init", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.adafactor_warmup_init", "target": "merged", "show_if": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}], "hint_key": "field.adafactor_warmup_initHint", "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False}]},
 {"key": "adafactor_clip_threshold", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.adafactor_clip_threshold", "target": "merged", "min": 1e-8, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}},
 {"key": "adafactor_eps", "type": "text", "default": "1e-30, 1e-3", "section": "optimizer", "desc_key": "field.adafactor_eps", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_epsHint"},
 # ── Optimizer Merged: betas / eps ──
