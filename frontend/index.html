@@ -294,48 +294,95 @@
 
       <!-- Route: Parameter documentation -->
       <div x-show="currentRoute === 'docs'" x-cloak class="docs-page">
-        <div class="page-header docs-page-header">
-          <h1 class="page-title" x-text="t('docs.title')">Parameter Guide</h1>
-          <p class="page-subtitle" x-text="t('docs.subtitle')">Training parameter reference</p>
-        </div>
-
         <div class="docs-layout">
-          <aside class="docs-index" :aria-label="t('docs.catalog')">
+          <aside class="docs-index" x-show="docsDocuments.length" x-cloak
+                 :aria-label="t('docs.catalog')">
             <div class="docs-index-title" x-text="t('docs.catalog')">Documents</div>
-            <div class="docs-index-list">
-              <template x-for="doc in docsDocuments" :key="doc.slug">
-                <button type="button" class="docs-index-item"
-                        :class="{ active: docsSelectedSlug === doc.slug }"
-                        @click="selectParameterDoc(doc.slug)">
-                  <span class="docs-index-item-title" x-text="doc.title"></span>
-                  <span class="docs-index-item-summary" x-text="doc.summary"></span>
-                </button>
+            <div class="docs-index-groups">
+              <template x-for="group in docsDocumentGroups()" :key="group.category">
+                <section class="docs-index-group">
+                  <div class="docs-index-group-title" x-text="docsCategoryLabel(group.category)"></div>
+                  <div class="docs-index-list">
+                    <template x-for="doc in group.documents" :key="doc.slug">
+                      <button type="button" class="docs-index-item"
+                              :class="{ active: docsSelectedSlug === doc.slug, pending: docsPendingSlug === doc.slug }"
+                              :aria-current="docsSelectedSlug === doc.slug ? 'page' : null"
+                              :aria-busy="docsPendingSlug === doc.slug ? 'true' : 'false'"
+                              @click="selectParameterDoc(doc.slug)">
+                        <span class="docs-index-item-title" x-text="doc.title"></span>
+                        <span class="docs-index-item-state" aria-hidden="true">
+                          <span class="docs-index-spinner" x-show="docsPendingSlug === doc.slug"></span>
+                        </span>
+                      </button>
+                    </template>
+                  </div>
+                </section>
               </template>
-              <div class="docs-empty" x-show="!docsLoading && docsDocuments.length === 0 && !docsError"
-                   x-text="t('docs.empty')">No documents</div>
             </div>
           </aside>
 
-          <section class="docs-reader" aria-live="polite">
-            <div class="docs-loading" x-show="docsLoading">
+          <section class="docs-reader" :aria-busy="docsContentLoading ? 'true' : 'false'">
+            <div class="docs-document-picker" x-show="docsDocuments.length > 1" x-cloak>
+              <label for="docsDocumentSelect" x-text="t('docs.catalog')">Documents</label>
+              <select id="docsDocumentSelect" class="docs-document-select"
+                      :value="docsPendingSlug || docsSelectedSlug"
+                      @change="selectParameterDoc($event.target.value)">
+                <template x-for="doc in docsDocuments" :key="doc.slug">
+                  <option :value="doc.slug" x-text="doc.title"></option>
+                </template>
+              </select>
+            </div>
+
+            <details class="docs-mobile-outline" x-show="docsHtml && docsTocItems.length" x-cloak>
+              <summary x-text="t('docs.onThisPage')">On this page</summary>
+              <nav class="docs-toc" @click="handleDocsContentClick($event)"
+                   :aria-label="t('docs.onThisPage')">
+                <ul class="docs-toc-list">
+                  <template x-for="item in docsTocItems" :key="'mobile-' + item.anchor">
+                    <li :class="'level-' + item.level">
+                      <a :href="'#' + encodeURIComponent(item.anchor)" :title="item.title"
+                         :class="{ active: docsActiveAnchor === item.anchor }"
+                         :aria-current="docsActiveAnchor === item.anchor ? 'location' : null">
+                        <span x-text="item.title"></span>
+                      </a>
+                    </li>
+                  </template>
+                </ul>
+              </nav>
+            </details>
+
+            <div class="docs-loading" x-show="!docsHtml && (docsIndexLoading || docsContentLoading)"
+                 role="status" aria-live="polite">
               <span class="spinner"></span>
               <span x-text="t('docs.loading')">Loading documentation...</span>
             </div>
-            <div class="docs-error" x-show="docsError" x-cloak>
+            <div class="docs-error" x-show="!docsHtml && docsError" x-cloak role="alert">
               <span x-text="docsError"></span>
               <button type="button" class="btn btn-ghost btn-sm" @click="loadDocsPage(true)" x-text="t('docs.retry')">Retry</button>
             </div>
-            <div x-show="docsHtml && !docsLoading && !docsError" x-cloak>
-              <div class="docs-reader-heading" x-show="docsCurrentDocument()">
-                <span class="docs-reader-kicker" x-text="t('docs.parameterReference')">Parameter reference</span>
-                <span class="docs-reader-summary" x-text="docsCurrentDocument() ? docsCurrentDocument().summary : ''"></span>
-              </div>
-              <nav class="docs-toc" x-show="docsToc" x-html="docsToc"
-                   @click="handleDocsContentClick($event)" :aria-label="t('docs.onThisPage')"></nav>
-              <article id="docsArticle" class="markdown-body" x-html="docsHtml"
-                       @click="handleDocsContentClick($event)"></article>
-            </div>
+            <div class="docs-empty" x-show="!docsIndexLoading && docsDocuments.length === 0 && !docsError"
+                 x-cloak x-text="t('docs.empty')">No documents</div>
+            <article id="docsArticle" class="markdown-body" x-show="docsHtml" x-cloak
+                     x-html="docsHtml" @click="handleDocsContentClick($event)"></article>
           </section>
+
+          <aside class="docs-outline" x-show="docsHtml && docsTocItems.length" x-cloak>
+            <div class="docs-outline-title" x-text="t('docs.onThisPage')">On this page</div>
+            <nav class="docs-toc" @click="handleDocsContentClick($event)"
+                 :aria-label="t('docs.onThisPage')">
+              <ul class="docs-toc-list">
+                <template x-for="item in docsTocItems" :key="'desktop-' + item.anchor">
+                  <li :class="'level-' + item.level">
+                    <a :href="'#' + encodeURIComponent(item.anchor)" :title="item.title"
+                       :class="{ active: docsActiveAnchor === item.anchor }"
+                       :aria-current="docsActiveAnchor === item.anchor ? 'location' : null">
+                      <span x-text="item.title"></span>
+                    </a>
+                  </li>
+                </template>
+              </ul>
+            </nav>
+          </aside>
         </div>
       </div>
 

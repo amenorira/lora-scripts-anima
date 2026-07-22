@@ -265,6 +265,9 @@ document.addEventListener('alpine:init', () => {
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
       }
+      if (prev === 'docs' && route !== 'docs' && typeof this.cleanupDocsReader === 'function') {
+        this.cleanupDocsReader();
+      }
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
         if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
         else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();

@@ -20,15 +20,17 @@
 	},
 	"docs": {
 		"title": "参数说明",
-		"subtitle": "训练参数、作用机制与适用场景参考",
-		"catalog": "文档目录",
-		"parameterReference": "训练参数参考",
-		"onThisPage": "本页目录",
+		"catalog": "参数文档",
+		"onThisPage": "本文内容",
 		"loading": "正在加载文档...",
 		"loadError": "无法加载文档",
 		"empty": "暂无参数文档",
 		"retry": "重试",
-		"openGuide": "查看说明"
+		"openGuide": "查看说明",
+		"categories": {
+			"network": "网络结构",
+			"other": "其他"
+		}
 	},
 	"monitor": {
 		"status": "训练状态",

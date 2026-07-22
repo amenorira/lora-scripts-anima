@@ -26,9 +26,11 @@ _DOC_ANCHOR_RE = re.compile(
     r"^\s*<!--\s*doc-anchor:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*-->\s*$"
 )
 _ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
+# Add future guides here; the reader groups and renders this registry automatically.
 _DOCUMENTS = {
     "lora-plus": {
         "category": "network",
+        "order": 10,
         "titles": {"zh-CN": "LoRA+", "en-US": "LoRA+"},
         "summaries": {
             "zh-CN": "LoRA+ 的训练原理、适用场景、参数含义与优化器注意事项。",
@@ -143,7 +145,7 @@ def _render_markdown(source: str, relative_path: PurePosixPath) -> tuple[str, st
             _DocAnchorExtension(),
             _AssetExtension(relative_path.parent),
         ],
-        extension_configs={"toc": {"permalink": False}},
+        extension_configs={"toc": {"permalink": False, "toc_depth": "2-3"}},
         output_format="html5",
     )
     html = renderer.convert(source)
@@ -164,18 +166,31 @@ def _resolve_asset_path(asset_path: str) -> Path:
     return path
 
 
-@router.get("/docs")
-async def list_docs(locale: str = Query(_DEFAULT_LOCALE)):
-    selected_locale = _normalize_locale(locale)
-    documents = [
+def _list_documents(locale: str) -> list[dict[str, str]]:
+    documents = sorted(
+        _DOCUMENTS.items(),
+        key=lambda item: (
+            str(item[1].get("category", "")),
+            int(item[1].get("order", 0)),
+            item[0],
+        ),
+    )
+    return [
         {
             "slug": slug,
             "category": document["category"],
-            "title": document["titles"].get(selected_locale) or document["titles"][_DEFAULT_LOCALE],
-            "summary": document["summaries"].get(selected_locale) or document["summaries"][_DEFAULT_LOCALE],
+            "title": document["titles"].get(locale) or document["titles"][_DEFAULT_LOCALE],
+            "summary": document["summaries"].get(locale)
+            or document["summaries"][_DEFAULT_LOCALE],
         }
-        for slug, document in _DOCUMENTS.items()
+        for slug, document in documents
     ]
+
+
+@router.get("/docs")
+async def list_docs(locale: str = Query(_DEFAULT_LOCALE)):
+    selected_locale = _normalize_locale(locale)
+    documents = _list_documents(selected_locale)
     return APIResponseSuccess(data={"documents": documents, "locale": selected_locale})
 
 

@@ -20,15 +20,17 @@
 	},
 	"docs": {
 		"title": "Parameter Guide",
-		"subtitle": "Training parameter behavior and use-case reference",
-		"catalog": "Documents",
-		"parameterReference": "Training parameter reference",
-		"onThisPage": "On this page",
+		"catalog": "Parameter docs",
+		"onThisPage": "In this article",
 		"loading": "Loading documentation...",
 		"loadError": "Unable to load documentation",
 		"empty": "No parameter documents",
 		"retry": "Retry",
-		"openGuide": "Open guide"
+		"openGuide": "Open guide",
+		"categories": {
+			"network": "Network",
+			"other": "Other"
+		}
 	},
 	"monitor": {
 		"status": "Training Status",

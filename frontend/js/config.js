@@ -76,6 +76,6 @@ window.ROUTE_CONFIG = {
   'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
   'presets': { titleKey: 'preset.title', subtitleKey: 'preset.subtitle' },
-  'docs': { titleKey: 'docs.title', subtitleKey: 'docs.subtitle' },
+  'docs': { titleKey: 'docs.title' },
   'tensorboard': { title: 'TensorBoard', subtitle: '' },
 };
