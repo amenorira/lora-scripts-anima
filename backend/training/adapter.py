@@ -12,8 +12,6 @@ from typing import Any
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
 from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
-    AUTOMAGIC_SCHEDULER_TYPE,
-    EMOPULSE_SCHEDULER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
     get_supported_fields,
@@ -190,6 +188,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = {k: v for k, v in config.items()}  # 扁平结构，dict comprehension 浅拷贝即可
+    # lr_scheduler_type 已从产品配置移除；旧预设残留也不再透传给 sd-scripts。
+    source.pop("lr_scheduler_type", None)
     adapted: dict[str, Any] = {}
     warnings: list[str] = []
 
@@ -323,13 +323,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     if te_only and not _is_empty_value(source.get("unet_lr")):
         source["unet_lr"] = ""
 
-    # ── 5.6. EmoSens 优化器：注入 EmoPulse 透传调度器 + 模型感知 LR ──
-    # EmoSens 在 optimizer.step() 内部已将 group['lr'] 设为动态 emoPulse。
-    # 必须用透传调度器替代传统调度器（constant/cosine 等会覆写 emoPulse）。
-    # 前端 auto_value 已锁定 lr_scheduler_type=EmoPulse，此处为安全兜底。
+    # ── 5.6. EmoSens 优化器：内部动态 LR + 模型感知 LR ─────────
+    # 训练启动钩子会提供无操作 scheduler 接口，避免传统 scheduler 覆写 emoPulse。
     if source.get("optimizer_type") == EMOSENS_OPTIMIZER_TYPE:
-        source["lr_scheduler_type"] = EMOPULSE_SCHEDULER_TYPE
         source["lr_scheduler"] = "constant"
+        source["lr_warmup_steps"] = 0
         # 上游推荐 Anima/DiT LoRA 使用 0.1，SDXL LoRA 使用 1.0。
         # 仅替换缺失值和界面通用默认值，保留用户明确设置的学习率。
         model_type = source.get("model_train_type", "sdxl-lora")
@@ -375,7 +373,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             source["optimizer_args"] = opt_args
             warnings.append("EmoSens: weight_decay auto-set to 0.01")
 
-    # ── 5.6a. Automagic3：兼容模式 + 实际 LR 透传 ──────────
+    # ── 5.6a. Automagic3：兼容模式 + 优化器内部 LR ─────────
     if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
         opt_args = list(source.get("optimizer_args") or [])
         reserved_guard = any(item.strip().startswith("fused_guard=") for item in opt_args)
@@ -418,26 +416,17 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 "full_bf16 disabled / Automagic3 兼容模式要求可训练参数保持 FP32，已关闭 full_bf16"
             )
 
-        scheduler_changed = source.get("lr_scheduler_type") != AUTOMAGIC_SCHEDULER_TYPE
-        source["lr_scheduler_type"] = AUTOMAGIC_SCHEDULER_TYPE
+        scheduler_changed = (
+            source.get("lr_scheduler") != "constant"
+            or source.get("lr_warmup_steps") not in (None, 0)
+        )
         source["lr_scheduler"] = "constant"
         source["lr_warmup_steps"] = 0
         if scheduler_changed:
             warnings.append(
-                "Automagic3: external scheduler replaced with AutomagicPassthrough "
-                "to preserve and report the internally adapted LR / 已接管外部调度器并透传实际自适应 LR"
+                "Automagic3: external LR scheduling disabled; TensorBoard reads the optimizer's "
+                "adaptive LR directly / 已禁用外部学习率调度，TensorBoard 将直接读取优化器的实际自适应 LR"
             )
-
-    # lr_scheduler_type 非空时，内置 lr_scheduler 被 sd-scripts 忽略，不写 TOML
-    if not _is_empty_value(source.get("lr_scheduler_type")):
-        source.pop("lr_scheduler", None)
-        source.pop("lr_warmup_steps", None)
-        source.pop("lr_scheduler_num_cycles", None)
-        source.pop("lr_scheduler_power", None)
-    # ScheduleFree 优化器自带 dummy scheduler，不允许外部调度器
-    _SF_OPTIMIZERS = {"AdamWScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"}
-    if source.get("optimizer_type") in _SF_OPTIMIZERS:
-        source.pop("lr_scheduler_type", None)
 
     # ── 5.6b. Prodigy 优化器：锁定 learning_rate ─────────
     # D-adaptation 要求 LR=1.0 作缩放因子。三个 LR 字段（learning_rate / unet_lr / text_encoder_lr）

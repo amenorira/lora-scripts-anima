@@ -69,6 +69,7 @@ def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None
     env["ANIMA_OUTPUT_DIR"] = artifact_dir
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TASK_ID"] = task_id
+    env["LORA_SCRIPTS_TRUE_LR_LOGGING"] = "1"
 
     # 确保内部启动钩子、项目根目录和 vendor/ 位于 Python path 前面。
     # python_startup 中的 sitecustomize 会在训练解释器导入 bitsandbytes 前自动加载。

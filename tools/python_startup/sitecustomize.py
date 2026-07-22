@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import subprocess
 import sys
 
@@ -48,3 +49,9 @@ def _install_bitsandbytes_windows_compat() -> None:
 
 
 _install_bitsandbytes_windows_compat()
+
+
+if os.environ.get("LORA_SCRIPTS_TRUE_LR_LOGGING") == "1":
+    from tools.python_startup.lr_logging import install_import_hook
+
+    install_import_hook()

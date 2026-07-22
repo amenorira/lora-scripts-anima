@@ -8,11 +8,10 @@
 ## Vendored files
 
 - `emosens.py` comes from `optimizer/emosens.py`.
-- `emopulse_scheduler.py` comes from `scheduler/emopulse_scheduler.py`.
 
 ## Local adaptations
 
 - Package paths use `vendor.emo_optimizer`.
 - Console messages use encoding-safe output for Windows code pages.
-- When paired with EmoSens, `EmoPulse` is a pass-through scheduler so it does not
-  overwrite the learning rate already calculated by the optimizer.
+- EmoSens owns its dynamic learning rate. The project uses sd-scripts' no-op
+  scheduler interface and reports the optimizer's current rate directly.

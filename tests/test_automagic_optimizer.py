@@ -1,4 +1,3 @@
-import importlib
 import json
 import unittest
 from pathlib import Path
@@ -8,13 +7,12 @@ import torch
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
-    AUTOMAGIC_SCHEDULER_TYPE,
     FIELDS,
     get_fields_json,
 )
 from backend.training.validation import validate_training_config
+from tools.python_startup.lr_logging import read_learning_rates
 from vendor.automagic_optimizer.integration import Automagic3
-from vendor.automagic_optimizer.scheduler import AutomagicPassthrough
 
 
 def valid_automagic_config() -> dict:
@@ -55,6 +53,7 @@ class AutomagicFieldContractTests(unittest.TestCase):
             for option in group["options"]
         ]
         self.assertTrue(any(option["v"] == AUTOMAGIC_OPTIMIZER_TYPE for option in optimizer_options))
+        self.assertNotIn("lr_scheduler_type", fields)
         for key in (
             "automagic_min_lr",
             "automagic_max_lr",
@@ -194,7 +193,7 @@ class AutomagicValidationTests(unittest.TestCase):
 
 
 class AutomagicAdapterTests(unittest.TestCase):
-    def test_forces_compatibility_mode_and_passthrough_scheduler(self):
+    def test_forces_compatibility_mode_without_external_scheduler(self):
         adapted, warnings = adapt_config(
             {
                 "model_train_type": "anima-lora",
@@ -202,7 +201,7 @@ class AutomagicAdapterTests(unittest.TestCase):
                 "learning_rate": "1e-4",
                 "full_bf16": True,
                 "lr_scheduler": "cosine",
-                "lr_scheduler_type": "",
+                "lr_scheduler_type": "legacy.external.Scheduler",
                 "lr_warmup_steps": 100,
                 "automagic_min_lr": 1e-7,
                 "automagic_max_lr": 2e-3,
@@ -211,9 +210,9 @@ class AutomagicAdapterTests(unittest.TestCase):
                 "optimizer_args": ["max_lr=1e-2", "beta2=0.99"],
             }
         )
-        self.assertEqual(adapted["lr_scheduler_type"], AUTOMAGIC_SCHEDULER_TYPE)
-        self.assertNotIn("lr_scheduler", adapted)
-        self.assertNotIn("lr_warmup_steps", adapted)
+        self.assertNotIn("lr_scheduler_type", adapted)
+        self.assertEqual(adapted["lr_scheduler"], "constant")
+        self.assertEqual(adapted["lr_warmup_steps"], 0)
         self.assertNotIn("full_bf16", adapted)
         self.assertIn("fused=False", adapted["optimizer_args"])
         self.assertNotIn("fused=True", adapted["optimizer_args"])
@@ -259,27 +258,22 @@ class AutomagicAdapterTests(unittest.TestCase):
 
 
 class AutomagicRuntimeTests(unittest.TestCase):
-    def test_dynamic_import_step_scheduler_and_resume(self):
-        module_name, class_name = AUTOMAGIC_OPTIMIZER_TYPE.rsplit(".", 1)
-        optimizer_class = getattr(importlib.import_module(module_name), class_name)
+    def test_dynamic_lr_reporting_and_resume(self):
         parameter = torch.nn.Parameter(torch.tensor([1.0, -1.0], dtype=torch.float32))
-        optimizer = optimizer_class([parameter], lr=1e-4)
-        scheduler = AutomagicPassthrough(optimizer)
+        optimizer = Automagic3([parameter], lr=1e-4)
 
         for _ in range(10):
             parameter.square().mean().backward()
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            scheduler.step()
 
         self.assertFalse(optimizer.fused)
         self.assertEqual(optimizer._hook_handles, [])
-        self.assertEqual(scheduler.get_last_lr(), optimizer.get_learning_rates())
-        self.assertEqual(scheduler.state_dict(), {"step_count": 10})
+        self.assertEqual(read_learning_rates(optimizer=optimizer), optimizer.get_learning_rates())
 
         state = optimizer.state_dict()
         restored_parameter = torch.nn.Parameter(parameter.detach().clone())
-        restored = optimizer_class([restored_parameter], lr=1e-4)
+        restored = Automagic3([restored_parameter], lr=1e-4)
         restored.load_state_dict(state)
         self.assertAlmostEqual(restored.get_avg_learning_rate(), optimizer.get_avg_learning_rate(), places=12)
 

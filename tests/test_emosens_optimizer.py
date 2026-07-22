@@ -8,7 +8,6 @@ from pathlib import Path
 
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
-    EMOPULSE_SCHEDULER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
     get_fields_json,
@@ -57,6 +56,7 @@ class EmoSensFieldContractTests(unittest.TestCase):
             for option in group["options"]
         ]
         self.assertTrue(any(option["v"] == EMOSENS_OPTIMIZER_TYPE for option in optimizer_options))
+        self.assertNotIn("lr_scheduler_type", fields)
 
         accumulation = fields["gradient_accumulation_steps"]
         self.assertEqual(accumulation["autoValue"][0]["set"], 1)
@@ -151,7 +151,9 @@ class EmoSensAdapterTests(unittest.TestCase):
                     config["learning_rate"] = learning_rate
                 adapted, _ = adapt_config(config)
                 self.assertEqual(adapted["learning_rate"], expected)
-                self.assertEqual(adapted["lr_scheduler_type"], EMOPULSE_SCHEDULER_TYPE)
+                self.assertNotIn("lr_scheduler_type", adapted)
+                self.assertEqual(adapted["lr_scheduler"], "constant")
+                self.assertEqual(adapted["lr_warmup_steps"], 0)
 
     def test_preserves_explicit_learning_rate_and_gradient_clipping(self):
         for model_type, learning_rate in (("anima-lora", "0.2"), ("sdxl-lora", "0.5")):
