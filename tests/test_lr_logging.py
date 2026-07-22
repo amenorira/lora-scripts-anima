@@ -1,3 +1,4 @@
+import math
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 import torch
 
 from tools.python_startup.lr_logging import (
+    EffectiveLrNoOpScheduler,
     LearningRateReporter,
     _patch_network_trainer_module,
     _patch_optimizer_module,
@@ -32,6 +34,23 @@ class LearningRateReaderTests(unittest.TestCase):
             param_groups=[{"lr": 1.0, "scheduled_lr": 0.125}],
         )
         self.assertEqual(read_learning_rates(optimizer=optimizer), [0.125])
+
+    def test_effective_noop_scheduler_reports_schedulefree_rate_without_mutation(self):
+        parameter = torch.nn.Parameter(torch.tensor([1.0]))
+        optimizer = named_optimizer(
+            "AdamWScheduleFree",
+            param_groups=[{"params": [parameter], "lr": 1.0, "scheduled_lr": 0.125}],
+        )
+        scheduler = EffectiveLrNoOpScheduler(optimizer)
+        before_parameter = parameter.detach().clone()
+        before_lr = optimizer.param_groups[0]["lr"]
+
+        self.assertEqual(scheduler.get_last_lr(), [0.125])
+        self.assertIsNone(scheduler.step())
+        self.assertTrue(torch.equal(parameter, before_parameter))
+        self.assertEqual(optimizer.param_groups[0]["lr"], before_lr)
+        self.assertEqual(scheduler.state_dict(), {})
+        self.assertIsNone(scheduler.load_state_dict({}))
 
     def test_prodigy_uses_adaptive_d_times_lr(self):
         optimizer = named_optimizer(
@@ -138,6 +157,20 @@ class InstalledOptimizerTests(unittest.TestCase):
         expected = optimizer.param_groups[0]["d"] * optimizer.param_groups[0]["lr"]
         self.assertEqual(read_learning_rates(optimizer=optimizer), [expected])
 
+    def test_real_prodigy_bias_correction_reports_last_step_rate(self):
+        from prodigyopt import Prodigy
+
+        parameter = torch.nn.Parameter(torch.tensor([1.0]))
+        optimizer = Prodigy([parameter], lr=1.0, d0=1e-3, use_bias_correction=True)
+        parameter.square().backward()
+        optimizer.step()
+
+        group = optimizer.param_groups[0]
+        beta1, beta2 = group["betas"]
+        step = max(int(group["k"]), 1)
+        expected = group["d"] * group["lr"] * math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
+        self.assertAlmostEqual(read_learning_rates(optimizer=optimizer)[0], expected)
+
     def test_real_prodigy_plus_uses_its_effective_rate_api(self):
         from prodigyplus import ProdigyPlusScheduleFree
 
@@ -239,12 +272,9 @@ class SdScriptsPatchTests(unittest.TestCase):
         )
         self.assertEqual(logs["lr/unet"], 0.125)
 
-    def test_internal_lr_owner_gets_noop_scheduler(self):
-        dummy = object()
+    def test_internal_lr_owner_gets_effective_noop_scheduler(self):
         module = types.SimpleNamespace(
             get_scheduler_fix=lambda args, optimizer, num_processes: "external-scheduler",
-            get_dummy_scheduler=lambda optimizer: dummy,
-            append_lr_to_logs_with_names=lambda *args: None,
         )
         _patch_optimizer_module(module)
         automagic = named_optimizer(
@@ -252,7 +282,34 @@ class SdScriptsPatchTests(unittest.TestCase):
             param_groups=[{"lr": 1e-4}],
             get_learning_rates=lambda self: [1e-4],
         )
-        self.assertIs(module.get_scheduler_fix(None, automagic, 1), dummy)
+        scheduler = module.get_scheduler_fix(None, automagic, 1)
+        self.assertIsInstance(scheduler, EffectiveLrNoOpScheduler)
+        self.assertIs(scheduler.optimizer, automagic)
+        self.assertEqual(scheduler.get_last_lr(), [1e-4])
+
+    def test_schedulefree_optimizer_gets_effective_noop_scheduler(self):
+        module = types.SimpleNamespace(
+            get_scheduler_fix=lambda args, optimizer, num_processes: "external-scheduler",
+        )
+        _patch_optimizer_module(module)
+        optimizer = named_optimizer(
+            "AdamWScheduleFree",
+            param_groups=[{"lr": 1.0, "scheduled_lr": 0.125}],
+        )
+
+        scheduler = module.get_scheduler_fix(None, optimizer, 1)
+        self.assertIsInstance(scheduler, EffectiveLrNoOpScheduler)
+        self.assertEqual(scheduler.get_last_lr(), [0.125])
+
+    def test_external_scheduler_is_unchanged_for_regular_optimizer(self):
+        external_scheduler = object()
+        module = types.SimpleNamespace(
+            get_scheduler_fix=lambda args, optimizer, num_processes: external_scheduler,
+        )
+        _patch_optimizer_module(module)
+        optimizer = named_optimizer("AdamW", param_groups=[{"lr": 1e-4}])
+
+        self.assertIs(module.get_scheduler_fix(None, optimizer, 1), external_scheduler)
 
     def test_training_subprocess_installs_import_hook(self):
         env = os.environ.copy()

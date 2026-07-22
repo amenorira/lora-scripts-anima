@@ -116,13 +116,24 @@ def _read_prodigy_plus(optimizer: Any) -> list[float]:
     return [optimizer.get_dlr(group) for group in optimizer.param_groups]
 
 
+def _read_prodigy(optimizer: Any) -> list[float]:
+    values: list[float] = []
+    for group in optimizer.param_groups:
+        value = group["d"] * group["lr"]
+        if group.get("use_bias_correction"):
+            beta1, beta2 = group["betas"]
+            step = max(int(group.get("k", 0)), 1)
+            value *= math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
+        values.append(value)
+    return values
+
+
 def _read_d_adaptation(optimizer: Any) -> list[float]:
     values: list[float] = []
     for group in optimizer.param_groups:
         lr = group.get("effective_lr", group["lr"])
         value = group["d"] * lr
 
-        # prodigyopt applies this scalar directly when bias correction is on.
         if group.get("use_bias_correction"):
             beta1, beta2 = group["betas"]
             step = int(group.get("k", 0)) + 1
@@ -228,6 +239,25 @@ def optimizer_owns_schedule(optimizer: Any) -> bool:
     return bool(reporter and reporter.owns_schedule)
 
 
+class EffectiveLrNoOpScheduler:
+    """No-op scheduler that reports the optimizer's effective learning rate."""
+
+    def __init__(self, optimizer: Any):
+        self.optimizer = optimizer
+
+    def step(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def get_last_lr(self) -> list[float]:
+        return read_learning_rates(optimizer=self.optimizer)
+
+    def state_dict(self) -> dict[str, Any]:
+        return {}
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        return None
+
+
 def _append_d_adaptation_diagnostics(
     logs: dict[str, Any],
     optimizer: Any | None,
@@ -236,7 +266,7 @@ def _append_d_adaptation_diagnostics(
     if optimizer is None:
         return
     candidate, reporter = _resolve_reporter(optimizer)
-    if reporter is None or reporter.name not in {"d-adaptation", "prodigy-plus"}:
+    if reporter is None or reporter.name not in {"d-adaptation", "prodigy", "prodigy-plus"}:
         return
 
     for name, group in zip(names, candidate.param_groups):
@@ -251,17 +281,14 @@ def _append_d_adaptation_diagnostics(
 def _patch_optimizer_module(module: Any) -> None:
     if getattr(module, _OPTIMIZER_PATCH_FLAG, False):
         return
-    if not all(
-        hasattr(module, name)
-        for name in ("get_scheduler_fix", "get_dummy_scheduler", "append_lr_to_logs_with_names")
-    ):
+    if not callable(getattr(module, "get_scheduler_fix", None)):
         return
 
     original_get_scheduler_fix = module.get_scheduler_fix
 
     def get_scheduler_fix(args: Any, optimizer: Any, num_processes: int):
         if optimizer_owns_schedule(optimizer):
-            return module.get_dummy_scheduler(optimizer)
+            return EffectiveLrNoOpScheduler(optimizer)
         return original_get_scheduler_fix(args, optimizer, num_processes)
 
     def append_lr_to_logs_with_names(
@@ -278,7 +305,8 @@ def _patch_optimizer_module(module: Any) -> None:
 
     get_scheduler_fix.__wrapped__ = original_get_scheduler_fix
     module.get_scheduler_fix = get_scheduler_fix
-    module.append_lr_to_logs_with_names = append_lr_to_logs_with_names
+    if callable(getattr(module, "append_lr_to_logs_with_names", None)):
+        module.append_lr_to_logs_with_names = append_lr_to_logs_with_names
     setattr(module, _OPTIMIZER_PATCH_FLAG, True)
 
 
@@ -370,13 +398,7 @@ register_learning_rate_reporter(
         "prodigy-plus",
         _named("ProdigyPlusScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"),
         _read_prodigy_plus,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
-        "d-adaptation",
-        _name_starts_with("DAdapt", "Prodigy"),
-        _read_d_adaptation,
+        owns_schedule=True,
     )
 )
 register_learning_rate_reporter(
@@ -384,6 +406,21 @@ register_learning_rate_reporter(
         "schedule-free",
         _name_ends_with("ScheduleFree"),
         _read_schedule_free,
+        owns_schedule=True,
+    )
+)
+register_learning_rate_reporter(
+    LearningRateReporter(
+        "prodigy",
+        _named("Prodigy", "prodigyopt.prodigy.Prodigy"),
+        _read_prodigy,
+    )
+)
+register_learning_rate_reporter(
+    LearningRateReporter(
+        "d-adaptation",
+        _name_starts_with("DAdapt"),
+        _read_d_adaptation,
     )
 )
 register_learning_rate_reporter(
@@ -395,6 +432,7 @@ register_learning_rate_reporter(
 
 
 __all__ = [
+    "EffectiveLrNoOpScheduler",
     "LearningRateReporter",
     "install_import_hook",
     "optimizer_from_scheduler",
