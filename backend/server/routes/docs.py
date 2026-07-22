@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import posixpath
+import re
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from markdown import Markdown
 from markdown.extensions import Extension
+from markdown.preprocessors import Preprocessor
 from markdown.treeprocessors import Treeprocessor
 
 from backend.constants import DOCS_DIR
@@ -20,6 +22,10 @@ router = APIRouter()
 
 _DEFAULT_LOCALE = "zh-CN"
 _SUPPORTED_LOCALES = {"zh-CN", "en-US"}
+_DOC_ANCHOR_RE = re.compile(
+    r"^\s*<!--\s*doc-anchor:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*-->\s*$"
+)
+_ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
 _DOCUMENTS = {
     "lora-plus": {
         "category": "network",
@@ -34,6 +40,44 @@ _DOCUMENTS = {
         },
     },
 }
+
+
+class _DocAnchorPreprocessor(Preprocessor):
+    """Turn invisible doc anchor comments into Markdown heading attributes."""
+
+    def run(self, lines: list[str]) -> list[str]:
+        output: list[str] = []
+        pending_anchor: str | None = None
+
+        for line in lines:
+            marker = _DOC_ANCHOR_RE.match(line)
+            if marker:
+                if pending_anchor is not None:
+                    output.append(f"<!-- doc-anchor: {pending_anchor} -->")
+                pending_anchor = marker.group(1)
+                continue
+
+            if pending_anchor is not None:
+                if _ATX_HEADING_RE.match(line):
+                    line = f"{line.rstrip()} {{#{pending_anchor}}}"
+                else:
+                    output.append(f"<!-- doc-anchor: {pending_anchor} -->")
+                pending_anchor = None
+
+            output.append(line)
+
+        if pending_anchor is not None:
+            output.append(f"<!-- doc-anchor: {pending_anchor} -->")
+        return output
+
+
+class _DocAnchorExtension(Extension):
+    def extendMarkdown(self, markdown: Markdown) -> None:
+        markdown.preprocessors.register(
+            _DocAnchorPreprocessor(markdown),
+            "local_doc_anchors",
+            35,
+        )
 
 
 def _normalize_locale(locale: str | None) -> str:
@@ -93,7 +137,12 @@ class _AssetExtension(Extension):
 
 def _render_markdown(source: str, relative_path: PurePosixPath) -> tuple[str, str]:
     renderer = Markdown(
-        extensions=["extra", "toc", _AssetExtension(relative_path.parent)],
+        extensions=[
+            "extra",
+            "toc",
+            _DocAnchorExtension(),
+            _AssetExtension(relative_path.parent),
+        ],
         extension_configs={"toc": {"permalink": False}},
         output_format="html5",
     )

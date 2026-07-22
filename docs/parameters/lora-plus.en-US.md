@@ -2,7 +2,8 @@
 
 > LoRA+ assigns different learning rates to LoRA parameter groups during training. It is not an optimizer or scheduler, and it does not change the exported LoRA format or inference behavior.
 
-## Overview {#overview}
+<!-- doc-anchor: overview -->
+## Overview
 
 A standard LoRA update is the product of two low-rank matrices:
 
@@ -19,7 +20,8 @@ lora_up LR   = base LR * LoRA+ ratio
 
 With a base rate of `1e-4` and a ratio of `2`, the regular group uses `1e-4` and the `plus` group uses `2e-4`.
 
-## Training effects {#effects}
+<!-- doc-anchor: effects -->
+## Training effects
 
 - **Faster startup:** `lora_up` can leave its zero initialization sooner.
 - **Targeted acceleration:** the base rate for the other LoRA parameters remains unchanged.
@@ -29,7 +31,8 @@ With a base rate of `1e-4` and a ratio of `2`, the regular group uses `1e-4` and
 
 LoRA+ adds no inference VRAM or compute cost and does not change how the `.safetensors` file is loaded.
 
-## When it can help {#good-cases}
+<!-- doc-anchor: good-cases -->
+## When it can help
 
 LoRA+ is most worth testing when:
 
@@ -41,7 +44,8 @@ LoRA+ is most worth testing when:
 
 For few-shot character LoRAs, identity details may form sooner. Repeated backgrounds and compositions can also be memorized sooner, so dataset quality matters more, not less.
 
-## When to be cautious {#cautions}
+<!-- doc-anchor: cautions -->
+## When to be cautious
 
 - Very small or highly duplicated datasets that already overfit easily.
 - A high base learning rate that becomes excessive after multiplication.
@@ -51,11 +55,13 @@ For few-shot character LoRAs, identity details may form sooner. Repeated backgro
 
 ScheduleFree and other internally scheduled optimizers can generally hold different parameter-group rates, but their internal dynamics interact with the ratio. AdamW ratios should not be copied blindly.
 
-## sd-scripts parameters {#parameters}
+<!-- doc-anchor: parameters -->
+## sd-scripts parameters
 
 The UI toggle is local to this trainer and is never sent to sd-scripts. Only these native `network_args` are emitted.
 
-### `loraplus_lr_ratio` {#loraplus-lr-ratio}
+<!-- doc-anchor: loraplus-lr-ratio -->
+### `loraplus_lr_ratio`
 
 Global LoRA+ ratio and the default for both UNet/DiT and text encoder groups.
 
@@ -65,7 +71,8 @@ loraplus_lr_ratio=2.0
 
 A component-specific value overrides the global value for that component. Leave the global field empty and set only a component field to enable LoRA+ for one component.
 
-### `loraplus_unet_lr_ratio` {#loraplus-unet-lr-ratio}
+<!-- doc-anchor: loraplus-unet-lr-ratio -->
+### `loraplus_unet_lr_ratio`
 
 Ratio for the main UNet. The same sd-scripts parameter name is used for the main DiT in Anima training.
 
@@ -75,7 +82,8 @@ loraplus_unet_lr_ratio=2.0
 
 For a first character-LoRA experiment, applying `2.0` only to UNet/DiT is the conservative starting point.
 
-### `loraplus_text_encoder_lr_ratio` {#loraplus-text-encoder-lr-ratio}
+<!-- doc-anchor: loraplus-text-encoder-lr-ratio -->
+### `loraplus_text_encoder_lr_ratio`
 
 Ratio for text-encoder LoRA parameters.
 
@@ -85,7 +93,8 @@ loraplus_text_encoder_lr_ratio=2.0
 
 The text encoder can bind a trigger word faster, but it can also lose prompt generalization faster. Start conservatively.
 
-## Supported network modules {#support}
+<!-- doc-anchor: support -->
+## Supported network modules
 
 The trainer exposes LoRA+ only for modules that implement it in sd-scripts:
 
@@ -98,7 +107,8 @@ The trainer exposes LoRA+ only for modules that implement it in sd-scripts:
 
 The switch is hidden for `lycoris.kohya` so the trainer does not pass unverified parameters to that module.
 
-## Suggested experiment {#testing}
+<!-- doc-anchor: testing -->
+## Suggested experiment
 
 Keep the dataset, seed, rank, alpha, base LR, and total steps fixed:
 
@@ -109,7 +119,8 @@ Keep the dataset, seed, rank, alpha, base LR, and total steps fixed:
 
 Compare samples at the same steps. Watch identity formation, background leakage, rigid composition, and prompt generalization. Loss alone cannot determine whether LoRA+ is better.
 
-## TensorBoard {#tensorboard}
+<!-- doc-anchor: tensorboard -->
+## TensorBoard
 
 sd-scripts records the regular and higher-rate groups separately:
 

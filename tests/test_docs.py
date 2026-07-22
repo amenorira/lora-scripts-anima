@@ -17,12 +17,14 @@ class DocumentationTests(unittest.TestCase):
 
     def test_markdown_renders_stable_anchors_toc_and_relative_images(self):
         html, toc = _render_markdown(
-            "# Guide\n\n## Ratio {#ratio}\n\n![curve](images/curve.png)",
+            "# Guide\n\n<!-- doc-anchor: ratio -->\n## Ratio\n\n![curve](images/curve.png)",
             PurePosixPath("parameters/guide.md"),
         )
 
         self.assertIn('id="ratio"', html)
         self.assertIn('href="#ratio"', toc)
+        self.assertNotIn("doc-anchor", html)
+        self.assertNotIn("{#ratio}", html)
         self.assertIn('src="/api/docs/assets/parameters/images/curve.png"', html)
 
     def test_asset_path_rejects_parent_traversal(self):
