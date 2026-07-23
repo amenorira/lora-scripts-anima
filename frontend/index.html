@@ -1793,7 +1793,7 @@
       <template x-if="currentRoute && currentRoute.startsWith('train-')">
         <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
           <div class="panel-header">
-            <span x-text="t('common.tomlPreview')">TOML Preview</span>
+            <span x-text="form.model_train_type === 'krea2-lora' ? t('common.kreaPresetPreview', 'Krea 2 Preset') : t('common.tomlPreview')">TOML Preview</span>
           </div>
           <div class="panel-preview" id="tomlPreview" x-effect="updateTomlDebounced()"># Parameters will appear here</div>
           <div class="panel-actions">

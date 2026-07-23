@@ -359,11 +359,15 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
     config["logging_dir"] = str(internal_run_dir / "log")
     dataset_config = build_krea2_dataset_config(config)
     dataset_config_file = internal_run_dir / "dataset.toml"
+    sample_prompts_file = (
+        internal_run_dir / "sample_prompts.txt" if bool(config.get("enable_krea_samples", False)) else None
+    )
     train_config = build_krea2_train_config(
         config,
         dataset_config_file,
         artifact_run_dir,
         internal_run_dir / "log",
+        sample_prompts_file,
     )
 
     autosave_dir = Path(os.getcwd()) / "config" / "autosave"
@@ -377,6 +381,9 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
         toml_file.write_text(train_toml, encoding="utf-8")
         (internal_run_dir / "config.toml").write_text(train_toml, encoding="utf-8")
         dataset_config_file.write_text(dataset_toml, encoding="utf-8")
+        if sample_prompts_file is not None:
+            prompts = str(config["krea_sample_prompts"]).replace("\r\n", "\n").replace("\r", "\n").rstrip()
+            sample_prompts_file.write_text(prompts + "\n", encoding="utf-8")
 
     await asyncio.gather(
         asyncio.to_thread(_write_configs),
@@ -405,6 +412,7 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
             "profile_id": KREA2_PROFILE_ID,
             "adapter_id": "musubi_lora",
             "dataset_config": str(dataset_config_file),
+            "sample_prompts": str(sample_prompts_file) if sample_prompts_file is not None else None,
         },
     )
 

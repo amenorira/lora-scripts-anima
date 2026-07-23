@@ -188,31 +188,42 @@ window.trainingTomlMixin = {
   },
 
   _updateKrea2Toml() {
-    const quote = (value) => '"' + String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    // Krea 2 always needs a generated dataset TOML and an isolated run
+    // directory.  The former preview used fake values for those paths, which
+    // made the Copy/Download actions export an invalid TOML.  Emit a valid
+    // Anima preset instead: it is safe to re-import, while the real musubi
+    // train/dataset TOMLs are written by the backend at launch.
+    const quote = (value) => '"' + String(value ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\r\n|\r|\n/g, '\\n') + '"';
+    const valueToToml = (value) => {
+      if (typeof value === 'boolean') return value ? 'true' : 'false';
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+      const coerced = this._coerceNum(value);
+      if (typeof coerced === 'number' && Number.isFinite(coerced)) return String(coerced);
+      return quote(value);
+    };
     const lines = [
-      '# musubi-tuner Krea 2 profile',
-      'dit = ' + quote(this.form.dit),
-      'vae = ' + quote(this.form.vae),
-      'dataset_config = "<generated dataset.toml>"',
-      'network_module = "networks.lora_krea2"',
-      'network_dim = ' + Number(this.form.network_dim || 32),
-      'network_alpha = ' + Number(this.form.network_alpha || 32),
-      'learning_rate = ' + Number(this.form.learning_rate || 0.0001),
-      'mixed_precision = ' + quote(this.form.mixed_precision || 'bf16'),
-      'timestep_sampling = ' + quote(this.form.timestep_sampling || 'shift'),
-      'optimizer_type = ' + quote(this.form.optimizer_type || 'adamw8bit'),
-      'output_name = ' + quote(this.form.output_name),
-      'output_dir = "<managed run output directory>"',
+      '# Anima Krea 2 preset (musubi-tuner)',
+      '# Safe to copy, download, and import back into Anima.',
+      '# At launch Anima writes the actual musubi config.toml and dataset.toml into the run directory.',
+      '# output_dir below is the selected base directory; a new output_name_timestamp child is created per run.',
+      'model_train_type = "krea2-lora"',
     ];
-    const attention = this.form.krea_attention_backend || 'sdpa';
-    lines.push(attention + ' = true');
-    if (this.form.gradient_checkpointing) lines.push('gradient_checkpointing = true');
-    if (Number(this.form.blocks_to_swap || 0) > 0) lines.push('blocks_to_swap = ' + Number(this.form.blocks_to_swap));
-    if (this.form.fp8_base) {
-      lines.push('fp8_base = true');
-      lines.push('fp8_scaled = true');
-    }
-    if (this.form.compile) lines.push('compile = true');
+
+    window.getVisibleSections('krea2-lora').forEach(section => {
+      const sectionLines = [];
+      (section.fields || []).forEach(field => {
+        if (field.hidden || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
+        const value = this.form[field.key];
+        if (value === '' || value === null || value === undefined) return;
+        sectionLines.push(`${field.key} = ${valueToToml(value)}`);
+      });
+      if (sectionLines.length > 0) {
+        lines.push('', `# --- ${section.key} ---`, ...sectionLines);
+      }
+    });
 
     this.tomlRaw = lines.join('\n');
     const preview = document.getElementById('tomlPreview');

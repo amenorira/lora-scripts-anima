@@ -816,7 +816,10 @@ window.trainingPresetsMixin = {
     const blob = new Blob([this.tomlRaw], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = (this.form.output_name || 'config') + '.toml'; a.click();
+    const isKrea2Preset = this.form.model_train_type === 'krea2-lora';
+    a.href = url;
+    a.download = (this.form.output_name || 'config') + (isKrea2Preset ? '-anima-krea2-preset.toml' : '.toml');
+    a.click();
     URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'));
   },
 

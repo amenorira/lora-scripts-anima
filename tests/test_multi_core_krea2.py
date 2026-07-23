@@ -1,9 +1,12 @@
+import asyncio
 import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import toml
 
 from backend.training.core_registry import (
     TrainingProfileError,
@@ -27,12 +30,13 @@ from backend.training.musubi_krea2 import (
 )
 from backend.training.supervisor import _build_train_env
 from backend.training.validation import validate_training_config
+from backend.server.routes import training as training_routes
 
 
 def krea2_config(root: Path) -> dict:
     config = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
     models = root / "models"
-    models.mkdir()
+    models.mkdir(parents=True)
     for name in ("raw.safetensors", "vae.safetensors", "qwen3vl.safetensors"):
         (models / name).write_bytes(b"test")
     train = root / "train"
@@ -129,6 +133,126 @@ class Krea2CodecTests(unittest.TestCase):
         )
         parser_flags = set(re.findall(r"--([a-zA-Z0-9_]+)", parser_source))
         self.assertTrue(set(train).issubset(parser_flags), set(train) - parser_flags)
+
+    def test_step_duration_and_scheduler_fields_map_to_musubi(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "krea_training_duration_mode": "steps",
+                    "max_train_steps": 321,
+                    "lr_scheduler": "cosine_with_restarts",
+                    "lr_warmup_steps": "0.1",
+                    "lr_decay_steps": 20,
+                    "lr_scheduler_num_cycles": 2,
+                    "max_grad_norm": 0.5,
+                }
+            )
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
+            estimate = estimate_training_steps(config)
+
+        self.assertEqual(train["max_train_steps"], 321)
+        self.assertNotIn("max_train_epochs", train)
+        self.assertEqual(train["lr_scheduler"], "cosine_with_restarts")
+        self.assertEqual(train["lr_warmup_steps"], 0.1)
+        self.assertEqual(train["lr_decay_steps"], 20)
+        self.assertEqual(train["lr_scheduler_num_cycles"], 2)
+        self.assertEqual(train["max_grad_norm"], 0.5)
+        self.assertEqual(estimate["total_steps"], 321)
+
+    def test_sample_and_turbo_fields_generate_only_real_musubi_flags(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            turbo = root / "models" / "turbo.safetensors"
+            turbo.write_bytes(b"test")
+            config.update(
+                {
+                    "enable_krea_samples": True,
+                    "krea_sample_prompts": "A fox in snow. --w 1024 --h 1024 --s 8 --l 1 --d 0",
+                    "turbo_dit": str(turbo),
+                    "turbo_dit_cache": True,
+                    "sample_every_n_epochs": 2,
+                    "sample_every_n_steps": 50,
+                    "sample_at_first": True,
+                }
+            )
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(
+                config,
+                root / "run" / "dataset.toml",
+                root / "output",
+                root / "run" / "log",
+                root / "run" / "sample_prompts.txt",
+            )
+
+        self.assertEqual(train["text_encoder"], config["text_encoder"])
+        self.assertEqual(train["sample_prompts"], str(root / "run" / "sample_prompts.txt"))
+        self.assertEqual(train["turbo_dit"], str(turbo))
+        self.assertTrue(train["turbo_dit_cache"])
+        self.assertEqual(train["sample_every_n_epochs"], 2)
+        self.assertEqual(train["sample_every_n_steps"], 50)
+        self.assertTrue(train["sample_at_first"])
+        self.assertNotIn("krea_sample_prompts", train)
+
+    def test_rejects_unsafe_turbo_and_h2d_block_swap_combinations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "enable_krea_samples": True,
+                    "krea_sample_prompts": "A fox in snow.",
+                    "turbo_dit": str(root / "models" / "turbo.safetensors"),
+                    "blocks_to_swap": 1,
+                }
+            )
+            errors = validate_krea2_config(config)
+            self.assertTrue(any("turbo_dit: cannot be combined" in error for error in errors))
+
+            config = krea2_config(root / "h2d")
+            config.update({"blocks_to_swap": 1, "block_swap_h2d_only": True, "gradient_checkpointing": False})
+            errors = validate_krea2_config(config)
+
+        self.assertTrue(any("block_swap_h2d_only: requires gradient_checkpointing" in error for error in errors))
+
+    def test_launch_writes_managed_krea_sample_prompt_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "enable_krea_samples": True,
+                    "krea_sample_prompts": "# stable regression prompt\nA fox in snow. --w 1024 --h 1024 --s 8 --l 1 --d 0",
+                }
+            )
+            timestamp = "20260723-153000"
+            with patch(
+                "backend.server.routes.training.krea2_preflight",
+                return_value={"ok": True, "errors": [], "cache": {"ready": True}},
+            ), patch(
+                "backend.server.routes.training.run_train", return_value={"status": "success"}
+            ), patch.object(training_routes, "OUTPUT_DIR", root / "runs"), patch(
+                "backend.server.routes.training.os.getcwd", return_value=str(root)
+            ):
+                result = asyncio.run(training_routes._create_krea2_run(config, None, timestamp))
+
+            run_dir = root / "runs" / f"krea2_test_{timestamp}"
+            prompt_file = run_dir / "sample_prompts.txt"
+            train_config = toml.loads((run_dir / "config.toml").read_text(encoding="utf-8"))
+            prompt_text = prompt_file.read_text(encoding="utf-8")
+            points_to_prompt_file = os.path.samefile(train_config["sample_prompts"], prompt_file)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(
+            prompt_text,
+            "# stable regression prompt\nA fox in snow. --w 1024 --h 1024 --s 8 --l 1 --d 0\n",
+        )
+        self.assertTrue(points_to_prompt_file)
+        self.assertEqual(train_config["text_encoder"], config["text_encoder"])
+        self.assertNotIn("krea_sample_prompts", train_config)
 
     def test_cache_manifest_detects_caption_changes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -296,6 +420,16 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("/api/training/cores", environment)
         self.assertIn("runtime_errors", Path("frontend/js/environment-render.js").read_text(encoding="utf-8"))
         self.assertIn("prepareKrea2Cache()", form)
+
+    def test_krea_preset_preview_has_no_fake_runtime_paths(self):
+        training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
+        training_presets = Path("frontend/js/training-presets.js").read_text(encoding="utf-8")
+
+        self.assertNotIn('<generated dataset.toml>', training_toml)
+        self.assertNotIn('<managed run output directory>', training_toml)
+        self.assertIn('model_train_type = "krea2-lora"', training_toml)
+        self.assertIn("Safe to copy, download, and import back into Anima.", training_toml)
+        self.assertIn("-anima-krea2-preset.toml", training_presets)
 
 
 if __name__ == "__main__":

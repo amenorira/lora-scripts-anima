@@ -375,7 +375,8 @@ window.trainingCoreMixin = {
     const keys = [
       'model_train_type', 'train_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
-      'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps', 'max_train_epochs', 'gpu_ids',
+      'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps',
+      'krea_training_duration_mode', 'max_train_epochs', 'max_train_steps', 'gpu_ids',
     ];
     const payload = {};
     keys.forEach(key => {
