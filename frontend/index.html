@@ -1974,5 +1974,64 @@
   </div>
 </div>
 
+<!-- ── Anima Timestep Distribution Preview ─────────────── -->
+<div class="modal-overlay" x-show="timestepPreviewOpen" @click.self="timestepPreviewOpen = false"
+     @keydown.escape.window="timestepPreviewOpen = false" x-cloak>
+  <div class="modal timestep-preview-modal" role="dialog" aria-modal="true" :aria-label="t('timestepPreview.title')">
+    <div class="modal-header">
+      <div>
+        <div x-text="t('timestepPreview.title')">Timestep distribution</div>
+        <div class="timestep-preview-subtitle" x-text="t('timestepPreview.subtitle')"></div>
+      </div>
+      <button class="btn-icon" @click="timestepPreviewOpen = false" :aria-label="t('common.close')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" x-show="timestepPreviewData">
+      <div class="timestep-preview-meta">
+        <span><b x-text="timestepPreviewData && timestepPreviewData.sampling"></b><small x-text="t('timestepPreview.sampling')"></small></span>
+        <span><b x-text="timestepPreviewData && timestepPreviewData.weighting"></b><small x-text="t('timestepPreview.weighting')"></small></span>
+        <span><b x-text="timestepPreviewData && timestepPreviewData.resolution"></b><small x-text="t('timestepPreview.resolution')"></small></span>
+      </div>
+
+      <div class="timestep-preview-chart" aria-hidden="true">
+        <div class="timestep-preview-bars">
+          <template x-for="bin in (timestepPreviewData ? timestepPreviewData.bins : [])" :key="bin.index">
+            <i :style="`height:${bin.height}%`" :title="`${Math.round(bin.index * 1000 / 32)}–${Math.round((bin.index + 1) * 1000 / 32)}: ${bin.percent.toFixed(2)}%`"></i>
+          </template>
+        </div>
+        <svg class="timestep-preview-weight-line" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline :points="timestepPreviewData ? timestepPreviewData.weightPoints : ''"></polyline>
+        </svg>
+      </div>
+      <div class="timestep-preview-axis">
+        <span x-text="t('timestepPreview.clean')">Clean</span>
+        <span x-text="t('timestepPreview.noisy')">Noisy</span>
+      </div>
+      <div class="timestep-preview-legend">
+        <span><i class="legend-distribution"></i><span x-text="t('timestepPreview.distribution')"></span></span>
+        <span><i class="legend-weight"></i><span x-text="t('timestepPreview.lossWeight')"></span></span>
+      </div>
+
+      <div class="timestep-preview-summary">
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.lowPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.detailZone')"></span></div>
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.midPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.middleZone')"></span></div>
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.highPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.structureZone')"></span></div>
+      </div>
+
+      <div class="timestep-preview-notes" x-show="timestepPreviewData && timestepPreviewData.notes.length">
+        <template x-for="(note, index) in (timestepPreviewData ? timestepPreviewData.notes : [])" :key="index">
+          <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
+        </template>
+      </div>
+      <p class="timestep-preview-footnote" x-text="t('timestepPreview.footnote')"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" @click="refreshTimestepPreview()" x-text="t('timestepPreview.refresh')">Refresh</button>
+      <button class="btn btn-primary btn-sm" @click="timestepPreviewOpen = false" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

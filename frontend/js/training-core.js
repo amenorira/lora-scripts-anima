@@ -51,6 +51,8 @@ window.trainingCoreMixin = {
   _pickerFiles: [],
   _pickerFilter: '',
   _pickerCwd: '',
+  timestepPreviewOpen: false,
+  timestepPreviewData: null,
 
   // Training state
   trainingBlocked: false,
@@ -1461,6 +1463,14 @@ window.trainingCoreMixin = {
   // x-show 与 faStatus/xfStatus/tritonStatus 及 form 值联动，环境数据异步到达后自动显示。
   _getEnvHint(dataKey) {
     switch (dataKey) {
+      case 'timestep_sampling':
+        return `<div class="timestep-preview-entry">
+          <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
+            <span x-text="t('timestepPreview.open')">View timestep distribution</span>
+          </button>
+          <span class="field-hint" x-text="t('timestepPreview.entryHint')"></span>
+        </div>`;
       case 'attn_mode':
         return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')||'Flash Attention not installed'}</div>`
              + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
@@ -1470,6 +1480,148 @@ window.trainingCoreMixin = {
         return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')||'Triton not installed'}</div>`;
     }
     return '';
+  },
+
+  _timestepPreviewNumber(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  },
+
+  _timestepPreviewResolution() {
+    const raw = String(this.form.resolution || '1024,1024');
+    const values = raw.split(/[xX,]/).map(v => Number(v.trim())).filter(v => Number.isFinite(v) && v > 0);
+    if (values.length === 1) return [values[0], values[0]];
+    if (values.length >= 2) return [values[0], values[1]];
+    return [1024, 1024];
+  },
+
+  _buildTimestepPreview() {
+    const sampling = String(this.form.timestep_sampling || 'sigmoid');
+    const weighting = String(this.form.weighting_scheme || 'uniform');
+    const sigmoidScale = this._timestepPreviewNumber(this.form.sigmoid_scale, 1.0);
+    const flowShift = Math.max(0.0001, this._timestepPreviewNumber(this.form.discrete_flow_shift, 1.0));
+    const logitMean = this._timestepPreviewNumber(this.form.logit_mean, 0.0);
+    const logitStd = Math.max(0, this._timestepPreviewNumber(this.form.logit_std, 1.0));
+    const modeScale = this._timestepPreviewNumber(this.form.mode_scale, 1.29);
+    const [height, width] = this._timestepPreviewResolution();
+    const binCount = 32;
+    const counts = Array(binCount).fill(0);
+    const sampleCount = 32768;
+
+    // Deterministic PRNG keeps the chart stable while preserving the upstream distributions.
+    let state = 0x6d2b79f5;
+    const random = () => {
+      state |= 0;
+      state = state + 0x6d2b79f5 | 0;
+      let value = Math.imul(state ^ state >>> 15, 1 | state);
+      value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+      return ((value ^ value >>> 14) >>> 0) / 4294967296;
+    };
+    let spareNormal = null;
+    const normal = () => {
+      if (spareNormal !== null) {
+        const value = spareNormal;
+        spareNormal = null;
+        return value;
+      }
+      const u = Math.max(random(), 1e-12);
+      const v = random();
+      const radius = Math.sqrt(-2 * Math.log(u));
+      const angle = 2 * Math.PI * v;
+      spareNormal = radius * Math.sin(angle);
+      return radius * Math.cos(angle);
+    };
+    const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
+    const fixedShift = value => (value * flowShift) / (1 + (flowShift - 1) * value);
+
+    // Anima VAE compression is 8; flux_shift uses the packed latent token count.
+    const latentH = Math.floor(height / 8);
+    const latentW = Math.floor(width / 8);
+    const tokenCount = Math.floor(latentH / 2) * Math.floor(latentW / 2);
+    const mu = 0.5 + ((1.15 - 0.5) / (4096 - 256)) * (tokenCount - 256);
+    const expMu = Math.exp(mu);
+    const adaptiveShift = value => expMu / (expMu + (1 / Math.max(value, 1e-12) - 1));
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      let sigma;
+      if (sampling === 'uniform') {
+        sigma = random();
+      } else if (sampling === 'shift') {
+        sigma = fixedShift(sigmoid(sigmoidScale * normal()));
+      } else if (sampling === 'flux_shift') {
+        sigma = adaptiveShift(sigmoid(sigmoidScale * normal()));
+      } else if (sampling === 'sigma') {
+        let density;
+        if (weighting === 'logit_normal') {
+          density = sigmoid(logitMean + logitStd * normal());
+        } else if (weighting === 'mode') {
+          const u = random();
+          density = 1 - u - modeScale * (Math.cos(Math.PI * u / 2) ** 2 - 1 + u);
+        } else {
+          density = random();
+        }
+        // FlowMatchEulerDiscreteScheduler is descending; index u maps to sigma ~= 1-u.
+        sigma = fixedShift(1 - Math.max(0, Math.min(1, density)));
+      } else {
+        sigma = sigmoid(sigmoidScale * normal());
+      }
+      sigma = Math.max(0, Math.min(0.999999, sigma));
+      counts[Math.min(binCount - 1, Math.floor(sigma * binCount))] += 1;
+    }
+
+    const maxCount = Math.max(...counts, 1);
+    const weights = counts.map((_, index) => {
+      const sigma = Math.max((index + 0.5) / binCount, 1e-6);
+      if (weighting === 'sigma_sqrt') return sigma ** -2;
+      if (weighting === 'cosmap') return 2 / (Math.PI * (1 - 2 * sigma + 2 * sigma * sigma));
+      return 1;
+    });
+    const logWeights = weights.map(value => Math.log1p(value));
+    const maxLogWeight = Math.max(...logWeights, 1);
+    const bins = counts.map((count, index) => ({
+      index,
+      count,
+      percent: count * 100 / sampleCount,
+      height: Math.max(1.5, count * 100 / maxCount),
+      weight: weights[index],
+      weightY: 100 - logWeights[index] * 92 / maxLogWeight,
+    }));
+    const weightPoints = bins.map((bin, index) => `${(index * 100 / (binCount - 1)).toFixed(2)},${bin.weightY.toFixed(2)}`).join(' ');
+    const third = Math.floor(binCount / 3);
+    const sumRange = (start, end) => counts.slice(start, end).reduce((total, value) => total + value, 0) * 100 / sampleCount;
+    const notes = [];
+    if (!['shift', 'sigma'].includes(sampling) && Math.abs(flowShift - 1) > 1e-9) {
+      notes.push(this.t('timestepPreview.shiftIgnored'));
+    }
+    if (sampling === 'flux_shift') notes.push(this.t('timestepPreview.fluxShiftNote'));
+    if (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma') {
+      notes.push(this.t('timestepPreview.densityIgnored'));
+    }
+    if (!['sigma_sqrt', 'cosmap'].includes(weighting)) {
+      notes.push(this.t('timestepPreview.uniformWeightNote'));
+    }
+
+    return {
+      sampling,
+      weighting,
+      resolution: `${height} × ${width}`,
+      sampleCount,
+      bins,
+      weightPoints,
+      lowPercent: sumRange(0, third),
+      midPercent: sumRange(third, binCount - third),
+      highPercent: sumRange(binCount - third, binCount),
+      notes,
+    };
+  },
+
+  openTimestepPreview() {
+    this.timestepPreviewData = this._buildTimestepPreview();
+    this.timestepPreviewOpen = true;
+  },
+
+  refreshTimestepPreview() {
+    this.timestepPreviewData = this._buildTimestepPreview();
   },
 
   _getOutputPathHint(dataKey) {

@@ -2422,6 +2422,56 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   font-size: 13px; border-radius: var(--radius-sm);
 }
 
+/* ── Anima timestep distribution preview ───────────────── */
+.timestep-preview-entry {
+  width: 100%; margin-top: 7px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.timestep-preview-entry .btn { display: inline-flex; align-items: center; gap: 6px; }
+.timestep-preview-entry .field-hint { width: auto; margin: 0; }
+.timestep-preview-modal { width: min(760px, calc(100vw - 32px)); max-width: 760px; max-height: 88vh; }
+.timestep-preview-subtitle { margin-top: 3px; color: var(--text-tertiary); font-size: 11.5px; font-weight: 400; }
+.timestep-preview-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.timestep-preview-meta > span {
+  min-width: 0; padding: 9px 11px; border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); background: var(--bg-surface-raised);
+}
+.timestep-preview-meta b { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.timestep-preview-meta small { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 10.5px; }
+.timestep-preview-chart {
+  position: relative; height: 230px; overflow: hidden; border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel); background:
+    linear-gradient(to top, transparent 24.5%, var(--border-subtle) 25%, transparent 25.5%, transparent 49.5%, var(--border-subtle) 50%, transparent 50.5%, transparent 74.5%, var(--border-subtle) 75%, transparent 75.5%),
+    var(--bg-surface-raised);
+}
+.timestep-preview-bars { position: absolute; inset: 12px 12px 10px; display: flex; align-items: flex-end; gap: 3px; }
+.timestep-preview-bars i {
+  flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
+  opacity: .78; transition: height .22s var(--ease-out), opacity .15s;
+}
+.timestep-preview-bars i:hover { opacity: 1; }
+.timestep-preview-weight-line { position: absolute; inset: 12px; width: calc(100% - 24px); height: calc(100% - 22px); overflow: visible; pointer-events: none; }
+.timestep-preview-weight-line polyline { fill: none; stroke: var(--warning); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.timestep-preview-axis, .timestep-preview-legend { display: flex; align-items: center; justify-content: space-between; color: var(--text-tertiary); font-size: 10.5px; }
+.timestep-preview-axis { margin-top: 5px; }
+.timestep-preview-legend { justify-content: flex-end; gap: 16px; margin-top: 8px; }
+.timestep-preview-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.timestep-preview-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.legend-distribution { background: var(--accent); }
+.legend-weight { background: var(--warning); }
+.timestep-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 15px; }
+.timestep-preview-summary > div { padding: 10px; text-align: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+.timestep-preview-summary b { display: block; color: var(--text-primary); font-size: 16px; font-variant-numeric: tabular-nums; }
+.timestep-preview-summary span { color: var(--text-tertiary); font-size: 10.5px; }
+.timestep-preview-notes { margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); font-size: 11.5px; line-height: 1.55; }
+.timestep-preview-notes > div { display: flex; gap: 7px; }
+.timestep-preview-notes > div + div { margin-top: 4px; }
+.timestep-preview-footnote { margin: 12px 1px 0; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.5; }
+@media (max-width: 640px) {
+  .timestep-preview-meta, .timestep-preview-summary { grid-template-columns: 1fr; }
+  .timestep-preview-chart { height: 180px; }
+}
+
 /* ── Iframe full-height (TensorBoard / TagEditor) ────────── */
 .iframe-full {
   position: absolute; inset: 0;

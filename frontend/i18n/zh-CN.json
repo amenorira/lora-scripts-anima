@@ -688,6 +688,28 @@
 		"caching": "正在准备 Krea 2 缓存",
 		"cacheStarted": "Krea 2 两阶段缓存任务已启动"
 	},
+	"timestepPreview": {
+		"open": "查看时间步分布",
+		"entryHint": "根据当前参数预估训练关注的噪声区间",
+		"title": "Anima 时间步分布",
+		"subtitle": "训练开始前的本地预估，不会启动训练或修改 TOML",
+		"sampling": "采样方式",
+		"weighting": "Loss 权重",
+		"resolution": "参考分辨率",
+		"clean": "低噪声 · 细节  t=0",
+		"noisy": "t=1000  高噪声 · 结构",
+		"distribution": "采样概率",
+		"lossWeight": "Loss 权重（对数刻度）",
+		"detailZone": "低噪声 / 细节区",
+		"middleZone": "中噪声区",
+		"structureZone": "高噪声 / 结构区",
+		"shiftIgnored": "当前采样方式不会使用 discrete_flow_shift；这个参数会被忽略。",
+		"fluxShiftNote": "flux_shift 会按参考分辨率自动计算位移；不同 AR bucket 的实际分布会不同。",
+		"densityIgnored": "logit_normal/mode 仅在 timestep_sampling=sigma 时改变采样密度。",
+		"uniformWeightNote": "当前 weighting_scheme 对 Anima 的逐时间步 Loss 权重为均匀权重。",
+		"footnote": "柱形为 32,768 次确定性模拟的采样概率；曲线为 Anima 实际 Loss weighting 公式。多分辨率数据集请分别用主要 bucket 分辨率查看。",
+		"refresh": "按当前参数刷新"
+	},
 	"common": {
 		"startTraining": "开始训练",
 		"stopTraining": "终止训练",
