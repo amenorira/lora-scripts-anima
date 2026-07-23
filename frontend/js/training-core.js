@@ -151,13 +151,13 @@ window.trainingCoreMixin = {
     return defaults;
   },
 
-  _normalizeProfileSelectValues(trainType, defaults = this._buildFormDefaults(trainType)) {
+  _normalizeProfileSelectValues(trainType, defaults = this._buildFormDefaults(trainType), target = this.form) {
     window.getVisibleSections(trainType).forEach(section => {
       section.fields.forEach(field => {
         if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length) return;
         const validValues = field.options.map(option => option.v);
-        if (!validValues.includes(this.form[field.key])) {
-          this.form[field.key] = defaults[field.key] ?? validValues[0];
+        if (!validValues.includes(target[field.key])) {
+          target[field.key] = defaults[field.key] ?? validValues[0];
         }
       });
     });
@@ -1285,12 +1285,8 @@ window.trainingCoreMixin = {
       } else {
         fc.options = [];
       }
-      const hasGroups = !!(fc.groups && fc.groups.length);
-      const hasOptionDescs = (fc.options || []).some(o => o.d) || (fc.groups || []).some(g => (g.options || []).some(o => o.d));
-      fc.hasOptionDescs = !!hasOptionDescs;
-      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
-      const descPanelHtml = fc.hasOptionDescs ? `<div class="anima-select-menu-desc" x-show="hoveredOpt && hoveredOpt.d" x-text="hoveredOpt ? hoveredOpt.d : ''"></div>` : '';
-      const menuHtml = `<template x-if="open"><div class="anima-select-menu"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div></template>`;
+      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
+      const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
       inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
@@ -2696,11 +2692,15 @@ window.trainingCoreMixin = {
   rebuildForm() {
     const r = this.currentRoute;
     if (!r || !r.startsWith('train-')) return;
+    const activeType = this.form.model_train_type || 'anima-lora';
+    const profileDefaults = this._buildFormDefaults(activeType);
+    this._normalizeProfileSelectValues(activeType, profileDefaults);
+    this._normalizeProfileSelectValues(activeType, profileDefaults, this.formDefaults);
     // Re-apply autoValue rules so select fields, locked fields etc. stay consistent
     // after preset load, config import, or full reset.
     this._applyInitialAutoValues();
     const cachePathChanged = this._syncKrea2CacheDir();
-    this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
+    this.renderTrainingForm(activeType);
     this.updateReadonlyStates();
     if (cachePathChanged) this.updateToml();
   },

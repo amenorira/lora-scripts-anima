@@ -6,10 +6,11 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('animaSelect', (fieldConfigJson, initialValue) => ({
     open: false,
+    positioned: false,
     value: initialValue,
-    hoveredIdx: -1,
-    hoveredOpt: null,
     _escHandler: null,
+    _positionFrame: null,
+    _revealPoint: null,
 
     get displayGroups() {
       try {
@@ -38,34 +39,33 @@ document.addEventListener('alpine:init', () => {
       return result;
     },
 
+    get hasDescriptions() {
+      return this.flatOptions.some(opt => opt.d);
+    },
+
     get selectedLabel() {
       const opt = this.flatOptions.find(o => o.v === this.value);
       return opt ? opt.l : String(this.value || '');
     },
 
-    get selectedDesc() {
-      const opt = this.flatOptions.find(o => o.v === this.value);
-      return opt ? (opt.d || '') : '';
-    },
-
     init() {
+      this.$watch('open', (isOpen) => {
+        if (isOpen) this.$nextTick(() => this.positionMenu());
+      });
       this._escHandler = (e) => {
         if (e.key === 'Escape' && this.open) { this.open = false; }
       };
       this.$el.addEventListener('keydown', this._escHandler);
 
-      // 滚动或窗口尺寸变化时关闭菜单（fixed 定位的菜单不会跟随页面滚动，
-      // 关闭比错位重定位更安全，符合常见下拉交互直觉）。
-      // 但菜单内部滚动（.anima-select-menu-scroll）不应关闭——需区分页面滚动与菜单滚动：
-      // capture 阶段检查 e.target，若源自菜单内部则忽略。
+      // fixed 菜单在页面或面板滚动时按帧重定位；菜单自身滚动无需重算。
       this._scrollHandler = (e) => {
         if (!this.open) return;
         const target = e.target;
         if (target && typeof target.closest === 'function' && target.closest('.anima-select-menu')) return;
-        this.open = false;
+        this.schedulePositionMenu();
       };
       window.addEventListener('scroll', this._scrollHandler, true);
-      this._resizeHandler = () => { if (this.open) this.open = false; };
+      this._resizeHandler = () => { if (this.open) this.schedulePositionMenu(); };
       window.addEventListener('resize', this._resizeHandler);
 
       // Sync display when the hidden input value is changed externally
@@ -102,6 +102,9 @@ document.addEventListener('alpine:init', () => {
       if (this._resizeHandler) {
         window.removeEventListener('resize', this._resizeHandler);
       }
+      if (this._positionFrame !== null) {
+        cancelAnimationFrame(this._positionFrame);
+      }
     },
 
     closeOnOutside() {
@@ -123,26 +126,32 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    onOptionMouseEnter(idx, opt) {
-      this.hoveredIdx = idx;
-      this.hoveredOpt = opt;
-    },
-
-    onOptionMouseLeave() {
-      this.hoveredIdx = -1;
-      this.hoveredOpt = null;
-    },
-
-    toggle() {
+    toggle(event) {
       this.open = !this.open;
-      if (!this.open) {
-        this.hoveredIdx = -1;
-        this.hoveredOpt = null;
-      } else {
+      if (this.open) {
+        this.positioned = false;
+        this.setRevealOrigin(event);
         // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
         // （如分组的 .card-body、.advanced-fold-body）裁剪。
         this.$nextTick(() => this.positionMenu());
       }
+    },
+
+    schedulePositionMenu() {
+      if (this._positionFrame !== null) return;
+      this._positionFrame = requestAnimationFrame(() => {
+        this._positionFrame = null;
+        if (this.open) this.positionMenu();
+      });
+    },
+
+    setRevealOrigin(event) {
+      const trigger = this.$el.querySelector('.anima-select-trigger');
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const clientX = event && Number.isFinite(event.clientX) ? event.clientX : rect.left + rect.width / 2;
+      const clientY = event && Number.isFinite(event.clientY) ? event.clientY : rect.bottom;
+      this._revealPoint = { x: clientX, y: clientY };
     },
 
     // 把菜单定位到触发器正下方（fixed，相对视口），并约束在视口内。
@@ -151,24 +160,34 @@ document.addEventListener('alpine:init', () => {
       const trigger = root.querySelector('.anima-select-trigger');
       const menu = root.querySelector('.anima-select-menu');
       if (!trigger || !menu) return;
+      const firstPosition = !this.positioned;
       const r = trigger.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      // 宽度：至少触发器宽，但不超出视口
-      const width = Math.max(r.width, 200);
-      // 预估菜单高度（最多 300 滚动区 + 描述栏 ~40），估算用 340
-      const estMenuH = Math.min(340, vh - r.bottom - 8);
-      // 若下方空间不足且上方更宽裕，则向上展开
+      // 带说明的选项需要更宽的阅读区域；窄屏下仍由视口宽度兜底。
+      const width = Math.min(Math.max(r.width, this.hasDescriptions ? 320 : 200), vw - 16);
+      const menuScroll = menu.querySelector('.anima-select-menu-scroll');
+      const maxScrollHeight = 520;
+      if (menuScroll) menuScroll.style.maxHeight = `${maxScrollHeight}px`;
+      const desiredHeight = Math.min(menu.scrollHeight, maxScrollHeight + 2);
+      const spaceBelow = Math.max(0, vh - r.bottom - 8);
+      const spaceAbove = Math.max(0, r.top - 8);
+      const openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+      const availableHeight = openUp ? spaceAbove : spaceBelow;
+      if (menuScroll) menuScroll.style.maxHeight = `${Math.max(120, Math.min(maxScrollHeight, availableHeight - 2))}px`;
+      const renderedHeight = Math.min(menu.scrollHeight, availableHeight);
       let top;
-      if (r.bottom + estMenuH > vh - 8 && r.top - estMenuH > 8) {
-        top = r.top - estMenuH; // 向上
+      if (openUp) {
+        top = Math.max(8, r.top - renderedHeight - 4);
         menu.classList.add('anima-select-menu-up');
+        this.$el.style.setProperty('--select-origin-y', '100%');
       } else {
         top = r.bottom + 4;
         menu.classList.remove('anima-select-menu-up');
+        this.$el.style.setProperty('--select-origin-y', '0%');
       }
-      // 水平：左对齐触发器，若超出右侧则贴右
-      let left = r.left;
+      // 带说明的宽菜单向左展开，避免侵入右侧预览栏；紧凑菜单保持左对齐。
+      let left = this.hasDescriptions ? r.right - width : r.left;
       if (left + width > vw - 8) left = vw - width - 8;
       if (left < 8) left = 8;
       menu.style.position = 'fixed';
@@ -176,6 +195,23 @@ document.addEventListener('alpine:init', () => {
       menu.style.left = Math.round(left) + 'px';
       menu.style.width = Math.round(width) + 'px';
       menu.style.right = 'auto';
+      // 使用真实点击位置作为扩散中心；菜单上下翻转时仍保持指针位置自然衔接。
+      const revealPoint = this._revealPoint || { x: r.left + r.width / 2, y: openUp ? r.top : r.bottom };
+      const originX = Math.max(0, Math.min(width, revealPoint.x - left));
+      const originY = Math.max(0, Math.min(renderedHeight, revealPoint.y - top));
+      this.$el.style.setProperty('--select-origin-x', `${Math.round(originX)}px`);
+      this.$el.style.setProperty('--select-origin-y', `${Math.round(originY)}px`);
+      if (firstPosition && menuScroll) {
+        const activeOption = menuScroll.querySelector('.anima-select-option.active');
+        if (activeOption) {
+          const optionTop = activeOption.offsetTop;
+          const optionBottom = optionTop + activeOption.offsetHeight;
+          if (optionTop < menuScroll.scrollTop || optionBottom > menuScroll.scrollTop + menuScroll.clientHeight) {
+            menuScroll.scrollTop = Math.max(0, optionTop - (menuScroll.clientHeight - activeOption.offsetHeight) / 2);
+          }
+        }
+      }
+      this.positioned = true;
     },
 
   }));

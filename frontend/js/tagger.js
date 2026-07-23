@@ -128,20 +128,25 @@ window.taggerMixin = {
     const enc = this.escJson(config);
     return `<div class="anima-select" x-data="animaSelect('${enc}', '${(defaultValue||'').replace(/'/g, "\\'")}')" x-init="syncToModel()" @click.outside="closeOnOutside()">
       <input type="hidden" x-ref="modelInput" value="${defaultValue||''}" id="${inputId}">
-      <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="open=!open">
+      <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)">
         <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
         <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
       </button>
-      <div class="anima-select-menu" x-show="open" x-transition>
-        <div class="anima-select-menu-scroll">
-          <template x-for="opt in flatOptions" :key="opt.v">
-            <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
-              <span x-text="opt.l" :title="opt.l"></span>
-              <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-          </template>
+      <template x-if="open">
+        <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())">
+          <div class="anima-select-menu-scroll">
+            <template x-for="opt in flatOptions" :key="opt.v">
+              <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
+                <span class="anima-select-option-content">
+                  <span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span>
+                  <span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span>
+                </span>
+                <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </template>
+          </div>
         </div>
-      </div>
+      </template>
     </div>`;
   },
 
