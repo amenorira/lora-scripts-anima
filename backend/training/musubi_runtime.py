@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import sys
+import warnings
 from typing import Any
 
 from packaging.version import InvalidVersion, Version
@@ -149,7 +150,18 @@ def shared_runtime_status() -> dict[str, Any]:
             )
 
     try:
-        from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration  # noqa: F401
+        # Qwen3-VL's import path probes CUDA availability. On a GUI-only
+        # machine with an older/no driver, PyTorch emits this known warning even
+        # though a CUDA-capable wheel is installed correctly. The runtime
+        # contract deliberately allows that state, so hide only this probe.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"cudaGetDeviceCount\(\) returned cudaError.*",
+                category=UserWarning,
+                module=r"torch\.cuda",
+            )
+            from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration  # noqa: F401
     except Exception as exc:
         errors.append(
             "transformers cannot provide Qwen3-VL required by Krea 2 / "
