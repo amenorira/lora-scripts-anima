@@ -6,9 +6,12 @@ semantics and must never inherit sd-scripts-only values.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
+import importlib.metadata
 import json
 import math
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -40,11 +43,69 @@ _KREA2_LR_SCHEDULERS = {
     "cosine",
     "cosine_with_restarts",
     "polynomial",
+    "inverse_sqrt",
+    "cosine_with_min_lr",
+    "warmup_stable_decay",
+    # Kept for old saved presets.  musubi selects this internally for
+    # AdaFactor relative-step mode; it is deliberately not offered as a
+    # general UI scheduler.
     "adafactor",
     "rex",
 }
 _KREA2_COMPILE_MODES = {"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
 _KREA2_COMPILE_DYNAMIC_VALUES = {"auto", "true", "false"}
+_KREA2_CUSTOM_OPTIMIZER = "__custom__"
+_KREA2_SCHEDULEFREE_OPTIMIZERS = {"schedulefree.AdamWScheduleFree"}
+_KREA2_BETA_LENGTHS: dict[str, set[int]] = {
+    "adamw8bit": {2},
+    "AdamW": {2},
+    "bitsandbytes.optim.PagedAdamW8bit": {2},
+    "bitsandbytes.optim.AdEMAMix8bit": {3},
+    "bitsandbytes.optim.PagedAdEMAMix8bit": {3},
+    "bitsandbytes.optim.Lion8bit": {2},
+    "bitsandbytes.optim.PagedLion8bit": {2},
+    "pytorch_optimizer.CAME": {3},
+    "pytorch_optimizer.Lion": {2},
+    "prodigyopt.Prodigy": {2},
+    "schedulefree.AdamWScheduleFree": {2},
+    "torch.optim.Adam": {2},
+    "torch.optim.RAdam": {2},
+    "torch.optim.NAdam": {2},
+}
+_KREA2_BETA_OPTIMIZERS = set(_KREA2_BETA_LENGTHS)
+_KREA2_EPS_OPTIMIZERS = {
+    "adamw8bit",
+    "AdamW",
+    "bitsandbytes.optim.PagedAdamW8bit",
+    "bitsandbytes.optim.AdEMAMix8bit",
+    "bitsandbytes.optim.PagedAdEMAMix8bit",
+    "prodigyopt.Prodigy",
+    "schedulefree.AdamWScheduleFree",
+    "torch.optim.Adam",
+    "torch.optim.RAdam",
+    "torch.optim.NAdam",
+}
+_KREA2_MIN_LR_RATIO_SCHEDULERS = {"cosine_with_min_lr", "warmup_stable_decay", "rex"}
+_KREA2_NUM_CYCLES_SCHEDULERS = {"cosine_with_restarts", "cosine_with_min_lr", "warmup_stable_decay"}
+_PYTHON_NAME_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
+_PYTHON_FULL_CLASS_PATH_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$")
+_KREA2_LEGACY_OPTIMIZER_ALIASES = {
+    # These bare values were valid selectors in the sd-scripts form, but
+    # musubi resolves non-dotted names from torch.optim.  Translate only the
+    # known values to their real musubi-importable class paths.
+    "pagedadamw8bit": "bitsandbytes.optim.PagedAdamW8bit",
+    "lion": "pytorch_optimizer.Lion",
+    "lion8bit": "bitsandbytes.optim.Lion8bit",
+    "pagedlion8bit": "bitsandbytes.optim.PagedLion8bit",
+    "prodigy": "prodigyopt.Prodigy",
+    "adamwschedulefree": "schedulefree.AdamWScheduleFree",
+    "came": "pytorch_optimizer.CAME",
+}
+_KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
+    "pytorch_optimizer.": "pytorch-optimizer",
+    "prodigyopt.": "prodigyopt",
+    "schedulefree.": "schedulefree",
+}
 # Compatibility alias for integrations which imported the previous private
 # constant. The authoritative contract now lives in musubi_runtime and is
 # shared by launchers, the Environment tab, and Krea preflight.
@@ -285,9 +346,20 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "key": "learning_rate",
         "type": "text",
         "default": "1e-4",
-        "section": "training",
+        "section": "optimizer",
         "desc_key": "field.learning_rate",
         "required": True,
+        # These are constructor defaults/recommendations from the concrete
+        # classes installed in the shared runtime.  They apply only while the
+        # user has not supplied a different learning rate.
+        "auto_value": [
+            {"watch": "optimizer_type", "when": "bitsandbytes.optim.Lion8bit", "set": "1e-4", "set_if_default": True},
+            {"watch": "optimizer_type", "when": "bitsandbytes.optim.PagedLion8bit", "set": "1e-4", "set_if_default": True},
+            {"watch": "optimizer_type", "when": "pytorch_optimizer.Lion", "set": "1e-4", "set_if_default": True},
+            {"watch": "optimizer_type", "when": "pytorch_optimizer.CAME", "set": "2e-4", "set_if_default": True},
+            {"watch": "optimizer_type", "when": "prodigyopt.Prodigy", "set": "1.0", "set_if_default": True},
+            {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": "0.0025", "set_if_default": True},
+        ],
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -350,11 +422,88 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "adamw8bit",
         "section": "optimizer",
         "desc_key": "field.optimizer_type",
-        "options": [
-            {"v": "adamw8bit", "l": "adamw8bit"},
-            {"v": "AdamW", "l": "AdamW"},
-            {"v": "AdaFactor", "l": "AdaFactor"},
+        # parser_common.py documents the first three short names, while
+        # trainer_base.py deliberately supports any importable optimizer class
+        # path.  Keep only paths backed by the shared runtime in the curated
+        # menu; the final entry exposes musubi's full-path escape hatch.
+        "groups": [
+            {
+                "label_key": "opt.krea_optimizer_group_builtin",
+                "options": [
+                    {"v": "adamw8bit", "l": "AdamW 8-bit", "dk": "opt.krea_optimizer_adamw8bit"},
+                    {"v": "AdamW", "l": "AdamW", "dk": "opt.krea_optimizer_adamw"},
+                    {"v": "AdaFactor", "l": "AdaFactor", "dk": "opt.krea_optimizer_adafactor"},
+                ],
+            },
+            {
+                "label_key": "opt.krea_optimizer_group_bitsandbytes",
+                "options": [
+                    {
+                        "v": "bitsandbytes.optim.PagedAdamW8bit",
+                        "l": "PagedAdamW8bit",
+                        "dk": "opt.krea_optimizer_paged_adamw8bit",
+                    },
+                    {
+                        "v": "bitsandbytes.optim.AdEMAMix8bit",
+                        "l": "AdEMAMix8bit",
+                        "dk": "opt.krea_optimizer_ademamix8bit",
+                    },
+                    {
+                        "v": "bitsandbytes.optim.PagedAdEMAMix8bit",
+                        "l": "PagedAdEMAMix8bit",
+                        "dk": "opt.krea_optimizer_paged_ademamix8bit",
+                    },
+                    {
+                        "v": "bitsandbytes.optim.Lion8bit",
+                        "l": "Lion8bit",
+                        "dk": "opt.krea_optimizer_lion8bit",
+                    },
+                    {
+                        "v": "bitsandbytes.optim.PagedLion8bit",
+                        "l": "PagedLion8bit",
+                        "dk": "opt.krea_optimizer_paged_lion8bit",
+                    },
+                ],
+            },
+            {
+                "label_key": "opt.krea_optimizer_group_shared",
+                "options": [
+                    {"v": "pytorch_optimizer.CAME", "l": "CAME", "dk": "opt.krea_optimizer_came"},
+                    {"v": "pytorch_optimizer.Lion", "l": "Lion", "dk": "opt.krea_optimizer_lion"},
+                    {"v": "prodigyopt.Prodigy", "l": "Prodigy", "dk": "opt.krea_optimizer_prodigy"},
+                    {
+                        "v": "schedulefree.AdamWScheduleFree",
+                        "l": "AdamWScheduleFree",
+                        "dk": "opt.krea_optimizer_schedulefree",
+                    },
+                ],
+            },
+            {
+                "label_key": "opt.krea_optimizer_group_torch",
+                "options": [
+                    {"v": "torch.optim.Adam", "l": "Adam", "dk": "opt.krea_optimizer_torch_adam"},
+                    {"v": "torch.optim.RAdam", "l": "RAdam", "dk": "opt.krea_optimizer_torch_radam"},
+                    {"v": "torch.optim.NAdam", "l": "NAdam", "dk": "opt.krea_optimizer_torch_nadam"},
+                    {"v": "torch.optim.SGD", "l": "SGD", "dk": "opt.krea_optimizer_torch_sgd"},
+                ],
+            },
+            {
+                "label_key": "opt.krea_optimizer_group_custom",
+                "options": [
+                    {"v": _KREA2_CUSTOM_OPTIMIZER, "l": "Custom class path", "dk": "opt.krea_optimizer_custom"},
+                ],
+            },
         ],
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_optimizer_custom_type",
+        "type": "text",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_optimizer_custom_type",
+        "hint_key": "field.krea_optimizer_custom_typeHint",
+        "show_if": {"key": "optimizer_type", "eq": _KREA2_CUSTOM_OPTIMIZER},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -373,7 +522,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "constant",
         "section": "optimizer",
         "desc_key": "field.lr_scheduler",
-        "advanced": True,
         "options": [
             {"v": "constant", "l": "constant"},
             {"v": "constant_with_warmup", "l": "constant_with_warmup"},
@@ -381,9 +529,26 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"v": "cosine", "l": "cosine"},
             {"v": "cosine_with_restarts", "l": "cosine_with_restarts"},
             {"v": "polynomial", "l": "polynomial"},
-            {"v": "adafactor", "l": "adafactor"},
+            {"v": "inverse_sqrt", "l": "inverse_sqrt"},
+            {"v": "cosine_with_min_lr", "l": "cosine_with_min_lr"},
+            {"v": "warmup_stable_decay", "l": "warmup_stable_decay"},
             {"v": "rex", "l": "rex"},
         ],
+        "auto_value": [
+            {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": "constant"},
+            {
+                "watch": {"optimizer_type": "AdaFactor", "krea_adafactor_relative_step": True},
+                "set": "constant",
+            },
+        ],
+        "readonly_if_any": [
+            {"key": "optimizer_type", "eq": "schedulefree.AdamWScheduleFree"},
+            [
+                {"key": "optimizer_type", "eq": "AdaFactor"},
+                {"key": "krea_adafactor_relative_step", "eq": True},
+            ],
+        ],
+        "readonly_reason_key": "field.krea_lr_scheduler_internalLocked",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -393,7 +558,14 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.lr_warmup_steps",
         "hint_key": "field.krea_ratio_or_stepsHint",
-        "advanced": True,
+        "show_if": {"key": "lr_scheduler", "neq": "constant"},
+        "auto_value": [
+            {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": 0},
+            {
+                "watch": {"optimizer_type": "AdaFactor", "krea_adafactor_relative_step": True},
+                "set": 0,
+            },
+        ],
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -403,7 +575,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_lr_decay_steps",
         "hint_key": "field.krea_ratio_or_stepsHint",
-        "advanced": True,
+        "show_if": {"key": "lr_scheduler", "eq": "warmup_stable_decay"},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -414,8 +586,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.lr_scheduler_num_cycles",
         "min": 1,
         "step": 1,
-        "advanced": True,
-        "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"},
+        "show_if": {
+            "key": "lr_scheduler",
+            "eq": "cosine_with_restarts",
+            "_or": ["cosine_with_min_lr", "warmup_stable_decay"],
+        },
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -426,8 +601,195 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.lr_scheduler_power",
         "min": 0.01,
         "step": 0.1,
-        "advanced": True,
         "show_if": {"key": "lr_scheduler", "eq": "polynomial"},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "lr_scheduler_timescale",
+        "type": "number",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_lr_scheduler_timescale",
+        "hint_key": "field.krea_lr_scheduler_timescaleHint",
+        "min": 1,
+        "step": 1,
+        "show_if": {"key": "lr_scheduler", "eq": "inverse_sqrt"},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "lr_scheduler_min_lr_ratio",
+        "type": "number",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_lr_scheduler_min_lr_ratio",
+        "hint_key": "field.krea_lr_scheduler_min_lr_ratioHint",
+        "min": 0,
+        "max": 1,
+        "step": 0.001,
+        "show_if": {
+            "key": "lr_scheduler",
+            "eq": "cosine_with_min_lr",
+            "_or": ["warmup_stable_decay", "rex"],
+        },
+        # transformers requires an explicit floor for cosine_with_min_lr.
+        # Keep the normal cosine behavior (0) as the first-use default while
+        # preserving a user-entered floor across scheduler changes.
+        "auto_value": [
+            {"watch": "lr_scheduler", "when": "cosine_with_min_lr", "set": 0.0, "set_if_default": True}
+        ],
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_optimizer_weight_decay",
+        "type": "number",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_optimizer_weight_decay",
+        "hint_key": "field.krea_optimizer_weight_decayHint",
+        "min": 0,
+        "step": 0.001,
+        "show_if": {"key": "optimizer_type", "neq": _KREA2_CUSTOM_OPTIMIZER},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_optimizer_betas",
+        "type": "text",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_optimizer_betas",
+        "hint_key": "field.krea_optimizer_betasHint",
+        "show_if": {
+            "key": "optimizer_type",
+            "eq": "adamw8bit",
+            "_or": [
+                "AdamW",
+                "bitsandbytes.optim.PagedAdamW8bit",
+                "bitsandbytes.optim.AdEMAMix8bit",
+                "bitsandbytes.optim.PagedAdEMAMix8bit",
+                "bitsandbytes.optim.Lion8bit",
+                "bitsandbytes.optim.PagedLion8bit",
+                "pytorch_optimizer.CAME",
+                "pytorch_optimizer.Lion",
+                "prodigyopt.Prodigy",
+                "schedulefree.AdamWScheduleFree",
+                "torch.optim.Adam",
+                "torch.optim.RAdam",
+                "torch.optim.NAdam",
+            ],
+        },
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_optimizer_eps",
+        "type": "text",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_optimizer_eps",
+        "hint_key": "field.krea_optimizer_epsHint",
+        "show_if": {
+            "key": "optimizer_type",
+            "eq": "adamw8bit",
+            "_or": [
+                "AdamW",
+                "bitsandbytes.optim.PagedAdamW8bit",
+                "bitsandbytes.optim.AdEMAMix8bit",
+                "bitsandbytes.optim.PagedAdEMAMix8bit",
+                "prodigyopt.Prodigy",
+                "schedulefree.AdamWScheduleFree",
+                "torch.optim.Adam",
+                "torch.optim.RAdam",
+                "torch.optim.NAdam",
+            ],
+        },
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_schedulefree_warmup_steps",
+        "type": "number",
+        "default": 0,
+        "section": "optimizer",
+        "desc_key": "field.krea_schedulefree_warmup_steps",
+        "hint_key": "field.krea_schedulefree_warmup_stepsHint",
+        "min": 0,
+        "step": 1,
+        "show_if": {"key": "optimizer_type", "eq": "schedulefree.AdamWScheduleFree"},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_adafactor_relative_step",
+        "type": "toggle",
+        "default": True,
+        "section": "optimizer",
+        "desc_key": "field.krea_adafactor_relative_step",
+        "hint_key": "field.krea_adafactor_relative_stepHint",
+        "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_adafactor_scale_parameter",
+        "type": "toggle",
+        "default": True,
+        "section": "optimizer",
+        "desc_key": "field.krea_adafactor_scale_parameter",
+        "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
+        "advanced": True,
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_adafactor_warmup_init",
+        "type": "toggle",
+        "default": False,
+        "section": "optimizer",
+        "desc_key": "field.krea_adafactor_warmup_init",
+        "hint_key": "field.krea_adafactor_warmup_initHint",
+        "show_if": [
+            {"key": "optimizer_type", "eq": "AdaFactor"},
+            {"key": "krea_adafactor_relative_step", "eq": True},
+        ],
+        "advanced": True,
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_adafactor_clip_threshold",
+        "type": "number",
+        "default": 1.0,
+        "section": "optimizer",
+        "desc_key": "field.krea_adafactor_clip_threshold",
+        "min": 0.00000001,
+        "step": 0.1,
+        "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
+        "advanced": True,
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_adafactor_eps",
+        "type": "text",
+        "default": "1e-30, 1e-3",
+        "section": "optimizer",
+        "desc_key": "field.krea_adafactor_eps",
+        "hint_key": "field.krea_adafactor_epsHint",
+        "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
+        "advanced": True,
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_lr_scheduler_type",
+        "type": "text",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_lr_scheduler_type",
+        "hint_key": "field.krea_lr_scheduler_typeHint",
+        "advanced": True,
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "krea_lr_scheduler_args",
+        "type": "textarea",
+        "default": "",
+        "section": "optimizer",
+        "desc_key": "field.krea_lr_scheduler_args",
+        "hint_key": "field.krea_lr_scheduler_argsHint",
+        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -935,6 +1297,191 @@ def _split_args(value: Any) -> list[str]:
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
+def _validate_musubi_literal_args(value: Any, key: str, errors: list[str]) -> None:
+    """Validate the exact ``key=Python literal`` grammar musubi parses.
+
+    ``trainer_base.py`` uses ``arg.split('=')`` followed by
+    ``ast.literal_eval``.  Validate the same grammar before a long cache
+    preparation or a training launch so malformed advanced arguments do not
+    fail only after the model has been loaded.
+    """
+
+    for item in _split_args(value):
+        if item.count("=") != 1:
+            errors.append(f"{key}: each line must contain one key=value pair / 每行必须只有一个 key=value")
+            continue
+        argument, literal = (part.strip() for part in item.split("=", 1))
+        if not argument.isidentifier() or not literal:
+            errors.append(f"{key}: invalid argument {item!r} / 参数格式无效")
+            continue
+        try:
+            ast.literal_eval(literal)
+        except (SyntaxError, ValueError):
+            errors.append(f"{key}: {argument} must use a Python literal / 必须使用 Python 字面量")
+
+
+def _normalize_numeric_literal(
+    config: dict[str, Any],
+    key: str,
+    errors: list[str],
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
+    """Normalize an optional numeric Python literal used in optimizer args."""
+
+    if _is_empty(config.get(key)):
+        return None
+    try:
+        value = ast.literal_eval(str(config[key]).strip())
+        number = float(value)
+    except (SyntaxError, ValueError, TypeError):
+        errors.append(f"{key}: must be a numeric Python literal / 必须是数字 Python 字面量")
+        return None
+    if not math.isfinite(number) or (minimum is not None and number < minimum) or (
+        maximum is not None and number > maximum
+    ):
+        errors.append(f"{key}: value is out of range / 数值超出有效范围")
+        return None
+    config[key] = number
+    return number
+
+
+def _normalize_numeric_tuple(
+    config: dict[str, Any],
+    key: str,
+    errors: list[str],
+    *,
+    lengths: set[int],
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> tuple[float, ...] | None:
+    """Normalize a comma-separated/tuple numeric literal for musubi kwargs."""
+
+    if _is_empty(config.get(key)):
+        return None
+    try:
+        value = ast.literal_eval(str(config[key]).strip())
+    except (SyntaxError, ValueError):
+        errors.append(f"{key}: must use comma-separated Python numbers / 必须使用逗号分隔的 Python 数字")
+        return None
+    if not isinstance(value, (tuple, list)) or len(value) not in lengths:
+        expected = "/".join(str(length) for length in sorted(lengths))
+        errors.append(f"{key}: requires {expected} values / 需要 {expected} 个数值")
+        return None
+    try:
+        numbers = tuple(float(item) for item in value)
+    except (TypeError, ValueError):
+        errors.append(f"{key}: values must be numeric / 每个值必须是数字")
+        return None
+    if any(
+        not math.isfinite(number)
+        or (minimum is not None and number < minimum)
+        or (maximum is not None and number > maximum)
+        for number in numbers
+    ):
+        errors.append(f"{key}: value is out of range / 数值超出有效范围")
+        return None
+    config[key] = numbers
+    return numbers
+
+
+def _replace_musubi_arg(arguments: list[str], key: str, literal: str) -> None:
+    """Set a guided argument, overriding the same key from raw advanced text."""
+
+    prefix = f"{key}="
+    arguments[:] = [item for item in arguments if not item.lstrip().startswith(prefix)]
+    arguments.append(f"{key}={literal}")
+
+
+def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
+    """Merge guided Krea optimizer fields with musubi's raw ``optimizer_args``."""
+
+    arguments = _split_args(config.get("krea_optimizer_args"))
+    optimizer_type = str(config.get("optimizer_type") or "adamw8bit")
+
+    if not _is_empty(config.get("krea_optimizer_weight_decay")):
+        _replace_musubi_arg(arguments, "weight_decay", repr(float(config["krea_optimizer_weight_decay"])))
+    if optimizer_type in _KREA2_BETA_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_betas")):
+        _replace_musubi_arg(arguments, "betas", repr(tuple(config["krea_optimizer_betas"])))
+    if optimizer_type in _KREA2_EPS_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_eps")):
+        _replace_musubi_arg(arguments, "eps", repr(float(config["krea_optimizer_eps"])))
+
+    if optimizer_type == "AdaFactor":
+        _replace_musubi_arg(
+            arguments,
+            "relative_step",
+            "True" if bool(config.get("krea_adafactor_relative_step", True)) else "False",
+        )
+        _replace_musubi_arg(
+            arguments,
+            "scale_parameter",
+            "True" if bool(config.get("krea_adafactor_scale_parameter", True)) else "False",
+        )
+        _replace_musubi_arg(
+            arguments,
+            "warmup_init",
+            "True" if bool(config.get("krea_adafactor_warmup_init", False)) else "False",
+        )
+        _replace_musubi_arg(
+            arguments,
+            "clip_threshold",
+            repr(float(config.get("krea_adafactor_clip_threshold", 1.0))),
+        )
+        _replace_musubi_arg(
+            arguments,
+            "eps",
+            repr(tuple(config.get("krea_adafactor_eps", (1e-30, 1e-3)))),
+        )
+    elif optimizer_type in _KREA2_SCHEDULEFREE_OPTIMIZERS and int(
+        config.get("krea_schedulefree_warmup_steps", 0)
+    ):
+        _replace_musubi_arg(arguments, "warmup_steps", str(int(config["krea_schedulefree_warmup_steps"])))
+
+    return arguments
+
+
+def _normalize_krea2_optimizer_type(config: dict[str, Any], errors: list[str]) -> str:
+    """Resolve UI aliases/custom paths into the exact musubi optimizer type."""
+
+    requested = str(config.get("optimizer_type") or "").strip()
+    if requested == _KREA2_CUSTOM_OPTIMIZER:
+        requested = str(config.get("krea_optimizer_custom_type") or "").strip()
+        if not _PYTHON_FULL_CLASS_PATH_RE.fullmatch(requested):
+            errors.append(
+                "krea_optimizer_custom_type: a full Python class path is required "
+                "/ 必须填写完整 Python 类路径"
+            )
+            return ""
+    if not requested:
+        errors.append("optimizer_type: required / 必填")
+        return ""
+
+    lowered = requested.lower()
+    if lowered == "adamw8bit":
+        requested = "adamw8bit"
+    elif lowered == "adafactor":
+        requested = "AdaFactor"
+    elif lowered in _KREA2_LEGACY_OPTIMIZER_ALIASES:
+        requested = _KREA2_LEGACY_OPTIMIZER_ALIASES[lowered]
+    elif not _PYTHON_NAME_RE.fullmatch(requested):
+        errors.append("optimizer_type: invalid Python class path / Python 类路径格式无效")
+        return ""
+
+    config["optimizer_type"] = requested
+    return requested
+
+
+def _selected_optional_optimizer_package(optimizer_type: Any) -> str | None:
+    """Return the distribution required by a curated non-musubi optimizer."""
+
+    value = str(optimizer_type or "")
+    return next(
+        (package for prefix, package in _KREA2_OPTIONAL_OPTIMIZER_PACKAGES.items() if value.startswith(prefix)),
+        None,
+    )
+
+
 def image_files(directory: str | Path, cache_dir: str | Path | None = None) -> list[Path]:
     root = Path(directory)
     if not root.is_dir():
@@ -1115,10 +1662,19 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     # persisted preset may predate a field we added later.
     for key, default in {
         "krea_training_duration_mode": "epochs",
+        "optimizer_type": "adamw8bit",
         "max_grad_norm": 1.0,
         "lr_scheduler": "constant",
         "lr_warmup_steps": 0,
         "lr_decay_steps": 0,
+        "lr_scheduler_num_cycles": 1,
+        "lr_scheduler_power": 1.0,
+        "krea_schedulefree_warmup_steps": 0,
+        "krea_adafactor_relative_step": True,
+        "krea_adafactor_scale_parameter": True,
+        "krea_adafactor_warmup_init": False,
+        "krea_adafactor_clip_threshold": 1.0,
+        "krea_adafactor_eps": "1e-30, 1e-3",
         "compile_mode": "default",
         "compile_dynamic": "auto",
         "block_swap_ring_size": 2,
@@ -1171,6 +1727,30 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     else:
         config["krea_training_duration_mode"] = duration_mode
 
+    optimizer_type = _normalize_krea2_optimizer_type(config, errors)
+    adafactor_relative_step = bool(config.get("krea_adafactor_relative_step", True))
+    custom_scheduler_type = str(config.get("krea_lr_scheduler_type") or "").strip()
+    if custom_scheduler_type and not _PYTHON_NAME_RE.fullmatch(custom_scheduler_type):
+        errors.append("krea_lr_scheduler_type: invalid Python class path / Python 类路径格式无效")
+    elif custom_scheduler_type:
+        config["krea_lr_scheduler_type"] = custom_scheduler_type
+
+    # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
+    # and switches to its own AdafactorSchedule in relative-step mode.  Keep
+    # the persisted config honest rather than displaying external settings
+    # that the upstream training loop will ignore.
+    internal_scheduler = optimizer_type in _KREA2_SCHEDULEFREE_OPTIMIZERS or (
+        optimizer_type == "AdaFactor" and adafactor_relative_step
+    )
+    if internal_scheduler:
+        config["lr_scheduler"] = "constant"
+        config["lr_warmup_steps"] = 0
+        if custom_scheduler_type:
+            errors.append(
+                "krea_lr_scheduler_type: unavailable with the selected optimizer's internal scheduler "
+                "/ 当前优化器使用内部调度器，不能指定自定义调度器"
+            )
+
     for key, minimum in (
         ("network_dim", 1),
         ("network_alpha", 1),
@@ -1219,8 +1799,64 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     for key in ("lr_warmup_steps", "lr_decay_steps"):
         if not _is_empty(config.get(key)):
             _as_steps_or_ratio(config, key, errors)
-    if str(config.get("lr_scheduler", "constant")) == "cosine_with_restarts":
+    scheduler_name = str(config.get("lr_scheduler", "constant"))
+    # get_cosine_with_min_lr_schedule_with_warmup rejects a missing floor;
+    # use zero to match an ordinary cosine schedule for direct API callers and
+    # old presets that naturally predate this guided field.
+    if scheduler_name == "cosine_with_min_lr" and _is_empty(config.get("lr_scheduler_min_lr_ratio")):
+        config["lr_scheduler_min_lr_ratio"] = 0.0
+    if scheduler_name == "constant":
+        try:
+            has_warmup = float(config.get("lr_warmup_steps", 0) or 0) != 0
+        except (TypeError, ValueError):
+            has_warmup = False
+        if has_warmup:
+            errors.append("lr_warmup_steps: constant scheduler does not accept warmup / constant 调度器不支持预热")
+    if scheduler_name in _KREA2_NUM_CYCLES_SCHEDULERS:
         _as_int(config, "lr_scheduler_num_cycles", errors, 1)
+    if scheduler_name == "inverse_sqrt" and not _is_empty(config.get("lr_scheduler_timescale")):
+        _as_int(config, "lr_scheduler_timescale", errors, 1)
+    if scheduler_name in _KREA2_MIN_LR_RATIO_SCHEDULERS and not _is_empty(
+        config.get("lr_scheduler_min_lr_ratio")
+    ):
+        ratio = _as_float(config, "lr_scheduler_min_lr_ratio", errors, 0.0)
+        if ratio is not None and ratio > 1.0:
+            errors.append("lr_scheduler_min_lr_ratio: must be <= 1 / 不能大于 1")
+
+    if not _is_empty(config.get("krea_optimizer_weight_decay")):
+        _as_float(config, "krea_optimizer_weight_decay", errors, 0.0)
+    if not _is_empty(config.get("krea_optimizer_betas")):
+        if optimizer_type not in _KREA2_BETA_OPTIMIZERS:
+            errors.append("krea_optimizer_betas: not supported by the selected optimizer / 当前优化器不支持 betas")
+        else:
+            _normalize_numeric_tuple(
+                config,
+                "krea_optimizer_betas",
+                errors,
+                lengths=_KREA2_BETA_LENGTHS[optimizer_type],
+                minimum=0.0,
+                maximum=0.999999999,
+            )
+    if not _is_empty(config.get("krea_optimizer_eps")):
+        if optimizer_type not in _KREA2_EPS_OPTIMIZERS:
+            errors.append("krea_optimizer_eps: not supported by the selected optimizer / 当前优化器不支持 eps")
+        else:
+            _normalize_numeric_literal(config, "krea_optimizer_eps", errors, minimum=1e-30)
+
+    if optimizer_type == "AdaFactor":
+        _as_float(config, "krea_adafactor_clip_threshold", errors, 0.00000001)
+        _normalize_numeric_tuple(
+            config,
+            "krea_adafactor_eps",
+            errors,
+            lengths={2},
+            minimum=1e-30,
+        )
+    if optimizer_type in _KREA2_SCHEDULEFREE_OPTIMIZERS:
+        _as_int(config, "krea_schedulefree_warmup_steps", errors, 0)
+
+    _validate_musubi_literal_args(config.get("krea_optimizer_args"), "krea_optimizer_args", errors)
+    _validate_musubi_literal_args(config.get("krea_lr_scheduler_args"), "krea_lr_scheduler_args", errors)
     if not _is_empty(config.get("compile_cache_size_limit")):
         _as_int(config, "compile_cache_size_limit", errors, 1)
 
@@ -1234,6 +1870,11 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         errors.append("krea_attention_backend: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) not in _KREA2_LR_SCHEDULERS:
         errors.append("lr_scheduler: unsupported value / 不支持的选项")
+    if str(config.get("lr_scheduler", "constant")) == "adafactor":
+        errors.append(
+            "lr_scheduler: adafactor is managed internally; select AdaFactor relative-step mode instead "
+            "/ adafactor 由内部管理，请改用 AdaFactor 相对步长模式"
+        )
     if str(config.get("compile_mode", "default")) not in _KREA2_COMPILE_MODES:
         errors.append("compile_mode: unsupported value / 不支持的选项")
     if str(config.get("compile_dynamic", "auto")) not in _KREA2_COMPILE_DYNAMIC_VALUES:
@@ -1334,10 +1975,16 @@ def build_krea2_train_config(
         result["lr_warmup_steps"] = config["lr_warmup_steps"]
     if not _is_empty(config.get("lr_decay_steps")) and float(config["lr_decay_steps"]) != 0:
         result["lr_decay_steps"] = config["lr_decay_steps"]
-    if result["lr_scheduler"] == "cosine_with_restarts":
+    if result["lr_scheduler"] in _KREA2_NUM_CYCLES_SCHEDULERS:
         result["lr_scheduler_num_cycles"] = int(config.get("lr_scheduler_num_cycles", 1))
     if result["lr_scheduler"] == "polynomial":
         result["lr_scheduler_power"] = float(config.get("lr_scheduler_power", 1.0))
+    if result["lr_scheduler"] == "inverse_sqrt" and not _is_empty(config.get("lr_scheduler_timescale")):
+        result["lr_scheduler_timescale"] = int(config["lr_scheduler_timescale"])
+    if result["lr_scheduler"] in _KREA2_MIN_LR_RATIO_SCHEDULERS and not _is_empty(
+        config.get("lr_scheduler_min_lr_ratio")
+    ):
+        result["lr_scheduler_min_lr_ratio"] = float(config["lr_scheduler_min_lr_ratio"])
     if bool(config.get("persistent_data_loader_workers", True)):
         result["persistent_data_loader_workers"] = True
     if bool(config.get("save_state", False)):
@@ -1383,9 +2030,14 @@ def build_krea2_train_config(
     network_args = _split_args(config.get("network_args_custom"))
     if network_args:
         result["network_args"] = network_args
-    optimizer_args = _split_args(config.get("krea_optimizer_args"))
+    optimizer_args = _build_krea2_optimizer_args(config)
     if optimizer_args:
         result["optimizer_args"] = optimizer_args
+    if not _is_empty(config.get("krea_lr_scheduler_type")):
+        result["lr_scheduler_type"] = str(config["krea_lr_scheduler_type"])
+    scheduler_args = _split_args(config.get("krea_lr_scheduler_args"))
+    if scheduler_args:
+        result["lr_scheduler_args"] = scheduler_args
     if bool(config.get("enable_krea_samples", False)):
         if sample_prompts_path is None:
             raise ValueError("sample_prompts_path is required when Krea sampling is enabled")
@@ -1416,6 +2068,16 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
 
     runtime = shared_runtime_status()
     errors.extend(runtime["errors"])
+
+    optional_optimizer_package = _selected_optional_optimizer_package(config.get("optimizer_type"))
+    if optional_optimizer_package:
+        try:
+            importlib.metadata.version(optional_optimizer_package)
+        except importlib.metadata.PackageNotFoundError:
+            errors.append(
+                f"Selected optimizer requires {optional_optimizer_package}, but it is not installed in the shared "
+                f"training environment / 所选优化器需要 {optional_optimizer_package}，但共享训练环境未安装"
+            )
 
     for key, label in (("dit", "Krea 2 RAW DiT"), ("vae", "Qwen-Image VAE"), ("text_encoder", "Qwen3-VL text encoder")):
         path = Path(str(config.get(key) or ""))

@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import unittest
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import patch
 
@@ -181,6 +182,142 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["max_grad_norm"], 0.5)
         self.assertEqual(estimate["total_steps"], 321)
 
+    def test_optimizer_menu_exposes_musubi_paths_and_safe_scheduler_surface(self):
+        fields = get_fields_json()
+        optimizer_fields = [
+            field
+            for section in fields["sections"]
+            for field in section["fields"]
+            if field["key"] == "optimizer_type" and field.get("profiles") == ["krea2-lora"]
+        ]
+        scheduler_fields = [
+            field
+            for section in fields["sections"]
+            for field in section["fields"]
+            if field["key"] == "lr_scheduler" and field.get("profiles") == ["krea2-lora"]
+        ]
+
+        self.assertEqual(len(optimizer_fields), 1)
+        optimizer_values = {
+            option["v"]
+            for group in optimizer_fields[0]["groups"]
+            for option in group["options"]
+        }
+        self.assertTrue(
+            {
+                "bitsandbytes.optim.PagedAdEMAMix8bit",
+                "pytorch_optimizer.CAME",
+                "prodigyopt.Prodigy",
+                "schedulefree.AdamWScheduleFree",
+                "__custom__",
+            }.issubset(optimizer_values)
+        )
+
+        self.assertEqual(len(scheduler_fields), 1)
+        scheduler_values = {option["v"] for option in scheduler_fields[0]["options"]}
+        self.assertTrue({"inverse_sqrt", "cosine_with_min_lr", "warmup_stable_decay"}.issubset(scheduler_values))
+        # trainer_base calls lr_scheduler.step() without a metric, so exposing
+        # ReduceLROnPlateau would produce a valid-looking form that fails mid-run.
+        self.assertNotIn("reduce_lr_on_plateau", scheduler_values)
+        self.assertNotIn("cosine_warmup_with_min_lr", scheduler_values)
+
+    def test_guided_optimizer_and_scheduler_controls_map_to_real_musubi_flags(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "optimizer_type": "bitsandbytes.optim.PagedAdEMAMix8bit",
+                    "krea_optimizer_weight_decay": 0.02,
+                    "krea_optimizer_betas": "0.9, 0.999, 0.9999",
+                    "krea_optimizer_eps": "1e-8",
+                    "lr_scheduler": "cosine_with_min_lr",
+                    "lr_scheduler_num_cycles": 3,
+                    "lr_scheduler_min_lr_ratio": 0.05,
+                    "krea_lr_scheduler_type": "CosineAnnealingLR",
+                    "krea_lr_scheduler_args": "T_max=100\neta_min=1e-6",
+                }
+            )
+
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
+
+        self.assertEqual(train["optimizer_type"], "bitsandbytes.optim.PagedAdEMAMix8bit")
+        self.assertEqual(train["lr_scheduler"], "cosine_with_min_lr")
+        self.assertEqual(train["lr_scheduler_num_cycles"], 3)
+        self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.05)
+        self.assertEqual(train["lr_scheduler_type"], "CosineAnnealingLR")
+        self.assertEqual(train["lr_scheduler_args"], ["T_max=100", "eta_min=1e-6"])
+        self.assertEqual(
+            train["optimizer_args"],
+            ["weight_decay=0.02", "betas=(0.9, 0.999, 0.9999)", "eps=1e-08"],
+        )
+
+    def test_cosine_with_min_lr_gets_an_explicit_safe_floor_for_old_presets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config["lr_scheduler"] = "cosine_with_min_lr"
+
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
+
+        self.assertEqual(config["lr_scheduler_min_lr_ratio"], 0.0)
+        self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.0)
+
+    def test_optimizer_alias_custom_path_and_internal_scheduler_are_normalized(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "optimizer_type": "Prodigy",
+                    "lr_scheduler": "cosine",
+                    "lr_warmup_steps": 10,
+                }
+            )
+            self.assertEqual(validate_krea2_config(config), [])
+            self.assertEqual(config["optimizer_type"], "prodigyopt.Prodigy")
+
+            config = krea2_config(root / "schedulefree")
+            config.update(
+                {
+                    "optimizer_type": "schedulefree.AdamWScheduleFree",
+                    "lr_scheduler": "cosine",
+                    "lr_warmup_steps": 10,
+                    "krea_schedulefree_warmup_steps": 25,
+                }
+            )
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
+
+            custom = krea2_config(root / "custom")
+            custom.update(
+                {
+                    "optimizer_type": "__custom__",
+                    "krea_optimizer_custom_type": "bitsandbytes.optim.LAMB8bit",
+                }
+            )
+            self.assertEqual(validate_krea2_config(custom), [])
+
+        self.assertEqual(config["lr_scheduler"], "constant")
+        self.assertEqual(config["lr_warmup_steps"], 0)
+        self.assertEqual(train["optimizer_args"], ["warmup_steps=25"])
+        self.assertEqual(custom["optimizer_type"], "bitsandbytes.optim.LAMB8bit")
+
+    def test_optimizer_specific_guided_args_reject_invalid_shapes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            config.update({"optimizer_type": "AdamW", "krea_optimizer_betas": "0.9, 0.999, 0.9999"})
+            errors = validate_krea2_config(config)
+
+            came = krea2_config(Path(temp_dir) / "came")
+            came.update({"optimizer_type": "pytorch_optimizer.CAME", "krea_optimizer_betas": "0.9, 0.999"})
+            came_errors = validate_krea2_config(came)
+
+        self.assertTrue(any("krea_optimizer_betas: requires 2 values" in error for error in errors))
+        self.assertTrue(any("krea_optimizer_betas: requires 3 values" in error for error in came_errors))
+
     def test_sample_and_turbo_fields_generate_only_real_musubi_flags(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -324,6 +461,20 @@ class Krea2CodecTests(unittest.TestCase):
 
         self.assertTrue(preflight["ok"], preflight["errors"])
         self.assertEqual(preflight["runtime"]["python"], "main")
+
+    def test_preflight_explains_when_a_selected_shared_optimizer_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            config["optimizer_type"] = "pytorch_optimizer.CAME"
+            runtime = {"ok": True, "errors": [], "versions": {}, "python": "main"}
+            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value=runtime), patch(
+                "backend.training.musubi_krea2.importlib.metadata.version",
+                side_effect=PackageNotFoundError,
+            ):
+                preflight = krea2_preflight(config, require_cache=False)
+
+        self.assertFalse(preflight["ok"])
+        self.assertTrue(any("pytorch-optimizer" in error for error in preflight["errors"]))
 
     def test_generic_validation_and_step_api_dispatch_to_krea_codec(self):
         with tempfile.TemporaryDirectory() as temp_dir:
