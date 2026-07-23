@@ -1,6 +1,9 @@
 import asyncio
+import json
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from importlib.metadata import PackageNotFoundError
@@ -633,6 +636,55 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("-krea2-preset.toml", training_presets)
         training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
         self.assertIn("_syncKrea2CacheDir", training_core)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_krea_preset_preview_uses_the_shared_toml_highlighter(self):
+        script = r"""
+global.window = {};
+const preview = { innerHTML: '', textContent: 'must-not-be-used' };
+global.document = {
+  getElementById(id) { return id === 'tomlPreview' ? preview : null; },
+};
+window.getVisibleSections = () => [{
+  key: 'base',
+  fields: [
+    { key: 'model_train_type' },
+    { key: 'learning_rate' },
+    { key: 'output_name' },
+  ],
+}];
+require('./frontend/js/training-toml.js');
+const ctx = Object.assign({}, window.trainingTomlMixin, {
+  form: {
+    model_train_type: 'krea2-lora',
+    learning_rate: 0.0001,
+    output_name: 'safe<&',
+  },
+  _fieldShowIfMet() { return true; },
+  _coerceNum(value) { return value; },
+  esc(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  },
+  t() { return 'none'; },
+});
+ctx._updateKrea2Toml();
+console.log(JSON.stringify(preview));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        preview = json.loads(result.stdout)
+        self.assertIn('class="toml-comment"', preview["innerHTML"])
+        self.assertIn('class="toml-key"', preview["innerHTML"])
+        self.assertIn('class="toml-num"', preview["innerHTML"])
+        self.assertIn('class="toml-str"', preview["innerHTML"])
+        self.assertIn("safe&lt;&amp;", preview["innerHTML"])
+        self.assertEqual(preview["textContent"], "must-not-be-used")
 
 
 if __name__ == "__main__":

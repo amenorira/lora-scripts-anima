@@ -171,7 +171,14 @@ window.trainingTomlMixin = {
     allSections.forEach(s => { lines.push(...sectionLines[s.key]); });
 
     this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
-    const highlighted = lines.map(line => {
+    this._renderTomlPreview(lines, this.t('common.noConfigs'));
+  },
+
+  // Keep all training-core previews on one renderer.  Krea 2 has a
+  // copyable application preset rather than musubi's runtime TOMLs, but it
+  // should still look exactly like the SDXL/Anima TOML preview.
+  _highlightToml(lines) {
+    return lines.map(line => {
       if (line.startsWith('#')) return `<span class="toml-comment">${this.esc(line)}</span>`;
       const eq = line.indexOf('=');
       if (eq === -1) return this.esc(line);
@@ -180,11 +187,16 @@ window.trainingTomlMixin = {
       const valCls = (val.startsWith('"') || val.startsWith("'")) ? 'toml-str' : 'toml-num';
       return `<span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> <span class="${valCls}">${this.esc(val)}</span>`;
     }).join('\n');
+  },
+
+  _renderTomlPreview(lines, emptyMessage = '') {
     const preview = document.getElementById('tomlPreview');
-    if (preview) {
-      if (lines.length === 0) preview.innerHTML = `<span class="toml-comment"># ${this.t('common.noConfigs')}</span>`;
-      else preview.innerHTML = highlighted;
+    if (!preview) return;
+    if (lines.length === 0) {
+      preview.innerHTML = `<span class="toml-comment"># ${this.esc(emptyMessage || this.t('common.noConfigs'))}</span>`;
+      return;
     }
+    preview.innerHTML = this._highlightToml(lines);
   },
 
   _updateKrea2Toml() {
@@ -226,8 +238,7 @@ window.trainingTomlMixin = {
     });
 
     this.tomlRaw = lines.join('\n');
-    const preview = document.getElementById('tomlPreview');
-    if (preview) preview.textContent = this.tomlRaw;
+    this._renderTomlPreview(lines);
   },
 
   // Debounced TOML update (for x-effect binding, avoids per-keystroke recalc)
