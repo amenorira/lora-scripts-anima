@@ -119,7 +119,31 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertNotIn("train_batch_size", train)
         self.assertNotIn("save_model_as", train)
         self.assertNotIn("attn_mode", train)
+        self.assertEqual(train["sigmoid_scale"], 1.0)
         self.assertTrue(train["sdpa"])
+
+    def test_krea_timestep_and_weighting_options_reach_musubi_config(self):
+        sampling_modes = ("uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr")
+        weighting_schemes = ("none", "sigma_sqrt", "cosmap", "logit_normal", "mode")
+
+        for sampling in sampling_modes:
+            for weighting in weighting_schemes:
+                with self.subTest(sampling=sampling, weighting=weighting), tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    config = krea2_config(root)
+                    config["timestep_sampling"] = sampling
+                    config["weighting_scheme"] = weighting
+
+                    self.assertEqual(validate_krea2_config(config), [])
+                    train = build_krea2_train_config(
+                        config,
+                        root / "run" / "dataset.toml",
+                        root / "artifact",
+                        root / "run" / "log",
+                    )
+
+                    self.assertEqual(train["timestep_sampling"], sampling)
+                    self.assertEqual(train["weighting_scheme"], weighting)
 
     def test_cache_directory_is_automatically_nested_under_its_dataset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -717,6 +741,35 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("-krea2-preset.toml", training_presets)
         training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
         self.assertIn("_syncKrea2CacheDir", training_core)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_krea_profile_resets_incompatible_shared_select_values(self):
+        script = r"""
+global.window = {};
+window.getVisibleSections = () => [{
+  fields: [
+    { key: 'timestep_sampling', type: 'select', default: 'shift', options: [{ v: 'shift' }, { v: 'krea2_shift' }] },
+    { key: 'weighting_scheme', type: 'select', default: 'none', options: [{ v: 'none' }] },
+  ],
+}];
+require('./frontend/js/training-core.js');
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: { timestep_sampling: 'sigmoid', weighting_scheme: 'uniform' },
+});
+const defaults = ctx._buildFormDefaults('krea2-lora');
+ctx._normalizeProfileSelectValues('krea2-lora', defaults);
+console.log(JSON.stringify(ctx.form));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        form = json.loads(result.stdout)
+        self.assertEqual(form["timestep_sampling"], "shift")
+        self.assertEqual(form["weighting_scheme"], "none")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_krea_preset_preview_uses_the_shared_toml_highlighter(self):

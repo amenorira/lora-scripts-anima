@@ -425,8 +425,12 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_timestep_sampling",
         "options": [
+            {"v": "uniform", "l": "uniform"},
+            {"v": "sigmoid", "l": "sigmoid"},
+            {"v": "sigma", "l": "sigma"},
             {"v": "shift", "l": "shift"},
             {"v": "krea2_shift", "l": "krea2_shift"},
+            {"v": "logsnr", "l": "logsnr"},
         ],
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -438,7 +442,17 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.discrete_flow_shift",
         "min": 0.01,
         "step": 0.01,
-        "show_if": {"key": "timestep_sampling", "eq": "shift"},
+        "show_if": {"key": "timestep_sampling", "eq": "shift", "_or": ["sigma"]},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "sigmoid_scale",
+        "type": "number",
+        "default": 1.0,
+        "step": 0.001,
+        "section": "training",
+        "desc_key": "field.sigmoid_scale",
+        "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "krea2_shift"]},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -446,8 +460,44 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "type": "select",
         "default": "none",
         "section": "training",
-        "desc_key": "field.weighting_scheme",
-        "options": [{"v": "none", "l": "none"}],
+        "desc_key": "field.krea_weighting_scheme",
+        "options": [
+            {"v": "none", "l": "none"},
+            {"v": "sigma_sqrt", "l": "sigma_sqrt"},
+            {"v": "cosmap", "l": "cosmap"},
+            {"v": "logit_normal", "l": "logit_normal"},
+            {"v": "mode", "l": "mode"},
+        ],
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "logit_mean",
+        "type": "number",
+        "default": 0.0,
+        "step": 0.01,
+        "section": "training",
+        "desc_key": "field.logit_mean",
+        "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "logit_std",
+        "type": "number",
+        "default": 1.0,
+        "step": 0.01,
+        "section": "training",
+        "desc_key": "field.logit_std",
+        "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
+        "key": "mode_scale",
+        "type": "number",
+        "default": 1.29,
+        "step": 0.01,
+        "section": "training",
+        "desc_key": "field.mode_scale",
+        "show_if": {"key": "timestep_sampling", "eq": "sigma"},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1805,6 +1855,14 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             errors.append("network_dropout: must be <= 0.5 / 不能大于 0.5")
         if key == "learning_rate" and number is not None and number <= 0:
             errors.append("learning_rate: must be > 0 / 必须大于 0")
+    if not _is_empty(config.get("sigmoid_scale")):
+        _as_float(config, "sigmoid_scale", errors)
+    if not _is_empty(config.get("logit_mean")):
+        _as_float(config, "logit_mean", errors)
+    if not _is_empty(config.get("logit_std")):
+        _as_float(config, "logit_std", errors, 0.0)
+    if not _is_empty(config.get("mode_scale")):
+        _as_float(config, "mode_scale", errors)
 
     for key in ("lr_warmup_steps", "lr_decay_steps"):
         if not _is_empty(config.get(key)):
@@ -1891,10 +1949,14 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     if str(config.get("mixed_precision", "bf16")) not in {"bf16", "fp16", "no"}:
         errors.append("mixed_precision: unsupported value / 不支持的选项")
-    if str(config.get("timestep_sampling", "shift")) not in {"shift", "krea2_shift"}:
+    if str(config.get("timestep_sampling", "shift")) not in {
+        "uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr"
+    }:
         errors.append("timestep_sampling: unsupported value / 不支持的选项")
-    if str(config.get("weighting_scheme", "none")) != "none":
-        errors.append("weighting_scheme: Krea 2 profile currently supports none only / 当前仅支持 none")
+    if str(config.get("weighting_scheme", "none")) not in {
+        "none", "sigma_sqrt", "cosmap", "logit_normal", "mode"
+    }:
+        errors.append("weighting_scheme: unsupported value / 不支持的选项")
     if str(config.get("krea_attention_backend", "sdpa")) not in _ATTENTION_FLAGS:
         errors.append("krea_attention_backend: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) not in _KREA2_LR_SCHEDULERS:
@@ -1993,7 +2055,7 @@ def build_krea2_train_config(
         "seed": int(config.get("seed", 42)),
         "mixed_precision": str(config.get("mixed_precision", "bf16")),
         "timestep_sampling": str(config.get("timestep_sampling", "shift")),
-        "weighting_scheme": "none",
+        "weighting_scheme": str(config.get("weighting_scheme", "none")),
         "optimizer_type": optimizer_type,
         "lr_scheduler": str(config.get("lr_scheduler", "constant")),
         "output_dir": str(output_dir),
@@ -2009,6 +2071,15 @@ def build_krea2_train_config(
         result["max_train_epochs"] = int(config["max_train_epochs"])
     if result["timestep_sampling"] == "shift":
         result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
+    if result["timestep_sampling"] == "sigma":
+        result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
+    if result["timestep_sampling"] in {"sigmoid", "shift", "krea2_shift"}:
+        result["sigmoid_scale"] = float(config.get("sigmoid_scale", 1.0))
+    if result["timestep_sampling"] in {"sigma", "logsnr"}:
+        result["logit_mean"] = float(config.get("logit_mean", 0.0))
+        result["logit_std"] = float(config.get("logit_std", 1.0))
+    if result["timestep_sampling"] == "sigma":
+        result["mode_scale"] = float(config.get("mode_scale", 1.29))
     if not _is_empty(config.get("lr_warmup_steps")) and float(config["lr_warmup_steps"]) != 0:
         result["lr_warmup_steps"] = config["lr_warmup_steps"]
     if not _is_empty(config.get("lr_decay_steps")) and float(config["lr_decay_steps"]) != 0:

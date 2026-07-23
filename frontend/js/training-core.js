@@ -99,6 +99,7 @@ window.trainingCoreMixin = {
         this.form[k] = newDefaults[k];
       }
     }
+    this._normalizeProfileSelectValues(v, newDefaults);
     this.formDefaults = { ...newDefaults };
 
     // A runtime profile owns its network module. Krea's module is musubi
@@ -148,6 +149,18 @@ window.trainingCoreMixin = {
     if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
     else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
     return defaults;
+  },
+
+  _normalizeProfileSelectValues(trainType, defaults = this._buildFormDefaults(trainType)) {
+    window.getVisibleSections(trainType).forEach(section => {
+      section.fields.forEach(field => {
+        if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length) return;
+        const validValues = field.options.map(option => option.v);
+        if (!validValues.includes(this.form[field.key])) {
+          this.form[field.key] = defaults[field.key] ?? validValues[0];
+        }
+      });
+    });
   },
 
   _deriveKrea2CacheDir(trainDataDir) {
@@ -246,6 +259,9 @@ window.trainingCoreMixin = {
     if (!container || !container.childElementCount) return false;
     if (this._trainFormMountedRoute !== route || this._trainFormLocale !== this.locale) return false;
 
+    const activeType = this.form && this.form.model_train_type;
+    if (activeType) this._normalizeProfileSelectValues(activeType);
+
     this.buildSectionNav();
     this.refreshTrainingRealtimeState();
     this.scheduleStepEstimate();
@@ -292,6 +308,7 @@ window.trainingCoreMixin = {
     if (!validTrainTypes.includes(this.form.model_train_type)) {
       this.form.model_train_type = trainType;
     }
+    this._normalizeProfileSelectValues(this.form.model_train_type, defaults);
     // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
@@ -369,6 +386,7 @@ window.trainingCoreMixin = {
       Object.keys(freshDefaults).forEach(key => {
         if (self.form[key] === undefined) self.form[key] = freshDefaults[key];
       });
+      self._normalizeProfileSelectValues(activeType, freshDefaults);
       self.formDefaults = { ...freshDefaults };
       self._syncKrea2CacheDir();
       self.renderTrainingForm(activeType, null);
@@ -1498,6 +1516,7 @@ window.trainingCoreMixin = {
   _buildTimestepPreview() {
     const sampling = String(this.form.timestep_sampling || 'sigmoid');
     const weighting = String(this.form.weighting_scheme || 'uniform');
+    const isKrea2 = String(this.form.model_train_type || '') === 'krea2-lora';
     const sigmoidScale = this._timestepPreviewNumber(this.form.sigmoid_scale, 1.0);
     const flowShift = Math.max(0.0001, this._timestepPreviewNumber(this.form.discrete_flow_shift, 1.0));
     const logitMean = this._timestepPreviewNumber(this.form.logit_mean, 0.0);
@@ -1534,13 +1553,17 @@ window.trainingCoreMixin = {
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
     const fixedShift = value => (value * flowShift) / (1 + (flowShift - 1) * value);
 
-    // Anima VAE compression is 8; flux_shift uses the packed latent token count.
+    // Anima and Krea 2 both use VAE f8 latents with 2x2 DiT patch packing.
     const latentH = Math.floor(height / 8);
     const latentW = Math.floor(width / 8);
     const tokenCount = Math.floor(latentH / 2) * Math.floor(latentW / 2);
-    const mu = 0.5 + ((1.15 - 0.5) / (4096 - 256)) * (tokenCount - 256);
-    const expMu = Math.exp(mu);
-    const adaptiveShift = value => expMu / (expMu + (1 / Math.max(value, 1e-12) - 1));
+    const resolutionShift = maxTokens => {
+      const mu = 0.5 + ((1.15 - 0.5) / (maxTokens - 256)) * (tokenCount - 256);
+      const shift = Math.exp(mu);
+      return value => (value * shift) / (1 + (shift - 1) * value);
+    };
+    const fluxShift = resolutionShift(4096);
+    const krea2Shift = resolutionShift(6400);
 
     for (let index = 0; index < sampleCount; index += 1) {
       let sigma;
@@ -1549,7 +1572,9 @@ window.trainingCoreMixin = {
       } else if (sampling === 'shift') {
         sigma = fixedShift(sigmoid(sigmoidScale * normal()));
       } else if (sampling === 'flux_shift') {
-        sigma = adaptiveShift(sigmoid(sigmoidScale * normal()));
+        sigma = fluxShift(sigmoid(sigmoidScale * normal()));
+      } else if (sampling === 'krea2_shift') {
+        sigma = krea2Shift(sigmoid(sigmoidScale * normal()));
       } else if (sampling === 'sigma') {
         let density;
         if (weighting === 'logit_normal') {
@@ -1562,6 +1587,8 @@ window.trainingCoreMixin = {
         }
         // FlowMatchEulerDiscreteScheduler is descending; index u maps to sigma ~= 1-u.
         sigma = fixedShift(1 - Math.max(0, Math.min(1, density)));
+      } else if (sampling === 'logsnr') {
+        sigma = sigmoid(-(logitMean + logitStd * normal()) / 2);
       } else {
         sigma = sigmoid(sigmoidScale * normal());
       }
@@ -1590,10 +1617,11 @@ window.trainingCoreMixin = {
     const third = Math.floor(binCount / 3);
     const sumRange = (start, end) => counts.slice(start, end).reduce((total, value) => total + value, 0) * 100 / sampleCount;
     const notes = [];
-    if (!['shift', 'sigma'].includes(sampling) && Math.abs(flowShift - 1) > 1e-9) {
+    if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
     }
     if (sampling === 'flux_shift') notes.push(this.t('timestepPreview.fluxShiftNote'));
+    if (sampling === 'krea2_shift') notes.push(this.t('timestepPreview.krea2ShiftNote'));
     if (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma') {
       notes.push(this.t('timestepPreview.densityIgnored'));
     }
