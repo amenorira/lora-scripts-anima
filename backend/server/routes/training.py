@@ -15,6 +15,24 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request
 from backend.constants import OUTPUT_DIR
 from backend.monitor.run_registry import resolve_user_path
 from backend.training import run_train
+from backend.training.core_registry import (
+    TrainingProfileError,
+    profile_payload,
+    resolve_training_profile,
+)
+from backend.training.musubi_krea2 import (
+    KREA2_CACHE_RUNNER_FILE,
+    KREA2_PROFILE_ID,
+    KREA2_TRAINER_FILE,
+    MUSUBI_TUNER_DIR,
+    build_krea2_dataset_config,
+    build_krea2_train_config,
+    get_krea2_cache_status,
+    krea2_preflight,
+    mark_cache_manifest,
+    prepare_cache_manifest,
+    validate_krea2_config,
+)
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend import launch_utils
 from backend.server.models import APIResponseFail, APIResponseSuccess
@@ -22,11 +40,6 @@ from backend.log import log
 from backend.utils import train_utils
 
 router = APIRouter()
-
-trainer_mapping = {
-    "sdxl-lora": "./vendor/sd-scripts/sdxl_train_network.py",
-    "anima-lora": "./vendor/sd-scripts/anima_train_network.py",
-}
 
 avaliable_scripts = [
     "networks/extract_lora_from_models.py",
@@ -247,9 +260,9 @@ def _cleanup_autosave(autosave_dir: str, keep: int = 50) -> None:
 def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str, is_resume: bool) -> None:
     """写入人类可读的训练摘要 run_info.txt"""
     try:
-        model_path = config.get("pretrained_model_name_or_path", "?")
+        model_path = config.get("pretrained_model_name_or_path") or config.get("dit", "?")
         model_name = os.path.basename(model_path) if model_path else "?"
-        dataset = config.get("train_data_dir", "?")
+        dataset = config.get("train_data_dir") or config.get("dataset_config", "?")
         lines = [
             f"Training Run: {os.path.basename(run_dir)}",
             f"Started:      {timestamp}",
@@ -300,6 +313,225 @@ def _write_output_dir_reference(run_dir: str, artifact_dir: str) -> None:
         log.warning(f"Failed to write output_dir.txt / 写入失败: {e}")
 
 
+def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
+    return APIResponseFail(
+        message="Krea 2 configuration is not ready / Krea 2 配置尚未就绪:\n" + "\n".join(errors),
+        data={"errorCode": error_code, "errors": errors},
+    )
+
+
+async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
+    """Launch the musubi Krea 2 training profile without touching sd-scripts."""
+
+    validation_errors = validate_krea2_config(config)
+    if validation_errors:
+        return _krea2_error(validation_errors, "invalidKrea2Config")
+
+    preflight = await asyncio.to_thread(krea2_preflight, config, True)
+    if not preflight["ok"]:
+        code = "krea2CacheRequired" if not preflight["cache"]["ready"] else "krea2PreflightFailed"
+        return _krea2_error(preflight["errors"], code)
+
+    output_name = config.get("output_name", "krea2_lora")
+    safe_name = _safe_output_name(str(output_name))
+    run_dir_name = f"{safe_name}_{timestamp}"
+    is_resume = bool(str(config.get("resume") or "").strip())
+    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
+    try:
+        output_base_path = await asyncio.to_thread(resolve_user_path, requested_output_dir)
+    except (OSError, ValueError) as exc:
+        return APIResponseFail(
+            message=f"Invalid output path / 输出路径无效: {exc}",
+            data={"errorCode": "invalidOutputPath"},
+        )
+
+    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
+    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
+    try:
+        await asyncio.to_thread(_prepare_output_directories, artifact_run_dir, internal_run_dir)
+    except OSError as exc:
+        return APIResponseFail(
+            message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
+            data={"errorCode": "outputDirectoryUnavailable", "outputPath": str(artifact_run_dir)},
+        )
+
+    config["output_dir"] = str(artifact_run_dir)
+    config["logging_dir"] = str(internal_run_dir / "log")
+    dataset_config = build_krea2_dataset_config(config)
+    dataset_config_file = internal_run_dir / "dataset.toml"
+    train_config = build_krea2_train_config(
+        config,
+        dataset_config_file,
+        artifact_run_dir,
+        internal_run_dir / "log",
+    )
+
+    autosave_dir = Path(os.getcwd()) / "config" / "autosave"
+    autosave_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_autosave(str(autosave_dir), keep=50)
+    toml_file = autosave_dir / f"{timestamp}-krea2.toml"
+    train_toml = toml.dumps(train_config)
+    dataset_toml = toml.dumps(dataset_config)
+
+    def _write_configs():
+        toml_file.write_text(train_toml, encoding="utf-8")
+        (internal_run_dir / "config.toml").write_text(train_toml, encoding="utf-8")
+        dataset_config_file.write_text(dataset_toml, encoding="utf-8")
+
+    await asyncio.gather(
+        asyncio.to_thread(_write_configs),
+        asyncio.to_thread(
+            _write_run_info,
+            str(internal_run_dir),
+            config,
+            KREA2_PROFILE_ID,
+            timestamp,
+            is_resume,
+        ),
+        asyncio.to_thread(_write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
+    )
+
+    return run_train(
+        str(toml_file),
+        KREA2_TRAINER_FILE,
+        gpu_ids,
+        2,
+        run_dir=str(internal_run_dir),
+        artifact_dir=str(artifact_run_dir),
+        output_base_dir=requested_output_dir,
+        preview_enabled=False,
+        engine_id="musubi_tuner",
+        run_metadata={
+            "profile_id": KREA2_PROFILE_ID,
+            "adapter_id": "musubi_lora",
+            "dataset_config": str(dataset_config_file),
+        },
+    )
+
+
+@router.get("/training/cores")
+async def training_cores():
+    """Expose installed runtime/profile capabilities for environment and UI pages."""
+
+    return APIResponseSuccess(data=profile_payload())
+
+
+@router.post("/training/krea2/cache-status")
+async def krea2_cache_status(request: Request):
+    try:
+        config = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(config, dict):
+        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+    try:
+        profile = resolve_training_profile(config)
+    except TrainingProfileError as exc:
+        return APIResponseFail(message=str(exc))
+    if profile.id != KREA2_PROFILE_ID:
+        return APIResponseFail(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档")
+    return APIResponseSuccess(data=await asyncio.to_thread(get_krea2_cache_status, config))
+
+
+@router.post("/training/krea2/cache")
+async def create_krea2_cache(request: Request):
+    """Start the required latent and Qwen3-VL cache pipeline as one task."""
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        config = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(config, dict):
+        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+
+    gpu_ids = config.pop("gpu_ids", None)
+    try:
+        profile = resolve_training_profile(config)
+    except TrainingProfileError as exc:
+        return APIResponseFail(message=str(exc))
+    if profile.id != KREA2_PROFILE_ID:
+        return APIResponseFail(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档")
+
+    validation_errors = validate_krea2_config(config)
+    if validation_errors:
+        return _krea2_error(validation_errors, "invalidKrea2Config")
+    preflight = await asyncio.to_thread(krea2_preflight, config, False)
+    if not preflight["ok"]:
+        return _krea2_error(preflight["errors"], "krea2PreflightFailed")
+
+    safe_name = _safe_output_name(str(config.get("output_name", "krea2_lora")))
+    run_dir = (OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}").resolve()
+    cache_dir = Path(str(config["dataset_cache_dir"])).resolve()
+    try:
+        await asyncio.to_thread(_prepare_output_directories, run_dir, cache_dir)
+    except OSError as exc:
+        return APIResponseFail(
+            message=f"Cache directory is unavailable or not writable / 缓存目录不可用或无法写入: {exc}",
+            data={"errorCode": "cacheDirectoryUnavailable", "cachePath": str(cache_dir)},
+        )
+
+    dataset_config_file = run_dir / "dataset.toml"
+    dataset_toml = toml.dumps(build_krea2_dataset_config(config))
+    try:
+        await asyncio.to_thread(prepare_cache_manifest, config)
+        await asyncio.gather(
+            asyncio.to_thread(dataset_config_file.write_text, dataset_toml, "utf-8"),
+            asyncio.to_thread(
+                _write_run_info,
+                str(run_dir),
+                config,
+                "krea2-cache",
+                timestamp,
+                False,
+            ),
+            asyncio.to_thread(_write_output_dir_reference, str(run_dir), str(cache_dir)),
+        )
+    except OSError as exc:
+        return APIResponseFail(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
+
+    def _cache_finished(status: str) -> None:
+        mark_cache_manifest(config, status)
+
+    result = run_train(
+        str(dataset_config_file),
+        KREA2_CACHE_RUNNER_FILE,
+        gpu_ids,
+        2,
+        extra_args=[
+            "--musubi-root",
+            str(MUSUBI_TUNER_DIR),
+            "--dataset-config",
+            str(dataset_config_file),
+            "--vae",
+            str(config["vae"]),
+            "--text-encoder",
+            str(config["text_encoder"]),
+            "--text-cache-batch-size",
+            str(config.get("text_cache_batch_size", 1)),
+        ],
+        run_dir=str(run_dir),
+        artifact_dir=str(run_dir),
+        output_base_dir=str(cache_dir),
+        preview_enabled=False,
+        engine_id="musubi_tuner",
+        config_argument=None,
+        use_accelerate=False,
+        run_metadata={
+            "profile_id": KREA2_PROFILE_ID,
+            "operation": "krea2_cache",
+            "dataset_config": str(dataset_config_file),
+            "cache_dir": str(cache_dir),
+        },
+        on_complete=_cache_finished,
+    )
+    if result.get("status") != "success":
+        await asyncio.to_thread(mark_cache_manifest, config, "failed")
+        return result
+    result.setdefault("data", {})["operation"] = "krea2_cache"
+    return result
+
+
 @router.post("/run")
 async def create_toml_file(request: Request):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -314,10 +546,20 @@ async def create_toml_file(request: Request):
 
     gpu_ids = config.pop("gpu_ids", None)
 
-    model_train_type = config.get("model_train_type", "sdxl-lora")
-    trainer_file = trainer_mapping.get(model_train_type)
-    if not trainer_file:
-        return APIResponseFail(message=f"Unsupported training type: {model_train_type} / 不支持的训练类型: {model_train_type}")
+    try:
+        profile = resolve_training_profile(config)
+    except TrainingProfileError as exc:
+        return APIResponseFail(message=str(exc))
+    if profile.id == KREA2_PROFILE_ID:
+        return await _create_krea2_run(config, gpu_ids, timestamp)
+
+    # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
+    # metadata is restored at the supervisor boundary instead of being passed
+    # through to sd-scripts as an unknown command line field.
+    config.pop("engine_id", None)
+    adapter_id = str(config.pop("adapter_id", profile.adapter_id))
+    model_train_type = profile.id
+    trainer_file = profile.trainer_file
 
     # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
     # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
@@ -487,6 +729,11 @@ async def create_toml_file(request: Request):
         artifact_dir=str(artifact_run_dir),
         output_base_dir=requested_output_dir,
         preview_enabled=bool(_ui_config.get("enable_preview", False)),
+        engine_id=profile.engine_id,
+        run_metadata={
+            "profile_id": profile.id,
+            "adapter_id": adapter_id,
+        },
     )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）

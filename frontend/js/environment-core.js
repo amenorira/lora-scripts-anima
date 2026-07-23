@@ -21,6 +21,9 @@ window.environmentCoreMixin = {
   // ── sd-scripts State ────────────────────────────────
   sdStatus: null,
 
+  // ── Multi-core Registry State ───────────────────────
+  trainingCores: null, trainingCoresError: null,
+
   // ── Triton State ─────────────────────────────────────
   tritonStatus: null, tritonBusy: false,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
@@ -37,7 +40,7 @@ window.environmentCoreMixin = {
   animaModelLogOpen: false, // 日志折叠状态（持久化，避免实时重渲染被收起）
 
   // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
+  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, coreRegistryCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
   _envRealtimeTopics: null,
 
   _envInitCardState() {
@@ -47,6 +50,7 @@ window.environmentCoreMixin = {
         if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
         if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
         if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
+        if (typeof s.coreRegistry === 'boolean') this.coreRegistryCardOpen = s.coreRegistry;
         if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
         if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
         if (typeof s.animaModelLog === 'boolean') this.animaModelLogOpen = s.animaModelLog;
@@ -54,7 +58,7 @@ window.environmentCoreMixin = {
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,coreRegistry:this.coreRegistryCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
   },
 
   // ── Realtime task bridge ─────────────────────────────
@@ -194,9 +198,9 @@ window.environmentCoreMixin = {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
-    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsTriton = !this.tritonStatus,
+    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
           needsAnimaModel = !this.animaModelStatus;
-    if (needsFa || needsXf || needsSd || needsTriton || needsAnimaModel) {
+    if (needsFa || needsXf || needsSd || needsCores || needsTriton || needsAnimaModel) {
       // 立即渲染卡片骨架（4 张卡片 + Anima 模型卡 + Loading 徽章），给用户即时结构反馈；
       // 各卡片数据到达后由 faRefresh/xfRefresh 内的 renderEnvironment 独立刷新，
       // 比单一 spinner 体验更好，也避免长时间空白被误认为卡死。
@@ -207,11 +211,25 @@ window.environmentCoreMixin = {
       if (needsSd) tasks.push((async () => {
         try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); } catch (_) { this.sdStatus = null; }
       })());
+      if (needsCores) tasks.push(this.trainingCoresRefresh());
       if (needsTriton) tasks.push(this.tritonRefresh(true));
       if (needsAnimaModel) tasks.push(this.animaModelRefresh(true));
       await Promise.all(tasks);
     }
     this.renderEnvironment(); this.finishProgress();
+  },
+
+  async trainingCoresRefresh() {
+    this.trainingCoresError = null;
+    try {
+      const response = await fetch('/api/training/cores');
+      const payload = await response.json();
+      if (!response.ok || payload.status !== 'success') throw new Error(payload.message || 'Failed to load training cores');
+      this.trainingCores = payload.data || null;
+    } catch (error) {
+      this.trainingCoresError = String(error.message || error);
+      this.trainingCores = null;
+    }
   },
 
   async faRefresh(silent) {

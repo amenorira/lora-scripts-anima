@@ -7,14 +7,14 @@
 // 表示关键路径字段已就绪填写。优先级高于橙色 field-changed。
 // 用 field.default（schema 原始默认）而非 formDefaults 做基准，不被预设/导入重置影响。
 window.FILLED_INDICATOR_KEYS = new Set([
-  'pretrained_model_name_or_path', 'vae', 'qwen3', 'train_data_dir',
+  'pretrained_model_name_or_path', 'dit', 'vae', 'qwen3', 'text_encoder', 'train_data_dir', 'dataset_cache_dir',
   'output_name', 'output_dir',
 ]);
 
 // 预填默认值淡色字段清单：仅这些 text 字段在"值==schema 原始默认值"时 input 字色淡化为 placeholder 视觉。
 // 三个 Anima 底模字段默认指向环境管理页可下载的文件（非空），纳入此清单以提示"仍为推荐默认值"。
 window.DEFAULT_DIM_KEYS = new Set([
-  'pretrained_model_name_or_path', 'vae', 'qwen3',
+  'pretrained_model_name_or_path', 'dit', 'vae', 'qwen3', 'text_encoder',
   'train_data_dir', 'output_name', 'output_dir',
 ]);
 
@@ -73,6 +73,7 @@ window.trainingCoreMixin = {
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
+    { v: 'krea2-lora', l: 'Krea 2 LoRA (musubi-tuner)', dk: 'opt.model_train_type_krea2-lora' },
   ],
   currentTrainTypeDesc: '',
   currentTrainTypeLabel: 'Anima LoRA',
@@ -98,13 +99,12 @@ window.trainingCoreMixin = {
     }
     this.formDefaults = { ...newDefaults };
 
-    // network_module 兼容性修正：anima 用 networks.lora_anima，SDXL 用 networks.lora。
-    // 放在 default 补充之后、渲染之前，确保 animaSelect 组件初始化时读到正确值。
-    if (v === 'anima-lora' && this.form.network_module === 'networks.lora') {
-      this.form.network_module = 'networks.lora_anima';
-    } else if (v !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
-      this.form.network_module = 'networks.lora';
-    }
+    // A runtime profile owns its network module. Krea's module is musubi
+    // specific and must never inherit an sd-scripts or LyCORIS selection.
+    const targetMod = v === 'anima-lora'
+      ? 'networks.lora_anima'
+      : (v === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+    if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
 
     // Re-render form with new train type
     this.renderTrainingForm(v, null);
@@ -117,7 +117,6 @@ window.trainingCoreMixin = {
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
     // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
-    const targetMod = (v === 'anima-lora') ? 'networks.lora_anima' : 'networks.lora';
     this.$nextTick(() => {
       if (this.form.network_module !== targetMod) {
         this.form.network_module = targetMod;
@@ -143,9 +142,8 @@ window.trainingCoreMixin = {
     }); });
     defaults.model_train_type = trainType;
     // Adjust network_module default based on train type
-    if (trainType === 'anima-lora') {
-      defaults.network_module = 'networks.lora_anima';
-    }
+    if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
+    else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
     return defaults;
   },
 
@@ -270,7 +268,9 @@ window.trainingCoreMixin = {
       this.form.model_train_type = trainType;
     }
     // Fix incompatible network_module after merge
-    if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
+    if (this.form.model_train_type === 'krea2-lora') {
+      this.form.network_module = 'networks.lora_krea2';
+    } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
     } else if (this.form.model_train_type !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
       this.form.network_module = 'networks.lora';
@@ -330,6 +330,28 @@ window.trainingCoreMixin = {
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
 
+    // The form may mount before /api/fields returns. Rehydrate missing
+    // profile-scoped fields (notably Krea 2) once the authoritative registry
+    // arrives instead of leaving the user with the static fallback schema.
+    if (self._trainingFieldsLoadedHandler) {
+      window.removeEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
+    }
+    self._trainingFieldsLoadedHandler = () => {
+      if (!self._trainFormMountedRoute) return;
+      const activeType = self.form.model_train_type || 'anima-lora';
+      const freshDefaults = self._buildFormDefaults(activeType);
+      Object.keys(freshDefaults).forEach(key => {
+        if (self.form[key] === undefined) self.form[key] = freshDefaults[key];
+      });
+      self.formDefaults = { ...freshDefaults };
+      self.renderTrainingForm(activeType, null);
+      self.setupAutoValueWatchers();
+      self.setupShowIfWatchers();
+      self.setupReadonlyWatchers();
+      self.updateToml();
+    };
+    window.addEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
+
     // Synchronize the form once from the shared realtime snapshot.
     this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
@@ -351,9 +373,9 @@ window.trainingCoreMixin = {
 
   _stepEstimatePayload() {
     const keys = [
-      'model_train_type', 'train_data_dir', 'resolution', 'enable_bucket',
+      'model_train_type', 'train_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
-      'train_batch_size', 'gradient_accumulation_steps', 'max_train_epochs', 'gpu_ids',
+      'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps', 'max_train_epochs', 'gpu_ids',
     ];
     const payload = {};
     keys.forEach(key => {
@@ -1166,7 +1188,7 @@ window.trainingCoreMixin = {
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide', 'Open guide'))}</span></button>`
       : '';
-    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
     const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;
     if (!isRequired && field.requiredGroups && Array.isArray(field.requiredGroups)) {
@@ -1186,7 +1208,7 @@ window.trainingCoreMixin = {
       const fc = {};
       const self = this;
       const currentTrainType = this.form.model_train_type || 'anima-lora';
-      const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+      const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
       const currentGroup = groupMap[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
@@ -2431,7 +2453,9 @@ window.trainingCoreMixin = {
     this.form.model_train_type = currentTrainType;
 
     // Adjust network_module based on train type
-    const targetNetworkModule = currentTrainType === 'anima-lora' ? 'networks.lora_anima' : 'networks.lora';
+    const targetNetworkModule = currentTrainType === 'anima-lora'
+      ? 'networks.lora_anima'
+      : (currentTrainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
     this.form.network_module = targetNetworkModule;
 
     this.formHistory = [{ ...this.form }];
@@ -2469,7 +2493,7 @@ window.trainingCoreMixin = {
   validateForm() {
     const errors = {};
     // Check all required fields
-    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima' };
+    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
     const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
     const sections = this._allSections();
     for (const section of sections) {

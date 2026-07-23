@@ -13,7 +13,10 @@ from typing import Any
 
 from backend.constants import OUTPUT_DIR
 from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
-from backend.training.field_registry import FIELDS as _REGISTRY_FIELDS
+from backend.training.field_registry import get_all_fields
+
+
+_REGISTRY_FIELDS = get_all_fields()
 
 # TensorBoard 的 DirectoryWatcher 会在每次读到当前 event 文件末尾时输出
 # "No path found after ..."。这是正常增量读取状态，不应污染训练控制台。

@@ -186,6 +186,17 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
             code="invalidConfig",
         )
 
+    if str(config.get("model_train_type") or "") == "krea2-lora":
+        from backend.training.musubi_krea2 import estimate_krea2_steps
+
+        try:
+            return estimate_krea2_steps(dict(config))
+        except ValueError as exc:
+            raise StepEstimateError(
+                str(exc),
+                code="krea2EstimateInvalid",
+            ) from exc
+
     train_data_value = config.get("train_data_dir")
     if not train_data_value:
         raise StepEstimateError(

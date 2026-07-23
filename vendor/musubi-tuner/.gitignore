@@ -1,0 +1,16 @@
+__pycache__/
+.venv
+venv/
+logs/
+uv.lock
+main.exp
+main.lib
+main.obj
+CLAUDE.md
+GEMINI.md
+.claude/
+.gemini/
+AGENTS.md
+.vscode/settings.json
+.mcp.json
+references/

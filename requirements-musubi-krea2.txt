@@ -1,0 +1,27 @@
+# musubi-tuner Krea 2 core overlay
+#
+# This file is installed only into venv/cores/musubi.  The core venv receives
+# the main venv's CUDA-enabled torch/torchvision through a read-only .pth
+# bridge, while all musubi dependency versions below remain local to the core.
+# sd-scripts pins transformers==4.54.1; do not merge this file into
+# requirements.txt.
+#
+# Direct runtime requirements mirror musubi-tuner 0.3.4's pyproject, excluding
+# torch and torchvision because those must remain the project's CUDA 13 build.
+
+accelerate==1.6.0
+av==14.0.1
+bitsandbytes
+diffusers==0.32.1
+einops==0.7.0
+huggingface-hub==0.34.3
+opencv-python==4.10.0.84
+pillow>=11.3.0
+safetensors==0.4.5
+toml==0.10.2
+tqdm==4.67.1
+transformers==4.57.6
+voluptuous==0.15.2
+ftfy==6.3.1
+easydict==1.13
+sentencepiece==0.2.1

@@ -20,7 +20,7 @@ from backend.training.optimizer_contracts import (
 )
 
 
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
+_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2"}
 _EMPTY_STRINGS = {"", "undefined", "null", "nan"}
 
 
@@ -370,6 +370,13 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
     """根据字段注册表与跨字段契约返回所有配置错误。"""
     errors: list[str] = []
     train_type = str(config.get("model_train_type", "sdxl-lora"))
+    if train_type == "krea2-lora":
+        # Krea uses musubi-tuner arguments and a separate dataset TOML. Running
+        # the sd-scripts optimizer and adapter contracts against it would reject
+        # valid Krea values and, worse, normalize them into invalid flags.
+        from backend.training.musubi_krea2 import validate_krea2_config
+
+        return validate_krea2_config(config)
     group = _TRAIN_TYPE_GROUP.get(train_type)
 
     for field in FIELDS:

@@ -13,12 +13,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from backend.log import log
 from backend.tasks import tm
 from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
+from backend.training.core_registry import engine_pythonpaths, get_engine
 
 
 _ATTN_CACHE: list[str] | None = None
@@ -50,9 +51,15 @@ def _detect_available_attn() -> list[str]:
     return available
 
 
-def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None) -> dict:
+def _build_train_env(
+    artifact_dir: str,
+    task_id: str,
+    run_dir: str | None = None,
+    engine_id: str = "sd_scripts",
+) -> dict:
     """构建训练子进程的环境变量"""
     env = os.environ.copy()
+    engine = get_engine(engine_id)
 
     # 防止系统 site-packages 污染
     env["PYTHONNOUSERSITE"] = "1"
@@ -69,19 +76,26 @@ def _build_train_env(artifact_dir: str, task_id: str, run_dir: str | None = None
     env["ANIMA_OUTPUT_DIR"] = artifact_dir
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TASK_ID"] = task_id
-    env["LORA_SCRIPTS_TRUE_LR_LOGGING"] = "1"
-
-    # 确保内部启动钩子、项目根目录和 vendor/ 位于 Python path 前面。
-    # python_startup 中的 sitecustomize 会在训练解释器导入 bitsandbytes 前自动加载。
-    # vendor/ 须排在 site-packages 之前，使 vendored 版本（lycoris 等）优先于 pip 旧版
     repo_root = str(REPO_ROOT)
     vendor_root = str(REPO_ROOT / "vendor")
-    startup_hooks = str(REPO_ROOT / "tools" / "python_startup")
     existing_pypath = env.get("PYTHONPATH", "")
-    new_paths = [startup_hooks, vendor_root, repo_root]
+
+    if engine.uses_sd_scripts_hooks:
+        env["LORA_SCRIPTS_TRUE_LR_LOGGING"] = "1"
+        # sd-scripts needs the startup hook and vendored LyCORIS package.
+        startup_hooks = str(REPO_ROOT / "tools" / "python_startup")
+        new_paths = [startup_hooks, vendor_root, repo_root]
+    else:
+        # Musubi imports a package from vendor/musubi-tuner/src. Do not place
+        # vendor/ as a whole before it: sd-scripts also owns a top-level
+        # library package and can shadow musubi imports.
+        env.pop("LORA_SCRIPTS_TRUE_LR_LOGGING", None)
+        new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [repo_root]
+
     for p in existing_pypath.split(os.pathsep):
-        if p and p not in new_paths:
-            new_paths.append(p)
+        if not p or p == vendor_root or p in new_paths:
+            continue
+        new_paths.append(p)
     env["PYTHONPATH"] = os.pathsep.join(new_paths)
 
     # 抑制 HuggingFace tokenizers 在 DataLoader fork 时刷屏的 "parallelism disabled" 警告
@@ -112,6 +126,11 @@ def run_train(
     artifact_dir: str = "",
     output_base_dir: str = "",
     preview_enabled: bool | None = None,
+    engine_id: str = "sd_scripts",
+    config_argument: str | None = "--config_file",
+    use_accelerate: bool = True,
+    run_metadata: Optional[dict[str, Any]] = None,
+    on_complete: Optional[Callable[[str], None]] = None,
 ) -> dict:
     """
     启动训练子进程。
@@ -119,6 +138,15 @@ def run_train(
     返回: {"status": "success", "data": {"task_id": ...}}
     """
     script = _get_trainer_script(trainer_file)
+    engine = get_engine(engine_id)
+    if engine.python_executable is not None and not engine.python_executable.is_file():
+        return {
+            "status": "error",
+            "message": (
+                f"Training runtime is not installed / 训练核心运行环境未安装: "
+                f"{engine.python_executable}. Please run start.bat to provision the {engine.label} core."
+            ),
+        }
 
     # 内部运行目录保存日志/配置/TB；产物目录保存模型/断点/sample。
     control_dir = run_dir or output_dir or str(Path(toml_path).parent.parent / "output")
@@ -144,19 +172,23 @@ def run_train(
             env_extra["USE_LIBUV"] = "0"
 
     # ── 2. 构建命令行参数 ──────────────────────────────
-    args = [
-        sys.executable, "-m", "accelerate.commands.launch",
-        "--num_cpu_threads_per_process", str(cpu_threads),
-        "--quiet",
-    ]
+    args = [str(engine.python_executable or Path(sys.executable))]
+    if use_accelerate:
+        args.extend([
+            "-m", "accelerate.commands.launch",
+            "--num_cpu_threads_per_process", str(cpu_threads),
+            "--quiet",
+        ])
     # 多 GPU 参数
-    if len(validated_ids) > 1:
+    if use_accelerate and len(validated_ids) > 1:
         args.extend(["--multi_gpu", "--num_processes", str(len(validated_ids))])
         if sys.platform == "win32":
             args.extend(["--rdzv_backend", "c10d"])
-    # 训练脚本 + 训练配置
+    # 训练脚本 + 可选配置参数。Krea cache pipeline uses a dataset TOML
+    # argument instead of sd-scripts' config_file convention.
     args.append(str(script))
-    args.extend(["--config_file", toml_path])
+    if config_argument:
+        args.extend([config_argument, toml_path])
 
     if extra_args:
         args.extend(extra_args)
@@ -171,13 +203,23 @@ def run_train(
 
     # Save task metadata into run directory (task_id ↔ run_dir mapping)
     try:
-        save_config_snapshot(task_id, toml_path, run_dir=control_dir, artifact_dir=artifacts_dir,
-                             output_base_dir=output_base_dir or str(Path(artifacts_dir).parent), extra_info={
+        metadata = {
             "trainer_file": trainer_file,
             "gpu_ids": gpu_ids,
             "output_dir": artifacts_dir,
             "preview_enabled": preview_enabled,
-        })
+            "engine_id": engine_id,
+        }
+        if run_metadata:
+            metadata.update(run_metadata)
+        save_config_snapshot(
+            task_id,
+            toml_path,
+            run_dir=control_dir,
+            artifact_dir=artifacts_dir,
+            output_base_dir=output_base_dir or str(Path(artifacts_dir).parent),
+            extra_info=metadata,
+        )
     except Exception as e:
         tm.terminate_task(task_id)
         log.error(f"Failed to save task metadata / 保存任务元数据失败: {e}")
@@ -186,7 +228,12 @@ def run_train(
             "message": f"Failed to initialize training monitoring / 初始化训练监控失败: {e}",
         }
 
-    env = _build_train_env(artifact_dir=artifacts_dir, task_id=task_id, run_dir=control_dir)
+    env = _build_train_env(
+        artifact_dir=artifacts_dir,
+        task_id=task_id,
+        run_dir=control_dir,
+        engine_id=engine_id,
+    )
     env.update(env_extra)
     task.environ = env  # 更新 task 的环境变量
 
@@ -233,6 +280,11 @@ def run_train(
         # ── C: 失败时提取尾部错误日志 ─────────────────────
         if status != "completed":
             _write_error_tail(log_file, run_path, task_id_short)
+        if on_complete:
+            try:
+                on_complete(status)
+            except Exception as exc:
+                log.warning("Training completion callback failed / 训练完成回调失败: %s", exc)
 
         # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
         _log_run_end(status, run_meta, duration, exit_code, task_id_short)
@@ -252,6 +304,7 @@ def run_train(
             "task_id": task_id,
             "run_dir": str(run_path),
             "artifact_dir": str(Path(artifacts_dir)),
+            "engine_id": engine_id,
         },
     }
 
@@ -375,19 +428,21 @@ def _read_run_meta(run_dir: Path, trainer_file: str) -> dict:
         meta["train_type"] = "anima-lora"
     elif "sdxl" in trainer_file:
         meta["train_type"] = "sdxl-lora"
+    elif "krea2" in trainer_file:
+        meta["train_type"] = "krea2-lora"
     config_file = run_dir / "config.toml"
     if not config_file.exists():
         return meta
     try:
-        text = config_file.read_text(encoding="utf-8", errors="replace")
-        for key in ("output_name", "pretrained_model_name_or_path",
+        text = config_file.read_text(encoding="utf-8")
+        for key in ("output_name", "pretrained_model_name_or_path", "dit",
                     "max_train_epochs", "max_train_steps"):
             m = re.search(rf'^{key}\s*=\s*["\']?(?P<v>[^"\'\n#]+)["\']?\s*$', text, re.MULTILINE)
             if m:
                 v = m.group("v").strip().strip('"').strip("'")
                 if key == "output_name":
                     meta["output_name"] = v
-                elif key == "pretrained_model_name_or_path":
+                elif key in {"pretrained_model_name_or_path", "dit"}:
                     meta["model"] = Path(v).name if v else ""
                 elif key == "max_train_epochs":
                     meta["epochs"] = v

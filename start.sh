@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+MUSUBI_VENV_PYTHON="$SCRIPT_DIR/venv/cores/musubi/bin/python"
 
 QUIET=0
 for arg in "$@"; do
@@ -115,6 +116,31 @@ _fix_pip_mirror() {
 }
 
 # -- Install function --
+do_install_musubi_core() {
+    if [ ! -f "$VENV_PYTHON" ]; then
+        echo "[ERROR] Main venv is required before the musubi core. / musubi 核心需要主 venv。"
+        exit 1
+    fi
+
+    if [ ! -f "$MUSUBI_VENV_PYTHON" ]; then
+        echo "Creating isolated musubi core venv... / 正在创建隔离的 musubi 核心 venv……"
+        mkdir -p "$SCRIPT_DIR/venv/cores"
+        "$VENV_PYTHON" -m venv "$SCRIPT_DIR/venv/cores/musubi" || { echo "[ERROR] Failed to create musubi core venv. / 创建 musubi 核心 venv 失败。"; exit 1; }
+        "$MUSUBI_VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
+    fi
+
+    local host_site_packages
+    host_site_packages="$("$VENV_PYTHON" -X utf8 -c 'import site; print(site.getsitepackages()[0])')"
+    if [ ! -d "$host_site_packages" ]; then
+        echo "[ERROR] Main venv site-packages was not found. / 未找到主 venv 的 site-packages。"
+        exit 1
+    fi
+    "$MUSUBI_VENV_PYTHON" -X utf8 "$SCRIPT_DIR/tools/configure_musubi_overlay.py" --host-site-packages "$host_site_packages" || { echo "[ERROR] Failed to configure musubi dependency overlay. / 配置 musubi 依赖桥接失败。"; exit 1; }
+
+    echo "[4/4] Installing musubi-tuner Krea 2 core dependencies... / 正在安装 musubi-tuner Krea 2 核心依赖……"
+    "$MUSUBI_VENV_PYTHON" -m pip install -r "$SCRIPT_DIR/requirements-musubi-krea2.txt" || { echo "[ERROR] musubi-tuner dependencies install failed. / musubi-tuner 依赖安装失败。"; exit 1; }
+}
+
 do_install() {
     echo ""
     echo "[Install] Starting installation... / 开始安装……"
@@ -130,18 +156,20 @@ do_install() {
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/3] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
-    # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/3] 降级
+    echo "[1/4] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
+    # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/4] 降级
     "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
     "$VENV_PYTHON" -m pip install torch==2.10.0+cu130 torchvision==0.25.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
-    echo "[2/3] Installing sd-scripts dependencies... / 正在安装 sd-scripts 依赖……"
+    echo "[2/4] Installing sd-scripts dependencies... / 正在安装 sd-scripts 依赖……"
     (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed. / sd-scripts 依赖安装失败。"; exit 1; }
 
-    echo "[3/3] Installing project dependencies... / 正在安装项目依赖……"
+    echo "[3/4] Installing project dependencies... / 正在安装项目依赖……"
     "$VENV_PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
+
+    do_install_musubi_core
 
     echo ""
     echo "[Done] Installation complete! / 安装完成！"
@@ -175,6 +203,11 @@ if [ ! -f "$VENV_PYTHON" ]; then
         fi
         do_install
     fi
+fi
+
+if [ ! -f "$MUSUBI_VENV_PYTHON" ]; then
+    echo "[Notice] musubi-tuner Krea 2 core is not installed; provisioning it now. / 未安装 musubi-tuner Krea 2 核心，正在补齐。"
+    do_install_musubi_core
 fi
 
 # -- Managed CUDA runtime migration --

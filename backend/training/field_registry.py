@@ -127,7 +127,7 @@ def _loraplus_readonly_conditions() -> list[dict[str, Any] | list[dict[str, Any]
 
 FIELDS: list[dict[str, Any]] = [
 # ── Model ──
-{"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}]},
+{"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}, {"v": "krea2-lora", "l": "Krea 2 LoRA", "dk": "opt.model_train_type_krea2-lora"}]},
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
 # 用户下载后即可直接开训，无需手动填写；路径与 ANIMA_FILES 的本地文件名保持一致。
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
@@ -531,6 +531,23 @@ def _to_camel(field: dict) -> dict:
 _fields_json_cache: dict | None = None
 
 
+def get_all_fields() -> list[dict]:
+    """Return every frontend field, including profile-scoped external cores.
+
+    ``FIELDS`` deliberately remains the sd-scripts schema because it is also
+    used by the legacy TOML adapter.  Consumers that render or describe a run
+    must use this helper so a musubi profile does not silently lose labels.
+
+    Profile-scoped Krea definitions intentionally come first.  A few keys
+    (for example ``optimizer_type``) have distinct schemas per runtime; the
+    legacy definition must remain the last one for older consumers that build
+    a key-indexed map without profile filtering.
+    """
+    from backend.training.musubi_krea2 import KREA2_FIELDS
+
+    return [*KREA2_FIELDS, *FIELDS]
+
+
 def get_fields_json() -> dict:
     """返回前端可用的字段定义 JSON"""
     global _fields_json_cache
@@ -551,7 +568,7 @@ def get_fields_json() -> dict:
         "misc": {"title_key": "section.misc"},
     }
 
-    for f in FIELDS:
+    for f in get_all_fields():
         section_name = f["section"]
         if section_name not in sections:
             sections[section_name] = {

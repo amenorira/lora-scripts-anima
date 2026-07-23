@@ -1,0 +1,17 @@
+# Upstream Version Tracking
+# This file records which commit of kohya-ss/musubi-tuner the vendored source
+# tree (vendor/musubi-tuner/) is based on. See vendor/musubi-tuner/README.md
+# for upstream license notices and third-party source exceptions.
+
+[upstream]
+repo = "kohya-ss/musubi-tuner"
+branch = "main"
+commit = "8934cfbbb4b9bcfa8071ce209129f0c5eb5df2e6"
+sync_date = "2026-07-23T00:00:00+08:00"
+tag = "main@8934cfb"
+last_check = "2026-07-23"
+
+[local]
+source_subdirectory = "."
+modifications = []
+license_notice = "Apache-2.0 for most code; see upstream README license section for exceptions."

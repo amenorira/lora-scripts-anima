@@ -1809,6 +1809,13 @@
             <div class="btn-row">
               <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
             </div>
+            <div class="btn-row" x-show="form.model_train_type === 'krea2-lora'">
+              <button class="btn btn-ghost btn-sm" style="flex:1" @click="prepareKrea2Cache()"
+                      :disabled="isTraining || trainingStarting"
+                      x-text="t('krea2.prepareCache', 'Prepare Krea 2 Caches')">
+                Prepare Krea 2 Caches
+              </button>
+            </div>
             <div class="btn-row">
               <button class="btn btn-start" style="flex:1" @click="startTraining()"
                       :disabled="isTraining || trainingStarting || trainingBlocked"

@@ -21,6 +21,7 @@ window.environmentRenderMixin = {
 
     html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
     html += this._renderSdRow(T);
+    html += this._renderCoreRegistryRow(T);
     html += this._renderTritonRow(T);
     html += `</div>`;
 
@@ -318,6 +319,56 @@ window.environmentRenderMixin = {
     return h;
   },
 
+  // The registry is intentionally separate from the legacy sd-scripts card:
+  // it makes the mounted LyCORIS adapter and the isolated musubi runtime
+  // visible without suggesting that they share a Python dependency set.
+  _renderCoreRegistryRow(T) {
+    const registry = this.trainingCores;
+    const error = this.trainingCoresError;
+    const engines = registry?.engines || [];
+    const adapters = registry?.adapters || [];
+    const profiles = registry?.profiles || [];
+    const unavailable = engines.some(engine => !engine.available);
+    const state = error ? 'err' : !registry ? 'loading' : unavailable ? 'warn' : 'ok';
+    const badge = error
+      ? `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>`
+      : !registry
+        ? `<span class="env-badge env-badge-loading">${T('loading', 'Loading...')}</span>`
+        : unavailable
+          ? `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`
+          : `<span class="env-badge env-badge-ok">${T('coreReady', 'Ready')}</span>`;
+    let h = '';
+    h += this._renderCardOpen(
+      'env-core-registry', state, this.coreRegistryCardOpen,
+      this._renderCardSummary('&#9654;', T('coreRegistryTitle', 'Training core registry'), T('coreRegistryDesc', 'sd-scripts, mounted LyCORIS, and musubi-tuner'), badge)
+    );
+
+    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
+    if (registry) {
+      const engineRows = engines.map(engine => {
+        const status = engine.available
+          ? `<span class="env-badge env-badge-ok">${T('coreReady', 'Ready')}</span>`
+          : `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`;
+        const runtime = engine.python_executable
+          ? `<code>${this.esc(engine.python_executable)}</code>`
+          : `<span class="env-text-dim">${T('coreRuntime', 'Main application venv')}</span>`;
+        return `<div class="env-model-item"><div class="env-model-item-top"><div class="env-model-item-main"><div class="env-model-item-name">${this.esc(engine.label || engine.id)}</div><div class="env-model-item-desc">${this.esc(engine.description || '')}</div><div class="env-model-destpath">${this.esc(engine.root || '')}</div></div><div class="env-model-item-action">${status}</div></div><div class="env-model-item-status">${runtime}</div></div>`;
+      }).join('');
+      h += this._renderDetailGroup(T('coreRuntime', 'Runtime'), `<div class="env-model-list">${engineRows}</div>`);
+
+      const adapterText = adapters.map(adapter => {
+        const mounted = adapter.mounted ? ` · ${T('coreMounted', 'mounted')}` : '';
+        return `<span class="env-env-item"><strong>${this.esc(adapter.label || adapter.id)}</strong>${this.esc(mounted)}<span class="env-text-dim"> — ${this.esc(adapter.description || '')}</span></span>`;
+      }).join('<br>');
+      h += this._renderDetailGroup(T('coreAdapters', 'Adapters'), adapterText || `<span class="env-text-dim">—</span>`);
+
+      const profileText = profiles.map(profile => this.esc(`${profile.label || profile.id} → ${profile.engine_id}`)).join(' · ');
+      h += this._renderDetailGroup(T('coreProfiles', 'Profiles'), profileText || `<span class="env-text-dim">—</span>`);
+    }
+    h += this._renderCardClose();
+    return h;
+  },
+
   // ═══════════════════════════════════════════════════════
   //  Triton card
   // ═══════════════════════════════════════════════════════
@@ -591,12 +642,13 @@ window.environmentRenderMixin = {
 
   _bindCardToggle(el) {
     const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts','env-triton','env-anima-model'].forEach(id => {
+    ['env-flash-attn','env-xformers','env-sdscripts','env-core-registry','env-triton','env-anima-model'].forEach(id => {
       const card = el.querySelector('#'+id); if (!card) return;
       card.addEventListener('toggle', () => {
         if (id==='env-flash-attn') a.faCardOpen = card.open;
         else if (id==='env-xformers') a.xfCardOpen = card.open;
         else if (id==='env-sdscripts') a.sdCardOpen = card.open;
+        else if (id==='env-core-registry') a.coreRegistryCardOpen = card.open;
         else if (id==='env-triton') a.tritonCardOpen = card.open;
         else if (id==='env-anima-model') a.animaModelCardOpen = card.open;
         a._envSaveCardState();

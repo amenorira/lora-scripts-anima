@@ -19,6 +19,10 @@ window.trainingTomlMixin = {
   // optimizer_args 插在 optimizer 分组后。omitDefault 字段在值==默认值时跳过（不显示/不传）。
   updateToml() {
     const trainType = this.form.model_train_type || 'anima-lora';
+    if (trainType === 'krea2-lora') {
+      this._updateKrea2Toml();
+      return;
+    }
     const allSections = window.getVisibleSections(trainType);
     const fieldByKey = new Map(
       allSections.flatMap(section => (section.fields || []).map(field => [field.key, field]))
@@ -183,10 +187,56 @@ window.trainingTomlMixin = {
     }
   },
 
+  _updateKrea2Toml() {
+    const quote = (value) => '"' + String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    const lines = [
+      '# musubi-tuner Krea 2 profile',
+      'dit = ' + quote(this.form.dit),
+      'vae = ' + quote(this.form.vae),
+      'dataset_config = "<generated dataset.toml>"',
+      'network_module = "networks.lora_krea2"',
+      'network_dim = ' + Number(this.form.network_dim || 32),
+      'network_alpha = ' + Number(this.form.network_alpha || 32),
+      'learning_rate = ' + Number(this.form.learning_rate || 0.0001),
+      'mixed_precision = ' + quote(this.form.mixed_precision || 'bf16'),
+      'timestep_sampling = ' + quote(this.form.timestep_sampling || 'shift'),
+      'optimizer_type = ' + quote(this.form.optimizer_type || 'adamw8bit'),
+      'output_name = ' + quote(this.form.output_name),
+      'output_dir = "<managed run output directory>"',
+    ];
+    const attention = this.form.krea_attention_backend || 'sdpa';
+    lines.push(attention + ' = true');
+    if (this.form.gradient_checkpointing) lines.push('gradient_checkpointing = true');
+    if (Number(this.form.blocks_to_swap || 0) > 0) lines.push('blocks_to_swap = ' + Number(this.form.blocks_to_swap));
+    if (this.form.fp8_base) {
+      lines.push('fp8_base = true');
+      lines.push('fp8_scaled = true');
+    }
+    if (this.form.compile) lines.push('compile = true');
+
+    this.tomlRaw = lines.join('\n');
+    const preview = document.getElementById('tomlPreview');
+    if (preview) preview.textContent = this.tomlRaw;
+  },
+
   // Debounced TOML update (for x-effect binding, avoids per-keystroke recalc)
   updateTomlDebounced() {
     clearTimeout(this._tomlDebounceTimer);
     this._tomlDebounceTimer = setTimeout(() => this.updateToml(), 250);
+  },
+
+  _collectKrea2Payload() {
+    const payload = { model_train_type: 'krea2-lora' };
+    window.getVisibleSections('krea2-lora').forEach(section => {
+      (section.fields || []).forEach(field => {
+        if (field.hidden || !this._fieldShowIfMet(field)) return;
+        const value = this.form[field.key];
+        if (value === '' || value === null || value === undefined) return;
+        payload[field.key] = this._coerceNum(value);
+      });
+    });
+    if (this.form.gpu_ids !== undefined && this.form.gpu_ids !== null) payload.gpu_ids = this.form.gpu_ids;
+    return payload;
   },
 
   // Helper: check if a field's showIf condition is met
@@ -305,6 +355,39 @@ window.trainingTomlMixin = {
     return optArgs;
   },
 
+  // ── Krea 2 cache pipeline ──────────────────────────────
+  async prepareKrea2Cache() {
+    if (this.isTraining || this.trainingStarting) return;
+    if ((this.form.model_train_type || '') !== 'krea2-lora') return;
+    if (!this.validateForm()) {
+      this.toast(this.t('common.formErrors') || 'Please fix form errors before preparing cache', 'error');
+      return;
+    }
+
+    this.trainingStarting = true;
+    try {
+      const response = await fetch('/api/training/krea2/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this._collectKrea2Payload()),
+      });
+      const data = await response.json();
+      if (!response.ok || data.status !== 'success') {
+        this.toast(data.message || 'Failed to prepare Krea 2 cache', 'error');
+        return;
+      }
+      this.taskId = (data.data && data.data.task_id) || null;
+      this.isTraining = true;
+      this.isIdle = false;
+      this.statusText = this.t('krea2.caching', 'Preparing Krea 2 caches') + '...';
+      this.toast(this.t('krea2.cacheStarted', 'Krea 2 cache pipeline started'));
+    } catch (error) {
+      this.toast((this.t('common.requestFailed') || 'Request failed') + ': ' + error.message, 'error');
+    } finally {
+      this.trainingStarting = false;
+    }
+  },
+
   // ── Training ───────────────────────────────────────────
   async startTraining() {
     if (this.isTraining || this.trainingStarting) return;
@@ -349,6 +432,34 @@ window.trainingTomlMixin = {
 
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
+
+    if (trainType === 'krea2-lora') {
+      const payload = this._collectKrea2Payload();
+      try {
+        const response = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'success') {
+          this.toast(data.message || 'Failed', 'error');
+          this.isTraining = false;
+          this.isIdle = true;
+          this.statusText = this.t('monitor.idle', 'Idle');
+        } else {
+          this.taskId = (data.data && data.data.task_id) || null;
+          this.toast(this.t('common.trainingStarted'));
+        }
+      } catch (error) {
+        this.toast((this.t('common.requestFailed') || 'Request failed') + ': ' + error.message, 'error');
+        this.isTraining = false;
+        this.isIdle = true;
+        this.statusText = this.t('monitor.idle', 'Idle');
+      }
+      this.trainingStarting = false;
+      return;
+    }
 
     const validKeys = new Set(['model_train_type']);
     const fieldDefMap = {}; // key → field def（查 omitDefault/default）

@@ -958,7 +958,36 @@ function Install-ProjectEnvironment {
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") (Join-Path $script:RepositoryRoot "vendor\sd-scripts")
     Write-Text "install_project" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") $script:RepositoryRoot
+    Install-MusubiCoreEnvironment $venvPython
     Write-Text "install_done" -Color Green
+}
+
+function Install-MusubiCoreEnvironment {
+    param([string]$HostPython)
+
+    # musubi-tuner requires transformers 4.57.6 whereas sd-scripts pins
+    # 4.54.1. A child venv does not inherit its parent venv's packages, so
+    # configure a read-only .pth bridge after creation: musubi-local packages
+    # stay first on sys.path while CUDA PyTorch remains in the main venv.
+    $coreVenv = Join-Path $script:RepositoryRoot "venv\cores\musubi"
+    $corePython = Join-Path $coreVenv "Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $corePython)) {
+        Write-Text "musubi_venv_creating" -Color Cyan
+        Invoke-ProcessWithSpinner $HostPython @("-m", "venv", $coreVenv) (Get-Text "musubi_venv_creating")
+        if (-not (Test-Path -LiteralPath $corePython)) { throw "musubi core python.exe was not created" }
+        Invoke-PipInstall $corePython @("install", "--upgrade", "pip")
+    }
+    $hostSitePackages = @(& $HostPython -X utf8 -c "import site; print(site.getsitepackages()[0])")[-1]
+    if ($LASTEXITCODE -ne 0 -or -not $hostSitePackages) { throw "could not locate main venv site-packages" }
+    $hostSitePackages = ([string]$hostSitePackages).Trim()
+    if (-not (Test-Path -LiteralPath $hostSitePackages -PathType Container)) {
+        throw "main venv site-packages does not exist: $hostSitePackages"
+    }
+    $overlayHelper = Join-Path $script:RepositoryRoot "tools\configure_musubi_overlay.py"
+    & $corePython -X utf8 $overlayHelper "--host-site-packages" $hostSitePackages
+    if ($LASTEXITCODE -ne 0) { throw "failed to configure musubi dependency overlay" }
+    Write-Text "install_musubi" -Color Cyan
+    Invoke-PipInstall $corePython @("install", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
 }
 
 function Invoke-MainBootstrap {
@@ -995,6 +1024,10 @@ function Invoke-MainBootstrap {
             return
         }
         Install-ProjectEnvironment $python.Path
+    }
+    $musubiPython = Join-Path $script:RepositoryRoot "venv\cores\musubi\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $musubiPython)) {
+        Install-MusubiCoreEnvironment $venvPython
     }
 
     Set-Location $script:RepositoryRoot

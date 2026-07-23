@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
+_✨ 多核心 LoRA 训练工具：Anima、SDXL 与 Krea 2 ✨_
 
-基于 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（位于 `vendor/sd-scripts/`）的训练 GUI，为 **Anima 模型**（Qwen3 + T5 双编码器）提供 LoRA 训练支持，同时兼容 SDXL。
+基于多核心训练架构的本地训练 GUI：保留 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（位于 `vendor/sd-scripts/`）用于 Anima / SDXL，同时接入 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) 的 **Krea 2 LoRA** 训练。
 
 </div>
 
@@ -24,7 +24,7 @@ _✨ 专为 Anima 模型打造的 LoRA 训练工具 ✨_
 > ✅ **v1.3.3 正式版已发布**
 > 本次更新统一实时通信并改善慢速远程连接体验，同时增强标签编辑器的保存可靠性、快捷操作和响应式布局。
 
-lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面，内置完整的 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) 训练引擎。当前 UI 支持 **SDXL** 和 **Anima** 两种模型的 LoRA 训练（SD 1.5 已移除）。
+lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。它以核心注册表隔离不同训练器：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是可选的挂载式适配器核心（`lycoris.kohya`），**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 
 ### 支持的模型类型
 
@@ -32,6 +32,9 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 |---------|------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 双编码器） |
+| **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+
+> ℹ️ Krea 2 在训练前必须生成 latent 与 Qwen3-VL 文本编码输出两类缓存。界面会在“开始训练”前验证缓存是否完整、且是否仍与图片、标签和模型匹配。
 
 > ℹ️ `vendor/sd-scripts/` 训练引擎本身支持 SD3 / FLUX / HunyuanImage / Lumina 等更多模型，但当前 UI 尚未接入这些模型的训练入口。
 
@@ -53,6 +56,7 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 ```
 lora-scripts-anima/
 ├── vendor/sd-scripts/          ← 训练引擎（kohya-ss/sd-scripts 完整原版）
+├── vendor/musubi-tuner/        ← Krea 2 训练核心（固定上游版本）
 ├── backend/                    ← FastAPI 后端
 │   ├── server/                 ← API 核心（路由、状态、代理）
 │   ├── training/               ← 训练引擎封装（参数适配、字段注册表、进程管理）
@@ -65,7 +69,8 @@ lora-scripts-anima/
 ├── tools/                      ← 独立工具（Flash Attn 安装等）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
 ├── start.bat / start.sh        ← 启动脚本
-└── requirements.txt            ← 项目依赖
+├── requirements.txt            ← 主应用 / sd-scripts 依赖
+└── requirements-musubi-krea2.txt ← musubi 隔离核心依赖
 ```
 
 # 使用方法
@@ -90,6 +95,8 @@ lora-scripts-anima/
 | RTX 50 系 (Blackwell) | 2.10.0 | 13.0 |
 
 已有 cu128 `venv` 会在下次启动时自动升级；已经安装的 xformers、FlashAttention、Triton 和 bitsandbytes 会同步匹配 cu130，ONNX Runtime GPU 会切换到 CUDA 13 对应版本，未安装的可选库保持不变。无 NVIDIA 显卡的机器仍会安装完整 GPU 环境并正常运行 GUI，仅训练功能需要显卡。
+
+> **Krea 2 核心环境**：启动脚本会额外创建 `venv/cores/musubi`。该环境的 musubi 依赖（包括 `transformers 4.57.6`）与主环境隔离；它只读复用主环境已安装的 CUDA PyTorch，因此不会把 sd-scripts 所需的 `transformers 4.54.1` 升级或替换。
 
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
@@ -197,13 +204,15 @@ python tools/install_flash_attn.py --yes        # 非交互自动安装
 
 GUI 的 **环境** 标签页提供：
 - Python / PyTorch / CUDA 版本信息
-- sd-scripts 训练引擎版本
+- sd-scripts、挂载式 LyCORIS 与 musubi-tuner 核心状态
+- musubi 独立环境状态（它复用主环境的 CUDA PyTorch，但不会修改 sd-scripts 的依赖）
 - Flash Attention 安装状态检测与一键安装
 - 候选 wheel 列表预览
 
 ## 致谢
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — 训练核心脚本
+- [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 训练核心
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 训练 GUI 框架
 - [WalkingMeatAxolotl/AnimaLoraStudio](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio) — flash_attn wheel 智能匹配算法参考
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel 源

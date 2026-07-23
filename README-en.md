@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ LoRA Training Tool for Anima Models ✨_
+_✨ Multi-core LoRA Training Tool: Anima, SDXL, and Krea 2 ✨_
 
-A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) for **Anima model** (Qwen3 + T5 dual encoder) LoRA training. Also compatible with SDXL.
+A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) continues to serve Anima / SDXL, while [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) provides **Krea 2 LoRA** training.
 
 </div>
 
@@ -24,7 +24,7 @@ A training GUI based on [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scr
 > ✅ **v1.3.3 is now available**
 > This release unifies realtime communication and improves slow remote connections, while strengthening tag-editor save reliability, shortcuts, and responsive layout.
 
-lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts), with the full [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts.git) training engine bundled. The UI currently supports **SDXL** and **Anima** LoRA training (SD 1.5 has been removed).
+lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). Its core registry keeps trainer boundaries explicit: **sd-scripts** handles SDXL / Anima, **LyCORIS** is a selectable adapter core mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
 ### Supported Model Types
 
@@ -32,6 +32,9 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 |---------------|------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
+| **LoRA** | **Krea 2 RAW DiT** (musubi-tuner) |
+
+> ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
 
 > ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but these are not yet wired into the current UI.
 
@@ -53,6 +56,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 ```
 lora-scripts-anima/
 ├── vendor/sd-scripts/          ← Training engine (full kohya-ss/sd-scripts)
+├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
 ├── backend/                    ← FastAPI backend
 │   ├── server/                 ← API core (routes, state, proxy)
 │   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
@@ -65,7 +69,8 @@ lora-scripts-anima/
 ├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
 ├── start.bat / start.sh        ← Launch scripts
-└── requirements.txt            ← Project dependencies
+├── requirements.txt            ← Main application / sd-scripts dependencies
+└── requirements-musubi-krea2.txt ← Isolated musubi core dependencies
 ```
 
 # Usage
@@ -90,6 +95,8 @@ lora-scripts-anima/
 | RTX 50 (Blackwell) | 2.10.0 | 13.0 |
 
 Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version; optional packages that were not installed remain unchanged. Machines without an NVIDIA GPU still receive the complete GPU environment and can run the GUI; only training requires a GPU.
+
+> **Krea 2 core environment**: the launch scripts also create `venv/cores/musubi`. Its musubi dependencies (including `transformers 4.57.6`) are isolated from the main environment. It read-only reuses the main CUDA-enabled PyTorch build, so sd-scripts' required `transformers 4.54.1` is never upgraded or replaced.
 
 ### Windows: Download ZIP (beginner-friendly)
 
@@ -195,13 +202,15 @@ Save, load, and delete training presets in TOML format. Presets are stored in `c
 
 The GUI **Environment** tab provides:
 - Python / PyTorch / CUDA version info
-- sd-scripts engine version
+- sd-scripts, mounted LyCORIS, and musubi-tuner core status
+- musubi runtime status (it reuses the main CUDA PyTorch build without changing sd-scripts dependencies)
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
 
 ## Acknowledgements
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Core training scripts
+- [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Training GUI framework
 - [WalkingMeatAxolotl/AnimaLoraStudio](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio) — flash_attn wheel matching algorithm reference
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel source
