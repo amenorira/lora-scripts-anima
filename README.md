@@ -96,7 +96,7 @@ lora-scripts-anima/
 
 已有 cu128 `venv` 会在下次启动时自动升级；已经安装的 xformers、FlashAttention、Triton 和 bitsandbytes 会同步匹配 cu130，ONNX Runtime GPU 会切换到 CUDA 13 对应版本，未安装的可选库保持不变。无 NVIDIA 显卡的机器仍会安装完整 GPU 环境并正常运行 GUI，仅训练功能需要显卡。
 
-> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和 CUDA PyTorch。启动器先安装上游 sd-scripts 依赖，再以本项目的 `requirements-musubi-krea2.txt` 将共享版本收敛到 `transformers 4.57.6` / `tokenizers 0.22.2`；每次启动只做本地检查，版本正确时不会重复运行 pip 或卸载重装。不会修改 `vendor/` 中的上游依赖文件。
+> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和 CUDA PyTorch。启动器先安装上游 sd-scripts 依赖，再以本项目的 `requirements-musubi-krea2.txt` 将共享版本收敛到 `transformers 4.57.6` / `tokenizers 0.22.2`；日常启动只做快速元数据检查，版本正确时不会重复运行 pip、卸载重装或导入完整 Krea 2 栈。同步后及实际 Krea 2 预检会做完整导入验证。不会修改 `vendor/` 中的上游依赖文件。
 
 > 从旧版本遗留的 `venv/cores/musubi` 不再被读取、写入或自动删除；确认新主环境可正常训练后，可由用户自行删除以回收磁盘空间。
 

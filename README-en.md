@@ -96,7 +96,7 @@ lora-scripts-anima/
 
 Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version; optional packages that were not installed remain unchanged. Machines without an NVIDIA GPU still receive the complete GPU environment and can run the GUI; only training requires a GPU.
 
-> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project main `venv` and one CUDA PyTorch build. Launchers install upstream sd-scripts requirements first, then converge the shared stack through this project's `requirements-musubi-krea2.txt` (`transformers 4.57.6` / `tokenizers 0.22.2`). Startup performs a local check and does not rerun pip or uninstall packages when versions are already correct. No upstream dependency file under `vendor/` is modified.
+> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project main `venv` and one CUDA PyTorch build. Launchers install upstream sd-scripts requirements first, then converge the shared stack through this project's `requirements-musubi-krea2.txt` (`transformers 4.57.6` / `tokenizers 0.22.2`). Normal startup uses a fast metadata check, so a healthy environment neither reruns pip/uninstalls packages nor imports the full Krea 2 stack. A full import check runs after synchronization and before Krea 2 work. No upstream dependency file under `vendor/` is modified.
 
 > A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically. After confirming that the shared main environment trains correctly, users may remove it manually to reclaim disk space.
 

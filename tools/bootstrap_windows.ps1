@@ -967,13 +967,14 @@ function Ensure-MusubiSharedRuntime {
 
     # vendor/sd-scripts is intentionally installed first. This project-owned
     # requirement file is the final authority for the shared Krea 2 runtime.
-    # The check is local and idempotent: healthy launches do not invoke pip.
+    # The hot-path check is local/idempotent metadata only: healthy GUI
+    # launches do not invoke pip or import Qwen3-VL.
     & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check
     if ($LASTEXITCODE -eq 0) { return }
 
     Write-Text "install_musubi" -Color Cyan
     Invoke-PipInstall $HostPython @("install", "--upgrade-strategy", "only-if-needed", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
-    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check
+    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports
     if ($LASTEXITCODE -ne 0) { throw "musubi shared runtime verification failed" }
 }
 

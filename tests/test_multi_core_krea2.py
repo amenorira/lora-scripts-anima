@@ -14,7 +14,7 @@ from backend.training.core_registry import (
 )
 from backend.training.field_registry import get_fields_json
 from backend.training.step_estimator import estimate_training_steps
-from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, version_error
+from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status, version_error
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS,
     build_krea2_dataset_config,
@@ -203,6 +203,8 @@ class MultiCoreSupervisorTests(unittest.TestCase):
         self.assertIn("requirements-musubi-krea2.txt", linux)
         self.assertIn("--upgrade-strategy", windows)
         self.assertIn("--upgrade-strategy", linux)
+        self.assertEqual(windows.count("--verify-imports"), 1)
+        self.assertEqual(linux.count("--verify-imports"), 1)
         self.assertNotIn("configure_musubi_overlay.py", windows)
         self.assertNotIn("configure_musubi_overlay.py", linux)
         self.assertNotIn("venv\\cores\\musubi", windows)
@@ -235,6 +237,52 @@ class MusubiRuntimeContractTests(unittest.TestCase):
         self.assertIsNone(version_error("torch", ">=2.9.1", "2.10.0+cu130"))
         self.assertIsNone(version_error("torchvision", ">=0.24.1", "0.25.0+cu130"))
         self.assertIsNotNone(version_error("transformers", "4.57.6", "4.54.1"))
+
+    def test_fast_status_checks_metadata_without_importing_training_stack(self):
+        versions = {
+            name: (
+                "2.10.0+cu130"
+                if name == "torch"
+                else "0.25.0+cu130"
+                if name == "torchvision"
+                else "11.3.0"
+                if expected == ">=11.3.0"
+                else "0.0.0"
+                if expected is None
+                else expected
+            )
+            for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
+        }
+        with patch("backend.training.musubi_runtime.installed_versions", return_value=versions), patch(
+            "backend.training.musubi_runtime.importlib.import_module"
+        ) as import_module:
+            status = shared_runtime_status(verify_imports=False)
+
+        self.assertTrue(status["ok"], status["errors"])
+        self.assertFalse(status["imports_verified"])
+        self.assertIsNone(status["torch_path"])
+        import_module.assert_not_called()
+
+    def test_fast_status_rejects_cpu_torch_metadata(self):
+        versions = {
+            name: (
+                "2.10.0"
+                if name == "torch"
+                else "0.25.0+cu130"
+                if name == "torchvision"
+                else "11.3.0"
+                if expected == ">=11.3.0"
+                else "0.0.0"
+                if expected is None
+                else expected
+            )
+            for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
+        }
+        with patch("backend.training.musubi_runtime.installed_versions", return_value=versions):
+            status = shared_runtime_status(verify_imports=False)
+
+        self.assertFalse(status["ok"])
+        self.assertTrue(any("torch must be a CUDA wheel" in error for error in status["errors"]))
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):

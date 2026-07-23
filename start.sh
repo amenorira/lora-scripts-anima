@@ -122,14 +122,15 @@ ensure_musubi_shared_runtime() {
     fi
 
     # vendor/sd-scripts is installed before this project-owned requirement
-    # file. Check first so normal launches do not download or rewrite packages.
+    # file. The hot path only reads metadata, so normal GUI launches do not
+    # download/rewrite packages or import Qwen3-VL.
     if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
         return
     fi
 
     echo "[4/4] Synchronizing shared musubi-tuner Krea 2 dependencies... / 正在同步主环境的 musubi-tuner Krea 2 依赖……"
     "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements-musubi-krea2.txt" || { echo "[ERROR] musubi-tuner dependencies install failed. / musubi-tuner 依赖安装失败。"; exit 1; }
-    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check || { echo "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
+    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { echo "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
 }
 
 do_install() {
