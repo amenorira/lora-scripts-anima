@@ -141,7 +141,7 @@ class Krea2CodecTests(unittest.TestCase):
             root = Path(temp_dir)
             config = krea2_config(root)
             config["network_args_custom"] = "exclude_patterns=['.*']"
-            config["krea_optimizer_args"] = "weight_decay=0.01"
+            config["krea_optimizer_weight_decay"] = 0.01
             self.assertEqual(validate_krea2_config(config), [])
             train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
 
@@ -209,9 +209,10 @@ class Krea2CodecTests(unittest.TestCase):
                 "pytorch_optimizer.CAME",
                 "prodigyopt.Prodigy",
                 "schedulefree.AdamWScheduleFree",
-                "__custom__",
             }.issubset(optimizer_values)
         )
+        self.assertEqual(len(optimizer_values), 16)
+        self.assertNotIn("__custom__", optimizer_values)
 
         self.assertEqual(len(scheduler_fields), 1)
         scheduler_values = {option["v"] for option in scheduler_fields[0]["options"]}
@@ -234,8 +235,6 @@ class Krea2CodecTests(unittest.TestCase):
                     "lr_scheduler": "cosine_with_min_lr",
                     "lr_scheduler_num_cycles": 3,
                     "lr_scheduler_min_lr_ratio": 0.05,
-                    "krea_lr_scheduler_type": "CosineAnnealingLR",
-                    "krea_lr_scheduler_args": "T_max=100\neta_min=1e-6",
                 }
             )
 
@@ -246,8 +245,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["lr_scheduler"], "cosine_with_min_lr")
         self.assertEqual(train["lr_scheduler_num_cycles"], 3)
         self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.05)
-        self.assertEqual(train["lr_scheduler_type"], "CosineAnnealingLR")
-        self.assertEqual(train["lr_scheduler_args"], ["T_max=100", "eta_min=1e-6"])
         self.assertEqual(
             train["optimizer_args"],
             ["weight_decay=0.02", "betas=(0.9, 0.999, 0.9999)", "eps=1e-08"],
@@ -265,7 +262,7 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(config["lr_scheduler_min_lr_ratio"], 0.0)
         self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.0)
 
-    def test_optimizer_alias_custom_path_and_internal_scheduler_are_normalized(self):
+    def test_optimizer_alias_and_internal_scheduler_are_normalized(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config = krea2_config(root)
@@ -291,19 +288,36 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertEqual(validate_krea2_config(config), [])
             train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
 
-            custom = krea2_config(root / "custom")
-            custom.update(
-                {
-                    "optimizer_type": "__custom__",
-                    "krea_optimizer_custom_type": "bitsandbytes.optim.LAMB8bit",
-                }
-            )
-            self.assertEqual(validate_krea2_config(custom), [])
-
         self.assertEqual(config["lr_scheduler"], "constant")
         self.assertEqual(config["lr_warmup_steps"], 0)
         self.assertEqual(train["optimizer_args"], ["warmup_steps=25"])
-        self.assertEqual(custom["optimizer_type"], "bitsandbytes.optim.LAMB8bit")
+
+    def test_rejects_arbitrary_optimizer_and_scheduler_injection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            config.update(
+                {
+                    "optimizer_type": "__custom__",
+                    "krea_optimizer_custom_type": "bitsandbytes.optim.LAMB8bit",
+                    "krea_optimizer_args": "weight_decay=0.01",
+                    "krea_lr_scheduler_type": "CosineAnnealingLR",
+                    "krea_lr_scheduler_args": "T_max=100",
+                }
+            )
+            errors = validate_krea2_config(config)
+            with self.assertRaisesRegex(ValueError, "only the built-in Krea 2 optimizer list"):
+                build_krea2_train_config(
+                    config,
+                    Path(temp_dir) / "dataset.toml",
+                    Path(temp_dir) / "output",
+                    Path(temp_dir) / "log",
+                )
+
+        self.assertTrue(any(error.startswith("optimizer_type: only the built-in") for error in errors))
+        self.assertTrue(any(error.startswith("krea_optimizer_custom_type:") for error in errors))
+        self.assertTrue(any(error.startswith("krea_optimizer_args:") for error in errors))
+        self.assertTrue(any(error.startswith("krea_lr_scheduler_type:") for error in errors))
+        self.assertTrue(any(error.startswith("krea_lr_scheduler_args:") for error in errors))
 
     def test_optimizer_specific_guided_args_reject_invalid_shapes(self):
         with tempfile.TemporaryDirectory() as temp_dir:

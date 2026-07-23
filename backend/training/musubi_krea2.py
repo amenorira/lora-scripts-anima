@@ -11,7 +11,6 @@ import hashlib
 import importlib.metadata
 import json
 import math
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -54,7 +53,6 @@ _KREA2_LR_SCHEDULERS = {
 }
 _KREA2_COMPILE_MODES = {"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
 _KREA2_COMPILE_DYNAMIC_VALUES = {"auto", "true", "false"}
-_KREA2_CUSTOM_OPTIMIZER = "__custom__"
 _KREA2_SCHEDULEFREE_OPTIMIZERS = {"schedulefree.AdamWScheduleFree"}
 _KREA2_BETA_LENGTHS: dict[str, set[int]] = {
     "adamw8bit": {2},
@@ -87,8 +85,6 @@ _KREA2_EPS_OPTIMIZERS = {
 }
 _KREA2_MIN_LR_RATIO_SCHEDULERS = {"cosine_with_min_lr", "warmup_stable_decay", "rex"}
 _KREA2_NUM_CYCLES_SCHEDULERS = {"cosine_with_restarts", "cosine_with_min_lr", "warmup_stable_decay"}
-_PYTHON_NAME_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
-_PYTHON_FULL_CLASS_PATH_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$")
 _KREA2_LEGACY_OPTIMIZER_ALIASES = {
     # These bare values were valid selectors in the sd-scripts form, but
     # musubi resolves non-dotted names from torch.optim.  Translate only the
@@ -101,6 +97,26 @@ _KREA2_LEGACY_OPTIMIZER_ALIASES = {
     "adamwschedulefree": "schedulefree.AdamWScheduleFree",
     "came": "pytorch_optimizer.CAME",
 }
+_KREA2_CURATED_OPTIMIZERS = frozenset(
+    {
+        "adamw8bit",
+        "AdamW",
+        "AdaFactor",
+        "bitsandbytes.optim.PagedAdamW8bit",
+        "bitsandbytes.optim.AdEMAMix8bit",
+        "bitsandbytes.optim.PagedAdEMAMix8bit",
+        "bitsandbytes.optim.Lion8bit",
+        "bitsandbytes.optim.PagedLion8bit",
+        "pytorch_optimizer.CAME",
+        "pytorch_optimizer.Lion",
+        "prodigyopt.Prodigy",
+        "schedulefree.AdamWScheduleFree",
+        "torch.optim.Adam",
+        "torch.optim.RAdam",
+        "torch.optim.NAdam",
+        "torch.optim.SGD",
+    }
+)
 _KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
     "pytorch_optimizer.": "pytorch-optimizer",
     "prodigyopt.": "prodigyopt",
@@ -423,9 +439,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.optimizer_type",
         # parser_common.py documents the first three short names, while
-        # trainer_base.py deliberately supports any importable optimizer class
-        # path.  Keep only paths backed by the shared runtime in the curated
-        # menu; the final entry exposes musubi's full-path escape hatch.
+        # trainer_base.py can technically import arbitrary optimizer classes.
+        # Deliberately expose only the audited shared-runtime allowlist: an
+        # unsupported optimizer can otherwise fail after the expensive cache
+        # and model-load stages.
         "groups": [
             {
                 "label_key": "opt.krea_optimizer_group_builtin",
@@ -487,23 +504,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
                     {"v": "torch.optim.SGD", "l": "SGD", "dk": "opt.krea_optimizer_torch_sgd"},
                 ],
             },
-            {
-                "label_key": "opt.krea_optimizer_group_custom",
-                "options": [
-                    {"v": _KREA2_CUSTOM_OPTIMIZER, "l": "Custom class path", "dk": "opt.krea_optimizer_custom"},
-                ],
-            },
         ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "krea_optimizer_custom_type",
-        "type": "text",
-        "default": "",
-        "section": "optimizer",
-        "desc_key": "field.krea_optimizer_custom_type",
-        "hint_key": "field.krea_optimizer_custom_typeHint",
-        "show_if": {"key": "optimizer_type", "eq": _KREA2_CUSTOM_OPTIMIZER},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -648,7 +649,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.krea_optimizer_weight_decayHint",
         "min": 0,
         "step": 0.001,
-        "show_if": {"key": "optimizer_type", "neq": _KREA2_CUSTOM_OPTIMIZER},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -769,36 +769,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_adafactor_eps",
         "hint_key": "field.krea_adafactor_epsHint",
         "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
-        "advanced": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "krea_lr_scheduler_type",
-        "type": "text",
-        "default": "",
-        "section": "optimizer",
-        "desc_key": "field.krea_lr_scheduler_type",
-        "hint_key": "field.krea_lr_scheduler_typeHint",
-        "advanced": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "krea_lr_scheduler_args",
-        "type": "textarea",
-        "default": "",
-        "section": "optimizer",
-        "desc_key": "field.krea_lr_scheduler_args",
-        "hint_key": "field.krea_lr_scheduler_argsHint",
-        "advanced": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "krea_optimizer_args",
-        "type": "textarea",
-        "default": "",
-        "section": "optimizer",
-        "desc_key": "field.krea_optimizer_args",
-        "hint_key": "field.krea_optimizer_argsHint",
         "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -1297,29 +1267,6 @@ def _split_args(value: Any) -> list[str]:
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def _validate_musubi_literal_args(value: Any, key: str, errors: list[str]) -> None:
-    """Validate the exact ``key=Python literal`` grammar musubi parses.
-
-    ``trainer_base.py`` uses ``arg.split('=')`` followed by
-    ``ast.literal_eval``.  Validate the same grammar before a long cache
-    preparation or a training launch so malformed advanced arguments do not
-    fail only after the model has been loaded.
-    """
-
-    for item in _split_args(value):
-        if item.count("=") != 1:
-            errors.append(f"{key}: each line must contain one key=value pair / 每行必须只有一个 key=value")
-            continue
-        argument, literal = (part.strip() for part in item.split("=", 1))
-        if not argument.isidentifier() or not literal:
-            errors.append(f"{key}: invalid argument {item!r} / 参数格式无效")
-            continue
-        try:
-            ast.literal_eval(literal)
-        except (SyntaxError, ValueError):
-            errors.append(f"{key}: {argument} must use a Python literal / 必须使用 Python 字面量")
-
-
 def _normalize_numeric_literal(
     config: dict[str, Any],
     key: str,
@@ -1395,9 +1342,9 @@ def _replace_musubi_arg(arguments: list[str], key: str, literal: str) -> None:
 
 
 def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
-    """Merge guided Krea optimizer fields with musubi's raw ``optimizer_args``."""
+    """Build optimizer args only from the audited guided Krea controls."""
 
-    arguments = _split_args(config.get("krea_optimizer_args"))
+    arguments: list[str] = []
     optimizer_type = str(config.get("optimizer_type") or "adamw8bit")
 
     if not _is_empty(config.get("krea_optimizer_weight_decay")):
@@ -1442,17 +1389,9 @@ def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
 
 
 def _normalize_krea2_optimizer_type(config: dict[str, Any], errors: list[str]) -> str:
-    """Resolve UI aliases/custom paths into the exact musubi optimizer type."""
+    """Resolve legacy aliases into an audited optimizer allowlist entry."""
 
     requested = str(config.get("optimizer_type") or "").strip()
-    if requested == _KREA2_CUSTOM_OPTIMIZER:
-        requested = str(config.get("krea_optimizer_custom_type") or "").strip()
-        if not _PYTHON_FULL_CLASS_PATH_RE.fullmatch(requested):
-            errors.append(
-                "krea_optimizer_custom_type: a full Python class path is required "
-                "/ 必须填写完整 Python 类路径"
-            )
-            return ""
     if not requested:
         errors.append("optimizer_type: required / 必填")
         return ""
@@ -1460,12 +1399,17 @@ def _normalize_krea2_optimizer_type(config: dict[str, Any], errors: list[str]) -
     lowered = requested.lower()
     if lowered == "adamw8bit":
         requested = "adamw8bit"
+    elif lowered == "adamw":
+        requested = "AdamW"
     elif lowered == "adafactor":
         requested = "AdaFactor"
     elif lowered in _KREA2_LEGACY_OPTIMIZER_ALIASES:
         requested = _KREA2_LEGACY_OPTIMIZER_ALIASES[lowered]
-    elif not _PYTHON_NAME_RE.fullmatch(requested):
-        errors.append("optimizer_type: invalid Python class path / Python 类路径格式无效")
+    if requested not in _KREA2_CURATED_OPTIMIZERS:
+        errors.append(
+            "optimizer_type: only the built-in Krea 2 optimizer list is supported "
+            "/ 当前仅支持内置的 Krea 2 优化器列表"
+        )
         return ""
 
     config["optimizer_type"] = requested
@@ -1729,11 +1673,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     optimizer_type = _normalize_krea2_optimizer_type(config, errors)
     adafactor_relative_step = bool(config.get("krea_adafactor_relative_step", True))
-    custom_scheduler_type = str(config.get("krea_lr_scheduler_type") or "").strip()
-    if custom_scheduler_type and not _PYTHON_NAME_RE.fullmatch(custom_scheduler_type):
-        errors.append("krea_lr_scheduler_type: invalid Python class path / Python 类路径格式无效")
-    elif custom_scheduler_type:
-        config["krea_lr_scheduler_type"] = custom_scheduler_type
 
     # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
     # and switches to its own AdafactorSchedule in relative-step mode.  Keep
@@ -1745,11 +1684,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if internal_scheduler:
         config["lr_scheduler"] = "constant"
         config["lr_warmup_steps"] = 0
-        if custom_scheduler_type:
-            errors.append(
-                "krea_lr_scheduler_type: unavailable with the selected optimizer's internal scheduler "
-                "/ 当前优化器使用内部调度器，不能指定自定义调度器"
-            )
 
     for key, minimum in (
         ("network_dim", 1),
@@ -1855,8 +1789,14 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if optimizer_type in _KREA2_SCHEDULEFREE_OPTIMIZERS:
         _as_int(config, "krea_schedulefree_warmup_steps", errors, 0)
 
-    _validate_musubi_literal_args(config.get("krea_optimizer_args"), "krea_optimizer_args", errors)
-    _validate_musubi_literal_args(config.get("krea_lr_scheduler_args"), "krea_lr_scheduler_args", errors)
+    for key, message in (
+        ("krea_optimizer_custom_type", "custom optimizer classes are not supported / 不支持自定义优化器类"),
+        ("krea_optimizer_args", "raw optimizer args are not supported; use the guided fields / 不支持原始优化器参数，请使用界面字段"),
+        ("krea_lr_scheduler_type", "custom scheduler classes are not supported / 不支持自定义学习率调度器类"),
+        ("krea_lr_scheduler_args", "raw scheduler args are not supported; use the guided fields / 不支持原始调度器参数，请使用界面字段"),
+    ):
+        if not _is_empty(config.get(key)):
+            errors.append(f"{key}: {message}")
     if not _is_empty(config.get("compile_cache_size_limit")):
         _as_int(config, "compile_cache_size_limit", errors, 1)
 
@@ -1936,6 +1876,15 @@ def build_krea2_train_config(
 ) -> dict[str, Any]:
     """Encode only musubi Krea 2 flags into the flat training TOML."""
 
+    optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
+    # Normal launch paths call validate_krea2_config first, but keep this
+    # serialization boundary closed for direct integrations as well.
+    if optimizer_type not in _KREA2_CURATED_OPTIMIZERS:
+        raise ValueError(
+            "optimizer_type: only the built-in Krea 2 optimizer list is supported "
+            "/ 当前仅支持内置的 Krea 2 优化器列表"
+        )
+
     # Batch size belongs solely to the musubi dataset TOML. Keep unsupported
     # legacy sd-scripts keys out of this file: musubi's config loader retains
     # unknown keys silently, which would otherwise make a displayed setting
@@ -1956,7 +1905,7 @@ def build_krea2_train_config(
         "mixed_precision": str(config.get("mixed_precision", "bf16")),
         "timestep_sampling": str(config.get("timestep_sampling", "shift")),
         "weighting_scheme": "none",
-        "optimizer_type": str(config.get("optimizer_type", "adamw8bit")),
+        "optimizer_type": optimizer_type,
         "lr_scheduler": str(config.get("lr_scheduler", "constant")),
         "output_dir": str(output_dir),
         "output_name": str(config["output_name"]),
@@ -2033,11 +1982,6 @@ def build_krea2_train_config(
     optimizer_args = _build_krea2_optimizer_args(config)
     if optimizer_args:
         result["optimizer_args"] = optimizer_args
-    if not _is_empty(config.get("krea_lr_scheduler_type")):
-        result["lr_scheduler_type"] = str(config["krea_lr_scheduler_type"])
-    scheduler_args = _split_args(config.get("krea_lr_scheduler_args"))
-    if scheduler_args:
-        result["lr_scheduler_args"] = scheduler_args
     if bool(config.get("enable_krea_samples", False)):
         if sample_prompts_path is None:
             raise ValueError("sample_prompts_path is required when Krea sampling is enabled")
