@@ -21,6 +21,7 @@ KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
 KREA2_NETWORK_MODULE = "networks.lora_krea2"
+KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 
@@ -100,12 +101,13 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "dataset_cache_dir",
         "type": "text",
-        "default": "./cache/krea2",
+        "default": "./train/.krea2-cache",
         "section": "model",
         "desc_key": "field.krea_dataset_cache_dir",
         "hint_key": "field.krea_dataset_cache_dirHint",
         "role": "file-folder",
         "required": True,
+        "readonly": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -843,6 +845,13 @@ def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+def krea2_auto_cache_dir(train_data_dir: Any) -> str:
+    """Return Krea's deterministic cache directory for one source dataset."""
+
+    raw_path = str(train_data_dir or "").strip()
+    return str(Path(raw_path) / KREA2_AUTO_CACHE_DIR_NAME) if raw_path else ""
+
+
 def _as_int(config: dict[str, Any], key: str, errors: list[str], minimum: int = 0) -> int | None:
     value = config.get(key)
     try:
@@ -1117,6 +1126,13 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "sample_every_n_epochs": 1,
     }.items():
         config.setdefault(key, default)
+
+    # Keep every cache beside the dataset that produced it.  This is a UI and
+    # launch invariant rather than an optional musubi argument: a stale preset
+    # or direct API call must not scatter Krea cache files elsewhere.
+    automatic_cache_dir = krea2_auto_cache_dir(config.get("train_data_dir"))
+    if automatic_cache_dir:
+        config["dataset_cache_dir"] = automatic_cache_dir
 
     errors: list[str] = []
     for key in (

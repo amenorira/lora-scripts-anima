@@ -23,6 +23,7 @@ from backend.training.musubi_krea2 import (
     build_krea2_dataset_config,
     build_krea2_train_config,
     get_krea2_cache_status,
+    image_files,
     krea2_preflight,
     mark_cache_manifest,
     prepare_cache_manifest,
@@ -50,7 +51,7 @@ def krea2_config(root: Path) -> dict:
             "vae": str(models / "vae.safetensors"),
             "text_encoder": str(models / "qwen3vl.safetensors"),
             "train_data_dir": str(train),
-            "dataset_cache_dir": str(root / "cache"),
+            "dataset_cache_dir": str(train / ".krea2-cache"),
             "output_dir": str(root / "output"),
             "output_name": "krea2_test",
         }
@@ -115,6 +116,24 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertNotIn("save_model_as", train)
         self.assertNotIn("attn_mode", train)
         self.assertTrue(train["sdpa"])
+
+    def test_cache_directory_is_automatically_nested_under_its_dataset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config["dataset_cache_dir"] = str(root / "somewhere-else")
+
+            self.assertEqual(validate_krea2_config(config), [])
+            expected_cache = Path(config["train_data_dir"]) / ".krea2-cache"
+            dataset = build_krea2_dataset_config(config)
+            expected_cache.mkdir()
+            (expected_cache / "not-a-training-image.png").write_bytes(b"cache artifact")
+
+            images = image_files(config["train_data_dir"], config["dataset_cache_dir"])
+
+        self.assertEqual(Path(config["dataset_cache_dir"]), expected_cache)
+        self.assertEqual(Path(dataset["datasets"][0]["cache_directory"]), expected_cache)
+        self.assertEqual([path.name for path in images], ["portrait.png"])
 
     def test_train_toml_uses_only_krea_parser_flags(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -447,6 +466,8 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("# Krea 2 preset (musubi-tuner)", training_toml)
         self.assertNotIn("Anima Krea 2", training_toml)
         self.assertIn("-krea2-preset.toml", training_presets)
+        training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
+        self.assertIn("_syncKrea2CacheDir", training_core)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ from backend.training.optimizer_contracts import (
 #   min        — 最小值（可选）
 #   max        — 最大值（可选）
 #   hidden     — 是否隐藏（可选）
+#   readonly   — 静态只读（可选）。用于展示由应用自动管理、不可手工覆盖的值。
 #   group      — 所属训练类型: "all" / "sdxl" / "anima" / "diT", 列表表示多选
 #                None 或 "all" 表示所有类型通用。前端根据 model_train_type 过滤显示。
 #   auto_value — 自动填值规则（可选）: [{"watch": "key", "when": "val", "set": new_val}, ...]

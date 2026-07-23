@@ -105,6 +105,7 @@ window.trainingCoreMixin = {
       ? 'networks.lora_anima'
       : (v === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
+    this._syncKrea2CacheDir();
 
     // Re-render form with new train type
     this.renderTrainingForm(v, null);
@@ -145,6 +146,28 @@ window.trainingCoreMixin = {
     if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
     else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
     return defaults;
+  },
+
+  _deriveKrea2CacheDir(trainDataDir) {
+    const raw = String(trainDataDir ?? '').trim();
+    if (!raw) return '';
+    const lastBackslash = raw.lastIndexOf('\\');
+    const lastSlash = raw.lastIndexOf('/');
+    const separator = lastBackslash > lastSlash ? '\\' : '/';
+    const base = raw.replace(/[\\/]+$/, '');
+    if (!base) return separator + '.krea2-cache';
+    return `${base}${separator}.krea2-cache`;
+  },
+
+  _syncKrea2CacheDir() {
+    if (!this.form || this.form.model_train_type !== 'krea2-lora') return false;
+    const cacheDir = this._deriveKrea2CacheDir(this.form.train_data_dir);
+    const changed = this.form.dataset_cache_dir !== cacheDir;
+    if (changed) this.form.dataset_cache_dir = cacheDir;
+    if (this.formDefaults && this.formDefaults.dataset_cache_dir !== cacheDir) {
+      this.formDefaults.dataset_cache_dir = cacheDir;
+    }
+    return changed;
   },
 
   suspendTrainForm(route) {
@@ -276,6 +299,7 @@ window.trainingCoreMixin = {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
+    this._syncKrea2CacheDir();
     this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
 
@@ -344,6 +368,7 @@ window.trainingCoreMixin = {
         if (self.form[key] === undefined) self.form[key] = freshDefaults[key];
       });
       self.formDefaults = { ...freshDefaults };
+      self._syncKrea2CacheDir();
       self.renderTrainingForm(activeType, null);
       self.setupAutoValueWatchers();
       self.setupShowIfWatchers();
@@ -1198,6 +1223,8 @@ window.trainingCoreMixin = {
     const requiredMark = isRequired ? '<span class="field-required" aria-hidden="true">*</span>' : '';
     const dataKey = field.key;
     const isToggle = field.type === 'toggle';
+    const isStaticReadonly = field.readonly === true;
+    const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
     // Text/textarea/path fields get their input on a separate row (full-width)
     const isFullWidth = field.type === 'textarea' || (field.role && field.role.startsWith('file-'));
 
@@ -1246,13 +1273,13 @@ window.trainingCoreMixin = {
       const menuHtml = `<template x-if="open"><div class="anima-select-menu"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="(opt, oIdx) in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)" @mouseenter="onOptionMouseEnter(oIdx, opt)" @mouseleave="onOptionMouseLeave()"><span x-text="opt.l" :title="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div>${descPanelHtml}</div></template>`;
       inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="closeOnOutside()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
-      inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"></textarea>`;
+      inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {
         inputHtml += this._positivePromptCountHint(dataKey);
       }
     } else if (field.type === 'stepper' || field.type === 'number') {
       const sStep = field.step || 1;
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
+      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
       // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
@@ -1261,11 +1288,11 @@ window.trainingCoreMixin = {
       if (_phMap) {
         // Dynamic placeholder that updates when optimizer_type changes
         const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''">`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}">`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}"${staticReadonlyAttrs}>`;
       } else {
         // DEFAULT_DIM_KEYS 字段：值==schema 原始默认值时加 is-default class，CSS 淡色模拟 placeholder 视觉
         // （假留空——值仍保留，不触发必填校验失败、不影响训练流程；改值后 class 移除恢复正常字色）
@@ -1273,13 +1300,13 @@ window.trainingCoreMixin = {
         const _dimCls = (window.DEFAULT_DIM_KEYS && window.DEFAULT_DIM_KEYS.has(dataKey) && field.default !== undefined && field.default !== '' && field.default !== null)
           ? ` :class="{ 'is-default': String(form.${dataKey}) === String('${String(field.default).replace(/'/g, '\\x27')}') }"`
           : '';
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}>`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}${staticReadonlyAttrs}>`;
       }
     }
 
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
-    if (field.role && field.role.startsWith('file-')) {
+    if (field.role && field.role.startsWith('file-') && !isStaticReadonly) {
       controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker','Local picker')" :aria-label="t('common.browseLocal','Browse local files')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser','Built-in browser')" :aria-label="t('common.searchBuiltin','Search built-in models')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;
@@ -1403,13 +1430,15 @@ window.trainingCoreMixin = {
       ? `'${String(field.default).replace(/'/g, '\\x27')}'`
       : 'undefined';
     const _filledExpr = `window.FILLED_INDICATOR_KEYS.has(${_filledKey}) && form.${dataKey} !== '' && form.${dataKey} !== null && form.${dataKey} !== undefined && String(form.${dataKey}) !== String(${_filledDefaultLit})`;
-    return `<div class="field${condClass}${nestedClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-filled': ${_filledExpr}, 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
-      <div class="field-row">
-        ${controlSection}
-        <div class="field-menu-wrap">
+    const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap">
           <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" tabindex="-1">${_dotsSvg}</button>
           ${_menuPopupHtml}
-        </div>
+        </div>`;
+    const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
+    return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-filled': ${_filledExpr}, 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
+      <div class="field-row">
+        ${controlSection}
+        ${fieldMenuHtml}
       </div>
       ${fullWidthRow}
       <div class="field-diff-info" x-show="formDiffMap && formDiffMap['${dataKey}']" x-cloak>
@@ -2258,6 +2287,9 @@ window.trainingCoreMixin = {
   },
 
   setField(key, value) {
+    if (key === 'dataset_cache_dir' && this.form.model_train_type === 'krea2-lora') {
+      value = this._deriveKrea2CacheDir(this.form.train_data_dir);
+    }
     const oldVal = this.form[key];
     if (oldVal === value) return;
     if (this._autoValueApplied && Object.prototype.hasOwnProperty.call(this._autoValueApplied, key)) {
@@ -2291,6 +2323,7 @@ window.trainingCoreMixin = {
       : null;
 
     this.form[key] = value;
+    if (key === 'train_data_dir') this._syncKrea2CacheDir();
     if (key === 'optimizer_type' || key === 'gradient_accumulation_steps' ||
         key === 'mixed_precision' || key === 'gpu_ids') {
       this._enforceEmosensUiConstraints(key, emosensPreviousConstraints);
@@ -2486,8 +2519,10 @@ window.trainingCoreMixin = {
     // Re-apply autoValue rules so select fields, locked fields etc. stay consistent
     // after preset load, config import, or full reset.
     this._applyInitialAutoValues();
+    const cachePathChanged = this._syncKrea2CacheDir();
     this.renderTrainingForm(this.form.model_train_type || 'anima-lora');
     this.updateReadonlyStates();
+    if (cachePathChanged) this.updateToml();
   },
 
   // ── Validation ────────────────────────────────────────
