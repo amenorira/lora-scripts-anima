@@ -70,7 +70,7 @@ lora-scripts-anima/
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
 ├── start.bat / start.sh        ← Launch scripts
 ├── requirements.txt            ← Main application / sd-scripts dependencies
-└── requirements-musubi-krea2.txt ← Isolated musubi core dependencies
+└── requirements-musubi-krea2.txt ← Shared Krea 2 version-convergence dependencies
 ```
 
 # Usage
@@ -96,7 +96,9 @@ lora-scripts-anima/
 
 Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version; optional packages that were not installed remain unchanged. Machines without an NVIDIA GPU still receive the complete GPU environment and can run the GUI; only training requires a GPU.
 
-> **Krea 2 core environment**: the launch scripts also create `venv/cores/musubi`. Its musubi dependencies (including `transformers 4.57.6`) are isolated from the main environment. It read-only reuses the main CUDA-enabled PyTorch build, so sd-scripts' required `transformers 4.54.1` is never upgraded or replaced.
+> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project main `venv` and one CUDA PyTorch build. Launchers install upstream sd-scripts requirements first, then converge the shared stack through this project's `requirements-musubi-krea2.txt` (`transformers 4.57.6` / `tokenizers 0.22.2`). Startup performs a local check and does not rerun pip or uninstall packages when versions are already correct. No upstream dependency file under `vendor/` is modified.
+
+> A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically. After confirming that the shared main environment trains correctly, users may remove it manually to reclaim disk space.
 
 ### Windows: Download ZIP (beginner-friendly)
 
@@ -203,7 +205,7 @@ Save, load, and delete training presets in TOML format. Presets are stored in `c
 The GUI **Environment** tab provides:
 - Python / PyTorch / CUDA version info
 - sd-scripts, mounted LyCORIS, and musubi-tuner core status
-- musubi runtime status (it reuses the main CUDA PyTorch build without changing sd-scripts dependencies)
+- shared musubi Krea 2 runtime status (shared CUDA PyTorch with explicit version-convergence health)
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
 

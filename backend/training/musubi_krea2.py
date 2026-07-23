@@ -9,14 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from packaging.version import InvalidVersion, Version
-
-from backend.training.core_registry import MUSUBI_TUNER_DIR, get_engine
+from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 
 
 KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
@@ -32,24 +30,10 @@ _ATTENTION_FLAGS = {
     "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
-_MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
-    "accelerate": "1.6.0",
-    "av": "14.0.1",
-    "bitsandbytes": None,
-    "diffusers": "0.32.1",
-    "einops": "0.7.0",
-    "huggingface-hub": "0.34.3",
-    "opencv-python": "4.10.0.84",
-    "pillow": ">=11.3.0",
-    "safetensors": "0.4.5",
-    "toml": "0.10.2",
-    "easydict": "1.13",
-    "tqdm": "4.67.1",
-    "transformers": "4.57.6",
-    "voluptuous": "0.15.2",
-    "ftfy": "6.3.1",
-    "sentencepiece": "0.2.1",
-}
+# Compatibility alias for integrations which imported the previous private
+# constant. The authoritative contract now lives in musubi_runtime and is
+# shared by launchers, the Environment tab, and Krea preflight.
+_MUSUBI_RUNTIME_PACKAGES = MUSUBI_RUNTIME_PACKAGES
 
 
 # Kept separate from the legacy FIELDS registry. field_registry.get_fields_json
@@ -863,74 +847,6 @@ def build_krea2_train_config(
     return result
 
 
-def _musubi_runtime_versions() -> tuple[dict[str, str | None], str | None]:
-    """Read versions from musubi's isolated core interpreter.
-
-    Inspecting metadata in the web-server interpreter would inspect
-    sd-scripts' environment instead, defeating dependency isolation.
-    """
-    runtime_python = get_engine("musubi_tuner").python_executable
-    if runtime_python is None or not runtime_python.is_file():
-        return {}, (
-            "musubi core virtual environment is not installed / "
-            f"musubi 核心虚拟环境未安装: {runtime_python}"
-        )
-
-    probe = (
-        "import importlib.metadata as m, json, torch, accelerate, av, cv2, diffusers, einops, ftfy, safetensors, sentencepiece, toml, voluptuous; "
-        "from PIL import Image; from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration; "
-        "installed={d.metadata['Name'].lower():d.version for d in m.distributions() if d.metadata.get('Name')}; "
-        f"names={tuple(_MUSUBI_RUNTIME_PACKAGES)!r}; "
-        "print(json.dumps({name: installed.get(name.lower()) for name in names}))"
-    )
-    try:
-        completed = subprocess.run(
-            [str(runtime_python), "-X", "utf8", "-c", probe],
-            cwd=MUSUBI_TUNER_DIR,
-            capture_output=True,
-            encoding="utf-8",
-            errors="strict",
-            timeout=15,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {}, f"failed to inspect musubi runtime / 无法检查 musubi 运行环境: {exc}"
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()[:500]
-        return {}, f"failed to inspect musubi runtime / 无法检查 musubi 运行环境: {detail}"
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        return {}, f"invalid musubi runtime probe result / musubi 运行环境检查结果无效: {exc}"
-    if not isinstance(payload, dict):
-        return {}, "invalid musubi runtime probe result / musubi 运行环境检查结果无效"
-    return {str(key): (str(value) if value is not None else None) for key, value in payload.items()}, None
-
-
-def _runtime_version_error(package_name: str, expected: str | None, installed: str) -> str | None:
-    """Return an actionable version mismatch message, if any."""
-
-    if expected is None:
-        return None
-    if expected.startswith(">="):
-        minimum = expected[2:]
-        try:
-            if Version(installed) >= Version(minimum):
-                return None
-        except InvalidVersion:
-            pass
-        return (
-            f"{package_name} must be {expected}, found {installed} / "
-            f"{package_name} 版本必须为 {expected}，当前为 {installed}"
-        )
-    if installed == expected:
-        return None
-    return (
-        f"{package_name} must be {expected}, found {installed} / "
-        f"{package_name} 版本必须为 {expected}，当前为 {installed}"
-    )
-
-
 def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[str, Any]:
     """Check runtime, dependency, local model and cache readiness before launch."""
 
@@ -942,17 +858,8 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
             f"musubi-tuner source is not installed / musubi-tuner 源码未安装: {MUSUBI_TUNER_DIR}"
         )
 
-    installed_packages, probe_error = _musubi_runtime_versions()
-    if probe_error:
-        errors.append(probe_error)
-    for package_name, expected in _MUSUBI_RUNTIME_PACKAGES.items():
-        installed = installed_packages.get(package_name)
-        if installed is None:
-            errors.append(f"{package_name} is not installed / 未安装 {package_name}")
-            continue
-        version_error = _runtime_version_error(package_name, expected, installed)
-        if version_error:
-            errors.append(version_error)
+    runtime = shared_runtime_status()
+    errors.extend(runtime["errors"])
 
     for key, label in (("dit", "Krea 2 RAW DiT"), ("vae", "Qwen-Image VAE"), ("text_encoder", "Qwen3-VL text encoder")):
         path = Path(str(config.get(key) or ""))
@@ -970,7 +877,7 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
             "Krea 2 latent 与文本缓存缺失或已失效，请先生成缓存"
         )
 
-    return {"ok": not errors, "errors": errors, "cache": cache_status}
+    return {"ok": not errors, "errors": errors, "cache": cache_status, "runtime": runtime}
 
 
 def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:

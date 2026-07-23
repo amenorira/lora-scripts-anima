@@ -958,36 +958,23 @@ function Install-ProjectEnvironment {
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") (Join-Path $script:RepositoryRoot "vendor\sd-scripts")
     Write-Text "install_project" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") $script:RepositoryRoot
-    Install-MusubiCoreEnvironment $venvPython
+    Ensure-MusubiSharedRuntime $venvPython
     Write-Text "install_done" -Color Green
 }
 
-function Install-MusubiCoreEnvironment {
+function Ensure-MusubiSharedRuntime {
     param([string]$HostPython)
 
-    # musubi-tuner requires transformers 4.57.6 whereas sd-scripts pins
-    # 4.54.1. A child venv does not inherit its parent venv's packages, so
-    # configure a read-only .pth bridge after creation: musubi-local packages
-    # stay first on sys.path while CUDA PyTorch remains in the main venv.
-    $coreVenv = Join-Path $script:RepositoryRoot "venv\cores\musubi"
-    $corePython = Join-Path $coreVenv "Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $corePython)) {
-        Write-Text "musubi_venv_creating" -Color Cyan
-        Invoke-ProcessWithSpinner $HostPython @("-m", "venv", $coreVenv) (Get-Text "musubi_venv_creating")
-        if (-not (Test-Path -LiteralPath $corePython)) { throw "musubi core python.exe was not created" }
-        Invoke-PipInstall $corePython @("install", "--upgrade", "pip")
-    }
-    $hostSitePackages = @(& $HostPython -X utf8 -c "import site; print(site.getsitepackages()[0])")[-1]
-    if ($LASTEXITCODE -ne 0 -or -not $hostSitePackages) { throw "could not locate main venv site-packages" }
-    $hostSitePackages = ([string]$hostSitePackages).Trim()
-    if (-not (Test-Path -LiteralPath $hostSitePackages -PathType Container)) {
-        throw "main venv site-packages does not exist: $hostSitePackages"
-    }
-    $overlayHelper = Join-Path $script:RepositoryRoot "tools\configure_musubi_overlay.py"
-    & $corePython -X utf8 $overlayHelper "--host-site-packages" $hostSitePackages
-    if ($LASTEXITCODE -ne 0) { throw "failed to configure musubi dependency overlay" }
+    # vendor/sd-scripts is intentionally installed first. This project-owned
+    # requirement file is the final authority for the shared Krea 2 runtime.
+    # The check is local and idempotent: healthy launches do not invoke pip.
+    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check
+    if ($LASTEXITCODE -eq 0) { return }
+
     Write-Text "install_musubi" -Color Cyan
-    Invoke-PipInstall $corePython @("install", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
+    Invoke-PipInstall $HostPython @("install", "--upgrade-strategy", "only-if-needed", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
+    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check
+    if ($LASTEXITCODE -ne 0) { throw "musubi shared runtime verification failed" }
 }
 
 function Invoke-MainBootstrap {
@@ -1025,16 +1012,12 @@ function Invoke-MainBootstrap {
         }
         Install-ProjectEnvironment $python.Path
     }
-    $musubiPython = Join-Path $script:RepositoryRoot "venv\cores\musubi\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $musubiPython)) {
-        Install-MusubiCoreEnvironment $venvPython
-    }
-
     Set-Location $script:RepositoryRoot
     & $venvPython -X utf8 -m tools.ensure_runtime
     if ($LASTEXITCODE -ne 0) {
         throw (Get-Text "process_failed" @("CUDA 13.0 runtime upgrade", $LASTEXITCODE))
     }
+    Ensure-MusubiSharedRuntime $venvPython
 
     $env:HF_HOME = Join-Path $script:RepositoryRoot "huggingface"
     $env:PYTHONUTF8 = "1"

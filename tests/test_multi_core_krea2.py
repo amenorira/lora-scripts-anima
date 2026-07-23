@@ -6,17 +6,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.training.core_registry import (
-    MAIN_VENV_SITE_PACKAGES,
-    MUSUBI_VENV_SITE_PACKAGES,
     TrainingProfileError,
+    engine_pythonpaths,
+    get_engine,
     profile_payload,
     resolve_training_profile,
 )
 from backend.training.field_registry import get_fields_json
 from backend.training.step_estimator import estimate_training_steps
+from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, version_error
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS,
-    _MUSUBI_RUNTIME_PACKAGES,
     build_krea2_dataset_config,
     build_krea2_train_config,
     get_krea2_cache_status,
@@ -73,9 +73,13 @@ class CoreRegistryTests(unittest.TestCase):
             )
 
     def test_capabilities_expose_engines_profiles_and_adapters(self):
-        payload = profile_payload()
+        runtime = {"ok": True, "errors": [], "versions": {}, "python": "main", "torch_path": "torch", "torch_cuda": "13.0"}
+        with patch("backend.training.musubi_runtime.shared_runtime_status", return_value=runtime):
+            payload = profile_payload()
 
-        self.assertTrue(any(item["id"] == "musubi_tuner" for item in payload["engines"]))
+        musubi = next(item for item in payload["engines"] if item["id"] == "musubi_tuner")
+        self.assertTrue(musubi["available"])
+        self.assertIsNone(musubi["python_executable"])
         self.assertTrue(any(item["id"] == "krea2-lora" for item in payload["profiles"]))
         lycoris = next(item for item in payload["adapters"] if item["id"] == "lycoris")
         self.assertTrue(lycoris["mounted"])
@@ -141,17 +145,26 @@ class Krea2CodecTests(unittest.TestCase):
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
 
-    def test_preflight_uses_the_isolated_musubi_runtime(self):
+    def test_preflight_uses_the_shared_main_runtime_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
             versions = {
                 name: ("11.3.0" if expected == ">=11.3.0" else "0.0.0" if expected is None else expected)
-                for name, expected in _MUSUBI_RUNTIME_PACKAGES.items()
+                for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
             }
-            with patch("backend.training.musubi_krea2._musubi_runtime_versions", return_value=(versions, None)):
+            runtime = {
+                "ok": True,
+                "errors": [],
+                "versions": versions,
+                "python": "main",
+                "torch_path": "main/torch",
+                "torch_cuda": "13.0",
+            }
+            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value=runtime):
                 preflight = krea2_preflight(config, require_cache=False)
 
         self.assertTrue(preflight["ok"], preflight["errors"])
+        self.assertEqual(preflight["runtime"]["python"], "main")
 
     def test_generic_validation_and_step_api_dispatch_to_krea_codec(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -175,18 +188,53 @@ class MultiCoreSupervisorTests(unittest.TestCase):
         self.assertNotIn("LORA_SCRIPTS_TRUE_LR_LOGGING", env)
         self.assertIn("vendor" + os.sep + "musubi-tuner" + os.sep + "src", env["PYTHONPATH"])
         paths = env["PYTHONPATH"].split(os.pathsep)
-        self.assertLess(paths.index(str(MUSUBI_VENV_SITE_PACKAGES)), paths.index(str(MAIN_VENV_SITE_PACKAGES)))
+        self.assertEqual(paths[0], str(engine_pythonpaths("musubi_tuner")[0]))
+        self.assertIsNone(get_engine("musubi_tuner").python_executable)
+        self.assertNotIn("venv" + os.sep + "cores" + os.sep + "musubi", env["PYTHONPATH"])
 
-    def test_musubi_overlay_is_configured_by_both_launchers(self):
+    def test_musubi_shared_runtime_is_converged_by_both_launchers(self):
         windows = Path("tools/bootstrap_windows.ps1").read_text(encoding="utf-8")
         linux = Path("start.sh").read_text(encoding="utf-8")
-        overlay_helper = Path("tools/configure_musubi_overlay.py").read_text(encoding="utf-8")
+        requirements = Path("requirements-musubi-krea2.txt").read_text(encoding="utf-8")
 
-        self.assertIn("configure_musubi_overlay.py", windows)
-        self.assertIn("configure_musubi_overlay.py", linux)
+        self.assertIn("tools.ensure_musubi_runtime", windows)
+        self.assertIn("tools.ensure_musubi_runtime", linux)
         self.assertIn("requirements-musubi-krea2.txt", windows)
         self.assertIn("requirements-musubi-krea2.txt", linux)
-        self.assertIn("anima_host_venv.pth", overlay_helper)
+        self.assertIn("--upgrade-strategy", windows)
+        self.assertIn("--upgrade-strategy", linux)
+        self.assertNotIn("configure_musubi_overlay.py", windows)
+        self.assertNotIn("configure_musubi_overlay.py", linux)
+        self.assertNotIn("venv\\cores\\musubi", windows)
+        self.assertNotIn("venv/cores/musubi", linux)
+        self.assertIn("transformers==4.57.6", requirements)
+        self.assertIn("tokenizers==0.22.2", requirements)
+
+
+class MusubiRuntimeContractTests(unittest.TestCase):
+    def test_shared_requirements_match_the_runtime_contract(self):
+        from packaging.requirements import Requirement
+
+        requirement_lines = Path("requirements-musubi-krea2.txt").read_text(encoding="utf-8").splitlines()
+        requirements = {
+            requirement.name.lower(): str(requirement.specifier)
+            for raw_line in requirement_lines
+            for line in (raw_line.split("#", 1)[0].strip(),)
+            if line
+            for requirement in (Requirement(line),)
+        }
+        expected = {
+            name: "" if version is None else version if version.startswith(">=") else f"=={version}"
+            for name, version in MUSUBI_RUNTIME_PACKAGES.items()
+            if name not in {"torch", "torchvision"}
+        }
+
+        self.assertEqual(requirements, expected)
+
+    def test_cuda_local_version_satisfies_musubi_minimum(self):
+        self.assertIsNone(version_error("torch", ">=2.9.1", "2.10.0+cu130"))
+        self.assertIsNone(version_error("torchvision", ">=0.24.1", "0.25.0+cu130"))
+        self.assertIsNotNone(version_error("transformers", "4.57.6", "4.54.1"))
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):
@@ -198,6 +246,7 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("/api/training/krea2/cache", training_toml)
         self.assertIn("krea2-lora", training_toml)
         self.assertIn("/api/training/cores", environment)
+        self.assertIn("runtime_errors", Path("frontend/js/environment-render.js").read_text(encoding="utf-8"))
         self.assertIn("prepareKrea2Cache()", form)
 
 

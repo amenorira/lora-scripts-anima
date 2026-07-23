@@ -1,13 +1,13 @@
-# musubi-tuner Krea 2 core overlay
+# Shared musubi-tuner Krea 2 runtime
 #
-# This file is installed only into venv/cores/musubi.  The core venv receives
-# the main venv's CUDA-enabled torch/torchvision through a read-only .pth
-# bridge, while all musubi dependency versions below remain local to the core.
-# sd-scripts pins transformers==4.54.1; do not merge this file into
-# requirements.txt.
+# The launcher installs vendor/sd-scripts/requirements.txt first, then this
+# application-owned file last. That makes this version set authoritative for
+# both sd-scripts and musubi without modifying either upstream repository.
 #
-# Direct runtime requirements mirror musubi-tuner 0.3.4's pyproject, excluding
-# torch and torchvision because those must remain the project's CUDA 13 build.
+# Do not add torch or torchvision here: the main environment's CUDA 13 build
+# is installed before either upstream requirement set and is shared by every
+# training core. tools.ensure_musubi_runtime prevents repeated pip work once
+# these versions are already present.
 
 accelerate==1.6.0
 av==14.0.1
@@ -21,6 +21,7 @@ safetensors==0.4.5
 toml==0.10.2
 tqdm==4.67.1
 transformers==4.57.6
+tokenizers==0.22.2
 voluptuous==0.15.2
 ftfy==6.3.1
 easydict==1.13

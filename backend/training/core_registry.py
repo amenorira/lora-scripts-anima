@@ -9,30 +9,13 @@ explicit while preserving the legacy model_train_type values.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import os
 from pathlib import Path
 from typing import Any
 
-from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT
+from backend.constants import SD_SCRIPTS_DIR, VENDOR_ROOT
 
 
 MUSUBI_TUNER_DIR = VENDOR_ROOT / "musubi-tuner"
-MUSUBI_VENV_DIR = REPO_ROOT / "venv" / "cores" / "musubi"
-MUSUBI_PYTHON = MUSUBI_VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-MAIN_VENV_DIR = REPO_ROOT / "venv"
-
-
-def venv_site_packages(venv_dir: Path) -> Path:
-    """Return the conventional site-packages directory without importing its Python."""
-
-    if os.name == "nt":
-        return venv_dir / "Lib" / "site-packages"
-    candidates = sorted((venv_dir / "lib").glob("python*/site-packages"))
-    return candidates[0] if candidates else venv_dir / "lib" / "site-packages"
-
-
-MAIN_VENV_SITE_PACKAGES = venv_site_packages(MAIN_VENV_DIR)
-MUSUBI_VENV_SITE_PACKAGES = venv_site_packages(MUSUBI_VENV_DIR)
 
 
 class TrainingProfileError(ValueError):
@@ -94,11 +77,9 @@ ENGINES: dict[str, TrainingEngine] = {
         pythonpath=(MUSUBI_TUNER_DIR / "src",),
         uses_sd_scripts_hooks=False,
         description=(
-            "Independent musubi-tuner runtime for Krea 2 and future profiles; "
-            "uses a dedicated venv with a read-only bridge to the main CUDA/PyTorch stack, "
-            "so its transformers dependency cannot alter sd-scripts."
+            "musubi-tuner Krea 2 runtime using the shared main CUDA/PyTorch environment; "
+            "application-owned requirements are reconciled after sd-scripts without modifying upstream files."
         ),
-        python_executable=MUSUBI_PYTHON,
     ),
 }
 
@@ -246,46 +227,47 @@ def profile_payload() -> dict[str, Any]:
     """Return a JSON-safe capability summary for environment/UI consumers."""
 
     engines = []
+    engine_availability: dict[str, bool] = {}
     for engine in ENGINES.values():
         item = asdict(engine)
         item["root"] = str(engine.root)
         item["pythonpath"] = [str(path) for path in engine.pythonpath]
-        if engine.python_executable is not None:
+        if engine.id == "musubi_tuner":
+            # Keep the Environment tab honest: a source tree alone is not
+            # enough if a manual sd-scripts install restored transformers 4.54.
+            from backend.training.musubi_runtime import shared_runtime_status
+
+            runtime = shared_runtime_status()
+            item["python_executable"] = None
+            item["runtime_ready"] = runtime["ok"]
+            item["runtime_errors"] = runtime["errors"]
+            item["runtime_versions"] = runtime["versions"]
+        elif engine.python_executable is not None:
             item["python_executable"] = str(engine.python_executable)
             item["runtime_ready"] = engine.python_executable.is_file()
         else:
             item["python_executable"] = None
             item["runtime_ready"] = True
         item["available"] = engine.root.is_dir() and item["runtime_ready"]
+        engine_availability[engine.id] = item["available"]
         engines.append(item)
 
     profiles = []
     for profile in PROFILES.values():
         item = asdict(profile)
-        engine = ENGINES[profile.engine_id]
-        item["available"] = engine.root.is_dir() and (
-            engine.python_executable is None or engine.python_executable.is_file()
-        )
+        item["available"] = engine_availability[profile.engine_id]
         profiles.append(item)
 
     adapters = []
     for adapter in ADAPTERS.values():
         item = asdict(adapter)
-        host = ENGINES[adapter.host_engine_id]
-        item["available"] = host.root.is_dir() and (
-            host.python_executable is None or host.python_executable.is_file()
-        )
+        item["available"] = engine_availability[adapter.host_engine_id]
         adapters.append(item)
 
     return {"engines": engines, "profiles": profiles, "adapters": adapters}
 
 
 def engine_pythonpaths(engine_id: str) -> tuple[Path, ...]:
-    engine = get_engine(engine_id)
-    if engine.id == "musubi_tuner":
-        # PYTHONPATH has higher priority than the interpreter's automatic
-        # site directories. Put the isolated core before the read-only host
-        # bridge so transformers/diffusers resolve from musubi, while torch
-        # and torchvision resolve from the main CUDA-enabled environment.
-        return (*engine.pythonpath, MUSUBI_VENV_SITE_PACKAGES, MAIN_VENV_SITE_PACKAGES)
-    return engine.pythonpath
+    """Return source-only paths; every engine uses the main application venv."""
+
+    return get_engine(engine_id).pythonpath

@@ -320,8 +320,8 @@ window.environmentRenderMixin = {
   },
 
   // The registry is intentionally separate from the legacy sd-scripts card:
-  // it makes the mounted LyCORIS adapter and the isolated musubi runtime
-  // visible without suggesting that they share a Python dependency set.
+  // it makes the mounted LyCORIS adapter and the shared musubi runtime
+  // visible, including whether the common Krea dependency set is healthy.
   _renderCoreRegistryRow(T) {
     const registry = this.trainingCores;
     const error = this.trainingCoresError;
@@ -349,10 +349,14 @@ window.environmentRenderMixin = {
         const status = engine.available
           ? `<span class="env-badge env-badge-ok">${T('coreReady', 'Ready')}</span>`
           : `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`;
-        const runtime = engine.python_executable
+      const runtime = engine.python_executable
           ? `<code>${this.esc(engine.python_executable)}</code>`
           : `<span class="env-text-dim">${T('coreRuntime', 'Main application venv')}</span>`;
-        return `<div class="env-model-item"><div class="env-model-item-top"><div class="env-model-item-main"><div class="env-model-item-name">${this.esc(engine.label || engine.id)}</div><div class="env-model-item-desc">${this.esc(engine.description || '')}</div><div class="env-model-destpath">${this.esc(engine.root || '')}</div></div><div class="env-model-item-action">${status}</div></div><div class="env-model-item-status">${runtime}</div></div>`;
+        const runtimeErrors = Array.isArray(engine.runtime_errors) ? engine.runtime_errors : [];
+        const runtimeProblem = runtimeErrors.length
+          ? `<div class="env-msg env-msg-warn"><pre>${this.esc(runtimeErrors.join('\n'))}</pre></div>`
+          : '';
+        return `<div class="env-model-item"><div class="env-model-item-top"><div class="env-model-item-main"><div class="env-model-item-name">${this.esc(engine.label || engine.id)}</div><div class="env-model-item-desc">${this.esc(engine.description || '')}</div><div class="env-model-destpath">${this.esc(engine.root || '')}</div></div><div class="env-model-item-action">${status}</div></div><div class="env-model-item-status">${runtime}</div>${runtimeProblem}</div>`;
       }).join('');
       h += this._renderDetailGroup(T('coreRuntime', 'Runtime'), `<div class="env-model-list">${engineRows}</div>`);
 

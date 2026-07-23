@@ -1234,7 +1234,7 @@
 	"opt": {
 		"model_train_type_sdxl-lora": "Stable Diffusion XL 系列模型 LoRA 训练",
 		"model_train_type_anima-lora": "基于 NVIDIA Cosmos-Predict2-2B 衍生的 Diffusion Transformer (DiT) 架构模型",
-		"model_train_type_krea2-lora": "Krea 2 LoRA 训练（musubi-tuner 独立核心）",
+		"model_train_type_krea2-lora": "Krea 2 LoRA 训练（musubi-tuner 共享运行时）",
 		"save_model_as_safetensors": "SafeTensors 格式，安全且加载快，推荐使用",
 		"save_model_as_pt": "PyTorch 原生格式，兼容性好",
 		"save_model_as_diffusers_safetensors": "Diffusers SafeTensors 格式，适用于 Diffusers 生态",

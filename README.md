@@ -70,7 +70,7 @@ lora-scripts-anima/
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
 ├── start.bat / start.sh        ← 启动脚本
 ├── requirements.txt            ← 主应用 / sd-scripts 依赖
-└── requirements-musubi-krea2.txt ← musubi 隔离核心依赖
+└── requirements-musubi-krea2.txt ← 主环境的 Krea 2 版本收敛依赖
 ```
 
 # 使用方法
@@ -96,7 +96,9 @@ lora-scripts-anima/
 
 已有 cu128 `venv` 会在下次启动时自动升级；已经安装的 xformers、FlashAttention、Triton 和 bitsandbytes 会同步匹配 cu130，ONNX Runtime GPU 会切换到 CUDA 13 对应版本，未安装的可选库保持不变。无 NVIDIA 显卡的机器仍会安装完整 GPU 环境并正常运行 GUI，仅训练功能需要显卡。
 
-> **Krea 2 核心环境**：启动脚本会额外创建 `venv/cores/musubi`。该环境的 musubi 依赖（包括 `transformers 4.57.6`）与主环境隔离；它只读复用主环境已安装的 CUDA PyTorch，因此不会把 sd-scripts 所需的 `transformers 4.54.1` 升级或替换。
+> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和 CUDA PyTorch。启动器先安装上游 sd-scripts 依赖，再以本项目的 `requirements-musubi-krea2.txt` 将共享版本收敛到 `transformers 4.57.6` / `tokenizers 0.22.2`；每次启动只做本地检查，版本正确时不会重复运行 pip 或卸载重装。不会修改 `vendor/` 中的上游依赖文件。
+
+> 从旧版本遗留的 `venv/cores/musubi` 不再被读取、写入或自动删除；确认新主环境可正常训练后，可由用户自行删除以回收磁盘空间。
 
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
@@ -205,7 +207,7 @@ python tools/install_flash_attn.py --yes        # 非交互自动安装
 GUI 的 **环境** 标签页提供：
 - Python / PyTorch / CUDA 版本信息
 - sd-scripts、挂载式 LyCORIS 与 musubi-tuner 核心状态
-- musubi 独立环境状态（它复用主环境的 CUDA PyTorch，但不会修改 sd-scripts 的依赖）
+- musubi Krea 2 共享运行时状态（与 sd-scripts 共用 CUDA PyTorch，并显示版本是否已收敛）
 - Flash Attention 安装状态检测与一键安装
 - 候选 wheel 列表预览
 

@@ -6,7 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
-MUSUBI_VENV_PYTHON="$SCRIPT_DIR/venv/cores/musubi/bin/python"
 
 QUIET=0
 for arg in "$@"; do
@@ -116,29 +115,21 @@ _fix_pip_mirror() {
 }
 
 # -- Install function --
-do_install_musubi_core() {
+ensure_musubi_shared_runtime() {
     if [ ! -f "$VENV_PYTHON" ]; then
-        echo "[ERROR] Main venv is required before the musubi core. / musubi 核心需要主 venv。"
+        echo "[ERROR] Main venv is required before Krea 2 runtime synchronization. / 同步 Krea 2 运行时前需要主 venv。"
         exit 1
     fi
 
-    if [ ! -f "$MUSUBI_VENV_PYTHON" ]; then
-        echo "Creating isolated musubi core venv... / 正在创建隔离的 musubi 核心 venv……"
-        mkdir -p "$SCRIPT_DIR/venv/cores"
-        "$VENV_PYTHON" -m venv "$SCRIPT_DIR/venv/cores/musubi" || { echo "[ERROR] Failed to create musubi core venv. / 创建 musubi 核心 venv 失败。"; exit 1; }
-        "$MUSUBI_VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
+    # vendor/sd-scripts is installed before this project-owned requirement
+    # file. Check first so normal launches do not download or rewrite packages.
+    if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
+        return
     fi
 
-    local host_site_packages
-    host_site_packages="$("$VENV_PYTHON" -X utf8 -c 'import site; print(site.getsitepackages()[0])')"
-    if [ ! -d "$host_site_packages" ]; then
-        echo "[ERROR] Main venv site-packages was not found. / 未找到主 venv 的 site-packages。"
-        exit 1
-    fi
-    "$MUSUBI_VENV_PYTHON" -X utf8 "$SCRIPT_DIR/tools/configure_musubi_overlay.py" --host-site-packages "$host_site_packages" || { echo "[ERROR] Failed to configure musubi dependency overlay. / 配置 musubi 依赖桥接失败。"; exit 1; }
-
-    echo "[4/4] Installing musubi-tuner Krea 2 core dependencies... / 正在安装 musubi-tuner Krea 2 核心依赖……"
-    "$MUSUBI_VENV_PYTHON" -m pip install -r "$SCRIPT_DIR/requirements-musubi-krea2.txt" || { echo "[ERROR] musubi-tuner dependencies install failed. / musubi-tuner 依赖安装失败。"; exit 1; }
+    echo "[4/4] Synchronizing shared musubi-tuner Krea 2 dependencies... / 正在同步主环境的 musubi-tuner Krea 2 依赖……"
+    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements-musubi-krea2.txt" || { echo "[ERROR] musubi-tuner dependencies install failed. / musubi-tuner 依赖安装失败。"; exit 1; }
+    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check || { echo "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
 }
 
 do_install() {
@@ -169,7 +160,7 @@ do_install() {
     "$VENV_PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
 
-    do_install_musubi_core
+    ensure_musubi_shared_runtime
 
     echo ""
     echo "[Done] Installation complete! / 安装完成！"
@@ -205,17 +196,15 @@ if [ ! -f "$VENV_PYTHON" ]; then
     fi
 fi
 
-if [ ! -f "$MUSUBI_VENV_PYTHON" ]; then
-    echo "[Notice] musubi-tuner Krea 2 core is not installed; provisioning it now. / 未安装 musubi-tuner Krea 2 核心，正在补齐。"
-    do_install_musubi_core
-fi
-
 # -- Managed CUDA runtime migration --
 "$VENV_PYTHON" -X utf8 -m tools.ensure_runtime
 if [ $? -ne 0 ]; then
     echo "[ERROR] CUDA 13.0 runtime synchronization failed. / CUDA 13.0 运行时同步失败。"
     exit 1
 fi
+
+# -- Shared Krea 2 dependency convergence --
+ensure_musubi_shared_runtime
 
 # -- Launch --
 echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
