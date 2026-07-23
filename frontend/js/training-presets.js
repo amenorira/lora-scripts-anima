@@ -818,7 +818,7 @@ window.trainingPresetsMixin = {
     const a = document.createElement('a');
     const isKrea2Preset = this.form.model_train_type === 'krea2-lora';
     a.href = url;
-    a.download = (this.form.output_name || 'config') + (isKrea2Preset ? '-anima-krea2-preset.toml' : '.toml');
+    a.download = (this.form.output_name || 'config') + (isKrea2Preset ? '-krea2-preset.toml' : '.toml');
     a.click();
     URL.revokeObjectURL(url); this.toast(this.t('common.downloaded'));
   },

@@ -21,7 +21,8 @@ KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
 KREA2_NETWORK_MODULE = "networks.lora_krea2"
-KREA2_CACHE_MANIFEST_NAME = ".anima-krea2-cache.json"
+KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
+_LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 _ATTENTION_FLAGS = {
@@ -999,6 +1000,29 @@ def cache_manifest_path(cache_dir: str | Path) -> Path:
     return Path(cache_dir) / KREA2_CACHE_MANIFEST_NAME
 
 
+def _read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
+    """Read the current manifest first, with a one-way compatibility fallback.
+
+    Earlier builds called the Krea-specific cache file ``.anima-krea2-cache``.
+    That was only an application-owned filename, never an upstream model
+    setting, but it incorrectly suggested an Anima/Krea relationship.  Keep
+    old cache metadata readable so renaming it does not make users recache.
+    """
+
+    directory = Path(cache_dir)
+    paths = (cache_manifest_path(directory),) + tuple(
+        directory / name for name in _LEGACY_KREA2_CACHE_MANIFEST_NAMES
+    )
+    for path in paths:
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(manifest, dict):
+            return manifest, path
+    return {}, cache_manifest_path(directory)
+
+
 def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     """Persist a pending cache request before the worker process starts."""
 
@@ -1022,9 +1046,8 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> None:
     """Mark a full two-stage cache pipeline completed or failed."""
 
     path = cache_manifest_path(config["dataset_cache_dir"])
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
+    if not manifest:
         manifest = prepare_cache_manifest(config)
     stage_state = "completed" if status == "completed" else "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
@@ -1047,11 +1070,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         ]
         text_files = list(cache_dir.glob("*_krea2_te.safetensors"))
 
-    manifest: dict[str, Any] = {}
-    try:
-        manifest = json.loads(cache_manifest_path(cache_dir).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        pass
+    manifest, _ = _read_cache_manifest(cache_dir)
 
     try:
         fingerprint = krea2_cache_fingerprint(config)

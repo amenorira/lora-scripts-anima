@@ -269,6 +269,22 @@ class Krea2CodecTests(unittest.TestCase):
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
 
+    def test_legacy_anima_named_cache_manifest_remains_readable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            cache = Path(config["dataset_cache_dir"])
+            cache.mkdir()
+            (cache / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
+            (cache / "portrait_krea2_te.safetensors").write_bytes(b"text")
+            prepare_cache_manifest(config)
+            mark_cache_manifest(config, "completed")
+            (cache / ".krea2-cache.json").rename(cache / ".anima-krea2-cache.json")
+
+            status = get_krea2_cache_status(config)
+
+        self.assertTrue(status["ready"])
+
     def test_preflight_uses_the_shared_main_runtime_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
@@ -428,8 +444,9 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertNotIn('<generated dataset.toml>', training_toml)
         self.assertNotIn('<managed run output directory>', training_toml)
         self.assertIn('model_train_type = "krea2-lora"', training_toml)
-        self.assertIn("Safe to copy, download, and import back into Anima.", training_toml)
-        self.assertIn("-anima-krea2-preset.toml", training_presets)
+        self.assertIn("# Krea 2 preset (musubi-tuner)", training_toml)
+        self.assertNotIn("Anima Krea 2", training_toml)
+        self.assertIn("-krea2-preset.toml", training_presets)
 
 
 if __name__ == "__main__":

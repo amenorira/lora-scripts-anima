@@ -205,9 +205,9 @@ window.trainingTomlMixin = {
       return quote(value);
     };
     const lines = [
-      '# Anima Krea 2 preset (musubi-tuner)',
-      '# Safe to copy, download, and import back into Anima.',
-      '# At launch Anima writes the actual musubi config.toml and dataset.toml into the run directory.',
+      '# Krea 2 preset (musubi-tuner)',
+      '# Safe to copy, download, and import back into this application.',
+      '# At launch the application writes the actual musubi config.toml and dataset.toml into the run directory.',
       '# output_dir below is the selected base directory; a new output_name_timestamp child is created per run.',
       'model_train_type = "krea2-lora"',
     ];
