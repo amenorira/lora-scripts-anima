@@ -592,7 +592,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
                 flex_tokens = dropout_tags(flex_tokens)
 
-                caption = ", ".join(fixed_tokens + flex_tokens + fixed_suffix_tokens)
+                caption = f"{subset.caption_separator} ".join(fixed_tokens + flex_tokens + fixed_suffix_tokens)
 
             # process secondary separator
             if subset.secondary_separator:

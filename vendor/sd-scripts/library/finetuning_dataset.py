@@ -189,9 +189,11 @@ class FineTuningDataset(BaseDataset):
 
                     # add tags to each line of caption
                     if tags is not None:
-                        caption = "\n".join(
-                            [f"{line}{subset.caption_separator}{tags}" for line in caption.split("\n") if line.strip() != ""]
-                        )
+                        caption_lines = [line for line in caption.split("\n") if line.strip() != ""]
+                        if caption_lines:
+                            caption = "\n".join([f"{line}{subset.caption_separator}{tags}" for line in caption_lines])
+                        else:
+                            caption = tags  # no caption lines (e.g. tags-only metadata), use tags as is
                         tags_list.append(tags)
                 else:
                     # use as is

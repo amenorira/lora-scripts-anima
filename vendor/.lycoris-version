@@ -1,0 +1,16 @@
+# Upstream Version Tracking
+# This file records which commit of KohakuBlueleaf/LyCORIS the vendored
+# Python package (vendor/lycoris/) is based on.
+
+[upstream]
+repo = "KohakuBlueleaf/LyCORIS"
+branch = "main"
+commit = "a72bb1bcc9094b25f0bb5340e5e62eacf540f188"
+sync_date = "2026-07-23T00:00:00+08:00"
+tag = "main@a72bb1b"
+last_check = "2026-07-23"
+
+[local]
+# vendor/lycoris is the upstream repository's lycoris/ package subtree.
+source_subdirectory = "lycoris"
+modifications = []

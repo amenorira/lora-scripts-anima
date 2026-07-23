@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 同步 vendored `sd-scripts` 至 `6565877`（`v0.11.1-9-g6565877`），补齐 Anima aesthetics 权重键名兼容，并修复自定义 caption 分隔符与 tags-only metadata 的数据集处理。
+- 同步 vendored LyCORIS 至 `a72bb1b`，加入 weight-only FP8 旁路支持及新模型模块匹配；现有 Anima 模块匹配保持兼容。
 - 默认训练环境从 PyTorch 2.10.0 + cu128 升级到 cu130；新安装直接使用 cu130，已有 `venv` 在下次启动时自动迁移。
 - 自动重新匹配已安装的 xformers、FlashAttention、Triton 和 bitsandbytes，并将 ONNX Runtime GPU 切换到 CUDA 13 对应版本。
 - 保持无 NVIDIA 显卡环境可完整安装并运行 GUI，收敛预期的 CUDA 探测警告，并修复同次启动中依赖版本缓存未刷新导致的 ONNX Runtime 误卸载。

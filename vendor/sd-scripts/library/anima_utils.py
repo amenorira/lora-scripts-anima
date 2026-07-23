@@ -103,7 +103,18 @@ def load_anima_model(
 
     # load model weights with dynamic fp8 optimization and LoRA merging if needed
     logger.info(f"Loading DiT model from {dit_path}, device={loading_device}")
-    rename_hooks = WeightTransformHooks(rename_hook=lambda k: k[len("net.") :] if k.startswith("net.") else k)
+
+    def rename_hook(key: str) -> str:
+        # Rename keys to remove "net." prefix for anima-base-v1.0.safetensors and previous versions
+        if key.startswith("net."):
+            return key[len("net.") :]
+        # Also remove "model.diffusion_model." prefix for anima-aesthetics-v1.0.safetensors and later versions
+        if key.startswith("model.diffusion_model."):
+            return key[len("model.diffusion_model.") :]
+        return key
+
+    rename_hooks = WeightTransformHooks(rename_hook=rename_hook)
+
     sd = load_safetensors_with_lora_and_fp8(
         model_files=dit_path,
         lora_weights_list=lora_weights_list,
