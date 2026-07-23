@@ -185,7 +185,7 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["max_grad_norm"], 0.5)
         self.assertEqual(estimate["total_steps"], 321)
 
-    def test_optimizer_menu_exposes_musubi_paths_and_safe_scheduler_surface(self):
+    def test_optimizer_menu_separates_recommended_and_advanced_surface(self):
         fields = get_fields_json()
         optimizer_fields = [
             field
@@ -201,20 +201,44 @@ class Krea2CodecTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(optimizer_fields), 1)
-        optimizer_values = {
-            option["v"]
+        optimizer_groups = {
+            group["labelKey"]: {option["v"] for option in group["options"]}
             for group in optimizer_fields[0]["groups"]
-            for option in group["options"]
         }
-        self.assertTrue(
+        self.assertSetEqual(
+            optimizer_groups["opt.krea_optimizer_group_recommended"],
             {
-                "bitsandbytes.optim.PagedAdEMAMix8bit",
+                "adamw8bit",
+                "AdamW",
+                "AdaFactor",
+                "bitsandbytes.optim.PagedAdamW8bit",
+                "bitsandbytes.optim.Lion8bit",
                 "pytorch_optimizer.CAME",
                 "prodigyopt.Prodigy",
+                "prodigyplus.ProdigyPlusScheduleFree",
                 "schedulefree.AdamWScheduleFree",
-            }.issubset(optimizer_values)
+            },
         )
-        self.assertEqual(len(optimizer_values), 16)
+        self.assertSetEqual(
+            optimizer_groups["opt.krea_optimizer_group_advanced"],
+            {
+                "bitsandbytes.optim.PagedLion8bit",
+                "pytorch_optimizer.Lion",
+                "bitsandbytes.optim.AdEMAMix8bit",
+                "bitsandbytes.optim.PagedAdEMAMix8bit",
+            },
+        )
+        optimizer_values = set().union(*optimizer_groups.values())
+        self.assertEqual(len(optimizer_values), 13)
+        self.assertFalse(
+            {
+                "torch.optim.Adam",
+                "torch.optim.RAdam",
+                "torch.optim.NAdam",
+                "torch.optim.SGD",
+            }
+            & optimizer_values
+        )
         self.assertNotIn("__custom__", optimizer_values)
 
         self.assertEqual(len(scheduler_fields), 1)
@@ -291,9 +315,59 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertEqual(validate_krea2_config(config), [])
             train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
 
+            legacy = krea2_config(root / "legacy")
+            legacy.update({"optimizer_type": "torch.optim.SGD"})
+            self.assertEqual(validate_krea2_config(legacy), [])
+            legacy_train = build_krea2_train_config(
+                legacy, root / "legacy-dataset.toml", root / "legacy-output", root / "legacy-log"
+            )
+
         self.assertEqual(config["lr_scheduler"], "constant")
         self.assertEqual(config["lr_warmup_steps"], 0)
         self.assertEqual(train["optimizer_args"], ["warmup_steps=25"])
+        self.assertEqual(legacy_train["optimizer_type"], "torch.optim.SGD")
+
+    def test_prodigyplus_uses_internal_scheduler_and_only_supported_guided_args(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "optimizer_type": "prodigyplus.ProdigyPlusScheduleFree",
+                    "krea_optimizer_weight_decay": 0.02,
+                    "krea_optimizer_betas": "0.9, 0.99",
+                    "krea_optimizer_eps": "1e-8",
+                    "krea_prodigy_d_coef": "1.5",
+                    "krea_prodigy_d0": "1e-5",
+                    "krea_prodigyplus_use_stableadamw": True,
+                    "lr_scheduler": "cosine",
+                    "lr_warmup_steps": 10,
+                    "max_grad_norm": 0.5,
+                    # This field belongs to AdamWScheduleFree alone. A stale
+                    # or direct value must not become an invalid ProdigyPlus
+                    # constructor argument.
+                    "krea_schedulefree_warmup_steps": 25,
+                }
+            )
+
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
+
+        self.assertEqual(config["lr_scheduler"], "constant")
+        self.assertEqual(config["lr_warmup_steps"], 0)
+        self.assertEqual(config["max_grad_norm"], 0.0)
+        self.assertEqual(
+            train["optimizer_args"],
+            [
+                "weight_decay=0.02",
+                "betas=(0.9, 0.99)",
+                "eps=1e-08",
+                "d_coef=1.5",
+                "d0=1e-05",
+                "use_stableadamw=True",
+            ],
+        )
+        self.assertFalse(any(arg.startswith("warmup_steps=") for arg in train["optimizer_args"]))
 
     def test_rejects_arbitrary_optimizer_and_scheduler_injection(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -332,8 +406,15 @@ class Krea2CodecTests(unittest.TestCase):
             came.update({"optimizer_type": "pytorch_optimizer.CAME", "krea_optimizer_betas": "0.9, 0.999"})
             came_errors = validate_krea2_config(came)
 
+            prodigyplus = krea2_config(Path(temp_dir) / "prodigyplus")
+            prodigyplus.update(
+                {"optimizer_type": "prodigyplus.ProdigyPlusScheduleFree", "krea_prodigy_d0": "0"}
+            )
+            prodigyplus_errors = validate_krea2_config(prodigyplus)
+
         self.assertTrue(any("krea_optimizer_betas: requires 2 values" in error for error in errors))
         self.assertTrue(any("krea_optimizer_betas: requires 3 values" in error for error in came_errors))
+        self.assertTrue(any(error.startswith("krea_prodigy_d0: value is out of range") for error in prodigyplus_errors))
 
     def test_sample_and_turbo_fields_generate_only_real_musubi_flags(self):
         with tempfile.TemporaryDirectory() as temp_dir:

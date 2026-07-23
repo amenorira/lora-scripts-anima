@@ -16,9 +16,10 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 
-# These are the musubi-tuner 0.3.4 direct runtime requirements.  torch and
-# torchvision are shared from the main CUDA 13 environment, but are validated
-# explicitly below because accelerate/bitsandbytes depend on torch indirectly.
+# These are the musubi-tuner 0.3.4 direct runtime requirements plus the
+# application-owned, curated ProdigyPlus optimizer. Torch and torchvision are
+# shared from the main CUDA 13 environment, but are validated explicitly below
+# because accelerate/bitsandbytes depend on torch indirectly.
 MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
     "accelerate": "1.6.0",
     "av": "14.0.1",
@@ -28,6 +29,7 @@ MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
     "huggingface-hub": "0.34.3",
     "opencv-python": "4.10.0.84",
     "pillow": ">=11.3.0",
+    "prodigy-plus-schedule-free": "1.9.2",
     "safetensors": "0.4.5",
     "toml": "0.10.2",
     "tqdm": "4.67.1",
