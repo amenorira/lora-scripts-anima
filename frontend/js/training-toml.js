@@ -12,6 +12,7 @@ window.trainingTomlMixin = {
   taskId: null,
   statusText: 'Idle',
   _tomlDebounceTimer: null,
+  _tomlPreviewIdleHandle: null,
 
   // ── TOML ────────────────────────────────────────────────
   // 按表单分组顺序（getVisibleSections 返回 registry section_order + 字段顺序）
@@ -190,13 +191,29 @@ window.trainingTomlMixin = {
   },
 
   _renderTomlPreview(lines, emptyMessage = '') {
-    const preview = document.getElementById('tomlPreview');
-    if (!preview) return;
-    if (lines.length === 0) {
-      preview.innerHTML = `<span class="toml-comment"># ${this.esc(emptyMessage || this.t('common.noConfigs'))}</span>`;
+    const html = lines.length === 0
+      ? `<span class="toml-comment"># ${this.esc(emptyMessage || this.t('common.noConfigs'))}</span>`
+      : this._highlightToml(lines);
+    this.tomlHighlighted = html;
+
+    const applyPreview = () => {
+      this._tomlPreviewIdleHandle = null;
+      const preview = document.getElementById('tomlPreview');
+      if (preview && preview.innerHTML !== this.tomlHighlighted) {
+        preview.innerHTML = this.tomlHighlighted;
+      }
+    };
+
+    // 预览不参与训练参数计算，优先让类型下拉关闭和新表单完成首帧。
+    // 非浏览器环境（单元测试）保持同步，便于确定性验证。
+    if (typeof window.requestIdleCallback !== 'function') {
+      applyPreview();
       return;
     }
-    preview.innerHTML = this._highlightToml(lines);
+    if (this._tomlPreviewIdleHandle !== null) {
+      window.cancelIdleCallback(this._tomlPreviewIdleHandle);
+    }
+    this._tomlPreviewIdleHandle = window.requestIdleCallback(applyPreview, { timeout: 250 });
   },
 
   _updateKrea2Toml() {

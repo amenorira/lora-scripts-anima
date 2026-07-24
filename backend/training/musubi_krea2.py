@@ -152,7 +152,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "dit",
         "type": "text",
-        "default": "",
+        "default": "./models/krea2_raw_fp8_scaled.safetensors",
         "section": "model",
         "desc_key": "field.krea_dit",
         "hint_key": "field.krea_ditHint",
@@ -163,7 +163,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "vae",
         "type": "text",
-        "default": "",
+        "default": "./models/qwen_image_vae.safetensors",
         "section": "model",
         "desc_key": "field.krea_vae",
         "hint_key": "field.krea_vaeHint",
@@ -174,7 +174,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "text_encoder",
         "type": "text",
-        "default": "",
+        "default": "./models/qwen3vl_4b_fp8_scaled.safetensors",
         "section": "model",
         "desc_key": "field.krea_text_encoder",
         "hint_key": "field.krea_text_encoderHint",

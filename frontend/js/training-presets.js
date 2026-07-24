@@ -14,6 +14,7 @@ window.trainingPresetsMixin = {
   // ── 列表/筛选 ─────────────────────────────────────────
   allPresets: [],
   presets: [],
+  presetsLoaded: false,
   presetsLoading: false,
   presetSearch: '',
   presetTypeFilter: 'all',        // 'all' | 'anima-lora' | 'sdxl-lora'
@@ -73,6 +74,7 @@ window.trainingPresetsMixin = {
       const d = await r.json();
       if (d.status === 'success' && d.data && d.data.presets) {
         this.allPresets = d.data.presets;
+        this.presetsLoaded = true;
         this._refreshFilteredPresets();
       }
     } catch (e) { /* ignore */ }
@@ -81,7 +83,8 @@ window.trainingPresetsMixin = {
 
   _refreshFilteredPresets() {
     const routeCfg = ROUTE_CONFIG[this.currentRoute] || {};
-    const currentType = routeCfg.trainType || (this.form && this.form.model_train_type) || 'anima-lora';
+    // 同一训练页可以切换多个训练核心，当前表单类型比路由默认类型更准确。
+    const currentType = (this.form && this.form.model_train_type) || routeCfg.trainType || 'anima-lora';
     this.presets = this.allPresets.filter(p =>
       p && p.metadata && (!p.metadata.train_type || p.metadata.train_type === currentType)
     );

@@ -700,6 +700,15 @@ a:focus-visible {
   line-height: 1.4;
 }
 
+#trainFormContent {
+  transition: opacity 110ms ease, transform 110ms ease;
+}
+#trainForm.train-type-switching #trainFormContent {
+  opacity: 0.35;
+  transform: translateY(2px);
+  pointer-events: none;
+}
+
 
 
 /* ── Content Cards ───────────────────────────────────────── */
@@ -4792,8 +4801,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-family: var(--font-mono);
   font-size: 10.5px;
 }
+.env-badge-link { text-decoration: none; cursor: pointer; }
+.env-badge-link:hover { border-color: var(--accent); }
 
-/* ── Anima 模型下载卡 ──────────────────────────────── */
+/* ── 模型下载卡 ────────────────────────────────────── */
 .env-model-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
 .env-model-item {
   display: flex; flex-direction: column; gap: 6px;

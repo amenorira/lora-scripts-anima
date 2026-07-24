@@ -14,19 +14,21 @@ window.environmentRenderMixin = {
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
     let html = '';
 
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Acceleration')}</div>`;
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Performance acceleration')}</div>`;
     html += this._renderFaRow(T);
     html += this._renderXfRow(T);
+    html += this._renderTritonRow(T);
     html += `</div>`;
 
     html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
     html += this._renderSdRow(T);
-    html += this._renderCoreRegistryRow(T);
-    html += this._renderTritonRow(T);
+    html += this._renderLycorisRow(T);
+    html += this._renderMusubiRow(T);
     html += `</div>`;
 
     html += `<div class="env-section"><div class="env-section-header">${T('sectionModels', 'Models')}</div>`;
-    html += this._renderAnimaModelRow(T);
+    html += this._renderAnimaModelRow(T, 'Anima');
+    html += this._renderAnimaModelRow(T, 'Krea 2');
     html += `</div>`;
 
     el.innerHTML = html;
@@ -287,87 +289,88 @@ window.environmentRenderMixin = {
   // ═══════════════════════════════════════════════════════
   //  sd-scripts card
   // ═══════════════════════════════════════════════════════
+  _renderCoreVersionBadge(T, meta, available = true, error = null) {
+    if (error) return `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>`;
+    if (!meta) return `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`;
+    if (!available) return `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`;
+    const displayVersion = meta.describe || meta.tag;
+    if (displayVersion) {
+      const repoUrl = `https://github.com/${meta.repo}`;
+      const versionUrl = meta.local_commit
+        ? `${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}`
+        : `${repoUrl}/releases/tag/${this.escapeAttr(meta.tag)}`;
+      return `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-badge env-badge-info env-badge-link"><code>${this.esc(displayVersion)}</code></a>`;
+    }
+    if (meta.local_commit) return `<span class="env-badge env-badge-info"><code>${this.esc(meta.local_commit.slice(0,7))}</code></span>`;
+    return `<span class="env-badge env-badge-info">${T('sdScriptsLocal','Local')}</span>`;
+  },
+
+  _renderCoreRepositoryDetails(T, meta, fallbackRepo) {
+    const repo = meta?.repo || fallbackRepo;
+    const repoUrl = `https://github.com/${repo}`;
+    const displayVersion = meta?.describe || meta?.tag;
+    const versionUrl = meta?.local_commit
+      ? `${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}`
+      : (meta?.tag ? `${repoUrl}/releases/tag/${this.escapeAttr(meta.tag)}` : null);
+    const versionHtml = displayVersion
+      ? `<span class="env-env-item">Version ${versionUrl ? `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(displayVersion)}</code></a>` : `<code>${this.esc(displayVersion)}</code>`}</span>`
+      : null;
+    const verItems = [
+      `<span class="env-env-item">Repo <a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${this.esc(repo)} &#8599;</a></span>`,
+      meta?.local_branch ? `<span class="env-env-item">Branch <em>${this.esc(meta.local_branch)}</em></span>` : null,
+      versionHtml,
+      meta?.local_commit ? `<span class="env-env-item">Commit <a href="${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(meta.local_commit.slice(0,7))}</code></a></span>` : null,
+      meta?.sync_date ? `<span class="env-env-item">Sync <span class="env-text-dim">${this.esc(meta.sync_date)}</span></span>` : null,
+    ].filter(Boolean);
+    return this._renderDetailGroup(T('verLabel','Ver'), verItems.join(' &middot; '))
+      + this._renderDetailGroup('', `<a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a>`);
+  },
+
   _renderSdRow(T) {
     const sd = this.sdStatus; const sdLocal = sd?.local || {};
     let h = '';
 
-    // 版本由仓库人工上传维护，不存在"自动更新检查"语义，故不显示状态徽章；
-    // 数据未到时仍显示 Loading，数据到达后展示本地 Tag/Commit 作为版本标识。
-    const sdBadge = !sd
-      ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : sdLocal.tag ? `<span class="env-badge env-badge-info"><code>${this.esc(sdLocal.tag)}</code></span>`
-      : sdLocal.local_commit ? `<span class="env-badge env-badge-info"><code>${this.esc(sdLocal.local_commit.slice(0,8))}</code></span>`
-      : `<span class="env-badge env-badge-info">${T('sdScriptsLocal','Local')}</span>`;
-
+    const sdBadge = this._renderCoreVersionBadge(T, sd ? sdLocal : null);
     const cardState = !sd ? 'loading' : 'idle';
     const summary = this._renderCardSummary('&#9654;', T('sdScriptsTitle','sd-scripts'), T('sdScriptsDesc','kohya-ss/sd-scripts'), sdBadge);
     h += this._renderCardOpen('env-sdscripts', cardState, this.sdCardOpen, summary);
 
-    if (sd) {
-      const repoUrl = sd.repo_url || `https://github.com/${sdLocal.repo||'kohya-ss/sd-scripts'}`;
-      const verItems = [
-        `<span class="env-env-item">Repo <a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${this.esc(sdLocal.repo||'kohya-ss/sd-scripts')} &#8599;</a></span>`,
-        sdLocal.local_branch ? `<span class="env-env-item">Branch <em>${this.esc(sdLocal.local_branch)}</em></span>` : null,
-        sdLocal.tag ? `<span class="env-env-item">Tag <a href="${repoUrl}/releases/tag/${this.escapeAttr(sdLocal.tag)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(sdLocal.tag)}</code></a></span>` : null,
-        sdLocal.local_commit ? `<span class="env-env-item">Commit <a href="${repoUrl}/commit/${this.escapeAttr(sdLocal.local_commit)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(sdLocal.local_commit.slice(0,8))}</code></a></span>` : null,
-        sdLocal.sync_date ? `<span class="env-env-item">Sync <span class="env-text-dim">${this.esc(sdLocal.sync_date)}</span></span>` : null,
-      ].filter(r=>r);
-      h += this._renderDetailGroup(T('verLabel','Ver'), verItems.join(' &middot; '));
-      h += this._renderDetailGroup('', `<a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a>`);
-    }
+    if (sd) h += this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts');
     h += this._renderCardClose();
     return h;
   },
 
-  // The registry is intentionally separate from the legacy sd-scripts card:
-  // it makes the mounted LyCORIS adapter and the shared musubi runtime
-  // visible, including whether the common Krea dependency set is healthy.
-  _renderCoreRegistryRow(T) {
+  _renderLycorisRow(T) {
     const registry = this.trainingCores;
     const error = this.trainingCoresError;
-    const engines = registry?.engines || [];
-    const adapters = registry?.adapters || [];
-    const profiles = registry?.profiles || [];
-    const unavailable = engines.some(engine => !engine.available);
-    const state = error ? 'err' : !registry ? 'loading' : unavailable ? 'warn' : 'ok';
-    const badge = error
-      ? `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>`
-      : !registry
-        ? `<span class="env-badge env-badge-loading">${T('loading', 'Loading...')}</span>`
-        : unavailable
-          ? `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`
-          : `<span class="env-badge env-badge-ok">${T('coreReady', 'Ready')}</span>`;
+    const adapter = registry?.adapters?.find(item => item.id === 'lycoris');
+    const available = !!adapter?.available;
+    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'warn';
+    const badge = this._renderCoreVersionBadge(T, adapter?.version || null, available, error);
     let h = '';
-    h += this._renderCardOpen(
-      'env-core-registry', state, this.coreRegistryCardOpen,
-      this._renderCardSummary('&#9654;', T('coreRegistryTitle', 'Training core registry'), T('coreRegistryDesc', 'sd-scripts, mounted LyCORIS, and musubi-tuner'), badge)
-    );
-
+    h += this._renderCardOpen('env-lycoris', state, this.lycorisCardOpen,
+      this._renderCardSummary('&#9654;', 'LyCORIS', T('lycorisDesc', 'LoRA adapter core'), badge));
     if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
-    if (registry) {
-      const engineRows = engines.map(engine => {
-        const status = engine.available
-          ? `<span class="env-badge env-badge-ok">${T('coreReady', 'Ready')}</span>`
-          : `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`;
-      const runtime = engine.python_executable
-          ? `<code>${this.esc(engine.python_executable)}</code>`
-          : `<span class="env-text-dim">${T('coreRuntime', 'Main application venv')}</span>`;
-        const runtimeErrors = Array.isArray(engine.runtime_errors) ? engine.runtime_errors : [];
-        const runtimeProblem = runtimeErrors.length
-          ? `<div class="env-msg env-msg-warn"><pre>${this.esc(runtimeErrors.join('\n'))}</pre></div>`
-          : '';
-        return `<div class="env-model-item"><div class="env-model-item-top"><div class="env-model-item-main"><div class="env-model-item-name">${this.esc(engine.label || engine.id)}</div><div class="env-model-item-desc">${this.esc(engine.description || '')}</div><div class="env-model-destpath">${this.esc(engine.root || '')}</div></div><div class="env-model-item-action">${status}</div></div><div class="env-model-item-status">${runtime}</div>${runtimeProblem}</div>`;
-      }).join('');
-      h += this._renderDetailGroup(T('coreRuntime', 'Runtime'), `<div class="env-model-list">${engineRows}</div>`);
+    if (adapter) h += this._renderCoreRepositoryDetails(T, adapter.version, 'KohakuBlueleaf/LyCORIS');
+    h += this._renderCardClose();
+    return h;
+  },
 
-      const adapterText = adapters.map(adapter => {
-        const mounted = adapter.mounted ? ` · ${T('coreMounted', 'mounted')}` : '';
-        return `<span class="env-env-item"><strong>${this.esc(adapter.label || adapter.id)}</strong>${this.esc(mounted)}<span class="env-text-dim"> — ${this.esc(adapter.description || '')}</span></span>`;
-      }).join('<br>');
-      h += this._renderDetailGroup(T('coreAdapters', 'Adapters'), adapterText || `<span class="env-text-dim">—</span>`);
-
-      const profileText = profiles.map(profile => this.esc(`${profile.label || profile.id} → ${profile.engine_id}`)).join(' · ');
-      h += this._renderDetailGroup(T('coreProfiles', 'Profiles'), profileText || `<span class="env-text-dim">—</span>`);
+  _renderMusubiRow(T) {
+    const registry = this.trainingCores;
+    const error = this.trainingCoresError;
+    const engine = registry?.engines?.find(item => item.id === 'musubi_tuner');
+    const available = !!engine?.available;
+    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'warn';
+    const badge = this._renderCoreVersionBadge(T, engine?.version || null, available, error);
+    let h = '';
+    h += this._renderCardOpen('env-musubi', state, this.musubiCardOpen,
+      this._renderCardSummary('&#9654;', 'musubi-tuner', T('musubiDesc', 'Krea 2 training core'), badge));
+    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
+    if (engine) {
+      h += this._renderCoreRepositoryDetails(T, engine.version, 'kohya-ss/musubi-tuner');
+      const runtimeErrors = Array.isArray(engine.runtime_errors) ? engine.runtime_errors : [];
+      if (runtimeErrors.length) h += `<div class="env-msg env-msg-warn"><pre>${this.esc(runtimeErrors.join('\n'))}</pre></div>`;
     }
     h += this._renderCardClose();
     return h;
@@ -407,7 +410,7 @@ window.environmentRenderMixin = {
         h += this._renderDetailGroup(T('actionLabel','Actions'),
           `<div class="env-actions"><button id="triton-reinstall-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('reinstall','Reinstall')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`);
       } else {
-        h += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Recommended for DiT per-block compile. Windows: pip install triton-windows; Linux: pip install triton')}</div>`;
+        h += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
         h += this._renderDetailGroup(T('actionLabel','Actions'),
           `<div class="env-actions"><button id="triton-install-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('tritonInstallBtn','Install')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`);
       }
@@ -417,10 +420,10 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
-  //  Anima 模型下载 card
+  //  模型下载 cards
   // ═══════════════════════════════════════════════════════
-  _renderAnimaModelRow(T) {
-    const files = this.animaModelStatus || [];
+  _renderAnimaModelRow(T, modelGroup) {
+    const files = (this.animaModelStatus || []).filter(file => file.group === modelGroup);
     const progress = this.animaModelProgress;
     const aggregate = this.animaModelAggregate;
     const busy = this.animaModelBusy;
@@ -430,26 +433,36 @@ window.environmentRenderMixin = {
     const curFile = p.filename || '';
     const batch = Array.isArray(p.batch) ? p.batch : null;
     const phase = p.phase || '';
+    const groupTask = !p.group || p.group === 'all' || p.group === modelGroup;
+    const groupBusy = busy && groupTask;
+    const groupError = error && groupTask ? error : null;
+    const isKrea2 = modelGroup === 'Krea 2';
+    const cardId = isKrea2 ? 'env-krea2-model' : 'env-anima-model';
+    const cardOpen = isKrea2 ? this.kreaModelCardOpen : this.animaModelCardOpen;
+    const title = isKrea2 ? T('animaModel.krea2Title','Krea 2 Models') : T('animaModel.animaTitle','Anima Models');
+    const subtitle = isKrea2
+      ? T('animaModel.krea2Subtitle','RAW / Turbo / Qwen3-VL / VAE')
+      : T('animaModel.animaSubtitle','Base / Qwen3 / VAE');
     let h = '';
 
     // 卡片标题行 + 整体状态徽标
     const allReady = files.length > 0 && files.every(f => f.exists);
-    const cardState = error ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : busy ? 'loading' : 'warn';
-    const cardBadge = error
+    const cardState = groupError ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : groupBusy ? 'loading' : 'warn';
+    const cardBadge = groupError
       ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !files.length
         ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
         : allReady
           ? `<span class="env-badge env-badge-ok">${T('animaModel.allReady','All ready')}</span>`
-          : busy
+          : groupBusy
             ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
             : `<span class="env-badge env-badge-warn">${T('animaModel.incomplete','Incomplete')}</span>`;
 
-    const summary = this._renderCardSummary('&#9654;', T('animaModel.title','Anima Models'), T('animaModel.subtitle','Base / text encoder / VAE'), cardBadge);
-    h += this._renderCardOpen('env-anima-model', cardState, this.animaModelCardOpen, summary);
+    const summary = this._renderCardSummary('&#9654;', title, subtitle, cardBadge);
+    h += this._renderCardOpen(cardId, cardState, cardOpen, summary);
 
     // 错误提示
-    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
+    if (groupError) h += `<div class="env-msg env-msg-err"><pre>${this.esc(groupError)}</pre></div>`;
 
     // ── 目标路径说明 banner（"下载到哪里"）──
     if (files.length) {
@@ -457,7 +470,7 @@ window.environmentRenderMixin = {
     }
 
     // ── 整体批量进度（下载中显示）──
-    if (busy && aggregate) {
+    if (groupBusy && aggregate) {
       const fileOf = T('animaModel.fileOf','File {i}/{n}').replace('{i}', aggregate.fileIndex).replace('{n}', aggregate.fileTotal);
       h += `<div class="env-model-aggregate">
         <div class="env-progress-bar"><div style="width:${aggregate.pct}%"></div></div>
@@ -473,8 +486,8 @@ window.environmentRenderMixin = {
 
     for (const f of files) {
       const inBatch = !batch || batch.includes(f.filename);
-      const isCurrent = busy && curFile === f.filename;
-      const isQueued = busy && inBatch && !isCurrent;
+      const isCurrent = groupBusy && curFile === f.filename;
+      const isQueued = groupBusy && inBatch && !isCurrent;
       let statusHtml = '';
       let actionHtml = '';
       let rowCls = 'env-model-item';
@@ -507,11 +520,11 @@ window.environmentRenderMixin = {
         statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending','Pending')}</span>`;
       } else if (f.exists) {
         statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')} &middot; ${this._humanBytes((f.size_gb||0)*1073741824)}</span>`;
-      } else if (!busy && phase === 'error' && curFile === f.filename) {
+      } else if (!busy && groupTask && phase === 'error' && curFile === f.filename) {
         // 本次任务里此文件失败
         rowCls += ' env-model-item-failed';
         statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
-      } else if (!busy && inBatch && phase === 'done') {
+      } else if (!busy && groupTask && inBatch && phase === 'done') {
         // 本次任务正常结束但该文件没落盘 → 视为失败
         rowCls += ' env-model-item-failed';
         statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
@@ -523,9 +536,9 @@ window.environmentRenderMixin = {
       if (isCurrent || isQueued) {
         actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" disabled>${T('animaModel.downloading','Downloading')}</button>`;
       } else if (f.exists) {
-        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''} title="${T('animaModel.redownload','Redownload')}">${T('animaModel.redownload','Redownload')}</button>`;
+        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''} title="${T('animaModel.redownload','Redownload')}">${T('animaModel.redownload','Redownload')}</button>`;
       } else {
-        actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
+        actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
       }
 
       // 每文件目标相对路径作为副标题（"下载到哪里"的逐文件体现）
@@ -533,7 +546,7 @@ window.environmentRenderMixin = {
       h += `<div class="${rowCls}">
         <div class="env-model-item-top">
           <div class="env-model-item-main">
-            <div class="env-model-item-name"><code title="${this.escapeAttr(f.filename)}">${this.esc(f.filename)}</code></div>
+            <div class="env-model-item-name"><a href="${this.escapeAttr(f.source_url || '#')}" target="_blank" rel="noopener" class="env-link"><code title="${this.escapeAttr(f.filename)}">${this.esc(f.filename)}</code></a></div>
             <div class="env-model-item-desc">${this.esc(f.desc || '')}</div>
             <div class="env-model-destpath">${this.esc(destPath)}</div>
           </div>
@@ -551,14 +564,16 @@ window.environmentRenderMixin = {
 
     // ── 底部操作栏：一键下载全部 + 刷新 ──
     const hasMissing = files.some(f => !f.exists);
-    const dlAllLabel = busy
+    const dlAllLabel = groupBusy
       ? T('animaModel.downloading','Downloading...')
       : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
-    h += `<div class="env-model-footer"><div class="env-actions"><button id="anima-model-dl-btn" class="btn btn-secondary" ${busy?'disabled':''}>${dlAllLabel}</button>${this._renderRefreshBtn('anima-model-refresh-btn', busy)}</div></div>`;
+    const repoId = files[0]?.repo_id || (isKrea2 ? 'Comfy-Org/Krea-2' : 'circlestone-labs/Anima');
+    const repoUrl = `https://huggingface.co/${this.escapeAttr(repoId)}/tree/main`;
+    h += `<div class="env-model-footer"><div class="env-actions"><button class="btn btn-secondary env-model-dl-all" data-group="${this.escapeAttr(modelGroup)}" ${busy?'disabled':''}>${dlAllLabel}</button><button class="btn-icon env-model-refresh" ${busy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">${T('animaModel.openRepository','Open model repository')} &#8599;</a></div></div>`;
 
     // ── 下载日志（可折叠，状态持久化避免重渲染被收起）──
-    if (this.animaModelLog) {
-      h += `<details class="env-model-log-wrap" id="env-anima-model-log" ${this.animaModelLogOpen?'open':''}><summary>${T('animaModel.progressLog','Progress Log')}</summary>${this._renderLog(this.animaModelLog)}</details>`;
+    if (this.animaModelLog && groupTask) {
+      h += `<details class="env-model-log-wrap" data-model-log ${this.animaModelLogOpen?'open':''}><summary>${T('animaModel.progressLog','Progress Log')}</summary>${this._renderLog(this.animaModelLog)}</details>`;
     }
 
     h += this._renderCardClose();
@@ -567,27 +582,20 @@ window.environmentRenderMixin = {
 
   _bindAnimaModelEvents(el) {
     const a = window.__anima || this;
-    const dlBtn = el.querySelector('#anima-model-dl-btn');
-    const refreshBtn = el.querySelector('#anima-model-refresh-btn');
-    if (dlBtn) {
-      const fn = a.animaModelDownload;
-      if (typeof fn === 'function') {
-        dlBtn.addEventListener('click', () => fn.call(a, null));
-      } else {
-        // 方法未找到：在按钮旁边插入错误提示
-        dlBtn.insertAdjacentHTML('afterend', '<span style="color:red;font-size:11px">[ERR: animaModelDownload not found]</span>');
-      }
-    }
-    if (refreshBtn) refreshBtn.addEventListener('click', () => a.animaModelRefresh());
+    el.querySelectorAll('.env-model-dl-all[data-group]').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelDownload(null, btn.dataset.group));
+    });
+    el.querySelectorAll('.env-model-refresh').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelRefresh());
+    });
 
     // 逐文件下载按钮
     el.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file));
+      btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file, btn.dataset.group));
     });
 
     // 日志折叠持久化 + 自动滚到底
-    const logDet = el.querySelector('#env-anima-model-log');
-    if (logDet) {
+    el.querySelectorAll('[data-model-log]').forEach(logDet => {
       logDet.addEventListener('toggle', () => {
         a.animaModelLogOpen = logDet.open;
         a._envSaveCardState();
@@ -601,7 +609,7 @@ window.environmentRenderMixin = {
         const pre = logDet.querySelector('.env-log');
         if (pre) pre.scrollTop = pre.scrollHeight;
       }
-    }
+    });
   },
 
   // ═══════════════════════════════════════════════════════
@@ -646,15 +654,17 @@ window.environmentRenderMixin = {
 
   _bindCardToggle(el) {
     const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts','env-core-registry','env-triton','env-anima-model'].forEach(id => {
+    ['env-flash-attn','env-xformers','env-sdscripts','env-lycoris','env-musubi','env-triton','env-anima-model','env-krea2-model'].forEach(id => {
       const card = el.querySelector('#'+id); if (!card) return;
       card.addEventListener('toggle', () => {
         if (id==='env-flash-attn') a.faCardOpen = card.open;
         else if (id==='env-xformers') a.xfCardOpen = card.open;
         else if (id==='env-sdscripts') a.sdCardOpen = card.open;
-        else if (id==='env-core-registry') a.coreRegistryCardOpen = card.open;
+        else if (id==='env-lycoris') a.lycorisCardOpen = card.open;
+        else if (id==='env-musubi') a.musubiCardOpen = card.open;
         else if (id==='env-triton') a.tritonCardOpen = card.open;
         else if (id==='env-anima-model') a.animaModelCardOpen = card.open;
+        else if (id==='env-krea2-model') a.kreaModelCardOpen = card.open;
         a._envSaveCardState();
       });
     });

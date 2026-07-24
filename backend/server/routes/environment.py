@@ -174,19 +174,21 @@ def _download_job_snapshot(job_id: str) -> dict:
     return {"status": "error", "done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
 
 
-def _start_download_job(only_file: str | None = None) -> str:
-    """启动 Anima 模型下载后台线程，返回 job_id。"""
-    from tools.download_anima_model import ANIMA_FILES, download_anima_files
+def _start_download_job(only_file: str | None = None, group: str | None = None) -> str:
+    """启动训练模型下载后台线程，返回 job_id。"""
+    from tools.download_anima_model import MODEL_FILES, download_anima_files
 
-    if only_file:
-        files = [(hub_name, local_name, digest) for hub_name, local_name, digest in ANIMA_FILES if local_name == only_file or hub_name == only_file]
-        if not files:
-            raise RuntimeError(f"未知文件: {only_file}")
-    else:
-        files = ANIMA_FILES
+    files = [
+        item
+        for item in MODEL_FILES
+        if (not group or item[4] == group)
+        and (not only_file or item[2] == only_file or item[1] == only_file)
+    ]
+    if not files:
+        raise RuntimeError(f"未知模型或分组: {group or '-'} / {only_file or '-'}")
 
     job_id = uuid4().hex[:12]
-    shared_progress: dict = {}
+    shared_progress: dict = {"group": group or "all"}
     log_lines: list[str] = []
     with _download_jobs_lock:
         _download_jobs[job_id] = {
@@ -195,6 +197,7 @@ def _start_download_job(only_file: str | None = None) -> str:
             "progress": shared_progress,
             "log": log_lines,
             "only_file": only_file,
+            "group": group,
         }
 
     def _run():
@@ -212,7 +215,7 @@ def _start_download_job(only_file: str | None = None) -> str:
             if len(log_lines) > 50:
                 del log_lines[: len(log_lines) - 50]
             try:
-                log.info(f"[anima-dl] {message}")
+                log.info(f"[model-dl] {message}")
             except Exception:
                 pass
 
@@ -271,11 +274,11 @@ def _start_download_job(only_file: str | None = None) -> str:
 
 @router.get("/anima-model/status")
 async def anima_model_status() -> dict:
-    """扫描 models/ 目录，返回 Anima 各核心文件已下载/未下载状态。"""
+    """扫描 models/ 目录，返回全部训练模型的下载状态。"""
     _cleanup_download_jobs()
-    from tools.download_anima_model import list_local_anima_files
+    from tools.download_anima_model import list_local_model_files
 
-    files = await asyncio.to_thread(list_local_anima_files, SD_MODELS_DIR)
+    files = await asyncio.to_thread(list_local_model_files, SD_MODELS_DIR)
     try:
         dest_dir_rel = SD_MODELS_DIR.relative_to(REPO_ROOT).as_posix() + "/"
     except ValueError:
@@ -287,11 +290,13 @@ async def anima_model_status() -> dict:
 
 @router.post("/anima-model/download")
 async def anima_model_download(request: Request) -> dict:
-    """启动后台模型下载。body 可选 {'file': '<filename>'} 仅下载单个文件。"""
+    """启动后台模型下载。可按 group 批量下载，或按 group + file 下载单个文件。"""
     only_file = None
+    group = None
     try:
         body = await request.json()
         only_file = body.get("file") or None
+        group = body.get("group") or None
     except Exception:
         pass
     with _download_jobs_lock:
@@ -299,7 +304,7 @@ async def anima_model_download(request: Request) -> dict:
     if running:
         return {"success": False, "message": "已有下载任务进行中 / A download is already running"}
     try:
-        job_id = await asyncio.to_thread(_start_download_job, only_file)
+        job_id = await asyncio.to_thread(_start_download_job, only_file, group)
     except Exception as exc:
         return {"success": False, "message": str(exc)}
     await realtime_tasks.register(
@@ -684,6 +689,29 @@ async def xformers_install() -> dict:
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
 
+def _matching_triton_spec(torch_version: str | None = None) -> str:
+    """Return the Triton minor range matched to the active PyTorch version."""
+    try:
+        from packaging.version import Version
+    except ImportError:
+        return ""
+    try:
+        if torch_version is None:
+            import torch
+
+            torch_version = torch.__version__
+        version = Version(str(torch_version).split("+")[0])
+    except Exception:
+        return ""
+    if version >= Version("2.12"):
+        return ">=3.7,<3.8"
+    if version >= Version("2.10"):
+        return ">=3.6,<3.7"
+    if version >= Version("2.9"):
+        return ">=3.5,<3.6"
+    return ""
+
+
 def _triton_status_sync() -> dict:
     import importlib.metadata as importlib_metadata
 
@@ -707,11 +735,14 @@ def _triton_status_sync() -> dict:
     platform_note = None
     if not installed:
         if sys.platform == "win32":
+            version_spec = _matching_triton_spec()
+            package_label = f"triton-windows{version_spec}" if version_spec else "兼容版本的 triton-windows"
+            package_label_en = f"triton-windows{version_spec}" if version_spec else "a compatible triton-windows version"
             platform_note = (
                 "Triton 未安装。Windows 需先安装 VC++ Redistributable，"
-                "然后在环境管理页一键安装 triton-windows（triton-lang 官方移植 v3.7，版本约束 <3.8） / "
+                f"然后在环境管理页一键安装与当前 PyTorch 匹配的 {package_label} / "
                 "Triton not installed. Windows: install VC++ Redist first, "
-                "then one-click install triton-windows (official triton-lang port v3.7, version <3.8)"
+                f"then one-click install {package_label_en} matched to the active PyTorch version"
             )
         else:
             platform_note = "Triton 未安装。Linux 用户: pip install triton / Triton not installed. Linux: pip install triton"
@@ -725,24 +756,7 @@ async def triton_status() -> dict:
 
 @router.post("/triton/install")
 async def triton_install() -> dict:
-    triton_version = ""
-    try:
-        from packaging.version import Version
-    except ImportError:
-        Version = None
-    if Version is not None:
-        try:
-            import torch
-
-            version = Version(torch.__version__.split("+")[0])
-            if version >= Version("2.12"):
-                triton_version = ">=3.7,<3.8"
-            elif version >= Version("2.10"):
-                triton_version = ">=3.6,<3.7"
-            elif version >= Version("2.9"):
-                triton_version = ">=3.5,<3.6"
-        except Exception:
-            pass
+    triton_version = _matching_triton_spec()
 
     package = "triton-windows" if sys.platform == "win32" else "triton"
     if triton_version:

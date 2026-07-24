@@ -4,7 +4,32 @@
    ================================================================ */
 
 document.addEventListener('alpine:init', () => {
-  Alpine.data('animaSelect', (fieldConfigJson, initialValue) => ({
+  Alpine.data('animaSelect', (fieldConfigJson, initialValue) => {
+    // 选项配置在组件生命周期内不会变化。预先完成一次 base64 解码和 JSON
+    // 解析，避免 Alpine 求值 selectedLabel / hasDescriptions 时反复解析。
+    let fieldConfig = {};
+    try {
+      if (typeof fieldConfigJson === 'string') {
+        const binary = atob(fieldConfigJson);
+        const bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
+        fieldConfig = JSON.parse(new TextDecoder().decode(bytes));
+      } else {
+        fieldConfig = fieldConfigJson || {};
+      }
+    } catch (e) {
+      console.warn('[animaSelect] Failed to parse field config:', e);
+    }
+    const displayGroups = fieldConfig.groups && fieldConfig.groups.length
+      ? fieldConfig.groups
+      : (fieldConfig.options && fieldConfig.options.length
+        ? [{ label: '', options: fieldConfig.options }]
+        : []);
+    const flatOptions = [];
+    displayGroups.forEach(group => {
+      (group.options || []).forEach(option => flatOptions.push(option));
+    });
+
+    return ({
     open: false,
     positioned: false,
     value: initialValue,
@@ -13,30 +38,11 @@ document.addEventListener('alpine:init', () => {
     _revealPoint: null,
 
     get displayGroups() {
-      try {
-        let json;
-        if (typeof fieldConfigJson === 'string') {
-          const binary = atob(fieldConfigJson);
-          const bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
-          json = new TextDecoder().decode(bytes);
-        } else {
-          json = JSON.stringify(fieldConfigJson || {});
-        }
-        const fc = typeof json === 'string' ? JSON.parse(json) : json;
-        if (fc.groups && fc.groups.length) return fc.groups;
-        if (fc.options && fc.options.length) return [{ label: '', options: fc.options }];
-      } catch (e) {
-        console.warn('[animaSelect] Failed to parse field config:', e);
-      }
-      return [];
+      return displayGroups;
     },
 
     get flatOptions() {
-      const result = [];
-      this.displayGroups.forEach(g => {
-        (g.options || []).forEach(o => result.push(o));
-      });
-      return result;
+      return flatOptions;
     },
 
     get hasDescriptions() {
@@ -214,5 +220,6 @@ document.addEventListener('alpine:init', () => {
       this.positioned = true;
     },
 
-  }));
+    });
+  });
 });

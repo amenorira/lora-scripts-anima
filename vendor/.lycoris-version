@@ -8,6 +8,8 @@ branch = "main"
 commit = "a72bb1bcc9094b25f0bb5340e5e62eacf540f188"
 sync_date = "2026-07-23T00:00:00+08:00"
 tag = "main@a72bb1b"
+version = "3.4.0"
+describe = "v3.4.0-0-ga72bb1b"
 last_check = "2026-07-23"
 
 [local]

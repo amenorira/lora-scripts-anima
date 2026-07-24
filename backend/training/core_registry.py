@@ -8,6 +8,7 @@ explicit while preserving the legacy model_train_type values.
 """
 from __future__ import annotations
 
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,32 @@ from backend.constants import SD_SCRIPTS_DIR, VENDOR_ROOT
 
 
 MUSUBI_TUNER_DIR = VENDOR_ROOT / "musubi-tuner"
+
+
+def _vendor_version(name: str) -> dict[str, str | None]:
+    """Read the same tracked upstream fields shown for sd-scripts."""
+    info: dict[str, str | None] = {
+        "repo": None,
+        "local_branch": None,
+        "local_commit": None,
+        "sync_date": None,
+        "tag": None,
+        "version": None,
+        "describe": None,
+    }
+    track_file = VENDOR_ROOT / f".{name}-version"
+    try:
+        upstream = tomllib.loads(track_file.read_text(encoding="utf-8")).get("upstream", {})
+    except (OSError, tomllib.TOMLDecodeError):
+        return info
+    info["repo"] = upstream.get("repo")
+    info["local_branch"] = upstream.get("branch")
+    info["local_commit"] = upstream.get("commit")
+    info["sync_date"] = upstream.get("sync_date")
+    info["tag"] = upstream.get("tag")
+    info["version"] = upstream.get("version")
+    info["describe"] = upstream.get("describe")
+    return info
 
 
 class TrainingProfileError(ValueError):
@@ -242,6 +269,7 @@ def profile_payload() -> dict[str, Any]:
             item["runtime_ready"] = runtime["ok"]
             item["runtime_errors"] = runtime["errors"]
             item["runtime_versions"] = runtime["versions"]
+            item["version"] = _vendor_version("musubi-tuner")
         elif engine.python_executable is not None:
             item["python_executable"] = str(engine.python_executable)
             item["runtime_ready"] = engine.python_executable.is_file()
@@ -262,6 +290,8 @@ def profile_payload() -> dict[str, Any]:
     for adapter in ADAPTERS.values():
         item = asdict(adapter)
         item["available"] = engine_availability[adapter.host_engine_id]
+        if adapter.id == "lycoris":
+            item["version"] = _vendor_version("lycoris")
         adapters.append(item)
 
     return {"engines": engines, "profiles": profiles, "adapters": adapters}

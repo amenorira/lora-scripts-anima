@@ -54,6 +54,11 @@ class ApiRouterContractTests(unittest.TestCase):
 
 
 class EnvironmentJobCleanupTests(unittest.TestCase):
+    def test_triton_version_range_tracks_pytorch_minor(self):
+        self.assertEqual(environment._matching_triton_spec("2.9.1+cu128"), ">=3.5,<3.6")
+        self.assertEqual(environment._matching_triton_spec("2.10.0+cu130"), ">=3.6,<3.7")
+        self.assertEqual(environment._matching_triton_spec("2.12.0"), ">=3.7,<3.8")
+
     def test_prune_finished_jobs_keeps_active_and_unexpired_jobs(self):
         jobs = {
             "active": {"done": False, "start": 0},

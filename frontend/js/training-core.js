@@ -12,7 +12,7 @@ window.FILLED_INDICATOR_KEYS = new Set([
 ]);
 
 // 预填默认值淡色字段清单：仅这些 text 字段在"值==schema 原始默认值"时 input 字色淡化为 placeholder 视觉。
-// 三个 Anima 底模字段默认指向环境管理页可下载的文件（非空），纳入此清单以提示"仍为推荐默认值"。
+// 三个 Anima 底模字段默认指向环境管理页可下载的文件（非空），纳入此清单以提示"仍为默认值"。
 window.DEFAULT_DIM_KEYS = new Set([
   'pretrained_model_name_or_path', 'dit', 'vae', 'qwen3', 'text_encoder',
   'train_data_dir', 'output_name', 'output_dir',
@@ -25,10 +25,17 @@ window.trainingCoreMixin = {
   formHistory: [],
   formHistoryIdx: -1,
   formErrors: {},
+  _profileFormDrafts: {},
+  _activeTrainType: '',
 
   // 分组折叠状态（B2）与进阶参数折叠状态（A3），响应式驱动 UI
   _sectionCollapsed: {},
   _advancedCollapsed: {},
+  _lazyAdvancedFields: {},
+  _trainTypePanelCache: null,
+  _trainFieldsRevision: 0,
+  _profileWatcherSetupHandle: null,
+  _profileWatcherSetupUsesIdle: false,
 
   // 分组导航指示器（#1）：当前可见分组列表 + 滚动高亮的当前分组
   sectionNavList: [],
@@ -46,6 +53,9 @@ window.trainingCoreMixin = {
   _conditionalMotionQueue: null,
   _conditionalMotionTimer: null,
   _conditionalMotionEpoch: 0,
+  _trainTypeSwitchFrame: null,
+  _trainTypeSwitchCommitFrame: null,
+  _pendingTrainType: '',
   showFilePickerModalFlag: false,
   _pickerKey: '',
   _pickerFiles: [],
@@ -80,6 +90,115 @@ window.trainingCoreMixin = {
   currentTrainTypeDesc: '',
   currentTrainTypeLabel: 'Anima LoRA',
 
+  _clearProfileFieldWatchers() {
+    this._cancelProfileFieldWatcherSetup();
+    ['_autoValueWatchers', '_showIfWatchers', '_readonlyWatchers'].forEach(key => {
+      (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
+      this[key] = [];
+    });
+  },
+
+  _cancelProfileFieldWatcherSetup() {
+    if (this._profileWatcherSetupHandle === null) return;
+    if (this._profileWatcherSetupUsesIdle && typeof cancelIdleCallback === 'function') {
+      cancelIdleCallback(this._profileWatcherSetupHandle);
+    } else {
+      clearTimeout(this._profileWatcherSetupHandle);
+    }
+    this._profileWatcherSetupHandle = null;
+    this._profileWatcherSetupUsesIdle = false;
+  },
+
+  _scheduleProfileFieldWatchers(trainType) {
+    this._cancelProfileFieldWatcherSetup();
+    const setup = () => {
+      this._profileWatcherSetupHandle = null;
+      this._profileWatcherSetupUsesIdle = false;
+      if ((this.form.model_train_type || this._activeTrainType) !== trainType) return;
+      this.setupAutoValueWatchers();
+      this.setupShowIfWatchers();
+      this.setupReadonlyWatchers();
+    };
+    if (typeof requestIdleCallback === 'function') {
+      this._profileWatcherSetupUsesIdle = true;
+      this._profileWatcherSetupHandle = requestIdleCallback(setup, { timeout: 120 });
+    } else {
+      this._profileWatcherSetupHandle = setTimeout(setup, 0);
+    }
+  },
+
+  _trainTypePanelIsReady(trainType) {
+    if (!(this._trainTypePanelCache instanceof Map)) return false;
+    const panel = this._trainTypePanelCache.get(trainType);
+    return !!panel
+      && panel.getAttribute('data-panel-ready') === '1'
+      && panel.dataset.panelLocale === String(this.locale || '')
+      && panel.dataset.fieldsRevision === String(this._trainFieldsRevision || 0);
+  },
+
+  _commitTrainTypeSwitch(target) {
+    if (target && target !== this.form.model_train_type) {
+      this._switchInProgress = true;
+      try { this.switchTrainType(target); } finally { this._switchInProgress = false; }
+    }
+  },
+
+  _scheduleTrainTypeSwitch(value) {
+    // 三套表单在进入页面时已完成初始化。缓存命中时直接换面板，不再人为等待
+    // 两个 animation frame；昂贵的字段 watcher 在换屏后空闲阶段恢复。
+    if (this._trainTypePanelIsReady(value)) {
+      this._cancelScheduledTrainTypeSwitch();
+      this._commitTrainTypeSwitch(value);
+      return;
+    }
+
+    this._pendingTrainType = value;
+    const formElement = document.getElementById('trainForm');
+    if (formElement) {
+      formElement.classList.add('train-type-switching');
+      formElement.setAttribute('aria-busy', 'true');
+    }
+    if (this._trainTypeSwitchFrame !== null || this._trainTypeSwitchCommitFrame !== null) return;
+
+    const raf = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : callback => setTimeout(callback, 0);
+    // 两帧分离：第一帧先让下拉关闭和旧表单淡出完成绘制；第二帧才执行
+    // 较重的 DOM/Alpine 重建，避免点击事件本身长时间无响应。
+    this._trainTypeSwitchFrame = raf(() => {
+      this._trainTypeSwitchFrame = null;
+      this._trainTypeSwitchCommitFrame = raf(() => {
+        this._trainTypeSwitchCommitFrame = null;
+        const target = this._pendingTrainType;
+        this._pendingTrainType = '';
+        this._commitTrainTypeSwitch(target);
+        raf(() => {
+          const currentForm = document.getElementById('trainForm');
+          if (currentForm) {
+            currentForm.classList.remove('train-type-switching');
+            currentForm.removeAttribute('aria-busy');
+          }
+        });
+      });
+    });
+  },
+
+  _cancelScheduledTrainTypeSwitch() {
+    const cancel = typeof cancelAnimationFrame === 'function'
+      ? cancelAnimationFrame
+      : clearTimeout;
+    if (this._trainTypeSwitchFrame !== null) cancel(this._trainTypeSwitchFrame);
+    if (this._trainTypeSwitchCommitFrame !== null) cancel(this._trainTypeSwitchCommitFrame);
+    this._trainTypeSwitchFrame = null;
+    this._trainTypeSwitchCommitFrame = null;
+    this._pendingTrainType = '';
+    const formElement = document.getElementById('trainForm');
+    if (formElement) {
+      formElement.classList.remove('train-type-switching');
+      formElement.removeAttribute('aria-busy');
+    }
+  },
+
   switchTrainType(v) {
     // 训练类型变化后，旧的预设对比数据已无意义，清理避免误显示"已修改"标识
     this.formDiffMap = null;
@@ -90,17 +209,23 @@ window.trainingCoreMixin = {
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
-    // 为新训练类型的可见字段补充默认值（已有值保留）。
-    // 切换类型后，新类型专有字段若未初始化会显示空，且 omitDefault 比较失效；
-    // 这里复用 buildTrainForm 的 default 构建逻辑，只填缺失的 key。
-    const newDefaults = this._buildFormDefaults(v);
-    for (const k in newDefaults) {
-      if (this.form[k] === undefined || this.form[k] === null) {
-        this.form[k] = newDefaults[k];
-      }
+    // 旧类型的字段 watcher 若留到 form 整体替换之后再释放，会先针对新对象
+    // 执行一轮旧规则（显隐扫描、只读刷新、自动值联动），造成重复渲染。
+    this._clearProfileFieldWatchers();
+
+    // 每个训练类型拥有独立草稿。切出时保存当前类型，第一次切入新类型时从
+    // 该类型的 registry 默认值创建；切回来时仅恢复它自己的字段，避免同名
+    // 参数（优化器、学习率、保存设置等）跨训练核心相互污染。
+    const previousType = this._activeTrainType;
+    if (previousType && previousType !== v) {
+      this._captureProfileDraft(previousType, { ...this.form, model_train_type: previousType });
     }
+    const newDefaults = this._buildFormDefaults(v);
+    this.form = this._profileFormFromDraft(v, newDefaults);
+    if (v === 'krea2-lora') this._applyKrea2ModelDefaults(this.form, newDefaults);
     this._normalizeProfileSelectValues(v, newDefaults);
     this.formDefaults = { ...newDefaults };
+    this._activeTrainType = v;
 
     // A runtime profile owns its network module. Krea's module is musubi
     // specific and must never inherit an sd-scripts or LyCORIS selection.
@@ -109,14 +234,20 @@ window.trainingCoreMixin = {
       : (v === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
+    this._captureProfileDraft(v, this.form, newDefaults);
+    this.formHistory = [{ ...this.form }];
+    this.formHistoryIdx = 0;
 
     // Re-render form with new train type
     this.renderTrainingForm(v, null);
-    this.setupAutoValueWatchers();
-    this.setupShowIfWatchers();
-    this.setupReadonlyWatchers();
+    this._scheduleProfileFieldWatchers(v);
     this.updateToml();
-    this.loadPresets();
+    // 预设列表与训练类型无关，切换时只在内存中重新筛选，避免重复请求。
+    if (this.presetsLoaded) {
+      this._refreshFilteredPresets();
+    } else {
+      this.loadPresets();
+    }
 
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
@@ -149,6 +280,59 @@ window.trainingCoreMixin = {
     if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
     else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
     return defaults;
+  },
+
+  _profileDraftStorageKey(route = this.currentRoute) {
+    return route && route.startsWith('train-') ? `anima-form-profiles-${route}` : '';
+  },
+
+  _loadProfileDrafts(route = this.currentRoute) {
+    const storageKey = this._profileDraftStorageKey(route);
+    if (!storageKey || typeof localStorage === 'undefined') return {};
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const validTypes = new Set(this.trainTypes.map(item => item.v));
+      return Object.fromEntries(
+        Object.entries(parsed).filter(([key, value]) =>
+          validTypes.has(key) && value && typeof value === 'object' && !Array.isArray(value))
+      );
+    } catch (e) {
+      return {};
+    }
+  },
+
+  _profileFormFromDraft(trainType, defaults = this._buildFormDefaults(trainType), source = null) {
+    const draft = source || this._profileFormDrafts[trainType] || {};
+    const clean = { ...defaults };
+    Object.keys(defaults).forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(draft, key)) clean[key] = draft[key];
+    });
+    clean.model_train_type = trainType;
+    return clean;
+  },
+
+  _captureProfileDraft(trainType, source = this.form, defaults = this._buildFormDefaults(trainType)) {
+    if (!trainType) return null;
+    const draft = this._profileFormFromDraft(trainType, defaults, source);
+    this._profileFormDrafts[trainType] = draft;
+    return draft;
+  },
+
+  _persistProfileDrafts(route = this.currentRoute) {
+    const storageKey = this._profileDraftStorageKey(route);
+    if (!storageKey || typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(this._profileFormDrafts));
+    } catch (e) {}
+  },
+
+  _applyKrea2ModelDefaults(target = this.form, defaults = this._buildFormDefaults('krea2-lora')) {
+    ['dit', 'vae', 'text_encoder'].forEach(key => {
+      if (target[key] === undefined || target[key] === null || String(target[key]).trim() === '') {
+        target[key] = defaults[key];
+      }
+    });
   },
 
   _normalizeProfileSelectValues(trainType, defaults = this._buildFormDefaults(trainType), target = this.form) {
@@ -188,8 +372,11 @@ window.trainingCoreMixin = {
   suspendTrainForm(route) {
     if (!route || !route.startsWith('train-')) return;
 
+    this._cancelScheduledTrainTypeSwitch();
     clearTimeout(this._formSaveTimer);
     this._formSaveTimer = null;
+    this._captureProfileDraft(this._activeTrainType || this.form.model_train_type, this.form);
+    this._persistProfileDrafts(route);
     try {
       localStorage.setItem('anima-form-' + route, JSON.stringify(this.form));
     } catch (e) {}
@@ -208,9 +395,13 @@ window.trainingCoreMixin = {
   },
 
   _disposeTrainForm() {
+    this._cancelScheduledTrainTypeSwitch();
+    this._cancelProfileFieldWatcherSetup();
     clearTimeout(this._formSaveTimer);
     this._formSaveTimer = null;
     if (this._trainFormMountedRoute) {
+      this._captureProfileDraft(this._activeTrainType || this.form.model_train_type, this.form);
+      this._persistProfileDrafts(this._trainFormMountedRoute);
       try {
         localStorage.setItem('anima-form-' + this._trainFormMountedRoute, JSON.stringify(this.form));
       } catch (e) {}
@@ -230,6 +421,10 @@ window.trainingCoreMixin = {
       window.removeEventListener('locale-changed', this._localeChangeHandler);
       this._localeChangeHandler = null;
     }
+    if (this._trainingFieldsLoadedHandler) {
+      window.removeEventListener('training-fields-loaded', this._trainingFieldsLoadedHandler);
+      this._trainingFieldsLoadedHandler = null;
+    }
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     this._stepEstimateRequestSeq += 1;
@@ -246,6 +441,7 @@ window.trainingCoreMixin = {
     this._conditionalMotionEpoch += 1;
     this.stopSectionScroll();
 
+    this._destroyTrainTypePanelCache();
     const container = document.getElementById('trainFormContent');
     if (container) container.replaceChildren();
     this.sectionNavList = [];
@@ -289,6 +485,7 @@ window.trainingCoreMixin = {
     const savedKey = 'anima-form-' + r;
     let saved = null;
     try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
+    this._profileFormDrafts = this._loadProfileDrafts(r);
 
     // Use saved train type if valid, otherwise fall back to route default
     const validTrainTypes = this.trainTypes.map(t => t.v);
@@ -301,8 +498,13 @@ window.trainingCoreMixin = {
     }
 
     const defaults = this._buildFormDefaults(trainType);
-
-    this.form = { ...defaults, ...(saved || {}) };
+    const savedProfileDraft = this._profileFormDrafts[trainType] || {};
+    this.form = this._profileFormFromDraft(
+      trainType,
+      defaults,
+      { ...savedProfileDraft, ...(saved || {}) }
+    );
+    this._activeTrainType = trainType;
     this._autoValueApplied = {};
     // Ensure model_train_type is valid (saved may have been from another route)
     if (!validTrainTypes.includes(this.form.model_train_type)) {
@@ -312,6 +514,7 @@ window.trainingCoreMixin = {
     // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
+      this._applyKrea2ModelDefaults(this.form, defaults);
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
     } else if (this.form.model_train_type !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
@@ -319,6 +522,8 @@ window.trainingCoreMixin = {
     }
     this.formDefaults = { ...defaults };
     this._syncKrea2CacheDir();
+    this._captureProfileDraft(this.form.model_train_type, this.form, defaults);
+    this._persistProfileDrafts(r);
     this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
 
@@ -327,6 +532,7 @@ window.trainingCoreMixin = {
     this.currentTrainTypeLabel = tt ? tt.l : '';
 
     this.renderTrainingForm(trainType, null);
+    this._warmTrainTypePanels(trainType);
     this._trainFormMountedRoute = r;
     this._trainFormLocale = this.locale;
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
@@ -349,6 +555,8 @@ window.trainingCoreMixin = {
       self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
+        self._captureProfileDraft(self._activeTrainType || self.form.model_train_type, self.form);
+        self._persistProfileDrafts(r);
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
       }, 1000);
     });
@@ -370,6 +578,11 @@ window.trainingCoreMixin = {
     self._localeChangeHandler = () => {
       const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
+      const activeType = self.form.model_train_type || 'anima-lora';
+      self._destroyTrainTypePanelCache();
+      self.renderTrainingForm(activeType, null, true);
+      self._warmTrainTypePanels(activeType);
+      self._trainFormLocale = self.locale;
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
 
@@ -381,15 +594,19 @@ window.trainingCoreMixin = {
     }
     self._trainingFieldsLoadedHandler = () => {
       if (!self._trainFormMountedRoute) return;
+      self._trainFieldsRevision += 1;
       const activeType = self.form.model_train_type || 'anima-lora';
       const freshDefaults = self._buildFormDefaults(activeType);
       Object.keys(freshDefaults).forEach(key => {
         if (self.form[key] === undefined) self.form[key] = freshDefaults[key];
       });
       self._normalizeProfileSelectValues(activeType, freshDefaults);
+      if (activeType === 'krea2-lora') self._applyKrea2ModelDefaults(self.form, freshDefaults);
       self.formDefaults = { ...freshDefaults };
       self._syncKrea2CacheDir();
-      self.renderTrainingForm(activeType, null);
+      self._destroyTrainTypePanelCache();
+      self.renderTrainingForm(activeType, null, true);
+      self._warmTrainTypePanels(activeType);
       self.setupAutoValueWatchers();
       self.setupShowIfWatchers();
       self.setupReadonlyWatchers();
@@ -781,15 +998,117 @@ window.trainingCoreMixin = {
     </div>`;
   },
 
-  renderTrainingForm(trainType, targetId) {
-    const container = document.getElementById(targetId || 'trainFormContent');
-    if (!container) return;
-    const sections = window.getVisibleSections(trainType || this.form.model_train_type || 'anima-lora');
+  _mutateTrainingPanels(callback) {
+    const alpine = window.Alpine;
+    if (alpine && typeof alpine.mutateDom === 'function') {
+      alpine.mutateDom(callback);
+    } else {
+      callback();
+    }
+  },
+
+  _destroyTrainTypePanelCache() {
+    if (!(this._trainTypePanelCache instanceof Map)) {
+      this._trainTypePanelCache = null;
+      return;
+    }
+    const alpine = window.Alpine;
+    this._mutateTrainingPanels(() => {
+      this._trainTypePanelCache.forEach(panel => {
+        if (alpine && typeof alpine.destroyTree === 'function') {
+          Array.from(panel.children).forEach(child => alpine.destroyTree(child));
+        }
+        panel.remove();
+      });
+    });
+    this._trainTypePanelCache.clear();
+    this._trainTypePanelCache = null;
+  },
+
+  _activateTrainTypePanel(root, trainType) {
+    if (!(this._trainTypePanelCache instanceof Map)) this._trainTypePanelCache = new Map();
+
+    // 兼容热更新前已直接渲染在根容器中的旧结构。
+    const legacyChildren = Array.from(root.children).filter(
+      child => !child.classList.contains('train-type-panel')
+    );
+    if (legacyChildren.length > 0) {
+      this._replaceTrainingFormHtml(root, '');
+      this._trainTypePanelCache.clear();
+    }
+
+    const activePanel = root.querySelector(':scope > .train-type-panel');
+
+    let panel = this._trainTypePanelCache.get(trainType);
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'train-type-panel';
+      panel.dataset.trainType = trainType;
+      this._trainTypePanelCache.set(trainType, panel);
+    }
+    this._mutateTrainingPanels(() => {
+      if (activePanel && activePanel !== panel) activePanel.remove();
+      if (panel.parentElement !== root) root.appendChild(panel);
+    });
+    return panel;
+  },
+
+  _warmTrainTypePanels(activeType) {
+    const root = document.getElementById('trainFormContent');
+    if (!root) return;
+    const originalForm = this.form;
+    const originalDefaults = this.formDefaults;
+    const originalActiveType = this._activeTrainType;
+
+    this.trainTypes.forEach(({ v: trainType }) => {
+      if (trainType === activeType || this._trainTypePanelIsReady(trainType)) return;
+      const defaults = this._buildFormDefaults(trainType);
+      const warmForm = this._profileFormFromDraft(trainType, defaults);
+      if (trainType === 'krea2-lora') {
+        this._applyKrea2ModelDefaults(warmForm, defaults);
+        const cacheDir = this._deriveKrea2CacheDir(warmForm.train_data_dir);
+        warmForm.dataset_cache_dir = cacheDir;
+        defaults.dataset_cache_dir = cacheDir;
+      }
+      this._normalizeProfileSelectValues(trainType, defaults, warmForm);
+      warmForm.network_module = trainType === 'anima-lora'
+        ? 'networks.lora_anima'
+        : (trainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+      this.form = warmForm;
+      this.formDefaults = { ...defaults };
+      this._activeTrainType = trainType;
+      this.renderTrainingForm(trainType, null, true);
+    });
+
+    this.form = originalForm;
+    this.formDefaults = originalDefaults;
+    this._activeTrainType = originalActiveType;
+    this.renderTrainingForm(activeType, null);
+  },
+
+  renderTrainingForm(trainType, targetId, force = false) {
+    const root = document.getElementById(targetId || 'trainFormContent');
+    if (!root) return;
+    const activeType = trainType || this.form.model_train_type || 'anima-lora';
+    const container = targetId ? root : this._activateTrainTypePanel(root, activeType);
+
+    if (!targetId && !force && this._trainTypePanelIsReady(activeType)) {
+      this._nestLevelCache = null;
+      this._advCountFields = container._advCountFields || {};
+      this._lazyAdvancedFields = container._lazyAdvancedFields || {};
+      this.buildSectionNav();
+      this._syncAllConditionalFields();
+      return;
+    }
+    const sections = window.getVisibleSections(activeType);
     // 失效嵌套层级缓存（字段集随训练类型变化）
     this._nestLevelCache = null;
     // 进阶参数计数映射：countKey → [field objects]，供 _updateAdvancedCounts 运行期重算。
     // 渲染期建立后，showConditionalFields 切换字段显隐时用 _fieldVisible 按表单状态重计括号数字。
     this._advCountFields = {};
+    this._lazyAdvancedFields = {};
+    // 渲染前读取折叠状态，默认折叠的高级字段可以延迟到首次展开时创建。
+    this._initCollapseState(sections);
     let html = '';
       sections.forEach(section => {
       const allFields = section.fields.filter(f => !f.hidden);
@@ -859,8 +1178,9 @@ window.trainingCoreMixin = {
                 html += `<span>${this.esc(sgAdvTitle)}</span>`;
                 html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
                 html += `</div>`;
-                html += `<div class="advanced-fold-body">`;
-                sg.advanced.forEach(af => { html += this.renderField(af); });
+                const sgAdvancedLoaded = this._advancedCollapsed[sgKey] === false;
+                html += `<div class="advanced-fold-body" data-advanced-loaded="${sgAdvancedLoaded ? '1' : '0'}">`;
+                html += this._renderAdvancedFields(sgKey, sg.advanced);
                 html += `</div></div>`;
               }
               html += `</div></div>`;
@@ -876,8 +1196,9 @@ window.trainingCoreMixin = {
               html += `<span>${this.esc(sgAdvTitle)}</span>`;
               html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
               html += `</div>`;
-              html += `<div class="advanced-fold-body">`;
-              sg.advanced.forEach(af => { html += this.renderField(af); });
+              const sgAdvancedLoaded = this._advancedCollapsed[sgKey] === false;
+              html += `<div class="advanced-fold-body" data-advanced-loaded="${sgAdvancedLoaded ? '1' : '0'}">`;
+              html += this._renderAdvancedFields(sgKey, sg.advanced);
               html += `</div></div>`;
             }
           }
@@ -889,8 +1210,6 @@ window.trainingCoreMixin = {
 
       // 底部全局高级折叠（仅常规字段中的 advanced）
       if (regularAdvanced.length > 0) {
-        const advCollapsedKey = 'anima-advanced-collapsed-' + section.key;
-        const advCollapsed = localStorage.getItem(advCollapsedKey) !== '0';
         const regularAdvVisible = regularAdvanced.filter(f => this._fieldVisible(f)).length;
         this._advCountFields[section.key] = regularAdvanced;
         html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] !== false }">`;
@@ -899,20 +1218,53 @@ window.trainingCoreMixin = {
         html += `<span>${this.t('common.advancedParams')}</span>`;
         html += `<span class="advanced-count" data-adv-count-key="${section.key}">(${regularAdvVisible})</span>`;
         html += `</div>`;
-        html += `<div class="advanced-fold-body">`;
-        regularAdvanced.forEach(field => { html += this.renderField(field); });
+        const regularAdvancedLoaded = this._advancedCollapsed[section.key] === false;
+        html += `<div class="advanced-fold-body" data-advanced-loaded="${regularAdvancedLoaded ? '1' : '0'}">`;
+        html += this._renderAdvancedFields(section.key, regularAdvanced);
         html += `</div></div>`;
       }
 
       html += `</div></div>`;
     });
-    container.innerHTML = html;
-    // 初始化折叠状态对象（Alpine 响应式）
-    this._initCollapseState(sections);
+    this._replaceTrainingFormHtml(container, html);
+    if (!targetId) {
+      container.setAttribute('data-panel-ready', '1');
+      container.dataset.panelLocale = String(this.locale || '');
+      container.dataset.fieldsRevision = String(this._trainFieldsRevision || 0);
+      container._advCountFields = this._advCountFields;
+      container._lazyAdvancedFields = this._lazyAdvancedFields;
+    }
     // 构建右侧分组导航指示器（#1）并绑定滚动高亮
     this.buildSectionNav();
-    // Re-check all conditional fields after render
-    this._allShowIfKeys().forEach(k => this.showConditionalFields(k));
+    // 整张表单刚重建时一次性同步全部条件字段。旧实现按每个条件 key
+    // 重复扫描 DOM、重算计数和生成 TOML，训练类型切换时会产生明显卡顿。
+    this._syncAllConditionalFields();
+  },
+
+  _renderAdvancedFields(key, fields) {
+    if (this._advancedCollapsed[key] !== false) {
+      this._lazyAdvancedFields[key] = fields;
+      return '';
+    }
+    return fields.map(field => this.renderField(field)).join('');
+  },
+
+  _replaceTrainingFormHtml(container, html) {
+    const alpine = window.Alpine;
+    if (!alpine || typeof alpine.mutateDom !== 'function'
+        || typeof alpine.destroyTree !== 'function' || typeof alpine.initTree !== 'function') {
+      container.innerHTML = html;
+      return;
+    }
+
+    // 直接 innerHTML 会让旧表单的 Alpine effects、全局事件和节点引用滞留，
+    // 连续切换时 detached DOM 快速累积。先逐棵销毁，再在暂停 MutationObserver
+    // 的受控更新中插入并手动初始化新树。
+    alpine.mutateDom(() => {
+      Array.from(container.children).forEach(child => alpine.destroyTree(child));
+      container.innerHTML = html;
+      Array.from(container.children).forEach(child => alpine.initTree(child));
+    });
   },
 
   // ── Section / Advanced collapse state (B2 / A3) ──
@@ -969,6 +1321,15 @@ window.trainingCoreMixin = {
       fold = card && card.querySelector('.advanced-fold:not([data-adv-key])');
     }
     const body = fold && fold.querySelector('.advanced-fold-body');
+    if (!willCollapse && body && body.getAttribute('data-advanced-loaded') !== '1') {
+      const fields = this._lazyAdvancedFields[key] || [];
+      const html = fields.map(field => this.renderField(field)).join('');
+      this._replaceTrainingFormHtml(body, html);
+      body.setAttribute('data-advanced-loaded', '1');
+      delete this._lazyAdvancedFields[key];
+      this._syncAllConditionalFields();
+      this.updateReadonlyStates();
+    }
     if (body) this._animateCollapse(body, willCollapse);
   },
 
@@ -1686,6 +2047,47 @@ window.trainingCoreMixin = {
       const visible = fields.filter(f => this._fieldVisible(f)).length;
       span.textContent = '(' + visible + ')';
     });
+  },
+
+  // 完整渲染后的快速初始化路径：每个条件节点只解析和求值一次，不播放动画，
+  // 不生成 TOML（调用方会在表单初始化完成后统一生成）。
+  _syncAllConditionalFields() {
+    const container = document.getElementById('trainFormContent');
+    if (!container) return;
+
+    container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]').forEach(row => {
+      let match = true;
+      try {
+        const allAttr = row.getAttribute('data-show-if-all');
+        const anyAttr = row.getAttribute('data-show-if-any');
+        if (allAttr !== null) {
+          const conditions = JSON.parse(allAttr);
+          match = conditions.every(c => this._evalShowIfCond(c));
+        } else if (anyAttr !== null) {
+          const groups = JSON.parse(anyAttr);
+          match = groups.some(group => group.every(c => this._evalShowIfCond(c)));
+        } else {
+          const parentKey = row.getAttribute('data-show-if-key');
+          const expectedVal = this.form[parentKey];
+          const eqVal = row.getAttribute('data-show-if-eq');
+          const neqVal = row.getAttribute('data-show-if-neq');
+          const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
+          if (eqVal !== null) {
+            match = String(expectedVal) === eqVal || orVals.includes(String(expectedVal));
+          } else if (neqVal !== null) {
+            match = String(expectedVal) !== neqVal
+              && expectedVal !== null && expectedVal !== undefined && expectedVal !== '';
+          }
+        }
+      } catch (e) {
+        // 保留渲染阶段已经计算出的状态，避免坏条件导致字段被错误隐藏。
+        match = !row.classList.contains('field-hidden');
+      }
+      row._conditionalTargetVisible = match;
+      this._setConditionalState(row, match);
+    });
+
+    this._updateAdvancedCounts();
   },
 
   showConditionalFields(parentKey) {
@@ -2468,6 +2870,10 @@ window.trainingCoreMixin = {
     }
     const oldVal = this.form[key];
     if (oldVal === value) return;
+    if (key === 'model_train_type' && !this._switchInProgress) {
+      this._scheduleTrainTypeSwitch(value);
+      return;
+    }
     if (this._autoValueApplied && Object.prototype.hasOwnProperty.call(this._autoValueApplied, key)) {
       delete this._autoValueApplied[key];
     }
@@ -2517,12 +2923,6 @@ window.trainingCoreMixin = {
     if (key === 'output_dir' || key === 'output_name' || key === 'resume') {
       this.scheduleOutputPathInfo();
     }
-    // model_train_type 切换：直接调用 switchTrainType，不依赖 $watch
-    //（applyPreset 等流程会临时禁用 watcher，存在未恢复的风险）
-    if (key === 'model_train_type' && value !== oldVal && !this._switchInProgress) {
-      this._switchInProgress = true;
-      try { this.switchTrainType(value); } finally { this._switchInProgress = false; }
-    }
     this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
 
@@ -2570,7 +2970,7 @@ window.trainingCoreMixin = {
     // Clear error for this field on change and re-render to update UI
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null);
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null, true);
       return;
     }
     this.updateTomlDebounced();
@@ -2642,13 +3042,21 @@ window.trainingCoreMixin = {
       }
     }
     // No different value found → restore to default
-    const def = this.formDefaults[key];
+    const def = this._currentProfileFieldDefault(key);
     this.form[key] = def !== undefined ? def : '';
     this.updateToml();
   },
 
+  _currentProfileFieldDefault(key) {
+    const trainType = this.form.model_train_type || this._activeTrainType || 'anima-lora';
+    const defaults = this._buildFormDefaults(trainType);
+    return Object.prototype.hasOwnProperty.call(defaults, key) ? defaults[key] : '';
+  },
+
   resetField(key) {
-    const def = this.formDefaults[key];
+    // formDefaults may represent an applied preset baseline. "Reset to default"
+    // must always use the active training profile's registry default instead.
+    const def = this._currentProfileFieldDefault(key);
     this.setField(key, def !== undefined ? def : '');
   },
 
@@ -2657,16 +3065,27 @@ window.trainingCoreMixin = {
     this.formDiffMap = null;
     this.diffCounts = { modified: 0, added: 0 };
     this.previewPreset = null;
-    // Preserve current train type - don't reset it
+    // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被预设、
+    // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;
-    this.form = { ...this.formDefaults };
-    this.form.model_train_type = currentTrainType;
+    const profileDefaults = this._buildFormDefaults(currentTrainType);
+    this.formDefaults = { ...profileDefaults };
+    this.form = { ...profileDefaults, model_train_type: currentTrainType };
+    this._autoValueApplied = {};
+    if (currentTrainType === 'krea2-lora') {
+      this._applyKrea2ModelDefaults(this.form, profileDefaults);
+    }
+    this._normalizeProfileSelectValues(currentTrainType, profileDefaults);
 
     // Adjust network_module based on train type
     const targetNetworkModule = currentTrainType === 'anima-lora'
       ? 'networks.lora_anima'
       : (currentTrainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
     this.form.network_module = targetNetworkModule;
+    this._activeTrainType = currentTrainType;
+    this._syncKrea2CacheDir();
+    this._captureProfileDraft(currentTrainType, this.form, profileDefaults);
+    this._persistProfileDrafts();
 
     this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
@@ -2676,6 +3095,8 @@ window.trainingCoreMixin = {
     // Ensure network_module is correct after rebuild
     this.$nextTick(() => {
       this.form.network_module = targetNetworkModule;
+      this._captureProfileDraft(currentTrainType, this.form, profileDefaults);
+      this._persistProfileDrafts();
       this.updateToml();
     });
 
@@ -2758,7 +3179,7 @@ window.trainingCoreMixin = {
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;
     if (hasErrors) {
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null);
+      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null, true);
     }
     return !hasErrors;
   },

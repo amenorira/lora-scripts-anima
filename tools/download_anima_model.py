@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Anima 模型下载工具（薄封装）。
+"""训练模型下载工具（薄封装）。
 
-从 Hugging Face Hub 下载 lora-scripts-anima 所需的基础模型文件（底模 / text encoder / VAE）
+从 Hugging Face Hub 下载 lora-scripts-anima 所需的 Anima / Krea 2 模型文件
 落到本地 `models/` 目录，供训练直接 `pretrained_model_name_or_path` 等字段引用。
 
-本文件只保留 Anima 专属内容（文件清单、批量下载编排、本地扫描、CLI），
+本文件只保留产品模型清单、批量下载编排、本地扫描和 CLI，
 通用 HF 流式下载核心（多分块/续传/端点回退/进度上报/rich Progress）在
 backend/utils/hf_download.py，由 api.py / tagger_download.py / 本文件共用。
 
@@ -46,6 +46,54 @@ ANIMA_FILES: list[tuple[str, str, str]] = [
 
 # HF 仓库
 ANIMA_REPO_ID = "circlestone-labs/Anima"
+KREA2_REPO_ID = "Comfy-Org/Krea-2"
+
+KREA2_FILES: list[tuple[str, str, str]] = [
+    (
+        "diffusion_models/krea2_raw_fp8_scaled.safetensors",
+        "krea2_raw_fp8_scaled.safetensors",
+        "Krea 2 训练底模 / Training model",
+    ),
+    (
+        "diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+        "krea2_turbo_fp8_scaled.safetensors",
+        "Krea 2 推理模型 / Inference model",
+    ),
+    (
+        "text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+        "qwen3vl_4b_fp8_scaled.safetensors",
+        "文本编码器 / Text encoder (Qwen3-VL-4B FP8 scaled)",
+    ),
+    (
+        "vae/qwen_image_vae.safetensors",
+        "qwen_image_vae.safetensors",
+        "VAE（与 Anima 共用本地文件） / Shared with Anima",
+    ),
+]
+
+# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组)
+MODEL_FILES: list[tuple[str, str, str, str, str]] = [
+    (ANIMA_REPO_ID, hf_path, local_name, desc, "Anima")
+    for hf_path, local_name, desc in ANIMA_FILES
+] + [
+    (KREA2_REPO_ID, hf_path, local_name, desc, "Krea 2")
+    for hf_path, local_name, desc in KREA2_FILES
+]
+
+
+def _normalize_file(
+    item: tuple[str, str, str] | tuple[str, str, str, str] | tuple[str, str, str, str, str],
+    default_repo_id: str,
+) -> tuple[str, str, str, str]:
+    """Return (repo_id, hf_path, local_name, description)."""
+    if len(item) == 3:
+        hf_path, local_name, desc = item
+        return default_repo_id, hf_path, local_name, desc
+    if len(item) == 4:
+        repo, hf_path, local_name, desc = item
+        return repo, hf_path, local_name, desc
+    repo, hf_path, local_name, desc, _group = item
+    return repo, hf_path, local_name, desc
 
 
 def download_anima_files(
@@ -54,10 +102,14 @@ def download_anima_files(
     on_log: Optional[Callable[[str], None]] = None,
     on_progress: Optional[Callable[[str], None]] = None,
     repo_id: str = ANIMA_REPO_ID,
-    files: list[tuple[str, str, str]] | None = None,
+    files: list[
+        tuple[str, str, str]
+        | tuple[str, str, str, str]
+        | tuple[str, str, str, str, str]
+    ] | None = None,
     progress_lock: Optional[threading.Lock] = None,
 ) -> list[Path]:
-    """逐文件下载 Anima 模型，把进度写入共享 progress dict。
+    """逐文件下载模型，把进度写入共享 progress dict。
 
     参数:
         dest_dir: 落盘目录（通常 = SD_MODELS_DIR），所有文件最终平铺在此目录下
@@ -65,7 +117,7 @@ def download_anima_files(
         on_log: 事件日志回调（文件开始/完成/失败/重试），换行打印
         on_progress: 单行进度回调（百分比+速度），由调用方以 \\r 原地刷新；可空
         repo_id: HF 仓库 id
-        files: [(hf_path, local_name, desc)]，默认 ANIMA_FILES
+        files: 支持 (hf_path, local_name, desc) 或带 repo_id / UI 分组的模型条目
         progress_lock: 保护 progress dict 的锁；传入后端共享锁可使读取端与之互斥，
                        避免轮询时 "dictionary changed during iteration"。默认自建本地锁。
 
@@ -77,14 +129,15 @@ def download_anima_files(
     progress = progress if progress is not None else {}
 
     # 让前端能区分"本次要下的文件"（排队中）与"不相关的文件"（显示静态状态）
-    batch_names = [local_name for _, local_name, _ in files]
+    normalized_files = [_normalize_file(item, repo_id) for item in files]
+    batch_names = [local_name for _, _, local_name, _ in normalized_files]
     with lock:
         progress.update({
             "phase": "downloading",
             "file_index": 0,
             "file_total": file_total,
             "batch": batch_names,
-            "filename": files[0][1] if files else "",
+            "filename": normalized_files[0][2] if normalized_files else "",
         })
 
     def _log(msg: str):
@@ -111,7 +164,7 @@ def download_anima_files(
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     results: list[Path] = []
-    for i, (hf_path, local_name, desc) in enumerate(files):
+    for i, (file_repo_id, hf_path, local_name, desc) in enumerate(normalized_files):
         _log(f"[{i+1}/{file_total}] 下载 / Downloading {local_name} ({desc}) ...")
         with lock:
             progress.update({
@@ -126,7 +179,7 @@ def download_anima_files(
         dest = dest_dir / local_name
         try:
             path = download_hf_file(
-                repo_id, hf_path, dest,
+                file_repo_id, hf_path, dest,
                 progress=progress, lock=lock,
                 on_log=on_log, on_progress=on_progress,
                 file_index=i, file_total=file_total,
@@ -167,6 +220,26 @@ def list_local_anima_files(dest_dir: Path) -> list[dict]:
             out.append({"filename": local_name, "desc": desc, "exists": True, "size_gb": round(p.stat().st_size / (1024**3), 2)})
         else:
             out.append({"filename": local_name, "desc": desc, "exists": False, "size_gb": 0})
+    return out
+
+
+def list_local_model_files(dest_dir: Path) -> list[dict]:
+    """扫描全部可下载训练模型，并返回 UI 所需的仓库与用途信息。"""
+    out = []
+    for repo_id, hf_path, local_name, desc, group in MODEL_FILES:
+        path = dest_dir / local_name
+        exists = path.exists() and path.is_file()
+        out.append(
+            {
+                "filename": local_name,
+                "desc": desc,
+                "group": group,
+                "repo_id": repo_id,
+                "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
+                "exists": exists,
+                "size_gb": round(path.stat().st_size / (1024**3), 2) if exists else 0,
+            }
+        )
     return out
 
 

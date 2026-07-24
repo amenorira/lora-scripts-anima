@@ -89,10 +89,12 @@ class CoreRegistryTests(unittest.TestCase):
         musubi = next(item for item in payload["engines"] if item["id"] == "musubi_tuner")
         self.assertTrue(musubi["available"])
         self.assertIsNone(musubi["python_executable"])
+        self.assertEqual(musubi["version"]["describe"], "v0.3.4-7-g8934cfb")
         self.assertTrue(any(item["id"] == "krea2-lora" for item in payload["profiles"]))
         lycoris = next(item for item in payload["adapters"] if item["id"] == "lycoris")
         self.assertTrue(lycoris["mounted"])
         self.assertEqual(lycoris["host_engine_id"], "sd_scripts")
+        self.assertEqual(lycoris["version"]["describe"], "v3.4.0-0-ga72bb1b")
 
 
 class Krea2CodecTests(unittest.TestCase):
@@ -102,6 +104,13 @@ class Krea2CodecTests(unittest.TestCase):
         dit = next(field for field in all_fields if field["key"] == "dit")
 
         self.assertEqual(dit["profiles"], ["krea2-lora"])
+
+    def test_registry_provides_downloaded_krea_model_paths(self):
+        defaults = {field["key"]: field.get("default") for field in KREA2_FIELDS}
+
+        self.assertEqual(defaults["dit"], "./models/krea2_raw_fp8_scaled.safetensors")
+        self.assertEqual(defaults["vae"], "./models/qwen_image_vae.safetensors")
+        self.assertEqual(defaults["text_encoder"], "./models/qwen3vl_4b_fp8_scaled.safetensors")
 
     def test_generates_separate_dataset_and_train_tomls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -770,6 +779,330 @@ console.log(JSON.stringify(ctx.form));
         form = json.loads(result.stdout)
         self.assertEqual(form["timestep_sampling"], "shift")
         self.assertEqual(form["weighting_scheme"], "none")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_krea_profile_fills_blank_model_paths_without_overwriting_custom_paths(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: {
+    dit: '',
+    vae: 'D:/custom/vae.safetensors',
+    text_encoder: null,
+  },
+});
+ctx._applyKrea2ModelDefaults(ctx.form, {
+  dit: './models/krea2_raw_fp8_scaled.safetensors',
+  vae: './models/qwen_image_vae.safetensors',
+  text_encoder: './models/qwen3vl_4b_fp8_scaled.safetensors',
+});
+console.log(JSON.stringify(ctx.form));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        form = json.loads(result.stdout)
+        self.assertEqual(form["dit"], "./models/krea2_raw_fp8_scaled.safetensors")
+        self.assertEqual(form["vae"], "D:/custom/vae.safetensors")
+        self.assertEqual(form["text_encoder"], "./models/qwen3vl_4b_fp8_scaled.safetensors")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_training_profiles_keep_independent_drafts_and_reset_from_registry_defaults(self):
+        script = r"""
+global.window = {};
+const profileFields = {
+  'anima-lora': [
+    { key: 'learning_rate', type: 'text', default: 'anima-default' },
+    { key: 'optimizer_type', type: 'select', default: 'AnimaOpt', options: [{ v: 'AnimaOpt' }] },
+  ],
+  'sdxl-lora': [
+    { key: 'learning_rate', type: 'text', default: 'sdxl-default' },
+    { key: 'optimizer_type', type: 'select', default: 'SDXLOpt', options: [{ v: 'SDXLOpt' }] },
+  ],
+  'krea2-lora': [
+    { key: 'learning_rate', type: 'text', default: 'krea-default' },
+    { key: 'optimizer_type', type: 'select', default: 'KreaOpt', options: [{ v: 'KreaOpt' }] },
+    { key: 'dit', type: 'text', default: './models/raw.safetensors' },
+    { key: 'vae', type: 'text', default: './models/vae.safetensors' },
+    { key: 'text_encoder', type: 'text', default: './models/text.safetensors' },
+  ],
+};
+window.getVisibleSections = type => [{ key: 'test', fields: profileFields[type] }];
+window.t = (_key, fallback) => fallback;
+require('./frontend/js/training-core.js');
+const noop = () => {};
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: {
+    model_train_type: 'anima-lora',
+    learning_rate: 'anima-custom',
+    optimizer_type: 'AnimaOpt',
+  },
+  formDefaults: {},
+  _profileFormDrafts: {},
+  _activeTrainType: 'anima-lora',
+  currentRoute: '',
+  renderTrainingForm: noop,
+  setupAutoValueWatchers: noop,
+  setupShowIfWatchers: noop,
+  setupReadonlyWatchers: noop,
+  updateToml: noop,
+  loadPresets: noop,
+  rebuildForm: noop,
+  toast: noop,
+  t: (_key, fallback) => fallback || '',
+  $nextTick: fn => fn(),
+});
+ctx.switchTrainType('krea2-lora');
+const kreaFirst = { ...ctx.form };
+ctx.form.learning_rate = 'krea-custom';
+ctx.switchTrainType('sdxl-lora');
+const sdxlFirst = { ...ctx.form };
+ctx.switchTrainType('anima-lora');
+const animaRestored = { ...ctx.form };
+ctx.switchTrainType('krea2-lora');
+const kreaRestored = { ...ctx.form };
+ctx.formDefaults.learning_rate = 'preset-baseline';
+ctx.form.learning_rate = 'edited-after-preset';
+ctx.setField = (key, value) => { ctx.form[key] = value; };
+ctx.resetField('learning_rate');
+const kreaFieldReset = ctx.form.learning_rate;
+ctx.formDefaults.learning_rate = 'polluted-default';
+ctx.form.learning_rate = 'polluted-value';
+ctx.resetAllParams();
+const kreaReset = { form: { ...ctx.form }, defaults: { ...ctx.formDefaults } };
+console.log(JSON.stringify({ kreaFirst, sdxlFirst, animaRestored, kreaRestored, kreaFieldReset, kreaReset }));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["kreaFirst"]["learning_rate"], "krea-default")
+        self.assertEqual(state["sdxlFirst"]["learning_rate"], "sdxl-default")
+        self.assertEqual(state["animaRestored"]["learning_rate"], "anima-custom")
+        self.assertEqual(state["kreaRestored"]["learning_rate"], "krea-custom")
+        self.assertEqual(state["kreaFieldReset"], "krea-default")
+        self.assertEqual(state["kreaReset"]["form"]["learning_rate"], "krea-default")
+        self.assertEqual(state["kreaReset"]["defaults"]["learning_rate"], "krea-default")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_training_type_switch_initializes_conditions_in_one_dom_pass(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const makeRow = (id, attrs) => ({
+  id,
+  attrs,
+  isConnected: true,
+  classList: { contains() { return false; } },
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
+  },
+});
+const rows = [
+  makeRow('single', { 'data-show-if-key': 'mode', 'data-show-if-eq': 'fast' }),
+  makeRow('all', {
+    'data-show-if-all': JSON.stringify([
+      { key: 'enabled', eq: true },
+      { key: 'mode', neq: 'slow' },
+    ]),
+  }),
+  makeRow('any', {
+    'data-show-if-any': JSON.stringify([
+      [{ key: 'mode', eq: 'slow' }],
+      [{ key: 'enabled', eq: false }],
+    ]),
+  }),
+];
+let queryCount = 0;
+global.document = {
+  getElementById() {
+    return {
+      querySelectorAll(selector) {
+        if (selector !== '[data-show-if-all],[data-show-if-any],[data-show-if-key]') {
+          throw new Error('unexpected selector: ' + selector);
+        }
+        queryCount += 1;
+        return rows;
+      },
+    };
+  },
+};
+const applied = {};
+let countRefreshes = 0;
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: { mode: 'fast', enabled: true },
+  _setConditionalState(row, visible) { applied[row.id] = visible; },
+  _updateAdvancedCounts() { countRefreshes += 1; },
+});
+ctx._syncAllConditionalFields();
+console.log(JSON.stringify({ queryCount, countRefreshes, applied }));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["queryCount"], 1)
+        self.assertEqual(state["countRefreshes"], 1)
+        self.assertEqual(state["applied"], {"single": True, "all": True, "any": False})
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_training_type_ui_switch_yields_a_frame_before_rebuilding(self):
+        script = r"""
+global.window = {};
+const frames = [];
+global.requestAnimationFrame = callback => {
+  frames.push(callback);
+  return frames.length;
+};
+const classes = new Set();
+const formElement = {
+  classList: {
+    add(value) { classes.add(value); },
+    remove(value) { classes.delete(value); },
+  },
+  setAttribute() {},
+  removeAttribute() {},
+};
+global.document = {
+  getElementById(id) { return id === 'trainForm' ? formElement : null; },
+};
+require('./frontend/js/training-core.js');
+const switches = [];
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: { model_train_type: 'anima-lora' },
+  formDefaults: { model_train_type: 'anima-lora' },
+  switchTrainType(value) {
+    switches.push(value);
+    this.form = { model_train_type: value };
+  },
+});
+ctx.setField('model_train_type', 'krea2-lora');
+const beforeFrames = {
+  type: ctx.form.model_train_type,
+  switches: switches.slice(),
+  queued: frames.length,
+  fading: classes.has('train-type-switching'),
+};
+frames.shift()();
+const afterFirstFrame = {
+  type: ctx.form.model_train_type,
+  switches: switches.slice(),
+  queued: frames.length,
+};
+frames.shift()();
+const afterCommitFrame = {
+  type: ctx.form.model_train_type,
+  switches: switches.slice(),
+  queued: frames.length,
+};
+frames.shift()();
+console.log(JSON.stringify({
+  beforeFrames,
+  afterFirstFrame,
+  afterCommitFrame,
+  fadingAfterPaint: classes.has('train-type-switching'),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["beforeFrames"]["type"], "anima-lora")
+        self.assertEqual(state["beforeFrames"]["switches"], [])
+        self.assertEqual(state["beforeFrames"]["queued"], 1)
+        self.assertTrue(state["beforeFrames"]["fading"])
+        self.assertEqual(state["afterFirstFrame"]["switches"], [])
+        self.assertEqual(state["afterCommitFrame"]["switches"], ["krea2-lora"])
+        self.assertEqual(state["afterCommitFrame"]["type"], "krea2-lora")
+        self.assertFalse(state["fadingAfterPaint"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_training_type_ui_switch_uses_ready_panel_without_waiting_for_frames(self):
+        script = r"""
+global.window = {};
+const frames = [];
+global.requestAnimationFrame = callback => {
+  frames.push(callback);
+  return frames.length;
+};
+global.document = { getElementById() { return null; } };
+require('./frontend/js/training-core.js');
+const switches = [];
+const readyPanel = {
+  dataset: { panelLocale: '', fieldsRevision: '0' },
+  getAttribute(name) { return name === 'data-panel-ready' ? '1' : null; },
+};
+const ctx = Object.assign({}, window.trainingCoreMixin, {
+  form: { model_train_type: 'anima-lora' },
+  formDefaults: { model_train_type: 'anima-lora' },
+  _trainTypePanelCache: new Map([['krea2-lora', readyPanel]]),
+  switchTrainType(value) {
+    switches.push(value);
+    this.form = { model_train_type: value };
+  },
+});
+ctx.setField('model_train_type', 'krea2-lora');
+console.log(JSON.stringify({
+  type: ctx.form.model_train_type,
+  switches,
+  queuedFrames: frames.length,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["type"], "krea2-lora")
+        self.assertEqual(state["switches"], ["krea2-lora"])
+        self.assertEqual(state["queuedFrames"], 0)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_training_preset_filter_uses_switched_form_type_before_route_default(self):
+        script = r"""
+global.window = {};
+global.ROUTE_CONFIG = { 'train-lora': { trainType: 'anima-lora' } };
+require('./frontend/js/training-presets.js');
+const ctx = Object.assign({}, window.trainingPresetsMixin, {
+  currentRoute: 'train-lora',
+  form: { model_train_type: 'krea2-lora' },
+  allPresets: [
+    { metadata: { name: 'Anima', train_type: 'anima-lora' } },
+    { metadata: { name: 'Krea', train_type: 'krea2-lora' } },
+    { metadata: { name: 'Shared' } },
+  ],
+});
+ctx._refreshFilteredPresets();
+console.log(JSON.stringify(ctx.presets.map(item => item.metadata.name)));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        self.assertEqual(json.loads(result.stdout), ["Krea", "Shared"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_krea_preset_preview_uses_the_shared_toml_highlighter(self):

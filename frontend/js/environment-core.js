@@ -28,7 +28,7 @@ window.environmentCoreMixin = {
   tritonStatus: null, tritonBusy: false,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
 
-  // ── Anima 模型 State ────────────────────────────────
+  // ── 模型下载 State ──────────────────────────────────
   animaModelStatus: null,   // models/ 下已有文件清单 [{filename, desc, exists, size_gb, dest_path}]
   animaModelDestDir: '',    // 目标目录（相对仓库根，如 models/），用于"下载到哪里"说明
   animaModelBusy: false,
@@ -40,7 +40,7 @@ window.environmentCoreMixin = {
   animaModelLogOpen: false, // 日志折叠状态（持久化，避免实时重渲染被收起）
 
   // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, coreRegistryCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true,
+  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, lycorisCardOpen: true, musubiCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true, kreaModelCardOpen: true,
   _envRealtimeTopics: null,
 
   _envInitCardState() {
@@ -50,15 +50,19 @@ window.environmentCoreMixin = {
         if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
         if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
         if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
-        if (typeof s.coreRegistry === 'boolean') this.coreRegistryCardOpen = s.coreRegistry;
+        if (typeof s.lycoris === 'boolean') this.lycorisCardOpen = s.lycoris;
+        else if (typeof s.coreRegistry === 'boolean') this.lycorisCardOpen = s.coreRegistry;
+        if (typeof s.musubi === 'boolean') this.musubiCardOpen = s.musubi;
+        else if (typeof s.coreRegistry === 'boolean') this.musubiCardOpen = s.coreRegistry;
         if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
         if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
+        if (typeof s.kreaModel === 'boolean') this.kreaModelCardOpen = s.kreaModel;
         if (typeof s.animaModelLog === 'boolean') this.animaModelLogOpen = s.animaModelLog;
       }
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,coreRegistry:this.coreRegistryCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,lycoris:this.lycorisCardOpen,musubi:this.musubiCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,kreaModel:this.kreaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
   },
 
   // ── Realtime task bridge ─────────────────────────────
@@ -304,7 +308,7 @@ window.environmentCoreMixin = {
     if (!silent) { this.renderEnvironment(); this.finishProgress(); }
   },
 
-  async animaModelDownload(file) {
+  async animaModelDownload(file, group) {
     if (this.animaModelBusy) return; // 防止重复点击
     this.animaModelBusy = true; this.animaModelError = null;
     this.animaModelLog = ''; this.animaModelProgress = null;
@@ -312,7 +316,7 @@ window.environmentCoreMixin = {
     this.animaModelLogOpen = false;  // 新任务默认收起日志，用户可手动展开
     this.startProgress(); this.renderEnvironment();
     try {
-      const body = file ? JSON.stringify({file}) : '{}';
+      const body = JSON.stringify({file: file || null, group: group || null});
       const r = await fetch('/api/anima-model/download', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body
       });
