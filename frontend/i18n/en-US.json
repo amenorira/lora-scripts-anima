@@ -28,6 +28,7 @@
 		"retry": "Retry",
 		"openGuide": "Open guide",
 		"categories": {
+			"training": "Training",
 			"network": "Network",
 			"other": "Other"
 		}
@@ -694,6 +695,7 @@
 		"entryHint": "Estimate which noise ranges the current settings emphasize",
 		"title": "Training timestep distribution",
 		"subtitle": "Local pre-training estimate; does not start training or modify TOML",
+		"docsFallback": "The current profile is not Anima/Krea 2; showing the Anima baseline example",
 		"sampling": "Sampling",
 		"weighting": "Loss weighting",
 		"resolution": "Reference resolution",

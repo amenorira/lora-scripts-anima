@@ -28,6 +28,22 @@ _DOC_ANCHOR_RE = re.compile(
 _ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
 # Add future guides here; the reader groups and renders this registry automatically.
 _DOCUMENTS = {
+    "timesteps": {
+        "category": "training",
+        "order": 10,
+        "titles": {
+            "zh-CN": "Flow-matching 训练时间步",
+            "en-US": "Flow-matching Training Timesteps",
+        },
+        "summaries": {
+            "zh-CN": "时间步采样、Loss 权重、参数生效关系，以及人物、画风和概念训练的调优方法。",
+            "en-US": "Timestep sampling, loss weighting, parameter activation, and tuning for characters, styles, and concepts.",
+        },
+        "files": {
+            "zh-CN": "parameters/timesteps.zh-CN.md",
+            "en-US": "parameters/timesteps.en-US.md",
+        },
+    },
     "lora-plus": {
         "category": "network",
         "order": 10,

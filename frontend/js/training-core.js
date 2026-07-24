@@ -1862,24 +1862,25 @@ window.trainingCoreMixin = {
     return Number.isFinite(parsed) ? parsed : fallback;
   },
 
-  _timestepPreviewResolution() {
-    const raw = String(this.form.resolution || '1024,1024');
+  _timestepPreviewResolution(value) {
+    const raw = String(value || (this.form && this.form.resolution) || '1024,1024');
     const values = raw.split(/[xX,]/).map(v => Number(v.trim())).filter(v => Number.isFinite(v) && v > 0);
     if (values.length === 1) return [values[0], values[0]];
     if (values.length >= 2) return [values[0], values[1]];
     return [1024, 1024];
   },
 
-  _buildTimestepPreview() {
-    const sampling = String(this.form.timestep_sampling || 'sigmoid');
-    const weighting = String(this.form.weighting_scheme || 'uniform');
-    const isKrea2 = String(this.form.model_train_type || '') === 'krea2-lora';
-    const sigmoidScale = this._timestepPreviewNumber(this.form.sigmoid_scale, 1.0);
-    const flowShift = Math.max(0.0001, this._timestepPreviewNumber(this.form.discrete_flow_shift, 1.0));
-    const logitMean = this._timestepPreviewNumber(this.form.logit_mean, 0.0);
-    const logitStd = Math.max(0, this._timestepPreviewNumber(this.form.logit_std, 1.0));
-    const modeScale = this._timestepPreviewNumber(this.form.mode_scale, 1.29);
-    const [height, width] = this._timestepPreviewResolution();
+  _buildTimestepPreview(values) {
+    const source = values || this.form || {};
+    const sampling = String(source.timestep_sampling || 'sigmoid');
+    const weighting = String(source.weighting_scheme || 'uniform');
+    const isKrea2 = String(source.model_train_type || '') === 'krea2-lora';
+    const sigmoidScale = this._timestepPreviewNumber(source.sigmoid_scale, 1.0);
+    const flowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
+    const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
+    const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
+    const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
+    const [height, width] = this._timestepPreviewResolution(source.resolution);
     const binCount = 32;
     const counts = Array(binCount).fill(0);
     const sampleCount = 32768;

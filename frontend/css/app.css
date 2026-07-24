@@ -4389,6 +4389,54 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
 }
+.docs-timestep-widget {
+  margin: 20px 0 24px;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.docs-timestep-widget-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.docs-timestep-widget-header > div { min-width: 0; }
+.docs-timestep-widget-header strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.35;
+}
+.docs-timestep-widget-header span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.docs-timestep-widget-header .btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+.docs-timestep-widget-header .btn span {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.docs-timestep-widget .timestep-preview-chart { height: 230px; }
+.docs-timestep-widget .timestep-preview-footnote { margin-bottom: 0; }
+
+@media (max-width: 620px) {
+  .docs-timestep-widget { padding: 13px; }
+  .docs-timestep-widget-header { align-items: stretch; flex-direction: column; }
+  .docs-timestep-widget-header .btn { align-self: flex-start; }
+  .docs-timestep-widget .timestep-preview-chart { height: 180px; }
+}
 
 @container (min-width: 1170px) {
   .docs-layout {

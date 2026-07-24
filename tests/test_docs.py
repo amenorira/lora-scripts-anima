@@ -15,12 +15,72 @@ from backend.server.routes.docs import (
     _render_markdown,
     _resolve_asset_path,
 )
+from backend.training.field_registry import FIELDS
+from backend.training.musubi_krea2 import KREA2_FIELDS
 
 
 class DocumentationTests(unittest.TestCase):
     def test_loraplus_documents_exist_for_both_locales(self):
         self.assertTrue(_document_path("lora-plus", "zh-CN").is_file())
         self.assertTrue(_document_path("lora-plus", "en-US").is_file())
+
+    def test_timestep_documents_exist_and_keep_the_widget_placeholder(self):
+        for locale in ("zh-CN", "en-US"):
+            path = _document_path("timesteps", locale)
+            self.assertTrue(path.is_file())
+            html, toc = _render_markdown(
+                path.read_text(encoding="utf-8"),
+                PurePosixPath(f"parameters/timesteps.{locale}.md"),
+            )
+            self.assertIn('data-doc-widget="timestep-preview"', html)
+            for anchor in (
+                "sampling",
+                "sigmoid-scale",
+                "flow-shift",
+                "weighting",
+                "logit-normal",
+                "mode",
+                "sdxl-range",
+            ):
+                self.assertIn(f'id="{anchor}"', html)
+                self.assertIn(f'href="#{anchor}"', toc)
+
+    def test_timestep_fields_link_to_the_relevant_document_sections(self):
+        expected = {
+            "timestep_sampling": "sampling",
+            "sigmoid_scale": "sigmoid-scale",
+            "discrete_flow_shift": "flow-shift",
+            "weighting_scheme": "weighting",
+            "logit_mean": "logit-normal",
+            "logit_std": "logit-normal",
+            "mode_scale": "mode",
+        }
+        anima_fields = {
+            field["key"]: field
+            for field in FIELDS
+            if field.get("group") == "anima" and field["key"] in expected
+        }
+        krea_fields = {
+            field["key"]: field
+            for field in KREA2_FIELDS
+            if field["key"] in expected
+        }
+        for fields in (anima_fields, krea_fields):
+            self.assertEqual(set(fields), set(expected))
+            for key, anchor in expected.items():
+                self.assertEqual(fields[key]["doc_slug"], "timesteps")
+                self.assertEqual(fields[key]["doc_anchor"], anchor)
+
+        sdxl_fields = {
+            field["key"]: field
+            for field in FIELDS
+            if field.get("group") == "sdxl"
+            and field["key"] in {"min_timestep", "max_timestep"}
+        }
+        self.assertEqual(set(sdxl_fields), {"min_timestep", "max_timestep"})
+        for field in sdxl_fields.values():
+            self.assertEqual(field["doc_slug"], "timesteps")
+            self.assertEqual(field["doc_anchor"], "sdxl-range")
 
     def test_markdown_renders_stable_anchors_toc_and_relative_images(self):
         html, toc = _render_markdown(
@@ -75,6 +135,61 @@ class DocumentationTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class DocumentationFrontendTests(unittest.TestCase):
+    def test_timestep_widget_reuses_the_training_preview_calculation(self):
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return null; } };
+require('./frontend/js/training-core.js');
+require('./frontend/js/docs.js');
+
+let refreshHandler = null;
+const container = {
+  className: '',
+  innerHTML: '',
+  querySelector(selector) {
+    if (selector !== '.docs-timestep-refresh') return null;
+    return {
+      addEventListener(name, handler) {
+        if (name === 'click') refreshHandler = handler;
+      },
+    };
+  },
+};
+const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
+  form: {
+    model_train_type: 'anima-lora',
+    timestep_sampling: 'sigmoid',
+    weighting_scheme: 'uniform',
+    sigmoid_scale: 1,
+    discrete_flow_shift: 1,
+    resolution: '1024,1024',
+  },
+  t(key) { return key; },
+});
+context._renderDocsTimestepPreview(container);
+console.log(JSON.stringify({
+  className: container.className,
+  barCount: (container.innerHTML.match(/title="\d+-\d+:/g) || []).length,
+  hasMiddleSummary: container.innerHTML.includes('57.0%'),
+  hasWeightCurve: container.innerHTML.includes('<polyline points='),
+  refreshBound: typeof refreshHandler === 'function',
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["className"], "docs-timestep-widget")
+        self.assertEqual(state["barCount"], 32)
+        self.assertTrue(state["hasMiddleSummary"])
+        self.assertTrue(state["hasWeightCurve"])
+        self.assertTrue(state["refreshBound"])
+
     def test_scrollspy_uses_visibility_and_preserves_clipped_click_target(self):
         script = r"""
 global.window = {

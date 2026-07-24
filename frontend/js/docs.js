@@ -200,6 +200,7 @@ window.docsMixin = {
       const delay = anchor ? 32 : 0;
       setTimeout(() => {
         if (this.currentRoute !== 'docs' || this.docsSelectedSlug !== documentData.slug) return;
+        this._hydrateDocsWidgets();
         const mobileOutline = document.querySelector('.docs-mobile-outline');
         if (mobileOutline) mobileOutline.open = false;
         this._setupDocsScrollSpy();
@@ -213,6 +214,103 @@ window.docsMixin = {
         }
       }, delay);
     });
+  },
+
+  _hydrateDocsWidgets() {
+    const article = document.getElementById('docsArticle');
+    if (!article) return;
+    article.querySelectorAll('[data-doc-widget="timestep-preview"]').forEach(container => {
+      this._renderDocsTimestepPreview(container);
+    });
+  },
+
+  _renderDocsTimestepPreview(container) {
+    if (!container || typeof this._buildTimestepPreview !== 'function') return;
+    const currentForm = this.form || {};
+    const currentProfile = String(currentForm.model_train_type || '');
+    const usesFlowMatching = currentProfile === 'anima-lora' || currentProfile === 'krea2-lora';
+    const previewValues = usesFlowMatching ? currentForm : {
+      model_train_type: 'anima-lora',
+      timestep_sampling: 'sigmoid',
+      weighting_scheme: 'uniform',
+      sigmoid_scale: 1.0,
+      discrete_flow_shift: 1.0,
+      logit_mean: 0.0,
+      logit_std: 1.0,
+      mode_scale: 1.29,
+      resolution: currentForm.resolution || '1024,1024',
+    };
+    const data = this._buildTimestepPreview(previewValues);
+    const escapeHtml = value => String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const tr = (key, fallback) => {
+      const translated = typeof this.t === 'function' ? this.t(key) : '';
+      return escapeHtml(translated || fallback);
+    };
+    const percent = value => Number(value || 0).toFixed(1) + '%';
+    const summary = [
+      `${tr('timestepPreview.detailZone', 'Low noise')}: ${percent(data.lowPercent)}`,
+      `${tr('timestepPreview.middleZone', 'Mid noise')}: ${percent(data.midPercent)}`,
+      `${tr('timestepPreview.structureZone', 'High noise')}: ${percent(data.highPercent)}`,
+    ].join('; ');
+    const bars = data.bins.map(bin => {
+      const start = Math.round(bin.index * 1000 / 32);
+      const end = Math.round((bin.index + 1) * 1000 / 32);
+      return `<i style="height:${bin.height}%" title="${start}-${end}: ${bin.percent.toFixed(2)}%"></i>`;
+    }).join('');
+    const notes = data.notes.map(note => (
+      `<div><span aria-hidden="true">&#8226;</span><span>${escapeHtml(note)}</span></div>`
+    )).join('');
+    const subtitleKey = usesFlowMatching
+      ? 'timestepPreview.subtitle'
+      : 'timestepPreview.docsFallback';
+
+    container.className = 'docs-timestep-widget';
+    container.innerHTML = `
+      <div class="docs-timestep-widget-header">
+        <div>
+          <strong>${tr('timestepPreview.title', 'Timestep distribution')}</strong>
+          <span>${tr(subtitleKey, 'Anima baseline example for the flow-matching guide')}</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm docs-timestep-refresh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
+          <span>${tr('timestepPreview.refresh', 'Refresh')}</span>
+        </button>
+      </div>
+      <div class="timestep-preview-meta">
+        <span><b>${escapeHtml(data.sampling)}</b><small>${tr('timestepPreview.sampling', 'Sampling')}</small></span>
+        <span><b>${escapeHtml(data.weighting)}</b><small>${tr('timestepPreview.weighting', 'Loss weighting')}</small></span>
+        <span><b>${escapeHtml(data.resolution)}</b><small>${tr('timestepPreview.resolution', 'Reference resolution')}</small></span>
+      </div>
+      <div class="timestep-preview-chart" role="img" aria-label="${escapeHtml(summary)}">
+        <div class="timestep-preview-bars" aria-hidden="true">${bars}</div>
+        <svg class="timestep-preview-weight-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="${escapeHtml(data.weightPoints)}"></polyline>
+        </svg>
+      </div>
+      <div class="timestep-preview-axis">
+        <span>${tr('timestepPreview.clean', 'Low noise')}</span>
+        <span>${tr('timestepPreview.noisy', 'High noise')}</span>
+      </div>
+      <div class="timestep-preview-legend">
+        <span><i class="legend-distribution"></i><span>${tr('timestepPreview.distribution', 'Sampling probability')}</span></span>
+        <span><i class="legend-weight"></i><span>${tr('timestepPreview.lossWeight', 'Loss weight')}</span></span>
+      </div>
+      <div class="timestep-preview-summary">
+        <div><b>${percent(data.lowPercent)}</b><span>${tr('timestepPreview.detailZone', 'Low noise')}</span></div>
+        <div><b>${percent(data.midPercent)}</b><span>${tr('timestepPreview.middleZone', 'Mid noise')}</span></div>
+        <div><b>${percent(data.highPercent)}</b><span>${tr('timestepPreview.structureZone', 'High noise')}</span></div>
+      </div>
+      ${notes ? `<div class="timestep-preview-notes">${notes}</div>` : ''}
+      <p class="timestep-preview-footnote">${tr('timestepPreview.footnote', 'Deterministic local preview of the current trainer formulas.')}</p>
+    `;
+
+    const refresh = container.querySelector('.docs-timestep-refresh');
+    if (refresh) refresh.addEventListener('click', () => this._renderDocsTimestepPreview(container));
   },
 
   _cancelDocsContentRequest() {

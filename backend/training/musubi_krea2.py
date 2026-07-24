@@ -433,6 +433,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"v": "logsnr", "l": "logsnr"},
         ],
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "sampling",
     },
     {
         "key": "discrete_flow_shift",
@@ -444,6 +446,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 0.01,
         "show_if": {"key": "timestep_sampling", "eq": "shift", "_or": ["sigma"]},
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "flow-shift",
     },
     {
         "key": "sigmoid_scale",
@@ -454,6 +458,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.sigmoid_scale",
         "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "krea2_shift"]},
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "sigmoid-scale",
     },
     {
         "key": "weighting_scheme",
@@ -469,6 +475,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"v": "mode", "l": "mode"},
         ],
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "weighting",
     },
     {
         "key": "logit_mean",
@@ -479,6 +487,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.logit_mean",
         "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "logit-normal",
     },
     {
         "key": "logit_std",
@@ -489,6 +499,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.logit_std",
         "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "logit-normal",
     },
     {
         "key": "mode_scale",
@@ -499,6 +511,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.mode_scale",
         "show_if": {"key": "timestep_sampling", "eq": "sigma"},
         "profiles": [KREA2_PROFILE_ID],
+        "doc_slug": "timesteps",
+        "doc_anchor": "mode",
     },
     {
         "key": "optimizer_type",
