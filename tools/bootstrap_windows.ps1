@@ -23,6 +23,7 @@ $script:SkipGitSetup = $false
 $script:AssumeYes = $false
 $script:ForwardArgs = @()
 $script:BootstrapExitCode = 0
+$script:InitialSetupHeaderShown = $false
 $script:ProtectedUserRoots = @(
     ".venv",
     "bootstrap-backups",
@@ -110,6 +111,13 @@ function Write-Text {
         [ConsoleColor]$Color = [ConsoleColor]::Gray
     )
     Write-Host (Get-Text $Key $FormatArgs) -ForegroundColor $Color
+}
+
+function Show-InitialSetupHeader {
+    if ($script:InitialSetupHeaderShown) { return }
+    $script:InitialSetupHeaderShown = $true
+    Write-Text "bootstrap_start" -Color Cyan
+    Write-Text "project_dir" @($script:RepositoryRoot) -Color DarkGray
 }
 
 function Format-ByteSize {
@@ -782,9 +790,7 @@ function Invoke-OptionalGitBootstrap {
     $git = Find-GitExecutable
     if (Test-Path -LiteralPath $marker) {
         if ($git) {
-            Write-Text "git_found" @($git) -Color DarkGray
             if (Test-RepositoryValid $root $git) {
-                Write-Text "git_existing" -Color Green
                 return $false
             }
             Write-Text "git_corrupt" -Color Yellow
@@ -969,7 +975,7 @@ function Ensure-MusubiSharedRuntime {
     # requirement file is the final authority for the shared Krea 2 runtime.
     # The hot-path check is local/idempotent metadata only: healthy GUI
     # launches do not invoke pip or import Qwen3-VL.
-    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check
+    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check --quiet
     if ($LASTEXITCODE -eq 0) { return }
 
     Write-Text "install_musubi" -Color Cyan
@@ -979,8 +985,6 @@ function Ensure-MusubiSharedRuntime {
 }
 
 function Invoke-MainBootstrap {
-    Write-Text "bootstrap_start" -Color Cyan
-    Write-Text "project_dir" @($script:RepositoryRoot) -Color DarkGray
     Set-Location $script:RepositoryRoot
 
     $repaired = Invoke-OptionalGitBootstrap
@@ -992,6 +996,7 @@ function Invoke-MainBootstrap {
 
     $python = Find-CompatiblePython
     if (-not $python) {
+        Show-InitialSetupHeader
         Write-Text "python_missing" -Color Yellow
         if (-not (Confirm-RequiredInstall "python_install_prompt")) {
             throw (Get-Text "python_required")
@@ -999,12 +1004,11 @@ function Invoke-MainBootstrap {
         $installed = Install-Python312
         $python = [pscustomobject]@{ Path = $installed; Source = "automatic per-user install" }
     }
-    Write-Text "python_using" @($python.Source, $python.Path) -Color Green
-    & $python.Path --version | Out-Host
     Repair-PipMirrorForProcess $python.Path
 
     $venvPython = Join-Path $script:RepositoryRoot "venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $venvPython)) {
+        Show-InitialSetupHeader
         Write-Text "venv_missing" -Color Yellow
         if (-not (Confirm-RequiredInstall "venv_install_prompt")) {
             Write-Text "cancelled" -Color Yellow
@@ -1028,7 +1032,6 @@ function Invoke-MainBootstrap {
     if ($pythonPathEntries -notcontains $startupHooks) {
         $env:PYTHONPATH = (@($startupHooks) + $pythonPathEntries) -join ';'
     }
-    Write-Text "launching" -Color Cyan
     Set-Location $script:RepositoryRoot
     & $venvPython -m backend.gui @script:ForwardArgs
     if ($null -eq $LASTEXITCODE) {

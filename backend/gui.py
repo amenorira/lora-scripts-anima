@@ -33,7 +33,7 @@ if not ((3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32):
 from backend.log import log
 
 # Immediate timestamped feedback while the heavy imports (torch, fastapi) load.
-log.info("Initializing / 正在初始化（加载依赖）…")
+log.info("Starting lora-scripts-anima / 正在启动 lora-scripts-anima…")
 
 from backend.launch_utils import (base_dir_path, check_environment, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
@@ -85,7 +85,7 @@ atexit.register(_cleanup_subprocesses)
 
 
 def run_tensorboard():
-    log.info("Starting tensorboard / 正在启动 TensorBoard...")
+    log.debug("Starting tensorboard / 正在启动 TensorBoard...")
     try:
         proc = subprocess.Popen(
             [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
@@ -102,7 +102,7 @@ def run_tensorboard():
                 f"Check if tensorboard is installed or port {args.tensorboard_port} is available."
             )
         _subprocesses.append((proc, "TensorBoard"))
-        log.info(
+        log.debug(
             "TensorBoard started at http://%s:%s/ / TensorBoard 已启动",
             args.tensorboard_host, args.tensorboard_port,
         )
@@ -115,9 +115,12 @@ def run_tensorboard():
         )
 
 def launch():
-    log.info("Starting lora-scripts-anima GUI / 正在启动...")
-    log.info(f"Base directory / 项目目录: {base_dir_path()}, Working directory / 工作目录: {os.getcwd()}")
-    log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
+    log.debug(
+        "Base directory / 项目目录: %s, Working directory / 工作目录: %s",
+        base_dir_path(),
+        os.getcwd(),
+    )
+    log.debug("%s Python %s %s", platform.system(), platform.python_version(), sys.executable)
     check_environment()
 
     if not args.skip_prepare_environment:
@@ -131,7 +134,7 @@ def launch():
             log.error("port finding fallback error / 端口查找失败，无可用端口")
             sys.exit(1)
 
-    log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
+    log.debug("lora-scripts-anima Version: %s", git_tag(base_dir_path()))
 
     # flash-attn status
     try:
@@ -142,21 +145,21 @@ def launch():
     try:
         fa_ver = pkg_version("flash_attn") if pkg_version else None
         if fa_ver:
-            log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
+            log.debug(f"flash_attn: OK (version / 版本 {fa_ver})")
         else:
-            log.info("flash_attn: NOT FOUND / 未安装")
+            log.debug("flash_attn: NOT FOUND / 未安装")
     except Exception:
-        log.info("flash_attn: NOT FOUND / 未安装")
+        log.debug("flash_attn: NOT FOUND / 未安装")
 
     # xformers status
     try:
         xf_ver = pkg_version("xformers") if pkg_version else None
         if xf_ver:
-            log.info(f"xformers: OK (version / 版本 {xf_ver})")
+            log.debug(f"xformers: OK (version / 版本 {xf_ver})")
         else:
-            log.info("xformers: NOT FOUND / 未安装")
+            log.debug("xformers: NOT FOUND / 未安装")
     except Exception:
-        log.info("xformers: NOT FOUND / 未安装")
+        log.debug("xformers: NOT FOUND / 未安装")
 
     if args.listen:
         args.host = "0.0.0.0"

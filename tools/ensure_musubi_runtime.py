@@ -21,6 +21,11 @@ def main() -> int:
         action="store_true",
         help="also import Krea 2's native and Qwen3-VL dependencies",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="do not print the healthy status (errors are still shown)",
+    )
     parser.add_argument("--json", action="store_true", help="emit machine-readable status")
     args = parser.parse_args()
 
@@ -28,13 +33,14 @@ def main() -> int:
     if args.json:
         print(json.dumps(status, ensure_ascii=False, indent=2))
     elif status["ok"]:
-        print(
-            "[Krea 2] Shared training runtime is ready"
-            f" ({'full import verification' if args.verify_imports else 'fast metadata check'}): "
-            f"transformers={status['versions'].get('transformers')}, "
-            f"torch={status['versions'].get('torch')}",
-            flush=True,
-        )
+        if not args.quiet:
+            print(
+                "[Krea 2] Shared training runtime is ready"
+                f" ({'full import verification' if args.verify_imports else 'fast metadata check'}): "
+                f"transformers={status['versions'].get('transformers')}, "
+                f"torch={status['versions'].get('torch')}",
+                flush=True,
+            )
     else:
         print("[Krea 2] Shared training runtime needs synchronization:", flush=True)
         for error in status["errors"]:

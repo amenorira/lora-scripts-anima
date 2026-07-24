@@ -1,5 +1,5 @@
 {
-  "bootstrap_start": "Windows bootstrap is starting... / Windows 首次启动引导正在开始……",
+  "bootstrap_start": "Initial setup is required. / 检测到需要完成首次安装配置。",
   "project_dir": "Project directory: {0} / 项目目录：{0}",
   "git_existing": "Existing Git repository detected; remote and files will not be changed. / 检测到现有 Git 仓库，不会修改远端或项目文件。",
   "git_origin_unknown": "The existing repository origin could not be confirmed as the official project; no remote or files were changed. / 无法确认现有仓库是否来自官方项目；启动器未修改远端或项目文件。",

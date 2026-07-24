@@ -10,7 +10,7 @@ printable_devices = []
 def check_torch_gpu():
     try:
         import torch
-        log.info(f'Torch {torch.__version__}')
+        log.debug(f'Torch {torch.__version__}')
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
@@ -30,10 +30,10 @@ def check_torch_gpu():
             log.warning("！！！若您正在使用训练包，请直接下载最新训练包！！！")
 
         if torch.version.cuda:
-            log.info(
+            log.debug(
                 f'Torch backend: nVidia CUDA {torch.version.cuda} cuDNN {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else "N/A"}')
         elif torch.version.hip:
-            log.info(f'Torch backend: AMD ROCm HIP {torch.version.hip}')
+            log.debug(f'Torch backend: AMD ROCm HIP {torch.version.hip}')
 
         device_count = torch.cuda.device_count()
         for pos in range(device_count):
@@ -43,7 +43,7 @@ def check_torch_gpu():
             device = torch.cuda.device(pos)
             available_devices.append(device)
             printable_devices.append(f"GPU {pos}: {name} ({round(memory / (1024**3))} GB)")
-            log.info(
+            log.debug(
                 f'Torch detected GPU: {name} VRAM {round(memory / 1024 / 1024)} '
                 f'Arch {props.major}.{props.minor} Cores {props.multi_processor_count}')
     except Exception as e:

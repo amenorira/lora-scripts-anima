@@ -18,7 +18,7 @@ class Config:
         self._save_lock = threading.Lock()
 
     def load_config(self):
-        log.info(f"Loading config from {self.path}")
+        log.debug(f"Loading config from {self.path}")
         if not os.path.exists(self.path):
             old_path = REPO_ROOT / "assets" / "config.json"
             if os.path.exists(old_path):
