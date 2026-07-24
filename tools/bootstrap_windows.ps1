@@ -10,6 +10,10 @@ $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $script:Utf8NoBom
 $OutputEncoding = $script:Utf8NoBom
 $script:InlineLength = 0
+$script:StartupProgressActive = $false
+$script:StartupProgressFrame = 0
+$script:StartupProgressStopwatch = $null
+$script:LastNativeExitCode = 0
 
 $script:ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:DefaultRoot = [IO.Path]::GetFullPath((Join-Path $script:ScriptDir ".."))
@@ -110,6 +114,7 @@ function Write-Text {
         [object[]]$FormatArgs = @(),
         [ConsoleColor]$Color = [ConsoleColor]::Gray
     )
+    Complete-InlineProgress
     Write-Host (Get-Text $Key $FormatArgs) -ForegroundColor $Color
 }
 
@@ -151,6 +156,44 @@ function Complete-InlineProgress {
             [Console]::Write("`r" + (" " * $script:InlineLength) + "`r")
         }
         $script:InlineLength = 0
+    }
+}
+
+function Update-StartupProgress {
+    if (-not $script:StartupProgressActive -or [Console]::IsOutputRedirected) { return }
+
+    $width = 24
+    $pulseWidth = 5
+    $travel = $width - $pulseWidth
+    $cycle = [Math]::Max(1, $travel * 2)
+    $position = $script:StartupProgressFrame % $cycle
+    if ($position -gt $travel) { $position = $cycle - $position }
+
+    $characters = ("." * $width).ToCharArray()
+    for ($i = 0; $i -lt $pulseWidth; $i++) {
+        $characters[$position + $i] = if ($i -eq ($pulseWidth - 1)) { '>' } else { '=' }
+    }
+    $bar = -join $characters
+    $elapsed = Format-Duration $script:StartupProgressStopwatch.Elapsed
+    Write-InlineProgress ("[{0}] {1}  {2}" -f $bar, (Get-Text "startup_preparing"), $elapsed)
+    $script:StartupProgressFrame++
+}
+
+function Start-StartupProgress {
+    Write-Text "launching" -Color Cyan
+    if ([Console]::IsOutputRedirected) { return }
+    $script:StartupProgressActive = $true
+    $script:StartupProgressFrame = 0
+    $script:StartupProgressStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Update-StartupProgress
+}
+
+function Stop-StartupProgress {
+    $script:StartupProgressActive = $false
+    Complete-InlineProgress
+    if ($null -ne $script:StartupProgressStopwatch) {
+        $script:StartupProgressStopwatch.Stop()
+        $script:StartupProgressStopwatch = $null
     }
 }
 
@@ -270,10 +313,17 @@ function Invoke-NativeCapture {
     if (-not $process.Start()) { throw "Unable to start $FilePath" }
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
+    if ($script:StartupProgressActive -and -not [Console]::IsOutputRedirected) {
+        while (-not $process.WaitForExit(120)) {
+            Update-StartupProgress
+        }
+    } else {
+        $process.WaitForExit()
+    }
     $stdout = $stdoutTask.GetAwaiter().GetResult()
     $stderr = $stderrTask.GetAwaiter().GetResult()
     $code = $process.ExitCode
+    $script:LastNativeExitCode = $code
     $process.Dispose()
     if ($code -ne 0 -and -not $AllowFailure) {
         $detail = $stderr.Trim()
@@ -975,8 +1025,13 @@ function Ensure-MusubiSharedRuntime {
     # requirement file is the final authority for the shared Krea 2 runtime.
     # The hot-path check is local/idempotent metadata only: healthy GUI
     # launches do not invoke pip or import Qwen3-VL.
-    & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check --quiet
-    if ($LASTEXITCODE -eq 0) { return }
+    $checkOutput = @(Invoke-NativeCapture -FilePath $HostPython -Arguments @(
+        "-X", "utf8", "-m", "tools.ensure_musubi_runtime", "--check", "--quiet"
+    ) -WorkingDirectory $script:RepositoryRoot -AllowFailure)
+    if ($script:LastNativeExitCode -eq 0) { return }
+
+    Complete-InlineProgress
+    $checkOutput | Out-Host
 
     Write-Text "install_musubi" -Color Cyan
     Invoke-PipInstall $HostPython @("install", "--upgrade-strategy", "only-if-needed", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
@@ -986,6 +1041,7 @@ function Ensure-MusubiSharedRuntime {
 
 function Invoke-MainBootstrap {
     Set-Location $script:RepositoryRoot
+    Start-StartupProgress
 
     $repaired = Invoke-OptionalGitBootstrap
     if ($repaired) {
@@ -1034,7 +1090,7 @@ function Invoke-MainBootstrap {
     if ($pythonPathEntries -notcontains $startupHooks) {
         $env:PYTHONPATH = (@($startupHooks) + $pythonPathEntries) -join ';'
     }
-    Write-Text "launching" -Color Cyan
+    Stop-StartupProgress
     Set-Location $script:RepositoryRoot
     & $venvPython -m backend.gui @script:ForwardArgs
     if ($null -eq $LASTEXITCODE) {
@@ -1054,8 +1110,10 @@ try {
     }
     if ($script:Action -ne "run") { throw "Unknown bootstrap action: $($script:Action)" }
     Invoke-MainBootstrap
+    Stop-StartupProgress
     exit $script:BootstrapExitCode
 } catch {
+    Stop-StartupProgress
     Write-Text "fatal_error" @($_.Exception.Message) -Color Red
     exit 1
 }

@@ -110,7 +110,7 @@ class BootstrapContractTests(unittest.TestCase):
 
         self.assertIn("function Invoke-MainBootstrap {\n    Set-Location", main)
         self.assertIn("Show-InitialSetupHeader", main)
-        self.assertIn('tools.ensure_musubi_runtime --check --quiet', script)
+        self.assertIn('"tools.ensure_musubi_runtime", "--check", "--quiet"', script)
         self.assertIn("需要完成首次安装配置", messages["bootstrap_start"])
         self.assertNotIn("首次启动引导", messages["bootstrap_start"])
 
@@ -118,6 +118,26 @@ class BootstrapContractTests(unittest.TestCase):
         repository_ok = repository_ok[:repository_ok.index("}")]
         self.assertNotIn('Write-Text "git_found"', repository_ok)
         self.assertNotIn('Write-Text "git_existing"', repository_ok)
+
+    def test_launchers_show_immediate_animated_startup_feedback(self):
+        windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
+        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
+        messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
+
+        windows_main = windows_script[windows_script.index("function Invoke-MainBootstrap"):]
+        self.assertLess(
+            windows_main.index("Start-StartupProgress"),
+            windows_main.index("Invoke-OptionalGitBootstrap"),
+        )
+        self.assertIn("while (-not $process.WaitForExit(120))", windows_script)
+        self.assertIn('Get-Text "startup_preparing"', windows_script)
+        self.assertIn("正在准备启动环境", messages["startup_preparing"])
+
+        launch_notice = linux_script.index('echo "[Launch] Starting lora-scripts-anima')
+        python_probe = linux_script.index("if [ -f \"$VENV_PYTHON\" ]")
+        self.assertLess(launch_notice, python_probe)
+        self.assertIn("_startup_spinner()", linux_script)
+        self.assertIn("sleep 0.12", linux_script)
 
     def test_quiet_runtime_check_hides_success_but_keeps_errors(self):
         healthy = {"ok": True, "errors": [], "versions": {}}
@@ -155,7 +175,10 @@ class BootstrapContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "backend" / "gui.py").is_file())
         self.assertIn("-m backend.gui @script:ForwardArgs", windows_script)
         self.assertNotIn("-m backend.gui @script:ForwardArgs | Out-Host", windows_script)
-        self.assertIn("Invoke-MainBootstrap\n    exit $script:BootstrapExitCode", windows_script)
+        self.assertIn(
+            "Invoke-MainBootstrap\n    Stop-StartupProgress\n    exit $script:BootstrapExitCode",
+            windows_script,
+        )
         self.assertIn("-m backend.gui", linux_script)
         self.assertFalse((ROOT / "sitecustomize.py").exists())
         self.assertTrue((ROOT / "tools" / "python_startup" / "sitecustomize.py").is_file())

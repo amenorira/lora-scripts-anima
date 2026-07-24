@@ -55,6 +55,7 @@
   "install_musubi": "[4/4] Synchronizing shared musubi-tuner Krea 2 dependencies... / [4/4] 正在同步主环境的 musubi-tuner Krea 2 依赖……",
   "install_done": "Installation complete. / 安装完成。",
   "launching": "Launching lora-scripts-anima... / 正在启动 lora-scripts-anima……",
+  "startup_preparing": "Preparing startup environment... / 正在准备启动环境……",
   "cancelled": "Cancelled. / 已取消。",
   "fatal_error": "Startup failed: {0} / 启动失败：{0}",
   "internal_action_done": "Bootstrap action finished. / 启动器内部操作已完成。"

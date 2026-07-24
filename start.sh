@@ -7,6 +7,61 @@ cd "$SCRIPT_DIR"
 
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
 
+echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
+
+STARTUP_SPINNER_PID=""
+_startup_spinner() {
+    local width=24
+    local pulse_width=5
+    local travel=$((width - pulse_width))
+    local cycle=$((travel * 2))
+    local frame=0
+    local started=$SECONDS
+    while true; do
+        local position=$((frame % cycle))
+        if [ "$position" -gt "$travel" ]; then
+            position=$((cycle - position))
+        fi
+        local bar=""
+        local i
+        for ((i = 0; i < width; i++)); do
+            if [ "$i" -ge "$position" ] && [ "$i" -lt $((position + pulse_width - 1)) ]; then
+                bar="${bar}="
+            elif [ "$i" -eq $((position + pulse_width - 1)) ]; then
+                bar="${bar}>"
+            else
+                bar="${bar}."
+            fi
+        done
+        local elapsed=$((SECONDS - started))
+        printf '\r[%s] Preparing startup environment... / 正在准备启动环境……  %02d:%02d' \
+            "$bar" $((elapsed / 60)) $((elapsed % 60))
+        frame=$((frame + 1))
+        sleep 0.12
+    done
+}
+
+_start_startup_spinner() {
+    if [ -t 1 ]; then
+        _startup_spinner &
+        STARTUP_SPINNER_PID=$!
+        trap '_stop_startup_spinner' EXIT
+        trap '_stop_startup_spinner; exit 130' INT TERM
+    fi
+}
+
+_stop_startup_spinner() {
+    if [ -n "$STARTUP_SPINNER_PID" ]; then
+        kill "$STARTUP_SPINNER_PID" >/dev/null 2>&1 || true
+        wait "$STARTUP_SPINNER_PID" 2>/dev/null || true
+        STARTUP_SPINNER_PID=""
+        printf '\r\033[2K'
+    fi
+    trap - EXIT INT TERM
+}
+
+_start_startup_spinner
+
 QUIET=0
 for arg in "$@"; do
     if [ "$arg" = "--quiet" ] || [ "$arg" = "-q" ]; then
@@ -47,6 +102,7 @@ else
 fi
 
 if [ -z "$PYTHON_BIN" ]; then
+    _stop_startup_spinner
     echo "[FAIL] No compatible 64-bit Python installation was found. / 未找到兼容的 64 位 Python。"
     echo "       Required: Python 3.10-3.12 (Python 3.12 recommended). / 需要 Python 3.10-3.12（推荐 3.12）。"
     echo "       Python 3.13/3.14 may remain installed side by side. / Python 3.13/3.14 可以并行保留。"
@@ -55,6 +111,7 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
+_stop_startup_spinner
 echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
 "$PYTHON_BIN" --version
 
@@ -208,5 +265,4 @@ fi
 ensure_musubi_shared_runtime
 
 # -- Launch --
-echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
 "$VENV_PYTHON" -m backend.gui "$@"
