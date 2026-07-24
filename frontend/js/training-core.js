@@ -2905,6 +2905,7 @@ window.trainingCoreMixin = {
       : null;
 
     this.form[key] = value;
+    if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);
     if (key === 'train_data_dir') this._syncKrea2CacheDir();
     if (key === 'optimizer_type' || key === 'gradient_accumulation_steps' ||
         key === 'mixed_precision' || key === 'gpu_ids') {

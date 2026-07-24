@@ -13,6 +13,9 @@ window.trainingTomlMixin = {
   statusText: 'Idle',
   _tomlDebounceTimer: null,
   _tomlPreviewIdleHandle: null,
+  _tomlPreviewChangedKey: '',
+  _tomlPreviewScrollFrame: null,
+  _tomlPreviewUserScrollUntil: 0,
 
   // ── TOML ────────────────────────────────────────────────
   // 按表单分组顺序（getVisibleSections 返回 registry section_order + 字段顺序）
@@ -75,6 +78,10 @@ window.trainingTomlMixin = {
     const pushLine = (sectionKey, line) => {
       if (sectionLines[sectionKey]) sectionLines[sectionKey].push(line);
     };
+
+    // Portable presets need to retain the application profile selector. The
+    // backend consumes it for core routing and filters it before trainer launch.
+    pushLine('model', `model_train_type = "${trainType}"`);
 
     // 遍历 sections → fields，按表单同序处理
     for (const section of allSections) {
@@ -168,8 +175,7 @@ window.trainingTomlMixin = {
     }
 
     // ── 按 section_order 拼接所有分组行 ─────────────────────────
-    const lines = [];
-    allSections.forEach(s => { lines.push(...sectionLines[s.key]); });
+    const lines = this._groupTomlSectionLines(allSections, sectionLines);
 
     this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
     this._renderTomlPreview(lines, this.t('common.noConfigs'));
@@ -180,14 +186,227 @@ window.trainingTomlMixin = {
   // should still look exactly like the SDXL/Anima TOML preview.
   _highlightToml(lines) {
     return lines.map(line => {
-      if (line.startsWith('#')) return `<span class="toml-comment">${this.esc(line)}</span>`;
+      if (line === '') {
+        return '<span class="toml-line toml-line-empty" aria-hidden="true">&nbsp;</span>';
+      }
+      if (line.startsWith('#')) {
+        return `<span class="toml-line"><span class="toml-line-content toml-comment">${this.esc(line)}</span></span>`;
+      }
       const eq = line.indexOf('=');
-      if (eq === -1) return this.esc(line);
+      if (eq === -1) {
+        return `<span class="toml-line"><span class="toml-line-content">${this.esc(line)}</span></span>`;
+      }
       const key = line.substring(0, eq).trim();
       const val = line.substring(eq + 1).trim();
-      const valCls = (val.startsWith('"') || val.startsWith("'")) ? 'toml-str' : 'toml-num';
-      return `<span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> <span class="${valCls}">${this.esc(val)}</span>`;
-    }).join('\n');
+      return `<span class="toml-line" data-param-key="${this._tomlEscapeAttr(key)}"><span class="toml-line-content"><span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> ${this._highlightTomlValue(key, val)}</span></span>`;
+    }).join('');
+  },
+
+  _highlightTomlValue(key, value) {
+    if ((key === 'network_args' || key === 'optimizer_args') && value.startsWith('[')) {
+      const parts = [];
+      const pattern = /"((?:\\.|[^"\\])*)"/g;
+      let cursor = 0;
+      let match;
+      while ((match = pattern.exec(value)) !== null) {
+        if (match.index > cursor) {
+          parts.push(`<span class="toml-num">${this.esc(value.slice(cursor, match.index))}</span>`);
+        }
+        const argKey = String(match[1]).split('=', 1)[0].trim();
+        parts.push(`<span class="toml-arg-token toml-str" data-toml-arg-key="${this._tomlEscapeAttr(argKey)}">${this.esc(match[0])}</span>`);
+        cursor = pattern.lastIndex;
+      }
+      if (cursor > 0) {
+        if (cursor < value.length) {
+          parts.push(`<span class="toml-num">${this.esc(value.slice(cursor))}</span>`);
+        }
+        return parts.join('');
+      }
+    }
+    const valueClass = (value.startsWith('"') || value.startsWith("'")) ? 'toml-str' : 'toml-num';
+    return `<span class="${valueClass}">${this.esc(value)}</span>`;
+  },
+
+  _tomlEscapeAttr(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  },
+
+  queueTomlPreviewChange(key) {
+    this._tomlPreviewChangedKey = String(key || '');
+  },
+
+  _tomlPreviewOutputKey(key) {
+    const sourceKey = String(key || '');
+    if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return sourceKey;
+    const argTarget = this._tomlPreviewArgTarget(sourceKey);
+    if (argTarget) return argTarget.paramKey;
+    if (sourceKey === 'network_args_custom' || sourceKey === 'enable_loraplus') return 'network_args';
+    if (sourceKey === 'optimizer_args_custom') return 'optimizer_args';
+    return sourceKey;
+  },
+
+  _tomlPreviewArgTarget(key) {
+    if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return null;
+    const networkArgs = {
+      loraplus_lr_ratio: 'loraplus_lr_ratio',
+      loraplus_unet_lr_ratio: 'loraplus_unet_lr_ratio',
+      loraplus_text_encoder_lr_ratio: 'loraplus_text_encoder_lr_ratio',
+      lycoris_algo: 'algo',
+      conv_dim: 'conv_dim',
+      conv_alpha: 'conv_alpha',
+      lokr_factor: 'factor',
+      use_tucker: 'use_tucker',
+      use_scalar: 'use_scalar',
+      decompose_both: 'decompose_both',
+      full_matrix: 'full_matrix',
+      train_norm: 'train_norm',
+      rank_dropout: 'rank_dropout',
+      module_dropout: 'module_dropout',
+      dropout: 'dropout',
+      dora_wd: 'dora_wd',
+      block_size: 'block_size',
+      constraint: 'constraint',
+      rescaled: 'rescaled',
+      bypass_mode: 'bypass_mode',
+      rs_lora: 'rs_lora',
+      lycoris_preset: 'preset',
+      unbalanced_factorization: 'unbalanced_factorization',
+      wd_on_output: 'wd_on_output',
+    };
+    if (Object.prototype.hasOwnProperty.call(networkArgs, key)) {
+      return { paramKey: 'network_args', argKey: networkArgs[key] };
+    }
+    const optimizerArgs = {
+      weight_decay: 'weight_decay',
+      stopcoef: 'stopcoef',
+      prodigy_d_coef: 'd_coef',
+      prodigy_d0: 'd0',
+      prodigy_safeguard_warmup: 'safeguard_warmup',
+      prodigyplus_use_stableadamw: 'use_stableadamw',
+      schedulefree_warmup_steps: 'warmup_steps',
+      adafactor_relative_step: 'relative_step',
+      adafactor_scale_parameter: 'scale_parameter',
+      adafactor_warmup_init: 'warmup_init',
+      adafactor_clip_threshold: 'clip_threshold',
+      adafactor_eps: 'eps',
+      automagic_min_lr: 'min_lr',
+      automagic_max_lr: 'max_lr',
+      automagic_beta2: 'beta2',
+      automagic_clip_threshold: 'clip_threshold',
+      automagic_polarity_history: 'polarity_history',
+      automagic_fused: 'fused',
+      betas: 'betas',
+      eps: 'eps',
+      came_weight_decouple: 'weight_decouple',
+      came_fixed_decay: 'fixed_decay',
+      came_clip_threshold: 'clip_threshold',
+      came_ams_bound: 'ams_bound',
+      came_eps1: 'eps1',
+      came_eps2: 'eps2',
+    };
+    return Object.prototype.hasOwnProperty.call(optimizerArgs, key)
+      ? { paramKey: 'optimizer_args', argKey: optimizerArgs[key] }
+      : null;
+  },
+
+  _tomlParamValues(preview) {
+    const values = new Map();
+    if (!preview || typeof preview.querySelectorAll !== 'function') return values;
+    preview.querySelectorAll('[data-param-key]').forEach(line => {
+      values.set(String(line.dataset.paramKey || ''), String(line.textContent || ''));
+    });
+    return values;
+  },
+
+  _bindTomlPreviewInteraction(preview) {
+    if (!preview || preview._tomlInteractionBound || typeof preview.addEventListener !== 'function') return;
+    const noteUserScroll = () => {
+      this._tomlPreviewUserScrollUntil = Date.now() + 1800;
+      if (this._tomlPreviewScrollFrame !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(this._tomlPreviewScrollFrame);
+        this._tomlPreviewScrollFrame = null;
+      }
+    };
+    preview.addEventListener('wheel', noteUserScroll, { passive: true });
+    preview.addEventListener('touchstart', noteUserScroll, { passive: true });
+    preview.addEventListener('pointerdown', noteUserScroll, { passive: true });
+    preview._tomlInteractionBound = true;
+  },
+
+  _tomlArgToken(line, argKey) {
+    if (!line || !argKey || typeof line.querySelectorAll !== 'function') return null;
+    const matches = Array.from(line.querySelectorAll('[data-toml-arg-key]'))
+      .filter(item => String(item.dataset.tomlArgKey || '') === String(argKey));
+    return matches.length > 0 ? matches[matches.length - 1] : null;
+  },
+
+  _flashTomlLine(line, argKey = '') {
+    if (!line || typeof line.querySelector !== 'function') return;
+    const content = argKey ? this._tomlArgToken(line, argKey) : line.querySelector('.toml-line-content');
+    if (!content || !content.classList) return;
+    content.classList.remove('toml-change-flash');
+    void content.offsetWidth;
+    content.classList.add('toml-change-flash');
+  },
+
+  _scrollTomlPreview(preview, targetTop, onComplete) {
+    const maxTop = Math.max(0, preview.scrollHeight - preview.clientHeight);
+    const destination = Math.min(maxTop, Math.max(0, targetTop));
+    const start = Number(preview.scrollTop || 0);
+    const distance = destination - start;
+    const reduceMotion = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion || Math.abs(distance) < 2 || typeof window.requestAnimationFrame !== 'function') {
+      preview.scrollTop = destination;
+      onComplete();
+      return;
+    }
+
+    if (this._tomlPreviewScrollFrame !== null && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(this._tomlPreviewScrollFrame);
+    }
+    const duration = Math.min(420, 260 + Math.abs(distance) * 0.08);
+    let startedAt = null;
+    const tick = timestamp => {
+      if (startedAt === null) startedAt = timestamp;
+      const progress = Math.min(1, (timestamp - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      preview.scrollTop = start + distance * eased;
+      if (progress < 1) {
+        this._tomlPreviewScrollFrame = window.requestAnimationFrame(tick);
+        return;
+      }
+      this._tomlPreviewScrollFrame = null;
+      preview.scrollTop = destination;
+      onComplete();
+    };
+    this._tomlPreviewScrollFrame = window.requestAnimationFrame(tick);
+  },
+
+  _revealTomlPreviewChange(preview, paramKey, argKey = '') {
+    if (!preview || !paramKey || typeof preview.querySelectorAll !== 'function') return;
+    const line = Array.from(preview.querySelectorAll('[data-param-key]'))
+      .find(item => String(item.dataset.paramKey || '') === String(paramKey));
+    if (!line || typeof line.getBoundingClientRect !== 'function') return;
+    const target = argKey ? this._tomlArgToken(line, argKey) : line;
+    if (!target || typeof target.getBoundingClientRect !== 'function') return;
+    const previewRect = preview.getBoundingClientRect();
+    const lineRect = target.getBoundingClientRect();
+    const inset = 8;
+    const visible = lineRect.top >= previewRect.top + inset
+      && lineRect.bottom <= previewRect.bottom - inset;
+    const flash = () => this._flashTomlLine(line, argKey);
+    if (visible || Date.now() < this._tomlPreviewUserScrollUntil) {
+      flash();
+      return;
+    }
+    const lineMiddle = lineRect.top - previewRect.top + preview.scrollTop + lineRect.height / 2;
+    const targetTop = lineMiddle - preview.clientHeight * 0.42;
+    this._scrollTomlPreview(preview, targetTop, flash);
   },
 
   _renderTomlPreview(lines, emptyMessage = '') {
@@ -199,8 +418,27 @@ window.trainingTomlMixin = {
     const applyPreview = () => {
       this._tomlPreviewIdleHandle = null;
       const preview = document.getElementById('tomlPreview');
-      if (preview && preview.innerHTML !== this.tomlHighlighted) {
+      if (!preview) return;
+      this._bindTomlPreviewInteraction(preview);
+      const previousValues = preview._tomlParamValues || this._tomlParamValues(preview);
+      if (preview._tomlSourceHtml !== this.tomlHighlighted) {
         preview.innerHTML = this.tomlHighlighted;
+        preview._tomlSourceHtml = this.tomlHighlighted;
+      }
+      const nextValues = this._tomlParamValues(preview);
+      preview._tomlParamValues = nextValues;
+
+      const changedSourceKey = this._tomlPreviewChangedKey;
+      this._tomlPreviewChangedKey = '';
+      if (changedSourceKey) {
+        const preferredKey = this._tomlPreviewOutputKey(changedSourceKey);
+        const argTarget = this._tomlPreviewArgTarget(changedSourceKey);
+        const changedKeys = Array.from(nextValues.keys()).filter(key =>
+          !previousValues.has(key) || previousValues.get(key) !== nextValues.get(key)
+        );
+        const targetKey = changedKeys.includes(preferredKey) ? preferredKey : changedKeys[0];
+        const targetArgKey = targetKey === preferredKey && argTarget ? argTarget.argKey : '';
+        if (targetKey) this._revealTomlPreviewChange(preview, targetKey, targetArgKey);
       }
     };
 
@@ -216,12 +454,31 @@ window.trainingTomlMixin = {
     this._tomlPreviewIdleHandle = window.requestIdleCallback(applyPreview, { timeout: 250 });
   },
 
+  _groupTomlSectionLines(sections, sectionLines) {
+    const lines = [];
+    sections.forEach(section => {
+      const grouped = sectionLines[section.key] || [];
+      if (grouped.length === 0) return;
+      if (lines.length > 0) lines.push('');
+      lines.push(`# --- ${section.key} ---`, ...grouped);
+    });
+    return lines;
+  },
+
+  parameterPreviewTitle() {
+    const trainType = String(this.form && this.form.model_train_type || 'anima-lora');
+    const titleKeys = {
+      'sdxl-lora': ['common.sdxlParameterPreview', 'SDXL Parameter Preview'],
+      'anima-lora': ['common.animaParameterPreview', 'Anima Parameter Preview'],
+      'krea2-lora': ['common.krea2ParameterPreview', 'Krea 2 Parameter Preview'],
+    };
+    const [key, fallback] = titleKeys[trainType] || ['common.tomlPreview', 'Parameter Preview'];
+    return this.t(key, fallback);
+  },
+
   _updateKrea2Toml() {
-    // Krea 2 always needs a generated dataset TOML and an isolated run
-    // directory.  The former preview used fake values for those paths, which
-    // made the Copy/Download actions export an invalid TOML.  Emit a valid
-    // Anima preset instead: it is safe to re-import, while the real musubi
-    // train/dataset TOMLs are written by the backend at launch.
+    // This is a portable application preset. The backend writes musubi's
+    // separate train and dataset TOMLs when the run is launched.
     const quote = (value) => '"' + String(value ?? '')
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
@@ -233,27 +490,21 @@ window.trainingTomlMixin = {
       if (typeof coerced === 'number' && Number.isFinite(coerced)) return String(coerced);
       return quote(value);
     };
-    const lines = [
-      '# Krea 2 preset (musubi-tuner)',
-      '# Safe to copy, download, and import back into this application.',
-      '# At launch the application writes the actual musubi config.toml and dataset.toml into the run directory.',
-      '# output_dir below is the selected base directory; a new output_name_timestamp child is created per run.',
-      'model_train_type = "krea2-lora"',
-    ];
+    const sections = window.getVisibleSections('krea2-lora');
+    const sectionLines = {};
+    sections.forEach(section => { sectionLines[section.key] = []; });
+    if (sectionLines.model) sectionLines.model.push('model_train_type = "krea2-lora"');
 
-    window.getVisibleSections('krea2-lora').forEach(section => {
-      const sectionLines = [];
+    sections.forEach(section => {
       (section.fields || []).forEach(field => {
         if (field.hidden || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if (value === '' || value === null || value === undefined) return;
-        sectionLines.push(`${field.key} = ${valueToToml(value)}`);
+        sectionLines[section.key].push(`${field.key} = ${valueToToml(value)}`);
       });
-      if (sectionLines.length > 0) {
-        lines.push('', `# --- ${section.key} ---`, ...sectionLines);
-      }
     });
 
+    const lines = this._groupTomlSectionLines(sections, sectionLines);
     this.tomlRaw = lines.join('\n');
     this._renderTomlPreview(lines);
   },

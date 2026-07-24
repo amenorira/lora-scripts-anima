@@ -829,6 +829,57 @@ window.trainingPresetsMixin = {
   // 训练页右侧面板：导入 TOML 文件填表（走后端解析）
   importConfigFile() { document.getElementById('configFileInput').click(); },
 
+  _applyImportedFlatConfig(parsed) {
+    const validTypes = new Set((this.trainTypes || []).map(item => item.v));
+    const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
+    const importedType = String(parsed.model_train_type || currentType);
+    if (!validTypes.has(importedType)) {
+      throw new Error(`Unsupported model_train_type: ${importedType}`);
+    }
+
+    const applyValues = () => {
+      const defaults = this._buildFormDefaults(importedType);
+      const validKeys = new Set(['model_train_type']);
+      window.getVisibleSections(importedType).forEach(section => {
+        (section.fields || []).forEach(field => validKeys.add(field.key));
+      });
+      const imported = {};
+      Object.entries(parsed).forEach(([key, value]) => {
+        if (validKeys.has(key)) imported[key] = value;
+      });
+
+      this.form = { ...defaults, ...imported, model_train_type: importedType };
+      this._activeTrainType = importedType;
+      this._normalizeProfileSelectValues(importedType, defaults);
+      if (importedType === 'krea2-lora') this._syncKrea2CacheDir();
+      this._captureProfileDraft(importedType, this.form, defaults);
+      this.formDefaults = { ...this.form };
+      this.formHistory = [this.formDefaults];
+      this.formHistoryIdx = 0;
+      this.updateToml();
+      this.rebuildForm();
+    };
+
+    // Switch the runtime profile first so its deferred network ownership check
+    // completes before imported adapter choices are restored.
+    if (importedType !== currentType) {
+      this._switchInProgress = true;
+      try { this.switchTrainType(importedType); }
+      finally { this._switchInProgress = false; }
+      if (typeof this.$nextTick === 'function') {
+        return new Promise((resolve, reject) => {
+          this.$nextTick(() => {
+            try { applyValues(); resolve(); }
+            catch (error) { reject(error); }
+          });
+        });
+      }
+    }
+
+    applyValues();
+    return Promise.resolve();
+  },
+
   handleConfigFileImport(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -845,10 +896,7 @@ window.trainingPresetsMixin = {
         if (d.status !== 'success') { self.toast(self.t('common.parseError') + ': ' + (d.message || '')); return; }
         const parsed = d.data.data || {};
         if (Object.keys(parsed).length === 0) { self.toast(self.t('common.invalidToml')); return; }
-        self.form = { ...self.formDefaults, ...parsed };
-        self.formDefaults = { ...self.form };
-        self.formHistory = [self.formDefaults]; self.formHistoryIdx = 0;
-        self.updateToml(); self.rebuildForm();
+        await self._applyImportedFlatConfig(parsed);
         self.toast(self.t('common.imported'));
       } catch (err) { self.toast(self.t('common.parseError') + ': ' + err.message); }
     };

@@ -745,11 +745,163 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertNotIn('<generated dataset.toml>', training_toml)
         self.assertNotIn('<managed run output directory>', training_toml)
         self.assertIn('model_train_type = "krea2-lora"', training_toml)
-        self.assertIn("# Krea 2 preset (musubi-tuner)", training_toml)
+        self.assertNotIn("# Krea 2 preset (musubi-tuner)", training_toml)
+        self.assertNotIn("# Safe to copy", training_toml)
+        self.assertIn("_groupTomlSectionLines", training_toml)
         self.assertNotIn("Anima Krea 2", training_toml)
         self.assertIn("-krea2-preset.toml", training_presets)
         training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
         self.assertIn("_syncKrea2CacheDir", training_core)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_all_parameter_previews_are_grouped_self_describing_and_route_to_the_right_core(self):
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return { innerHTML: '' }; } };
+window.OPTIMIZER_DEFAULTS = {};
+window.getVisibleSections = () => [
+  {
+    key: 'model',
+    fields: [
+      { key: 'model_train_type', hidden: true },
+      { key: 'model_path' },
+    ],
+  },
+  { key: 'network', fields: [{ key: 'network_dim' }] },
+  { key: 'empty', fields: [{ key: 'empty_value' }] },
+];
+require('./frontend/js/training-toml.js');
+
+function previewFor(type) {
+  const ctx = Object.assign({}, window.trainingTomlMixin, {
+    form: {
+      model_train_type: type,
+      model_path: `./models/${type}.safetensors`,
+      network_dim: 32,
+      empty_value: '',
+    },
+    _fieldShowIfMet() { return true; },
+    _coerceNum(value) { return value; },
+    findFieldDef() { return null; },
+    esc(value) { return String(value); },
+    t(key, fallback) { return fallback || key; },
+  });
+  ctx.updateToml();
+  return { type, toml: ctx.tomlRaw, title: ctx.parameterPreviewTitle() };
+}
+
+console.log(JSON.stringify([
+  previewFor('sdxl-lora'),
+  previewFor('anima-lora'),
+  previewFor('krea2-lora'),
+]));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        previews = json.loads(result.stdout)
+        expected_engines = {
+            "sdxl-lora": "sd_scripts",
+            "anima-lora": "sd_scripts",
+            "krea2-lora": "musubi_tuner",
+        }
+        expected_titles = {
+            "sdxl-lora": "SDXL Parameter Preview",
+            "anima-lora": "Anima Parameter Preview",
+            "krea2-lora": "Krea 2 Parameter Preview",
+        }
+        for preview in previews:
+            config = toml.loads(preview["toml"])
+            train_type = preview["type"]
+            self.assertEqual(config["model_train_type"], train_type)
+            self.assertIn("# --- model ---", preview["toml"])
+            self.assertIn("# --- network ---", preview["toml"])
+            self.assertNotIn("# --- empty ---", preview["toml"])
+            self.assertEqual(preview["title"], expected_titles[train_type])
+            profile = resolve_training_profile(config)
+            self.assertEqual(profile.engine_id, expected_engines[train_type])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_flat_config_import_switches_profile_before_filtering_fields(self):
+        script = r"""
+global.window = {};
+window.getVisibleSections = type => [{
+  key: 'model',
+  fields: type === 'sdxl-lora'
+    ? [
+        { key: 'model_train_type' },
+        { key: 'pretrained_model_name_or_path' },
+        { key: 'network_module' },
+        { key: 'xformers' },
+      ]
+    : [{ key: 'model_train_type' }, { key: 'qwen3' }],
+}];
+require('./frontend/js/training-presets.js');
+const events = [];
+const tickQueue = [];
+const ctx = Object.assign({}, window.trainingPresetsMixin, {
+  trainTypes: [{ v: 'sdxl-lora' }, { v: 'anima-lora' }, { v: 'krea2-lora' }],
+  form: { model_train_type: 'anima-lora', qwen3: './models/old-qwen.safetensors' },
+  _activeTrainType: 'anima-lora',
+  switchTrainType(type) {
+    events.push(`switch:${type}`);
+    this.form = { model_train_type: type, network_module: 'networks.lora' };
+    this._activeTrainType = type;
+    this.$nextTick(() => {
+      events.push(`switch-tick:${type}`);
+      this.form.network_module = 'networks.lora';
+    });
+  },
+  $nextTick(callback) { tickQueue.push(callback); },
+  _buildFormDefaults(type) {
+    events.push(`defaults:${type}`);
+    return type === 'sdxl-lora'
+      ? {
+          model_train_type: type,
+          pretrained_model_name_or_path: './models/default.safetensors',
+          network_module: 'networks.lora',
+          xformers: false,
+        }
+      : { model_train_type: type, qwen3: './models/default-qwen.safetensors' };
+  },
+  _normalizeProfileSelectValues() {},
+  _syncKrea2CacheDir() {},
+  _captureProfileDraft() {},
+  updateToml() {},
+  rebuildForm() {},
+});
+const importing = ctx._applyImportedFlatConfig({
+  model_train_type: 'sdxl-lora',
+  pretrained_model_name_or_path: './models/imported.safetensors',
+  network_module: 'lycoris.kohya',
+  xformers: true,
+  qwen3: './models/must-not-leak.safetensors',
+  unknown_field: 123,
+});
+while (tickQueue.length > 0) tickQueue.shift()();
+importing.then(() => console.log(JSON.stringify({ events, form: ctx.form })));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["events"][0], "switch:sdxl-lora")
+        self.assertEqual(state["events"][1], "switch-tick:sdxl-lora")
+        self.assertEqual(state["events"][2], "defaults:sdxl-lora")
+        self.assertEqual(state["form"]["model_train_type"], "sdxl-lora")
+        self.assertEqual(state["form"]["pretrained_model_name_or_path"], "./models/imported.safetensors")
+        self.assertEqual(state["form"]["network_module"], "lycoris.kohya")
+        self.assertTrue(state["form"]["xformers"])
+        self.assertNotIn("qwen3", state["form"])
+        self.assertNotIn("unknown_field", state["form"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_krea_profile_resets_incompatible_shared_select_values(self):
@@ -1146,12 +1298,160 @@ console.log(JSON.stringify(preview));
             text=True,
         )
         preview = json.loads(result.stdout)
-        self.assertIn('class="toml-comment"', preview["innerHTML"])
+        self.assertIn('class="toml-line-content toml-comment"', preview["innerHTML"])
+        self.assertIn('data-param-key="learning_rate"', preview["innerHTML"])
+        self.assertIn('data-param-key="output_name"', preview["innerHTML"])
         self.assertIn('class="toml-key"', preview["innerHTML"])
         self.assertIn('class="toml-num"', preview["innerHTML"])
         self.assertIn('class="toml-str"', preview["innerHTML"])
         self.assertIn("safe&lt;&amp;", preview["innerHTML"])
         self.assertEqual(preview["textContent"], "must-not-be-used")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_toml_change_reveal_uses_decelerating_scroll_then_flashes_text_content(self):
+        script = r"""
+global.window = {};
+const frames = [];
+window.matchMedia = () => ({ matches: false });
+window.requestAnimationFrame = callback => { frames.push(callback); return frames.length; };
+window.cancelAnimationFrame = () => {};
+require('./frontend/js/training-toml.js');
+
+const classEvents = [];
+const content = {
+  offsetWidth: 80,
+  classList: {
+    remove(name) { classEvents.push(`remove:${name}`); },
+    add(name) { classEvents.push(`add:${name}`); },
+  },
+};
+const line = {
+  dataset: { paramKey: 'learning_rate' },
+  getBoundingClientRect() { return { top: 900, bottom: 920, height: 20 }; },
+  querySelector(selector) { return selector === '.toml-line-content' ? content : null; },
+};
+const samples = [];
+let currentTop = 0;
+const preview = {
+  clientHeight: 300,
+  scrollHeight: 1000,
+  get scrollTop() { return currentTop; },
+  set scrollTop(value) { currentTop = value; samples.push(value); },
+  getBoundingClientRect() { return { top: 0, bottom: 300 }; },
+  querySelectorAll() { return [line]; },
+};
+const ctx = Object.assign({}, window.trainingTomlMixin, {
+  form: { model_train_type: 'sdxl-lora' },
+  _tomlPreviewUserScrollUntil: 0,
+  _tomlPreviewScrollFrame: null,
+});
+ctx._revealTomlPreviewChange(preview, 'learning_rate');
+let timestamp = 0;
+while (frames.length > 0) {
+  const frame = frames.shift();
+  frame(timestamp);
+  timestamp += 50;
+}
+const positive = samples.filter(value => value > 0);
+const deltas = positive.map((value, index) => index === 0 ? value : value - positive[index - 1]);
+console.log(JSON.stringify({
+  finalTop: currentTop,
+  samples,
+  firstDelta: deltas[0],
+  lastDelta: deltas[deltas.length - 1],
+  classEvents,
+  networkAlias: ctx._tomlPreviewOutputKey('loraplus_lr_ratio'),
+  optimizerAlias: ctx._tomlPreviewOutputKey('weight_decay'),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["finalTop"], 700)
+        self.assertGreater(len(state["samples"]), 3)
+        self.assertGreater(state["firstDelta"], state["lastDelta"])
+        self.assertEqual(
+            state["classEvents"],
+            ["remove:toml-change-flash", "add:toml-change-flash"],
+        )
+        self.assertEqual(state["networkAlias"], "network_args")
+        self.assertEqual(state["optimizerAlias"], "optimizer_args")
+
+    def test_toml_change_animation_is_scoped_to_text_content(self):
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
+
+        self.assertIn("#tomlPreview .toml-line-content.toml-change-flash", css)
+        self.assertIn("@keyframes toml-devtools-change", css)
+        self.assertIn("box-decoration-break: clone", css)
+        self.assertIn("queueTomlPreviewChange(key)", training_core)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_merged_args_flash_only_the_changed_key_value_token(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-toml.js');
+const events = [];
+const makeToken = (key, label = key) => ({
+  dataset: { tomlArgKey: key },
+  offsetWidth: 40,
+  classList: {
+    remove(name) { events.push(`${label}:remove:${name}`); },
+    add(name) { events.push(`${label}:add:${name}`); },
+  },
+});
+const oldAlgo = makeToken('algo', 'algo-old');
+const algo = makeToken('algo');
+const conv = makeToken('conv_dim');
+const lineContent = makeToken('line');
+const line = {
+  querySelector(selector) { return selector === '.toml-line-content' ? lineContent : null; },
+  querySelectorAll(selector) { return selector === '[data-toml-arg-key]' ? [oldAlgo, conv, algo] : []; },
+};
+const ctx = Object.assign({}, window.trainingTomlMixin, {
+  form: { model_train_type: 'sdxl-lora' },
+  esc(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  },
+});
+const html = ctx._highlightToml([
+  'network_args = ["algo=loha", "conv_dim=8"]',
+  'optimizer_args = ["weight_decay=0.02", "eps=1e-8"]',
+]);
+ctx._flashTomlLine(line, ctx._tomlPreviewArgTarget('lycoris_algo').argKey);
+console.log(JSON.stringify({
+  html,
+  events,
+  lycoris: ctx._tomlPreviewArgTarget('lycoris_algo'),
+  weightDecay: ctx._tomlPreviewArgTarget('weight_decay'),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertIn('data-toml-arg-key="algo"', state["html"])
+        self.assertIn('data-toml-arg-key="conv_dim"', state["html"])
+        self.assertIn('data-toml-arg-key="weight_decay"', state["html"])
+        self.assertEqual(
+            state["events"],
+            ["algo:remove:toml-change-flash", "algo:add:toml-change-flash"],
+        )
+        self.assertEqual(state["lycoris"], {"paramKey": "network_args", "argKey": "algo"})
+        self.assertEqual(
+            state["weightDecay"],
+            {"paramKey": "optimizer_args", "argKey": "weight_decay"},
+        )
 
 
 if __name__ == "__main__":
