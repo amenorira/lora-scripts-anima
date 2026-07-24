@@ -4682,6 +4682,30 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 @keyframes env-spin { to { transform: rotate(360deg); } }
 
+.env-load-status {
+  display: flex; align-items: center; gap: 10px;
+  max-width: 820px; min-height: 42px; margin: 0 0 14px;
+  padding: 8px 10px; border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); background: var(--bg-surface);
+  color: var(--text-secondary); font-size: 12px;
+}
+.env-load-spinner {
+  width: 16px; height: 16px; flex: 0 0 16px;
+  border: 2px solid var(--border-default); border-top-color: var(--accent);
+  border-radius: 50%; animation: env-spin 0.7s linear infinite;
+}
+.env-load-main { flex: 1; min-width: 0; }
+.env-load-copy { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.env-load-count { flex-shrink: 0; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 10.5px; }
+.env-load-track {
+  height: 3px; margin-top: 6px; overflow: hidden;
+  border-radius: var(--radius-pill); background: var(--accent-muted);
+}
+.env-load-track > span {
+  display: block; height: 100%; border-radius: inherit;
+  background: var(--accent); transition: width 0.2s ease;
+}
+
 .env-install-progress { display: flex; flex-direction: column; gap: 6px; }
 .env-install-row {
   display: flex; align-items: center; gap: 10px;
@@ -4796,6 +4820,12 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-badge-err { --env-badge-tone: var(--danger); }
 .env-badge-info,
 .env-badge-loading { --env-badge-tone: var(--accent); }
+.env-badge-loading::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  margin-right: 5px; border-radius: 50%; background: currentColor;
+  animation: env-loading-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes env-loading-pulse { from { opacity: 0.3; } to { opacity: 1; } }
 .env-badge-info code {
   color: inherit;
   font-family: var(--font-mono);
@@ -4803,6 +4833,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .env-badge-link { text-decoration: none; cursor: pointer; }
 .env-badge-link:hover { border-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .env-load-spinner, .env-badge-loading::before { animation: none; }
+  .env-load-track > span { transition: none; }
+}
 
 /* ── 模型下载卡 ────────────────────────────────────── */
 .env-model-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }

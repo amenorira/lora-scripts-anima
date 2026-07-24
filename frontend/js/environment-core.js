@@ -42,6 +42,12 @@ window.environmentCoreMixin = {
   // ── Card open/close state (persisted) ────────────────
   faCardOpen: true, xfCardOpen: true, sdCardOpen: true, lycorisCardOpen: true, musubiCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true, kreaModelCardOpen: true,
   _envRealtimeTopics: null,
+  environmentLoading: false,
+  environmentLoadCompleted: 0,
+  environmentLoadTotal: 0,
+  _environmentLoadPromise: null,
+  _environmentCommitChain: null,
+  _environmentRenderFrame: null,
 
   _envInitCardState() {
     try {
@@ -120,7 +126,7 @@ window.environmentCoreMixin = {
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
     this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
     this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
-    if (this.currentRoute === 'environment') this.renderEnvironment();
+    this.scheduleEnvironmentRender();
     return hadTasks;
   },
 
@@ -144,7 +150,7 @@ window.environmentCoreMixin = {
       this.animaModelAggregate = this._computeAnimaAggregate(this.animaModelProgress);
     }
     if (!terminal) {
-      if (this.currentRoute === 'environment') this.renderEnvironment();
+      this.scheduleEnvironmentRender();
       return;
     }
     this._finalizeEnvironmentRealtimeTask(slot, data, failed);
@@ -160,22 +166,22 @@ window.environmentCoreMixin = {
     if (slot === 'fa') {
       if (failed) this.faError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
       else this.toast(this.t('environment.refreshed'), 'success');
-      this.faRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+      this.faRefresh(true).catch(() => {});
     } else if (slot === 'xf') {
       if (failed) this.xfError = data.error || data.lines || fallback;
-      this.xfRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+      this.xfRefresh(true).catch(() => {});
     } else if (slot === 'triton') {
       if (failed) this.tritonInstallLog = (this.tritonInstallLog ? this.tritonInstallLog + '\n' : '') + '[ERROR] ' + fallback;
-      this.tritonRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+      this.tritonRefresh(true).catch(() => {});
     } else if (slot === 'animaModel') {
       if (failed) {
         this.animaModelError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
         this.toast(this.t('environment.installFailed', 'Download failed'), 'error');
       }
-      this.animaModelRefresh(true).then(() => { if (this.currentRoute === 'environment') this.renderEnvironment(); }).catch(() => {});
+      this.animaModelRefresh(true).catch(() => {});
     }
     this.finishProgress();
-    if (this.currentRoute === 'environment') this.renderEnvironment();
+    this.scheduleEnvironmentRender();
   },
 
   _formatElapsed(sec) { const m = Math.floor(sec/60), s = Math.floor(sec%60); return m+':'+String(s).padStart(2,'0'); },
@@ -198,27 +204,157 @@ window.environmentCoreMixin = {
   faShowConfirm(msg, callback) { this.faConfirmMsg = msg; this.faConfirmCallback = callback; this.renderEnvironment(); },
   faDismissConfirm() { this.faConfirmMsg = null; this.faConfirmCallback = null; this.renderEnvironment(); },
 
+  scheduleEnvironmentRender() {
+    if (this.currentRoute !== 'environment' || this._environmentRenderFrame != null) return;
+    this._environmentRenderFrame = requestAnimationFrame(() => {
+      this._environmentRenderFrame = null;
+      if (this.currentRoute === 'environment') this.renderEnvironment();
+    });
+  },
+
+  _waitForEnvironmentPaint() {
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      setTimeout(finish, 80);
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+    });
+  },
+
+  async _commitEnvironmentLoad(loader, outcome) {
+    const commit = async () => {
+      try {
+        if (outcome.ok) loader.apply(outcome.value);
+        else if (loader.fail) loader.fail(outcome.error);
+      } finally {
+        this.environmentLoadCompleted++;
+        if (this.currentRoute === 'environment') this.renderEnvironment();
+        await this._waitForEnvironmentPaint();
+      }
+    };
+    this._environmentCommitChain = (this._environmentCommitChain || Promise.resolve()).then(commit, commit);
+    await this._environmentCommitChain;
+  },
+
+  async _runEnvironmentLoadQueue(loaders, concurrency) {
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < loaders.length) {
+        const loader = loaders[cursor++];
+        let outcome;
+        try {
+          outcome = { ok: true, value: await loader.load() };
+        } catch (error) {
+          outcome = { ok: false, error };
+        }
+        await this._commitEnvironmentLoad(loader, outcome);
+      }
+    };
+    const workerCount = Math.min(Math.max(1, concurrency || 1), loaders.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  },
+
+  _environmentJsonLoader(url, apply, fail, transform) {
+    return {
+      load: async () => {
+        const response = await fetch(url);
+        const payload = await response.json();
+        if (!response.ok) throw new Error('Failed to load ' + url);
+        return transform ? transform(payload) : payload;
+      },
+      apply,
+      fail,
+    };
+  },
+
   async buildEnvironmentPage() {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
+    if (this._environmentLoadPromise) {
+      this.renderEnvironment();
+      await this._environmentLoadPromise;
+      if (this.currentRoute === 'environment') this.renderEnvironment();
+      this.finishProgress();
+      return;
+    }
     const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
           needsAnimaModel = !this.animaModelStatus;
     if (needsFa || needsXf || needsSd || needsCores || needsTriton || needsAnimaModel) {
-      // 立即渲染卡片骨架（4 张卡片 + Anima 模型卡 + Loading 徽章），给用户即时结构反馈；
-      // 各卡片数据到达后由 faRefresh/xfRefresh 内的 renderEnvironment 独立刷新，
-      // 比单一 spinner 体验更好，也避免长时间空白被误认为卡死。
+      // Render the full skeleton immediately, then load in a small queue.
+      // This avoids stacking cold imports and disk scans while telemetry is active.
+      const loaders = [];
+      if (needsFa) {
+        this.faError = null;
+        const source = this.faSource && this.faSource !== 'default' ? '?source=' + encodeURIComponent(this.faSource) : '';
+        loaders.push(this._environmentJsonLoader(
+          '/api/flash-attention/status' + source,
+          data => { this.faStatus = data; },
+          error => { this.faError = String(error); this.faStatus = null; },
+        ));
+      }
+      if (needsXf) {
+        this.xfError = null;
+        loaders.push(this._environmentJsonLoader(
+          '/api/xformers/status',
+          data => { this.xfStatus = data; },
+          error => { this.xfError = String(error); this.xfStatus = null; },
+        ));
+      }
+      if (needsTriton) loaders.push(this._environmentJsonLoader(
+        '/api/triton/status',
+        data => { this.tritonStatus = data; },
+        () => { this.tritonStatus = null; },
+      ));
+      if (needsSd) loaders.push(this._environmentJsonLoader(
+        '/api/sd-scripts/status',
+        data => { this.sdStatus = data; },
+        () => { this.sdStatus = null; },
+      ));
+      if (needsAnimaModel) {
+        this.animaModelError = null;
+        loaders.push(this._environmentJsonLoader(
+          '/api/anima-model/status',
+          data => {
+            this.animaModelStatus = data.files || null;
+            this.animaModelDestDir = data.dest_dir || 'models/';
+          },
+          error => { this.animaModelError = String(error); this.animaModelStatus = null; },
+        ));
+      }
+      if (needsCores) {
+        this.trainingCoresError = null;
+        loaders.push(this._environmentJsonLoader(
+          '/api/training/cores',
+          data => { this.trainingCores = data; },
+          error => { this.trainingCoresError = String(error.message || error); this.trainingCores = null; },
+          payload => {
+            if (payload.status !== 'success') throw new Error(payload.message || 'Failed to load training cores');
+            return payload.data || null;
+          },
+        ));
+      }
+
+      this.environmentLoading = true;
+      this.environmentLoadCompleted = 0;
+      this.environmentLoadTotal = loaders.length;
+      this._environmentCommitChain = Promise.resolve();
       this.renderEnvironment();
-      const tasks = [];
-      if (needsFa) tasks.push(this.faRefresh(true));
-      if (needsXf) tasks.push(this.xfRefresh(true));
-      if (needsSd) tasks.push((async () => {
-        try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); } catch (_) { this.sdStatus = null; }
-      })());
-      if (needsCores) tasks.push(this.trainingCoresRefresh());
-      if (needsTriton) tasks.push(this.tritonRefresh(true));
-      if (needsAnimaModel) tasks.push(this.animaModelRefresh(true));
-      await Promise.all(tasks);
+      this._environmentLoadPromise = (async () => {
+        await this._waitForEnvironmentPaint();
+        await this._runEnvironmentLoadQueue(loaders, 2);
+      })();
+      try {
+        await this._environmentLoadPromise;
+      } finally {
+        this._environmentLoadPromise = null;
+        this._environmentCommitChain = null;
+        this.environmentLoading = false;
+      }
     }
     this.renderEnvironment(); this.finishProgress();
   },
@@ -244,7 +380,8 @@ window.environmentCoreMixin = {
       this.faStatus = await r.json();
       if (!silent) this.toast(this.t('environment.refreshed'));
     } catch (e) { this.faError = String(e); this.faStatus = null; }
-    this.renderEnvironment(); if (!silent) this.finishProgress();
+    if (silent) this.scheduleEnvironmentRender(); else this.renderEnvironment();
+    if (!silent) this.finishProgress();
   },
 
   async faInstall(url) {
@@ -271,7 +408,7 @@ window.environmentCoreMixin = {
   // ── xformers Methods ────────────────────────────────
   async xfRefresh(silent) { this.xfError = null;
     try { const r = await fetch('/api/xformers/status'); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
-    if (!silent) { this.renderEnvironment(); this.finishProgress(); }
+    if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
     try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
@@ -283,7 +420,7 @@ window.environmentCoreMixin = {
   // ── Triton Methods ──────────────────────────────────
   async tritonRefresh(silent) {
     try { const r = await fetch('/api/triton/status'); this.tritonStatus = await r.json(); } catch (_) { this.tritonStatus = null; }
-    if (!silent) { this.renderEnvironment(); this.finishProgress(); }
+    if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
   async tritonInstall() {
@@ -305,7 +442,7 @@ window.environmentCoreMixin = {
       this.animaModelStatus = data.files || null;
       this.animaModelDestDir = data.dest_dir || 'models/';
     } catch (e) { this.animaModelError = String(e); this.animaModelStatus = null; }
-    if (!silent) { this.renderEnvironment(); this.finishProgress(); }
+    if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
   async animaModelDownload(file, group) {

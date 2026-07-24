@@ -421,7 +421,11 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
 async def training_cores():
     """Expose installed runtime/profile capabilities for environment and UI pages."""
 
-    return APIResponseSuccess(data=profile_payload())
+    # The first full runtime check imports torch, torchvision, and the Krea 2
+    # dependency set. On Windows that can take several seconds, so never run it
+    # on FastAPI's event-loop thread where it would stall realtime updates.
+    payload = await asyncio.to_thread(profile_payload)
+    return APIResponseSuccess(data=payload)
 
 
 @router.post("/training/krea2/cache-status")

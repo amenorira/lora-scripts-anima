@@ -249,6 +249,54 @@ class RealtimeFrontendContractTests(unittest.TestCase):
         self.assertNotIn("pollTaggerProgress", combined)
         self.assertNotIn("_startProgressPolling", combined)
 
+    def test_environment_cold_start_is_throttled_and_shows_progress(self):
+        render_source = Path("frontend/js/environment-render.js").read_text(encoding="utf-8")
+        self.assertIn("_runEnvironmentLoadQueue(loaders, 2)", self.environment_source)
+        self.assertIn("_commitEnvironmentLoad", self.environment_source)
+        self.assertIn("_waitForEnvironmentPaint", self.environment_source)
+        self.assertIn("environmentLoadCompleted", self.environment_source)
+        self.assertIn("scheduleEnvironmentRender", self.environment_source)
+        self.assertIn('class="env-load-status"', render_source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend state-machine checks")
+    def test_environment_results_commit_one_painted_step_at_a_time(self):
+        script = r"""
+global.window = {};
+global.requestAnimationFrame = callback => setTimeout(callback, 0);
+eval(require('fs').readFileSync('frontend/js/environment-core.js', 'utf8'));
+const mixin = window.environmentCoreMixin;
+const frames = [];
+const applied = [];
+const app = Object.assign({}, mixin, {
+  currentRoute: 'environment',
+  environmentLoadCompleted: 0,
+  _environmentCommitChain: Promise.resolve(),
+  renderEnvironment() { frames.push(this.environmentLoadCompleted); },
+});
+const delays = [30, 5, 20, 0, 10, 0];
+const loaders = delays.map((delay, index) => ({
+  load: () => new Promise(resolve => setTimeout(() => resolve(index), delay)),
+  apply: value => applied.push(value),
+}));
+(async () => {
+  await app._runEnvironmentLoadQueue(loaders, 2);
+  process.stdout.write(JSON.stringify({frames, applied}));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["frames"], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(state["applied"][0], 1)
+        self.assertEqual(sorted(state["applied"]), list(range(6)))
+
     def test_weak_network_media_queue_and_explicit_original_are_present(self):
         render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
         app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
