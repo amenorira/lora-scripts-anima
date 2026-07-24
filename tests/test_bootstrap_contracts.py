@@ -103,27 +103,23 @@ class BootstrapContractTests(unittest.TestCase):
             self.assertIn(" / ", messages[key], key)
             self.assertTrue(any("\u4e00" <= char <= "\u9fff" for char in messages[key]), key)
 
-    def test_healthy_windows_startup_is_quiet_until_timestamped_app_logs(self):
+    def test_healthy_windows_startup_hides_bootstrap_probe_details(self):
         script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
         messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
-
         main = script[script.index("function Invoke-MainBootstrap"):]
-        self.assertNotIn('Write-Text "project_dir"', main)
-        self.assertNotIn('Write-Text "python_using"', main)
-        self.assertNotIn('& $python.Path --version', main)
-        self.assertNotIn('Write-Text "launching"', main)
-        self.assertIn('Show-InitialSetupHeader', main)
+
+        self.assertIn("function Invoke-MainBootstrap {\n    Set-Location", main)
+        self.assertIn("Show-InitialSetupHeader", main)
+        self.assertIn('tools.ensure_musubi_runtime --check --quiet', script)
         self.assertIn("需要完成首次安装配置", messages["bootstrap_start"])
+        self.assertNotIn("首次启动引导", messages["bootstrap_start"])
 
-    def test_shared_runtime_health_check_is_quiet_on_success(self):
-        windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        checker = (ROOT / "tools" / "ensure_musubi_runtime.py").read_text(encoding="utf-8")
+        repository_ok = script[script.index("if (Test-RepositoryValid $root $git)"):]
+        repository_ok = repository_ok[:repository_ok.index("}")]
+        self.assertNotIn('Write-Text "git_found"', repository_ok)
+        self.assertNotIn('Write-Text "git_existing"', repository_ok)
 
-        self.assertIn("tools.ensure_musubi_runtime --check --quiet", windows_script)
-        self.assertIn("tools.ensure_musubi_runtime --check --quiet", linux_script)
-        self.assertIn('parser.add_argument(\n        "--quiet"', checker)
-
+    def test_quiet_runtime_check_hides_success_but_keeps_errors(self):
         healthy = {"ok": True, "errors": [], "versions": {}}
         output = io.StringIO()
         with patch.object(sys, "argv", ["ensure_musubi_runtime", "--check", "--quiet"]), patch.object(
@@ -132,15 +128,13 @@ class BootstrapContractTests(unittest.TestCase):
             self.assertEqual(ensure_musubi_runtime.main(), 0)
         self.assertEqual(output.getvalue(), "")
 
-    def test_healthy_linux_startup_is_quiet_until_timestamped_app_logs(self):
-        script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        launch = script[script.index("# -- Managed CUDA runtime migration --"):]
-
-        self.assertNotIn("[Launch] Starting", launch)
-        self.assertNotIn("[Setup] Using Python", script[:script.index("# -- Venv check --")])
-        self.assertNotIn("[Notice] Git was not found", script)
-        self.assertIn("检测到需要完成首次安装配置", script)
-        self.assertIn("backend.gui emits the first timestamped console line", script)
+        unhealthy = {"ok": False, "errors": ["missing package"], "versions": {}}
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["ensure_musubi_runtime", "--check", "--quiet"]), patch.object(
+            ensure_musubi_runtime, "shared_runtime_status", return_value=unhealthy
+        ), contextlib.redirect_stdout(output):
+            self.assertEqual(ensure_musubi_runtime.main(), 1)
+        self.assertIn("missing package", output.getvalue())
 
     def test_launchers_reject_incompatible_interpreters(self):
         windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")

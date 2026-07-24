@@ -329,7 +329,7 @@ def setup_onnxruntime(
         resolved = _resolve_ort_version_for_torch()
         if resolved:
             onnx_version = resolved
-            log.debug(f"resolved onnxruntime-gpu=={resolved} from torch CUDA build")
+            log.info(f"resolved onnxruntime-gpu=={resolved} from torch CUDA build")
 
     if onnx_version and not is_installed(f"onnxruntime-gpu=={onnx_version}"):
         log.info("uninstalling wrong onnxruntime version")
@@ -384,7 +384,7 @@ def check_requirements():
     if not req_file.exists():
         return
 
-    log.debug("Checking requirements / 检查依赖...")
+    log.info("Checking requirements / 检查依赖...")
     missing = []
     with open(req_file, "r", encoding="utf-8") as f:
         for line in f:
@@ -403,7 +403,7 @@ def check_requirements():
             except Exception as e:
                 log.warning(f"Failed to install {pkg}: {e}")
     else:
-        log.debug("All requirements satisfied / 所有依赖已满足")
+        log.info("All requirements satisfied / 所有依赖已满足")
 
 
 def prepare_environment(prepare_onnxruntime: bool = True):
@@ -490,11 +490,11 @@ def check_environment():
             result = run_capture_text(["nvidia-smi", "-L"])
             if result.returncode == 0 and result.stdout.strip():
                 gpu_info = result.stdout.strip().split('\n')[0]
-                log.debug("GPU: %s", gpu_info)
+                log.info("GPU: %s", gpu_info)
             else:
-                log.debug("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+                log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
         except FileNotFoundError:
-            log.debug("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
+            log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
         except PermissionError:
             # 某些容器（如 AutoDL）nvidia-smi 存在但无执行权限，不应阻断启动
             log.warning("nvidia-smi permission denied -- skipping GPU probe / 无权限执行 nvidia-smi，跳过 GPU 探测")
@@ -510,6 +510,6 @@ def check_environment():
         elif free_gb < 30:
             log.warning("Disk free: %d GB / 磁盘剩余空间", free_gb)
         else:
-            log.debug("Disk free: %d GB / 磁盘剩余空间", free_gb)
+            log.info("Disk free: %d GB / 磁盘剩余空间", free_gb)
     except OSError:
         pass

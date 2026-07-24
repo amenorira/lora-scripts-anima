@@ -1009,6 +1009,8 @@ function Invoke-MainBootstrap {
     $venvPython = Join-Path $script:RepositoryRoot "venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $venvPython)) {
         Show-InitialSetupHeader
+        Write-Text "python_using" @($python.Source, $python.Path) -Color Green
+        & $python.Path --version | Out-Host
         Write-Text "venv_missing" -Color Yellow
         if (-not (Confirm-RequiredInstall "venv_install_prompt")) {
             Write-Text "cancelled" -Color Yellow
@@ -1032,6 +1034,7 @@ function Invoke-MainBootstrap {
     if ($pythonPathEntries -notcontains $startupHooks) {
         $env:PYTHONPATH = (@($startupHooks) + $pythonPathEntries) -join ';'
     }
+    Write-Text "launching" -Color Cyan
     Set-Location $script:RepositoryRoot
     & $venvPython -m backend.gui @script:ForwardArgs
     if ($null -eq $LASTEXITCODE) {

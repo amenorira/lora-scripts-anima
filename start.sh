@@ -22,6 +22,7 @@ _is_supported_python() {
 }
 
 PYTHON_BIN=""
+PYTHON_SOURCE=""
 
 if [ -f "$VENV_PYTHON" ]; then
     if ! _is_supported_python "$VENV_PYTHON"; then
@@ -32,12 +33,14 @@ if [ -f "$VENV_PYTHON" ]; then
         exit 1
     fi
     PYTHON_BIN="$VENV_PYTHON"
+    PYTHON_SOURCE="existing venv"
 else
     for candidate in python3.12 python3.11 python3.10 python3 python; do
         command -v "$candidate" >/dev/null 2>&1 || continue
         candidate_path="$(command -v "$candidate")"
         if _is_supported_python "$candidate_path"; then
             PYTHON_BIN="$candidate_path"
+            PYTHON_SOURCE="$candidate"
             break
         fi
     done
@@ -50,6 +53,15 @@ if [ -z "$PYTHON_BIN" ]; then
     echo "       Install Python 3.12 and venv support, for example: / 请安装 Python 3.12 和 venv 支持，例如："
     echo "       sudo apt install python3.12 python3.12-venv"
     exit 1
+fi
+
+echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
+"$PYTHON_BIN" --version
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "[Notice] Git was not found. It is optional for launch but required for git pull updates; install it with your distribution package manager. / 未找到 Git；启动训练器不依赖 Git，但使用 git pull 更新时需要，请通过发行版包管理器安装。"
+elif [ ! -e "$SCRIPT_DIR/.git" ]; then
+    echo "[Notice] This appears to be a ZIP download. Automatic ZIP-to-Git repair is currently Windows-only; Linux users should use git clone for updateable installs. / 当前目录看起来是 ZIP 下载版；自动转换为 Git 仓库目前仅支持 Windows，Linux 如需更新请使用 git clone。"
 fi
 
 # -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
@@ -112,7 +124,7 @@ ensure_musubi_shared_runtime() {
     # vendor/sd-scripts is installed before this project-owned requirement
     # file. The hot path only reads metadata, so normal GUI launches do not
     # download/rewrite packages or import Qwen3-VL.
-    if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --quiet; then
+    if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
         return
     fi
 
@@ -168,9 +180,6 @@ case ":${PYTHONPATH:-}:" in
 esac
 _fix_pip_mirror
 if [ ! -f "$VENV_PYTHON" ]; then
-    echo "[Setup] Initial setup is required. / 检测到需要完成首次安装配置。"
-    echo "[Setup] Using Python: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
-    "$PYTHON_BIN" --version
     echo "[Notice] Virtual environment (venv) not found. / 未找到虚拟环境（venv）。"
     if [ "$QUIET" = "1" ]; then
         echo "  --quiet mode: auto-installing... / --quiet 模式：自动安装……"
@@ -198,5 +207,6 @@ fi
 # -- Shared Krea 2 dependency convergence --
 ensure_musubi_shared_runtime
 
-# -- Launch (backend.gui emits the first timestamped console line) --
+# -- Launch --
+echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
 "$VENV_PYTHON" -m backend.gui "$@"
