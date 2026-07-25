@@ -24,7 +24,27 @@ class DocumentationTests(unittest.TestCase):
         self.assertTrue(_document_path("lora-plus", "zh-CN").is_file())
         self.assertTrue(_document_path("lora-plus", "en-US").is_file())
 
-    def test_timestep_documents_exist_and_keep_the_widget_placeholder(self):
+    def test_timestep_documents_keep_widgets_equations_and_stable_anchors(self):
+        expected_anchors = (
+            "quick-start",
+            "terminology",
+            "visualizer",
+            "dataset-guidance",
+            "scenarios",
+            "diagnosis",
+            "flow-matching",
+            "defaults",
+            "sampling",
+            "sigmoid-scale",
+            "flow-shift",
+            "weighting",
+            "logit-normal",
+            "mode",
+            "compatibility",
+            "sdxl-range",
+            "common-mistakes",
+            "testing",
+        )
         for locale in ("zh-CN", "en-US"):
             path = _document_path("timesteps", locale)
             self.assertTrue(path.is_file())
@@ -33,15 +53,14 @@ class DocumentationTests(unittest.TestCase):
                 PurePosixPath(f"parameters/timesteps.{locale}.md"),
             )
             self.assertIn('data-doc-widget="timestep-preview"', html)
-            for anchor in (
-                "sampling",
-                "sigmoid-scale",
-                "flow-shift",
-                "weighting",
-                "logit-normal",
-                "mode",
-                "sdxl-range",
-            ):
+            equation_count = html.count('<div class="doc-equation"') + html.count(
+                '<div class="doc-equation doc-equation-compact"'
+            )
+            self.assertEqual(equation_count, 9)
+            self.assertIn('class="doc-frac"', html)
+            self.assertIn('role="group"', html)
+            self.assertNotIn('class="language-text"', html)
+            for anchor in expected_anchors:
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 

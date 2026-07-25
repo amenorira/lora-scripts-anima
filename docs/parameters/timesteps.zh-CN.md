@@ -1,13 +1,15 @@
-# Flow-matching 训练时间步
+# 训练时间步：从看懂到调参
 
-> 时间步决定训练时一张图片被加入多少噪声，以及模型在低噪声细节、中噪声特征和高噪声结构之间如何分配学习机会。它不是训练已经运行了多少步，也不是生成图片时填写的采样步数。
+> 训练时，系统会先给图片加入随机噪声，再让模型学习如何处理它。时间步表示这一次加了多少噪声。它会影响训练更常关注细节、整体结构，还是两者之间的平衡。
 
-本文主要说明本训练器中 **Anima** 与 **Krea 2** 的 flow-matching 时间步。SDXL 使用不同的扩散训练路径，文末单独说明与它有关的时间步范围参数。
+本文主要介绍本训练器中 **Anima** 和 **Krea 2** 使用的 flow matching（流匹配）时间步。SDXL 采用另一套扩散训练方式，相关的时间步范围参数会在文末单独说明。
 
 <!-- doc-anchor: quick-start -->
-## 先给第一次训练的建议
+## 第一次训练先这样设置
 
-如果你还不能根据训练结果判断应该偏向哪个噪声区域，请保留当前训练类型的默认设置。对于 Anima LoRA，常用基准是：
+如果你还没有训练过基准版本，建议先保留当前训练类型的默认值。时间步是高级调优项，数据质量、标注、学习率和停止时机通常更值得优先检查。
+
+Anima LoRA 可以从下面这组设置开始：
 
 ```toml
 timestep_sampling = "sigmoid"
@@ -15,325 +17,367 @@ sigmoid_scale = 1.0
 weighting_scheme = "uniform"
 ```
 
-它主要覆盖中噪声，同时保留一定比例的低噪声和高噪声，适合作为人物、画风和普通概念训练的第一组对照实验。
+Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5` 和 `weighting_scheme=none`。它们同样适合作为第一组对照。
 
-时间步属于高级调优项。数据筛选、标注、学习率和停止时机通常比修改时间步更重要。一个可靠的做法是先训练默认基线，再只改变一个时间步参数，用相同提示词、随机种子（Seed）、采样设置和 checkpoint（训练中途保存的权重）步数比较结果。
+这两组默认值都会覆盖不同强度的噪声，不会只盯着细节或整体结构。人物、画风和普通概念训练都可以先从这里开始。
+
+> **先记住：** 时间步不是“画质开关”。没有基准结果时，不要同时修改多个时间步参数。先完成一次默认训练，之后才容易判断改动是否真的有效。
 
 <!-- doc-anchor: terminology -->
 ## 先分清三种“步”
 
-| 名称 | 它表示什么 | 常见参数 |
+训练界面里有三种名字相近、含义完全不同的“步”：
+
+| 名称 | 实际含义 | 常见参数 |
 | --- | --- | --- |
-| 训练步数 | 优化器更新 LoRA 参数的次数 | `max_train_steps` |
-| 训练时间步 | 当前训练样本处在多大的噪声强度 | `timestep_sampling` |
-| 生成采样步数 | 推理时从噪声走向成图所用的数值求解次数 | `sample_steps` |
+| 训练步数 | LoRA 参数被更新了多少次 | `max_train_steps` |
+| 训练时间步 | 当前图片被加入了多少噪声 | `timestep_sampling` |
+| 生成采样步数 | 生成图片时执行多少次去噪计算 | `sample_steps` |
 
-因此，训练日志中的第 500 步和噪声时间步 `t≈500` 没有“进行到一半”的对应关系。一次优化器更新里，不同图片还可以分别抽到不同的噪声时间步。
-
-<!-- doc-anchor: flow-matching -->
-## 时间步在训练中做了什么
-
-设原图经过 VAE 编码后的 latent（模型实际处理的图像特征）为 `x`，随机噪声为 `ε`，归一化时间步为 `t∈[0,1]`。Anima 和 Krea 2 的训练输入可直观理解为：
-
-```text
-x_t = (1 - t) * x + t * ε
-```
-
-- `t≈0`：输入几乎仍是原图 latent，属于低噪声区。
-- `t≈0.5`：图像与噪声充分混合，属于中噪声区。
-- `t≈1`：输入接近纯噪声，属于高噪声区。
-
-Anima 当前训练实现的目标是预测流方向 `ε-x`。推理时过程反过来：模型从高噪声出发，沿着学到的方向逐步走向低噪声并形成图片。
-
-### 不同噪声区域大致学什么
-
-| 区域 | 输入状态 | 更容易体现的学习内容 |
-| --- | --- | --- |
-| 低噪声 | 大部分原图信息仍然可见 | 线条、纹理、颜色、五官和服装小细节 |
-| 中噪声 | 图像与噪声充分混合 | 身份、风格、形态与细节之间的平衡 |
-| 高噪声 | 原图信息已经很少 | 主体语义、轮廓、姿势、构图和整体结构 |
-
-这是一种帮助理解的近似，而不是严格的能力分区。细节、身份与构图都会跨越多个时间步；数据内容、文字标注和基础模型能力仍然会影响所有区域。
-
-训练代码中还经常使用 `sigma` 表示噪声混合比例。在本文讨论的 flow-matching 路径里，可以先把它理解为与 `t` 同方向的噪声强度：`sigma` 越接近 `0` 越干净，越接近 `1` 越接近纯噪声。界面为了便于阅读，将这一范围显示为约 `0～1000` 的时间步。
+例如，日志中的“训练到第 500 步”表示 LoRA 已经更新了 500 次。它和噪声时间步 `t≈500` 没有“都进行到一半”的关系。一次训练更新中，不同图片也可以抽到不同的噪声时间步。
 
 <!-- doc-anchor: visualizer -->
-## 用分布预览理解当前配置
+## 先学会看分布图
 
 <div data-doc-widget="timestep-preview"></div>
 
-图中的 **蓝色柱子**表示时间步被抽到的概率。柱子越高，训练越经常遇到对应的噪声区域。32 根柱子只是把完整时间范围划成 32 个统计区间，不表示训练器只有 32 个时间步；柱高也经过归一化，没有直接的纵轴概率刻度。
+看这张图时，只需要分三步：
 
-**橙色曲线**表示样本被抽到以后，Loss 还要乘上的逐时间步权重。Loss 是模型预测与训练目标之间的误差，训练器据此更新 LoRA。橙线使用对数刻度，用来观察权重形状，不是实际 Loss 数值，也不能与蓝柱高度直接比较。平坦的橙线表示各时间步不附加不同权重，并不表示 Loss 固定为某个数值。
+1. **看蓝色柱子。** 柱子越高，代表对应的噪声区域越常被抽到。
+2. **看橙色曲线。** Loss 表示模型预测与训练目标之间的误差。橙线显示样本被抽到以后，这个误差还要乘上多大的额外权重。
+3. **看低、中、高噪声占比。** 它能快速告诉你当前设置更偏向细节、平衡区域还是整体结构。
 
-某个时间区域对参数更新的实际贡献可以粗略理解为：
+32 根蓝柱只是把完整时间范围分成 32 个区间方便观察，并不表示训练器只有 32 个时间步。柱高以最高的一根为基准进行了缩放，因此不能直接当作纵轴概率读取。
 
-```text
-采样概率 * Loss 权重 * 该批样本在该时间步产生的误差
-```
+橙线使用对数刻度，只用来比较权重的变化趋势。它不是训练日志中的实际 Loss，也不能和蓝柱的高度直接比较。橙线保持水平，表示没有对不同时间步额外加权，不表示 Loss 永远不变。
 
-最后一项会随图片、标注和训练阶段变化，所以图表展示的是“训练机会与显式权重”，不是最终学习量的精确预测。
+<div class="doc-equation doc-equation-compact" role="group" aria-label="某个噪声区域对训练影响的近似关系">
+  <div class="doc-equation-kicker">帮助理解，不是精确预测</div>
+  <div class="doc-equation-expression">实际影响 ≈ 抽到的频率 × Loss 权重 × 当前误差</div>
+  <p>图片、标注和训练阶段都会改变“当前误差”，所以分布图只能说明训练如何分配抽样与权重。</p>
+</div>
 
-预览使用 32,768 次确定性模拟，因此相同参数会得到稳定图形。低、中、高三个百分比是区间汇总，显示时可能因四舍五入合计为 `99.9%` 或 `100.1%`。预览不会启动训练，也不会修改训练配置文件（TOML）。
+预览会在本地进行 32,768 次固定随机序列的模拟。参数相同，图形就相同。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。预览不会启动训练，也不会修改 TOML 配置。
+
+<!-- doc-anchor: dataset-guidance -->
+## 图片数量会怎样影响时间步选择
+
+图片越少，模型能参考的角度、姿势、背景和构图变化就越少。时间步不能补出这些缺失的信息，它只能决定现有图片更常在哪种噪声强度下参与训练。
+
+因此，少图或高度重复的数据集通常更适合保留稳定的中噪声倾向。图片足够多，而且内容真正多样时，才更有条件增加低噪声和高噪声两端的覆盖。
+
+下面的数值是经验起点，不是固定配方：
+
+| 训练情况 | 建议起点 | 为什么这样设置 |
+| --- | --- | --- |
+| 5～12 张人物图 | `sigmoid`、`sigmoid_scale=0.8～1.0`、`uniform` | 先学习多张图共有的身份特征，降低复读姿势和背景的风险 |
+| 15～40 张人物图 | `sigmoid`、`sigmoid_scale=1.0～1.2`、`uniform` | 兼顾身份、细节和整体结构 |
+| 40～100 张多样人物图 | `sigmoid`、`sigmoid_scale=1.1～1.4`、`uniform` | 角度和构图足够丰富时，可以逐步扩大两端覆盖 |
+| 15～30 张画风图 | `sigmoid`、`sigmoid_scale=0.8～1.0`、`uniform` | 避免把固定人物、背景或构图误学成画风 |
+| 60～200 张多样画风图 | `sigmoid`、`sigmoid_scale=1.1～1.4`、`uniform` | 数据足够多样时，可以同时学习笔触、形体和构图习惯 |
+| 物体或结构概念 | `sigmoid`、`sigmoid_scale=1.0～1.2`、`uniform` | 先保持平衡，确认整体轮廓不足后再增加高噪声训练 |
+
+这里说的数量是 **有效独立图片数**。连续视频帧、同一张图的多个裁剪，以及高度相似的卡面，不能提供等量的新信息。
+
+例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，样本曝光次数可能相近，但前者仍然只有 10 张图提供的角度和构图。`repeats` 可以增加训练次数，不能增加数据多样性。
+
+<div class="doc-equation doc-equation-compact" role="group" aria-label="每轮训练更新数的近似估算">
+  <div class="doc-equation-kicker">单卡训练的粗略估算</div>
+  <div class="doc-equation-expression doc-equation-expression-small">每轮更新数 ≈ <span class="doc-frac"><span>图片数 × repeats</span><span>batch size × gradient accumulation</span></span></div>
+  <p>这是帮助规划训练长度的近似关系，不会改变时间步分布本身。</p>
+</div>
+
+<!-- doc-anchor: scenarios -->
+## 人物、画风和概念分别怎么选
+
+### 少图人物
+
+少图人物最容易把脸、姿势、背景和构图一起记住。建议先用 `sigmoid 0.8～1.0 + uniform`，不要一开始就使用 `sigma_sqrt` 或明显偏向高噪声的 shift。
+
+如果角色身份没有学出来，先检查触发词、标注、学习率和训练步数。单纯调整时间步，通常不能修复这些基础问题。
+
+### 多图人物与高还原度
+
+一个角色要在新姿势、新镜头下仍然保持身份，不能只靠低噪声训练。低噪声有助于保留五官和服装细节，中噪声负责身份与结构的平衡，高噪声则影响模型如何从模糊信息中建立整体角色。
+
+当数据确实包含不同角度、姿势和构图时，可以把 `sigmoid_scale` 从 `1.0` 逐步测试到 `1.1～1.4`。不要跳过默认版本，否则很难判断扩大分布后究竟改善了什么。
+
+### 少图画风
+
+颜色、线条和笔触主要会在低噪声与中噪声区域体现；人物比例、形状设计、光影布局和构图习惯还会涉及高噪声。
+
+少图画风最常见的问题不是“学得不够强”，而是把固定主体和固定构图一起学成了风格。图片较少时，应先保持中噪声倾向，并尽量让训练图的主体和构图有所变化。
+
+### 多图、高还原画风
+
+追求高还原画风，不等于把训练全部推向低噪声。低、中噪声有助于复现线条、配色和材质，高噪声也参与学习形体、光影和构图语言。
+
+对于约 60 张以上、主体和镜头真正多样的数据，可以逐步测试 `sigmoid_scale=1.1～1.4`。如果颜色和笔触已经正确，但整体形体仍不像，再单独尝试轻微的高噪声 shift。`sigma_sqrt` 不是通用的“画风增强”选项。
+
+判断画风是否学好时，不要只看生成结果是否像训练图。更重要的是，它能否把相同的视觉语言应用到训练集中没有出现过的主体和构图上。
+
+### 物体、服装与结构概念
+
+特殊服装、道具和机械结构往往需要中噪声和高噪声来建立整体轮廓。如果局部纹理正确，但整体结构不稳定，可以在确认数据角度足够后，测试 `sigmoid_scale=1.2～1.4` 或轻微的 `shift>1`。
+
+只有正面图时，时间步无法推断物体背面的样子。缺少的视角仍然需要通过数据补充。
+
+<!-- doc-anchor: diagnosis -->
+## 根据训练结果排查
+
+| 看到的现象 | 可以测试的时间步调整 | 还要同时检查 |
+| --- | --- | --- |
+| 熟悉姿势很像，换姿势后身份消失 | 适度提高 `sigmoid_scale` | 角度是否足够、标注是否合理、是否已经过拟合 |
+| 小细节一直出不来 | 小幅提高 `sigmoid_scale`，增加两端覆盖 | 原图是否真的包含清晰细节 |
+| 总是生成同一姿势或背景 | 减少高噪声偏移，回到 sigmoid 基线 | 数据是否重复、背景是否正确标注 |
+| 轮廓或身体结构不稳定 | 数据充分时测试轻微 `shift>1` | 是否有全身图和多角度图片 |
+| 纹理过锐、脏点多、复读训练图 | 停用 `sigma_sqrt` 或回到均匀权重 | 学习率、总步数和推理 LoRA 权重 |
+| 画风只有颜色，缺少形体特点 | 适度扩大 sigmoid，或单独测试轻微高噪声 shift | 主体类型和构图是否足够多样 |
+| 画风压制提示词，总把构图带回训练集 | 减少高噪声偏移 | 总训练强度是否过高 |
+
+同一种现象可能有多个原因。时间步分布只是排查的一部分，不能代替对数据、标注、学习率和固定提示词采样图的检查。
+
+<!-- doc-anchor: flow-matching -->
+## 时间步到底控制什么
+
+下面开始解释原理。如果你只想完成第一次训练，可以先跳过这一节，等需要调参时再回来查阅。
+
+图片进入模型之前，会先由 VAE 压缩成 latent，也就是模型实际处理的图像特征。设原图 latent 为 <var>x</var>，随机噪声为 <var>ε</var>，归一化时间步为 <var>t</var>，那么加入噪声后的输入可以写成：
+
+<div class="doc-equation" role="group" aria-label="Flow matching 加噪公式">
+  <div class="doc-equation-kicker">加入噪声后的训练输入</div>
+  <div class="doc-equation-expression"><var>x</var><sub>t</sub> = (1 − <var>t</var>)<var>x</var> + <var>tε</var></div>
+  <p><var>t</var> 越小，输入越接近原图；<var>t</var> 越大，输入越接近纯噪声。</p>
+</div>
+
+| 时间步位置 | 模型看到的输入 | 更容易体现的内容 |
+| --- | --- | --- |
+| 低噪声，`t≈0` | 原图信息大部分仍然可见 | 线条、纹理、颜色、五官和服装细节 |
+| 中噪声，`t≈0.5` | 原图与噪声充分混合 | 身份、风格、形态与细节之间的平衡 |
+| 高噪声，`t≈1` | 输入已经接近纯噪声 | 主体语义、轮廓、姿势、构图和整体结构 |
+
+这张表只是帮助建立直觉，并不是严格的能力分区。身份、细节和构图都会跨越多个时间步，最终结果仍然取决于数据、标注和基础模型。
+
+当前 Anima 和 Krea 2 的训练目标都是预测从原图指向噪声的流动方向：
+
+<div class="doc-equation doc-equation-compact" role="group" aria-label="Flow matching 训练目标">
+  <div class="doc-equation-kicker">模型需要预测的方向</div>
+  <div class="doc-equation-expression"><var>v</var> = <var>ε</var> − <var>x</var></div>
+  <p>生成图片时过程反过来：模型从高噪声出发，逐步走向清晰图像。</p>
+</div>
+
+训练代码里还经常使用 <var>σ</var>（界面参数中写作 `sigma`）表示噪声混合比例。在本文讨论的 flow matching 路径中，可以先把它理解为与 <var>t</var> 同方向的噪声强度：越接近 `0` 越干净，越接近 `1` 越接近纯噪声。界面会把这个范围显示为大约 `0～1000` 的时间步。
 
 <!-- doc-anchor: defaults -->
 ## 当前训练类型的默认值
 
-| 训练类型 | 默认采样 | 默认分布参数 | 默认 Loss 权重 |
+| 训练类型 | 默认采样方式 | 默认分布参数 | 默认 Loss 权重 |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none` |
 
-`uniform` 与 `none` 在当前 Loss 计算中都表示不附加逐时间步权重；`none` 同时承担旧配置和训练后端兼容用途。导入旧预设后，应以界面实际显示和分布预览为准。
+在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 使用 `none`，还为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
 
 <!-- doc-anchor: sampling -->
-## `timestep_sampling`：决定抽到哪里
+## `timestep_sampling`：决定哪些时间步更常出现
 
-该参数首先决定蓝色柱子的形状，也就是每次训练更可能从哪些噪声区域抽取样本。
+`timestep_sampling` 决定蓝色柱子的基本形状，也就是训练更常抽到哪些噪声强度。
 
-| 选项 | 实际行为 | 支持范围 |
+| 选项 | 它会怎样抽取时间步 | 可用训练类型 |
 | --- | --- | --- |
-| `sigmoid` | 对缩放后的正态随机数应用 sigmoid，通常集中在中噪声 | Anima、Krea 2 |
-| `uniform` | 在完整时间范围内均匀抽取 | Anima、Krea 2 |
-| `shift` | 在 sigmoid 分布上应用固定 flow shift | Anima、Krea 2 |
-| `sigma` | 按 scheduler 的 sigma 时间表取样，部分权重方案可改变抽样密度 | Anima、Krea 2 |
-| `flux_shift` | 根据当前分辨率计算 FLUX 风格 shift | Anima |
-| `krea2_shift` | 根据 Krea 2 的分辨率公式计算 shift | Krea 2 |
-| `logsnr` | 从 LogSNR 分布生成时间步 | Krea 2 |
+| `sigmoid` | 以中噪声为主，同时保留两端 | Anima、Krea 2 |
+| `uniform` | 在完整范围内均匀抽取 | Anima、Krea 2 |
+| `shift` | 先生成 sigmoid 分布，再整体向一侧移动 | Anima、Krea 2 |
+| `sigma` | 按训练 scheduler 的离散噪声表抽取 | Anima、Krea 2 |
+| `flux_shift` | 根据当前分辨率计算 FLUX 风格的 shift | Anima |
+| `krea2_shift` | 根据当前分辨率计算 Krea 2 的 shift | Krea 2 |
+| `logsnr` | 从 LogSNR 分布转换出时间步 | Krea 2 |
 
 ### `sigmoid`
 
-`sigmoid` 的采样可以写成：
+`sigmoid` 会先取得一个服从标准正态分布的随机数，再把它转换到 `0～1`：
 
-```text
-z ~ Normal(0, 1)
-t = sigmoid(sigmoid_scale * z)
-```
+<div class="doc-equation" role="group" aria-label="Sigmoid 时间步采样公式">
+  <div class="doc-equation-kicker">sigmoid 采样</div>
+  <div class="doc-equation-expression"><var>z</var> ∼ N(0, 1)<br><var>t</var> = sigmoid(<var>s z</var>)</div>
+  <p><var>s</var> 对应 <code>sigmoid_scale</code>。默认值为 1.0。</p>
+</div>
 
-默认 `sigmoid_scale=1.0` 时，分布左右对称并明显偏向中间。以 1024×1024 的默认示例观察，通常约有 21% 落在低噪声区、57% 落在中噪声区、21% 落在高噪声区；具体显示会受统计分区和参数影响。
+默认 `sigmoid_scale=1.0` 时，分布左右对称，并明显集中在中噪声。以 1024×1024 的默认预览为例，低、中、高噪声占比大约是 21%、57% 和 21%。具体数值会随参数和统计区间略有变化。
 
 ### `uniform`
 
-`uniform` 直接在完整时间范围均匀抽取。与默认 sigmoid 相比，它会明显增加靠近低噪声和高噪声两端的训练机会。它不是“更公平所以一定更好”：当数据较少或构图重复时，两端也更容易学习训练图细节和数据集偏差。
+`uniform` 会在完整时间范围内均匀抽取。和默认 sigmoid 相比，它会明显增加低噪声与高噪声两端的训练次数。
+
+均匀不代表一定更好。数据较少或构图重复时，两端增加的训练次数也可能让模型更快记住背景、固定姿势和图片瑕疵。
 
 ### `shift`
 
-`shift` 先生成 sigmoid 分布，再应用固定偏移。它适合已经通过对照图确认需要增加高噪声或低噪声训练的情况，不建议仅凭“结构”或“细节”两个词直接大幅调整。
+`shift` 先生成 sigmoid 分布，再通过 `discrete_flow_shift` 把整组分布向低噪声或高噪声移动。它更适合已经完成基准训练，并且从对照图中确认需要调整整体方向的情况。
 
 ### `sigma`
 
-`sigma` 通过训练 scheduler（噪声时间表）的离散位置选择噪声强度。此时 `discrete_flow_shift` 会改变 scheduler 时间表；当 `weighting_scheme` 为 `logit_normal` 或 `mode` 时，它还会改变抽样密度。
+`sigma` 会从训练 scheduler，也就是预先定义的离散噪声表中选择时间步。`discrete_flow_shift` 会改变这张噪声表。
 
-`sigma_sqrt` 和 `cosmap` 在 `sigma` 模式下仍然使用普通密度抽样，它们改变的是抽到样本之后的 Loss 权重。
+当 `weighting_scheme` 选择 `logit_normal` 或 `mode` 时，它还会改变抽取位置的分布。选择 `sigma_sqrt` 或 `cosmap` 时，抽取分布保持普通密度，只在计算 Loss 时改变权重。
 
 ### `flux_shift` 与 `krea2_shift`
 
-这两种方式按照当前 latent token 数量（压缩后图像特征网格的大小）计算偏移。分辨率越高，计算出的分布可能越偏向高噪声。它们不读取固定的 `discrete_flow_shift`。
+这两种方式会根据当前 latent 网格大小计算 shift。通常分辨率越高，最终分布越可能向高噪声移动。它们不会读取固定的 `discrete_flow_shift`。
 
-开启 bucket（把相近分辨率和宽高比的图片分组训练）后，每个 bucket 都会按自己的 latent 尺寸计算实际分布。文档图表显示的参考分辨率不能代表所有 bucket。
+开启 bucket 后，相近分辨率和宽高比的图片会分组训练。每个 bucket 都会按自己的 latent 尺寸计算分布，因此文档图表中的参考分辨率不能代表数据集里的所有 bucket。
 
 ### `logsnr`
 
-SNR 是信号强度与噪声强度的比值，LogSNR 是它的对数表达。较高的 LogSNR 代表信号更多、噪声更少。Krea 2 的 `logsnr` 会先从由 `logit_mean` 和 `logit_std` 定义的正态分布取得 LogSNR，再转换为时间步：
+SNR 表示信号与噪声的强度比，LogSNR 是它的对数形式。LogSNR 越高，代表原图信号越强、噪声越少。
 
-```text
-logSNR ~ Normal(logit_mean, logit_std)
-t = sigmoid(-logSNR / 2)
-```
+Krea 2 的 `logsnr` 会先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再转换成时间步：
 
-它与 `sigma + logit_normal` 使用相同的两个参数名，但转换路径不同。不要只凭参数正负猜测最终方向，应以分布预览为准。
+<div class="doc-equation" role="group" aria-label="LogSNR 时间步转换公式">
+  <div class="doc-equation-kicker">Krea 2 logsnr 采样</div>
+  <div class="doc-equation-expression">LogSNR ∼ N(<var>μ</var>, <var>σ</var>)<br><var>t</var> = sigmoid(−LogSNR / 2)</div>
+  <p><var>μ</var> 对应 <code>logit_mean</code>，<var>σ</var> 对应 <code>logit_std</code>。</p>
+</div>
+
+它和 `sigma + logit_normal` 使用相同的两个参数名，但转换过程不同。不要只根据参数的正负判断方向，直接查看分布预览更可靠。
 
 <!-- doc-anchor: sigmoid-scale -->
-## `sigmoid_scale`：控制分布展开程度
+## `sigmoid_scale`：控制分布向两端展开多少
 
-`sigmoid_scale` 在 `sigmoid`、`shift`、`flux_shift` 和 `krea2_shift` 中生效。
+`sigmoid_scale` 会在 `sigmoid`、`shift`、`flux_shift` 和 `krea2_shift` 中生效。
 
-- 接近 `0`：样本几乎全部集中到 `t≈0.5`。
-- `1.0`：以中噪声为主，同时保留两端覆盖。
-- `1.2～1.5`：低噪声和高噪声的覆盖都会增加。
-- 数值过大：分布可能过度集中在两个端点。
+- 接近 `0`：样本几乎都集中在 `t≈0.5`。
+- `1.0`：以中噪声为主，同时保留低噪声和高噪声。
+- `1.2～1.5`：低噪声与高噪声两端都会增加。
+- 数值过大：样本可能过度集中到两个端点。
 
-增大该值不是简单的“提高质量”。它会同时增加细节端和结构端的学习机会，也可能加快背景、固定构图、压缩痕迹或错误标注的学习。
+提高 `sigmoid_scale` 不是单纯提高质量。它可能补充细节和整体结构，也可能让背景、固定构图、压缩痕迹和错误标注更快被学进去。
 
 <!-- doc-anchor: flow-shift -->
-## `discrete_flow_shift`：把分布推向一侧
+## `discrete_flow_shift`：把整组分布向一侧移动
 
-固定 shift 的变换为：
+设 shift 为 <var>s</var>，它对时间步的变换为：
 
-```text
-shifted_t = shift * t / (1 + (shift - 1) * t)
-```
+<div class="doc-equation" role="group" aria-label="Discrete flow shift 公式">
+  <div class="doc-equation-kicker">固定 flow shift</div>
+  <div class="doc-equation-expression"><var>t</var><sub>shifted</sub> = <span class="doc-frac"><span><var>s t</var></span><span>1 + (<var>s</var> − 1)<var>t</var></span></span></div>
+  <p><var>s</var> 对应 <code>discrete_flow_shift</code>。</p>
+</div>
 
-- `1.0`：不偏移。
+- `1.0`：不移动。
 - 大于 `1.0`：整体向高噪声移动。
 - 小于 `1.0`：整体向低噪声移动。
 
-它在 `shift` 中直接生效，在 `sigma` 中通过 scheduler 生效。`sigmoid`、`uniform`、`flux_shift`、`krea2_shift` 和 `logsnr` 不使用这个固定值。
+这个参数在 `shift` 中直接生效，在 `sigma` 中通过 scheduler 生效。`sigmoid`、`uniform`、`flux_shift`、`krea2_shift` 和 `logsnr` 不会使用这个固定值。
 
 <!-- doc-anchor: weighting -->
-## `weighting_scheme`：抽到以后算多重
+## 采样频率和 Loss 权重不是一回事
 
-该参数的名称容易造成误解：有些选项改变 Loss 权重，有些选项只在 `timestep_sampling=sigma` 时改变采样密度。
+时间步对训练的影响有两个独立环节：
 
-| 选项 | 改变采样密度 | 改变 Loss 权重 |
+1. **先决定抽到哪里。** 由 `timestep_sampling` 和相关分布参数控制，对应图中的蓝柱。
+2. **抽到以后算多重。** 由真正的 Loss 权重控制，对应图中的橙线。
+
+`weighting_scheme` 这个名称容易误导，因为其中有些选项改变 Loss 权重，有些选项只在 `timestep_sampling=sigma` 时改变抽样分布。
+
+| 选项 | 会改变抽样分布吗 | 会改变 Loss 权重吗 |
 | --- | --- | --- |
-| `uniform` / `none` | 否 | 否 |
-| `sigma_sqrt` | 否 | 是，使用 `1/sigma²` 强调低噪声 |
-| `cosmap` | 否 | 是，平滑强调中噪声 |
-| `logit_normal` | 仅在 `sigma` 采样时 | 否 |
-| `mode` | 仅在 `sigma` 采样时 | 否 |
+| `uniform` / `none` | 不会 | 不会 |
+| `sigma_sqrt` | 不会 | 会，强烈提高低噪声权重 |
+| `cosmap` | 不会 | 会，平滑提高中噪声权重 |
+| `logit_normal` | 仅在 `sigma` 采样时 | 不会 |
+| `mode` | 仅在 `sigma` 采样时 | 不会 |
 
 ### `uniform` / `none`
 
-不附加逐时间步 Loss 权重。图表中的橙线保持水平。这是最容易解释、也最适合作为基线的设置。
+不对不同时间步添加额外 Loss 权重。图中的橙线保持水平。这是最容易比较，也最适合作为基准的设置。
 
 ### `sigma_sqrt`
 
-```text
-weight = 1 / sigma²
-```
+<div class="doc-equation" role="group" aria-label="Sigma sqrt Loss 权重公式">
+  <div class="doc-equation-kicker">低噪声权重</div>
+  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
+  <p><var>σ</var> 越接近 0，权重增长越快。</p>
+</div>
 
-它会非常强地提高低噪声样本的贡献。接近低噪声端时权重增长很快，少图训练中容易放大局部记忆、过锐纹理和不稳定梯度，因此不建议作为新手默认值。
+它会显著放大低噪声样本的影响。少图训练中，这可能加重局部记忆、过锐纹理和梯度不稳定，因此不建议作为新手默认值。
 
 ### `cosmap`
 
-```text
-weight = 2 / [pi * (1 - 2sigma + 2sigma²)]
-```
+<div class="doc-equation" role="group" aria-label="Cosmap Loss 权重公式">
+  <div class="doc-equation-kicker">中噪声权重</div>
+  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>2</span><span><var>π</var>(1 − 2<var>σ</var> + 2<var>σ</var><sup>2</sup>)</span></span></div>
+  <p>它会相对降低两个端点的影响，并平滑强调中噪声。</p>
+</div>
 
-它平滑降低两端的相对贡献并强调中噪声。它只改变橙色 Loss 曲线，不改变蓝色采样柱。
+`cosmap` 只改变橙色权重曲线，不会改变蓝色采样柱。
 
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`、`logit_mean` 与 `logit_std`
 
-这组参数只有在 `timestep_sampling=sigma` 时才会改变抽样密度。
+这组设置只有在 `timestep_sampling=sigma` 时才会改变抽样分布。
 
 - `logit_mean=0`：分布大致对称。
-- 在 `sigma` scheduler 的索引方向下，正值通常把最终 sigma 推向低噪声，负值通常推向高噪声。
+- 在当前 sigma scheduler 的索引方向下，正值通常使最终 sigma 偏向低噪声，负值通常偏向高噪声。
 - `logit_std` 越小，样本越集中；越大，样本越向两端展开。
 
-由于 scheduler shift 也会参与最终映射，实际方向和幅度应以预览为准。选择 `sigmoid + logit_normal` 时，`logit_normal` 不会改变采样，也不会附加 Loss 权重。
+scheduler shift 还会参与最后的映射，所以应以预览结果判断实际方向和幅度。选择 `sigmoid + logit_normal` 时，`logit_normal` 不会改变采样，也不会增加 Loss 权重。
 
 <!-- doc-anchor: mode -->
 ### `mode` 与 `mode_scale`
 
-`mode` 只有在 `timestep_sampling=sigma` 时改变抽样密度，不附加 Loss 权重。
+`mode` 只会在 `timestep_sampling=sigma` 时改变抽样分布，不会增加 Loss 权重。
 
-- `mode_scale=0` 时接近均匀密度。
-- 数值增大时，更多样本集中到中噪声。
-- 默认 `1.29` 已具有明显的中间区域倾向。
+- `mode_scale=0`：接近均匀分布。
+- 数值增大：样本更集中在中噪声。
+- 默认 `1.29`：已经有明显的中噪声倾向。
 
 <!-- doc-anchor: compatibility -->
-## 参数生效速查
+## 参数什么时候生效
 
 | 参数 | sigmoid | uniform | shift | sigma | flux/krea shift | logsnr |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sigmoid_scale` | 生效 | 忽略 | 生效 | 忽略 | 生效 | 忽略 |
 | `discrete_flow_shift` | 忽略 | 忽略 | 生效 | 生效 | 忽略 | 忽略 |
-| `logit_mean/std` | 忽略 | 忽略 | 忽略 | 仅 `logit_normal` 密度 | 忽略 | 直接生效 |
-| `mode_scale` | 忽略 | 忽略 | 忽略 | 仅 `mode` 密度 | 忽略 | 忽略 |
-| `sigma_sqrt/cosmap` Loss | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
+| `logit_mean/std` | 忽略 | 忽略 | 忽略 | 仅影响 `logit_normal` 分布 | 忽略 | 直接生效 |
+| `mode_scale` | 忽略 | 忽略 | 忽略 | 仅影响 `mode` 分布 | 忽略 | 忽略 |
+| `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
 
-这里的“忽略”表示训练代码不会消费该参数，保留数值不会产生隐藏效果。界面会尽量按当前组合隐藏无效字段，分布预览也会提示被忽略的设置。
-
-<!-- doc-anchor: dataset-guidance -->
-## 数据集大小与时间步有什么关系
-
-图片数量影响的是可供模型归纳的证据，而时间步决定这些证据被放在哪些噪声难度上学习。训练集越少、构图越重复，越应优先使用稳定的中间区域；训练集越大且内容越多样，才越有条件扩大两端覆盖。
-
-以下范围是经验起点，不是硬性规则：
-
-| 训练情况 | 建议起点 | 主要考虑 |
-| --- | --- | --- |
-| 5～12 张少图人物 | `sigmoid`、scale `0.8～1.0`、`uniform` | 减少端点过拟合，先提取共同身份 |
-| 15～40 张人物 | `sigmoid`、scale `1.0～1.2`、`uniform` | 平衡身份、结构和细节 |
-| 40～100 张多样人物 | `sigmoid`、scale `1.1～1.4`、`uniform` | 数据足够多样时可扩大两端覆盖 |
-| 15～30 张少图画风 | `sigmoid`、scale `0.8～1.0`、`uniform` | 降低主体、背景和构图与画风纠缠 |
-| 60～200 张多样画风 | `sigmoid`、scale `1.1～1.4`、`uniform` | 同时学习笔触、形体与构图语言 |
-| 物体或结构概念 | `sigmoid`、scale `1.0～1.2`、`uniform` | 先保持平衡，整体轮廓不足时再增加高噪声 |
-
-这里的数量指 **有效独立图片**。连续视频帧、同图裁剪和高度相似的卡面不会产生等量的数据多样性。
-
-例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，可能产生相近的样本曝光数，但前者没有获得更多角度、姿势和背景信息。重复次数能补足优化器更新数量，不能创造新的视觉证据。
-
-在单卡近似情况下：
-
-```text
-每轮样本数 = 图片数 * repeats
-每轮优化器更新数 ≈ 每轮样本数 / batch size / gradient accumulation
-```
-
-<!-- doc-anchor: scenarios -->
-## 人物、画风与概念应关注什么
-
-### 少图人物
-
-少图人物最容易同时记住脸、固定姿势、背景和构图。应先使用 `sigmoid 0.8～1.0 + uniform`，避免 `sigma_sqrt` 和明显高噪声偏移。身份学不出来时，应先检查触发词、标注、学习率和训练步数。
-
-### 多图人物与高还原度
-
-高还原且能换姿势、换镜头的人物不能只依靠低噪声。低噪声补充五官和服装细节，中噪声建立稳定身份，高噪声帮助模型从噪声阶段建立整体角色。数据真正多样时，可将 `sigmoid_scale` 逐步提高到 `1.1～1.4`，但仍应保留默认版本作为对照。
-
-### 少图画风与高还原画风
-
-颜色、笔触和线条更多体现在低中噪声；人物比例、形状设计、光影布局和构图语言也涉及高噪声。少图画风应避免把固定主体和构图学成“风格”。主体类型足够丰富时，才适合扩大覆盖或测试轻微高噪声 shift。
-
-追求高还原画风时，不应只把训练推向低噪声。低中噪声有助于复现线条、配色和材质，高噪声则参与学习形体、光影布局和构图习惯。对于约 60 张以上且主体、镜头和构图真正多样的数据，可从 `sigmoid_scale=1.1～1.4` 做递进测试；若只缺整体形体语言，再单独测试轻微高噪声 shift。`sigma_sqrt` 不是“加强画风还原”的通用开关。
-
-“训练图看起来很像”不等于风格泛化良好。真正可迁移的画风 LoRA 应能在训练集中没有出现的新主体和新构图上保持视觉语言。
-
-### 物体与结构概念
-
-特殊服装、道具和机械结构通常需要中高噪声来建立整体语义与轮廓。若局部纹理已经正确但整体结构不稳定，可在确认数据角度充足后，测试 `sigmoid_scale=1.2～1.4` 或轻微 `shift>1`。只有正面图时，时间步调整不能凭空教会模型背面结构。
-
-<!-- doc-anchor: diagnosis -->
-## 根据训练结果调整
-
-| 现象 | 可检查的方向 | 同时需要排查 |
-| --- | --- | --- |
-| 固定提示词很像，换姿势后身份消失 | 适度提高 `sigmoid_scale` | 数据角度、标注、训练是否过拟合 |
-| 小细节长期缺失 | 小幅增加两端覆盖 | 原图是否真的包含清晰细节 |
-| 总生成固定姿势或背景 | 减少高噪声偏移，回到 sigmoid 基线 | 数据是否重复、背景是否正确标注 |
-| 轮廓和整体结构不稳定 | 数据充分时测试轻微 `shift>1` | 全身图和多角度是否足够 |
-| 纹理过锐、脏点或训练图复读 | 避免 `sigma_sqrt` | 学习率、总步数、推理 LoRA 权重 |
-| 画风有颜色但缺少形体语言 | 扩大 sigmoid 或测试轻微高噪声 shift | 主体类型和构图是否多样 |
-| 画风严重压制提示词构图 | 减少高噪声偏移 | 总训练强度是否过高 |
-
-相同现象可能由不同原因造成。时间步图只能告诉你训练机会如何分配，不能替代对数据、学习率和采样图的检查。
+“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会产生隐藏效果。界面会尽量隐藏当前组合中无效的字段，分布预览也会提示被忽略的设置。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
 
-SDXL 不使用本文前述的 Anima/Krea 2 flow-matching 采样选项。本训练器为 SDXL 提供独立的时间步范围控制：
+SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项。本训练器为 SDXL 提供两个独立的范围参数：
 
-- `min_timestep`：允许训练的最低噪声时间步，留空使用 `0`。
-- `max_timestep`：允许训练的最高噪声时间步，留空使用 `1000`。
-- 提高 `min_timestep` 会排除最干净的低噪声样本。
-- 降低 `max_timestep` 会排除最高噪声样本。
+- `min_timestep`：允许抽取的最低噪声时间步，留空时使用 `0`。
+- `max_timestep`：允许抽取的最高噪声时间步，留空时使用 `1000`。
+- 提高 `min_timestep`：排除最干净的低噪声样本。
+- 降低 `max_timestep`：排除噪声最高的样本。
 
-它们只裁剪允许抽取的范围，不等同于 `sigmoid_scale` 或 flow shift。除非有明确实验目标，建议保留完整范围。
+它们只是裁剪允许抽取的范围，不等同于 `sigmoid_scale` 或 flow shift。没有明确实验目标时，建议保留完整范围。
 
-`min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 也与 SDXL 的噪声训练有关，但它们分别属于 Loss 重加权、预测目标和 scheduler 调整，不属于本文的 flow-matching 分布参数。
+`min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 也与 SDXL 的噪声训练有关，但分别控制 Loss 重加权、预测目标和 scheduler 行为，不属于本文介绍的 flow matching 分布参数。
 
 <!-- doc-anchor: common-mistakes -->
 ## 常见误区
 
-1. `sigmoid + logit_normal` 不会让 logit-normal 控制采样；它只在 `sigma` 模式下改变密度。
-2. `discrete_flow_shift` 并非对所有采样方式都有效。
-3. 高噪声不等于质量更高，低噪声也不保证细节一定更好。
-4. 时间步不能创造训练集中不存在的角度、结构或绘画规律。
-5. `sample_flow_shift` 属于生成预览参数，不是训练时间步分布。
-6. `seed` 会改变真实训练的随机抽取序列，但不会改变足够长训练下的理论分布形状；文档预览使用固定模拟种子，因此修改训练 Seed 不会让图形抖动。
-7. batch size 和多卡数量不改变理论分布，但短训练中的实际直方图波动会不同。
-8. 时间步设置不会改变导出的 LoRA 文件格式，也不要求推理时使用同名采样方式。
+1. `sigmoid + logit_normal` 不会启用 logit-normal 抽样；它只在 `sigma` 模式下生效。
+2. `discrete_flow_shift` 并不是所有采样方式都会使用。
+3. 高噪声不代表质量更高，低噪声也不保证细节一定更好。
+4. 时间步无法创造训练集中没有的角度、结构和绘画规律。
+5. `sample_flow_shift` 是生成预览参数，不会改变训练时间步分布。
+6. 训练 `seed` 会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览使用固定模拟种子，因此修改训练 Seed 不会让图形变化。
+7. batch size 和多卡数量不会改变理论分布，但会影响短训练中实际抽样的波动大小。
+8. 时间步设置不会改变导出的 LoRA 文件格式，推理时也不要求使用同名采样方式。
 
 <!-- doc-anchor: testing -->
-## 推荐的对照方法
+## 怎样做可靠的对照实验
 
-1. 使用当前训练类型默认值训练基线。
-2. 保持数据集、Seed、Rank、Alpha、学习率和总步数不变。
-3. 第二次只修改一个参数，例如把 `sigmoid_scale` 从 `1.0` 改为 `1.25`。
-4. 使用相同提示词、生成 Seed、分辨率和推理 LoRA 权重比较相同步数的 checkpoint。
-5. 同时观察身份或风格还原、背景泄漏、构图僵化、提示词服从和未见场景泛化。
+1. 先用当前训练类型的默认值完成一组基准训练。
+2. 固定数据集、随机种子、Rank、Alpha、学习率和总训练步数。
+3. 第二组实验只改一个参数，例如把 `sigmoid_scale` 从 `1.0` 改为 `1.25`。
+4. 使用相同提示词、生成种子、分辨率和推理 LoRA 权重，对比相同步数保存的 checkpoint。
+5. 同时观察身份或画风还原、背景泄漏、构图僵化、提示词服从度，以及在未见场景中的表现。
 
-Loss 只能辅助判断。时间步方案是否更好，最终应由固定条件下的多组采样图和目标使用场景决定。
+训练 Loss 只能作为辅助信息。某组时间步设置是否更好，最终应由固定条件下的多组生成图和你的实际使用目标决定。

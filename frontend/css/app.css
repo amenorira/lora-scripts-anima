@@ -4364,6 +4364,62 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   color: var(--text-preview);
   font-size: 12.5px;
 }
+.markdown-body .doc-equation {
+  margin: 18px 0;
+  padding: 17px 20px 15px;
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface-raised);
+  text-align: center;
+}
+.markdown-body .doc-equation-compact { padding-block: 14px 12px; }
+.markdown-body .doc-equation-kicker {
+  margin-bottom: 8px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.markdown-body .doc-equation-expression {
+  min-width: max-content;
+  color: var(--text-primary);
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  font-size: 25px;
+  line-height: 1.65;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.markdown-body .doc-equation-expression-small { font-size: 21px; }
+.markdown-body .doc-equation-compact .doc-equation-expression {
+  min-width: 0;
+  overflow-wrap: normal;
+}
+.markdown-body .doc-equation-expression var { font-family: inherit; }
+.markdown-body .doc-equation-expression sub,
+.markdown-body .doc-equation-expression sup { line-height: 0; }
+.markdown-body .doc-equation p {
+  margin: 8px auto 0;
+  max-width: 680px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.markdown-body .doc-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  margin: 0 0.18em;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+.markdown-body .doc-frac > span {
+  padding: 0.04em 0.3em;
+  text-align: center;
+  white-space: nowrap;
+}
+.markdown-body .doc-frac > span:first-child { border-bottom: 1.5px solid currentColor; }
 .markdown-body table {
   display: block;
   width: 100%;
@@ -4436,6 +4492,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .docs-timestep-widget-header { align-items: stretch; flex-direction: column; }
   .docs-timestep-widget-header .btn { align-self: flex-start; }
   .docs-timestep-widget .timestep-preview-chart { height: 180px; }
+  .markdown-body .doc-equation { padding: 14px 12px 12px; }
+  .markdown-body .doc-equation-expression { font-size: 21px; }
+  .markdown-body .doc-equation-expression-small { font-size: 18px; }
 }
 
 @container (min-width: 1170px) {
