@@ -1,151 +1,263 @@
 # LoRA+
 
-> LoRA+ assigns different learning rates to LoRA parameter groups during training. It is not an optimizer or scheduler, and it does not change the exported LoRA format or inference behavior.
+> LoRA+ gives different learning rates to different parameters within a LoRA. It may change how quickly target features appear, but it is not a quality-enhancement option and does not guarantee a better final result. Training without LoRA+ remains a complete, standard LoRA workflow.
 
 <!-- doc-anchor: overview -->
-## Overview
+## Quick overview
 
-A standard LoRA update is the product of two low-rank matrices:
+A standard LoRA can be understood as two parts that work together. Ordinary training gives them the same learning rate. LoRA+ keeps the base learning rate for one group and gives the other group a higher rate.
 
-```text
-delta W = scale * lora_up * lora_down
-```
+For example, with a base learning rate of `1e-4` and a LoRA+ ratio of `2.0`:
 
-`lora_down` is commonly initialized with small random values while `lora_up` starts at zero. Early in training, `lora_up` therefore receives the useful update first and the effective gradient for `lora_down` is initially weak. Standard LoRA uses one learning rate for both matrices. LoRA+ raises only the `lora_up` rate:
+- The base group continues to use `1e-4`.
+- The higher-rate group uses `2e-4`.
+- The base model, number of LoRA parameters, and exported file format do not change.
 
-```text
-lora_down LR = base LR
-lora_up LR   = base LR * LoRA+ ratio
-```
-
-With a base rate of `1e-4` and a ratio of `2`, the regular group uses `1e-4` and the `plus` group uses `2e-4`.
+LoRA+ therefore changes how much may be learned after a given number of steps, not what the model is capable of learning. The dataset and captions determine which content is repeated during training. LoRA+ may make the intended feature appear sooner, but it may also make repeated backgrounds, poses, and compositions easier to memorize.
 
 <!-- doc-anchor: effects -->
-## Training effects
+## How LoRA+ affects training
 
-- **Faster startup:** `lora_up` can leave its zero initialization sooner.
-- **Targeted acceleration:** the base rate for the other LoRA parameters remains unchanged.
-- **More learning within a fixed budget:** useful features may appear in fewer steps.
-- **Faster overfitting:** backgrounds, watermarks, effects, and incorrect captions can also be learned sooner.
-- **Separate LR telemetry:** TensorBoard receives regular and `plus` learning-rate series.
+LoRA+ uses the same learning-rate mechanism for characters, styles, garments, and general concepts, but the results worth checking differ by training target:
 
-LoRA+ adds no inference VRAM or compute cost and does not change how the `.safetensors` file is loaded.
-
-<!-- doc-anchor: good-cases -->
-## When it can help
-
-LoRA+ is most worth testing when:
-
-1. You use a conventional optimizer such as AdamW or AdamW8bit.
-2. The current run underfits, but raising the global learning rate is unstable.
-3. You train a medium or high rank such as `16`, `32`, or `64` with a limited step budget.
-4. The dataset and captions are clean and consistent.
-5. You want useful character, outfit, or style features to appear earlier.
-
-For few-shot character LoRAs, identity details may form sooner. Repeated backgrounds and compositions can also be memorized sooner, so dataset quality matters more, not less.
-
-<!-- doc-anchor: cautions -->
-## When to be cautious
-
-- Very small or highly duplicated datasets that already overfit easily.
-- A high base learning rate that becomes excessive after multiplication.
-- Captions or images containing repeated unwanted details.
-- Low-rank runs or configurations that already converge within the intended budget.
-- Optimizers that take ownership of the learning rate require an explicit check that they preserve independent parameter-group rates.
-
-<!-- doc-anchor: optimizer-compatibility -->
-## Optimizer compatibility
-
-| Optimizer | LoRA+ status | Notes |
+| Training target | Possible change | Also examine |
 | --- | --- | --- |
-| AdamW, AdamW8bit, PagedAdamW8bit, Lion, CAME | Supported | Preserve parameter-group rates and provide the most predictable ratio behavior. |
-| AdamWScheduleFree | Supported | Preserves groups, but its internal dynamics affect the live rates. |
-| Automagic3 | Conditional | Every base LR multiplied by its LoRA+ ratio must remain within `min_lr` and `max_lr`. Adaptive behavior can change the ratio between groups during training. |
-| AdaFactor | Manual-LR mode only | Disable both `relative_step` and `warmup_init`. The default relative-step mode ignores group rates, so the UI disables and locks LoRA+ while it is active. |
-| Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve LoRA+ multi-rate semantics; both UI and backend reject this combination. |
-| EmoSens | Unsupported | EmoSens updates all parameters with one global `emoPulse` and rewrites every group to that rate after each step, erasing the LoRA+ ratio. |
+| Character LoRA | Face, hair, or identity features may stabilize earlier | Whether outfits remain replaceable and whether backgrounds or poses become tied to the character |
+| Style LoRA | Color, line, and shape characteristics may appear earlier | Whether the style transfers to new characters, objects, and compositions |
+| Garment or object LoRA | The target appearance may become clear in earlier checkpoints | Whether it combines with different characters, poses, and scenes |
+| Trigger-based concept | The trigger may produce a clear response earlier | Whether the rest of the prompt still controls the result normally |
 
-Switching to an incompatible mode turns LoRA+ off and shows the lock reason. Backend validation also rejects incompatible combinations submitted by old presets or direct API requests.
+Image count alone does not determine whether LoRA+ is appropriate. The effective number and diversity of independent images matter more:
+
+- A small character dataset can memorize identity, outfit, background, and pose together. LoRA+ may make all of them appear sooner.
+- A larger dataset with varied viewpoints, poses, and backgrounds makes it easier to separate faster learning from better generalization.
+- A large collection of near-duplicates carries risks similar to a small dataset.
+- `repeats` increases how often an image is used; it does not add new viewpoints, poses, or compositions.
+
+LoRA+ also interacts with the rest of the training configuration:
+
+- **Base learning rate** sets the value before multiplication. A ratio of `2.0` produces a different effective rate from a base of `1e-4` than from a base of `2e-4`.
+- **Training steps** determine how many updates occur. LoRA+ may move both the best checkpoint and the onset of overfitting earlier.
+- **Rank** controls LoRA capacity, not learning speed directly. An underfit high-rank LoRA may need a different learning rate, more steps, or better captions rather than LoRA+.
+- **Alpha** scales the LoRA weight update. A ratio that worked before an alpha change may no longer behave the same way.
+- **Dataset and captions** determine which content is repeatedly reinforced. LoRA+ cannot replace missing data or correct an unsuitable trigger or inaccurate captions.
+
+<!-- doc-anchor: effective-lr -->
+## Effective learning rates
+
+A LoRA+ ratio only has meaning together with its base learning rate. The trainer first determines the base rate for each trained component, then applies the LoRA+ ratio to that component's higher-rate parameter group:
+
+| Component | Preferred base rate | Used when empty |
+| --- | --- | --- |
+| UNet/DiT | `unet_lr` | `learning_rate` |
+| Text encoder | `text_encoder_lr` | `learning_rate` |
+
+The following examples show how the base learning rate and LoRA+ ratio combine to determine the effective rates:
+
+| Configuration | Base group | Higher-rate group |
+| --- | --- | --- |
+| Base LR `1e-4`, LoRA+ disabled | `1e-4` | `1e-4` |
+| Base LR `1e-4`, ratio `2.0` | `1e-4` | `2e-4` |
+| Base LR `2e-4`, ratio `2.0` | `2e-4` | `4e-4` |
+
+When `unet_lr` or `text_encoder_lr` is set, the corresponding component uses that rate in the calculation. For example, with `learning_rate=1e-4`, `unet_lr=8e-5`, and a UNet/DiT ratio of `2.0`:
+
+<div class="doc-equation doc-equation-compact" role="group" aria-label="Example effective UNet LoRA+ learning rates">
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>base</sub> = 8 × 10<sup>−5</sup></div>
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>plus</sub> = 8 × 10<sup>−5</sup> · 2 = 1.6 × 10<sup>−4</sup></div>
+</div>
+
+Raising the global learning rate accelerates every LoRA parameter. Raising the LoRA+ ratio accelerates only the higher-rate group. This distinction is the main practical purpose of LoRA+.
+
+<!-- doc-anchor: ratio-guidance -->
+## What the ratio means
+
+The ratio is a learning-rate multiplier for the higher-rate group, not a quality level:
+
+| Ratio | Effective meaning | What changes |
+| --- | --- | --- |
+| `1.0` | Both groups use the same rate | No differential LoRA+ learning-rate effect |
+| `2.0` | The higher-rate group uses 2× the base rate | The trainer default and a relatively mild difference |
+| `4.0` | The higher-rate group uses 4× the base rate | The resulting effective rate requires closer attention |
+| `8.0`–`16.0` | The higher-rate group uses a substantially higher rate | More sensitive to the base rate, stopping point, and repeated data |
+
+The LoRA+ paper presents `16` as the recommended ratio for its experimental settings, and the sd-scripts documentation repeats that value. Those results come from specific models and tasks and are not a universal recommendation for character, style, or concept LoRAs. This trainer defaults to `2.0` to provide a milder initial difference.
 
 <!-- doc-anchor: parameters -->
-## sd-scripts parameters
+## Trainer parameters
 
-The UI toggle is the sole LoRA+ control in this trainer and is never sent to sd-scripts. Only these native `network_args` are emitted. Matching `loraplus_*` entries in advanced custom network arguments are ignored so they cannot bypass UI linkage or backend compatibility checks.
+“Enable LoRA+” is the master switch in this trainer. It controls whether the ratio settings below are written for sd-scripts; the toggle itself is not a training argument.
+
+When the switch is off, ratio values retained in the UI are not included in the training configuration. Matching `loraplus_*` entries in advanced custom network arguments are also ignored so that the UI and backend validation use the same values.
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
 
-Global LoRA+ ratio and the default for both UNet/DiT and text encoder groups.
+The global ratio. UNet/DiT and text encoder groups use this value when no component-specific ratio is set. The UI default is `2.0`, and the minimum is `1.0`.
 
-```text
-loraplus_lr_ratio=2.0
+```toml
+loraplus_lr_ratio = 2.0
 ```
-
-A component-specific value overrides the global value for that component. Leave the global field empty and set only a component field to enable LoRA+ for one component.
 
 <!-- doc-anchor: loraplus-unet-lr-ratio -->
 ### `loraplus_unet_lr_ratio`
 
-Ratio for the main UNet. The same sd-scripts parameter name is used for the main DiT in Anima training.
+Overrides the ratio for the main UNet only. The Anima training path retains the sd-scripts `unet` parameter name even though it refers to the main DiT network.
 
-```text
-loraplus_unet_lr_ratio=2.0
+```toml
+loraplus_unet_lr_ratio = 2.0
 ```
 
-For a first character-LoRA experiment, applying `2.0` only to UNet/DiT is the conservative starting point.
+This setting has no effect when only the text encoder is trained.
 
 <!-- doc-anchor: loraplus-text-encoder-lr-ratio -->
 ### `loraplus_text_encoder_lr_ratio`
 
-Ratio for text-encoder LoRA parameters.
+Overrides the ratio for text-encoder LoRA parameters only.
 
-```text
-loraplus_text_encoder_lr_ratio=2.0
+```toml
+loraplus_text_encoder_lr_ratio = 2.0
 ```
 
-The text encoder can bind a trigger word faster, but it can also lose prompt generalization faster. Start conservatively.
+This setting has no effect when the text encoder is not trained, “Train UNet only” is enabled, or caching prevents text-encoder training. A higher text-encoder ratio may make the trigger produce a clear response sooner, but it may also make the model depend on that trigger earlier and reduce control from the rest of the prompt.
+
+The ratio precedence is:
+
+| Component | Ratio used |
+| --- | --- |
+| UNet/DiT | `loraplus_unet_lr_ratio`, falling back to `loraplus_lr_ratio` when empty |
+| Text encoder | `loraplus_text_encoder_lr_ratio`, falling back to `loraplus_lr_ratio` when empty |
+
+When the global ratio is empty, a component ratio can be used by itself to limit LoRA+ to that component. At least one ratio is required while LoRA+ is enabled. A component does not use LoRA+ when both its specific ratio and the global ratio are empty.
+
+<!-- doc-anchor: good-cases -->
+## When LoRA+ may help
+
+The current training result is more informative than the target category alone. LoRA+ may be worth comparing when:
+
+- Character identity, style, or the target concept remains clearly underfit within the intended step budget.
+- Raising the global learning rate damages detail or causes instability, but faster updates are still desired for only part of the LoRA.
+- Training time or total steps are limited, making progress at the same checkpoint step especially relevant.
+- A result without LoRA+ is already available as a comparison for learning speed and final quality.
+
+When a standard LoRA already reaches a stable result within the intended budget, LoRA+ usually offers less additional value. Its availability in the trainer does not imply that every configuration should use it.
+
+<!-- doc-anchor: cautions -->
+## Risks and limitations
+
+A higher ratio is more likely to accelerate overfitting when:
+
+- The dataset is very small or many images share the same background, pose, and composition.
+- The collection contains many video frames, duplicate crops, or near-identical images despite a large file count.
+- The base learning rate is already high, making the multiplied effective rate excessive.
+- Secondary characters, watermarks, effects, or undescribed elements recur throughout the dataset.
+- The current run already shows rigid composition, background binding, or weaker prompt control.
+- The optimizer manages learning rates internally, allowing the effective ratio to change during training.
+
+LoRA+ cannot correct insufficient model capacity, missing training data, or inaccurate captions. It also does not determine a new stopping step automatically. A higher ratio may move both the best checkpoint and overfitting earlier, so the previous end point may no longer be appropriate.
+
+<!-- doc-anchor: testing -->
+## Evaluating the result
+
+LoRA+ should be assessed from two different perspectives:
+
+| Comparison | What it shows |
+| --- | --- |
+| Checkpoints at the same step | Whether LoRA+ changed learning speed |
+| The best observed checkpoint from each configuration | Whether LoRA+ improved the best result actually obtained |
+
+A comparable experiment normally keeps the dataset, training seed, rank, alpha, base learning rates, optimizer, scheduler, and total steps fixed while changing only the LoRA+ toggle or one ratio. Previewing with the same generation seeds and prompts reduces random variation during comparison.
+
+Useful observations depend on the target:
+
+- **Character LoRA:** identity consistency, outfit replacement, and recognition in new backgrounds and poses.
+- **Style LoRA:** transfer to subjects and compositions absent from the training set rather than simple reproduction of training images.
+- **Garment or object LoRA:** combination with different characters, poses, and scenes.
+- **Trigger-based concept:** a clear trigger response while other character, action, and environment terms remain effective.
+
+If a higher ratio only makes the best result appear earlier while the best quality remains similar, its main benefit is fewer steps to that result. If background binding, repeated composition, or weaker prompt control also appears earlier, the ratio, base learning rate, repeated data, and stopping point all require consideration.
+
+Loss can help identify training anomalies and overall trends, but it cannot determine identity fidelity, style transfer, or prompt control on its own.
+
+<!-- doc-anchor: mechanism -->
+## Technical mechanism
+
+Instead of changing the original model weights directly, a standard LoRA represents the weight update with two low-rank matrices. In sd-scripts terminology, `lora_down` first projects the input into a lower-dimensional space and `lora_up` projects it back to the original dimension:
+
+<div class="doc-equation" role="group" aria-label="Standard LoRA weight update equation">
+  <div class="doc-equation-expression"><span class="doc-math-var">ΔW</span> = <span class="doc-frac"><span><span class="doc-math-var">α</span></span><span><span class="doc-math-var">r</span></span></span> · <span class="doc-math-var">B</span> · <span class="doc-math-var">A</span></div>
+  <p><span class="doc-math-var">A</span> is <code>lora_down</code>, <span class="doc-math-var">B</span> is <code>lora_up</code>, <span class="doc-math-var">r</span> is the rank, and <span class="doc-math-var">α</span> is alpha.</p>
+</div>
+
+In the current sd-scripts implementation, `lora_down` is initialized with random values and `lora_up` is initialized to zero. On the first backward pass, the gradient of `lora_down` is temporarily zero because `lora_up` is zero. After `lora_up` has been updated, `lora_down` begins to receive a nonzero gradient. The two matrices therefore have different update dynamics at the start of training.
+
+Standard LoRA training commonly gives both parameter groups the same learning rate. LoRA+ retains the base rate for `lora_down` and raises the rate for `lora_up`:
+
+<div class="doc-equation doc-equation-compact" role="group" aria-label="LoRA+ learning-rate equations">
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>down</sub> = <span class="doc-math-var">LR</span><sub>base</sub></div>
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>up</sub> = <span class="doc-math-var">LR</span><sub>base</sub> · <span class="doc-math-var">ratio</span></div>
+</div>
+
+The ratio changes the size of each update, not the point at which a parameter starts updating. At a ratio of `1.0`, both groups still use the same learning rate.
+
+<!-- doc-anchor: optimizer-compatibility -->
+## Optimizers and schedulers
+
+| Optimizer | LoRA+ status | Notes |
+| --- | --- | --- |
+| AdamW, AdamW8bit, PagedAdamW8bit | Supported | Preserve separate learning rates for different parameter groups, making the ratio relatively easy to interpret. |
+| Lion, Lion8bit, PagedLion8bit | Supported | Preserve separate parameter-group learning rates. |
+| CAME | Supported | Preserves separate parameter-group learning rates. |
+| AdamWScheduleFree | Supported | Preserves the groups, but its internal adjustments affect the effective rates during training. |
+| Automagic3 | Conditional | The result of “base LR × LoRA+ ratio” must remain within `min_lr` and `max_lr`. Adaptive behavior can change the effective ratio during training. |
+| AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be disabled. The default relative-step mode ignores parameter-group rates, so the UI disables and locks LoRA+. |
+| Prodigy, ProdigyPlus | Unsupported | The current sd-scripts training path cannot reliably preserve separate learning rates for different parameter groups; both UI and backend reject this combination. |
+| EmoSens | Unsupported | EmoSens updates every parameter with one global `emoPulse` and resets all parameter groups to that rate after each step, removing the LoRA+ ratio. |
+
+Switching to an incompatible mode turns LoRA+ off and displays the reason. Backend validation also rejects incompatible combinations submitted through older presets or direct API requests.
+
+With a conventional scheduler, parameter groups normally change by the same proportion, preserving the initial LoRA+ ratio. Warmup controls the overall learning-rate progression at the start of training and is not a LoRA+ ratio. For internally adaptive optimizers such as Schedule-Free and Automagic3, the recorded curves show the effective rates used during training.
 
 <!-- doc-anchor: support -->
 ## Supported network modules
 
-The trainer exposes LoRA+ only for modules that implement it in sd-scripts:
+The trainer exposes LoRA+ only for native network modules in which the current sd-scripts implementation defines a higher-rate parameter:
 
-| Network module | Higher-rate parameter group |
-| --- | --- |
-| `networks.lora` | `lora_up` |
-| `networks.lora_anima` | `lora_up` |
-| `networks.loha` | second LoHa parameter pair |
-| `networks.lokr` | LoKr scale parameter group |
+| Network module | Higher-rate parameter | Notes |
+| --- | --- | --- |
+| `networks.lora` | `lora_up` | Standard LoRA+ grouping. |
+| `networks.lora_anima` | `lora_up` | Standard LoRA+ grouping for Anima. |
+| `networks.loha` | `hada_w2_a` | The sd-scripts extension for LoHa. |
+| `networks.lokr` | `lokr_w1` | The sd-scripts extension for LoKr. |
 
-The switch is hidden for `lycoris.kohya` so the trainer does not pass unverified parameters to that module.
-
-<!-- doc-anchor: testing -->
-## Suggested experiment
-
-Keep the dataset, seed, rank, alpha, base LR, and total steps fixed:
-
-1. Run a baseline without LoRA+.
-2. Test only `loraplus_unet_lr_ratio=2.0`.
-3. If the run still clearly underfits, test `4.0`.
-4. Try `8.0` or `16.0` only after confirming that the base LR is conservative.
-
-Compare samples at the same steps. Watch identity formation, background leakage, rigid composition, and prompt generalization. Loss alone cannot determine whether LoRA+ is better.
+The toggle is hidden for `lycoris.kohya` so the trainer does not pass unverified parameters to that module. LoHa and LoKr support means that sd-scripts can assign a higher learning rate to the listed parameter. It does not mean that the standard LoRA+ paper reports equivalent experimental evidence for these decompositions.
 
 <!-- doc-anchor: tensorboard -->
 ## TensorBoard
 
-sd-scripts records the regular and higher-rate groups separately:
+When LoRA+ is enabled, sd-scripts records the base and higher-rate groups separately. A standard SDXL LoRA commonly produces:
 
 ```text
 lr/unet
 lr/unet plus
-```
-
-Text-encoder training can also produce:
-
-```text
 lr/textencoder
 lr/textencoder plus
 ```
 
-The trainer's true-LR reporting layer reads the actual parameter-group rates, so both regular and `plus` TensorBoard series reflect the values used by the optimizer. For internally adaptive optimizers such as Automagic3 and ScheduleFree, use the live curves instead of assuming that the initial ratio remains constant throughout training.
+The Anima text encoder is numbered and commonly produces:
+
+```text
+lr/textencoder 1
+lr/textencoder 1 plus
+```
+
+`plus` identifies the higher-rate parameter group. Block learning rates or other multi-group configurations can add more names and curves.
+
+The trainer records the parameter-group learning rates currently used by the optimizer. For internally adaptive optimizers such as Automagic3 and Schedule-Free, the TensorBoard curves show the effective values. With conventional optimizers, the two curves can be used to confirm that the expected ratio is maintained.
+
+<!-- doc-anchor: references -->
+## References
+
+- Hayou et al., [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354), presents the theoretical motivation and experiments for using different learning rates for the two LoRA matrices.
+- The sd-scripts `train_network_advanced.md` documentation describes `loraplus_lr_ratio`, component-specific ratios, and optimizer restrictions.
+- The sd-scripts `loha_lokr.md` documentation describes the higher-rate parameter mappings for LoHa and LoKr.

@@ -32,12 +32,12 @@ _DOCUMENTS = {
         "category": "training",
         "order": 10,
         "titles": {
-            "zh-CN": "训练时间步：理解与调参",
-            "en-US": "Training Timesteps: Practical Guide",
+            "zh-CN": "时间步",
+            "en-US": "Timesteps",
         },
         "summaries": {
-            "zh-CN": "从分布图和数据集规模出发，理解时间步采样、Loss 权重及人物、画风和概念训练的调整方法。",
-            "en-US": "Understand timestep sampling and loss weighting through distribution previews, dataset size, and practical LoRA tuning.",
+            "zh-CN": "说明时间步采样、Loss 权重、参数生效关系，以及不同数据集与训练目标下的设置参考。",
+            "en-US": "Reference for timestep sampling, loss weighting, parameter activation, dataset size, and LoRA training objectives.",
         },
         "files": {
             "zh-CN": "parameters/timesteps.zh-CN.md",
@@ -49,8 +49,8 @@ _DOCUMENTS = {
         "order": 10,
         "titles": {"zh-CN": "LoRA+", "en-US": "LoRA+"},
         "summaries": {
-            "zh-CN": "LoRA+ 的训练原理、适用场景、参数含义与优化器注意事项。",
-            "en-US": "Training behavior, use cases, parameters, and optimizer notes for LoRA+.",
+            "zh-CN": "LoRA+ 的原理、实际学习率、倍率参数、支持范围与兼容性。",
+            "en-US": "LoRA+ mechanics, effective rates, ratio parameters, supported modules, and compatibility.",
         },
         "files": {
             "zh-CN": "parameters/lora-plus.zh-CN.md",

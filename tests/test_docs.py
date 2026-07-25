@@ -20,9 +20,41 @@ from backend.training.musubi_krea2 import KREA2_FIELDS
 
 
 class DocumentationTests(unittest.TestCase):
-    def test_loraplus_documents_exist_for_both_locales(self):
-        self.assertTrue(_document_path("lora-plus", "zh-CN").is_file())
-        self.assertTrue(_document_path("lora-plus", "en-US").is_file())
+    def test_loraplus_documents_keep_equations_references_and_stable_anchors(self):
+        expected_anchors = (
+            "overview",
+            "effects",
+            "good-cases",
+            "cautions",
+            "effective-lr",
+            "optimizer-compatibility",
+            "parameters",
+            "loraplus-lr-ratio",
+            "loraplus-unet-lr-ratio",
+            "loraplus-text-encoder-lr-ratio",
+            "support",
+            "ratio-guidance",
+            "testing",
+            "mechanism",
+            "tensorboard",
+            "references",
+        )
+        for locale in ("zh-CN", "en-US"):
+            path = _document_path("lora-plus", locale)
+            self.assertTrue(path.is_file())
+            html, toc = _render_markdown(
+                path.read_text(encoding="utf-8"),
+                PurePosixPath(f"parameters/lora-plus.{locale}.md"),
+            )
+            equation_count = html.count('<div class="doc-equation"') + html.count(
+                '<div class="doc-equation doc-equation-compact"'
+            )
+            self.assertEqual(equation_count, 3)
+            self.assertIn('class="doc-frac"', html)
+            self.assertIn("https://arxiv.org/abs/2402.12354", html)
+            for anchor in expected_anchors:
+                self.assertIn(f'id="{anchor}"', html)
+                self.assertIn(f'href="#{anchor}"', toc)
 
     def test_timestep_documents_keep_widgets_equations_and_stable_anchors(self):
         expected_anchors = (
@@ -154,6 +186,121 @@ class DocumentationTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class DocumentationFrontendTests(unittest.TestCase):
+    def test_active_toc_item_scrolls_into_the_outline_safe_area(self):
+        script = r"""
+global.window = {
+  requestAnimationFrame(callback) { callback(); return 1; },
+  cancelAnimationFrame() {},
+  matchMedia() { return { matches: false }; },
+  setTimeout,
+  clearTimeout,
+};
+
+let linkRect = { top: 280, bottom: 310 };
+const link = { getBoundingClientRect() { return linkRect; } };
+const outline = {
+  clientHeight: 300,
+  scrollHeight: 1000,
+  scrollTop: 100,
+  lastScroll: null,
+  querySelector(selector) {
+    return selector === 'a[href="#testing"]' ? link : null;
+  },
+  getBoundingClientRect() { return { top: 0, bottom: 300 }; },
+  scrollTo(options) { this.scrollTop = options.top; this.lastScroll = options; },
+};
+global.document = {
+  querySelector(selector) { return selector === '.docs-outline' ? outline : null; },
+};
+
+require('./frontend/js/docs.js');
+const context = Object.assign({}, window.docsMixin, { docsActiveAnchor: '' });
+context._setDocsActiveAnchor('testing');
+const lowerScroll = outline.lastScroll;
+
+outline.lastScroll = null;
+linkRect = { top: 120, bottom: 145 };
+context._revealDocsTocAnchor('testing');
+const visibleScroll = outline.lastScroll;
+
+outline.scrollTop = 200;
+linkRect = { top: 10, bottom: 30 };
+context._revealDocsTocAnchor('testing');
+const upperScroll = outline.lastScroll;
+
+outline.lastScroll = null;
+outline.scrollTop = 100;
+linkRect = { top: 280, bottom: 310 };
+window.matchMedia = () => ({ matches: true });
+context._revealDocsTocAnchor('testing');
+const reducedMotionScroll = outline.lastScroll;
+
+console.log(JSON.stringify({ lowerScroll, visibleScroll, upperScroll, reducedMotionScroll }));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["lowerScroll"], {"top": 146, "behavior": "smooth"})
+        self.assertIsNone(state["visibleScroll"])
+        self.assertEqual(state["upperScroll"], {"top": 174, "behavior": "smooth"})
+        self.assertEqual(
+            state["reducedMotionScroll"],
+            {"top": 146, "behavior": "auto"},
+        )
+
+    def test_document_tables_receive_responsive_headers_and_wide_class(self):
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return null; } };
+require('./frontend/js/docs.js');
+
+const classes = new Set();
+const headers = ['Parameter', 'sigmoid', 'uniform', 'shift', 'sigma', 'logsnr'];
+const cells = headers.map(() => ({
+  tagName: 'TD',
+  labels: {},
+  setAttribute(name, value) { this.labels[name] = value; },
+}));
+const row = { children: cells };
+const table = {
+  classList: { add(name) { classes.add(name); } },
+  querySelectorAll(selector) {
+    if (selector === 'thead th') return headers.map(textContent => ({ textContent }));
+    if (selector === 'tbody tr') return [row];
+    return [];
+  },
+};
+const article = { querySelectorAll(selector) { return selector === 'table' ? [table] : []; } };
+
+window.docsMixin._hydrateDocsTables(article);
+console.log(JSON.stringify({
+  classes: Array.from(classes).sort(),
+  labels: cells.map(cell => cell.labels['data-label']),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(
+            state["classes"],
+            ["docs-table-responsive", "docs-table-wide"],
+        )
+        self.assertEqual(state["labels"], [
+            "Parameter", "sigmoid", "uniform", "shift", "sigma", "logsnr",
+        ])
+
     def test_timestep_widget_reuses_the_training_preview_calculation(self):
         script = r"""
 global.window = {};
@@ -372,8 +519,11 @@ console.log(JSON.stringify({
         toc_css = css[css.index(".docs-toc {") : css.index(".markdown-body {")]
         self.assertNotIn("border-left", toc_css)
         self.assertIn("text-overflow: ellipsis", toc_css)
-        self.assertIn("max-width: 1760px", css)
-        self.assertIn("clamp(760px, 52cqi, 900px)", css)
+        self.assertIn("max-width: 1920px", css)
+        self.assertIn("minmax(0, 1120px)", css)
+        self.assertIn("scrollbar-color: transparent transparent", css)
+        self.assertIn("table.docs-table-wide", css)
+        self.assertIn("content: attr(data-label)", css)
 
 
 if __name__ == "__main__":

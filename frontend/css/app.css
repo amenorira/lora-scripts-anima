@@ -4084,7 +4084,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 /* ── Parameter documentation ────────────────────────────── */
 .docs-page {
   width: 100%;
-  max-width: 1760px;
+  max-width: 1920px;
   margin: 0 auto;
   container-type: inline-size;
 }
@@ -4159,6 +4159,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding-right: 12px;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 .docs-index-title,
 .docs-outline-title {
@@ -4237,7 +4238,23 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   padding-left: 12px;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
+.docs-index:hover,
+.docs-outline:hover { scrollbar-color: var(--border-default) transparent; }
+.docs-index::-webkit-scrollbar,
+.docs-outline::-webkit-scrollbar { width: 6px; }
+.docs-index::-webkit-scrollbar-track,
+.docs-outline::-webkit-scrollbar-track { background: transparent; }
+.docs-index::-webkit-scrollbar-thumb,
+.docs-outline::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+}
+.docs-index:hover::-webkit-scrollbar-thumb,
+.docs-outline:hover::-webkit-scrollbar-thumb { background: var(--border-default); }
+.docs-index::-webkit-scrollbar-thumb:hover,
+.docs-outline::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 .docs-loading,
 .docs-error,
 .docs-empty {
@@ -4365,16 +4382,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-size: 12.5px;
 }
 .markdown-body .doc-equation {
-  margin: 18px 0;
-  padding: 17px 20px 15px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 20px auto;
+  padding: 9px 18px 11px;
   overflow-x: auto;
-  border: 1px solid var(--border-default);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-control);
-  background: var(--bg-surface-raised);
   text-align: center;
 }
-.markdown-body .doc-equation-compact { padding-block: 14px 12px; }
+.markdown-body .doc-equation-compact { padding-block: 7px 9px; }
 .markdown-body .doc-equation-kicker {
   margin-bottom: 8px;
   color: var(--text-tertiary);
@@ -4386,8 +4401,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   min-width: max-content;
   color: var(--text-primary);
   font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
-  font-size: 25px;
-  line-height: 1.65;
+  font-size: 24px;
+  line-height: 1.55;
+  font-kerning: normal;
   font-variant-numeric: lining-nums tabular-nums;
 }
 .markdown-body .doc-equation-expression-small { font-size: 21px; }
@@ -4395,9 +4411,25 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   min-width: 0;
   overflow-wrap: normal;
 }
-.markdown-body .doc-equation-expression var { font-family: inherit; }
+.markdown-body .doc-equation-expression var {
+  font-family: inherit;
+  font-style: italic;
+}
+.markdown-body .doc-math-fn { font-style: normal; }
 .markdown-body .doc-equation-expression sub,
-.markdown-body .doc-equation-expression sup { line-height: 0; }
+.markdown-body .doc-equation-expression sup {
+  position: relative;
+  margin-left: 0.07em;
+  font-size: 0.68em;
+  line-height: 0;
+}
+.markdown-body .doc-equation-expression sub { bottom: -0.08em; }
+.markdown-body .doc-equation-expression sup { top: -0.08em; }
+.markdown-body .doc-math-close {
+  display: inline-block;
+  margin-left: 0.06em;
+  font-style: normal;
+}
 .markdown-body .doc-equation p {
   margin: 8px auto 0;
   max-width: 680px;
@@ -4421,22 +4453,38 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 .markdown-body .doc-frac > span:first-child { border-bottom: 1.5px solid currentColor; }
 .markdown-body table {
-  display: block;
+  display: table;
   width: 100%;
+  max-width: 100%;
   margin: 16px 0;
-  overflow-x: auto;
   border-collapse: collapse;
+  table-layout: auto;
   font-size: 13px;
 }
 .markdown-body th,
 .markdown-body td {
-  min-width: 150px;
+  min-width: 0;
   padding: 9px 11px;
   border: 1px solid var(--border-default);
+  overflow-wrap: anywhere;
   text-align: left;
   vertical-align: top;
 }
 .markdown-body th { background: var(--bg-surface-raised); font-weight: 650; }
+.markdown-body table code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.markdown-body table.docs-table-wide {
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+.markdown-body table.docs-table-wide th,
+.markdown-body table.docs-table-wide td { padding-inline: 8px; }
+.markdown-body table.docs-table-wide th:first-child { width: 20%; }
 .markdown-body img {
   display: block;
   max-width: 100%;
@@ -4492,16 +4540,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .docs-timestep-widget-header { align-items: stretch; flex-direction: column; }
   .docs-timestep-widget-header .btn { align-self: flex-start; }
   .docs-timestep-widget .timestep-preview-chart { height: 180px; }
-  .markdown-body .doc-equation { padding: 14px 12px 12px; }
+  .markdown-body .doc-equation { padding: 8px 10px 10px; }
   .markdown-body .doc-equation-expression { font-size: 21px; }
   .markdown-body .doc-equation-expression-small { font-size: 18px; }
 }
 
 @container (min-width: 1170px) {
   .docs-layout {
-    grid-template-columns: minmax(180px, 1fr) minmax(0, 820px) minmax(180px, 1fr);
-    grid-template-columns: minmax(180px, 1fr) minmax(0, clamp(760px, 52cqi, 900px)) minmax(180px, 1fr);
-    column-gap: 24px;
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1120px) minmax(180px, 220px);
     column-gap: clamp(20px, 2cqi, 32px);
   }
   .docs-index {
@@ -4532,8 +4578,49 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .docs-document-select { width: 100%; }
   .markdown-body h1 { font-size: 26px; }
   .markdown-body h2 { margin-top: 36px; font-size: 19px; }
-  .markdown-body th,
-  .markdown-body td { min-width: 130px; }
+}
+
+@container (max-width: 720px) {
+  .markdown-body table.docs-table-responsive {
+    display: block;
+    border-collapse: separate;
+    font-size: 13px;
+  }
+  .markdown-body table.docs-table-responsive thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .markdown-body table.docs-table-responsive tbody { display: grid; gap: 12px; }
+  .markdown-body table.docs-table-responsive tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+  }
+  .markdown-body table.docs-table-responsive td {
+    display: grid;
+    grid-template-columns: minmax(90px, 34%) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 9px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .markdown-body table.docs-table-responsive td:last-child { border-bottom: 0; }
+  .markdown-body table.docs-table-responsive td::before {
+    content: attr(data-label);
+    color: var(--text-tertiary);
+    font-size: 11.5px;
+    font-weight: 650;
+    line-height: 1.45;
+  }
 }
 [data-theme="dark"] .panel-backdrop.open {
   background: var(--bg-overlay);
