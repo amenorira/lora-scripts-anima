@@ -55,12 +55,10 @@ _FA_REPO_APIS: list[str] = [
 
 # GitHub 代理前缀列表。直连失败时按序尝试。
 # 注意：ghproxy 类代理对 GitHub API 和 release 下载都生效，前缀拼在原 URL 前即可。
-#   ghproxy.com / https://  →  https://ghproxy.com/https://api.github.com/...
 # 维护时优先放稳定、限速宽松的镜像；"" 表示直连（放最后作为兜底）。
 _FA_PROXIES: list[str] = [
-    "https://ghproxy.com/",
-    "https://gh-proxy.com/",
     "https://ghproxy.net/",
+    "https://gh-proxy.com/",
     "",  # 直连兜底
 ]
 
@@ -70,15 +68,18 @@ _FA_PROXIES: list[str] = [
 #   fallback → bdashore3 源优先（主力源异常时的备用仓库）
 SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
     "default": {
-        "proxies": ["", "https://ghproxy.com/", "https://gh-proxy.com/", "https://ghproxy.net/"],
+        "api_proxies": ["", "https://gh-proxy.com/"],
+        "download_proxies": ["", "https://ghproxy.net/"],
         "repo_apis": list(_FA_REPO_APIS),
     },
     "mirror": {
-        "proxies": ["https://ghproxy.com/", "https://gh-proxy.com/", "https://ghproxy.net/", ""],
+        "api_proxies": ["https://gh-proxy.com/", ""],
+        "download_proxies": ["https://ghproxy.net/", ""],
         "repo_apis": list(_FA_REPO_APIS),
     },
     "fallback": {
-        "proxies": ["", "https://ghproxy.com/", "https://gh-proxy.com/"],
+        "api_proxies": ["", "https://gh-proxy.com/"],
+        "download_proxies": ["", "https://ghproxy.net/"],
         "repo_apis": list(reversed(_FA_REPO_APIS)),  # bdashore3 优先
     },
 }
@@ -109,7 +110,7 @@ def _urls_for(source: str) -> list[str]:
     cfg = get_source_config(source)
     seen: set[str] = set()
     urls: list[str] = []
-    for proxy in cfg["proxies"]:
+    for proxy in cfg["api_proxies"]:
         for api in cfg["repo_apis"]:
             u = _proxy_url(proxy, api)
             if u not in seen:
@@ -132,7 +133,8 @@ def proxy_download_url(url: str, source: str = "default") -> str:
     单一职责：把 download URL 映射到首选代理包装后的 URL。无 IO。
     """
     cfg = get_source_config(source)
-    first_proxy = cfg["proxies"][0] if cfg["proxies"] else ""
+    proxies = cfg["download_proxies"]
+    first_proxy = proxies[0] if proxies else ""
     return _proxy_url(first_proxy, url)
 
 
@@ -150,7 +152,7 @@ def download_urls_for(url: str, source: str = "default") -> list[str]:
     cfg = get_source_config(source)
     candidates: list[str] = []
     seen: set[str] = set()
-    for proxy in cfg["proxies"]:
+    for proxy in cfg["download_proxies"]:
         u = _proxy_url(proxy, url)
         if u not in seen:
             seen.add(u)
@@ -166,6 +168,10 @@ _FA_CACHE_TTL = 86400  # 24 小时
 
 # 可选 GitHub Token（设置了更好，不设也能用 ETag 免限流）
 _FA_GITHUB_TOKEN = os.environ.get("FA_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+# 单个网络源的无响应等待上限。超时后立即切换下一个直连/镜像候选，
+# 不在同一源内部重复等待，避免一次安装卡住数分钟。
+_FA_SOURCE_TIMEOUT = 10
 
 
 # ── 磁盘缓存（带 ETag 支持）────────────────────────────────────────────────
@@ -387,13 +393,13 @@ def _build_request(url: str, *, etag: Optional[str] = None) -> urllib.request.Re
 
 
 def _try_fetch_api(url: str, source: str) -> tuple[Optional[list], Optional[str], bool]:
-    """尝试从 GitHub API 拉取数据（带指数退避重试，抗瞬断）。
+    """尝试从 GitHub API 拉取数据，单源超时后由调用方切换备用源。
 
     使用 ETag 条件请求：
     - 304 Not Modified → 数据未变，不消耗 rate limit，返回 (None, None, unchanged=True)
     - 200 → 有新数据，保存新 ETag，返回 (data, None, unchanged=False)
     - 403/429 → 限流/拒绝，返回 (None, error, unchanged=False)（明确响应，不重试）
-    - 网络瞬断（超时/连接重置）→ 短退避重试最多 2 次，仍失败返回错误
+    - 网络瞬断（超时/连接重置）→ 立即返回错误，由调用方尝试下一个源
 
     Args:
         url: GitHub releases API URL（可能已加代理前缀）。
@@ -402,14 +408,14 @@ def _try_fetch_api(url: str, source: str) -> tuple[Optional[list], Optional[str]
     Returns: (data, error, unchanged) — unchanged=True 表示缓存仍然有效
     """
     etag = _load_etag(source)
-    # 瞬断重试：对超时/连接错误做短退避，对明确的 HTTP 状态码不重试。
-    max_retries = 2
-    backoff = 1.0  # 秒，指数增长
+    # 每个候选只尝试一次。直连或镜像 10 秒内无响应就立即换下一个源。
+    max_retries = 0
+    backoff = 1.0
     last_err: Optional[str] = None
     for attempt in range(max_retries + 1):
         try:
             req = _build_request(url + "?per_page=100", etag=etag)
-            resp = urllib.request.urlopen(req, timeout=15)
+            resp = urllib.request.urlopen(req, timeout=_FA_SOURCE_TIMEOUT)
 
             # 保存新 ETag
             new_etag = resp.headers.get("ETag") or resp.headers.get("etag")
@@ -719,11 +725,16 @@ def install_wheel(url: str, source: str = "default") -> dict[str, Any]:
     for i, dl_url in enumerate(candidates):
         via = "direct" if dl_url == url else "mirror"
         print(f"\n[INSTALL] pip install {dl_url}  (attempt {i+1}/{len(candidates)}, {via})")
+        print("       If this source cannot connect within 10s, the next source is used automatically.")
+        print("       若此源 10 秒内连不上，将自动切换下一个源；下载开始后可继续正常传输。")
         print("       Download + install may take 2-5 min (~150-250 MB)... / 下载 + 安装可能需要 2-5 分钟（约 150-250 MB）...")
         print()
 
         r = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--retries", "3", "--timeout", "60", dl_url],
+            [
+                sys.executable, "-m", "pip", "install",
+                "--retries", "0", "--timeout", str(_FA_SOURCE_TIMEOUT), dl_url,
+            ],
             capture_output=True,
             text=True,
         )
