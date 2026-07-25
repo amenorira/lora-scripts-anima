@@ -33,6 +33,17 @@ _MAX_REALTIME_LOG_CHARS = 48 * 1024
 _MAX_REALTIME_METRIC_POINTS = 256
 
 
+def _format_learning_rate(value: Any) -> str:
+    """Keep LR text stable across log parsing and TensorBoard updates."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if 0 < abs(number) < 0.001:
+        return f"{number:.4e}"
+    return f"{number:.6g}"
+
+
 def _bounded_realtime_log_lines(lines: list[str]) -> tuple[list[str], bool]:
     """Keep a WebSocket log event small while preserving the newest output.
 
@@ -251,6 +262,8 @@ class TaskMonitor:
         for key, value in updates.items():
             if key not in _PROGRESS_FIELDS or value is None or value == "":
                 continue
+            if key == "lr":
+                value = _format_learning_rate(value)
             current[key] = value
         return dict(current)
     
@@ -465,7 +478,7 @@ class TaskMonitor:
                         break
                 if tb_points.get("lr/unet"):
                     lr = float(tb_points["lr/unet"][-1]["value"])
-                    tb_progress["lr"] = f"{lr:.4e}" if 0 < abs(lr) < 0.001 else f"{lr:.6g}"
+                    tb_progress["lr"] = _format_learning_rate(lr)
                 if tb_progress:
                     progress = self._merge_progress(task_id, tb_progress)
                     self._update_console_progress(task_id, progress, output_name)

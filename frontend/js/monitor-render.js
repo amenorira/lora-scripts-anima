@@ -384,7 +384,7 @@ window.monitorRenderMixin = {
     const values = {
       step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)',
       loss: d.loss != null ? d.loss : this._seriesLatest('loss/average', '--'),
-      lr: d.lr != null ? d.lr : this._seriesLatest('lr/unet', '--'),
+      lr: d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet', '--'),
       epoch: d.epoch != null ? d.epoch : '--',
       elapsed: d.elapsed || (isHistory && d.train_result && d.train_result.duration_str) || '--',
       eta: isHistory ? '—' : (d.eta || '--'),
@@ -425,7 +425,7 @@ window.monitorRenderMixin = {
     const completed = isHistory && tr.status === 'completed';
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average', '--');
-    const lr = d.lr != null ? d.lr : this._seriesLatest('lr/unet', '--');
+    const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet', '--');
     let html = '<section class="m-console-card m-overview-metrics">';
     html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary','Run summary') : t('liveMetrics','Live metrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? (tr.status || t('finished','Finished')) : (isRunning ? t('live','Live') : t('standby','Standby'))) + '</span></div>';
     if (!isRunning && !isHistory) {
@@ -459,7 +459,17 @@ window.monitorRenderMixin = {
     const value = series.latest != null ? series.latest : (series.points && series.points.length ? series.points[series.points.length - 1].value : null);
     if (value == null || !Number.isFinite(Number(value))) return fallback;
     const number = Number(value);
-    return Math.abs(number) > 0 && Math.abs(number) < 0.001 ? number.toExponential(3) : number.toFixed(4);
+    return tag.startsWith('lr/') ? this._formatLearningRate(number, fallback) : number.toFixed(4);
+  },
+
+  _formatLearningRate(value, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    if (!(Math.abs(number) > 0 && Math.abs(number) < 0.001)) return Number(number.toPrecision(6)).toString();
+    const parts = number.toExponential(4).split('e');
+    const exponent = Number(parts[1]);
+    const sign = exponent < 0 ? '-' : '+';
+    return parts[0] + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
   },
 
   _trainingDiagnosticPoints() {

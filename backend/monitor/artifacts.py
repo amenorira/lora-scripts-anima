@@ -416,6 +416,21 @@ _LOG_TAIL_BYTES = 2 * 1024 * 1024  # 2 MiB
 
 # ANSI 转义序列正则（颜色、光标控制、清屏等）
 _ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+_TQDM_BAR_RE = re.compile(
+    r'^(?P<label>.*?)(?P<pct>\d{1,3})%\|.*\|\s*'
+    r'(?P<suffix>\d+\s*/\s*\d+.*)$'
+)
+
+
+def _compact_tqdm_line(line: str, width: int = 10) -> str:
+    """Render terminal-width tqdm bars at a stable width for the web log viewer."""
+    match = _TQDM_BAR_RE.match(line)
+    if not match:
+        return line
+    percent = max(0, min(100, int(match.group("pct"))))
+    filled = round(width * percent / 100)
+    bar = "#" * filled + "-" * (width - filled)
+    return f'{match.group("label")}{percent}%|{bar}| {match.group("suffix")}'
 
 
 def _clean_log_text(text: str) -> str:
@@ -436,7 +451,7 @@ def _clean_log_text(text: str) -> str:
                 line = line.split('\r')[-1]
             cleaned_lines.append(line)
         text = '\n'.join(cleaned_lines)
-    return text
+    return '\n'.join(_compact_tqdm_line(line) for line in text.split('\n'))
 
 
 def read_clean_log_lines(path: Path) -> list[str]:

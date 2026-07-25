@@ -7,13 +7,28 @@ import unittest
 from pathlib import Path
 
 from backend.log import log
-from backend.monitor.monitor import TaskMonitor, _build_console_progress
+from backend.monitor.monitor import TaskMonitor, _build_console_progress, _format_learning_rate
 from backend.monitor.artifacts import _tail_file, read_clean_log_lines
 from backend.monitor.training import parse_log_progress
 from backend.training.supervisor import _build_train_env
 
 
 class ProgressParsingTests(unittest.TestCase):
+    def test_terminal_width_tqdm_bars_are_compacted_for_web_logs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "train.log"
+            log_path.write_text(
+                "steps:   8%|##" + " " * 180 + "| 52/650 [01:04<12:21, 1.24s/it, avr_loss=0.118]\n",
+                encoding="utf-8",
+            )
+
+            lines = read_clean_log_lines(log_path)
+
+        self.assertEqual(
+            lines,
+            ["steps:   8%|#---------| 52/650 [01:04<12:21, 1.24s/it, avr_loss=0.118]"],
+        )
+
     def test_terminal_cr_overwrites_do_not_inflate_log_line_count(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             log_path = Path(tmp_dir) / "train.log"
@@ -52,6 +67,10 @@ class ProgressParsingTests(unittest.TestCase):
 
 
 class ProgressStateTests(unittest.TestCase):
+    def test_learning_rate_format_is_stable_across_sources(self):
+        self.assertEqual(_format_learning_rate("9.7000e-5"), "9.7000e-05")
+        self.assertEqual(_format_learning_rate(9.5e-5), "9.5000e-05")
+
     def test_partial_updates_keep_previous_fields(self):
         monitor = TaskMonitor()
         first = monitor._merge_progress("task", {
@@ -92,6 +111,12 @@ class ConsoleLoggingTests(unittest.TestCase):
     def test_tensorboard_info_logging_is_disabled(self):
         self.assertFalse(logging.getLogger("tensorboard").isEnabledFor(logging.INFO))
         self.assertTrue(logging.getLogger("tensorboard").isEnabledFor(logging.WARNING))
+
+    def test_tensorboard_proxy_request_logging_is_disabled(self):
+        for logger_name in ("httpx", "httpcore"):
+            logger = logging.getLogger(logger_name)
+            self.assertFalse(logger.isEnabledFor(logging.INFO))
+            self.assertTrue(logger.isEnabledFor(logging.WARNING))
 
     def test_console_progress_is_transient(self):
         progress = _build_console_progress()
@@ -137,6 +162,13 @@ class MonitorFrontendContractTests(unittest.TestCase):
         render_tab = self.render_source.split("_renderTab(tab, d, gpu, sys, t, isHistory) {", 1)[1].split("\n  },", 1)[0]
         self.assertIn("this._patchTrainingDiagnostics(root, t, d, isHistory);", self.render_source)
         self.assertNotIn("lossDataVersion", render_tab)
+
+    def test_learning_rate_fallback_uses_padded_scientific_notation(self):
+        formatter = self.render_source.split("_formatLearningRate(value, fallback) {", 1)[1].split("\n  },", 1)[0]
+        self.assertIn("toExponential(4)", formatter)
+        self.assertIn("padStart(2, '0')", formatter)
+        self.assertIn("this._formatLearningRate(number, fallback)", self.render_source)
+        self.assertEqual(self.render_source.count("this._formatLearningRate(d.lr, String(d.lr))"), 2)
 
     def test_training_diagnostics_replace_duplicate_loss_chart(self):
         diagnostics = self.render_source.split("_trainingDiagnostics(points) {", 1)[1].split("\n  },", 1)[0]

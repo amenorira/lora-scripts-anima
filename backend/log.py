@@ -3,6 +3,13 @@ import os
 from logging.handlers import RotatingFileHandler
 
 
+# TensorBoard is served through an internal httpx reverse proxy. Its per-request
+# INFO records interrupt Rich's live training row and leave a screenful of
+# progress snapshots; warnings and transport errors remain visible.
+for _quiet_logger in ("httpx", "httpcore"):
+    logging.getLogger(_quiet_logger).setLevel(logging.WARNING)
+
+
 log = logging.getLogger('anima-trainer')
 log.setLevel(logging.DEBUG)
 # 应用日志由本模块统一输出；禁止继续传播给 uvicorn/sd-scripts 配置的 root handler，
