@@ -21,8 +21,8 @@ A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](h
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v2.0.0 is now available**
-> This major release introduces the multi-core training architecture and a complete Krea 2 RAW DiT LoRA workflow, alongside a CUDA 13 training stack, richer parameter previews, and built-in training guides.
+> ✅ **v2.0.1 is now available**
+> This patch release fixes optimizer-linked defaults, training logs and live metrics, while improving Flash Attention download fallback and documentation navigation.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). Its core registry keeps trainer boundaries explicit: **sd-scripts** handles SDXL / Anima, **LyCORIS** is a selectable adapter core mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 

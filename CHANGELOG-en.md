@@ -4,6 +4,34 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.1 - 2026-07-26
+
+This patch release focuses on training-monitoring, optimizer coupling, dependency-download, and documentation-navigation issues found after v2.0.0.
+
+### Training Logs and Live Monitoring
+
+- Compacted terminal-width `tqdm` progress bars in web training logs to a stable width, preventing long blank regions and wrapped metrics.
+- Unified learning-rate scientific notation across log parsing, TensorBoard increments, and frontend fallback paths, eliminating format changes such as `e-5` versus `e-05`.
+- Suppressed routine `httpx` request logs from the TensorBoard reverse proxy so Rich's live progress row is not repeatedly frozen into the console history.
+
+### Optimizer Configuration
+
+- Fixed optimizer switches resetting linked fields such as `weight_decay`, `max_grad_norm`, `betas`, and `eps` to incorrect defaults.
+- Changed the recommended `AdamWScheduleFree` learning rate for Anima and SDXL from the library-wide `0.0025` default to the more conservative LoRA-oriented value `3e-4`.
+- Synchronized the frontend offline field fallback and optimizer contract tests while preserving user-entered learning rates.
+
+### Installation and Documentation
+
+- Shortened per-source Flash Attention connection timeouts, removed duplicate retries against the same source, and separated API and wheel proxies for more reliable fallback.
+- Fixed documentation navigation highlighting that could jump from a short section to the following section too early while scrolling.
+- Completed and aligned the bilingual v2.0.0 changelogs with full version history and language-switch links.
+
+### Regression Coverage
+
+- Added tests for optimizer-linked resets, Flash Attention fallback, training-log cleanup, live LR formatting, console logger levels, and documentation section tracking.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.0.0...v2.0.1)
+
 ## v2.0.0 - 2026-07-25
 
 This is a training-architecture-level update. v2.0.0 introduces a multi-core training system, officially integrates Krea 2 RAW DiT LoRA, and upgrades the default training stack to PyTorch 2.10.0 + CUDA 13.0. Training configuration, cache preflight checks, environment management, parameter previews, and built-in documentation have also been systematically reorganized around multi-core workflows.

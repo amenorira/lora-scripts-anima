@@ -21,8 +21,8 @@ _✨ 多核心 LoRA 训练工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v2.0.0 正式版已发布**
-> 本次重大更新引入多训练核心架构与 Krea 2 RAW DiT LoRA 完整工作流，同时升级 CUDA 13 训练环境、参数预览和内置训练指南。
+> ✅ **v2.0.1 已发布**
+> 本次补丁版本修复优化器联动默认值、训练日志与实时指标显示，并改善 Flash Attention 下载回退和文档目录导航。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。它以核心注册表隔离不同训练器：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是可选的挂载式适配器核心（`lycoris.kohya`），**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 
