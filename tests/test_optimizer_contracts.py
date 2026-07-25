@@ -67,7 +67,6 @@ def auto_value_for(field: dict, optimizer_type: str) -> object:
 class OptimizerFieldContractTests(unittest.TestCase):
     def test_registry_displays_constructor_defaults_and_recommendations(self):
         from pytorch_optimizer import CAME
-        from schedulefree import AdamWScheduleFree
 
         fields = fields_by_key()
         learning_rate = fields["learning_rate"]
@@ -76,10 +75,7 @@ class OptimizerFieldContractTests(unittest.TestCase):
             float(auto_value_for(learning_rate, CAME_OPTIMIZER_TYPE)),
             inspect.signature(CAME).parameters["lr"].default,
         )
-        self.assertEqual(
-            float(auto_value_for(learning_rate, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE)),
-            inspect.signature(AdamWScheduleFree).parameters["lr"].default,
-        )
+        self.assertEqual(auto_value_for(learning_rate, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE), "3e-4")
         self.assertEqual(auto_value_for(learning_rate, PRODIGY_OPTIMIZER_TYPE), "1.0")
         self.assertEqual(auto_value_for(learning_rate, AUTOMAGIC_OPTIMIZER_TYPE), "1e-4")
 
@@ -460,8 +456,8 @@ const optimizerResets = {
   }),
   schedulefreeLearningRate: resetWithRule({
     form: { optimizer_type: 'AdamWScheduleFree', learning_rate: '1e-4' },
-    key: 'learning_rate', profileDefault: '1e-4', expected: '0.0025',
-    rules: [{ watch: 'optimizer_type', when: 'AdamWScheduleFree', set: '0.0025', setIfDefault: true }],
+    key: 'learning_rate', profileDefault: '1e-4', expected: '3e-4',
+    rules: [{ watch: 'optimizer_type', when: 'AdamWScheduleFree', set: '3e-4', setIfDefault: true }],
   }),
   adafactorScale: resetWithRule({
     form: { optimizer_type: 'AdaFactor', adafactor_relative_step: false, adafactor_scale_parameter: true },
@@ -513,7 +509,7 @@ console.log(JSON.stringify({
                 "prodigyGradClip": {"value": 0, "changed": False},
                 "lionBetas": {"value": "0.9, 0.99", "changed": False},
                 "automagicEps": {"value": "1e-30", "changed": False},
-                "schedulefreeLearningRate": {"value": "0.0025", "changed": False},
+                "schedulefreeLearningRate": {"value": "3e-4", "changed": False},
                 "adafactorScale": {"value": False, "changed": False},
             },
         )
