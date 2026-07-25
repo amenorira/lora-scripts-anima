@@ -1,5 +1,7 @@
 # Changelog
 
+[English](CHANGELOG-en.md)
+
 本项目的重要版本变更记录于此。
 
 ## v2.0.0 - 2026-07-25

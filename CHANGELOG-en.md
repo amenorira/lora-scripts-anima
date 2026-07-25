@@ -1,0 +1,308 @@
+# Changelog
+
+[中文](CHANGELOG.md)
+
+All notable changes to this project are documented in this file.
+
+## v2.0.0 - 2026-07-25
+
+Introduced the multi-core training architecture and a complete Krea 2 RAW DiT LoRA workflow, upgraded the shared training environment to PyTorch 2.10.0 + CUDA 13.0, and substantially improved parameter previews, environment management, and built-in training documentation.
+
+### Multi-Core and Krea 2 Training
+
+- Added an explicit training-core registry. `sd-scripts` continues to handle SDXL / Anima, while `musubi-tuner` handles Krea 2 RAW DiT LoRA, with independent parameter, validation, and launch boundaries for each core.
+- Fully integrated Krea 2 models, dataset TOML, latent caching, Qwen3-VL text caching, training preflight checks, command generation, progress monitoring, and interrupted-run recovery.
+- Added automatic Krea 2 dataset cache collection and validation against image, caption, and model state to prevent training with incomplete or stale caches.
+- Added Krea 2-specific presets, optimizers, and timestep sampling options, and fixed parameter export, preview highlighting, and cross-core field naming.
+
+### Shared Environment and Startup Experience
+
+- Updated vendored `sd-scripts` to `6565877` (`v0.11.1-9-g6565877`), added compatibility for Anima aesthetics weight keys, and fixed dataset handling for custom caption separators and tags-only metadata.
+- Updated vendored LyCORIS to `a72bb1b`, adding weight-only FP8 bypass support and matching for new model modules while preserving existing Anima module compatibility.
+- Upgraded the default training environment from PyTorch 2.10.0 + cu128 to cu130. New installations use cu130 directly, and existing `venv` environments migrate on the next launch.
+- Automatically rematch installed xformers, FlashAttention, Triton, and bitsandbytes packages, and move ONNX Runtime GPU to the CUDA 13-compatible version.
+- Preserved complete installation and GUI operation on machines without an NVIDIA GPU, reduced expected CUDA detection warnings, and fixed accidental ONNX Runtime removal caused by stale dependency-version caches during the same launch.
+- Krea 2 now shares the project `venv` with the main application. Normal startup uses a fast metadata check and only converges dependencies when versions do not match, avoiding repeated pip runs and full training-stack imports.
+- Reworked Windows and Linux startup output with actionable diagnostic logs, immediate stage messages, dynamic progress, and progressive environment-page loading.
+
+### Parameter Experience and Training Guides
+
+- Enhanced TOML and command previews so form changes can be located precisely in the generated parameters, and improved multi-select menus, preset loading, and cross-core field synchronization.
+- Added Anima and Krea 2 timestep distribution previews with histogram, density, cumulative distribution, signal-to-noise ratio, and other analytical views.
+- Added bilingual timestep and LoRA+ guides with improved formulas, tables of contents, anchor navigation, narrow-screen layouts, and contextual documentation links from parameter controls.
+
+### Verification
+
+- Added regression coverage for multi-core behavior, Krea 2, timestep previews, documentation, launchers, the shared runtime, and realtime state.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.3...v2.0.0)
+
+## v1.3.3 - 2026-07-19
+
+Unified trainer realtime communication and improved slow remote connections while strengthening output discovery and the reliability and responsive behavior of the tag editor.
+
+### Realtime Communication and Slow Connections
+
+- Unified task state, training progress, log increments, and hardware data over the same-origin `/ws/realtime` endpoint, with backend instance identification, snapshot restoration, and reconnection.
+- Clearly distinguished delayed realtime data from a disconnected backend, and cleared stale instance state after backend restarts to avoid presenting expired tasks and monitoring data as current.
+- Enabled slow-connection compatibility by default: the complete sample list remains visible, thumbnails load through a low-priority single-request queue, and background image requests pause when realtime data is delayed.
+- Added versioned cache URLs for previews and optimized the monitor-tab layout and history loading so image transfers do not compete with critical realtime information.
+
+### Training Outputs and Tag Editor
+
+- Added a bilingual `output_dir.txt` to every training run directory to record the actual locations of models, checkpoints, training state, and previews, with synchronized cleanup when history is deleted.
+- Changed tag-editor text mode to update in-memory state immediately and record history with debouncing; pending edits are settled before saving, changing images, undoing, or leaving the page.
+- Fixed empty-tag draft restoration, unsaved-change protection during recursive scans and reloads, and preservation of dirty state and drafts after partial save failures.
+- Made batch operations target selected images by default, prioritized relative paths in file search and display, and fixed `Ctrl+F`, native input undo, and rename-button overlap with counters.
+- Improved editor-panel width, image-preview height, toolbar wrapping, and narrow layouts at 1100px and 900px.
+
+### Verification
+
+- Added contract tests for realtime communication, weak-network loading, cross-directory outputs, and the tag editor.
+- Verified the tag editor on desktop and narrow layouts with a dataset containing 12 images and 88 unique tags.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.2...v1.3.3)
+
+## v1.3.2 - 2026-07-19
+
+Completed a code-quality pass that strictly preserves existing behavior and API contracts, lowers maintenance costs, and adds regression protection for important compatibility behavior.
+
+### Server Structure and Task Maintenance
+
+- Split the previous monolithic API router into system, tagger, and environment modules while preserving the `backend.server.api.router` compatibility entry point, every `/api/*` path, and all request and response structures.
+- Extracted shared TTL cleanup for three types of completed environment jobs while preserving install-log deletion callbacks and the existing 600-second cleanup timing.
+- Extracted shared lazy ONNX Session creation for taggers while preserving Torch CUDA library loading, CUDA/CPU provider order, SessionOptions logging level, and exception propagation.
+
+### Dead-Code Cleanup and Verification
+
+- Removed frontend definitions overridden by final mixins, unused private members, unused local imports, and comment-only legacy code while preserving effective conditions and stop-training interactions.
+- Added source-contract tests for API routes, task cleanup, ONNX helpers, and frontend mixins to lock down behavior-preserving boundaries.
+- Passed all 93 unit tests, Python compilation checks, and configuration-fallback consistency checks.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.1...v1.3.2)
+
+## v1.3.1 - 2026-07-18
+
+Fixed Rich log colors lost when the v1.3.0 Windows launcher took ownership of GUI output, and moved the Python automatic-startup hook from the repository root into an internal tools directory.
+
+### Console Colors and Exit Codes
+
+- Stopped piping the GUI process through PowerShell `Out-Host`, allowing Rich to recognize the interactive terminal again and restore colored timestamps, levels, and messages.
+- Stored the GUI exit code in independent launcher state, preserving normal exits, error returns, and automatic restart after ZIP repair returns code 23.
+- Added real-PTY smoke verification and normal ZIP-repair entry tests for colored ANSI output, argument forwarding, and restart return codes.
+
+### Internal Python Startup Hook
+
+- Moved root-level `sitecustomize.py` into `tools/python_startup/` so new users are less likely to open an internal compatibility file accidentally.
+- Made Windows and Linux launchers and training subprocesses inject the internal startup-hook directory consistently; direct backend-module execution also loads it explicitly.
+- Preserved the bitsandbytes compatibility fix for Windows Chinese code pages and expanded automatic-loading and subprocess-encoding tests.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.0...v1.3.1)
+
+## v1.3.0 - 2026-07-18
+
+Redesigned first-run installation on Windows so users downloading the GitHub ZIP can prepare the environment automatically and safely convert the folder into a repository that supports future `git pull` updates.
+
+### First-Run Installation on Windows
+
+- Reduced `start.bat` to a Windows PowerShell 5.1-compatible entry point and moved environment detection, installation, repository repair, and GUI launch into the new PowerShell bootstrap.
+- Automatically reused 64-bit Python 3.10-3.12; when no compatible interpreter is available, the bootstrap can install official Python 3.12.10 for the current user without replacing newer versions or changing the default interpreter.
+- Preferred Git installation through winget, with fallback to a pinned official Git for Windows installer validated by SHA-256 and Authenticode signature.
+- Added percentage, size, live speed, and ETA to downloads; silent installation and `venv` creation stages show activity and elapsed time, while pip and Git retain native progress output.
+- Standardized English / Chinese installation messages and configured the current-user PATH, Git Bash Here, and required Explorer context-menu entries.
+
+### ZIP Repository Repair and Data Protection
+
+- Detected GitHub ZIP folders without `.git`, fetched complete `main` history and tags, and saved changed files, the remote commit, and a manifest to `bootstrap-backups/<timestamp>.zip` before aligning sources.
+- Created a local `main` tracking `origin/main` after repair, set `pull.ff=only`, and restarted the launcher once; later updates remain an explicit user action through `git pull`.
+- Excluded `venv`, models, caches, outputs, logs, Hugging Face data, and the entire user `config` directory from source alignment, without running `git clean` or hard-resetting user directories.
+- Left valid repositories untouched; damaged repositories or repositories with an unverifiable origin receive a bilingual warning. Git installation or repair failure does not block the trainer from starting.
+
+### Arguments, Linux, and Tests
+
+- Kept core dependency installation enabled under `--quiet/-q` while skipping optional Git changes by default, and added `--setup-git` and `--skip-git-setup` for noninteractive or explicit behavior.
+- Added bilingual Python, Git, and ZIP-download guidance to the Linux launcher without invoking distribution package managers or `sudo` automatically.
+- Added Windows contract and temporary-remote integration tests covering Chinese and spaced paths, source backups, user-data protection, damaged repositories, download failures, and ordinary `git pull` after repair.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.2.0...v1.3.0)
+
+## v1.2.0 - 2026-07-16
+
+Added complete support for saving training artifacts outside the trainer directory, including other directories on the same drive and different drive letters. Each run can choose its own output directory while TensorBoard, previews, logs, and history monitoring remain stable.
+
+### Custom Output Directories
+
+- Write models, training checkpoints, and sample previews to the selected output directory while keeping configuration, terminal logs, TensorBoard data, training results, and task mappings inside the trainer.
+- Allow every run to use a different output directory, with unified handling for same-drive, cross-directory, and cross-drive paths instead of relying on paths relative to the trainer.
+- Validate directory availability and write permission before launch. The default directory adds no notice; custom directories show only one necessary status line and block launch when unavailable.
+
+### Monitoring, History, and Compatibility
+
+- Read external artifacts through task mappings in the monitor, preserving sample previews, file listings, downloads, and minimum-loss checkpoint detection.
+- Read TensorBoard data from the trainer's internal log directory so historical curves remain available when tasks use different artifact directories or an external directory is temporarily unavailable.
+- Automatically import compatible legacy cross-directory training records; deleting history removes only internal logs and monitoring data, never user training artifacts.
+- Added task-path mappings and path-traversal validation to prevent invalid access through external paths.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.1.3...v1.2.0)
+
+## v1.1.3 - 2026-07-16
+
+Improved first-time Windows installation and startup by handling unsupported Python versions and Microsoft Store placeholders automatically, while reducing the chance that new users launch internal source files by mistake.
+
+### Python Installation and Environment Selection
+
+- Made the Windows launcher prefer a compatible project `venv`, then search for 64-bit Python 3.12, 3.11, and 3.10 in order while skipping Microsoft Store Python placeholders.
+- When only Python 3.13/3.14 is installed, allow official Python 3.12 to be installed side by side for the current user without removing existing versions or changing the system default PATH.
+- Validate the Python Software Foundation digital signature when downloading Python 3.12 automatically, stopping with a manual download URL when validation fails.
+- Applied the same supported-version limits to the Linux launcher and added explicit recovery instructions for an incompatible existing `venv`.
+
+### Launch Entry Points and Documentation
+
+- Moved root-level `gui.py` into `backend/gui.py` and made launch scripts use the internal module consistently, reducing accidental launches that bypass environment preparation.
+- Show an immediate, friendly error when an internal module is launched with an unsupported interpreter instead of attempting dependency repair and later failing on incompatible wheels.
+- Updated Chinese and English prerequisite documentation for Python, Git, automatically installed PyTorch/CUDA, and the differences between Windows and Linux environment handling.
+- Fixed overlap between the training-page scrollbar and the hit area of adjacent controls.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.1.2...v1.1.3)
+
+## v1.1.2 - 2026-07-15
+
+Improved visual hierarchy and interaction feedback in both themes, preserving neutral-gray surfaces while restoring clear, vivid text, group colors, and status colors.
+
+### Themes and Visual Hierarchy
+
+- Changed the dark theme to a more comfortable neutral-gray hierarchy and rebalanced brightness differences among the page background, sidebar, cards, inputs, and overlays.
+- Kept gray concentrated in backgrounds and surfaces while restoring vivid body text, parameter groups, status messages, and code highlighting so the interface no longer appears uniformly muted.
+- Fine-tuned surface hierarchy and borders in the light theme so both themes share the same information density and visual logic.
+
+### Toggles and Notification Feedback
+
+- Redesigned global toggles with improved dimensions, tracks, knobs, and state feedback, including hover, pressed, keyboard-focus, and disabled states with restrained motion.
+- Changed notifications to neutral surfaces with colored icons, lightweight status fills, and low-contrast full borders, removing the left color stripe and large saturated status areas.
+- Completed warning notifications with multiline wrapping, long-text handling, stacking, and narrow-screen layouts, and adjusted duration by error, warning, and normal-message severity.
+- Replaced bouncing and scaling with short-distance fades while continuing to respect reduced-motion preferences.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.1.1...v1.1.2)
+
+## v1.1.1 - 2026-07-13
+
+Upgraded training monitoring into a dense professional console and fixed several interaction issues involving historical logs, output files, and realtime refreshes.
+
+### Training Monitor Console
+
+- Added a sticky task control bar, compact hardware metrics, responsive tabs, and a 12-column overview layout that concentrates status, progress, key metrics, and samples in the first viewport.
+- Replaced the duplicate large Loss chart with rule-based training diagnostics showing trend changes, coefficient of variation, minimum observed Loss, decision rationale, and the exact statistical window.
+- Added collapsed algorithm details and applicability boundaries that disclose data sources, window rules, and thresholds, and clarify that diagnostics do not determine image quality, overfitting, or the best checkpoint.
+- Changed SSE updates to lightweight partial refreshes, preserved existing Loss data during reconnection, and redrew monitor content immediately after language changes.
+
+### Logs, Samples, and Output Files
+
+- Fixed incorrect log counts when opening history for the first time, the unavailable initial-screen "Top" button in full logs, and carriage-return log updates splitting into multiple lines.
+- Preserved incremental log append, pagination, search, copy, download, and scroll position while reorganizing the sticky toolbar hierarchy.
+- Changed sample previews to a non-cropping layout with progressive loading and keyboard lightbox navigation; output files now use an aligned table and batch-selection actions.
+- Always highlight the minimum-Loss checkpoint, preferring the newer archive when Loss values are equal.
+
+### Visual Design and Accessibility
+
+- Standardized site panels to square corners and tightened buttons and inputs to subtle corners, removing unnecessary gradients, shadows, and highly saturated callouts from the monitor.
+- Added standard tab semantics, keyboard navigation, focus styling, connection-status text, and reduced-motion support.
+- Improved Chinese and English monitor copy, idle-state explanations, historical-data labels, and training-diagnostic descriptions.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.1.0...v1.1.1)
+
+## v1.1.0 - 2026-07-13
+
+Upgraded the desktop interface and interactions while preserving the existing layout and color-coded LoRA parameter groups, improving information density, state readability, and page responsiveness.
+
+### Interface and State Redesign
+
+- Unified borders, corner radii, and hierarchy across cards, forms, buttons, selects, and the sidebar, reducing excessive curves, shadows, and decoration for a more desktop-productivity-oriented interface.
+- Preserved color identification for LoRA parameter groups and narrowed the selected sidebar marker to a short vertical line for quick location with restrained visual weight.
+- Redesigned environment status, model entries, and download actions to reduce highly saturated state colors and correct content alignment.
+- Simplified the log toolbar by removing the low-frequency "Go to line N" control and freeing horizontal space for search, pagination, and copy actions.
+- Unified training-type and ordinary select interactions and indicator widths, and improved alignment of labels, values, and formulas in the training-step area.
+
+### Page Transitions and Animation Performance
+
+- Added lightweight page-transition progress so the first visit to the training page responds visually before mounting the heavier form.
+- Cached the training-form DOM and Alpine state, pausing only polling when leaving and reusing the existing state when returning to avoid repeated initialization pauses.
+- Batched conditional parameter visibility into a single FLIP layout transition with more natural nonlinear easing for showing, hiding, and repositioning surrounding fields.
+- Added cleanup and fallbacks for background tabs, interrupted animations, rapid reverse transitions, and reduced-motion preferences to avoid stale animation state and wasted resources.
+- Reduced persistent dropdown DOM and repeated window-size reads, lowering rendering and listener overhead on inactive views.
+
+### Training Steps and Localization
+
+- Changed the training-step estimation API to return structured error codes and parameters so the frontend can show readable messages in the active language.
+- Added Chinese and English messages for dataset, resolution, GPU, bucketing, and image-reading errors instead of displaying mixed-language backend errors directly.
+- Corrected the source of step-validation error text before training and added localized error-context and frontend-contract regression tests.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.0.2...v1.1.0)
+
+## v1.0.2 - 2026-07-12
+
+Updated training-step estimation and the interface so users can confirm the actual training scale before a run starts.
+
+### Training-Step Calculation
+
+- Added a training-step calculation area showing source image count, directory repeats, batch size, gradient accumulation, epochs, GPU count, and estimated total steps.
+- Explained training samples, batches per epoch, optimizer steps per epoch, and final total steps through a readable step-by-step formula.
+- Reused sd-scripts image scanning, bucketing, and ceiling rules so estimates match actual training.
+- Recalculated automatically after changing the dataset directory or related training parameters, with a manual refresh action.
+- Forced a fresh scan and validation before starting training to avoid stale dataset statistics.
+
+### Interface Improvements
+
+- Preserved the previous result during recalculation and fixed the calculation area's height so controls below it do not move vertically.
+- Added theoretical effective-batch display to clarify the relationship among batch size, gradient accumulation, and multiple GPUs.
+- Preserved the existing descriptions of gradient accumulation and gradient checkpointing so the independent parameters are not mistaken for automatic coupling.
+- Added regression tests for backend calculation, comparison against sd-scripts bucketing, and frontend refresh behavior.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.0.1...v1.0.2)
+
+## v1.0.1 - 2026-07-11
+
+A stability and usability update focused on tag-editing efficiency for large datasets and training-monitor state management.
+
+### Tag Editor Improvements
+
+- Combined image listing and tag-frequency scanning to reduce repeated disk traversal for large datasets.
+- Added 320px list thumbnails and a 960px preview cache to reduce image loading time.
+- Moved batch saving, batch editing, and preview operations to background threads so service responses remain responsive.
+- Changed history to incremental changes to reduce memory usage during continuous editing.
+- Fixed undo and redo for global tag renaming and improved history-detail display.
+- Added select-current-page, select-all-filtered-results, and a narrow-screen vertical layout.
+- Improved dialog semantics, automatic focus, and image-preview interactions.
+
+### Stability Fixes
+
+- Fixed historical logs remaining in the training monitor after leaving a historical task detail view.
+- Fixed recursive dataset caches returning stale tags after saving a single image.
+- Fixed stale indexes causing inaccurate statistics after a tag-frequency request failed.
+- Added automatic size-limited thumbnail-cache cleanup to prevent unbounded disk usage over time.
+- Added backend and frontend contract regression tests for the tag editor.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.0.0...v1.0.1)
+
+## v1.0.0 - 2026-07-11
+
+The first stable release, providing complete local Anima and SDXL LoRA training workflows.
+
+### Major Features
+
+- A local FastAPI and Alpine.js training workspace integrating the `sd-scripts` training engine.
+- Anima (Qwen3 + T5 dual encoders) and SDXL LoRA training.
+- Training parameter forms, TOML previews, preset management, and strict model-specific validation.
+- Realtime hardware monitoring, training logs, history, Loss statistics, and a preview lightbox.
+- A built-in tag editor, WD14 automatic tagging, model downloads, and training-environment management.
+- Chinese and English interfaces, light and dark themes, and Windows/Linux launch scripts.
+
+### Stable-Release Improvements
+
+- Fixed mixed training-sample previews, scanning stalls, and multiline sample-prompt composition.
+- Improved training-log viewing and training-task concurrency-slot management.
+- Aligned field ranges, model groups, and Anima/SDXL resolution constraints with `sd-scripts`.
+- Strengthened validation for Anima models, VAE, Qwen3, dropout, token, and timestep parameters.
+- Improved performance of image counting, preview scanning, and training launch paths.
+- Reduced duplicate field hints and synchronized API configuration with the frontend offline fallback.
+
+[Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.0.0-rc.3...v1.0.0)
