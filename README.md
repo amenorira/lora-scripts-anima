@@ -21,8 +21,8 @@ _✨ 多核心 LoRA 训练工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v1.3.3 正式版已发布**
-> 本次更新统一实时通信并改善慢速远程连接体验，同时增强标签编辑器的保存可靠性、快捷操作和响应式布局。
+> ✅ **v2.0.0 正式版已发布**
+> 本次重大更新引入多训练核心架构与 Krea 2 RAW DiT LoRA 完整工作流，同时升级 CUDA 13 训练环境、参数预览和内置训练指南。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。它以核心注册表隔离不同训练器：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是可选的挂载式适配器核心（`lycoris.kohya`），**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 
@@ -216,5 +216,4 @@ GUI 的 **环境** 标签页提供：
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — 训练核心脚本
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 训练核心
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 训练 GUI 框架
-- [WalkingMeatAxolotl/AnimaLoraStudio](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio) — flash_attn wheel 智能匹配算法参考
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel 源

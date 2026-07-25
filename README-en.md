@@ -21,8 +21,8 @@ A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](h
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v1.3.3 is now available**
-> This release unifies realtime communication and improves slow remote connections, while strengthening tag-editor save reliability, shortcuts, and responsive layout.
+> ✅ **v2.0.0 is now available**
+> This major release introduces the multi-core training architecture and a complete Krea 2 RAW DiT LoRA workflow, alongside a CUDA 13 training stack, richer parameter previews, and built-in training guides.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). Its core registry keeps trainer boundaries explicit: **sd-scripts** handles SDXL / Anima, **LyCORIS** is a selectable adapter core mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
@@ -214,5 +214,4 @@ The GUI **Environment** tab provides:
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Core training scripts
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Training GUI framework
-- [WalkingMeatAxolotl/AnimaLoraStudio](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio) — flash_attn wheel matching algorithm reference
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel source
