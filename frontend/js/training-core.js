@@ -3044,7 +3044,7 @@ window.trainingCoreMixin = {
       }
     }
     // No different value found → restore to default
-    const def = this._currentProfileFieldDefault(key);
+    const def = this._currentEffectiveFieldDefault(key);
     this.form[key] = def !== undefined ? def : '';
     this.updateToml();
   },
@@ -3055,10 +3055,22 @@ window.trainingCoreMixin = {
     return Object.prototype.hasOwnProperty.call(defaults, key) ? defaults[key] : '';
   },
 
+  _currentEffectiveFieldDefault(key) {
+    const profileDefault = this._currentProfileFieldDefault(key);
+    const rules = Array.isArray(this._autoValueRules) ? this._autoValueRules : [];
+    const matched = rules.find(rule =>
+      rule.target === key && this._matchAutoValueRule(rule)
+    );
+    return matched && matched.set !== null && matched.set !== undefined
+      ? matched.set
+      : profileDefault;
+  },
+
   resetField(key) {
     // formDefaults may represent an applied preset baseline. "Reset to default"
-    // must always use the active training profile's registry default instead.
-    const def = this._currentProfileFieldDefault(key);
+    // must use the active dependency-aware default. Optimizer fields commonly
+    // replace the static registry default through autoValue rules.
+    const def = this._currentEffectiveFieldDefault(key);
     this.setField(key, def !== undefined ? def : '');
   },
 

@@ -422,6 +422,54 @@ const locked = readonly._readonlyIfAnyMet(clauses);
 readonly.form.prodigyplus_use_stableadamw = false;
 const unlocked = readonly._readonlyIfAnyMet(clauses);
 
+function resetWithRule({ form, key, profileDefault, expected, rules }) {
+  const ctx = Object.assign({}, core, {
+    form: { model_train_type: 'anima-lora', ...form },
+    formDefaults: { [key]: expected },
+    _autoValueRules: rules.map(rule => ({ target: key, ...rule })),
+    _currentProfileFieldDefault() { return profileDefault; },
+    setField(target, value) { this.form[target] = value; },
+  });
+  ctx.resetField(key);
+  return {
+    value: ctx.form[key],
+    changed: String(ctx.form[key]) !== String(ctx.formDefaults[key]),
+  };
+}
+
+const optimizerResets = {
+  adamWeightDecay: resetWithRule({
+    form: { optimizer_type: 'AdamW', weight_decay: 0.2 },
+    key: 'weight_decay', profileDefault: '', expected: 0.01,
+    rules: [{ watch: 'optimizer_type', when: 'AdamW', set: 0.01, setIfDefault: true }],
+  }),
+  prodigyGradClip: resetWithRule({
+    form: { optimizer_type: 'Prodigy', max_grad_norm: 1 },
+    key: 'max_grad_norm', profileDefault: 1, expected: 0,
+    rules: [{ watch: 'optimizer_type', when: 'Prodigy', set: 0, setIfDefault: true }],
+  }),
+  lionBetas: resetWithRule({
+    form: { optimizer_type: 'Lion', betas: '0.8, 0.9' },
+    key: 'betas', profileDefault: '', expected: '0.9, 0.99',
+    rules: [{ watch: 'optimizer_type', when: 'Lion', set: '0.9, 0.99', setIfDefault: true }],
+  }),
+  automagicEps: resetWithRule({
+    form: { optimizer_type: 'vendor.automagic_optimizer.integration.Automagic3', eps: '1e-8' },
+    key: 'eps', profileDefault: '', expected: '1e-30',
+    rules: [{ watch: 'optimizer_type', when: 'vendor.automagic_optimizer.integration.Automagic3', set: '1e-30', setIfDefault: true }],
+  }),
+  schedulefreeLearningRate: resetWithRule({
+    form: { optimizer_type: 'AdamWScheduleFree', learning_rate: '1e-4' },
+    key: 'learning_rate', profileDefault: '1e-4', expected: '0.0025',
+    rules: [{ watch: 'optimizer_type', when: 'AdamWScheduleFree', set: '0.0025', setIfDefault: true }],
+  }),
+  adafactorScale: resetWithRule({
+    form: { optimizer_type: 'AdaFactor', adafactor_relative_step: false, adafactor_scale_parameter: true },
+    key: 'adafactor_scale_parameter', profileDefault: true, expected: false,
+    rules: [{ watch: 'adafactor_relative_step', when: false, set: false }],
+  }),
+};
+
 console.log(JSON.stringify({
   schedulefreeDefaults,
   schedulefreeCustom,
@@ -433,6 +481,7 @@ console.log(JSON.stringify({
   explicitAlternateDefault: weightContext.form.weight_decay,
   locked,
   unlocked,
+  optimizerResets,
 }));
 """
         result = subprocess.run(
@@ -457,6 +506,17 @@ console.log(JSON.stringify({
         self.assertEqual(state["explicitAlternateDefault"], 0)
         self.assertTrue(state["locked"])
         self.assertFalse(state["unlocked"])
+        self.assertEqual(
+            state["optimizerResets"],
+            {
+                "adamWeightDecay": {"value": 0.01, "changed": False},
+                "prodigyGradClip": {"value": 0, "changed": False},
+                "lionBetas": {"value": "0.9, 0.99", "changed": False},
+                "automagicEps": {"value": "1e-30", "changed": False},
+                "schedulefreeLearningRate": {"value": "0.0025", "changed": False},
+                "adafactorScale": {"value": False, "changed": False},
+            },
+        )
 
 
 if __name__ == "__main__":
