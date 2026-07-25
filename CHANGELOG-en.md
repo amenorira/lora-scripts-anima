@@ -6,34 +6,82 @@ All notable changes to this project are documented in this file.
 
 ## v2.0.0 - 2026-07-25
 
-Introduced the multi-core training architecture and a complete Krea 2 RAW DiT LoRA workflow, upgraded the shared training environment to PyTorch 2.10.0 + CUDA 13.0, and substantially improved parameter previews, environment management, and built-in training documentation.
+This is a training-architecture-level update. v2.0.0 introduces a multi-core training system, officially integrates Krea 2 RAW DiT LoRA, and upgrades the default training stack to PyTorch 2.10.0 + CUDA 13.0. Training configuration, cache preflight checks, environment management, parameter previews, and built-in documentation have also been systematically reorganized around multi-core workflows.
 
-### Multi-Core and Krea 2 Training
+### Multi-Core Training Architecture
 
-- Added an explicit training-core registry. `sd-scripts` continues to handle SDXL / Anima, while `musubi-tuner` handles Krea 2 RAW DiT LoRA, with independent parameter, validation, and launch boundaries for each core.
-- Fully integrated Krea 2 models, dataset TOML, latent caching, Qwen3-VL text caching, training preflight checks, command generation, progress monitoring, and interrupted-run recovery.
-- Added automatic Krea 2 dataset cache collection and validation against image, caption, and model state to prevent training with incomplete or stale caches.
-- Added Krea 2-specific presets, optimizers, and timestep sampling options, and fixed parameter export, preview highlighting, and cross-core field naming.
+- Added an explicit training-core registry that isolates fields, parameter validation, command generation, and launch flows for each trainer.
+- `sd-scripts` continues to handle SDXL and Anima, while `musubi-tuner` handles Krea 2 RAW DiT LoRA.
+- LyCORIS remains available as an optional adapter core through `lycoris.kohya`.
+- The frontend switches fields, presets, optimizers, and timestep options based on the active training type, preventing parameters from different cores from contaminating each other.
+- TOML import and export, parameter previews, training preflight checks, and task monitoring all support core switching.
 
-### Shared Environment and Startup Experience
+### Krea 2 RAW DiT LoRA
 
-- Updated vendored `sd-scripts` to `6565877` (`v0.11.1-9-g6565877`), added compatibility for Anima aesthetics weight keys, and fixed dataset handling for custom caption separators and tags-only metadata.
-- Updated vendored LyCORIS to `a72bb1b`, adding weight-only FP8 bypass support and matching for new model modules while preserving existing Anima module compatibility.
-- Upgraded the default training environment from PyTorch 2.10.0 + cu128 to cu130. New installations use cu130 directly, and existing `venv` environments migrate on the next launch.
-- Automatically rematch installed xformers, FlashAttention, Triton, and bitsandbytes packages, and move ONNX Runtime GPU to the CUDA 13-compatible version.
-- Preserved complete installation and GUI operation on machines without an NVIDIA GPU, reduced expected CUDA detection warnings, and fixed accidental ONNX Runtime removal caused by stale dependency-version caches during the same launch.
-- Krea 2 now shares the project `venv` with the main application. Normal startup uses a fast metadata check and only converges dependencies when versions do not match, avoiding repeated pip runs and full training-stack imports.
-- Reworked Windows and Linux startup output with actionable diagnostic logs, immediate stage messages, dynamic progress, and progressive environment-page loading.
+- Fully integrated Krea 2 models, VAE, the Qwen3-VL text encoder, and dataset TOML configuration.
+- Added latent and text-encoder caching with pre-training checks that ensure caches are complete and still match the images, captions, and models.
+- Automatically collect Krea 2 dataset caches, reducing manual maintenance of cache paths and intermediate files.
+- Added training command generation, progress estimation, log monitoring, stopping, and interrupted-run recovery.
+- Added Krea 2-specific optimizer, scheduler, timestep sampling, and network parameter options.
+- Fixed Krea 2 parameter-preview highlighting, preset export, field naming, and custom-optimizer injection boundaries.
 
-### Parameter Experience and Training Guides
+### Shared CUDA 13 Training Environment
 
-- Enhanced TOML and command previews so form changes can be located precisely in the generated parameters, and improved multi-select menus, preset loading, and cross-core field synchronization.
-- Added Anima and Krea 2 timestep distribution previews with histogram, density, cumulative distribution, signal-to-noise ratio, and other analytical views.
-- Added bilingual timestep and LoRA+ guides with improved formulas, tables of contents, anchor navigation, narrow-screen layouts, and contextual documentation links from parameter controls.
+- Upgraded the default training environment from PyTorch 2.10.0 + cu128 to PyTorch 2.10.0 + cu130.
+- RTX 30, 40, and 50 series GPUs now use a unified CUDA 13.0 training stack.
+- Existing cu128 `venv` environments migrate on the next launch, while new installations use cu130 directly.
+- Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to the new environment.
+- ONNX Runtime GPU moves to the CUDA 13-compatible version, with a fix for accidental removal caused by a stale dependency-version cache during the same launch.
+- Machines without an NVIDIA GPU can still complete environment installation and run the GUI; only training requires an NVIDIA GPU.
 
-### Verification
+### Krea 2 Runtime Management
 
-- Added regression coverage for multi-core behavior, Krea 2, timestep previews, documentation, launchers, the shared runtime, and realtime state.
+- Krea 2 shares the project-root `venv` with the main application, replacing the separate core environment.
+- `requirements-musubi-krea2.txt` converges the shared dependencies required by Krea 2.
+- Normal startup performs only a fast metadata check. When versions are correct, it does not rerun pip, uninstall dependencies, or import the complete training stack.
+- Full import verification still runs after dependency synchronization and before actual Krea 2 tasks.
+- A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically and can be removed manually after the new environment is confirmed working.
+
+### Parameter Configuration and Previews
+
+- Enhanced TOML and training-command previews so each form change can be located in the generated parameters.
+- Improved multi-select menus, preset loading, core switching, and automatic cross-field value synchronization.
+- Fixed inconsistent timestep sampling options between Anima and Krea 2.
+- Added Anima and Krea 2 timestep distribution previews with histogram, density, cumulative-distribution, and signal-to-noise-ratio views.
+- Improved LoRA+ parameter coupling, optimizer compatibility constraints, and interface guidance.
+
+### Built-In Training Guides
+
+- Added complete bilingual timestep guides covering common sampling methods, parameter meanings, distribution characteristics, and recommended use cases.
+- Rewrote the LoRA+ guide with learning-rate ratios, optimizer compatibility, and configuration guidance.
+- Added tables of contents, anchor navigation, formula layout, and contextual entry points from parameter controls.
+- Improved desktop and narrow-screen layouts so long formulas, tables, and navigation remain readable in smaller windows.
+
+### Startup and Environment Management
+
+- Added immediate stage messages and dynamic progress to the Windows and Linux launchers.
+- Simplified normal startup output while preserving diagnostic logs for installation and dependency issues.
+- Changed the environment page to progressive loading to reduce the initial wait and perceived unresponsiveness.
+- Optimized Krea 2 runtime probing so healthy environments do not repeat expensive checks on every launch.
+
+### Upstream Synchronization
+
+- Updated vendored `sd-scripts` to `6565877` (`v0.11.1-9-g6565877`).
+- Added compatibility for Anima aesthetics weight keys and fixed dataset handling for custom caption separators and tags-only metadata.
+- Updated vendored LyCORIS to `a72bb1b`, adding a weight-only FP8 bypass and matching for new model modules.
+- Added a pinned `musubi-tuner` snapshot as the Krea 2 training core while keeping upstream sources inside the `vendor/` boundary.
+
+### Upgrade Notes
+
+- The first launch after upgrading may spend additional time migrating CUDA and PyTorch dependencies. Allow the launcher to finish.
+- CUDA 13.0 requires NVIDIA driver R580 or newer.
+- The project requires 64-bit Python 3.10 through 3.12; Python 3.12 is recommended.
+- If the existing `venv` was created with Python 3.13 or 3.14, remove or rename only the project-local `venv`, then run the launcher again.
+- Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The interface blocks launch when caches are missing or stale.
+
+### Regression Protection
+
+This release adds regression coverage for the multi-core architecture, Krea 2 configuration and caching, timestep previews, built-in documentation, launchers, the shared runtime, parameter contracts, and realtime state, covering the primary behavioral boundaries of this architecture upgrade.
 
 [Full diff](https://github.com/amenorira/lora-scripts-anima/compare/v1.3.3...v2.0.0)
 
