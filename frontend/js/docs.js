@@ -23,7 +23,6 @@ window.docsMixin = {
   _docsContentCache: Object.create(null),
   _docsContentAbortController: null,
   _docsContentPromise: null,
-  _docsTocArticle: null,
   _docsTocHeadings: [],
   _docsTocScroller: null,
   _docsTocScrollHandler: null,
@@ -435,7 +434,6 @@ window.docsMixin = {
       return;
     }
 
-    this._docsTocArticle = article;
     this._docsTocHeadings = headings;
     this._docsTocScroller = scroller;
     this._docsTocScrollHandler = () => {
@@ -492,39 +490,18 @@ window.docsMixin = {
 
     const scrollerRect = scroller.getBoundingClientRect();
     const viewportTop = scrollerRect.top + 18;
-    const viewportBottom = scrollerRect.bottom - 18;
-    const articleBottom = this._docsTocArticle
-      ? Math.min(viewportBottom, this._docsTocArticle.getBoundingClientRect().bottom)
-      : viewportBottom;
     const headingRects = headings.map(heading => heading.getBoundingClientRect());
-    const scores = [];
+    const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     let activeIndex = 0;
-    let bestScore = -1;
 
-    for (let index = 0; index < headings.length; index += 1) {
-      const headingTop = headingRects[index].top;
-      const sectionTop = index === 0 ? Math.min(headingTop, viewportTop) : headingTop;
-      const sectionBottom = index + 1 < headings.length
-        ? headingRects[index + 1].top
-        : Math.max(articleBottom, headingTop);
-      const visibleTop = Math.max(viewportTop, sectionTop);
-      const visibleBottom = Math.min(viewportBottom, sectionBottom);
-      let score = Math.max(0, visibleBottom - visibleTop);
-      if (headingTop >= viewportTop && headingTop <= viewportBottom) score += 24;
-      scores.push(score);
-      if (score > bestScore) {
-        bestScore = score;
+    if (maxScrollTop - scroller.scrollTop <= 2) {
+      activeIndex = headings.length - 1;
+    }
+    else {
+      for (let index = 0; index < headings.length; index += 1) {
+        if (headingRects[index].top > viewportTop + 2) break;
         activeIndex = index;
       }
-    }
-
-    const currentIndex = headings.findIndex(heading => heading.id === this.docsActiveAnchor);
-    if (
-      currentIndex >= 0
-      && scores[currentIndex] > 0
-      && bestScore - scores[currentIndex] <= 24
-    ) {
-      activeIndex = currentIndex;
     }
     this._setDocsActiveAnchor(headings[activeIndex].id);
   },
@@ -596,7 +573,6 @@ window.docsMixin = {
       const cancelFrame = window.cancelAnimationFrame || window.clearTimeout;
       cancelFrame(this._docsTocRevealRaf);
     }
-    this._docsTocArticle = null;
     this._docsTocHeadings = [];
     this._docsTocScroller = null;
     this._docsTocScrollHandler = null;

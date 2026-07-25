@@ -356,7 +356,7 @@ console.log(JSON.stringify({
         self.assertTrue(state["hasWeightCurve"])
         self.assertTrue(state["refreshBound"])
 
-    def test_scrollspy_uses_visibility_and_preserves_clipped_click_target(self):
+    def test_scrollspy_uses_section_at_viewport_top_and_preserves_click_target(self):
         script = r"""
 global.window = {
   CSS: { escape(value) { return value; } },
@@ -434,6 +434,12 @@ lastTop = 220;
 context._refreshDocsActiveAnchor();
 const bottomActive = context.docsActiveAnchor;
 
+scroller.scrollTop = 400;
+testingTop = 18;
+lastTop = 190;
+context._refreshDocsActiveAnchor();
+const shortSectionActive = context.docsActiveAnchor;
+
 scroller.scrollTop = 100;
 testingTop = -100;
 lastTop = 900;
@@ -465,6 +471,7 @@ console.log(JSON.stringify({
   groups,
   tocItems,
   bottomActive,
+  shortSectionActive,
   duringSmooth,
   targetStillLocked,
   finalActive,
@@ -500,6 +507,7 @@ console.log(JSON.stringify({
             ],
         )
         self.assertEqual(state["bottomActive"], "tensorboard")
+        self.assertEqual(state["shortSectionActive"], "testing")
         self.assertEqual(state["duringSmooth"], "tensorboard")
         self.assertTrue(state["targetStillLocked"])
         self.assertEqual(state["finalActive"], "tensorboard")
