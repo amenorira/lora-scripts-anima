@@ -493,31 +493,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "缓存文本编码器输出与仅训练文本编码器不兼容，已自动切换为仅训练主干"
         )
 
-    # ── 5.8b. cache_text_encoder_outputs 与 caption dropout/shuffle 互斥 ──
-    # sd-scripts is_text_encoder_output_cacheable() 在 shuffle_caption 或
-    # caption_tag_dropout_rate>0 时返回 false → anima_train_network.py assert 失败。
-    # 方向：默认推荐 cache=true（省显存提速），故遇到冲突时保留 cache、清空 caption 互斥项。
-    if source.get("cache_text_encoder_outputs"):
-        conflicting = []
-        if source.get("shuffle_caption"):
-            conflicting.append("shuffle_caption")
-            source["shuffle_caption"] = False
-        ctgd = source.get("caption_tag_dropout_rate")
-        try:
-            ctgd_val = float(ctgd) if ctgd is not None and ctgd != "" else 0.0
-        except (TypeError, ValueError):
-            ctgd_val = 0.0
-        if ctgd_val > 0:
-            conflicting.append("caption_tag_dropout_rate")
-            source["caption_tag_dropout_rate"] = 0
-        if conflicting:
-            warnings.append(
-                "[Conflict] cache_text_encoder_outputs is incompatible with "
-                + ", ".join(conflicting) + "; cleared by backend / "
-                "缓存文本编码器输出与这些 caption 选项不兼容，已自动清除: "
-                + ", ".join(conflicting)
-            )
-
     # ── 5.9. attn_mode=xformers 需要 split_attn ──
     if source.get("attn_mode") == "xformers" and not source.get("split_attn"):
         source["split_attn"] = True

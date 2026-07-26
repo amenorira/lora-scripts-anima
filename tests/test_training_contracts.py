@@ -1,3 +1,6 @@
+import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from dataclasses import asdict
@@ -8,7 +11,8 @@ from PIL import Image
 
 from backend.monitor import artifacts
 from backend.tasks import TaskManager
-from backend.training.field_registry import FIELDS
+from backend.training.adapter import adapt_config
+from backend.training.field_registry import FIELDS, get_all_fields
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.validation import validate_training_config
 from backend.utils.train_utils import count_images
@@ -64,6 +68,131 @@ class TrainingValidationTests(unittest.TestCase):
 
         config["model_train_type"] = "sdxl-lora"
         self.assertTrue(any("resolution" in error for error in validate_training_config(config)))
+
+        config["network_module"] = "networks.lora"
+        config["resolution"] = "1056,1024"
+        self.assertEqual(validate_training_config(config), [])
+
+    def test_validates_bucket_step_by_train_type(self):
+        config = valid_anima_config()
+        for step in (16, 32, 64):
+            with self.subTest(train_type="anima-lora", step=step):
+                candidate = dict(config, bucket_reso_steps=step)
+                self.assertEqual(validate_training_config(candidate), [])
+
+        config.update(model_train_type="sdxl-lora", network_module="networks.lora", resolution="1024,1024")
+        for step in (16, 48):
+            with self.subTest(train_type="sdxl-lora", step=step):
+                errors = validate_training_config(dict(config, bucket_reso_steps=step))
+                self.assertTrue(any("bucket_reso_steps" in error for error in errors), errors)
+        for step in (32, 64):
+            with self.subTest(train_type="sdxl-lora", step=step):
+                self.assertEqual(validate_training_config(dict(config, bucket_reso_steps=step)), [])
+
+    def test_text_cache_caption_contracts_are_profile_specific(self):
+        anima = valid_anima_config()
+        anima["caption_dropout_rate"] = 0.1
+        self.assertEqual(validate_training_config(anima), [])
+
+        for key, value in (("shuffle_caption", True), ("caption_tag_dropout_rate", 0.1)):
+            with self.subTest(train_type="anima-lora", key=key):
+                errors = validate_training_config(dict(valid_anima_config(), **{key: value}))
+                self.assertTrue(any("cache_text_encoder_outputs" in error for error in errors), errors)
+
+        sdxl = dict(
+            valid_anima_config(),
+            model_train_type="sdxl-lora",
+            network_module="networks.lora",
+            resolution="1024,1024",
+        )
+        for key, value in (
+            ("caption_dropout_rate", 0.1),
+            ("shuffle_caption", True),
+            ("caption_tag_dropout_rate", 0.1),
+        ):
+            with self.subTest(train_type="sdxl-lora", key=key):
+                errors = validate_training_config(dict(sdxl, **{key: value}))
+                self.assertTrue(any("cache_text_encoder_outputs" in error for error in errors), errors)
+
+    def test_adapter_does_not_silently_clear_caption_conflicts(self):
+        config = valid_anima_config()
+        config.update(shuffle_caption=True, caption_tag_dropout_rate=0.1)
+
+        adapted, warnings = adapt_config(config)
+
+        self.assertTrue(adapted["shuffle_caption"])
+        self.assertEqual(adapted["caption_tag_dropout_rate"], 0.1)
+        self.assertFalse(any("cleared by backend" in warning for warning in warnings))
+
+    def test_dylora_block_size_must_be_a_positive_integer_divisor(self):
+        base = valid_anima_config()
+        base.update(network_module="lycoris.kohya", lycoris_algo="dylora", network_dim=30)
+        for block_size in (0, -1, 1.5, 4):
+            with self.subTest(block_size=block_size):
+                errors = validate_training_config(dict(base, block_size=block_size))
+                self.assertTrue(any("block_size" in error for error in errors), errors)
+
+        self.assertEqual(validate_training_config(dict(base, block_size=5)), [])
+
+
+class TrainingFieldSchemaTests(unittest.TestCase):
+    @staticmethod
+    def _lookup(messages: dict, key: str):
+        value = messages
+        for part in key.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
+    @staticmethod
+    def _walk(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from TrainingFieldSchemaTests._walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from TrainingFieldSchemaTests._walk(child)
+
+    def test_all_field_i18n_references_exist_in_both_locales(self):
+        reference_keys = {
+            item[key]
+            for item in self._walk(get_all_fields())
+            if isinstance(item, dict)
+            for key in ("desc_key", "hint_key", "readonly_reason_key", "reason_key", "dk", "label_key")
+            if isinstance(item.get(key), str) and item[key]
+        }
+        for locale in ("zh-CN", "en-US"):
+            messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
+            for key in reference_keys:
+                with self.subTest(locale=locale, key=key):
+                    value = self._lookup(messages, key)
+                    self.assertIsInstance(value, str)
+                    self.assertTrue(value.strip())
+
+    def test_field_conditions_reference_registered_keys(self):
+        fields = get_all_fields()
+        registered = {field["key"] for field in fields}
+        for field in fields:
+            for attr in ("show_if", "show_if_any", "readonly_if", "readonly_if_any"):
+                for item in self._walk(field.get(attr)):
+                    key = item.get("key") if isinstance(item, dict) else None
+                    if key:
+                        with self.subTest(field=field["key"], attr=attr, key=key):
+                            self.assertIn(key, registered)
+
+    def test_select_defaults_are_declared_options(self):
+        for field in get_all_fields():
+            if field.get("type") != "select" or "default" not in field:
+                continue
+            options = list(field.get("options") or [])
+            for group in field.get("groups") or []:
+                options.extend(group.get("options") or [])
+            values = {option.get("v") for option in options if "v" in option}
+            if values:
+                with self.subTest(field=field["key"], default=field["default"]):
+                    self.assertIn(field["default"], values)
 
     def test_normalizes_numeric_strings(self):
         config = valid_anima_config()
@@ -306,6 +435,85 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertEqual(scheduled_refresh.count("this.stepEstimate = null;"), 1)
         self.assertEqual(forced_refresh.count("this.stepEstimate = null;"), 1)
         self.assertIn("effectiveBatch:", training_core)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+class TrainingFormFrontendTests(unittest.TestCase):
+    def test_profile_constraints_and_caption_cache_interlocks(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const mixin = window.trainingCoreMixin;
+const bucketField = {
+  key: 'bucket_reso_steps', type: 'number', min: 16, step: 16,
+  constraintsByGroup: { sdxl: { min: 32, step: 32 }, anima: { min: 16, step: 16 } },
+};
+function context(modelType, form) {
+  const toasts = [];
+  const ctx = Object.assign({}, mixin, {
+    form: Object.assign({ model_train_type: modelType }, form),
+    formDefaults: {}, formErrors: {}, _autoValueApplied: {},
+    findFieldDef(key) { return key === 'bucket_reso_steps' ? bucketField : null; },
+    _allShowIfKeys() { return []; },
+    queueTomlPreviewChange() {}, pushHistory() {}, updateTomlDebounced() {},
+    scheduleOutputPathInfo() {}, toast(message) { toasts.push(message); },
+    t(key) { return key; },
+  });
+  ctx.toasts = toasts;
+  return ctx;
+}
+const sdxl = context('sdxl-lora', { bucket_reso_steps: 64 });
+const anima = context('anima-lora', { bucket_reso_steps: 32 });
+sdxl.stepField('bucket_reso_steps', -32);
+anima.stepField('bucket_reso_steps', -16);
+
+const sdxlCaption = context('sdxl-lora', {
+  cache_text_encoder_outputs: true, cache_text_encoder_outputs_to_disk: true,
+  caption_dropout_rate: 0, caption_tag_dropout_rate: 0, shuffle_caption: false,
+});
+sdxlCaption.setField('caption_dropout_rate', 0.1);
+const animaCaption = context('anima-lora', {
+  cache_text_encoder_outputs: true, cache_text_encoder_outputs_to_disk: true,
+  caption_dropout_rate: 0, caption_tag_dropout_rate: 0, shuffle_caption: false,
+});
+animaCaption.setField('caption_dropout_rate', 0.1);
+const blocked = context('sdxl-lora', {
+  cache_text_encoder_outputs: false, cache_text_encoder_outputs_to_disk: false,
+  caption_dropout_rate: 0.1, caption_tag_dropout_rate: 0, shuffle_caption: false,
+});
+blocked.setField('cache_text_encoder_outputs', true);
+
+console.log(JSON.stringify({
+  sdxlRule: sdxl._numberConstraints(bucketField),
+  animaRule: anima._numberConstraints(bucketField),
+  sdxlStep: sdxl.form.bucket_reso_steps,
+  animaStep: anima.form.bucket_reso_steps,
+  sdxlCache: sdxlCaption.form.cache_text_encoder_outputs,
+  sdxlDiskCache: sdxlCaption.form.cache_text_encoder_outputs_to_disk,
+  animaCache: animaCaption.form.cache_text_encoder_outputs,
+  blockedCache: blocked.form.cache_text_encoder_outputs,
+  blockedToasts: blocked.toasts.length,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["sdxlRule"]["min"], 32)
+        self.assertEqual(payload["sdxlRule"]["step"], 32)
+        self.assertEqual(payload["animaRule"]["min"], 16)
+        self.assertEqual(payload["sdxlStep"], 32)
+        self.assertEqual(payload["animaStep"], 16)
+        self.assertFalse(payload["sdxlCache"])
+        self.assertFalse(payload["sdxlDiskCache"])
+        self.assertTrue(payload["animaCache"])
+        self.assertFalse(payload["blockedCache"])
+        self.assertEqual(payload["blockedToasts"], 1)
 
 if __name__ == "__main__":
     unittest.main()

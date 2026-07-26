@@ -1579,6 +1579,13 @@ window.trainingCoreMixin = {
     return true;
   },
 
+  _numberConstraints(field) {
+    if (!field) return {};
+    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
+    const group = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
+    return { ...field, ...((field.constraintsByGroup || {})[group] || {}) };
+  },
+
 
   renderField(field) {
     const val = this.form[field.key];
@@ -1591,7 +1598,10 @@ window.trainingCoreMixin = {
     const specificLabel = this.t(descKeyWithSuffix);
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
-    const hint = field.hintKey ? this.t(field.hintKey) : '';
+    const hintKeyWithSuffix = field.hintKey ? field.hintKey + trainTypeSuffix : '';
+    const specificHint = hintKeyWithSuffix ? this.t(hintKeyWithSuffix) : '';
+    const hasSpecificHint = specificHint && specificHint !== hintKeyWithSuffix;
+    const hint = field.hintKey ? (hasSpecificHint ? specificHint : this.t(field.hintKey)) : '';
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide', 'Open guide'))}</span></button>`
       : '';
@@ -1655,8 +1665,10 @@ window.trainingCoreMixin = {
         inputHtml += this._positivePromptCountHint(dataKey);
       }
     } else if (field.type === 'stepper' || field.type === 'number') {
-      const sStep = field.step || 1;
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
+      const constraints = this._numberConstraints(field);
+      const sStep = constraints.step || 1;
+      const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
+      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
       // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
@@ -2886,14 +2898,26 @@ window.trainingCoreMixin = {
     // Enforce min/max bounds on number fields (skip empty/unset — means "disabled")
     const field = this.findFieldDef(key);
     if (field && field.type === 'number') {
+      const constraints = this._numberConstraints(field);
       if (value === '' || value === null || value === undefined) {
         // preserve empty/unset — signals sd-scripts "not used"
       } else {
         const numVal = Number(value);
         if (!isNaN(numVal)) {
-          if (field.min !== undefined && numVal < field.min) value = field.min;
-          if (field.max !== undefined && numVal > field.max) value = field.max;
+          if (constraints.min !== undefined && numVal < constraints.min) value = constraints.min;
+          if (constraints.max !== undefined && numVal > constraints.max) value = constraints.max;
         }
+      }
+    }
+
+    if ((key === 'cache_text_encoder_outputs' || key === 'cache_text_encoder_outputs_to_disk') && value === true) {
+      const hasShuffleConflict = this.form.shuffle_caption === true;
+      const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
+      const hasSdxlDropoutConflict = this.form.model_train_type === 'sdxl-lora' && Number(this.form.caption_dropout_rate || 0) > 0;
+      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict) {
+        this.toast(this.t('field.cache_text_encoder_outputsLocked'), 'warning');
+        this.form[key] = false;
+        return;
       }
     }
 
@@ -2957,6 +2981,15 @@ window.trainingCoreMixin = {
       this.form['network_train_text_encoder_only'] = false;
       _setLRField('text_encoder_lr', '');
     }
+    if (key === 'cache_text_encoder_outputs' && value === false) {
+      this.form['cache_text_encoder_outputs_to_disk'] = false;
+    }
+    if (key === 'cache_text_encoder_outputs_to_disk' && value === true) {
+      this.form['cache_text_encoder_outputs'] = true;
+      this.form['network_train_unet_only'] = true;
+      this.form['network_train_text_encoder_only'] = false;
+      _setLRField('text_encoder_lr', '');
+    }
     // Caption 互斥项开启 → 自动关掉 cache_text_encoder_outputs（连 to_disk 一起关，
     // 否则后端兜底会因 to_disk=true 强制 cache=true 与 shuffle 冲突）。
     // sd-scripts is_text_encoder_output_cacheable() 在 shuffle_caption 或 caption_tag_dropout_rate>0 时返回 false。
@@ -2965,6 +2998,10 @@ window.trainingCoreMixin = {
       this.form['cache_text_encoder_outputs_to_disk'] = false;
     }
     if (key === 'caption_tag_dropout_rate' && Number(value) > 0 && this.form['cache_text_encoder_outputs']) {
+      this.form['cache_text_encoder_outputs'] = false;
+      this.form['cache_text_encoder_outputs_to_disk'] = false;
+    }
+    if (key === 'caption_dropout_rate' && this.form.model_train_type === 'sdxl-lora' && Number(value) > 0 && this.form['cache_text_encoder_outputs']) {
       this.form['cache_text_encoder_outputs'] = false;
       this.form['cache_text_encoder_outputs_to_disk'] = false;
     }
@@ -2981,10 +3018,11 @@ window.trainingCoreMixin = {
   stepField(key, delta) {
     const current = Number(this.form[key]) || 0;
     const field = this.findFieldDef(key);
-    const step = field ? (field.step || 1) : 1;
+    const constraints = this._numberConstraints(field);
+    const step = constraints.step || 1;
     let newVal = current + delta;
-    if (field && field.min !== undefined && newVal < field.min) newVal = field.min;
-    if (field && field.max !== undefined && newVal > field.max) newVal = field.max;
+    if (constraints.min !== undefined && newVal < constraints.min) newVal = constraints.min;
+    if (constraints.max !== undefined && newVal > constraints.max) newVal = constraints.max;
     // Fix floating-point drift (e.g. 0.1 + 0.2 = 0.30000000000000004)
     const decimals = (String(step).split('.')[1] || '').length;
     newVal = Number(newVal.toFixed(decimals));

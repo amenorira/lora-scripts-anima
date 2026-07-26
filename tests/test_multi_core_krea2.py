@@ -154,6 +154,16 @@ class Krea2CodecTests(unittest.TestCase):
                     self.assertEqual(train["timestep_sampling"], sampling)
                     self.assertEqual(train["weighting_scheme"], weighting)
 
+    def test_shift_is_positive_for_shift_and_sigma_sampling(self):
+        for sampling in ("shift", "sigma"):
+            for value in (0, -1, float("nan"), float("inf")):
+                with self.subTest(sampling=sampling, value=value), tempfile.TemporaryDirectory() as temp_dir:
+                    config = krea2_config(Path(temp_dir))
+                    config["timestep_sampling"] = sampling
+                    config["discrete_flow_shift"] = value
+                    errors = validate_krea2_config(config)
+                    self.assertTrue(any("discrete_flow_shift" in error for error in errors), errors)
+
     def test_cache_directory_is_automatically_nested_under_its_dataset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -99,7 +99,9 @@ class AutomagicFieldContractTests(unittest.TestCase):
             messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
             self.assertIn("optimizer_type_Automagic3", messages["opt"])
             self.assertIn("automagic_max_lr", messages["field"])
-            self.assertIn("1e3", messages["field"]["automagic_max_lrHint"])
+            max_lr_hint = messages["field"]["automagic_max_lrHint"]
+            self.assertTrue(any(token in max_lr_hint for token in ("上限", "limit")))
+            self.assertTrue(any(token in max_lr_hint for token in ("溢出", "overflow")))
             self.assertIn("automagic_fusedLocked", messages["field"])
             self.assertIn("automagic_fusedAutoDisabled", messages["field"])
             self.assertIn("{details}", messages["field"]["automagic_fusedAutoDisabled"])

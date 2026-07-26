@@ -1103,6 +1103,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1,
         "section": "performance",
         "desc_key": "field.krea_text_cache_batch_size",
+        "hint_key": "field.krea_text_cache_batch_sizeHint",
         "min": 1,
         "step": 1,
         "advanced": True,
@@ -1860,7 +1861,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         ("max_grad_norm", 0.0),
         ("lr_scheduler_power", 0.01),
     ):
-        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") != "shift":
+        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") not in {"shift", "sigma"}:
             continue
         if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
             continue

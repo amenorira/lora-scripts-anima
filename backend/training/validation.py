@@ -56,7 +56,7 @@ def _validate_resolution(value: Any, train_type: str) -> str | None:
     if len(parts) not in (1, 2) or any(not part.isdigit() for part in parts):
         return "resolution must be one or two positive integers, e.g. 1024,1024 / 分辨率格式应为正整数，如 1024,1024"
     dimensions = [int(part) for part in parts]
-    step = 16 if train_type == "anima-lora" else 64
+    step = 16 if train_type == "anima-lora" else 32
     if any(dimension <= 0 or dimension % step != 0 for dimension in dimensions):
         return f"resolution must use positive multiples of {step} / 分辨率必须为 {step} 的正整数倍"
     return None
@@ -441,6 +441,57 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 errors.append("min_bucket_reso: must not exceed max_bucket_reso / 不能大于最大桶分辨率")
         except (TypeError, ValueError):
             pass
+
+        bucket_step = config.get("bucket_reso_steps", 64)
+        try:
+            bucket_step_number = float(bucket_step)
+        except (TypeError, ValueError):
+            pass
+        else:
+            required_step = 16 if train_type == "anima-lora" else 32
+            if (
+                not math.isfinite(bucket_step_number)
+                or not bucket_step_number.is_integer()
+                or bucket_step_number <= 0
+                or int(bucket_step_number) % required_step != 0
+            ):
+                errors.append(
+                    f"bucket_reso_steps: must be a positive multiple of {required_step} / "
+                    f"必须为 {required_step} 的正整数倍"
+                )
+
+    cache_text_outputs = config.get("cache_text_encoder_outputs") is True or config.get(
+        "cache_text_encoder_outputs_to_disk"
+    ) is True
+    if cache_text_outputs:
+        caption_conflicts: list[str] = []
+        if config.get("shuffle_caption") is True:
+            caption_conflicts.append("shuffle_caption")
+        try:
+            tag_dropout = float(config.get("caption_tag_dropout_rate") or 0)
+        except (TypeError, ValueError):
+            tag_dropout = 0
+        if tag_dropout > 0:
+            caption_conflicts.append("caption_tag_dropout_rate")
+        if train_type == "sdxl-lora":
+            try:
+                caption_dropout = float(config.get("caption_dropout_rate") or 0)
+            except (TypeError, ValueError):
+                caption_dropout = 0
+            if caption_dropout > 0:
+                caption_conflicts.append("caption_dropout_rate")
+        if caption_conflicts:
+            errors.append(
+                "cache_text_encoder_outputs: incompatible with "
+                + ", ".join(caption_conflicts)
+                + " / 文本编码器缓存与这些 Caption 选项不兼容"
+            )
+
+    if config.get("network_module") == "lycoris.kohya" and str(config.get("lycoris_algo", "")).lower() == "dylora":
+        block_size = config.get("block_size", 4)
+        network_dim = config.get("network_dim")
+        if isinstance(block_size, int) and block_size > 0 and isinstance(network_dim, int) and network_dim % block_size != 0:
+            errors.append("block_size: must divide network_dim / 必须能整除 network_dim")
 
     weights = config.get("base_weights")
     multipliers = config.get("base_weights_multiplier")

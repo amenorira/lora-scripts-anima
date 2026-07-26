@@ -141,7 +141,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "bucket_no_upscale", "type": "toggle", "default": True, "section": "model", "desc_key": "field.bucket_no_upscale", "target": "toml", "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
-{"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
+{"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "constraints_by_group": {"sdxl": {"min": 32, "step": 32}, "anima": {"min": 16, "step": 16}}, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "target": "toml", "group": "sdxl"},
 # ── Network ──
 # 通用基础参数在前（对所有 module 生效）；network_module 作为"算法开关"置于其后。
@@ -197,7 +197,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "full_matrix", "type": "toggle", "default": False, "section": "network", "desc_key": "field.full_matrix", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
     {"key": "train_norm", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_norm", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya", "omit_default": True},
     {"key": "dora_wd", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dora_wd", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.dora_wdHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
-    {"key": "block_size", "type": "number", "default": 4, "section": "network", "desc_key": "field.block_size", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "dylora"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
+    {"key": "block_size", "type": "number", "default": 4, "section": "network", "desc_key": "field.block_size", "hint_key": "field.block_sizeHint", "target": "ui", "min": 1, "step": 1, "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "dylora"}], "advanced": True, "sub_group": "kohya", "omit_default": True},
     {"key": "constraint", "type": "number", "default": 0, "step": 0.1, "section": "network", "desc_key": "field.constraint", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "hint_key": "field.constraintHint", "advanced": True, "sub_group": "kohya", "omit_default": True},
     {"key": "rescaled", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rescaled", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "advanced": True, "sub_group": "kohya", "omit_default": True},
     {"key": "bypass_mode", "type": "toggle", "default": False, "section": "network", "desc_key": "field.bypass_mode", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "advanced": True, "sub_group": "kohya", "omit_default": True},
@@ -317,10 +317,10 @@ FIELDS: list[dict[str, Any]] = [
 # 在 shuffle_caption / caption_tag_dropout_rate>0 时返回 false → anima_train_network.py assert 失败）。
 # 双重保护：前端 setField 联动自动关 cache（caption 互斥项激活时）+ readonly_if_any 锁定防用户回开
 # （任一互斥项激活期间 cache 开关灰显，光自动关不够，用户还能手动再开回 true）。
-{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
+{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
 # to_disk 联动 cache=true 已由 sd-scripts 后端兜底（anima_train_network.py:56-58），前端 auto_value 规则
 # 曾经 watch 自身导致用户把 to_disk 切回 false 时把 cache 复位为 default=True（switchTrainType 后被偷开），删除。
-{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml"},
+{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "target": "toml", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
@@ -447,6 +447,7 @@ _FIELD_KEY_MAP = {
     "sub_group": "subGroup",
     "doc_slug": "docSlug",
     "doc_anchor": "docAnchor",
+    "constraints_by_group": "constraintsByGroup",
 }
 
 
