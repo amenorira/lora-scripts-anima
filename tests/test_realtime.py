@@ -236,6 +236,166 @@ class RealtimeFrontendContractTests(unittest.TestCase):
         self.assertIn("this._monitorRealtimeDetailGeneration++;", self.monitor_source)
         self.assertIn("void this.refreshMonitorRealtimeDetail();", self.monitor_source)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend cursor checks")
+    def test_monitor_detail_snapshot_does_not_skip_queued_task_replay(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/realtime.js', 'utf8'));
+const app = Object.assign({}, window.realtimeMixin, {
+  _realtimeCursors: {'task:train-1': 10, server: 3},
+  _realtimeTopics: new Set(['server', 'task:train-1']),
+});
+app._applyRealtimeSnapshotCursors(
+  {'task:train-1': 40, server: 8, hardware: 7},
+  {preserveSubscribedCursors: true},
+);
+process.stdout.write(JSON.stringify(app._realtimeCursors));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        cursors = json.loads(result.stdout)
+
+        self.assertEqual(cursors["task:train-1"], 10)
+        self.assertEqual(cursors["server"], 3)
+        self.assertEqual(cursors["hardware"], 7)
+        self.assertIn("preserveSubscribedCursors: true", self.monitor_source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_same_task_reuses_log_page_but_transport_resync_forces_reload(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+const app = Object.assign(Object.create(mixin), {
+  selectedRunDir: null,
+  realtimeTaskStateUnknown: false,
+  _logFullSourceKey: 'task:train-1',
+  _logFullLoaded: true,
+  _logFullNeedsResync: false,
+  logFullLines: ['old-page'],
+  logFullOffset: 0,
+  logFullTotal: 1,
+  logFullMatches: [],
+  previews: [],
+  previewStep: 0,
+  lossSeries: [],
+  trainParams: [],
+  monitorData: {},
+  currentRoute: 'settings',
+  _outputFilesRunDir: '',
+  t: (_key, fallback) => fallback,
+  handleRealtimeHardware: () => {},
+  _followLatestPreview: () => {},
+  _setMonitorRealtimeTask: () => {},
+});
+const snapshot = {
+  tasks: {managed: [{id: 'train-1', status: 'RUNNING'}]},
+  monitor: {
+    detail: true,
+    state: 'RUNNING',
+    active_task: {id: 'train-1', status: 'RUNNING'},
+    log_lines: ['disk-tail'],
+  },
+};
+app.applyRealtimeMonitorSnapshot(snapshot);
+const reused = {
+  lines: app.logFullLines.slice(),
+  needsResync: app._logFullNeedsResync,
+};
+app._monitorRealtimeTopic = 'task:train-1';
+app.handleRealtimeResyncRequired(['task:train-1']);
+process.stdout.write(JSON.stringify({reused, afterResync: app._logFullNeedsResync}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["reused"]["lines"], ["old-page"])
+        self.assertFalse(state["reused"]["needsResync"])
+        self.assertTrue(state["afterResync"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_new_task_discards_previous_full_log_buffer(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+const app = Object.assign(Object.create(mixin), {
+  selectedRunDir: null,
+  realtimeTaskStateUnknown: false,
+  _logFullSourceKey: 'task:train-1',
+  _logFullLoaded: true,
+  _logFullNeedsResync: false,
+  _logSliceRequestSeq: 0,
+  logFullLines: ['old-task'],
+  logFullOffset: 0,
+  logFullTotal: 1,
+  logFullMatches: [0],
+  logFullMatchIdx: 0,
+  previews: [],
+  previewStep: 0,
+  lossSeries: [],
+  trainParams: [],
+  monitorData: {},
+  currentRoute: 'settings',
+  _outputFilesRunDir: '',
+  t: (_key, fallback) => fallback,
+  handleRealtimeHardware: () => {},
+  _followLatestPreview: () => {},
+  _setMonitorRealtimeTask: () => {},
+});
+app.applyRealtimeMonitorSnapshot({
+  tasks: {managed: [{id: 'train-2', status: 'RUNNING'}]},
+  monitor: {
+    detail: true,
+    state: 'RUNNING',
+    active_task: {id: 'train-2', status: 'RUNNING'},
+    log_lines: ['new-task-tail'],
+  },
+});
+process.stdout.write(JSON.stringify({
+  source: app._logFullSourceKey,
+  lines: app.logFullLines,
+  total: app.logFullTotal,
+  loaded: app._logFullLoaded,
+  needsResync: app._logFullNeedsResync,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["source"], "task:train-2")
+        self.assertEqual(state["lines"], [])
+        self.assertEqual(state["total"], 0)
+        self.assertFalse(state["loaded"])
+        self.assertTrue(state["needsResync"])
+
+    def test_leaving_tail_mode_requires_a_fresh_full_log_page(self):
+        stop_body = self.monitor_source.split("stopMonitorRealtime() {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("const wasTailMode = this.logMode === 'tail';", stop_body)
+        self.assertIn("this._logFullLoaded = false;", stop_body)
+        self.assertIn("this._logFullNeedsResync = true;", stop_body)
+
     def test_realtime_uses_two_second_freshness_and_no_sse_or_progress_polling(self):
         combined = "\n".join((
             self.client_source,

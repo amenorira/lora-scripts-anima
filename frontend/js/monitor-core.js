@@ -42,6 +42,7 @@ window.monitorCoreMixin = {
   _logFullSlide: false,        // full 模式实时增量 slide 待执行
   _logFullEvictK: 0,           // full 模式 slide 删顶行数
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
+  _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
 
   // ── 历史页筛选状态 ──
@@ -257,6 +258,14 @@ window.monitorCoreMixin = {
     else if (event.type === 'task.result') this._refreshRealtimeSnapshot(this.realtimeInstanceId);
   },
 
+  handleRealtimeResyncRequired(topics) {
+    if (this.selectedRunDir) return;
+    const currentTopic = this._monitorRealtimeTopic;
+    if (!Array.isArray(topics) || topics.length === 0 || (currentTopic && topics.includes(currentTopic))) {
+      this._logFullNeedsResync = true;
+    }
+  },
+
   applyRealtimeMonitorSnapshot(snapshot) {
     const hardware = snapshot && snapshot.hardware;
     if (hardware) this.handleRealtimeHardware(hardware);
@@ -269,6 +278,28 @@ window.monitorCoreMixin = {
     const taskWasLostOnRestart = this.realtimeTaskStateUnknown && !active;
     const next = Object.assign({}, monitor);
     const hasMonitorDetail = next.detail === true || taskWasLostOnRestart;
+    const snapshotTaskId = next.active_task && next.active_task.id || active && active.id || '';
+    const nextLogSourceKey = snapshotTaskId ? 'task:' + snapshotTaskId : '';
+    const reusingFullLog = !!(
+      nextLogSourceKey
+      && this._logFullSourceKey === nextLogSourceKey
+      && this._logFullLoaded
+      && this.logFullLines.length
+    );
+
+    if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
+      this._logSliceRequestSeq++;
+      this.logFullLines = [];
+      this.logFullOffset = 0;
+      this.logFullTotal = 0;
+      this.logFullMatches = [];
+      this.logFullMatchIdx = -1;
+      this._logFullLoaded = false;
+      this._logFullNeedsResync = false;
+      this._logFullSlide = false;
+      this._logFullEvictK = 0;
+    }
+    if (nextLogSourceKey) this._logFullSourceKey = nextLogSourceKey;
 
     if (taskWasLostOnRestart) {
       // A fresh backend has no in-memory ownership of the old process. Do not
@@ -292,7 +323,7 @@ window.monitorCoreMixin = {
       this.logLines = Array.isArray(next.log_lines) ? next.log_lines.slice(-this._logCap()) : [];
       this._logContentVersion++;
       this._logDirty = true;
-      this._logFullNeedsResync = true;
+      this._logFullNeedsResync = this._logFullNeedsResync || !reusingFullLog;
       const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
       this.previews = Array.isArray(next.previews) ? next.previews : [];
       this._followLatestPreview(wasAtEnd);
@@ -350,6 +381,7 @@ window.monitorCoreMixin = {
     this.logFullOffset = 0;
     this.logFullTotal = 0;
     this.logFullMatches = [];
+    this._logFullSourceKey = '';
     this.trainParams = [];
     this.previews = [];
     this.previewStep = 0;
@@ -433,6 +465,19 @@ window.monitorCoreMixin = {
     if (!data || !data.data || this.selectedRunDir) return;
     const logData = data.data;
     const newLines = logData.lines || [];
+    const eventSourceKey = this._monitorRealtimeTopic || '';
+
+    if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
+      this._logSliceRequestSeq++;
+      this.logFullLines = [];
+      this.logFullOffset = 0;
+      this.logFullTotal = 0;
+      this.logFullMatches = [];
+      this.logFullMatchIdx = -1;
+      this._logFullLoaded = false;
+      this._logFullNeedsResync = true;
+    }
+    if (eventSourceKey) this._logFullSourceKey = eventSourceKey;
 
     if (newLines.length === 0) return;
 
@@ -601,10 +646,9 @@ window.monitorCoreMixin = {
     this.realtimeSubscribe('hardware');
     if (this.realtimeSnapshot) {
       this.applyRealtimeMonitorSnapshot(this.realtimeSnapshot);
-      // Even a previously complete detail snapshot can be stale after the
-      // user spent time elsewhere. The dashboard always rebuilds its
-      // disk-backed details on entry; the initial compact bootstrap remains
-      // what controls the global connected indicator.
+      // Curves, progress and artifacts are refreshed from disk on entry. A
+      // complete log page for the same task stays in memory so queued replay
+      // can fill the page-switch gap without a later HTTP response replacing it.
       void this.refreshMonitorRealtimeDetail();
     }
     else {
@@ -620,6 +664,7 @@ window.monitorCoreMixin = {
     await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
       monitorDetail: true,
       monitorDetailGeneration: generation,
+      preserveSubscribedCursors: true,
     });
     if (this.currentRoute !== 'monitor-dashboard' || generation !== this._monitorRealtimeDetailGeneration) return;
     // If this call joined a compact bootstrap already in flight, issue one
@@ -633,12 +678,14 @@ window.monitorCoreMixin = {
         await this._refreshRealtimeSnapshot(this.realtimeInstanceId, currentSocket, {
           monitorDetail: true,
           monitorDetailGeneration: generation,
+          preserveSubscribedCursors: true,
         });
       }
     }
   },
   stopMonitorRealtime() {
     // Invalidate a detail request that is still fetching disk-backed data.
+    const wasTailMode = this.logMode === 'tail';
     this._monitorRealtimeDetailGeneration++;
     this.realtimeUnsubscribe('hardware');
     this._setMonitorRealtimeTask(null);
@@ -651,8 +698,12 @@ window.monitorCoreMixin = {
     this._logTrimK = 0;
     this._logChunking = false;
     this.logMode = 'full';
-    this._logFullLoaded = false;
-    this._logFullNeedsResync = false;
+    if (wasTailMode) {
+      // Tail mode does not keep the paged full-log buffer current. Returning
+      // in full mode must therefore rebuild from disk instead of reusing it.
+      this._logFullLoaded = false;
+      this._logFullNeedsResync = true;
+    }
     this._logFullSlide = false;
     this._logFullEvictK = 0;
     this._cancelPreviewMediaQueue();
@@ -685,8 +736,14 @@ window.monitorCoreMixin = {
     if (this.runningTask) return this.runningTask.id || null;
     return this.taskId || null;
   },
+  _currentLogSourceKey() {
+    const runDir = this._logSliceRunDir();
+    if (runDir) return 'run:' + runDir;
+    const taskId = this._logSliceTaskId();
+    return taskId ? 'task:' + taskId : '';
+  },
   /** 是否存在可拉取的实时/历史日志源（无训练且非历史模式时为 false） */
-  _hasLogSource() { return !!(this._logSliceRunDir() || this._logSliceTaskId()); },
+  _hasLogSource() { return !!this._currentLogSourceKey(); },
 
   /** 切换 tail/full 模式 */
   async setLogMode(mode) {
@@ -803,6 +860,7 @@ window.monitorCoreMixin = {
         this.logFullLines = nextLines;
         this.logFullMatches = nextMatches;
         this.logFullQuery = q;
+        this._logFullSourceKey = sourceKey;
         // 更新 logTotal（live 模式首次探得）
         if (!this.selectedRunDir) this.logTotal = d.total;
         if (opts._matchIdx !== undefined) {
@@ -991,6 +1049,7 @@ window.monitorCoreMixin = {
     this.logFullQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
+    this._logFullSourceKey = 'run:' + runDir;
     this._logContentVersion++;
     this._logDirty = true;
     this.selectedRunDir = runDir;
@@ -1088,6 +1147,7 @@ window.monitorCoreMixin = {
     this._logFullNeedsResync = false;
     this._logFullSlide = false;
     this._logFullEvictK = 0;
+    this._logFullSourceKey = '';
     this.logTotal = 0;
     this._logContentVersion++;
   },

@@ -291,6 +291,9 @@ window.realtimeMixin = {
       this._handleRealtimeServerRestart();
     }
     const topics = Array.isArray(message && message.topics) ? message.topics : [];
+    if (typeof this.handleRealtimeResyncRequired === 'function') {
+      this.handleRealtimeResyncRequired(topics);
+    }
     if (!this._realtimeCursors) this._realtimeCursors = {};
     if (topics.length) topics.forEach(topic => delete this._realtimeCursors[topic]);
     else this._realtimeCursors = {};
@@ -342,14 +345,7 @@ window.realtimeMixin = {
         this.realtimeSnapshot = snapshot;
         this.realtimeInstanceId = nextId || this.realtimeInstanceId;
         this._saveRealtimeInstanceId();
-        if (!this._realtimeCursors) this._realtimeCursors = {};
-        const snapshotCursors = snapshot.cursors || {};
-        for (const [topic, seq] of Object.entries(snapshotCursors)) {
-          const numericSeq = Number(seq) || 0;
-          if (numericSeq > Number(this._realtimeCursors[topic] || 0)) {
-            this._realtimeCursors[topic] = numericSeq;
-          }
-        }
+        this._applyRealtimeSnapshotCursors(snapshot.cursors || {}, options);
         this._saveRealtimeCursors();
         // A dashboard-only detail request may finish after the user leaves
         // that page. Keep the current transport snapshot/cursors, but never
@@ -375,6 +371,24 @@ window.realtimeMixin = {
       }
     })();
     return this._realtimeSnapshotPromise;
+  },
+
+  _applyRealtimeSnapshotCursors(snapshotCursors, options) {
+    if (!this._realtimeCursors) this._realtimeCursors = {};
+    const preserveSubscribed = !!(options && options.preserveSubscribedCursors);
+    const subscribed = this._realtimeTopics || new Set();
+    for (const [topic, seq] of Object.entries(snapshotCursors || {})) {
+      // A dashboard detail snapshot is fetched while task replay is already
+      // queued on the WebSocket. Advancing that subscribed topic here would
+      // make the inbound handler discard the queued gap as `seq <= last`.
+      // Let WebSocket events advance live cursors; the snapshot may still seed
+      // topics that are not currently subscribed.
+      if (preserveSubscribed && subscribed.has(topic)) continue;
+      const numericSeq = Number(seq) || 0;
+      if (numericSeq > Number(this._realtimeCursors[topic] || 0)) {
+        this._realtimeCursors[topic] = numericSeq;
+      }
+    }
   },
 
   _applyRealtimeSnapshot(snapshot, options) {
