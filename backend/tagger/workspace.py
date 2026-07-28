@@ -255,6 +255,20 @@ def _normalize_tags(tags: list[str]) -> list[str]:
     return result
 
 
+def _format_output_tags(tags: list[str], *, replace_underscore: bool, escape_tag: bool) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        value = tag.replace("_", " ") if replace_underscore else tag
+        if escape_tag:
+            value = value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
 def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
@@ -299,7 +313,12 @@ def _llm_tags(model_id: str, image: Image.Image, options: dict,
     excluded = set(_normalize_tags(split_str(str(options.get("exclude_tags", "")))))
     normalized = [tag for tag in normalized if tag not in excluded]
     additional = _normalize_tags(split_str(str(options.get("additional_tags", ""))))
-    return _normalize_tags([*additional, *normalized]), {}
+    merged = _normalize_tags([*additional, *normalized])
+    return _format_output_tags(
+        merged,
+        replace_underscore=bool(options.get("replace_underscore", True)),
+        escape_tag=bool(options.get("escape_tag", True)),
+    ), {}
 
 
 def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True) -> str:

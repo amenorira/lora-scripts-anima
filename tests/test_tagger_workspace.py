@@ -313,6 +313,41 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(postprocess.call_args.args[3], thresholds)
         self.assertEqual(set(raw), {"general", "character", "rating", "model"})
 
+    def test_llm_output_applies_shared_tag_formatting_after_filtering(self):
+        from backend.tagger.llama_runtime import llama_runtime
+
+        raw = ["Looking_At_Viewer", "smile_(expression)", "pose_(dynamic)", "blue_hair", "blue hair"]
+        with patch.object(llama_runtime, "infer_tags", return_value=raw):
+            tags, categories = workspace._llm_tags(
+                "qwen3.5-4b-ud-q4",
+                Image.new("RGB", (16, 16)),
+                {
+                    "additional_tags": "best_quality, looking_at_viewer",
+                    "exclude_tags": "smile_(expression)",
+                    "replace_underscore": True,
+                    "escape_tag": True,
+                },
+            )
+
+        self.assertEqual(tags, ["best quality", "looking at viewer", "pose \\(dynamic\\)", "blue hair"])
+        self.assertEqual(categories, {})
+
+    def test_llm_output_preserves_raw_tag_syntax_when_formatting_is_disabled(self):
+        from backend.tagger.llama_runtime import llama_runtime
+
+        with patch.object(
+            llama_runtime,
+            "infer_tags",
+            return_value=["looking_at_viewer", "smile_(expression)"],
+        ):
+            tags, _ = workspace._llm_tags(
+                "qwen3.5-4b-ud-q4",
+                Image.new("RGB", (16, 16)),
+                {"replace_underscore": False, "escape_tag": False},
+            )
+
+        self.assertEqual(tags, ["looking_at_viewer", "smile_(expression)"])
+
     def test_append_caption_respects_remove_duplicated_option(self):
         with tempfile.TemporaryDirectory() as temporary:
             image_path = Path(temporary) / "sample.png"
@@ -415,6 +450,8 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("['concise'", tagger_js)
         self.assertIn("taggerSettings.replaceUnderscore", template)
         self.assertIn("taggerSettings.escapeTag", template)
+        self.assertNotIn('label x-show="!taggerIsLlm()"><span><b x-text="t(\'tagger.replaceUnderscore\')', template)
+        self.assertNotIn('label x-show="!taggerIsLlm()"><span><b x-text="t(\'tagger.escapeTag\')', template)
         self.assertIn("taggerSettings.removeDuplicated", template)
         self.assertIn("taggerSettings.addRatingTag", template)
         self.assertIn("taggerSettings.addModelTag", template)
