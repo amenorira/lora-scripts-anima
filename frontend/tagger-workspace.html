@@ -1,0 +1,186 @@
+<svg class="tagger-ui-sprite" aria-hidden="true">
+  <symbol id="ti-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3z"/><path d="M3 6v12"/></symbol>
+  <symbol id="ti-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+  <symbol id="ti-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
+  <symbol id="ti-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol>
+  <symbol id="ti-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="ti-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="ti-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="ti-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5l2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="ti-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+  <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="ti-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="ti-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+</svg>
+
+<section class="tagger-page-shell">
+  <header class="page-header tagger-page-header">
+    <div class="monitor-page-heading">
+      <h1 class="page-title" x-text="t('tagger.title', 'Tagger')"></h1>
+      <span class="monitor-page-kicker" x-text="t('tagger.subtitle', 'Automatically tag images with local models')"></span>
+    </div>
+    <div id="taggerResbar" class="monitor-resbar tagger-page-resbar"></div>
+  </header>
+
+  <nav class="tagger-mode-tabs" :aria-label="t('tagger.sourceType', 'Source type')">
+    <button :class="{ active: taggerSourceMode === 'folder' }" @click="selectTaggerSourceMode('folder')" x-text="t('tagger.batchMode', 'Batch mode')"></button>
+    <button :class="{ active: taggerSourceMode === 'single' }" @click="selectTaggerSourceMode('single')" x-text="t('tagger.singleMode', 'Single image')"></button>
+  </nav>
+
+  <div class="tagger-training-notice" x-show="trainingActive">
+    <span x-text="t('tagger.trainingBlocked', 'Training is using the GPU. Tagger is unavailable.')"></span>
+    <button @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor', 'Open monitor')"></span><svg><use href="#ti-external"></use></svg></button>
+  </div>
+
+  <template x-if="taggerSourceMode === 'folder'">
+    <div class="tagger-batch-layout">
+      <main class="tagger-form-column">
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.basicSettings', 'Basic settings')"></h2>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <div class="tagger-field-info"><label x-text="t('tagger.imageDir', 'Image folder')"></label><p x-text="t('tagger.imageDirDesc', 'Folder containing images to tag')"></p></div>
+            <div class="tagger-path-control">
+              <input type="text" x-model="taggerSourcePath" @keydown.enter="scanTaggerSource()" :placeholder="t('tagger.sourcePath', 'Select an image folder')">
+              <button type="button" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.model', 'Tagger model')"></label><p x-text="t('tagger.modelDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-model-select" x-data="animaSelect(() => taggerModelSelectConfig(), taggerSelectedModel)" @click.outside="closeOnOutside()" @anima-select-change="taggerSelectedModel = $event.detail.value; handleTaggerModelChange(true)">
+                <input type="hidden" x-ref="modelInput" :value="taggerSelectedModel">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="group in displayGroups" :key="group.label"><div class="anima-select-group"><div class="anima-select-group-label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></template></div></div></template>
+              </div>
+              <div class="tagger-model-meta"><span x-text="taggerModel()?.engine === 'llama' ? 'Qwen3-VL / llama.cpp / CUDA' : 'ONNX Runtime / CUDA'"></span><span x-text="taggerModel()?.installed ? t('tagger.installed', 'Installed') : t('tagger.downloadRequired', 'Download required')"></span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="taggerIsLlm() ? t('tagger.qwenSettings', 'Qwen settings') : t('tagger.modelSettings', 'Model settings')"></h2>
+          <div class="tagger-section-note" x-text="taggerIsLlm() ? t('tagger.qwenSettingsDesc') : t('tagger.onnxSettingsDesc')"></div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.preset', 'Inference preset')"></label><p x-text="taggerIsLlm() ? t('tagger.qwenPresetDesc') : t('tagger.presetHelp')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerPreset($event.detail.value)">
+                <input type="hidden" x-ref="modelInput" :value="taggerSettings.preset">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field" x-show="!taggerIsLlm() && !taggerUsesCategoryThresholds()">
+            <div class="tagger-field-info"><label x-text="t('tagger.threshold')"></label><p x-text="t('tagger.thresholdDesc')"></p></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+          </div>
+          <div class="tagger-form-field" x-show="!taggerIsLlm() && !taggerUsesCategoryThresholds()">
+            <div class="tagger-field-info"><label x-text="t('tagger.characterThreshold')"></label><p x-text="t('tagger.characterThresholdDesc')"></p></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.max(0, Number(taggerSettings.characterThreshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" min="0" max="1" step="0.01" x-model.number="taggerSettings.characterThreshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.min(1, Number(taggerSettings.characterThreshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+          </div>
+          <div class="tagger-form-field" x-show="taggerIsLlm()">
+            <div class="tagger-field-info"><label x-text="t('tagger.maxTags')"></label><p x-text="t('tagger.maxTagsDesc')"></p></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.maxTags = Math.max(10, Number(taggerSettings.maxTags) - 5); setTaggerCustomPreset()">&minus;</button><input type="number" min="10" max="160" step="5" x-model.number="taggerSettings.maxTags" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.maxTags = Math.min(160, Number(taggerSettings.maxTags) + 5); setTaggerCustomPreset()">+</button></div></div>
+          </div>
+          <div class="tagger-form-field" x-show="taggerIsLlm()">
+            <div class="tagger-field-info"><label x-text="t('tagger.lowVram')"></label><p x-text="t('tagger.lowVramDesc')"></p></div>
+            <div class="tagger-field-control"><label class="toggle"><input type="checkbox" x-model="taggerSettings.lowVram" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+          </div>
+          <div class="tagger-vram-guidance" x-show="taggerIsLlm()"><span x-text="taggerVramSummary()"></span></div>
+          <p class="tagger-vram-warning" x-show="taggerVramLimited()" x-text="t('tagger.vramLimited')"></p>
+
+          <div class="tagger-category-customize" x-show="taggerUsesCategoryThresholds()"><div><b x-text="t('tagger.categoryThresholds')"></b><small x-text="t('tagger.categoryThresholdsDesc')"></small></div><label><span x-text="t('tagger.adjustSeparately')"></span><span class="toggle"><input type="checkbox" :checked="taggerThresholdsOpen" @change="taggerThresholdsOpen = $event.target.checked"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label></div>
+          <div class="tagger-category-settings" x-show="taggerUsesCategoryThresholds() && taggerThresholdsOpen">
+            <template x-for="key in taggerCategoryKeys()" :key="key"><div class="tagger-category-field" :class="{ disabled: taggerSettings.categoryEnabled[key] === false }"><label class="tagger-category-enable"><input type="checkbox" x-model="taggerSettings.categoryEnabled[key]" @change="toggleTaggerCategorySetting(key)"><span x-text="taggerCategoryLabel(key)"></span></label><div class="tagger-category-controls"><div class="stepper tagger-field-stepper"><button type="button" @click="adjustTaggerCategoryThreshold(key, -0.01)" :disabled="taggerSettings.categoryEnabled[key] === false">&minus;</button><input type="number" min="0" max="1" step="0.001" x-model.number="taggerSettings.categoryThresholds[key]" @change="updateTaggerCategorySetting(key)" :disabled="taggerSettings.categoryEnabled[key] === false"><button type="button" @click="adjustTaggerCategoryThreshold(key, 0.01)" :disabled="taggerSettings.categoryEnabled[key] === false">+</button></div></div></div></template>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.outputOptions', 'Output options')"></h2>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.conflictAction')"></label><p x-text="t('tagger.conflictActionDesc')"></p></div>
+            <div class="tagger-field-control"><div class="anima-select tagger-conflict-select" x-data="animaSelect(() => taggerConflictSelectConfig(), taggerSettings.conflict)" x-effect="value = taggerSettings.conflict" @click.outside="closeOnOutside()" @anima-select-change="taggerSettings.conflict = $event.detail.value; saveTaggerSettings()"><input type="hidden" x-ref="modelInput" :value="taggerSettings.conflict"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.conflict; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template></div></div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.additionalTags')"></label><p x-text="t('tagger.additionalTagsDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerSettings.additionalTags" @change="saveTaggerSettings()" placeholder="1girl, solo"></div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.excludeTags')"></label><p x-text="t('tagger.excludeTagsDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerSettings.excludeTags" @change="saveTaggerSettings()" placeholder="watermark, text"></div>
+          </div>
+          <div class="tagger-option-grid">
+            <label><span><b x-text="t('tagger.recursive')"></b><small x-text="t('tagger.recursiveDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.recursive" @change="saveTaggerSettings(); scanTaggerSource()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label x-show="!taggerIsLlm()"><span><b x-text="t('tagger.replaceUnderscore')"></b><small x-text="t('tagger.replaceUnderscoreDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.replaceUnderscore" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label x-show="!taggerIsLlm()"><span><b x-text="t('tagger.escapeTag')"></b><small x-text="t('tagger.escapeTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.escapeTag" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label x-show="!taggerIsLlm()"><span><b x-text="t('tagger.removeDuplicated')"></b><small x-text="t('tagger.removeDuplicatedDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.removeDuplicated" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label x-show="!taggerIsLlm()"><span><b x-text="t('tagger.addRatingTag')"></b><small x-text="t('tagger.addRatingTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.addRatingTag" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label x-show="!taggerIsLlm()"><span><b x-text="t('tagger.addModelTag')"></b><small x-text="t('tagger.addModelTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.addModelTag" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+          </div>
+        </section>
+
+      </main>
+
+      <aside class="tagger-action-panel">
+        <h2 x-text="t('tagger.batchMode')"></h2>
+        <div class="tagger-action-source" :class="{ ready: taggerSource?.total }"><svg><use href="#ti-folder"></use></svg><div><strong x-text="taggerSource?.total ? (taggerSource.total + ' ' + t('tagger.images')) : t('tagger.noSource')"></strong><span x-text="taggerSource?.path || t('tagger.imageDirDesc')"></span></div></div>
+        <div class="tagger-source-summary" x-show="taggerSource"><span><strong x-text="taggerSource?.total || 0"></strong><small x-text="t('tagger.images')"></small></span><span><strong x-text="taggerSource?.directories || 0"></strong><small x-text="t('tagger.folders')"></small></span><span><strong x-text="taggerSource?.with_caption || 0"></strong><small x-text="t('tagger.captions')"></small></span></div>
+        <button class="tagger-start-button" x-show="!taggerRunning" @click="startTagger()" :disabled="!taggerCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
+        <button class="tagger-stop-button" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>
+        <div class="tagger-task-status" x-show="taggerTask">
+          <div class="tagger-task-title"><i :class="taggerTask?.status || 'idle'"></i><strong x-text="taggerPhaseLabel()"></strong><span x-text="(taggerTask?.current || 0) + ' / ' + (taggerTask?.total || taggerSource?.total || 0)"></span></div>
+          <div class="tagger-progress-track"><i :style="'width:' + taggerProgressPercent() + '%'"></i></div>
+          <div class="tagger-task-file" x-text="taggerTask?.current_file || ''"></div>
+          <dl><div><dt x-text="t('tagger.speed')"></dt><dd x-text="taggerTask?.speed ? taggerTask.speed + ' img/s' : '--'"></dd></div><div><dt>ETA</dt><dd x-text="formatTaggerEta(taggerTask?.eta_seconds)"></dd></div><div><dt x-text="t('tagger.success')"></dt><dd class="success" x-text="taggerTask?.success || 0"></dd></div><div><dt x-text="t('tagger.skipped')"></dt><dd class="skipped" x-text="taggerTask?.skipped || 0"></dd></div><div><dt x-text="t('tagger.failed')"></dt><dd class="failed" x-text="taggerTask?.failed || 0"></dd></div></dl>
+        </div>
+        <button class="tagger-secondary-button" x-show="taggerTask?.failed" @click="retryFailedTagger()"><svg><use href="#ti-retry"></use></svg><span x-text="t('tagger.retryFailed')"></span></button>
+        <button class="tagger-secondary-button" x-show="taggerTask?.status === 'done' && taggerSource?.kind === 'folder'" @click="openTaggerDatasetInEditor()"><span x-text="t('tagger.openTagEditor')"></span><svg><use href="#ti-external"></use></svg></button>
+        <section class="tagger-action-log">
+          <header><div><strong x-text="t('tagger.logTitle', 'Tagger log')"></strong><span class="tagger-log-phase" :class="{ running: taggerRunning }" x-text="taggerTask ? taggerPhaseLabel() : t('tagger.phase.ready')"></span></div><button x-show="taggerTask?.logs?.length" @click="taggerLogsOpen = !taggerLogsOpen" x-text="taggerLogsOpen ? t('common.collapse', 'Collapse') : t('common.expand', 'Expand')"></button></header>
+          <div class="tagger-error-summary" x-show="taggerTask?.error_detail"><strong x-text="t('tagger.error')"></strong><span x-text="taggerTask?.error_detail"></span></div>
+          <div class="tagger-log-stream" x-effect="taggerTask?.logs?.length; $nextTick(() => { $el.scrollTop = $el.scrollHeight })"><template x-for="(line, index) in taggerVisibleLogs()" :key="index + ':' + line"><div class="tagger-log-line" :class="taggerLogTone(line)"><time class="tagger-log-time" x-text="taggerLogTime(line)"></time><code class="tagger-log-message" x-text="taggerLogMessage(line)"></code></div></template><div class="tagger-log-empty" x-show="!taggerTask?.logs?.length" x-text="t('tagger.logsEmpty')"></div></div>
+        </section>
+      </aside>
+    </div>
+  </template>
+
+  <template x-if="taggerSourceMode === 'single'">
+    <div class="tagger-single-layout">
+      <main class="tagger-single-preview" :class="{ light: taggerPreviewLight, 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
+        <div class="tagger-preview-toolbar"><span x-text="taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="taggerPreviewActual = !taggerPreviewActual" :class="{ active: taggerPreviewActual }" :title="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button><button x-show="taggerSource" @click="taggerPreviewLight = !taggerPreviewLight" :title="t('tagger.previewBackground')"><svg><use href="#ti-sun"></use></svg></button></div>
+        <button class="tagger-drop-zone" x-show="!taggerSource" @click="pickTaggerSource()"><svg><use href="#ti-image"></use></svg><strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span></button>
+        <div class="tagger-preview-image" x-show="taggerSource"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :class="{ actual: taggerPreviewActual }" :alt="t('tagger.preview')"></div>
+      </main>
+
+      <aside class="tagger-single-sidebar">
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.basicSettings')"></h2>
+          <div class="tagger-form-field tagger-form-field-stacked"><div class="tagger-field-info"><label x-text="t('tagger.model')"></label><p x-text="t('tagger.modelDesc')"></p></div><div class="tagger-field-control">
+            <div class="anima-select tagger-model-select" x-data="animaSelect(() => taggerModelSelectConfig(), taggerSelectedModel)" @click.outside="closeOnOutside()" @anima-select-change="taggerSelectedModel = $event.detail.value; handleTaggerModelChange(true)"><input type="hidden" x-ref="modelInput" :value="taggerSelectedModel"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="group in displayGroups" :key="group.label"><div class="anima-select-group"><div class="anima-select-group-label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></template></div></div></template></div>
+          </div></div>
+          <div class="tagger-form-field"><div class="tagger-field-info"><label x-text="t('tagger.preset')"></label><p x-text="taggerIsLlm() ? t('tagger.qwenPresetDesc') : t('tagger.presetHelp')"></p></div><div class="tagger-field-control"><div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerPreset($event.detail.value)"><input type="hidden" x-ref="modelInput" :value="taggerSettings.preset"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template></div></div></div>
+          <div class="tagger-form-field" x-show="taggerIsLlm()"><div class="tagger-field-info"><label x-text="t('tagger.maxTags')"></label><p x-text="t('tagger.maxTagsDesc')"></p></div><div class="tagger-field-control"><input class="tagger-number-input" type="number" min="10" max="160" step="5" x-model.number="taggerSettings.maxTags" @change="setTaggerCustomPreset()"></div></div>
+          <div class="tagger-form-field" x-show="!taggerIsLlm() && !taggerUsesCategoryThresholds()"><div class="tagger-field-info"><label x-text="t('tagger.threshold')"></label><p x-text="t('tagger.thresholdDesc')"></p></div><div class="tagger-field-control"><input class="tagger-number-input" type="number" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"></div></div>
+          <div class="tagger-category-customize" x-show="taggerUsesCategoryThresholds()"><div><b x-text="t('tagger.categoryThresholds')"></b><small x-text="t('tagger.categoryThresholdsDesc')"></small></div><label><span x-text="t('tagger.adjustSeparately')"></span><span class="toggle"><input type="checkbox" :checked="taggerThresholdsOpen" @change="taggerThresholdsOpen = $event.target.checked"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label></div>
+          <div class="tagger-category-settings" x-show="taggerUsesCategoryThresholds() && taggerThresholdsOpen">
+            <template x-for="key in taggerCategoryKeys()" :key="key"><div class="tagger-category-field" :class="{ disabled: taggerSettings.categoryEnabled[key] === false }"><label class="tagger-category-enable"><input type="checkbox" x-model="taggerSettings.categoryEnabled[key]" @change="toggleTaggerCategorySetting(key)"><span x-text="taggerCategoryLabel(key)"></span></label><div class="tagger-category-controls"><div class="stepper tagger-field-stepper"><button type="button" @click="adjustTaggerCategoryThreshold(key, -0.01)" :disabled="taggerSettings.categoryEnabled[key] === false">&minus;</button><input type="number" min="0" max="1" step="0.001" x-model.number="taggerSettings.categoryThresholds[key]" @change="updateTaggerCategorySetting(key)" :disabled="taggerSettings.categoryEnabled[key] === false"><button type="button" @click="adjustTaggerCategoryThreshold(key, 0.01)" :disabled="taggerSettings.categoryEnabled[key] === false">+</button></div></div></div></template>
+          </div>
+          <button class="tagger-start-button" x-show="!taggerRunning" @click="startTagger()" :disabled="!taggerCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
+          <button class="tagger-stop-button" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>
+        </section>
+
+        <section class="tagger-form-card tagger-single-result" x-show="taggerSourceMode === 'single'">
+          <h2><span x-text="t('tagger.resultTags')"></span><small x-text="taggerResultText ? taggerResultText.split(',').filter(Boolean).length : 0"></small></h2>
+          <textarea x-model="taggerResultText" :placeholder="t('tagger.noResult')"></textarea>
+          <div class="tagger-result-actions" x-show="taggerResultText"><button @click="copyTaggerResult()"><svg><use href="#ti-copy"></use></svg><span x-text="t('tagger.copyTags')"></span></button><button @click="saveTaggerResult()"><svg><use href="#ti-save"></use></svg><span x-text="t('common.save')"></span></button></div>
+          <div class="tagger-category-browser" x-show="!taggerIsLlm() && Object.keys(taggerCategoryState).length">
+            <div class="tagger-category-toolbar"><label><span x-text="t('tagger.globalThreshold')"></span><input type="number" min="0" max="1" step="0.01" x-model.number="taggerCategoryGlobalThreshold" @change="applyTaggerGlobalThreshold()"></label><span class="tagger-category-total"><b x-text="taggerVisibleCategoryCount()"></b><span x-text="t('tagger.totalTags')"></span></span><button @click="setAllTaggerCategoriesVisible(true)" x-text="t('tagger.showAll')"></button><button @click="setAllTaggerCategoriesVisible(false)" x-text="t('tagger.hideAll')"></button></div>
+            <template x-for="(category, key) in taggerCategoryState" :key="key"><section class="tagger-category-section"><div class="tagger-category-heading"><input class="tagger-checkbox" type="checkbox" x-model="category.visible" @change="toggleTaggerResultCategory(key)"><button class="tagger-category-collapse" @click="category.collapsed = !category.collapsed"><svg :class="{ open: !category.collapsed }"><use href="#ti-chevron"></use></svg></button><strong x-text="category.label"></strong><span x-text="category.visibleTags.length + ' / ' + category.total"></span><label><span x-text="t('tagger.threshold')"></span><input type="number" min="0" max="1" step="0.01" x-model.number="category.threshold" @change="updateTaggerResultCategory(key)"></label><button class="tagger-category-copy" @click="copyTaggerCategory(key)" :disabled="!category.visibleTags.length" x-text="t('common.copy')"></button></div><div class="tagger-category-tags" x-show="!category.collapsed"><template x-for="tag in category.visibleTags" :key="tag[0]"><span><code x-text="tag[0]"></code><b x-text="Number(tag[1]).toFixed(3)"></b></span></template><p x-show="category.visible && !category.visibleTags.length" x-text="t('tagger.noTags')"></p><small x-show="category.truncated" x-text="t('tagger.tagTruncated').replace('{total}', category.total)"></small></div></section></template>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </template>
+</section>
+
+<input id="taggerFileInput" type="file" accept="image/*" hidden @change="handleTaggerFileInput($event)">

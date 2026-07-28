@@ -1,0 +1,196 @@
+/* Tagger follows the training form language while keeping single-image review focused. */
+.tagger-route { overflow: auto; min-width: 0; }
+#taggerWorkspaceHost { min-height: 100%; }
+.tagger-ui-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.tagger-page-shell { min-height: 100%; padding: 24px 28px 40px; color: var(--text-primary); }
+.tagger-page-shell svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tagger-page-shell :is(button, input, textarea) { border-radius: var(--radius-sm); letter-spacing: 0; }
+
+.tagger-page-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 30px; margin-bottom: 10px; }
+.tagger-page-header .page-title { margin-bottom: 0; }
+.tagger-page-resbar { padding: 0; }
+.tagger-mode-tabs { display: flex; gap: 0; margin: 0 0 16px; border-bottom: 1px solid var(--border-default); }
+.tagger-mode-tabs button { min-width: 104px; padding: 8px 15px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 550; cursor: pointer; }
+.tagger-mode-tabs button:hover { color: var(--text-primary); }
+.tagger-mode-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tagger-training-notice { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-default)); background: var(--danger-soft); color: var(--danger); font-size: 11px; }
+.tagger-training-notice button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 650; cursor: pointer; }
+
+.tagger-batch-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(540px, 36vw, 680px); align-items: start; gap: 20px; width: 100%; }
+.tagger-form-column { display: block; min-width: 0; padding: 0 8px; }
+.tagger-form-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.tagger-form-card > h2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 0; margin: 0 0 4px; padding: 18px 0 7px; border-bottom: 1px solid var(--border-default); color: var(--text-primary); font-size: 14px; font-weight: 700; }
+.tagger-form-card:first-child > h2 { padding-top: 0; }
+.tagger-form-card > h2::before { width: 3px; height: 14px; flex: 0 0 auto; border-radius: 1px; background: var(--section-model); content: ""; }
+.tagger-form-card:nth-of-type(2) > h2::before { background: var(--section-performance); }
+.tagger-form-card:nth-of-type(3) > h2::before { background: var(--section-caption); }
+.tagger-form-card > h2 small { margin-left: auto; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 10px; font-weight: 500; }
+.tagger-form-card > h2 button { margin-left: auto; padding: 2px 5px; border: 0; background: transparent; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+.tagger-section-note { padding: 5px 10px 7px; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.5; }
+.tagger-form-field { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(220px, 320px); align-items: center; gap: 20px; min-height: 58px; margin: 0 -8px; padding: 8px 8px 8px 10px; border: 0; border-radius: 2px; transition: background-color var(--duration-fast) ease; }
+.tagger-form-field:hover { background: var(--hover-overlay); }
+.tagger-form-field-stacked { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.tagger-field-info { min-width: 0; }
+.tagger-field-info label { display: block; color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.tagger-field-info p { margin: 3px 0 0; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.45; white-space: pre-line; }
+.tagger-field-control { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; min-width: 0; }
+.tagger-field-control > .anima-select { width: 200px; max-width: 100%; margin-left: auto; }
+.tagger-field-control > .tagger-model-select { width: 260px; }
+.tagger-field-control .anima-select-trigger { min-height: 34px; }
+.tagger-model-meta, .tagger-vram-guidance { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--text-tertiary); font-size: 9.5px; }
+.tagger-model-meta { width: 260px; max-width: 100%; margin-left: auto; }
+.tagger-model-meta span:last-child { color: var(--accent); font-weight: 650; }
+.tagger-vram-guidance { padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); }
+.tagger-vram-warning { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); color: var(--warning); font-size: 10.5px; line-height: 1.45; }
+.tagger-path-control { display: flex; height: 34px; border: 1px solid var(--border-input); background: var(--bg-input); }
+.tagger-path-control:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
+.tagger-path-control input { flex: 1; min-width: 0; padding: 0 9px; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; }
+.tagger-path-control button { display: inline-flex; align-items: center; justify-content: center; width: 34px; border: 0; border-left: 1px solid var(--border-default); background: var(--bg-input-action); color: var(--text-secondary); cursor: pointer; }
+.tagger-path-control button:hover { color: var(--accent); background: var(--accent-soft); }
+.tagger-field-stepper { width: 140px; margin-left: auto; }
+.tagger-number-input, .tagger-text-input { width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-size: 11px; }
+.tagger-text-input { max-width: 320px; margin-left: auto; }
+.tagger-number-input { max-width: 132px; margin-left: auto; font-family: var(--font-mono); text-align: right; }
+.tagger-number-input:focus, .tagger-text-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
+
+.tagger-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.tagger-option-grid > label { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; min-height: 58px; margin: 0; padding: 9px 10px; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; }
+.tagger-option-grid > label:hover { background: var(--hover-overlay); }
+.tagger-option-grid > label > span:first-child { min-width: 0; }
+.tagger-option-grid b { display: block; color: var(--text-primary); font-size: 11px; font-weight: 600; }
+.tagger-option-grid small { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.35; }
+.tagger-category-customize { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; min-height: 58px; margin: 0 -8px; padding: 9px 8px 9px 10px; border: 0; border-radius: 2px; }
+.tagger-category-customize:hover { background: var(--hover-overlay); }
+.tagger-category-customize b { display: block; color: var(--text-primary); font-size: 11px; }
+.tagger-category-customize small { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.4; }
+.tagger-category-customize > label { display: flex; align-items: center; gap: 9px; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+.tagger-category-settings { margin: 0 0 4px 14px; padding-left: 12px; border-left: 2px dashed var(--border-default); }
+.tagger-category-settings > .tagger-category-field { display: flex; grid-template-columns: none; align-items: center; gap: 20px; min-height: 46px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--border-subtle); transition: background-color var(--duration-fast) ease, opacity var(--duration-fast) ease; }
+.tagger-category-field:hover { background: var(--hover-overlay); }
+.tagger-category-field.disabled { opacity: .52; }
+.tagger-category-enable { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 12px; font-weight: 550; cursor: pointer; }
+.tagger-category-enable > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-controls { display: flex; flex: 0 0 140px; align-items: center; justify-content: flex-end; min-width: 0; }
+.tagger-category-controls .tagger-field-stepper { margin-left: 0; }
+.tagger-category-settings .tagger-field-stepper input[type="number"] { width: 0; height: auto; padding: 7px 4px; border: 0; border-radius: 0; background: var(--bg-input); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; box-shadow: none; }
+.tagger-category-settings .tagger-field-stepper input[type="number"]:focus { border: 0; box-shadow: none; }
+.tagger-category-controls :is(input, button):disabled { cursor: not-allowed; }
+
+.tagger-action-panel { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; height: min(820px, calc(100vh - 142px)); min-height: 520px; padding: 0 0 0 16px; border: 0; border-left: 1px solid var(--border-default); background: transparent; }
+.tagger-action-panel > h2 { display: flex; align-items: center; gap: 8px; min-height: 0; margin: 0 0 2px; padding: 0 0 7px; border-bottom: 1px solid var(--border-default); color: var(--text-primary); font-size: 14px; }
+.tagger-action-panel > h2::before { width: 3px; height: 14px; border-radius: 1px; background: var(--section-training); content: ""; }
+.tagger-action-log { display: flex; flex: 1 1 260px; min-height: 220px; margin-top: 2px; overflow: hidden; border-top: 1px solid var(--border-default); flex-direction: column; }
+.tagger-action-log > header { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 0 12px; }
+.tagger-action-log > header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.tagger-action-log > header strong { font-size: 10.5px; }
+.tagger-log-phase { overflow: hidden; color: var(--text-tertiary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-log-phase::before { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--text-tertiary); content: ""; vertical-align: 1px; }
+.tagger-log-phase.running::before { background: var(--accent); }
+.tagger-action-log > header button { padding: 2px 4px; border: 0; background: transparent; color: var(--text-secondary); font-size: 9px; cursor: pointer; }
+.tagger-log-stream { flex: 1 1 auto; min-height: 0; padding: 7px 0; overflow: auto; border-top: 1px solid var(--border-subtle); background: var(--bg-input); }
+.tagger-log-line { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; min-height: 24px; padding: 3px 12px; border-left: 2px solid transparent; color: var(--text-secondary); font: 10px/1.65 var(--font-mono); word-break: break-word; }
+.tagger-log-time { color: var(--text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tagger-log-message { min-width: 0; }
+.tagger-log-line.phase { border-left-color: var(--accent); color: var(--text-primary); }
+.tagger-log-line.success { color: var(--success); }
+.tagger-log-line.warning { color: var(--warning); }
+.tagger-log-line.error { border-left-color: var(--danger); color: var(--danger); }
+.tagger-log-empty { padding: 10px 12px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.55; }
+.tagger-action-source { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; padding: 9px 0; border: 0; border-bottom: 1px solid var(--border-subtle); background: transparent; }
+.tagger-action-source > svg { width: 22px; height: 22px; color: var(--text-tertiary); }
+.tagger-action-source strong, .tagger-action-source span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-action-source strong { font-size: 11px; }
+.tagger-action-source span { margin-top: 3px; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9px; }
+.tagger-action-source.ready > svg { color: var(--accent); }
+.tagger-source-summary { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border-subtle); }
+.tagger-source-summary span { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-right: 1px solid var(--border-subtle); }
+.tagger-source-summary span:last-child { border-right: 0; }
+.tagger-source-summary strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+.tagger-source-summary small { color: var(--text-tertiary); font-size: 8.5px; }
+.tagger-start-button, .tagger-stop-button, .tagger-secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 34px; padding: 5px 10px; border: 1px solid transparent; font-size: 11px; font-weight: 650; cursor: pointer; }
+.tagger-start-button { background: var(--accent-solid); color: #fff; }
+.tagger-start-button:hover:not(:disabled) { background: var(--accent-hover); }
+.tagger-start-button:disabled { opacity: .45; cursor: not-allowed; }
+.tagger-stop-button { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.tagger-secondary-button { border-color: var(--border-input); background: var(--bg-input); color: var(--text-secondary); }
+.tagger-secondary-button:hover { border-color: var(--accent); color: var(--accent); }
+.tagger-task-status { padding: 9px; border: 1px solid var(--border-subtle); }
+.tagger-task-title { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.tagger-task-title i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
+.tagger-task-title i.running, .tagger-task-title i.created { background: var(--accent); }
+.tagger-task-title i.done { background: var(--success); }
+.tagger-task-title i.error, .tagger-task-title i.cancelled { background: var(--danger); }
+.tagger-task-title strong { font-size: 10.5px; }
+.tagger-task-title span { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9px; }
+.tagger-progress-track { height: 3px; margin: 8px 0 5px; overflow: hidden; background: var(--border-default); }
+.tagger-progress-track i { display: block; height: 100%; background: var(--accent-solid); }
+.tagger-task-file { overflow: hidden; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-task-status dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; margin: 10px 0 0; }
+.tagger-task-status dl div { display: flex; justify-content: space-between; }
+.tagger-task-status dt { color: var(--text-tertiary); font-size: 9px; }
+.tagger-task-status dd { margin: 0; font-family: var(--font-mono); font-size: 9px; }
+.tagger-task-status dd.success { color: var(--success); }.tagger-task-status dd.skipped { color: var(--warning); }.tagger-task-status dd.failed { color: var(--danger); }
+.tagger-error-summary { display: flex; gap: 8px; padding: 8px 14px; background: var(--danger-soft); color: var(--danger); font-size: 10px; }
+
+.tagger-single-layout { display: grid; grid-template-columns: minmax(420px, 1.2fr) minmax(380px, .8fr); align-items: start; gap: 16px; max-width: 1280px; margin: 0 auto; }
+.tagger-single-preview { display: grid; grid-template-rows: 36px minmax(420px, calc(100vh - 190px)); min-width: 0; overflow: hidden; border: 1px solid var(--border-default); background: var(--bg-surface); }
+.tagger-single-preview.light { background: #dedede; }
+.tagger-single-preview.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tagger-preview-toolbar { display: flex; align-items: center; gap: 3px; padding: 3px 5px 3px 10px; border-bottom: 1px solid var(--border-default); }
+.tagger-preview-toolbar > span { flex: 1; min-width: 0; overflow: hidden; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-preview-toolbar button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.tagger-preview-toolbar button:hover, .tagger-preview-toolbar button.active { background: var(--accent-soft); color: var(--accent); }
+.tagger-drop-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 0; background: var(--bg-preview); color: var(--text-tertiary); cursor: pointer; }
+.tagger-drop-zone:hover { color: var(--text-secondary); }
+.tagger-drop-zone svg { width: 38px; height: 38px; stroke-width: 1.3; }
+.tagger-drop-zone strong { font-size: 12px; font-weight: 550; }
+.tagger-drop-zone span { font-size: 10px; }
+.tagger-preview-image { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: auto; background: var(--bg-preview); }
+.tagger-preview-image img { display: block; max-width: calc(100% - 28px); max-height: calc(100% - 28px); object-fit: contain; }
+.tagger-preview-image img.actual { max-width: none; max-height: none; object-fit: none; }
+.tagger-single-sidebar { display: grid; gap: 12px; min-width: 0; }
+.tagger-single-sidebar .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.tagger-single-sidebar .tagger-field-control { width: 100%; }
+.tagger-single-sidebar .tagger-category-settings { margin-left: 10px; }
+.tagger-single-sidebar .tagger-category-settings > .tagger-category-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; padding-block: 8px; }
+.tagger-single-sidebar .tagger-category-enable, .tagger-single-sidebar .tagger-category-controls { grid-column: 1; }
+.tagger-single-sidebar .tagger-category-controls { width: 100%; }
+.tagger-single-sidebar .tagger-category-controls { justify-content: space-between; }
+.tagger-single-result textarea { display: block; width: calc(100% - 28px); min-height: 82px; margin: 12px 14px 0; padding: 8px; resize: vertical; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; }
+.tagger-result-actions { display: flex; justify-content: flex-end; gap: 5px; padding: 7px 14px 10px; }
+.tagger-result-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 3px 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+.tagger-result-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.tagger-category-browser { margin: 0 14px 12px; border-top: 1px solid var(--border-default); }
+.tagger-category-toolbar { display: flex; align-items: center; gap: 5px; min-height: 35px; border-bottom: 1px solid var(--border-default); }
+.tagger-category-toolbar > label { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 9.5px; }
+.tagger-category-toolbar input { width: 58px; height: 25px; padding: 0 4px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 9.5px; }
+.tagger-category-toolbar button, .tagger-category-copy { min-height: 25px; padding: 2px 6px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-secondary); font-size: 9px; cursor: pointer; }
+.tagger-category-total { display: inline-flex; gap: 3px; margin-right: auto; color: var(--text-tertiary); font-size: 9px; }
+.tagger-category-section { border-bottom: 1px solid var(--border-default); }
+.tagger-category-heading { display: grid; grid-template-columns: 16px 22px minmax(80px, 1fr) auto auto 42px; align-items: center; gap: 5px; min-height: 34px; }
+.tagger-category-heading strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-heading > span { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 8.5px; }
+.tagger-category-heading > label { display: flex; align-items: center; gap: 4px; color: var(--text-tertiary); font-size: 8.5px; }
+.tagger-category-heading > label input { width: 54px; height: 25px; padding: 0 4px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 9px; }
+.tagger-category-collapse { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 25px; padding: 0; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+.tagger-category-collapse svg { width: 12px; height: 12px; transform: rotate(-90deg); }
+.tagger-category-collapse svg.open { transform: rotate(0); }
+.tagger-category-copy { width: 42px; padding: 0; }
+.tagger-category-tags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 0 7px 43px; column-gap: 12px; }
+.tagger-category-tags > span { display: flex; justify-content: space-between; gap: 6px; min-width: 0; min-height: 23px; border-bottom: 1px solid var(--border-subtle); }
+.tagger-category-tags code { overflow: hidden; color: var(--text-secondary); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-tags b { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 8.5px; font-weight: 500; }
+.tagger-category-tags p, .tagger-category-tags small { grid-column: 1 / -1; color: var(--text-tertiary); font-size: 9px; }
+
+@media (max-width: 1250px) {
+  .tagger-page-shell { padding-inline: 16px; }
+  .tagger-batch-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
+  .tagger-form-field { grid-template-columns: minmax(220px, 1fr) minmax(200px, 44%); gap: 14px; }
+  .tagger-category-field { gap: 14px; }
+  .tagger-single-layout { grid-template-columns: minmax(390px, 1fr) minmax(360px, .85fr); }
+}
+
+@media (max-width: 1199px) {
+  .tagger-page-header { align-items: flex-start; flex-wrap: wrap; gap: 8px 14px; }
+  .tagger-page-header .monitor-resbar { order: 2; width: 100%; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+}

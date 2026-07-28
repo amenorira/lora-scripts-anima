@@ -56,12 +56,7 @@ window.monitorRenderMixin = {
 
     // 页头右侧资源监控（仅实时模式；历史模式由 x-show 隐藏）
     if (!isHistory) {
-      const resbarEl = document.getElementById('monitorResbar');
-      if (resbarEl && (!resbarEl.firstElementChild || this._resbarLocale !== locale)) {
-        this._resbarLocale = locale;
-        resbarEl.innerHTML = this._resbarHtml(gpu, sys, t);
-      }
-      this._patchResbar(gpu, sys, t);
+      this._renderResourceBar('monitorResbar', gpu, sys, t, locale);
     }
 
     // ── 3. 标签页内容 ──
@@ -177,8 +172,19 @@ window.monitorRenderMixin = {
     return html;
   },
 
-  _patchResbar(gpu, sys, t) {
-    const bar = document.getElementById('monitorResbar');
+  _renderResourceBar(containerId, gpu, sys, t, locale) {
+    const bar = document.getElementById(containerId);
+    if (!bar) return;
+    const localeKey = String(locale || '');
+    if (!bar.firstElementChild || bar.dataset.locale !== localeKey) {
+      bar.dataset.locale = localeKey;
+      bar.innerHTML = this._resbarHtml(gpu, sys, t);
+    }
+    this._patchResbar(gpu, sys, t, containerId);
+  },
+
+  _patchResbar(gpu, sys, t, containerId = 'monitorResbar') {
+    const bar = document.getElementById(containerId);
     if (!bar) return;
     // 若结构未就绪或 GPU 可用性切换，则重建
     const hasGpuChip = !!bar.querySelector('[data-res="gpu"]');

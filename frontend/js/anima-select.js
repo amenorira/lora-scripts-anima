@@ -5,11 +5,14 @@
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('animaSelect', (fieldConfigJson, initialValue) => {
-    // 选项配置在组件生命周期内不会变化。预先完成一次 base64 解码和 JSON
-    // 解析，避免 Alpine 求值 selectedLabel / hasDescriptions 时反复解析。
+    // Most field configs are static. A function may be supplied by workspaces
+    // whose options arrive asynchronously (for example the Tagger registry).
+    const fieldConfigFactory = typeof fieldConfigJson === 'function' ? fieldConfigJson : null;
     let fieldConfig = {};
     try {
-      if (typeof fieldConfigJson === 'string') {
+      if (fieldConfigFactory) {
+        fieldConfig = fieldConfigFactory() || {};
+      } else if (typeof fieldConfigJson === 'string') {
         const binary = atob(fieldConfigJson);
         const bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
         fieldConfig = JSON.parse(new TextDecoder().decode(bytes));
@@ -19,15 +22,13 @@ document.addEventListener('alpine:init', () => {
     } catch (e) {
       console.warn('[animaSelect] Failed to parse field config:', e);
     }
-    const displayGroups = fieldConfig.groups && fieldConfig.groups.length
-      ? fieldConfig.groups
-      : (fieldConfig.options && fieldConfig.options.length
-        ? [{ label: '', options: fieldConfig.options }]
+    const normalizedGroups = config => config.groups && config.groups.length
+      ? config.groups
+      : (config.options && config.options.length
+        ? [{ label: '', options: config.options }]
         : []);
-    const flatOptions = [];
-    displayGroups.forEach(group => {
-      (group.options || []).forEach(option => flatOptions.push(option));
-    });
+    const staticDisplayGroups = normalizedGroups(fieldConfig);
+    const staticFlatOptions = staticDisplayGroups.flatMap(group => group.options || []);
 
     return ({
     open: false,
@@ -38,11 +39,14 @@ document.addEventListener('alpine:init', () => {
     _revealPoint: null,
 
     get displayGroups() {
-      return displayGroups;
+      if (!fieldConfigFactory) return staticDisplayGroups;
+      try { return normalizedGroups(fieldConfigFactory() || {}); }
+      catch (_) { return []; }
     },
 
     get flatOptions() {
-      return flatOptions;
+      if (!fieldConfigFactory) return staticFlatOptions;
+      return this.displayGroups.flatMap(group => group.options || []);
     },
 
     get hasDescriptions() {

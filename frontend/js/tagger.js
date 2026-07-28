@@ -1,419 +1,703 @@
-/* ================================================================
-   tagger.js — Tagger form & API (training-UI-style layout)
-   Mixin merged into animaApp Alpine component
-   ================================================================ */
-
+/* Tagger desktop workspace. State is kept in Alpine; large media stays in browser/server caches. */
 window.taggerMixin = {
-  // ── State ──────────────────────────────────────────────
-  taggerRunning: false,
+  taggerModels: [],
+  taggerHardware: {},
+  taggerSelectedModel: '',
+  taggerSourceMode: 'folder',
+  taggerSourcePath: '',
+  taggerSource: null,
+  taggerScanning: false,
   taggerStarting: false,
-  taggerTaskId: null,        // 当前运行中的 task_id，用于停止
+  taggerRunning: false,
+  taggerInstalling: false,
+  taggerTaskId: null,
+  taggerTask: null,
+  taggerItems: [],
+  taggerItemsTotal: 0,
+  taggerSelectedIndex: 0,
+  taggerResultText: '',
+  taggerResultCategories: {},
+  taggerCategoryState: {},
+  taggerCategoryGlobalThreshold: 0.5,
+  taggerFilmstripCollapsed: false,
+  taggerFailedOnly: false,
+  taggerLogsOpen: false,
+  taggerAdvancedOpen: false,
+  taggerThresholdsOpen: false,
+  taggerPreviewActual: false,
+  taggerPreviewLight: false,
+  taggerDragOver: false,
+  taggerSettings: {
+    preset: 'balanced',
+    conflict: 'ignore',
+    threshold: 0.35,
+    characterThreshold: 0.6,
+    maxTags: 80,
+    lowVram: false,
+    recursive: true,
+    replaceUnderscore: true,
+    escapeTag: true,
+    addRatingTag: false,
+    addModelTag: false,
+    removeDuplicated: false,
+    categoryThresholds: {},
+    categoryEnabled: {},
+    additionalTags: '',
+    excludeTags: '',
+  },
   _taggerRealtimeTopic: null,
-  _taggerModelsCache: null,  // 缓存模型列表，避免重复请求
-  taggerSelectedModel: '',   // 当前选中的 tagger 模型 ID
-  taggerPreset: 'macro',     // Camie 阈值预设: macro / micro / custom
+  _taggerPendingStart: false,
+  _taggerLastItemsFetch: 0,
+  _taggerPreviewObjectUrl: null,
+  _taggerLoadedResultKey: '',
 
-  // ── 单图模式状态 ─────────────────────────────────────
-  taggerMode: 'batch',       // 'batch' | 'single'
-  singleImage: {
-    previewUrl: null,        // base64 预览
-    file: null,              // 原始 File 对象
-    dragOver: false,
-    model: '',               // 模型 ID
-    globalThreshold: 0.50,
-    categories: {},          // { key: { label, tags:[[name,conf],...], threshold, visible, collapsed, visibleTags:[] } }
-    inferring: false,
-    inferred: false,
-    leftWidth: 55,           // 左侧宽度百分比
-    isResizing: false,       // 是否正在拖拽分隔线
-    formatOptions: {
-      replaceUnderscore: true,
-      escapeTag: true,
-      addRatingTag: false,
-    },
+  TAGGER_CAMIE_CATEGORIES: ['general', 'character', 'copyright', 'artist', 'meta', 'year', 'rating'],
+  TAGGER_CL_CATEGORIES: ['general', 'character', 'copyright', 'artist', 'meta', 'quality', 'rating'],
+  TAGGER_CAMIE_PRESETS: {
+    macro: { general: 0.492, character: 0.492, copyright: 0.492, artist: 0.492, meta: 0.492, year: 0.492, rating: 0.492 },
+    micro: { general: 0.614, character: 0.614, copyright: 0.614, artist: 0.614, meta: 0.614, year: 0.614, rating: 0.614 },
+  },
+  TAGGER_CL_PRESETS: {
+    macro: { general: 0.35, character: 0.6, copyright: 0.35, artist: 0.35, meta: 0.35, quality: 0.35, rating: 0.35 },
+    micro: { general: 0.45, character: 0.7, copyright: 0.45, artist: 0.45, meta: 0.45, quality: 0.45, rating: 0.45 },
   },
 
-  // ── Camie 阈值预设 ───────────────────────────────────
-  CAMIE_PRESETS: {
-    macro: { general: '0.492', character: '0.492', copyright: '0.492', artist: '0.492', meta: '0.492', year: '0.492', rating: '0.492' },
-    micro: { general: '0.614', character: '0.614', copyright: '0.614', artist: '0.614', meta: '0.614', year: '0.614', rating: '0.614' },
-  },
-  // ── CL Tagger 阈值预设 ───────────────────────────────
-  CL_PRESETS: {
-    macro: { general: '0.35', character: '0.6', copyright: '0.35', artist: '0.35', meta: '0.35', quality: '0.35', rating: '0.35' },
-    micro: { general: '0.45', character: '0.7', copyright: '0.45', artist: '0.45', meta: '0.45', quality: '0.45', rating: '0.45' },
-  },
-  // ── 各模型分类定义 ────────────────────────────────────
-  CAMIE_CATS: ['general','character','copyright','artist','meta','year','rating'],
-  CL_CATS: ['general','character','copyright','artist','meta','quality','rating'],
-
-  /** 将预设切为"自定义"（仅更新当前激活的预设选择器） */
-  _camieCustomPreset() {
-    this.taggerPreset = 'custom';
-    const isCL = this.taggerSelectedModel === 'cl_tagger_1_02';
-    const id = isCL ? 'tagger-cl-preset' : 'tagger-preset';
-    const el = document.getElementById(id);
-    if (el) el.value = 'custom';
-  },
-
-  /** 通用阈值步进 */
-  _thStepDown() {
-    const el = document.getElementById('tagger-threshold');
-    if (el) el.stepDown();
-  },
-  _thStepUp() {
-    const el = document.getElementById('tagger-threshold');
-    if (el) el.stepUp();
-  },
-  /** CL 角色阈值步进 */
-  _charStepDown() {
-    const el = document.getElementById('tagger-char-threshold');
-    if (el) el.stepDown();
-  },
-  _charStepUp() {
-    const el = document.getElementById('tagger-char-threshold');
-    if (el) el.stepUp();
-  },
-  /** 分类阈值步进辅助方法（不触发预设切换，由模板显式调用） */
-  _catStepDown(prefix, cat) {
-    const el = document.getElementById(prefix + '-th-' + cat);
-    if (el) el.stepDown();
-  },
-  _catStepUp(prefix, cat) {
-    const el = document.getElementById(prefix + '-th-' + cat);
-    if (el) el.stepUp();
-  },
-  /** checkbox 切换时同步 stepper 按钮 disabled 状态 */
-  _catToggleCat(prefix, cat) {
-    const cb = document.getElementById(prefix + '-en-' + cat);
-    if (!cb) return;
-    const disabled = !cb.checked;
-    const th = document.getElementById(prefix + '-th-' + cat);
-    if (th) th.disabled = disabled;
-    const stepper = th ? th.closest('.stepper') : null;
-    if (stepper) {
-      stepper.querySelectorAll('button').forEach(b => { b.disabled = disabled; });
-    }
-  },
-
-  applyCamiePreset(preset) {
-    if (preset === 'custom') { this.taggerPreset = 'custom'; return; }
-    const isCL = this.taggerSelectedModel === 'cl_tagger_1_02';
-    const prefix = isCL ? 'tagger-cl' : 'tagger-camie';
-    const presets = isCL ? this.CL_PRESETS : this.CAMIE_PRESETS;
-    const cats = isCL ? this.CL_CATS : this.CAMIE_CATS;
-    const vals = presets[preset];
-    if (!vals) return;
-    for (const cat of cats) {
-      const thEl = document.getElementById(prefix + '-th-' + cat);
-      const enEl = document.getElementById(prefix + '-en-' + cat);
-      if (thEl) { thEl.value = vals[cat]; thEl.disabled = false; }
-      if (enEl) enEl.checked = true;
-      const stepper = thEl ? thEl.closest('.stepper') : null;
-      if (stepper) {
-        stepper.querySelectorAll('button').forEach(b => { b.disabled = false; });
-      }
-    }
-    this.taggerPreset = preset;
-    // 仅同步当前激活的预设选择器（避免两个面板的预设互相覆盖）
-    const activePresetId = isCL ? 'tagger-cl-preset' : 'tagger-preset';
-    const activeEl = document.getElementById(activePresetId);
-    if (activeEl && activeEl.value !== preset) { activeEl.value = preset; }
-  },
-
-  // ── Helpers ────────────────────────────────────────────
-  // esc() and escJson defined in trainingCoreMixin (shared via mixin merge)
-
-  animaSelectHtml(config, defaultValue, inputId) {
-    const enc = this.escJson(config);
-    return `<div class="anima-select" x-data="animaSelect('${enc}', '${(defaultValue||'').replace(/'/g, "\\'")}')" x-init="syncToModel()" @click.outside="closeOnOutside()">
-      <input type="hidden" x-ref="modelInput" value="${defaultValue||''}" id="${inputId}">
-      <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)">
-        <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
-        <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <template x-if="open">
-        <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())">
-          <div class="anima-select-menu-scroll">
-            <template x-for="opt in flatOptions" :key="opt.v">
-              <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
-                <span class="anima-select-option-content">
-                  <span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span>
-                  <span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span>
-                </span>
-                <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-            </template>
-          </div>
-        </div>
-      </template>
-    </div>`;
-  },
-
-  // ── Methods ────────────────────────────────────────────
   async buildTaggerForm() {
-    const container = document.getElementById('taggerForm');
-    if (!container) return;
-    // Clean up previous event listeners from prior buildTaggerForm calls
-    if (this._taggerAbortController) {
-      this._taggerAbortController.abort();
+    await this._mountTaggerWorkspace();
+    this._loadTaggerSettings();
+    this.realtimeSubscribe('hardware');
+    this.renderTaggerResourceBar();
+    await this.loadTaggerModels();
+    const stored = localStorage.getItem('anima-tagger-task-id');
+    let taskId = '';
+    try {
+      const response = await fetch('/api/tagger/tasks/active');
+      const body = await response.json();
+      taskId = body.status === 'success' && body.data ? body.data.task_id || '' : '';
+    } catch (_) {}
+    taskId = taskId || stored || '';
+    if (taskId) await this.restoreTaggerTask(taskId);
+  },
+
+  renderTaggerResourceBar() {
+    if (typeof this._renderResourceBar !== 'function') return;
+    const translate = (key, fallback) => this.t('monitor.' + key, fallback) || fallback || key;
+    this._renderResourceBar('taggerResbar', this.gpuInfo, this.sysInfo, translate, this.locale);
+  },
+
+  async _mountTaggerWorkspace() {
+    const host = document.getElementById('taggerWorkspaceHost');
+    if (!host || host.dataset.mounted === '1') return;
+    try {
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260728-tagger9');
+      if (!response.ok) throw new Error('Workspace template unavailable');
+      host.innerHTML = await response.text();
+      host.dataset.mounted = '1';
+      if (window.Alpine) Alpine.initTree(host);
+    } catch (error) {
+      host.textContent = error.message;
     }
-    this._taggerAbortController = new AbortController();
-    const taggerSignal = this._taggerAbortController.signal;
-    let models = [];
-    if (this._taggerModelsCache && this._taggerModelsCache.length) {
-      models = this._taggerModelsCache;
-    } else {
-      try { const r=await fetch('/api/tagger/models'); const d=await r.json(); if(d.status==='success') models=d.data||[]; } catch(e){}
-      if (models.length) this._taggerModelsCache = models;
+  },
+
+  stopTaggerWorkspace() {
+    this.realtimeUnsubscribe('hardware');
+    this._setTaggerRealtimeTask(null);
+    this._releaseTaggerPreview();
+  },
+
+  _loadTaggerSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('anima-tagger-settings') || '{}');
+      this.taggerSettings = Object.assign({}, this.taggerSettings, saved);
+    } catch (_) {}
+  },
+
+  saveTaggerSettings() {
+    localStorage.setItem('anima-tagger-settings', JSON.stringify(this.taggerSettings));
+  },
+
+  async loadTaggerModels() {
+    try {
+      const response = await fetch('/api/tagger/models');
+      const body = await response.json();
+      if (body.status !== 'success' || !body.data) throw new Error(body.message || 'Model registry unavailable');
+      this.taggerModels = body.data.models || [];
+      this.taggerHardware = body.data.hardware || {};
+      const savedModel = localStorage.getItem('anima-tagger-model') || '';
+      if (!this.taggerSelectedModel && this.taggerModels.some(model => model.id === savedModel)) {
+        this.taggerSelectedModel = savedModel;
+      }
+      if (!this.taggerModels.some(model => model.id === this.taggerSelectedModel)) {
+        this.taggerSelectedModel = this.taggerModels[0] ? this.taggerModels[0].id : '';
+      }
+      this.handleTaggerModelChange(false);
+    } catch (error) {
+      this.toast(this.t('tagger.modelLoadFailed', 'Unable to load Tagger models') + ': ' + error.message, 'error');
     }
-    if (!models.length) {
-      container.className = '';
-      container.innerHTML = `<div class="card"><div class="card-header">${this.t('tagger.title')}</div><div style="padding:20px;color:var(--text-secondary)">${this.t('common.failed')}: Unable to load model list</div></div>`;
+  },
+
+  taggerModel() {
+    return this.taggerModels.find(model => model.id === this.taggerSelectedModel) || null;
+  },
+
+  taggerModelSelectConfig() {
+    const separator = this.t('tagger.factSeparator', '; ');
+    const groups = [
+      ['tagger', this.t('tagger.dedicatedModels', 'Dedicated Taggers')],
+      ['vision_llm', this.t('tagger.visionLlmModels', 'Vision LLM')],
+    ];
+    return {
+      groups: groups.map(([family, label]) => ({
+        label,
+        options: this.taggerModels.filter(model => model.family === family).map(model => {
+          const facts = model.engine === 'llama' ? [
+            this.t('tagger.modelVramFact').replace('{vram}', String(model.min_vram_gb || 0)),
+            this.t('tagger.modelDownloadFact').replace('{size}', this.formatTaggerBytes(model.download_bytes)),
+          ] : [];
+          return {
+            v: model.id,
+            l: model.name,
+            d: [this.taggerModelPurpose(model.id), ...facts].filter(Boolean).join(separator),
+          };
+        }),
+      })).filter(group => group.options.length),
+    };
+  },
+
+  taggerPresetSelectConfig() {
+    return { options: this.taggerPresetOptions().map(option => ({
+      v: option[0],
+      l: option[1],
+      d: this.taggerPresetDescription(option[0]),
+    })) };
+  },
+
+  taggerConflictSelectConfig() {
+    return { options: [
+      { v: 'ignore', l: this.t('tagger.conflictIgnore') },
+      { v: 'copy', l: this.t('tagger.conflictCopy') },
+      { v: 'prepend', l: this.t('tagger.conflictMerge') },
+    ] };
+  },
+
+  taggerPresetDescription(preset) {
+    const suffix = preset.charAt(0).toUpperCase() + preset.slice(1);
+    if (preset === 'custom') return this.t('tagger.presetCustomDesc');
+    if (this.taggerIsLlm()) return this.t(`tagger.presetQwen${suffix}Desc`);
+    if (this.taggerUsesCategoryThresholds()) return this.t(`tagger.preset${suffix}Desc`);
+    return this.t(`tagger.presetOnnx${suffix}Desc`);
+  },
+
+  taggerVramSummary() {
+    const model = this.taggerModel();
+    if (!model) return '';
+    return this.t('tagger.vramSummary')
+      .replace('{vram}', String(model.min_vram_gb || 0))
+      .replace('{size}', this.formatTaggerBytes(model.download_bytes));
+  },
+
+  taggerModelPurpose(modelId) {
+    const key = {
+      'camie-tagger-v2': 'modelPurposeCamie',
+      'wd-eva02-large-tagger-v3': 'modelPurposeEva',
+      'wd-vit-large-tagger-v3': 'modelPurposeVit',
+      'cl_tagger_1_02': 'modelPurposeCl',
+      'qwen3-vl-4b-q4': 'modelPurposeQwen4b',
+      'qwen3-vl-8b-q4': 'modelPurposeQwen8b',
+    }[modelId];
+    return key ? this.t(`tagger.${key}`) : '';
+  },
+
+  taggerIsLlm() {
+    const model = this.taggerModel();
+    return !!model && model.engine === 'llama';
+  },
+
+  taggerUsesCategoryThresholds() {
+    return ['camie-tagger-v2', 'cl_tagger_1_02'].includes(this.taggerSelectedModel);
+  },
+
+  taggerCategoryKeys() {
+    if (this.taggerSelectedModel === 'camie-tagger-v2') return this.TAGGER_CAMIE_CATEGORIES;
+    if (this.taggerSelectedModel === 'cl_tagger_1_02') return this.TAGGER_CL_CATEGORIES;
+    return [];
+  },
+
+  taggerCategoryLabel(key) {
+    const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+    return this.t('tagger.cat' + suffix, key);
+  },
+
+  taggerCategoryOptions() {
+    return this.taggerCategoryKeys().map(key => ({
+      key,
+      label: this.taggerCategoryLabel(key),
+      threshold: Number(this.taggerSettings.categoryThresholds[key] ?? (key === 'character' ? 0.6 : 0.35)),
+      enabled: this.taggerSettings.categoryEnabled[key] !== false,
+    }));
+  },
+
+  handleTaggerModelChange(resetPreset = true) {
+    localStorage.setItem('anima-tagger-model', this.taggerSelectedModel || '');
+    const allowed = this.taggerPresetOptions().map(option => option[0]);
+    let preset = this.taggerSettings.preset;
+    if (resetPreset || !allowed.includes(preset)) {
+      preset = this.taggerIsLlm() ? 'balanced' : (this.taggerUsesCategoryThresholds() ? 'macro' : 'balanced');
+    }
+    this.applyTaggerPreset(preset);
+    this.taggerCategoryState = {};
+    this.taggerResultCategories = {};
+    this._taggerLoadedResultKey = '';
+  },
+
+  taggerVramLimited() {
+    const model = this.taggerModel();
+    if (!model || model.engine !== 'llama') return false;
+    const total = Number(this.gpuInfo?.vram_total_mb || this.taggerHardware.vram_total_mb || 0);
+    const used = Number(this.gpuInfo?.vram_used_mb || 0);
+    return total > 0 && (total - used) / 1024 < Number(model.min_vram_gb || 0);
+  },
+
+  taggerCanStart() {
+    return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel && !this.taggerRunning && !this.taggerStarting && !this.taggerInstalling && !this.trainingActive);
+  },
+
+  taggerStartLabel() {
+    if (this.taggerInstalling) return this.t('tagger.installing', 'Downloading');
+    if (this.taggerStarting) return this.t('common.starting', 'Starting');
+    const model = this.taggerModel();
+    if (model && model.engine === 'llama' && !model.installed) return this.t('tagger.downloadAndStart', 'Download and start');
+    return this.t('tagger.start', 'Start');
+  },
+
+  applyTaggerPreset(preset) {
+    this.taggerSettings.preset = preset;
+    if (preset === 'custom') {
+      if (this.taggerUsesCategoryThresholds()) this.taggerThresholdsOpen = true;
+      this.saveTaggerSettings();
       return;
     }
-    const modelOpts = models.map(m=>({v:m.id, l:m.name||m.id}));
-    let savedModel = this.taggerSelectedModel || localStorage.getItem('anima-tagger-model') || '';
-    if (!savedModel || !modelOpts.find(o => o.v === savedModel)) {
-      savedModel = modelOpts[0]?.v || '';
-    }
-    const modelSelect = this.animaSelectHtml({options: modelOpts}, savedModel, 'tagger-model');
-    const conflictOpts = [
-      {v:'ignore',l:this.t('tagger.conflictIgnore')},{v:'copy',l:this.t('tagger.conflictCopy')},{v:'prepend',l:this.t('tagger.conflictPrepend')}
-    ];
-    const conflictSelect = this.animaSelectHtml({options: conflictOpts}, 'copy', 'tagger-conflict-action');
-    const presetOpts = [
-      {v:'macro',l:this.t('tagger.presetMacro')},
-      {v:'micro',l:this.t('tagger.presetMicro')},
-      {v:'custom',l:this.t('tagger.presetCustom')},
-    ];
-    const presetSelect = this.animaSelectHtml({options: presetOpts}, 'macro', 'tagger-preset');
-    const clPresetSelect = this.animaSelectHtml({options: presetOpts}, 'macro', 'tagger-cl-preset');
-
-    // ── 辅助：生成 field-row（标签在左，控件在右）────
-    const _fieldRow = (labelKey, descKey, controlHtml, extraAttrs, extraClass) => {
-      const cls = extraClass ? `field ${extraClass}` : 'field';
-      return `<div class="${cls}"${extraAttrs||''}><div class="field-row"><div class="field-info"><div class="field-key">${this.t(labelKey)}</div><div class="field-desc">${this.t(descKey)}</div></div><div class="field-control">${controlHtml}</div></div></div>`;
-    };
-
-    // ── 辅助：生成开关项 ─────────────────────────────
-    const _toggle = (id, labelKey, checked) => {
-      return `<label class="toggle"><input type="checkbox" id="${id}"${checked?' checked':''}><span class="toggle-track"><span class="toggle-thumb"></span></span><span>${this.t(labelKey)}</span></label>`;
-    };
-
-    // ── 辅助：分类字段行（field-nested 样式，checkbox+stepper 在右侧）─
-    // prefix: 'tagger-camie' 或 'tagger-cl'，用于区分同名的 DOM ID
-    const _catField = (prefix, cat, defVal) => {
-      const catLabel = this.t('tagger.cat'+cat.charAt(0).toUpperCase()+cat.slice(1));
-      return `<div class="field field-nested"><div class="field-row"><div class="field-info"><div class="field-key">${catLabel}</div></div><div class="field-control"><label class="toggle" style="margin-right:6px"><input type="checkbox" id="${prefix}-en-${cat}" checked @change="_catToggleCat('${prefix}','${cat}')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><div class="stepper"><button type="button" @click="_catStepDown('${prefix}','${cat}');_camieCustomPreset()">−</button><input type="number" id="${prefix}-th-${cat}" value="${defVal}" min="0" max="1" step="0.01" @change="_camieCustomPreset()"><button type="button" @click="_catStepUp('${prefix}','${cat}');_camieCustomPreset()">+</button></div></div></div></div>`;
-    };
-
-    const _folderSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
-
-    container.className = '';
-    container.innerHTML =
-    // ════════════════════════════════════════════════════════
-    // Card 1: 基本设置
-    // ════════════════════════════════════════════════════════
-    `<div class="card"><div class="card-header">${this.t('tagger.basicSettings')}</div>` +
-      // 图片文件夹路径 — 全宽布局（标签在上，输入框在下，参照训练界面）
-      `<div class="field"><div class="field-info" style="margin-bottom:6px"><div class="field-key">${this.t('tagger.imageDir')}</div><div class="field-desc">${this.t('tagger.imageDirDesc')}</div></div><div class="field-input-row"><div class="field-input-wrap"><input type="text" id="tagger-path" placeholder="./train/aki"><div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePickerTagger('tagger-path')" title="${this.t('tagger.imageDir')}" aria-label="Browse local files">${_folderSvg}</button></div></div></div></div>` +
-      _fieldRow('tagger.model', 'tagger.modelDesc', modelSelect) +
-      // 通用阈值 — 仅 WD14 系列可见（CL 和 Camie 用分类阈值代替）
-      _fieldRow('tagger.threshold', 'tagger.thresholdDesc',
-        `<div class="stepper"><button type="button" @click="_thStepDown()">−</button><input type="number" id="tagger-threshold" value="0.35" min="0" max="1" step="0.01"><button type="button" @click="_thStepUp()">+</button></div>`,
-        ` :class="{ 'field-hidden': taggerSelectedModel==='camie-tagger-v2' || taggerSelectedModel==='cl_tagger_1_02' }"`, 'field-conditional') +
-      // CL 角色阈值 — 仅 WD14 系列可见（CL 和 Camie 在分类面板中单独设置角色阈值）
-      _fieldRow('tagger.characterThreshold', 'tagger.characterThresholdDesc',
-        `<div class="stepper"><button type="button" @click="_charStepDown()">−</button><input type="number" id="tagger-char-threshold" value="0.6" min="0" max="1" step="0.01"><button type="button" @click="_charStepUp()">+</button></div>`,
-        ` :class="{ 'field-hidden': taggerSelectedModel==='camie-tagger-v2' || taggerSelectedModel==='cl_tagger_1_02' }"`, 'field-conditional') +
-    `</div>` +
-
-    // ════════════════════════════════════════════════════════
-    // Card 2: Camie 分类阈值（仅 Camie 模型可见）
-    // ════════════════════════════════════════════════════════
-    `<div class="card field-conditional" :class="{ 'field-hidden': taggerSelectedModel!=='camie-tagger-v2' }"><div class="card-header">${this.t('tagger.presetLabel')}</div>` +
-      // 阈值预设选择器
-      `<div class="field"><div class="field-row"><div class="field-info"><div class="field-key">${this.t('tagger.presetLabel')}</div><div class="field-desc">${this.t('tagger.presetDesc')}</div></div><div class="field-control">${presetSelect}</div></div></div>` +
-      // 说明文字
-      `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
-      // 各分类作为嵌套字段（field-nested）
-      _catField('tagger-camie','general','0.492') +
-      _catField('tagger-camie','character','0.492') +
-      _catField('tagger-camie','copyright','0.492') +
-      _catField('tagger-camie','artist','0.492') +
-      _catField('tagger-camie','meta','0.492') +
-      _catField('tagger-camie','year','0.492') +
-      _catField('tagger-camie','rating','0.492') +
-    `</div>` +
-
-    // ════════════════════════════════════════════════════════
-    // Card 2b: CL 分类阈值（仅 CL tagger 可见）
-    // ════════════════════════════════════════════════════════
-    `<div class="card field-conditional" :class="{ 'field-hidden': taggerSelectedModel!=='cl_tagger_1_02' }"><div class="card-header">${this.t('tagger.clCategoryLabel')}</div>` +
-      // 阈值预设选择器
-      `<div class="field"><div class="field-row"><div class="field-info"><div class="field-key">${this.t('tagger.presetLabel')}</div><div class="field-desc">${this.t('tagger.clPresetDesc')}</div></div><div class="field-control">${clPresetSelect}</div></div></div>` +
-      // 说明文字
-      `<div class="field" style="border-bottom:none"><div class="field-row"><div class="field-info"><div class="field-desc" style="color:var(--text-tertiary);font-size:12px">${this.t('tagger.categoryThresholdsDesc')}</div></div></div></div>` +
-      // CL 分类字段
-      _catField('tagger-cl','general','0.35') +
-      _catField('tagger-cl','character','0.6') +
-      _catField('tagger-cl','copyright','0.35') +
-      _catField('tagger-cl','artist','0.35') +
-      _catField('tagger-cl','meta','0.35') +
-      _catField('tagger-cl','quality','0.35') +
-      _catField('tagger-cl','rating','0.35') +
-    `</div>` +
-
-    // ════════════════════════════════════════════════════════
-    // Card 3: 输出选项
-    // ════════════════════════════════════════════════════════
-    `<div class="card"><div class="card-header">${this.t('tagger.outputOptions')}</div>` +
-      _fieldRow('tagger.additionalTags', 'tagger.additionalTagsDesc',
-        `<input type="text" id="tagger-additional" placeholder="e.g. 1girl, solo">`) +
-      _fieldRow('tagger.excludeTags', 'tagger.excludeTagsDesc',
-        `<input type="text" id="tagger-exclude" placeholder="e.g. watermark">`) +
-      _fieldRow('tagger.conflictAction', 'tagger.conflictActionDesc', conflictSelect) +
-      `<div class="field"><div class="toggle-grid" style="padding:4px 0">` +
-        _toggle('tagger-replace-underscore', 'tagger.replaceUnderscore', true) +
-        _toggle('tagger-escape-tag', 'tagger.escapeTag', true) +
-        _toggle('tagger-recursive', 'tagger.recursive', true) +
-        _toggle('tagger-remove-dup', 'tagger.removeDuplicated', false) +
-        _toggle('tagger-add-rating', 'tagger.addRatingTag', false) +
-        _toggle('tagger-add-model', 'tagger.addModelTag', false) +
-      `</div></div>` +
-    `</div>`;
-
-    // ── 监听模型切换，同步 taggerSelectedModel 并应用预设 ──
-    // animaSelect 组件在 select() 时会 dispatch input 事件到 hidden input
-    const modelEl = document.getElementById('tagger-model');
-    if (modelEl) {
-      this.taggerSelectedModel = modelEl.value;
-      if (modelEl.value) localStorage.setItem('anima-tagger-model', modelEl.value);
-      modelEl.addEventListener('input', () => {
-        this.taggerSelectedModel = modelEl.value;
-        localStorage.setItem('anima-tagger-model', modelEl.value);
-        // 切换到新模型时，读取其预设选择器的当前值并应用
-        const newIsCL = modelEl.value === 'cl_tagger_1_02';
-        const newPresetId = newIsCL ? 'tagger-cl-preset' : 'tagger-preset';
-        const newPresetEl = document.getElementById(newPresetId);
-        if (newPresetEl && newPresetEl.value) {
-          this.applyCamiePreset(newPresetEl.value);
-        }
-      }, { signal: taggerSignal });
-    }
-
-    // ── 预设 animaSelect 事件监听 ──
-    const presetEl = document.getElementById('tagger-preset');
-    if (presetEl) {
-      presetEl.addEventListener('input', () => {
-        this.applyCamiePreset(presetEl.value);
-      }, { signal: taggerSignal });
-    }
-    const clPresetEl = document.getElementById('tagger-cl-preset');
-    if (clPresetEl) {
-      clPresetEl.addEventListener('input', () => {
-        this.applyCamiePreset(clPresetEl.value);
-      }, { signal: taggerSignal });
-    }
-    // 初始化：为当前模型显式应用默认预设
-    if (savedModel === 'camie-tagger-v2' || savedModel === 'cl_tagger_1_02') {
-      const initPresetId = savedModel === 'cl_tagger_1_02' ? 'tagger-cl-preset' : 'tagger-preset';
-      const initPresetEl = document.getElementById(initPresetId);
-      if (initPresetEl && initPresetEl.value) {
-        this.applyCamiePreset(initPresetEl.value);
+    if (this.taggerIsLlm()) {
+      this.taggerSettings.maxTags = { concise: 40, balanced: 80, detailed: 140 }[preset] || 80;
+    } else if (this.taggerUsesCategoryThresholds()) {
+      if (preset === 'custom') this.taggerThresholdsOpen = true;
+      const presets = this.taggerSelectedModel === 'camie-tagger-v2' ? this.TAGGER_CAMIE_PRESETS : this.TAGGER_CL_PRESETS;
+      if (preset !== 'custom' && presets[preset]) {
+        this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, presets[preset]);
+        const enabled = Object.assign({}, this.taggerSettings.categoryEnabled);
+        this.taggerCategoryKeys().forEach(key => { if (enabled[key] == null) enabled[key] = true; });
+        this.taggerSettings.categoryEnabled = enabled;
       }
+    } else {
+      const values = {
+        recall: [0.25, 0.50], balanced: [0.35, 0.60], precise: [0.50, 0.72],
+      }[preset] || [0.35, 0.60];
+      this.taggerSettings.threshold = values[0];
+      this.taggerSettings.characterThreshold = values[1];
     }
-  },
-
-  // ── 清除右侧日志面板 ─────────────────────────────────
-  clearTaggerLog() {
-    const panel = document.getElementById('taggerLogPanel');
-    if (!panel) return;
-    panel.innerHTML = '';
-  },
-
-  // ── 获取日志面板引用 ─────────────────────────────────
-  _getTaggerLogPanel() {
-    const panel = document.getElementById('taggerLogPanel');
-    if (!panel || !panel.isConnected) return null;
-    return panel;
-  },
-
-  async runTagger() {
-    const path = document.getElementById('tagger-path').value;
-    const model = document.getElementById('tagger-model').value;
-    const thresholdEl = document.getElementById('tagger-threshold');
-    const threshold = (model === 'camie-tagger-v2' || model === 'cl_tagger_1_02') ? 0.35 : parseFloat(thresholdEl?.value || '0.35');
-    const charThreshold = parseFloat(document.getElementById('tagger-char-threshold')?.value || '0.6');
-    const additional = document.getElementById('tagger-additional').value;
-    const exclude = document.getElementById('tagger-exclude').value;
-    const conflictAction = document.getElementById('tagger-conflict-action')?.value || 'copy';
-    const removeDup = document.getElementById('tagger-remove-dup')?.checked || false;
-    if (!path) { this.toast(this.t('common.specifyDir')); return; }
-
-    // ── 收集分类阈值 ──────────────────────────
-    // 未勾选的分类设阈值为 1.0，使其不输出标签（与 UI 描述一致）
-    let categoryThresholds = null;
-    if (model === 'camie-tagger-v2') {
-      categoryThresholds = {};
-      const prefix = 'tagger-camie';
-      for (const cat of this.CAMIE_CATS) {
-        const enEl = document.getElementById(prefix + '-en-' + cat);
-        if (enEl && enEl.checked) {
-          const thEl = document.getElementById(prefix + '-th-' + cat);
-          if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
+    this.saveTaggerSettings();
+    if (Object.keys(this.taggerCategoryState).length) {
+      Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
+        if (this.taggerUsesCategoryThresholds()) {
+          category.threshold = Number(this.taggerSettings.categoryThresholds[key] ?? category.threshold);
+          category.visible = this.taggerSettings.categoryEnabled[key] !== false;
         } else {
-          categoryThresholds[cat] = 1.0;
+          category.threshold = Number(key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold);
         }
-      }
-    } else if (model === 'cl_tagger_1_02') {
-      categoryThresholds = {};
-      const prefix = 'tagger-cl';
-      for (const cat of this.CL_CATS) {
-        const enEl = document.getElementById(prefix + '-en-' + cat);
-        if (enEl && enEl.checked) {
-          const thEl = document.getElementById(prefix + '-th-' + cat);
-          if (thEl) categoryThresholds[cat] = parseFloat(thEl.value) || 0.35;
-        } else {
-          categoryThresholds[cat] = 1.0;
-        }
-      }
+      });
+      this.recalculateAllTaggerCategories(true);
     }
+  },
 
-    this.taggerStarting = true;
-    this.taggerRunning = true;
-    const panel = this._getTaggerLogPanel();
-    if (panel) { panel.innerHTML = `<div style="color:var(--accent)">${this.t('tagger.running')}</div>`; }
+  taggerPresetOptions() {
+    if (this.taggerIsLlm()) return [['concise', this.t('tagger.presetConcise', 'Concise')], ['balanced', this.t('tagger.presetBalanced', 'Balanced')], ['detailed', this.t('tagger.presetDetailed', 'Detailed')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
+    if (this.taggerUsesCategoryThresholds()) return [['macro', this.t('tagger.presetMacro', 'Macro')], ['micro', this.t('tagger.presetMicro', 'Micro')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
+    return [['recall', this.t('tagger.presetRecall', 'Recall')], ['balanced', this.t('tagger.presetBalanced', 'Balanced')], ['precise', this.t('tagger.presetPrecise', 'Precise')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
+  },
 
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 30000);
+  setTaggerCustomPreset() {
+    this.taggerSettings.preset = 'custom';
+    this.saveTaggerSettings();
+  },
+
+  updateTaggerCategorySetting(key) {
+    this.taggerSettings.preset = 'custom';
+    this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, {
+      [key]: Math.max(0, Math.min(1, Number(this.taggerSettings.categoryThresholds[key]) || 0)),
+    });
+    this.saveTaggerSettings();
+  },
+
+  adjustTaggerCategoryThreshold(key, delta) {
+    const current = Number(this.taggerSettings.categoryThresholds[key]) || 0;
+    this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, {
+      [key]: Number(Math.max(0, Math.min(1, current + delta)).toFixed(3)),
+    });
+    this.updateTaggerCategorySetting(key);
+  },
+
+  toggleTaggerCategorySetting(key) {
+    this.taggerSettings.categoryEnabled = Object.assign({}, this.taggerSettings.categoryEnabled, {
+      [key]: this.taggerSettings.categoryEnabled[key] !== false,
+    });
+    this.saveTaggerSettings();
+  },
+
+  taggerEffectiveCategoryThresholds() {
+    if (!this.taggerUsesCategoryThresholds()) return {};
+    return Object.fromEntries(this.taggerCategoryKeys().map(key => [
+      key,
+      this.taggerSettings.categoryEnabled[key] === false ? 1.01 : Number(this.taggerSettings.categoryThresholds[key] ?? 0.35),
+    ]));
+  },
+
+  async selectTaggerSourceMode(mode) {
+    if (this.taggerRunning) return;
+    this.taggerTaskId = null;
+    this.taggerTask = null;
+    localStorage.removeItem('anima-tagger-task-id');
+    this.taggerSourceMode = mode;
+    this.taggerSourcePath = '';
+    this.taggerSource = null;
+    this.taggerItems = [];
+    this.taggerItemsTotal = 0;
+    this.taggerResultText = '';
+    this.taggerThresholdsOpen = false;
+    this._releaseTaggerPreview();
+  },
+
+  async pickTaggerSource() {
     try {
-      const body = {path,interrogator_model:model,threshold,character_threshold:charThreshold,additional_tags:additional,exclude_tags:exclude,replace_underscore:document.getElementById('tagger-replace-underscore').checked,batch_input_recursive:document.getElementById('tagger-recursive').checked,batch_output_dir:'',batch_output_action_on_conflict:conflictAction,add_rating_tag:document.getElementById('tagger-add-rating')?.checked||false,add_model_tag:document.getElementById('tagger-add-model')?.checked||false,escape_tag:document.getElementById('tagger-escape-tag')?.checked||false,batch_remove_duplicated_tag:removeDup,batch_output_save_json:false,sort_by_alphabetical_order:false,add_confident_as_weight:false,batch_output_filename_format:'[name].[output_extension]',unload_model_after_running:false};
-      if (categoryThresholds && Object.keys(categoryThresholds).length) {
-        body.category_thresholds = categoryThresholds;
+      const picker = this.taggerSourceMode === 'single' ? 'image-file' : 'folder';
+      const response = await fetch('/api/pick_file?picker_type=' + picker);
+      const body = await response.json();
+      if (body.status === 'success' && body.data && body.data.path) {
+        this.taggerSourcePath = body.data.path;
+        await this.scanTaggerSource();
       }
-      const r = await fetch('/api/interrogate',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctrl.signal,body:JSON.stringify(body)});
-      clearTimeout(timeout);
-      const d = await r.json();
-      if (d.status === 'success' && d.data && d.data.task_id) {
-        this.taggerTaskId = d.data.task_id;
-        this._setTaggerRealtimeTask(d.data.task_id);
-      } else {
-        if (panel) { panel.innerHTML = `<div style="color:var(--danger)">Error: ${this.esc(d.message||'Unknown')}</div>`; }
-        this.toast(d.message||this.t('common.failed'));
-        this.taggerRunning = false;
-      }
-    } catch(e) {
-      clearTimeout(timeout);
-      if (panel) {
-        const msg = e.name === 'AbortError' ? 'Request timeout' : e.message;
-        panel.innerHTML = `<div style="color:var(--danger)">Error: ${this.esc(msg)}</div>`;
-      }
-      this.toast(this.t('common.failed')+': '+(e.name==='AbortError'?'Timeout':e.message));
-      this.taggerRunning = false;
+    } catch (_) { this.toast(this.t('common.localPickerNA', 'Local picker unavailable')); }
+  },
+
+  async handleTaggerFileInput(event) {
+    const file = event.target.files && event.target.files[0];
+    if (file) await this.uploadTaggerFile(file);
+    event.target.value = '';
+  },
+
+  async handleTaggerDrop(event) {
+    this.taggerDragOver = false;
+    if (this.taggerSourceMode !== 'single') return;
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) await this.uploadTaggerFile(file);
+  },
+
+  async handleTaggerPaste(event) {
+    if (this.currentRoute !== 'tagger' || this.taggerSourceMode !== 'single') return;
+    const items = Array.from((event.clipboardData && event.clipboardData.items) || []);
+    const image = items.find(item => item.type && item.type.startsWith('image/'));
+    if (image) await this.uploadTaggerFile(image.getAsFile());
+  },
+
+  async uploadTaggerFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    this.taggerScanning = true;
+    this._releaseTaggerPreview();
+    this._taggerPreviewObjectUrl = URL.createObjectURL(file);
+    this.taggerSourcePath = file.name;
+    try {
+      const data = new FormData();
+      data.append('file', file, file.name);
+      const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Upload failed');
+      this.setTaggerSource(body.data);
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally { this.taggerScanning = false; }
+  },
+
+  async scanTaggerSource() {
+    if (!this.taggerSourcePath.trim()) return;
+    this.taggerScanning = true;
+    try {
+      const response = await fetch('/api/tagger/source/scan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: this.taggerSourcePath.trim(), recursive: this.taggerSettings.recursive }),
+      });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Scan failed');
+      this.setTaggerSource(body.data);
+    } catch (error) { this.toast(error.message, 'error'); }
+    finally { this.taggerScanning = false; }
+  },
+
+  setTaggerSource(source) {
+    if (!this.taggerRunning) {
+      this.taggerTaskId = null;
+      this.taggerTask = null;
+      localStorage.removeItem('anima-tagger-task-id');
     }
-    this.taggerStarting = false;
+    this.taggerSource = source;
+    this.taggerSourcePath = source.path || this.taggerSourcePath;
+    this.taggerItems = (source.items || []).map(item => Object.assign({ status: 'pending' }, item));
+    this.taggerItemsTotal = Number(source.total || this.taggerItems.length);
+    this.taggerSelectedIndex = 0;
+    this.taggerResultText = '';
+    this.taggerResultCategories = {};
+    this.taggerCategoryState = {};
+    this._taggerLoadedResultKey = '';
+    this.saveTaggerSettings();
+  },
+
+  taggerPreviewUrl(index) {
+    if (this.taggerSourceMode === 'single' && this._taggerPreviewObjectUrl && index === 0) return this._taggerPreviewObjectUrl;
+    return this.taggerSource ? `/api/tagger/source/${this.taggerSource.source_token}/${index}` : '';
+  },
+
+  taggerThumbUrl(index) {
+    return this.taggerSource ? `/api/tagger/thumbnails/${this.taggerSource.source_token}/${index}` : '';
+  },
+
+  selectTaggerItem(item) {
+    this.taggerSelectedIndex = Number(item.index || 0);
+    const result = item.result || (this.taggerTask && this.taggerTask.current_result && this.taggerTask.current_result.index === this.taggerSelectedIndex ? this.taggerTask.current_result : null);
+    this.setTaggerResult(result, true);
+  },
+
+  setTaggerResult(result, force = false) {
+    if (!result) {
+      this.taggerResultText = '';
+      this.taggerResultCategories = {};
+      this.taggerCategoryState = {};
+      this._taggerLoadedResultKey = '';
+      return;
+    }
+    const resultKey = `${this.taggerTaskId || 'source'}:${Number(result.index || 0)}:${result.path || result.name || ''}`;
+    if (!force && resultKey === this._taggerLoadedResultKey) return;
+    this._taggerLoadedResultKey = resultKey;
+    this.taggerResultText = result.text || '';
+    this.taggerResultCategories = result.categories || {};
+    const state = {};
+    if (this.taggerSourceMode === 'single' && !this.taggerIsLlm()) {
+      Object.entries(this.taggerResultCategories).forEach(([key, category]) => {
+        const rawTags = Array.isArray(category) ? category : (category.tags || []);
+        if (!rawTags.length) return;
+        const defaultThreshold = key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold;
+        state[key] = {
+          label: category.label || this.taggerCategoryLabel(key),
+          tags: rawTags,
+          threshold: Number(this.taggerSettings.categoryThresholds[key] ?? defaultThreshold ?? 0.5),
+          visible: this.taggerSettings.categoryEnabled[key] !== false,
+          collapsed: key !== 'general',
+          visibleTags: [],
+          total: Number(category.total || rawTags.length),
+          truncated: !!category.truncated,
+        };
+      });
+    }
+    this.taggerCategoryState = state;
+    if (Object.keys(state).length) {
+      this.taggerCategoryGlobalThreshold = Number(state.general?.threshold ?? this.taggerSettings.threshold ?? 0.5);
+      this.recalculateAllTaggerCategories(true);
+    }
+  },
+
+  taggerCategoryEntries() {
+    return Object.entries(this.taggerCategoryState).map(([key, category]) => ({ key, ...category }));
+  },
+
+  recalculateTaggerCategory(key, updateResult = true) {
+    const category = this.taggerCategoryState[key];
+    if (!category) return;
+    const threshold = Math.max(0, Math.min(1, Number(category.threshold) || 0));
+    category.threshold = threshold;
+    category.visibleTags = category.visible
+      ? category.tags.filter(tag => Number(tag[1]) >= threshold).slice(0, 200)
+      : [];
+    if (updateResult) this.refreshTaggerResultFromCategories();
+  },
+
+  updateTaggerResultCategory(key) {
+    const category = this.taggerCategoryState[key];
+    if (!category) return;
+    category.threshold = Math.max(0, Math.min(1, Number(category.threshold) || 0));
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.preset = 'custom';
+      this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, {
+        [key]: category.threshold,
+      });
+    }
+    this.saveTaggerSettings();
+    this.recalculateTaggerCategory(key);
+  },
+
+  toggleTaggerResultCategory(key) {
+    const category = this.taggerCategoryState[key];
+    if (!category) return;
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.preset = 'custom';
+      this.taggerSettings.categoryEnabled = Object.assign({}, this.taggerSettings.categoryEnabled, {
+        [key]: !!category.visible,
+      });
+      this.saveTaggerSettings();
+    }
+    this.recalculateTaggerCategory(key);
+  },
+
+  recalculateAllTaggerCategories(updateResult = true) {
+    Object.keys(this.taggerCategoryState).forEach(key => this.recalculateTaggerCategory(key, false));
+    if (updateResult) this.refreshTaggerResultFromCategories();
+  },
+
+  applyTaggerGlobalThreshold() {
+    const threshold = Math.max(0, Math.min(1, Number(this.taggerCategoryGlobalThreshold) || 0));
+    this.taggerCategoryGlobalThreshold = threshold;
+    Object.values(this.taggerCategoryState).forEach(category => { category.threshold = threshold; });
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.preset = 'custom';
+      this.taggerSettings.categoryThresholds = Object.fromEntries(this.taggerCategoryKeys().map(key => [key, threshold]));
+    } else {
+      this.taggerSettings.threshold = threshold;
+      this.taggerSettings.characterThreshold = threshold;
+    }
+    this.saveTaggerSettings();
+    this.recalculateAllTaggerCategories(true);
+  },
+
+  setAllTaggerCategoriesVisible(visible) {
+    Object.values(this.taggerCategoryState).forEach(category => { category.visible = visible; });
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.preset = 'custom';
+      this.taggerSettings.categoryEnabled = Object.fromEntries(this.taggerCategoryKeys().map(key => [key, visible]));
+      this.saveTaggerSettings();
+    }
+    this.recalculateAllTaggerCategories(true);
+  },
+
+  setAllTaggerCategoriesCollapsed(collapsed) {
+    Object.values(this.taggerCategoryState).forEach(category => { category.collapsed = collapsed; });
+  },
+
+  formatTaggerOutputName(name) {
+    let value = String(name || '');
+    if (this.taggerSettings.replaceUnderscore) value = value.replace(/_/g, ' ');
+    if (this.taggerSettings.escapeTag) value = value.replace(/([\\()])/g, '\\$1');
+    return value;
+  },
+
+  taggerVisibleCategoryTags() {
+    const excluded = new Set(String(this.taggerSettings.excludeTags || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean));
+    const values = [];
+    const seen = new Set();
+    Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
+      if (!category.visible || (key === 'rating' && !this.taggerSettings.addRatingTag) || (key === 'model' && !this.taggerSettings.addModelTag)) return;
+      category.visibleTags.forEach(tag => {
+        const raw = String(tag[0] || '').trim();
+        const normalized = raw.toLowerCase();
+        if (!raw || excluded.has(normalized) || (this.taggerSettings.removeDuplicated && seen.has(normalized))) return;
+        seen.add(normalized);
+        values.push(this.formatTaggerOutputName(raw));
+      });
+    });
+    const additional = String(this.taggerSettings.additionalTags || '').split(',').map(value => value.trim()).filter(Boolean);
+    additional.reverse().forEach(raw => {
+      const normalized = raw.toLowerCase();
+      if (excluded.has(normalized) || (this.taggerSettings.removeDuplicated && seen.has(normalized))) return;
+      seen.add(normalized);
+      values.unshift(this.formatTaggerOutputName(raw));
+    });
+    return values;
+  },
+
+  refreshTaggerResultFromCategories() {
+    if (this.taggerSourceMode !== 'single' || !Object.keys(this.taggerCategoryState).length) return;
+    this.taggerResultText = this.taggerVisibleCategoryTags().join(', ');
+  },
+
+  taggerVisibleCategoryCount() {
+    return Object.values(this.taggerCategoryState).reduce((total, category) => total + (category.visibleTags || []).length, 0);
+  },
+
+  async copyTaggerCategory(key) {
+    const category = this.taggerCategoryState[key];
+    if (!category) return;
+    const text = category.visibleTags.map(tag => this.formatTaggerOutputName(tag[0])).join(', ');
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); this.toast(this.t('tagger.copied', 'Copied')); }
+    catch (_) { this.toast(this.t('common.failed', 'Failed'), 'error'); }
+  },
+
+  async startTagger() {
+    if (!this.taggerCanStart()) return;
+    const model = this.taggerModel();
+    if (model && model.engine === 'llama' && !model.installed) {
+      this._taggerPendingStart = true;
+      await this.installTaggerModel();
+      return;
+    }
+    this.taggerStarting = true;
+    this.saveTaggerSettings();
+    try {
+      const payload = {
+        source_token: this.taggerSource.source_token,
+        model_id: this.taggerSelectedModel,
+        conflict: this.taggerSettings.conflict,
+        write_captions: this.taggerSource.kind !== 'upload',
+        options: {
+          threshold: Number(this.taggerSettings.threshold),
+          character_threshold: Number(this.taggerSettings.characterThreshold),
+          category_thresholds: this.taggerEffectiveCategoryThresholds(),
+          max_tags: Number(this.taggerSettings.maxTags),
+          preset: this.taggerSettings.preset,
+          low_vram: this.taggerSettings.lowVram,
+          replace_underscore: this.taggerSettings.replaceUnderscore,
+          escape_tag: this.taggerSettings.escapeTag,
+          add_rating_tag: this.taggerSettings.addRatingTag,
+          add_model_tag: this.taggerSettings.addModelTag,
+          remove_duplicated: this.taggerSettings.removeDuplicated,
+          additional_tags: this.taggerSettings.additionalTags,
+          exclude_tags: this.taggerSettings.excludeTags,
+        },
+      };
+      const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Unable to start');
+      this.attachTaggerTask(body.data.task_id);
+    } catch (error) { this.toast(error.message, 'error'); }
+    finally { this.taggerStarting = false; }
+  },
+
+  async installTaggerModel() {
+    this.taggerInstalling = true;
+    try {
+      const response = await fetch(`/api/tagger/models/${encodeURIComponent(this.taggerSelectedModel)}/install`, { method: 'POST' });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Unable to install model');
+      this._setTaggerRealtimeTask(body.data.task_id);
+    } catch (error) {
+      this.taggerInstalling = false;
+      this._taggerPendingStart = false;
+      this.toast(error.message, 'error');
+    }
+  },
+
+  attachTaggerTask(taskId) {
+    this.taggerTaskId = taskId;
+    this.taggerRunning = true;
+    localStorage.setItem('anima-tagger-task-id', taskId);
+    this._setTaggerRealtimeTask(taskId);
+  },
+
+  async restoreTaggerTask(taskId) {
+    try {
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/status`);
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Task unavailable');
+      this.taggerTaskId = taskId;
+      this.applyTaggerTaskSnapshot(body.data, '');
+      if (this.taggerRunning) this._setTaggerRealtimeTask(taskId);
+      await this.refreshTaggerItems(true);
+    } catch (_) { localStorage.removeItem('anima-tagger-task-id'); }
   },
 
   _setTaggerRealtimeTask(taskId) {
@@ -425,522 +709,208 @@ window.taggerMixin = {
   },
 
   handleRealtimeTaggerEvent(event) {
-    if (!event || !this._taggerRealtimeTopic || event.topic !== this._taggerRealtimeTopic) return;
-    if (event.type !== 'task.status' && event.type !== 'task.progress') return;
+    if (!event) return;
+    if (event.type === 'hardware.sample' && event.payload) return;
+    if (!this._taggerRealtimeTopic || event.topic !== this._taggerRealtimeTopic) return;
+    if (!['task.status', 'task.progress', 'task.result'].includes(event.type)) return;
     const envelope = event.payload || {};
-    this._renderTaggerRealtimeProgress(envelope.data || {}, envelope.status || '');
+    if (envelope.kind === 'tagger-install') {
+      this.taggerTask = envelope.data || {};
+      if (['FINISHED', 'FAILED', 'TERMINATED'].includes(envelope.status)) this.finishTaggerInstall(envelope.status, envelope.data || {});
+      return;
+    }
+    this.applyTaggerTaskSnapshot(envelope.data || {}, envelope.status || '');
   },
 
   applyRealtimeTaggerSnapshot(snapshot) {
     if (!this.taggerTaskId || !snapshot || !snapshot.tasks) return;
-    const tracked = snapshot.tasks.tracked || [];
-    const task = tracked.find(item => item.task_id === this.taggerTaskId);
-    if (task) this._renderTaggerRealtimeProgress(task.data || {}, task.status || '');
+    const task = (snapshot.tasks.tracked || []).find(item => item.task_id === this.taggerTaskId);
+    if (task) this.applyTaggerTaskSnapshot(task.data || {}, task.status || '');
   },
 
   resetRealtimeTaggerState() {
-    const wasRunning = !!(this.taggerRunning || this.taggerTaskId);
+    const active = !!(this.taggerRunning || this.taggerInstalling);
     this._setTaggerRealtimeTask(null);
     this.taggerRunning = false;
-    this.taggerStarting = false;
-    this.taggerTaskId = null;
-    const panel = this._getTaggerLogPanel();
-    if (wasRunning && panel) {
-      panel.innerHTML = `<div style="color:var(--warning);font-weight:500">${this.t('monitor.taskStateUnknown', 'Task state unknown')}</div>`;
-    }
-    return wasRunning;
+    this.taggerInstalling = false;
+    return active;
   },
 
-  _renderTaggerRealtimeProgress(p, normalizedStatus) {
-    if (!p) return;
-    const panel = this._getTaggerLogPanel();
-    const rawStatus = String(p.status || '').toLowerCase();
-    const completed = rawStatus === 'done' || normalizedStatus === 'FINISHED';
-    const cancelled = rawStatus === 'cancelled' || normalizedStatus === 'TERMINATED';
-    const failed = rawStatus === 'error' || normalizedStatus === 'FAILED';
-    if (panel) {
-      if (completed) {
-        const lines = (p.logs || []).slice(-15);
-        panel.innerHTML = `<div style="padding:8px 10px;background:var(--accent-soft);border-radius:var(--radius-sm);color:var(--accent);font-weight:600;font-size:13px;margin-bottom:6px">✓ ${this.t('tagger.completed')} — ${p.current || 0}/${p.total || 0} ${this.t('tagger.imagesProcessed')}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
-      } else if (cancelled) {
-        panel.innerHTML = `<div style="color:var(--warning);font-weight:500">⏹ ${this.t('tagger.stop')}</div>`;
-      } else if (failed) {
-        const lines = (p.logs || []).slice(-20);
-        panel.innerHTML = `<div style="color:var(--danger);font-weight:500">${this.esc(p.error_detail || this.t('common.failed'))}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
-      } else {
-        const lines = (p.logs || []).slice(-20);
-        const progressLine = p.total > 0 ? `[${p.current || 0}/${p.total}] ${this.esc(p.current_file || '')}` : this.t('tagger.running');
-        panel.innerHTML = `<div style="margin-bottom:4px;color:var(--accent);font-weight:600">${progressLine}</div>` + lines.map(line => `<div>${this.esc(line)}</div>`).join('');
-      }
-      panel.scrollTop = panel.scrollHeight;
+  applyTaggerTaskSnapshot(data, normalizedStatus) {
+    this.taggerTask = data;
+    if (data.source_token && (!this.taggerSource || this.taggerSource.source_token !== data.source_token)) {
+      this.taggerSource = { source_token: data.source_token, kind: data.source_kind, total: data.total, path: data.source_root || '' };
     }
-    if (!completed && !cancelled && !failed) return;
-    this.taggerRunning = false;
-    this.taggerTaskId = null;
+    if (data.source_root) {
+      this.taggerSource.path = data.source_root;
+      this.taggerSourcePath = data.source_root;
+    }
+    const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(normalizedStatus) || ['done', 'error', 'cancelled'].includes(data.status);
+    this.taggerRunning = !terminal;
+    if (data.current_result && data.current_result.index === this.taggerSelectedIndex) {
+      this.setTaggerResult(data.current_result, false);
+    }
+    const now = Date.now();
+    if (now - this._taggerLastItemsFetch > 800) {
+      this._taggerLastItemsFetch = now;
+      void this.refreshTaggerItems(false);
+    }
+    if (terminal) {
+      this._setTaggerRealtimeTask(null);
+      if (data.status === 'done') this.toast(this.t('tagger.completed', 'Tagging completed'));
+    }
+  },
+
+  async finishTaggerInstall(status, data) {
+    this.taggerInstalling = false;
     this._setTaggerRealtimeTask(null);
-    if (completed) this.toast(this.t('tagger.completed'));
-    else if (cancelled) this.toast(this.t('tagger.stop'));
-    else this.toast(this.t('common.failed'), 'error');
-  },
-
-  async stopTagger() {
-    this.taggerRunning = false;
-    if (this.taggerTaskId) {
-      try { await fetch(`/api/interrogate/stop?task_id=${this.taggerTaskId}`, {method:'POST'}); } catch(e) {}
-      this.taggerTaskId = null;
-    }
-    this._setTaggerRealtimeTask(null);
-    const panel = this._getTaggerLogPanel();
-    if (panel) {
-      const stopMsg = document.createElement('div');
-      stopMsg.style.cssText = 'margin-top:4px;color:var(--warning);font-weight:500';
-      stopMsg.textContent = `⏹ ${this.t('tagger.stop')}`;
-      panel.appendChild(stopMsg);
-      panel.scrollTop = panel.scrollHeight;
-    }
-    this.toast(this.t('tagger.stop'));
-  },
-
-  localFilePickerTagger(inputId) {
-    var self = this;
-    fetch('/api/pick_file?picker_type=folder').then(r=>r.json()).then(d=>{if(d.status==='success'&&d.data&&d.data.path) document.getElementById(inputId).value=d.data.path;}).catch(function(){ self.toast(self.t('common.localPickerNA')); });
-  },
-
-  openTagEditor() { window.location.hash = 'tagEditor'; },
-
-  // ════════════════════════════════════════════════════════
-  //  单图模式方法
-  // ════════════════════════════════════════════════════════
-
-  switchTaggerMode(mode) {
-    this.taggerMode = mode;
-    if (mode === 'single') {
-      this.$nextTick(() => {
-        this.buildSingleModelSelect();
-        this.buildSinglePresetSelect();
-      });
-      // 全局监听粘贴事件
-      document.addEventListener('paste', this._onSinglePaste);
-    } else {
-      document.removeEventListener('paste', this._onSinglePaste);
-    }
-  },
-
-  /** 全局粘贴处理（document 级别，确保焦点不在 drop-zone 时也能触发） */
-  _onSinglePaste(e) {
-    if (this.taggerMode !== 'single') return;
-    const items = e.clipboardData && e.clipboardData.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        this.loadImageFile(item.getAsFile());
-        break;
-      }
-    }
-  },
-
-  /** 构建单图模式模型选择器 */
-  async buildSingleModelSelect() {
-    const container = document.getElementById('singleModelSelect');
-    if (!container || container.children.length > 0) return;
-    let models = this._taggerModelsCache;
-    if (!models || !models.length) {
-      try {
-        const r = await fetch('/api/tagger/models');
-        const d = await r.json();
-        if (d.status === 'success') models = d.data || [];
-        if (models.length) this._taggerModelsCache = models;
-      } catch (e) { return; }
-    }
-    if (!models || !models.length) return;
-    const modelOpts = models.map(m => ({ v: m.id, l: m.name || m.id }));
-    const savedModel = this.taggerSelectedModel || localStorage.getItem('anima-tagger-model') || modelOpts[0]?.v || '';
-    this.singleImage.model = savedModel;
-    const html = this.animaSelectHtml({ options: modelOpts }, savedModel, 'single-tagger-model');
-    container.innerHTML = html;
-    this.$nextTick(() => {
-      const el = document.getElementById('single-tagger-model');
-      if (el) {
-        el.addEventListener('input', () => {
-          this.singleImage.model = el.value;
-          this.$nextTick(() => {
-            this.buildSinglePresetSelect();
-          });
-        });
-      }
-    });
-  },
-
-  /** 构建单图模式阈值预设选择器 */
-  buildSinglePresetSelect() {
-    const container = document.getElementById('singlePresetSelect');
-    if (!container) return;
-    container.innerHTML = '';
-    const presetOpts = [
-      { v: 'macro', l: this.t('tagger.presetMacro') },
-      { v: 'micro', l: this.t('tagger.presetMicro') },
-      { v: 'custom', l: this.t('tagger.presetCustom') },
-    ];
-    const html = this.animaSelectHtml({ options: presetOpts }, 'macro', 'single-preset');
-    container.innerHTML = html;
-    this.$nextTick(() => {
-      const presetEl = document.getElementById('single-preset');
-      if (presetEl) {
-        presetEl.addEventListener('input', () => {
-          this.applySinglePreset(presetEl.value);
-        });
-      }
-    });
-  },
-
-  /** 应用预设到阈值 */
-  applySinglePreset(preset) {
-    if (preset === 'custom') return;
-    const isCL = this.singleImage.model === 'cl_tagger_1_02';
-    const isCamie = this.singleImage.model === 'camie-tagger-v2';
-    const isCategoryModel = isCL || isCamie;
-
-    // ── 预推理：更新初始阈值滑块 ──
-    const thEl = document.getElementById('single-init-threshold');
-    const thVal = document.getElementById('single-init-th-val');
-    if (thEl) {
-      let initVal = '0.50';
-      if (isCamie) {
-        initVal = this.CAMIE_PRESETS[preset] ? this.CAMIE_PRESETS[preset].general : '0.50';
-      } else if (isCL) {
-        initVal = this.CL_PRESETS[preset] ? this.CL_PRESETS[preset].general : '0.50';
-      } else {
-        initVal = preset === 'macro' ? '0.35' : (preset === 'micro' ? '0.45' : '0.50');
-      }
-      thEl.value = initVal;
-      if (thVal) thVal.value = parseFloat(initVal).toFixed(2);
-    }
-
-    // ── 推理后：将预设值同步到分类阈值并刷新 ──
-    if (this.singleImage.inferred && isCategoryModel) {
-      const presets = isCL ? this.CL_PRESETS : this.CAMIE_PRESETS;
-      const vals = presets[preset];
-      if (vals) {
-        for (const key in this.singleImage.categories) {
-          if (vals[key] !== undefined) {
-            this.singleImage.categories[key].threshold = parseFloat(vals[key]);
-          }
-        }
-      }
-      // 同步全局阈值 = 预设的 general 值（如果存在）
-      if (vals && vals.general) {
-        this.singleImage.globalThreshold = parseFloat(vals.general);
-      }
-      this._recalcAllVisibleTags();
-    }
-  },
-
-  /** 文件选择器 */
-  singleFilePicker() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = (e) => {
-      if (e.target.files && e.target.files[0]) {
-        this.loadImageFile(e.target.files[0]);
-      }
-    };
-    input.click();
-  },
-
-  /** 拖拽放下图片 */
-  handleImageDrop(e) {
-    this.singleImage.dragOver = false;
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      this.loadImageFile(file);
-    }
-  },
-
-  /** Ctrl+V 粘贴图片 */
-  handleImagePaste(e) {
-    const items = e.clipboardData && e.clipboardData.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        this.loadImageFile(item.getAsFile());
-        break;
-      }
-    }
-  },
-
-  /** 加载图片文件并生成预览 */
-  loadImageFile(file) {
-    if (!file) return;
-    this.singleImage.file = file;
-    this.singleImage.inferred = false;
-    const reader = new FileReader();
-    const fileRef = file; // Capture reference to detect if another file was loaded while reading
-    reader.onload = (e) => {
-      // Only update if the file hasn't changed since we started reading
-      if (this.singleImage.file === fileRef) {
-        this.singleImage.previewUrl = e.target.result;
-      }
-    };
-    reader.onerror = () => {
-      if (this.singleImage.file === fileRef) {
-        this.toast(this.t('common.failed') + ': Failed to read image file');
-        this.singleImage.file = null;
-      }
-    };
-    try {
-      reader.readAsDataURL(file);
-    } catch (e) {
-      this.toast(this.t('common.failed') + ': Failed to read image file');
-      this.singleImage.file = null;
-    }
-  },
-
-  /** 拖拽分隔线：开始 */
-  handleResizeStart() {
-    this.singleImage.isResizing = true;
-    document.body.style.cursor = 'col-resize';
-  },
-
-  /** 拖拽分隔线：移动 */
-  handleResizeMove(e) {
-    if (!this.singleImage.isResizing) return;
-    const layout = document.querySelector('.single-tagger-layout');
-    if (!layout) return;
-    const rect = layout.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const pct = (x / rect.width) * 100;
-    // 限制范围：20% ~ 80%
-    this.singleImage.leftWidth = Math.min(80, Math.max(20, Math.round(pct)));
-  },
-
-  /** 拖拽分隔线：结束 */
-  handleResizeEnd() {
-    this.singleImage.isResizing = false;
-    document.body.style.cursor = '';
-  },
-
-  /** 清除图片和推理结果 */
-  clearSingleImage() {
-    this.singleImage.previewUrl = null;
-    this.singleImage.file = null;
-    this.singleImage.dragOver = false;
-    this.singleImage.categories = {};
-    this.singleImage.inferred = false;
-    this.singleImage.inferring = false;
-    this.singleImage.globalThreshold = 0.50;
-  },
-
-  /** 执行单图推理 */
-  async runSingleInference() {
-    if (!this.singleImage.file) {
-      this.toast(this.t('tagger.noImage'));
+    if (status !== 'FINISHED') {
+      this._taggerPendingStart = false;
+      this.toast(data.error_detail || this.t('common.failed', 'Failed'), 'error');
       return;
     }
-    this.singleImage.inferring = true;
+    await this.loadTaggerModels();
+    if (this._taggerPendingStart) {
+      this._taggerPendingStart = false;
+      await this.startTagger();
+    }
+  },
+
+  async refreshTaggerItems(reset) {
+    if (!this.taggerTaskId) return;
     try {
-      const formData = new FormData();
-      formData.append('file', this.singleImage.file);
-      formData.append('interrogator_model', this.singleImage.model || 'camie-tagger-v2');
-
-      const r = await fetch('/api/tagger/single', {
-        method: 'POST',
-        body: formData,
-      });
-      const d = await r.json();
-      if (d.status !== 'success') {
-        this.toast(d.message || this.t('common.failed'));
-        this.singleImage.inferring = false;
-        return;
-      }
-      if (!d.data || !d.data.categories) {
-        this.toast(this.t('common.failed'));
-        this.singleImage.inferring = false;
-        return;
-      }
-      const data = d.data;
-      const initThEl = document.getElementById('single-init-threshold');
-      this.singleImage.globalThreshold = initThEl ? parseFloat(initThEl.value) || 0.50 : 0.50;
-      this.singleImage.categories = {};
-
-      for (const [key, tags] of Object.entries(data.categories)) {
-        if (!tags || tags.length === 0) continue;
-        this.singleImage.categories[key] = {
-          label: data.labels[key] || key,
-          tags: tags,                                          // 原始数据（不过滤）
-          threshold: this.singleImage.globalThreshold,         // 分类独立阈值，初始继承全局
-          visible: true,
-          collapsed: key !== 'general',                        // 默认只展开 General
-          visibleTags: [],                                     // 满足本分类阈值 + 可见的标签（响应式数组）
-        };
-      }
-      this._recalcAllVisibleTags();
-      this.singleImage.inferred = true;
-    } catch (e) {
-      this.toast(this.t('common.failed') + ': ' + e.message);
-    }
-    this.singleImage.inferring = false;
+      const offset = reset || this.taggerFailedOnly ? 0 : Math.max(0, Number(this.taggerTask?.current || 0) - 80);
+      const limit = this.taggerFailedOnly ? 500 : 160;
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/items?offset=${offset}&limit=${limit}&failed_only=${this.taggerFailedOnly}`);
+      const body = await response.json();
+      if (body.status !== 'success') return;
+      this.taggerItemsTotal = Number(body.data.total || 0);
+      this._mergeTaggerItems(body.data.items || [], reset || this.taggerFailedOnly);
+      if (reset && this.taggerItems.length) this.selectTaggerItem(this.taggerItems[0]);
+    } catch (_) {}
   },
 
-  _singleThDebounceTimer: null,
-
-  /** 全局阈值变更 → 同步所有分类阈值并重新计算可见标签（100ms 防抖） */
-  applyGlobalThreshold() {
-    const gt = this.singleImage.globalThreshold;
-    for (const key in this.singleImage.categories) {
-      this.singleImage.categories[key].threshold = gt;
-    }
-    if (this._singleThDebounceTimer) clearTimeout(this._singleThDebounceTimer);
-    this._singleThDebounceTimer = setTimeout(() => {
-      this._recalcAllVisibleTags();
-    }, 100);
-  },
-
-  /** 分类阈值变更 → 重新计算该分类可见标签（模板中 @input 调用） */
-  recalcCategoryThreshold(key) {
-    this._recalcVisibleTags(key);
-  },
-
-  /** 分类可见性切换 → 重新计算（模板中 @change 调用） */
-  recalcCategoryVisibility(key) {
-    this._recalcVisibleTags(key);
-  },
-
-  /** 重新计算单个分类的 visibleTags */
-  _recalcVisibleTags(key) {
-    const cat = this.singleImage.categories[key];
-    if (!cat) return;
-    if (!cat.visible) {
-      cat.visibleTags = [];
-      cat._totalCount = 0;
+  _mergeTaggerItems(items, replace) {
+    if (replace) {
+      this.taggerItems = items;
       return;
     }
-    const filtered = cat.tags.filter(tag => tag[1] >= cat.threshold);
-    cat._totalCount = filtered.length;
-    cat.visibleTags = filtered.slice(0, 200);
+    const merged = new Map(this.taggerItems.map(item => [item.index, item]));
+    items.forEach(item => merged.set(item.index, item));
+    this.taggerItems = Array.from(merged.values()).sort((left, right) => left.index - right.index);
   },
 
-  /** 重新计算所有分类的 visibleTags */
-  _recalcAllVisibleTags() {
-    for (const key in this.singleImage.categories) {
-      this._recalcVisibleTags(key);
-    }
-  },
-
-  /** 汇总可见标签数量 */
-  summaryTagCount() {
-    const opts = this.singleImage.formatOptions;
-    let count = 0;
-    for (const key in this.singleImage.categories) {
-      if (key === 'rating' && !opts.addRatingTag) continue;
-      const cat = this.singleImage.categories[key];
-      if (cat.visible) {
-        count += cat.visibleTags.length;
-      }
-    }
-    return count;
-  },
-
-  /** 汇总可见标签文本（逗号分隔） */
-  summaryTagsText() {
-    const parts = this.summaryTagsParts();
-    // 标签内空格替换为不换行空格，保证多词标签不被截断
-    return parts.map(t => t.replace(/ /g, '\u00A0')).join(', ');
-  },
-
-  /** 汇总可见标签数组（用于 x-for 渲染，每个标签作为独立不换行单元） */
-  summaryTagsParts() {
-    const opts = this.singleImage.formatOptions;
-    const parts = [];
-    for (const key in this.singleImage.categories) {
-      const cat = this.singleImage.categories[key];
-      if (key === 'rating' && !opts.addRatingTag) continue;
-      if (cat.visible) {
-        for (const tag of cat.visibleTags) {
-          let tagName = tag[0];
-          if (opts.replaceUnderscore) {
-            tagName = tagName.replace(/_/g, ' ');
-          }
-          if (opts.escapeTag) {
-            tagName = tagName.replace(/([\\()])/g, '\\$1');
-          }
-          parts.push(tagName);
-        }
-      }
-    }
-    return parts;
-  },
-
-  /** 复制标签到剪贴板 */
-  async copyTags() {
-    const text = this.summaryTagsParts().join(', ');
-    if (!text) return;
+  async loadMoreTaggerItems(event) {
+    const element = event.currentTarget;
+    if (!this.taggerSource || !element || element.scrollLeft + element.clientWidth < element.scrollWidth - 240) return;
+    const total = Number(this.taggerItemsTotal || this.taggerTask?.total || this.taggerSource.total || 0);
+    if (this.taggerItems.length >= total) return;
     try {
-      await navigator.clipboard.writeText(text);
-      this.toast(this.t('tagger.copied'));
-    } catch (e) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      this.toast(this.t('tagger.copied'));
-    }
+      const lastIndex = this.taggerItems.reduce((highest, item) => Math.max(highest, Number(item.index)), -1);
+      const offset = this.taggerFailedOnly ? this.taggerItems.length : lastIndex + 1;
+      const url = this.taggerTaskId
+        ? `/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/items?offset=${offset}&limit=120&failed_only=${this.taggerFailedOnly}`
+        : `/api/tagger/source/${encodeURIComponent(this.taggerSource.source_token)}/items?offset=${offset}&limit=120`;
+      const response = await fetch(url);
+      const body = await response.json();
+      if (body.status === 'success') {
+        this.taggerItemsTotal = Number(body.data.total || this.taggerItemsTotal);
+        this._mergeTaggerItems(body.data.items || [], false);
+      }
+    } catch (_) {}
   },
 
-  /** 复制单个分类的标签 */
-  async copyCategoryTags(key) {
-    const cat = this.singleImage.categories[key];
-    if (!cat || !cat.visibleTags.length) return;
-    const opts = this.singleImage.formatOptions;
-    const parts = [];
-    for (const tag of cat.visibleTags) {
-      let tagName = tag[0];
-      if (opts.replaceUnderscore) tagName = tagName.replace(/_/g, ' ');
-      if (opts.escapeTag) tagName = tagName.replace(/([\\()])/g, '\\$1');
-      parts.push(tagName);
-    }
-    const text = parts.join(', ');
+  async toggleTaggerFailedOnly() {
+    this.taggerFailedOnly = !this.taggerFailedOnly;
+    await this.refreshTaggerItems(true);
+  },
+
+  async cancelTagger() {
+    if (!this.taggerTaskId) return;
+    try { await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/cancel`, { method: 'POST' }); }
+    catch (_) {}
+  },
+
+  async retryFailedTagger() {
+    if (!this.taggerTaskId || !this.taggerTask || !this.taggerTask.failed) return;
     try {
-      await navigator.clipboard.writeText(text);
-      this.toast(this.t('tagger.copied'));
-    } catch (e) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      this.toast(this.t('tagger.copied'));
-    }
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/retry`, { method: 'POST' });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Retry failed');
+      this.attachTaggerTask(body.data.task_id);
+    } catch (error) { this.toast(error.message, 'error'); }
   },
 
-  collapseAllCats() {
-    for (const key in this.singleImage.categories) {
-      this.singleImage.categories[key].collapsed = true;
-    }
+  async copyTaggerResult() {
+    if (!this.taggerResultText) return;
+    try { await navigator.clipboard.writeText(this.taggerResultText); this.toast(this.t('tagger.copied', 'Copied')); }
+    catch (_) { this.toast(this.t('common.failed', 'Failed'), 'error'); }
   },
-  expandAllCats() {
-    for (const key in this.singleImage.categories) {
-      this.singleImage.categories[key].collapsed = false;
-    }
+
+  async saveTaggerResult() {
+    if (!this.taggerSource || !this.taggerResultText.trim()) return;
+    try {
+      const response = await fetch('/api/tagger/captions/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_token: this.taggerSource.source_token, index: this.taggerSelectedIndex, text: this.taggerResultText }),
+      });
+      const body = await response.json();
+      if (body.status !== 'success') throw new Error(body.message || 'Save failed');
+      this.taggerResultText = body.data.text;
+      this.toast(this.t('common.saved', 'Saved'));
+    } catch (error) { this.toast(error.message, 'error'); }
   },
-  showAllCats() {
-    for (const key in this.singleImage.categories) {
-      this.singleImage.categories[key].visible = true;
-    }
-    this._recalcAllVisibleTags();
+
+  openTaggerDatasetInEditor() {
+    if (this.taggerSource && this.taggerSource.kind === 'folder') this.tagEditorDir = this.taggerSource.path || this.taggerSourcePath;
+    this.navigate('tagEditor');
   },
-  hideAllCats() {
-    for (const key in this.singleImage.categories) {
-      this.singleImage.categories[key].visible = false;
-    }
-    this._recalcAllVisibleTags();
+
+  taggerProgressPercent() {
+    return this.taggerTask && this.taggerTask.total ? Math.min(100, Math.round(this.taggerTask.current * 100 / this.taggerTask.total)) : 0;
+  },
+
+  formatTaggerEta(seconds) {
+    if (seconds == null) return '--';
+    const value = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(value / 60);
+    return minutes ? `${minutes}m ${Math.round(value % 60)}s` : `${Math.round(value)}s`;
+  },
+
+  formatTaggerBytes(bytes) {
+    const gb = Number(bytes || 0) / 1073741824;
+    return gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(Number(bytes || 0) / 1048576) + ' MB';
+  },
+
+  taggerPhaseLabel() {
+    const phase = this.taggerTask && this.taggerTask.phase || (this.taggerScanning ? 'scanning' : 'ready');
+    return this.t('tagger.phase.' + phase, phase.replace(/_/g, ' '));
+  },
+
+  taggerVisibleLogs() {
+    const logs = this.taggerTask && Array.isArray(this.taggerTask.logs) ? this.taggerTask.logs : [];
+    return logs.slice(this.taggerLogsOpen ? -160 : -32);
+  },
+
+  taggerLogTime(line) {
+    return String(line || '').match(/^\[([^\]]+)\]\s*/)?.[1] || '--:--:--';
+  },
+
+  taggerLogMessage(line) {
+    return String(line || '').replace(/^\[[^\]]+\]\s*/, '');
+  },
+
+  taggerLogTone(line) {
+    const value = String(line || '').toLowerCase();
+    if (/failed|error|unsupported|out of memory|exception/.test(value)) return 'error';
+    if (/skipped|cancelled|stopped/.test(value)) return 'warning';
+    if (/completed|model ready|\(success\)|written/.test(value)) return 'success';
+    if (/task started|loading model|download|preparing/.test(value)) return 'phase';
+    return '';
+  },
+
+  _releaseTaggerPreview() {
+    if (this._taggerPreviewObjectUrl) URL.revokeObjectURL(this._taggerPreviewObjectUrl);
+    this._taggerPreviewObjectUrl = null;
   },
 };

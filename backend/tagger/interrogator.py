@@ -29,6 +29,7 @@ _TAGGER_PROGRESS_TTL = 300  # 终态任务保留 5 分钟后自动清理
 
 _tagger_progress: Dict[str, dict] = {}
 _tagger_progress_lock = threading.Lock()
+gpu_inference_lock = threading.Lock()
 
 
 def _cleanup_completed_tasks():
@@ -64,9 +65,15 @@ def cancel_tagger_task(task_id: str) -> bool:
         if task_id in _tagger_progress:
             _tagger_progress[task_id]["status"] = "cancelled"
             _tagger_progress[task_id]["logs"].append('Task cancelled by user')
-            _mark_task_completed(task_id)
+            import time
+            _tagger_progress[task_id]["_completed_at"] = time.time()
             return True
         return False
+
+
+def has_active_legacy_tagger_task() -> bool:
+    with _tagger_progress_lock:
+        return any(info.get("status") == "running" for info in _tagger_progress.values())
 
 
 # 所有模型统一下载到项目 huggingface/ 目录
@@ -251,7 +258,8 @@ def on_interrogate(
                                 _tagger_progress[task_id]["current_file"] = str(path.name)
                             continue
 
-                    tags = interrogator.interrogate(image)
+                    with gpu_inference_lock:
+                        tags = interrogator.interrogate(image)
                     processed_tags = Interrogator.postprocess_tags(
                         tags,
                         *postprocess_opts

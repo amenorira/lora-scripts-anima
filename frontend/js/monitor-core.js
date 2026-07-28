@@ -559,6 +559,8 @@ window.monitorCoreMixin = {
 
     if (this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
+    } else if (this.currentRoute === 'tagger' && typeof this.renderTaggerResourceBar === 'function') {
+      this.renderTaggerResourceBar();
     }
   },
 

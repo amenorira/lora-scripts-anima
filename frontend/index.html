@@ -19,12 +19,13 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260728-tagger4">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260728-tagger16">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
   <script src="/anima-ui/js/config.js" defer></script>
-  <script src="/anima-ui/js/anima-select.js" defer></script>
+  <script src="/anima-ui/js/anima-select.js?v=20260728-tagger4" defer></script>
   <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
   <script src="/anima-ui/js/monitor-render.js" defer></script>
@@ -34,7 +35,7 @@
   <script src="/anima-ui/js/training-core.js" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-presets.js" defer></script>
-  <script src="/anima-ui/js/tagger.js" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260728-tagger7" defer></script>
   <script src="/anima-ui/js/tag-editor.js" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -483,193 +484,8 @@
       </div>
 
       <!-- Route: Tagger -->
-      <div x-show="currentRoute === 'tagger'" x-cloak>
-        <div class="page-header">
-          <h1 class="page-title" x-text="t('tagger.title')">Tagger</h1>
-          <p class="page-subtitle" x-text="t('tagger.subtitle')">Auto-tag images using AI models</p>
-        </div>
-
-        <!-- Tab 栏 -->
-        <div class="tagger-tabs">
-          <button class="tagger-tab" :class="{ active: taggerMode === 'batch' }" @click="switchTaggerMode('batch')" x-text="t('tagger.batchMode')">批量模式</button>
-          <button class="tagger-tab" :class="{ active: taggerMode === 'single' }" @click="switchTaggerMode('single')" x-text="t('tagger.singleMode')">单图模式</button>
-        </div>
-
-        <!-- 批量模式 -->
-        <div x-show="taggerMode === 'batch'" class="card" id="taggerForm"></div>
-
-        <!-- 单图模式 -->
-        <div x-show="taggerMode === 'single'" id="singleTaggerContent">
-            <div class="single-tagger-layout"
-     @mousemove="handleResizeMove($event)"
-     @mouseup="handleResizeEnd()"
-     @mouseleave="handleResizeEnd()">
-              <!-- 左侧：图片上传区 -->
-              <div class="single-tagger-left" :style="{ width: singleImage.leftWidth + '%' }">
-                <div class="drop-zone" tabindex="0"
-                     :class="{ 'has-image': singleImage.previewUrl, 'drag-over': singleImage.dragOver }"
-                     @click="singleFilePicker()"
-                     @dragover.prevent="singleImage.dragOver = true"
-                     @dragleave="singleImage.dragOver = false"
-                     @drop.prevent="handleImageDrop($event)"
-                     @paste="handleImagePaste($event)">
-                  <div class="drop-zone-placeholder" x-show="!singleImage.previewUrl">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <div x-text="t('tagger.dropImageHere')">拖拽图片到此处，或点击选择</div>
-                    <div style="font-size:11px;opacity:0.6" x-text="t('tagger.orPaste')">或 Ctrl+V 粘贴</div>
-                  </div>
-                  <img :src="singleImage.previewUrl" x-show="singleImage.previewUrl" alt="Preview">
-                </div>
-                <div class="single-tagger-actions">
-                  <button class="btn btn-start" style="flex:0 0 60%"
-                          @click="runSingleInference()"
-                          :disabled="!singleImage.file || singleImage.inferring"
-                          x-text="singleImage.inferring ? t('tagger.inferring') : t('tagger.startInference')">
-                    开始推理
-                  </button>
-                  <button class="btn btn-ghost" style="flex:1;color:var(--danger)"
-                          @click="clearSingleImage()"
-                          x-show="singleImage.file"
-                          x-text="t('common.clear')">清除</button>
-                </div>
-              <!-- 标签汇总栏：推理后显示 -->
-              <div class="tag-summary" x-show="singleImage.inferred">
-                <div class="tag-summary-header">
-                  <span class="tag-summary-title"><span x-text="t('tagger.totalTags')">总计标签</span>: <span x-text="summaryTagCount()"></span></span>
-                  <button class="btn" style="font-size:12px;padding:4px 14px" @click="copyTags()" x-text="t('tagger.copyTags')">复制标签</button>
-                </div>
-                <div class="tag-summary-content" x-text="summaryTagsText()"></div>
-              </div>
-              </div>
-
-              <div class="divider-vertical" :class="{ dragging: singleImage.isResizing }" @mousedown.prevent="handleResizeStart()"></div>
-
-              <!-- 右侧：模型选择器始终可见 + 条件内容 -->
-              <div class="single-tagger-right" :style="{ width: (100 - singleImage.leftWidth) + '%' }" style="display:flex;flex-direction:column;gap:12px;padding:0">
-                <!-- 模型选择器 — 始终可见 -->
-                <div class="field">
-                  <div class="field-info"><div class="field-key" x-text="t('tagger.model')">Tagger 模型</div></div>
-                  <div class="field-control" id="singleModelSelect"></div>
-                </div>
-
-                <!-- 预设选择器（仅 Camie/CL 可见） -->
-                <div x-show="singleImage.model === 'camie-tagger-v2' || singleImage.model === 'cl_tagger_1_02'">
-                  <div class="field">
-                    <div class="field-row">
-                      <div class="field-info"><div class="field-key" x-text="t('tagger.presetLabel')">阈值预设</div></div>
-                      <div class="field-control" id="singlePresetSelect"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 初始阈值（仅预推理可见，标签随模型变化） -->
-                <div class="field" x-show="!singleImage.inferred">
-                  <div class="field-row">
-                    <div class="field-info">
-                      <div class="field-key">
-                        <span x-show="singleImage.model === 'camie-tagger-v2' || singleImage.model === 'cl_tagger_1_02'" x-text="t('tagger.globalThreshold')">初始阈值</span>
-                        <span x-show="singleImage.model !== 'camie-tagger-v2' && singleImage.model !== 'cl_tagger_1_02'" x-text="t('tagger.threshold')">阈值</span>
-                      </div>
-                    </div>
-                    <div class="field-control" style="display:flex;align-items:center;gap:8px">
-                      <input type="range" id="single-init-threshold" min="0" max="1" step="0.01" value="0.50"
-                             style="flex:1;height:4px;accent-color:var(--accent)"
-                             @input="document.getElementById('single-init-th-val').value = parseFloat($event.target.value).toFixed(2)">
-                      <input type="number" id="single-init-th-val" min="0" max="1" step="0.01" value="0.50"
-                             style="width:50px;font-size:12px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px"
-                             @change="document.getElementById('single-init-threshold').value = parseFloat($event.target.value)">
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 格式化开关：始终可见 -->
-                <div class="field">
-                  <div class="toggle-grid" style="padding:4px 0">
-                    <label class="toggle">
-                      <input type="checkbox" x-model="singleImage.formatOptions.replaceUnderscore" checked>
-                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                      <span x-text="t('tagger.replaceUnderscore')">将下划线替换为空格</span>
-                    </label>
-                    <label class="toggle">
-                      <input type="checkbox" x-model="singleImage.formatOptions.escapeTag" checked>
-                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                      <span x-text="t('tagger.escapeTag')">转义括号</span>
-                    </label>
-                    <label class="toggle">
-                      <input type="checkbox" x-model="singleImage.formatOptions.addRatingTag">
-                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                      <span x-text="t('tagger.addRatingTag')">添加等级标签</span>
-                    </label>
-                  </div>
-                </div>
-
-                <!-- 推理后：全局阈值 + 分类面板 + 汇总 -->
-                <div x-show="singleImage.inferred">
-                  <!-- 全局阈值 -->
-                  <div class="field">
-                    <div class="field-row">
-                      <div class="field-info"><div class="field-key" x-text="t('tagger.globalThreshold')">全局阈值</div></div>
-                      <div class="field-control" style="display:flex;align-items:center;gap:8px">
-                        <input type="range" min="0" max="1" step="0.01"
-                               x-model.number="singleImage.globalThreshold"
-                               @input="applyGlobalThreshold()"
-                               style="flex:1;height:4px;accent-color:var(--accent)">
-                        <input type="number" min="0" max="1" step="0.01"
-                               x-model.number="singleImage.globalThreshold"
-                               @change="applyGlobalThreshold()"
-                               style="width:52px;font-size:12px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
-                      </div>
-                    </div>
-                    <div style="display:flex;gap:6px;margin-top:4px">
-                      <button class="btn btn-xs btn-ghost" @click="collapseAllCats()" x-text="t('tagger.collapseAll')">折叠全部</button>
-                      <button class="btn btn-xs btn-ghost" @click="expandAllCats()" x-text="t('tagger.expandAll')">展开全部</button>
-                      <button class="btn btn-xs btn-ghost" @click="showAllCats()" x-text="t('tagger.showAll')">显示全部</button>
-                      <button class="btn btn-xs btn-ghost" @click="hideAllCats()" x-text="t('tagger.hideAll')">隐藏全部</button>
-                    </div>
-                  </div>
-
-                  <!-- 分类面板 -->
-                  <template x-for="(cat, key) in singleImage.categories" :key="key">
-                    <div class="cat-panel" :class="{ collapsed: cat.collapsed }">
-                      <div class="cat-panel-header" @click="cat.collapsed = !cat.collapsed">
-                        <span class="cat-panel-arrow">▼</span>
-                        <span class="cat-panel-label" x-text="cat.label"></span>
-                        <span class="cat-panel-count" x-text="cat.visibleTags.length >= 200 ? '(' + cat.visibleTags.length + '/' + (cat._totalCount || 0) + '+' + ')' : '(' + cat.visibleTags.length + ')'"></span>
-                        <span class="cat-panel-spacer"></span>
-                        <label class="toggle" @click.stop="">
-                          <input type="checkbox" :checked="cat.visible" @change="cat.visible = $event.target.checked; recalcCategoryVisibility(key)">
-                          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                        </label>
-                        <button class="btn btn-ghost" @click.stop="copyCategoryTags(key)" style="font-size:12px;padding:3px 10px" :title="t('tagger.copyCategoryTags','Copy category tags')" x-text="t('common.copy','Copy')">复制</button>
-                      </div>
-                      <div class="cat-panel-controls">
-                        <input type="range" min="0" max="1" step="0.01"
-                               x-model.number="cat.threshold"
-                               @input="recalcCategoryThreshold(key)">
-                        <input type="number" min="0" max="1" step="0.01"
-                               x-model.number="cat.threshold"
-                               @change="recalcCategoryThreshold(key)"
-                               style="width:50px;font-size:11px;border:1px solid var(--border-input);border-radius:var(--radius-control);text-align:center;padding:2px 4px;color:var(--text-secondary);font-variant-numeric:tabular-nums">
-                      </div>
-                      <div class="cat-panel-body">
-                        <div class="tag-list">
-                          <template x-for="(tag, i) in cat.visibleTags" :key="i">
-                            <span class="tag-item">
-                              <span x-text="tag[0]"></span>
-                              <span class="tag-conf" x-text="tag[1].toFixed(2)"></span>
-                            </span>
-                          </template>
-                          <span x-show="cat.visibleTags.length === 0" style="color:var(--text-tertiary);font-size:12px" x-text="t('tagger.noTags')">没有符合条件的标签</span>
-                        </div>
-                        <div x-show="cat._totalCount > 200" style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px;border-top:1px solid var(--border-default);margin-top:4px" x-text="t('tagger.tagTruncated','Showing first 200 of {total}. Raise threshold to reduce tags.').replace('{total}', cat._totalCount)"></div>
-                      </div>
-                    </div>
-                  </template>
-
-                </div>
-              </div>
-        </div>
-      </div>
+      <div x-show="currentRoute === 'tagger'" class="tagger-route" x-cloak>
+        <div id="taggerWorkspaceHost"></div>
       </div>
 
       <!-- Route: Tag Editor -->
@@ -1835,37 +1651,7 @@
           </div>
         </div>
       </template>
-      <!-- Tagger: Log output + actions -->
-      <template x-if="currentRoute === 'tagger'">
-        <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
-          <div class="panel-header">
-            <span x-text="t('tagger.logTitle', 'Tagger 日志')">Tagger 日志</span>
-          </div>
-          <div class="panel-preview" id="taggerLogPanel"></div>
-          <!-- 批量模式：显示操作按钮 -->
-          <div class="panel-actions" x-show="taggerMode === 'batch'">
-            <div class="btn-row">
-              <button class="btn btn-ghost btn-sm" style="flex:1" @click="clearTaggerLog()" x-text="t('common.clear', '清除')">清除</button>
-            </div>
-            <div class="btn-row">
-              <button class="btn btn-start" style="flex:1" @click="runTagger()"
-                      :disabled="taggerRunning || taggerStarting"
-                      x-text="taggerStarting ? t('common.starting') : (taggerRunning ? t('tagger.running') : t('tagger.start'))">
-                启动
-              </button>
-              <button class="btn btn-stop" style="flex:1" @click="stopTagger()"
-                      :disabled="!taggerRunning" x-text="t('tagger.stop')">
-                停止
-              </button>
-            </div>
-          </div>
-          <!-- 单图模式：提示 -->
-          <div class="panel-actions" x-show="taggerMode === 'single'">
-            <div style="color:var(--text-tertiary);font-size:12px;text-align:center;padding:8px" x-text="t('tagger.singleMode')">单图模式</div>
-          </div>
-        </div>
-      </template>
-      <!-- Other tools (placeholder) -->
+      <!-- Other tools -->
       <template x-if="currentRoute === 'tools'">
         <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
           <div class="panel-header"><span>Tools</span></div>
@@ -1878,7 +1664,7 @@
     <div class="panel-backdrop" :class="{ open: rightPanelOpen }" @click="rightPanelOpen = false"></div>
 
     <!-- Toggle FAB for right panel on medium/small screens -->
-    <button class="panel-toggle-btn" x-show="showRightPanel()" @click="rightPanelOpen = !rightPanelOpen" :aria-label="rightPanelOpen ? 'Close panel' : 'Open panel'">
+    <button class="panel-toggle-btn" :class="{ 'tagger-hidden': currentRoute === 'tagger' }" x-show="showRightPanel()" @click="rightPanelOpen = !rightPanelOpen" :aria-label="rightPanelOpen ? 'Close panel' : 'Open panel'">
       <svg x-show="!rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
       <svg x-show="rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     </button>

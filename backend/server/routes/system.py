@@ -86,6 +86,16 @@ async def pick_file(picker_type: str):
             return open_file_selector("", "Select file", file_types)
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
+    elif picker_type == "image-file":
+        file_types = [
+            ("images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif"),
+            ("all files", "*.*"),
+        ]
+
+        def _pick_image():
+            return open_file_selector("", "Select image", file_types)
+
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_image)
     else:
         return APIResponseFail(message=f"Invalid picker_type: {picker_type}")
 

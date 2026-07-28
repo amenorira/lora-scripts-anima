@@ -1,0 +1,232 @@
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from PIL import Image
+
+from backend.tagger import interrogator, workspace
+from backend.tagger.registry import MODEL_SPECS, recommended_llm_id
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class TaggerRegistryTests(unittest.TestCase):
+    def test_qwen_registry_exposes_only_supported_q4_models(self):
+        qwen = [spec for spec in MODEL_SPECS if spec.engine == "llama"]
+        self.assertEqual([spec.id for spec in qwen], ["qwen3-vl-4b-q4", "qwen3-vl-8b-q4"])
+        self.assertTrue(all("Q4_K_M" in spec.name for spec in qwen))
+        self.assertFalse(any("Q5" in spec.name for spec in qwen))
+        self.assertEqual(recommended_llm_id(8), "qwen3-vl-4b-q4")
+        self.assertEqual(recommended_llm_id(10), "qwen3-vl-8b-q4")
+
+
+class TaggerWorkspaceTests(unittest.TestCase):
+    def _image(self, path: Path, color=(120, 80, 160)) -> None:
+        Image.new("RGB", (48, 32), color).save(path)
+
+    def _wait(self, task_id: str) -> dict:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            result = workspace.task_snapshot(task_id)
+            if result.get("status") in {"done", "error", "cancelled"}:
+                return result
+            time.sleep(0.02)
+        self.fail("Tagger task did not finish")
+
+    def test_scan_thumbnail_task_results_and_atomic_caption_save(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image_path = root / "sample.png"
+            self._image(image_path)
+            source = workspace.scan_source(str(root), True)
+            self.assertEqual(source["total"], 1)
+            self.assertEqual(source["with_caption"], 0)
+            page = workspace.source_items(source["source_token"], 0, 1)
+            self.assertEqual(page["total"], 1)
+            self.assertEqual(page["items"][0]["index"], 0)
+
+            with patch.object(workspace, "TAGGER_CACHE_DIR", root / "cache"):
+                thumb = workspace.thumbnail_path(source["source_token"], 0)
+                self.assertTrue(thumb.is_file())
+                with Image.open(thumb) as generated:
+                    self.assertLessEqual(max(generated.size), 160)
+
+            with patch.object(workspace, "training_active", return_value=False), patch.object(
+                workspace, "_onnx_tags", return_value=(["1girl", "blue eyes"], {"general": {"tags": [["1girl", 0.99]]}})
+            ):
+                task_id = workspace.create_task({
+                    "source_token": source["source_token"],
+                    "model_id": "camie-tagger-v2",
+                    "conflict": "copy",
+                    "write_captions": True,
+                })
+                result = self._wait(task_id)
+
+            self.assertEqual(result["status"], "done")
+            self.assertEqual(result["source_root"], str(root.resolve()))
+            self.assertEqual(image_path.with_suffix(".txt").read_text(encoding="utf-8"), "1girl, blue eyes")
+            items = workspace.task_items(task_id)["items"]
+            self.assertEqual(items[0]["result"]["text"], "1girl, blue eyes")
+            self.assertFalse(list(root.glob(".*.tmp")))
+
+            saved = workspace.save_caption(source["source_token"], 0, "1girl, red dress, 1girl")
+            self.assertEqual(saved["text"], "1girl, red dress")
+            self.assertEqual(image_path.with_suffix(".txt").read_text(encoding="utf-8"), "1girl, red dress")
+
+    def test_skip_existing_caption_does_not_run_inference(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image_path = root / "existing.png"
+            self._image(image_path)
+            image_path.with_suffix(".txt").write_text("existing tag", encoding="utf-8")
+            source = workspace.scan_source(str(root), True)
+            with patch.object(workspace, "training_active", return_value=False), patch.object(
+                workspace, "_onnx_tags", side_effect=AssertionError("inference should be skipped")
+            ):
+                task_id = workspace.create_task({
+                    "source_token": source["source_token"],
+                    "model_id": "camie-tagger-v2",
+                    "conflict": "ignore",
+                    "write_captions": True,
+                })
+                result = self._wait(task_id)
+            self.assertEqual(result["skipped"], 1)
+            self.assertEqual(workspace.task_items(task_id)["items"][0]["result"]["text"], "existing tag")
+
+    def test_onnx_result_keeps_all_raw_categories_and_passes_category_thresholds(self):
+        raw = {
+            "general": [("1girl", 0.99)],
+            "character": [("alice", 0.88)],
+            "rating": [("safe", 0.97)],
+            "model": [("anime", 0.91)],
+        }
+        fake = MagicMock()
+        fake.interrogate.return_value = raw
+        thresholds = {"general": 0.4, "character": 0.7, "rating": 1.01, "model": 1.01}
+        with patch.dict(workspace.available_interrogators, {"camie-tagger-v2": fake}), patch.object(
+            interrogator.Interrogator,
+            "postprocess_tags",
+            return_value={"1girl": 0.99, "alice": 0.88},
+        ) as postprocess:
+            tags, categories = workspace._onnx_tags(
+                "camie-tagger-v2",
+                Image.new("RGB", (16, 16)),
+                {"category_thresholds": thresholds},
+            )
+
+        self.assertEqual(tags, ["1girl", "alice"])
+        self.assertEqual(set(categories), {"general", "character", "rating", "model"})
+        self.assertEqual(categories["character"]["tags"], [["alice", 0.88]])
+        self.assertEqual(categories["character"]["total"], 1)
+        self.assertFalse(categories["character"]["truncated"])
+        self.assertEqual(postprocess.call_args.args[3], thresholds)
+        self.assertEqual(set(raw), {"general", "character", "rating", "model"})
+
+    def test_append_caption_respects_remove_duplicated_option(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image_path = Path(temporary) / "sample.png"
+            caption_path = image_path.with_suffix(".txt")
+            caption_path.write_text("1girl, blue eyes", encoding="utf-8")
+
+            workspace._write_caption(image_path, ["blue eyes", "smile"], "prepend", False)
+            self.assertEqual(caption_path.read_text(encoding="utf-8"), "1girl, blue eyes, blue eyes, smile")
+
+            caption_path.write_text("1girl, blue eyes", encoding="utf-8")
+            workspace._write_caption(image_path, ["blue eyes", "smile"], "prepend", True)
+            self.assertEqual(caption_path.read_text(encoding="utf-8"), "1girl, blue eyes, smile")
+
+    def test_legacy_cancel_returns_without_reacquiring_progress_lock(self):
+        task_id = "cancel-lock-test"
+        with interrogator._tagger_progress_lock:
+            interrogator._tagger_progress[task_id] = {"status": "running", "logs": []}
+        thread = threading.Thread(target=interrogator.cancel_tagger_task, args=(task_id,))
+        thread.start()
+        thread.join(timeout=1)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(interrogator.get_tagger_task_snapshot(task_id)["status"], "cancelled")
+        with interrogator._tagger_progress_lock:
+            interrogator._tagger_progress.pop(task_id, None)
+
+
+class TaggerFrontendContractTests(unittest.TestCase):
+    def test_workspace_uses_training_style_desktop_structure(self):
+        template = (REPO_ROOT / "frontend" / "tagger-workspace.html").read_text(encoding="utf-8")
+        css = (REPO_ROOT / "frontend" / "css" / "tagger.css").read_text(encoding="utf-8")
+        tagger_js = (REPO_ROOT / "frontend" / "js" / "tagger.js").read_text(encoding="utf-8")
+        self.assertIn("tagger-page-header", template)
+        self.assertIn('class="page-header tagger-page-header"', template)
+        self.assertIn('class="page-title"', template)
+        self.assertIn('class="monitor-page-heading"', template)
+        self.assertIn('id="taggerResbar"', template)
+        self.assertIn("monitor-resbar tagger-page-resbar", template)
+        self.assertIn("_renderResourceBar('taggerResbar'", tagger_js)
+        self.assertIn("tagger-mode-tabs", template)
+        self.assertIn("tagger-batch-layout", template)
+        self.assertIn("tagger-form-card", template)
+        self.assertIn("tagger-field-info", template)
+        self.assertIn("tagger-action-panel", template)
+        self.assertIn("tagger-single-layout", template)
+        self.assertIn("tagger-single-preview", template)
+        self.assertIn("tagger-category-settings", template)
+        self.assertIn("tagger-category-browser", template)
+        self.assertNotIn("anima-select-compact", template)
+        self.assertIn("stepper tagger-field-stepper", template)
+        self.assertIn("tagger-conflict-select", template)
+        self.assertIn("taggerConflictSelectConfig", tagger_js)
+        self.assertNotIn("tagger-choice-group", template)
+        self.assertNotIn("<select", template)
+        self.assertIn("taggerSourceMode === 'folder'", template)
+        self.assertIn("taggerSourceMode === 'single'", template)
+        self.assertIn("taggerIsLlm()", template)
+        self.assertIn("taggerUsesCategoryThresholds()", template)
+        self.assertIn("tagger-category-customize", template)
+        self.assertNotIn("tagger-category-table-head", template)
+        self.assertIn("tagger-category-field", template)
+        self.assertIn("tagger-category-controls", template)
+        self.assertIn("tagger-category-enable", template)
+        self.assertIn("adjustTaggerCategoryThreshold", tagger_js)
+        self.assertIn("taggerUsesCategoryThresholds() && taggerThresholdsOpen", template)
+        self.assertIn("tagger-action-log", template)
+        self.assertIn("tagger-log-stream", template)
+        self.assertIn("taggerVisibleLogs", tagger_js)
+        self.assertIn("taggerLogTone", tagger_js)
+        self.assertIn("taggerLogTime", tagger_js)
+        self.assertIn("tagger.logsEmpty", template)
+        self.assertIn("taggerPresetDescription", tagger_js)
+        self.assertIn("modelVramFact", tagger_js)
+        self.assertIn("modelDownloadFact", tagger_js)
+        self.assertIn("toggleTaggerResultCategory(key)", template)
+        self.assertIn("updateTaggerResultCategory(key)", template)
+        self.assertIn("taggerSettings.lowVram", template)
+        self.assertIn("taggerSettings.maxTags", template)
+        self.assertIn("taggerSettings.replaceUnderscore", template)
+        self.assertIn("taggerSettings.escapeTag", template)
+        self.assertIn("taggerSettings.removeDuplicated", template)
+        self.assertIn("taggerSettings.addRatingTag", template)
+        self.assertIn("taggerSettings.addModelTag", template)
+        self.assertIn("category_thresholds", tagger_js)
+        self.assertIn("add_model_tag", tagger_js)
+        self.assertIn("TAGGER_CAMIE_CATEGORIES", tagger_js)
+        self.assertIn("TAGGER_CL_CATEGORIES", tagger_js)
+        self.assertNotIn("tagger-commandbar", template)
+        self.assertNotIn("tagger-filmstrip", template)
+        self.assertNotIn("tagger-inline-disclosure", template)
+        self.assertNotIn("tagger-log-card", template)
+        self.assertNotIn("linear-gradient", css)
+        self.assertNotIn("border-radius: 8", css)
+        self.assertNotIn("Q5", template)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) clamp(540px, 36vw, 680px)", css)
+        self.assertIn(".tagger-field-control > .anima-select { width: 200px", css)
+        self.assertIn(".tagger-option-grid > label { display: flex", css)
+        self.assertIn("margin: 0; padding: 9px 10px; overflow: hidden", css)
+        self.assertIn(".tagger-form-card { border: 0", css)
+        self.assertIn("background: transparent", css)
+        self.assertIn(".tagger-single-layout", css)
+
+
+if __name__ == "__main__":
+    unittest.main()

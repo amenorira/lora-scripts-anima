@@ -15,6 +15,7 @@ huggingface/
 
 models/*
 !models/.gitkeep
+runtime/
 .anima_tmp/
 bootstrap-backups/
 

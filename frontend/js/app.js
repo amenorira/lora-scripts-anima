@@ -296,8 +296,7 @@ document.addEventListener('alpine:init', () => {
 
     showRightPanel() {
       const r = this.currentRoute;
-      if (r === 'tagger' && this.taggerMode === 'single') return false;
-      return r && (r.startsWith('train-') || r === 'tagger' || r === 'tools');
+      return r && (r.startsWith('train-') || r === 'tools');
     },
 
     // ── Route Content Builder ───────────────────────────────
@@ -320,6 +319,7 @@ document.addEventListener('alpine:init', () => {
         this.taggerTaskId = null;
         if (typeof this._setTaggerRealtimeTask === 'function') this._setTaggerRealtimeTask(null);
       }
+      if (r !== 'tagger' && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
       } else if (r === 'tagger') {
