@@ -62,6 +62,10 @@ class ApiRouterContractTests(unittest.TestCase):
         ("/tagger/tasks/{task_id}/items", ("GET",)),
         ("/tagger/tasks/active", ("GET",)),
         ("/tagger/models/{model_id}/install", ("POST",)),
+        ("/tagger/runtime", ("GET",)),
+        ("/tagger/runtime/install", ("POST",)),
+        ("/tagger/runtime/start", ("POST",)),
+        ("/tagger/runtime/stop", ("POST",)),
         ("/tagger/single", ("POST",)),
         ("/anima-model/status", ("GET",)),
         ("/anima-model/download", ("POST",)),
@@ -179,6 +183,17 @@ class OnnxSessionFactoryTests(unittest.TestCase):
 
 
 class FrontendMixinCleanupContractTests(unittest.TestCase):
+    def test_training_preview_toggle_is_scoped_to_training_routes(self):
+        app_source = (REPO_ROOT / "frontend/js/app.js").read_text(encoding="utf-8")
+        index_source = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+        css_source = (REPO_ROOT / "frontend/css/app.css").read_text(encoding="utf-8")
+
+        show_panel_body = app_source.split("showRightPanel() {", 1)[1].split("\n    },", 1)[0]
+        self.assertIn("r.startsWith('train-')", show_panel_body)
+        self.assertNotIn("r === 'tools'", show_panel_body)
+        self.assertIn('class="panel-backdrop" x-show="showRightPanel()"', index_source)
+        self.assertNotIn(".panel-toggle-btn {\n    display: flex !important;", css_source)
+
     def test_effective_show_if_handler_is_defined_once_with_current_semantics(self):
         training_core = (REPO_ROOT / "frontend/js/training-core.js").read_text(encoding="utf-8")
         training_toml = (REPO_ROOT / "frontend/js/training-toml.js").read_text(encoding="utf-8")

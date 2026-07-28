@@ -269,6 +269,7 @@ document.addEventListener('alpine:init', () => {
         this.cleanupDocsReader();
       }
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
+        this.rightPanelOpen = false;
         if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
         else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
@@ -296,7 +297,7 @@ document.addEventListener('alpine:init', () => {
 
     showRightPanel() {
       const r = this.currentRoute;
-      return r && (r.startsWith('train-') || r === 'tools');
+      return !!(r && r.startsWith('train-'));
     },
 
     // ── Route Content Builder ───────────────────────────────

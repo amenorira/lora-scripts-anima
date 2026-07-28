@@ -35,7 +35,7 @@
   <script src="/anima-ui/js/training-core.js" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-presets.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260728-tagger7" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260728-tagger8" defer></script>
   <script src="/anima-ui/js/tag-editor.js" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -1660,11 +1660,11 @@
       </template>
     </div>
 
-    <!-- Panel backdrop for medium/small screens -->
-    <div class="panel-backdrop" :class="{ open: rightPanelOpen }" @click="rightPanelOpen = false"></div>
+    <!-- Training preview backdrop for medium/small screens -->
+    <div class="panel-backdrop" x-show="showRightPanel()" :class="{ open: rightPanelOpen }" @click="rightPanelOpen = false"></div>
 
-    <!-- Toggle FAB for right panel on medium/small screens -->
-    <button class="panel-toggle-btn" :class="{ 'tagger-hidden': currentRoute === 'tagger' }" x-show="showRightPanel()" @click="rightPanelOpen = !rightPanelOpen" :aria-label="rightPanelOpen ? 'Close panel' : 'Open panel'">
+    <!-- Training parameter preview toggle for medium/small screens -->
+    <button class="panel-toggle-btn" x-show="showRightPanel()" @click="rightPanelOpen = !rightPanelOpen" :aria-label="rightPanelOpen ? 'Close panel' : 'Open panel'">
       <svg x-show="!rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
       <svg x-show="rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     </button>

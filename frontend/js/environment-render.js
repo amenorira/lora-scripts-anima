@@ -2,7 +2,7 @@
    environment-render.js — renderEnvironment + event bindings
    Mixin merged into animaApp Alpine component
 
-   设计：扁平 row → 卡片（env-card）；抽取共享 helper
+   设计：按训练环境与本地资源分栏；抽取共享 helper
    （_renderDetailGroup / _renderProgressPanel / _renderLog / _renderRefreshBtn）
    消除四处重复 HTML + 内联 style。日志可读性为核心目标。
    ================================================================ */
@@ -28,6 +28,7 @@ window.environmentRenderMixin = {
         + `<div class="env-load-track"><span style="width:${pct}%"></span></div></div></div>`;
     }
 
+    html += `<div class="env-layout"><div class="env-layout-column env-layout-training">`;
     html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Performance acceleration')}</div>`;
     html += this._renderFaRow(T);
     html += this._renderXfRow(T);
@@ -40,15 +41,22 @@ window.environmentRenderMixin = {
     html += this._renderMusubiRow(T);
     html += `</div>`;
 
+    html += `</div><div class="env-layout-column env-layout-resources">`;
+    html += `<div class="env-section"><div class="env-section-header">${T('sectionLocalAi', 'Local inference')}</div>`;
+    html += this._renderLlamaRuntimeRow(T);
+    html += `</div>`;
+
     html += `<div class="env-section"><div class="env-section-header">${T('sectionModels', 'Models')}</div>`;
     html += this._renderAnimaModelRow(T, 'Anima');
     html += this._renderAnimaModelRow(T, 'Krea 2');
     html += `</div>`;
+    html += `</div></div>`;
 
     el.innerHTML = html;
     this._bindFaEvents(el, T);
     this._bindXfEvents(el);
     this._bindTritonEvents(el);
+    this._bindLlamaRuntimeEvents(el);
     this._bindAnimaModelEvents(el);
     this._bindCardToggle(el);
     this._autoScrollLogs(el);
@@ -121,6 +129,76 @@ window.environmentRenderMixin = {
       meta = `<span class="env-progress-time">${elapsed}</span>`;
     }
     return `<div class="env-progress-panel">${bar}<div class="env-progress-meta">${meta}</div></div>`;
+  },
+
+  _renderLlamaRuntimeRow(T) {
+    const runtime = this.llamaRuntimeStatus;
+    const busy = this.llamaRuntimeBusy;
+    const error = this.llamaRuntimeError;
+    const installed = !!runtime?.installed;
+    const updateAvailable = !!runtime?.update_available;
+    const repairRequired = !!runtime?.repair_required;
+    const running = !!runtime?.running;
+    const state = error ? 'err' : busy ? 'loading' : installed && !updateAvailable && !repairRequired ? 'ok' : 'warn';
+    const statusText = busy ? T('installing','Installing...')
+      : running ? T('llamaRuntime.running','Running')
+      : updateAvailable && runtime?.mandatory ? T('llamaRuntime.updateRequired','Update required')
+      : updateAvailable ? T('llamaRuntime.updateAvailable','Update available')
+      : repairRequired ? T('llamaRuntime.repairRequired','Repair required')
+      : installed ? T('installed','Installed') : T('notInstalled','Not installed');
+    const badgeClass = error ? 'err' : busy ? 'loading' : installed && !updateAvailable && !repairRequired ? 'ok' : 'warn';
+    const summary = this._renderCardSummary('&#9654;', T('llamaRuntime.title','Vision LLM inference runtime'),
+      T('llamaRuntime.subtitle','llama.cpp CUDA backend'),
+      `<span class="env-badge env-badge-${badgeClass}">${statusText}</span>`);
+    let h = this._renderCardOpen('env-llama-runtime', state, this.llamaRuntimeCardOpen, summary);
+
+    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
+    h += `<div class="env-msg env-msg-info">${T('llamaRuntime.description','Loads Qwen3.5 GGUF models on the local NVIDIA GPU. The runtime is installed outside Python; model weights are managed separately in Tagger.')}</div>`;
+
+    if (runtime) {
+      const archiveSize = this._humanBytes(runtime.archive_size_bytes || 0);
+      const installedSize = runtime.installed_size_bytes ? this._humanBytes(runtime.installed_size_bytes) : '';
+      const installedRef = runtime.installed_ref && runtime.installed_ref !== runtime.runtime_ref
+        ? `<span class="env-env-item">${T('llamaRuntime.installedBuild','Installed')} <em>${this.esc(runtime.installed_ref)}</em></span>` : '';
+      h += this._renderDetailGroup(T('llamaRuntime.build','Build'),
+        `<span class="env-env-item">llama.cpp <em>${this.esc(runtime.runtime_ref || '?')}</em></span><span class="env-env-item">CUDA <em>${this.esc(runtime.cuda_version || '?')}</em></span><span class="env-env-item">${T('llamaRuntime.channel','Channel')} <em>${this.esc(runtime.channel || 'stable')}-v${this.esc(runtime.runtime_api_version || 1)}</em></span>${installedRef}`);
+      h += this._renderDetailGroup(T('llamaRuntime.platform','Platform'),
+        `<span class="env-env-item"><em>${this.esc(runtime.platform || '')}</em></span><span class="env-env-item">${T('llamaRuntime.downloadSize','Download')} <em>${archiveSize}</em></span>${installedSize ? `<span class="env-env-item">${T('llamaRuntime.diskUsage','Disk')} <em>${installedSize}</em></span>` : ''}`);
+      if (runtime.install_path) h += this._renderDetailGroup(T('llamaRuntime.path','Path'), `<code class="env-runtime-path" title="${this.escapeAttr(runtime.install_path)}">${this.esc(runtime.install_path)}</code>`);
+      if (running && runtime.loaded_model) h += this._renderDetailGroup(T('llamaRuntime.loadedModel','Loaded'), `<span class="env-env-item"><em>${this.esc(runtime.loaded_model)}</em></span>`);
+    }
+
+    if (busy && this.llamaRuntimeProgress) {
+      const p = this.llamaRuntimeProgress;
+      const phase = p.phase || 'working';
+      h += this._renderProgressPanel({
+        stage: phase === 'installing' ? 'installing' : (p.total > 0 ? 'downloading' : 'connecting'),
+        pct: p.total > 0 ? Math.round((p.downloaded || 0) * 100 / p.total) : 0,
+        downloadedBytes: p.downloaded || 0, totalBytes: p.total || 0, speedMB: p.speed || 0,
+        fileIndex: 1, fileTotal: 1, label: p.filename || '',
+      });
+    }
+    if (this.llamaRuntimeLog) h += this._renderLog(this.llamaRuntimeLog);
+
+    const installLabel = updateAvailable ? T('llamaRuntime.update','Update component')
+      : installed ? T('llamaRuntime.repair','Repair component') : T('llamaRuntime.install','Install component');
+    h += this._renderDetailGroup(T('actionLabel','Actions'), `<div class="env-actions">
+      <button id="llama-runtime-install" class="btn btn-secondary btn-sm" ${busy || running ? 'disabled' : ''}>${installLabel}</button>
+      ${running ? `<button id="llama-runtime-stop" class="btn btn-ghost btn-sm">${T('llamaRuntime.stop','Stop runtime')}</button>` : ''}
+      ${this._renderRefreshBtn('llama-runtime-refresh', busy)}
+    </div>`);
+    h += this._renderCardClose();
+    return h;
+  },
+
+  _bindLlamaRuntimeEvents(el) {
+    const a = window.__anima || this;
+    const install = el.querySelector('#llama-runtime-install');
+    const stop = el.querySelector('#llama-runtime-stop');
+    const refresh = el.querySelector('#llama-runtime-refresh');
+    if (install) install.addEventListener('click', () => a.llamaRuntimeInstall(!!a.llamaRuntimeStatus?.installed));
+    if (stop) stop.addEventListener('click', () => a.llamaRuntimeStop());
+    if (refresh) refresh.addEventListener('click', () => a.llamaRuntimeRefresh());
   },
 
   // 日志渲染：按行套色（ERROR/RETRY/WARN 红/橙，完成/Successfully 绿），输出到 <pre class="env-log">。
@@ -668,7 +746,7 @@ window.environmentRenderMixin = {
 
   _bindCardToggle(el) {
     const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts','env-lycoris','env-musubi','env-triton','env-anima-model','env-krea2-model'].forEach(id => {
+    ['env-flash-attn','env-xformers','env-sdscripts','env-lycoris','env-musubi','env-triton','env-llama-runtime','env-anima-model','env-krea2-model'].forEach(id => {
       const card = el.querySelector('#'+id); if (!card) return;
       card.addEventListener('toggle', () => {
         if (id==='env-flash-attn') a.faCardOpen = card.open;
@@ -678,6 +756,7 @@ window.environmentRenderMixin = {
         else if (id==='env-musubi') a.musubiCardOpen = card.open;
         else if (id==='env-triton') a.tritonCardOpen = card.open;
         else if (id==='env-anima-model') a.animaModelCardOpen = card.open;
+        else if (id==='env-llama-runtime') a.llamaRuntimeCardOpen = card.open;
         else if (id==='env-krea2-model') a.kreaModelCardOpen = card.open;
         a._envSaveCardState();
       });

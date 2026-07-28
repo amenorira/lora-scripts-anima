@@ -289,11 +289,12 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[s
     return list(tags), categories
 
 
-def _llm_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[str], dict]:
+def _llm_tags(model_id: str, image: Image.Image, options: dict,
+              on_log=None) -> tuple[list[str], dict]:
     from backend.tagger.llama_runtime import llama_runtime
 
     with gpu_inference_lock:
-        tags = llama_runtime.infer_tags(model_id, image, options)
+        tags = llama_runtime.infer_tags(model_id, image, options, on_log=on_log)
     normalized = _normalize_tags(tags)
     excluded = set(_normalize_tags(split_str(str(options.get("exclude_tags", "")))))
     normalized = [tag for tag in normalized if tag not in excluded]
@@ -417,7 +418,12 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 if not model_ready:
                     _task_log(task, f"Loading model: {spec.name}")
                 if spec.engine == "llama":
-                    tags, categories = _llm_tags(spec.id, image, options)
+                    tags, categories = _llm_tags(
+                        spec.id,
+                        image,
+                        options,
+                        on_log=lambda message: _task_log(task, message),
+                    )
                 else:
                     tags, categories = _onnx_tags(spec.id, image, options)
                 if not model_ready:
@@ -458,8 +464,12 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     task["failed"] += 1
                     task["items"][index].update({"status": "failed", "error": message})
                 _task_log(task, f"Failed {path.name}: {message}")
+                if spec.engine == "llama" and not model_ready:
+                    raise RuntimeError(
+                        f"Qwen runtime failed to start; remaining images were not processed. {message}"
+                    ) from exc
                 if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower() and "memory" in str(exc).lower():
-                    raise RuntimeError("CUDA out of memory. Select Qwen3-VL 4B or close other GPU applications.") from exc
+                    raise RuntimeError("CUDA out of memory. Select Qwen3.5 4B or close other GPU applications.") from exc
             finally:
                 if image is not None:
                     image.close()

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from backend.constants import HF_CACHE_DIR, TAGGER_MODELS_DIR, TAGGER_RUNTIME_DIR
 from backend.monitor.hardware import gpu_info
+from backend.tagger.prompt_presets import DEFAULT_PROMPT_PRESET, prompt_preset_payload
+from backend.tagger.runtime_spec import installed_runtime_matches, resolve_runtime_manifest
 
 
 @dataclass(frozen=True)
@@ -44,18 +46,18 @@ MODEL_SPECS: tuple[TaggerModelSpec, ...] = (
         "Anime tagger with 42,163 tags including quality and model categories", 747_000_000, 2, True, True,
     ),
     TaggerModelSpec(
-        "qwen3-vl-4b-q4", "Qwen3-VL 4B Instruct Q4_K_M", "llama", "vision_llm",
-        "Open-vocabulary 4B vision-language tag generation for 6 GB or larger GPUs", 3_580_000_000, 6, False, False,
-        "Qwen/Qwen3-VL-4B-Instruct-GGUF",
-        "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
-        "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+        "qwen3.5-4b-ud-q4", "Qwen3.5 4B UD-Q4_K_XL", "llama", "vision_llm",
+        "Unified 4B vision-language model with dynamic mixed-precision quantization", 3_584_533_344, 6, False, False,
+        "unsloth/Qwen3.5-4B-GGUF",
+        "Qwen3.5-4B-UD-Q4_K_XL.gguf",
+        "mmproj-F16.gguf",
     ),
     TaggerModelSpec(
-        "qwen3-vl-8b-q4", "Qwen3-VL 8B Instruct Q4_K_M", "llama", "vision_llm",
-        "Open-vocabulary 8B vision-language tag generation for 10 GB or larger GPUs", 6_230_000_000, 10, False, False,
-        "Qwen/Qwen3-VL-8B-Instruct-GGUF",
-        "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
-        "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
+        "qwen3.5-9b-ud-q4", "Qwen3.5 9B UD-Q4_K_XL", "llama", "vision_llm",
+        "Unified 9B vision-language model with more capacity for fine details and relationships", 6_884_261_664, 10, False, False,
+        "unsloth/Qwen3.5-9B-GGUF",
+        "Qwen3.5-9B-UD-Q4_K_XL.gguf",
+        "mmproj-F16.gguf",
     ),
 )
 
@@ -106,7 +108,7 @@ def _onnx_installed(spec: TaggerModelSpec) -> bool:
 
 
 def recommended_llm_id(total_vram_gb: float) -> str:
-    return "qwen3-vl-8b-q4" if total_vram_gb >= 10 else "qwen3-vl-4b-q4"
+    return "qwen3.5-9b-ud-q4" if total_vram_gb >= 10 else "qwen3.5-4b-ud-q4"
 
 
 def model_payload() -> dict:
@@ -114,7 +116,11 @@ def model_payload() -> dict:
     total_mb = int(hardware.get("vram_total_mb") or 0)
     total_gb = total_mb / 1024
     recommendation = recommended_llm_id(total_gb)
-    runtime_ready = llama_server_path().is_file()
+    runtime_manifest, _ = resolve_runtime_manifest()
+    runtime_ready = (
+        llama_server_path().is_file()
+        and installed_runtime_matches(runtime_manifest)
+    )
     models = []
     for spec in MODEL_SPECS:
         data = asdict(spec)
@@ -140,6 +146,8 @@ def model_payload() -> dict:
         models.append(data)
     return {
         "models": models,
+        "prompt_presets": prompt_preset_payload(),
+        "default_prompt_preset": DEFAULT_PROMPT_PRESET,
         "hardware": {
             "nvidia": bool(hardware),
             "gpu_name": hardware.get("name", ""),
