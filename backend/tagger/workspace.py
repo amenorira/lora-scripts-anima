@@ -255,6 +255,76 @@ def _normalize_tags(tags: list[str]) -> list[str]:
     return result
 
 
+_LLM_FILLER_TAGS = {
+    "anime", "anime_style", "girl", "boy", "female", "male", "character", "person", "subject",
+    "1_person", "face", "eyes", "hair", "body", "skin", "background",
+    "illustration", "digital_art", "2d", "detailed", "cute", "kawaii",
+    "clean_lines", "smooth_shading", "no_context", "no_story", "no_environment", "no_movement",
+    "vocaloid", "utau", "hololive", "vtuber", "virtual_youtuber", "virtual_you_tuber",
+    "virtual_singer", "virtual_influencer", "virtual_celebrity", "anime_character", "anime_art",
+    "artwork", "avatar",
+    "white", "black", "gray", "grey", "red", "pink", "orange", "yellow", "green", "blue",
+    "purple", "brown", "cyan", "teal", "mint", "light_blue", "light_brown", "pastel",
+}
+
+_LLM_PARENT_TAGS = {
+    "bow", "ribbon", "hair_ornament", "hair_accessory", "hair_clip", "hairpin",
+    "hoodie", "jacket", "dress", "skirt", "top", "collar", "pattern", "striped", "strap", "clip",
+    "thighhigh",
+    "legwear", "sock", "socks", "ankle_sock", "ankle_socks", "shoe", "shoes", "sneakers",
+}
+
+
+def _clean_llm_tags(tags: list[str], *, strict: bool = False) -> list[str]:
+    aliases = {
+        "1_female": "1girl",
+        "1_male": "1boy",
+        "closeup": "close-up",
+        "fullbody": "full_body",
+        "cropped_legs": "lower_body",
+        "shortskirt": "short_skirt",
+    }
+    normalized = _normalize_tags([
+        aliases.get(str(tag).strip().lower().replace(" ", "_"), str(tag)) for tag in tags
+    ])
+    keyed = [(tag, tag.replace(" ", "_")) for tag in normalized]
+    keys = {key for _, key in keyed}
+    result: list[str] = []
+    for tag, key in keyed:
+        words = tag.replace("_", " ").split()
+        if strict and (len(words) > 4 or any(word in {"with", "over"} for word in words)):
+            continue
+        if key in _LLM_FILLER_TAGS or key.startswith(("no_", "without_", "not_")):
+            continue
+        if key in _LLM_PARENT_TAGS and any(
+            other != key and (
+                other.startswith(key + "_")
+                or other.endswith("_" + key)
+                or ("_" + key + "_") in other
+            )
+            for other in keys
+        ):
+            continue
+        if key in {"hair_ornament", "hair_accessory"} and keys.intersection({
+            "hair_clip", "hairpin", "hair_bow", "head_bow", "hair_ribbon",
+        }):
+            continue
+        if key == "jacket" and any("hoodie" in other for other in keys):
+            continue
+        if key in {"shoe", "shoes", "footwear"} and any(
+            other != key and ("shoe" in other or "sneaker" in other) for other in keys
+        ):
+            continue
+        if key in {"sock", "socks", "legwear"} and any(
+            other != key and ("sock" in other or "thighhigh" in other or "legwear" in other) for other in keys
+        ):
+            continue
+        if key == "skirt" and any(other != key and other.endswith("_skirt") for other in keys):
+            continue
+        result.append(tag)
+    return result
+
+
 def _format_output_tags(tags: list[str], *, replace_underscore: bool, escape_tag: bool) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -309,7 +379,7 @@ def _llm_tags(model_id: str, image: Image.Image, options: dict,
 
     with gpu_inference_lock:
         tags = llama_runtime.infer_tags(model_id, image, options, on_log=on_log)
-    normalized = _normalize_tags(tags)
+    normalized = _clean_llm_tags(tags, strict=str(options.get("preset") or "") == "danbooru")
     excluded = set(_normalize_tags(split_str(str(options.get("exclude_tags", "")))))
     normalized = [tag for tag in normalized if tag not in excluded]
     additional = _normalize_tags(split_str(str(options.get("additional_tags", ""))))
@@ -370,7 +440,10 @@ def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: th
                 image = None
                 if not existing:
                     with Image.open(path) as opened:
+                        alpha = opened.getchannel("A") if "A" in opened.getbands() else None
+                        source_has_transparency = bool(alpha and alpha.getextrema()[0] < 128)
                         image = opened.convert("RGB")
+                        image.info["source_has_transparency"] = source_has_transparency
                         image.load()
                 if not _put((index, path, image, None, existing)):
                     return
@@ -483,10 +556,12 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     task["failed"] += 1
                     task["items"][index].update({"status": "failed", "error": message})
                 _task_log(task, f"Failed {path.name}: {message}")
-                if spec.engine == "llama" and not model_ready:
-                    raise RuntimeError(
-                        f"Qwen runtime failed to start; remaining images were not processed. {message}"
-                    ) from exc
+                if spec.engine == "llama":
+                    from backend.tagger.llama_runtime import LlamaRuntimeStartupError
+                    if isinstance(exc, LlamaRuntimeStartupError):
+                        raise RuntimeError(
+                            f"Qwen runtime failed to start; remaining images were not processed. {message}"
+                        ) from exc
                 if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower() and "memory" in str(exc).lower():
                     raise RuntimeError("CUDA out of memory. Select Qwen3.5 4B or close other GPU applications.") from exc
             finally:

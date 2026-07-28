@@ -39,8 +39,76 @@ from backend.tagger.runtime_spec import (
 )
 from backend.utils.hf_download import download_hf_file
 
-_SYSTEM_PROMPT = """Follow the user's image-tagging instructions. Return only JSON matching
-the requested schema, without explanations, Markdown, or additional fields."""
+_SYSTEM_PROMPT = """Follow the user's image-tagging instructions. Return only one comma-separated
+training caption, without analysis, explanations, Markdown, headings, or additional text."""
+_CONTEXT_SIZE = 4096
+_TAG_RESPONSE_FIELDS = (
+    "subjects",
+    "composition",
+    "appearance",
+    "clothing_accessories",
+    "expression_gaze_pose",
+    "background_objects",
+)
+
+
+class LlamaRuntimeStartupError(RuntimeError):
+    """The managed llama-server could not become ready for inference."""
+
+
+class LlamaResponseError(RuntimeError):
+    """llama-server responded, but the model output was unusable."""
+
+
+def _parse_tag_response(body: dict, maximum: int) -> list[str]:
+    try:
+        choice = body["choices"][0]
+        content = choice["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LlamaResponseError("Qwen response did not contain a completion") from exc
+    finish_reason = str(choice.get("finish_reason") or "") if isinstance(choice, dict) else ""
+    if isinstance(content, list):
+        content = "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content)
+    text = str(content).strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].strip().lower() in {"```", "```json"}:
+            lines.pop(0)
+        if lines and lines[-1].strip() == "```":
+            lines.pop()
+        text = "\n".join(lines).strip()
+    if finish_reason == "length":
+        raise LlamaResponseError("Qwen tag output reached the token limit before completion")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        tags = [part.strip() for part in text.split(",") if part.strip()]
+    else:
+        tags = data.get("tags") if isinstance(data, dict) else None
+        if tags is None and isinstance(data, dict):
+            tags = []
+            for field in _TAG_RESPONSE_FIELDS:
+                value = data.get(field, "")
+                if isinstance(value, list):
+                    tags.extend(str(part).strip() for part in value if str(part).strip())
+                else:
+                    tags.extend(part.strip() for part in str(value).split(",") if part.strip())
+        if isinstance(tags, str):
+            tags = [part.strip() for part in tags.split(",") if part.strip()]
+    if not isinstance(tags, list) or not tags:
+        raise LlamaResponseError("Qwen response did not contain a tag list")
+    result: list[str] = []
+    for tag in tags:
+        value = str(tag).strip()
+        if value.upper() == "<END>":
+            break
+        if value:
+            result.append(value)
+        if len(result) >= maximum:
+            break
+    if not result:
+        raise LlamaResponseError("Qwen response did not contain tags before the end marker")
+    return result
 
 
 def _safe_extract_zip(archive: Path, target: Path) -> None:
@@ -361,23 +429,26 @@ class LlamaRuntime:
             model_path, projector_path = model_paths(spec)
             server = llama_server_path()
             if not server.is_file() or not model_path.is_file() or not projector_path.is_file():
-                raise RuntimeError("Qwen model or llama runtime is not installed")
+                raise LlamaRuntimeStartupError("Qwen model or llama runtime is not installed")
             target_manifest, _ = resolve_runtime_manifest()
             if not installed_runtime_matches(target_manifest):
-                raise RuntimeError("Qwen runtime requires an update or repair / Qwen 运行组件需要更新或修复")
+                raise LlamaRuntimeStartupError(
+                    "Qwen runtime requires an update or repair / Qwen 运行组件需要更新或修复"
+                )
             port = _free_port()
             stderr_path = TAGGER_RUNTIME_DIR / "llama-server.log"
             log_file = open(stderr_path, "w", encoding="utf-8", errors="replace")
             command = [
                 str(server), "--model", str(model_path), "--mmproj", str(projector_path),
-                "--host", "127.0.0.1", "--port", str(port), "--ctx-size", "2048",
+                "--host", "127.0.0.1", "--port", str(port), "--ctx-size", str(_CONTEXT_SIZE),
+                "--image-min-tokens", "1024",
                 "--parallel", "1", "--n-gpu-layers", str(self._gpu_layers(model_id, low_vram)),
             ]
             gpu_layers = command[-1]
             self._output_lines.clear()
             self._emit(
                 f"Starting llama-server: model={model_path.name}, mmproj={projector_path.name}, "
-                f"gpu_layers={gpu_layers}, ctx=2048, port={port}",
+                f"gpu_layers={gpu_layers}, ctx={_CONTEXT_SIZE}, port={port}",
                 on_log,
             )
             try:
@@ -393,9 +464,9 @@ class LlamaRuntime:
                     bufsize=1,
                     creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
                 )
-            except Exception:
+            except Exception as exc:
                 log_file.close()
-                raise
+                raise LlamaRuntimeStartupError(f"Unable to start llama-server: {exc}") from exc
             self._log_file = log_file
             self._model_id = model_id
             self._low_vram = low_vram
@@ -420,7 +491,7 @@ class LlamaRuntime:
                             "The installed runtime package must be rebuilt as Release with deployable dependencies."
                         )
                     self.stop("startup failed")
-                    raise RuntimeError(
+                    raise LlamaRuntimeStartupError(
                         f"llama-server exited during startup (code {exit_code}): {detail or 'no process output'}"
                     )
                 try:
@@ -433,7 +504,7 @@ class LlamaRuntime:
                     pass
                 time.sleep(0.5)
             self.stop("startup timeout")
-            raise TimeoutError("llama-server startup timed out")
+            raise LlamaRuntimeStartupError("llama-server startup timed out")
 
     def stop(self, reason: str = "requested") -> None:
         process = self._process
@@ -466,25 +537,22 @@ class LlamaRuntime:
         self.start(model_id, low_vram=low_vram, on_log=on_log)
         maximum = max(10, min(int(options.get("max_tags", 80)), 160))
         prompt = resolve_tagger_prompt(options, maximum)
+        source_has_transparency = bool(image.info.get("source_has_transparency", False))
+        prompt += (
+            "\n\nSource alpha metadata: meaningful transparency is present. Tag it only when relevant."
+            if source_has_transparency
+            else "\n\nSource alpha metadata: no meaningful transparency. Never output transparent_background."
+        )
         prepared = image.copy()
         prepared.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
         buffer = io.BytesIO()
         prepared.save(buffer, format="JPEG", quality=92)
         data_url = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
-        schema = {
-            "name": "anime_training_tags",
-            "schema": {
-                "type": "object",
-                "properties": {"tags": {"type": "array", "items": {"type": "string"}, "maxItems": maximum}},
-                "required": ["tags"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        }
         payload = {
             "model": "local",
-            "temperature": 0.1,
-            "max_tokens": min(768, max(256, maximum * 6)),
+            "temperature": 0.0,
+            "repeat_penalty": 1.08,
+            "max_tokens": min(1536, max(768, maximum * 10)),
             "chat_template_kwargs": {"enable_thinking": False},
             "reasoning_effort": "none",
             "messages": [
@@ -494,7 +562,6 @@ class LlamaRuntime:
                     {"type": "image_url", "image_url": {"url": data_url}},
                 ]},
             ],
-            "response_format": {"type": "json_schema", "json_schema": schema},
         }
         with self._lock:
             if not self._port:
@@ -506,19 +573,17 @@ class LlamaRuntime:
             )
             self._last_used = time.time()
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content)
-        text = str(content).strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.startswith("json"):
-                text = text[4:].lstrip()
-        data = json.loads(text)
-        tags = data.get("tags") if isinstance(data, dict) else None
-        if not isinstance(tags, list):
-            raise ValueError("Qwen response did not contain a tags array")
-        return [str(tag) for tag in tags[:maximum]]
+        try:
+            body = response.json()
+        except json.JSONDecodeError as exc:
+            raise LlamaResponseError("llama-server returned an invalid HTTP JSON response") from exc
+        tags = _parse_tag_response(body, maximum)
+        if not source_has_transparency:
+            tags = [
+                tag for tag in tags
+                if str(tag).strip().lower().replace(" ", "_") != "transparent_background"
+            ]
+        return tags
 
 
 llama_runtime = LlamaRuntime()

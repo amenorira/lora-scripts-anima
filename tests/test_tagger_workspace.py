@@ -66,11 +66,17 @@ class TaggerRegistryTests(unittest.TestCase):
         self.assertEqual(set(TAGGER_PROMPT_PRESETS), {"danbooru", "enhanced"})
         for prompt in TAGGER_PROMPT_PRESETS.values():
             for concept in ("subjects and count", "clothing", "action", "composition", "background", "lighting"):
-                self.assertIn(concept, prompt)
+                self.assertIn(concept.split()[-1], prompt.lower())
             self.assertIn("{{max_tags}}", prompt)
-        self.assertIn("Do not write sentences or natural-language phrases", TAGGER_PROMPT_PRESETS["danbooru"])
-        self.assertIn("use a short English phrase", TAGGER_PROMPT_PRESETS["enhanced"])
-        self.assertIn("no more than 72", resolve_tagger_prompt({"preset": "enhanced"}, 72))
+            self.assertIn("left and right", prompt)
+            self.assertIn("all distinct salient facts", prompt)
+            self.assertIn("fabric ornaments", prompt)
+            self.assertIn("comma-separated line", prompt)
+        self.assertIn("Do not invent compound tags", TAGGER_PROMPT_PRESETS["danbooru"])
+        self.assertIn("small minority of short concrete English phrases", TAGGER_PROMPT_PRESETS["enhanced"])
+        self.assertIn("same complete set", TAGGER_PROMPT_PRESETS["enhanced"])
+        self.assertIn("four out of every five", TAGGER_PROMPT_PRESETS["enhanced"])
+        self.assertIn("72 is a hard ceiling", resolve_tagger_prompt({"preset": "enhanced"}, 72))
         self.assertEqual(resolve_tagger_prompt({"prompt": "Return {{max_tags}} items."}, 36), "Return 36 items.")
 
     def test_llama_runtime_distribution_uses_hugging_face_assets(self):
@@ -167,6 +173,61 @@ class TaggerRegistryTests(unittest.TestCase):
             )
             self.assertTrue(runtime_spec.installed_runtime_matches(manifest))
 
+    def test_llama_response_parser_reports_token_limit_and_accepts_fenced_json(self):
+        from backend.tagger.llama_runtime import LlamaResponseError, _parse_tag_response
+
+        tags = _parse_tag_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '```json\n{"tags":["1girl","blue_hair"]}\n```'},
+            }],
+        }, 1)
+        self.assertEqual(tags, ["1girl"])
+
+        tags = _parse_tag_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '{"tags":"1girl, lower_body, white_background"}'},
+            }],
+        }, 2)
+        self.assertEqual(tags, ["1girl", "lower_body"])
+
+        tags = _parse_tag_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '{"tags":["1girl","upper_body","<END>","ignored"]}'},
+            }],
+        }, 80)
+        self.assertEqual(tags, ["1girl", "upper_body"])
+
+        tags = _parse_tag_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": (
+                    '{"subjects":"1girl, solo","composition":"upper_body",'
+                    '"appearance":"long_hair","clothing_accessories":"white_dress",'
+                    '"expression_gaze_pose":"smile","background_objects":"white_background"}'
+                )},
+            }],
+        }, 5)
+        self.assertEqual(tags, ["1girl", "solo", "upper_body", "long_hair", "white_dress"])
+
+        tags = _parse_tag_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": "1girl, lower_body, white_background"},
+            }],
+        }, 2)
+        self.assertEqual(tags, ["1girl", "lower_body"])
+
+        with self.assertRaisesRegex(LlamaResponseError, "token limit"):
+            _parse_tag_response({
+                "choices": [{
+                    "finish_reason": "length",
+                    "message": {"content": '{"tags":["1girl",'},
+                }],
+            }, 80)
+
     def test_stale_llama_runtime_is_not_treated_as_current(self):
         from backend.tagger import llama_runtime
 
@@ -200,6 +261,20 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 return result
             time.sleep(0.02)
         self.fail("Tagger task did not finish")
+
+    def test_llm_tag_cleanup_removes_filler_and_redundant_parents(self):
+        cleaned = workspace._clean_llm_tags([
+            "1girl", "anime_style", "white", "skirt", "white_skirt", "dress", "patterned_dress",
+            "hair ornament", "hair clip", "pink hair clip", "bow", "pink_bow",
+            "shoe", "white_shoes", "no_story",
+        ])
+        self.assertEqual(cleaned, [
+            "1girl", "white_skirt", "patterned_dress", "pink hair clip", "pink_bow", "white_shoes",
+        ])
+        self.assertEqual(
+            workspace._clean_llm_tags(["1 female", "looking at viewer", "white dress with cat print"], strict=True),
+            ["1girl", "looking at viewer"],
+        )
 
     def test_scan_thumbnail_task_results_and_atomic_caption_save(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -262,6 +337,8 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(workspace.task_items(task_id)["items"][0]["result"]["text"], "existing tag")
 
     def test_qwen_startup_failure_stops_the_batch_after_first_image(self):
+        from backend.tagger.llama_runtime import LlamaRuntimeStartupError
+
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self._image(root / "first.png")
@@ -270,7 +347,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
             with patch.object(workspace, "training_active", return_value=False), patch.object(
                 workspace, "gpu_info", return_value={"name": "NVIDIA test GPU"}
             ), patch.object(
-                workspace, "_llm_tags", side_effect=RuntimeError("llama-server exited during startup")
+                workspace, "_llm_tags", side_effect=LlamaRuntimeStartupError("llama-server exited during startup")
             ) as infer:
                 task_id = workspace.create_task({
                     "source_token": source["source_token"],
@@ -283,6 +360,33 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(result["failed"], 1)
             self.assertEqual(infer.call_count, 1)
             self.assertIn("remaining images were not processed", result["error_detail"])
+
+    def test_qwen_response_failure_does_not_abort_remaining_images(self):
+        from backend.tagger.llama_runtime import LlamaResponseError
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._image(root / "first.png")
+            self._image(root / "second.png")
+            source = workspace.scan_source(str(root), True)
+            with patch.object(workspace, "training_active", return_value=False), patch.object(
+                workspace, "gpu_info", return_value={"name": "NVIDIA test GPU"}
+            ), patch.object(
+                workspace,
+                "_llm_tags",
+                side_effect=[LlamaResponseError("invalid JSON"), (["1girl", "solo"], {})],
+            ) as infer:
+                task_id = workspace.create_task({
+                    "source_token": source["source_token"],
+                    "model_id": "qwen3.5-4b-ud-q4",
+                    "write_captions": False,
+                })
+                result = self._wait(task_id)
+
+            self.assertEqual(result["status"], "done")
+            self.assertEqual(result["failed"], 1)
+            self.assertEqual(result["success"], 1)
+            self.assertEqual(infer.call_count, 2)
 
     def test_onnx_result_keeps_all_raw_categories_and_passes_category_thresholds(self):
         raw = {
