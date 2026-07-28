@@ -95,7 +95,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260728-tagger12');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260728-tagger13');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
