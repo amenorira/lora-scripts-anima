@@ -13,6 +13,7 @@ PRODIGY_OPTIMIZER_TYPE = "Prodigy"
 PRODIGYPLUS_OPTIMIZER_TYPE = "prodigyplus.ProdigyPlusScheduleFree"
 ADAFACTOR_OPTIMIZER_TYPE = "AdaFactor"
 CAME_OPTIMIZER_TYPE = "pytorch_optimizer.CAME"
+STABLE_ADAMW_OPTIMIZER_TYPE = "pytorch_optimizer.StableAdamW"
 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE = "AdamWScheduleFree"
 
 PRODIGY_OPTIMIZERS = frozenset(
@@ -180,7 +181,7 @@ _BNB_ADAMW_ARGS = {
     # signatures, but explicitly rejects every value except 32.
     "optim_bits": _choice(32),
     "min_8bit_size": _integer(0),
-    "percentile_clipping": _integer(0, 100),
+    "percentile_clipping": _integer(1, 100),
     "block_wise": _boolean(),
 }
 
@@ -195,7 +196,7 @@ _BNB_LION_ARGS = {
     "betas": _BETAS_2,
     "weight_decay": _NON_NEGATIVE,
     "min_8bit_size": _integer(0),
-    "percentile_clipping": _integer(0, 100),
+    "percentile_clipping": _integer(1, 100),
     "block_wise": _boolean(),
 }
 
@@ -274,6 +275,16 @@ _CAME_ARGS = {
     "maximize": _boolean(),
 }
 
+_STABLE_ADAMW_ARGS = {
+    "betas": _BETAS_2,
+    "eps": _NON_NEGATIVE,
+    "weight_decay": _NON_NEGATIVE,
+    "weight_decouple": _boolean(),
+    "kahan_sum": _boolean(),
+    "foreach": _boolean(allow_none=True),
+    "maximize": _boolean(),
+}
+
 _SCHEDULEFREE_ARGS = {
     "betas": _BETAS_2,
     "eps": _POSITIVE,
@@ -318,6 +329,7 @@ OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
         external_grad_clip="forbidden",
     ),
     CAME_OPTIMIZER_TYPE: OptimizerContract(_CAME_ARGS),
+    STABLE_ADAMW_OPTIMIZER_TYPE: OptimizerContract(_STABLE_ADAMW_ARGS),
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE: OptimizerContract(
         _SCHEDULEFREE_ARGS,
         scheduler_owner="optimizer",
@@ -342,6 +354,7 @@ _ADAM_OPTIMIZERS = frozenset(
         "AdamW",
         "AdamW8bit",
         "PagedAdamW8bit",
+        STABLE_ADAMW_OPTIMIZER_TYPE,
         ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
         PRODIGY_OPTIMIZER_TYPE,
         PRODIGYPLUS_OPTIMIZER_TYPE,
@@ -356,6 +369,20 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS)),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
     "eps": FormArgument("eps", _ADAM_OPTIMIZERS),
+    "bnb_percentile_clipping": FormArgument(
+        "percentile_clipping",
+        frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
+    ),
+    "bnb_min_8bit_size": FormArgument(
+        "min_8bit_size",
+        frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
+    ),
+    "stableadamw_kahan_sum": FormArgument(
+        "kahan_sum", frozenset({STABLE_ADAMW_OPTIMIZER_TYPE})
+    ),
+    "stableadamw_weight_decouple": FormArgument(
+        "weight_decouple", frozenset({STABLE_ADAMW_OPTIMIZER_TYPE})
+    ),
     "stopcoef": FormArgument("stopcoef", frozenset({EMOSENS_OPTIMIZER_TYPE})),
     "prodigy_d_coef": FormArgument("d_coef", PRODIGY_OPTIMIZERS),
     "prodigy_d0": FormArgument("d0", PRODIGY_OPTIMIZERS),

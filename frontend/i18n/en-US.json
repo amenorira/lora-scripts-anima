@@ -30,6 +30,7 @@
 		"categories": {
 			"training": "Training",
 			"network": "Network",
+			"optimizer": "Optimizers",
 			"other": "Other"
 		}
 	},
@@ -463,6 +464,14 @@
 		"min_snr_gamma": "Minimum SNR weighting threshold",
 		"weight_decay": "Weight decay. Leave empty for optimizer default.",
 		"weight_decayHint": "Shows the selected optimizer's constructor default and merges into optimizer_args; unchanged defaults may be omitted.",
+		"bnb_percentile_clipping": "8-bit percentile clipping",
+		"bnb_percentile_clippingHint": "100 disables it; 99 is a mild limit, while 95 is an experimental choice for uneven data. A low max_grad_norm at the same time may clip updates twice.",
+		"bnb_min_8bit_size": "Minimum 8-bit tensor size",
+		"bnb_min_8bit_sizeHint": "Default: 4096. Raising this to 16384 keeps more small LoRA tensors in FP32 optimizer state. It uses a little more VRAM but may improve low-rank numerical stability.",
+		"stableadamw_kahan_sum": "Kahan summation",
+		"stableadamw_kahan_sumHint": "Compensates for rounding error in low-precision parameter updates. It can help FP16/BF16 trainable parameters and has little effect on standard FP32 LoRA parameters.",
+		"stableadamw_weight_decouple": "Decoupled weight decay",
+		"stableadamw_weight_decoupleHint": "Uses AdamW-style decoupled decay. It has no practical effect while weight_decay is 0.",
 		"stopcoef": "Convergence sensitivity stopcoef",
 		"stopcoefHint": "EmoSens convergence threshold. Higher values trigger [READY TO STOP] earlier. Default: 0.04",
 		"prodigy_d_coef": "Prodigy optimizer d_coef parameter",
@@ -1407,6 +1416,7 @@
 		"optimizer_type_AdamW": "Standard AdamW optimizer, higher VRAM usage",
 		"optimizer_type_AdamW8bit": "8-bit AdamW with lower optimizer VRAM usage",
 		"optimizer_type_PagedAdamW8bit": "Paged 8-bit AdamW, for tight VRAM scenarios",
+		"optimizer_type_StableAdamW": "AdamW with update stabilization for gradient spikes; uses standard schedulers and gradient clipping",
 		"optimizer_type_Lion": "Lion optimizer (EvoLved Sign Momentum)",
 		"optimizer_type_Lion8bit": "8-bit Lion, saves VRAM",
 		"optimizer_type_PagedLion8bit": "Paged 8-bit Lion",

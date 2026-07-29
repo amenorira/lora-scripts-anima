@@ -53,6 +53,7 @@ window.UI_CONSTANTS = {
 window.OPTIMIZER_DEFAULTS = {
   learning_rate: {
     'AdamW': '1e-4', 'AdamW8bit': '1e-4', 'PagedAdamW8bit': '1e-4',
+    'pytorch_optimizer.StableAdamW': '1e-4',
     'Lion': '1e-4', 'Lion8bit': '1e-4', 'PagedLion8bit': '1e-4',
     'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0',
     'pytorch_optimizer.CAME': '2e-4', 'AdamWScheduleFree': '0.0025',
@@ -66,6 +67,7 @@ window.OPTIMIZER_DEFAULTS = {
   automagic_fused: { 'vendor.automagic_optimizer.integration.Automagic3': false },
   betas: {
     'AdamW': '0.9, 0.999', 'AdamW8bit': '0.9, 0.999', 'PagedAdamW8bit': '0.9, 0.999',
+    'pytorch_optimizer.StableAdamW': '0.9, 0.99',
     'Lion': '0.9, 0.99', 'Lion8bit': '0.9, 0.99', 'PagedLion8bit': '0.9, 0.99',
     'pytorch_optimizer.CAME': '0.9, 0.999, 0.9999',
     'vendor.emo_optimizer.emosens.EmoSens': '0.9, 0.995',
@@ -74,6 +76,7 @@ window.OPTIMIZER_DEFAULTS = {
   },
   eps: {
     'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
+    'pytorch_optimizer.StableAdamW': '1e-8',
     'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
     'vendor.automagic_optimizer.integration.Automagic3': '1e-30',
     'AdamWScheduleFree': '1e-8',
@@ -81,6 +84,7 @@ window.OPTIMIZER_DEFAULTS = {
   },
   weight_decay: {
     'AdamW': 0.01, 'AdamW8bit': 0.01, 'PagedAdamW8bit': 0.01,
+    'pytorch_optimizer.StableAdamW': 0.01,
     'Lion': 0, 'Lion8bit': 0, 'PagedLion8bit': 0,
     'Prodigy': 0, 'prodigyplus.ProdigyPlusScheduleFree': 0,
     'AdaFactor': 0, 'pytorch_optimizer.CAME': 0, 'AdamWScheduleFree': 0,
@@ -96,6 +100,16 @@ window.OPTIMIZER_DEFAULTS = {
   prodigy_safeguard_warmup: { 'Prodigy': false },
   prodigyplus_use_stableadamw: { 'prodigyplus.ProdigyPlusScheduleFree': true },
   schedulefree_warmup_steps: { 'AdamWScheduleFree': 0 },
+  bnb_percentile_clipping: {
+    'AdamW8bit': 100, 'PagedAdamW8bit': 100,
+    'Lion8bit': 100, 'PagedLion8bit': 100,
+  },
+  bnb_min_8bit_size: {
+    'AdamW8bit': 4096, 'PagedAdamW8bit': 4096,
+    'Lion8bit': 4096, 'PagedLion8bit': 4096,
+  },
+  stableadamw_kahan_sum: { 'pytorch_optimizer.StableAdamW': true },
+  stableadamw_weight_decouple: { 'pytorch_optimizer.StableAdamW': true },
   adafactor_relative_step: { 'AdaFactor': true },
   adafactor_scale_parameter: { 'AdaFactor': true },
   adafactor_warmup_init: { 'AdaFactor': false },

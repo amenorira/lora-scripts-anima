@@ -30,6 +30,7 @@
 		"categories": {
 			"training": "训练原理",
 			"network": "网络结构",
+			"optimizer": "优化器",
 			"other": "其他"
 		}
 	},
@@ -463,6 +464,14 @@
 		"min_snr_gamma": "最小信噪比加权阈值",
 		"weight_decay": "权重衰减。留空使用优化器默认值",
 		"weight_decayHint": "显示当前优化器的构造器默认值，并合并进 optimizer_args；未修改的默认值可省略",
+		"bnb_percentile_clipping": "8-bit 百分位裁剪",
+		"bnb_percentile_clippingHint": "100 表示关闭；99 是温和限制，95 是质量混杂数据的实验值。若 max_grad_norm 也很低，可能发生双重强裁剪。",
+		"bnb_min_8bit_size": "8-bit 最小张量大小",
+		"bnb_min_8bit_sizeHint": "默认 4096。提高到 16384 会让更多小型 LoRA 参数保留 FP32 优化器状态，增加少量显存，但可能改善低 rank 的数值稳定性。",
+		"stableadamw_kahan_sum": "Kahan 求和",
+		"stableadamw_kahan_sumHint": "补偿低精度参数更新的舍入误差。FP16/BF16 可训练参数可能受益；标准 FP32 LoRA 参数下基本无影响。",
+		"stableadamw_weight_decouple": "解耦权重衰减",
+		"stableadamw_weight_decoupleHint": "启用 AdamW 式解耦衰减；weight_decay 为 0 时没有实际影响。",
 		"stopcoef": "收敛灵敏度 stopcoef",
 		"stopcoefHint": "EmoSens 收敛通知阈值。越高越早触发 [READY TO STOP]，默认 0.04",
 		"prodigy_d_coef": "Prodigy 优化器 d_coef 参数",
@@ -1407,6 +1416,7 @@
 		"optimizer_type_AdamW": "标准 AdamW 优化器，显存占用较高",
 		"optimizer_type_AdamW8bit": "8-bit AdamW，减少优化器显存占用",
 		"optimizer_type_PagedAdamW8bit": "分页 8-bit AdamW，适合显存紧张时使用",
+		"optimizer_type_StableAdamW": "针对异常梯度更新做稳定化的 AdamW，保留常规调度器与梯度裁剪",
 		"optimizer_type_Lion": "Lion 优化器（EvoLved Sign Momentum）",
 		"optimizer_type_Lion8bit": "8-bit Lion，节省显存",
 		"optimizer_type_PagedLion8bit": "分页 8-bit Lion",

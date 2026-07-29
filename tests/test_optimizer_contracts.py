@@ -2,6 +2,7 @@ import inspect
 import json
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from backend.training.optimizer_contracts import (
     CAME_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
+    STABLE_ADAMW_OPTIMIZER_TYPE,
 )
 from backend.training.validation import validate_training_config
 
@@ -66,7 +68,7 @@ def auto_value_for(field: dict, optimizer_type: str) -> object:
 
 class OptimizerFieldContractTests(unittest.TestCase):
     def test_registry_displays_constructor_defaults_and_recommendations(self):
-        from pytorch_optimizer import CAME
+        from pytorch_optimizer import CAME, StableAdamW
 
         fields = fields_by_key()
         learning_rate = fields["learning_rate"]
@@ -78,11 +80,22 @@ class OptimizerFieldContractTests(unittest.TestCase):
         self.assertEqual(auto_value_for(learning_rate, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE), "3e-4")
         self.assertEqual(auto_value_for(learning_rate, PRODIGY_OPTIMIZER_TYPE), "1.0")
         self.assertEqual(auto_value_for(learning_rate, AUTOMAGIC_OPTIMIZER_TYPE), "1e-4")
+        self.assertEqual(auto_value_for(learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE), "1e-4")
 
         weight_decay = fields["weight_decay"]
         self.assertEqual(auto_value_for(weight_decay, "AdamW8bit"), 0.01)
         self.assertEqual(auto_value_for(weight_decay, "Lion8bit"), 0.0)
         self.assertEqual(auto_value_for(weight_decay, CAME_OPTIMIZER_TYPE), 0.0)
+        self.assertEqual(auto_value_for(weight_decay, STABLE_ADAMW_OPTIMIZER_TYPE), 0.0)
+        self.assertEqual(inspect.signature(StableAdamW).parameters["weight_decay"].default, 0.01)
+
+        self.assertEqual(auto_value_for(fields["betas"], STABLE_ADAMW_OPTIMIZER_TYPE), "0.9, 0.99")
+        self.assertEqual(auto_value_for(fields["eps"], STABLE_ADAMW_OPTIMIZER_TYPE), "1e-8")
+        self.assertTrue(fields["stableadamw_kahan_sum"]["default"])
+        self.assertTrue(fields["stableadamw_kahan_sum"]["advanced"])
+        self.assertTrue(fields["stableadamw_weight_decouple"]["default"])
+        self.assertEqual(fields["bnb_percentile_clipping"]["default"], 100)
+        self.assertEqual(fields["bnb_min_8bit_size"]["default"], 4096)
 
         self.assertEqual(fields["prodigy_d0"]["default"], "1e-6")
         self.assertEqual(fields["schedulefree_warmup_steps"]["default"], 0)
@@ -117,6 +130,13 @@ class OptimizerValidationTests(unittest.TestCase):
             ("AdamW", {"weight_decay": -0.01}, "weight_decay"),
             ("AdamW8bit", {"optimizer_args": ["optim_bits=8"]}, "one of"),
             (ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, {"schedulefree_warmup_steps": 1.5}, "integer"),
+            (STABLE_ADAMW_OPTIMIZER_TYPE, {"betas": "0.9"}, "exactly 2"),
+            (STABLE_ADAMW_OPTIMIZER_TYPE, {"betas": "0.9, 1.0"}, "item 1"),
+            (STABLE_ADAMW_OPTIMIZER_TYPE, {"eps": "-1e-8"}, "eps"),
+            (STABLE_ADAMW_OPTIMIZER_TYPE, {"stableadamw_kahan_sum": "yes"}, "true or false"),
+            ("AdamW8bit", {"bnb_percentile_clipping": 0}, "percentile_clipping"),
+            ("Lion8bit", {"bnb_percentile_clipping": 101}, "percentile_clipping"),
+            ("PagedAdamW8bit", {"bnb_min_8bit_size": -1}, "min_8bit_size"),
         )
         for optimizer_type, updates, expected in cases:
             with self.subTest(optimizer_type=optimizer_type, updates=updates):
@@ -130,6 +150,45 @@ class OptimizerValidationTests(unittest.TestCase):
         config["optimizer_args"] = ["silently_ignored_option=1"]
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
+
+        config = valid_config(STABLE_ADAMW_OPTIMIZER_TYPE)
+        config["optimizer_args"] = ["unknown_stability_knob=True"]
+        errors = validate_training_config(config)
+        self.assertTrue(any("unsupported argument" in error for error in errors), errors)
+
+    def test_real_sd_scripts_factory_instantiates_stableadamw(self):
+        sd_scripts = Path("vendor/sd-scripts").resolve()
+        sys.path.insert(0, str(sd_scripts))
+        try:
+            from library.optimizer import get_optimizer
+
+            args = type(
+                "Args",
+                (),
+                {
+                    "optimizer_type": STABLE_ADAMW_OPTIMIZER_TYPE,
+                    "use_8bit_adam": False,
+                    "use_lion_optimizer": False,
+                    "fused_backward_pass": False,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": 1e-4,
+                    "optimizer_args": [
+                        "betas=(0.9,0.99)",
+                        "eps=1e-8",
+                        "weight_decay=0",
+                        "weight_decouple=True",
+                        "kahan_sum=True",
+                    ],
+                },
+            )()
+            parameter = torch.nn.Parameter(torch.ones(2))
+            _, _, optimizer = get_optimizer(args, [parameter])
+        finally:
+            sys.path.remove(str(sd_scripts))
+
+        self.assertEqual(type(optimizer).__name__, "StableAdamW")
+        self.assertEqual(optimizer.param_groups[0]["weight_decay"], 0)
+        self.assertEqual(optimizer.param_groups[0]["betas"], (0.9, 0.99))
 
         config = valid_config("AdamW8bit")
         config["optimizer_args"] = ["fused=True"]
@@ -165,6 +224,44 @@ class OptimizerValidationTests(unittest.TestCase):
 
 
 class OptimizerAdapterTests(unittest.TestCase):
+    def test_stableadamw_keeps_external_training_controls_and_loraplus(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": STABLE_ADAMW_OPTIMIZER_TYPE,
+                "learning_rate": "1e-4",
+                "lr_scheduler": "cosine",
+                "lr_warmup_steps": 20,
+                "max_grad_norm": 1,
+                "enable_loraplus": True,
+                "loraplus_lr_ratio": 2,
+                "weight_decay": 0,
+                "stableadamw_kahan_sum": True,
+                "stableadamw_weight_decouple": True,
+            }
+        )
+        self.assertEqual(adapted["lr_scheduler"], "cosine")
+        self.assertEqual(adapted["lr_warmup_steps"], 20)
+        self.assertEqual(adapted["max_grad_norm"], 1)
+        self.assertIn("loraplus_lr_ratio=2", adapted["network_args"])
+        self.assertIn("weight_decay=0", adapted["optimizer_args"])
+        self.assertIn("kahan_sum=True", adapted["optimizer_args"])
+        self.assertEqual(warnings, [])
+
+    def test_bitsandbytes_form_controls_only_apply_to_supported_optimizers(self):
+        values = {
+            "bnb_percentile_clipping": 99,
+            "bnb_min_8bit_size": 16384,
+        }
+        for optimizer_type in ("AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"):
+            adapted, _ = adapt_config({"optimizer_type": optimizer_type, **values})
+            self.assertIn("percentile_clipping=99", adapted["optimizer_args"])
+            self.assertIn("min_8bit_size=16384", adapted["optimizer_args"])
+
+        adapted, _ = adapt_config({"optimizer_type": "AdamW", **values})
+        self.assertNotIn("optimizer_args", adapted)
+
     def test_adafactor_relative_and_manual_modes(self):
         relative, warnings = adapt_config(
             {
@@ -367,6 +464,30 @@ const automagicDefaults = args({
   eps: '1e-30',
   weight_decay: 0,
 });
+const stableDefaults = args({
+  optimizer_type: 'pytorch_optimizer.StableAdamW',
+  betas: '0.9, 0.99',
+  eps: '1e-8',
+  weight_decay: 0,
+  stableadamw_kahan_sum: true,
+  stableadamw_weight_decouple: true,
+});
+const stableCustom = args({
+  optimizer_type: 'pytorch_optimizer.StableAdamW',
+  weight_decay: 0.02,
+  stableadamw_kahan_sum: false,
+  stableadamw_weight_decouple: false,
+});
+const bnbDefaults = args({
+  optimizer_type: 'AdamW8bit',
+  bnb_percentile_clipping: 100,
+  bnb_min_8bit_size: 4096,
+});
+const bnbCustom = args({
+  optimizer_type: 'AdamW8bit',
+  bnb_percentile_clipping: 99,
+  bnb_min_8bit_size: 16384,
+});
 
 const field = { key: 'lr_scheduler', default: 'cosine_with_restarts' };
 const rules = [
@@ -472,6 +593,10 @@ console.log(JSON.stringify({
   adafactorDefaults,
   adafactorCustom,
   automagicDefaults,
+  stableDefaults,
+  stableCustom,
+  bnbDefaults,
+  bnbCustom,
   previousAuto: previousAuto.form.lr_scheduler,
   explicitCustom: explicitCustom.form.lr_scheduler,
   explicitAlternateDefault: weightContext.form.weight_decay,
@@ -497,6 +622,16 @@ console.log(JSON.stringify({
             ["relative_step=False", "scale_parameter=False"],
         )
         self.assertEqual(state["automagicDefaults"], [])
+        self.assertEqual(state["stableDefaults"], ["weight_decay=0"])
+        self.assertEqual(
+            state["stableCustom"],
+            ["weight_decay=0.02", "kahan_sum=False", "weight_decouple=False"],
+        )
+        self.assertEqual(state["bnbDefaults"], [])
+        self.assertEqual(
+            state["bnbCustom"],
+            ["percentile_clipping=99", "min_8bit_size=16384"],
+        )
         self.assertEqual(state["previousAuto"], "cosine")
         self.assertEqual(state["explicitCustom"], "constant")
         self.assertEqual(state["explicitAlternateDefault"], 0)

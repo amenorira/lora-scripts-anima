@@ -28,6 +28,22 @@ _DOC_ANCHOR_RE = re.compile(
 _ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
 # Add future guides here; the reader groups and renders this registry automatically.
 _DOCUMENTS = {
+    "optimizers": {
+        "category": "optimizer",
+        "order": 10,
+        "titles": {
+            "zh-CN": "优化器",
+            "en-US": "Optimizers",
+        },
+        "summaries": {
+            "zh-CN": "面向 Anima 与 SDXL LoRA 的优化器选择、关键参数、场景起点和对照测试方法。",
+            "en-US": "Optimizer choices, key controls, starting points, and comparison methods for Anima and SDXL LoRA training.",
+        },
+        "files": {
+            "zh-CN": "parameters/optimizers.zh-CN.md",
+            "en-US": "parameters/optimizers.en-US.md",
+        },
+    },
     "timesteps": {
         "category": "training",
         "order": 10,

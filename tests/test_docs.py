@@ -20,6 +20,92 @@ from backend.training.musubi_krea2 import KREA2_FIELDS
 
 
 class DocumentationTests(unittest.TestCase):
+    def test_optimizer_documents_cover_supported_workflows_and_stable_anchors(self):
+        expected_anchors = (
+            "quick-choice",
+            "optimizer-type",
+            "stable-comparison",
+            "learning-rate",
+            "scheduler-warmup",
+            "betas",
+            "eps",
+            "weight-decay",
+            "gradient-clipping",
+            "percentile-clipping",
+            "min-8bit-size",
+            "stableadamw-options",
+            "came-clipping",
+            "schedulefree-warmup",
+            "stochastic-rounding",
+            "loraplus",
+            "one-image",
+            "few-shot",
+            "galgame",
+            "dmm-mixed",
+            "mixed-quality",
+            "outfits-forms",
+            "style-lora",
+            "vram",
+            "starting-configs",
+            "ab-testing",
+            "limits",
+            "evidence",
+        )
+        for locale in ("zh-CN", "en-US"):
+            path = _document_path("optimizers", locale)
+            html, toc = _render_markdown(
+                path.read_text(encoding="utf-8"),
+                PurePosixPath(f"parameters/optimizers.{locale}.md"),
+            )
+            self.assertGreaterEqual(html.count("<table>"), 3)
+            self.assertIn("pytorch_optimizer.StableAdamW", html)
+            self.assertIn("https://arxiv.org/abs/2307.02047", html)
+            for anchor in expected_anchors:
+                self.assertIn(f'id="{anchor}"', html)
+                self.assertIn(f'href="#{anchor}"', toc)
+
+    def test_optimizer_fields_link_to_guide_sections(self):
+        expected = {
+            "optimizer_type": "optimizer-type",
+            "learning_rate": "learning-rate",
+            "lr_scheduler": "scheduler-warmup",
+            "lr_warmup_steps": "scheduler-warmup",
+            "max_grad_norm": "gradient-clipping",
+            "weight_decay": "weight-decay",
+            "betas": "betas",
+            "eps": "eps",
+            "bnb_percentile_clipping": "percentile-clipping",
+            "bnb_min_8bit_size": "min-8bit-size",
+            "stableadamw_kahan_sum": "stableadamw-options",
+            "stableadamw_weight_decouple": "stableadamw-options",
+            "came_clip_threshold": "came-clipping",
+        }
+        fields = {field["key"]: field for field in FIELDS if field["key"] in expected}
+        self.assertEqual(set(fields), set(expected))
+        for key, anchor in expected.items():
+            self.assertEqual(fields[key]["doc_slug"], "optimizers")
+            self.assertEqual(fields[key]["doc_anchor"], anchor)
+
+    def test_optimizer_category_and_i18n_keys_are_registered(self):
+        document = _DOCUMENTS["optimizers"]
+        self.assertEqual(document["category"], "optimizer")
+        root = Path(__file__).resolve().parents[1]
+        locales = {
+            locale: json.loads((root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8"))
+            for locale in ("zh-CN", "en-US")
+        }
+        for translations in locales.values():
+            self.assertIn("optimizer", translations["docs"]["categories"])
+            for key in (
+                "bnb_percentile_clipping",
+                "bnb_min_8bit_size",
+                "stableadamw_kahan_sum",
+                "stableadamw_weight_decouple",
+            ):
+                self.assertIn(key, translations["field"])
+                self.assertIn(f"{key}Hint", translations["field"])
+            self.assertIn("optimizer_type_StableAdamW", translations["opt"])
+
     def test_loraplus_documents_keep_equations_references_and_stable_anchors(self):
         expected_anchors = (
             "overview",
