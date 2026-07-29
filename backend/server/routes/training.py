@@ -546,15 +546,12 @@ async def create_krea2_cache(request: Request):
 
 @router.post("/run")
 async def create_toml_file(request: Request):
-    from backend.tagger.llama_runtime import llama_runtime
     from backend.tagger.workspace import has_active_tagger_task
 
     if has_active_tagger_task():
         return APIResponseFail(
             message="Tagger is using the GPU. Stop tagging before training / 反推任务正在使用 GPU，请停止后再训练"
         )
-    # A warm Qwen server may reserve VRAM even after a finished tagging task.
-    await asyncio.to_thread(llama_runtime.stop, "training is starting")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     json_data = await request.body()
 

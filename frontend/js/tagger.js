@@ -2,10 +2,6 @@
 window.taggerMixin = {
   taggerModels: [],
   taggerHardware: {},
-  taggerPromptPresets: [],
-  taggerDefaultPromptPreset: 'enhanced',
-  taggerRuntime: null,
-  taggerRuntimeBusy: false,
   taggerSelectedModel: '',
   taggerSourceMode: 'folder',
   taggerSourcePath: '',
@@ -13,7 +9,6 @@ window.taggerMixin = {
   taggerScanning: false,
   taggerStarting: false,
   taggerRunning: false,
-  taggerInstalling: false,
   taggerTaskId: null,
   taggerTask: null,
   taggerItems: [],
@@ -36,10 +31,6 @@ window.taggerMixin = {
     conflict: 'ignore',
     threshold: 0.35,
     characterThreshold: 0.6,
-    maxTags: 80,
-    prompt: '',
-    promptBasePreset: 'enhanced',
-    lowVram: false,
     recursive: true,
     replaceUnderscore: true,
     escapeTag: true,
@@ -52,7 +43,6 @@ window.taggerMixin = {
     excludeTags: '',
   },
   _taggerRealtimeTopic: null,
-  _taggerPendingStart: false,
   _taggerLastItemsFetch: 0,
   _taggerPreviewObjectUrl: null,
   _taggerLoadedResultKey: '',
@@ -129,13 +119,7 @@ window.taggerMixin = {
       if (body.status !== 'success' || !body.data) throw new Error(body.message || 'Model registry unavailable');
       this.taggerModels = body.data.models || [];
       this.taggerHardware = body.data.hardware || {};
-      this.taggerPromptPresets = body.data.prompt_presets || [];
-      this.taggerDefaultPromptPreset = body.data.default_prompt_preset || 'enhanced';
-      const legacyModels = {
-        'qwen3-vl-4b-q4': 'qwen3.5-4b-ud-q4',
-        'qwen3-vl-8b-q4': 'qwen3.5-9b-ud-q4',
-      };
-      const savedModel = legacyModels[localStorage.getItem('anima-tagger-model')] || localStorage.getItem('anima-tagger-model') || '';
+      const savedModel = localStorage.getItem('anima-tagger-model') || '';
       if (!this.taggerSelectedModel && this.taggerModels.some(model => model.id === savedModel)) {
         this.taggerSelectedModel = savedModel;
       }
@@ -143,7 +127,6 @@ window.taggerMixin = {
         this.taggerSelectedModel = this.taggerModels[0] ? this.taggerModels[0].id : '';
       }
       this.handleTaggerModelChange(false);
-      if (this.taggerIsLlm()) void this.refreshTaggerRuntime(true);
     } catch (error) {
       this.toast(this.t('tagger.modelLoadFailed', 'Unable to load Tagger models') + ': ' + error.message, 'error');
     }
@@ -155,22 +138,15 @@ window.taggerMixin = {
 
   taggerModelSelectConfig() {
     const separator = this.t('tagger.factSeparator', '; ');
-    const groups = [
-      ['tagger', this.t('tagger.dedicatedModels', 'Dedicated Taggers')],
-      ['vision_llm', this.t('tagger.visionLlmModels', 'Vision LLM')],
-    ];
+    const groups = [['tagger', this.t('tagger.dedicatedModels', 'Dedicated Taggers')]];
     return {
       groups: groups.map(([family, label]) => ({
         label,
         options: this.taggerModels.filter(model => model.family === family).map(model => {
-          const facts = model.engine === 'llama' ? [
-            this.t('tagger.modelVramFact').replace('{vram}', String(model.min_vram_gb || 0)),
-            this.t('tagger.modelDownloadFact').replace('{size}', this.formatTaggerBytes(model.download_bytes)),
-          ] : [];
           return {
             v: model.id,
             l: model.name,
-            d: [this.taggerModelPurpose(model.id), ...facts].filter(Boolean).join(separator),
+            d: [this.taggerModelPurpose(model.id)].filter(Boolean).join(separator),
           };
         }),
       })).filter(group => group.options.length),
@@ -195,22 +171,11 @@ window.taggerMixin = {
 
   taggerPresetDescription(preset) {
     const suffix = preset.charAt(0).toUpperCase() + preset.slice(1);
-    if (this.taggerIsLlm()) {
-      const key = { danbooru: 'promptDanbooruDesc', enhanced: 'promptEnhancedDesc', custom: 'promptCustomDesc' }[preset];
-      return key ? this.t(`tagger.${key}`) : '';
-    }
     if (preset === 'custom') return this.t('tagger.presetCustomDesc');
     if (this.taggerUsesCategoryThresholds()) return this.t(`tagger.preset${suffix}Desc`);
     return this.t(`tagger.presetOnnx${suffix}Desc`);
   },
 
-  taggerVramSummary() {
-    const model = this.taggerModel();
-    if (!model) return '';
-    return this.t('tagger.vramSummary')
-      .replace('{vram}', String(model.min_vram_gb || 0))
-      .replace('{size}', this.formatTaggerBytes(model.download_bytes));
-  },
 
   taggerModelPurpose(modelId) {
     const key = {
@@ -218,16 +183,10 @@ window.taggerMixin = {
       'wd-eva02-large-tagger-v3': 'modelPurposeEva',
       'wd-vit-large-tagger-v3': 'modelPurposeVit',
       'cl_tagger_1_02': 'modelPurposeCl',
-      'qwen3.5-4b-ud-q4': 'modelPurposeQwen35_4b',
-      'qwen3.5-9b-ud-q4': 'modelPurposeQwen35_9b',
     }[modelId];
     return key ? this.t(`tagger.${key}`) : '';
   },
 
-  taggerIsLlm() {
-    const model = this.taggerModel();
-    return !!model && model.engine === 'llama';
-  },
 
   taggerUsesCategoryThresholds() {
     return ['camie-tagger-v2', 'cl_tagger_1_02'].includes(this.taggerSelectedModel);
@@ -258,49 +217,27 @@ window.taggerMixin = {
     const allowed = this.taggerPresetOptions().map(option => option[0]);
     let preset = this.taggerSettings.preset;
     if (resetPreset || !allowed.includes(preset)) {
-      preset = this.taggerIsLlm() ? this.taggerDefaultPromptPreset : (this.taggerUsesCategoryThresholds() ? 'macro' : 'balanced');
+      preset = this.taggerUsesCategoryThresholds() ? 'macro' : 'balanced';
     }
     this.applyTaggerPreset(preset);
     this.taggerCategoryState = {};
     this.taggerResultCategories = {};
     this._taggerLoadedResultKey = '';
-    if (this.taggerIsLlm()) void this.refreshTaggerRuntime(true);
   },
 
-  taggerVramLimited() {
-    const model = this.taggerModel();
-    if (!model || model.engine !== 'llama') return false;
-    const total = Number(this.gpuInfo?.vram_total_mb || this.taggerHardware.vram_total_mb || 0);
-    const used = Number(this.gpuInfo?.vram_used_mb || 0);
-    return total > 0 && (total - used) / 1024 < Number(model.min_vram_gb || 0);
-  },
 
   taggerCanStart() {
-    return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel && !this.taggerRunning && !this.taggerStarting && !this.taggerInstalling && !this.trainingActive);
+    return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel
+      && !this.taggerRunning && !this.taggerStarting && !this.trainingActive);
   },
 
   taggerStartLabel() {
-    if (this.taggerInstalling) return this.t('tagger.installing', 'Downloading');
     if (this.taggerStarting) return this.t('common.starting', 'Starting');
-    const model = this.taggerModel();
-    if (model && model.engine === 'llama' && !model.installed) return this.t('tagger.downloadAndStart', 'Download and start');
     return this.t('tagger.start', 'Start');
   },
 
   applyTaggerPreset(preset) {
     this.taggerSettings.preset = preset;
-    if (this.taggerIsLlm()) {
-      if (preset !== 'custom') {
-        const prompt = this.taggerPromptPresets.find(item => item.id === preset)?.prompt || '';
-        if (prompt) this.taggerSettings.prompt = prompt;
-        this.taggerSettings.promptBasePreset = preset;
-      } else if (!String(this.taggerSettings.prompt || '').trim()) {
-        const base = this.taggerSettings.promptBasePreset || this.taggerDefaultPromptPreset;
-        this.taggerSettings.prompt = this.taggerPromptPresets.find(item => item.id === base)?.prompt || '';
-      }
-      this.saveTaggerSettings();
-      return;
-    }
     if (preset === 'custom') {
       if (this.taggerUsesCategoryThresholds()) this.taggerThresholdsOpen = true;
       this.saveTaggerSettings();
@@ -337,11 +274,6 @@ window.taggerMixin = {
   },
 
   taggerPresetOptions() {
-    if (this.taggerIsLlm()) return [
-      ['danbooru', this.t('tagger.promptDanbooru', 'Danbooru-style Tags')],
-      ['enhanced', this.t('tagger.promptEnhanced', 'Enhanced Tags')],
-      ['custom', this.t('tagger.presetCustom', 'Custom')],
-    ];
     if (this.taggerUsesCategoryThresholds()) return [['macro', this.t('tagger.presetMacro', 'Macro')], ['micro', this.t('tagger.presetMicro', 'Micro')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
     return [['recall', this.t('tagger.presetRecall', 'Recall')], ['balanced', this.t('tagger.presetBalanced', 'Balanced')], ['precise', this.t('tagger.presetPrecise', 'Precise')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
   },
@@ -351,94 +283,6 @@ window.taggerMixin = {
     this.saveTaggerSettings();
   },
 
-  markTaggerPromptCustom() {
-    if (!this.taggerIsLlm()) return;
-    if (this.taggerSettings.preset !== 'custom') {
-      this.taggerSettings.promptBasePreset = this.taggerSettings.preset || this.taggerDefaultPromptPreset;
-      this.taggerSettings.preset = 'custom';
-    }
-  },
-
-  restoreTaggerPrompt() {
-    const preset = this.taggerSettings.preset === 'custom'
-      ? (this.taggerSettings.promptBasePreset || this.taggerDefaultPromptPreset)
-      : this.taggerSettings.preset;
-    this.applyTaggerPreset(preset || this.taggerDefaultPromptPreset);
-  },
-
-  async refreshTaggerRuntime(silent = false) {
-    if (!this.taggerIsLlm()) {
-      this.taggerRuntime = null;
-      return;
-    }
-    if (!silent) this.taggerRuntimeBusy = true;
-    try {
-      const response = await fetch('/api/tagger/runtime');
-      const body = await response.json();
-      if (body.status === 'success') this.taggerRuntime = body.data || null;
-      else if (!silent) throw new Error(body.message || 'Runtime status unavailable');
-    } catch (error) {
-      if (!silent) this.toast(error.message, 'error');
-    } finally {
-      if (!silent) this.taggerRuntimeBusy = false;
-    }
-  },
-
-  taggerRuntimeMatchesSettings() {
-    return !!(
-      this.taggerRuntime?.running
-      && this.taggerRuntime.loaded_model === this.taggerSelectedModel
-      && !!this.taggerRuntime.low_vram === !!this.taggerSettings.lowVram
-    );
-  },
-
-  taggerRuntimeStateLabel() {
-    if (this.taggerRuntimeBusy) return this.t('tagger.runtimeChanging');
-    if (!this.taggerRuntime?.installed) return this.t('tagger.runtimeNotInstalled');
-    if (!this.taggerRuntime.running) return this.t('tagger.runtimeStopped');
-    if (!this.taggerRuntimeMatchesSettings()) return this.t('tagger.runtimeConfigChanged');
-    return this.t('tagger.runtimeReady');
-  },
-
-  taggerRuntimeDetail() {
-    if (!this.taggerRuntime?.running) return this.t('tagger.runtimeAutoStartDesc');
-    const model = this.taggerModels.find(item => item.id === this.taggerRuntime.loaded_model);
-    const remaining = Number(this.taggerRuntime.idle_remaining_seconds || 0);
-    const minutes = Math.max(1, Math.ceil(remaining / 60));
-    return this.t('tagger.runtimeLoadedDetail')
-      .replace('{model}', model?.name || this.taggerRuntime.loaded_model || '')
-      .replace('{minutes}', String(minutes));
-  },
-
-  async preloadTaggerRuntime() {
-    if (!this.taggerIsLlm() || !this.taggerModel()?.installed || this.taggerRuntimeBusy || this.taggerRunning) return;
-    this.taggerRuntimeBusy = true;
-    try {
-      const response = await fetch('/api/tagger/runtime/start', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: this.taggerSelectedModel, low_vram: !!this.taggerSettings.lowVram }),
-      });
-      const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Unable to preload model');
-      this.taggerRuntime = body.data || null;
-    } catch (error) { this.toast(error.message, 'error'); }
-    finally {
-      await this.refreshTaggerRuntime(true);
-      this.taggerRuntimeBusy = false;
-    }
-  },
-
-  async releaseTaggerRuntime() {
-    if (!this.taggerRuntime?.running || this.taggerRuntimeBusy || this.taggerRunning) return;
-    this.taggerRuntimeBusy = true;
-    try {
-      const response = await fetch('/api/tagger/runtime/stop', { method: 'POST' });
-      const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Unable to release model');
-      this.taggerRuntime = body.data || null;
-    } catch (error) { this.toast(error.message, 'error'); }
-    finally { this.taggerRuntimeBusy = false; }
-  },
 
   updateTaggerCategorySetting(key) {
     this.taggerSettings.preset = 'custom';
@@ -632,7 +476,7 @@ window.taggerMixin = {
     this.taggerResultText = result.text || '';
     this.taggerResultCategories = result.categories || {};
     const state = {};
-    if (this.taggerSourceMode === 'single' && !this.taggerIsLlm()) {
+    if (this.taggerSourceMode === 'single') {
       Object.entries(this.taggerResultCategories).forEach(([key, category]) => {
         const rawTags = Array.isArray(category) ? category : (category.tags || []);
         if (!rawTags.length) return;
@@ -783,12 +627,7 @@ window.taggerMixin = {
 
   async startTagger() {
     if (!this.taggerCanStart()) return;
-    const model = this.taggerModel();
-    if (model && model.engine === 'llama' && !model.installed) {
-      this._taggerPendingStart = true;
-      await this.installTaggerModel();
-      return;
-    }
+
     this.taggerStarting = true;
     this.saveTaggerSettings();
     try {
@@ -801,10 +640,7 @@ window.taggerMixin = {
           threshold: Number(this.taggerSettings.threshold),
           character_threshold: Number(this.taggerSettings.characterThreshold),
           category_thresholds: this.taggerEffectiveCategoryThresholds(),
-          max_tags: Number(this.taggerSettings.maxTags),
-          preset: this.taggerSettings.preset,
-          prompt: String(this.taggerSettings.prompt || ''),
-          low_vram: this.taggerSettings.lowVram,
+          category_enabled: Object.assign({}, this.taggerSettings.categoryEnabled),
           replace_underscore: this.taggerSettings.replaceUnderscore,
           escape_tag: this.taggerSettings.escapeTag,
           add_rating_tag: this.taggerSettings.addRatingTag,
@@ -820,20 +656,6 @@ window.taggerMixin = {
       this.attachTaggerTask(body.data.task_id);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }
-  },
-
-  async installTaggerModel() {
-    this.taggerInstalling = true;
-    try {
-      const response = await fetch(`/api/tagger/models/${encodeURIComponent(this.taggerSelectedModel)}/install`, { method: 'POST' });
-      const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Unable to install model');
-      this._setTaggerRealtimeTask(body.data.task_id);
-    } catch (error) {
-      this.taggerInstalling = false;
-      this._taggerPendingStart = false;
-      this.toast(error.message, 'error');
-    }
   },
 
   attachTaggerTask(taskId) {
@@ -869,11 +691,6 @@ window.taggerMixin = {
     if (!this._taggerRealtimeTopic || event.topic !== this._taggerRealtimeTopic) return;
     if (!['task.status', 'task.progress', 'task.result'].includes(event.type)) return;
     const envelope = event.payload || {};
-    if (envelope.kind === 'tagger-install') {
-      this.taggerTask = envelope.data || {};
-      if (['FINISHED', 'FAILED', 'TERMINATED'].includes(envelope.status)) this.finishTaggerInstall(envelope.status, envelope.data || {});
-      return;
-    }
     this.applyTaggerTaskSnapshot(envelope.data || {}, envelope.status || '');
   },
 
@@ -884,10 +701,9 @@ window.taggerMixin = {
   },
 
   resetRealtimeTaggerState() {
-    const active = !!(this.taggerRunning || this.taggerInstalling);
+    const active = !!this.taggerRunning;
     this._setTaggerRealtimeTask(null);
     this.taggerRunning = false;
-    this.taggerInstalling = false;
     return active;
   },
 
@@ -913,22 +729,6 @@ window.taggerMixin = {
     if (terminal) {
       this._setTaggerRealtimeTask(null);
       if (data.status === 'done') this.toast(this.t('tagger.completed', 'Tagging completed'));
-      if (this.taggerIsLlm()) void this.refreshTaggerRuntime(true);
-    }
-  },
-
-  async finishTaggerInstall(status, data) {
-    this.taggerInstalling = false;
-    this._setTaggerRealtimeTask(null);
-    if (status !== 'FINISHED') {
-      this._taggerPendingStart = false;
-      this.toast(data.error_detail || this.t('common.failed', 'Failed'), 'error');
-      return;
-    }
-    await this.loadTaggerModels();
-    if (this._taggerPendingStart) {
-      this._taggerPendingStart = false;
-      await this.startTagger();
     }
   },
 
@@ -1024,20 +824,11 @@ window.taggerMixin = {
 
   taggerProgressPercent() {
     if (!this.taggerTask || !this.taggerTask.total) return 0;
-    const completed = this.taggerInstalling ? this.taggerTask.downloaded : this.taggerTask.current;
-    return Math.min(100, Math.round(Number(completed || 0) * 100 / Number(this.taggerTask.total)));
+    return Math.min(100, Math.round(Number(this.taggerTask.current || 0) * 100 / Number(this.taggerTask.total)));
   },
 
   taggerTaskProgressText() {
     if (!this.taggerTask) return '';
-    if (this.taggerInstalling) {
-      const downloaded = this.formatTaggerBytes(this.taggerTask.downloaded || 0);
-      const total = this.taggerTask.total ? this.formatTaggerBytes(this.taggerTask.total) : '--';
-      const file = this.taggerTask.file_total
-        ? ` · ${this.taggerTask.file_index || 1}/${this.taggerTask.file_total}`
-        : '';
-      return `${downloaded} / ${total}${file}`;
-    }
     return `${this.taggerTask.current || 0} / ${this.taggerTask.total || this.taggerSource?.total || 0}`;
   },
 
@@ -1048,24 +839,13 @@ window.taggerMixin = {
     return minutes ? `${minutes}m ${Math.round(value % 60)}s` : `${Math.round(value)}s`;
   },
 
-  formatTaggerBytes(bytes) {
-    const gb = Number(bytes || 0) / 1073741824;
-    return gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(Number(bytes || 0) / 1048576) + ' MB';
-  },
-
-  formatTaggerDownloadSpeed(speed) {
-    return Number(speed || 0) > 0 ? Number(speed).toFixed(1) + ' MB/s' : '--';
-  },
-
   taggerPhaseLabel() {
-    const phase = this.taggerTask?.phase || (this.taggerRuntimeBusy ? 'loading_model' : (this.taggerScanning ? 'scanning' : 'ready'));
+    const phase = this.taggerTask?.phase || (this.taggerScanning ? 'scanning' : 'ready');
     return this.t('tagger.phase.' + phase, phase.replace(/_/g, ' '));
   },
 
   taggerLogLines() {
-    const taskLogs = Array.isArray(this.taggerTask?.logs) ? this.taggerTask.logs : [];
-    const runtimeLogs = this.taggerIsLlm() && Array.isArray(this.taggerRuntime?.logs) ? this.taggerRuntime.logs : [];
-    return Array.from(new Set([...taskLogs, ...runtimeLogs]));
+    return Array.isArray(this.taggerTask?.logs) ? this.taggerTask.logs : [];
   },
 
   taggerLogCount() {

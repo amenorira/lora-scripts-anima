@@ -1,15 +1,11 @@
-"""Structured model registry shared by the Tagger API and workspace UI."""
+"""Structured ONNX model registry shared by the Tagger API and workspace UI."""
 from __future__ import annotations
 
-import sys
 import time
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
-from backend.constants import HF_CACHE_DIR, TAGGER_MODELS_DIR, TAGGER_RUNTIME_DIR
+from backend.constants import HF_CACHE_DIR
 from backend.monitor.hardware import gpu_info
-from backend.tagger.prompt_presets import DEFAULT_PROMPT_PRESET, prompt_preset_payload
-from backend.tagger.runtime_spec import installed_runtime_matches, resolve_runtime_manifest
 
 
 @dataclass(frozen=True)
@@ -23,41 +19,28 @@ class TaggerModelSpec:
     min_vram_gb: int
     supports_confidence: bool
     supports_categories: bool
-    repo_id: str = ""
-    model_file: str = ""
-    projector_file: str = ""
 
 
 MODEL_SPECS: tuple[TaggerModelSpec, ...] = (
     TaggerModelSpec(
         "camie-tagger-v2", "Camie Tagger v2", "onnx", "tagger",
-        "Danbooru 2024 ViT tagger with about 71K tags across seven confidence categories", 733_000_000, 2, True, True,
+        "Danbooru 2024 ViT tagger with about 71K tags across seven confidence categories",
+        733_000_000, 2, True, True,
     ),
     TaggerModelSpec(
         "wd-eva02-large-tagger-v3", "WD EVA02 Large v3", "onnx", "tagger",
-        "WD v3 EVA02-Large tagger for general, character, and rating tags", 904_000_000, 2, True, True,
+        "WD v3 EVA02-Large tagger for general, character, and rating tags",
+        904_000_000, 2, True, True,
     ),
     TaggerModelSpec(
         "wd-vit-large-tagger-v3", "WD ViT Large v3", "onnx", "tagger",
-        "WD v3 ViT-Large tagger for classic WD14 ViT workflows", 904_000_000, 2, True, True,
+        "WD v3 ViT-Large tagger for classic WD14 ViT workflows",
+        904_000_000, 2, True, True,
     ),
     TaggerModelSpec(
         "cl_tagger_1_02", "CL Tagger v1.02", "onnx", "tagger",
-        "Anime tagger with 42,163 tags including quality and model categories", 747_000_000, 2, True, True,
-    ),
-    TaggerModelSpec(
-        "qwen3.5-4b-ud-q4", "Qwen3.5 4B UD-Q4_K_XL", "llama", "vision_llm",
-        "Unified 4B vision-language model with dynamic mixed-precision quantization", 3_584_533_344, 6, False, False,
-        "unsloth/Qwen3.5-4B-GGUF",
-        "Qwen3.5-4B-UD-Q4_K_XL.gguf",
-        "mmproj-F16.gguf",
-    ),
-    TaggerModelSpec(
-        "qwen3.5-9b-ud-q4", "Qwen3.5 9B UD-Q4_K_XL", "llama", "vision_llm",
-        "Unified 9B vision-language model with more capacity for fine details and relationships", 6_884_261_664, 10, False, False,
-        "unsloth/Qwen3.5-9B-GGUF",
-        "Qwen3.5-9B-UD-Q4_K_XL.gguf",
-        "mmproj-F16.gguf",
+        "Anime tagger with 42,163 tags including quality and model categories",
+        747_000_000, 2, True, True,
     ),
 )
 
@@ -65,22 +48,7 @@ MODEL_SPEC_BY_ID = {spec.id: spec for spec in MODEL_SPECS}
 _onnx_install_cache: dict[str, tuple[float, bool]] = {}
 
 
-def llama_server_path() -> Path:
-    name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
-    direct = TAGGER_RUNTIME_DIR / name
-    if direct.exists():
-        return direct
-    matches = list(TAGGER_RUNTIME_DIR.rglob(name)) if TAGGER_RUNTIME_DIR.exists() else []
-    return matches[0] if matches else direct
-
-
-def model_paths(spec: TaggerModelSpec) -> tuple[Path, Path]:
-    root = TAGGER_MODELS_DIR / spec.id
-    return root / spec.model_file, root / spec.projector_file
-
-
 def _onnx_installed(spec: TaggerModelSpec) -> bool:
-    # Existing taggers use the shared Hugging Face cache and download lazily.
     name_fragments = {
         "camie-tagger-v2": ("camie-tagger-v2.onnx",),
         "cl_tagger_1_02": ("model.onnx", "tag_mapping.json"),
@@ -107,51 +75,22 @@ def _onnx_installed(spec: TaggerModelSpec) -> bool:
     return installed
 
 
-def recommended_llm_id(total_vram_gb: float) -> str:
-    return "qwen3.5-9b-ud-q4" if total_vram_gb >= 10 else "qwen3.5-4b-ud-q4"
-
-
 def model_payload() -> dict:
     hardware = gpu_info() or {}
-    total_mb = int(hardware.get("vram_total_mb") or 0)
-    total_gb = total_mb / 1024
-    recommendation = recommended_llm_id(total_gb)
-    runtime_manifest, _ = resolve_runtime_manifest()
-    runtime_ready = (
-        llama_server_path().is_file()
-        and installed_runtime_matches(runtime_manifest)
-    )
     models = []
     for spec in MODEL_SPECS:
+        installed = _onnx_installed(spec)
         data = asdict(spec)
-        if spec.engine == "llama":
-            model_path, projector_path = model_paths(spec)
-            files_ready = model_path.is_file() and projector_path.is_file()
-            data.update({
-                "installed": runtime_ready and files_ready,
-                "runtime_installed": runtime_ready,
-                "files_installed": files_ready,
-                "recommended": spec.id == recommendation,
-                "status": "ready" if runtime_ready and files_ready else "not_installed",
-            })
-        else:
-            installed = _onnx_installed(spec)
-            data.update({
-                "installed": installed,
-                "runtime_installed": True,
-                "files_installed": installed,
-                "recommended": spec.id == "camie-tagger-v2",
-                "status": "ready" if installed else "download_on_first_use",
-            })
+        data.update({
+            "installed": installed,
+            "status": "ready" if installed else "download_on_first_use",
+        })
         models.append(data)
     return {
         "models": models,
-        "prompt_presets": prompt_preset_payload(),
-        "default_prompt_preset": DEFAULT_PROMPT_PRESET,
         "hardware": {
             "nvidia": bool(hardware),
             "gpu_name": hardware.get("name", ""),
-            "vram_total_mb": total_mb,
-            "recommended_llm": recommendation,
+            "vram_total_mb": int(hardware.get("vram_total_mb") or 0),
         },
     }

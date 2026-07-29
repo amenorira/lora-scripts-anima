@@ -15,7 +15,6 @@ from PIL import Image, UnidentifiedImageError
 
 from backend.constants import TAGGER_CACHE_DIR
 from backend.log import log
-from backend.monitor.hardware import gpu_info
 from backend.tagger.interrogator import (
     available_interrogators,
     gpu_inference_lock,
@@ -255,90 +254,6 @@ def _normalize_tags(tags: list[str]) -> list[str]:
     return result
 
 
-_LLM_FILLER_TAGS = {
-    "anime", "anime_style", "girl", "boy", "female", "male", "character", "person", "subject",
-    "1_person", "face", "eyes", "hair", "body", "skin", "background",
-    "illustration", "digital_art", "2d", "detailed", "cute", "kawaii",
-    "clean_lines", "smooth_shading", "no_context", "no_story", "no_environment", "no_movement",
-    "vocaloid", "utau", "hololive", "vtuber", "virtual_youtuber", "virtual_you_tuber",
-    "virtual_singer", "virtual_influencer", "virtual_celebrity", "anime_character", "anime_art",
-    "artwork", "avatar",
-    "white", "black", "gray", "grey", "red", "pink", "orange", "yellow", "green", "blue",
-    "purple", "brown", "cyan", "teal", "mint", "light_blue", "light_brown", "pastel",
-}
-
-_LLM_PARENT_TAGS = {
-    "bow", "ribbon", "hair_ornament", "hair_accessory", "hair_clip", "hairpin",
-    "hoodie", "jacket", "dress", "skirt", "top", "collar", "pattern", "striped", "strap", "clip",
-    "thighhigh",
-    "legwear", "sock", "socks", "ankle_sock", "ankle_socks", "shoe", "shoes", "sneakers",
-}
-
-
-def _clean_llm_tags(tags: list[str], *, strict: bool = False) -> list[str]:
-    aliases = {
-        "1_female": "1girl",
-        "1_male": "1boy",
-        "closeup": "close-up",
-        "fullbody": "full_body",
-        "cropped_legs": "lower_body",
-        "shortskirt": "short_skirt",
-    }
-    normalized = _normalize_tags([
-        aliases.get(str(tag).strip().lower().replace(" ", "_"), str(tag)) for tag in tags
-    ])
-    keyed = [(tag, tag.replace(" ", "_")) for tag in normalized]
-    keys = {key for _, key in keyed}
-    result: list[str] = []
-    for tag, key in keyed:
-        words = tag.replace("_", " ").split()
-        if strict and (len(words) > 4 or any(word in {"with", "over"} for word in words)):
-            continue
-        if key in _LLM_FILLER_TAGS or key.startswith(("no_", "without_", "not_")):
-            continue
-        if key in _LLM_PARENT_TAGS and any(
-            other != key and (
-                other.startswith(key + "_")
-                or other.endswith("_" + key)
-                or ("_" + key + "_") in other
-            )
-            for other in keys
-        ):
-            continue
-        if key in {"hair_ornament", "hair_accessory"} and keys.intersection({
-            "hair_clip", "hairpin", "hair_bow", "head_bow", "hair_ribbon",
-        }):
-            continue
-        if key == "jacket" and any("hoodie" in other for other in keys):
-            continue
-        if key in {"shoe", "shoes", "footwear"} and any(
-            other != key and ("shoe" in other or "sneaker" in other) for other in keys
-        ):
-            continue
-        if key in {"sock", "socks", "legwear"} and any(
-            other != key and ("sock" in other or "thighhigh" in other or "legwear" in other) for other in keys
-        ):
-            continue
-        if key == "skirt" and any(other != key and other.endswith("_skirt") for other in keys):
-            continue
-        result.append(tag)
-    return result
-
-
-def _format_output_tags(tags: list[str], *, replace_underscore: bool, escape_tag: bool) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for tag in tags:
-        value = tag.replace("_", " ") if replace_underscore else tag
-        if escape_tag:
-            value = value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        result.append(value)
-    return result
-
-
 def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
@@ -352,13 +267,14 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[s
         }
         for key, values in raw.items() if values
     }
-    threshold = float(options.get("threshold", 0.35))
-    character_threshold = float(options.get("character_threshold", 0.6))
-    category_thresholds = options.get("category_thresholds") or {}
+    category_thresholds = dict(options.get("category_thresholds") or {})
+    for category, enabled in (options.get("category_enabled") or {}).items():
+        if enabled is False:
+            category_thresholds[str(category)] = 1.01
     tags = Interrogator.postprocess_tags(
         {key: list(values) for key, values in raw.items()},
-        threshold,
-        character_threshold,
+        float(options.get("threshold", 0.35)),
+        float(options.get("character_threshold", 0.6)),
         category_thresholds,
         bool(options.get("add_rating_tag", False)),
         bool(options.get("add_model_tag", False)),
@@ -371,24 +287,6 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[s
         bool(options.get("escape_tag", True)),
     )
     return list(tags), categories
-
-
-def _llm_tags(model_id: str, image: Image.Image, options: dict,
-              on_log=None) -> tuple[list[str], dict]:
-    from backend.tagger.llama_runtime import llama_runtime
-
-    with gpu_inference_lock:
-        tags = llama_runtime.infer_tags(model_id, image, options, on_log=on_log)
-    normalized = _clean_llm_tags(tags, strict=str(options.get("preset") or "") == "danbooru")
-    excluded = set(_normalize_tags(split_str(str(options.get("exclude_tags", "")))))
-    normalized = [tag for tag in normalized if tag not in excluded]
-    additional = _normalize_tags(split_str(str(options.get("additional_tags", ""))))
-    merged = _normalize_tags([*additional, *normalized])
-    return _format_output_tags(
-        merged,
-        replace_underscore=bool(options.get("replace_underscore", True)),
-        escape_tag=bool(options.get("escape_tag", True)),
-    ), {}
 
 
 def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True) -> str:
@@ -480,25 +378,24 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 _task_log(task, "Task cancelled by user")
                 break
             if existing_text:
-                text = existing_text
-                if text:
-                    result = {
-                        "index": index,
-                        "name": path.name,
-                        "path": str(path),
-                        "tags": [part.strip() for part in text.split(",") if part.strip()],
-                        "text": text,
-                        "categories": {},
-                    }
-                    with task["lock"]:
-                        task["skipped"] += 1
-                        task["current"] = index + 1
-                        task["items"][index].update({"status": "skipped", "tag_count": len(result["tags"])})
-                        task["current_result"] = result
-                        task["results"][index] = result
-                        task["updated_at"] = time.time()
-                    _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: existing caption skipped")
-                    continue
+                tags = [part.strip() for part in existing_text.split(",") if part.strip()]
+                result = {
+                    "index": index,
+                    "name": path.name,
+                    "path": str(path),
+                    "tags": tags,
+                    "text": existing_text,
+                    "categories": {},
+                }
+                with task["lock"]:
+                    task["skipped"] += 1
+                    task["current"] = index + 1
+                    task["items"][index].update({"status": "skipped", "tag_count": len(tags)})
+                    task["current_result"] = result
+                    task["results"][index] = result
+                    task["updated_at"] = time.time()
+                _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: existing caption skipped")
+                continue
             with task["lock"]:
                 task["phase"] = "inference" if model_ready else "loading_model"
                 task["current_file"] = path.name
@@ -509,15 +406,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     raise decode_error
                 if not model_ready:
                     _task_log(task, f"Loading model: {spec.name}")
-                if spec.engine == "llama":
-                    tags, categories = _llm_tags(
-                        spec.id,
-                        image,
-                        options,
-                        on_log=lambda message: _task_log(task, message),
-                    )
-                else:
-                    tags, categories = _onnx_tags(spec.id, image, options)
+                tags, categories = _onnx_tags(spec.id, image, options)
                 if not model_ready:
                     model_ready = True
                     _task_log(task, f"Model ready: {spec.name}")
@@ -556,14 +445,12 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     task["failed"] += 1
                     task["items"][index].update({"status": "failed", "error": message})
                 _task_log(task, f"Failed {path.name}: {message}")
-                if spec.engine == "llama":
-                    from backend.tagger.llama_runtime import LlamaRuntimeStartupError
-                    if isinstance(exc, LlamaRuntimeStartupError):
-                        raise RuntimeError(
-                            f"Qwen runtime failed to start; remaining images were not processed. {message}"
-                        ) from exc
-                if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower() and "memory" in str(exc).lower():
-                    raise RuntimeError("CUDA out of memory. Select Qwen3.5 4B or close other GPU applications.") from exc
+                if "out of memory" in str(exc).lower() or (
+                    "cuda" in str(exc).lower() and "memory" in str(exc).lower()
+                ):
+                    raise RuntimeError(
+                        "CUDA out of memory during ONNX inference. Close other GPU applications."
+                    ) from exc
             finally:
                 if image is not None:
                     image.close()
@@ -601,8 +488,6 @@ def create_task(payload: dict) -> str:
     model_id = str(payload.get("model_id") or "")
     if model_id not in MODEL_SPEC_BY_ID:
         raise ValueError("Unknown model / 未知模型")
-    if MODEL_SPEC_BY_ID[model_id].engine == "llama" and not gpu_info():
-        raise RuntimeError("Qwen Tagger requires an NVIDIA GPU with CUDA / Qwen 反推仅支持 NVIDIA CUDA")
     source_token = str(payload.get("source_token") or "")
     with _sources_lock:
         source = _sources.get(source_token)

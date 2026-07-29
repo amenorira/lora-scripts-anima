@@ -2,10 +2,7 @@
 
 import asyncio
 import os
-import threading
-import time
 import uuid
-from collections import deque
 from io import BytesIO
 from pathlib import Path
 
@@ -25,8 +22,7 @@ from backend.tagger.interrogator import (
     on_interrogate,
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
-from backend.tagger.llama_runtime import llama_runtime
-from backend.tagger.registry import MODEL_SPEC_BY_ID, model_payload
+from backend.tagger.registry import model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
     create_task as create_workspace_task,
@@ -41,7 +37,6 @@ from backend.tagger.workspace import (
     task_snapshot,
     thumbnail_path,
     training_active,
-    has_active_tagger_task,
 )
 
 router = APIRouter()
@@ -67,91 +62,6 @@ _MODEL_DISPLAY_NAMES = {
     "cl_tagger_1_02": "CL Tagger v1.02",
     "camie-tagger-v2": "Camie Tagger v2",
 }
-
-_install_jobs: dict[str, dict] = {}
-_install_jobs_lock = threading.Lock()
-
-
-def _install_snapshot(job_id: str) -> dict:
-    with _install_jobs_lock:
-        job = _install_jobs.get(job_id)
-        if not job:
-            return {"status": "error", "done": True, "error_detail": "Install task not found", "logs": []}
-        with job["lock"]:
-            progress = dict(job["progress"])
-            downloaded = int(progress.get("downloaded", 0) or 0)
-            total = int(progress.get("total", 0) or 0)
-            speed = float(progress.get("speed", 0) or 0)
-            eta_seconds = ((total - downloaded) / (speed * 1024 * 1024)) if total > downloaded and speed > 0 else None
-            logs = list(job["logs"])
-            if progress.get("phase") == "downloading" and job.get("progress_line"):
-                logs.append(job["progress_line"])
-            return {
-                "status": job["status"],
-                "phase": progress.get("phase", job["status"]),
-                "done": job["done"],
-                "downloaded": downloaded,
-                "total": total,
-                "speed": speed,
-                "eta_seconds": eta_seconds,
-                "filename": progress.get("filename", ""),
-                "file_index": progress.get("file_index", 0),
-                "file_total": progress.get("file_total", 0),
-                "logs": logs,
-                "error_detail": job.get("error_detail"),
-            }
-
-
-async def _start_llama_install_job(model_id: str | None, runtime_only: bool, force: bool = False):
-    with _install_jobs_lock:
-        if any(not job["done"] for job in _install_jobs.values()):
-            return APIResponseFail(message="Another runtime or model download is running / 已有运行时或模型下载任务")
-        job_id = uuid.uuid4().hex[:12]
-        job = {
-            "model_id": model_id,
-            "runtime_only": runtime_only,
-            "status": "running",
-            "done": False,
-            "progress": {"phase": "resolving", "downloaded": 0, "total": 0},
-            "logs": deque(maxlen=100),
-            "progress_line": "",
-            "error_detail": None,
-            "lock": threading.RLock(),
-            "started_at": time.time(),
-        }
-        _install_jobs[job_id] = job
-
-    def _log(message: str) -> None:
-        with job["lock"]:
-            job["logs"].append(f"[{time.strftime('%H:%M:%S')}] {message}")
-
-    def _progress(message: str) -> None:
-        with job["lock"]:
-            job["progress_line"] = f"[{time.strftime('%H:%M:%S')}] {message}"
-
-    def _run() -> None:
-        try:
-            if runtime_only:
-                llama_runtime.install_runtime(job["progress"], job["lock"], _log, _progress, force=force)
-                with job["lock"]:
-                    job["progress"].update({"phase": "done", "done": True, "status": "done"})
-            else:
-                llama_runtime.install(str(model_id), job["progress"], job["lock"], _log, _progress)
-            with job["lock"]:
-                job["status"] = "done"
-                job["done"] = True
-        except Exception as exc:
-            log.exception("llama runtime or model installation failed")
-            with job["lock"]:
-                job["status"] = "error"
-                job["done"] = True
-                job["error_detail"] = str(exc)[:500]
-                job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Install failed: {str(exc)[:500]}")
-
-    kind = "tagger-runtime-install" if runtime_only else "tagger-install"
-    threading.Thread(target=_run, daemon=True, name=f"{kind}-{job_id}").start()
-    await realtime_tasks.register(job_id, kind, lambda job_id=job_id: _install_snapshot(job_id))
-    return APIResponseSuccess(data={"task_id": job_id})
 
 
 @router.post("/interrogate")
@@ -207,63 +117,8 @@ async def stop_interrogate(task_id: str):
 
 @router.get("/tagger/models")
 async def list_tagger_models():
-    """List model capabilities, installation state, and hardware recommendation."""
-    payload = await asyncio.to_thread(model_payload)
-    with _install_jobs_lock:
-        jobs = list(_install_jobs.values())
-        for model in payload["models"]:
-            matching = [job for job in jobs if job.get("model_id") == model["id"]]
-            if not matching:
-                continue
-            latest = max(matching, key=lambda job: job["started_at"])
-            if not latest["done"]:
-                model["status"] = "downloading"
-            elif latest["status"] == "error" and not model["installed"]:
-                model["status"] = "error"
-                model["error_detail"] = latest.get("error_detail")
-    return APIResponseSuccess(data=payload)
-
-
-@router.get("/tagger/runtime")
-async def tagger_runtime_status(refresh: bool = False):
-    """Return the external llama.cpp CUDA runtime state without scanning model files."""
-    return APIResponseSuccess(data=await asyncio.to_thread(llama_runtime.runtime_status, refresh=refresh))
-
-
-@router.post("/tagger/runtime/stop")
-async def stop_tagger_runtime():
-    if training_active() or has_active_tagger_task():
-        return APIResponseFail(message="GPU task is running / GPU 任务正在运行")
-    await asyncio.to_thread(llama_runtime.stop, "released by user")
-    return APIResponseSuccess(data=await asyncio.to_thread(llama_runtime.runtime_status))
-
-
-@router.post("/tagger/runtime/start")
-async def start_tagger_runtime(request: Request):
-    if training_active() or has_active_tagger_task():
-        return APIResponseFail(message="GPU task is running / GPU 任务正在运行")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    model_id = str(body.get("model_id") or "")
-    spec = MODEL_SPEC_BY_ID.get(model_id)
-    if not spec or spec.engine != "llama":
-        return APIResponseFail(message="Unknown Qwen model / 未知 Qwen 模型")
-    try:
-        await asyncio.to_thread(llama_runtime.start, model_id, low_vram=bool(body.get("low_vram", False)))
-        return APIResponseSuccess(data=await asyncio.to_thread(llama_runtime.runtime_status))
-    except Exception as exc:
-        return APIResponseFail(message=str(exc))
-
-
-@router.post("/tagger/runtime/install")
-async def install_tagger_runtime(request: Request):
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    return await _start_llama_install_job(None, runtime_only=True, force=bool(body.get("force")))
+    """List ONNX model capabilities and installation state."""
+    return APIResponseSuccess(data=await asyncio.to_thread(model_payload))
 
 
 @router.post("/tagger/source/scan")
@@ -398,15 +253,6 @@ async def list_tagger_workspace_items(task_id: str, offset: int = 0, limit: int 
 async def active_tagger_workspace_task():
     return APIResponseSuccess(data={"task_id": latest_active_task_id()})
 
-
-@router.post("/tagger/models/{model_id}/install")
-async def install_tagger_model(model_id: str):
-    spec = MODEL_SPEC_BY_ID.get(model_id)
-    if spec is None:
-        return APIResponseFail(message="Unknown model / 未知模型")
-    if spec.engine != "llama":
-        return APIResponseFail(message="This model downloads automatically on first inference")
-    return await _start_llama_install_job(model_id, runtime_only=False)
 
 
 @router.post("/tagger/single")

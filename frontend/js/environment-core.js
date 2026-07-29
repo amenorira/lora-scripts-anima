@@ -28,10 +28,6 @@ window.environmentCoreMixin = {
   tritonStatus: null, tritonBusy: false,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
 
-  // ── External llama.cpp Runtime State ─────────────────
-  llamaRuntimeStatus: null, llamaRuntimeBusy: false, llamaRuntimeError: null,
-  llamaRuntimeJobId: null, llamaRuntimeProgress: null, llamaRuntimeLog: '',
-
   // ── 模型下载 State ──────────────────────────────────
   animaModelStatus: null,   // models/ 下已有文件清单 [{filename, desc, exists, size_gb, dest_path}]
   animaModelDestDir: '',    // 目标目录（相对仓库根，如 models/），用于"下载到哪里"说明
@@ -44,7 +40,7 @@ window.environmentCoreMixin = {
   animaModelLogOpen: false, // 日志折叠状态（持久化，避免实时重渲染被收起）
 
   // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, lycorisCardOpen: true, musubiCardOpen: true, tritonCardOpen: true, llamaRuntimeCardOpen: true, animaModelCardOpen: true, kreaModelCardOpen: true,
+  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, lycorisCardOpen: true, musubiCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true, kreaModelCardOpen: true,
   _envRealtimeTopics: null,
   environmentLoading: false,
   environmentLoadCompleted: 0,
@@ -65,7 +61,6 @@ window.environmentCoreMixin = {
         if (typeof s.musubi === 'boolean') this.musubiCardOpen = s.musubi;
         else if (typeof s.coreRegistry === 'boolean') this.musubiCardOpen = s.coreRegistry;
         if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
-        if (typeof s.llamaRuntime === 'boolean') this.llamaRuntimeCardOpen = s.llamaRuntime;
         if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
         if (typeof s.kreaModel === 'boolean') this.kreaModelCardOpen = s.kreaModel;
         if (typeof s.animaModelLog === 'boolean') this.animaModelLogOpen = s.animaModelLog;
@@ -73,7 +68,7 @@ window.environmentCoreMixin = {
     } catch (_) {}
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,lycoris:this.lycorisCardOpen,musubi:this.musubiCardOpen,triton:this.tritonCardOpen,llamaRuntime:this.llamaRuntimeCardOpen,animaModel:this.animaModelCardOpen,kreaModel:this.kreaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,lycoris:this.lycorisCardOpen,musubi:this.musubiCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,kreaModel:this.kreaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
   },
 
   // ── Realtime task bridge ─────────────────────────────
@@ -106,14 +101,13 @@ window.environmentCoreMixin = {
       'flash-attention-install': 'fa',
       'xformers-install': 'xf',
       'triton-install': 'triton',
-      'tagger-runtime-install': 'llamaRuntime',
       'model-download': 'animaModel',
     };
     for (const task of tracked) {
       const slot = slots[task.kind];
       if (!slot || !['CREATED', 'RUNNING'].includes(task.status)) continue;
-      const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot === 'llamaRuntime' ? 'llamaRuntimeJobId' : slot + 'InstallJobId';
-      const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot === 'llamaRuntime' ? 'llamaRuntimeBusy' : slot + 'Busy';
+      const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
+      const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
       if (!this[idKey]) this[idKey] = task.task_id;
       this[busyKey] = true;
       this._setEnvironmentRealtimeTask(slot, task.task_id);
@@ -122,17 +116,16 @@ window.environmentCoreMixin = {
   },
 
   resetRealtimeEnvironmentState() {
-    const slots = ['fa', 'xf', 'triton', 'llamaRuntime', 'animaModel'];
-    const hadTasks = !!(this.faBusy || this.xfBusy || this.tritonBusy || this.llamaRuntimeBusy || this.animaModelBusy || this.faInstallJobId || this.xfInstallJobId || this.tritonInstallJobId || this.llamaRuntimeJobId || this.animaModelJobId);
+    const slots = ['fa', 'xf', 'triton', 'animaModel'];
+    const hadTasks = !!(this.faBusy || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.faInstallJobId || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
     slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
     const unknown = this.t('monitor.taskStateUnknown', 'Task state unknown');
     if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
     if (this.tritonBusy || this.tritonInstallJobId) this.tritonInstallLog = unknown;
-    if (this.llamaRuntimeBusy || this.llamaRuntimeJobId) this.llamaRuntimeError = unknown;
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
-    this.faBusy = this.xfBusy = this.tritonBusy = this.llamaRuntimeBusy = this.animaModelBusy = false;
-    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.llamaRuntimeJobId = this.animaModelJobId = null;
+    this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
+    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
     this.scheduleEnvironmentRender();
     return hadTasks;
   },
@@ -151,9 +144,6 @@ window.environmentCoreMixin = {
     } else if (slot === 'triton') {
       this.tritonInstallLog = data.lines || this.tritonInstallLog;
       this.tritonInstallElapsed = data.elapsed || 0;
-    } else if (slot === 'llamaRuntime') {
-      this.llamaRuntimeProgress = data.progress || data || this.llamaRuntimeProgress;
-      this.llamaRuntimeLog = Array.isArray(data.logs) ? data.logs.join('\n') : (data.log || this.llamaRuntimeLog);
     } else if (slot === 'animaModel') {
       this.animaModelProgress = data.progress || this.animaModelProgress;
       this.animaModelLog = Array.isArray(data.log) ? data.log.join('\n') : (data.log || this.animaModelLog);
@@ -167,8 +157,8 @@ window.environmentCoreMixin = {
   },
 
   _finalizeEnvironmentRealtimeTask(slot, data, failed) {
-    const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot === 'llamaRuntime' ? 'llamaRuntimeJobId' : slot + 'InstallJobId';
-    const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot === 'llamaRuntime' ? 'llamaRuntimeBusy' : slot + 'Busy';
+    const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
+    const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
     this[busyKey] = false;
     this[idKey] = null;
     this._setEnvironmentRealtimeTask(slot, null);
@@ -183,10 +173,6 @@ window.environmentCoreMixin = {
     } else if (slot === 'triton') {
       if (failed) this.tritonInstallLog = (this.tritonInstallLog ? this.tritonInstallLog + '\n' : '') + '[ERROR] ' + fallback;
       this.tritonRefresh(true).catch(() => {});
-    } else if (slot === 'llamaRuntime') {
-      if (failed) this.llamaRuntimeError = data.error_detail || fallback;
-      else this.toast(this.t('environment.llamaRuntime.installComplete', 'Runtime installed'), 'success');
-      this.llamaRuntimeRefresh(true).catch(() => {});
     } else if (slot === 'animaModel') {
       if (failed) {
         this.animaModelError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
@@ -296,9 +282,9 @@ window.environmentCoreMixin = {
       this.finishProgress();
       return;
     }
-    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus, needsLlamaRuntime = !this.llamaRuntimeStatus,
+    const needsFa = !this.faStatus, needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
           needsAnimaModel = !this.animaModelStatus;
-    if (needsFa || needsXf || needsSd || needsCores || needsTriton || needsLlamaRuntime || needsAnimaModel) {
+    if (needsFa || needsXf || needsSd || needsCores || needsTriton || needsAnimaModel) {
       // Render the full skeleton immediately, then load in a small queue.
       // This avoids stacking cold imports and disk scans while telemetry is active.
       const loaders = [];
@@ -329,18 +315,6 @@ window.environmentCoreMixin = {
         data => { this.sdStatus = data; },
         () => { this.sdStatus = null; },
       ));
-      if (needsLlamaRuntime) {
-        this.llamaRuntimeError = null;
-        loaders.push(this._environmentJsonLoader(
-          '/api/tagger/runtime?refresh=1',
-          data => { this.llamaRuntimeStatus = data; },
-          error => { this.llamaRuntimeError = String(error.message || error); this.llamaRuntimeStatus = null; },
-          payload => {
-            if (payload.status !== 'success') throw new Error(payload.message || 'Failed to load llama runtime');
-            return payload.data || null;
-          },
-        ));
-      }
       if (needsAnimaModel) {
         this.animaModelError = null;
         loaders.push(this._environmentJsonLoader(
@@ -457,49 +431,6 @@ window.environmentCoreMixin = {
       if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('triton', result.job_id); }
       else { this.tritonBusy = false; this.toast(this.t('environment.installFailed','Install failed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.tritonBusy = false; this.toast(String(e), 'error'); this.finishProgress(); this.renderEnvironment(); }
-  },
-
-  async llamaRuntimeRefresh(silent) {
-    this.llamaRuntimeError = null;
-    try {
-      const response = await fetch('/api/tagger/runtime?refresh=1');
-      const payload = await response.json();
-      if (!response.ok || payload.status !== 'success') throw new Error(payload.message || 'Failed to load llama runtime');
-      this.llamaRuntimeStatus = payload.data || null;
-    } catch (error) {
-      this.llamaRuntimeError = String(error.message || error);
-      this.llamaRuntimeStatus = null;
-    }
-    if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
-  },
-
-  async llamaRuntimeInstall(force) {
-    if (this.llamaRuntimeBusy) return;
-    this.llamaRuntimeBusy = true; this.llamaRuntimeError = null;
-    this.llamaRuntimeProgress = null; this.llamaRuntimeLog = '';
-    this.startProgress(); this.renderEnvironment();
-    try {
-      const response = await fetch('/api/tagger/runtime/install', {
-        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force: !!force}),
-      });
-      const payload = await response.json();
-      if (payload.status !== 'success') throw new Error(payload.message || 'Unable to install runtime');
-      this.llamaRuntimeJobId = payload.data.task_id;
-      this._setEnvironmentRealtimeTask('llamaRuntime', this.llamaRuntimeJobId);
-    } catch (error) {
-      this.llamaRuntimeBusy = false; this.llamaRuntimeError = String(error.message || error);
-      this.finishProgress(); this.renderEnvironment();
-    }
-  },
-
-  async llamaRuntimeStop() {
-    try {
-      const response = await fetch('/api/tagger/runtime/stop', {method:'POST'});
-      const payload = await response.json();
-      if (payload.status !== 'success') throw new Error(payload.message || 'Unable to stop runtime');
-      this.llamaRuntimeStatus = payload.data || this.llamaRuntimeStatus;
-      this.renderEnvironment();
-    } catch (error) { this.toast(String(error.message || error), 'error'); }
   },
 
   // ── Anima 模型下载 Methods ──────────────────────────

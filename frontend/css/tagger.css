@@ -37,11 +37,9 @@
 .tagger-field-control > .anima-select { width: 200px; max-width: 100%; margin-left: auto; }
 .tagger-field-control > .tagger-model-select { width: 260px; }
 .tagger-field-control .anima-select-trigger { min-height: 34px; }
-.tagger-model-meta, .tagger-vram-guidance { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--text-tertiary); font-size: 9.5px; }
+.tagger-model-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--text-tertiary); font-size: 9.5px; }
 .tagger-model-meta { width: 260px; max-width: 100%; margin-left: auto; }
 .tagger-model-meta span:last-child { color: var(--accent); font-weight: 650; }
-.tagger-vram-guidance { padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); }
-.tagger-vram-warning { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); color: var(--warning); font-size: 10.5px; line-height: 1.45; }
 .tagger-path-control { display: flex; height: 34px; border: 1px solid var(--border-input); background: var(--bg-input); }
 .tagger-path-control:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
 .tagger-path-control input { flex: 1; min-width: 0; padding: 0 9px; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; }
@@ -52,25 +50,6 @@
 .tagger-text-input { max-width: 320px; margin-left: auto; }
 .tagger-number-input { max-width: 132px; margin-left: auto; font-family: var(--font-mono); text-align: right; }
 .tagger-number-input:focus, .tagger-text-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
-.tagger-prompt-field { align-items: stretch; }
-.tagger-prompt-editor { width: 100%; min-width: 0; border: 1px solid var(--border-input); border-radius: 2px; background: var(--bg-input); }
-.tagger-prompt-editor:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
-.tagger-prompt-editor textarea { display: block; width: 100%; min-height: 176px; max-height: 320px; padding: 9px 10px; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.55; }
-.tagger-prompt-footer { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 3px 7px 3px 10px; border-top: 1px solid var(--border-subtle); color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9px; }
-.tagger-prompt-footer button { min-height: 22px; padding: 2px 6px; border: 1px solid var(--border-input); border-radius: 2px; background: var(--bg-input-action); color: var(--text-secondary); font-family: var(--font-sans); font-size: 9px; cursor: pointer; }
-.tagger-prompt-footer button:hover { border-color: var(--accent); color: var(--accent); }
-.tagger-runtime-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 56px; margin: 4px 0 0; padding: 8px 10px; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
-.tagger-runtime-info { display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; }
-.tagger-runtime-info b, .tagger-runtime-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tagger-runtime-info b { color: var(--text-primary); font-size: 10.5px; font-weight: 650; }
-.tagger-runtime-info small { margin-top: 2px; color: var(--text-tertiary); font-size: 9px; }
-.tagger-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
-.tagger-runtime-dot.running { background: var(--success); }
-.tagger-runtime-dot.changed { background: var(--warning); }
-.tagger-runtime-actions { display: flex; align-items: center; gap: 5px; }
-.tagger-runtime-actions button { min-height: 27px; padding: 3px 8px; border: 1px solid var(--border-input); border-radius: 2px; background: var(--bg-input); color: var(--text-secondary); font-size: 9.5px; cursor: pointer; }
-.tagger-runtime-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.tagger-runtime-actions button:disabled { opacity: .45; cursor: not-allowed; }
 
 .tagger-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .tagger-option-grid > label { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; min-height: 58px; margin: 0; padding: 9px 10px; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; }
@@ -170,9 +149,6 @@
 .tagger-single-sidebar { display: grid; gap: 12px; min-width: 0; }
 .tagger-single-sidebar .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 7px; }
 .tagger-single-sidebar .tagger-field-control { width: 100%; }
-.tagger-single-sidebar .tagger-prompt-editor textarea { min-height: 150px; max-height: 260px; }
-.tagger-single-sidebar .tagger-runtime-row { grid-template-columns: minmax(0, 1fr); }
-.tagger-single-sidebar .tagger-runtime-actions { justify-content: flex-end; }
 .tagger-single-sidebar .tagger-category-settings { margin-left: 10px; }
 .tagger-single-sidebar .tagger-category-settings > .tagger-category-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; padding-block: 8px; }
 .tagger-single-sidebar .tagger-category-enable, .tagger-single-sidebar .tagger-category-controls { grid-column: 1; }
