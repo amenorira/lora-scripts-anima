@@ -208,6 +208,10 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertIn("tagger-action-panel", template)
         self.assertIn("tagger-single-layout", template)
         self.assertIn("tagger-single-preview", template)
+        self.assertIn("tagger-single-main", template)
+        self.assertNotIn("tagger-single-settings-grid", template)
+        self.assertIn("tagger-single-categories", template)
+        self.assertLess(template.index("tagger-single-result"), template.index("tagger-single-sidebar"))
         self.assertIn("tagger-category-settings", template)
         self.assertIn("tagger-category-browser", template)
         self.assertNotIn("anima-select-compact", template)
@@ -217,6 +221,8 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("tagger-choice-group", template)
         self.assertNotIn("<select", template)
         self.assertEqual(template.count('x-effect="value = taggerSelectedModel"'), 2)
+        self.assertEqual(template.count('@click="value = taggerSettings.preset; toggle($event)"'), 2)
+        self.assertEqual(template.count("taggerPresetOptions().find(option => option[0] === taggerSettings.preset)"), 2)
         self.assertIn("localStorage.getItem('anima-tagger-model')", tagger_js)
         self.assertIn("this.taggerModels[0] ? this.taggerModels[0].id : ''", tagger_js)
         self.assertIn("localStorage.setItem('anima-tagger-model'", tagger_js)
@@ -293,6 +299,8 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertIn(".tagger-form-card { border: 0", css)
         self.assertIn("background: transparent", css)
         self.assertIn(".tagger-single-layout", css)
+        self.assertIn("grid-template-rows: 36px clamp(280px, 43vh, 480px)", css)
+        self.assertNotIn(".tagger-single-settings-grid", css)
 
 
 if __name__ == "__main__":
