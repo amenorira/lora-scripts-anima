@@ -22,7 +22,6 @@ window.taggerMixin = {
   taggerFailedOnly: false,
   taggerLogsOpen: false,
   taggerAdvancedOpen: false,
-  taggerThresholdsOpen: false,
   taggerPreviewActual: false,
   taggerPreviewLight: false,
   taggerDragOver: false,
@@ -38,7 +37,8 @@ window.taggerMixin = {
     addModelTag: false,
     removeDuplicated: false,
     categoryThresholds: {},
-    categoryEnabled: {},
+    categoryEnabledByModel: {},
+    characterEnabledByModel: {},
     additionalTags: '',
     excludeTags: '',
   },
@@ -47,8 +47,6 @@ window.taggerMixin = {
   _taggerPreviewObjectUrl: null,
   _taggerLoadedResultKey: '',
 
-  TAGGER_CAMIE_CATEGORIES: ['general', 'character', 'copyright', 'artist', 'meta', 'year', 'rating'],
-  TAGGER_CL_CATEGORIES: ['general', 'character', 'copyright', 'artist', 'meta', 'quality', 'rating'],
   TAGGER_CAMIE_PRESETS: {
     macro: { general: 0.492, character: 0.492, copyright: 0.492, artist: 0.492, meta: 0.492, year: 0.492, rating: 0.492 },
     micro: { general: 0.614, character: 0.614, copyright: 0.614, artist: 0.614, meta: 0.614, year: 0.614, rating: 0.614 },
@@ -85,7 +83,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260730-tagger14');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260730-tagger16');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -104,6 +102,7 @@ window.taggerMixin = {
   _loadTaggerSettings() {
     try {
       const saved = JSON.parse(localStorage.getItem('anima-tagger-settings') || '{}');
+      delete saved.categoryEnabled;
       this.taggerSettings = Object.assign({}, this.taggerSettings, saved);
     } catch (_) {}
   },
@@ -189,27 +188,62 @@ window.taggerMixin = {
 
 
   taggerUsesCategoryThresholds() {
-    return ['camie-tagger-v2', 'cl_tagger_1_02'].includes(this.taggerSelectedModel);
+    return this.taggerCategoryKeys().length > 0;
   },
 
   taggerCategoryKeys() {
-    if (this.taggerSelectedModel === 'camie-tagger-v2') return this.TAGGER_CAMIE_CATEGORIES;
-    if (this.taggerSelectedModel === 'cl_tagger_1_02') return this.TAGGER_CL_CATEGORIES;
-    return [];
+    const categories = this.taggerModel()?.threshold_categories;
+    return Array.isArray(categories) ? categories : [];
+  },
+
+  taggerSupportsCharacterToggle() {
+    return this.taggerModel()?.supports_character_toggle === true;
+  },
+
+  taggerCharacterEnabled() {
+    return this.taggerSettings.characterEnabledByModel?.[this.taggerSelectedModel] !== false;
+  },
+
+  setTaggerCharacterEnabled(enabled) {
+    this.taggerSettings.characterEnabledByModel = Object.assign(
+      {},
+      this.taggerSettings.characterEnabledByModel,
+      { [this.taggerSelectedModel]: !!enabled },
+    );
+    this.saveTaggerSettings();
+    const character = this.taggerCategoryState.character;
+    if (character) {
+      character.visible = !!enabled;
+      this.recalculateTaggerCategory('character');
+    }
+  },
+
+  taggerCategoryEnabled(key) {
+    return this.taggerSettings.categoryEnabledByModel?.[this.taggerSelectedModel]?.[key] !== false;
+  },
+
+  setTaggerCategoryEnabled(key, enabled) {
+    const modelSettings = Object.assign(
+      {},
+      this.taggerSettings.categoryEnabledByModel?.[this.taggerSelectedModel],
+      { [key]: !!enabled },
+    );
+    this.taggerSettings.categoryEnabledByModel = Object.assign(
+      {},
+      this.taggerSettings.categoryEnabledByModel,
+      { [this.taggerSelectedModel]: modelSettings },
+    );
+    this.saveTaggerSettings();
+    const category = this.taggerCategoryState[key];
+    if (category) {
+      category.visible = !!enabled;
+      this.recalculateTaggerCategory(key);
+    }
   },
 
   taggerCategoryLabel(key) {
     const suffix = key.charAt(0).toUpperCase() + key.slice(1);
     return this.t('tagger.cat' + suffix, key);
-  },
-
-  taggerCategoryOptions() {
-    return this.taggerCategoryKeys().map(key => ({
-      key,
-      label: this.taggerCategoryLabel(key),
-      threshold: Number(this.taggerSettings.categoryThresholds[key] ?? (key === 'character' ? 0.6 : 0.35)),
-      enabled: this.taggerSettings.categoryEnabled[key] !== false,
-    }));
   },
 
   handleTaggerModelChange(resetPreset = true) {
@@ -239,18 +273,13 @@ window.taggerMixin = {
   applyTaggerPreset(preset) {
     this.taggerSettings.preset = preset;
     if (preset === 'custom') {
-      if (this.taggerUsesCategoryThresholds()) this.taggerThresholdsOpen = true;
       this.saveTaggerSettings();
       return;
     }
     if (this.taggerUsesCategoryThresholds()) {
-      if (preset === 'custom') this.taggerThresholdsOpen = true;
       const presets = this.taggerSelectedModel === 'camie-tagger-v2' ? this.TAGGER_CAMIE_PRESETS : this.TAGGER_CL_PRESETS;
       if (preset !== 'custom' && presets[preset]) {
         this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, presets[preset]);
-        const enabled = Object.assign({}, this.taggerSettings.categoryEnabled);
-        this.taggerCategoryKeys().forEach(key => { if (enabled[key] == null) enabled[key] = true; });
-        this.taggerSettings.categoryEnabled = enabled;
       }
     } else {
       const values = {
@@ -264,7 +293,6 @@ window.taggerMixin = {
       Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
         if (this.taggerUsesCategoryThresholds()) {
           category.threshold = Number(this.taggerSettings.categoryThresholds[key] ?? category.threshold);
-          category.visible = this.taggerSettings.categoryEnabled[key] !== false;
         } else {
           category.threshold = Number(key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold);
         }
@@ -300,19 +328,17 @@ window.taggerMixin = {
     this.updateTaggerCategorySetting(key);
   },
 
-  toggleTaggerCategorySetting(key) {
-    this.taggerSettings.categoryEnabled = Object.assign({}, this.taggerSettings.categoryEnabled, {
-      [key]: this.taggerSettings.categoryEnabled[key] !== false,
-    });
-    this.saveTaggerSettings();
-  },
-
   taggerEffectiveCategoryThresholds() {
     if (!this.taggerUsesCategoryThresholds()) return {};
     return Object.fromEntries(this.taggerCategoryKeys().map(key => [
       key,
-      this.taggerSettings.categoryEnabled[key] === false ? 1.01 : Number(this.taggerSettings.categoryThresholds[key] ?? 0.35),
+      Number(this.taggerSettings.categoryThresholds[key] ?? 0.35),
     ]));
+  },
+
+  taggerEffectiveCategoryEnabled() {
+    if (this.taggerSupportsCharacterToggle()) return { character: this.taggerCharacterEnabled() };
+    return Object.fromEntries(this.taggerCategoryKeys().map(key => [key, this.taggerCategoryEnabled(key)]));
   },
 
   async selectTaggerSourceMode(mode) {
@@ -326,7 +352,6 @@ window.taggerMixin = {
     this.taggerItems = [];
     this.taggerItemsTotal = 0;
     this.taggerResultText = '';
-    this.taggerThresholdsOpen = false;
     this._releaseTaggerPreview();
   },
 
@@ -485,7 +510,9 @@ window.taggerMixin = {
           label: category.label || this.taggerCategoryLabel(key),
           tags: rawTags,
           threshold: Number(this.taggerSettings.categoryThresholds[key] ?? defaultThreshold ?? 0.5),
-          visible: this.taggerSettings.categoryEnabled[key] !== false,
+          visible: this.taggerUsesCategoryThresholds()
+            ? this.taggerCategoryEnabled(key)
+            : key !== 'character' || !this.taggerSupportsCharacterToggle() || this.taggerCharacterEnabled(),
           collapsed: key !== 'general',
           visibleTags: [],
           total: Number(category.total || rawTags.length),
@@ -532,13 +559,6 @@ window.taggerMixin = {
   toggleTaggerResultCategory(key) {
     const category = this.taggerCategoryState[key];
     if (!category) return;
-    if (this.taggerUsesCategoryThresholds()) {
-      this.taggerSettings.preset = 'custom';
-      this.taggerSettings.categoryEnabled = Object.assign({}, this.taggerSettings.categoryEnabled, {
-        [key]: !!category.visible,
-      });
-      this.saveTaggerSettings();
-    }
     this.recalculateTaggerCategory(key);
   },
 
@@ -564,11 +584,6 @@ window.taggerMixin = {
 
   setAllTaggerCategoriesVisible(visible) {
     Object.values(this.taggerCategoryState).forEach(category => { category.visible = visible; });
-    if (this.taggerUsesCategoryThresholds()) {
-      this.taggerSettings.preset = 'custom';
-      this.taggerSettings.categoryEnabled = Object.fromEntries(this.taggerCategoryKeys().map(key => [key, visible]));
-      this.saveTaggerSettings();
-    }
     this.recalculateAllTaggerCategories(true);
   },
 
@@ -640,7 +655,7 @@ window.taggerMixin = {
           threshold: Number(this.taggerSettings.threshold),
           character_threshold: Number(this.taggerSettings.characterThreshold),
           category_thresholds: this.taggerEffectiveCategoryThresholds(),
-          category_enabled: Object.assign({}, this.taggerSettings.categoryEnabled),
+          category_enabled: this.taggerEffectiveCategoryEnabled(),
           replace_underscore: this.taggerSettings.replaceUnderscore,
           escape_tag: this.taggerSettings.escapeTag,
           add_rating_tag: this.taggerSettings.addRatingTag,

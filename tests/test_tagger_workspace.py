@@ -19,10 +19,10 @@ class TaggerRegistryTests(unittest.TestCase):
         self.assertEqual(
             [spec.id for spec in MODEL_SPECS],
             [
-                "camie-tagger-v2",
                 "wd-eva02-large-tagger-v3",
                 "wd-vit-large-tagger-v3",
                 "cl_tagger_1_02",
+                "camie-tagger-v2",
             ],
         )
         self.assertTrue(all(spec.engine == "onnx" for spec in MODEL_SPECS))
@@ -32,6 +32,9 @@ class TaggerRegistryTests(unittest.TestCase):
         self.assertNotIn("recommended_llm", payload["hardware"])
         self.assertNotIn("runtime_installed", payload["models"][0])
         self.assertNotIn("files_installed", payload["models"][0])
+        self.assertTrue(payload["models"][0]["supports_character_toggle"])
+        self.assertEqual(payload["models"][0]["threshold_categories"], ())
+        self.assertEqual(payload["models"][2]["threshold_categories"][-2:], ("quality", "rating"))
 class TaggerWorkspaceTests(unittest.TestCase):
     def _image(self, path: Path, color=(120, 80, 160)) -> None:
         Image.new("RGB", (48, 32), color).save(path)
@@ -141,6 +144,22 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(postprocess.call_args.args[3], thresholds)
         self.assertEqual(set(raw), {"general", "character", "rating", "model"})
 
+    def test_onnx_result_can_disable_character_tags_without_hiding_raw_category(self):
+        fake = MagicMock()
+        fake.interrogate.return_value = {
+            "general": [("1girl", 0.99)],
+            "character": [("alice", 0.88)],
+        }
+        with patch.dict(workspace.available_interrogators, {"wd-eva02-large-tagger-v3": fake}):
+            tags, categories = workspace._onnx_tags(
+                "wd-eva02-large-tagger-v3",
+                Image.new("RGB", (16, 16)),
+                {"category_enabled": {"character": False}},
+            )
+
+        self.assertEqual(tags, ["1girl"])
+        self.assertIn("character", categories)
+
 
 
 
@@ -211,9 +230,9 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("tagger-category-table-head", template)
         self.assertIn("tagger-category-field", template)
         self.assertIn("tagger-category-controls", template)
-        self.assertIn("tagger-category-enable", template)
+        self.assertIn("tagger-category-toggle", template)
         self.assertIn("adjustTaggerCategoryThreshold", tagger_js)
-        self.assertIn("taggerUsesCategoryThresholds() && taggerThresholdsOpen", template)
+        self.assertNotIn("taggerThresholdsOpen", template)
         self.assertIn("tagger-action-log", template)
         self.assertIn("tagger-log-stream", template)
         self.assertIn("taggerVisibleLogs", tagger_js)
@@ -250,11 +269,16 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertIn("taggerSettings.addRatingTag", template)
         self.assertIn("taggerSettings.addModelTag", template)
         self.assertIn("category_thresholds", tagger_js)
-        self.assertIn("category_enabled", tagger_js)
+        self.assertIn("taggerEffectiveCategoryEnabled", tagger_js)
+        self.assertIn("categoryEnabledByModel", tagger_js)
+        self.assertIn("setTaggerCategoryEnabled", tagger_js)
+        self.assertIn("characterEnabledByModel", tagger_js)
+        self.assertNotIn("taggerSettings.categoryEnabled[", tagger_js)
+        self.assertIn("delete saved.categoryEnabled", tagger_js)
         self.assertNotIn("llm_optimization", tagger_js)
         self.assertIn("add_model_tag", tagger_js)
-        self.assertIn("TAGGER_CAMIE_CATEGORIES", tagger_js)
-        self.assertIn("TAGGER_CL_CATEGORIES", tagger_js)
+        self.assertNotIn("TAGGER_CAMIE_CATEGORIES", tagger_js)
+        self.assertNotIn("TAGGER_CL_CATEGORIES", tagger_js)
         self.assertNotIn("tagger-commandbar", template)
         self.assertNotIn("tagger-filmstrip", template)
         self.assertNotIn("tagger-inline-disclosure", template)

@@ -19,28 +19,32 @@ class TaggerModelSpec:
     min_vram_gb: int
     supports_confidence: bool
     supports_categories: bool
+    threshold_categories: tuple[str, ...]
+    supports_character_toggle: bool
 
 
 MODEL_SPECS: tuple[TaggerModelSpec, ...] = (
     TaggerModelSpec(
-        "camie-tagger-v2", "Camie Tagger v2", "onnx", "tagger",
-        "Danbooru 2024 ViT tagger with about 71K tags across seven confidence categories",
-        733_000_000, 2, True, True,
-    ),
-    TaggerModelSpec(
         "wd-eva02-large-tagger-v3", "WD EVA02 Large v3", "onnx", "tagger",
         "WD v3 EVA02-Large tagger for general, character, and rating tags",
-        904_000_000, 2, True, True,
+        904_000_000, 2, True, True, (), True,
     ),
     TaggerModelSpec(
         "wd-vit-large-tagger-v3", "WD ViT Large v3", "onnx", "tagger",
         "WD v3 ViT-Large tagger for classic WD14 ViT workflows",
-        904_000_000, 2, True, True,
+        904_000_000, 2, True, True, (), True,
     ),
     TaggerModelSpec(
         "cl_tagger_1_02", "CL Tagger v1.02", "onnx", "tagger",
         "Anime tagger with 42,163 tags including quality and model categories",
         747_000_000, 2, True, True,
+        ("general", "character", "copyright", "artist", "meta", "quality", "rating"), False,
+    ),
+    TaggerModelSpec(
+        "camie-tagger-v2", "Camie Tagger v2", "onnx", "tagger",
+        "Danbooru 2024 ViT tagger with about 71K tags across seven confidence categories",
+        733_000_000, 2, True, True,
+        ("general", "character", "copyright", "artist", "meta", "year", "rating"), False,
     ),
 )
 

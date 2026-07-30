@@ -57,22 +57,19 @@
 .tagger-option-grid > label > span:first-child { min-width: 0; }
 .tagger-option-grid b { display: block; color: var(--text-primary); font-size: 11px; font-weight: 600; }
 .tagger-option-grid small { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.35; }
-.tagger-category-customize { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; min-height: 58px; margin: 0 -8px; padding: 9px 8px 9px 10px; border: 0; border-radius: 2px; }
+.tagger-category-customize { display: block; min-height: 58px; margin: 0 -8px; padding: 9px 8px 9px 10px; border: 0; border-radius: 2px; }
 .tagger-category-customize:hover { background: var(--hover-overlay); }
 .tagger-category-customize b { display: block; color: var(--text-primary); font-size: 11px; }
 .tagger-category-customize small { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.4; }
-.tagger-category-customize > label { display: flex; align-items: center; gap: 9px; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .tagger-category-settings { margin: 0 0 4px 14px; padding-left: 12px; border-left: 2px dashed var(--border-default); }
 .tagger-category-settings > .tagger-category-field { display: flex; grid-template-columns: none; align-items: center; gap: 20px; min-height: 46px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--border-subtle); transition: background-color var(--duration-fast) ease, opacity var(--duration-fast) ease; }
 .tagger-category-field:hover { background: var(--hover-overlay); }
-.tagger-category-field.disabled { opacity: .52; }
-.tagger-category-enable { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 12px; font-weight: 550; cursor: pointer; }
-.tagger-category-enable > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-toggle { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 12px; font-weight: 550; cursor: pointer; }
+.tagger-category-toggle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tagger-category-controls { display: flex; flex: 0 0 140px; align-items: center; justify-content: flex-end; min-width: 0; }
 .tagger-category-controls .tagger-field-stepper { margin-left: 0; }
 .tagger-category-settings .tagger-field-stepper input[type="number"] { width: 0; height: auto; padding: 7px 4px; border: 0; border-radius: 0; background: var(--bg-input); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; box-shadow: none; }
 .tagger-category-settings .tagger-field-stepper input[type="number"]:focus { border: 0; box-shadow: none; }
-.tagger-category-controls :is(input, button):disabled { cursor: not-allowed; }
 
 .tagger-action-panel { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; height: min(820px, calc(100vh - 142px)); min-height: 520px; padding: 0 0 0 16px; border: 0; border-left: 1px solid var(--border-default); background: transparent; }
 .tagger-action-panel > h2 { display: flex; align-items: center; gap: 8px; min-height: 0; margin: 0 0 2px; padding: 0 0 7px; border-bottom: 1px solid var(--border-default); color: var(--text-primary); font-size: 14px; }
@@ -151,7 +148,7 @@
 .tagger-single-sidebar .tagger-field-control { width: 100%; }
 .tagger-single-sidebar .tagger-category-settings { margin-left: 10px; }
 .tagger-single-sidebar .tagger-category-settings > .tagger-category-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; padding-block: 8px; }
-.tagger-single-sidebar .tagger-category-enable, .tagger-single-sidebar .tagger-category-controls { grid-column: 1; }
+.tagger-single-sidebar .tagger-category-toggle, .tagger-single-sidebar .tagger-category-controls { grid-column: 1; }
 .tagger-single-sidebar .tagger-category-controls { width: 100%; }
 .tagger-single-sidebar .tagger-category-controls { justify-content: space-between; }
 .tagger-single-result textarea { display: block; width: calc(100% - 28px); min-height: 82px; margin: 12px 14px 0; padding: 8px; resize: vertical; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; }
