@@ -21,8 +21,8 @@ _✨ 多核心 LoRA 训练工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v2.0.1 已发布**
-> 本次补丁版本修复优化器联动默认值、训练日志与实时指标显示，并改善 Flash Attention 下载回退和文档目录导航。
+> ✅ **v2.1.0 已发布**
+> 本版本重构 Tagger 工作台，补充多模型分类控制与批量处理，并系统校正训练参数说明、优化器文档和 Krea 2 FP8 交互。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。它以核心注册表隔离不同训练器：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是可选的挂载式适配器核心（`lycoris.kohya`），**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 
@@ -43,7 +43,7 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 - **训练 WebUI** — 一站式工作台：LoRA 训练表单、TOML 配置预览、预设管理（保存/加载/删除）、训练历史记录
 - **实时硬件监控** — GPU 利用率/显存/温度、CPU/RAM 使用率，Chart.js 动态图表，TensorBoard 集成，实时日志查看
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
-- **WD14 自动打标** — 集成 WD14 标签器，一键为数据集图片生成标签
+- **多模型 Tagger 工作台** — 集成 WD、CL Tagger 与 Camie Tagger，支持单图检查、分类阈值控制和批量标签写入
 - **Flash Attention 智能安装** — 自动检测 Python/CUDA/PyTorch 版本及 ABI，通过 GitHub API 匹配最佳预编译 wheel，一键安装
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
 - **国际化 (i18n)** — 中英双语界面（676 个翻译键），浏览器语言自动检测，偏好持久保存

@@ -4,6 +4,37 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.1.0 - 2026-07-30
+
+This release redesigns the Tagger workflow and systematically refines training parameter copy, optimizer documentation, and advanced Krea 2 configuration.
+
+### Tagger Workspace
+
+- Rebuilt Tagger as a dedicated workspace for single-image inspection, batch processing, result editing, and caption-file output.
+- Added WD EVA02 Large v3, WD ViT Large v3, CL Tagger v1.02, and Camie Tagger v2 with model-specific category thresholds and character-tag controls.
+- Improved model selection, single-image layout, confidence results, and tag formatting, while fixing stale selection state and incorrect model names.
+- Removed the local LLM tag-generation path that did not form a stable workflow, keeping the ONNX Tagger runtime boundary predictable.
+
+### Training Parameters and Optimizers
+
+- Audited visible SDXL, Anima, and Krea 2 fields, separating concise labels from defaults, applicability, coupling, and side-effect guidance.
+- Corrected the semantics of Batch size, gradient accumulation, Dropout, timestep sampling, Loss weighting, CAME, AdaFactor, Schedule-Free, and ten learning-rate schedulers.
+- Added bilingual optimizer parameter guides and completed StableAdamW support for weight decay, Kahan summation, and argument serialization.
+- Added dropdown guidance for Krea 2 timestep, attention, and optimizer choices, and corrected Lion8bit, cache fingerprint, and RAW/Turbo DiT descriptions.
+
+### Krea 2 FP8 and Compatibility
+
+- Merged `fp8_base` and the non-independent `fp8_scaled` setting into one dynamic-scaling FP8 toggle while still emitting both musubi arguments when enabled.
+- Continued accepting legacy `fp8_scaled` values in presets and API payloads, normalizing them from `fp8_base` during validation.
+- Versioned the field-schema fallback asset so upgrades do not retain stale labels or omit newly added hints.
+
+### Regression Coverage
+
+- Added contracts for merged FP8 behavior, legacy payloads, scheduler descriptions, bilingual i18n, visible field titles, and field-asset cache invalidation.
+- The full unit suite covers the Tagger workspace, multi-core training, field schemas, optimizer arguments, and Krea 2 configuration generation.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.0.1...v2.1.0)
+
 ## v2.0.1 - 2026-07-26
 
 This patch release focuses on training-monitoring, optimizer coupling, dependency-download, and documentation-navigation issues found after v2.0.0.

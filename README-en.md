@@ -21,8 +21,8 @@ A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](h
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v2.0.1 is now available**
-> This patch release fixes optimizer-linked defaults, training logs and live metrics, while improving Flash Attention download fallback and documentation navigation.
+> ✅ **v2.1.0 is now available**
+> This release redesigns the Tagger workspace with multi-model category controls and batch processing, while refining training parameter semantics, optimizer documentation, and the Krea 2 FP8 workflow.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). Its core registry keeps trainer boundaries explicit: **sd-scripts** handles SDXL / Anima, **LyCORIS** is a selectable adapter core mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
@@ -43,7 +43,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 - **Training WebUI** — All-in-one workspace: LoRA training form, TOML config preview, preset management (save/load/delete), training history
 - **Real-time Hardware Monitor** — GPU utilization / VRAM / temperature, CPU / RAM usage, Chart.js dynamic charts, TensorBoard integration, live log viewer
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
-- **WD14 Auto-Tagger** — Integrated WD14 tagger for one-click dataset labeling
+- **Multi-model Tagger Workspace** — WD, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output
 - **Flash Attention Smart Install** — Auto-detects Python / CUDA / PyTorch versions and ABI, matches the best prebuilt wheel via GitHub API, one-click install
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
 - **Internationalization (i18n)** — Bilingual UI (676 translation keys), browser language auto-detection, persistent preference

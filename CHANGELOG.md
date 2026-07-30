@@ -4,6 +4,37 @@
 
 本项目的重要版本变更记录于此。
 
+## v2.1.0 - 2026-07-30
+
+本版本重构 Tagger 工作流，并系统整理训练参数说明、优化器文档和 Krea 2 高级配置。
+
+### Tagger 工作台
+
+- 将 Tagger 重构为独立工作台，统一单图检查、批量处理、结果编辑和标签文件写入流程。
+- 支持 WD EVA02 Large v3、WD ViT Large v3、CL Tagger v1.02 和 Camie Tagger v2，并按模型能力显示分类阈值与角色标签控制。
+- 改进模型选择、单图布局、置信度结果和标签格式化，修复切换模型后状态不同步与名称显示错误。
+- 移除未形成稳定工作流的本地 LLM 标签反推路径，保留可预测的 ONNX Tagger 运行边界。
+
+### 训练参数与优化器
+
+- 全面审查 SDXL、Anima 与 Krea 2 可见字段，将简短中文标题与默认值、适用条件、联动关系和副作用说明分离。
+- 校正 Batch、梯度累积、Dropout、时间步采样、Loss 权重、CAME、AdaFactor、Schedule-Free 和十种学习率调度器的技术语义。
+- 新增中英文优化器参数文档，并补全 StableAdamW 的权重衰减、Kahan 求和与参数序列化支持。
+- 为 Krea 2 时间步、注意力实现和优化器选项补充下拉说明，修正 Lion8bit、缓存指纹和 RAW/Turbo DiT 的说明。
+
+### Krea 2 FP8 与兼容性
+
+- 将 `fp8_base` 与不可独立选择的 `fp8_scaled` 合并为一个动态缩放 FP8 开关，开启时仍输出两个 musubi 参数。
+- 继续接受旧预设和 API payload 中的 `fp8_scaled`，并在校验阶段按 `fp8_base` 自动归一化。
+- 为字段 schema fallback 增加缓存版本，避免升级后浏览器继续显示旧标题或遗漏新 hint。
+
+### 回归保护
+
+- 新增 FP8 合并、旧 payload、调度器说明、双语 i18n、可见标题与字段缓存版本契约测试。
+- 完整单元测试覆盖 Tagger 工作台、多训练核心、字段 schema、优化器参数和 Krea 2 配置生成。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.0.1...v2.1.0)
+
 ## v2.0.1 - 2026-07-26
 
 本补丁版本集中修复 v2.0.0 发布后发现的训练监控、优化器联动、依赖下载和文档导航问题。
