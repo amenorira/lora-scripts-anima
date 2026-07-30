@@ -229,6 +229,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "model",
         "desc_key": "field.enable_bucket",
+        "hint_key": "field.enable_bucketHint",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -237,6 +238,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "model",
         "desc_key": "field.bucket_no_upscale",
+        "hint_key": "field.bucket_no_upscaleHint",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -287,6 +289,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 0,
         "section": "network",
         "desc_key": "field.network_dropout",
+        "hint_key": "field.network_dropoutHint",
         "min": 0,
         "max": 0.5,
         "step": 0.01,
@@ -342,6 +345,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1,
         "section": "training",
         "desc_key": "field.train_batch_size",
+        "hint_key": "field.train_batch_sizeHint",
         "min": 1,
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
@@ -352,6 +356,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1,
         "section": "training",
         "desc_key": "field.gradient_accumulation_steps",
+        "hint_key": "field.gradient_accumulation_stepsHint",
         "min": 1,
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
@@ -362,6 +367,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "training",
         "desc_key": "field.gradient_checkpointing",
+        "hint_key": "field.gradient_checkpointingHint",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -380,7 +386,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "type": "text",
         "default": "1e-4",
         "section": "optimizer",
-        "desc_key": "field.learning_rate",
+        "desc_key": "field.krea_learning_rate",
+        "hint_key": "field.krea_learning_rateHint",
         "required": True,
         # These are constructor defaults/recommendations from the concrete
         # classes installed in the shared runtime.  They apply only while the
@@ -425,12 +432,12 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_timestep_sampling",
         "options": [
-            {"v": "uniform", "l": "uniform"},
-            {"v": "sigmoid", "l": "sigmoid"},
-            {"v": "sigma", "l": "sigma"},
-            {"v": "shift", "l": "shift"},
-            {"v": "krea2_shift", "l": "krea2_shift"},
-            {"v": "logsnr", "l": "logsnr"},
+            {"v": "uniform", "l": "uniform", "dk": "opt.krea_timestep_sampling_uniform"},
+            {"v": "sigmoid", "l": "sigmoid", "dk": "opt.krea_timestep_sampling_sigmoid"},
+            {"v": "sigma", "l": "sigma", "dk": "opt.krea_timestep_sampling_sigma"},
+            {"v": "shift", "l": "shift", "dk": "opt.krea_timestep_sampling_shift"},
+            {"v": "krea2_shift", "l": "krea2_shift", "dk": "opt.krea_timestep_sampling_krea2_shift"},
+            {"v": "logsnr", "l": "logsnr", "dk": "opt.krea_timestep_sampling_logsnr"},
         ],
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -467,12 +474,13 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "none",
         "section": "training",
         "desc_key": "field.krea_weighting_scheme",
+        "hint_key": "field.krea_weighting_schemeHint",
         "options": [
-            {"v": "none", "l": "none"},
-            {"v": "sigma_sqrt", "l": "sigma_sqrt"},
-            {"v": "cosmap", "l": "cosmap"},
-            {"v": "logit_normal", "l": "logit_normal"},
-            {"v": "mode", "l": "mode"},
+            {"v": "none", "l": "none", "dk": "opt.krea_weighting_scheme_none"},
+            {"v": "sigma_sqrt", "l": "sigma_sqrt", "dk": "opt.weighting_scheme_sigma_sqrt"},
+            {"v": "cosmap", "l": "cosmap", "dk": "opt.weighting_scheme_cosmap"},
+            {"v": "logit_normal", "l": "logit_normal", "dk": "opt.weighting_scheme_logit_normal"},
+            {"v": "mode", "l": "mode", "dk": "opt.weighting_scheme_mode"},
         ],
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -484,7 +492,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 0.0,
         "step": 0.01,
         "section": "training",
-        "desc_key": "field.logit_mean",
+        "desc_key": "field.krea_logit_mean",
+        "hint_key": "field.krea_logit_meanHint",
         "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -496,7 +505,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1.0,
         "step": 0.01,
         "section": "training",
-        "desc_key": "field.logit_std",
+        "desc_key": "field.krea_logit_std",
+        "hint_key": "field.krea_logit_stdHint",
         "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -508,7 +518,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1.29,
         "step": 0.01,
         "section": "training",
-        "desc_key": "field.mode_scale",
+        "desc_key": "field.krea_mode_scale",
+        "hint_key": "field.krea_mode_scaleHint",
         "show_if": {"key": "timestep_sampling", "eq": "sigma"},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -587,6 +598,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1.0,
         "section": "optimizer",
         "desc_key": "field.max_grad_norm",
+        "hint_key": "field.max_grad_normHint",
         "min": 0,
         "step": 0.1,
         "auto_value": [
@@ -611,16 +623,16 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.lr_scheduler",
         "options": [
-            {"v": "constant", "l": "constant"},
-            {"v": "constant_with_warmup", "l": "constant_with_warmup"},
-            {"v": "linear", "l": "linear"},
-            {"v": "cosine", "l": "cosine"},
-            {"v": "cosine_with_restarts", "l": "cosine_with_restarts"},
-            {"v": "polynomial", "l": "polynomial"},
-            {"v": "inverse_sqrt", "l": "inverse_sqrt"},
-            {"v": "cosine_with_min_lr", "l": "cosine_with_min_lr"},
-            {"v": "warmup_stable_decay", "l": "warmup_stable_decay"},
-            {"v": "rex", "l": "rex"},
+            {"v": "constant", "l": "constant", "dk": "opt.lr_scheduler_constant"},
+            {"v": "constant_with_warmup", "l": "constant_with_warmup", "dk": "opt.lr_scheduler_constant_with_warmup"},
+            {"v": "linear", "l": "linear", "dk": "opt.lr_scheduler_linear"},
+            {"v": "cosine", "l": "cosine", "dk": "opt.lr_scheduler_cosine"},
+            {"v": "cosine_with_restarts", "l": "cosine_with_restarts", "dk": "opt.lr_scheduler_cosine_with_restarts"},
+            {"v": "polynomial", "l": "polynomial", "dk": "opt.lr_scheduler_polynomial"},
+            {"v": "inverse_sqrt", "l": "inverse_sqrt", "dk": "opt.krea_lr_scheduler_inverse_sqrt"},
+            {"v": "cosine_with_min_lr", "l": "cosine_with_min_lr", "dk": "opt.krea_lr_scheduler_cosine_with_min_lr"},
+            {"v": "warmup_stable_decay", "l": "warmup_stable_decay", "dk": "opt.krea_lr_scheduler_warmup_stable_decay"},
+            {"v": "rex", "l": "rex", "dk": "opt.krea_lr_scheduler_rex"},
         ],
         "auto_value": [
             {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": "constant"},
@@ -665,7 +677,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "0",
         "section": "optimizer",
         "desc_key": "field.krea_lr_decay_steps",
-        "hint_key": "field.krea_ratio_or_stepsHint",
+        "hint_key": "field.krea_lr_decay_stepsHint",
         "show_if": {"key": "lr_scheduler", "eq": "warmup_stable_decay"},
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -675,6 +687,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 1,
         "section": "optimizer",
         "desc_key": "field.lr_scheduler_num_cycles",
+        "hint_key": "field.krea_lr_scheduler_num_cyclesHint",
         "min": 1,
         "step": 1,
         "show_if": {
@@ -859,6 +872,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "optimizer",
         "desc_key": "field.krea_adafactor_scale_parameter",
+        "hint_key": "field.krea_adafactor_scale_parameterHint",
         "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
         "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
@@ -907,10 +921,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.krea_attention_backend",
         "options": [
-            {"v": "sdpa", "l": "SDPA"},
-            {"v": "flash_attn", "l": "FlashAttention"},
-            {"v": "sage_attn", "l": "SageAttention"},
-            {"v": "xformers", "l": "xFormers"},
+            {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
+            {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
+            {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
+            {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -969,16 +983,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": False,
         "section": "performance",
         "desc_key": "field.krea_fp8_base",
-        "advanced": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "fp8_scaled",
-        "type": "toggle",
-        "default": False,
-        "section": "performance",
-        "desc_key": "field.krea_fp8_scaled",
-        "show_if": {"key": "fp8_base", "eq": True},
+        "hint_key": "field.krea_fp8_baseHint",
         "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -987,7 +992,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "type": "toggle",
         "default": False,
         "section": "performance",
-        "desc_key": "field.compile",
+        "desc_key": "field.krea_compile",
+        "hint_key": "field.krea_compileHint",
         "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -1300,6 +1306,20 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
     },
 ]
+
+_KREA2_SHARED_HINTS_BY_KEY = {
+    "network_dim": "field.network_dimHint",
+    "network_alpha": "field.network_alphaHint",
+    "mixed_precision": "field.mixed_precisionHint",
+    "discrete_flow_shift": "field.discrete_flow_shiftHint",
+    "sigmoid_scale": "field.sigmoid_scaleHint",
+    "save_state": "field.save_stateHint",
+    "lr_scheduler_power": "field.lr_scheduler_powerHint",
+    "krea_prodigy_d0": "field.krea_prodigy_d0Hint",
+}
+for _field in KREA2_FIELDS:
+    if _field["key"] in _KREA2_SHARED_HINTS_BY_KEY:
+        _field.setdefault("hint_key", _KREA2_SHARED_HINTS_BY_KEY[_field["key"]])
 
 
 def _is_empty(value: Any) -> bool:
@@ -1985,8 +2005,10 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         errors.append("compile_mode: unsupported value / 不支持的选项")
     if str(config.get("compile_dynamic", "auto")) not in _KREA2_COMPILE_DYNAMIC_VALUES:
         errors.append("compile_dynamic: unsupported value / 不支持的选项")
-    if config.get("fp8_base") and not config.get("fp8_scaled"):
-        errors.append("fp8_scaled: Krea 2 requires scaled FP8 with fp8_base / fp8_base 必须同时启用 fp8_scaled")
+    # Krea 2 exposes scaled FP8 as one real choice.  Keep the old wire key
+    # readable, but normalize it from fp8_base so stale presets cannot express
+    # the unsupported plain-FP8 combination.
+    config["fp8_scaled"] = bool(config.get("fp8_base", False))
     if config.get("gradient_checkpointing_cpu_offload") and not config.get("gradient_checkpointing"):
         errors.append(
             "gradient_checkpointing_cpu_offload: requires gradient_checkpointing / 必须同时启用 gradient_checkpointing"

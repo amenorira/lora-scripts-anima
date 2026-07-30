@@ -171,6 +171,54 @@ class TrainingFieldSchemaTests(unittest.TestCase):
                     self.assertIsInstance(value, str)
                     self.assertTrue(value.strip())
 
+    def test_visible_field_titles_do_not_contain_explanations(self):
+        messages = json.loads(Path("frontend/i18n/zh-CN.json").read_text(encoding="utf-8"))
+        explanation_markers = (
+            "；",
+            "。",
+            "不可用",
+            "不支持",
+            "仅在",
+            "仅 ",
+            "需配合",
+            "留空",
+            "默认",
+            "互斥",
+            "开启后",
+            "关闭后",
+            "0=",
+            "-1=",
+            "（仅",
+            "（可选",
+            "（默认",
+            "（不",
+            "（需",
+            "（多行",
+            "（训练前",
+            "（低显存",
+        )
+
+        for field in get_all_fields():
+            if field.get("hidden"):
+                continue
+            title_keys = [field["desc_key"]]
+            for suffix in ("_sdxl", "_anima"):
+                key = f'{field["desc_key"]}{suffix}'
+                if self._lookup(messages, key) is not None:
+                    title_keys.append(key)
+            for key in title_keys:
+                title = self._lookup(messages, key)
+                with self.subTest(field=field["key"], title_key=key, title=title):
+                    self.assertFalse(
+                        any(marker in title for marker in explanation_markers),
+                        f"Move behavior, applicability, defaults, and side effects from {key} to a hint: {title}",
+                    )
+
+        caption_tag_dropout = next(
+            field for field in get_all_fields() if field["key"] == "caption_tag_dropout_rate"
+        )
+        self.assertEqual(caption_tag_dropout.get("hint_key"), "field.caption_tag_dropout_rateHint")
+
     def test_field_conditions_reference_registered_keys(self):
         fields = get_all_fields()
         registered = {field["key"] for field in fields}
@@ -408,6 +456,10 @@ class TrainingStepEstimatorTests(unittest.TestCase):
 
 
 class MonitorFrontendContractTests(unittest.TestCase):
+    def test_training_field_schema_script_is_cache_busted(self):
+        index_html = Path("frontend/index.html").read_text(encoding="utf-8")
+        self.assertRegex(index_html, r'/anima-ui/js/config\.js\?v=[^"\s]+')
+
     def test_leaving_history_clears_cached_logs(self):
         monitor_core = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
         reset_body = monitor_core.split("resetRunDetailState() {", 1)[1].split("\n  },", 1)[0]

@@ -112,6 +112,47 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(defaults["vae"], "./models/qwen_image_vae.safetensors")
         self.assertEqual(defaults["text_encoder"], "./models/qwen3vl_4b_fp8_scaled.safetensors")
 
+    def test_registry_exposes_one_scaled_fp8_control_and_describes_krea_options(self):
+        fields = {field["key"]: field for field in KREA2_FIELDS}
+
+        self.assertIn("fp8_base", fields)
+        self.assertNotIn("fp8_scaled", fields)
+        self.assertEqual(fields["fp8_base"]["desc_key"], "field.krea_fp8_base")
+
+        expected_options = {
+            "timestep_sampling": 6,
+            "lr_scheduler": 10,
+            "krea_attention_backend": 4,
+        }
+        for key, count in expected_options.items():
+            with self.subTest(field=key):
+                options = fields[key]["options"]
+                self.assertEqual(len(options), count)
+                self.assertTrue(all(option.get("dk") for option in options), options)
+
+    def test_legacy_fp8_payload_is_normalized_and_both_flags_are_serialized_together(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update({"fp8_base": True, "fp8_scaled": False})
+
+            self.assertEqual(validate_krea2_config(config), [])
+            enabled = build_krea2_train_config(
+                config, root / "dataset.toml", root / "output", root / "log"
+            )
+
+            config.update({"fp8_base": False, "fp8_scaled": True})
+            self.assertEqual(validate_krea2_config(config), [])
+            disabled = build_krea2_train_config(
+                config, root / "dataset.toml", root / "output", root / "log"
+            )
+
+        self.assertTrue(config["fp8_scaled"] is False)
+        self.assertTrue(enabled["fp8_base"])
+        self.assertTrue(enabled["fp8_scaled"])
+        self.assertNotIn("fp8_base", disabled)
+        self.assertNotIn("fp8_scaled", disabled)
+
     def test_generates_separate_dataset_and_train_tomls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
