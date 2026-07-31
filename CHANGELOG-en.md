@@ -4,6 +4,19 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Anima Learning-Rate Coupling and Compatibility
+
+- Changed every `setIfDefault` rule to use explicit field provenance, preserving manual input, imports, presets, and legacy local drafts even when a value happens to equal a default.
+- Persisted provenance per training route/profile; field reset opts back into the current dependency-aware recommendation, while full reset restores the complete profile defaults.
+- Derived Anima learning-rate placeholders directly from registry `autoValue` rules and removed the separately maintained frontend recommendation map.
+
+### Documentation
+
+- Corrected the evidence boundaries for `cosine_with_restarts`, Anima rank/alpha, Schedule-Free warmup, and Lion weight decay, with upstream references pinned to revisions reviewed on 2026-07-31.
+- Reduced repeated LR values so the optimizer guide's learning-rate table is the single detailed recommendation matrix.
+
 ## v2.1.0 - 2026-07-30
 
 This release redesigns the Tagger workflow and systematically refines training parameter copy, optimizer documentation, and advanced Krea 2 configuration.

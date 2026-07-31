@@ -4,6 +4,19 @@
 
 本项目的重要版本变更记录于此。
 
+## 未发布
+
+### Anima 学习率联动与兼容性
+
+- 将所有 `setIfDefault` 联动改为基于字段来源判断，保护手动输入、导入配置、预设和旧版本地草稿，即使数值恰好等于默认值也不再静默覆盖。
+- 按训练 route/profile 持久化字段来源；单字段复位重新启用当前依赖条件下的自动推荐，全量复位恢复完整 profile 默认组合。
+- Anima 学习率 placeholder 改为直接读取字段 registry 的 `autoValue` 规则，删除前端重复维护的推荐值映射。
+
+### 文档
+
+- 更正 `cosine_with_restarts`、Anima rank/alpha、Schedule-Free warmup 和 Lion weight decay 的依据边界，并将外部依据固定到 2026-07-31 核查的提交。
+- 精简重复学习率数值，以优化器文档中的学习率主表作为详细推荐矩阵。
+
 ## v2.1.0 - 2026-07-30
 
 本版本重构 Tagger 工作流，并系统整理训练参数说明、优化器文档和 Krea 2 高级配置。

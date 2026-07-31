@@ -6,7 +6,7 @@
 
 优化器会影响收敛速度、显存占用和数值稳定性，但通常不是人物还原度的首要决定因素。少图人物训练出现问题时，应先检查数据、标注、重复次数、学习率和停止时机。
 
-本文把“实现/论文事实”和“Anima 工程起点”分开：CAME、Lion、Schedule-Free 的论文或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡给出的基线是使用 **Anima-Base**、不训练 LLM Adapter、rank 32，并从 `2e-5` 附近开始轻微调整；本训练器的 Anima 默认 `rank=32, alpha=32` 与此基线配套。
+本文把“实现/论文事实”和“Anima 工程起点”分开：CAME、Lion、Schedule-Free 的论文或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡给出的依据仅覆盖使用 **Anima-Base**、不训练 LLM Adapter、rank 32，并从 `2e-5` 附近开始轻微调整。本训练器采用 `rank=32, alpha=32` 作为项目工程起点，其中 `alpha=32` 是项目选择，仍需按数据集本地验证。
 
 <!-- doc-anchor: quick-choice -->
 ## 快速选择
@@ -39,7 +39,7 @@
 | Automagic3 | 项目实验性自适应方案 | 建议在具备明确基准时进行测试 |
 | AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
 | CAME | 混合来源数据、更新尺度波动较大时进行对照 | 使用三个 beta 和内部 RMS 裁剪；不具备图片质量判断能力 |
-| AdamWScheduleFree | 测试不使用外部 scheduler 的 AdamW | 使用内部 warmup；短训练不建议作为第一选择 |
+| AdamWScheduleFree | 测试不使用外部 scheduler 的 AdamW | 支持内部 warmup；项目默认暂设为 0，短训练不建议作为第一选择 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1，不支持 LoRA+ |
 
 表中的显存说明仅指优化器状态。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
@@ -61,7 +61,7 @@
 <!-- doc-anchor: learning-rate -->
 ### 学习率（learning rate）
 
-Anima 在默认 `rank=32, alpha=32`、只训练 DiT 主干时，可从以下值开始：
+Anima 只训练 DiT 主干时，可从以下项目工程起点开始。官方 Anima 依据只覆盖 rank 32 与约 `2e-5`；表中其他优化器数值及 `alpha=32` 均属于迁移或项目选择：
 
 | 优化器 | Anima 自动起点 | 依据与含义 |
 | --- | ---: | --- |
@@ -74,6 +74,8 @@ Anima 在默认 `rank=32, alpha=32`、只训练 DiT 主干时，可从以下值�
 | AdaFactor relative step | 由优化器接管 | 关闭 relative step 后，Anima 手动模式从 `2e-5` 开始 |
 | Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
 
+Lion 的 `5e-6` 只迁移了官方“LR 比 AdamW 小约 3～10 倍”的比例。本项目没有同时照搬其“相应增大 weight decay”的调整方式，因此这不是完整的 Lion 官方 recipe。
+
 SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4`、Lion 为 `2e-5`、AdamWScheduleFree 为 `3e-4`。切换模型类型或优化器时，界面只会替换尚未手动修改的推荐值；导入配置和自定义值保持原样。
 
 `network_alpha / network_dim` 会缩放 LoRA 分支。上游 `sd-scripts` 的 `1e-4` 示例对应 `alpha=1`，并明确说明提高 alpha 时应重新降低/验证 LR；因此不能把该示例直接套到本项目默认的 `rank=32, alpha=32`。
@@ -83,7 +85,7 @@ SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4
 <!-- doc-anchor: scheduler-warmup -->
 ### 学习率调度器与预热（scheduler 和 warmup）
 
-AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。Anima 新配置默认使用 `constant`，与上游 Anima 示例一致，也避免 `cosine_with_restarts` 在短训练中重新抬高 LR。已有手动配置可以继续使用；要测试预热时，可改为 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
+AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。Anima 新配置默认使用 `constant`，用于匹配上游 Anima 示例，并减少短训练中的额外调度变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启；只有 cycles 大于 1 才会发生周期重启。已有手动配置可以继续使用；要测试预热时，可改为 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
 
 AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，所以界面会把外部调度器固定为 constant。两者的内部预热不能和 `lr_warmup_steps` 混为一谈。
 
@@ -152,7 +154,7 @@ StableAdamW 库默认 `weight_decay=0.01`，本训练器会明确输出 `weight_
 <!-- doc-anchor: schedulefree-warmup -->
 ### Schedule-Free 预热（warmup）
 
-AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 会被关闭。少图训练的总步数较少，过长的 warmup 会减少有效学习阶段。
+AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 会被关闭。Schedule-Free 上游通常建议使用 warmup；本项目考虑到少图短训练可能被固定 warmup 占用较大比例，暂时保持内部 `warmup_steps=0`。同时，`1e-4` 只是未经 Anima 充分验证的实验起点，不应视为官方或实测最优值。
 
 <!-- doc-anchor: stochastic-rounding -->
 ### 随机舍入（stochastic rounding）
@@ -214,10 +216,10 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并增加训练检查点（chec
 
 | 用途 | 优化器与参数 | 其他设置 |
 | --- | --- | --- |
-| Anima 通用基准 | AdamW8bit，`lr=2e-5`，`weight_decay=0.01` | constant，`max_grad_norm=1`，rank/alpha=32，只训练 DiT |
-| Anima 混合来源对照 | CAME，`lr=1.5e-5`；其余保持默认 | constant，`max_grad_norm=1`；结果需用固定条件验证 |
-| Anima 梯度尖峰对照 | StableAdamW，`lr=2e-5`，`betas=(0.9,0.99)`，`eps=1e-8`，`weight_decay=0` | Kahan 开启，constant，`max_grad_norm=1` |
-| Anima Lion 实验 | Lion / Lion8bit，`lr=5e-6`，`betas=(0.9,0.99)` | constant；不要沿用 AdamW 的 LR |
+| Anima 通用基准 | AdamW8bit，LR 采用上方主表，`weight_decay=0.01` | constant，`max_grad_norm=1`，项目默认 rank/alpha，只训练 DiT |
+| Anima 混合来源对照 | CAME，LR 采用上方主表；其余保持默认 | constant，`max_grad_norm=1`；结果需用固定条件验证 |
+| Anima 梯度尖峰对照 | StableAdamW，LR 采用上方主表，保留项目默认稳定性参数 | Kahan 开启，constant，`max_grad_norm=1` |
+| Anima Lion 实验 | Lion / Lion8bit，LR 采用上方主表 | constant；这不是完整的官方 Lion recipe |
 | 温和的 8-bit 裁剪 | AdamW8bit，沿用基准参数，`percentile_clipping=99` | 保持其他参数不变 |
 
 出现过拟合时，优先减少训练步数、重复次数（repeats）或学习率；学习不足时，先检查触发词和有效步数；曲线出现尖峰时，先定位对应批次，再考虑裁剪或 StableAdamW。
@@ -239,7 +241,7 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并增加训练检查点（chec
 
 1. 固定数据集、标注（caption）、随机种子（seed）、底模、rank/alpha、批次大小和总步数。
 2. 固定预览提示词、采样参数和生成随机种子。
-3. Anima 配方对照可先使用 AdamW8bit `2e-5`、StableAdamW `2e-5`、CAME `1.5e-5`、Lion `5e-6`。这比较的是各优化器的合理起始配方；若要单独隔离算法差异，应另做相同 LR 的实验。
+3. Anima 配方对照使用上方学习率主表中的对应工程起点。这比较的是完整起始配方；若要单独隔离算法差异，应另做相同 LR 的实验。
 4. 比较相同步数的训练检查点，同时记录梯度范数、峰值显存和训练时间。
 5. 不应仅比较损失值；还需评估人物还原、服装控制、背景或姿势绑定以及提示词响应。
 
@@ -261,9 +263,11 @@ Prodigy 等需要不同学习率尺度的优化器不能纳入上述单变量对
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
+事实核查日期：**2026-07-31**。下列代码与模型卡链接固定到核查时的提交。
+
 **实现事实：** 本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 中，它的构造器默认值包括 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=True`、`kahan_sum=True`。本项目有意将 `weight_decay` 覆盖为 `0`。
 
-**模型与上游依据：** Anima 官方模型卡建议使用 Anima-Base、不要训练 LLM Adapter、rank 32 从 `2e-5` 左右起步。`sd-scripts` 的 Anima 文档把 `1e-4` 标为 `alpha=1` 的示例，并要求 alpha 增大后重新降低/验证 LR。
+**模型与上游依据：** Anima 官方模型卡建议使用 Anima-Base、不要训练 LLM Adapter、rank 32 从 `2e-5` 左右起步，但没有规定 `alpha=32`。`sd-scripts` 的 Anima 文档把 `1e-4` 标为 `alpha=1` 的示例，并要求 alpha 增大后重新降低/验证 LR。
 
 **论文依据：** CAME、Lion、Prodigy、Schedule-Free、LoRA+ 的论文解释了算法动机，并报告了各自任务上的结果。CAME 的 `0.5`～`0.9` 倍和 Lion 的 `1/3`～`1/10` LR 是相对 AdamW 的官方调参建议；语言模型、分类或其他扩散实验不能直接推出 Anima 人物 LoRA 的画质排序。
 
@@ -271,15 +275,16 @@ Prodigy 等需要不同学习率尺度的优化器不能纳入上述单变量对
 
 参考资料：
 
-- [Anima 官方模型卡](https://huggingface.co/circlestone-labs/Anima)
-- [sd-scripts Anima LoRA 训练文档](https://github.com/kohya-ss/sd-scripts/blob/main/docs/anima_train_network.md)
-- [CAME 官方实现与调参说明](https://github.com/yangluo7/CAME)
-- [Lion 官方实现与调参说明](https://github.com/google/automl/tree/master/lion)
-- [Schedule-Free 官方实现与调参说明](https://github.com/facebookresearch/schedule_free)
+- [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [sd-scripts Anima LoRA 训练文档（固定提交）](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
+- [CAME 官方实现与调参说明（固定提交）](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
+- [Lion 官方实现与调参说明（固定提交）](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
+- [Schedule-Free 官方实现与调参说明（固定提交）](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
+- [Transformers 余弦重启调度器实现（固定提交）](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
 - [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
 - [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
-- [pytorch-optimizer 文档](https://pytorch-optimizers.readthedocs.io/)
-- [bitsandbytes 优化器文档](https://huggingface.co/docs/bitsandbytes/optimizers)
+- [pytorch-optimizer 实现（固定提交）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
+- [bitsandbytes 优化器实现（固定提交）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)

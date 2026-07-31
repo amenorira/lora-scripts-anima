@@ -891,13 +891,17 @@ window.getVisibleSections = type => [{
       ]
     : [{ key: 'model_train_type' }, { key: 'qwen3' }],
 }];
+require('./frontend/js/training-core.js');
 require('./frontend/js/training-presets.js');
 const events = [];
 const tickQueue = [];
-const ctx = Object.assign({}, window.trainingPresetsMixin, {
+const ctx = Object.assign({}, window.trainingCoreMixin, window.trainingPresetsMixin, {
   trainTypes: [{ v: 'sdxl-lora' }, { v: 'anima-lora' }, { v: 'krea2-lora' }],
   form: { model_train_type: 'anima-lora', qwen3: './models/old-qwen.safetensors' },
   _activeTrainType: 'anima-lora',
+  _profileFormDrafts: {},
+  _profileFieldSources: {},
+  _fieldSources: {},
   switchTrainType(type) {
     events.push(`switch:${type}`);
     this.form = { model_train_type: type, network_module: 'networks.lora' };
@@ -1047,6 +1051,8 @@ const ctx = Object.assign({}, window.trainingCoreMixin, {
   },
   formDefaults: {},
   _profileFormDrafts: {},
+  _profileFieldSources: {},
+  _fieldSources: { learning_rate: 'user', optimizer_type: 'default' },
   _activeTrainType: 'anima-lora',
   currentRoute: '',
   renderTrainingForm: noop,
@@ -1063,22 +1069,30 @@ const ctx = Object.assign({}, window.trainingCoreMixin, {
 ctx.switchTrainType('krea2-lora');
 const kreaFirst = { ...ctx.form };
 ctx.form.learning_rate = 'krea-custom';
+ctx._setFieldSource('learning_rate', 'user');
 ctx.switchTrainType('sdxl-lora');
 const sdxlFirst = { ...ctx.form };
 ctx.switchTrainType('anima-lora');
 const animaRestored = { ...ctx.form };
+const animaSource = ctx._fieldSources.learning_rate;
 ctx.switchTrainType('krea2-lora');
 const kreaRestored = { ...ctx.form };
+const kreaSource = ctx._fieldSources.learning_rate;
 ctx.formDefaults.learning_rate = 'preset-baseline';
 ctx.form.learning_rate = 'edited-after-preset';
 ctx.setField = (key, value) => { ctx.form[key] = value; };
 ctx.resetField('learning_rate');
 const kreaFieldReset = ctx.form.learning_rate;
+const kreaFieldResetSource = ctx._fieldSources.learning_rate;
 ctx.formDefaults.learning_rate = 'polluted-default';
 ctx.form.learning_rate = 'polluted-value';
 ctx.resetAllParams();
 const kreaReset = { form: { ...ctx.form }, defaults: { ...ctx.formDefaults } };
-console.log(JSON.stringify({ kreaFirst, sdxlFirst, animaRestored, kreaRestored, kreaFieldReset, kreaReset }));
+const kreaResetSource = ctx._fieldSources.learning_rate;
+console.log(JSON.stringify({
+  kreaFirst, sdxlFirst, animaRestored, animaSource, kreaRestored, kreaSource,
+  kreaFieldReset, kreaFieldResetSource, kreaReset, kreaResetSource,
+}));
 """
         result = subprocess.run(
             ["node", "-e", script],
@@ -1091,10 +1105,14 @@ console.log(JSON.stringify({ kreaFirst, sdxlFirst, animaRestored, kreaRestored, 
         self.assertEqual(state["kreaFirst"]["learning_rate"], "krea-default")
         self.assertEqual(state["sdxlFirst"]["learning_rate"], "sdxl-default")
         self.assertEqual(state["animaRestored"]["learning_rate"], "anima-custom")
+        self.assertEqual(state["animaSource"], "user")
         self.assertEqual(state["kreaRestored"]["learning_rate"], "krea-custom")
+        self.assertEqual(state["kreaSource"], "user")
         self.assertEqual(state["kreaFieldReset"], "krea-default")
+        self.assertEqual(state["kreaFieldResetSource"], "default")
         self.assertEqual(state["kreaReset"]["form"]["learning_rate"], "krea-default")
         self.assertEqual(state["kreaReset"]["defaults"]["learning_rate"], "krea-default")
+        self.assertEqual(state["kreaResetSource"], "default")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_training_type_switch_initializes_conditions_in_one_dom_pass(self):

@@ -64,6 +64,27 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 
+    def test_optimizer_documents_keep_fact_checked_scheduler_and_recipe_boundaries(self):
+        root = Path(__file__).resolve().parents[1]
+        zh = (root / "docs" / "parameters" / "optimizers.zh-CN.md").read_text(encoding="utf-8")
+        en = (root / "docs" / "parameters" / "optimizers.en-US.md").read_text(encoding="utf-8")
+        for text in (zh, en):
+            self.assertIn("2026-07-31", text)
+            self.assertIn("f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b", text)
+            self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
+            self.assertIn("70785b53e778d0e872c0bbb75ff4ee54ee10c291", text)
+            self.assertNotIn("blob/main/docs/anima_train_network.md", text)
+        self.assertNotIn("避免 `cosine_with_restarts` 在短训练中重新抬高 LR", zh)
+        self.assertNotIn("avoiding a late LR increase from `cosine_with_restarts`", en)
+        self.assertIn("默认 `num_cycles=1` 时不会在训练中途重启", zh)
+        self.assertIn("default `num_cycles=1`", en)
+        self.assertIn("`alpha=32` 是项目选择", zh)
+        self.assertIn("`alpha=32` is a project choice", en)
+        self.assertIn("不是完整的 Lion 官方 recipe", zh)
+        self.assertIn("not the complete official Lion recipe", en)
+        self.assertIn("暂时保持内部 `warmup_steps=0`", zh)
+        self.assertIn("keeps internal `warmup_steps=0`", en)
+
     def test_optimizer_fields_link_to_guide_sections(self):
         expected = {
             "optimizer_type": "optimizer-type",

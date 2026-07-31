@@ -481,7 +481,7 @@ require('./frontend/js/training-core.js');
 const core = window.trainingCoreMixin;
 const rules = __RULES__;
 
-function apply(modelType, optimizerType, learningRate, scheduler) {
+function apply(modelType, optimizerType, learningRate, scheduler, source = 'default') {
   const fields = {
     learning_rate: { key: 'learning_rate', default: '1e-4' },
     lr_scheduler: { key: 'lr_scheduler', default: 'cosine_with_restarts' },
@@ -499,6 +499,11 @@ function apply(modelType, optimizerType, learningRate, scheduler) {
     },
     _autoValueRules: rules,
     _autoValueApplied: {},
+    _fieldSources: {
+      learning_rate: source,
+      lr_scheduler: source,
+    },
+    _profileFieldSources: {},
     findFieldDef(key) { return fields[key]; },
   });
   ctx._applyInitialAutoValues();
@@ -513,7 +518,7 @@ console.log(JSON.stringify({
   animaCame: apply('anima-lora', 'pytorch_optimizer.CAME', '1e-4', 'cosine_with_restarts'),
   animaLion: apply('anima-lora', 'Lion8bit', '1e-4', 'cosine_with_restarts'),
   sdxlLion: apply('sdxl-lora', 'Lion8bit', '1e-4', 'cosine_with_restarts'),
-  custom: apply('anima-lora', 'pytorch_optimizer.CAME', '7e-5', 'cosine'),
+  custom: apply('anima-lora', 'pytorch_optimizer.CAME', '7e-5', 'cosine', 'user'),
 }));
 """.replace("__RULES__", json.dumps(rules))
 
@@ -546,6 +551,419 @@ console.log(JSON.stringify({
             state["custom"],
             {"learning_rate": "7e-5", "lr_scheduler": "cosine"},
         )
+
+    def test_field_provenance_controls_optimizer_transitions(self):
+        fields = fields_by_key()
+        rules = [
+            {"target": key, **rule}
+            for key in ("learning_rate", "lr_scheduler")
+            for rule in fields[key].get("autoValue", [])
+        ]
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const rules = __RULES__;
+const fields = {
+  learning_rate: { key: 'learning_rate', default: '1e-4', type: 'text' },
+  lr_scheduler: { key: 'lr_scheduler', default: 'cosine_with_restarts', type: 'select' },
+  optimizer_type: { key: 'optimizer_type', default: 'AdamW8bit', type: 'select' },
+};
+const ctx = Object.assign({}, core, {
+  form: {
+    model_train_type: 'anima-lora',
+    optimizer_type: 'AdamW8bit',
+    learning_rate: '1e-4',
+    lr_scheduler: 'cosine_with_restarts',
+  },
+  formDefaults: {
+    learning_rate: '1e-4',
+    lr_scheduler: 'cosine_with_restarts',
+  },
+  formErrors: {},
+  _autoValueRules: rules,
+  _autoValueApplied: {},
+  _fieldSources: { learning_rate: 'default', lr_scheduler: 'default' },
+  _profileFieldSources: {},
+  findFieldDef(key) { return fields[key] || null; },
+  queueTomlPreviewChange() {},
+  pushHistory() {},
+  _allShowIfKeys() { return []; },
+  _currentProfileFieldDefault(key) { return fields[key] ? fields[key].default : ''; },
+  updateTomlDebounced() {},
+  scheduleOutputPathInfo() {},
+  t(_key, fallback) { return fallback || ''; },
+});
+ctx._applyInitialAutoValues();
+const fresh = { ...ctx.form, sources: { ...ctx._fieldSources } };
+
+ctx.form.optimizer_type = 'pytorch_optimizer.CAME';
+ctx._applyInitialAutoValues();
+const came = { ...ctx.form, sources: { ...ctx._fieldSources } };
+
+ctx.form.optimizer_type = 'Lion';
+ctx._applyInitialAutoValues();
+const lion = { ...ctx.form, sources: { ...ctx._fieldSources } };
+
+ctx.setField('learning_rate', '2e-5');
+ctx.setField('lr_scheduler', 'cosine_with_restarts');
+ctx.form.optimizer_type = 'AdamW8bit';
+ctx._applyInitialAutoValues();
+const manual = { ...ctx.form, sources: { ...ctx._fieldSources } };
+
+ctx.resetField('learning_rate');
+const reset = { value: ctx.form.learning_rate, source: ctx._fieldSources.learning_rate };
+console.log(JSON.stringify({ fresh, came, lion, manual, reset }));
+""".replace("__RULES__", json.dumps(rules))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(
+            (state["fresh"]["learning_rate"], state["fresh"]["lr_scheduler"]),
+            ("2e-5", "constant"),
+        )
+        self.assertEqual(
+            (state["came"]["learning_rate"], state["came"]["lr_scheduler"]),
+            ("1.5e-5", "constant"),
+        )
+        self.assertEqual(
+            (state["lion"]["learning_rate"], state["lion"]["lr_scheduler"]),
+            ("5e-6", "constant"),
+        )
+        self.assertEqual(
+            (state["manual"]["learning_rate"], state["manual"]["lr_scheduler"]),
+            ("2e-5", "cosine_with_restarts"),
+        )
+        self.assertEqual(state["manual"]["sources"]["learning_rate"], "user")
+        self.assertEqual(state["manual"]["sources"]["lr_scheduler"], "user")
+        self.assertEqual(state["reset"], {"value": "2e-5", "source": "auto"})
+
+    def test_same_value_user_input_and_reset_persist_provenance(self):
+        fields = fields_by_key()
+        rules = [
+            {"target": "learning_rate", **rule}
+            for rule in fields["learning_rate"].get("autoValue", [])
+        ]
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const rules = __RULES__;
+let persistCalls = 0;
+const field = { key: 'learning_rate', default: '1e-4', type: 'text' };
+const ctx = Object.assign({}, core, {
+  form: {
+    model_train_type: 'anima-lora',
+    optimizer_type: 'AdamW8bit',
+    learning_rate: '2e-5',
+  },
+  formDefaults: { learning_rate: '2e-5' },
+  formErrors: {},
+  _autoValueRules: rules,
+  _autoValueApplied: { learning_rate: '2e-5' },
+  _fieldSources: { learning_rate: 'auto' },
+  _profileFieldSources: {},
+  findFieldDef() { return field; },
+  queueTomlPreviewChange() {},
+  pushHistory() {},
+  _allShowIfKeys() { return []; },
+  _currentProfileFieldDefault() { return '1e-4'; },
+  updateTomlDebounced() {},
+  updateToml() {},
+  scheduleOutputPathInfo() {},
+  _persistProfileFieldSources() { persistCalls += 1; },
+  t(_key, fallback) { return fallback || ''; },
+});
+
+ctx.setField('learning_rate', '2e-5');
+const sameValueUser = {
+  value: ctx.form.learning_rate,
+  source: ctx._fieldSources.learning_rate,
+  persistCalls,
+};
+
+ctx.resetField('learning_rate');
+const sameValueReset = {
+  value: ctx.form.learning_rate,
+  source: ctx._fieldSources.learning_rate,
+  persistCalls,
+};
+
+console.log(JSON.stringify({ sameValueUser, sameValueReset }));
+""".replace("__RULES__", json.dumps(rules))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(
+            state["sameValueUser"],
+            {"value": "2e-5", "source": "user", "persistCalls": 1},
+        )
+        self.assertEqual(
+            state["sameValueReset"],
+            {"value": "2e-5", "source": "auto", "persistCalls": 3},
+        )
+
+    def test_import_and_preset_keys_remain_explicit(self):
+        fields = fields_by_key()
+        visible_fields = [
+            fields["model_train_type"],
+            fields["optimizer_type"],
+            fields["learning_rate"],
+            fields["lr_scheduler"],
+        ]
+        rules = [
+            {"target": key, **rule}
+            for key in ("learning_rate", "lr_scheduler")
+            for rule in fields[key].get("autoValue", [])
+        ]
+        script = r"""
+global.window = {};
+window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
+require('./frontend/js/training-core.js');
+require('./frontend/js/training-presets.js');
+const core = window.trainingCoreMixin;
+const presets = window.trainingPresetsMixin;
+const rules = __RULES__;
+
+function makeContext() {
+  const ctx = Object.assign({}, core, presets, {
+    currentRoute: '',
+    trainTypes: [{ v: 'anima-lora' }, { v: 'sdxl-lora' }],
+    form: {
+      model_train_type: 'anima-lora',
+      optimizer_type: 'AdamW8bit',
+      learning_rate: '1e-4',
+      lr_scheduler: 'cosine_with_restarts',
+    },
+    formDefaults: {},
+    formHistory: [],
+    _profileFormDrafts: {},
+    _profileFieldSources: {},
+    _fieldSources: {},
+    _activeTrainType: 'anima-lora',
+    _autoValueRules: rules,
+    _autoValueApplied: {},
+    updateToml() {},
+    renderTrainingForm() {},
+    updateReadonlyStates() {},
+    rebuildForm() { this._applyInitialAutoValues(); },
+    $nextTick(fn) { fn(); },
+  });
+  const defaults = ctx._buildFormDefaults('anima-lora');
+  ctx.formDefaults = { ...defaults };
+  ctx._replaceProfileFieldSources('anima-lora', defaults);
+  return ctx;
+}
+
+async function imported(data) {
+  const ctx = makeContext();
+  await ctx._applyImportedFlatConfig({ model_train_type: 'anima-lora', ...data });
+  return {
+    learning_rate: ctx.form.learning_rate,
+    lr_scheduler: ctx.form.lr_scheduler,
+    lrSource: ctx._fieldSources.learning_rate,
+    schedulerSource: ctx._fieldSources.lr_scheduler,
+  };
+}
+
+(async () => {
+  const cameExplicit = await imported({
+    optimizer_type: 'pytorch_optimizer.CAME',
+    learning_rate: '1e-4',
+    lr_scheduler: 'cosine_with_restarts',
+  });
+  const cameLegacy = await imported({
+    optimizer_type: 'pytorch_optimizer.CAME',
+    learning_rate: '2e-4',
+  });
+  const stableExplicit = await imported({
+    optimizer_type: 'pytorch_optimizer.StableAdamW',
+    learning_rate: '1e-4',
+  });
+  const missingValues = await imported({ optimizer_type: 'pytorch_optimizer.CAME' });
+
+  const preset = makeContext();
+  preset.applyPreset({
+    metadata: { name: 'explicit' },
+    data: {
+      optimizer_type: 'pytorch_optimizer.CAME',
+      learning_rate: '1e-4',
+      lr_scheduler: 'cosine_with_restarts',
+    },
+  });
+  console.log(JSON.stringify({
+    cameExplicit,
+    cameLegacy,
+    stableExplicit,
+    missingValues,
+    preset: {
+      learning_rate: preset.form.learning_rate,
+      lr_scheduler: preset.form.lr_scheduler,
+      lrSource: preset._fieldSources.learning_rate,
+      schedulerSource: preset._fieldSources.lr_scheduler,
+    },
+  }));
+})().catch(error => { console.error(error); process.exit(1); });
+""".replace("__FIELDS__", json.dumps(visible_fields)).replace("__RULES__", json.dumps(rules))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(
+            state["cameExplicit"],
+            {
+                "learning_rate": "1e-4",
+                "lr_scheduler": "cosine_with_restarts",
+                "lrSource": "import",
+                "schedulerSource": "import",
+            },
+        )
+        self.assertEqual(state["cameLegacy"]["learning_rate"], "2e-4")
+        self.assertEqual(state["cameLegacy"]["lrSource"], "import")
+        self.assertEqual(state["stableExplicit"]["learning_rate"], "1e-4")
+        self.assertEqual(state["stableExplicit"]["lrSource"], "import")
+        self.assertEqual(
+            (state["missingValues"]["learning_rate"], state["missingValues"]["lr_scheduler"]),
+            ("1.5e-5", "constant"),
+        )
+        self.assertEqual(state["missingValues"]["lrSource"], "auto")
+        self.assertEqual(state["missingValues"]["schedulerSource"], "auto")
+        self.assertEqual(
+            state["preset"],
+            {
+                "learning_rate": "1e-4",
+                "lr_scheduler": "cosine_with_restarts",
+                "lrSource": "preset",
+                "schedulerSource": "preset",
+            },
+        )
+
+    def test_legacy_drafts_and_placeholder_use_registry_provenance(self):
+        fields = fields_by_key()
+        visible_fields = [
+            fields["model_train_type"],
+            fields["optimizer_type"],
+            fields["learning_rate"],
+            fields["lr_scheduler"],
+        ]
+        script = r"""
+global.window = {};
+window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
+const storage = new Map();
+global.localStorage = {
+  getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+  setItem(key, value) { storage.set(key, value); },
+};
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const ctx = Object.assign({}, core, {
+  currentRoute: 'train-anima',
+  trainTypes: [{ v: 'anima-lora' }, { v: 'sdxl-lora' }],
+  form: { model_train_type: 'anima-lora' },
+  _activeTrainType: 'anima-lora',
+  _profileFieldSources: {},
+  _fieldSources: {},
+});
+const defaults = ctx._buildFormDefaults('anima-lora');
+const legacyDraft = {
+  ...defaults,
+  optimizer_type: 'pytorch_optimizer.CAME',
+  learning_rate: '1e-4',
+  lr_scheduler: 'cosine_with_restarts',
+};
+ctx._activateProfileFieldSources('anima-lora', defaults, legacyDraft, true);
+const legacySources = { ...ctx._fieldSources };
+ctx.form = { ...legacyDraft };
+ctx.setupAutoValueWatchers = function() {
+  this._autoValueRules = [];
+  window.getVisibleSections('anima-lora').forEach(section => section.fields.forEach(field => {
+    (field.autoValue || []).forEach(rule => this._autoValueRules.push({
+      target: rule.setTarget || field.key,
+      watch: rule.watch,
+      when: rule.when,
+      set: rule.set,
+      setIfDefault: rule.setIfDefault === true,
+    }));
+  }));
+  this._applyInitialAutoValues();
+};
+ctx.setupAutoValueWatchers();
+const preserved = { learning_rate: ctx.form.learning_rate, lr_scheduler: ctx.form.lr_scheduler };
+
+ctx._fieldSources.learning_rate = 'user';
+ctx._fieldSources.lr_scheduler = 'auto';
+ctx._captureProfileFieldSources('anima-lora');
+ctx._persistProfileFieldSources();
+const reloaded = Object.assign({}, core, {
+  currentRoute: 'train-anima',
+  trainTypes: ctx.trainTypes,
+})._loadProfileFieldSources('train-anima');
+
+const learningRateField = __LR_FIELD__;
+const placeholders = ctx._optimizerAutoValueMap(learningRateField, 'anima-lora');
+console.log(JSON.stringify({
+  legacySources,
+  preserved,
+  reloaded,
+  placeholders,
+  storageKey: ctx._profileFieldSourceStorageKey(),
+}));
+""".replace("__FIELDS__", json.dumps(visible_fields)).replace(
+            "__LR_FIELD__", json.dumps(fields["learning_rate"])
+        )
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["legacySources"]["learning_rate"], "saved")
+        self.assertEqual(state["legacySources"]["lr_scheduler"], "saved")
+        self.assertEqual(
+            state["preserved"],
+            {"learning_rate": "1e-4", "lr_scheduler": "cosine_with_restarts"},
+        )
+        self.assertEqual(
+            state["reloaded"]["anima-lora"]["learning_rate"], "user"
+        )
+        self.assertEqual(
+            state["reloaded"]["anima-lora"]["lr_scheduler"], "auto"
+        )
+        self.assertEqual(
+            state["storageKey"], "anima-form-profile-sources-v1-train-anima"
+        )
+        self.assertEqual(state["placeholders"]["AdamW8bit"], "2e-5")
+        self.assertEqual(state["placeholders"][CAME_OPTIMIZER_TYPE], "1.5e-5")
+        self.assertEqual(state["placeholders"]["Lion"], "5e-6")
+        self.assertEqual(
+            state["placeholders"][ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE], "1e-4"
+        )
+        constants = Path("frontend/js/constants.js").read_text(encoding="utf-8")
+        self.assertNotIn("ANIMA_OPTIMIZER_LR_DEFAULTS", constants)
 
     def test_default_omission_auto_value_provenance_and_readonly_groups(self):
         script = r"""
@@ -631,18 +1049,20 @@ const rules = [
   { target: 'lr_scheduler', watch: 'optimizer_type', when: 'Prodigy', set: 'cosine', setIfDefault: true },
   { target: 'lr_scheduler', watch: 'optimizer_type', when: 'AdamWScheduleFree', set: 'constant', setIfDefault: false },
 ];
-function autoContext(applied) {
+function autoContext(source) {
   return Object.assign({}, core, {
     form: { optimizer_type: 'Prodigy', lr_scheduler: 'constant' },
     formDefaults: { lr_scheduler: 'constant' },
     _autoValueRules: rules,
-    _autoValueApplied: applied,
+    _autoValueApplied: {},
+    _fieldSources: { lr_scheduler: source },
+    _profileFieldSources: {},
     findFieldDef() { return field; },
   });
 }
-const previousAuto = autoContext({ lr_scheduler: 'constant' });
+const previousAuto = autoContext('auto');
 previousAuto._applyInitialAutoValues();
-const explicitCustom = autoContext({});
+const explicitCustom = autoContext('user');
 explicitCustom._applyInitialAutoValues();
 
 const weightField = { key: 'weight_decay', default: '' };
@@ -650,6 +1070,8 @@ const weightContext = Object.assign({}, core, {
   form: { optimizer_type: 'AdamW', weight_decay: 0 },
   formDefaults: { weight_decay: '' },
   _autoValueApplied: {},
+  _fieldSources: { weight_decay: 'user' },
+  _profileFieldSources: {},
   _autoValueRules: [
     { target: 'weight_decay', watch: 'optimizer_type', when: 'AdamW', set: 0.01, setIfDefault: true },
     { target: 'weight_decay', watch: 'optimizer_type', when: 'Lion', set: 0, setIfDefault: true },
@@ -681,13 +1103,21 @@ function resetWithRule({ form, key, profileDefault, expected, rules }) {
     form: { model_train_type: 'anima-lora', ...form },
     formDefaults: { [key]: expected },
     _autoValueRules: rules.map(rule => ({ target: key, ...rule })),
+    _autoValueApplied: {},
+    _fieldSources: { [key]: 'user' },
+    _profileFieldSources: {},
     _currentProfileFieldDefault() { return profileDefault; },
-    setField(target, value) { this.form[target] = value; },
+    setField(target, value) {
+      this.form[target] = value;
+      this._setFieldSource(target, 'user');
+    },
+    updateToml() {},
   });
   ctx.resetField(key);
   return {
     value: ctx.form[key],
     changed: String(ctx.form[key]) !== String(ctx.formDefaults[key]),
+    source: ctx._fieldSources[key],
   };
 }
 
@@ -777,12 +1207,12 @@ console.log(JSON.stringify({
         self.assertEqual(
             state["optimizerResets"],
             {
-                "adamWeightDecay": {"value": 0.01, "changed": False},
-                "prodigyGradClip": {"value": 0, "changed": False},
-                "lionBetas": {"value": "0.9, 0.99", "changed": False},
-                "automagicEps": {"value": "1e-30", "changed": False},
-                "schedulefreeLearningRate": {"value": "3e-4", "changed": False},
-                "adafactorScale": {"value": False, "changed": False},
+                "adamWeightDecay": {"value": 0.01, "changed": False, "source": "auto"},
+                "prodigyGradClip": {"value": 0, "changed": False, "source": "auto"},
+                "lionBetas": {"value": "0.9, 0.99", "changed": False, "source": "auto"},
+                "automagicEps": {"value": "1e-30", "changed": False, "source": "auto"},
+                "schedulefreeLearningRate": {"value": "3e-4", "changed": False, "source": "auto"},
+                "adafactorScale": {"value": False, "changed": False, "source": "auto"},
             },
         )
 

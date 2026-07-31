@@ -193,21 +193,23 @@ const rules = [
   { target: 'learning_rate', watch: { optimizer_type: optimizer, model_train_type: 'anima-lora' }, set: '0.1', setIfDefault: true },
   { target: 'learning_rate', watch: 'optimizer_type', when: optimizer, set: '1.0', setIfDefault: true },
 ];
-function makeContext(modelType, learningRate) {
+function makeContext(modelType, learningRate, source) {
   return Object.assign({}, mixin, {
     form: { optimizer_type: optimizer, model_train_type: modelType, learning_rate: learningRate },
     formDefaults: { learning_rate: '1e-4' },
     _autoValueRules: rules,
+    _fieldSources: { learning_rate: source },
+    _profileFieldSources: {},
     _allSections() { return [{ fields: [field] }]; },
   });
 }
-const anima = makeContext('anima-lora', '1e-4');
+const anima = makeContext('anima-lora', '1e-4', 'default');
 anima._applyInitialAutoValues();
-const sdxl = makeContext('sdxl-lora', '1e-4');
+const sdxl = makeContext('sdxl-lora', '1e-4', 'default');
 sdxl._applyInitialAutoValues();
-const previousRecommendation = makeContext('anima-lora', '1.0');
+const previousRecommendation = makeContext('anima-lora', '1.0', 'auto');
 previousRecommendation._applyInitialAutoValues();
-const custom = makeContext('anima-lora', '0.2');
+const custom = makeContext('anima-lora', '0.2', 'user');
 custom._applyInitialAutoValues();
 
 const toasts = [];

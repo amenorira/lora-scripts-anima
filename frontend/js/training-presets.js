@@ -850,14 +850,18 @@ window.trainingPresetsMixin = {
 
       this.form = { ...defaults, ...imported, model_train_type: importedType };
       this._activeTrainType = importedType;
+      this._replaceProfileFieldSources(importedType, defaults, Object.keys(imported), 'import');
       this._normalizeProfileSelectValues(importedType, defaults);
       if (importedType === 'krea2-lora') this._syncKrea2CacheDir();
       this._captureProfileDraft(importedType, this.form, defaults);
-      this.formDefaults = { ...this.form };
+      this.formDefaults = { ...defaults };
       this.formHistory = [this.formDefaults];
       this.formHistoryIdx = 0;
       this.updateToml();
       this.rebuildForm();
+      this._captureProfileDraft(importedType, this.form, defaults);
+      this._persistProfileDrafts();
+      this._persistProfileFieldSources();
     };
 
     // Switch the runtime profile first so its deferred network ownership check
@@ -977,6 +981,11 @@ window.trainingPresetsMixin = {
     const savedWatcher = this._trainTypeWatcher;
     if (savedWatcher) { savedWatcher(); this._trainTypeWatcher = null; }
     try {
+      const presetTrainType = String(data.model_train_type || this.form.model_train_type || 'anima-lora');
+      if (presetTrainType !== this.form.model_train_type) {
+        this._switchInProgress = true;
+        try { this.switchTrainType(presetTrainType); } finally { this._switchInProgress = false; }
+      }
       const overrideKeys = Object.keys(data);
       for (const k of overrideKeys) {
         if (k === 'model_train_type') {
@@ -985,6 +994,7 @@ window.trainingPresetsMixin = {
         }
         this.form[k] = data[k];
       }
+      overrideKeys.forEach(key => this._setFieldSource(key, 'preset', this.form.model_train_type));
     } finally {
       if (savedWatcher) {
         this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
@@ -1002,6 +1012,9 @@ window.trainingPresetsMixin = {
     this.currentPresetName = (preset.metadata && preset.metadata.name) || '';
     this.updateToml();
     this.rebuildForm();
+    this._captureProfileDraft(this.form.model_train_type, this.form);
+    this._persistProfileDrafts();
+    this._persistProfileFieldSources();
   },
 
   applyPresetNavigate(preset) {
