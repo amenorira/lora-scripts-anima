@@ -635,7 +635,6 @@ window.trainingCoreMixin = {
     const hasSavedDraft = Object.keys(savedProfileDraft).length > 0 || !!saved;
     this._activateProfileFieldSources(trainType, defaults, mergedSavedDraft, hasSavedDraft);
     this._activeTrainType = trainType;
-    this._autoValueApplied = {};
     // Ensure model_train_type is valid (saved may have been from another route)
     if (!validTrainTypes.includes(this.form.model_train_type)) {
       this.form.model_train_type = trainType;
@@ -2676,7 +2675,6 @@ window.trainingCoreMixin = {
 
   // ── Auto Value: auto-set field value when watcher field changes ──
   _autoValueRules: null,
-  _autoValueApplied: null,
 
   /** Check whether a single autoValue rule matches the current form state. */
   _matchAutoValueRule(rule) {
@@ -2703,9 +2701,6 @@ window.trainingCoreMixin = {
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
-    if (!this._autoValueApplied || typeof this._autoValueApplied !== 'object') {
-      this._autoValueApplied = {};
-    }
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
       const matched = this._autoValueRules.find(
@@ -2714,10 +2709,9 @@ window.trainingCoreMixin = {
       if (matched && matched.set !== null && matched.set !== undefined) {
         if (this._autoValueRuleCanSet(matched)) {
           this.form[matched.target] = matched.set;
-          this._autoValueApplied[matched.target] = matched.set;
           this._setFieldSource(matched.target, 'auto');
+          this.formDefaults[matched.target] = matched.set;
         }
-        this.formDefaults[matched.target] = matched.set;
       }
     });
   },
@@ -2726,9 +2720,6 @@ window.trainingCoreMixin = {
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
     if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._autoValueWatchers = [];
-    if (!this._autoValueApplied || typeof this._autoValueApplied !== 'object') {
-      this._autoValueApplied = {};
-    }
     // Collect all autoValue rules from all visible fields
     const rules = [];
     this._allSections().forEach(s => s.fields.forEach(f => {
@@ -2777,17 +2768,15 @@ window.trainingCoreMixin = {
             if (matched.set !== null && matched.set !== undefined) {
               if (self._autoValueRuleCanSet(matched)) {
                 self.form[matched.target] = matched.set;
-                self._autoValueApplied[matched.target] = matched.set;
                 self._setFieldSource(matched.target, 'auto');
+                self.formDefaults[matched.target] = matched.set;
               }
-              self.formDefaults[matched.target] = matched.set;
             }
           } else if (self._autoValueTargetCanReset(target)) {
             // No rule matches → restore default (also update formDefaults)
             const field = self.findFieldDef(target);
             const defVal = field ? field.default : (self.formDefaults[target]);
             if (field) self.form[target] = defVal;
-            self._autoValueApplied[target] = defVal;
             self.formDefaults[target] = defVal;
             self._setFieldSource(target, 'default');
           }
@@ -3041,9 +3030,6 @@ window.trainingCoreMixin = {
       this._scheduleTrainTypeSwitch(value);
       return;
     }
-    if (this._autoValueApplied && Object.prototype.hasOwnProperty.call(this._autoValueApplied, key)) {
-      delete this._autoValueApplied[key];
-    }
     if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) {
       const numVal = Number(value);
       if (!isNaN(numVal)) value = numVal;
@@ -3274,12 +3260,8 @@ window.trainingCoreMixin = {
     );
     const value = def !== undefined ? def : '';
     const unchanged = this.form[key] === value;
-    if (this._autoValueApplied && Object.prototype.hasOwnProperty.call(this._autoValueApplied, key)) {
-      delete this._autoValueApplied[key];
-    }
     this.setField(key, value);
     if (matched && matched.set !== null && matched.set !== undefined) {
-      this._autoValueApplied[key] = value;
       this._setFieldSource(key, 'auto');
     } else {
       this._setFieldSource(key, 'default');
@@ -3302,7 +3284,6 @@ window.trainingCoreMixin = {
     const profileDefaults = this._buildFormDefaults(currentTrainType);
     this.formDefaults = { ...profileDefaults };
     this.form = { ...profileDefaults, model_train_type: currentTrainType };
-    this._autoValueApplied = {};
     this._replaceProfileFieldSources(currentTrainType, profileDefaults);
     if (currentTrainType === 'krea2-lora') {
       this._applyKrea2ModelDefaults(this.form, profileDefaults);

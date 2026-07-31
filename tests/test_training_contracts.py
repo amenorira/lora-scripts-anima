@@ -504,7 +504,7 @@ function context(modelType, form) {
   const toasts = [];
   const ctx = Object.assign({}, mixin, {
     form: Object.assign({ model_train_type: modelType }, form),
-    formDefaults: {}, formErrors: {}, _autoValueApplied: {},
+    formDefaults: {}, formErrors: {},
     findFieldDef(key) { return key === 'bucket_reso_steps' ? bucketField : null; },
     _allShowIfKeys() { return []; },
     queueTomlPreviewChange() {}, pushHistory() {}, updateTomlDebounced() {},

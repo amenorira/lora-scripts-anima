@@ -498,7 +498,6 @@ function apply(modelType, optimizerType, learningRate, scheduler, source = 'defa
       lr_scheduler: 'cosine_with_restarts',
     },
     _autoValueRules: rules,
-    _autoValueApplied: {},
     _fieldSources: {
       learning_rate: source,
       lr_scheduler: source,
@@ -582,7 +581,6 @@ const ctx = Object.assign({}, core, {
   },
   formErrors: {},
   _autoValueRules: rules,
-  _autoValueApplied: {},
   _fieldSources: { learning_rate: 'default', lr_scheduler: 'default' },
   _profileFieldSources: {},
   findFieldDef(key) { return fields[key] || null; },
@@ -667,7 +665,6 @@ const ctx = Object.assign({}, core, {
   formDefaults: { learning_rate: '2e-5' },
   formErrors: {},
   _autoValueRules: rules,
-  _autoValueApplied: { learning_rate: '2e-5' },
   _fieldSources: { learning_rate: 'auto' },
   _profileFieldSources: {},
   findFieldDef() { return field; },
@@ -756,11 +753,13 @@ function makeContext() {
     _fieldSources: {},
     _activeTrainType: 'anima-lora',
     _autoValueRules: rules,
-    _autoValueApplied: {},
     updateToml() {},
     renderTrainingForm() {},
     updateReadonlyStates() {},
     rebuildForm() { this._applyInitialAutoValues(); },
+    toastWithAction() {},
+    toast() {},
+    t(_key, fallback) { return fallback || ''; },
     $nextTick(fn) { fn(); },
   });
   const defaults = ctx._buildFormDefaults('anima-lora');
@@ -805,6 +804,38 @@ async function imported(data) {
       lr_scheduler: 'cosine_with_restarts',
     },
   });
+
+  const selective = makeContext();
+  Object.assign(selective.form, {
+    optimizer_type: 'pytorch_optimizer.CAME',
+    learning_rate: '1.5e-5',
+    lr_scheduler: 'constant',
+  });
+  selective.formDefaults = { ...selective.form };
+  selective._fieldSources = { learning_rate: 'auto', lr_scheduler: 'auto' };
+  selective._profileFieldSources = {
+    'anima-lora': { learning_rate: 'auto', lr_scheduler: 'auto' },
+  };
+  selective.presetEditor = { entries: [
+    { key: 'learning_rate', value: '1e-4' },
+    { key: 'lr_scheduler', value: 'cosine_with_restarts' },
+  ] };
+  selective.applyPresetDiffSelected(['learning_rate', 'lr_scheduler']);
+  const selectiveApplied = {
+    learning_rate: selective.form.learning_rate,
+    lr_scheduler: selective.form.lr_scheduler,
+    defaultLearningRate: selective.formDefaults.learning_rate,
+    lrSource: selective._fieldSources.learning_rate,
+  };
+  selective.undoApplyPreset();
+  const selectiveUndone = {
+    learning_rate: selective.form.learning_rate,
+    lr_scheduler: selective.form.lr_scheduler,
+    lrSource: selective._fieldSources.learning_rate,
+  };
+  selective.form.optimizer_type = 'Lion8bit';
+  selective._applyInitialAutoValues();
+
   console.log(JSON.stringify({
     cameExplicit,
     cameLegacy,
@@ -816,6 +847,9 @@ async function imported(data) {
       lrSource: preset._fieldSources.learning_rate,
       schedulerSource: preset._fieldSources.lr_scheduler,
     },
+    selectiveApplied,
+    selectiveUndone,
+    selectiveAfterSwitch: selective.form.learning_rate,
   }));
 })().catch(error => { console.error(error); process.exit(1); });
 """.replace("__FIELDS__", json.dumps(visible_fields)).replace("__RULES__", json.dumps(rules))
@@ -857,6 +891,24 @@ async function imported(data) {
                 "schedulerSource": "preset",
             },
         )
+        self.assertEqual(
+            state["selectiveApplied"],
+            {
+                "learning_rate": "1e-4",
+                "lr_scheduler": "cosine_with_restarts",
+                "defaultLearningRate": "1e-4",
+                "lrSource": "preset",
+            },
+        )
+        self.assertEqual(
+            state["selectiveUndone"],
+            {
+                "learning_rate": "1.5e-5",
+                "lr_scheduler": "constant",
+                "lrSource": "auto",
+            },
+        )
+        self.assertEqual(state["selectiveAfterSwitch"], "5e-6")
 
     def test_legacy_drafts_and_placeholder_use_registry_provenance(self):
         fields = fields_by_key()
@@ -1054,7 +1106,6 @@ function autoContext(source) {
     form: { optimizer_type: 'Prodigy', lr_scheduler: 'constant' },
     formDefaults: { lr_scheduler: 'constant' },
     _autoValueRules: rules,
-    _autoValueApplied: {},
     _fieldSources: { lr_scheduler: source },
     _profileFieldSources: {},
     findFieldDef() { return field; },
@@ -1069,7 +1120,6 @@ const weightField = { key: 'weight_decay', default: '' };
 const weightContext = Object.assign({}, core, {
   form: { optimizer_type: 'AdamW', weight_decay: 0 },
   formDefaults: { weight_decay: '' },
-  _autoValueApplied: {},
   _fieldSources: { weight_decay: 'user' },
   _profileFieldSources: {},
   _autoValueRules: [
@@ -1103,7 +1153,6 @@ function resetWithRule({ form, key, profileDefault, expected, rules }) {
     form: { model_train_type: 'anima-lora', ...form },
     formDefaults: { [key]: expected },
     _autoValueRules: rules.map(rule => ({ target: key, ...rule })),
-    _autoValueApplied: {},
     _fieldSources: { [key]: 'user' },
     _profileFieldSources: {},
     _currentProfileFieldDefault() { return profileDefault; },

@@ -6,7 +6,7 @@
 
 优化器会影响收敛速度、显存占用和数值稳定性，但通常不是人物还原度的首要决定因素。少图人物训练出现问题时，应先检查数据、标注、重复次数、学习率和停止时机。
 
-本文把“实现/论文事实”和“Anima 工程起点”分开：CAME、Lion、Schedule-Free 的论文或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡给出的依据仅覆盖使用 **Anima-Base**、不训练 LLM Adapter、rank 32，并从 `2e-5` 附近开始轻微调整。本训练器采用 `rank=32, alpha=32` 作为项目工程起点，其中 `alpha=32` 是项目选择，仍需按数据集本地验证。
+本文区分“实现与论文事实”和“Anima 工程起点”：CAME、Lion、Schedule-Free 的论文结果或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡明确建议使用 **Anima-Base**、不训练 LLM Adapter、采用 rank 32，并从 `2e-5` 附近小幅调整。本训练器采用 `rank=32, alpha=32` 作为项目工程起点，其中 `alpha=32` 是项目选择，仍需按数据集本地验证。
 
 <!-- doc-anchor: quick-choice -->
 ## 快速选择
@@ -38,8 +38,8 @@
 | ProdigyPlusScheduleFree | 测试内部调度和组合功能 | 外部 scheduler 和 warmup 不生效，少图短训练中的收益不确定 |
 | Automagic3 | 项目实验性自适应方案 | 建议在具备明确基准时进行测试 |
 | AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
-| CAME | 混合来源数据、更新尺度波动较大时进行对照 | 使用三个 beta 和内部 RMS 裁剪；不具备图片质量判断能力 |
-| AdamWScheduleFree | 测试不使用外部 scheduler 的 AdamW | 支持内部 warmup；项目默认暂设为 0，短训练不建议作为第一选择 |
+| CAME | 混合来源数据、更新尺度波动较大时进行对照 | 使用三个 beta 和内部 RMS 裁剪 |
+| AdamWScheduleFree | 测试不使用外部 scheduler 的 AdamW | 支持内部 warmup，但本项目默认设置 `warmup_steps=0`；短训练不建议作为第一选择 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1，不支持 LoRA+ |
 
 表中的显存说明仅指优化器状态。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
@@ -51,7 +51,7 @@
 
 **CAME** 使用因子化状态和内部 RMS 裁剪。卡面、截图、立绘的画质和构图差异较大时，它可作为 AdamW8bit 的对照方案。CAME 处理的是参数更新，不会判断图片质量；伙伴角色、文字、特效和错误标注仍需在数据处理中解决。
 
-**StableAdamW** 会限制异常大的参数更新，并支持常规学习率调度器、预热、`max_grad_norm` 和 LoRA+。Anima 建议先沿用 AdamW 基线：`lr=2e-5`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`。SDXL 的界面起点仍为 `1e-4`。它不是 8-bit 优化器，因此优化器状态占用通常高于 AdamW8bit。
+**StableAdamW** 会限制异常大的参数更新，并支持常规学习率调度器、预热、`max_grad_norm` 和 LoRA+。本项目在 Anima 中先沿用 AdamW 基线：`lr=2e-5`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`。SDXL 的界面起点仍为 `1e-4`。它不是 8-bit 优化器，因此优化器状态占用通常高于 AdamW8bit。
 
 如果基准训练的曲线和预览均正常，StableAdamW 的额外收益可能较小。它的主要用途是改善更新稳定性。
 

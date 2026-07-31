@@ -6,7 +6,7 @@
 
 Optimizer choice affects convergence, optimizer-state memory, and numerical stability. Dataset quality, captions, repeats, learning rate, and stopping point usually have a greater effect on character fidelity, especially with very small datasets.
 
-This guide separates implementation/paper facts from Anima engineering starts. Paper results and constructor defaults for CAME, Lion, and Schedule-Free are not Anima LoRA optima. The official Anima model card supports only **Anima-Base**, leaving the LLM Adapter untrained, rank 32, and starting near `2e-5` with small adjustments. This trainer uses `rank=32, alpha=32` as a project starting point; `alpha=32` is a project choice that still requires local validation.
+This guide separates implementation and paper facts from Anima engineering starts. Paper results and constructor defaults for CAME, Lion, and Schedule-Free are not Anima LoRA optima. The official Anima model card recommends **Anima-Base**, no LLM Adapter training, rank 32, and an initial LR near `2e-5` with small adjustments. This trainer uses `rank=32, alpha=32` as a project starting point; `alpha=32` is a project choice that still requires local validation.
 
 <!-- doc-anchor: quick-choice -->
 ## Quick selection
@@ -38,8 +38,8 @@ For few-shot character training, comparisons may focus on **AdamW8bit, CAME, and
 | ProdigyPlusScheduleFree | Comparison of its internal schedule and combined features | External scheduler/warmup are disabled; benefits in short runs are uncertain |
 | Automagic3 | Project-specific experimental adaptive optimizer | Recommended only when a clear baseline is available |
 | AdaFactor | Reducing optimizer-state memory | Relative-step mode owns the LR and restricts LoRA+ |
-| CAME | Comparison on batches with uneven update scales | Uses three betas and internal RMS clipping; it does not assess image quality |
-| AdamWScheduleFree | AdamW without an external schedule | Supports internal warmup; the project currently defaults it to 0 and does not treat it as a primary short-run choice |
+| CAME | Comparison on batches with uneven update scales | Uses three betas and internal RMS clipping |
+| AdamWScheduleFree | AdamW without an external schedule | Supports internal warmup, but this project sets `warmup_steps=0` by default and does not treat it as a primary short-run choice |
 | EmoSens | Project-specific emotion-driven optimizer | Gradient accumulation must be 1; LoRA+ is unsupported |
 
 The memory descriptions refer only to optimizer state. Actual peak VRAM also depends on resolution, rank, batch size, caching, and preview generation.
@@ -51,7 +51,7 @@ The memory descriptions refer only to optimizer state. Actual peak VRAM also dep
 
 **CAME uses factored state and internal RMS clipping.** It may be compared with AdamW8bit for datasets that mix sprites, cards, and captures with different update characteristics. CAME operates on parameter updates; it does not identify image quality, the target character, or unwanted effects.
 
-**StableAdamW is designed to limit unusually large updates.** It supports the standard scheduler, warmup, `max_grad_norm`, and LoRA+. For Anima, begin at the AdamW scale: `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`. The SDXL UI start remains `1e-4`. StableAdamW is not an 8-bit optimizer, so its state memory is generally higher than AdamW8bit.
+**StableAdamW is designed to limit unusually large updates.** It supports the standard scheduler, warmup, `max_grad_norm`, and LoRA+. For Anima, this project starts at the AdamW scale: `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`. The SDXL UI start remains `1e-4`. StableAdamW is not an 8-bit optimizer, so its state memory is generally higher than AdamW8bit.
 
 If baseline curves and previews are already stable, the additional benefit of StableAdamW may be limited. Its primary purpose is update stability.
 
@@ -67,7 +67,7 @@ For Anima backbone-only training, use the following project starts. Official Ani
 | --- | ---: | --- |
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Official Anima rank-32 baseline; 8-bit state and paging do not change LR semantics |
 | StableAdamW | `2e-5` | Keeps the AdamW scale so update stabilization can be compared separately |
-| CAME | `1.5e-5` | CAME's official tuning guidance is about `0.5` to `0.9` times AdamW; this is a transfer starting point, not an Anima optimum |
+| CAME | `1.5e-5` | CAME's official tuning guidance is about `0.5` to `0.9` times the AdamW learning rate; this is a transfer starting point, not an Anima optimum |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's official guidance uses an LR roughly `3` to `10` times smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Official guidance often uses `1` to `10` times the base optimizer LR; Anima evidence is limited, so treat this as experimental |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scaling baseline, not directly comparable with `2e-5` |

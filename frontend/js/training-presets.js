@@ -502,11 +502,25 @@ window.trainingPresetsMixin = {
     this.applyPresetWithSnapshot(p);
   },
 
+  _capturePresetApplySnapshot() {
+    try {
+      this._preApplySnapshot = {
+        form: JSON.parse(JSON.stringify(this.form || {})),
+        formDefaults: JSON.parse(JSON.stringify(this.formDefaults || {})),
+        fieldSources: JSON.parse(JSON.stringify(this._fieldSources || {})),
+        profileFieldSources: JSON.parse(JSON.stringify(this._profileFieldSources || {})),
+        autoValueRules: JSON.parse(JSON.stringify(this._autoValueRules || [])),
+        activeTrainType: this._activeTrainType || this.form?.model_train_type || '',
+      };
+    } catch (_) {
+      this._preApplySnapshot = null;
+    }
+  },
+
   applyPresetWithSnapshot(preset) {
     if (!preset || !preset.data) return;
-    // 快照当前 form（深拷贝），用于撤销
-    try { this._preApplySnapshot = JSON.parse(JSON.stringify(this.form || {})); }
-    catch (_) { this._preApplySnapshot = null; }
+    // 快照表单、默认基线和来源状态，用于完整撤销
+    this._capturePresetApplySnapshot();
     const count = Object.keys(preset.data || {}).length;
     const name = (preset.metadata && preset.metadata.name) || '';
     this.applyPresetNavigate(preset);
@@ -519,9 +533,25 @@ window.trainingPresetsMixin = {
   },
 
   undoApplyPreset() {
-    if (!this._preApplySnapshot) { this.toast(this.t('preset.noSnapshot')); return; }
-    this.form = JSON.parse(JSON.stringify(this._preApplySnapshot));
-    this.formDefaults = { ...this.form };
+    const snapshot = this._preApplySnapshot;
+    if (!snapshot || !snapshot.form) { this.toast(this.t('preset.noSnapshot')); return; }
+    const restoredTrainType = snapshot.activeTrainType || snapshot.form.model_train_type;
+    const currentTrainType = this._activeTrainType || this.form.model_train_type;
+    const trainTypeChanged = !!restoredTrainType && restoredTrainType !== currentTrainType;
+    if (trainTypeChanged && typeof this._clearProfileFieldWatchers === 'function') {
+      this._clearProfileFieldWatchers();
+    }
+    this.form = JSON.parse(JSON.stringify(snapshot.form));
+    this.formDefaults = JSON.parse(JSON.stringify(snapshot.formDefaults || snapshot.form));
+    this._fieldSources = JSON.parse(JSON.stringify(snapshot.fieldSources || {}));
+    this._profileFieldSources = JSON.parse(JSON.stringify(snapshot.profileFieldSources || {}));
+    this._autoValueRules = JSON.parse(JSON.stringify(snapshot.autoValueRules || []));
+    this._activeTrainType = restoredTrainType || this.form.model_train_type;
+    if (trainTypeChanged) {
+      const tt = (this.trainTypes || []).find(item => item.v === this._activeTrainType);
+      this.currentTrainTypeDesc = tt ? this.t(tt.dk, tt.l) : '';
+      this.currentTrainTypeLabel = tt ? tt.l : '';
+    }
     this.formHistory = [this.formDefaults];
     this.formHistoryIdx = 0;
     this.formDiffMap = null;
@@ -532,6 +562,14 @@ window.trainingPresetsMixin = {
     this._preApplySnapshot = null;
     this.updateToml();
     this.rebuildForm();
+    if (trainTypeChanged) {
+      if (typeof this.setupAutoValueWatchers === 'function') this.setupAutoValueWatchers();
+      if (typeof this.setupShowIfWatchers === 'function') this.setupShowIfWatchers();
+      if (typeof this.setupReadonlyWatchers === 'function') this.setupReadonlyWatchers();
+    }
+    this._captureProfileDraft(this.form.model_train_type, this.form);
+    this._persistProfileDrafts();
+    this._persistProfileFieldSources();
     this.toast(this.t('preset.undone'));
   },
 
@@ -626,13 +664,13 @@ window.trainingPresetsMixin = {
     }
     if (Object.keys(data).length === 0) return;
     // 快照
-    try { this._preApplySnapshot = JSON.parse(JSON.stringify(this.form || {})); }
-    catch (_) { this._preApplySnapshot = null; }
+    this._capturePresetApplySnapshot();
     // 选择性覆盖（不切训练类型，避免跨路由复杂度）
     const savedWatcher = this._trainTypeWatcher;
     if (savedWatcher) { savedWatcher(); this._trainTypeWatcher = null; }
     try {
       for (const k of Object.keys(data)) this.form[k] = data[k];
+      Object.keys(data).forEach(key => this._setFieldSource(key, 'preset', this.form.model_train_type));
     } finally {
       if (savedWatcher) {
         this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
@@ -648,6 +686,9 @@ window.trainingPresetsMixin = {
     this.formHistoryIdx = 0;
     this.updateToml();
     this.rebuildForm();
+    this._captureProfileDraft(this.form.model_train_type, this.form);
+    this._persistProfileDrafts();
+    this._persistProfileFieldSources();
     this.toastWithAction(
       this.t('preset.diffAppliedN').replace('{n}', Object.keys(data).length),
       this.t('preset.undo'),

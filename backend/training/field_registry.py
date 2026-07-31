@@ -53,7 +53,7 @@ from backend.training.optimizer_contracts import (
 #                None 或 "all" 表示所有类型通用。前端根据 model_train_type 过滤显示。
 #   auto_value — 自动填值规则（可选）: [{"watch": "key", "when": "val", "set": new_val}, ...]
 #                set 为 null 表示恢复默认值。
-#                set_if_default 为 true 时，仅在目标字段仍是默认值或同组推荐值时自动更新。
+#                set_if_default 为 true 时，仅在目标字段来源仍为默认值或自动推荐时更新。
 #   advanced   — 是否为进阶参数（可选，默认 false）。
 #   omit_default — 默认值省略（可选，默认 false）。仅当 registry default == sd-scripts
 #                  argparse default 时才可标记 True：前端在值==default 时不传给

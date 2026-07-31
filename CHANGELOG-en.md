@@ -9,7 +9,7 @@ All notable changes to this project are documented in this file.
 ### Anima Learning-Rate Coupling and Compatibility
 
 - Changed every `setIfDefault` rule to use explicit field provenance, preserving manual input, imports, presets, and legacy local drafts even when a value happens to equal a default.
-- Persisted provenance per training route/profile; field reset opts back into the current dependency-aware recommendation, while full reset restores the complete profile defaults.
+- Persisted provenance per training route and profile; resetting one field re-enables its current dependency-aware recommendation, while a full reset restores all profile defaults.
 - Derived Anima learning-rate placeholders directly from registry `autoValue` rules and removed the separately maintained frontend recommendation map.
 
 ### Documentation
