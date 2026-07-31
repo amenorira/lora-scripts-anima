@@ -1677,7 +1677,10 @@ window.trainingCoreMixin = {
       if (_phMap) {
         // Dynamic placeholder that updates when optimizer_type changes
         const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${_phExpr})[form.optimizer_type] || ''"${staticReadonlyAttrs}>`;
+        const _phSource = dataKey === 'learning_rate'
+          ? `(form.model_train_type === 'anima-lora' ? (window.ANIMA_OPTIMIZER_LR_DEFAULTS || {}) : (${_phExpr}))`
+          : `(${_phExpr})`;
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="${_phSource}[form.optimizer_type] || ''"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');

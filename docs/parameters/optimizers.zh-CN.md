@@ -6,6 +6,8 @@
 
 优化器会影响收敛速度、显存占用和数值稳定性，但通常不是人物还原度的首要决定因素。少图人物训练出现问题时，应先检查数据、标注、重复次数、学习率和停止时机。
 
+本文把“实现/论文事实”和“Anima 工程起点”分开：CAME、Lion、Schedule-Free 的论文或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡给出的基线是使用 **Anima-Base**、不训练 LLM Adapter、rank 32，并从 `2e-5` 附近开始轻微调整；本训练器的 Anima 默认 `rank=32, alpha=32` 与此基线配套。
+
 <!-- doc-anchor: quick-choice -->
 ## 快速选择
 
@@ -49,7 +51,7 @@
 
 **CAME** 使用因子化状态和内部 RMS 裁剪。卡面、截图、立绘的画质和构图差异较大时，它可作为 AdamW8bit 的对照方案。CAME 处理的是参数更新，不会判断图片质量；伙伴角色、文字、特效和错误标注仍需在数据处理中解决。
 
-**StableAdamW** 会限制异常大的参数更新，并支持常规学习率调度器、预热、`max_grad_norm` 和 LoRA+。本项目的建议起点是 `lr=1e-4`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`。它不是 8-bit 优化器，因此优化器状态占用通常高于 AdamW8bit。
+**StableAdamW** 会限制异常大的参数更新，并支持常规学习率调度器、预热、`max_grad_norm` 和 LoRA+。Anima 建议先沿用 AdamW 基线：`lr=2e-5`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`。SDXL 的界面起点仍为 `1e-4`。它不是 8-bit 优化器，因此优化器状态占用通常高于 AdamW8bit。
 
 如果基准训练的曲线和预览均正常，StableAdamW 的额外收益可能较小。它的主要用途是改善更新稳定性。
 
@@ -59,18 +61,29 @@
 <!-- doc-anchor: learning-rate -->
 ### 学习率（learning rate）
 
-可从以下学习率开始：
+Anima 在默认 `rank=32, alpha=32`、只训练 DiT 主干时，可从以下值开始：
 
-- AdamW / AdamW8bit / StableAdamW：`1e-4`
-- CAME：界面建议 `2e-4`；少图人物也可以先用 `1e-4` 做保守对照
-- Prodigy / ProdigyPlus：`1.0`
+| 优化器 | Anima 自动起点 | 依据与含义 |
+| --- | ---: | --- |
+| AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
+| StableAdamW | `2e-5` | 先与 AdamW 使用相同尺度，单独比较稳定化更新 |
+| CAME | `1.5e-5` | CAME 官方建议通常使用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
+| Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion 官方建议 LR 比 AdamW 小约 `3`～`10` 倍 |
+| AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
+| Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
+| AdaFactor relative step | 由优化器接管 | 关闭 relative step 后，Anima 手动模式从 `2e-5` 开始 |
+| Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
+
+SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4`、Lion 为 `2e-5`、AdamWScheduleFree 为 `3e-4`。切换模型类型或优化器时，界面只会替换尚未手动修改的推荐值；导入配置和自定义值保持原样。
+
+`network_alpha / network_dim` 会缩放 LoRA 分支。上游 `sd-scripts` 的 `1e-4` 示例对应 `alpha=1`，并明确说明提高 alpha 时应重新降低/验证 LR；因此不能把该示例直接套到本项目默认的 `rank=32, alpha=32`。
 
 人物过早出现构图僵化、串色或提示词响应下降时，可降低学习率或减少训练步数。学习不足时，应先确认触发词和有效训练步数，再小幅提高学习率。Lion 的合理学习率范围与 AdamW 不同，需要单独测试。
 
 <!-- doc-anchor: scheduler-warmup -->
 ### 学习率调度器与预热（scheduler 和 warmup）
 
-AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。已有 cosine 配置可以继续使用。少图短训练的预热不宜过长，建议从 `0` 或总步数的 `5%` 以内开始。
+AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。Anima 新配置默认使用 `constant`，与上游 Anima 示例一致，也避免 `cosine_with_restarts` 在短训练中重新抬高 LR。已有手动配置可以继续使用；要测试预热时，可改为 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
 
 AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，所以界面会把外部调度器固定为 constant。两者的内部预热不能和 `lr_warmup_steps` 混为一谈。
 
@@ -159,7 +172,7 @@ AdamW、8-bit AdamW、StableAdamW、Lion、CAME、AdamWScheduleFree 可以使用
 <!-- doc-anchor: one-image -->
 ### 只有一张立绘
 
-用 AdamW8bit，`lr=5e-5`～`1e-4`，并增加训练检查点（checkpoint）的保存频率。这个场景最大的风险是把姿势和构图一起记住。StableAdamW 只能处理更新尖峰，不能补出侧面、背面或新表情。
+Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并增加训练检查点（checkpoint）的保存频率。SDXL 可继续按其独立基线调整。这个场景最大的风险是把姿势和构图一起记住；StableAdamW 只能处理更新尖峰，不能补出侧面、背面或新表情。
 
 <!-- doc-anchor: few-shot -->
 ### 2～5 张少图人物
@@ -201,9 +214,10 @@ AdamW、8-bit AdamW、StableAdamW、Lion、CAME、AdamWScheduleFree 可以使用
 
 | 用途 | 优化器与参数 | 其他设置 |
 | --- | --- | --- |
-| 通用基准 | AdamW8bit，`lr=1e-4`，`weight_decay=0.01` | cosine，`max_grad_norm=1` |
-| 混合来源数据对照 | CAME，先试 `lr=1e-4`，再比较 `2e-4`；其余保持默认 | cosine，`max_grad_norm=1` |
-| 梯度尖峰对照 | StableAdamW，`lr=1e-4`，`betas=(0.9,0.99)`，`eps=1e-8`，`weight_decay=0` | Kahan 开启，cosine，`max_grad_norm=1` |
+| Anima 通用基准 | AdamW8bit，`lr=2e-5`，`weight_decay=0.01` | constant，`max_grad_norm=1`，rank/alpha=32，只训练 DiT |
+| Anima 混合来源对照 | CAME，`lr=1.5e-5`；其余保持默认 | constant，`max_grad_norm=1`；结果需用固定条件验证 |
+| Anima 梯度尖峰对照 | StableAdamW，`lr=2e-5`，`betas=(0.9,0.99)`，`eps=1e-8`，`weight_decay=0` | Kahan 开启，constant，`max_grad_norm=1` |
+| Anima Lion 实验 | Lion / Lion8bit，`lr=5e-6`，`betas=(0.9,0.99)` | constant；不要沿用 AdamW 的 LR |
 | 温和的 8-bit 裁剪 | AdamW8bit，沿用基准参数，`percentile_clipping=99` | 保持其他参数不变 |
 
 出现过拟合时，优先减少训练步数、重复次数（repeats）或学习率；学习不足时，先检查触发词和有效步数；曲线出现尖峰时，先定位对应批次，再考虑裁剪或 StableAdamW。
@@ -225,7 +239,7 @@ AdamW、8-bit AdamW、StableAdamW、Lion、CAME、AdamWScheduleFree 可以使用
 
 1. 固定数据集、标注（caption）、随机种子（seed）、底模、rank/alpha、批次大小和总步数。
 2. 固定预览提示词、采样参数和生成随机种子。
-3. AdamW8bit、CAME 和 StableAdamW 可先在相同 `lr=1e-4` 下直接对照，只更换优化器及其必需参数。
+3. Anima 配方对照可先使用 AdamW8bit `2e-5`、StableAdamW `2e-5`、CAME `1.5e-5`、Lion `5e-6`。这比较的是各优化器的合理起始配方；若要单独隔离算法差异，应另做相同 LR 的实验。
 4. 比较相同步数的训练检查点，同时记录梯度范数、峰值显存和训练时间。
 5. 不应仅比较损失值；还需评估人物还原、服装控制、背景或姿势绑定以及提示词响应。
 
@@ -249,12 +263,19 @@ Prodigy 等需要不同学习率尺度的优化器不能纳入上述单变量对
 
 **实现事实：** 本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 中，它的构造器默认值包括 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=True`、`kahan_sum=True`。本项目有意将 `weight_decay` 覆盖为 `0`。
 
-**论文依据：** CAME、Lion、Prodigy、Schedule-Free、LoRA+ 的论文解释了算法动机，并报告了各自任务上的结果。语言模型或分类实验不能直接用于推导 Anima 人物 LoRA 的画质排序。
+**模型与上游依据：** Anima 官方模型卡建议使用 Anima-Base、不要训练 LLM Adapter、rank 32 从 `2e-5` 左右起步。`sd-scripts` 的 Anima 文档把 `1e-4` 标为 `alpha=1` 的示例，并要求 alpha 增大后重新降低/验证 LR。
+
+**论文依据：** CAME、Lion、Prodigy、Schedule-Free、LoRA+ 的论文解释了算法动机，并报告了各自任务上的结果。CAME 的 `0.5`～`0.9` 倍和 Lion 的 `1/3`～`1/10` LR 是相对 AdamW 的官方调参建议；语言模型、分类或其他扩散实验不能直接推出 Anima 人物 LoRA 的画质排序。
 
 **需要实测的经验判断：** CAME 可能更适合来源混合的数据，StableAdamW 可能更能容忍尖峰 batch。这些属于社区与工程经验，应通过固定条件的 A/B 测试确认是否适用于当前数据集。
 
 参考资料：
 
+- [Anima 官方模型卡](https://huggingface.co/circlestone-labs/Anima)
+- [sd-scripts Anima LoRA 训练文档](https://github.com/kohya-ss/sd-scripts/blob/main/docs/anima_train_network.md)
+- [CAME 官方实现与调参说明](https://github.com/yangluo7/CAME)
+- [Lion 官方实现与调参说明](https://github.com/google/automl/tree/master/lion)
+- [Schedule-Free 官方实现与调参说明](https://github.com/facebookresearch/schedule_free)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
 - [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)

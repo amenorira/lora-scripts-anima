@@ -66,21 +66,78 @@ def auto_value_for(field: dict, optimizer_type: str) -> object:
     raise AssertionError(f"No autoValue for {field['key']} and {optimizer_type}")
 
 
+def contextual_auto_value_for(
+    field: dict, optimizer_type: str, train_type: str, **conditions: object
+) -> object:
+    expected = {
+        "optimizer_type": optimizer_type,
+        "model_train_type": train_type,
+        **conditions,
+    }
+    for rule in field.get("autoValue", []):
+        if rule.get("watch") == expected:
+            return rule["set"]
+    raise AssertionError(
+        f"No contextual autoValue for {field['key']} and {expected!r}"
+    )
+
+
 class OptimizerFieldContractTests(unittest.TestCase):
-    def test_registry_displays_constructor_defaults_and_recommendations(self):
-        from pytorch_optimizer import CAME, StableAdamW
+    def test_registry_displays_product_defaults_and_anima_recommendations(self):
+        from pytorch_optimizer import StableAdamW
 
         fields = fields_by_key()
         learning_rate = fields["learning_rate"]
         self.assertEqual(learning_rate["default"], "1e-4")
-        self.assertEqual(
-            float(auto_value_for(learning_rate, CAME_OPTIMIZER_TYPE)),
-            inspect.signature(CAME).parameters["lr"].default,
-        )
+        self.assertEqual(auto_value_for(learning_rate, CAME_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(auto_value_for(learning_rate, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE), "3e-4")
         self.assertEqual(auto_value_for(learning_rate, PRODIGY_OPTIMIZER_TYPE), "1.0")
         self.assertEqual(auto_value_for(learning_rate, AUTOMAGIC_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(auto_value_for(learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE), "1e-4")
+        self.assertEqual(
+            contextual_auto_value_for(learning_rate, "AdamW8bit", "anima-lora"),
+            "2e-5",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(learning_rate, "Lion8bit", "anima-lora"),
+            "5e-6",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(learning_rate, CAME_OPTIMIZER_TYPE, "anima-lora"),
+            "1.5e-5",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(
+                learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE, "anima-lora"
+            ),
+            "2e-5",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(
+                learning_rate, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "anima-lora"
+            ),
+            "1e-4",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(
+                learning_rate,
+                ADAFACTOR_OPTIMIZER_TYPE,
+                "anima-lora",
+                adafactor_relative_step=False,
+            ),
+            "2e-5",
+        )
+
+        scheduler = fields["lr_scheduler"]
+        self.assertEqual(scheduler["hintKey"], "field.lr_schedulerHint")
+        self.assertTrue(
+            any(
+                rule.get("watch") == "model_train_type"
+                and rule.get("when") == "anima-lora"
+                and rule.get("set") == "constant"
+                for rule in scheduler["autoValue"]
+            )
+        )
 
         weight_decay = fields["weight_decay"]
         self.assertEqual(auto_value_for(weight_decay, "AdamW8bit"), 0.01)
@@ -410,6 +467,86 @@ class OptimizerAdapterTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class OptimizerFrontendTests(unittest.TestCase):
+    def test_anima_optimizer_recommendations_preserve_explicit_values(self):
+        fields = fields_by_key()
+        rules = []
+        for key in ("learning_rate", "lr_scheduler"):
+            for rule in fields[key].get("autoValue", []):
+                rules.append({"target": key, **rule})
+
+        script = r"""
+global.window = {};
+require('./frontend/js/constants.js');
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const rules = __RULES__;
+
+function apply(modelType, optimizerType, learningRate, scheduler) {
+  const fields = {
+    learning_rate: { key: 'learning_rate', default: '1e-4' },
+    lr_scheduler: { key: 'lr_scheduler', default: 'cosine_with_restarts' },
+  };
+  const ctx = Object.assign({}, core, {
+    form: {
+      model_train_type: modelType,
+      optimizer_type: optimizerType,
+      learning_rate: learningRate,
+      lr_scheduler: scheduler,
+    },
+    formDefaults: {
+      learning_rate: '1e-4',
+      lr_scheduler: 'cosine_with_restarts',
+    },
+    _autoValueRules: rules,
+    _autoValueApplied: {},
+    findFieldDef(key) { return fields[key]; },
+  });
+  ctx._applyInitialAutoValues();
+  return {
+    learning_rate: ctx.form.learning_rate,
+    lr_scheduler: ctx.form.lr_scheduler,
+  };
+}
+
+console.log(JSON.stringify({
+  animaAdam: apply('anima-lora', 'AdamW8bit', '1e-4', 'cosine_with_restarts'),
+  animaCame: apply('anima-lora', 'pytorch_optimizer.CAME', '1e-4', 'cosine_with_restarts'),
+  animaLion: apply('anima-lora', 'Lion8bit', '1e-4', 'cosine_with_restarts'),
+  sdxlLion: apply('sdxl-lora', 'Lion8bit', '1e-4', 'cosine_with_restarts'),
+  custom: apply('anima-lora', 'pytorch_optimizer.CAME', '7e-5', 'cosine'),
+}));
+""".replace("__RULES__", json.dumps(rules))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(
+            state["animaAdam"],
+            {"learning_rate": "2e-5", "lr_scheduler": "constant"},
+        )
+        self.assertEqual(
+            state["animaCame"],
+            {"learning_rate": "1.5e-5", "lr_scheduler": "constant"},
+        )
+        self.assertEqual(
+            state["animaLion"],
+            {"learning_rate": "5e-6", "lr_scheduler": "constant"},
+        )
+        self.assertEqual(
+            state["sdxlLion"],
+            {"learning_rate": "2e-5", "lr_scheduler": "cosine_with_restarts"},
+        )
+        self.assertEqual(
+            state["custom"],
+            {"learning_rate": "7e-5", "lr_scheduler": "cosine"},
+        )
+
     def test_default_omission_auto_value_provenance_and_readonly_groups(self):
         script = r"""
 global.window = {};

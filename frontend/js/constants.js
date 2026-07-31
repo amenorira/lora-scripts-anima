@@ -54,9 +54,9 @@ window.OPTIMIZER_DEFAULTS = {
   learning_rate: {
     'AdamW': '1e-4', 'AdamW8bit': '1e-4', 'PagedAdamW8bit': '1e-4',
     'pytorch_optimizer.StableAdamW': '1e-4',
-    'Lion': '1e-4', 'Lion8bit': '1e-4', 'PagedLion8bit': '1e-4',
+    'Lion': '2e-5', 'Lion8bit': '2e-5', 'PagedLion8bit': '2e-5',
     'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0',
-    'pytorch_optimizer.CAME': '2e-4', 'AdamWScheduleFree': '0.0025',
+    'pytorch_optimizer.CAME': '1e-4', 'AdamWScheduleFree': '3e-4',
     'vendor.automagic_optimizer.integration.Automagic3': '1e-4',
   },
   automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
@@ -119,4 +119,16 @@ window.OPTIMIZER_DEFAULTS = {
   came_fixed_decay: { 'pytorch_optimizer.CAME': false },
   came_clip_threshold: { 'pytorch_optimizer.CAME': 1.0 },
   came_ams_bound: { 'pytorch_optimizer.CAME': false },
+};
+
+// Anima uses rank/alpha=32 by default and has model-specific low-LR guidance.
+// These values are conservative starting points, not hard validation limits.
+window.ANIMA_OPTIMIZER_LR_DEFAULTS = {
+  'AdamW': '2e-5', 'AdamW8bit': '2e-5', 'PagedAdamW8bit': '2e-5',
+  'pytorch_optimizer.StableAdamW': '2e-5',
+  'Lion': '5e-6', 'Lion8bit': '5e-6', 'PagedLion8bit': '5e-6',
+  'pytorch_optimizer.CAME': '1.5e-5', 'AdamWScheduleFree': '1e-4',
+  'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0',
+  'vendor.automagic_optimizer.integration.Automagic3': '1e-4',
+  'vendor.emo_optimizer.emosens.EmoSens': '0.1',
 };

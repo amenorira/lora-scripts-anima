@@ -6,6 +6,8 @@
 
 Optimizer choice affects convergence, optimizer-state memory, and numerical stability. Dataset quality, captions, repeats, learning rate, and stopping point usually have a greater effect on character fidelity, especially with very small datasets.
 
+This guide separates implementation/paper facts from Anima engineering starts. Paper results and constructor defaults for CAME, Lion, and Schedule-Free are not Anima LoRA optima. The official Anima model card recommends **Anima-Base**, leaving the LLM Adapter untrained, rank 32, and starting near `2e-5` with small adjustments. The trainer's Anima defaults of `rank=32, alpha=32` are paired with that baseline.
+
 <!-- doc-anchor: quick-choice -->
 ## Quick selection
 
@@ -49,7 +51,7 @@ The memory descriptions refer only to optimizer state. Actual peak VRAM also dep
 
 **CAME uses factored state and internal RMS clipping.** It may be compared with AdamW8bit for datasets that mix sprites, cards, and captures with different update characteristics. CAME operates on parameter updates; it does not identify image quality, the target character, or unwanted effects.
 
-**StableAdamW is designed to limit unusually large updates.** It supports the standard scheduler, warmup, `max_grad_norm`, and LoRA+. The recommended starting point is `lr=1e-4`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`. It is not an 8-bit optimizer, so its state memory is generally higher than AdamW8bit.
+**StableAdamW is designed to limit unusually large updates.** It supports the standard scheduler, warmup, `max_grad_norm`, and LoRA+. For Anima, begin at the AdamW scale: `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`. The SDXL UI start remains `1e-4`. StableAdamW is not an 8-bit optimizer, so its state memory is generally higher than AdamW8bit.
 
 If baseline curves and previews are already stable, the additional benefit of StableAdamW may be limited. Its primary purpose is update stability.
 
@@ -59,18 +61,29 @@ If baseline curves and previews are already stable, the additional benefit of St
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-Recommended starting points:
+With Anima's default `rank=32, alpha=32` and backbone-only training, start here:
 
-- AdamW, AdamW8bit, StableAdamW: `1e-4`
-- CAME: the UI suggests `2e-4`; `1e-4` is a useful conservative comparison for tiny datasets
-- Prodigy and ProdigyPlus: `1.0`
+| Optimizer | Anima automatic start | Basis and meaning |
+| --- | ---: | --- |
+| AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Official Anima rank-32 baseline; 8-bit state and paging do not change LR semantics |
+| StableAdamW | `2e-5` | Keeps the AdamW scale so update stabilization can be compared separately |
+| CAME | `1.5e-5` | CAME's official tuning guidance is about `0.5` to `0.9` times AdamW; this is a transfer starting point, not an Anima optimum |
+| Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's official guidance uses an LR roughly `3` to `10` times smaller than AdamW |
+| AdamWScheduleFree | `1e-4` | Official guidance often uses `1` to `10` times the base optimizer LR; Anima evidence is limited, so treat this as experimental |
+| Prodigy / ProdigyPlus | `1.0` | D-adaptation scaling baseline, not directly comparable with `2e-5` |
+| AdaFactor relative step | Optimizer-owned | With relative step disabled, Anima manual mode starts at `2e-5` |
+| Automagic3 / EmoSens | `1e-4` / `0.1` | Baselines for internally dynamic LR, not ordinary fixed rates |
+
+SDXL keeps separate general starts: `1e-4` for AdamW/StableAdamW, `1e-4` for CAME, `2e-5` for Lion, and `3e-4` for AdamWScheduleFree. Switching model type or optimizer replaces only an untouched recommended value; imported and manually edited values are preserved.
+
+`network_alpha / network_dim` scales the LoRA branch. The upstream sd-scripts `1e-4` example is explicitly for `alpha=1` and tells users to lower or revalidate LR when alpha increases. It should not be copied directly to this trainer's default `rank=32, alpha=32`.
 
 Lower the LR when composition becomes rigid too early, colors bleed, or prompt response declines. When learning is insufficient, verify triggers and effective step count before increasing it. Lion requires a separate LR search because its useful range differs from AdamW.
 
 <!-- doc-anchor: scheduler-warmup -->
 ### Scheduler and warmup
 
-AdamW, AdamW8bit, StableAdamW, Lion, and CAME use the external sd-scripts scheduler. Existing cosine recipes still apply. Few-shot runs are short, so begin with no warmup or no more than roughly 5% of total steps.
+AdamW, AdamW8bit, StableAdamW, Lion, and CAME use the external sd-scripts scheduler. New Anima configurations use `constant`, matching the upstream Anima example and avoiding a late LR increase from `cosine_with_restarts` in a short run. Manual schedules remain valid. For a warmup experiment, use `constant_with_warmup` and begin at no more than about 5% of optimizer steps.
 
 AdamWScheduleFree and ProdigyPlusScheduleFree own their schedules. The trainer locks the external scheduler to constant for them. Their internal warmup is not the same setting as `lr_warmup_steps`.
 
@@ -159,7 +172,7 @@ Re-test the LoRA+ ratio after changing optimizer or base LR. The ratio changes t
 <!-- doc-anchor: one-image -->
 ### One sprite or character image
 
-Use AdamW8bit around `5e-5` to `1e-4`, with frequent checkpoints. The main risks are memorized pose and framing. StableAdamW may reduce update spikes, but it cannot supply missing side views, back views, or expressions.
+For Anima, use AdamW8bit around `1e-5` to `2e-5`, with frequent checkpoints. SDXL retains its separate baseline. The main risks are memorized pose and framing. StableAdamW may reduce update spikes, but it cannot supply missing side views, back views, or expressions.
 
 <!-- doc-anchor: few-shot -->
 ### Two to five character images
@@ -201,9 +214,10 @@ Use AdamW8bit or Lion8bit first. A Paged version is appropriate only when memory
 
 | Purpose | Optimizer settings | Rest of the run |
 | --- | --- | --- |
-| General baseline | AdamW8bit, `lr=1e-4`, `weight_decay=0.01` | cosine, `max_grad_norm=1` |
-| Mixed-source comparison | CAME at `lr=1e-4`, then compare the UI default `2e-4`; leave its other settings alone | cosine, `max_grad_norm=1` |
-| Spike-handling comparison | StableAdamW, `lr=1e-4`, `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0` | Kahan on, cosine, `max_grad_norm=1` |
+| Anima general baseline | AdamW8bit, `lr=2e-5`, `weight_decay=0.01` | constant, `max_grad_norm=1`, rank/alpha=32, DiT only |
+| Anima mixed-source comparison | CAME, `lr=1.5e-5`; keep its other defaults | constant, `max_grad_norm=1`; verify under fixed conditions |
+| Anima spike-handling comparison | StableAdamW, `lr=2e-5`, `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0` | Kahan on, constant, `max_grad_norm=1` |
+| Anima Lion experiment | Lion or Lion8bit, `lr=5e-6`, `betas=(0.9,0.99)` | constant; do not reuse AdamW's LR |
 | Mild 8-bit clipping test | Keep the AdamW8bit baseline and add `percentile_clipping=99` | Keep all other settings unchanged |
 
 For overfitting, first reduce steps, repeats, or LR. For underfitting, verify triggers and effective steps. For update spikes, identify the corresponding batch before adding more clipping.
@@ -225,7 +239,7 @@ For overfitting, first reduce steps, repeats, or LR. For underfitting, verify tr
 
 1. Fix the dataset, captions, seed, base model, rank/alpha, batch size, and total steps.
 2. Fix preview prompts, sampler settings, and generation seeds.
-3. AdamW8bit, CAME, and StableAdamW can first be compared at the same `lr=1e-4`, changing only the optimizer and its required arguments.
+3. A practical Anima recipe comparison can begin with AdamW8bit `2e-5`, StableAdamW `2e-5`, CAME `1.5e-5`, and Lion `5e-6`. This compares reasonable optimizer recipes; run a separate equal-LR experiment if the goal is to isolate the update rule itself.
 4. Compare checkpoints at matching steps. Record gradient norm, peak VRAM, and training time as well as previews.
 5. Include identity, outfit control, pose/background leakage, and prompt response in addition to loss.
 
@@ -249,12 +263,19 @@ Changing the optimizer, LR, rank, and run length together prevents attribution. 
 
 **Implementation facts:** The trainer loads `pytorch_optimizer.StableAdamW` through sd-scripts' full-class-path mechanism. In the installed `pytorch-optimizer 3.10.0`, constructor defaults include `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0.01`, `weight_decouple=True`, and `kahan_sum=True`. This trainer deliberately overrides weight decay to `0`.
 
-**Published evidence:** The CAME, Lion, Prodigy, Schedule-Free, and LoRA+ papers explain the algorithms and report results on their respective tasks. Language-model and classification results do not establish an image-quality ranking for Anima character LoRA training.
+**Model and upstream evidence:** The official Anima model card recommends Anima-Base, no LLM Adapter training, rank 32, and a starting LR near `2e-5`. The sd-scripts Anima guide labels `1e-4` as an `alpha=1` example and asks users to lower or revalidate LR when alpha increases.
+
+**Published evidence:** The CAME, Lion, Prodigy, Schedule-Free, and LoRA+ papers explain the algorithms and report results on their respective tasks. CAME's `0.5` to `0.9` multiplier and Lion's `1/3` to `1/10` LR are official relative-to-AdamW tuning guidance. Language-model, classification, and other diffusion results do not establish an image-quality ranking for Anima character LoRA training.
 
 **Experience requiring local validation:** CAME may be suitable for mixed-source image sets, and StableAdamW may tolerate spiky batches more effectively. These are community and engineering observations that should be verified with a fixed-condition comparison on the target dataset.
 
 References:
 
+- [Official Anima model card](https://huggingface.co/circlestone-labs/Anima)
+- [sd-scripts Anima LoRA training guide](https://github.com/kohya-ss/sd-scripts/blob/main/docs/anima_train_network.md)
+- [CAME official implementation and tuning notes](https://github.com/yangluo7/CAME)
+- [Lion official implementation and tuning notes](https://github.com/google/automl/tree/master/lion)
+- [Schedule-Free official implementation and tuning notes](https://github.com/facebookresearch/schedule_free)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
 - [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
