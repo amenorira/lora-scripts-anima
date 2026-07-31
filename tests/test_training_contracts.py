@@ -124,6 +124,28 @@ class TrainingValidationTests(unittest.TestCase):
         self.assertEqual(adapted["caption_tag_dropout_rate"], 0.1)
         self.assertFalse(any("cleared by backend" in warning for warning in warnings))
 
+    def test_keep_tokens_is_emitted_only_when_caption_tag_randomization_is_active(self):
+        cases = (
+            (False, 0, False),
+            (True, 0, True),
+            (False, 0.1, True),
+            (True, 0.1, True),
+        )
+        for shuffle, dropout, expected_keep_tokens in cases:
+            with self.subTest(shuffle=shuffle, dropout=dropout):
+                adapted, _ = adapt_config(
+                    {
+                        "model_train_type": "anima-lora",
+                        "shuffle_caption": shuffle,
+                        "caption_tag_dropout_rate": dropout,
+                        "keep_tokens": 3,
+                    }
+                )
+                self.assertEqual("keep_tokens" in adapted, expected_keep_tokens)
+                self.assertEqual("caption_tag_dropout_rate" in adapted, dropout > 0)
+                if expected_keep_tokens:
+                    self.assertEqual(adapted["keep_tokens"], 3)
+
     def test_dylora_block_size_must_be_a_positive_integer_divisor(self):
         base = valid_anima_config()
         base.update(network_module="lycoris.kohya", lycoris_algo="dylora", network_dim=30)
@@ -163,6 +185,11 @@ class TrainingFieldSchemaTests(unittest.TestCase):
             for key in ("desc_key", "hint_key", "readonly_reason_key", "reason_key", "dk", "label_key")
             if isinstance(item.get(key), str) and item[key]
         }
+        reference_keys.update(
+            hint_key
+            for field in get_all_fields()
+            for hint_key in (field.get("hint_key_by") or {}).get("values", {}).values()
+        )
         for locale in ("zh-CN", "en-US"):
             messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
             for key in reference_keys:
@@ -218,6 +245,18 @@ class TrainingFieldSchemaTests(unittest.TestCase):
             field for field in get_all_fields() if field["key"] == "caption_tag_dropout_rate"
         )
         self.assertEqual(caption_tag_dropout.get("hint_key"), "field.caption_tag_dropout_rateHint")
+
+        keep_tokens = next(field for field in get_all_fields() if field["key"] == "keep_tokens")
+        self.assertEqual(
+            keep_tokens["show_if_any"],
+            [
+                [{"key": "shuffle_caption", "eq": True}],
+                [{"key": "caption_tag_dropout_rate", "neq": 0}],
+            ],
+        )
+        self.assertTrue(keep_tokens["omit_default"])
+        self.assertEqual(caption_tag_dropout["default"], 0)
+        self.assertTrue(caption_tag_dropout["omit_default"])
 
     def test_field_conditions_reference_registered_keys(self):
         fields = get_all_fields()
@@ -534,6 +573,19 @@ const blocked = context('sdxl-lora', {
   caption_dropout_rate: 0.1, caption_tag_dropout_rate: 0, shuffle_caption: false,
 });
 blocked.setField('cache_text_encoder_outputs', true);
+const latentDisk = context('anima-lora', {
+  cache_latents: false, cache_latents_to_disk: false,
+});
+latentDisk.setField('cache_latents_to_disk', true);
+const latentAfterEnable = {
+  memory: latentDisk.form.cache_latents,
+  disk: latentDisk.form.cache_latents_to_disk,
+};
+latentDisk.setField('cache_latents_to_disk', false);
+const latentAfterDisable = {
+  memory: latentDisk.form.cache_latents,
+  disk: latentDisk.form.cache_latents_to_disk,
+};
 
 console.log(JSON.stringify({
   sdxlRule: sdxl._numberConstraints(bucketField),
@@ -545,6 +597,8 @@ console.log(JSON.stringify({
   animaCache: animaCaption.form.cache_text_encoder_outputs,
   blockedCache: blocked.form.cache_text_encoder_outputs,
   blockedToasts: blocked.toasts.length,
+  latentAfterEnable,
+  latentAfterDisable,
 }));
 """
         result = subprocess.run(
@@ -566,6 +620,8 @@ console.log(JSON.stringify({
         self.assertTrue(payload["animaCache"])
         self.assertFalse(payload["blockedCache"])
         self.assertEqual(payload["blockedToasts"], 1)
+        self.assertEqual(payload["latentAfterEnable"], {"memory": True, "disk": True})
+        self.assertEqual(payload["latentAfterDisable"], {"memory": True, "disk": False})
 
 if __name__ == "__main__":
     unittest.main()

@@ -650,6 +650,11 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
             "[Conflict] fused_backward_pass removed: unsupported by the SDXL/Anima "
             "network trainers / 当前训练器不支持，已移除"
         )
+    if (
+        optimizer_type == CAME_OPTIMIZER_TYPE
+        and config.get("came_weight_decouple") is False
+    ):
+        config.pop("came_fixed_decay", None)
     _merge_form_arguments(config)
     args, _ = parse_optimizer_args(config)
 

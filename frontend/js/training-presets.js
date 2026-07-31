@@ -333,8 +333,13 @@ window.trainingPresetsMixin = {
 
   // 字段 hint
   presetFieldHint(e) {
-    if (!e || !e.def || !e.def.hintKey) return '';
-    return this.t(e.def.hintKey) || '';
+    if (!e || !e.def) return '';
+    const values = {};
+    (this.presetEditor.entries || []).forEach(entry => {
+      values[entry.key] = entry.value;
+    });
+    const trainType = this.presetEditor.meta.train_type || 'anima-lora';
+    return this._resolveFieldHintText(e.def, values, trainType);
   },
 
   // textarea / 文件路径字段用全宽布局（info 在上、控件在下），与训练表 isFullWidth 一致

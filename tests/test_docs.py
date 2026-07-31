@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -64,7 +65,7 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 
-    def test_optimizer_documents_keep_fact_checked_scheduler_and_recipe_boundaries(self):
+    def test_optimizer_documents_keep_fact_checked_mechanisms_and_hard_relationships(self):
         root = Path(__file__).resolve().parents[1]
         zh = (root / "docs" / "parameters" / "optimizers.zh-CN.md").read_text(encoding="utf-8")
         en = (root / "docs" / "parameters" / "optimizers.en-US.md").read_text(encoding="utf-8")
@@ -74,16 +75,76 @@ class DocumentationTests(unittest.TestCase):
             self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
             self.assertIn("70785b53e778d0e872c0bbb75ff4ee54ee10c291", text)
             self.assertNotIn("blob/main/docs/anima_train_network.md", text)
-        self.assertNotIn("避免 `cosine_with_restarts` 在短训练中重新抬高 LR", zh)
-        self.assertNotIn("avoiding a late LR increase from `cosine_with_restarts`", en)
-        self.assertIn("默认 `num_cycles=1` 时不会在训练中途重启", zh)
-        self.assertIn("default `num_cycles=1`", en)
-        self.assertIn("`alpha=32` 是项目选择", zh)
-        self.assertIn("`alpha=32` is a project choice", en)
-        self.assertIn("不是完整的 Lion 官方 recipe", zh)
-        self.assertIn("not the complete official Lion recipe", en)
-        self.assertIn("暂时保持内部 `warmup_steps=0`", zh)
-        self.assertIn("keeps internal `warmup_steps=0`", en)
+        self.assertIn("外部 scheduler 不参与训练", zh)
+        self.assertIn("external scheduler does not participate", en)
+        self.assertIn("`β1`", zh)
+        self.assertIn("`β2`", zh)
+        self.assertIn("`β3`", zh)
+        self.assertIn("`β1`", en)
+        self.assertIn("`β2`", en)
+        self.assertIn("`β3`", en)
+        self.assertIn("`came_fixed_decay`", zh)
+        self.assertIn("`came_fixed_decay`", en)
+
+    def test_parameter_docs_and_field_option_text_use_objective_language(self):
+        root = Path(__file__).resolve().parents[1]
+        chinese_terms = (
+            "推荐",
+            "建议",
+            "优先",
+            "适合",
+            "尝试",
+            "保持默认",
+            "起点",
+            "常用",
+            "通常",
+            "谨慎",
+            "最好",
+            "应当",
+            "应该",
+            "不应",
+            "保守",
+            "先开启",
+            "请设置",
+            "不要修改",
+            "应先",
+        )
+        english_doc_pattern = re.compile(
+            r"\b(?:recommended|recommendation|recommend|should|try|suitable|usually|"
+            r"generally|commonly|normally|preferable)\b"
+            r"|starting point",
+            re.IGNORECASE,
+        )
+        english_field_pattern = re.compile(
+            r"\b(?:recommended|recommendation|recommend|should|try|suitable|usually|"
+            r"generally|common|commonly|normally|preferable|conservative)\b"
+            r"|starting point",
+            re.IGNORECASE,
+        )
+
+        for path in sorted((root / "docs" / "parameters").glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertFalse(
+                    any(term in text for term in chinese_terms),
+                    f"subjective or command-like wording remains in {path.name}",
+                )
+                self.assertIsNone(
+                    english_doc_pattern.search(text),
+                    f"subjective or command-like wording remains in {path.name}",
+                )
+
+        for locale in ("zh-CN", "en-US"):
+            messages = json.loads(
+                (root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            for section in ("field", "opt"):
+                for key, value in messages[section].items():
+                    if not isinstance(value, str):
+                        continue
+                    with self.subTest(locale=locale, key=f"{section}.{key}"):
+                        self.assertFalse(any(term in value for term in chinese_terms))
+                        self.assertIsNone(english_field_pattern.search(value))
 
     def test_optimizer_fields_link_to_guide_sections(self):
         expected = {

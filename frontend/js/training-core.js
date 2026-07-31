@@ -1743,6 +1743,49 @@ window.trainingCoreMixin = {
     return map;
   },
 
+  _fieldDefinition(fieldKey, trainType = this.form.model_train_type || 'anima-lora') {
+    const sections = window.getVisibleSections
+      ? window.getVisibleSections(trainType)
+      : (window.TRAIN_SECTIONS || []);
+    for (const section of sections) {
+      const field = (section.fields || []).find(item => item.key === fieldKey);
+      if (field) return field;
+    }
+    return null;
+  },
+
+  _resolveFieldHintKey(field, values, trainType) {
+    if (!field) return '';
+    const hintBy = field.hintKeyBy;
+    if (hintBy && hintBy.key && hintBy.values) {
+      const selected = values ? values[hintBy.key] : undefined;
+      const dynamicKey = hintBy.values[String(selected)];
+      if (dynamicKey) return dynamicKey;
+    }
+    if (!field.hintKey) return '';
+    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    if (suffix) {
+      const specificKey = field.hintKey + suffix;
+      const specific = this.t(specificKey);
+      if (specific && specific !== specificKey) return specificKey;
+    }
+    return field.hintKey;
+  },
+
+  _resolveFieldHintText(field, values, trainType) {
+    const key = this._resolveFieldHintKey(field, values, trainType);
+    return key ? (this.t(key) || '') : '';
+  },
+
+  fieldHintText(fieldKey) {
+    const trainType = this.form.model_train_type || 'anima-lora';
+    return this._resolveFieldHintText(
+      this._fieldDefinition(fieldKey, trainType),
+      this.form,
+      trainType
+    );
+  },
+
 
   renderField(field) {
     const val = this.form[field.key];
@@ -1755,10 +1798,7 @@ window.trainingCoreMixin = {
     const specificLabel = this.t(descKeyWithSuffix);
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
-    const hintKeyWithSuffix = field.hintKey ? field.hintKey + trainTypeSuffix : '';
-    const specificHint = hintKeyWithSuffix ? this.t(hintKeyWithSuffix) : '';
-    const hasSpecificHint = specificHint && specificHint !== hintKeyWithSuffix;
-    const hint = field.hintKey ? (hasSpecificHint ? specificHint : this.t(field.hintKey)) : '';
+    const hint = this._resolveFieldHintText(field, this.form, trainType);
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide', 'Open guide'))}</span></button>`
       : '';
@@ -2004,7 +2044,9 @@ window.trainingCoreMixin = {
           <span class="field-diff-type-added" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span>
         </template>
       </div>
-      ${hint ? `<div class="field-hint">${hint}</div>` : ''}
+      ${field.hintKeyBy
+        ? `<div class="field-hint" x-text="fieldHintText('${this.escapeAttr(dataKey)}')"></div>`
+        : (hint ? `<div class="field-hint">${hint}</div>` : '')}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
@@ -3071,6 +3113,10 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (key === 'cache_latents_to_disk' && oldVal !== true && value === true) {
+      this.form.cache_latents = true;
+      this._setFieldSource('cache_latents', 'auto');
+    }
     if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);
     if (key === 'train_data_dir') this._syncKrea2CacheDir();
     if (key === 'optimizer_type' || key === 'gradient_accumulation_steps' ||

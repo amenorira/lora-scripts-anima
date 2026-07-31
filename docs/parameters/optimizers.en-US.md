@@ -1,59 +1,54 @@
-# Optimizer Selection and Parameter Guide
+# Optimizer Mechanisms and Parameter Reference
 
-> For most Anima and SDXL LoRA training, **AdamW8bit** is the recommended baseline. If baseline training is stable, changing the optimizer is usually unnecessary.
->
-> **CAME** may be compared when the dataset contains sources of substantially different quality. **StableAdamW** may be compared when the logs show reproducible gradient spikes or when trainable LoRA parameters use FP16/BF16.
+An optimizer converts gradients into parameter updates. Implementations differ in state statistics, state-storage precision, step-size source, clipping location, and scheduler ownership. They do not read image semantics and cannot identify a target character, incorrect captions, or missing viewpoints.
 
-Optimizer choice affects convergence, optimizer-state memory, and numerical stability. Dataset quality, captions, repeats, learning rate, and stopping point usually have a greater effect on character fidelity, especially with very small datasets.
-
-This guide separates implementation and paper facts from Anima engineering starts. Paper results and constructor defaults for CAME, Lion, and Schedule-Free are not Anima LoRA optima. The official Anima model card recommends **Anima-Base**, no LLM Adapter training, rank 32, and an initial LR near `2e-5` with small adjustments. This trainer uses `rank=32, alpha=32` as a project starting point; `alpha=32` is a project choice that still requires local validation.
+This guide describes the current implementation and parameter relationships. Learning-rate, `betas`, `weight_decay`, and scheduler values that change when the optimizer changes are configuration behavior, not an algorithm ranking or a training-result judgment.
 
 <!-- doc-anchor: quick-choice -->
-## Quick selection
+## Mechanism quick reference
 
-| Training condition | Suggested baseline | Rationale |
+| Mechanism | Implementations | Observable effect |
 | --- | --- | --- |
-| First run, with no known stability issue | AdamW8bit | Established parameter behavior, low state memory, and easy comparison with common configurations |
-| Sprites, card art, captures, and effects in one set | AdamW8bit baseline, followed by a CAME comparison | CAME's internal clipping may improve update stability but does not assess image quality |
-| Reproducible loss or gradient spikes | Check the data and LR first, then compare StableAdamW | StableAdamW addresses update stability but does not guarantee higher image quality |
-| Trainable LoRA weights stored in FP16/BF16 | StableAdamW | Kahan summation is primarily relevant to low-precision parameter updates |
-| Optimizer-state memory is the main constraint | AdamW8bit; use PagedAdamW8bit only if paging is needed | Paged variants address memory pressure; CPU/GPU transfers may reduce training speed when paging occurs |
-| Reduced absolute learning-rate tuning | Prodigy | The trainer requires a base LR of `1.0` |
-
-For few-shot character training, comparisons may focus on **AdamW8bit, CAME, and StableAdamW**. Only one major variable should be changed at a time; otherwise, differences cannot be attributed to the optimizer.
+| First- and second-order state | AdamW, StableAdamW, Prodigy | Gradient history and squared-gradient history both affect update scale |
+| Sign-direction update | Lion family | The update direction is the sign of a momentum/current-gradient mixture |
+| Factored state | AdaFactor, CAME | Squared-gradient statistics for 2-D parameters use row and column factors |
+| Low-bit state storage | AdamW8bit, Lion8bit | Quantizable optimizer state is stored in 8-bit form |
+| Paged state | PagedAdamW8bit, PagedLion8bit | State pages transfer between CPU and GPU when paging is active |
+| Internal scheduling | AdamWScheduleFree, ProdigyPlusScheduleFree | Parameter averaging and scheduling occur inside the optimizer |
+| Project experimental state | Automagic3, EmoSens | Gradient-sign history or loss history changes the global update scale |
 
 <!-- doc-anchor: optimizer-type -->
-## Available optimizers
+## Current optimizers
 
-| Optimizer | Primary use | Limitations and notes |
+| Group | Optimizer | Update mechanism |
 | --- | --- | --- |
-| AdamW | A full-precision AdamW reference | Higher optimizer-state memory than the 8-bit version |
-| AdamW8bit | The general default | Small tensors remain in FP32 state by default; that is intentional |
-| PagedAdamW8bit | When ordinary 8-bit state still does not fit | Paging does not add a quality objective and may reduce speed when CPU/GPU transfers occur |
-| StableAdamW | Spiky updates or low-precision trainable weights | State memory is usually higher than AdamW8bit; it does not prevent overfitting |
-| Lion | Comparison with sign-based momentum | Requires an independent learning-rate search |
-| Lion8bit | Lion with smaller optimizer state | Requires an independent learning-rate adjustment |
-| PagedLion8bit | Lion8bit when paging is also needed | Same optimization method; paging may reduce training speed |
-| Prodigy | Optimizer-estimated update scale | Base LR must be `1.0`; LoRA+ is not supported here |
-| ProdigyPlusScheduleFree | Comparison of its internal schedule and combined features | External scheduler/warmup are disabled; benefits in short runs are uncertain |
-| Automagic3 | Project-specific experimental adaptive optimizer | Recommended only when a clear baseline is available |
-| AdaFactor | Reducing optimizer-state memory | Relative-step mode owns the LR and restricts LoRA+ |
-| CAME | Comparison on batches with uneven update scales | Uses three betas and internal RMS clipping |
-| AdamWScheduleFree | AdamW without an external schedule | Supports internal warmup, but this project sets `warmup_steps=0` by default and does not treat it as a primary short-run choice |
-| EmoSens | Project-specific emotion-driven optimizer | Gradient accumulation must be 1; LoRA+ is unsupported |
+| AdamW and state-storage variants | AdamW | Exponential moving averages of gradients and squared gradients, adaptive scaling, decoupled weight decay |
+| AdamW and state-storage variants | AdamW8bit | AdamW updates with quantizable state stored in 8-bit form |
+| AdamW and state-storage variants | PagedAdamW8bit | 8-bit AdamW state with state paging |
+| AdamW and state-storage variants | `pytorch_optimizer.StableAdamW` | AdamW-style state, update RMS clipping, and Kahan summation |
+| Sign updates | Lion | Sign-direction updates and one momentum state |
+| Sign updates | Lion8bit | Lion updates with quantizable momentum state stored in 8-bit form |
+| Sign updates | PagedLion8bit | 8-bit Lion state with state paging |
+| Factorized states | AdaFactor | Factorized squared-gradient statistics and optional relative step |
+| Factorized states | CAME | Factorized state, residual-confidence estimation, and internal RMS clipping |
+| Step-size estimation and internal scheduling | Prodigy | D-adaptation step-size estimation |
+| Step-size estimation and internal scheduling | ProdigyPlusScheduleFree | D-adaptation and a Schedule-Free parameter sequence |
+| Step-size estimation and internal scheduling | AdamWScheduleFree | AdamW-style state and a Schedule-Free parameter sequence |
+| Project experimental implementations | Automagic3 | Gradient-sign history, parameter-group learning-rate adaptation, and internal clipping |
+| Project experimental implementations | EmoSens | Loss moving average, global learning-rate multiplier, and stop signal |
 
-The memory descriptions refer only to optimizer state. Actual peak VRAM also depends on resolution, rank, batch size, caching, and preview generation.
+The 8-bit and paged descriptions refer to optimizer state. Peak training VRAM also includes model weights, activations, gradients, caches, and sampling.
 
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit, CAME, and StableAdamW
 
-**AdamW8bit is the baseline.** It has relatively low state memory, extensive practical use, and straightforward troubleshooting. It is generally preferred when no specific stability or memory issue is present.
+| Implementation | State and update | Additional behavior |
+| --- | --- | --- |
+| AdamW8bit | First- and second-order AdamW state; quantizable state stored in 8-bit form | bitsandbytes applies `percentile_clipping` to recent gradient norms |
+| CAME | Factored second-order state, first-order normalized-update state, residual-square confidence state | Confidence scaling and internal update RMS clipping |
+| StableAdamW | Full AdamW-style first- and second-order state | Update RMS clipping; Kahan summation compensates low-precision parameter accumulation |
 
-**CAME uses factored state and internal RMS clipping.** It may be compared with AdamW8bit for datasets that mix sprites, cards, and captures with different update characteristics. CAME operates on parameter updates; it does not identify image quality, the target character, or unwanted effects.
-
-**StableAdamW is designed to limit unusually large updates.** It supports the standard scheduler, warmup, `max_grad_norm`, and LoRA+. For Anima, this project starts at the AdamW scale: `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`. The SDXL UI start remains `1e-4`. StableAdamW is not an 8-bit optimizer, so its state memory is generally higher than AdamW8bit.
-
-If baseline curves and previews are already stable, the additional benefit of StableAdamW may be limited. Its primary purpose is update stability.
+All three process numerical updates only. Image quality, identity, outfit tags, and repeated composition are not classified by the optimizer.
 
 <!-- doc-anchor: parameters -->
 ## Parameter reference
@@ -61,230 +56,204 @@ If baseline curves and previews are already stable, the additional benefit of St
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-For Anima backbone-only training, use the following project starts. Official Anima evidence covers rank 32 and approximately `2e-5`; the other optimizer values and `alpha=32` are transfers or project choices:
+Learning rate controls the overall scale of each update. AdamW, Lion, CAME, and StableAdamW consume it as an external step size. AdaFactor with `relative_step=true` derives a step from training progress. Prodigy-family optimizers combine the input learning rate with a D-adaptation scale. Automagic3 and EmoSens add internally generated dynamic multipliers.
 
-| Optimizer | Anima automatic start | Basis and meaning |
-| --- | ---: | --- |
-| AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Official Anima rank-32 baseline; 8-bit state and paging do not change LR semantics |
-| StableAdamW | `2e-5` | Keeps the AdamW scale so update stabilization can be compared separately |
-| CAME | `1.5e-5` | CAME's official tuning guidance is about `0.5` to `0.9` times the AdamW learning rate; this is a transfer starting point, not an Anima optimum |
-| Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's official guidance uses an LR roughly `3` to `10` times smaller than AdamW |
-| AdamWScheduleFree | `1e-4` | Official guidance often uses `1` to `10` times the base optimizer LR; Anima evidence is limited, so treat this as experimental |
-| Prodigy / ProdigyPlus | `1.0` | D-adaptation scaling baseline, not directly comparable with `2e-5` |
-| AdaFactor relative step | Optimizer-owned | With relative step disabled, Anima manual mode starts at `2e-5` |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | Baselines for internally dynamic LR, not ordinary fixed rates |
+The project currently applies these automatic values. They are written only when the existing linkage conditions match; manual and imported values continue to follow the existing source rules:
 
-Lion's `5e-6` transfers only the official recommendation to use an LR about 3 to 10 times smaller than AdamW. This project does not also copy the corresponding upstream weight-decay increase, so it is not the complete official Lion recipe.
+| Training configuration | Selection | Automatic learning rate |
+| --- | --- | ---: |
+| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` |
+| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` |
+| Anima | CAME | `1.5e-5` |
+| Anima | AdamWScheduleFree | `1e-4` |
+| Anima | AdaFactor with `relative_step=false` | `2e-5` |
+| Anima | EmoSens | `0.1` |
+| General sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` |
+| General sd-scripts | Automagic3 | `1e-4` |
+| SDXL | CAME / StableAdamW | `1e-4` |
+| SDXL | Lion family | `2e-5` |
+| SDXL | AdamWScheduleFree | `3e-4` |
 
-SDXL keeps separate general starts: `1e-4` for AdamW/StableAdamW, `1e-4` for CAME, `2e-5` for Lion, and `3e-4` for AdamWScheduleFree. Switching model type or optimizer replaces only an untouched recommended value; imported and manually edited values are preserved.
-
-`network_alpha / network_dim` scales the LoRA branch. The upstream sd-scripts `1e-4` example is explicitly for `alpha=1` and tells users to lower or revalidate LR when alpha increases. It should not be copied directly to this trainer's default `rank=32, alpha=32`.
-
-Lower the LR when composition becomes rigid too early, colors bleed, or prompt response declines. When learning is insufficient, verify triggers and effective step count before increasing it. Lion requires a separate LR search because its useful range differs from AdamW.
+`network_alpha / network_dim` scales the LoRA branch, so the same optimizer learning rate does not represent the same LoRA-branch scale for every alpha/dim combination.
 
 <!-- doc-anchor: scheduler-warmup -->
-### Scheduler and warmup
+### External scheduler and warmup
 
-AdamW, AdamW8bit, StableAdamW, Lion, and CAME use the external sd-scripts scheduler. New Anima configurations use `constant` to match the upstream Anima example and reduce extra scheduling variables in short runs. With the default `num_cycles=1`, `cosine_with_restarts` does not restart mid-run; restarts occur only when cycles is greater than 1. Manual schedules remain valid. For a warmup experiment, use `constant_with_warmup` and begin at no more than about 5% of optimizer steps.
+AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and manual-step AdaFactor use the external scheduler. `lr_warmup_steps` belongs to that scheduler. `cosine_with_restarts` produces multiple in-run cycles only when `num_cycles` is greater than 1; `num_cycles=1` has no mid-run restart.
 
-AdamWScheduleFree and ProdigyPlusScheduleFree own their schedules. The trainer locks the external scheduler to constant for them. Their internal warmup is not the same setting as `lr_warmup_steps`.
+AdamWScheduleFree and ProdigyPlusScheduleFree manage parameter averaging and scheduling inside the optimizer. The external scheduler is fixed to `constant`; the external scheduler does not participate in training, and external `lr_warmup_steps` does not participate either. AdaFactor with `relative_step=true` also derives its step internally, so the external scheduler does not participate in training.
 
 <!-- doc-anchor: betas -->
-### Betas
+### Exponential moving-average decay coefficients (betas)
 
-Retain the defaults unless a controlled test provides a reason to change them:
+Larger values retain a larger proportion of historical state and give the current observation a smaller share of this state update.
 
-- AdamW family: commonly `0.9, 0.999`
-- StableAdamW and Lion: commonly `0.9, 0.99`
-- CAME: three beta values
+| Optimizer mechanism | Count | Meaning |
+| --- | ---: | --- |
+| AdamW, 8-bit/Paged AdamW, StableAdamW, EmoSens | 2 | `β1` controls the gradient moving average; `β2` controls the squared-gradient moving average |
+| Lion family | 2 | `β1` controls the historical-momentum/current-gradient mix used for the current sign direction; `β2` controls the momentum state stored for later steps |
+| CAME | 3 | `β1` controls the first-order normalized-update state; `β2` controls squared-gradient statistics; `β3` controls residual-square statistics between the normalized update and first-order state for confidence scaling |
+| Prodigy | 2 | `β1` and `β2` control first- and second-order states; D-adaptation's additional decay is separate from this input |
+| AdamWScheduleFree, ProdigyPlusScheduleFree | 2 | `β1` participates in combining current and averaged parameter sequences; `β2` controls squared-gradient statistics |
 
-Higher betas tend to smooth updates while reacting more slowly to new gradients. In normal LoRA tuning, LR is a much more useful first adjustment.
+The UI resolves the corresponding explanation and validates the count for the selected optimizer.
 
 <!-- doc-anchor: eps -->
-### Epsilon
+### Numerical stability term (eps)
 
-`eps` prevents a tiny denominator from producing an oversized update. StableAdamW defaults to `1e-8`. It is a numerical safeguard rather than an image-quality control and should remain at default unless a reproducible numerical issue is present.
+`eps` is added to adaptive-scaling denominators or related statistics to limit numerical amplification as a denominator approaches zero. It affects a numerical lower bound, not image content or regularization strength. AdaFactor uses a separate two-value `eps` input.
 
 <!-- doc-anchor: weight-decay -->
 ### Weight decay
 
-For the optimizers emphasized in this guide, the trainer provides the following starting points: `0.01` for AdamW, AdamW8bit, and PagedAdamW8bit; `0` for CAME and StableAdamW. These defaults establish reproducible baselines; they do not show that `0.01` is always better than `0`.
+Weight decay shrinks parameters during updates. AdamW-style decoupled decay is applied outside the gradient update; coupled decay enters gradient-related computation. `weight_decay=0` applies no decay.
 
-Character LoRAs have limited capacity, so large weight decay should not be introduced without a controlled comparison. Testing `weight_decay=0` with AdamW8bit is reasonable, but it should be treated as a separate parameter experiment with the dataset, run length, and other settings held constant.
-
-The StableAdamW package defaults to `weight_decay=0.01`. The generated TOML deliberately includes `weight_decay=0` to override that default.
+CAME's `weight_decouple` selects the decoupled form; `fixed_decay` participates only in that branch. StableAdamW's `weight_decouple` selects the same decay form.
 
 <!-- doc-anchor: gradient-clipping -->
 ### Maximum gradient norm
 
-`max_grad_norm=1` is a sensible baseline; `0` disables global norm clipping. StableAdamW works normally with this control.
-
-Avoid a very low norm limit together with `percentile_clipping=95`. Both controls can cut the same update, and normal learning may be clipped twice.
+`max_grad_norm` scales gradients by the global gradient norm before the optimizer update; `0` disables this global clipping. CAME, AdaFactor, StableAdamW, and bitsandbytes can also clip an internal update or statistic. When several are active, they occur at different points in the computation.
 
 <!-- doc-anchor: percentile-clipping -->
 ### Percentile clipping
 
-This setting is available only for AdamW8bit, PagedAdamW8bit, Lion8bit, and PagedLion8bit.
-
-- `100`: off, and the default
-- `99`: a mild experimental comparison value
-- `95`: a stronger experimental comparison value, considered only after confirming outlier gradients
-
-The values `99` and `95` are engineering starting points, not Anima LoRA optima established by published tests. bitsandbytes uses recent gradient norms; it does not inspect images. Strong clipping can suppress a rare outfit or expression just as easily as a genuinely bad batch.
+`percentile_clipping` is consumed only by AdamW8bit, PagedAdamW8bit, Lion8bit, and PagedLion8bit. bitsandbytes uses the recent gradient-norm distribution to limit the current norm; `100` means that this percentile clipping is off. Lower thresholds scale more gradients near the upper end of that recent distribution.
 
 <!-- doc-anchor: min-8bit-size -->
 ### Minimum 8-bit tensor size
 
-The default is `4096`. Tensors smaller than this keep FP32 optimizer state.
-
-For a low-rank LoRA, `16384` is a reasonable diagnostic if small-tensor numerical behavior is a concern. More tensors remain in FP32 state, using a little more VRAM. This setting does not change the precision of the model weights themselves.
+`min_8bit_size` is the element-count threshold for bitsandbytes state quantization. Tensors smaller than the threshold retain FP32 optimizer state. Increasing the threshold leaves more small tensors in FP32 state and increases the corresponding state memory; it does not change model-weight dtype.
 
 <!-- doc-anchor: stableadamw-options -->
 ### StableAdamW options
 
-`kahan_sum=True` uses compensated summation to retain small low-precision updates. It matters most when the trainable LoRA weights themselves are FP16 or BF16. In this project, selecting `mixed_precision=bf16` alone leaves trainable LoRA parameters in FP32; enabling `full_bf16` also casts those parameters to BF16. Kahan summation therefore usually has little effect unless `full_bf16` is enabled.
+`kahan_sum=true` keeps a compensation term for parameter updates, reducing rounding loss when small updates accumulate into FP16/BF16 trainable parameters. With only `mixed_precision=bf16`, sd-scripts can keep trainable LoRA parameters in FP32; `full_bf16` changes the trainable-parameter dtype, so the scope of Kahan compensation depends on the actual dtype.
 
-`weight_decouple=True` applies AdamW-style decoupled decay. It does not change the result while `weight_decay=0` and should normally remain enabled.
+`weight_decouple=true` applies AdamW-style decoupled weight decay. With `weight_decay=0`, the decay branch does not change parameters.
 
 <!-- doc-anchor: came-clipping -->
-### CAME's internal clipping
+### CAME internal clipping
 
-`came_clip_threshold` applies to the RMS of CAME's own update and defaults to `1.0`. It is separate from global `max_grad_norm`. Keep it at default first. Change it only when the same setup repeatedly shows the same instability.
+`came_clip_threshold` clips the RMS of CAME's normalized update. It is applied during CAME's internal update construction and is separate from pre-update global `max_grad_norm`.
+
+`came_fixed_decay` is shown and emitted only for CAME when `came_weight_decouple=true`. Fixed decay makes the decay amount independent of the current learning-rate scale.
 
 <!-- doc-anchor: schedulefree-warmup -->
-### Schedule-Free warmup
+### Schedule-Free internal warmup
 
-AdamWScheduleFree consumes its own `warmup_steps`, while external `lr_warmup_steps` is disabled. Upstream Schedule-Free guidance generally recommends warmup. This project currently keeps internal `warmup_steps=0` because a fixed warmup can consume a large share of a short few-shot run. Its `1e-4` LR is an experimental start without sufficient Anima validation, not an official or measured optimum.
+`schedulefree_warmup_steps` is an AdamWScheduleFree constructor argument that changes early internal step sizes. It is not passed to ProdigyPlusScheduleFree and is separate from external `lr_warmup_steps`.
 
 <!-- doc-anchor: stochastic-rounding -->
 ### Stochastic rounding
 
-Stochastic rounding reduces the long-term bias caused by repeatedly rounding low-precision updates in the same direction. ProdigyPlus keeps its package default; the trainer does not expose another switch. This is numerical handling, not data augmentation.
+ProdigyPlusScheduleFree stochastic rounding selects adjacent representable values with probabilities based on the discarded fraction when writing low-precision values. It reduces persistent directional rounding bias and does not alter samples or captions.
 
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-AdamW, 8-bit AdamW, StableAdamW, Lion, CAME, and AdamWScheduleFree can use LoRA+. Prodigy, ProdigyPlus, and EmoSens cannot. AdaFactor requires relative step to be disabled first.
-
-Re-test the LoRA+ ratio after changing optimizer or base LR. The ratio changes the effective LR of part of the LoRA; it is not an independent quality boost.
+LoRA+ assigns different effective learning rates to LoRA matrix components. AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and AdamWScheduleFree accept LoRA+ arguments. Prodigy, ProdigyPlusScheduleFree, and EmoSens do not; AdaFactor accepts them when `relative_step=false`.
 
 <!-- doc-anchor: scenarios -->
-## Common dataset cases
+## Dataset cases and capability boundaries
 
 <!-- doc-anchor: one-image -->
-### One sprite or character image
+### One image
 
-For Anima, use AdamW8bit around `1e-5` to `2e-5`, with frequent checkpoints. SDXL retains its separate baseline. The main risks are memorized pose and framing. StableAdamW may reduce update spikes, but it cannot supply missing side views, back views, or expressions.
+Every optimizer receives the same image evidence repeatedly. Changing state statistics does not create missing viewpoints, expressions, or compositions; steps, repeats, and learning rate determine how strongly that evidence accumulates.
 
 <!-- doc-anchor: few-shot -->
-### Two to five character images
+### Few-shot images
 
-Begin with an AdamW8bit baseline. If source or image quality differs noticeably, compare CAME at the same step budget. StableAdamW is relevant when the logs show update spikes. Complex internal schedules may have insufficient steps to show a benefit in very short runs.
+With few samples, a single batch contributes a larger share of total updates. Clipping can change the magnitude of an outlier numerical update, but it cannot determine whether that batch contains a valid rare feature or bad data.
 
 <!-- doc-anchor: galgame -->
-### Galgame sprites and expressions
+### Galgame sprites
 
-AdamW8bit is generally sufficient. Accurate expression tags and removal of repeated background information are more important than optimizer choice. If expression groups are strongly imbalanced, CAME may be included as a comparison rather than treated as an automatic upgrade.
+Repeated pose, background, and crop information enters the gradient as repeated evidence. The optimizer processes its numerical history and does not separate identity from shared composition.
 
 <!-- doc-anchor: dmm-mixed -->
-### DMM cards, effects, and companion characters
+### DMM cards and mixed sources
 
-Companion characters, text, watermarks, effects, and alternate forms should first be labeled or removed. AdamW8bit and CAME may then be compared. StableAdamW may be added if the training log remains unstable. Optimizers cannot identify which character is the training target.
+Cards, captures, sprites, and effects can produce different gradient scales. CAME confidence state, StableAdamW update RMS clipping, and bitsandbytes percentile clipping act at different locations, but none reads the source category.
 
 <!-- doc-anchor: mixed-quality -->
-### Uneven image quality
+### Uneven quality
 
-Blurred captures, heavy compression, duplicate crops, and near-identical Live2D frames should be addressed before optimizer tuning. Images that must remain can be controlled through captions, grouping, and repeats. CAME may be compared; for 8-bit optimizers, test `percentile_clipping=99` before `95`.
+Blur, compression, duplicate crops, and consecutive frames change the training signal. The optimizer does not automatically reduce their sampling weight; grouping, captions, and repeats determine how often they enter training.
 
 <!-- doc-anchor: outfits-forms -->
 ### Multiple outfits or forms
 
-Optimizer choice is secondary to accurate outfit/form tags and balanced sampling. AdamW8bit, CAME, and StableAdamW are all applicable. Evaluation should cover outfit control, identity retention, and color leakage across several prompts rather than a single preview.
+Outfit and form binding comes from sample co-occurrence and caption conditions. The optimizer changes the update trajectory but does not create missing label boundaries.
 
 <!-- doc-anchor: style-lora -->
 ### Style LoRA
 
-AdamW8bit is the recommended baseline. Subject coverage and captions that separate content from style generally have greater impact. StableAdamW can reduce the effect of an abnormal batch, while aggressive clipping may also suppress rare style features.
+Subject coverage and content/style captions determine whether style and subject signals are separated. Internal clipping affects both abnormal updates and numerically large updates from rare style features.
 
 <!-- doc-anchor: vram -->
-### Tight VRAM
+### Optimizer-state VRAM
 
-Use AdamW8bit or Lion8bit first. A Paged version is appropriate only when memory pressure makes paging useful. Once paging is active, optimizer-state transfers between CPU and GPU may reduce training speed. Keep `min_8bit_size=4096` unless measured results justify quantizing more small tensors.
+8-bit state reduces the storage width of quantizable state. Paged variants move state pages to CPU when GPU memory pressure activates paging, adding CPU/GPU transfers. AdaFactor and CAME reduce corresponding second-order state through factorization.
 
 <!-- doc-anchor: starting-configs -->
-## Conservative starting configurations
+## Automatic linkages and hard relationships
 
-| Purpose | Optimizer settings | Rest of the run |
+| Condition | Configuration result | Reason |
 | --- | --- | --- |
-| Anima general baseline | AdamW8bit, LR from the main table above, `weight_decay=0.01` | constant, `max_grad_norm=1`, project-default rank/alpha, DiT only |
-| Anima mixed-source comparison | CAME, LR from the main table; keep its other defaults | constant, `max_grad_norm=1`; verify under fixed conditions |
-| Anima spike-handling comparison | StableAdamW, LR from the main table; keep the project stability defaults | Kahan on, constant, `max_grad_norm=1` |
-| Anima Lion experiment | Lion or Lion8bit, LR from the main table | constant; this is not the complete official Lion recipe |
-| Mild 8-bit clipping test | Keep the AdamW8bit baseline and add `percentile_clipping=99` | Keep all other settings unchanged |
-
-For overfitting, first reduce steps, repeats, or LR. For underfitting, verify triggers and effective steps. For update spikes, identify the corresponding batch before adding more clipping.
+| AdamWScheduleFree / ProdigyPlusScheduleFree | External scheduler is `constant`, external warmup is `0` | Scheduling is managed inside the optimizer |
+| AdaFactor with `relative_step=true` | External scheduler does not participate; LoRA+ is not emitted | AdaFactor generates the step internally |
+| Prodigy / ProdigyPlusScheduleFree | Automatic base learning-rate value is `1.0` | The input learning rate participates in D-adaptation scale calculation |
+| CAME with `weight_decouple=false` | `came_fixed_decay` is hidden and omitted | Fixed decay belongs to the decoupled branch |
+| 8-bit/Paged bitsandbytes optimizer | `percentile_clipping` and `min_8bit_size` are visible | Both are consumed by the bitsandbytes state implementation |
+| Internal-scheduler optimizer | External scheduler controls reflect hard configuration only | External scheduler does not update parameters |
 
 <!-- doc-anchor: troubleshooting -->
-## Troubleshooting by symptom
+## Symptoms and observable measurements
 
-| Symptom | Check first | Optimizer adjustment to consider |
+| Symptom | Measurements that distinguish causes | Optimizer mechanisms |
 | --- | --- | --- |
-| Stable loss but poor previews | Dataset, captions, preview prompt, and checkpoint timing | Changing optimizer is usually not the first step |
-| Isolated, reproducible loss or gradient spikes | Corresponding batch, outlier images, and LR | Compare StableAdamW, or test `percentile_clipping=99` separately |
-| NaN or Inf | Stop the run; inspect LR, precision settings, corrupt data, and resume state | Compare StableAdamW only after correcting configuration or data issues; do not use clipping to hide a persistent error |
-| Optimizer state causes OOM | Confirm that state memory, rather than resolution, batch size, or preview generation, is responsible | Use 8-bit first; use a Paged variant only if needed |
-| Pose, background, or outfit is memorized quickly | Steps, repeats, LR, and duplicate data | Lower LR or shorten the run; changing optimizer usually does not solve this |
-| Character features remain weak | Trigger, captions, effective steps, rank, and training target | Raise LR gradually only after verifying those items |
+| Isolated gradient spike | Corresponding batch, gradient norm, and pre/post-clipping norm | Global clipping, percentile clipping, update RMS clipping |
+| NaN / Inf | First step, parameter dtype, VAE output, learning rate, and resume state | `eps` and internal stability terms cover their own denominators; they do not repair invalid inputs |
+| GPU out of memory | Separate parameter, activation, gradient, optimizer-state, and cache use | 8-bit state, factored state, paged state |
+| Stable loss but unsuitable previews | Multiple fixed-prompt checkpoints, captions, and sample co-occurrence | Optimizer handles gradients; loss is not a complete generation objective |
+| Fast memorization | Effective steps, repeats, learning rate, and duplicate samples | State history and step size determine update accumulation |
 
 <!-- doc-anchor: ab-testing -->
-## Controlled comparison method
+## Conditions for attributable comparisons
 
-1. Fix the dataset, captions, seed, base model, rank/alpha, batch size, and total steps.
-2. Fix preview prompts, sampler settings, and generation seeds.
-3. Use the corresponding engineering starts from the main learning-rate table for an Anima recipe comparison. This compares complete starting recipes; run a separate equal-LR experiment if the goal is to isolate the update rule itself.
-4. Compare checkpoints at matching steps. Record gradient norm, peak VRAM, and training time as well as previews.
-5. Include identity, outfit control, pose/background leakage, and prompt response in addition to loss.
+Differences can only be attributed to optimizer-related variables when dataset, captions, base model, random seed, rank/alpha, batch, gradient accumulation, total optimizer steps, and preview conditions are held constant. Changing the optimizer and learning rate together measures a complete configuration difference.
 
-Start each comparison from the same base model. Do not resume a saved optimizer state and then switch optimizer, because their momentum and state structures are not equivalent.
-
-Optimizers such as Prodigy require a different LR scale and cannot be included in that single-variable comparison. Tune each to a reasonable configuration first, then compare complete training recipes. The result should be described as a better recipe for the dataset, not as an isolated optimizer effect.
-
-Changing the optimizer, LR, rank, and run length together prevents attribution. Even if the result improves, the effective change cannot be identified.
+Optimizer state structures are not interchangeable. Resuming a state saved by another optimizer changes initial momentum, second-order statistics, and step-size state at the same time. D-adaptation optimizers also introduce an independent historical scale.
 
 <!-- doc-anchor: limits -->
-## Scope and limitations
+## Scope
 
-- CAME operates on gradients and optimizer state; it does not automatically reduce the weight of low-quality images.
-- StableAdamW primarily improves update stability. If the baseline is already stable, image-quality differences may be small.
-- Paged optimizers change memory management and do not provide an independent image-quality benefit; active paging may reduce training speed.
-- Optimizer choice alone cannot prevent one-image overfitting. Repeats, run length, and dataset diversity are more important.
-- Optimizer families have different useful LR ranges, so a shared LR does not necessarily produce a fair comparison.
+- Optimizers do not identify image quality, character identity, outfit category, watermarks, or companion characters.
+- Clipping operates on numerical magnitude and cannot tell whether a large update is bad data or a valid rare feature.
+- Paged variants change state memory placement and do not provide an independent image-quality objective.
+- Internal schedulers change parameter sequences and step-size history; external schedulers do not participate in those implementations.
+- Loss is an aggregate training value, not the same as identity retention, style generalization, or prompt response.
 
 <!-- doc-anchor: evidence -->
-## Evidence and references
+## Implementation evidence and references
 
-Fact-checked on **2026-07-31**. Code and model-card links below are pinned to the reviewed revisions.
+Fact-checked on **2026-07-31**. Project behavior follows the field metadata, adapter, and pinned upstream implementations in this repository.
 
-**Implementation facts:** The trainer loads `pytorch_optimizer.StableAdamW` through sd-scripts' full-class-path mechanism. In the installed `pytorch-optimizer 3.10.0`, constructor defaults include `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0.01`, `weight_decouple=True`, and `kahan_sum=True`. This trainer deliberately overrides weight decay to `0`.
-
-**Model and upstream evidence:** The official Anima model card recommends Anima-Base, no LLM Adapter training, rank 32, and a starting LR near `2e-5`, but does not specify `alpha=32`. The sd-scripts Anima guide labels `1e-4` as an `alpha=1` example and asks users to lower or revalidate LR when alpha increases.
-
-**Published evidence:** The CAME, Lion, Prodigy, Schedule-Free, and LoRA+ papers explain the algorithms and report results on their respective tasks. CAME's `0.5` to `0.9` multiplier and Lion's `1/3` to `1/10` LR are official relative-to-AdamW tuning guidance. Language-model, classification, and other diffusion results do not establish an image-quality ranking for Anima character LoRA training.
-
-**Experience requiring local validation:** CAME may be suitable for mixed-source image sets, and StableAdamW may tolerate spiky batches more effectively. These are community and engineering observations that should be verified with a fixed-condition comparison on the target dataset.
+The trainer loads `pytorch_optimizer.StableAdamW` through sd-scripts' full-class-path mechanism. The installed `pytorch-optimizer 3.10.0` constructor includes `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0.01`, `weight_decouple=true`, and `kahan_sum=true`; generated configuration values override constructor values according to the UI state.
 
 References:
 
-- [Official Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
-- [sd-scripts Anima LoRA training guide (pinned revision)](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
-- [CAME official implementation and tuning notes (pinned revision)](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
-- [Lion official implementation and tuning notes (pinned revision)](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
-- [Schedule-Free official implementation and tuning notes (pinned revision)](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
-- [Transformers cosine-restart scheduler implementation (pinned revision)](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
+- [Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [sd-scripts Anima training guide (pinned revision)](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
+- [CAME implementation (pinned revision)](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
+- [Lion implementation (pinned revision)](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
+- [Schedule-Free implementation (pinned revision)](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
-- [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
+- [Symbolic Discovery of Optimization Algorithms](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
 - [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
 - [pytorch-optimizer implementation (pinned revision)](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
-- [bitsandbytes optimizer implementation (pinned revision)](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
+- [bitsandbytes implementation (pinned revision)](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)

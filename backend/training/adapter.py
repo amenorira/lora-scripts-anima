@@ -203,6 +203,16 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     source = {k: v for k, v in config.items()}  # 扁平结构，dict comprehension 浅拷贝即可
     # lr_scheduler_type 已从产品配置移除；旧预设残留也不再透传给 sd-scripts。
     source.pop("lr_scheduler_type", None)
+    try:
+        tag_dropout_rate = float(source.get("caption_tag_dropout_rate") or 0)
+    except (TypeError, ValueError):
+        tag_dropout_rate = 0
+    if tag_dropout_rate <= 0:
+        source.pop("caption_tag_dropout_rate", None)
+    if source.get("shuffle_caption") is not True and tag_dropout_rate <= 0:
+        source.pop("keep_tokens", None)
+    if source.get("cache_latents_to_disk") is True:
+        source["cache_latents"] = True
     adapted: dict[str, Any] = {}
     warnings: list[str] = []
 

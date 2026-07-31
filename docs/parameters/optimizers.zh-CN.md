@@ -1,290 +1,259 @@
-# 优化器选择与参数指南
+# 优化器机制与参数参考
 
-> 对于大多数 Anima / SDXL LoRA 训练，建议先使用 **AdamW8bit** 建立基准。基准训练稳定时，通常无需更换优化器。
->
-> 数据来源和质量差异较大时，可对比 **CAME**；日志中存在可复现的梯度尖峰，或 LoRA 可训练参数使用 FP16/BF16 时，可对比 **StableAdamW**。
+优化器把梯度转换为参数更新。不同实现会改变状态统计方式、状态存储精度、步长来源、裁剪位置和调度归属。它们不读取图片语义，也不能识别训练目标、错误标注或缺失视角。
 
-优化器会影响收敛速度、显存占用和数值稳定性，但通常不是人物还原度的首要决定因素。少图人物训练出现问题时，应先检查数据、标注、重复次数、学习率和停止时机。
-
-本文区分“实现与论文事实”和“Anima 工程起点”：CAME、Lion、Schedule-Free 的论文结果或库默认值并不是 Anima LoRA 最优值。Anima 官方模型卡明确建议使用 **Anima-Base**、不训练 LLM Adapter、采用 rank 32，并从 `2e-5` 附近小幅调整。本训练器采用 `rank=32, alpha=32` 作为项目工程起点，其中 `alpha=32` 是项目选择，仍需按数据集本地验证。
+本文只描述项目当前实现与参数关系。界面切换优化器时存在的学习率、`betas`、`weight_decay` 和 scheduler 自动联动属于配置行为；这些数值不表示算法排序或训练结果判断。
 
 <!-- doc-anchor: quick-choice -->
-## 快速选择
+## 机制维度速查
 
-| 训练情况 | 建议起点 | 说明 |
+| 机制维度 | 对应实现 | 可观察影响 |
 | --- | --- | --- |
-| 首次训练，或没有明确的稳定性问题 | AdamW8bit | 参数习惯成熟、状态显存较低，便于与常见配置比较 |
-| DMM 卡面、立绘、截图、特效图混合 | 先使用 AdamW8bit，再对比 CAME | CAME 的内部裁剪可能改善更新稳定性，但不会识别低质量图片 |
-| 出现明显且可复现的损失值（loss）或梯度尖峰 | 排查异常图片和学习率后，对比 StableAdamW | StableAdamW 主要解决更新稳定性，不代表必然提高画质 |
-| LoRA 可训练参数使用 FP16/BF16 | StableAdamW | `kahan_sum` 主要在低精度参数更新中发挥作用 |
-| 优化器状态显存不足 | AdamW8bit；仍有内存压力时使用 PagedAdamW8bit | Paged 版本改变内存调度方式；发生 CPU/GPU 数据交换时可能降低训练速度 |
-| 减少绝对学习率调参 | Prodigy | 项目要求基础学习率为 `1.0` |
-
-少图人物训练可优先比较 **AdamW8bit、CAME、StableAdamW**。对照时应一次只修改一个主要变量，避免无法判断差异来源。
+| 一阶与二阶状态 | AdamW、StableAdamW、Prodigy | 梯度历史和梯度平方历史共同决定更新尺度 |
+| 符号方向更新 | Lion 系列 | 更新方向由动量与当前梯度的混合结果取符号得到 |
+| 因子化状态 | AdaFactor、CAME | 二维参数的平方梯度统计以行列因子保存 |
+| 低位状态存储 | AdamW8bit、Lion8bit | 可量化的优化器状态以 8-bit 形式保存 |
+| 分页状态 | PagedAdamW8bit、PagedLion8bit | 分页触发时，状态页在 CPU 与 GPU 之间传输 |
+| 内部调度 | AdamWScheduleFree、ProdigyPlusScheduleFree | 参数平均与步长调度在优化器内部完成 |
+| 项目实验状态 | Automagic3、EmoSens | 分别使用梯度符号历史或 loss 历史改变全局更新尺度 |
 
 <!-- doc-anchor: optimizer-type -->
-## 当前可用优化器
+## 当前优化器
 
-| 优化器 | 主要用途 | 限制与注意事项 |
+| 分组 | 优化器 | 更新机制 |
 | --- | --- | --- |
-| AdamW | 标准 AdamW 基准 | 优化器状态显存比 8-bit 版本高 |
-| AdamW8bit | 通用默认选择 | 小张量默认仍会保留 FP32 状态，这是正常行为 |
-| PagedAdamW8bit | 常规 8-bit 优化器仍无法满足显存需求时 | 与 AdamW8bit 的主要区别是分页；发生 CPU/GPU 数据交换时可能降低训练速度 |
-| StableAdamW | 梯度尖峰、低精度 LoRA 参数 | 状态显存通常高于 AdamW8bit；不能防止过拟合 |
-| Lion | 测试符号动量优化器 | 合理学习率范围与 AdamW 不同，需要重新调整 |
-| Lion8bit | 降低 Lion 的状态显存 | 需要独立调整学习率 |
-| PagedLion8bit | Lion8bit 同时需要分页时 | 分页本身不改善生成质量，并可能降低训练速度 |
-| Prodigy | 由优化器估计更新尺度 | 基础学习率使用 `1.0`；本项目不支持搭配 LoRA+ |
-| ProdigyPlusScheduleFree | 测试内部调度和组合功能 | 外部 scheduler 和 warmup 不生效，少图短训练中的收益不确定 |
-| Automagic3 | 项目实验性自适应方案 | 建议在具备明确基准时进行测试 |
-| AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
-| CAME | 混合来源数据、更新尺度波动较大时进行对照 | 使用三个 beta 和内部 RMS 裁剪 |
-| AdamWScheduleFree | 测试不使用外部 scheduler 的 AdamW | 支持内部 warmup，但本项目默认设置 `warmup_steps=0`；短训练不建议作为第一选择 |
-| EmoSens | 项目实验性优化器 | 要求梯度累积为 1，不支持 LoRA+ |
+| AdamW 与状态存储变体 | AdamW | 梯度与梯度平方的指数移动平均、自适应缩放、解耦权重衰减 |
+| AdamW 与状态存储变体 | AdamW8bit | AdamW 更新，可量化状态使用 8-bit 存储 |
+| AdamW 与状态存储变体 | PagedAdamW8bit | 8-bit AdamW 状态，并支持状态分页 |
+| AdamW 与状态存储变体 | `pytorch_optimizer.StableAdamW` | AdamW 式状态、更新 RMS 裁剪和 Kahan 求和 |
+| 符号更新 | Lion | 符号方向更新和一组动量状态 |
+| 符号更新 | Lion8bit | Lion 更新，可量化动量状态使用 8-bit 存储 |
+| 符号更新 | PagedLion8bit | 8-bit Lion 状态，并支持状态分页 |
+| 因子化状态 | AdaFactor | 因子化平方梯度统计和可选相对步长 |
+| 因子化状态 | CAME | 因子化状态、残差置信度估计和内部 RMS 裁剪 |
+| 步长估计与内部调度 | Prodigy | D-adaptation 步长估计 |
+| 步长估计与内部调度 | ProdigyPlusScheduleFree | D-adaptation 与 Schedule-Free 参数序列 |
+| 步长估计与内部调度 | AdamWScheduleFree | AdamW 式状态与 Schedule-Free 参数序列 |
+| 项目实验实现 | Automagic3 | 梯度符号历史、参数组学习率适应和内部裁剪 |
+| 项目实验实现 | EmoSens | loss 移动平均、全局学习率倍率和停止信号 |
 
-表中的显存说明仅指优化器状态。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
+8-bit 与分页描述的是优化器状态。训练峰值显存还包含模型参数、激活、缓存、梯度和采样过程。
 
 <!-- doc-anchor: stable-comparison -->
-## AdamW8bit、CAME、StableAdamW 的区别
+## AdamW8bit、CAME 与 StableAdamW
 
-**AdamW8bit** 适合作为基准。它的状态显存较低，使用经验较多，也便于区分学习率、训练步数和数据问题。没有明确的稳定性或显存问题时，可优先使用。
+| 实现 | 状态与更新 | 额外行为 |
+| --- | --- | --- |
+| AdamW8bit | 一阶、二阶 AdamW 状态；可量化状态以 8-bit 保存 | `percentile_clipping` 在 bitsandbytes 优化器内部处理近期梯度范数 |
+| CAME | 因子化二阶状态、一阶更新状态、残差平方置信度状态 | 置信度缩放和内部更新 RMS 裁剪 |
+| StableAdamW | 完整 AdamW 式一阶、二阶状态 | 更新 RMS 裁剪；Kahan 求和补偿低精度参数累加误差 |
 
-**CAME** 使用因子化状态和内部 RMS 裁剪。卡面、截图、立绘的画质和构图差异较大时，它可作为 AdamW8bit 的对照方案。CAME 处理的是参数更新，不会判断图片质量；伙伴角色、文字、特效和错误标注仍需在数据处理中解决。
-
-**StableAdamW** 会限制异常大的参数更新，并支持常规学习率调度器、预热、`max_grad_norm` 和 LoRA+。本项目在 Anima 中先沿用 AdamW 基线：`lr=2e-5`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`。SDXL 的界面起点仍为 `1e-4`。它不是 8-bit 优化器，因此优化器状态占用通常高于 AdamW8bit。
-
-如果基准训练的曲线和预览均正常，StableAdamW 的额外收益可能较小。它的主要用途是改善更新稳定性。
+三者都只处理数值更新。图片质量、主体身份、服装标签和构图重复不会由优化器自动分类。
 
 <!-- doc-anchor: parameters -->
 ## 参数说明
 
 <!-- doc-anchor: learning-rate -->
-### 学习率（learning rate）
+### 学习率
 
-Anima 只训练 DiT 主干时，可从以下项目工程起点开始。官方 Anima 依据只覆盖 rank 32 与约 `2e-5`；表中其他优化器数值及 `alpha=32` 均属于迁移或项目选择：
+学习率控制每一步更新的整体尺度。AdamW、Lion、CAME 和 StableAdamW 把它作为外部步长；AdaFactor 的 `relative_step=true` 根据训练进度生成步长；Prodigy 系列把输入学习率与 D-adaptation 估计尺度组合；Automagic3 与 EmoSens 还会在内部生成动态倍率。
 
-| 优化器 | Anima 自动起点 | 依据与含义 |
-| --- | ---: | --- |
-| AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
-| StableAdamW | `2e-5` | 先与 AdamW 使用相同尺度，单独比较稳定化更新 |
-| CAME | `1.5e-5` | CAME 官方建议通常使用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
-| Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion 官方建议 LR 比 AdamW 小约 `3`～`10` 倍 |
-| AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
-| Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
-| AdaFactor relative step | 由优化器接管 | 关闭 relative step 后，Anima 手动模式从 `2e-5` 开始 |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
+项目当前自动数值如下。自动值只在现有联动条件满足时写入，手动值和导入值沿用现有来源规则：
 
-Lion 的 `5e-6` 只迁移了官方“LR 比 AdamW 小约 3～10 倍”的比例。本项目没有同时照搬其“相应增大 weight decay”的调整方式，因此这不是完整的 Lion 官方 recipe。
+| 训练配置 | 选择值 | 自动学习率 |
+| --- | --- | ---: |
+| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` |
+| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` |
+| Anima | CAME | `1.5e-5` |
+| Anima | AdamWScheduleFree | `1e-4` |
+| Anima | AdaFactor 且 `relative_step=false` | `2e-5` |
+| Anima | EmoSens | `0.1` |
+| 通用 sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` |
+| 通用 sd-scripts | Automagic3 | `1e-4` |
+| SDXL | CAME / StableAdamW | `1e-4` |
+| SDXL | Lion 系列 | `2e-5` |
+| SDXL | AdamWScheduleFree | `3e-4` |
 
-SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4`、Lion 为 `2e-5`、AdamWScheduleFree 为 `3e-4`。切换模型类型或优化器时，界面只会替换尚未手动修改的推荐值；导入配置和自定义值保持原样。
-
-`network_alpha / network_dim` 会缩放 LoRA 分支。上游 `sd-scripts` 的 `1e-4` 示例对应 `alpha=1`，并明确说明提高 alpha 时应重新降低/验证 LR；因此不能把该示例直接套到本项目默认的 `rank=32, alpha=32`。
-
-人物过早出现构图僵化、串色或提示词响应下降时，可降低学习率或减少训练步数。学习不足时，应先确认触发词和有效训练步数，再小幅提高学习率。Lion 的合理学习率范围与 AdamW 不同，需要单独测试。
+`network_alpha / network_dim` 会缩放 LoRA 分支，因此相同优化器学习率在不同 alpha/dim 组合下不代表相同的 LoRA 分支尺度。
 
 <!-- doc-anchor: scheduler-warmup -->
-### 学习率调度器与预热（scheduler 和 warmup）
+### 外部 scheduler 与 warmup
 
-AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。Anima 新配置默认使用 `constant`，用于匹配上游 Anima 示例，并减少短训练中的额外调度变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启；只有 cycles 大于 1 才会发生周期重启。已有手动配置可以继续使用；要测试预热时，可改为 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
+AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和手动步长 AdaFactor 使用外部 scheduler。`lr_warmup_steps` 属于该外部 scheduler。`cosine_with_restarts` 只有在 `num_cycles` 大于 1 时才在训练中出现多个周期；`num_cycles=1` 不产生中途重启。
 
-AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，所以界面会把外部调度器固定为 constant。两者的内部预热不能和 `lr_warmup_steps` 混为一谈。
+AdamWScheduleFree 与 ProdigyPlusScheduleFree 在优化器内部管理参数平均和调度，外部 scheduler 固定为 `constant`，外部 scheduler 不参与训练，外部 `lr_warmup_steps` 也不参与训练。AdaFactor 的 `relative_step=true` 同样由优化器生成步长，外部 scheduler 不参与训练。
 
 <!-- doc-anchor: betas -->
-### 动量参数（betas）
+### 指数移动平均衰减系数（betas）
 
-没有明确调整依据时，应保留默认值：
+数值越大，历史状态保留比例越高，当前观测在本次状态更新中的占比越低。
 
-- AdamW 系列：通常是 `0.9, 0.999`
-- StableAdamW、Lion：通常是 `0.9, 0.99`
-- CAME：需要三个 beta
+| 优化器机制 | 输入数量 | 各项语义 |
+| --- | ---: | --- |
+| AdamW、8-bit/Paged AdamW、StableAdamW、EmoSens | 2 | `β1` 控制梯度移动平均，`β2` 控制梯度平方移动平均 |
+| Lion 系列 | 2 | `β1` 控制当前符号方向使用的历史动量与当前梯度混合，`β2` 控制供后续步骤使用的动量状态 |
+| CAME | 3 | `β1` 控制归一化更新的一阶状态，`β2` 控制梯度平方统计，`β3` 控制归一化更新残差平方统计并参与置信度缩放 |
+| Prodigy | 2 | `β1` 与 `β2` 分别控制一阶、二阶状态；D-adaptation 的额外衰减不属于该输入 |
+| AdamWScheduleFree、ProdigyPlusScheduleFree | 2 | `β1` 参与当前参数与平均参数序列的组合，`β2` 控制平方梯度统计 |
 
-beta 越高，更新通常越平滑，但对新梯度的响应也更慢。常规调优应优先调整学习率，而不是 beta。
+界面根据所选优化器显示对应解释，并按实现校验输入数量。
 
 <!-- doc-anchor: eps -->
 ### 数值稳定项（eps）
 
-`eps` 用来避免分母过小导致数值放大。StableAdamW 默认 `1e-8`。没有可复现的数值问题时，不建议改。
+`eps` 加到自适应缩放分母或相关统计量中，限制分母接近零时的数值放大。它影响数值计算下限，不直接控制图片内容或正则化强度。AdaFactor 使用独立的两项 `eps` 输入。
 
 <!-- doc-anchor: weight-decay -->
-### 权重衰减（weight decay）
+### 权重衰减
 
-对于本文重点介绍的优化器，本训练器提供以下起点：AdamW、AdamW8bit 和 PagedAdamW8bit 为 `0.01`；CAME 与 StableAdamW 为 `0`。这些值用于建立可复现的基准，不表示 `0.01` 一定优于 `0`。
+权重衰减使参数在更新过程中产生收缩。AdamW 式解耦衰减在梯度更新之外应用；耦合衰减会进入梯度相关计算。`weight_decay=0` 时不产生衰减。
 
-人物 LoRA 容量有限，不宜在没有对照结果时使用较大的权重衰减。若要为 AdamW8bit 测试 `weight_decay=0`，应将其视为单独的参数实验，并保持数据、步数和其他设置不变。
-
-StableAdamW 库默认 `weight_decay=0.01`，本训练器会明确输出 `weight_decay=0` 进行覆盖。这是有意设置，并非参数缺失。
+CAME 的 `weight_decouple` 决定是否使用解耦形式；`fixed_decay` 只在解耦衰减开启时参与计算。StableAdamW 的 `weight_decouple` 具有相同的衰减形式选择。
 
 <!-- doc-anchor: gradient-clipping -->
-### 最大梯度范数（max gradient norm）
+### 最大梯度范数
 
-`max_grad_norm=1` 是常用起点，`0` 表示关闭。StableAdamW 可以正常搭配这个参数。
-
-如果同时使用 `percentile_clipping=95` 和较低的 `max_grad_norm`，同一次更新可能受到两层裁剪。没有日志依据时，建议只保留一种温和裁剪。
+`max_grad_norm` 在优化器更新前按全局梯度范数缩放梯度，`0` 表示不执行该全局裁剪。CAME、AdaFactor、StableAdamW 和 bitsandbytes 还可以在各自内部执行更新或统计裁剪；同时启用时，不同裁剪发生在计算链的不同位置。
 
 <!-- doc-anchor: percentile-clipping -->
-### 百分位裁剪（percentile clipping）
+### 百分位裁剪
 
-只对 AdamW8bit、PagedAdamW8bit、Lion8bit、PagedLion8bit 生效。
-
-- `100`：关闭，也是默认值
-- `99`：较温和的实验对照值
-- `95`：较强的实验对照值，仅在确认存在异常梯度后考虑
-
-`99` 和 `95` 是工程测试起点，并非经过 Anima LoRA 实验证实的最优值。该功能依据近期梯度范数工作，不会判断图片质量。设得太强，少见服装、表情和构图带来的有效更新也可能一起被削弱。
+`percentile_clipping` 只由 AdamW8bit、PagedAdamW8bit、Lion8bit 和 PagedLion8bit 消费。bitsandbytes 根据近期梯度范数的分布限制当前梯度范数；`100` 表示不进行该百分位裁剪。阈值降低会使更多位于近期分布上端的梯度受到缩放。
 
 <!-- doc-anchor: min-8bit-size -->
-### 8-bit 状态最小张量尺寸（minimum 8-bit tensor size）
+### 8-bit 状态最小张量尺寸
 
-默认 `4096`。小于这个规模的张量会使用 FP32 优化器状态。
-
-低 rank 训练出现疑似小张量数值问题时，可测试 `16384`。更多 LoRA 张量会保留 FP32 状态，同时略微增加显存占用。此参数不会改变模型参数本身的精度。
+`min_8bit_size` 是 bitsandbytes 进行状态量化的张量元素数量门槛。小于门槛的张量保留 FP32 优化器状态。门槛增大时，更多小张量保留 FP32 状态，并增加相应状态显存；该参数不改变模型权重的数据类型。
 
 <!-- doc-anchor: stableadamw-options -->
 ### StableAdamW 专用参数
 
-`kahan_sum=True` 使用补偿求和减少低精度更新的舍入误差。其作用主要体现在 LoRA 可训练参数本身为 FP16/BF16 时。本项目仅选择 `mixed_precision=bf16` 时，LoRA 可训练参数仍保持 FP32；开启 `full_bf16` 才会将 LoRA 参数也转为 BF16。因此，未使用 `full_bf16` 时，Kahan 求和通常不会带来明显差异。
+`kahan_sum=true` 为参数更新维护补偿项，减少 FP16/BF16 可训练参数累加小更新时的舍入损失。仅设置 `mixed_precision=bf16` 时，sd-scripts 的 LoRA 可训练参数仍可保持 FP32；`full_bf16` 会改变可训练参数精度，因此 Kahan 补偿的作用范围随参数实际 dtype 变化。
 
-`weight_decouple=True` 表示使用 AdamW 式解耦权重衰减。`weight_decay=0` 时此开关不改变计算结果，建议保持开启。
+`weight_decouple=true` 使用 AdamW 式解耦权重衰减。`weight_decay=0` 时，衰减分支不改变参数。
 
 <!-- doc-anchor: came-clipping -->
 ### CAME 内部裁剪
 
-`came_clip_threshold` 裁剪 CAME 内部更新的均方根（RMS），默认 `1.0`。它和全局 `max_grad_norm` 不是同一个参数。应先保留默认值，只有固定条件下反复出现尖峰时再调整。
+`came_clip_threshold` 对 CAME 归一化更新的 RMS 进行裁剪。它发生在 CAME 内部更新构造过程中，与更新前的全局 `max_grad_norm` 不是同一计算。
+
+`came_fixed_decay` 只在 CAME 且 `came_weight_decouple=true` 时显示和输出。固定衰减使衰减量不再按当前学习率缩放。
 
 <!-- doc-anchor: schedulefree-warmup -->
-### Schedule-Free 预热（warmup）
+### Schedule-Free 内部 warmup
 
-AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 会被关闭。Schedule-Free 上游通常建议使用 warmup；本项目考虑到少图短训练可能被固定 warmup 占用较大比例，暂时保持内部 `warmup_steps=0`。同时，`1e-4` 只是未经 Anima 充分验证的实验起点，不应视为官方或实测最优值。
+`schedulefree_warmup_steps` 属于 AdamWScheduleFree 构造参数，并在优化器内部改变早期步长。它不传给 ProdigyPlusScheduleFree，也不等同于外部 `lr_warmup_steps`。
 
 <!-- doc-anchor: stochastic-rounding -->
-### 随机舍入（stochastic rounding）
+### 随机舍入
 
-随机舍入用于减少低精度更新长期朝同一方向取整造成的误差。ProdigyPlus 沿用库默认行为，本项目不另外加开关。它是数值处理，不是数据增强。
+ProdigyPlusScheduleFree 的随机舍入在低精度写回时按被舍弃部分的概率选择相邻可表示值，以减少长期固定方向的舍入偏差。该过程只作用于数值写回，不改变样本或 caption。
 
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-AdamW、8-bit AdamW、StableAdamW、Lion、CAME、AdamWScheduleFree 可以使用 LoRA+。Prodigy、ProdigyPlus、EmoSens 不支持；AdaFactor 需要先关闭 relative step。
-
-切换优化器后，应重新评估 LoRA+ 倍率。倍率改变的是部分 LoRA 参数的有效学习率，不提供独立的画质收益。
+LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和 AdamWScheduleFree 可接收 LoRA+ 参数。Prodigy、ProdigyPlusScheduleFree 和 EmoSens 不接收；AdaFactor 在 `relative_step=false` 时接收。
 
 <!-- doc-anchor: scenarios -->
-## 按数据集选择
+## 数据集情形与能力边界
 
 <!-- doc-anchor: one-image -->
-### 只有一张立绘
+### 单张图片
 
-Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并增加训练检查点（checkpoint）的保存频率。SDXL 可继续按其独立基线调整。这个场景最大的风险是把姿势和构图一起记住；StableAdamW 只能处理更新尖峰，不能补出侧面、背面或新表情。
+所有优化器都会重复接收同一图像证据。更换状态统计方式不会生成缺失的视角、表情或构图变化；训练步数、重复次数和学习率决定同一证据被累积的强度。
 
 <!-- doc-anchor: few-shot -->
-### 2～5 张少图人物
+### 少量图片
 
-建议先完成 AdamW8bit 基准训练。图片来源和质量差异明显时，可在相同步数下比较 CAME；日志存在尖峰时，再比较 StableAdamW。复杂的内部调度在短训练中可能没有足够步数体现效果。
+少量样本会使单个批次在总更新中的占比更高。裁剪机制可以改变异常数值更新的幅度，但不能判断该批次是有效稀有特征还是错误数据。
 
 <!-- doc-anchor: galgame -->
-### Galgame 多表情立绘
+### Galgame 立绘
 
-这类数据构图很固定，AdamW8bit 通常够用。比更换优化器更重要的是正确标注表情，并避免固定背景、站姿被学进人物身份。表情数量很不均衡时，可以增加一组 CAME 对照。
+固定站姿、背景和裁切会作为重复统计进入梯度。优化器只处理这些梯度的数值历史，不区分人物身份与共同构图。
 
 <!-- doc-anchor: dmm-mixed -->
-### DMM 卡面、特效、伙伴角色混合
+### DMM 卡面与混合来源
 
-应先标注或移除伙伴角色、文字、水印、特效和不同形态，再比较 AdamW8bit 与 CAME。训练日志仍存在稳定性问题时，可增加 StableAdamW 对照。优化器无法识别哪一名角色是训练目标。
+卡面、截图、立绘和特效图可能产生不同的梯度尺度。CAME 的置信度状态、StableAdamW 的更新 RMS 裁剪和 bitsandbytes 百分位裁剪会以不同位置处理数值波动，但都不读取来源类别。
 
 <!-- doc-anchor: mixed-quality -->
-### 图片质量参差
+### 质量差异
 
-应先处理模糊图、压缩截图、重复裁剪和 Live2D 连续帧。必须保留的图片可通过标注（caption）、分组和重复次数控制。可对比 CAME，或在 8-bit 优化器中先测试 `percentile_clipping=99`；不建议直接使用 `95`。
+模糊、压缩、重复裁剪和连续帧会改变训练信号。优化器无法给这些图片自动降低采样权重；数据分组、caption 和 repeats 决定它们进入训练的频率与条件。
 
 <!-- doc-anchor: outfits-forms -->
-### 多服装、多形态
+### 多服装与多形态
 
-此场景更依赖准确的服装/形态标签和合理的分组采样。AdamW8bit、CAME、StableAdamW 均可使用。评估时应检查服装控制、身份保持和形态串色，而非仅比较单张预览的锐度。
+服装或形态的绑定来自样本共现与 caption 条件。优化器会改变更新轨迹，但不会建立缺失的标签边界。
 
 <!-- doc-anchor: style-lora -->
 ### 风格 LoRA
 
-仍然从 AdamW8bit 开始。风格能否泛化，主要取决于题材覆盖，以及标注是否将内容与风格分开。StableAdamW 可以减轻异常批次（batch）的影响，但过强的裁剪也可能削弱少见的风格特征。
+题材覆盖和内容/风格标注决定风格信号与主体信号是否分离。内部裁剪会同时作用于异常更新和数值较大的稀有风格更新。
 
 <!-- doc-anchor: vram -->
-### 显存紧张
+### 优化器状态显存
 
-建议先使用 AdamW8bit 或 Lion8bit，仅在确认存在内存压力时改用 Paged 版本。分页实际触发时，CPU 与 GPU 之间的状态传输可能降低训练速度。`min_8bit_size` 建议保留 `4096`，避免为少量状态显存而量化更多小张量。
+8-bit 状态降低可量化状态的存储位宽。Paged 变体在 GPU 内存压力触发分页时把状态页移至 CPU，并产生 CPU/GPU 传输。AdaFactor 与 CAME 通过二维状态因子化减少对应参数的二阶状态规模。
 
 <!-- doc-anchor: starting-configs -->
-## 保守起始配置
+## 自动联动与硬性关系
 
-| 用途 | 优化器与参数 | 其他设置 |
+| 条件 | 配置结果 | 原因 |
 | --- | --- | --- |
-| Anima 通用基准 | AdamW8bit，LR 采用上方主表，`weight_decay=0.01` | constant，`max_grad_norm=1`，项目默认 rank/alpha，只训练 DiT |
-| Anima 混合来源对照 | CAME，LR 采用上方主表；其余保持默认 | constant，`max_grad_norm=1`；结果需用固定条件验证 |
-| Anima 梯度尖峰对照 | StableAdamW，LR 采用上方主表，保留项目默认稳定性参数 | Kahan 开启，constant，`max_grad_norm=1` |
-| Anima Lion 实验 | Lion / Lion8bit，LR 采用上方主表 | constant；这不是完整的官方 Lion recipe |
-| 温和的 8-bit 裁剪 | AdamW8bit，沿用基准参数，`percentile_clipping=99` | 保持其他参数不变 |
-
-出现过拟合时，优先减少训练步数、重复次数（repeats）或学习率；学习不足时，先检查触发词和有效步数；曲线出现尖峰时，先定位对应批次，再考虑裁剪或 StableAdamW。
+| AdamWScheduleFree / ProdigyPlusScheduleFree | 外部 scheduler 为 `constant`，外部 warmup 为 `0` | 调度由优化器内部管理 |
+| AdaFactor 且 `relative_step=true` | 外部 scheduler 不参与，LoRA+ 不输出 | 步长由 AdaFactor 内部生成 |
+| Prodigy / ProdigyPlusScheduleFree | 基础学习率自动值为 `1.0` | 输入学习率参与 D-adaptation 尺度计算 |
+| CAME 且 `weight_decouple=false` | `came_fixed_decay` 不显示且不输出 | 固定衰减只属于解耦衰减分支 |
+| 8-bit/Paged bitsandbytes 优化器 | 显示 `percentile_clipping` 与 `min_8bit_size` | 两项由 bitsandbytes 状态实现消费 |
+| 内部 scheduler 优化器 | 外部 scheduler 控件只反映硬性配置 | 外部 scheduler 不参与参数更新 |
 
 <!-- doc-anchor: troubleshooting -->
-## 按现象排查
+## 现象与可观测量
 
-| 现象 | 优先检查 | 可考虑的优化器调整 |
+| 现象 | 能区分问题来源的观测 | 优化器相关机制 |
 | --- | --- | --- |
-| 损失值平稳，但预览质量差 | 数据、标注、预览提示词、检查点时机 | 通常不应先更换优化器 |
-| 孤立且可复现的损失值或梯度尖峰 | 对应批次、异常图片、学习率 | 对比 StableAdamW，或单独测试 `percentile_clipping=99` |
-| 出现 NaN / Inf | 立即停止；检查学习率、精度设置、异常数据和恢复点 | 排除配置或数据问题后再比较 StableAdamW；不要用裁剪掩盖持续性错误 |
-| 优化器状态导致显存不足 | 确认峰值来自优化器状态，而非分辨率、batch 或预览 | 先用 8-bit；仍不足时再用 Paged 版本 |
-| 很快记住姿势、背景或服装 | 步数、repeats、学习率、数据重复 | 降低学习率或缩短训练；换优化器通常不能解决 |
-| 人物特征长期学不进去 | 触发词、caption、有效步数、rank 和训练目标 | 确认上述项目后，再小幅提高学习率 |
+| 孤立梯度峰值 | 对应批次、梯度范数、裁剪前后范数 | 全局裁剪、百分位裁剪、更新 RMS 裁剪 |
+| NaN / Inf | 首次出现步骤、参数 dtype、VAE 输出、学习率与恢复状态 | `eps` 与内部稳定项只覆盖各自分母，不修复无效输入 |
+| GPU 内存不足 | 参数、激活、梯度、优化器状态各自占用 | 8-bit 状态、因子化状态、Paged 状态 |
+| loss 平稳但预览不符合目标 | 固定提示词下的多个 checkpoint、caption 与样本共现 | 优化器只处理梯度，loss 不包含完整的主观生成目标 |
+| 训练结果很快固化 | 有效步数、repeats、学习率、重复样本 | 状态历史和步长共同决定更新累积速度 |
 
 <!-- doc-anchor: ab-testing -->
-## 怎么做有效的 A/B
+## 可归因对照条件
 
-1. 固定数据集、标注（caption）、随机种子（seed）、底模、rank/alpha、批次大小和总步数。
-2. 固定预览提示词、采样参数和生成随机种子。
-3. Anima 配方对照使用上方学习率主表中的对应工程起点。这比较的是完整起始配方；若要单独隔离算法差异，应另做相同 LR 的实验。
-4. 比较相同步数的训练检查点，同时记录梯度范数、峰值显存和训练时间。
-5. 不应仅比较损失值；还需评估人物还原、服装控制、背景或姿势绑定以及提示词响应。
+只有数据集、caption、底模、随机种子、rank/alpha、batch、梯度累积、总优化器步数和预览条件相同时，结果差异才可能归因到优化器相关变量。优化器与学习率同时变化时，对照反映的是完整配置差异。
 
-每组对照应从同一底模重新开始。不要加载另一优化器保存的训练状态后再切换优化器，因为动量和状态结构并不等价。
-
-Prodigy 等需要不同学习率尺度的优化器不能纳入上述单变量对照。可先分别调到合理设置，再比较完整训练方案；结论应表述为“该方案更适合当前数据集”，而不是把差异全部归因于优化器。
-
-同时修改优化器、学习率、rank 和训练步数会使结果无法归因。即使结果改善，也无法确定具体原因。
+不同优化器的状态结构不等价。从另一优化器保存的状态继续训练会同时改变初始动量、二阶统计和步长状态。Prodigy 等内部估计步长的实现还会引入独立的历史尺度。
 
 <!-- doc-anchor: limits -->
-## 适用边界
+## 能力范围
 
-- CAME 只处理梯度和优化器状态，不会自动降低低质量图片的权重。
-- StableAdamW 主要改善更新稳定性；基准训练已经稳定时，画质差异可能较小。
-- Paged 版本只改变内存分页方式，不提供独立的画质收益；实际发生分页时可能降低训练速度。
-- 优化器不能单独阻止单图过拟合；停止时机、重复次数和数据多样性更关键。
-- 不同优化器的合理学习率范围不同，因此统一使用同一学习率并不一定构成公平比较。
+- 优化器不识别图片质量、角色身份、服装类别、文字水印或伙伴角色。
+- 裁剪按数值幅度工作，无法判断大更新来自异常数据还是有效稀有特征。
+- Paged 变体改变状态内存位置，不提供独立的图像质量目标。
+- 内部 scheduler 改变参数序列与步长历史，外部 scheduler 在这些实现中不参与。
+- loss 是训练目标的聚合数值，不等同于人物还原、风格泛化或提示词响应。
 
 <!-- doc-anchor: evidence -->
-## 依据与参考资料
+## 实现依据与参考资料
 
-事实核查日期：**2026-07-31**。下列代码与模型卡链接固定到核查时的提交。
+事实核查日期：**2026-07-31**。项目行为以本仓库字段元数据、适配器和锁定版本的上游实现为准。
 
-**实现事实：** 本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 中，它的构造器默认值包括 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=True`、`kahan_sum=True`。本项目有意将 `weight_decay` 覆盖为 `0`。
-
-**模型与上游依据：** Anima 官方模型卡建议使用 Anima-Base、不要训练 LLM Adapter、rank 32 从 `2e-5` 左右起步，但没有规定 `alpha=32`。`sd-scripts` 的 Anima 文档把 `1e-4` 标为 `alpha=1` 的示例，并要求 alpha 增大后重新降低/验证 LR。
-
-**论文依据：** CAME、Lion、Prodigy、Schedule-Free、LoRA+ 的论文解释了算法动机，并报告了各自任务上的结果。CAME 的 `0.5`～`0.9` 倍和 Lion 的 `1/3`～`1/10` LR 是相对 AdamW 的官方调参建议；语言模型、分类或其他扩散实验不能直接推出 Anima 人物 LoRA 的画质排序。
-
-**需要实测的经验判断：** CAME 可能更适合来源混合的数据，StableAdamW 可能更能容忍尖峰 batch。这些属于社区与工程经验，应通过固定条件的 A/B 测试确认是否适用于当前数据集。
+本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 构造器包含 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=true` 和 `kahan_sum=true`；项目生成配置会按界面值覆盖构造器值。
 
 参考资料：
 
-- [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
-- [sd-scripts Anima LoRA 训练文档（固定提交）](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
-- [CAME 官方实现与调参说明（固定提交）](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
-- [Lion 官方实现与调参说明（固定提交）](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
-- [Schedule-Free 官方实现与调参说明（固定提交）](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
-- [Transformers 余弦重启调度器实现（固定提交）](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
+- [Anima 模型卡（固定版本）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [sd-scripts Anima 训练文档（固定版本）](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
+- [CAME 官方实现（固定版本）](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
+- [Lion 官方实现（固定版本）](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
+- [Schedule-Free 官方实现（固定版本）](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
-- [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
+- [Symbolic Discovery of Optimization Algorithms](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
 - [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
-- [pytorch-optimizer 实现（固定提交）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
-- [bitsandbytes 优化器实现（固定提交）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
+- [pytorch-optimizer 实现（固定版本）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
+- [bitsandbytes 实现（固定版本）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)

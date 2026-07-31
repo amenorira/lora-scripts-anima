@@ -63,6 +63,28 @@ def krea2_config(root: Path) -> dict:
     return config
 
 
+def krea_field_visible(field: dict, values: dict) -> bool:
+    def matches(condition: dict) -> bool:
+        current = values.get(condition["key"])
+        if "eq" in condition:
+            return current == condition["eq"] or current in condition.get("_or", [])
+        if "neq" in condition:
+            return current not in (condition["neq"], None, "")
+        return True
+
+    show_if = field.get("show_if")
+    if isinstance(show_if, list) and not all(matches(condition) for condition in show_if):
+        return False
+    if isinstance(show_if, dict) and not matches(show_if):
+        return False
+    show_if_any = field.get("show_if_any")
+    if show_if_any and not any(
+        all(matches(condition) for condition in group) for group in show_if_any
+    ):
+        return False
+    return True
+
+
 class CoreRegistryTests(unittest.TestCase):
     def test_lycoris_is_first_class_but_mounted_on_sd_scripts(self):
         config = {"model_train_type": "anima-lora", "adapter_id": "lycoris"}
@@ -195,6 +217,44 @@ class Krea2CodecTests(unittest.TestCase):
                     self.assertEqual(train["timestep_sampling"], sampling)
                     self.assertEqual(train["weighting_scheme"], weighting)
 
+    def test_krea_timestep_field_visibility_matches_serialized_parameters(self):
+        fields = {field["key"]: field for field in KREA2_FIELDS}
+        sampling_modes = ("uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr")
+        weighting_schemes = ("none", "sigma_sqrt", "cosmap", "logit_normal", "mode")
+
+        for sampling in sampling_modes:
+            for weighting in weighting_schemes:
+                with self.subTest(sampling=sampling, weighting=weighting), tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    config = krea2_config(root)
+                    config.update(
+                        {
+                            "timestep_sampling": sampling,
+                            "weighting_scheme": weighting,
+                            "logit_mean": 0.37,
+                            "logit_std": 0.83,
+                            "mode_scale": 1.77,
+                        }
+                    )
+                    self.assertEqual(validate_krea2_config(config), [])
+                    train = build_krea2_train_config(
+                        config,
+                        root / "dataset.toml",
+                        root / "output",
+                        root / "log",
+                    )
+
+                    uses_logit = sampling == "logsnr" or (
+                        sampling == "sigma" and weighting == "logit_normal"
+                    )
+                    uses_mode = sampling == "sigma" and weighting == "mode"
+                    self.assertEqual(krea_field_visible(fields["logit_mean"], config), uses_logit)
+                    self.assertEqual(krea_field_visible(fields["logit_std"], config), uses_logit)
+                    self.assertEqual(krea_field_visible(fields["mode_scale"], config), uses_mode)
+                    self.assertEqual("logit_mean" in train, uses_logit)
+                    self.assertEqual("logit_std" in train, uses_logit)
+                    self.assertEqual("mode_scale" in train, uses_mode)
+
     def test_shift_is_positive_for_shift_and_sigma_sampling(self):
         for sampling in ("shift", "sigma"):
             for value in (0, -1, float("nan"), float("inf")):
@@ -269,7 +329,7 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["max_grad_norm"], 0.5)
         self.assertEqual(estimate["total_steps"], 321)
 
-    def test_optimizer_menu_separates_recommended_and_advanced_surface(self):
+    def test_optimizer_menu_uses_mechanism_groups_and_exact_order(self):
         fields = get_fields_json()
         optimizer_fields = [
             field
@@ -286,34 +346,35 @@ class Krea2CodecTests(unittest.TestCase):
 
         self.assertEqual(len(optimizer_fields), 1)
         optimizer_groups = {
-            group["labelKey"]: {option["v"] for option in group["options"]}
+            group["labelKey"]: [option["v"] for option in group["options"]]
             for group in optimizer_fields[0]["groups"]
         }
-        self.assertSetEqual(
-            optimizer_groups["opt.krea_optimizer_group_recommended"],
+        self.assertEqual(
+            optimizer_groups,
             {
-                "adamw8bit",
-                "AdamW",
-                "AdaFactor",
-                "bitsandbytes.optim.PagedAdamW8bit",
-                "bitsandbytes.optim.Lion8bit",
-                "pytorch_optimizer.CAME",
-                "prodigyopt.Prodigy",
-                "prodigyplus.ProdigyPlusScheduleFree",
-                "schedulefree.AdamWScheduleFree",
-            },
-        )
-        self.assertSetEqual(
-            optimizer_groups["opt.krea_optimizer_group_advanced"],
-            {
-                "bitsandbytes.optim.PagedLion8bit",
-                "pytorch_optimizer.Lion",
-                "bitsandbytes.optim.AdEMAMix8bit",
-                "bitsandbytes.optim.PagedAdEMAMix8bit",
+                "opt.optimizer_group_adamw": [
+                    "adamw8bit",
+                    "AdamW",
+                    "bitsandbytes.optim.PagedAdamW8bit",
+                ],
+                "opt.optimizer_group_sign": [
+                    "bitsandbytes.optim.Lion8bit",
+                    "bitsandbytes.optim.PagedLion8bit",
+                    "pytorch_optimizer.Lion",
+                ],
+                "opt.optimizer_group_factorized": [
+                    "AdaFactor",
+                    "pytorch_optimizer.CAME",
+                ],
+                "opt.optimizer_group_adaptive": [
+                    "prodigyopt.Prodigy",
+                    "prodigyplus.ProdigyPlusScheduleFree",
+                    "schedulefree.AdamWScheduleFree",
+                ],
             },
         )
         optimizer_values = set().union(*optimizer_groups.values())
-        self.assertEqual(len(optimizer_values), 13)
+        self.assertEqual(len(optimizer_values), 11)
         self.assertFalse(
             {
                 "torch.optim.Adam",
@@ -339,9 +400,9 @@ class Krea2CodecTests(unittest.TestCase):
             config = krea2_config(root)
             config.update(
                 {
-                    "optimizer_type": "bitsandbytes.optim.PagedAdEMAMix8bit",
+                    "optimizer_type": "bitsandbytes.optim.PagedAdamW8bit",
                     "krea_optimizer_weight_decay": 0.02,
-                    "krea_optimizer_betas": "0.9, 0.999, 0.9999",
+                    "krea_optimizer_betas": "0.9, 0.999",
                     "krea_optimizer_eps": "1e-8",
                     "lr_scheduler": "cosine_with_min_lr",
                     "lr_scheduler_num_cycles": 3,
@@ -352,14 +413,29 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertEqual(validate_krea2_config(config), [])
             train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
 
-        self.assertEqual(train["optimizer_type"], "bitsandbytes.optim.PagedAdEMAMix8bit")
+        self.assertEqual(train["optimizer_type"], "bitsandbytes.optim.PagedAdamW8bit")
         self.assertEqual(train["lr_scheduler"], "cosine_with_min_lr")
         self.assertEqual(train["lr_scheduler_num_cycles"], 3)
         self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.05)
         self.assertEqual(
             train["optimizer_args"],
-            ["weight_decay=0.02", "betas=(0.9, 0.999, 0.9999)", "eps=1e-08"],
+            ["weight_decay=0.02", "betas=(0.9, 0.999)", "eps=1e-08"],
         )
+
+    def test_removed_optimizer_selector_uses_generic_unsupported_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            config["optimizer_type"] = "removed.optimizer"
+            errors = validate_krea2_config(config)
+            with self.assertRaisesRegex(ValueError, "only the built-in Krea 2 optimizer list"):
+                build_krea2_train_config(
+                    config,
+                    Path(temp_dir) / "dataset.toml",
+                    Path(temp_dir) / "output",
+                    Path(temp_dir) / "log",
+                )
+
+        self.assertTrue(any(error.startswith("optimizer_type: only the built-in") for error in errors))
 
     def test_cosine_with_min_lr_gets_an_explicit_safe_floor_for_old_presets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -410,6 +486,27 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(config["lr_warmup_steps"], 0)
         self.assertEqual(train["optimizer_args"], ["warmup_steps=25"])
         self.assertEqual(legacy_train["optimizer_type"], "torch.optim.SGD")
+
+    def test_final_state_save_is_independent_from_periodic_state_saves(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            config.update(
+                {
+                    "save_state": False,
+                    "save_state_on_train_end": True,
+                }
+            )
+            self.assertEqual(validate_krea2_config(config), [])
+            train = build_krea2_train_config(
+                config,
+                root / "dataset.toml",
+                root / "output",
+                root / "log",
+            )
+
+        self.assertNotIn("save_state", train)
+        self.assertTrue(train["save_state_on_train_end"])
 
     def test_prodigyplus_uses_internal_scheduler_and_only_supported_guided_args(self):
         with tempfile.TemporaryDirectory() as temp_dir:

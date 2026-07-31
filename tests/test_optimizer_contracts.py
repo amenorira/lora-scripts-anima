@@ -19,6 +19,14 @@ from backend.training.optimizer_contracts import (
     PRODIGYPLUS_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
+from backend.training.optimizer_metadata import (
+    KREA2_PROFILE,
+    SD_SCRIPTS_PROFILE,
+    optimizer_beta_hint_map,
+    optimizer_beta_lengths,
+    optimizer_entries,
+    optimizer_groups,
+)
 from backend.training.validation import validate_training_config
 
 
@@ -83,6 +91,60 @@ def contextual_auto_value_for(
 
 
 class OptimizerFieldContractTests(unittest.TestCase):
+    def test_optimizer_metadata_defines_exact_selectors_groups_and_beta_contracts(self):
+        self.assertEqual(
+            [entry.selector for entry in optimizer_entries(SD_SCRIPTS_PROFILE)],
+            [
+                "AdamW",
+                "AdamW8bit",
+                "PagedAdamW8bit",
+                STABLE_ADAMW_OPTIMIZER_TYPE,
+                "Lion",
+                "Lion8bit",
+                "PagedLion8bit",
+                ADAFACTOR_OPTIMIZER_TYPE,
+                CAME_OPTIMIZER_TYPE,
+                PRODIGY_OPTIMIZER_TYPE,
+                PRODIGYPLUS_OPTIMIZER_TYPE,
+                ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
+                AUTOMAGIC_OPTIMIZER_TYPE,
+                "vendor.emo_optimizer.emosens.EmoSens",
+            ],
+        )
+        self.assertEqual(len(optimizer_entries(KREA2_PROFILE)), 11)
+
+        expected_group_order = [
+            "opt.optimizer_group_adamw",
+            "opt.optimizer_group_sign",
+            "opt.optimizer_group_factorized",
+            "opt.optimizer_group_adaptive",
+            "opt.optimizer_group_experimental",
+        ]
+        self.assertEqual(
+            [group["label_key"] for group in optimizer_groups(SD_SCRIPTS_PROFILE)],
+            expected_group_order,
+        )
+        self.assertEqual(
+            [group["label_key"] for group in optimizer_groups(KREA2_PROFILE)],
+            expected_group_order[:-1],
+        )
+
+        for profile in (SD_SCRIPTS_PROFILE, KREA2_PROFILE):
+            lengths = optimizer_beta_lengths(profile)
+            hints = optimizer_beta_hint_map(profile)
+            beta_entries = {
+                entry.selector: entry
+                for entry in optimizer_entries(profile)
+                if entry.beta_arity is not None
+            }
+            self.assertEqual(set(lengths), set(beta_entries))
+            self.assertEqual(set(hints), set(beta_entries))
+            for selector, entry in beta_entries.items():
+                with self.subTest(profile=profile, selector=selector):
+                    self.assertEqual(lengths[selector], {entry.beta_arity})
+                    self.assertEqual(hints[selector], entry.beta_hint_key)
+                    self.assertTrue(entry.description_key.startswith("opt.optimizer_type_"))
+
     def test_registry_displays_product_defaults_and_anima_recommendations(self):
         from pytorch_optimizer import StableAdamW
 
@@ -319,6 +381,29 @@ class OptimizerAdapterTests(unittest.TestCase):
         adapted, _ = adapt_config({"optimizer_type": "AdamW", **values})
         self.assertNotIn("optimizer_args", adapted)
 
+    def test_came_fixed_decay_requires_decoupled_weight_decay(self):
+        coupled, _ = adapt_config(
+            {
+                "optimizer_type": CAME_OPTIMIZER_TYPE,
+                "weight_decay": 0.02,
+                "came_weight_decouple": False,
+                "came_fixed_decay": True,
+            }
+        )
+        decoupled, _ = adapt_config(
+            {
+                "optimizer_type": CAME_OPTIMIZER_TYPE,
+                "weight_decay": 0.02,
+                "came_weight_decouple": True,
+                "came_fixed_decay": True,
+            }
+        )
+
+        self.assertIn("weight_decouple=False", coupled["optimizer_args"])
+        self.assertNotIn("fixed_decay=True", coupled["optimizer_args"])
+        self.assertIn("weight_decouple=True", decoupled["optimizer_args"])
+        self.assertIn("fixed_decay=True", decoupled["optimizer_args"])
+
     def test_adafactor_relative_and_manual_modes(self):
         relative, warnings = adapt_config(
             {
@@ -467,7 +552,61 @@ class OptimizerAdapterTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class OptimizerFrontendTests(unittest.TestCase):
-    def test_anima_optimizer_recommendations_preserve_explicit_values(self):
+    def test_dynamic_beta_hints_match_main_form_and_preset_editor(self):
+        fields = fields_by_key()
+        betas_field = fields["betas"]
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+require('./frontend/js/training-presets.js');
+const messages = {
+  'field.betasHint_adam': 'adam beta mechanism',
+  'field.betasHint_lion': 'lion beta mechanism',
+  'field.betasHint_came': 'came beta mechanism',
+};
+const core = window.trainingCoreMixin;
+const presets = window.trainingPresetsMixin;
+const ctx = Object.assign({}, core, {
+  form: { model_train_type: 'anima-lora', optimizer_type: 'AdamW' },
+  t(key) { return messages[key] || key; },
+});
+const field = __FIELD__;
+const mainAdam = ctx._resolveFieldHintText(field, ctx.form, 'anima-lora');
+ctx.form.optimizer_type = 'Lion';
+const mainLion = ctx._resolveFieldHintText(field, ctx.form, 'anima-lora');
+
+const preset = Object.assign({}, core, presets, {
+  presetEditor: {
+    meta: { train_type: 'anima-lora' },
+    entries: [
+      { key: 'optimizer_type', value: 'pytorch_optimizer.CAME' },
+      { key: 'betas', value: '0.9, 0.999, 0.9999', def: field },
+    ],
+  },
+  t(key) { return messages[key] || key; },
+});
+const presetCame = preset.presetFieldHint(preset.presetEditor.entries[1]);
+console.log(JSON.stringify({ mainAdam, mainLion, presetCame }));
+""".replace("__FIELD__", json.dumps(betas_field))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "mainAdam": "adam beta mechanism",
+                "mainLion": "lion beta mechanism",
+                "presetCame": "came beta mechanism",
+            },
+        )
+
+    def test_anima_optimizer_automatic_values_preserve_explicit_values(self):
         fields = fields_by_key()
         rules = []
         for key in ("learning_rate", "lr_scheduler"):

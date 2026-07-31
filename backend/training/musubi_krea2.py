@@ -17,6 +17,19 @@ from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
+from backend.training.optimizer_metadata import (
+    KREA2_OPTIMIZER_AUTO_VALUES,
+    KREA2_PRODIGYPLUS_OPTIMIZER_TYPE,
+    KREA2_PROFILE,
+    KREA2_SCHEDULEFREE_OPTIMIZER_TYPE,
+    internal_scheduler_selectors,
+    optimizer_beta_hint_map,
+    optimizer_beta_lengths,
+    optimizer_entries,
+    optimizer_eps_selectors,
+    optimizer_groups,
+    optimizer_selectors,
+)
 
 
 KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
@@ -53,46 +66,41 @@ _KREA2_LR_SCHEDULERS = {
 }
 _KREA2_COMPILE_MODES = {"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
 _KREA2_COMPILE_DYNAMIC_VALUES = {"auto", "true", "false"}
-_KREA2_PRODIGYPLUS_OPTIMIZER = "prodigyplus.ProdigyPlusScheduleFree"
+_KREA2_PRODIGYPLUS_OPTIMIZER = KREA2_PRODIGYPLUS_OPTIMIZER_TYPE
 # musubi recognizes optimizer classes ending in ``ScheduleFree`` and supplies
 # its own no-op scheduler for them.  That does *not* mean each such class
 # accepts AdamWScheduleFree's ``warmup_steps`` constructor argument.
-_KREA2_INTERNAL_SCHEDULER_OPTIMIZERS = frozenset(
-    {"schedulefree.AdamWScheduleFree", _KREA2_PRODIGYPLUS_OPTIMIZER}
-)
-_KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS = frozenset({"schedulefree.AdamWScheduleFree"})
+_KREA2_INTERNAL_SCHEDULER_OPTIMIZERS = internal_scheduler_selectors(KREA2_PROFILE)
+_KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS = frozenset({KREA2_SCHEDULEFREE_OPTIMIZER_TYPE})
 _KREA2_PRODIGY_OPTIMIZERS = frozenset({"prodigyopt.Prodigy", _KREA2_PRODIGYPLUS_OPTIMIZER})
-_KREA2_BETA_LENGTHS: dict[str, set[int]] = {
-    "adamw8bit": {2},
-    "AdamW": {2},
-    "bitsandbytes.optim.PagedAdamW8bit": {2},
-    "bitsandbytes.optim.AdEMAMix8bit": {3},
-    "bitsandbytes.optim.PagedAdEMAMix8bit": {3},
-    "bitsandbytes.optim.Lion8bit": {2},
-    "bitsandbytes.optim.PagedLion8bit": {2},
-    "pytorch_optimizer.CAME": {3},
-    "pytorch_optimizer.Lion": {2},
-    "prodigyopt.Prodigy": {2},
-    _KREA2_PRODIGYPLUS_OPTIMIZER: {2},
-    "schedulefree.AdamWScheduleFree": {2},
-    "torch.optim.Adam": {2},
-    "torch.optim.RAdam": {2},
-    "torch.optim.NAdam": {2},
-}
+_KREA2_BETA_LENGTHS: dict[str, set[int]] = optimizer_beta_lengths(KREA2_PROFILE)
+# Hidden legacy torch optimizers remain launch-compatible but are not product
+# options, so their constructor capabilities stay local to the compatibility path.
+_KREA2_BETA_LENGTHS.update(
+    {
+        "torch.optim.Adam": {2},
+        "torch.optim.RAdam": {2},
+        "torch.optim.NAdam": {2},
+    }
+)
 _KREA2_BETA_OPTIMIZERS = set(_KREA2_BETA_LENGTHS)
-_KREA2_EPS_OPTIMIZERS = {
-    "adamw8bit",
-    "AdamW",
-    "bitsandbytes.optim.PagedAdamW8bit",
-    "bitsandbytes.optim.AdEMAMix8bit",
-    "bitsandbytes.optim.PagedAdEMAMix8bit",
-    "prodigyopt.Prodigy",
-    _KREA2_PRODIGYPLUS_OPTIMIZER,
-    "schedulefree.AdamWScheduleFree",
-    "torch.optim.Adam",
-    "torch.optim.RAdam",
-    "torch.optim.NAdam",
-}
+_KREA2_BETA_HINTS = optimizer_beta_hint_map(KREA2_PROFILE)
+_KREA2_BETA_HINTS.update(
+    {
+        "torch.optim.Adam": "field.betasHint_adam",
+        "torch.optim.RAdam": "field.betasHint_adam",
+        "torch.optim.NAdam": "field.betasHint_adam",
+    }
+)
+_KREA2_EPS_OPTIMIZERS = set(optimizer_eps_selectors(KREA2_PROFILE))
+_KREA2_EPS_OPTIMIZERS.update(
+    {"torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam"}
+)
+_KREA2_EPS_OPTIMIZER_ORDER = tuple(
+    entry.selector
+    for entry in optimizer_entries(KREA2_PROFILE)
+    if entry.selector in _KREA2_EPS_OPTIMIZERS
+) + ("torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam")
 _KREA2_MIN_LR_RATIO_SCHEDULERS = {"cosine_with_min_lr", "warmup_stable_decay", "rex"}
 _KREA2_NUM_CYCLES_SCHEDULERS = {"cosine_with_restarts", "cosine_with_min_lr", "warmup_stable_decay"}
 _KREA2_LEGACY_OPTIMIZER_ALIASES = {
@@ -109,23 +117,7 @@ _KREA2_LEGACY_OPTIMIZER_ALIASES = {
     "adamwschedulefree": "schedulefree.AdamWScheduleFree",
     "came": "pytorch_optimizer.CAME",
 }
-_KREA2_VISIBLE_OPTIMIZERS = frozenset(
-    {
-        "adamw8bit",
-        "AdamW",
-        "AdaFactor",
-        "bitsandbytes.optim.PagedAdamW8bit",
-        "bitsandbytes.optim.Lion8bit",
-        "bitsandbytes.optim.PagedLion8bit",
-        "bitsandbytes.optim.AdEMAMix8bit",
-        "bitsandbytes.optim.PagedAdEMAMix8bit",
-        "pytorch_optimizer.CAME",
-        "pytorch_optimizer.Lion",
-        "prodigyopt.Prodigy",
-        _KREA2_PRODIGYPLUS_OPTIMIZER,
-        "schedulefree.AdamWScheduleFree",
-    }
-)
+_KREA2_VISIBLE_OPTIMIZERS = optimizer_selectors(KREA2_PROFILE)
 # These generic torch optimizers were visible in the first Krea 2 release.
 # Keep them launch-compatible for saved presets, but do not offer new tasks a
 # half-configured SGD/Adam-family surface in the curated selector.
@@ -143,6 +135,14 @@ _KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
 # constant. The authoritative contract now lives in musubi_runtime and is
 # shared by launchers, the Environment tab, and Krea preflight.
 _MUSUBI_RUNTIME_PACKAGES = MUSUBI_RUNTIME_PACKAGES
+
+
+def _show_if_one_of(key: str, values: Iterable[str]) -> dict[str, Any]:
+    ordered = list(values)
+    condition: dict[str, Any] = {"key": key, "eq": ordered[0]}
+    if len(ordered) > 1:
+        condition["_or"] = ordered[1:]
+    return condition
 
 
 # Kept separate from the legacy FIELDS registry. field_registry.get_fields_json
@@ -389,18 +389,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_learning_rate",
         "hint_key": "field.krea_learning_rateHint",
         "required": True,
-        # These are constructor defaults/recommendations from the concrete
-        # classes installed in the shared runtime.  They apply only while the
-        # user has not supplied a different learning rate.
-        "auto_value": [
-            {"watch": "optimizer_type", "when": "bitsandbytes.optim.Lion8bit", "set": "1e-4", "set_if_default": True},
-            {"watch": "optimizer_type", "when": "bitsandbytes.optim.PagedLion8bit", "set": "1e-4", "set_if_default": True},
-            {"watch": "optimizer_type", "when": "pytorch_optimizer.Lion", "set": "1e-4", "set_if_default": True},
-            {"watch": "optimizer_type", "when": "pytorch_optimizer.CAME", "set": "2e-4", "set_if_default": True},
-            {"watch": "optimizer_type", "when": "prodigyopt.Prodigy", "set": "1.0", "set_if_default": True},
-            {"watch": "optimizer_type", "when": _KREA2_PRODIGYPLUS_OPTIMIZER, "set": "1.0", "set_if_default": True},
-            {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": "0.0025", "set_if_default": True},
-        ],
+        "auto_value": KREA2_OPTIMIZER_AUTO_VALUES["learning_rate"],
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -494,7 +483,13 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_logit_mean",
         "hint_key": "field.krea_logit_meanHint",
-        "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
+        "show_if_any": [
+            [{"key": "timestep_sampling", "eq": "logsnr"}],
+            [
+                {"key": "timestep_sampling", "eq": "sigma"},
+                {"key": "weighting_scheme", "eq": "logit_normal"},
+            ],
+        ],
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "logit-normal",
@@ -507,7 +502,13 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_logit_std",
         "hint_key": "field.krea_logit_stdHint",
-        "show_if": {"key": "timestep_sampling", "eq": "sigma", "_or": ["logsnr"]},
+        "show_if_any": [
+            [{"key": "timestep_sampling", "eq": "logsnr"}],
+            [
+                {"key": "timestep_sampling", "eq": "sigma"},
+                {"key": "weighting_scheme", "eq": "logit_normal"},
+            ],
+        ],
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "logit-normal",
@@ -520,7 +521,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_mode_scale",
         "hint_key": "field.krea_mode_scaleHint",
-        "show_if": {"key": "timestep_sampling", "eq": "sigma"},
+        "show_if": [
+            {"key": "timestep_sampling", "eq": "sigma"},
+            {"key": "weighting_scheme", "eq": "mode"},
+        ],
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "mode",
@@ -531,65 +535,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "adamw8bit",
         "section": "optimizer",
         "desc_key": "field.optimizer_type",
-        # parser_common.py documents the first three short names, while
-        # trainer_base.py can technically import arbitrary optimizer classes.
-        # Deliberately expose only the audited shared-runtime allowlist: an
-        # unsupported optimizer can otherwise fail after the expensive cache
-        # and model-load stages.  The base group is intentionally small; less
-        # common but validated variants live under Advanced.
-        "groups": [
-            {
-                "label_key": "opt.krea_optimizer_group_recommended",
-                "options": [
-                    {"v": "adamw8bit", "l": "AdamW 8-bit", "dk": "opt.krea_optimizer_adamw8bit"},
-                    {"v": "AdamW", "l": "AdamW", "dk": "opt.krea_optimizer_adamw"},
-                    {"v": "AdaFactor", "l": "AdaFactor", "dk": "opt.krea_optimizer_adafactor"},
-                    {
-                        "v": "bitsandbytes.optim.PagedAdamW8bit",
-                        "l": "PagedAdamW8bit",
-                        "dk": "opt.krea_optimizer_paged_adamw8bit",
-                    },
-                    {
-                        "v": "bitsandbytes.optim.Lion8bit",
-                        "l": "Lion8bit",
-                        "dk": "opt.krea_optimizer_lion8bit",
-                    },
-                    {"v": "pytorch_optimizer.CAME", "l": "CAME", "dk": "opt.krea_optimizer_came"},
-                    {"v": "prodigyopt.Prodigy", "l": "Prodigy", "dk": "opt.krea_optimizer_prodigy"},
-                    {
-                        "v": _KREA2_PRODIGYPLUS_OPTIMIZER,
-                        "l": "ProdigyPlusScheduleFree",
-                        "dk": "opt.krea_optimizer_prodigyplus",
-                    },
-                    {
-                        "v": "schedulefree.AdamWScheduleFree",
-                        "l": "AdamWScheduleFree",
-                        "dk": "opt.krea_optimizer_schedulefree",
-                    },
-                ],
-            },
-            {
-                "label_key": "opt.krea_optimizer_group_advanced",
-                "options": [
-                    {
-                        "v": "bitsandbytes.optim.PagedLion8bit",
-                        "l": "PagedLion8bit",
-                        "dk": "opt.krea_optimizer_paged_lion8bit",
-                    },
-                    {"v": "pytorch_optimizer.Lion", "l": "Lion", "dk": "opt.krea_optimizer_lion"},
-                    {
-                        "v": "bitsandbytes.optim.AdEMAMix8bit",
-                        "l": "AdEMAMix8bit",
-                        "dk": "opt.krea_optimizer_ademamix8bit",
-                    },
-                    {
-                        "v": "bitsandbytes.optim.PagedAdEMAMix8bit",
-                        "l": "PagedAdEMAMix8bit",
-                        "dk": "opt.krea_optimizer_paged_ademamix8bit",
-                    },
-                ],
-            },
-        ],
+        # The product allowlist is grouped by update mechanism rather than by
+        # a recommendation or popularity ranking.
+        "groups": optimizer_groups(KREA2_PROFILE),
+        "doc_slug": "optimizers",
+        "doc_anchor": "optimizer-type",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -761,26 +711,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_optimizer_betas",
         "hint_key": "field.krea_optimizer_betasHint",
-        "show_if": {
-            "key": "optimizer_type",
-            "eq": "adamw8bit",
-            "_or": [
-                "AdamW",
-                "bitsandbytes.optim.PagedAdamW8bit",
-                "bitsandbytes.optim.AdEMAMix8bit",
-                "bitsandbytes.optim.PagedAdEMAMix8bit",
-                "bitsandbytes.optim.Lion8bit",
-                "bitsandbytes.optim.PagedLion8bit",
-                "pytorch_optimizer.CAME",
-                "pytorch_optimizer.Lion",
-                "prodigyopt.Prodigy",
-                _KREA2_PRODIGYPLUS_OPTIMIZER,
-                "schedulefree.AdamWScheduleFree",
-                "torch.optim.Adam",
-                "torch.optim.RAdam",
-                "torch.optim.NAdam",
-            ],
-        },
+        "hint_key_by": {"key": "optimizer_type", "values": _KREA2_BETA_HINTS},
+        "show_if": _show_if_one_of("optimizer_type", _KREA2_BETA_HINTS),
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -790,22 +722,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_optimizer_eps",
         "hint_key": "field.krea_optimizer_epsHint",
-        "show_if": {
-            "key": "optimizer_type",
-            "eq": "adamw8bit",
-            "_or": [
-                "AdamW",
-                "bitsandbytes.optim.PagedAdamW8bit",
-                "bitsandbytes.optim.AdEMAMix8bit",
-                "bitsandbytes.optim.PagedAdEMAMix8bit",
-                "prodigyopt.Prodigy",
-                _KREA2_PRODIGYPLUS_OPTIMIZER,
-                "schedulefree.AdamWScheduleFree",
-                "torch.optim.Adam",
-                "torch.optim.RAdam",
-                "torch.optim.NAdam",
-            ],
-        },
+        "show_if": _show_if_one_of("optimizer_type", _KREA2_EPS_OPTIMIZER_ORDER),
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1215,6 +1132,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": False,
         "section": "save",
         "desc_key": "field.save_state_on_train_end",
+        "hint_key": "field.save_state_on_train_endHint",
         "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -1892,11 +1810,17 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             errors.append("learning_rate: must be > 0 / 必须大于 0")
     if not _is_empty(config.get("sigmoid_scale")):
         _as_float(config, "sigmoid_scale", errors)
-    if not _is_empty(config.get("logit_mean")):
+    timestep_sampling = str(config.get("timestep_sampling", "shift"))
+    weighting_scheme = str(config.get("weighting_scheme", "none"))
+    uses_logit_parameters = timestep_sampling == "logsnr" or (
+        timestep_sampling == "sigma" and weighting_scheme == "logit_normal"
+    )
+    uses_mode_scale = timestep_sampling == "sigma" and weighting_scheme == "mode"
+    if uses_logit_parameters and not _is_empty(config.get("logit_mean")):
         _as_float(config, "logit_mean", errors)
-    if not _is_empty(config.get("logit_std")):
+    if uses_logit_parameters and not _is_empty(config.get("logit_std")):
         _as_float(config, "logit_std", errors, 0.0)
-    if not _is_empty(config.get("mode_scale")):
+    if uses_mode_scale and not _is_empty(config.get("mode_scale")):
         _as_float(config, "mode_scale", errors)
 
     for key in ("lr_warmup_steps", "lr_decay_steps"):
@@ -2112,10 +2036,17 @@ def build_krea2_train_config(
         result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
     if result["timestep_sampling"] in {"sigmoid", "shift", "krea2_shift"}:
         result["sigmoid_scale"] = float(config.get("sigmoid_scale", 1.0))
-    if result["timestep_sampling"] in {"sigma", "logsnr"}:
+    uses_logit_parameters = result["timestep_sampling"] == "logsnr" or (
+        result["timestep_sampling"] == "sigma"
+        and result["weighting_scheme"] == "logit_normal"
+    )
+    if uses_logit_parameters:
         result["logit_mean"] = float(config.get("logit_mean", 0.0))
         result["logit_std"] = float(config.get("logit_std", 1.0))
-    if result["timestep_sampling"] == "sigma":
+    if (
+        result["timestep_sampling"] == "sigma"
+        and result["weighting_scheme"] == "mode"
+    ):
         result["mode_scale"] = float(config.get("mode_scale", 1.29))
     if not _is_empty(config.get("lr_warmup_steps")) and float(config["lr_warmup_steps"]) != 0:
         result["lr_warmup_steps"] = config["lr_warmup_steps"]
