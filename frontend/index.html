@@ -11,11 +11,12 @@
       var t = localStorage.getItem('anima-theme') || 'auto';
       var d = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
-      // 恢复右侧面板宽度（大屏拖拽记忆）：在 CSS 首帧前设 --panel-w，避免刷新时宽度闪现。
-      // 仅大屏生效（≤1100px 浮层模式由媒体查询直接给 width，不读此变量）。
+      // Restore the desktop preview width before first paint without squeezing the form below its usable width.
       var pw = parseInt(localStorage.getItem('anima-panel-w'), 10);
-      if (pw >= 300 && pw <= 760 && window.innerWidth > 1100) {
-        document.documentElement.style.setProperty('--panel-w', pw + 'px');
+      if (pw >= 300 && pw <= 760) {
+        var workspaceWidth = Math.max(window.innerWidth, 1024);
+        var panelMax = Math.max(300, Math.min(760, workspaceWidth - 700));
+        document.documentElement.style.setProperty('--panel-w', Math.min(pw, panelMax) + 'px');
       }
     })();
   </script>
@@ -323,35 +324,6 @@
           </aside>
 
           <section class="docs-reader" :aria-busy="docsContentLoading ? 'true' : 'false'">
-            <div class="docs-document-picker" x-show="docsDocuments.length > 1" x-cloak>
-              <label for="docsDocumentSelect" x-text="t('docs.catalog')">Documents</label>
-              <select id="docsDocumentSelect" class="docs-document-select"
-                      :value="docsPendingSlug || docsSelectedSlug"
-                      @change="selectParameterDoc($event.target.value)">
-                <template x-for="doc in docsDocuments" :key="doc.slug">
-                  <option :value="doc.slug" x-text="doc.title"></option>
-                </template>
-              </select>
-            </div>
-
-            <details class="docs-mobile-outline" x-show="docsHtml && docsTocItems.length" x-cloak>
-              <summary x-text="t('docs.onThisPage')">On this page</summary>
-              <nav class="docs-toc" @click="handleDocsContentClick($event)"
-                   :aria-label="t('docs.onThisPage')">
-                <ul class="docs-toc-list">
-                  <template x-for="item in docsTocItems" :key="'mobile-' + item.anchor">
-                    <li :class="'level-' + item.level">
-                      <a :href="'#' + encodeURIComponent(item.anchor)" :title="item.title"
-                         :class="{ active: docsActiveAnchor === item.anchor }"
-                         :aria-current="docsActiveAnchor === item.anchor ? 'location' : null">
-                        <span x-text="item.title"></span>
-                      </a>
-                    </li>
-                  </template>
-                </ul>
-              </nav>
-            </details>
-
             <div class="docs-loading" x-show="!docsHtml && (docsIndexLoading || docsContentLoading)"
                  role="status" aria-live="polite">
               <span class="spinner"></span>
@@ -1602,8 +1574,8 @@
     </main>
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
-    <div class="right-panel" id="rightPanel" x-show="showRightPanel()" :class="{ open: rightPanelOpen || isWideScreen }">
-      <!-- 拖拽手柄：贴面板左边缘，鼠标拖动调整宽度并持久化（仅大屏启用） -->
+    <div class="right-panel" id="rightPanel" x-show="showRightPanel()">
+      <!-- 拖拽手柄：贴面板左边缘，鼠标拖动调整宽度并持久化 -->
       <div class="panel-resizer" id="panelResizer" x-show="showRightPanel()" :title="t('common.panelResizeHint')"></div>
       <!-- Training: TOML preview + actions -->
       <template x-if="currentRoute && currentRoute.startsWith('train-')">
@@ -1659,15 +1631,6 @@
         </div>
       </template>
     </div>
-
-    <!-- Training preview backdrop for medium/small screens -->
-    <div class="panel-backdrop" x-show="showRightPanel()" :class="{ open: rightPanelOpen }" @click="rightPanelOpen = false"></div>
-
-    <!-- Training parameter preview toggle for medium/small screens -->
-    <button class="panel-toggle-btn" x-show="showRightPanel()" @click="rightPanelOpen = !rightPanelOpen" :aria-label="rightPanelOpen ? 'Close panel' : 'Open panel'">
-      <svg x-show="!rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      <svg x-show="rightPanelOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    </button>
 
   </div>
 </div>

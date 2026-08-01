@@ -201,8 +201,6 @@ window.docsMixin = {
       setTimeout(() => {
         if (this.currentRoute !== 'docs' || this.docsSelectedSlug !== documentData.slug) return;
         this._hydrateDocsWidgets();
-        const mobileOutline = document.querySelector('.docs-mobile-outline');
-        if (mobileOutline) mobileOutline.open = false;
         this._setupDocsScrollSpy();
         if (anchor) this.scrollToDocAnchor(anchor, false);
         else {
@@ -378,8 +376,6 @@ window.docsMixin = {
     const href = link.getAttribute('href') || '';
     if (!href.startsWith('#')) return;
     event.preventDefault();
-    const mobileOutline = link.closest('.docs-mobile-outline');
-    if (mobileOutline) mobileOutline.open = false;
     this.scrollToDocAnchor(decodeURIComponent(href.slice(1)), true);
   },
 

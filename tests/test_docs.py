@@ -696,10 +696,12 @@ console.log(JSON.stringify({
         self.assertNotIn("border-left", toc_css)
         self.assertIn("text-overflow: ellipsis", toc_css)
         self.assertIn("max-width: 1920px", css)
-        self.assertIn("minmax(0, 1120px)", css)
+        self.assertIn("minmax(620px, 1120px)", css)
+        self.assertIn("min-width: 1018px", css)
+        self.assertNotIn("docs-mobile-outline", html)
         self.assertIn("scrollbar-color: transparent transparent", css)
         self.assertIn("table.docs-table-wide", css)
-        self.assertIn("content: attr(data-label)", css)
+        self.assertNotIn("@container (max-width:", css)
 
 
 if __name__ == "__main__":

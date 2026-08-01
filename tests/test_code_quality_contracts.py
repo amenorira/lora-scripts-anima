@@ -177,7 +177,7 @@ class OnnxSessionFactoryTests(unittest.TestCase):
 
 
 class FrontendMixinCleanupContractTests(unittest.TestCase):
-    def test_training_preview_toggle_is_scoped_to_training_routes(self):
+    def test_training_preview_is_scoped_to_training_routes_and_stays_inline(self):
         app_source = (REPO_ROOT / "frontend/js/app.js").read_text(encoding="utf-8")
         index_source = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
         css_source = (REPO_ROOT / "frontend/css/app.css").read_text(encoding="utf-8")
@@ -185,8 +185,23 @@ class FrontendMixinCleanupContractTests(unittest.TestCase):
         show_panel_body = app_source.split("showRightPanel() {", 1)[1].split("\n    },", 1)[0]
         self.assertIn("r.startsWith('train-')", show_panel_body)
         self.assertNotIn("r === 'tools'", show_panel_body)
-        self.assertIn('class="panel-backdrop" x-show="showRightPanel()"', index_source)
-        self.assertNotIn(".panel-toggle-btn {\n    display: flex !important;", css_source)
+        self.assertIn('class="right-panel" id="rightPanel" x-show="showRightPanel()"', index_source)
+        self.assertNotIn("panel-backdrop", index_source)
+        self.assertNotIn("panel-toggle-btn", index_source)
+        self.assertNotIn("rightPanelOpen", app_source)
+        self.assertNotIn("isWideScreen", app_source)
+        self.assertIn("--app-min-width: 1024px", css_source)
+
+    def test_frontend_has_no_mobile_layout_breakpoints(self):
+        app_css = (REPO_ROOT / "frontend/css/app.css").read_text(encoding="utf-8")
+        tagger_css = (REPO_ROOT / "frontend/css/tagger.css").read_text(encoding="utf-8")
+        index_source = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("@media (max-width:", app_css)
+        self.assertNotIn("@media (max-width:", tagger_css)
+        self.assertNotIn("@container (max-width:", app_css)
+        self.assertNotIn("docs-mobile-outline", index_source)
+        self.assertNotIn("flex-direction: column;\n  }\n  .single-tagger-left", app_css)
 
     def test_effective_show_if_handler_is_defined_once_with_current_semantics(self):
         training_core = (REPO_ROOT / "frontend/js/training-core.js").read_text(encoding="utf-8")

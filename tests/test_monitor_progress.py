@@ -374,15 +374,17 @@ process.stdout.write(JSON.stringify({
         self.assertNotIn(".m-loss-chart", self.css_source)
         self.assertIn(".hist-action-primary", self.css_source)
 
-    def test_monitor_tabs_and_responsive_breakpoints_are_accessible(self):
+    def test_monitor_tabs_keep_accessible_desktop_layout(self):
         self.assertIn('role="tablist"', self.index_source)
         self.assertEqual(self.index_source.count('role="tab"'), 4)
         self.assertEqual(self.index_source.count(':aria-selected='), 4)
         self.assertEqual(self.index_source.count('@keydown.right.prevent="moveMonitorTab(1)"'), 4)
-        self.assertIn("@media (max-width: 1199px)", self.css_source)
-        self.assertIn("@media (max-width: 899px)", self.css_source)
-        self.assertIn("@media (max-width: 719px)", self.css_source)
-        self.assertIn(".route-monitor-dashboard .m-sb-progress-block", self.css_source)
+        self.assertIn("flex: 1; min-width: 960px; min-height: 0;", self.css_source)
+        self.assertIn(".m-overview-metrics { grid-column: span 4; }", self.css_source)
+        self.assertIn(".m-training-diagnostics { grid-column: span 5; }", self.css_source)
+        self.assertIn(".m-latest-sample { grid-column: span 3; }", self.css_source)
+        self.assertNotIn("@media (max-width:", self.css_source)
+        self.assertIn(".m-sb-progress-block", self.css_source)
         self.assertIn("overflow-x: auto", self.css_source)
         self.assertIn("@media (prefers-reduced-motion: reduce)", self.css_source)
 

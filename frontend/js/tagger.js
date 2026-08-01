@@ -592,7 +592,7 @@ window.taggerMixin = {
   },
 
   startTaggerSingleResize(event) {
-    if ((event && event.button !== 0) || window.innerWidth <= 1120) return;
+    if (event && event.button !== 0) return;
     this.taggerSingleResizing = true;
     document.body.classList.add('tagger-single-resizing');
   },

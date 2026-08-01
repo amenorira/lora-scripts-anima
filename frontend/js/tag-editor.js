@@ -204,8 +204,6 @@ window.tagEditorMixin = {
   _teFreqIndex: null,
   _teFreqFinalizeScheduled: false,
   _teHistoryState: null,
-  _teResponsiveInitialized: false,
-
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -384,10 +382,6 @@ window.tagEditorMixin = {
         this._teModifiedCount = 0;
         this.tagEditorSelected = [];
         this.tagEditorBatchScope = 'selected';
-        if (!this._teResponsiveInitialized) {
-          this._teResponsiveInitialized = true;
-          if (window.innerWidth <= 1100) this.tagEditorLeftCollapsed = true;
-        }
         this.tagEditorPage = 1;
         this.tagEditorHistory = [];
         this.tagEditorHistoryIdx = -1;

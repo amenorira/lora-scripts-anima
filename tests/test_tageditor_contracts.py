@@ -164,11 +164,12 @@ class TagEditorFrontendContractTests(unittest.TestCase):
         self.assertNotIn("snapshot: checkpoint", history_body)
         self.assertGreater(rename_body.index("this._tePushHistory"), rename_body.index("this.tagEditorImages.forEach"))
 
-    def test_narrow_layout_and_selection_labels_are_explicit(self):
+    def test_desktop_layout_and_selection_labels_are_explicit(self):
         css = Path("frontend/css/app.css").read_text(encoding="utf-8")
         html = Path("frontend/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("@media (max-width: 1100px)", css)
+        self.assertIn(".te-shell { display: flex; flex-direction: column; flex: 1; min-width: 960px;", css)
+        self.assertNotIn(".te-main { flex-direction: column; }", css)
         self.assertIn("width: clamp(300px, 28vw, 360px)", css)
         self.assertIn("height: clamp(180px, 34vh, 320px)", css)
         self.assertIn("tagEditor.selectPage", html)

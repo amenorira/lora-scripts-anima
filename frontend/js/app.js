@@ -21,8 +21,6 @@ document.addEventListener('alpine:init', () => {
     showThemeDropdown: false,
     showLangDropdown: false,
     sidebarCollapsed: false,
-    rightPanelOpen: false,
-    isWideScreen: window.innerWidth > 1100,
     _routeScrollPositions: {},
     routeTransitioning: false,
     _routeTransitionSeq: 0,
@@ -106,14 +104,6 @@ document.addEventListener('alpine:init', () => {
 
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         if (this.theme === 'auto') this.resolveTheme();
-      });
-
-      // 使用 matchMedia 替代 resize 事件，避免每秒 ~60 次触发
-      const mm = window.matchMedia('(min-width: 1101px)');
-      this.isWideScreen = mm.matches;
-      mm.addEventListener('change', (e) => {
-        this.isWideScreen = e.matches;
-        if (e.matches) this.rightPanelOpen = false;
       });
 
       this.buildRouteContent();
@@ -269,7 +259,6 @@ document.addEventListener('alpine:init', () => {
         this.cleanupDocsReader();
       }
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
-        this.rightPanelOpen = false;
         if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
         else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
@@ -471,17 +460,25 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Right Panel Resizer ─────────────────────────────────
-    // 鼠标拖拽调整右侧面板宽度并持久化到 localStorage。仅大屏（>1100px）启用，
-    // 浮层模式（≤1100px）固定宽度滑入滑出，拖拽会破坏 fixed 定位体验。
+    // 鼠标拖拽调整右侧面板宽度并持久化到 localStorage。
     // 宽度通过 CSS 变量 --panel-w 应用（而非 element inline width），这样：
     //   1. 首帧渲染前由 index.html 的 blocking 脚本设好，无刷新闪现；
-    //   2. ≤1100px 媒体查询直接给 .right-panel width，不读 --panel-w，浮层模式不受拖拽值影响。
+    //   2. 桌面窄窗口仍保留主表单的最小可用宽度。
     _PANEL_MIN_W: 300,
     _PANEL_MAX_W: 760,
+    _PANEL_MIN_MAIN_W: 520,
     _PANEL_STORAGE_KEY: 'anima-panel-w',
 
     _applyPanelWidth(px) {
       document.documentElement.style.setProperty('--panel-w', px + 'px');
+    },
+
+    _panelMaxWidth() {
+      const workspaceWidth = Math.max(window.innerWidth, 1024);
+      return Math.max(
+        this._PANEL_MIN_W,
+        Math.min(this._PANEL_MAX_W, workspaceWidth - 180 - this._PANEL_MIN_MAIN_W)
+      );
     },
 
     _initPanelResizer() {
@@ -489,15 +486,12 @@ document.addEventListener('alpine:init', () => {
       if (!resizer) return;
       // 保存的宽度已由 index.html 的 blocking 脚本在首帧前应用到 --panel-w，这里无需再设。
 
-      // ≤1100px 浮层模式不启用拖拽
-      const mm = window.matchMedia('(min-width: 1101px)');
-      if (!mm.matches) return;
-
-      const clamp = (w) => Math.max(this._PANEL_MIN_W, Math.min(this._PANEL_MAX_W, w));
+      const clamp = (w) => Math.max(this._PANEL_MIN_W, Math.min(this._panelMaxWidth(), w));
 
       const onMove = (e) => {
-        // 面板右边缘贴视口右边 → 宽度 = 视口宽 - 鼠标 x
-        this._applyPanelWidth(clamp(window.innerWidth - e.clientX));
+        const panel = document.getElementById('rightPanel');
+        const panelRight = panel ? panel.getBoundingClientRect().right : window.innerWidth;
+        this._applyPanelWidth(clamp(panelRight - e.clientX));
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
@@ -512,7 +506,6 @@ document.addEventListener('alpine:init', () => {
       };
 
       resizer.addEventListener('mousedown', (e) => {
-        if (!mm.matches) return; // 拖拽中途切到小屏则忽略
         e.preventDefault();
         document.body.classList.add('panel-resizing');
         document.addEventListener('mousemove', onMove);
