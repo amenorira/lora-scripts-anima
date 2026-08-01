@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ Multi-core LoRA Training Tool: Anima, SDXL, and Krea 2 ✨_
+_✨ Multi-backend LoRA Training Tool: Anima, SDXL, and Krea 2 ✨_
 
-A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`) continues to serve Anima / SDXL, while [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) provides **Krea 2 LoRA** training.
+A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`), while **Krea 2 LoRA** uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner).
 
 </div>
 
@@ -22,9 +22,9 @@ A local GUI built on a multi-core training architecture: [kohya-ss/sd-scripts](h
 </p>
 
 > ✅ **v2.1.0 is now available**
-> This release redesigns the Tagger workspace with multi-model category controls and batch processing, while refining training parameter semantics, optimizer documentation, and the Krea 2 FP8 workflow.
+> This release redesigns the Tagger workspace, adds multi-model category controls and batch processing, and thoroughly revises the training parameter guides, optimizer documentation, and Krea 2 FP8 workflow.
 
-lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). Its core registry keeps trainer boundaries explicit: **sd-scripts** handles SDXL / Anima, **LyCORIS** is a selectable adapter core mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
+lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). A training-core registry keeps each backend isolated: **sd-scripts** handles SDXL / Anima, **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
 ### Supported Model Types
 
@@ -36,26 +36,26 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 
 > ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
 
-> ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but these are not yet wired into the current UI.
+> ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but the current UI does not yet provide training entry points for them.
 
 ## ✨ Features
 
-- **Training WebUI** — All-in-one workspace: LoRA training form, TOML config preview, preset management (save/load/delete), training history
-- **Real-time Hardware Monitor** — GPU utilization / VRAM / temperature, CPU / RAM usage, Chart.js dynamic charts, TensorBoard integration, live log viewer
+- **Training WebUI** — An all-in-one workspace with a LoRA training form, TOML configuration preview, preset management (save/load/delete), and training history
+- **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Multi-model Tagger Workspace** — WD, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output
-- **Flash Attention Smart Install** — Auto-detects Python / CUDA / PyTorch versions and ABI, matches the best prebuilt wheel via GitHub API, one-click install
+- **Flash Attention Smart Install** — Detects Python, CUDA, PyTorch versions, and ABI; finds a compatible prebuilt wheel through the GitHub API; supports one-click installation
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
-- **Internationalization (i18n)** — Bilingual UI (676 translation keys), browser language auto-detection, persistent preference
+- **Internationalization (i18n)** — Chinese and English UI with browser-language detection and a persistent language preference
 - **Dark / Light Theme** — Auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
-- **Slow Remote Connection Compatibility** — Same-origin realtime transport, a weak-network thumbnail queue, and versioned browser caching keep previews from competing with live status
+- **Slow Remote Connection Compatibility** — Same-origin realtime transport, a weak-network thumbnail queue, and versioned browser caching reduce the effect of preview requests on live status delivery
 
 ## Project Structure
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Training engine (full kohya-ss/sd-scripts)
+├── vendor/sd-scripts/          ← Anima / SDXL training engine (pinned upstream snapshot)
 ├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
 ├── backend/                    ← FastAPI backend
 │   ├── server/                 ← API core (routes, state, proxy)
@@ -73,20 +73,22 @@ lora-scripts-anima/
 └── requirements-musubi-krea2.txt ← Shared Krea 2 version-convergence dependencies
 ```
 
-# Usage
+## Usage
 
 ### Prerequisites
 
 - **Python**: 64-bit Python 3.10–3.12 (3.12 recommended)
 - **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
 - **PyTorch 2.10.0 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
-- **NVIDIA driver R580 or newer**: the CUDA 13.0 minimum
+- **NVIDIA driver R580 or newer**: the minimum driver version for CUDA 13.0
 
-> **Windows users do not need to downgrade or preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.10–3.12 and skips Microsoft Store placeholders. If only Python 3.13/3.14 is installed, it can install the official Python 3.12 side by side for the current user without removing newer versions or changing the default Python. Downloads show percentage, size, speed, and ETA; silent installer stages show an activity spinner.
+> **Windows users do not need to downgrade or preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.10–3.12 and skips Microsoft Store placeholders.
+>
+> If only Python 3.13/3.14 is installed, the launcher can install the official Python 3.12 side by side for the current user. It does not remove newer versions or change the default Python. Downloads show progress, size, speed, and ETA; silent installer stages show an activity spinner.
 >
 > **Linux users** must install 64-bit Python 3.10–3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
 >
-> If the project already contains an incompatible `venv` created with Python 3.13/3.14, remove or rename only the project's `venv` folder, then run `start.bat` again.
+> If the project already contains an incompatible `venv` created with Python 3.13/3.14, remove or rename only the project's `venv` folder, then rerun the launcher for your platform.
 
 | GPU Series | Automatically Installed PyTorch | CUDA |
 |------------|:-------------------------------:|:----:|
@@ -94,18 +96,22 @@ lora-scripts-anima/
 | RTX 40 (Ada) | 2.10.0 | 13.0 |
 | RTX 50 (Blackwell) | 2.10.0 | 13.0 |
 
-Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are rematched to cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version; optional packages that were not installed remain unchanged. Machines without an NVIDIA GPU still receive the complete GPU environment and can run the GUI; only training requires a GPU.
+Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are aligned with cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version. Optional packages that were not installed remain unchanged.
 
-> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project main `venv` and one CUDA PyTorch build. Launchers install upstream sd-scripts requirements first, then converge the shared stack through this project's `requirements-musubi-krea2.txt` (`transformers 4.57.6` / `tokenizers 0.22.2`). Normal startup uses a fast metadata check, so a healthy environment neither reruns pip/uninstalls packages nor imports the full Krea 2 stack. A full import check runs after synchronization and before Krea 2 work. No upstream dependency file under `vendor/` is modified.
+Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
-> A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically. After confirming that the shared main environment trains correctly, users may remove it manually to reclaim disk space.
+> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The launcher installs the upstream sd-scripts requirements first, then uses this project's `requirements-musubi-krea2.txt` to align the shared dependencies to `transformers 4.57.6` / `tokenizers 0.22.2`.
+>
+> Normal startup performs only a fast metadata check. When the versions match, it does not rerun pip, uninstall or reinstall packages, or import the full Krea 2 runtime. A complete import check runs after dependency synchronization and during Krea 2 preflight. No upstream dependency file under `vendor/` is modified.
+
+> A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically. After confirming that the project's main `venv` can train correctly, you can remove the legacy directory manually to reclaim disk space.
 
 ### Windows: Download ZIP (beginner-friendly)
 
 1. On GitHub, choose **Code → Download ZIP**, fully extract it, and double-click `start.bat`.
 2. If `.git` is missing, the bootstrap asks to install Git for Windows and repair the folder as an updateable repository; choose the recommended option.
-3. Repair fetches the latest `main`. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`; `venv`, models, outputs, caches, logs, and the entire user `config` directory are excluded from source alignment and are never overwritten or cleaned.
-4. After source alignment, the bootstrap restarts once and then creates `venv` and installs the training dependencies.
+3. Repair fetches the latest `main`. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`. The process excludes `venv`, models, outputs, caches, logs, and the entire user `config` directory, so they are never overwritten or cleaned.
+4. After the source files are synchronized, the bootstrap restarts once, creates `venv`, and installs the training dependencies.
 
 A Git installation or repository-repair failure only produces a warning and does not block the trainer. Python or core dependency failures stop startup with a bilingual error.
 
@@ -129,10 +135,10 @@ First launch automatically creates a virtual environment and installs all depend
 
 ### Realtime and Slow Remote Connections
 
-All HTTP requests and realtime traffic use the current page's same Origin. The trainer does not configure SSH, port forwarding, proxies, cloud-platform-specific logic, or an extra realtime port. If you already reach the remote page through your own setup, the browser continues to use that entry point.
+All HTTP requests and realtime connections are same-origin with the current page. The trainer does not configure SSH, port forwarding, proxies, cloud-specific logic, or an extra realtime port. If you already reach the remote page through your own setup, the browser continues to use that entry point.
 
 - `/ws/realtime` carries only compact JSON state, progress, log increments, and hardware data. Commands, images, files, and metadata remain HTTP requests.
-- The sidebar shows “Backend connected” only after both the WebSocket `ready` message and a realtime snapshot succeed. No valid realtime data for two seconds means “Realtime data delayed”; it changes to “Backend disconnected” only after the socket is closed and the health probe also fails.
+- The sidebar shows “Backend connected” only after it receives both the WebSocket `ready` message and a realtime snapshot. Two seconds without valid realtime data produces “Realtime data delayed”; the status changes to “Backend disconnected” only after the socket closes and the health probe also fails.
 - A backend restart creates a new instance ID. The page clears task, progress, log, curve, and hardware data from the old instance and explicitly marks the previous in-memory task state as unknown. This version does not scan for or take over leftover training processes.
 - **UI Settings → Slow connection compatibility** is enabled by default. It shows the complete sample list for the current run or history record, loads thumbnails one at a time at low priority, and pauses those background requests while realtime data is delayed. Versioned thumbnails can stay in the browser cache for 24 hours; opening the original image remains an explicit user action.
 
@@ -143,7 +149,7 @@ After ZIP repair or `git clone`, right-click an empty area inside the project fo
 - Choose Windows **Open in Terminal**, then run `git pull`; or
 - Choose **Git Bash Here**, then run `git pull`. On Windows 11 it may appear under **Show more options**.
 
-The repository uses fast-forward-only pulls. If tracked source was edited manually, `git pull` stops safely and asks you to handle the local changes instead of overwriting them.
+The repository allows fast-forward-only pulls. If tracked source files were edited manually, `git pull` stops and asks you to handle the local changes instead of overwriting them.
 
 ## Program Arguments
 
@@ -156,7 +162,7 @@ The repository uses fast-forward-only pulls. If tracked source was edited manual
 | `--disable-tensorboard` | bool | false | Disable TensorBoard |
 | `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
 | `--tensorboard-port` | int | 6006 | TensorBoard port |
-| `--localization` | str | | Interface localization setting |
+| `--localization` | str | | Interface language and localization setting |
 | `--dev` | bool | false | Developer mode |
 | `--quiet` / `-q` | bool | false | Automatically install Python/venv dependencies; optional Git repair remains disabled |
 | `--setup-git` | bool | false | Windows: non-interactively perform the recommended Git install/ZIP repair |
@@ -172,16 +178,27 @@ Launch the GUI and install from the **Environment** tab. The script auto-detects
 
 ### Manual Install
 
+Windows:
+
+```powershell
+.\venv\Scripts\python.exe tools/install_flash_attn.py           # Interactive install
+.\venv\Scripts\python.exe tools/install_flash_attn.py --dry-run # Preview environment and candidates
+.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # Specify a wheel URL
+.\venv\Scripts\python.exe tools/install_flash_attn.py --yes     # Non-interactive install
+```
+
+Linux:
+
 ```sh
-python tools/install_flash_attn.py              # Interactive install
-python tools/install_flash_attn.py --dry-run    # Preview only
-python tools/install_flash_attn.py --url URL    # Manual wheel URL
-python tools/install_flash_attn.py --yes        # Non-interactive auto
+./venv/bin/python tools/install_flash_attn.py           # Interactive install
+./venv/bin/python tools/install_flash_attn.py --dry-run # Preview environment and candidates
+./venv/bin/python tools/install_flash_attn.py --url URL # Specify a wheel URL
+./venv/bin/python tools/install_flash_attn.py --yes     # Non-interactive install
 ```
 
 ## EmoSens Adaptive Optimizer
 
-The project includes EmoSens v3.9 adaptive optimizer (`vendor/emo_optimizer/`) for better convergence on Anima DiT training.
+The project includes the EmoSens v3.9 adaptive optimizer (`vendor/emo_optimizer/`), which improves convergence when training Anima DiT models.
 
 ### Recommended Settings
 
@@ -196,7 +213,7 @@ Select `EmoSens` from the optimizer dropdown in the training form.
 
 Save, load, and delete training presets in TOML format. Presets are stored in `config/presets/`.
 
-- **Save**: Configure training parameters and click "Save Preset"
+- **Save**: Configure the training parameters, then click **Save Preset**
 - **Load**: Select a saved preset from the dropdown
 - **Delete**: Remove unwanted presets from the management panel
 
@@ -204,14 +221,14 @@ Save, load, and delete training presets in TOML format. Presets are stored in `c
 
 The GUI **Environment** tab provides:
 - Python / PyTorch / CUDA version info
-- sd-scripts, mounted LyCORIS, and musubi-tuner core status
-- shared musubi Krea 2 runtime status (shared CUDA PyTorch with explicit version-convergence health)
+- core status for sd-scripts, the LyCORIS adapter backend, and musubi-tuner
+- musubi-tuner Krea 2 shared-runtime status (shared CUDA-enabled PyTorch and dependency-version alignment)
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
 
 ## Acknowledgements
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Core training scripts
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Training GUI framework
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel source

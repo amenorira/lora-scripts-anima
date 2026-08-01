@@ -1,8 +1,8 @@
 # 优化器机制与参数参考
 
-优化器把梯度转换为参数更新。不同实现会改变状态统计方式、状态存储精度、步长来源、裁剪位置和调度归属。它们不读取图片语义，也不能识别训练目标、错误标注或缺失视角。
+优化器负责把梯度转换为参数更新。不同实现采用不同的状态统计方式、状态存储精度、步长来源、裁剪位置和调度机制。优化器不读取图片语义，也无法识别目标角色、错误标注或缺失视角。
 
-本文只描述项目当前实现与参数关系。界面切换优化器时存在的学习率、`betas`、`weight_decay` 和 scheduler 自动联动属于配置行为；这些数值不表示算法排序或训练结果判断。
+本文只说明项目当前的实现和参数关系。切换优化器时，界面可能自动调整学习率、`betas`、`weight_decay` 和 scheduler；这些联动属于配置行为，不代表算法排名，也不能预判训练结果。
 
 <!-- doc-anchor: quick-choice -->
 ## 机制维度速查
@@ -15,7 +15,7 @@
 | 低位状态存储 | AdamW8bit、Lion8bit | 可量化的优化器状态以 8-bit 形式保存 |
 | 分页状态 | PagedAdamW8bit、PagedLion8bit | 分页触发时，状态页在 CPU 与 GPU 之间传输 |
 | 内部调度 | AdamWScheduleFree、ProdigyPlusScheduleFree | 参数平均与步长调度在优化器内部完成 |
-| 项目实验状态 | Automagic3、EmoSens | 分别使用梯度符号历史或 loss 历史改变全局更新尺度 |
+| 项目实验状态 | Automagic3、EmoSens | 分别根据梯度符号历史或 loss 历史调整全局更新尺度 |
 
 <!-- doc-anchor: optimizer-type -->
 ## 当前优化器
@@ -37,7 +37,7 @@
 | 项目实验实现 | Automagic3 | 梯度符号历史、参数组学习率适应和内部裁剪 |
 | 项目实验实现 | EmoSens | loss 移动平均、全局学习率倍率和停止信号 |
 
-8-bit 与分页描述的是优化器状态。训练峰值显存还包含模型参数、激活、缓存、梯度和采样过程。
+8-bit 与分页描述的都是优化器状态。训练峰值显存还包括模型参数、激活、缓存、梯度和采样过程。
 
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit、CAME 与 StableAdamW
@@ -56,9 +56,9 @@
 <!-- doc-anchor: learning-rate -->
 ### 学习率
 
-学习率控制每一步更新的整体尺度。AdamW、Lion、CAME 和 StableAdamW 把它作为外部步长；AdaFactor 的 `relative_step=true` 根据训练进度生成步长；Prodigy 系列把输入学习率与 D-adaptation 估计尺度组合；Automagic3 与 EmoSens 还会在内部生成动态倍率。
+学习率控制每一步参数更新的整体尺度。AdamW、Lion、CAME 和 StableAdamW 将其作为外部步长。AdaFactor 在 `relative_step=true` 时根据训练进度生成步长；Prodigy 系列将输入学习率与 D-adaptation 估计的尺度结合；Automagic3 与 EmoSens 还会在内部生成动态倍率。
 
-项目当前自动数值如下。自动值只在现有联动条件满足时写入，手动值和导入值沿用现有来源规则：
+项目当前使用的自动值如下。只有满足相应联动条件时，界面才会写入这些数值；手动设置和导入值继续沿用现有的来源规则：
 
 | 训练配置 | 选择值 | 自动学习率 |
 | --- | --- | ---: |
@@ -79,9 +79,9 @@
 <!-- doc-anchor: scheduler-warmup -->
 ### 外部 scheduler 与 warmup
 
-AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和手动步长 AdaFactor 使用外部 scheduler。`lr_warmup_steps` 属于该外部 scheduler。`cosine_with_restarts` 只有在 `num_cycles` 大于 1 时才在训练中出现多个周期；`num_cycles=1` 不产生中途重启。
+AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和手动步长 AdaFactor 使用外部 scheduler，`lr_warmup_steps` 也由该 scheduler 处理。`cosine_with_restarts` 只有在 `num_cycles` 大于 1 时才会在一次训练中产生多个周期；`num_cycles=1` 不会中途重启。
 
-AdamWScheduleFree 与 ProdigyPlusScheduleFree 在优化器内部管理参数平均和调度，外部 scheduler 固定为 `constant`，外部 scheduler 不参与训练，外部 `lr_warmup_steps` 也不参与训练。AdaFactor 的 `relative_step=true` 同样由优化器生成步长，外部 scheduler 不参与训练。
+AdamWScheduleFree 与 ProdigyPlusScheduleFree 在优化器内部管理参数平均和调度，因此外部 scheduler 固定为 `constant`，`lr_warmup_steps` 也不参与训练。AdaFactor 在 `relative_step=true` 时同样由优化器生成步长，外部 scheduler 不参与训练。
 
 <!-- doc-anchor: betas -->
 ### 指数移动平均衰减系数（betas）
@@ -92,7 +92,7 @@ AdamWScheduleFree 与 ProdigyPlusScheduleFree 在优化器内部管理参数平�
 | --- | ---: | --- |
 | AdamW、8-bit/Paged AdamW、StableAdamW、EmoSens | 2 | `β1` 控制梯度移动平均，`β2` 控制梯度平方移动平均 |
 | Lion 系列 | 2 | `β1` 控制当前符号方向使用的历史动量与当前梯度混合，`β2` 控制供后续步骤使用的动量状态 |
-| CAME | 3 | `β1` 控制归一化更新的一阶状态，`β2` 控制梯度平方统计，`β3` 控制归一化更新残差平方统计并参与置信度缩放 |
+| CAME | 3 | `β1` 控制归一化更新的一阶状态，`β2` 控制梯度平方统计，`β3` 控制归一化更新与一阶状态之间的残差平方统计，并参与置信度缩放 |
 | Prodigy | 2 | `β1` 与 `β2` 分别控制一阶、二阶状态；D-adaptation 的额外衰减不属于该输入 |
 | AdamWScheduleFree、ProdigyPlusScheduleFree | 2 | `β1` 参与当前参数与平均参数序列的组合，`β2` 控制平方梯度统计 |
 
@@ -108,12 +108,12 @@ AdamWScheduleFree 与 ProdigyPlusScheduleFree 在优化器内部管理参数平�
 
 权重衰减使参数在更新过程中产生收缩。AdamW 式解耦衰减在梯度更新之外应用；耦合衰减会进入梯度相关计算。`weight_decay=0` 时不产生衰减。
 
-CAME 的 `weight_decouple` 决定是否使用解耦形式；`fixed_decay` 只在解耦衰减开启时参与计算。StableAdamW 的 `weight_decouple` 具有相同的衰减形式选择。
+CAME 的界面字段 `came_weight_decouple` 会映射为实际参数 `weight_decouple`，用于选择是否采用解耦形式。界面字段 `came_fixed_decay` 会映射为 CAME 的实际参数 `fixed_decay`，并且只在解耦衰减开启时参与计算。StableAdamW 的 `weight_decouple` 也用于选择相同的衰减形式。
 
 <!-- doc-anchor: gradient-clipping -->
 ### 最大梯度范数
 
-`max_grad_norm` 在优化器更新前按全局梯度范数缩放梯度，`0` 表示不执行该全局裁剪。CAME、AdaFactor、StableAdamW 和 bitsandbytes 还可以在各自内部执行更新或统计裁剪；同时启用时，不同裁剪发生在计算链的不同位置。
+`max_grad_norm` 会在优化器更新前按全局梯度范数缩放梯度，`0` 表示不执行这项全局裁剪。CAME、AdaFactor、StableAdamW 和 bitsandbytes 还可以在内部裁剪更新值或统计量；同时启用多种裁剪时，它们会作用于计算链中的不同位置。
 
 <!-- doc-anchor: percentile-clipping -->
 ### 百分位裁剪
@@ -137,7 +137,7 @@ CAME 的 `weight_decouple` 决定是否使用解耦形式；`fixed_decay` 只在
 
 `came_clip_threshold` 对 CAME 归一化更新的 RMS 进行裁剪。它发生在 CAME 内部更新构造过程中，与更新前的全局 `max_grad_norm` 不是同一计算。
 
-`came_fixed_decay` 只在 CAME 且 `came_weight_decouple=true` 时显示和输出。固定衰减使衰减量不再按当前学习率缩放。
+`came_fixed_decay` 只在 CAME 且 `came_weight_decouple=true` 时显示和输出。它是界面字段，生成的 CAME 优化器参数使用实际名称 `fixed_decay`。启用固定衰减后，衰减量不再按当前学习率缩放。
 
 <!-- doc-anchor: schedulefree-warmup -->
 ### Schedule-Free 内部 warmup
@@ -160,17 +160,17 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 <!-- doc-anchor: one-image -->
 ### 单张图片
 
-所有优化器都会重复接收同一图像证据。更换状态统计方式不会生成缺失的视角、表情或构图变化；训练步数、重复次数和学习率决定同一证据被累积的强度。
+所有优化器都会反复接收同一张图片提供的证据。更换状态统计方式不会生成缺失的视角、表情或构图变化；训练步数、重复次数和学习率决定同一证据的累积强度。
 
 <!-- doc-anchor: few-shot -->
 ### 少量图片
 
-少量样本会使单个批次在总更新中的占比更高。裁剪机制可以改变异常数值更新的幅度，但不能判断该批次是有效稀有特征还是错误数据。
+样本较少时，单个 batch 在总更新中的占比更高。裁剪机制可以改变异常数值更新的幅度，但无法判断该 batch 包含的是有效的稀有特征还是错误数据。
 
 <!-- doc-anchor: galgame -->
 ### Galgame 立绘
 
-固定站姿、背景和裁切会作为重复统计进入梯度。优化器只处理这些梯度的数值历史，不区分人物身份与共同构图。
+固定站姿、背景和裁切会作为重复证据进入梯度。优化器只处理这些梯度的数值历史，不区分人物身份和共同构图。
 
 <!-- doc-anchor: dmm-mixed -->
 ### DMM 卡面与混合来源
@@ -180,7 +180,7 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 <!-- doc-anchor: mixed-quality -->
 ### 质量差异
 
-模糊、压缩、重复裁剪和连续帧会改变训练信号。优化器无法给这些图片自动降低采样权重；数据分组、caption 和 repeats 决定它们进入训练的频率与条件。
+模糊、压缩、重复裁剪和连续帧都会改变训练信号。优化器不会自动降低这些图片的采样权重；数据分组、caption 和 repeats 决定它们参与训练的频率和条件。
 
 <!-- doc-anchor: outfits-forms -->
 ### 多服装与多形态
@@ -205,7 +205,7 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 | AdamWScheduleFree / ProdigyPlusScheduleFree | 外部 scheduler 为 `constant`，外部 warmup 为 `0` | 调度由优化器内部管理 |
 | AdaFactor 且 `relative_step=true` | 外部 scheduler 不参与，LoRA+ 不输出 | 步长由 AdaFactor 内部生成 |
 | Prodigy / ProdigyPlusScheduleFree | 基础学习率自动值为 `1.0` | 输入学习率参与 D-adaptation 尺度计算 |
-| CAME 且 `weight_decouple=false` | `came_fixed_decay` 不显示且不输出 | 固定衰减只属于解耦衰减分支 |
+| CAME 且界面字段 `came_weight_decouple=false` | `came_fixed_decay` 不显示且不输出 | 实际参数 `fixed_decay` 只属于解耦衰减分支 |
 | 8-bit/Paged bitsandbytes 优化器 | 显示 `percentile_clipping` 与 `min_8bit_size` | 两项由 bitsandbytes 状态实现消费 |
 | 内部 scheduler 优化器 | 外部 scheduler 控件只反映硬性配置 | 外部 scheduler 不参与参数更新 |
 
@@ -223,7 +223,7 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 <!-- doc-anchor: ab-testing -->
 ## 可归因对照条件
 
-只有数据集、caption、底模、随机种子、rank/alpha、batch、梯度累积、总优化器步数和预览条件相同时，结果差异才可能归因到优化器相关变量。优化器与学习率同时变化时，对照反映的是完整配置差异。
+只有数据集、caption、底模、随机种子、rank/alpha、batch size、梯度累积、总优化器步数和预览条件保持一致，结果差异才可能归因于优化器相关变量。如果优化器与学习率同时变化，对照反映的是整套配置的差异。
 
 不同优化器的状态结构不等价。从另一优化器保存的状态继续训练会同时改变初始动量、二阶统计和步长状态。Prodigy 等内部估计步长的实现还会引入独立的历史尺度。
 

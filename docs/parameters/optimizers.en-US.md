@@ -1,8 +1,8 @@
 # Optimizer Mechanisms and Parameter Reference
 
-An optimizer converts gradients into parameter updates. Implementations differ in state statistics, state-storage precision, step-size source, clipping location, and scheduler ownership. They do not read image semantics and cannot identify a target character, incorrect captions, or missing viewpoints.
+An optimizer converts gradients into parameter updates. Implementations differ in how they track state, store that state, derive step size, apply clipping, and manage scheduling. Optimizers do not read image semantics and cannot identify a target character, incorrect captions, or missing viewpoints.
 
-This guide describes the current implementation and parameter relationships. Learning-rate, `betas`, `weight_decay`, and scheduler values that change when the optimizer changes are configuration behavior, not an algorithm ranking or a training-result judgment.
+This guide describes the current implementation and its parameter relationships. When the optimizer changes, the UI may update the learning rate, `betas`, `weight_decay`, and scheduler. These linkages are configuration behavior; they do not rank algorithms or predict training results.
 
 <!-- doc-anchor: quick-choice -->
 ## Mechanism quick reference
@@ -15,7 +15,7 @@ This guide describes the current implementation and parameter relationships. Lea
 | Low-bit state storage | AdamW8bit, Lion8bit | Quantizable optimizer state is stored in 8-bit form |
 | Paged state | PagedAdamW8bit, PagedLion8bit | State pages transfer between CPU and GPU when paging is active |
 | Internal scheduling | AdamWScheduleFree, ProdigyPlusScheduleFree | Parameter averaging and scheduling occur inside the optimizer |
-| Project experimental state | Automagic3, EmoSens | Gradient-sign history or loss history changes the global update scale |
+| Project experimental state | Automagic3, EmoSens | Gradient-sign history or loss history adjusts the global update scale |
 
 <!-- doc-anchor: optimizer-type -->
 ## Current optimizers
@@ -35,9 +35,9 @@ This guide describes the current implementation and parameter relationships. Lea
 | Step-size estimation and internal scheduling | ProdigyPlusScheduleFree | D-adaptation and a Schedule-Free parameter sequence |
 | Step-size estimation and internal scheduling | AdamWScheduleFree | AdamW-style state and a Schedule-Free parameter sequence |
 | Project experimental implementations | Automagic3 | Gradient-sign history, parameter-group learning-rate adaptation, and internal clipping |
-| Project experimental implementations | EmoSens | Loss moving average, global learning-rate multiplier, and stop signal |
+| Project experimental implementations | EmoSens | Moving average of loss, global learning-rate multiplier, and stop signal |
 
-The 8-bit and paged descriptions refer to optimizer state. Peak training VRAM also includes model weights, activations, gradients, caches, and sampling.
+The 8-bit and paged descriptions refer only to optimizer state. Peak training VRAM also includes model weights, activations, gradients, caches, and sampling.
 
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit, CAME, and StableAdamW
@@ -56,9 +56,9 @@ All three process numerical updates only. Image quality, identity, outfit tags, 
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-Learning rate controls the overall scale of each update. AdamW, Lion, CAME, and StableAdamW consume it as an external step size. AdaFactor with `relative_step=true` derives a step from training progress. Prodigy-family optimizers combine the input learning rate with a D-adaptation scale. Automagic3 and EmoSens add internally generated dynamic multipliers.
+Learning rate controls the overall scale of each parameter update. AdamW, Lion, CAME, and StableAdamW use it as an external step size. AdaFactor derives a step from training progress when `relative_step=true`. Prodigy-family optimizers combine the input learning rate with a scale estimated through D-adaptation. Automagic3 and EmoSens also generate dynamic multipliers internally.
 
-The project currently applies these automatic values. They are written only when the existing linkage conditions match; manual and imported values continue to follow the existing source rules:
+The project currently uses the automatic values below. The UI writes them only when the corresponding linkage conditions apply; manual and imported values continue to follow the existing source rules:
 
 | Training configuration | Selection | Automatic learning rate |
 | --- | --- | ---: |
@@ -79,9 +79,9 @@ The project currently applies these automatic values. They are written only when
 <!-- doc-anchor: scheduler-warmup -->
 ### External scheduler and warmup
 
-AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and manual-step AdaFactor use the external scheduler. `lr_warmup_steps` belongs to that scheduler. `cosine_with_restarts` produces multiple in-run cycles only when `num_cycles` is greater than 1; `num_cycles=1` has no mid-run restart.
+AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and manual-step AdaFactor use the external scheduler, which also handles `lr_warmup_steps`. `cosine_with_restarts` produces multiple cycles in one run only when `num_cycles` is greater than 1; `num_cycles=1` does not restart mid-run.
 
-AdamWScheduleFree and ProdigyPlusScheduleFree manage parameter averaging and scheduling inside the optimizer. The external scheduler is fixed to `constant`; the external scheduler does not participate in training, and external `lr_warmup_steps` does not participate either. AdaFactor with `relative_step=true` also derives its step internally, so the external scheduler does not participate in training.
+AdamWScheduleFree and ProdigyPlusScheduleFree manage parameter averaging and scheduling inside the optimizer. The external scheduler is therefore fixed to `constant`, and `lr_warmup_steps` does not participate in training. AdaFactor also derives its step internally when `relative_step=true`, so the external scheduler does not participate.
 
 <!-- doc-anchor: betas -->
 ### Exponential moving-average decay coefficients (betas)
@@ -92,7 +92,7 @@ Larger values retain a larger proportion of historical state and give the curren
 | --- | ---: | --- |
 | AdamW, 8-bit/Paged AdamW, StableAdamW, EmoSens | 2 | `β1` controls the gradient moving average; `β2` controls the squared-gradient moving average |
 | Lion family | 2 | `β1` controls the historical-momentum/current-gradient mix used for the current sign direction; `β2` controls the momentum state stored for later steps |
-| CAME | 3 | `β1` controls the first-order normalized-update state; `β2` controls squared-gradient statistics; `β3` controls residual-square statistics between the normalized update and first-order state for confidence scaling |
+| CAME | 3 | `β1` controls the first-order normalized-update state; `β2` controls squared-gradient statistics; `β3` controls residual-square statistics between the normalized update and first-order state and contributes to confidence scaling |
 | Prodigy | 2 | `β1` and `β2` control first- and second-order states; D-adaptation's additional decay is separate from this input |
 | AdamWScheduleFree, ProdigyPlusScheduleFree | 2 | `β1` participates in combining current and averaged parameter sequences; `β2` controls squared-gradient statistics |
 
@@ -108,12 +108,12 @@ The UI resolves the corresponding explanation and validates the count for the se
 
 Weight decay shrinks parameters during updates. AdamW-style decoupled decay is applied outside the gradient update; coupled decay enters gradient-related computation. `weight_decay=0` applies no decay.
 
-CAME's `weight_decouple` selects the decoupled form; `fixed_decay` participates only in that branch. StableAdamW's `weight_decouple` selects the same decay form.
+The CAME UI field `came_weight_decouple` maps to the actual argument `weight_decouple`, which selects the decoupled form. The UI field `came_fixed_decay` maps to CAME's actual `fixed_decay` argument and participates only in that branch. StableAdamW also uses `weight_decouple` to select the same decay form.
 
 <!-- doc-anchor: gradient-clipping -->
 ### Maximum gradient norm
 
-`max_grad_norm` scales gradients by the global gradient norm before the optimizer update; `0` disables this global clipping. CAME, AdaFactor, StableAdamW, and bitsandbytes can also clip an internal update or statistic. When several are active, they occur at different points in the computation.
+`max_grad_norm` scales gradients by the global gradient norm before the optimizer update; `0` disables this global clipping. CAME, AdaFactor, StableAdamW, and bitsandbytes can also clip internal updates or statistics. When several clipping mechanisms are active, they operate at different points in the computation.
 
 <!-- doc-anchor: percentile-clipping -->
 ### Percentile clipping
@@ -137,7 +137,7 @@ CAME's `weight_decouple` selects the decoupled form; `fixed_decay` participates 
 
 `came_clip_threshold` clips the RMS of CAME's normalized update. It is applied during CAME's internal update construction and is separate from pre-update global `max_grad_norm`.
 
-`came_fixed_decay` is shown and emitted only for CAME when `came_weight_decouple=true`. Fixed decay makes the decay amount independent of the current learning-rate scale.
+`came_fixed_decay` is shown and emitted only for CAME when `came_weight_decouple=true`. It is the UI field; generated CAME optimizer arguments use the actual name `fixed_decay`. Enabling fixed decay makes the decay amount independent of the current learning-rate scale.
 
 <!-- doc-anchor: schedulefree-warmup -->
 ### Schedule-Free internal warmup
@@ -160,17 +160,17 @@ LoRA+ assigns different effective learning rates to LoRA matrix components. Adam
 <!-- doc-anchor: one-image -->
 ### One image
 
-Every optimizer receives the same image evidence repeatedly. Changing state statistics does not create missing viewpoints, expressions, or compositions; steps, repeats, and learning rate determine how strongly that evidence accumulates.
+Every optimizer repeatedly receives the evidence contained in the same image. Changing state statistics does not create missing viewpoints, expressions, or compositions; steps, repeats, and learning rate determine how strongly that evidence accumulates.
 
 <!-- doc-anchor: few-shot -->
 ### Few-shot images
 
-With few samples, a single batch contributes a larger share of total updates. Clipping can change the magnitude of an outlier numerical update, but it cannot determine whether that batch contains a valid rare feature or bad data.
+With few samples, a single batch contributes a larger share of total updates. Clipping can change the magnitude of an outlier numerical update, but it cannot determine whether that batch contains a valid rare feature or erroneous data.
 
 <!-- doc-anchor: galgame -->
 ### Galgame sprites
 
-Repeated pose, background, and crop information enters the gradient as repeated evidence. The optimizer processes its numerical history and does not separate identity from shared composition.
+Repeated poses, backgrounds, and crops enter the gradient as repeated evidence. The optimizer processes the numerical history and does not separate identity from shared composition.
 
 <!-- doc-anchor: dmm-mixed -->
 ### DMM cards and mixed sources
@@ -180,7 +180,7 @@ Cards, captures, sprites, and effects can produce different gradient scales. CAM
 <!-- doc-anchor: mixed-quality -->
 ### Uneven quality
 
-Blur, compression, duplicate crops, and consecutive frames change the training signal. The optimizer does not automatically reduce their sampling weight; grouping, captions, and repeats determine how often they enter training.
+Blur, compression, duplicate crops, and consecutive frames all change the training signal. The optimizer does not automatically reduce their sampling weight; grouping, captions, and repeats determine how often and under which conditions they enter training.
 
 <!-- doc-anchor: outfits-forms -->
 ### Multiple outfits or forms
@@ -205,7 +205,7 @@ Subject coverage and content/style captions determine whether style and subject 
 | AdamWScheduleFree / ProdigyPlusScheduleFree | External scheduler is `constant`, external warmup is `0` | Scheduling is managed inside the optimizer |
 | AdaFactor with `relative_step=true` | External scheduler does not participate; LoRA+ is not emitted | AdaFactor generates the step internally |
 | Prodigy / ProdigyPlusScheduleFree | Automatic base learning-rate value is `1.0` | The input learning rate participates in D-adaptation scale calculation |
-| CAME with `weight_decouple=false` | `came_fixed_decay` is hidden and omitted | Fixed decay belongs to the decoupled branch |
+| CAME with UI field `came_weight_decouple=false` | `came_fixed_decay` is hidden and omitted | The actual `fixed_decay` argument belongs only to the decoupled branch |
 | 8-bit/Paged bitsandbytes optimizer | `percentile_clipping` and `min_8bit_size` are visible | Both are consumed by the bitsandbytes state implementation |
 | Internal-scheduler optimizer | External scheduler controls reflect hard configuration only | External scheduler does not update parameters |
 
@@ -223,7 +223,7 @@ Subject coverage and content/style captions determine whether style and subject 
 <!-- doc-anchor: ab-testing -->
 ## Conditions for attributable comparisons
 
-Differences can only be attributed to optimizer-related variables when dataset, captions, base model, random seed, rank/alpha, batch, gradient accumulation, total optimizer steps, and preview conditions are held constant. Changing the optimizer and learning rate together measures a complete configuration difference.
+Differences can be attributed to optimizer-related variables only when the dataset, captions, base model, random seed, rank/alpha, batch size, gradient accumulation, total optimizer steps, and preview conditions remain fixed. Changing the optimizer and learning rate together measures the difference between the complete configurations.
 
 Optimizer state structures are not interchangeable. Resuming a state saved by another optimizer changes initial momentum, second-order statistics, and step-size state at the same time. D-adaptation optimizers also introduce an independent historical scale.
 
@@ -234,7 +234,7 @@ Optimizer state structures are not interchangeable. Resuming a state saved by an
 - Clipping operates on numerical magnitude and cannot tell whether a large update is bad data or a valid rare feature.
 - Paged variants change state memory placement and do not provide an independent image-quality objective.
 - Internal schedulers change parameter sequences and step-size history; external schedulers do not participate in those implementations.
-- Loss is an aggregate training value, not the same as identity retention, style generalization, or prompt response.
+- Training loss is an aggregate value, not the same as identity retention, style generalization, or prompt response.
 
 <!-- doc-anchor: evidence -->
 ## Implementation evidence and references
