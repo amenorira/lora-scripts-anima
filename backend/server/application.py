@@ -22,6 +22,8 @@ from backend.utils.devices import check_torch_gpu
 from backend.monitor.monitor import task_monitor
 from backend.monitor.run_registry import import_legacy_external_runs
 from backend.server.routes.realtime import router as realtime_router
+from backend.constants import REPO_ROOT
+from backend.startup_output import show_environment, show_ready
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -51,17 +53,55 @@ async def app_startup():
             "Legacy external run import skipped: %s / 旧跨盘训练记录导入已跳过: %s",
             exc, exc,
         )
-    await asyncio.to_thread(check_torch_gpu)
+    runtime = await asyncio.to_thread(check_torch_gpu) or {}
 
-    url = f"http://{os.environ.get('ANIMA_HOST', '127.0.0.1')}:{os.environ.get('ANIMA_PORT', '12333')}/"
+    host = os.environ.get("ANIMA_HOST", "127.0.0.1")
+    port = os.environ.get("ANIMA_PORT", "12333")
+    browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    url = f"http://{browser_host}:{port}/"
     if migration.get("imported"):
         _log.info(
             "Imported %s legacy external run(s) / 已恢复 %s 条旧跨盘训练记录",
             migration["imported"], migration["imported"],
         )
-    _log.info(
-        "Server ready / 服务就绪  @ %s  (Ctrl+Click to open in browser / Ctrl+左键点击可在浏览器中打开)",
+
+    software = [
+        f"App {os.environ.get('ANIMA_VERSION', 'unknown')}",
+        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+    ]
+    if runtime.get("torch_version"):
+        software.append(f"Torch {runtime['torch_version']}")
+    compute = [runtime.get("backend", "unknown")]
+    gpus = runtime.get("gpus", [])
+    if gpus:
+        first_gpu = gpus[0]
+        gpu_text = f"{first_gpu['name']} ({first_gpu['memory_gb']} GB)"
+        if len(gpus) > 1:
+            gpu_text += f" +{len(gpus) - 1}"
+        compute.append(gpu_text)
+    environment = [
+        ("Software / 软件", "  |  ".join(software)),
+        ("Compute / 计算", "  |  ".join(compute)),
+    ]
+    free_disk = os.environ.get("ANIMA_FREE_DISK_GB")
+    if free_disk:
+        environment.append(("Storage / 存储", f"{free_disk} GB free / 可用"))
+    if host in {"0.0.0.0", "::"}:
+        environment.append(("Network / 网络", f"LAN access enabled on port {port} / 已开放局域网访问"))
+    show_environment(environment)
+
+    tensorboard_url = os.environ.get("ANIMA_TENSORBOARD_URL") or None
+    if tensorboard_url:
+        tensorboard_host = os.environ.get("ANIMA_TENSORBOARD_HOST", "127.0.0.1")
+        tensorboard_port = os.environ.get("ANIMA_TENSORBOARD_PORT", "6006")
+        tensorboard_browser_host = (
+            "127.0.0.1" if tensorboard_host in {"0.0.0.0", "::"} else tensorboard_host
+        )
+        tensorboard_url = f"http://{tensorboard_browser_host}:{tensorboard_port}/"
+    show_ready(
         url,
+        tensorboard_url=tensorboard_url,
+        log_path=REPO_ROOT / "logs" / "anima.log",
     )
 
 

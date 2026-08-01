@@ -21,7 +21,6 @@ window.taggerMixin = {
   taggerFilmstripCollapsed: false,
   taggerFailedOnly: false,
   taggerLogsOpen: false,
-  taggerAdvancedOpen: false,
   taggerPreviewActual: false,
   taggerPreviewLight: false,
   taggerDragOver: false,
@@ -48,6 +47,7 @@ window.taggerMixin = {
   _taggerLastItemsFetch: 0,
   _taggerPreviewObjectUrl: null,
   _taggerLoadedResultKey: '',
+  _taggerModeStates: { folder: null, single: null },
 
   TAGGER_CAMIE_PRESETS: {
     macro: { general: 0.492, character: 0.492, copyright: 0.492, artist: 0.492, meta: 0.492, year: 0.492, rating: 0.492 },
@@ -85,7 +85,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260730-tagger19');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260801-tagger23');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -100,6 +100,11 @@ window.taggerMixin = {
     this._setTaggerRealtimeTask(null);
     this.stopTaggerSingleResize();
     this._releaseTaggerPreview();
+    Object.values(this._taggerModeStates).forEach(state => {
+      if (!state?.previewObjectUrl) return;
+      URL.revokeObjectURL(state.previewObjectUrl);
+      state.previewObjectUrl = null;
+    });
   },
 
   _loadTaggerSettings() {
@@ -199,6 +204,14 @@ window.taggerMixin = {
     return Array.isArray(categories) ? categories : [];
   },
 
+  taggerSupportsStandaloneRatingToggle() {
+    return !this.taggerUsesCategoryThresholds();
+  },
+
+  taggerSupportsModelTag() {
+    return this.taggerModel()?.supports_model_tag === true;
+  },
+
   taggerSupportsCharacterToggle() {
     return this.taggerModel()?.supports_character_toggle === true;
   },
@@ -251,17 +264,23 @@ window.taggerMixin = {
 
   handleTaggerModelChange(resetPreset = true) {
     localStorage.setItem('anima-tagger-model', this.taggerSelectedModel || '');
+    if (resetPreset) {
+      this._clearTaggerResultState(true);
+      Object.values(this._taggerModeStates).forEach(state => this._clearStoredTaggerResult(state));
+    }
     const allowed = this.taggerPresetOptions().map(option => option[0]);
     let preset = this.taggerSettings.preset;
     if (resetPreset || !allowed.includes(preset)) {
       preset = this.taggerUsesCategoryThresholds() ? 'macro' : 'balanced';
     }
     this.applyTaggerPreset(preset);
-    this.taggerCategoryState = {};
-    this.taggerResultCategories = {};
-    this._taggerLoadedResultKey = '';
   },
 
+  changeTaggerModel(modelId) {
+    if (this.taggerRunning || this.taggerStarting || modelId === this.taggerSelectedModel) return;
+    this.taggerSelectedModel = modelId;
+    this.handleTaggerModelChange(true);
+  },
 
   taggerCanStart() {
     return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel
@@ -312,6 +331,13 @@ window.taggerMixin = {
   setTaggerCustomPreset() {
     this.taggerSettings.preset = 'custom';
     this.saveTaggerSettings();
+    if (!Object.keys(this.taggerCategoryState).length || this.taggerUsesCategoryThresholds()) return;
+    Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
+      category.threshold = Number(key === 'character'
+        ? this.taggerSettings.characterThreshold
+        : this.taggerSettings.threshold);
+    });
+    this.recalculateAllTaggerCategories(true);
   },
 
 
@@ -321,6 +347,11 @@ window.taggerMixin = {
       [key]: Math.max(0, Math.min(1, Number(this.taggerSettings.categoryThresholds[key]) || 0)),
     });
     this.saveTaggerSettings();
+    const category = this.taggerCategoryState[key];
+    if (category) {
+      category.threshold = this.taggerSettings.categoryThresholds[key];
+      this.recalculateTaggerCategory(key);
+    }
   },
 
   adjustTaggerCategoryThreshold(key, delta) {
@@ -345,21 +376,96 @@ window.taggerMixin = {
   },
 
   async selectTaggerSourceMode(mode) {
-    if (this.taggerRunning) return;
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning
+      || !['folder', 'single'].includes(mode) || mode === this.taggerSourceMode) return;
     this.stopTaggerSingleResize();
-    this.taggerTaskId = null;
-    this.taggerTask = null;
-    localStorage.removeItem('anima-tagger-task-id');
+    this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
     this.taggerSourceMode = mode;
-    this.taggerSourcePath = '';
-    this.taggerSource = null;
-    this.taggerItems = [];
-    this.taggerItemsTotal = 0;
+    const stored = this._taggerModeStates[mode];
+    this._taggerModeStates[mode] = null;
+    this._restoreTaggerModeState(stored);
+  },
+
+  _captureTaggerModeState() {
+    return {
+      sourcePath: this.taggerSourcePath,
+      source: this.taggerSource,
+      taskId: this.taggerTaskId,
+      task: this.taggerTask,
+      items: this.taggerItems,
+      itemsTotal: this.taggerItemsTotal,
+      selectedIndex: this.taggerSelectedIndex,
+      resultText: this.taggerResultText,
+      resultCategories: this.taggerResultCategories,
+      categoryState: this.taggerCategoryState,
+      loadedResultKey: this._taggerLoadedResultKey,
+      previewObjectUrl: this._taggerPreviewObjectUrl,
+      failedOnly: this.taggerFailedOnly,
+      logsOpen: this.taggerLogsOpen,
+    };
+  },
+
+  _restoreTaggerModeState(state) {
+    this.taggerSourcePath = state?.sourcePath || '';
+    this.taggerSource = state?.source || null;
+    this.taggerTaskId = state?.taskId || null;
+    this.taggerTask = state?.task || null;
+    this.taggerItems = state?.items || [];
+    this.taggerItemsTotal = Number(state?.itemsTotal || 0);
+    this.taggerSelectedIndex = Number(state?.selectedIndex || 0);
+    this.taggerResultText = state?.resultText || '';
+    this.taggerResultCategories = state?.resultCategories || {};
+    this.taggerCategoryState = state?.categoryState || {};
+    this._taggerLoadedResultKey = state?.loadedResultKey || '';
+    this._taggerPreviewObjectUrl = state?.previewObjectUrl || null;
+    this.taggerFailedOnly = !!state?.failedOnly;
+    this.taggerLogsOpen = !!state?.logsOpen;
+    if (this.taggerTaskId) localStorage.setItem('anima-tagger-task-id', this.taggerTaskId);
+    else localStorage.removeItem('anima-tagger-task-id');
+  },
+
+  clearTaggerSource() {
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning) return;
+    this.stopTaggerSingleResize();
+    this._taggerModeStates[this.taggerSourceMode] = null;
+    this._releaseTaggerPreview();
+    this._restoreTaggerModeState(null);
+  },
+
+  _clearStoredTaggerResult(state) {
+    if (!state) return;
+    state.taskId = null;
+    state.task = null;
+    state.resultText = '';
+    state.resultCategories = {};
+    state.categoryState = {};
+    state.loadedResultKey = '';
+    state.items = (state.items || []).map(item => {
+      const next = Object.assign({}, item, { status: 'pending' });
+      delete next.result;
+      delete next.tag_count;
+      delete next.error;
+      return next;
+    });
+  },
+
+  _clearTaggerResultState(clearTask = false) {
     this.taggerResultText = '';
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
     this._taggerLoadedResultKey = '';
-    this._releaseTaggerPreview();
+    if (!clearTask) return;
+    this._setTaggerRealtimeTask(null);
+    this.taggerTaskId = null;
+    this.taggerTask = null;
+    this.taggerItems = this.taggerItems.map(item => {
+      const next = Object.assign({}, item, { status: 'pending' });
+      delete next.result;
+      delete next.tag_count;
+      delete next.error;
+      return next;
+    });
+    localStorage.removeItem('anima-tagger-task-id');
   },
 
   async pickTaggerSource() {
@@ -431,6 +537,7 @@ window.taggerMixin = {
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || 'Upload failed');
+      body.data.display_name = file.name || this.t('tagger.singleImage', 'Single image');
       this.setTaggerSource(body.data);
     } catch (error) {
       this.toast(error.message, 'error');
@@ -468,7 +575,7 @@ window.taggerMixin = {
       localStorage.removeItem('anima-tagger-task-id');
     }
     this.taggerSource = source;
-    this.taggerSourcePath = source.path || this.taggerSourcePath;
+    this.taggerSourcePath = source.display_name || source.path || this.taggerSourcePath;
     this.taggerItems = (source.items || []).map(item => Object.assign({ status: 'pending' }, item));
     this.taggerItemsTotal = Number(source.total || this.taggerItems.length);
     this.taggerSelectedIndex = 0;
@@ -633,7 +740,6 @@ window.taggerMixin = {
   },
 
   taggerResultTags() {
-    if (Object.keys(this.taggerCategoryState).length) return this.taggerVisibleCategoryTags();
     return String(this.taggerResultText || '')
       .split(',')
       .map(value => value.trim())
@@ -641,25 +747,17 @@ window.taggerMixin = {
   },
 
   taggerVisibleCategoryTags() {
-    const excluded = new Set(String(this.taggerSettings.excludeTags || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean));
     const values = [];
     const seen = new Set();
     Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
-      if (!category.visible || (key === 'rating' && !this.taggerSettings.addRatingTag) || (key === 'model' && !this.taggerSettings.addModelTag)) return;
+      if (!category.visible) return;
       category.visibleTags.forEach(tag => {
         const raw = String(tag[0] || '').trim();
         const normalized = raw.toLowerCase();
-        if (!raw || excluded.has(normalized) || (this.taggerSettings.removeDuplicated && seen.has(normalized))) return;
+        if (!raw || (this.taggerSettings.removeDuplicated && seen.has(normalized))) return;
         seen.add(normalized);
         values.push(this.formatTaggerOutputName(raw));
       });
-    });
-    const additional = String(this.taggerSettings.additionalTags || '').split(',').map(value => value.trim()).filter(Boolean);
-    additional.reverse().forEach(raw => {
-      const normalized = raw.toLowerCase();
-      if (excluded.has(normalized) || (this.taggerSettings.removeDuplicated && seen.has(normalized))) return;
-      seen.add(normalized);
-      values.unshift(this.formatTaggerOutputName(raw));
     });
     return values;
   },
@@ -670,7 +768,12 @@ window.taggerMixin = {
   },
 
   taggerVisibleCategoryCount() {
-    return Object.values(this.taggerCategoryState).reduce((total, category) => total + (category.visibleTags || []).length, 0);
+    return this.taggerResultTags().length;
+  },
+
+  updateTaggerOutputSettings() {
+    this.saveTaggerSettings();
+    if (Object.keys(this.taggerCategoryState).length) this.refreshTaggerResultFromCategories();
   },
 
   async copyTaggerCategory(key) {
@@ -685,14 +788,18 @@ window.taggerMixin = {
   async startTagger() {
     if (!this.taggerCanStart()) return;
 
+    this._clearTaggerResultState(true);
     this.taggerStarting = true;
     this.saveTaggerSettings();
     try {
+      const categoryKeys = this.taggerCategoryKeys();
+      const categoryEnabled = this.taggerEffectiveCategoryEnabled();
+      const categoryOptionEnabled = key => categoryKeys.includes(key) && categoryEnabled[key] !== false;
       const payload = {
         source_token: this.taggerSource.source_token,
         model_id: this.taggerSelectedModel,
         conflict: this.taggerSettings.conflict,
-        write_captions: this.taggerSource.kind !== 'upload',
+        write_captions: this.taggerSourceMode === 'folder',
         options: {
           threshold: Number(this.taggerSettings.threshold),
           character_threshold: Number(this.taggerSettings.characterThreshold),
@@ -700,11 +807,15 @@ window.taggerMixin = {
           category_enabled: this.taggerEffectiveCategoryEnabled(),
           replace_underscore: this.taggerSettings.replaceUnderscore,
           escape_tag: this.taggerSettings.escapeTag,
-          add_rating_tag: this.taggerSettings.addRatingTag,
-          add_model_tag: this.taggerSettings.addModelTag,
+          add_rating_tag: categoryKeys.includes('rating')
+            ? categoryOptionEnabled('rating')
+            : this.taggerSourceMode === 'folder' && this.taggerSettings.addRatingTag,
+          add_model_tag: this.taggerSourceMode === 'folder'
+            && this.taggerSupportsModelTag()
+            && this.taggerSettings.addModelTag,
           remove_duplicated: this.taggerSettings.removeDuplicated,
-          additional_tags: this.taggerSettings.additionalTags,
-          exclude_tags: this.taggerSettings.excludeTags,
+          additional_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.additionalTags : '',
+          exclude_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.excludeTags : '',
         },
       };
       const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -858,20 +969,6 @@ window.taggerMixin = {
     if (!this.taggerResultText) return;
     try { await navigator.clipboard.writeText(this.taggerResultText); this.toast(this.t('tagger.copied', 'Copied')); }
     catch (_) { this.toast(this.t('common.failed', 'Failed'), 'error'); }
-  },
-
-  async saveTaggerResult() {
-    if (!this.taggerSource || !this.taggerResultText.trim()) return;
-    try {
-      const response = await fetch('/api/tagger/captions/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_token: this.taggerSource.source_token, index: this.taggerSelectedIndex, text: this.taggerResultText }),
-      });
-      const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Save failed');
-      this.taggerResultText = body.data.text;
-      this.toast(this.t('common.saved', 'Saved'));
-    } catch (error) { this.toast(error.message, 'error'); }
   },
 
   openTaggerDatasetInEditor() {

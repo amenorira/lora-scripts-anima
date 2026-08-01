@@ -233,27 +233,6 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
         }
 
 
-def save_caption(source_token: str, index: int, text: str) -> dict:
-    path = source_item(source_token, index)
-    tags = _normalize_tags(str(text).split(","))
-    if not tags:
-        raise ValueError("Caption cannot be empty / 标签内容不能为空")
-    _write_caption(path, tags, "copy")
-    return {"index": index, "path": str(path.with_suffix(".txt")), "text": ", ".join(tags)}
-
-
-def _normalize_tags(tags: list[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for raw in tags:
-        tag = " ".join(str(raw).replace("\x00", "").strip().lower().split())
-        if not tag or len(tag) > 160 or tag in seen:
-            continue
-        seen.add(tag)
-        result.append(tag)
-    return result
-
-
 def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
@@ -268,16 +247,24 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[s
         for key, values in raw.items() if values
     }
     category_thresholds = dict(options.get("category_thresholds") or {})
-    for category, enabled in (options.get("category_enabled") or {}).items():
+    category_enabled = dict(options.get("category_enabled") or {})
+    for category, enabled in category_enabled.items():
         if enabled is False:
             category_thresholds[str(category)] = 1.01
+    threshold_categories = MODEL_SPEC_BY_ID[model_id].threshold_categories
+    add_rating_tag = (
+        category_enabled.get("rating", True)
+        if "rating" in threshold_categories
+        else bool(options.get("add_rating_tag", False))
+    )
+    add_model_tag = MODEL_SPEC_BY_ID[model_id].supports_model_tag and bool(options.get("add_model_tag", False))
     tags = Interrogator.postprocess_tags(
         {key: list(values) for key, values in raw.items()},
         float(options.get("threshold", 0.35)),
         float(options.get("character_threshold", 0.6)),
         category_thresholds,
-        bool(options.get("add_rating_tag", False)),
-        bool(options.get("add_model_tag", False)),
+        add_rating_tag,
+        add_model_tag,
         split_str(str(options.get("additional_tags", ""))),
         split_str(str(options.get("exclude_tags", ""))),
         False,

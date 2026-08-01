@@ -28,12 +28,12 @@ if not ((3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32):
     )
     raise SystemExit(1)
 
-# Set up the logger first so the very first console line is timestamped.
-# (rich is light enough to import before the heavy torch/fastapi stack.)
+# Set up the startup console before importing the heavy torch/fastapi stack.
 from backend.log import log
+from backend.startup_output import show_step
 
-# Immediate timestamped feedback while the heavy imports (torch, fastapi) load.
-log.info("Initializing / 正在初始化（加载依赖）…")
+# Give immediate feedback while the heavy imports (torch, fastapi) load.
+show_step("Loading application / 正在加载应用")
 
 from backend.launch_utils import (base_dir_path, check_environment, git_tag,
                                    prepare_environment, check_port_avaliable, find_avaliable_ports)
@@ -85,7 +85,6 @@ atexit.register(_cleanup_subprocesses)
 
 
 def run_tensorboard():
-    log.info("Starting tensorboard / 正在启动 TensorBoard...")
     try:
         proc = subprocess.Popen(
             [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
@@ -102,36 +101,45 @@ def run_tensorboard():
                 f"Check if tensorboard is installed or port {args.tensorboard_port} is available."
             )
         _subprocesses.append((proc, "TensorBoard"))
-        log.info(
-            "TensorBoard started at http://%s:%s/ / TensorBoard 已启动",
-            args.tensorboard_host, args.tensorboard_port,
-        )
+        return f"http://{args.tensorboard_host}:{args.tensorboard_port}/"
     except Exception as e:
         # TensorBoard 是辅助服务：缺失/端口占用/无 GPU 环境都可能起不来，
         # 不应让它拖死主 GUI。降级为 warning，主服务照常启动。
         log.warning(
-            "TensorBoard disabled: %s / TensorBoard 已禁用: %s"
-            " (用 --disable-tensorboard 可隐藏此提示)", e, e,
+            "TensorBoard unavailable; the GUI will continue. Reason: %s / "
+            "TensorBoard 不可用，主界面仍可正常使用。原因：%s",
+            e, e,
         )
+        return None
 
 def launch():
-    log.info("Starting lora-scripts-anima GUI / 正在启动...")
-    log.info(f"Base directory / 项目目录: {base_dir_path()}, Working directory / 工作目录: {os.getcwd()}")
-    log.info(f"{platform.system()} Python {platform.python_version()} {sys.executable}")
-    check_environment()
+    log.info(
+        "Launch context: base=%s cwd=%s platform=%s python=%s executable=%s",
+        base_dir_path(), os.getcwd(), platform.system(), platform.python_version(), sys.executable,
+        extra={"console": False},
+    )
+    show_step("Checking environment / 正在检查运行环境")
+    free_disk_gb = check_environment()
 
     if not args.skip_prepare_environment:
         prepare_environment()
 
-    if not check_port_avaliable(args.port):
+    requested_port = args.port
+    if not check_port_avaliable(requested_port):
         avaliable = find_avaliable_ports(30000, 30000 + 20)
         if avaliable:
             args.port = avaliable
+            log.warning(
+                "Port %s is already in use; using %s instead. / "
+                "端口 %s 已被占用，已改用 %s。",
+                requested_port, args.port, requested_port, args.port,
+            )
         else:
             log.error("port finding fallback error / 端口查找失败，无可用端口")
             sys.exit(1)
 
-    log.info(f"lora-scripts-anima Version: {git_tag(base_dir_path())}")
+    version = git_tag(base_dir_path())
+    log.info("lora-scripts-anima version: %s", version, extra={"console": False})
 
     # flash-attn status
     try:
@@ -142,21 +150,21 @@ def launch():
     try:
         fa_ver = pkg_version("flash_attn") if pkg_version else None
         if fa_ver:
-            log.info(f"flash_attn: OK (version / 版本 {fa_ver})")
+            log.info("flash_attn: %s", fa_ver, extra={"console": False})
         else:
-            log.info("flash_attn: NOT FOUND / 未安装")
+            log.info("flash_attn: not installed", extra={"console": False})
     except Exception:
-        log.info("flash_attn: NOT FOUND / 未安装")
+        log.info("flash_attn: not installed", extra={"console": False})
 
     # xformers status
     try:
         xf_ver = pkg_version("xformers") if pkg_version else None
         if xf_ver:
-            log.info(f"xformers: OK (version / 版本 {xf_ver})")
+            log.info("xformers: %s", xf_ver, extra={"console": False})
         else:
-            log.info("xformers: NOT FOUND / 未安装")
+            log.info("xformers: not installed", extra={"console": False})
     except Exception:
-        log.info("xformers: NOT FOUND / 未安装")
+        log.info("xformers: not installed", extra={"console": False})
 
     if args.listen:
         args.host = "0.0.0.0"
@@ -167,9 +175,15 @@ def launch():
     os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)
     os.environ["ANIMA_DEV"] = "1" if args.dev else "0"
+    os.environ["ANIMA_VERSION"] = version
+    if free_disk_gb is not None:
+        os.environ["ANIMA_FREE_DISK_GB"] = str(free_disk_gb)
 
+    show_step("Starting services / 正在启动服务")
+    tensorboard_url = None
     if not args.disable_tensorboard:
-        run_tensorboard()
+        tensorboard_url = run_tensorboard()
+    os.environ["ANIMA_TENSORBOARD_URL"] = tensorboard_url or ""
 
     import uvicorn
     uvicorn.run("backend.server:app", host=args.host, port=args.port, log_level="error", reload=args.dev)

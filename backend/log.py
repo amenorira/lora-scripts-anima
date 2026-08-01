@@ -3,6 +3,13 @@ import os
 from logging.handlers import RotatingFileHandler
 
 
+class _ConsoleVisibilityFilter(logging.Filter):
+    """Allow selected records to be kept in the file log without console noise."""
+
+    def filter(self, record):
+        return getattr(record, "console", True)
+
+
 # TensorBoard is served through an internal httpx reverse proxy. Its per-request
 # INFO records interrupt Rich's live training row and leave a screenful of
 # progress snapshots; warnings and transport errors remain visible.
@@ -12,6 +19,7 @@ for _quiet_logger in ("httpx", "httpcore"):
 
 log = logging.getLogger('anima-trainer')
 log.setLevel(logging.DEBUG)
+console = None
 # 应用日志由本模块统一输出；禁止继续传播给 uvicorn/sd-scripts 配置的 root handler，
 # 否则同一条记录会以两种格式打印两遍。
 log.propagate = False
@@ -24,7 +32,7 @@ try:
 
     console = Console(
         log_time=True,
-        log_time_format='%H:%M:%S-%f',
+        log_time_format='%Y-%m-%d %H:%M:%S-%f',
         theme=Theme(
             {
                 'traceback.border': 'black',
@@ -41,10 +49,11 @@ try:
         show_path=False,
         markup=False,
         rich_tracebacks=True,
-        log_time_format='%H:%M:%S-%f',
+        log_time_format='%Y-%m-%d %H:%M:%S-%f',
         level=logging.INFO,
         console=console,
     )
+    rh.addFilter(_ConsoleVisibilityFilter())
     rh.set_name(logging.INFO)
     log.handlers.clear()
     log.addHandler(rh)
@@ -66,5 +75,6 @@ except ModuleNotFoundError:
     _sh = logging.StreamHandler()
     _sh.setLevel(logging.INFO)
     _sh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    _sh.addFilter(_ConsoleVisibilityFilter())
     log.handlers.clear()
     log.addHandler(_sh)

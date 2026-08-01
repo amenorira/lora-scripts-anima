@@ -329,7 +329,11 @@ def setup_onnxruntime(
         resolved = _resolve_ort_version_for_torch()
         if resolved:
             onnx_version = resolved
-            log.info(f"resolved onnxruntime-gpu=={resolved} from torch CUDA build")
+            log.info(
+                "Resolved onnxruntime-gpu==%s from torch CUDA build",
+                resolved,
+                extra={"console": False},
+            )
 
     if onnx_version and not is_installed(f"onnxruntime-gpu=={onnx_version}"):
         log.info("uninstalling wrong onnxruntime version")
@@ -384,7 +388,7 @@ def check_requirements():
     if not req_file.exists():
         return
 
-    log.info("Checking requirements / 检查依赖...")
+    log.info("Checking requirements / 检查依赖", extra={"console": False})
     missing = []
     with open(req_file, "r", encoding="utf-8") as f:
         for line in f:
@@ -403,7 +407,7 @@ def check_requirements():
             except Exception as e:
                 log.warning(f"Failed to install {pkg}: {e}")
     else:
-        log.info("All requirements satisfied / 所有依赖已满足")
+        log.info("All requirements satisfied / 所有依赖已满足", extra={"console": False})
 
 
 def prepare_environment(prepare_onnxruntime: bool = True):
@@ -479,37 +483,35 @@ _ENV_CHECKED = False
 
 
 def check_environment():
-    """Check GPU and disk space; log results via RichHandler.
-    仅首次调用时执行 nvidia-smi（子进程耗时 ~500ms–2s），后续调用复用结果。"""
+    """Check launch-critical disk space and return the free capacity in GiB."""
     global _ENV_CHECKED
 
-    # GPU check via nvidia-smi（仅首次）
-    if not _ENV_CHECKED:
-        _ENV_CHECKED = True
-        try:
-            result = run_capture_text(["nvidia-smi", "-L"])
-            if result.returncode == 0 and result.stdout.strip():
-                gpu_info = result.stdout.strip().split('\n')[0]
-                log.info("GPU: %s", gpu_info)
-            else:
-                log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
-        except FileNotFoundError:
-            log.warning("nvidia-smi not found -- no NVIDIA GPU or driver? / 未检测到 NVIDIA GPU")
-        except PermissionError:
-            # 某些容器（如 AutoDL）nvidia-smi 存在但无执行权限，不应阻断启动
-            log.warning("nvidia-smi permission denied -- skipping GPU probe / 无权限执行 nvidia-smi，跳过 GPU 探测")
-        except OSError:
-            log.warning("nvidia-smi not executable -- no NVIDIA GPU or driver? / 无法执行 nvidia-smi")
+    if _ENV_CHECKED:
+        return None
+    _ENV_CHECKED = True
 
-    # Disk space
     try:
         usage = shutil.disk_usage(base_dir_path())
         free_gb = usage.free // (1024 ** 3)
         if free_gb < 10:
-            log.error("Disk free: %d GB -- critically low / 磁盘空间不足", free_gb)
+            log.error(
+                "Critically low disk space: %d GB free. Model downloads or checkpoints may fail; "
+                "free space before training. / 磁盘空间严重不足：仅剩 %d GB，模型下载或 checkpoint "
+                "保存可能失败，请先清理空间。",
+                free_gb, free_gb,
+            )
         elif free_gb < 30:
-            log.warning("Disk free: %d GB / 磁盘剩余空间", free_gb)
+            log.warning(
+                "Low disk space: %d GB free. Large model downloads and checkpoints need more room. / "
+                "磁盘空间偏低：仅剩 %d GB，大模型下载和 checkpoint 保存可能需要更多空间。",
+                free_gb, free_gb,
+            )
         else:
-            log.info("Disk free: %d GB / 磁盘剩余空间", free_gb)
+            log.info(
+                "Disk free: %d GB / 磁盘剩余空间",
+                free_gb,
+                extra={"console": False},
+            )
+        return free_gb
     except OSError:
-        pass
+        return None

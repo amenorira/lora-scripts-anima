@@ -54,7 +54,6 @@ class ApiRouterContractTests(unittest.TestCase):
         ("/tagger/thumbnails/{source_token}/{index}", ("GET",)),
         ("/tagger/source/{source_token}/items", ("GET",)),
         ("/tagger/source/{source_token}/{index}", ("GET",)),
-        ("/tagger/captions/save", ("POST",)),
         ("/tagger/tasks", ("POST",)),
         ("/tagger/tasks/{task_id}/status", ("GET",)),
         ("/tagger/tasks/{task_id}/cancel", ("POST",)),

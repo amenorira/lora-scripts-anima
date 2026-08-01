@@ -29,7 +29,6 @@ from backend.tagger.workspace import (
     latest_active_task_id,
     register_upload,
     retry_failed_task,
-    save_caption,
     scan_source,
     source_item,
     source_items,
@@ -178,21 +177,6 @@ async def tagger_source_image(source_token: str, index: int):
     try:
         path = await asyncio.to_thread(source_item, source_token, index)
         return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
-    except Exception as exc:
-        return APIResponseFail(message=str(exc))
-
-
-@router.post("/tagger/captions/save")
-async def tagger_save_caption(request: Request):
-    try:
-        body = await request.json()
-        result = await asyncio.to_thread(
-            save_caption,
-            str(body.get("source_token") or ""),
-            int(body.get("index", 0)),
-            str(body.get("text") or ""),
-        )
-        return APIResponseSuccess(data=result)
     except Exception as exc:
         return APIResponseFail(message=str(exc))
 

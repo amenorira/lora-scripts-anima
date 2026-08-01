@@ -35,6 +35,8 @@ class TaggerRegistryTests(unittest.TestCase):
         self.assertTrue(payload["models"][0]["supports_character_toggle"])
         self.assertEqual(payload["models"][0]["threshold_categories"], ())
         self.assertEqual(payload["models"][2]["threshold_categories"][-2:], ("quality", "rating"))
+        self.assertTrue(payload["models"][2]["supports_model_tag"])
+        self.assertFalse(payload["models"][0]["supports_model_tag"])
 class TaggerWorkspaceTests(unittest.TestCase):
     def _image(self, path: Path, color=(120, 80, 160)) -> None:
         Image.new("RGB", (48, 32), color).save(path)
@@ -49,7 +51,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.fail("Tagger task did not finish")
 
 
-    def test_scan_thumbnail_task_results_and_atomic_caption_save(self):
+    def test_scan_thumbnail_task_results_and_atomic_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             image_path = root / "sample.png"
@@ -88,9 +90,34 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(items[0]["result"]["text"], "1girl, blue eyes")
             self.assertFalse(list(root.glob(".*.tmp")))
 
-            saved = workspace.save_caption(source["source_token"], 0, "1girl, red dress, 1girl")
-            self.assertEqual(saved["text"], "1girl, red dress")
-            self.assertEqual(image_path.with_suffix(".txt").read_text(encoding="utf-8"), "1girl, red dress")
+    def test_read_only_single_task_does_not_skip_existing_caption(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image_path = Path(temporary) / "single.png"
+            self._image(image_path)
+            caption_path = image_path.with_suffix(".txt")
+            caption_path.write_text("old model tag", encoding="utf-8")
+            source = workspace.scan_source(str(image_path), False)
+
+            categories = {"general": {"tags": [["new_model_tag", 0.98]], "total": 1}}
+            with patch.object(workspace, "training_active", return_value=False), patch.object(
+                workspace,
+                "_onnx_tags",
+                return_value=(["new model tag"], categories),
+            ) as infer:
+                task_id = workspace.create_task({
+                    "source_token": source["source_token"],
+                    "model_id": "wd-eva02-large-tagger-v3",
+                    "conflict": "ignore",
+                    "write_captions": False,
+                })
+                result = self._wait(task_id)
+
+            self.assertEqual(result["status"], "done")
+            infer.assert_called_once()
+            item_result = workspace.task_items(task_id)["items"][0]["result"]
+            self.assertEqual(item_result["text"], "new model tag")
+            self.assertEqual(item_result["categories"], categories)
+            self.assertEqual(caption_path.read_text(encoding="utf-8"), "old model tag")
 
     def test_skip_existing_caption_does_not_run_inference(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -160,6 +187,31 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(tags, ["1girl"])
         self.assertIn("character", categories)
 
+    def test_category_models_use_category_switch_for_rating_and_model_capability(self):
+        fake = MagicMock()
+        fake.interrogate.return_value = {
+            "general": [("1girl", 0.99)],
+            "rating": [("safe", 0.97)],
+            "model": [("nai", 0.91)],
+        }
+        with patch.dict(workspace.available_interrogators, {"cl_tagger_1_02": fake}), patch.object(
+            interrogator.Interrogator,
+            "postprocess_tags",
+            return_value={"1girl": 0.99},
+        ) as postprocess:
+            workspace._onnx_tags(
+                "cl_tagger_1_02",
+                Image.new("RGB", (16, 16)),
+                {
+                    "add_rating_tag": False,
+                    "add_model_tag": False,
+                    "category_enabled": {"rating": True},
+                },
+            )
+
+        self.assertTrue(postprocess.call_args.args[4])
+        self.assertFalse(postprocess.call_args.args[5])
+
 
 
 
@@ -222,8 +274,8 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("tagger-choice-group", template)
         self.assertNotIn("<select", template)
         self.assertEqual(template.count('x-effect="value = taggerSelectedModel"'), 2)
-        self.assertEqual(template.count('@click="value = taggerSettings.preset; toggle($event)"'), 2)
-        self.assertEqual(template.count("taggerPresetOptions().find(option => option[0] === taggerSettings.preset)"), 2)
+        self.assertEqual(template.count('@click="value = taggerSettings.preset; toggle($event)"'), 4)
+        self.assertEqual(template.count("taggerPresetOptions().find(option => option[0] === taggerSettings.preset)"), 4)
         self.assertIn("localStorage.getItem('anima-tagger-model')", tagger_js)
         self.assertIn("this.taggerModels[0] ? this.taggerModels[0].id : ''", tagger_js)
         self.assertIn("localStorage.setItem('anima-tagger-model'", tagger_js)
@@ -233,7 +285,7 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("taggerSettings.aiOptimize", template)
         self.assertNotIn("taggerOptimizationModelSelectConfig", template)
         self.assertIn("taggerUsesCategoryThresholds()", template)
-        self.assertIn("tagger-category-customize", template)
+        self.assertEqual(template.count("t('tagger.categoryThresholds')"), 2)
         self.assertNotIn("tagger-category-table-head", template)
         self.assertIn("tagger-category-field", template)
         self.assertIn("tagger-category-controls", template)
@@ -268,6 +320,27 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn("releaseTaggerRuntime", tagger_js)
         self.assertIn("tagger-result-tags", template)
         self.assertIn("taggerResultTags()", template)
+        self.assertIn("tagger-single-output-settings", template)
+        self.assertIn("updateTaggerOutputSettings()", template)
+        single_output = template.split('class="tagger-form-card tagger-single-output-settings"', 1)[1].split("</section>", 1)[0]
+        self.assertNotIn("taggerSettings.additionalTags", single_output)
+        self.assertNotIn("taggerSettings.excludeTags", single_output)
+        self.assertNotIn("taggerSettings.addRatingTag", single_output)
+        self.assertNotIn("taggerSettings.addModelTag", single_output)
+        self.assertIn("exclude_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.excludeTags : ''", tagger_js)
+        self.assertIn("clearTaggerSource()", template)
+        self.assertEqual(template.count("changeTaggerModel($event.detail.value)"), 2)
+        self.assertNotIn("saveTaggerResult", tagger_js)
+        self.assertNotIn("/api/tagger/captions/save", tagger_js)
+        self.assertNotIn("ti-save", template)
+        self.assertIn("write_captions: this.taggerSourceMode === 'folder'", tagger_js)
+        self.assertIn("_captureTaggerModeState", tagger_js)
+        self.assertIn("_restoreTaggerModeState", tagger_js)
+        self.assertNotIn('class="tagger-section-toggle"', template)
+        self.assertNotIn("toggleTaggerSection(", tagger_js)
+        self.assertNotIn("taggerModelSettingsOpen", tagger_js)
+        self.assertNotIn("taggerOutputOptionsOpen", tagger_js)
+        self.assertNotIn("anima-tagger-ui-state", tagger_js)
         self.assertNotIn("x-model=\"taggerResultText\" readonly", template)
         self.assertIn("tagger-confidence-item", template)
         self.assertIn("taggerDisplayName(tag[0])", template)
@@ -281,7 +354,10 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertNotIn('label x-show="!taggerIsLlm()"><span><b x-text="t(\'tagger.escapeTag\')', template)
         self.assertIn("taggerSettings.removeDuplicated", template)
         self.assertIn("taggerSettings.addRatingTag", template)
-        self.assertIn("taggerSettings.addModelTag", template)
+        self.assertEqual(template.count("taggerSettings.addRatingTag"), 1)
+        self.assertEqual(template.count("taggerSettings.addModelTag"), 1)
+        self.assertIn("taggerSupportsStandaloneRatingToggle()", template)
+        self.assertIn("taggerSupportsModelTag()", template)
         self.assertIn("category_thresholds", tagger_js)
         self.assertIn("taggerEffectiveCategoryEnabled", tagger_js)
         self.assertIn("categoryEnabledByModel", tagger_js)
@@ -308,6 +384,10 @@ class TaggerFrontendContractTests(unittest.TestCase):
         self.assertIn("background: transparent", css)
         self.assertIn(".tagger-single-layout", css)
         self.assertIn("grid-template-rows: 36px clamp(300px, 46vh, 520px)", css)
+        self.assertIn("@media (min-width: 1121px)", css)
+        self.assertIn(".tagger-page-shell:has(.tagger-single-layout)", css)
+        self.assertIn(".tagger-single-sidebar { padding-right: 8px; overflow-y: auto", css)
+        self.assertNotIn(".tagger-section-toggle", css)
         self.assertIn(".tagger-result-tag", css)
         self.assertIn(".tagger-confidence-item", css)
         self.assertIn("font-family: var(--font-sans)", css)
