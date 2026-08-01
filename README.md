@@ -21,8 +21,8 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v2.1.0 已发布**
-> 本版本重构了 Tagger 工作台，加入多模型分类控制与批量处理，并全面校订训练参数说明、优化器文档和 Krea 2 FP8 交互。
+> ✅ **v2.2.0 已发布**
+> 本版本统一桌面工作台与启动信息体验，增强优化器元数据和 Anima 学习率联动，并继续完善 Tagger 界面与训练文档。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。项目通过训练核心注册表隔离不同后端：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端，**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 

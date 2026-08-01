@@ -6,16 +6,35 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.2.0 - 2026-08-01
+
+This release unifies the desktop workspace and startup experience, expands optimizer metadata and Anima learning-rate coupling, and further refines the Tagger UI and training documentation.
+
+### Desktop Workspace and Startup Experience
+
+- Refactored application startup, logging initialization, and server output to present access URLs, runtime details, and startup state together, with clearer failure fallback.
+- Unified desktop layouts and control sizing across training pages, Tagger, and shared UI, reducing duplicate styles and improving information density in narrow windows.
+- Refined the Tagger single-image workspace, model configuration, and result presentation so category thresholds, character tags, and editing actions are easier to scan.
+
 ### Anima Learning-Rate Coupling and Compatibility
 
 - Changed every `setIfDefault` rule to use explicit field provenance, preserving manual input, imports, presets, and legacy local drafts even when a value happens to equal a default.
 - Persisted provenance per training route and profile; resetting one field re-enables its current dependency-aware recommendation, while a full reset restores all profile defaults.
 - Derived Anima learning-rate placeholders directly from registry `autoValue` rules and removed the separately maintained frontend recommendation map.
 
+### Optimizers and Training Configuration
+
+- Added centralized optimizer metadata covering parameter defaults, applicability, and serialization contracts, while refining Anima optimizer learning-rate and scheduler defaults.
+- Refactored Krea 2 configuration adaptation and training-field registration to reduce duplicated frontend/backend definitions and broaden regression coverage.
+- Fixed preset-application undo and field-provenance restoration so automatic recommendations do not overwrite user configuration.
+
 ### Documentation
 
 - Corrected the evidence boundaries for `cosine_with_restarts`, Anima rank/alpha, Schedule-Free warmup, and Lion weight decay, with upstream references pinned to revisions reviewed on 2026-07-31.
 - Reduced repeated LR values so the optimizer guide's learning-rate table is the single detailed recommendation matrix.
+- Fully refreshed the Chinese and English READMEs, parameter guides, and UI copy so training backends, installation flows, and runtime boundaries remain consistent.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.1.0...v2.2.0)
 
 ## v2.1.0 - 2026-07-30
 
