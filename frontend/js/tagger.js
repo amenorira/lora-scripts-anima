@@ -25,6 +25,8 @@ window.taggerMixin = {
   taggerPreviewActual: false,
   taggerPreviewLight: false,
   taggerDragOver: false,
+  taggerSingleLeftWidth: 55,
+  taggerSingleResizing: false,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -96,6 +98,7 @@ window.taggerMixin = {
   stopTaggerWorkspace() {
     this.realtimeUnsubscribe('hardware');
     this._setTaggerRealtimeTask(null);
+    this.stopTaggerSingleResize();
     this._releaseTaggerPreview();
   },
 
@@ -343,6 +346,7 @@ window.taggerMixin = {
 
   async selectTaggerSourceMode(mode) {
     if (this.taggerRunning) return;
+    this.stopTaggerSingleResize();
     this.taggerTaskId = null;
     this.taggerTask = null;
     localStorage.removeItem('anima-tagger-task-id');
@@ -352,6 +356,9 @@ window.taggerMixin = {
     this.taggerItems = [];
     this.taggerItemsTotal = 0;
     this.taggerResultText = '';
+    this.taggerResultCategories = {};
+    this.taggerCategoryState = {};
+    this._taggerLoadedResultKey = '';
     this._releaseTaggerPreview();
   },
 
@@ -477,6 +484,27 @@ window.taggerMixin = {
     return this.taggerSource ? `/api/tagger/source/${this.taggerSource.source_token}/${index}` : '';
   },
 
+  startTaggerSingleResize(event) {
+    if ((event && event.button !== 0) || window.innerWidth <= 1120) return;
+    this.taggerSingleResizing = true;
+    document.body.classList.add('tagger-single-resizing');
+  },
+
+  resizeTaggerSingleLayout(event) {
+    if (!this.taggerSingleResizing) return;
+    const layout = document.querySelector('.tagger-single-layout');
+    if (!layout) return;
+    const rect = layout.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const percent = ((event.clientX - rect.left) / width) * 100;
+    this.taggerSingleLeftWidth = Math.min(70, Math.max(30, Math.round(percent * 10) / 10));
+  },
+
+  stopTaggerSingleResize() {
+    this.taggerSingleResizing = false;
+    document.body.classList.remove('tagger-single-resizing');
+  },
+
   taggerThumbUrl(index) {
     return this.taggerSource ? `/api/tagger/thumbnails/${this.taggerSource.source_token}/${index}` : '';
   },
@@ -500,6 +528,7 @@ window.taggerMixin = {
     this._taggerLoadedResultKey = resultKey;
     this.taggerResultText = result.text || '';
     this.taggerResultCategories = result.categories || {};
+    const labels = result.labels || {};
     const state = {};
     if (this.taggerSourceMode === 'single') {
       Object.entries(this.taggerResultCategories).forEach(([key, category]) => {
@@ -507,7 +536,7 @@ window.taggerMixin = {
         if (!rawTags.length) return;
         const defaultThreshold = key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold;
         state[key] = {
-          label: category.label || this.taggerCategoryLabel(key),
+          label: category.label || labels[key] || this.taggerCategoryLabel(key),
           tags: rawTags,
           threshold: Number(this.taggerSettings.categoryThresholds[key] ?? defaultThreshold ?? 0.5),
           visible: this.taggerUsesCategoryThresholds()
@@ -596,6 +625,19 @@ window.taggerMixin = {
     if (this.taggerSettings.replaceUnderscore) value = value.replace(/_/g, ' ');
     if (this.taggerSettings.escapeTag) value = value.replace(/([\\()])/g, '\\$1');
     return value;
+  },
+
+  taggerDisplayName(name) {
+    const value = String(name || '');
+    return this.taggerSettings.replaceUnderscore ? value.replace(/_/g, ' ') : value;
+  },
+
+  taggerResultTags() {
+    if (Object.keys(this.taggerCategoryState).length) return this.taggerVisibleCategoryTags();
+    return String(this.taggerResultText || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
   },
 
   taggerVisibleCategoryTags() {
