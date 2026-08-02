@@ -170,11 +170,15 @@ class TagEditorFrontendContractTests(unittest.TestCase):
     def test_desktop_layout_and_selection_labels_are_explicit(self):
         css = Path("frontend/css/app.css").read_text(encoding="utf-8")
         html = Path("frontend/index.html").read_text(encoding="utf-8")
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
 
         self.assertIn(".te-shell { display: flex; flex-direction: column; flex: 1; min-width: 960px;", css)
         self.assertNotIn(".te-main { flex-direction: column; }", css)
         self.assertIn("grid-template-columns: auto minmax(0, 1fr) 8px var(--te-right-w, 340px)", css)
-        self.assertIn("grid-template-columns: repeat(auto-fill, 160px)", css)
+        self.assertIn("grid-template-columns: repeat(auto-fill, var(--te-card-size, 160px))", css)
+        self.assertIn("grid-auto-rows: var(--te-card-size, 160px)", css)
+        self.assertIn("new ResizeObserver(update)", source)
+        self.assertIn("tagEditorInitLayout()", html)
         self.assertIn("object-fit: contain", css)
         self.assertIn("height: clamp(180px, 34vh, 320px)", css)
         self.assertIn("tagEditor.selectPage", html)

@@ -106,6 +106,7 @@ window.tagEditorMixin = {
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
   tagEditorResizing: false,
+  _teGridResizeObserver: null,
   tagEditorSessionId: '',
   tagEditorSessionGeneration: 0,
   tagEditorSessionRevision: '',
@@ -711,6 +712,31 @@ window.tagEditorMixin = {
     var saved = 0;
     try { saved = parseInt(localStorage.getItem('tagEditor_rightWidth'), 10); } catch (e) {}
     this.tagEditorRightWidth = saved >= 280 && saved <= 520 ? saved : 340;
+  },
+
+  tagEditorInitLayout() {
+    var self = this;
+    this.$nextTick(function() {
+      var grid = document.getElementById('teV3Grid');
+      if (!grid) return;
+      if (self._teGridResizeObserver) self._teGridResizeObserver.disconnect();
+      var update = function() { self._teUpdateGridCardSize(grid); };
+      self._teGridResizeObserver = new ResizeObserver(update);
+      self._teGridResizeObserver.observe(grid);
+      update();
+    });
+  },
+
+  _teUpdateGridCardSize(grid) {
+    if (!grid || grid.clientWidth <= 0) return;
+    var style = getComputedStyle(grid);
+    var gap = parseFloat(style.columnGap) || 8;
+    var padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    var available = Math.max(1, grid.clientWidth - padding);
+    var minSize = 160;
+    var columns = Math.max(1, Math.floor((available + gap) / (minSize + gap)));
+    var size = Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns));
+    grid.style.setProperty('--te-card-size', size + 'px');
   },
 
   async tagEditorLoadTagFreq() {
