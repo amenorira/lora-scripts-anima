@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import io
 import os
-import shutil
 import zipfile
 from pathlib import Path
 
@@ -38,7 +37,10 @@ from backend.tageditor.core import (
     get_thumbnail_path, tag_list,
 )
 from backend.tageditor.operations import apply_operation
+from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event
+from backend.tageditor.sessions import dataset_sessions
 from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot, clear_all_snapshots
+from backend.tageditor.timeline import timeline_store
 
 router = APIRouter()
 
@@ -73,6 +75,13 @@ def _resolve_target_images(data: dict, dir_path: Path) -> tuple[list[dict], str 
     return [], "无效的批量操作作用域"
 
 
+def _valid_directory(raw_path: str) -> Path | None:
+    if not raw_path:
+        return None
+    path = resolve_dir(raw_path)
+    return path if path.exists() and path.is_dir() else None
+
+
 # ══════════════════════════════════════════════════════════════════
 #  API 端点
 # ══════════════════════════════════════════════════════════════════
@@ -83,8 +92,8 @@ async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir:
         return {"status": "error", "message": "请指定数据集目录路径"}
 
-    dir_path = resolve_dir(dir)
-    if not dir_path.exists():
+    dir_path = _valid_directory(dir)
+    if dir_path is None:
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
     images, tags = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
@@ -103,8 +112,8 @@ async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     if not dir:
         return {"status": "error", "message": "请指定数据集目录路径"}
 
-    dir_path = resolve_dir(dir)
-    if not dir_path.exists():
+    dir_path = _valid_directory(dir)
+    if dir_path is None:
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
     images, tags_data = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
@@ -113,14 +122,96 @@ async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     return {"status": "success", "data": {"tags": tags_data, "total_images": total_images}}
 
 
+@router.post("/tageditor/sessions")
+async def create_dataset_session(data: dict):
+    """Create an immutable dataset scan session and return its first page."""
+    try:
+        session = await asyncio.to_thread(dataset_sessions.create, data.get("dir", ""), data.get("recursive", True))
+        page = await asyncio.to_thread(
+            dataset_sessions.page,
+            session.id,
+            page=1,
+            page_size=int(data.get("page_size", 60)),
+        )
+        return {
+            "status": "success",
+            "data": {
+                "session_id": session.id,
+                "dir": str(session.directory),
+                "dir_name": session.directory.name or str(session.directory),
+                "recursive": session.recursive,
+                "count": len(session.images),
+                "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).strip()),
+                "tags": list(session.tags),
+                **page,
+            },
+        }
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+@router.get("/tageditor/sessions/{session_id}/images")
+async def get_dataset_session_page(
+    session_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(60, ge=30, le=240),
+    search: str = Query(""),
+    use_regex: bool = Query(False),
+    quick_filter: str = Query("all"),
+    include_tags: str = Query(""),
+    exclude_tags: str = Query(""),
+    tag_logic: str = Query("AND"),
+    sort_by: str = Query("name"),
+    sort_asc: bool = Query(True),
+    sort_by2: str = Query(""),
+    sort_asc2: bool = Query(True),
+):
+    try:
+        data = await asyncio.to_thread(
+            dataset_sessions.page,
+            session_id,
+            page=page,
+            page_size=page_size,
+            search=search,
+            use_regex=use_regex,
+            quick_filter=quick_filter,
+            include_tags=tuple(tag for tag in include_tags.split("\x1f") if tag),
+            exclude_tags=tuple(tag for tag in exclude_tags.split("\x1f") if tag),
+            tag_logic=tag_logic,
+            sort_by=sort_by,
+            sort_asc=sort_asc,
+            sort_by2=sort_by2,
+            sort_asc2=sort_asc2,
+        )
+        return {"status": "success", "data": data}
+    except KeyError:
+        return {"status": "error", "message": "数据集会话已过期"}
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+@router.post("/tageditor/sessions/{session_id}/refresh")
+async def refresh_dataset_session(session_id: str):
+    try:
+        session = await asyncio.to_thread(dataset_sessions.refresh, session_id)
+        return {"status": "success", "data": {"session_id": session.id, "generation": session.generation, "revision": session.revision, "count": len(session.images)}}
+    except KeyError:
+        return {"status": "error", "message": "数据集会话已过期"}
+
+
+@router.delete("/tageditor/sessions/{session_id}")
+async def close_dataset_session(session_id: str):
+    return {"status": "success", "data": {"closed": dataset_sessions.delete(session_id)}}
+
+
 @router.get("/tageditor/stats")
 async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True)):
     """数据集统计概览：图片总数、标签总数、有/无标签文件的图片数"""
     if not dir:
         return {"status": "error", "message": "请指定数据集目录路径"}
 
-    dir_path = resolve_dir(dir)
-    if not dir_path.exists():
+    dir_path = _valid_directory(dir)
+    if dir_path is None:
         return {"status": "error", "message": f"目录不存在: {dir}"}
 
     images = await asyncio.to_thread(get_cached_scan_images, dir_path, recursive)
@@ -153,8 +244,8 @@ async def tag_autocomplete(
     if not dir or not prefix:
         return {"status": "success", "data": {"suggestions": []}}
 
-    dir_path = resolve_dir(dir)
-    if not dir_path.exists():
+    dir_path = _valid_directory(dir)
+    if dir_path is None:
         return {"status": "success", "data": {"suggestions": []}}
 
     suggestions = await asyncio.to_thread(get_autocomplete, dir_path, prefix, limit, recursive)
@@ -168,8 +259,8 @@ async def filter_images(data: dict):
     if not dir_path:
         return {"status": "error", "message": "请指定数据集目录路径"}
 
-    d = resolve_dir(dir_path)
-    if not d.exists():
+    d = _valid_directory(dir_path)
+    if d is None:
         return {"status": "error", "message": "目录不存在"}
 
     include_tags = set(data.get("include_tags", []))
@@ -201,18 +292,22 @@ async def filter_images(data: dict):
 async def save_image_tags(data: dict):
     """保存单张图片的标签"""
     img_path = data.get("path", "")
-    tags = data.get("tags", "")
-    if not img_path:
-        return {"status": "error", "message": "图片路径无效"}
-    p = Path(img_path).resolve()
-    if not p.is_file():
-        return {"status": "error", "message": "图片路径无效"}
-    # A11: 校验路径未越界（save 本身无 dataset_dir 上下文，此处校验是否存在 .txt 旁文件即可）
-    cap = find_caption(p) or p.with_suffix(".txt")
-    if not write_tags(cap, tags):
-        return {"status": "error", "message": "写入标签文件失败"}
-    _invalidate_caches_for_path(p)
-    return {"status": "success", "message": "已保存"}
+    dir_path = _valid_directory(data.get("dir", ""))
+    if not img_path or dir_path is None:
+        return {"status": "error", "message": "图片路径或数据集目录无效"}
+    result = await asyncio.to_thread(
+        save_caption_transaction,
+        dir_path,
+        [{"path": img_path, "tags": data.get("tags", ""), "expected_revision": data.get("expected_revision")}],
+        writer=write_tags,
+        event_type="save",
+        label="保存单张标签",
+    )
+    if result["saved"] == 0 and (result["failed"] or result["conflicts"]):
+        return {"status": "error", "message": (result["failed"] or result["conflicts"])[0]["reason"], "data": result}
+    _invalidate_cache(dir_path, None)
+    dataset_sessions.invalidate_dataset(dir_path)
+    return {"status": "success", "message": "已保存", "data": result}
 
 
 @router.post("/tageditor/save-all")
@@ -226,55 +321,21 @@ async def save_all_tags(data: dict):
     if not images:
         return {"status": "error", "message": "无数据"}
     dir_str = data.get("dir", "")
-    dataset_dir = resolve_dir(dir_str) if dir_str else None
-    def _save_items() -> tuple[list[str], list[str], list[dict[str, str]]]:
-        saved_paths: list[str] = []
-        skipped_paths: list[str] = []
-        failed: list[dict[str, str]] = []
-        for item in images:
-            img_path = item.get("path", "")
-            tags = item.get("tags", "")
-            if not img_path:
-                failed.append({"path": "", "reason": "图片路径无效"})
-                continue
-            if not os.path.isfile(img_path):
-                failed.append({"path": img_path, "reason": "图片不存在"})
-                continue
-            resolved_path = _assert_within(img_path, dataset_dir) if dataset_dir is not None else Path(img_path).resolve()
-            if resolved_path is None:
-                failed.append({"path": img_path, "reason": "图片不在数据集目录内"})
-                continue
-            p = resolved_path
-            normalized_path = str(p)
-            cap_path = find_caption(p) or p.with_suffix(".txt")
-            existing_tags = read_tags(cap_path) if cap_path.exists() else ""
-            if existing_tags == tags.strip():
-                skipped_paths.append(normalized_path)
-                continue
-            if not write_tags(cap_path, tags):
-                failed.append({"path": normalized_path, "reason": "写入标签文件失败"})
-                continue
-            saved_paths.append(normalized_path)
-        return saved_paths, skipped_paths, failed
-
-    saved_paths, skipped_paths, failed = await asyncio.to_thread(_save_items)
-    if saved_paths:
-        if dataset_dir is not None:
-            _invalidate_cache(dataset_dir, None)
-        else:
-            dirs = {Path(path).parent for path in saved_paths}
-            for _d in dirs:
-                _invalidate_cache(_d, None)
-    return {
-        "status": "success",
-        "data": {
-            "saved": len(saved_paths),
-            "skipped": len(skipped_paths),
-            "saved_paths": saved_paths,
-            "skipped_paths": skipped_paths,
-            "failed": failed,
-        },
-    }
+    dataset_dir = _valid_directory(dir_str)
+    if dataset_dir is None:
+        return {"status": "error", "message": "请指定有效的数据集目录路径"}
+    result = await asyncio.to_thread(
+        save_caption_transaction,
+        dataset_dir,
+        images,
+        writer=write_tags,
+        event_type="save",
+        label=f"保存 {len(images)} 张图片的标签",
+    )
+    if result["saved"]:
+        _invalidate_cache(dataset_dir, None)
+        dataset_sessions.invalidate_dataset(dataset_dir)
+    return {"status": "success", "data": result}
 
 
 @router.post("/tageditor/batch")
@@ -286,17 +347,17 @@ async def batch_edit_tags(data: dict):
     if not dir_path or not operation:
         return {"status": "error", "message": "缺少参数"}
 
-    d = resolve_dir(dir_path)
-    if not d.exists():
+    d = _valid_directory(dir_path)
+    if d is None:
         return {"status": "error", "message": "目录不存在"}
 
     target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
     if err:
         return {"status": "error", "message": err}
 
-    def _apply_batch() -> tuple[int, list[str]]:
-        modified_count = 0
-        operation_errors = []
+    def _apply_batch() -> tuple[list[dict], list[str]]:
+        changes = []
+        operation_errors: list[str] = []
         for img in target_images:
             img_path_str = img.get("path", "")
             if not img_path_str:
@@ -309,17 +370,26 @@ async def batch_edit_tags(data: dict):
                 operation_errors.append(f"{img.get('name', '?')}: {operation_error}")
                 continue
             if new_tags != tags:
-                if not write_tags(cap, new_tags):
-                    operation_errors.append(f"{img.get('name', '?')}: 写入失败")
-                    continue
-                modified_count += 1
-        return modified_count, operation_errors
+                changes.append({"path": img_path_str, "tags": new_tags})
+        return changes, operation_errors
 
-    modified, errors = await asyncio.to_thread(_apply_batch)
+    changes, errors = await asyncio.to_thread(_apply_batch)
+    result = await asyncio.to_thread(
+        save_caption_transaction,
+        d,
+        changes,
+        writer=write_tags,
+        event_type="batch",
+        label=f"批量操作: {operation}",
+    ) if changes else {"saved": 0, "failed": [], "conflicts": [], "timeline_event": None}
+    modified = int(result.get("saved", 0))
+    errors.extend(item["reason"] for item in result.get("failed", []))
+    errors.extend(item["reason"] for item in result.get("conflicts", []))
 
     if modified > 0:
         _invalidate_cache(d, None)
-    return {"status": "success", "data": {"modified": modified, "errors": errors}}
+        dataset_sessions.invalidate_dataset(d)
+    return {"status": "success", "data": {"modified": modified, "errors": errors, "timeline_event": result.get("timeline_event")}}
 
 
 @router.post("/tageditor/batch/preview")
@@ -331,8 +401,8 @@ async def preview_batch_edit(data: dict):
     if not dir_path or not operation:
         return {"status": "error", "message": "缺少参数"}
 
-    d = resolve_dir(dir_path)
-    if not d.exists():
+    d = _valid_directory(dir_path)
+    if d is None:
         return {"status": "error", "message": "目录不存在"}
 
     target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
@@ -372,23 +442,17 @@ async def restore_from_backup(data: dict):
     if not dir_path:
         return {"status": "error", "message": "请指定数据集目录路径"}
 
-    d = resolve_dir(dir_path)
-    if not d.exists():
+    d = _valid_directory(dir_path)
+    if d is None:
         return {"status": "error", "message": "目录不存在"}
-
-    restored = 0
-    for ext in {".txt", ".caption"}:
-        for bak in d.rglob(f"*{ext}.bak"):
-            orig = bak.with_suffix("")
-            try:
-                shutil.copy2(bak, orig)
-                restored += 1
-            except Exception:
-                pass
-
-    if restored > 0:
+    try:
+        result = await asyncio.to_thread(restore_legacy_backups, d)
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+    if result["restored"] > 0:
         _invalidate_cache(d, None)
-    return {"status": "success", "data": {"restored": restored}}
+        dataset_sessions.invalidate_dataset(d)
+    return {"status": "success", "data": result}
 
 
 @router.get("/tageditor/download-zip")
@@ -447,7 +511,7 @@ async def download_dataset_zip(dir: str = Query("")):
 
 
 @router.get("/tageditor/thumbnail")
-async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=128, le=1600)):
+async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=128, le=1600), dataset_dir: str = Query("")):
     """标签编辑器缩略图代理"""
     import urllib.parse
     import mimetypes
@@ -459,6 +523,10 @@ async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=
 
     if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
         return PlainTextResponse("", status_code=404)
+    if dataset_dir:
+        root = _valid_directory(dataset_dir)
+        if root is None or _assert_within(str(p), root) is None:
+            return PlainTextResponse("", status_code=404)
 
     try:
         thumb_path = await asyncio.to_thread(get_thumbnail_path, p, size)
@@ -472,10 +540,56 @@ async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=
         return FileResponse(p, media_type=mt, headers={"Cache-Control": "public, max-age=3600"})
 
 
+@router.get("/tageditor/timeline")
+async def api_list_timeline(dataset_dir: str = Query(...), limit: int = Query(100, ge=1, le=500)):
+    directory = _valid_directory(dataset_dir)
+    if directory is None:
+        return {"status": "error", "message": "目录不存在"}
+    events = await asyncio.to_thread(timeline_store.list, directory, limit)
+    return {"status": "success", "data": events}
+
+
+@router.post("/tageditor/timeline/{event_id}/restore")
+async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
+    directory = _valid_directory(dataset_dir)
+    if directory is None:
+        return {"status": "error", "message": "目录不存在"}
+    try:
+        result = await asyncio.to_thread(restore_timeline_event, directory, event_id)
+        _invalidate_cache(directory, None)
+        dataset_sessions.invalidate_dataset(directory)
+        return {"status": "success", "data": result}
+    except KeyError:
+        return {"status": "error", "message": "时间线事件不存在"}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+@router.delete("/tageditor/timeline/{event_id}")
+async def api_delete_timeline(event_id: str, dataset_dir: str = Query(...)):
+    directory = _valid_directory(dataset_dir)
+    if directory is None:
+        return {"status": "error", "message": "目录不存在"}
+    deleted = await asyncio.to_thread(timeline_store.delete, event_id, directory)
+    return {"status": "success", "data": {"deleted": deleted}}
+
+
+@router.delete("/tageditor/timeline")
+async def api_clear_timeline(dataset_dir: str = Query(...)):
+    directory = _valid_directory(dataset_dir)
+    if directory is None:
+        return {"status": "error", "message": "目录不存在"}
+    cleared = await asyncio.to_thread(timeline_store.clear, directory)
+    return {"status": "success", "data": {"cleared": cleared}}
+
+
 @router.post("/tageditor/snapshots")
 async def api_create_snapshot(dataset_dir: str = Query(...)):
     try:
-        meta = create_snapshot(dataset_dir)
+        directory = _valid_directory(dataset_dir)
+        if directory is None:
+            return {"status": "error", "message": "目录不存在"}
+        meta = await asyncio.to_thread(create_snapshot, str(directory))
         return {"status": "success", "data": meta}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -484,7 +598,10 @@ async def api_create_snapshot(dataset_dir: str = Query(...)):
 @router.get("/tageditor/snapshots")
 async def api_list_snapshots(dataset_dir: str = Query(...)):
     try:
-        snaps = list_snapshots(dataset_dir)
+        directory = _valid_directory(dataset_dir)
+        if directory is None:
+            return {"status": "error", "message": "目录不存在"}
+        snaps = await asyncio.to_thread(list_snapshots, str(directory))
         return {"status": "success", "data": snaps}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -493,9 +610,13 @@ async def api_list_snapshots(dataset_dir: str = Query(...)):
 @router.post("/tageditor/snapshots/{sid}/restore")
 async def api_restore_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
-        ok = restore_snapshot(dataset_dir, sid)
+        directory = _valid_directory(dataset_dir)
+        if directory is None:
+            return {"status": "error", "message": "目录不存在"}
+        ok = await asyncio.to_thread(restore_snapshot, str(directory), sid)
         if ok:
-            _invalidate_cache(resolve_dir(dataset_dir), None)
+            _invalidate_cache(directory, None)
+            dataset_sessions.invalidate_dataset(directory)
             return {"status": "success", "message": "Snapshot restored"}
         return {"status": "error", "message": "Snapshot not found"}
     except Exception as e:
@@ -505,7 +626,10 @@ async def api_restore_snapshot(sid: str, dataset_dir: str = Query(...)):
 @router.delete("/tageditor/snapshots/{sid}")
 async def api_delete_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
-        delete_snapshot(dataset_dir, sid)
+        directory = _valid_directory(dataset_dir)
+        if directory is None:
+            return {"status": "error", "message": "目录不存在"}
+        await asyncio.to_thread(delete_snapshot, str(directory), sid)
         return {"status": "success", "message": "Snapshot deleted"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -515,7 +639,10 @@ async def api_delete_snapshot(sid: str, dataset_dir: str = Query(...)):
 async def api_clear_all_snapshots(dataset_dir: str = Query(...)):
     """清空所有快照（C5）"""
     try:
-        n = clear_all_snapshots(dataset_dir)
+        directory = _valid_directory(dataset_dir)
+        if directory is None:
+            return {"status": "error", "message": "目录不存在"}
+        n = await asyncio.to_thread(clear_all_snapshots, str(directory))
         return {"status": "success", "message": f"Cleared {n} snapshots", "data": {"cleared": n}}
     except Exception as e:
         return {"status": "error", "message": str(e)}

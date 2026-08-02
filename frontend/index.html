@@ -462,6 +462,7 @@
 
       <!-- Route: Tag Editor -->
       <div x-show="currentRoute === 'tagEditor'" x-cloak
+        x-init="tagEditorRestorePanelWidth()"
         @keydown.window="tagEditorHandleKeydown($event)"
         @click="tagEditorContextMenu = null">
 
@@ -493,7 +494,7 @@
         <!-- Context menu -->
         <div x-show="tagEditorContextMenu" class="te-ctx"
           :style="'left:' + (tagEditorContextMenu?.x || 0) + 'px; top:' + (tagEditorContextMenu?.y || 0) + 'px'"
-          @click.away="tagEditorContextMenu = null" @keydown.escape.window="tagEditorContextMenu = null">
+          @click.away="tagEditorContextMenu = null">
           <div class="te-ctx-item" @click="tagEditorCtxInclude()" x-text="t('tagEditor.contextInclude')"></div>
           <div class="te-ctx-item" @click="tagEditorCtxExclude()" x-text="t('tagEditor.contextExclude')"></div>
           <div class="te-ctx-divider"></div>
@@ -504,7 +505,7 @@
         </div>
 
         <!-- Empty State -->
-        <div x-show="tagEditorImages.length === 0 && !tagEditorLoading" class="te-empty">
+        <div x-show="!tagEditorSessionId && !tagEditorLoading" class="te-empty">
           <div class="te-empty-icon">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
@@ -537,12 +538,25 @@
         </div>
 
         <!-- Main -->
-        <div x-show="tagEditorImages.length > 0 && !tagEditorLoading" class="te-shell">
+        <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell">
           <div class="te-topbar">
             <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
               </svg>
+            </button>
+            <div class="te-dataset-controls">
+              <button class="te-topbar-btn te-dataset-button" @click="tagEditorRequestSwitch()" :title="t('tagEditor.switchDataset')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 13h8M13 10l3 3-3 3"/></svg>
+                <span x-text="tagEditorLoadedDir || tagEditorDir"></span>
+              </button>
+              <div class="te-dataset-switch" x-show="tagEditorSwitchOpen" @click.outside="tagEditorSwitchOpen = false">
+                <input id="te-switch-dir-input" type="text" x-model="tagEditorPendingDir" :placeholder="t('tagEditor.datasetDirPlaceholder')" @keydown.enter="tagEditorConfirmSwitch()" @keydown.escape="tagEditorSwitchOpen = false">
+                <button class="btn btn-primary btn-sm" @click="tagEditorConfirmSwitch()" x-text="t('tagEditor.switchDataset')"></button>
+              </div>
+            </div>
+            <button class="te-topbar-btn" @click="tagEditorCloseDataset()" :title="t('tagEditor.closeDataset')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
             <div class="te-search-wrap">
               <input id="te-search-input" type="text" :value="tagEditorSearchQuery"
@@ -552,36 +566,36 @@
                 :class="{ 'te-input-error': tagEditorRegexError }">
               <button class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorClearSearch()" :title="t('tagEditor.clearSearch')">&times;</button>
               <button class="te-regex-btn" :class="{ active: tagEditorUseRegex }"
-                @click="tagEditorUseRegex = !tagEditorUseRegex; _teValidateRegex(tagEditorSearchQuery); tagEditorPage = 1"
+                @click="tagEditorUseRegex = !tagEditorUseRegex; _teValidateRegex(tagEditorSearchQuery); tagEditorSchedulePageFetch(true)"
                 x-text='".*"' :title="t('tagEditor.regexSearch')"></button>
               <span class="te-search-spinner" x-show="_teSearchLoading"></span>
               <div class="te-regex-error" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
             </div>
             <div class="te-filter-group">
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
-                @click="tagEditorQuickFilter = 'all'; tagEditorPage = 1">
+                @click="tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)">
                 <span x-text="t('tagEditor.selection')"></span>
                 <span class="te-badge" x-text="tagEditorFilteredCount()"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'notag' }"
-                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag'); tagEditorPage = 1">
+                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag'); tagEditorSchedulePageFetch(true)">
                 <span x-text="t('tagEditor.noTag')"></span>
                 <span class="te-badge" x-text="tagEditorGetQuickCount('notag')"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'modified' }"
-                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'modified' ? 'all' : 'modified'); tagEditorPage = 1">
+                @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'modified' ? 'all' : 'modified'); tagEditorSchedulePageFetch(true)">
                 <span x-text="t('tagEditor.unsavedChanges')"></span>
                 <span class="te-badge" x-text="tagEditorGetQuickCount('modified')"></span>
               </button>
             </div>
             <div class="te-sort-wrap">
-              <select x-model="tagEditorSortBy" @change="tagEditorPage = 1">
+              <select x-model="tagEditorSortBy" @change="tagEditorSchedulePageFetch(true)">
                 <option value="name" x-text="t('tagEditor.sortName')"></option>
                 <option value="tagCount" x-text="t('tagEditor.sortTagCount')"></option>
                 <option value="modified" x-text="t('tagEditor.modified')"></option>
               </select>
               <button class="te-topbar-btn te-sort-dir"
-                @click="tagEditorSortAsc = !tagEditorSortAsc; tagEditorPage = 1"
+                @click="tagEditorSortAsc = !tagEditorSortAsc; tagEditorSchedulePageFetch(true)"
                 :title="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   :style="tagEditorSortAsc ? '' : 'transform:rotate(180deg)'">
@@ -590,14 +604,14 @@
               </button>
             </div>
             <div class="te-sort-wrap" style="margin-left:2px;">
-              <select x-model="tagEditorSortBy2" @change="tagEditorPage = 1">
+              <select x-model="tagEditorSortBy2" @change="tagEditorSchedulePageFetch(true)">
                 <option value="">—</option>
                 <option value="name" x-text="t('tagEditor.sortName')"></option>
                 <option value="tagCount" x-text="t('tagEditor.sortTagCount')"></option>
                 <option value="modified" x-text="t('tagEditor.modified')"></option>
               </select>
               <button class="te-topbar-btn te-sort-dir" x-show="tagEditorSortBy2"
-                @click="tagEditorSortAsc2 = !tagEditorSortAsc2; tagEditorPage = 1"
+                @click="tagEditorSortAsc2 = !tagEditorSortAsc2; tagEditorSchedulePageFetch(true)"
                 :title="tagEditorSortAsc2 ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   :style="tagEditorSortAsc2 ? '' : 'transform:rotate(180deg)'">
@@ -628,7 +642,11 @@
               </svg>
             </button>
           </div>
-          <div class="te-main">
+          <div class="te-main" data-te-main="active"
+            :style="'--te-right-w:' + tagEditorRightWidth + 'px'"
+            @pointermove.window="tagEditorResize($event)"
+            @pointerup.window="tagEditorStopResize()"
+            @pointercancel.window="tagEditorStopResize()">
             <div class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }">
               <div class="te-sidebar-tabs">
                 <button class="te-sidebar-tab" :class="{ active: tagEditorSidebarTab === 'tags' }"
@@ -694,20 +712,20 @@
                     @click="tagEditorClearTagSearch()">&times;</button>
                 </div>
                 <div class="te-logic-btns">
-                  <button :class="{ active: tagEditorTagLogic === 'AND' }" @click="tagEditorTagLogic = 'AND'"
+                  <button :class="{ active: tagEditorTagLogic === 'AND' }" @click="tagEditorTagLogic = 'AND'; tagEditorSchedulePageFetch(true)"
                     :title="t('tagEditor.logicAndHint')">AND</button>
-                  <button :class="{ active: tagEditorTagLogic === 'OR' }" @click="tagEditorTagLogic = 'OR'"
+                  <button :class="{ active: tagEditorTagLogic === 'OR' }" @click="tagEditorTagLogic = 'OR'; tagEditorSchedulePageFetch(true)"
                     :title="t('tagEditor.logicOrHint')">OR</button>
                 </div>
                 <div class="te-filter-chips" x-show="tagEditorTagSelection.length > 0 || tagEditorExcludedTags.length > 0">
                   <template x-for="tag in tagEditorTagSelection" :key="'inc-' + tag">
                     <span class="te-chip include"><span x-text="tag"></span>
-                      <span class="te-chip-x" @click="tagEditorTagSelection = tagEditorTagSelection.filter(function(t) { return t !== tag }); _teInvalidateFilter(); tagEditorPage = 1">&times;</span>
+                      <span class="te-chip-x" @click="tagEditorTagSelection = tagEditorTagSelection.filter(function(t) { return t !== tag }); _teInvalidateFilter(); tagEditorSchedulePageFetch(true)">&times;</span>
                     </span>
                   </template>
                   <template x-for="tag in tagEditorExcludedTags" :key="'exc-' + tag">
                     <span class="te-chip exclude"><span x-text="tag"></span>
-                      <span class="te-chip-x" @click="tagEditorExcludedTags = tagEditorExcludedTags.filter(function(t) { return t !== tag }); _teInvalidateFilter(); tagEditorPage = 1">&times;</span>
+                      <span class="te-chip-x" @click="tagEditorExcludedTags = tagEditorExcludedTags.filter(function(t) { return t !== tag }); _teInvalidateFilter(); tagEditorSchedulePageFetch(true)">&times;</span>
                     </span>
                   </template>
                 </div>
@@ -838,8 +856,8 @@
                     <div class="te-snapshot-item">
                       <span class="te-snapshot-time" x-text="_teFormatSnapshotTime(snap.timestamp)"></span>
                       <span class="te-snapshot-meta">
+                        <span x-text="snap.label || snap.event_type"></span>
                         <span x-text="snap.file_count + ' files'"></span>
-                        <span x-text="_teFormatSize(snap.size_bytes)"></span>
                       </span>
                       <div class="te-snapshot-actions">
                         <button @click="tagEditorRestoreSnapshot(snap.id)" :title="t('tagEditor.snapshotRestore')">
@@ -865,11 +883,11 @@
                   </svg>
                 </div>
                 <div class="te-empty-title" x-text="t('tagEditor.emptySearch')"></div>
-                <button class="btn btn-ghost btn-sm" @click="tagEditorClearSearch(); tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorPage = 1" x-text="t('tagEditor.clearFilter')"></button>
+                <button class="btn btn-ghost btn-sm" @click="tagEditorSearchQuery = ''; tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)" x-text="t('tagEditor.clearFilter')"></button>
               </div>
               <div class="te-grid" id="teV3Grid" x-show="tagEditorFilteredCount() > 0">
                 <template x-for="(img, idx) in tagEditorGetPaged()" :key="img.path">
-                  <div class="te-card"
+                  <div class="te-card" :data-path="img.path"
                     :class="{ selected: tagEditorSelected.includes(img.path), modified: img.tags !== tagEditorOriginal[img.path], 'te-card-no-cap': !img.has_caption }"
                     @click="tagEditorCardClick(img, idx, $event)"
                     @dblclick="tagEditorCardDblClick(img, idx, $event)"
@@ -878,7 +896,7 @@
                     @keydown.space.prevent="tagEditorCardClick(img, idx, $event)">
                     <div class="te-card-thumb">
                       <div class="te-card-skeleton"></div>
-                      <img :src="img.thumbnail" :alt="img.rel_path || img.name" loading="lazy"
+                      <img :src="img.thumbnail" :alt="img.rel_path || img.name" loading="lazy" decoding="async" width="320" height="320"
                         @load="$el.style.opacity='1'; $el.previousElementSibling.style.display='none'"
                         @error="$el.style.opacity='1'; $el.previousElementSibling.style.display='none'"
                         style="opacity:0; transition:opacity 0.2s;">
@@ -905,13 +923,18 @@
                 </template>
               </div>
             </div>
+            <div class="te-editor-divider" :class="{ dragging: tagEditorResizing }"
+              role="separator" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="520"
+              :aria-valuenow="Math.round(tagEditorRightWidth)" tabindex="0"
+              @pointerdown.prevent="tagEditorStartResize($event)"
+              @keydown.left.prevent="tagEditorAdjustRightWidth(8)"
+              @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"
+              @dblclick="tagEditorRightWidth = 340; tagEditorAdjustRightWidth(0)"></div>
             <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0 }">
-              <template x-if="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
-                <div class="te-editor-empty">
-                  <span x-text="t('tagEditor.noImageSelected')"></span>
-                </div>
-              </template>
-              <template x-if="tagEditorSelected.length === 1">
+              <div class="te-editor-empty" x-show="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
+                <span x-text="t('tagEditor.noImageSelected')"></span>
+              </div>
+              <div x-show="tagEditorSelected.length === 1" class="te-editor-state">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span class="te-editor-name"
@@ -978,8 +1001,8 @@
                     </div>
                   </div>
                 </div>
-              </template>
-              <template x-if="tagEditorSelected.length >= 2">
+              </div>
+              <div x-show="tagEditorSelected.length >= 2" class="te-editor-state">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
@@ -998,7 +1021,7 @@
                       </button>
                       <button :class="{ active: tagEditorBatchScope === 'all' }" @click="tagEditorBatchScope = 'all'">
                         <span x-text="t('tagEditor.scopeAll')"></span>
-                        <span class="te-badge" x-text="tagEditorImages.length"></span>
+                        <span class="te-badge" x-text="tagEditorDatasetCount"></span>
                       </button>
                     </div>
                   </div>
@@ -1074,7 +1097,7 @@
                     <div class="te-batch-stats">
                       <span class="te-batch-stats-title" x-text="t('tagEditor.tagCloud')"></span>
                       <template x-for="item in tagEditorGetSelectedStats()" :key="item.tag">
-                        <span class="te-batch-stag" @click="tagEditorBatchRemoveTag(item.tag)" :title="t('tagEditor.batchRemoveDirect')">
+                        <span class="te-batch-stag" :class="item.state" @click="tagEditorBatchRemoveTag(item.tag)" :title="t('tagEditor.batchRemoveDirect')">
                           <span x-text="item.tag"></span>
                           <span class="te-batch-stag-cnt" x-text="item.count"></span>
                           <span class="te-batch-stag-x" @click.stop="tagEditorBatchRemoveTag(item.tag)">&times;</span>
@@ -1084,12 +1107,12 @@
                   </template>
                   </div>
                 </div>
-              </template>
+              </div>
             </div>
           </div>
           <div class="te-statusbar">
             <span class="te-status-item">
-              <strong x-text="tagEditorImages.length"></strong>
+              <strong x-text="tagEditorDatasetCount"></strong>
               <span x-text="t('tagEditor.imageCount')"></span>
             </span>
             <span class="te-status-sep"></span>
@@ -1097,7 +1120,7 @@
               <strong x-text="tagEditorTagFreq.length"></strong>
               <span x-text="t('tagEditor.tagCloud')"></span>
             </span>
-            <template x-if="tagEditorFilteredCount() !== tagEditorImages.length">
+            <template x-if="tagEditorFilteredCount() !== tagEditorDatasetCount">
               <span class="te-status-item te-status-muted">
                 <span class="te-status-sep"></span>
                 <span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorFilteredCount())"></span>
@@ -1122,16 +1145,16 @@
             </template>
             <span class="te-status-spacer"></span>
             <div class="te-pager">
-              <button @click="tagEditorPage = 1" :disabled="tagEditorPage === 1">&laquo;</button>
-              <button @click="tagEditorPage--" :disabled="tagEditorPage === 1">&lsaquo;</button>
+              <button @click="tagEditorFetchPage(1)" :disabled="tagEditorPage === 1">&laquo;</button>
+              <button @click="tagEditorFetchPage(tagEditorPage - 1)" :disabled="tagEditorPage === 1">&lsaquo;</button>
               <template x-for="(p, pidx) in tagEditorGetPageNumbers()" :key="'pg-' + pidx">
                 <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
-                  @click="tagEditorPage = p" x-text="p"></button>
+                  @click="tagEditorFetchPage(p)" x-text="p"></button>
                 <span x-show="typeof p !== 'number'" x-text="p" class="te-pager-ellipsis"></span>
               </template>
-              <button @click="tagEditorPage++" :disabled="tagEditorPage >= tagEditorTotalPages()">&rsaquo;</button>
-              <button @click="tagEditorPage = tagEditorTotalPages()" :disabled="tagEditorPage >= tagEditorTotalPages()">&raquo;</button>
-              <select x-model="tagEditorPageSize" @change="tagEditorPage = 1">
+              <button @click="tagEditorFetchPage(tagEditorPage + 1)" :disabled="tagEditorPage >= tagEditorTotalPages()">&rsaquo;</button>
+              <button @click="tagEditorFetchPage(tagEditorTotalPages())" :disabled="tagEditorPage >= tagEditorTotalPages()">&raquo;</button>
+              <select x-model="tagEditorPageSize" @change="tagEditorSchedulePageFetch(true)">
                 <option value="30">30</option>
                 <option value="60">60</option>
                 <option value="120">120</option>

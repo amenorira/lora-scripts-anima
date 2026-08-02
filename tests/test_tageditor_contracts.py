@@ -123,16 +123,18 @@ class TagEditorBackendTests(unittest.TestCase):
 
             data = result["data"]
             self.assertEqual(result["status"], "success")
-            self.assertEqual(data["saved"], 1)
+            self.assertEqual(data["saved"], 0)
             self.assertEqual(data["skipped"], 1)
-            self.assertEqual(data["saved_paths"], [str(saved_image.resolve())])
+            self.assertEqual(data["saved_paths"], [])
             self.assertEqual(data["skipped_paths"], [str(skipped_image.resolve())])
             self.assertEqual(
                 {item["path"] for item in data["failed"]},
-                {str(failed_image.resolve()), str(missing_image)},
+                {str(missing_image)},
             )
-            self.assertEqual((root / "saved.txt").read_text(encoding="utf-8"), "saved")
+            self.assertTrue(data["aborted"])
+            self.assertFalse((root / "saved.txt").exists())
             self.assertFalse((root / "failed.txt").exists())
+            self.assertFalse(data["rolled_back"])
 
     def test_single_save_invalidates_recursive_parent_cache(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -145,6 +147,7 @@ class TagEditorBackendTests(unittest.TestCase):
             self.assertEqual(get_cached_scan_dataset(root, True)[0][0]["tags"], "old")
 
             result = asyncio.run(save_image_tags({
+                "dir": str(root),
                 "path": str(image_path),
                 "tags": "new",
             }))
@@ -162,7 +165,7 @@ class TagEditorFrontendContractTests(unittest.TestCase):
 
         self.assertIn("changes: changes", history_body)
         self.assertNotIn("snapshot: checkpoint", history_body)
-        self.assertGreater(rename_body.index("this._tePushHistory"), rename_body.index("this.tagEditorImages.forEach"))
+        self.assertGreater(rename_body.index("this._tePushHistory"), rename_body.index("images.forEach"))
 
     def test_desktop_layout_and_selection_labels_are_explicit(self):
         css = Path("frontend/css/app.css").read_text(encoding="utf-8")
@@ -170,7 +173,9 @@ class TagEditorFrontendContractTests(unittest.TestCase):
 
         self.assertIn(".te-shell { display: flex; flex-direction: column; flex: 1; min-width: 960px;", css)
         self.assertNotIn(".te-main { flex-direction: column; }", css)
-        self.assertIn("width: clamp(300px, 28vw, 360px)", css)
+        self.assertIn("grid-template-columns: auto minmax(0, 1fr) 8px var(--te-right-w, 340px)", css)
+        self.assertIn("grid-template-columns: repeat(auto-fill, 160px)", css)
+        self.assertIn("object-fit: contain", css)
         self.assertIn("height: clamp(180px, 34vh, 320px)", css)
         self.assertIn("tagEditor.selectPage", html)
         self.assertIn("tagEditor.selectFiltered", html)
