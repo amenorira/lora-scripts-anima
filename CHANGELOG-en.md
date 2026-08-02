@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.2.1 - 2026-08-02
+
+This patch release refactors the Tag Editor's data and session workflows and improves the desktop training dashboard when working with large sample, log, and output collections.
+
+### Tag Editor
+
+- Refactored the Tag Editor repository, session, snapshot, and timeline layers, consolidating frontend/backend state contracts and expanding regression coverage.
+- Improved responsive image-grid cards so images and editing details remain stable and readable across desktop window widths.
+
+### Training Dashboard
+
+- Fixed sample cards overlapping across rows and hiding filenames, introduced a stable responsive gallery that preserves full images, and added training-order and latest-first modes.
+- Removed exact overlap between HTTP snapshots and WebSocket replay, collapsed adjacent `tqdm` updates for the same step, and aligned visible rows across full-log, paginated, and live modes.
+- Added output-file search, type filters, independent sorting for models and other files, visible-result selection, and batch actions, while improving table typography, row height, and narrow-window scrolling.
+- Unified desktop typography across the four dashboard tabs, diagnostics, status badges, and supporting metrics, with complete Chinese and English UI copy.
+
+### Regression Protection
+
+- Added automated coverage for log overlap, same-step replacement, paginated totals, sample ordering, and output filtering and sorting.
+- Verified regular and narrow desktop layouts in the browser, ensuring sample cards do not overlap, output tables scroll locally, and the page has no horizontal overflow.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.2.0...v2.2.1)
+
 ## v2.2.0 - 2026-08-01
 
 This release unifies the desktop workspace and startup experience, expands optimizer metadata and Anima learning-rate coupling, and further refines the Tagger UI and training documentation.

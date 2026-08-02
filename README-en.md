@@ -21,8 +21,8 @@ A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://gi
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-> ✅ **v2.2.0 is now available**
-> This release unifies the desktop workspace and startup experience, expands optimizer metadata and Anima learning-rate coupling, and further refines the Tagger UI and training documentation.
+> ✅ **v2.2.1 is now available**
+> This release refactors the Tag Editor workflow and responsive grid, and improves the training dashboard's sample gallery, live logs, and output-file browsing experience.
 
 lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). A training-core registry keeps each backend isolated: **sd-scripts** handles SDXL / Anima, **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
