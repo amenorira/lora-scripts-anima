@@ -7,7 +7,7 @@ window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null,
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
-  previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewSortDir: 'asc', previewsLoading: false, historyItems: [], runningTask: null,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
@@ -16,7 +16,9 @@ window.monitorCoreMixin = {
   monitorParamQuery: '',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
-  outputSortKey: 'loss', outputSortDir: 'asc',  // 模型存档排序：loss|time|size|name，asc|desc
+  outputSearch: '', outputFilter: 'all',
+  outputModelSortKey: 'loss', outputModelSortDir: 'asc',
+  outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
   // ── 日志增量渲染状态 ──
@@ -498,10 +500,11 @@ window.monitorCoreMixin = {
       const atLastPage = this.logFullTotal === 0 || (this.logFullOffset + this.logFullLines.length >= this.logFullTotal);
       const following = this.logAutoScroll || this._logAtBottom;
       if (!atLastPage || !following) return;
-      const n = newLines.length;
       const cap = this._logPageSize();
-      this.logFullLines.push(...newLines);
-      this.logFullTotal += n;
+      const merged = this._mergeRealtimeLogLines(this.logFullLines, newLines);
+      if (!merged.changed) return;
+      this.logFullTotal += merged.appended;
+      if (merged.replaced) this._forceLogRebuild = true;
       // 超页裁顶（保持 DOM ≤ 一页），counterReset 随 offset 上移 → 绝对行号仍连续
       if (this.logFullLines.length > cap) {
         const k = this.logFullLines.length - cap;
@@ -509,7 +512,7 @@ window.monitorCoreMixin = {
         this.logFullOffset += k;
         this._logFullEvictK = k;
       }
-      this._logFullSlide = true;
+      this._logFullSlide = !merged.replaced;
       if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'logs') {
         this.scheduleRender();
       }
@@ -521,21 +524,9 @@ window.monitorCoreMixin = {
     // read, so a reconnect cannot skip a line written during that read. The
     // resulting replay can overlap the snapshot tail; remove that exact
     // suffix/prefix overlap before appending.
-    let overlap = 0;
-    const maxOverlap = Math.min(this.logLines.length, newLines.length);
-    for (let size = maxOverlap; size > 0; size--) {
-      let matches = true;
-      for (let index = 0; index < size; index++) {
-        if (this.logLines[this.logLines.length - size + index] !== newLines[index]) {
-          matches = false;
-          break;
-        }
-      }
-      if (matches) { overlap = size; break; }
-    }
-    const appendedLines = overlap ? newLines.slice(overlap) : newLines;
-    if (!appendedLines.length) return;
-    this.logLines.push(...appendedLines);
+    const merged = this._mergeRealtimeLogLines(this.logLines, newLines);
+    if (!merged.changed) return;
+    if (merged.replaced) this._forceLogRebuild = true;
     const cap = this._logCap();
     if (this.logLines.length > cap) {
       this._logTrimK = this.logLines.length - cap;
@@ -728,6 +719,41 @@ window.monitorCoreMixin = {
   // 内存缓冲上限 / 分页大小（取自 constants.js LOG）
   _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
+
+  _tqdmProgressSignature(line) {
+    const match = String(line || '').match(/^\s*steps:\s+\d+%\|.*\|\s*(\d+)\s*\/\s*(\d+)(?=\s*\[)/i);
+    return match ? match[1] + '/' + match[2] : '';
+  },
+
+  _mergeRealtimeLogLines(target, incoming) {
+    const lines = Array.isArray(incoming) ? incoming : [];
+    let overlap = 0;
+    const maxOverlap = Math.min(target.length, lines.length);
+    for (let size = maxOverlap; size > 0; size--) {
+      let matches = true;
+      for (let index = 0; index < size; index++) {
+        if (target[target.length - size + index] !== lines[index]) { matches = false; break; }
+      }
+      if (matches) { overlap = size; break; }
+    }
+
+    let appended = 0;
+    let replaced = 0;
+    for (const line of lines.slice(overlap)) {
+      const signature = this._tqdmProgressSignature(line);
+      const lastIndex = target.length - 1;
+      if (signature && lastIndex >= 0 && signature === this._tqdmProgressSignature(target[lastIndex])) {
+        if (target[lastIndex] !== line) {
+          target[lastIndex] = line;
+          replaced++;
+        }
+        continue;
+      }
+      target.push(line);
+      appended++;
+    }
+    return { appended, replaced, overlap, changed: appended > 0 || replaced > 0 };
+  },
 
   // ── 完整日志模式（后端分页）──────────────────────────────
   /** 当前完整日志模式定位日志的 run_dir（历史）或 task_id（实时） */
@@ -989,6 +1015,17 @@ window.monitorCoreMixin = {
     }
   },
 
+  _previewDisplayIndices() {
+    const indices = this.previews.map((_, index) => index);
+    return this.previewSortDir === 'desc' ? indices.reverse() : indices;
+  },
+
+  setPreviewSort(dir) {
+    if (dir !== 'asc' && dir !== 'desc') return;
+    this.previewSortDir = dir;
+    this.renderDashboard();
+  },
+
   // ── History ────────────────────────────────────────────
   async loadHistory() {
     try {
@@ -1224,7 +1261,7 @@ window.monitorCoreMixin = {
   },
 
   selectAllOutputFiles() {
-    this.outputFiles.forEach(f => { this.outputFilesSelected[f.path] = true; });
+    this._visibleOutputFiles().forEach(f => { this.outputFilesSelected[f.path] = true; });
     this._outputsListDirty = true;
     this.renderDashboard();
   },
@@ -1239,15 +1276,23 @@ window.monitorCoreMixin = {
     return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
   },
 
-  // 模型存档排序：仅对 category=='model' 排序，其余文件保持原序分区。
-  // 返回 { models: [...], others: [...] }。无 loss 的模型项按当前方向排末尾。
+  _visibleOutputFiles() {
+    const query = String(this.outputSearch || '').trim().toLowerCase();
+    const filter = this.outputFilter || 'all';
+    return (this.outputFiles || []).filter(file => {
+      const isModel = file.category === 'model';
+      if (filter === 'models' && !isModel) return false;
+      if (filter === 'others' && isModel) return false;
+      return !query || String(file.name || '').toLowerCase().includes(query);
+    });
+  },
+
   _sortedOutputs() {
-    const files = this.outputFiles || [];
+    const files = this._visibleOutputFiles();
     const models = files.filter(f => f.category === 'model');
     const others = files.filter(f => f.category !== 'model');
-    const key = this.outputSortKey || 'loss';
-    const dir = this.outputSortDir === 'desc' ? -1 : 1;
-    const sorted = models.slice().sort((a, b) => {
+    const sortFiles = (items, key, direction) => items.slice().sort((a, b) => {
+      const dir = direction === 'desc' ? -1 : 1;
       let va, vb;
       if (key === 'loss') {
         va = (a.ckpt_loss == null) ? Infinity : a.ckpt_loss;
@@ -1256,25 +1301,54 @@ window.monitorCoreMixin = {
         va = a.mtime || 0; vb = b.mtime || 0;
       } else if (key === 'size') {
         va = a.size || 0; vb = b.size || 0;
-      } else { // name
+      } else if (key === 'type') {
+        va = (a.category || (a.name || '').split('.').pop() || '').toLowerCase();
+        vb = (b.category || (b.name || '').split('.').pop() || '').toLowerCase();
+        if (va < vb) return -dir;
+        if (va > vb) return dir;
+        return 0;
+      } else {
         va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase();
-        if (va < vb) return dir;
-        if (va > vb) return -dir;
+        if (va < vb) return -dir;
+        if (va > vb) return dir;
         return 0;
       }
       return (va - vb) * dir;
     });
-    return { models: sorted, others };
+    return {
+      models: sortFiles(models, this.outputModelSortKey || 'loss', this.outputModelSortDir || 'asc'),
+      others: sortFiles(others, this.outputOtherSortKey || 'time', this.outputOtherSortDir || 'desc'),
+    };
   },
 
-  setOutputSort(key) {
-    if (this.outputSortKey === key) {
-      this.outputSortDir = this.outputSortDir === 'asc' ? 'desc' : 'asc';
+  setOutputSort(group, key) {
+    const modelGroup = group === 'models';
+    const keyField = modelGroup ? 'outputModelSortKey' : 'outputOtherSortKey';
+    const dirField = modelGroup ? 'outputModelSortDir' : 'outputOtherSortDir';
+    if (this[keyField] === key) {
+      this[dirField] = this[dirField] === 'asc' ? 'desc' : 'asc';
     } else {
-      this.outputSortKey = key;
-      this.outputSortDir = (key === 'loss' || key === 'name') ? 'asc' : 'desc';
+      this[keyField] = key;
+      this[dirField] = (key === 'loss' || key === 'name' || key === 'type') ? 'asc' : 'desc';
     }
     this.renderDashboard();
+  },
+
+  setOutputFilter(filter) {
+    if (!['all', 'models', 'others'].includes(filter)) return;
+    this.outputFilter = filter;
+    this.renderDashboard();
+  },
+
+  setOutputSearch(value) {
+    this.outputSearch = String(value || '');
+    this.renderDashboard();
+    requestAnimationFrame(() => {
+      const input = document.querySelector('.m-output-search-input');
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   },
 
   // 用隐藏 <a download> 触发下载，避免 window.open 被拦截 / 返回 JSON 错误页

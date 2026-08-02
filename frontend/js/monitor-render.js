@@ -318,7 +318,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
+      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + this.previewSortDir + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (tabChanged || this._builtSamplesSig !== sig) {
         // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
         const scrollTop = contentEl.scrollTop || 0;
@@ -334,7 +334,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + (this.outputSortKey) + ':' + (this.outputSortDir) + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (tabChanged || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = contentEl.querySelector('.m-outputs-scroll');
@@ -1515,16 +1515,20 @@ window.monitorRenderMixin = {
 
     const canRefresh = !!this.currentOutputRunDir;
     let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples','Preview')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
-    html += '<div class="m-view-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button></div>';
+    html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder','Sample order')) + '">';
+    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder','Training order')) + '</button>';
+    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst','Latest first')) + '</button></div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
       html += '<div class="preview-grid">';
-      this.previews.forEach((pv, i) => {
+      this._previewDisplayIndices().forEach(i => {
+        const pv = this.previews[i];
         html += '<button type="button" class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
         html += this._previewThumbImageHtml(pv);
-        html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small>' + this.esc(pv.name) + '</small></span>';
+        html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small title="' + this.esc(pv.name) + '">' + this.esc(pv.name) + '</small></span>';
         html += '</button>';
       });
       html += '</div>';
@@ -1608,10 +1612,10 @@ window.monitorRenderMixin = {
 
   previewLightboxNav(dir) {
     if (!this.previews.length) return;
-    const n = this.previews.length;
-    let next = this.previewStep + dir;
-    if (next < 0) next = 0;
-    else if (next > n - 1) next = n - 1;
+    const indices = this._previewDisplayIndices();
+    const current = Math.max(0, indices.indexOf(this.previewStep));
+    const nextPosition = Math.max(0, Math.min(current + dir, indices.length - 1));
+    const next = indices[nextPosition];
     if (next === this.previewStep) return;
     this.previewStep = next;
     this._updatePreviewLightbox();
@@ -1631,15 +1635,17 @@ window.monitorRenderMixin = {
       else original.removeAttribute('href');
     }
     const c = document.getElementById('previewLightboxCounter');
-    if (c) c.textContent = (this.previewStep + 1) + ' / ' + n;
+    const indices = this._previewDisplayIndices();
+    const displayPosition = Math.max(0, indices.indexOf(this.previewStep));
+    if (c) c.textContent = (displayPosition + 1) + ' / ' + n;
     const lbl = document.getElementById('previewLightboxLabel');
     if (lbl) lbl.textContent = this._parseSampleInfo(p.name);
     const box = document.getElementById('previewLightbox');
     if (box) {
       const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
       const nextBtn = box.querySelector('.preview-lightbox-nav.next');
-      if (prevBtn) prevBtn.disabled = this.previewStep <= 0;
-      if (nextBtn) nextBtn.disabled = this.previewStep >= n - 1;
+      if (prevBtn) prevBtn.disabled = displayPosition <= 0;
+      if (nextBtn) nextBtn.disabled = displayPosition >= n - 1;
     }
   },
 
@@ -1681,11 +1687,18 @@ window.monitorRenderMixin = {
     const runDir = this.currentOutputRunDir;
     const artifactUnavailable = !!runDir && (d.artifact_available === false || this.outputFilesError === 'artifactUnavailable');
     const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
+    const visibleCount = this._visibleOutputFiles().length;
     let html = '<div class="m-section m-outputs-section">';
     html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs','Training Outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
     html += '<div class="m-view-actions">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh','Refresh')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('selectAll','Select All')) + '</button>';
+    html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" placeholder="' + this.esc(t('searchOutputs','Search files...')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
+    html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter','File type filter')) + '">';
+    [['all', t('filterAll','All')], ['models', t('filterModels','Models')], ['others', t('filterOthers','Other')]].forEach(item => {
+      html += '<button type="button" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible','Select visible')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll','Deselect All')) + '</button>';
     html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll','Download All')) + '</button>';
     html += '</div></div>';
@@ -1716,29 +1729,25 @@ window.monitorRenderMixin = {
     }
 
     const selectedCount = this.selectedOutputFiles.length;
-    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected','Selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button></div>';
+    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected','Selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><div><button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection','Clear selection')) + '</button><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button></div></div>';
 
     // Scrollable content
     html += '<div class="m-outputs-scroll">';
 
     const { models, others } = this._sortedOutputs();
 
+    if (!models.length && !others.length) {
+      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs','No files match the current filters.')) + '</p></div>';
+    }
+
     // ── 模型存档区（带 loss + 排序）──
+    if (this.outputFilter !== 'others') {
     html += '<div class="m-ckpt-section">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints','Model Checkpoints')) + (models.length ? ' <span class="m-logs-count">' + models.length + '</span>' : '') + '</span>';
-    html += '<span class="m-section-title-right m-ckpt-sort">';
-    const sortKeys = [['loss', t('sortLoss','Loss')], ['time', t('sortTime','Time')], ['size', t('sortSize','Size')], ['name', t('sortName','Name')]];
-    sortKeys.forEach(k => {
-      const active = this.outputSortKey === k[0];
-      html += '<button type="button" class="m-sort-btn' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + k[0] + '\')">' + this.esc(k[1]);
-      if (active) html += ' <span class="m-sort-arrow">' + (this.outputSortDir === 'asc' ? '↑' : '↓') + '</span>';
-      html += '</button>';
-    });
-    html += '</span></div>';
+    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints','Model Checkpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
 
     if (models.length) {
       const bestPath = this._bestCheckpointPath(models);
-      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span><span>' + this.esc(t('fileName','File')) + '</span><span>' + this.esc(t('checkpoint','Checkpoint')) + '</span><span>' + this.esc(t('loss','Loss')) + '</span><span>' + this.esc(t('sortSize','Size')) + '</span><span>' + this.esc(t('modifiedTime','Modified')) + '</span><span>' + this.esc(t('actions','Actions')) + '</span></div>';
+      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName','File')) + '<span>' + this.esc(t('checkpoint','Checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss','Loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize','Size')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime','Modified')) + '<span>' + this.esc(t('actions','Actions')) + '</span></div>';
       models.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
@@ -1765,12 +1774,13 @@ window.monitorRenderMixin = {
       html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles','No model files')) + '</p></div>';
     }
     html += '</div>';
+    }
 
     // ── 其他文件区 ──
-    if (others.length) {
+    if (this.outputFilter !== 'models' && others.length) {
       html += '<div class="m-ckpt-section" style="margin-top:12px">';
       html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles','Other Files')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
-      html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span><span>' + this.esc(t('fileName','File')) + '</span><span>' + this.esc(t('fileType','Type')) + '</span><span>' + this.esc(t('sortSize','Size')) + '</span><span>' + this.esc(t('modifiedTime','Modified')) + '</span><span>' + this.esc(t('actions','Actions')) + '</span></div>';
+      html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName','File')) + this._outputSortHeadHtml('others', 'type', t('fileType','Type')) + this._outputSortHeadHtml('others', 'size', t('sortSize','Size')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime','Modified')) + '<span>' + this.esc(t('actions','Actions')) + '</span></div>';
       others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
@@ -1792,6 +1802,16 @@ window.monitorRenderMixin = {
     html += '</div>'; // m-outputs-scroll
     html += '</div>'; // m-section
     return html;
+  },
+
+  _outputSortHeadHtml(group, key, label) {
+    const modelGroup = group === 'models';
+    const activeKey = modelGroup ? this.outputModelSortKey : this.outputOtherSortKey;
+    const activeDir = modelGroup ? this.outputModelSortDir : this.outputOtherSortDir;
+    const active = activeKey === key;
+    let html = '<button type="button" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
+    if (active) html += '<span aria-hidden="true">' + (activeDir === 'asc' ? '↑' : '↓') + '</span>';
+    return html + '</button>';
   },
 
   _bestCheckpointPath(models) {

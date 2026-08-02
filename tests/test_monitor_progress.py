@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backend.log import log
 from backend.monitor.monitor import TaskMonitor, _build_console_progress, _format_learning_rate
-from backend.monitor.artifacts import _tail_file, read_clean_log_lines
+from backend.monitor.artifacts import _tail_file, read_clean_log_lines, read_log_slice
 from backend.monitor.training import parse_log_progress
 from backend.training.supervisor import _build_train_env
 
@@ -37,6 +37,24 @@ class ProgressParsingTests(unittest.TestCase):
             lines = read_clean_log_lines(log_path)
 
         self.assertEqual(lines, ["start", "step 3", "finished"])
+
+    def test_adjacent_updates_for_the_same_tqdm_step_keep_the_latest_value(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "train.log"
+            log_path.write_text(
+                "steps: 64%|######----| 513/800 [39:36<22:09, 4.63s/it, avr_loss=0.0276]\n"
+                "steps: 64%|######----| 513/800 [39:36<22:09, 4.63s/it, avr_loss=0.0287]\n"
+                "ordinary duplicate\nordinary duplicate\n"
+                "steps: 64%|######----| 514/800 [39:40<22:04, 4.63s/it, avr_loss=0.0278]\n",
+                encoding="utf-8",
+            )
+
+            page = read_log_slice(log_path, offset=0, limit=20)
+
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(page["lines"][0].split("avr_loss=")[-1], "0.0287]")
+        self.assertEqual(page["lines"][1:3], ["ordinary duplicate", "ordinary duplicate"])
+        self.assertIn("514/800", page["lines"][3])
 
     def test_tail_reader_keeps_terminal_overwrite_semantics(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -388,15 +406,21 @@ process.stdout.write(JSON.stringify({
         self.assertIn("overflow-x: auto", self.css_source)
         self.assertIn("@media (prefers-reduced-motion: reduce)", self.css_source)
 
-    def test_samples_and_outputs_keep_dense_non_cropped_layout(self):
+    def test_samples_and_outputs_keep_readable_non_cropped_layout(self):
         self.assertIn(".m-samples-section .preview-grid-item img", self.css_source)
         self.assertIn("object-fit: contain", self.css_source)
+        self.assertIn("minmax(224px, 1fr)", self.css_source)
+        self.assertIn("-webkit-line-clamp: 2", self.css_source)
         self.assertIn("grid-template-columns: 28px 24px minmax(190px, 1fr) 92px 78px 72px 132px 34px", self.css_source)
+        self.assertIn("position: sticky; top: 0;", self.css_source)
+        self.assertIn(".output-table .output-item { border-radius: 0;", self.css_source)
+        self.assertIn("font-size: 13px;", self.css_source)
 
     def test_secondary_tabs_share_one_left_aligned_header(self):
         self.assertEqual(self.render_source.count('class="m-view-header"'), 3)
         self.assertEqual(self.render_source.count('class="m-view-heading"'), 3)
-        self.assertIn('class="m-view-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()"', self.render_source)
+        self.assertIn('class="m-view-actions"><div class="m-segmented"', self.render_source)
+        self.assertIn('@click="refreshPreviews()"', self.render_source)
         self.assertNotIn('m-section-title-right"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()"', self.render_source)
         self.assertNotIn("m-output-tools", self.render_source)
 

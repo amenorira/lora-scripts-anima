@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import tomllib
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -433,6 +434,48 @@ def _compact_tqdm_line(line: str, width: int = 10) -> str:
     return f'{match.group("label")}{percent}%|{bar}| {match.group("suffix")}'
 
 
+_TQDM_STEP_RE = re.compile(
+    r'^\s*steps:\s+\d{1,3}%\|.*\|\s*(?P<current>\d+)\s*/\s*(?P<total>\d+)(?=\s*\[)',
+    re.IGNORECASE,
+)
+
+
+def _collapse_adjacent_tqdm_steps(lines: list[str]) -> list[str]:
+    """Keep the newest adjacent rendering of the same training step."""
+    collapsed: list[str] = []
+    last_signature: tuple[str, str] | None = None
+    for line in lines:
+        match = _TQDM_STEP_RE.match(line)
+        signature = (match.group("current"), match.group("total")) if match else None
+        if signature and collapsed and signature == last_signature:
+            collapsed[-1] = line
+            continue
+        collapsed.append(line)
+        last_signature = signature
+    return collapsed
+
+
+def _normalized_log_lines(log_path: Path):
+    """Yield cleaned rows while collapsing adjacent updates of one tqdm step."""
+    pending: str | None = None
+    pending_signature: tuple[str, str] | None = None
+    with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as handle:
+        for raw_line in handle:
+            cleaned = _clean_log_text(raw_line.rstrip("\r\n"))
+            for line in cleaned.split("\n"):
+                match = _TQDM_STEP_RE.match(line)
+                signature = (match.group("current"), match.group("total")) if match else None
+                if signature and signature == pending_signature:
+                    pending = line
+                    continue
+                if pending is not None:
+                    yield pending
+                pending = line
+                pending_signature = signature
+    if pending is not None:
+        yield pending
+
+
 def _clean_log_text(text: str) -> str:
     """清理训练日志中的终端控制字符：
     - 移除 ANSI 转义序列（颜色、光标移动等）
@@ -451,7 +494,8 @@ def _clean_log_text(text: str) -> str:
                 line = line.split('\r')[-1]
             cleaned_lines.append(line)
         text = '\n'.join(cleaned_lines)
-    return '\n'.join(_compact_tqdm_line(line) for line in text.split('\n'))
+    compacted = [_compact_tqdm_line(line) for line in text.split('\n')]
+    return '\n'.join(_collapse_adjacent_tqdm_steps(compacted))
 
 
 def read_clean_log_lines(path: Path) -> list[str]:
@@ -784,16 +828,28 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
             return empty
-        offsets, size = _get_log_line_offsets(log_path)
-        total = _log_line_count(offsets, size)
-
-        match_indices = _search_log_matches(log_path, query) if query else []
+        # Progress updates may be written as adjacent newline records for the
+        # same step. Stream normalized rows so large logs remain bounded.
+        ql = query.lower()
+        match_indices: list[int] = []
+        page: list[str] = []
+        tail_rows = deque(maxlen=max(1, limit)) if tail else None
+        total = 0
+        requested_end = offset + max(1, limit)
+        for line in _normalized_log_lines(log_path):
+            if ql and len(match_indices) < _LOG_SLICE_MAX_MATCHES and ql in line.lower():
+                match_indices.append(total)
+            if tail_rows is not None:
+                tail_rows.append(line)
+            elif offset <= total < requested_end:
+                page.append(line)
+            total += 1
 
         if tail:
             offset = max(0, total - max(1, limit))
         offset = max(0, min(offset, total))
         end = min(offset + max(1, limit), total)
-        lines = _read_log_lines_by_offset(log_path, offsets, size, offset, end)
+        lines = list(tail_rows) if tail_rows is not None else page[:max(0, end - offset)]
         return {
             "total": total,
             "offset": offset,

@@ -219,6 +219,61 @@ class RealtimeFrontendContractTests(unittest.TestCase):
         cls.tagger_source = Path("frontend/js/tagger.js").read_text(encoding="utf-8")
         cls.environment_source = Path("frontend/js/environment-core.js").read_text(encoding="utf-8")
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_monitor_helpers_merge_logs_and_filter_outputs_without_mutating_sources(self):
+        script = r"""
+global.window = {};
+global.requestAnimationFrame = callback => callback();
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+const app = Object.assign(Object.create(mixin), {
+  previews: [{name:'one'}, {name:'two'}, {name:'three'}],
+  previewSortDir: 'asc',
+  outputFiles: [
+    {path:'m2', name:'epoch-2.safetensors', category:'model', ckpt_loss:0.2, size:20, mtime:2},
+    {path:'m1', name:'epoch-1.safetensors', category:'model', ckpt_loss:0.1, size:10, mtime:1},
+    {path:'cfg', name:'config.toml', category:'config', size:3, mtime:3},
+  ],
+  outputFilesSelected: {}, outputSearch: 'epoch', outputFilter: 'models',
+  outputModelSortKey: 'loss', outputModelSortDir: 'asc',
+  outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
+  renderDashboard() {},
+});
+const exact = ['a', 'b'];
+const exactResult = app._mergeRealtimeLogLines(exact, ['b', 'c']);
+const progress = ['steps: 64%|######----| 513/800 [loss=0.1]'];
+const progressResult = app._mergeRealtimeLogLines(progress, ['steps: 64%|######----| 513/800 [loss=0.2]']);
+const ordinary = ['status alpha'];
+app._mergeRealtimeLogLines(ordinary, ['status beta']);
+app.selectAllOutputFiles();
+const asc = app._previewDisplayIndices();
+app.previewSortDir = 'desc';
+const desc = app._previewDisplayIndices();
+process.stdout.write(JSON.stringify({
+  exact, exactResult, progress, progressResult, ordinary,
+  selected: Object.keys(app.outputFilesSelected),
+  sorted: app._sortedOutputs().models.map(file => file.path),
+  source: app.outputFiles.map(file => file.path), asc, desc,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["exact"], ["a", "b", "c"])
+        self.assertEqual(state["exactResult"]["overlap"], 1)
+        self.assertEqual(state["progress"], ["steps: 64%|######----| 513/800 [loss=0.2]"])
+        self.assertEqual(state["progressResult"]["appended"], 0)
+        self.assertEqual(state["progressResult"]["replaced"], 1)
+        self.assertEqual(state["ordinary"], ["status alpha", "status beta"])
+        self.assertEqual(state["selected"], ["m2", "m1"])
+        self.assertEqual(state["sorted"], ["m1", "m2"])
+        self.assertEqual(state["source"], ["m2", "m1", "cfg"])
+        self.assertEqual(state["asc"], [0, 1, 2])
+        self.assertEqual(state["desc"], [2, 1, 0])
+
     def test_restart_resets_state_and_retries_a_failed_snapshot(self):
         self.assertIn("server_instance_id", self.client_source)
         self.assertIn("_handleRealtimeServerRestart()", self.client_source)
@@ -473,7 +528,7 @@ const loaders = delays.map((delay, index) => ({
         self.assertIn("settings.slowConnectionMode", index_source)
         self.assertNotIn("toggleWeakNetworkMode", render_source)
         self.assertNotIn("visiblePreviews", render_source)
-        self.assertIn("this.previews.forEach", render_source)
+        self.assertIn("this._previewDisplayIndices().forEach", render_source)
         self.assertIn("query.set('preview_limit', String(0))", self.client_source)
         self.assertIn("/api/monitor/previews?refresh=1&limit=0", self.monitor_source)
         self.assertIn("inspect_url || p.url", render_source)
