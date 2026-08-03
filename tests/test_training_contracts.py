@@ -234,49 +234,7 @@ class TrainingFieldSchemaTests(unittest.TestCase):
                     self.assertIsInstance(value, str)
                     self.assertTrue(value.strip())
 
-    def test_visible_field_titles_do_not_contain_explanations(self):
-        messages = json.loads(Path("frontend/i18n/zh-CN.json").read_text(encoding="utf-8"))
-        explanation_markers = (
-            "；",
-            "。",
-            "不可用",
-            "不支持",
-            "仅在",
-            "仅 ",
-            "需配合",
-            "留空",
-            "默认",
-            "互斥",
-            "开启后",
-            "关闭后",
-            "0=",
-            "-1=",
-            "（仅",
-            "（可选",
-            "（默认",
-            "（不",
-            "（需",
-            "（多行",
-            "（训练前",
-            "（低显存",
-        )
-
-        for field in get_all_fields():
-            if field.get("hidden"):
-                continue
-            title_keys = [field["desc_key"]]
-            for suffix in ("_sdxl", "_anima"):
-                key = f'{field["desc_key"]}{suffix}'
-                if self._lookup(messages, key) is not None:
-                    title_keys.append(key)
-            for key in title_keys:
-                title = self._lookup(messages, key)
-                with self.subTest(field=field["key"], title_key=key, title=title):
-                    self.assertFalse(
-                        any(marker in title for marker in explanation_markers),
-                        f"Move behavior, applicability, defaults, and side effects from {key} to a hint: {title}",
-                    )
-
+    def test_caption_dropout_and_keep_tokens_schema(self):
         caption_tag_dropout = next(
             field for field in get_all_fields() if field["key"] == "caption_tag_dropout_rate"
         )

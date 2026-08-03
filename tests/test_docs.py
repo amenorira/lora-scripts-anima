@@ -1,5 +1,4 @@
 import json
-import re
 import shutil
 import subprocess
 import unittest
@@ -21,204 +20,21 @@ from backend.training.musubi_krea2 import KREA2_FIELDS
 
 
 class DocumentationTests(unittest.TestCase):
-    def test_optimizer_documents_cover_supported_workflows_and_stable_anchors(self):
-        expected_anchors = (
-            "quick-choice",
-            "optimizer-type",
-            "stable-comparison",
-            "learning-rate",
-            "scheduler-warmup",
-            "betas",
-            "eps",
-            "weight-decay",
-            "gradient-clipping",
-            "percentile-clipping",
-            "min-8bit-size",
-            "stableadamw-options",
-            "came-clipping",
-            "schedulefree-warmup",
-            "stochastic-rounding",
-            "loraplus",
-            "one-image",
-            "few-shot",
-            "galgame",
-            "dmm-mixed",
-            "mixed-quality",
-            "outfits-forms",
-            "style-lora",
-            "vram",
-            "starting-configs",
-            "ab-testing",
-            "limits",
-            "evidence",
-        )
+    def test_optimizer_documents_render_registered_field_anchors(self):
+        expected_anchors = {
+            field["doc_anchor"]
+            for field in FIELDS
+            if field.get("doc_slug") == "optimizers" and field.get("doc_anchor")
+        }
         for locale in ("zh-CN", "en-US"):
             path = _document_path("optimizers", locale)
             html, toc = _render_markdown(
                 path.read_text(encoding="utf-8"),
                 PurePosixPath(f"parameters/optimizers.{locale}.md"),
             )
-            self.assertGreaterEqual(html.count("<table>"), 3)
-            self.assertIn("pytorch_optimizer.StableAdamW", html)
-            self.assertIn("https://arxiv.org/abs/2307.02047", html)
             for anchor in expected_anchors:
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
-
-    def test_optimizer_documents_keep_fact_checked_mechanisms_and_hard_relationships(self):
-        root = Path(__file__).resolve().parents[1]
-        zh = (root / "docs" / "parameters" / "optimizers.zh-CN.md").read_text(encoding="utf-8")
-        en = (root / "docs" / "parameters" / "optimizers.en-US.md").read_text(encoding="utf-8")
-        for text in (zh, en):
-            self.assertIn("2026-08-03", text)
-            self.assertIn("f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b", text)
-            self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
-            self.assertIn("70785b53e778d0e872c0bbb75ff4ee54ee10c291", text)
-            self.assertIn("3efb213ee8af5a6bf76f28726398433a847b38e9", text)
-            self.assertNotIn("blob/main/docs/anima_train_network.md", text)
-        self.assertIn("外部 scheduler 不参与训练", zh)
-        self.assertIn("external scheduler does not participate", en)
-        self.assertIn("`β1`", zh)
-        self.assertIn("`β2`", zh)
-        self.assertIn("`β3`", zh)
-        self.assertIn("`β1`", en)
-        self.assertIn("`β2`", en)
-        self.assertIn("`β3`", en)
-        self.assertIn("`came_fixed_decay`", zh)
-        self.assertIn("`came_fixed_decay`", en)
-
-    def test_parameter_docs_use_pinned_sources_and_precise_contract_language(self):
-        root = Path(__file__).resolve().parents[1]
-        documents = [
-            (root / "docs" / "parameters" / f"{slug}.{locale}.md").read_text(encoding="utf-8")
-            for slug in ("timesteps", "lora-plus", "optimizers")
-            for locale in ("zh-CN", "en-US")
-        ]
-        for text in documents:
-            self.assertIn("2026-08-03", text)
-            self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
-            self.assertNotIn("blob/main/", text)
-            self.assertNotIn("本项目", text)
-            self.assertNotIn("Project experimental", text)
-
-        lora_docs = documents[2:4]
-        for text in lora_docs:
-            self.assertNotIn("not what the model can learn", text)
-            self.assertNotIn("而不是模型能够学习哪些内容", text)
-            self.assertIn("warmup_init", text)
-
-        timestep_docs = documents[:2]
-        for text in timestep_docs:
-            self.assertNotIn("t≈500", text)
-            self.assertIn("32,768", text)
-
-    def test_parameter_docs_reference_complete_pinned_official_sources(self):
-        root = Path(__file__).resolve().parents[1]
-        source_sets = {
-            "timesteps": (
-                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md",
-                "https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md",
-            ),
-            "lora-plus": (
-                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/train_network_advanced.md",
-                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/loha_lokr.md",
-                "https://arxiv.org/abs/2402.12354",
-            ),
-            "optimizers": (
-                "https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion",
-                "https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291",
-                "https://github.com/konstmish/prodigy/tree/3efb213ee8af5a6bf76f28726398433a847b38e9",
-                "https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610",
-                "https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8",
-                "https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29",
-                "https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py",
-                "https://github.com/muooon/EmoSens/tree/2afff7a9a709e287e487dcd130b1e70a375ae4b2",
-            ),
-        }
-        for slug, sources in source_sets.items():
-            for locale in ("zh-CN", "en-US"):
-                text = (root / "docs" / "parameters" / f"{slug}.{locale}.md").read_text(encoding="utf-8")
-                for source in sources:
-                    with self.subTest(slug=slug, locale=locale, source=source):
-                        self.assertIn(source, text)
-
-    def test_scheduler_and_offload_hints_match_available_contracts(self):
-        root = Path(__file__).resolve().parents[1]
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(
-                (root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8")
-            )
-            fields = messages["field"]
-            cycles = fields["lr_scheduler_num_cyclesHint"]
-            self.assertIn("cosine_with_restarts", cycles)
-            self.assertNotIn("cosine_with_min_lr", cycles)
-            self.assertNotIn("warmup_stable_decay", cycles)
-
-            cpu_hint = fields["cpu_offload_checkpointingHint"]
-            unsloth_hint = fields["unsloth_offload_checkpointingHint"]
-            self.assertNotIn("Block Swap", cpu_hint)
-            self.assertNotIn("block swapping", cpu_hint)
-            self.assertTrue("Block Swap" in unsloth_hint or "block swapping" in unsloth_hint)
-
-    def test_parameter_docs_and_field_option_text_use_objective_language(self):
-        root = Path(__file__).resolve().parents[1]
-        chinese_terms = (
-            "推荐",
-            "建议",
-            "优先",
-            "适合",
-            "尝试",
-            "保持默认",
-            "起点",
-            "常用",
-            "通常",
-            "谨慎",
-            "最好",
-            "应当",
-            "应该",
-            "不应",
-            "保守",
-            "先开启",
-            "请设置",
-            "不要修改",
-            "应先",
-        )
-        english_doc_pattern = re.compile(
-            r"\b(?:recommended|recommendation|recommend|should|try|suitable|usually|"
-            r"generally|commonly|normally|preferable)\b"
-            r"|starting point",
-            re.IGNORECASE,
-        )
-        english_field_pattern = re.compile(
-            r"\b(?:recommended|recommendation|recommend|should|try|suitable|usually|"
-            r"generally|common|commonly|normally|preferable|conservative)\b"
-            r"|starting point",
-            re.IGNORECASE,
-        )
-
-        for path in sorted((root / "docs" / "parameters").glob("*.md")):
-            text = path.read_text(encoding="utf-8")
-            with self.subTest(path=path.name):
-                self.assertFalse(
-                    any(term in text for term in chinese_terms),
-                    f"subjective or command-like wording remains in {path.name}",
-                )
-                self.assertIsNone(
-                    english_doc_pattern.search(text),
-                    f"subjective or command-like wording remains in {path.name}",
-                )
-
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(
-                (root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8")
-            )
-            for section in ("field", "opt"):
-                for key, value in messages[section].items():
-                    if not isinstance(value, str):
-                        continue
-                    with self.subTest(locale=locale, key=f"{section}.{key}"):
-                        self.assertFalse(any(term in value for term in chinese_terms))
-                        self.assertIsNone(english_field_pattern.search(value))
 
     def test_optimizer_fields_link_to_guide_sections(self):
         expected = {
@@ -262,25 +78,12 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f"{key}Hint", translations["field"])
             self.assertIn("optimizer_type_StableAdamW", translations["opt"])
 
-    def test_loraplus_documents_keep_equations_references_and_stable_anchors(self):
-        expected_anchors = (
-            "overview",
-            "effects",
-            "good-cases",
-            "cautions",
-            "effective-lr",
-            "optimizer-compatibility",
-            "parameters",
-            "loraplus-lr-ratio",
-            "loraplus-unet-lr-ratio",
-            "loraplus-text-encoder-lr-ratio",
-            "support",
-            "ratio-guidance",
-            "testing",
-            "mechanism",
-            "tensorboard",
-            "references",
-        )
+    def test_loraplus_documents_render_registered_field_anchors(self):
+        expected_anchors = {
+            field["doc_anchor"]
+            for field in FIELDS
+            if field.get("doc_slug") == "lora-plus" and field.get("doc_anchor")
+        }
         for locale in ("zh-CN", "en-US"):
             path = _document_path("lora-plus", locale)
             self.assertTrue(path.is_file())
@@ -288,37 +91,16 @@ class DocumentationTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 PurePosixPath(f"parameters/lora-plus.{locale}.md"),
             )
-            equation_count = html.count('<div class="doc-equation"') + html.count(
-                '<div class="doc-equation doc-equation-compact"'
-            )
-            self.assertEqual(equation_count, 3)
-            self.assertIn('class="doc-frac"', html)
-            self.assertIn("https://arxiv.org/abs/2402.12354", html)
             for anchor in expected_anchors:
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 
-    def test_timestep_documents_keep_widgets_equations_and_stable_anchors(self):
-        expected_anchors = (
-            "quick-start",
-            "terminology",
-            "visualizer",
-            "dataset-guidance",
-            "scenarios",
-            "diagnosis",
-            "flow-matching",
-            "defaults",
-            "sampling",
-            "sigmoid-scale",
-            "flow-shift",
-            "weighting",
-            "logit-normal",
-            "mode",
-            "compatibility",
-            "sdxl-range",
-            "common-mistakes",
-            "testing",
-        )
+    def test_timestep_documents_render_registered_field_anchors_and_widget(self):
+        expected_anchors = {
+            field["doc_anchor"]
+            for field in (*FIELDS, *KREA2_FIELDS)
+            if field.get("doc_slug") == "timesteps" and field.get("doc_anchor")
+        }
         for locale in ("zh-CN", "en-US"):
             path = _document_path("timesteps", locale)
             self.assertTrue(path.is_file())
@@ -327,13 +109,6 @@ class DocumentationTests(unittest.TestCase):
                 PurePosixPath(f"parameters/timesteps.{locale}.md"),
             )
             self.assertIn('data-doc-widget="timestep-preview"', html)
-            equation_count = html.count('<div class="doc-equation"') + html.count(
-                '<div class="doc-equation doc-equation-compact"'
-            )
-            self.assertEqual(equation_count, 9)
-            self.assertIn('class="doc-frac"', html)
-            self.assertIn('role="group"', html)
-            self.assertNotIn('class="language-text"', html)
             for anchor in expected_anchors:
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)

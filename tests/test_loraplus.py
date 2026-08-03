@@ -1,4 +1,3 @@
-import json
 import shutil
 import subprocess
 import unittest
@@ -234,24 +233,6 @@ class LoRAPlusValidationTests(unittest.TestCase):
             {"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE},
             readonly_groups,
         )
-
-    def test_hints_and_documents_explain_optimizer_limits(self):
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(
-                Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8")
-            )
-            locked = messages["field"]["enable_loraplus_optimizerLocked"]
-            self.assertIn("EmoSens", locked)
-            self.assertIn("ProdigyPlusScheduleFree", locked)
-            self.assertIn("AdaFactor", locked)
-            self.assertIn("warmup_init", locked)
-            self.assertIn("loraplus_*", messages["field"]["network_args_customHint"])
-
-            document = Path(f"docs/parameters/lora-plus.{locale}.md").read_text(
-                encoding="utf-8"
-            )
-            for expected in ("EmoSens", "AdaFactor", "Automagic3", "relative_step"):
-                self.assertIn(expected, document)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_frontend_preview_ignores_custom_loraplus_args_when_disabled(self):

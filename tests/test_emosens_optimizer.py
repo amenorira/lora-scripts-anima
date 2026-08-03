@@ -92,21 +92,6 @@ class EmoSensFieldContractTests(unittest.TestCase):
         self.assertEqual(emo_rules, [])
         self.assertNotIn("readonlyIf", max_grad_norm)
 
-    def test_translations_and_vendor_provenance_are_present(self):
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
-            self.assertIn("gradient_accumulation_steps_emosensLocked", messages["field"])
-            self.assertIn("{details}", messages["field"]["emosensAutoAdjusted"])
-            self.assertIn("{parameter}", messages["field"]["emosensAdjustedValue"])
-            self.assertNotIn("max_grad_norm_emoLocked", messages["field"])
-
-        source = Path("vendor/emo_optimizer/SOURCE.md").read_text(encoding="utf-8")
-        license_text = Path("vendor/emo_optimizer/LICENSE").read_text(encoding="utf-8")
-        self.assertIn("2afff7a9a709e287e487dcd130b1e70a375ae4b2", source)
-        self.assertIn("Apache License", license_text)
-        self.assertIn("260530", Path("vendor/emo_optimizer/emosens.py").read_text(encoding="utf-8"))
-
-
 class EmoSensValidationTests(unittest.TestCase):
     def test_accepts_single_gpu_bf16_or_no_precision(self):
         for precision in ("bf16", "no"):

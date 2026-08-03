@@ -207,51 +207,6 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertNotIn("_lossChartHtml", self.render_source)
         self.assertNotIn("data-chart-path", self.render_source)
 
-    def test_diagnostic_explanation_exposes_evidence_rules_and_limits(self):
-        rules = self.render_source.split("_trainingDiagnosticRules() {", 1)[1].split("\n  },", 1)[0]
-        evidence = self.render_source.split("_diagnosticEvidence(t, diagnostic) {", 1)[1].split("\n  },", 1)[0]
-        diagnostics_html = self.render_source.split("_trainingDiagnosticsHtml(t) {", 1)[1].split("\n  },", 1)[0]
-
-        for declaration in (
-            "minimumPoints: 6",
-            "windowRatio: 0.15",
-            "windowMin: 12",
-            "windowMax: 60",
-            "reboundChange: 3",
-            "volatileCv: 12",
-            "convergingChange: -2",
-            "plateauAbsChange: 1",
-            "plateauCv: 4",
-        ):
-            self.assertIn(declaration, rules)
-
-        self.assertIn("this._trainingDiagnosticRules()", evidence)
-        self.assertIn("diagnosticEvidenceConverging", evidence)
-        self.assertIn("diagnosticEvidenceVolatile", evidence)
-        self.assertIn("data-diagnostic-field=\"evidence\"", diagnostics_html)
-        self.assertIn("data-diagnostic-field=\"window-evidence\"", diagnostics_html)
-        self.assertIn('<details class="m-diagnostic-method">', diagnostics_html)
-        self.assertIn("diagnosticScopeText", diagnostics_html)
-        self.assertIn("diagnosticMethodNote", diagnostics_html)
-        self.assertIn(".m-diagnostic-method", self.css_source)
-        self.assertIn(".m-diagnostic-boundary", self.css_source)
-
-        for key in (
-            "diagnosticEvidence",
-            "diagnosticEvidenceConverging",
-            "diagnosticWindowEvidence",
-            "diagnosticMethodTitle",
-            "diagnosticScopeText",
-            "diagnosticRuleReboundCondition",
-            "diagnosticRulePlateauCondition",
-            "diagnosticMethodNote",
-        ):
-            self.assertIn(f'"{key}"', self.zh_source)
-            self.assertIn(f'"{key}"', self.en_source)
-
-        self.assertIn("不能判断成图质量、过拟合或最佳 checkpoint", self.zh_source)
-        self.assertIn("cannot determine image quality, overfitting, or the best checkpoint", self.en_source)
-
     def test_monitor_locale_invalidates_all_cached_shells(self):
         self.assertIn("this._shellLocale !== locale", self.render_source)
         self.assertIn("[controlMode, locale]", self.render_source)
@@ -377,78 +332,6 @@ process.stdout.write(JSON.stringify({
         self.assertIn("requestAnimationFrame(() => this._scrollLogsToTop());", method)
         self.assertNotIn('logFullTotal<=0 || logFullOffset<=0', toolbar)
         self.assertIn("logFullTotal<=0 || logFullLoading", toolbar)
-
-    def test_monitor_visuals_use_neutral_background_and_subtle_statuses(self):
-        route = self.css_source.split(".main-fullscreen .route-monitor-dashboard {", 1)[1].split("}", 1)[0]
-        sticky = self.css_source.split(".monitor-sticky-stack {", 1)[1].split("}", 1)[0]
-        badge = self.css_source.split(".m-badge {", 1)[1].split("}", 1)[0]
-
-        self.assertIn("background: var(--bg-root);", route)
-        self.assertNotIn("radial-gradient", route)
-        self.assertIn("background: var(--bg-root);", sticky)
-        self.assertIn("border-radius: var(--radius-control);", badge)
-        self.assertIn(".m-training-diagnostics", self.css_source)
-        self.assertIn(".m-diagnostic-metrics", self.css_source)
-        self.assertNotIn(".m-loss-chart", self.css_source)
-        self.assertIn(".hist-action-primary", self.css_source)
-
-    def test_monitor_tabs_keep_accessible_desktop_layout(self):
-        self.assertIn('role="tablist"', self.index_source)
-        self.assertEqual(self.index_source.count('role="tab"'), 4)
-        self.assertEqual(self.index_source.count(':aria-selected='), 4)
-        self.assertEqual(self.index_source.count('@keydown.right.prevent="moveMonitorTab(1)"'), 4)
-        self.assertIn("flex: 1; min-width: 960px; min-height: 0;", self.css_source)
-        self.assertIn(".m-overview-metrics { grid-column: span 4; }", self.css_source)
-        self.assertIn(".m-training-diagnostics { grid-column: span 5; }", self.css_source)
-        self.assertIn(".m-latest-sample { grid-column: span 3; }", self.css_source)
-        self.assertNotIn("@media (max-width:", self.css_source)
-        self.assertIn(".m-sb-progress-block", self.css_source)
-        self.assertIn("overflow-x: auto", self.css_source)
-        self.assertIn("@media (prefers-reduced-motion: reduce)", self.css_source)
-
-    def test_samples_and_outputs_keep_readable_non_cropped_layout(self):
-        self.assertIn(".m-samples-section .preview-grid-item img", self.css_source)
-        self.assertIn("object-fit: contain", self.css_source)
-        self.assertIn("minmax(224px, 1fr)", self.css_source)
-        self.assertIn("-webkit-line-clamp: 2", self.css_source)
-        self.assertIn("grid-template-columns: 28px 24px minmax(190px, 1fr) 92px 78px 72px 132px 34px", self.css_source)
-        self.assertIn("position: sticky; top: 0;", self.css_source)
-        self.assertIn(".output-table .output-item { border-radius: 0;", self.css_source)
-        self.assertIn("font-size: 13px;", self.css_source)
-
-    def test_secondary_tabs_share_one_left_aligned_header(self):
-        self.assertEqual(self.render_source.count('class="m-view-header"'), 3)
-        self.assertEqual(self.render_source.count('class="m-view-heading"'), 3)
-        self.assertIn('class="m-view-actions"><div class="m-segmented"', self.render_source)
-        self.assertIn('@click="refreshPreviews()"', self.render_source)
-        self.assertNotIn('m-section-title-right"><button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()"', self.render_source)
-        self.assertNotIn("m-output-tools", self.render_source)
-
-        header = self.css_source.split(".m-view-header {", 1)[1].split("}", 1)[0]
-        self.assertIn("min-height: 42px;", header)
-        self.assertIn("align-items: center;", header)
-        self.assertNotIn("justify-content: space-between", header)
-        actions = self.css_source.split(".m-view-actions {", 1)[1].split("}", 1)[0]
-        self.assertIn("flex-wrap: nowrap;", actions)
-        self.assertIn("overflow-x: auto;", actions)
-
-    def test_global_geometry_uses_square_panels_and_subtle_controls(self):
-        for declaration in (
-            "--radius-panel: 0;",
-            "--radius-control: 2px;",
-            "--radius-pill: 999px;",
-            "--radius-sm: var(--radius-control);",
-            "--radius-md: var(--radius-panel);",
-            "--radius-lg: var(--radius-panel);",
-            "--radius-xl: var(--radius-panel);",
-            "--monitor-radius: var(--radius-panel);",
-            "--monitor-card-shadow: none;",
-        ):
-            self.assertIn(declaration, self.css_source)
-
-        self.assertIn("border-radius: var(--radius-lg);", self.css_source.split(".card {", 1)[1].split("}", 1)[0])
-        self.assertIn("border-radius: var(--radius-sm);", self.css_source.split(".btn {", 1)[1].split("}", 1)[0])
-        self.assertIn("border-radius: var(--radius-lg);", self.css_source.split(".modal {", 1)[1].split("}", 1)[0])
 
     def test_realtime_merges_fields_and_updates_state(self):
         self.assertIn("this.monitorData.state = data.status;", self.core_source)

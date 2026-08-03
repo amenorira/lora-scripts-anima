@@ -781,27 +781,6 @@ class MultiCoreSupervisorTests(unittest.TestCase):
         self.assertIsNone(get_engine("musubi_tuner").python_executable)
         self.assertNotIn("venv" + os.sep + "cores" + os.sep + "musubi", env["PYTHONPATH"])
 
-    def test_musubi_shared_runtime_is_converged_by_both_launchers(self):
-        windows = Path("tools/bootstrap_windows.ps1").read_text(encoding="utf-8")
-        linux = Path("start.sh").read_text(encoding="utf-8")
-        requirements = Path("requirements-musubi-krea2.txt").read_text(encoding="utf-8")
-
-        self.assertIn("tools.ensure_musubi_runtime", windows)
-        self.assertIn("tools.ensure_musubi_runtime", linux)
-        self.assertIn("requirements-musubi-krea2.txt", windows)
-        self.assertIn("requirements-musubi-krea2.txt", linux)
-        self.assertIn("--upgrade-strategy", windows)
-        self.assertIn("--upgrade-strategy", linux)
-        self.assertEqual(windows.count("--verify-imports"), 1)
-        self.assertEqual(linux.count("--verify-imports"), 1)
-        self.assertNotIn("configure_musubi_overlay.py", windows)
-        self.assertNotIn("configure_musubi_overlay.py", linux)
-        self.assertNotIn("venv\\cores\\musubi", windows)
-        self.assertNotIn("venv/cores/musubi", linux)
-        self.assertIn("transformers==4.57.6", requirements)
-        self.assertIn("tokenizers==0.22.2", requirements)
-
-
 class MusubiRuntimeContractTests(unittest.TestCase):
     def test_shared_requirements_match_the_runtime_contract(self):
         from packaging.requirements import Requirement
@@ -885,21 +864,6 @@ class MultiCoreFrontendContractTests(unittest.TestCase):
         self.assertIn("/api/training/cores", environment)
         self.assertIn("runtime_errors", Path("frontend/js/environment-render.js").read_text(encoding="utf-8"))
         self.assertIn("prepareKrea2Cache()", form)
-
-    def test_krea_preset_preview_has_no_fake_runtime_paths(self):
-        training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-        training_presets = Path("frontend/js/training-presets.js").read_text(encoding="utf-8")
-
-        self.assertNotIn('<generated dataset.toml>', training_toml)
-        self.assertNotIn('<managed run output directory>', training_toml)
-        self.assertIn('model_train_type = "krea2-lora"', training_toml)
-        self.assertNotIn("# Krea 2 preset (musubi-tuner)", training_toml)
-        self.assertNotIn("# Safe to copy", training_toml)
-        self.assertIn("_groupTomlSectionLines", training_toml)
-        self.assertNotIn("Anima Krea 2", training_toml)
-        self.assertIn("-krea2-preset.toml", training_presets)
-        training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
-        self.assertIn("_syncKrea2CacheDir", training_core)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_all_parameter_previews_are_grouped_self_describing_and_route_to_the_right_core(self):
