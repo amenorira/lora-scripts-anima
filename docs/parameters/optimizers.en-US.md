@@ -2,7 +2,7 @@
 
 An optimizer converts gradients into parameter updates. Implementations differ in how they track state, store that state, derive step size, apply clipping, and manage scheduling. Optimizers do not read image semantics and cannot identify a target character, incorrect captions, or missing viewpoints.
 
-This guide describes the current implementation and its parameter relationships. When the optimizer changes, the UI may update the learning rate, `betas`, `weight_decay`, and scheduler. These linkages are configuration behavior; they do not rank algorithms or predict training results.
+This guide separates optimizer mechanisms from current trainer parameter relationships and automatic linkages. When the optimizer changes, the UI may update the learning rate, `betas`, `weight_decay`, and scheduler. These linkages are configuration behavior; they do not rank algorithms or predict training results.
 
 <!-- doc-anchor: quick-choice -->
 ## Mechanism quick reference
@@ -15,7 +15,7 @@ This guide describes the current implementation and its parameter relationships.
 | Low-bit state storage | AdamW8bit, Lion8bit | Quantizable optimizer state is stored in 8-bit form |
 | Paged state | PagedAdamW8bit, PagedLion8bit | State pages transfer between CPU and GPU when paging is active |
 | Internal scheduling | AdamWScheduleFree, ProdigyPlusScheduleFree | Parameter averaging and scheduling occur inside the optimizer |
-| Project experimental state | Automagic3, EmoSens | Gradient-sign history or loss history adjusts the global update scale |
+| Integrated upstream optimizers | Automagic3, EmoSens | Gradient-sign history or loss history adjusts the update scale; the current trainer supplies sd-scripts adapters and compatibility constraints |
 
 <!-- doc-anchor: optimizer-type -->
 ## Current optimizers
@@ -34,8 +34,8 @@ This guide describes the current implementation and its parameter relationships.
 | Step-size estimation and internal scheduling | Prodigy | D-adaptation step-size estimation |
 | Step-size estimation and internal scheduling | ProdigyPlusScheduleFree | D-adaptation and a Schedule-Free parameter sequence |
 | Step-size estimation and internal scheduling | AdamWScheduleFree | AdamW-style state and a Schedule-Free parameter sequence |
-| Project experimental implementations | Automagic3 | Gradient-sign history, parameter-group learning-rate adaptation, and internal clipping |
-| Project experimental implementations | EmoSens | Moving average of loss, global learning-rate multiplier, and stop signal |
+| Integrated upstream optimizers | Automagic3 | Upstream ai-toolkit implementation; gradient-sign history, parameter-group learning-rate adaptation, and internal clipping |
+| Integrated upstream optimizers | EmoSens | Upstream EmoSens implementation; moving average of loss, global learning-rate multiplier, and stop signal |
 
 The 8-bit and paged descriptions refer only to optimizer state. Peak training VRAM also includes model weights, activations, gradients, caches, and sampling.
 
@@ -58,21 +58,21 @@ All three process numerical updates only. Image quality, identity, outfit tags, 
 
 Learning rate controls the overall scale of each parameter update. AdamW, Lion, CAME, and StableAdamW use it as an external step size. AdaFactor derives a step from training progress when `relative_step=true`. Prodigy-family optimizers combine the input learning rate with a scale estimated through D-adaptation. Automagic3 and EmoSens also generate dynamic multipliers internally.
 
-The project currently uses the automatic values below. The UI writes them only when the corresponding linkage conditions apply; manual and imported values continue to follow the existing source rules:
+The current trainer uses the automatic values below. The UI writes them only when the corresponding linkage conditions apply; manual and imported values continue to follow the existing source rules:
 
-| Training configuration | Selection | Automatic learning rate |
-| --- | --- | ---: |
-| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` |
-| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` |
-| Anima | CAME | `1.5e-5` |
-| Anima | AdamWScheduleFree | `1e-4` |
-| Anima | AdaFactor with `relative_step=false` | `2e-5` |
-| Anima | EmoSens | `0.1` |
-| General sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` |
-| General sd-scripts | Automagic3 | `1e-4` |
-| SDXL | CAME / StableAdamW | `1e-4` |
-| SDXL | Lion family | `2e-5` |
-| SDXL | AdamWScheduleFree | `3e-4` |
+| Training configuration | Selection | Automatic learning rate | Basis |
+| --- | --- | ---: | --- |
+| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` | Current trainer validation start |
+| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` | Current trainer validation start; Lion upstream pairs lower LR with higher weight decay |
+| Anima | CAME | `1.5e-5` | Current trainer validation start |
+| Anima | AdamWScheduleFree | `1e-4` | Current trainer validation start |
+| Anima | AdaFactor with `relative_step=false` | `2e-5` | Current trainer validation start |
+| Anima | EmoSens | `0.1` | Configuration default in the current trainer's integration layer |
+| General sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` | Prodigy upstream usage and current hard contract |
+| General sd-scripts | Automagic3 | `1e-4` | Configuration default in the current trainer's integration layer |
+| SDXL | CAME / StableAdamW | `1e-4` | Current trainer validation start |
+| SDXL | Lion family | `2e-5` | Current trainer validation start, not the complete Lion upstream recipe |
+| SDXL | AdamWScheduleFree | `3e-4` | Current trainer validation start |
 
 `network_alpha / network_dim` scales the LoRA branch, so the same optimizer learning rate does not represent the same LoRA-branch scale for every alpha/dim combination.
 
@@ -152,7 +152,7 @@ ProdigyPlusScheduleFree stochastic rounding selects adjacent representable value
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-LoRA+ assigns different effective learning rates to LoRA matrix components. AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and AdamWScheduleFree accept LoRA+ arguments. Prodigy, ProdigyPlusScheduleFree, and EmoSens do not; AdaFactor accepts them when `relative_step=false`.
+LoRA+ assigns different parameter-group learning rates to LoRA matrix components. The current trainer supports LoRA+ with AdamW, 8-bit/Paged AdamW, StableAdamW, Lion, CAME, and AdamWScheduleFree. It does not support the combination with Prodigy, ProdigyPlusScheduleFree, or EmoSens. AdaFactor requires both `relative_step` and `warmup_init` to be disabled.
 
 <!-- doc-anchor: scenarios -->
 ## Dataset cases and capability boundaries
@@ -239,9 +239,9 @@ Optimizer state structures are not interchangeable. Resuming a state saved by an
 <!-- doc-anchor: evidence -->
 ## Implementation evidence and references
 
-Fact-checked on **2026-07-31**. Project behavior follows the field metadata, adapter, and pinned upstream implementations in this repository.
+Verified on **2026-08-03**.
 
-The trainer loads `pytorch_optimizer.StableAdamW` through sd-scripts' full-class-path mechanism. The installed `pytorch-optimizer 3.10.0` constructor includes `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0.01`, `weight_decouple=true`, and `kahan_sum=true`; generated configuration values override constructor values according to the UI state.
+Official mechanisms and current trainer behavior are verified separately. The current trainer loads `pytorch_optimizer.StableAdamW` through sd-scripts' full-class-path mechanism, and generated configuration values override constructor defaults. Automagic3 is sourced from ai-toolkit, while EmoSens is sourced from its independent upstream repository. Their upstream implementations are retained locally with sd-scripts integration, runtime connections, and compatibility constraints. Neither is built into PyTorch.
 
 References:
 
@@ -250,6 +250,7 @@ References:
 - [CAME implementation (pinned revision)](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
 - [Lion implementation (pinned revision)](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
 - [Schedule-Free implementation (pinned revision)](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
+- [Prodigy implementation (pinned revision)](https://github.com/konstmish/prodigy/tree/3efb213ee8af5a6bf76f28726398433a847b38e9)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
 - [Symbolic Discovery of Optimization Algorithms](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
@@ -257,3 +258,7 @@ References:
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
 - [pytorch-optimizer implementation (pinned revision)](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
 - [bitsandbytes implementation (pinned revision)](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
+- [ai-toolkit Automagic3 source (pinned revision)](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py)
+- [EmoSens upstream repository (pinned revision)](https://github.com/muooon/EmoSens/tree/2afff7a9a709e287e487dcd130b1e70a375ae4b2)
+
+Current trainer behavior is established by field metadata, optimizer contracts, the adapter, validation, and tests.

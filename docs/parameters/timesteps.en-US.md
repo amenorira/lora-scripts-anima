@@ -30,7 +30,7 @@ The trainer uses the word “step” for three unrelated things:
 | Training timestep | How much noise was added to the current image | `timestep_sampling` |
 | Generation steps | How many denoising calculations are used to generate an image | `sample_steps` |
 
-For example, “training step 500” means that the LoRA has received 500 optimizer updates. It has no halfway relationship with noise timestep `t≈500`. Images in the same optimizer update may also receive different noise timesteps.
+For example, “training step 500” means that the LoRA has received 500 optimizer updates. It is not the same counter as normalized noise position `t≈0.5` or discrete noise timestep about `500`. Images in the same optimizer update may also receive different noise timesteps.
 
 <!-- doc-anchor: visualizer -->
 ## Distribution preview
@@ -53,7 +53,7 @@ The orange curve uses a logarithmic display scale. It is not the loss reported i
   <p>The current error changes with the image, caption, and stage of training. The preview therefore shows allocation, not a guaranteed amount of learning.</p>
 </div>
 
-The preview runs 32,768 deterministic local simulations. Identical settings produce an identical chart. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
+The preview runs 32,768 simulations in the browser with a fixed pseudorandom sequence. Identical settings produce an identical chart. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview does not start training, submit a training task, or write configuration.
 
 <!-- doc-anchor: dataset-guidance -->
 ## Dataset size and sampling coverage
@@ -77,7 +77,7 @@ Ten images repeated twenty times and one hundred distinct images repeated twice 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Approximate optimizer updates per epoch">
   <div class="doc-equation-kicker">Rough single-GPU estimate</div>
   <div class="doc-equation-expression doc-equation-expression-small">updates per epoch ≈ <span class="doc-frac"><span>image count × repeats</span><span>batch size × gradient accumulation</span></span></div>
-  <p>This helps estimate training length. It does not change the theoretical timestep distribution.</p>
+  <p>This estimate omits rounding from final partial batches, buckets, dataset groups, and multi-GPU sharding. Use the startup log for the actual updates per epoch.</p>
 </div>
 
 <!-- doc-anchor: scenarios -->
@@ -155,7 +155,7 @@ The current Anima and Krea 2 implementations train the model to predict the dire
   <p>Generation follows the learned path in reverse, starting from high noise and moving toward a clean image.</p>
 </div>
 
-Training code also uses <var>σ</var>, written as `sigma` in parameter names, for the noise mixing ratio. In the flow-matching paths covered here, it points in the same direction as <var>t</var>: values near `0` are clean, and values near `1` are close to pure noise. The UI presents this range as approximately `0–1000` timesteps.
+Training code also uses <var>σ</var>, written as `sigma` in parameter names, for the noise mixing ratio. Normalized <var>t</var>/<var>σ</var> in this guide lies in `[0,1]`: values near `0` are clean, and values near `1` are close to pure noise. The UI's approximate `0–1000` scale is the corresponding discrete timestep display and is not the normalized variable.
 
 <!-- doc-anchor: defaults -->
 ## Profile defaults
@@ -366,3 +366,14 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 Differences can be attributed to one timestep parameter only when the dataset, random seed, rank, alpha, learning rate, total training steps, checkpoint step, prompts, generation seeds, resolution, and inference LoRA weight remain fixed.
 
 Training loss is the aggregate error for the current objective and does not fully represent identity fidelity, style transfer, background leakage, composition binding, or prompt response. When multiple timestep parameters change, the result expresses their combined distribution and weighting changes.
+
+## Sources and verification date
+
+Verified on **2026-08-03**.
+
+Official mechanism sources:
+
+- [sd-scripts Anima training guide (pinned revision)](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
+- [Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+
+Current trainer behavior is defined by the browser preview in `frontend/js/training-core.js`, the field registry, and the associated tests.

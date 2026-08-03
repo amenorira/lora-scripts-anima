@@ -21,8 +21,8 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-> ✅ **v2.2.1 已发布**
-> 本版本重构标签编辑器内部工作流与自适应网格，并优化训练仪表盘的样本画廊、实时日志和输出文件浏览体验。
+> ✅ **v2.2.2 已发布**
+> 本版本统一 LoRA 参数契约与双语说明，补充固定上游依据，并修正 Automagic3、EmoSens 的来源归属说明。
 
 lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。项目通过训练核心注册表隔离不同后端：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端，**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 

@@ -19,7 +19,10 @@ from backend.training.field_registry import (
     get_supported_fields,
     get_ui_only_fields,
 )
-from backend.training.optimizer_contracts import normalize_optimizer_config
+from backend.training.optimizer_contracts import (
+    AUTOMAGIC_MAX_LR_DEFAULT,
+    normalize_optimizer_config,
+)
 from backend.training.validation import get_automagic_fused_conflicts
 
 SUPPORTED_FIELDS = get_supported_fields()
@@ -456,7 +459,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             _set_key_value_arg(opt_args, "fused", False)
 
         if not any(item.startswith("max_lr=") for item in opt_args):
-            _set_key_value_arg(opt_args, "max_lr", 1e3)
+            _set_key_value_arg(opt_args, "max_lr", AUTOMAGIC_MAX_LR_DEFAULT)
         source["optimizer_args"] = _normalize_network_args(opt_args)
 
         if source.pop("full_bf16", False):

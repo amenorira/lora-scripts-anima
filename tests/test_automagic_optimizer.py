@@ -11,6 +11,7 @@ from backend.training.field_registry import (
     get_fields_json,
 )
 from backend.training.validation import validate_training_config
+from backend.training.optimizer_contracts import AUTOMAGIC_MAX_LR_DEFAULT
 from tools.python_startup.lr_logging import read_learning_rates
 from vendor.automagic_optimizer.integration import Automagic3
 
@@ -111,6 +112,12 @@ class AutomagicFieldContractTests(unittest.TestCase):
 class AutomagicValidationTests(unittest.TestCase):
     def test_accepts_safe_defaults(self):
         self.assertEqual(validate_training_config(valid_automagic_config()), [])
+
+    def test_missing_max_lr_uses_shared_default(self):
+        config = valid_automagic_config()
+        config.pop("automagic_max_lr", None)
+        config["learning_rate"] = "0.01"
+        self.assertEqual(validate_training_config(config), [])
 
     def test_rejects_invalid_bounds_and_component_learning_rate(self):
         config = valid_automagic_config()
@@ -260,6 +267,20 @@ class AutomagicValidationTests(unittest.TestCase):
 
 
 class AutomagicAdapterTests(unittest.TestCase):
+    def test_missing_max_lr_is_injected_and_explicit_raw_value_is_preserved(self):
+        base = {
+            "model_train_type": "anima-lora",
+            "optimizer_type": AUTOMAGIC_OPTIMIZER_TYPE,
+            "learning_rate": "1e-4",
+        }
+        adapted, _ = adapt_config(base)
+        self.assertIn(f"max_lr={AUTOMAGIC_MAX_LR_DEFAULT}", adapted["optimizer_args"])
+        self.assertEqual(sum(item.startswith("max_lr=") for item in adapted["optimizer_args"]), 1)
+
+        adapted, _ = adapt_config(dict(base, optimizer_args=["max_lr=1e-3"]))
+        self.assertIn("max_lr=1e-3", adapted["optimizer_args"])
+        self.assertEqual(sum(item.startswith("max_lr=") for item in adapted["optimizer_args"]), 1)
+
     def test_forces_compatibility_mode_without_external_scheduler(self):
         adapted, warnings = adapt_config(
             {

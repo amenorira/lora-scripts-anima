@@ -124,6 +124,42 @@ class TrainingValidationTests(unittest.TestCase):
         self.assertEqual(adapted["caption_tag_dropout_rate"], 0.1)
         self.assertFalse(any("cleared by backend" in warning for warning in warnings))
 
+    def test_checkpoint_offload_conflict_order_matches_form_contract(self):
+        adapted, warnings = adapt_config(
+            dict(
+                valid_anima_config(),
+                cpu_offload_checkpointing=True,
+                unsloth_offload_checkpointing=True,
+                blocks_to_swap=0,
+            )
+        )
+        self.assertFalse(adapted["cpu_offload_checkpointing"])
+        self.assertTrue(adapted["unsloth_offload_checkpointing"])
+        self.assertTrue(any("cpu_offload_checkpointing" in warning for warning in warnings))
+
+        adapted, warnings = adapt_config(
+            dict(
+                valid_anima_config(),
+                cpu_offload_checkpointing=True,
+                unsloth_offload_checkpointing=True,
+                blocks_to_swap=1,
+            )
+        )
+        self.assertFalse(adapted["cpu_offload_checkpointing"])
+        self.assertFalse(adapted["unsloth_offload_checkpointing"])
+        self.assertTrue(any("blocks_to_swap" in warning for warning in warnings))
+
+        adapted, warnings = adapt_config(
+            dict(
+                valid_anima_config(),
+                cpu_offload_checkpointing=True,
+                unsloth_offload_checkpointing=False,
+                blocks_to_swap=1,
+            )
+        )
+        self.assertTrue(adapted["cpu_offload_checkpointing"])
+        self.assertFalse(any("cpu_offload_checkpointing" in warning for warning in warnings))
+
     def test_keep_tokens_is_emitted_only_when_caption_tag_randomization_is_active(self):
         cases = (
             (False, 0, False),

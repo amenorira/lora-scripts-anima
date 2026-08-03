@@ -2,7 +2,7 @@
 
 优化器负责把梯度转换为参数更新。不同实现采用不同的状态统计方式、状态存储精度、步长来源、裁剪位置和调度机制。优化器不读取图片语义，也无法识别目标角色、错误标注或缺失视角。
 
-本文只说明项目当前的实现和参数关系。切换优化器时，界面可能自动调整学习率、`betas`、`weight_decay` 和 scheduler；这些联动属于配置行为，不代表算法排名，也不能预判训练结果。
+本文说明优化器机制、当前训练器的参数关系和自动联动。切换优化器时，界面可能调整学习率、`betas`、`weight_decay` 和 scheduler；这些联动属于配置行为，不代表算法排名，也不能预判训练结果。
 
 <!-- doc-anchor: quick-choice -->
 ## 机制维度速查
@@ -15,7 +15,7 @@
 | 低位状态存储 | AdamW8bit、Lion8bit | 可量化的优化器状态以 8-bit 形式保存 |
 | 分页状态 | PagedAdamW8bit、PagedLion8bit | 分页触发时，状态页在 CPU 与 GPU 之间传输 |
 | 内部调度 | AdamWScheduleFree、ProdigyPlusScheduleFree | 参数平均与步长调度在优化器内部完成 |
-| 项目实验状态 | Automagic3、EmoSens | 分别根据梯度符号历史或 loss 历史调整全局更新尺度 |
+| 上游优化器集成 | Automagic3、EmoSens | 分别根据梯度符号历史或 Loss 历史调整更新尺度；当前训练器提供 sd-scripts 适配与兼容约束 |
 
 <!-- doc-anchor: optimizer-type -->
 ## 当前优化器
@@ -34,8 +34,8 @@
 | 步长估计与内部调度 | Prodigy | D-adaptation 步长估计 |
 | 步长估计与内部调度 | ProdigyPlusScheduleFree | D-adaptation 与 Schedule-Free 参数序列 |
 | 步长估计与内部调度 | AdamWScheduleFree | AdamW 式状态与 Schedule-Free 参数序列 |
-| 项目实验实现 | Automagic3 | 梯度符号历史、参数组学习率适应和内部裁剪 |
-| 项目实验实现 | EmoSens | loss 移动平均、全局学习率倍率和停止信号 |
+| 上游优化器集成 | Automagic3 | ai-toolkit 上游实现；梯度符号历史、参数组学习率适应和内部裁剪 |
+| 上游优化器集成 | EmoSens | EmoSens 上游实现；Loss 移动平均、全局学习率倍率和停止信号 |
 
 8-bit 与分页描述的都是优化器状态。训练峰值显存还包括模型参数、激活、缓存、梯度和采样过程。
 
@@ -58,21 +58,21 @@
 
 学习率控制每一步参数更新的整体尺度。AdamW、Lion、CAME 和 StableAdamW 将其作为外部步长。AdaFactor 在 `relative_step=true` 时根据训练进度生成步长；Prodigy 系列将输入学习率与 D-adaptation 估计的尺度结合；Automagic3 与 EmoSens 还会在内部生成动态倍率。
 
-项目当前使用的自动值如下。只有满足相应联动条件时，界面才会写入这些数值；手动设置和导入值继续沿用现有的来源规则：
+当前训练器使用的自动值如下。只有满足相应联动条件时，界面才会写入这些数值；手动设置和导入值继续沿用现有的来源规则：
 
-| 训练配置 | 选择值 | 自动学习率 |
-| --- | --- | ---: |
-| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` |
-| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` |
-| Anima | CAME | `1.5e-5` |
-| Anima | AdamWScheduleFree | `1e-4` |
-| Anima | AdaFactor 且 `relative_step=false` | `2e-5` |
-| Anima | EmoSens | `0.1` |
-| 通用 sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` |
-| 通用 sd-scripts | Automagic3 | `1e-4` |
-| SDXL | CAME / StableAdamW | `1e-4` |
-| SDXL | Lion 系列 | `2e-5` |
-| SDXL | AdamWScheduleFree | `3e-4` |
+| 训练配置 | 选择值 | 自动学习率 | 依据性质 |
+| --- | --- | ---: | --- |
+| Anima | AdamW / AdamW8bit / PagedAdamW8bit / StableAdamW | `2e-5` | 当前训练器配置值，需通过对照实验验证 |
+| Anima | Lion / Lion8bit / PagedLion8bit | `5e-6` | 当前训练器配置值，需与 weight decay 一并验证；Lion 官方联合讨论较低 LR 与较高 weight decay |
+| Anima | CAME | `1.5e-5` | 当前训练器配置值，需通过对照实验验证 |
+| Anima | AdamWScheduleFree | `1e-4` | 当前训练器配置值，需通过对照实验验证 |
+| Anima | AdaFactor 且 `relative_step=false` | `2e-5` | 当前训练器配置值，需通过对照实验验证 |
+| Anima | EmoSens | `0.1` | 当前训练器集成层的配置默认值 |
+| 通用 sd-scripts | Prodigy / ProdigyPlusScheduleFree | `1.0` | Prodigy 官方用法与当前强制契约 |
+| 通用 sd-scripts | Automagic3 | `1e-4` | 当前训练器集成层的配置默认值 |
+| SDXL | CAME / StableAdamW | `1e-4` | 当前训练器配置值，需通过对照实验验证 |
+| SDXL | Lion 系列 | `2e-5` | 当前训练器配置值，需与 weight decay 一并验证；不等同于完整 Lion 官方 recipe |
+| SDXL | AdamWScheduleFree | `3e-4` | 当前训练器配置值，需通过对照实验验证 |
 
 `network_alpha / network_dim` 会缩放 LoRA 分支，因此相同优化器学习率在不同 alpha/dim 组合下不代表相同的 LoRA 分支尺度。
 
@@ -152,7 +152,7 @@ ProdigyPlusScheduleFree 的随机舍入在低精度写回时按被舍弃部分�
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和 AdamWScheduleFree 可接收 LoRA+ 参数。Prodigy、ProdigyPlusScheduleFree 和 EmoSens 不接收；AdaFactor 在 `relative_step=false` 时接收。
+LoRA+ 为 LoRA 不同矩阵分量设置不同的参数组学习率。当前训练器支持 AdamW、8-bit/Paged AdamW、StableAdamW、Lion、CAME 和 AdamWScheduleFree 与 LoRA+ 组合；不支持 Prodigy、ProdigyPlusScheduleFree 或 EmoSens 组合。AdaFactor 必须同时关闭 `relative_step` 与 `warmup_init`。
 
 <!-- doc-anchor: scenarios -->
 ## 数据集情形与能力边界
@@ -239,9 +239,9 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 <!-- doc-anchor: evidence -->
 ## 实现依据与参考资料
 
-事实核查日期：**2026-07-31**。项目行为以本仓库字段元数据、适配器和锁定版本的上游实现为准。
+核验日期：**2026-08-03**。
 
-本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 构造器包含 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=true` 和 `kahan_sum=true`；项目生成配置会按界面值覆盖构造器值。
+官方机制依据与当前训练器行为分开核验。当前训练器通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`；生成配置按界面值覆盖构造器默认值。Automagic3 源自 ai-toolkit，EmoSens 源自其独立上游仓库；仓库内保留上游实现并增加 sd-scripts 集成、运行时接入和兼容约束。二者不是 PyTorch 内置优化器。
 
 参考资料：
 
@@ -250,6 +250,7 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 - [CAME 官方实现（固定版本）](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
 - [Lion 官方实现（固定版本）](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
 - [Schedule-Free 官方实现（固定版本）](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
+- [Prodigy 官方实现（固定版本）](https://github.com/konstmish/prodigy/tree/3efb213ee8af5a6bf76f28726398433a847b38e9)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
 - [Symbolic Discovery of Optimization Algorithms](https://arxiv.org/abs/2302.06675)
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
@@ -257,3 +258,7 @@ LoRA+ 为 LoRA 不同矩阵分量设置不同的有效学习率。AdamW、8-bit/
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
 - [pytorch-optimizer 实现（固定版本）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
 - [bitsandbytes 实现（固定版本）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
+- [ai-toolkit Automagic3 源文件（固定版本）](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py)
+- [EmoSens 上游仓库（固定版本）](https://github.com/muooon/EmoSens/tree/2afff7a9a709e287e487dcd130b1e70a375ae4b2)
+
+当前训练器行为由字段元数据、优化器契约、适配器、校验器和测试证明。

@@ -70,10 +70,11 @@ class DocumentationTests(unittest.TestCase):
         zh = (root / "docs" / "parameters" / "optimizers.zh-CN.md").read_text(encoding="utf-8")
         en = (root / "docs" / "parameters" / "optimizers.en-US.md").read_text(encoding="utf-8")
         for text in (zh, en):
-            self.assertIn("2026-07-31", text)
+            self.assertIn("2026-08-03", text)
             self.assertIn("f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b", text)
             self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
             self.assertIn("70785b53e778d0e872c0bbb75ff4ee54ee10c291", text)
+            self.assertIn("3efb213ee8af5a6bf76f28726398433a847b38e9", text)
             self.assertNotIn("blob/main/docs/anima_train_network.md", text)
         self.assertIn("外部 scheduler 不参与训练", zh)
         self.assertIn("external scheduler does not participate", en)
@@ -85,6 +86,79 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("`β3`", en)
         self.assertIn("`came_fixed_decay`", zh)
         self.assertIn("`came_fixed_decay`", en)
+
+    def test_parameter_docs_use_pinned_sources_and_precise_contract_language(self):
+        root = Path(__file__).resolve().parents[1]
+        documents = [
+            (root / "docs" / "parameters" / f"{slug}.{locale}.md").read_text(encoding="utf-8")
+            for slug in ("timesteps", "lora-plus", "optimizers")
+            for locale in ("zh-CN", "en-US")
+        ]
+        for text in documents:
+            self.assertIn("2026-08-03", text)
+            self.assertIn("37a1cbbc5725ed2a3575506e7bd2001c9908ac92", text)
+            self.assertNotIn("blob/main/", text)
+            self.assertNotIn("本项目", text)
+            self.assertNotIn("Project experimental", text)
+
+        lora_docs = documents[2:4]
+        for text in lora_docs:
+            self.assertNotIn("not what the model can learn", text)
+            self.assertNotIn("而不是模型能够学习哪些内容", text)
+            self.assertIn("warmup_init", text)
+
+        timestep_docs = documents[:2]
+        for text in timestep_docs:
+            self.assertNotIn("t≈500", text)
+            self.assertIn("32,768", text)
+
+    def test_parameter_docs_reference_complete_pinned_official_sources(self):
+        root = Path(__file__).resolve().parents[1]
+        source_sets = {
+            "timesteps": (
+                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md",
+                "https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md",
+            ),
+            "lora-plus": (
+                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/train_network_advanced.md",
+                "https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/loha_lokr.md",
+                "https://arxiv.org/abs/2402.12354",
+            ),
+            "optimizers": (
+                "https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion",
+                "https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291",
+                "https://github.com/konstmish/prodigy/tree/3efb213ee8af5a6bf76f28726398433a847b38e9",
+                "https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610",
+                "https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8",
+                "https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29",
+                "https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py",
+                "https://github.com/muooon/EmoSens/tree/2afff7a9a709e287e487dcd130b1e70a375ae4b2",
+            ),
+        }
+        for slug, sources in source_sets.items():
+            for locale in ("zh-CN", "en-US"):
+                text = (root / "docs" / "parameters" / f"{slug}.{locale}.md").read_text(encoding="utf-8")
+                for source in sources:
+                    with self.subTest(slug=slug, locale=locale, source=source):
+                        self.assertIn(source, text)
+
+    def test_scheduler_and_offload_hints_match_available_contracts(self):
+        root = Path(__file__).resolve().parents[1]
+        for locale in ("zh-CN", "en-US"):
+            messages = json.loads(
+                (root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            fields = messages["field"]
+            cycles = fields["lr_scheduler_num_cyclesHint"]
+            self.assertIn("cosine_with_restarts", cycles)
+            self.assertNotIn("cosine_with_min_lr", cycles)
+            self.assertNotIn("warmup_stable_decay", cycles)
+
+            cpu_hint = fields["cpu_offload_checkpointingHint"]
+            unsloth_hint = fields["unsloth_offload_checkpointingHint"]
+            self.assertNotIn("Block Swap", cpu_hint)
+            self.assertNotIn("block swapping", cpu_hint)
+            self.assertTrue("Block Swap" in unsloth_hint or "block swapping" in unsloth_hint)
 
     def test_parameter_docs_and_field_option_text_use_objective_language(self):
         root = Path(__file__).resolve().parents[1]
@@ -496,7 +570,7 @@ const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
     weighting_scheme: 'uniform',
     sigmoid_scale: 1,
     discrete_flow_shift: 1,
-    resolution: '1024,1024',
+    resolution: '1024,768',
   },
   t(key) { return key; },
 });
@@ -507,6 +581,7 @@ console.log(JSON.stringify({
   hasMiddleSummary: container.innerHTML.includes('57.0%'),
   hasWeightCurve: container.innerHTML.includes('<polyline points='),
   refreshBound: typeof refreshHandler === 'function',
+  resolution: context._buildTimestepPreview().resolution,
 }));
 """
         result = subprocess.run(
@@ -523,6 +598,7 @@ console.log(JSON.stringify({
         self.assertTrue(state["hasMiddleSummary"])
         self.assertTrue(state["hasWeightCurve"])
         self.assertTrue(state["refreshBound"])
+        self.assertEqual(state["resolution"], "1024 × 768")
 
     def test_scrollspy_uses_section_at_viewport_top_and_preserves_click_target(self):
         script = r"""

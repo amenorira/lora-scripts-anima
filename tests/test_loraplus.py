@@ -202,12 +202,31 @@ class LoRAPlusValidationTests(unittest.TestCase):
                 for rule in toggle["autoValue"]
             )
         )
+        self.assertTrue(
+            any(
+                rule.get("watch")
+                == {
+                    "optimizer_type": ADAFACTOR_OPTIMIZER_TYPE,
+                    "adafactor_warmup_init": True,
+                }
+                and rule.get("set") is False
+                for rule in toggle["autoValue"]
+            )
+        )
         readonly_groups = toggle["readonlyIfAny"]
         self.assertTrue(
             any(
                 isinstance(group, list)
                 and {condition["key"] for condition in group}
                 == {"optimizer_type", "adafactor_relative_step"}
+                for group in readonly_groups
+            )
+        )
+        self.assertTrue(
+            any(
+                isinstance(group, list)
+                and {condition["key"] for condition in group}
+                == {"optimizer_type", "adafactor_warmup_init"}
                 for group in readonly_groups
             )
         )
@@ -223,7 +242,9 @@ class LoRAPlusValidationTests(unittest.TestCase):
             )
             locked = messages["field"]["enable_loraplus_optimizerLocked"]
             self.assertIn("EmoSens", locked)
+            self.assertIn("ProdigyPlusScheduleFree", locked)
             self.assertIn("AdaFactor", locked)
+            self.assertIn("warmup_init", locked)
             self.assertIn("loraplus_*", messages["field"]["network_args_customHint"])
 
             document = Path(f"docs/parameters/lora-plus.{locale}.md").read_text(

@@ -6,6 +6,27 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.2.2 - 2026-08-03
+
+This patch release aligns LoRA form behavior across the UI, configuration adapter, and validator; it also updates bilingual guidance and built-in parameter documentation with reviewable pinned upstream sources.
+
+### Parameter Contracts and Form
+
+- Unified the effective Automagic3 default for a missing `max_lr` at `1e3` while preserving explicit values from existing presets and API requests.
+- Corrected the behavior boundaries and linked guidance for LoRA+, AdaFactor, Prodigy-family optimizers, offload modes, scheduler cycles, and non-square resolution previews.
+- Reworked shorthand wording, terminology casing, and redundant parentheticals in both locales so labels, hints, and lock reasons have distinct roles.
+
+### Documentation and Sources
+
+- Updated the timestep, LoRA+, and optimizer guides to distinguish upstream mechanisms, current-trainer behavior, and configuration values, with pinned revisions and a verification date.
+- Corrected source attribution for Automagic3 and EmoSens: they are integrated upstream optimizers, while the current trainer supplies sd-scripts adapters, runtime connections, and compatibility constraints.
+
+### Regression Protection
+
+- Added automated coverage for Automagic3 defaults, LoRA+ restrictions, offload combinations, scheduler guidance, resolution previews, and pinned upstream links.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.2.1...v2.2.2)
+
 ## v2.2.1 - 2026-08-02
 
 This patch release refactors the Tag Editor's data and session workflows and improves the desktop training dashboard when working with large sample, log, and output collections.

@@ -15,6 +15,7 @@ from backend.training.field_registry import (
 )
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
+    AUTOMAGIC_MAX_LR_DEFAULT,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
@@ -234,7 +235,7 @@ def _validate_automagic(
 
     defaults = {
         "min_lr": 1e-8,
-        "max_lr": 1e-3,
+        "max_lr": AUTOMAGIC_MAX_LR_DEFAULT,
         "beta2": 0.999,
         "eps": 1e-30,
         "clip_threshold": 1.0,

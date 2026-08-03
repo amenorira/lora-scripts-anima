@@ -8,6 +8,8 @@ from typing import Any, Mapping
 
 
 AUTOMAGIC_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic3"
+AUTOMAGIC_MAX_LR_DEFAULT = 1e3
+AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "1e3"
 EMOSENS_OPTIMIZER_TYPE = "vendor.emo_optimizer.emosens.EmoSens"
 PRODIGY_OPTIMIZER_TYPE = "Prodigy"
 PRODIGYPLUS_OPTIMIZER_TYPE = "prodigyplus.ProdigyPlusScheduleFree"

@@ -2100,7 +2100,7 @@ window.trainingCoreMixin = {
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
-    const [height, width] = this._timestepPreviewResolution(source.resolution);
+    const [width, height] = this._timestepPreviewResolution(source.resolution);
     const binCount = 32;
     const counts = Array(binCount).fill(0);
     const sampleCount = 32768;
@@ -2210,7 +2210,7 @@ window.trainingCoreMixin = {
     return {
       sampling,
       weighting,
-      resolution: `${height} × ${width}`,
+      resolution: `${width} × ${height}`,
       sampleCount,
       bins,
       weightPoints,

@@ -14,6 +14,7 @@ from typing import Any
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
+    AUTOMAGIC_MAX_LR_DEFAULT_TEXT,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
@@ -120,6 +121,15 @@ def _loraplus_auto_disable_rules() -> list[dict[str, Any]]:
             "set": False,
         }
     )
+    rules.append(
+        {
+            "watch": {
+                "optimizer_type": ADAFACTOR_OPTIMIZER_TYPE,
+                "adafactor_warmup_init": True,
+            },
+            "set": False,
+        }
+    )
     return rules
 
 
@@ -132,6 +142,12 @@ def _loraplus_readonly_conditions() -> list[dict[str, Any] | list[dict[str, Any]
         [
             {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE},
             {"key": "adafactor_relative_step", "eq": True},
+        ]
+    )
+    conditions.append(
+        [
+            {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE},
+            {"key": "adafactor_warmup_init", "eq": True},
         ]
     )
     return conditions
@@ -281,7 +297,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "stableadamw_kahan_sum", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.stableadamw_kahan_sum", "target": "merged", "show_if": {"key": "optimizer_type", "eq": STABLE_ADAMW_OPTIMIZER_TYPE}, "hint_key": "field.stableadamw_kahan_sumHint", "advanced": True, "doc_slug": "optimizers", "doc_anchor": "stableadamw-options"},
 {"key": "stableadamw_weight_decouple", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.stableadamw_weight_decouple", "target": "merged", "show_if": {"key": "optimizer_type", "eq": STABLE_ADAMW_OPTIMIZER_TYPE}, "hint_key": "field.stableadamw_weight_decoupleHint", "advanced": True, "doc_slug": "optimizers", "doc_anchor": "stableadamw-options"},
 {"key": "automagic_min_lr", "type": "text", "default": "1e-8", "section": "optimizer", "desc_key": "field.automagic_min_lr", "target": "merged", "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}},
-{"key": "automagic_max_lr", "type": "text", "default": "1e3", "section": "optimizer", "desc_key": "field.automagic_max_lr", "target": "merged", "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, "hint_key": "field.automagic_max_lrHint"},
+{"key": "automagic_max_lr", "type": "text", "default": AUTOMAGIC_MAX_LR_DEFAULT_TEXT, "section": "optimizer", "desc_key": "field.automagic_max_lr", "target": "merged", "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, "hint_key": "field.automagic_max_lrHint"},
 {"key": "automagic_beta2", "type": "number", "default": 0.999, "section": "optimizer", "desc_key": "field.automagic_beta2", "target": "merged", "min": 0, "max": 0.999999, "step": 0.001, "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, "advanced": True},
 {"key": "automagic_clip_threshold", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.automagic_clip_threshold", "target": "merged", "min": 1e-8, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, "hint_key": "field.automagic_clip_thresholdHint", "advanced": True},
 {"key": "automagic_polarity_history", "type": "number", "default": 8, "section": "optimizer", "desc_key": "field.automagic_polarity_history", "target": "merged", "min": 2, "max": 64, "step": 1, "show_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, "hint_key": "field.automagic_polarity_historyHint", "advanced": True},
