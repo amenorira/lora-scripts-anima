@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.2.3 - 2026-08-03
+
+This patch release restores more natural, practical timestep, LoRA+, and optimizer parameter guides while removing brittle tests that locked documentation wording, visual styling, and internal implementation details.
+
+### Parameter Documentation
+
+- Restored the practical bilingual timestep and LoRA+ guides while preserving links from training fields to their relevant sections.
+- Restored the bilingual optimizer guide to its readable pre-rewrite version while retaining coverage of supported optimizers and settings.
+
+### Test Maintenance
+
+- Removed low-value assertions for fixed wording, source revisions, CSS layouts, and source-code string snapshots.
+- Retained tests for documentation routes, registered field anchors, configuration generation, training adapters, and runtime behavior.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.2.2...v2.2.3)
+
 ## v2.2.2 - 2026-08-03
 
 This patch release aligns LoRA form behavior across the UI, configuration adapter, and validator; it also updates bilingual guidance and built-in parameter documentation with reviewable pinned upstream sources.
