@@ -33,7 +33,7 @@ class BootstrapContractTests(unittest.TestCase):
     def test_windows_keeps_python_compatibility_and_verified_install(self):
         script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn("sys.version_info[:2] < (3,13)", script)
+        self.assertIn("sys.version_info[:2] == (3,12)", script)
         self.assertIn("python-3.12.10-amd64.exe", script)
         self.assertIn("Get-AuthenticodeSignature", script)
         self.assertIn("*Python Software Foundation*", script)
@@ -161,9 +161,9 @@ class BootstrapContractTests(unittest.TestCase):
         linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
         gui = (ROOT / "backend" / "gui.py").read_text(encoding="utf-8")
 
-        self.assertIn("sys.version_info[:2] < (3,13)", windows_script)
-        self.assertIn("sys.version_info[:2] < (3, 13)", linux_script)
-        self.assertIn("sys.version_info[:2] < (3, 13)", gui)
+        self.assertIn("sys.version_info[:2] == (3,12)", windows_script)
+        self.assertIn("sys.version_info[:2] == (3, 12)", linux_script)
+        self.assertIn("sys.version_info[:2] == (3, 12)", gui)
         self.assertIn("Please run {launcher}", gui)
 
     def test_gui_is_an_internal_module(self):

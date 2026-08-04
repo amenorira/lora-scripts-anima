@@ -75,6 +75,29 @@ class ExistingVenvMigrationTests(unittest.TestCase):
         self.assertTrue(any(any(str(arg).startswith(expected_triton) for arg in command) for command in commands))
         self.assertIn("tools.install_flash_attn", run_mock.call_args.args[0])
         self.assertEqual(run_mock.call_args.kwargs["input_text"], "\n")
+        self.assertEqual(run_mock.call_args.kwargs["timeout"], 1800)
+
+    def test_flash_upgrade_failure_keeps_existing_installation(self):
+        versions = {
+            "bitsandbytes": None,
+            "xformers": None,
+            "flash-attn": "2.8.3+cu128torch2.10",
+            "triton-windows" if sys.platform == "win32" else "triton": None,
+        }
+        with patch.object(ensure_runtime, "package_version", side_effect=versions.get), patch.object(
+            ensure_runtime, "xformers_cuda_build", return_value=None
+        ), patch.object(ensure_runtime, "package_file", return_value=None), patch.object(
+            ensure_runtime, "run", return_value=1
+        ) as run_mock, patch.object(ensure_runtime, "pip") as pip_mock:
+            warnings = ensure_runtime.sync_optional_packages(core_changed=True)
+
+        # 升级失败 → 不卸载旧版（被墙环境下保留可用旧 wheel），只打警告
+        self.assertEqual(run_mock.call_count, 1)
+        uninstall_calls = [
+            call.args for call in pip_mock.call_args_list if "uninstall" in str(call.args[0])
+        ]
+        self.assertEqual(uninstall_calls, [])
+        self.assertTrue(any("keeping the existing installation" in w for w in warnings))
 
 
 class RuntimeRepairRegressionTests(unittest.TestCase):
@@ -109,8 +132,8 @@ class RuntimeRepairRegressionTests(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertEqual(caught, [])
-        self.assertIn("skipped", message)
-        self.assertNotIn("forward test passed", message)
+        self.assertIn("跳过", message)
+        self.assertNotIn("测试通过", message)
 
     def test_gpu_probe_suppresses_expected_no_driver_warning(self):
         fake_torch = types.ModuleType("torch")

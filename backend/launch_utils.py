@@ -178,10 +178,8 @@ _PKG_VERSION_CACHE: dict[str, str] | None = None
 
 def _build_pkg_version_cache() -> dict[str, str]:
     """构建 package_name → version 的反向映射（O(1) 查找，替代多次 filesystem 遍历）
-    若 distributions() 不可用则回退到空 dict，is_installed 将逐包查找。"""
+    失败时回退到空 dict，is_installed 将逐包查找。"""
     cache: dict[str, str] = {}
-    if not hasattr(importlib_metadata, 'distributions'):
-        return cache  # Python <3.10 回退到逐包查找
     try:
         for dist in importlib_metadata.distributions():
             name = dist.metadata.get("Name", "")

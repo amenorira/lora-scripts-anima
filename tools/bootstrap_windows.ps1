@@ -885,7 +885,7 @@ function Test-CompatiblePython {
     if (-not $PythonExecutable -or -not (Test-Path -LiteralPath $PythonExecutable)) { return $false }
     $probe = @(Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @(
         "-c",
-        "import sys; print('compatible') if (3,10) <= sys.version_info[:2] < (3,13) and sys.maxsize > 2**32 else sys.exit(1)"
+        "import sys; print('compatible') if sys.version_info[:2] == (3,12) and sys.maxsize > 2**32 else sys.exit(1)"
     ) -WorkingDirectory $script:RepositoryRoot -AllowFailure)
     return ($probe.Count -gt 0 -and $probe[0] -eq "compatible")
 }
@@ -901,7 +901,7 @@ function Find-CompatiblePython {
 
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
-        foreach ($version in @("3.12", "3.11", "3.10")) {
+        foreach ($version in @("3.12")) {
             $candidateJson = @(Invoke-NativeCapture -FilePath $launcher.Source -Arguments @("-$version", "-c", "import json,sys; print(json.dumps(sys.executable, ensure_ascii=True))") -WorkingDirectory $script:RepositoryRoot -AllowFailure)
             if ($candidateJson.Count -gt 0) {
                 try { $candidate = [string]($candidateJson[0] | ConvertFrom-Json) } catch { $candidate = $null }
@@ -923,7 +923,7 @@ function Find-CompatiblePython {
         }
     }
 
-    foreach ($name in @("python3.12.exe", "python3.11.exe", "python3.10.exe", "python3.exe", "python.exe")) {
+    foreach ($name in @("python3.12.exe", "python3.exe", "python.exe")) {
         $commands = @(Get-Command $name -All -ErrorAction SilentlyContinue)
         foreach ($command in $commands) {
             $candidate = $command.Source

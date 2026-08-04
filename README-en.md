@@ -44,7 +44,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Multi-model Tagger Workspace** — WD, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output
-- **Flash Attention Smart Install** — Detects Python, CUDA, PyTorch versions, and ABI; finds a compatible prebuilt wheel through the GitHub API; supports one-click installation
+- **Flash Attention Smart Install** — Provides prebuilt wheels for the fixed Python 3.12 + PyTorch 2.10+cu130 baseline; multi-mirror fallback downloads with resume and local caching; one-click installation
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
 - **Internationalization (i18n)** — Chinese and English UI with browser-language detection and a persistent language preference
 - **Dark / Light Theme** — Auto-follow system preference or manual toggle
@@ -77,18 +77,18 @@ lora-scripts-anima/
 
 ### Prerequisites
 
-- **Python**: 64-bit Python 3.10–3.12 (3.12 recommended)
+- **Python**: 64-bit Python 3.12 (the project baseline; prebuilt dependencies and the setup flow target this version)
 - **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
 - **PyTorch 2.10.0 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
 - **NVIDIA driver R580 or newer**: the minimum driver version for CUDA 13.0
 
-> **Windows users do not need to downgrade or preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.10–3.12 and skips Microsoft Store placeholders.
+> **Windows users do not need to preinstall Python/Git.** On the first run, `start.bat` searches for 64-bit Python 3.12 and skips Microsoft Store placeholders.
 >
 > If only Python 3.13/3.14 is installed, the launcher can install the official Python 3.12 side by side for the current user. It does not remove newer versions or change the default Python. Downloads show progress, size, speed, and ETA; silent installer stages show an activity spinner.
 >
-> **Linux users** must install 64-bit Python 3.10–3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
+> **Linux users** must install 64-bit Python 3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
 >
-> If the project already contains an incompatible `venv` created with Python 3.13/3.14, remove or rename only the project's `venv` folder, then rerun the launcher for your platform.
+> If the project already contains an incompatible `venv` created with another Python version, remove or rename only the project's `venv` folder, then rerun the launcher for your platform.
 
 | GPU Series | Automatically Installed PyTorch | CUDA |
 |------------|:-------------------------------:|:----:|
@@ -174,7 +174,7 @@ Recommended for RTX 40/50 series GPUs for optimal training performance.
 
 ### GUI Install
 
-Launch the GUI and install from the **Environment** tab. The script auto-detects Python / PyTorch / CUDA ABI / platform and matches the best prebuilt wheel via GitHub API.
+Launch the GUI and install from the **Environment** tab. The script targets the fixed Python 3.12 + PyTorch 2.10+cu130 baseline, downloads prebuilt wheels with multi-mirror fallback (resume + local cache), and supports offline install from a local .whl.
 
 ### Manual Install
 
@@ -182,18 +182,18 @@ Windows:
 
 ```powershell
 .\venv\Scripts\python.exe tools/install_flash_attn.py           # Interactive install
-.\venv\Scripts\python.exe tools/install_flash_attn.py --dry-run # Preview environment and candidates
-.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # Specify a wheel URL
+.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # Specify a wheel URL or local .whl path
 .\venv\Scripts\python.exe tools/install_flash_attn.py --yes     # Non-interactive install
+.\venv\Scripts\python.exe tools/install_flash_attn.py --force   # Force reinstall even if installed
 ```
 
 Linux:
 
 ```sh
 ./venv/bin/python tools/install_flash_attn.py           # Interactive install
-./venv/bin/python tools/install_flash_attn.py --dry-run # Preview environment and candidates
-./venv/bin/python tools/install_flash_attn.py --url URL # Specify a wheel URL
+./venv/bin/python tools/install_flash_attn.py --url URL # Specify a wheel URL or local .whl path
 ./venv/bin/python tools/install_flash_attn.py --yes     # Non-interactive install
+./venv/bin/python tools/install_flash_attn.py --force   # Force reinstall even if installed
 ```
 
 ## EmoSens Adaptive Optimizer

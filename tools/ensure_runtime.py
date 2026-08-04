@@ -32,18 +32,22 @@ def package_file(name: str, relative: str) -> Path | None:
         return None
 
 
-def run(command: list[str], *, input_text: str | None = None, check: bool = True) -> int:
+def run(command: list[str], *, input_text: str | None = None, check: bool = True, timeout: float | None = None) -> int:
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(
-        command,
-        input=input_text,
-        text=input_text is not None,
-        encoding="utf-8" if input_text is not None else None,
-        env=env,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            input=input_text,
+            text=input_text is not None,
+            encoding="utf-8" if input_text is not None else None,
+            env=env,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"command timed out after {timeout}s: {exc}")
     if check and result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}")
     return result.returncode
@@ -96,22 +100,34 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
 
     flash_version = package_version("flash-attn")
     if flash_version and (core_changed or "cu130torch2.10" not in flash_version.lower()):
-        result = run(
-            [
-                sys.executable,
-                "-X",
-                "utf8",
-                "-m",
-                "tools.install_flash_attn",
-                "--yes",
-                "--force",
-            ],
-            input_text="\n",
-            check=False,
-        )
+        try:
+            result = run(
+                [
+                    sys.executable,
+                    "-X",
+                    "utf8",
+                    "-m",
+                    "tools.install_flash_attn",
+                    "--yes",
+                    "--force",
+                ],
+                input_text="\n",
+                check=False,
+                # 整体上限 30 分钟：被墙网络下镜像 ~0.5MB/s（240MB 约 8 分钟），
+                # 慢但有效不应打断；此上限只兜住极端异常（完全卡死/龟速）。
+                timeout=1800,
+            )
+        except RuntimeError as exc:
+            result = -1
+            print(f"[Runtime][ERROR] flash-attn upgrade timed out: {exc}", file=sys.stderr)
         if result != 0:
-            pip("uninstall", "-y", "flash-attn", check=False)
-            warnings.append("FlashAttention upgrade failed; removed the incompatible old wheel")
+            # 升级失败时保留现有安装 —— 已可用的旧 wheel 远好于"卸载后没有"
+            # （老逻辑直接卸载，被墙环境下会把用户原本可用的 flash-attn 静默移除）
+            warnings.append(
+                "FlashAttention upgrade failed; keeping the existing installation. "
+                "Retry later or use the Environment page / "
+                "FlashAttention 升级失败，保留现有安装；可稍后重试或到环境页手动重装"
+            )
 
     expected_triton = "triton-windows" if sys.platform == "win32" else "triton"
     triton_version = package_version(expected_triton)

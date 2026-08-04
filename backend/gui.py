@@ -12,14 +12,14 @@ if sys.platform == "win32":
     from tools.python_startup import sitecustomize as _sitecustomize  # noqa: F401
 
 # Keep direct module launches from entering dependency repair with an
-# unsupported interpreter. start.bat/start.sh can select a compatible Python
+# unsupported interpreter. start.bat/start.sh can select Python 3.12
 # without requiring users to uninstall newer system versions.
-if not ((3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32):
+if not (sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32):
     current = platform.python_version()
     launcher = "start.bat" if sys.platform == "win32" else "start.sh"
     print(
         f"[FAIL] Unsupported Python {current} or non-64-bit interpreter.\n"
-        "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended).\n"
+        "       Supported: 64-bit Python 3.12.\n"
         f"       Please run {launcher}; it will select a compatible Python "
         "without removing newer versions.\n"
         f"       当前 Python {current} 不受支持，请运行 {launcher}；"

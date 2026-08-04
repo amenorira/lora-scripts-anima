@@ -69,11 +69,11 @@ for arg in "$@"; do
     fi
 done
 
-# -- Bootstrap: select a compatible 64-bit Python (3.10-3.12) --
+# -- Bootstrap: select 64-bit Python 3.12 --
 # Prefer an existing compatible venv, then a versioned interpreter. Python
 # 3.13/3.14 cannot install some pinned wheels used by this project.
 _is_supported_python() {
-    "$1" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 13) and sys.maxsize > 2**32 else 1)' >/dev/null 2>&1
+    "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32 else 1)' >/dev/null 2>&1
 }
 
 PYTHON_BIN=""
@@ -83,14 +83,14 @@ if [ -f "$VENV_PYTHON" ]; then
     if ! _is_supported_python "$VENV_PYTHON"; then
         echo "[FAIL] Existing venv uses an unsupported Python version or architecture. / 现有 venv 使用了不受支持的 Python 版本或架构。"
         "$VENV_PYTHON" --version 2>/dev/null || true
-        echo "       Supported: 64-bit Python 3.10-3.12 (3.12 recommended). / 支持 64 位 Python 3.10-3.12（推荐 3.12）。"
+        echo "       Supported: 64-bit Python 3.12. / 支持 64 位 Python 3.12。"
         echo "       Rename or remove only this project's 'venv' folder, then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
         exit 1
     fi
     PYTHON_BIN="$VENV_PYTHON"
     PYTHON_SOURCE="existing venv"
 else
-    for candidate in python3.12 python3.11 python3.10 python3 python; do
+    for candidate in python3.12 python3 python; do
         command -v "$candidate" >/dev/null 2>&1 || continue
         candidate_path="$(command -v "$candidate")"
         if _is_supported_python "$candidate_path"; then
@@ -104,7 +104,7 @@ fi
 if [ -z "$PYTHON_BIN" ]; then
     _stop_startup_spinner
     echo "[FAIL] No compatible 64-bit Python installation was found. / 未找到兼容的 64 位 Python。"
-    echo "       Required: Python 3.10-3.12 (Python 3.12 recommended). / 需要 Python 3.10-3.12（推荐 3.12）。"
+    echo "       Required: 64-bit Python 3.12. / 需要 64 位 Python 3.12。"
     echo "       Python 3.13/3.14 may remain installed side by side. / Python 3.13/3.14 可以并行保留。"
     echo "       Install Python 3.12 and venv support, for example: / 请安装 Python 3.12 和 venv 支持，例如："
     echo "       sudo apt install python3.12 python3.12-venv"

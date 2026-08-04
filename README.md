@@ -44,7 +44,7 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **多模型 Tagger 工作台** — 集成 WD、CL Tagger 与 Camie Tagger，支持单图检查、分类阈值控制和批量标签写入
-- **Flash Attention 智能安装** — 自动检测 Python、CUDA、PyTorch 版本及 ABI，通过 GitHub API 匹配合适的预编译 wheel，并支持一键安装
+- **Flash Attention 智能安装** — 面向 Python 3.12 + PyTorch 2.10+cu130 固定基线提供预编译 wheel，多镜像回退下载（断点续传 + 本地缓存），支持一键安装
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
 - **国际化（i18n）** — 中英双语界面，支持浏览器语言自动检测并保存语言偏好
 - **暗色/亮色主题** — 支持自动跟随系统、手动切换
@@ -77,18 +77,18 @@ lora-scripts-anima/
 
 ### 必要依赖
 
-- **Python**：需要 64 位 Python 3.10–3.12（推荐 3.12）
+- **Python**：需要 64 位 Python 3.12（项目基线版本，预编译依赖与安装流程均以此为准）
 - **Git**：用于下载和更新项目；Windows ZIP 下载版可在首次启动时自动安装
 - **PyTorch 2.10.0 + CUDA 13.0**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
 - **NVIDIA 驱动 R580 或更高版本**：CUDA 13.0 的最低驱动要求
 
-> **Windows 用户无需提前降级或另外安装 Python/Git。** 首次运行 `start.bat` 时，启动器会寻找 64 位 Python 3.10–3.12，并跳过 Microsoft Store 的 Python 占位符。
+> **Windows 用户无需提前安装 Python/Git。** 首次运行 `start.bat` 时，启动器会寻找 64 位 Python 3.12，并跳过 Microsoft Store 的 Python 占位符。
 >
 > 如果电脑只有 Python 3.13/3.14，可按提示为当前用户并行安装官方 Python 3.12。启动器不会卸载现有 Python，也不会修改系统默认 Python。下载时会显示进度、文件大小、速度和 ETA；静默安装阶段会显示加载动画。
 >
-> **Linux 用户**需要自行安装 64 位 Python 3.10–3.12。多数 Python 安装已包含创建 `venv` 的功能；只有 Ubuntu/Debian 等系统提示缺少该功能时，才需要额外安装对应的软件包（例如 `python3.12-venv`）。
+> **Linux 用户**需要自行安装 64 位 Python 3.12。多数 Python 安装已包含创建 `venv` 的功能；只有 Ubuntu/Debian 等系统提示缺少该功能时，才需要额外安装对应的软件包（例如 `python3.12-venv`）。
 >
-> 如果项目中已经存在由 Python 3.13/3.14 创建的不兼容 `venv`，请只删除或重命名项目内的 `venv` 文件夹，再重新运行当前平台的启动脚本。
+> 如果项目中已经存在由其他 Python 版本创建的不兼容 `venv`，请只删除或重命名项目内的 `venv` 文件夹，再重新运行当前平台的启动脚本。
 
 | GPU 系列 | 自动安装的 PyTorch | CUDA |
 |----------|:------------------:|:----:|
@@ -176,7 +176,7 @@ RTX 40/50 系显卡推荐安装 flash_attn 以获得最佳训练性能。
 
 ### GUI 安装
 
-启动 GUI 后，在 **环境** 标签页中点击安装即可。脚本自动检测 Python / PyTorch / CUDA ABI / 平台，通过 GitHub API 匹配最佳预编译 wheel。
+启动 GUI 后，在 **环境** 标签页中点击安装即可。脚本面向 Python 3.12 + PyTorch 2.10+cu130 固定基线，通过多镜像回退下载预编译 wheel（断点续传 + 本地缓存），支持离线直装本地 .whl。
 
 ### 手动安装
 
@@ -184,18 +184,18 @@ Windows：
 
 ```powershell
 .\venv\Scripts\python.exe tools/install_flash_attn.py           # 交互式安装
-.\venv\Scripts\python.exe tools/install_flash_attn.py --dry-run # 仅预览环境与候选
-.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # 手动指定 wheel
+.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # 指定 wheel URL 或本地 .whl 路径
 .\venv\Scripts\python.exe tools/install_flash_attn.py --yes     # 非交互自动安装
+.\venv\Scripts\python.exe tools/install_flash_attn.py --force   # 已安装也强制重装
 ```
 
 Linux：
 
 ```sh
 ./venv/bin/python tools/install_flash_attn.py           # 交互式安装
-./venv/bin/python tools/install_flash_attn.py --dry-run # 仅预览环境与候选
-./venv/bin/python tools/install_flash_attn.py --url URL # 手动指定 wheel
+./venv/bin/python tools/install_flash_attn.py --url URL # 指定 wheel URL 或本地 .whl 路径
 ./venv/bin/python tools/install_flash_attn.py --yes     # 非交互自动安装
+./venv/bin/python tools/install_flash_attn.py --force   # 已安装也强制重装
 ```
 
 ## EmoSens 自适应优化器
