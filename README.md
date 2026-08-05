@@ -153,6 +153,14 @@ cd lora-scripts-anima
 
 仓库仅允许快进更新。如果源码被手动修改，`git pull` 会停止并提示先处理本地改动，不会自动覆盖。
 
+## 训练参数指南
+
+详细的训练参数说明见 `docs/parameters/`：
+
+- [LoRA+ 指南](docs/parameters/lora-plus.zh-CN.md)：LoRA+ 的原理、倍率选择、优化器兼容性与判断方法
+- [优化器选择与参数指南](docs/parameters/optimizers.zh-CN.md)：优化器对比、学习率/weight decay 等参数起点、按数据集选择
+- [时间步指南](docs/parameters/timesteps.zh-CN.md)：flow matching 时间步采样、Loss 权重与分布预览说明
+
 ## 程序参数
 
 | 参数名称 | 类型 | 默认值 | 描述 |

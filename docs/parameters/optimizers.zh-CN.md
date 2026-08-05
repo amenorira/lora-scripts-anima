@@ -174,7 +174,7 @@ AdamW、8-bit AdamW、StableAdamW、Lion、CAME、AdamWScheduleFree 可以使用
 <!-- doc-anchor: one-image -->
 ### 只有一张立绘
 
-Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高 checkpoint 保存频率。SDXL 按自己的独立基线调整。这个场景最大的风险是把姿势和构图一起记住；StableAdamW 只能处理更新尖峰，补不出侧面、背面或新表情。
+Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高检查点（checkpoint）保存频率。SDXL 按自己的独立基线调整。这个场景最大的风险是把姿势和构图一起记住；StableAdamW 只能处理更新尖峰，补不出侧面、背面或新表情。
 
 <!-- doc-anchor: few-shot -->
 ### 2～5 张少图人物
@@ -260,10 +260,33 @@ Prodigy 等需要不同学习率尺度的优化器不能纳入上述单变量对
 - 优化器不能单独阻止单图过拟合；停止时机、重复次数和数据多样性更关键。
 - 不同优化器的合理学习率范围不同，统一使用同一学习率不一定构成公平比较。
 
+<!-- doc-anchor: faq -->
+## 常见问题
+
+**为什么切换模型类型或优化器后，学习率被替换了？**
+
+界面只在推荐值尚未被手动修改时替换它；手动调整过、导入的配置和自定义值都会保持原样。
+
+**为什么 Prodigy 的学习率被锁定为 1.0？**
+
+Prodigy 属于 D-adaptation 系的自适应优化器，学习率作为缩放基准使用，sd-scripts 文档建议设为 `1.0` 左右，因此界面会锁定并提示。
+
+**为什么 StableAdamW 的 weight_decay 在配置里是 0？**
+
+库默认值是 `0.01`，本项目有意输出 `weight_decay=0` 覆盖它，用于建立与 AdamW 基准可比的对齐起点。这是有意设置，不是参数缺失。
+
+**为什么切换优化器后 LoRA+ 被关闭了？**
+
+Prodigy、ProdigyPlus 和 EmoSens 不能可靠保留不同参数组的学习率；AdaFactor 在默认相对步长模式下也会接管学习率。界面会自动关闭 LoRA+ 并显示原因，后端也会拒绝通过旧预设或 API 提交的不兼容组合。
+
+**训练出问题时，先换优化器还是先查数据？**
+
+先查数据、标注、重复次数（repeats）、学习率和停止时机。优化器主要影响收敛速度、显存占用和数值稳定性，通常不是人物还原度的首要决定因素。
+
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
-事实核查日期：**2026-07-31**。下列代码与模型卡链接固定到核查时的提交。
+事实核查日期：**2026-08-05**。下列代码与模型卡链接固定到核查时的提交。
 
 **实现事实：** 本项目通过 sd-scripts 的完整类路径加载 `pytorch_optimizer.StableAdamW`。已安装的 `pytorch-optimizer 3.10.0` 中，它的构造器默认值为 `betas=(0.9,0.99)`、`eps=1e-8`、`weight_decay=0.01`、`weight_decouple=True`、`kahan_sum=True`。本项目有意将 `weight_decay` 覆盖为 `0`。
 

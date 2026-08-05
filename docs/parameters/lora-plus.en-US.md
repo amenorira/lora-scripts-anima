@@ -81,7 +81,7 @@ The ratio is a learning-rate multiplier for the higher-rate group. The number it
 | `4.0` | Higher-rate group gets 4× | Check the resulting effective rate against the base |
 | `8.0`–`16.0` | Much higher rate for the second group | More sensitive to base rate, stopping point, and repeated data |
 
-The LoRA+ paper uses `16` in its experiments, and the sd-scripts documentation repeats that value. It comes from specific models and tasks and is not a universal recommendation for character, style, or concept LoRAs. This trainer defaults to `2.0` for a milder starting difference.
+The LoRA+ paper uses `16` (expressed as `2^4` in the paper) in its experiments, and the sd-scripts documentation repeats that value. It comes from specific models and tasks and is not a universal recommendation for character, style, or concept LoRAs. This trainer defaults to `2.0` for a milder starting difference.
 
 <!-- doc-anchor: parameters -->
 ## Trainer parameters
@@ -108,7 +108,7 @@ Overrides the ratio for the main UNet only. The Anima training path keeps the sd
 loraplus_unet_lr_ratio = 2.0
 ```
 
-No effect when only the text encoder is trained.
+No effect when only the text encoder is trained. The value is still written to the training configuration, but no UNet/DiT parameters are trained, so it does not affect the run.
 
 <!-- doc-anchor: loraplus-text-encoder-lr-ratio -->
 ### `loraplus_text_encoder_lr_ratio`
@@ -119,7 +119,7 @@ Overrides the ratio for text-encoder LoRA parameters only.
 loraplus_text_encoder_lr_ratio = 2.0
 ```
 
-No effect when the text encoder is not trained, "Train UNet only" is enabled, or caching prevents text-encoder training. A higher text-encoder ratio can make the trigger respond clearly sooner, but it can also make the model depend on that trigger earlier and weaken control from the rest of the prompt.
+No effect when the text encoder is not trained, when "Train UNet only" is enabled, or when caching prevents text-encoder training. A higher text-encoder ratio can make the trigger respond clearly sooner, but it can also make the model depend on that trigger earlier and weaken control from the rest of the prompt.
 
 The precedence is:
 
@@ -255,9 +255,42 @@ lr/textencoder 1 plus
 
 The trainer records the per-group rates the optimizer actually uses. For internally adaptive optimizers such as Automagic3 and Schedule-Free, read the live values from the curves. With conventional optimizers, compare the two curves to confirm the expected ratio.
 
-<!-- doc-anchor: references -->
-## References
+<!-- doc-anchor: faq -->
+## Frequently asked questions
 
-- Hayou et al., [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354), presents the theory and experiments behind different learning rates for the two LoRA matrices.
-- The sd-scripts `train_network_advanced.md` documents `loraplus_lr_ratio`, component-specific ratios, and optimizer restrictions.
-- The sd-scripts `loha_lokr.md` documents the higher-rate parameter mappings for LoHa and LoKr.
+**The result got worse or overfitting appeared earlier after enabling LoRA+. What should I do?**
+
+Disable LoRA+ or lower the ratio back to `1.0` first and check whether the problem disappears. Then review the base learning rate, dataset repetition, and stopping point. The ratio only scales one parameter group's learning rate; it cannot determine final quality on its own.
+
+**What ratio should I use?**
+
+`2.0` is the trainer default and a relatively mild starting point. The paper's experiments use `16` (expressed as `2^4` in the paper), but that value comes from specific models and tasks and is not a universal recommendation for character, style, or concept LoRAs.
+
+**How do I confirm that LoRA+ is actually active?**
+
+With LoRA+ enabled, TensorBoard shows two curves per component, such as `lr/unet` and `lr/unet plus`. With a conventional optimizer, the ratio between the two curves should be close to the configured ratio.
+
+**Why did the trainer disable LoRA+ automatically?**
+
+When you switch to Prodigy, ProdigyPlus, or EmoSens, or when AdaFactor is in its default relative-step mode, the optimizer cannot reliably preserve per-group learning rates. The UI turns LoRA+ off and shows the reason.
+
+**Does LoRA+ still help when only the text encoder is trained?**
+
+It helps for the text encoder only: `loraplus_text_encoder_lr_ratio` applies, while `loraplus_unet_lr_ratio` has no UNet/DiT parameters being trained and therefore has no effect.
+
+<!-- doc-anchor: references -->
+## Evidence and references
+
+Fact-checked on **2026-08-05**. Code links below are pinned to the reviewed revisions.
+
+**Implementation facts:** The ratio parameters, component fallback order, initialization behavior, and TensorBoard group names reflect the actual implementation in this project's vendored sd-scripts fork (`networks/lora.py`, `networks/lora_anima.py`, `networks/network_base.py`).
+
+**Paper and upstream evidence:** [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354) by Hayou et al. presents the theoretical motivation and experiments for using different learning rates for the two LoRA matrices. The paper expresses its recommended ratio as `2^4` (that is, `16`). The sd-scripts `train_network_advanced.md` repeats that value and documents `loraplus_lr_ratio`, component-specific ratios, and optimizer restrictions; `loha_lokr.md` documents the higher-rate parameter mappings for LoHa and LoKr. Note that the arXiv page may be updated by later revisions; the `16` ratio refers to the paper's original wording.
+
+**Experience requiring local validation:** The suggestion that LoRA+ may help identity or style appear sooner, and the risk tendencies of higher ratios, are engineering observations that should be verified with a fixed-condition comparison.
+
+References:
+
+- [This project's sd-scripts fork: `train_network_advanced.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
+- [This project's sd-scripts fork: `loha_lokr.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)
+- [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)

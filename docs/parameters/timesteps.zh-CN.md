@@ -57,7 +57,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p>图片、标注和训练阶段都会改变“当前误差”，所以分布图只能说明训练如何分配抽样与权重。</p>
 </div>
 
-预览会在本地进行 32,768 次固定随机序列的模拟，参数相同，图形就相同。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
+预览会在本地进行 32,768 次固定随机种子的模拟，参数相同，图形就相同。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
 
 <!-- doc-anchor: dataset-guidance -->
 ## 数据集规模与时间步选择
@@ -70,7 +70,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 | 训练情况 | 经验起点 | 主要考虑 |
 | --- | --- | --- |
-| 5～12 张人物图 | `sigmoid`、`sigmoid_scale=0.8～1.0`、`uniform` | 学习多张图共有的身份特征，降低复读姿势和背景的风险 |
+| 5～12 张人物图 | `sigmoid`、`sigmoid_scale=0.8～1.0`、`uniform` | 学习多张图共有的身份特征，降低重复输出姿势和背景的风险 |
 | 15～40 张人物图 | `sigmoid`、`sigmoid_scale=1.0～1.2`、`uniform` | 兼顾身份、细节和整体结构 |
 | 40～100 张多样人物图 | `sigmoid`、`sigmoid_scale=1.1～1.4`、`uniform` | 角度和构图足够丰富时，逐步扩大两端覆盖 |
 | 15～30 张画风图 | `sigmoid`、`sigmoid_scale=0.8～1.0`、`uniform` | 降低固定人物、背景或构图被误学为画风的风险 |
@@ -79,7 +79,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 这里说的数量是 **有效独立图片数**。连续视频帧、同一张图的多个裁剪，以及高度相似的卡面，都无法提供等量的新信息。
 
-例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，样本曝光次数可能相近，但前者仍然只有 10 张图提供的角度和构图。`repeats` 可以增加训练次数，不能增加数据多样性。
+例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，样本曝光次数可能相近，但前者仍然只有 10 张图提供的角度和构图。`repeats`（重复次数）可以增加训练次数，不能增加数据多样性。
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="每轮训练更新数的近似估算">
   <div class="doc-equation-kicker">单卡训练的粗略估算</div>
@@ -131,7 +131,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | 小细节一直出不来 | 小幅提高 `sigmoid_scale`，增加两端覆盖 | 原图是否真的包含清晰细节 |
 | 总是生成同一姿势或背景 | 减少高噪声偏移，回到 sigmoid 基线 | 数据是否重复、背景是否正确标注 |
 | 轮廓或身体结构不稳定 | 数据充分时测试轻微 `shift>1` | 是否有全身图和多角度图片 |
-| 纹理过锐、脏点多、复读训练图 | 停用 `sigma_sqrt` 或回到均匀权重 | 学习率、总步数和推理 LoRA 权重 |
+| 纹理过锐、脏点多、重复输出训练图 | 停用 `sigma_sqrt` 或回到均匀权重 | 学习率、总步数和推理 LoRA 权重 |
 | 画风只有颜色，缺少形体特点 | 适度扩大 sigmoid，或单独测试轻微高噪声 shift | 主体类型和构图是否足够多样 |
 | 画风压制提示词，总把构图带回训练集 | 减少高噪声偏移 | 总训练强度是否过高 |
 
@@ -203,7 +203,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p><var>s</var> 对应 <code>sigmoid_scale</code>。默认值为 1.0。</p>
 </div>
 
-默认 `sigmoid_scale=1.0` 时，分布左右对称，明显集中在中噪声。以 1024×1024 的默认预览为例，低、中、高噪声占比大约是 21%、57% 和 21%；具体数值会随参数和统计区间略有变化。
+默认 `sigmoid_scale=1.0` 时，分布左右对称，明显集中在中噪声。以 1024×1024 的默认预览为例，低、中、高噪声占比大约是 21%、57% 和 21%（按 32 根柱子的平均三等分统计，即低、中、高分别对应 10、12、10 根柱子）；具体数值会随参数和统计区间略有变化。
 
 ### `uniform`
 
@@ -367,7 +367,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 3. 高噪声不代表质量更高，低噪声也不保证细节一定更好。
 4. 时间步无法创造训练集中没有的角度、结构和绘画规律。
 5. `sample_flow_shift` 是生成预览参数，不会改变训练时间步分布。
-6. 训练 `seed` 会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览使用固定模拟种子，因此修改训练 Seed 不会让图形变化。
+6. 训练随机种子（seed）会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览使用固定模拟种子，因此修改训练随机种子不会让图形变化。
 7. batch size 和多卡数量不会改变理论分布，但会影响短训练中实际抽样的波动大小。
 8. 时间步设置不会改变导出的 LoRA 文件格式，推理时也不要求使用同名采样方式。
 
@@ -377,7 +377,34 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 1. **基准组：** 采用当前训练类型的默认值。
 2. **固定条件：** 数据集、随机种子、Rank、Alpha、学习率和总训练步数保持一致。
 3. **单一变量：** 每组实验仅改变一个参数，例如将 `sigmoid_scale` 从 `1.0` 改为 `1.25`。
-4. **同条件对比：** checkpoint 处于相同训练步数，并采用相同的提示词、生成种子、分辨率和推理 LoRA 权重。
+4. **同条件对比：** 检查点（checkpoint）处于相同训练步数，并采用相同的提示词、生成种子、分辨率和推理 LoRA 权重。
 5. **评估维度：** 身份或画风还原、背景泄漏、构图僵化、提示词服从度，以及在未见场景中的表现。
 
 训练 Loss 只能作为辅助信息。某组时间步设置是否更好，最终应由固定条件下的多组生成图和你的实际使用目标决定。
+
+<!-- doc-anchor: evidence -->
+## 依据与参考资料
+
+事实核查日期：**2026-08-05**。下列代码链接固定到核查时的提交。
+
+**实现事实：** 本文公式与参数生效关系，以本项目 vendor 中实际加载的训练代码为准：
+
+- sd-scripts fork 的 `library/flux_train_utils.py`：`sigmoid`、`shift`、`flux_shift` 采样，`sigma_sqrt` 与 `cosmap` 权重公式，`discrete_flow_shift` 变换。
+- `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
+- musubi-tuner fork 的 `src/musubi_tuner/training/timesteps.py` 与 `training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 及共享公式。
+- 前端分布预览的模拟实现见 `frontend/js/training-core.js`（32 根柱子、32,768 次固定随机种子模拟）。
+
+**模型与上游依据：** Anima 与 Krea 2 的训练路径使用 flow matching（流匹配）加噪方式与目标公式 `v = ε − x`；`sigmoid` 采样与 `discrete_flow_shift` 的变换形式出自 [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis（SD3 论文）](https://arxiv.org/abs/2403.03206)。本文数据集规模对应的经验起点不属于任何官方推荐。
+
+**需要实测的经验判断：** 各数据集规模对应的 `sigmoid_scale` 范围、少图人物与画风的倾向性建议，以及“低噪声负责细节、高噪声负责结构”的直觉分区，都属于社区与工程经验，应通过固定条件的 A/B 测试确认是否适用于当前数据集。
+
+参考资料：
+
+- [本项目 sd-scripts fork：`library/flux_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/flux_train_utils.py)
+- [本项目 sd-scripts fork：`library/anima_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/anima_train_utils.py)
+- [本项目 musubi-tuner fork：`src/musubi_tuner/training/timesteps.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
+- [本项目 musubi-tuner fork：`training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
+- [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/frontend/js/training-core.js)
+- [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
+- [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)

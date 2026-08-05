@@ -203,7 +203,7 @@ Sigmoid sampling takes a standard normal random value and maps it into the `0–
   <p><var>s</var> is <code>sigmoid_scale</code>. Its default value is 1.0.</p>
 </div>
 
-With `sigmoid_scale=1.0`, the distribution is symmetric and clearly concentrated around mid noise. In the default 1024×1024 preview, the low, mid, and high regions are roughly 21%, 57%, and 21%; exact values vary slightly with settings and histogram boundaries.
+With `sigmoid_scale=1.0`, the distribution is symmetric and clearly concentrated around mid noise. In the default 1024×1024 preview, the low, mid, and high regions are roughly 21%, 57%, and 21% (averaged thirds of the 32 bins: 10, 12, and 10 bins respectively); exact values vary slightly with settings and histogram boundaries.
 
 ### `uniform`
 
@@ -381,3 +381,30 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 5. **Evaluation criteria:** fidelity, background leakage, composition rigidity, prompt adherence, and performance on subjects or compositions absent from the dataset.
 
 Training loss is supporting evidence rather than a complete evaluation. Whether a timestep configuration is better should be decided by controlled samples and the requirements of your actual use case.
+
+<!-- doc-anchor: evidence -->
+## Evidence and references
+
+Fact-checked on **2026-08-05**. Code links below are pinned to the reviewed revisions.
+
+**Implementation facts:** The formulas and parameter activation behavior in this guide reflect the training code actually loaded from this project's `vendor` directory:
+
+- The sd-scripts fork's `library/flux_train_utils.py`: `sigmoid`, `shift`, and `flux_shift` sampling, the `sigma_sqrt` and `cosmap` weighting formulas, and the `discrete_flow_shift` transform.
+- `library/anima_train_utils.py`: Anima's sampling and loss-weighting dispatch.
+- The musubi-tuner fork's `src/musubi_tuner/training/timesteps.py` and `training/trainer_base.py`: Krea 2's `krea2_shift` and `logsnr` modes and the shared formulas.
+- The frontend distribution preview simulation lives in `frontend/js/training-core.js` (32 bins, 32,768 fixed-seed simulations).
+
+**Model and upstream evidence:** The Anima and Krea 2 training paths use flow-matching noise and the training target `v = ε − x`. The `sigmoid` sampling scheme and the `discrete_flow_shift` transform come from [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3)](https://arxiv.org/abs/2403.03206). The empirical starting points for dataset sizes in this guide are not official recommendations.
+
+**Experience requiring local validation:** The `sigmoid_scale` ranges suggested for different dataset sizes, the tendencies described for few-shot characters and styles, and the intuitive division of low noise as detail and high noise as structure are community and engineering observations. They should be verified with a fixed-condition comparison on the target dataset.
+
+References:
+
+- [This project's sd-scripts fork: `library/flux_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/flux_train_utils.py)
+- [This project's sd-scripts fork: `library/anima_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/anima_train_utils.py)
+- [This project's musubi-tuner fork: `src/musubi_tuner/training/timesteps.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
+- [This project's musubi-tuner fork: `training/trainer_base.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
+- [This project's frontend: `frontend/js/training-core.js` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/frontend/js/training-core.js)
+- [Official Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
+- [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)

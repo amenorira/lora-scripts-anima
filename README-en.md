@@ -151,6 +151,14 @@ After ZIP repair or `git clone`, right-click an empty area inside the project fo
 
 The repository allows fast-forward-only pulls. If tracked source files were edited manually, `git pull` stops and asks you to handle the local changes instead of overwriting them.
 
+## Training Parameter Guides
+
+Detailed training parameter documentation lives in `docs/parameters/`:
+
+- [LoRA+ Guide](docs/parameters/lora-plus.en-US.md): how LoRA+ works, ratio selection, optimizer compatibility, and evaluation
+- [Optimizer Selection and Parameter Guide](docs/parameters/optimizers.en-US.md): optimizer comparison, learning rate and weight decay starting points, dataset-based selection
+- [Timestep Guide](docs/parameters/timesteps.en-US.md): flow-matching timestep sampling, loss weighting, and the distribution preview
+
 ## Program Arguments
 
 | Parameter | Type | Default | Description |

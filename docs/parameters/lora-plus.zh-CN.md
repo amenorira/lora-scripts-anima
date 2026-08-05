@@ -24,7 +24,7 @@ LoRA+ 对所有训练目标使用相同的学习率机制，但值得观察的�
 | --- | --- | --- |
 | 人物 LoRA | 脸部、发型或身份特征可能更早稳定 | 服装能否替换，背景和姿势是否被绑定 |
 | 画风 LoRA | 颜色、线条和形体特征可能更早出现 | 风格能否迁移到新人物、新物体和新构图 |
-| 服装或物体 LoRA | 目标外观可能在较早 checkpoint 中变得明显 | 能否与不同人物、姿势和场景组合 |
+| 服装或物体 LoRA | 目标外观可能在较早检查点（checkpoint）中变得明显 | 能否与不同人物、姿势和场景组合 |
 | 触发词概念 | 触发词可能更早产生明确响应 | 其他提示词是否仍能正常控制结果 |
 
 图片数量本身不决定是否适合 LoRA+，有效独立图片数和内容多样性更关键：
@@ -32,12 +32,12 @@ LoRA+ 对所有训练目标使用相同的学习率机制，但值得观察的�
 - 少量人物图更容易把身份、服装、背景和姿势一起记住，LoRA+ 可能让这些内容同时更早出现。
 - 图片较多且视角、姿势和背景足够多样时，更容易分辨 LoRA+ 改变的是学习速度还是最终泛化能力。
 - 文件很多但内容高度重复的数据集，风险更接近少图数据。
-- `repeats` 只增加每张图被训练的次数，不增加新的视角、姿势或构图。
+- `repeats`（重复次数）只增加每张图被训练的次数，不增加新的视角、姿势或构图。
 
 LoRA+ 的效果还取决于其他训练设置：
 
 - **基础学习率**是倍率相乘前的起点。同样的 `2.0` 倍率，在 `1e-4` 和 `2e-4` 基础学习率下代表完全不同的实际强度。
-- **训练步数**决定参数更新的总次数。LoRA+ 可能让最佳 checkpoint 提前出现，也可能让过拟合更早出现。
+- **训练步数**决定参数更新的总次数。LoRA+ 可能让最佳检查点提前出现，也可能让过拟合更早出现。
 - **Rank**决定 LoRA 的容量，不直接代表学习速度。高 rank 欠拟合时，应先检查学习率、步数和标注，而不是直接开 LoRA+。
 - **Alpha**参与权重增量的缩放。修改 alpha 后，原有的倍率需要重新评估。
 - **数据与标注**决定哪些内容被反复学习。LoRA+ 不能补充缺失的数据，也修复不了错误的触发词或标注。
@@ -81,7 +81,7 @@ LoRA+ 的效果还取决于其他训练设置：
 | `4.0` | 高倍率组为 4 倍 | 需结合基础学习率判断实际强度 |
 | `8.0`～`16.0` | 高倍率组远高于基础组 | 对基础学习率、停止时机和数据重复更敏感 |
 
-LoRA+ 论文在实验中使用 `16` 倍，sd-scripts 文档也沿用这一数值；它来自特定模型和任务，不能当作人物、画风或概念 LoRA 的通用推荐值。本训练器默认 `2.0`，从较温和的差异开始。
+LoRA+ 论文在实验中使用 `16` 倍（论文原文表述为 `2^4`），sd-scripts 文档也沿用这一数值；它来自特定模型和任务，不能当作人物、画风或概念 LoRA 的通用推荐值。本训练器默认 `2.0`，从较温和的差异开始。
 
 <!-- doc-anchor: parameters -->
 ## 训练器参数
@@ -108,7 +108,7 @@ loraplus_lr_ratio = 2.0
 loraplus_unet_lr_ratio = 2.0
 ```
 
-仅训练文本编码器时此参数无效。
+仅训练文本编码器时此参数无效（训练配置中仍会写入该值，但 UNet/DiT 参数不参与训练，因此它不会影响训练结果）。
 
 <!-- doc-anchor: loraplus-text-encoder-lr-ratio -->
 ### `loraplus_text_encoder_lr_ratio`
@@ -163,10 +163,10 @@ LoRA+ 无法解决模型容量不足、数据缺失或标注错误，也不会�
 
 | 比较方式 | 可以判断 |
 | --- | --- |
-| 相同步数的 checkpoint | LoRA+ 是否改变了学习速度 |
-| 每组配置的最佳 checkpoint | LoRA+ 是否改善了实际得到的最佳结果 |
+| 相同步数的检查点 | LoRA+ 是否改变了学习速度 |
+| 每组配置的最佳检查点 | LoRA+ 是否改善了实际得到的最佳结果 |
 
-有可比性的实验应固定数据集、训练 seed、rank、alpha、基础学习率、优化器、调度器和总步数，只改变 LoRA+ 开关或一个倍率。预览使用相同的生成 seed 和提示词，减少随机干扰。
+有可比性的实验应固定数据集、训练随机种子（seed）、rank、alpha、基础学习率、优化器、调度器和总步数，只改变 LoRA+ 开关或一个倍率。预览使用相同的生成随机种子（seed）和提示词，减少随机干扰。
 
 不同训练目标关注的现象：
 
@@ -255,9 +255,42 @@ lr/textencoder 1 plus
 
 训练器记录的是优化器实际使用的参数组学习率。对 Automagic3、Schedule-Free 等内部动态优化器，以 TensorBoard 曲线中的实时值为准；对常规优化器，可通过两条曲线检查倍率关系是否符合预期。
 
-<!-- doc-anchor: references -->
-## 参考资料
+<!-- doc-anchor: faq -->
+## 常见问题
 
-- Hayou 等人的论文 [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)，说明了为 LoRA 两组矩阵使用不同学习率的理论动机和实验结果。
-- sd-scripts 的 `train_network_advanced.md`，说明 `loraplus_lr_ratio`、组件倍率以及优化器限制。
-- sd-scripts 的 `loha_lokr.md`，说明 LoHa 与 LoKr 的高学习率参数映射。
+**启用 LoRA+ 后效果反而变差或过拟合更早出现，怎么办？**
+
+先关闭 LoRA+ 或把倍率降回 `1.0`，确认问题是否随之消失。随后依次检查基础学习率、数据重复度和停止时机：倍率只是放大高倍率参数组的学习率，不能单独决定最终质量。
+
+**倍率应该设多大？**
+
+`2.0` 是本训练器的默认值，也是较温和的起点。论文实验使用的是 `16`（原文表述为 `2^4`），但那是特定模型和任务的推荐值，不是人物、画风或概念 LoRA 的通用答案。
+
+**怎么确认 LoRA+ 真的生效了？**
+
+启用后，TensorBoard 中会同时出现基础组和高倍率组两条曲线（如 `lr/unet` 与 `lr/unet plus`）。对常规优化器，两条曲线的比例应接近设定的倍率。
+
+**为什么界面自动关闭了 LoRA+？**
+
+切换到 Prodigy、ProdigyPlus、EmoSens，或 AdaFactor 处于默认相对步长模式时，优化器不能可靠保留不同参数组的学习率，界面会自动关闭 LoRA+ 并显示原因。
+
+**只训练文本编码器时，LoRA+ 还有用吗？**
+
+有用，但只作用于文本编码器：`loraplus_text_encoder_lr_ratio` 生效，`loraplus_unet_lr_ratio` 没有对应的 UNet/DiT 参数参与训练，因此不产生作用。
+
+<!-- doc-anchor: references -->
+## 依据与参考资料
+
+事实核查日期：**2026-08-05**。下列代码链接固定到核查时的提交。
+
+**实现事实：** 倍率参数、组件回退顺序、初始化方式与 TensorBoard 分组名称，以本项目 vendor 中 sd-scripts fork 的实际实现为准（`networks/lora.py`、`networks/lora_anima.py`、`networks/network_base.py`）。
+
+**论文与上游依据：** [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)（Hayou 等人）介绍了为 LoRA 两组矩阵使用不同学习率的理论动机和实验结果，论文原文将推荐倍率表述为 `2^4`（即 `16`）。sd-scripts 的 `train_network_advanced.md` 转述了这一数值，并说明 `loraplus_lr_ratio`、组件倍率与优化器限制；`loha_lokr.md` 说明 LoHa 与 LoKr 的高学习率参数映射。注意：arXiv 页面内容可能被后续修订更新，倍率 `16` 的表述以论文原文为准。
+
+**需要实测的经验判断：** “LoRA+ 可能有助于身份或画风更快出现”以及倍率高低的风险倾向，属于工程经验，应通过固定条件的 A/B 测试确认。
+
+参考资料：
+
+- [本项目 sd-scripts fork：`train_network_advanced.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
+- [本项目 sd-scripts fork：`loha_lokr.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)
+- [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)

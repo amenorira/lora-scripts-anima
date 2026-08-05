@@ -261,10 +261,33 @@ Changing the optimizer, LR, rank, and step count at the same time makes the resu
 - No optimizer by itself prevents overfitted samples' memorization; stopping point, repeat counts, and data variety matter more.
 - Since optimizers run in different LR ranges, equal LR is not automatically an equal comparison.
 
+<!-- doc-anchor: faq -->
+## Frequently asked questions
+
+**Why is the learning rate replaced after I switch model type or optimizer?**
+
+The UI replaces a recommended value only when it has not been manually edited. Manually adjusted values, imported configurations, and custom values are preserved.
+
+**Why is the Prodigy learning rate locked to `1.0`?**
+
+Prodigy is a D-adaptation-style adaptive optimizer that uses the learning rate as a scaling baseline. The sd-scripts documentation recommends setting it near `1.0`, so the UI locks it and explains why.
+
+**Why is StableAdamW's weight decay `0` in the generated configuration?**
+
+The package default is `0.01`. This trainer deliberately writes `weight_decay=0` to align the starting point with the AdamW baseline. It is an intentional override, not a missing parameter.
+
+**Why was LoRA+ turned off after I switched optimizer?**
+
+Prodigy, ProdigyPlus, and EmoSens cannot reliably preserve per-group learning rates, and AdaFactor owns the learning rate in its default relative-step mode. The UI turns LoRA+ off and shows the reason; backend validation also rejects incompatible combinations submitted through older presets or the API.
+
+**When training goes wrong, should I change the optimizer or inspect the data first?**
+
+Inspect the dataset, captions, repeats, learning rate, and stopping point first. Optimizers mainly affect convergence speed, state memory, and numerical stability; they are usually not the primary factor in character fidelity.
+
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Evidence-check date: **2026-07-31**. The code and model card links below are fixed to the commits checked.
+Evidence-check date: **2026-08-05**. The code and model card links below are fixed to the commits checked.
 
 **Implementation facts:** This project loads `pytorch_optimizer.StableAdamW` through the exact sd-scripts class path. In the installed `pytorch-optimizer 3.10.0`, its constructor defaults are `betas=(0.9,0.99)`, `eps=1e-8`, `weight_decay=0.01`, `weight_decouple=True`, `kahan_sum=True`. This project deliberately overrides `weight_decay=0`.
 
@@ -279,7 +302,7 @@ References:
 - [Anima model card at a fixed commit](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [sd-scripts Anima training docs at a fixed commit](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
 - [CAME official implementation and notes at a fixed commit](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
-- [Lion official implementation and notes at a fixed commit](https://github.com/google/automl/tree/6a54c8741e7c32621e5e932d4547c4f35f47a0391122dc5/lion)
+- [Lion official implementation and notes at a fixed commit](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
 - [Schedule-Free official implementation and notes at a fixed commit](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
 - [Transformers cosine restart scheduler implementation at a fixed commit](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
 - [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
