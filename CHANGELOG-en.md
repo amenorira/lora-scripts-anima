@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.2.4 - 2026-08-05
+
+This patch release improves the training parameter guides with FAQ sections, a unified evidence format, and consistent terminology.
+
+### Parameter Documentation
+
+- Added "Frequently asked questions" sections to the LoRA+ and optimizer guides, covering ratio selection, disabled combinations, and replaced recommended values.
+- Unified the evidence format across all three guides with a fact-check date and pinned revision links; the timestep guide now has an "Evidence and references" section.
+- Standardized terminology (checkpoint, seed, repeats) and fixed the corrupted Lion reference hash in the English guide.
+- Added a "Training Parameter Guides" entry to both READMEs.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.2.3...v2.2.4)
+
 ## v2.2.3 - 2026-08-03
 
 This patch release restores more natural, practical timestep, LoRA+, and optimizer parameter guides while removing brittle tests that locked documentation wording, visual styling, and internal implementation details.
