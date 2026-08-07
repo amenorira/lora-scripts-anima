@@ -68,7 +68,7 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _statusbarHtml(d, t) {
     const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'FAILED':t('error','Error'),'CREATED':t('created','Pending'),'UNKNOWN':t('taskStateUnknown','Task state unknown'),'IDLE':t('idle','Idle')};
+    const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
@@ -84,10 +84,10 @@ window.monitorRenderMixin = {
     html += '<div class="m-sb-progress-meta"><span data-field="step">' + this.esc(stepText) + '</span><strong data-field="pct">' + percent + '%</strong></div>';
     html += '<div class="m-sb-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '"><div class="m-sb-bar" data-bar="progress" style="width:' + percent + '%"></div></div>';
     html += '</div>';
-    html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error','Error')) + '</span>';
-    html += '<span class="m-sb-error" data-role="restart"' + (this.realtimeTaskStateUnknown ? '' : ' hidden') + '>' + this.esc(t('taskStateUnknown','Backend restarted; previous live task state is unknown')) + '</span>';
-    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isTraining ? ' hidden' : '') + '>' + this.esc(t('readyToTrain','Ready for a new training run')) + '</div>';
-    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining','Stop')) + '</button></div>';
+    html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error')) + '</span>';
+    html += '<span class="m-sb-error" data-role="restart"' + (this.realtimeTaskStateUnknown ? '' : ' hidden') + '>' + this.esc(t('taskStateUnknown')) + '</span>';
+    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isTraining ? ' hidden' : '') + '>' + this.esc(t('readyToTrain')) + '</div>';
+    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining')) + '</button></div>';
     html += '</div>';
     return html;
   },
@@ -95,13 +95,13 @@ window.monitorRenderMixin = {
   _monitorConnectionMeta(t, stateCode) {
     if (this.realtimeState === 'online') {
       return stateCode === 'RUNNING'
-        ? { label: t('liveConnected','Live stream connected'), tone: 'ok' }
-        : { label: t('standby','Standby'), tone: 'muted' };
+        ? { label: t('liveConnected'), tone: 'ok' }
+        : { label: t('standby'), tone: 'muted' };
     }
     if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') {
-      return { label: t('realtimeDelayed','Realtime data delayed'), tone: 'warn' };
+      return { label: t('realtimeDelayed'), tone: 'warn' };
     }
-    return { label: t('reconnecting','Reconnecting…'), tone: 'warn' };
+    return { label: t('reconnecting'), tone: 'warn' };
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -134,12 +134,12 @@ window.monitorRenderMixin = {
 
   // 系统资源组：型号 + CPU/内存 文字数值
   _sysChip(sys, t) {
-    const fullName = sys.cpu_name || t('cpu','CPU');
+    const fullName = sys.cpu_name || t('cpu');
     let html = '<div class="m-res-chip" data-res="sys">';
     html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
-    html += this._resMeterHtml('cpu', t('cpu','CPU'), sys.cpu_pct, 'cpu-pct');
-    html += this._resMeterHtml('ram', t('ram','RAM'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
+    html += this._resMeterHtml('cpu', t('cpu'), sys.cpu_pct, 'cpu-pct');
+    html += this._resMeterHtml('ram', t('ram'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
     html += '</div>';
     html += '</div>';
     return html;
@@ -154,10 +154,10 @@ window.monitorRenderMixin = {
     let html = '<div class="m-res-chip" data-res="gpu">';
     html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
-    html += this._resMeterHtml('gpu', t('gpuLoad','Load'), loadPct, 'load-pct');
-    html += this._resMeterHtml('vram', t('vramUsed','VRAM'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
-    if (temp != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuTemp','Temp')) + '</span><span class="m-res-stat-val m-res-' + this._resGradeTemp(temp) + '" data-field="temp-val">' + temp + '°</span></span>';
-    if (gpu.power_w != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuPower','Power')) + '</span><span class="m-res-stat-val" data-field="power-text">' + gpu.power_w + 'W</span></span>';
+    html += this._resMeterHtml('gpu', t('gpuLoad'), loadPct, 'load-pct');
+    html += this._resMeterHtml('vram', t('vramUsed'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
+    if (temp != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuTemp')) + '</span><span class="m-res-stat-val m-res-' + this._resGradeTemp(temp) + '" data-field="temp-val">' + temp + '°</span></span>';
+    if (gpu.power_w != null) html += '<span class="m-res-stat"><span class="m-res-stat-label">' + this.esc(t('gpuPower')) + '</span><span class="m-res-stat-val" data-field="power-text">' + gpu.power_w + 'W</span></span>';
     html += '</div>';
     html += '</div>';
     return html;
@@ -227,7 +227,7 @@ window.monitorRenderMixin = {
     const bar = document.querySelector('.m-statusbar');
     if (!bar) return;
     const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training','Training'),'FINISHED':t('finished','Finished'),'TERMINATED':t('terminated','Terminated'),'FAILED':t('error','Error'),'CREATED':t('created','Pending'),'UNKNOWN':t('taskStateUnknown','Task state unknown'),'IDLE':t('idle','Idle')};
+    const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
     bar.dataset.state = stateCode.toLowerCase();
@@ -259,7 +259,7 @@ window.monitorRenderMixin = {
     const errorEl = bar.querySelector('[data-role="error"]');
     if (errorEl) {
       errorEl.hidden = !d.has_error;
-      errorEl.textContent = d.error_msg || t('error','Error');
+      errorEl.textContent = d.error_msg || t('error');
     }
     const restartEl = bar.querySelector('[data-role="restart"]');
     if (restartEl) restartEl.hidden = !this.realtimeTaskStateUnknown;
@@ -272,19 +272,19 @@ window.monitorRenderMixin = {
     const runName = (d.config && d.config.output_name) || ((this.selectedRunDir || '').split(/[\\/]/).pop() || '');
     let html = '<div class="m-history-banner">';
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-    html += '<span class="m-history-label">' + this.esc(t('viewingHistory','Viewing history')) + '</span>';
+    html += '<span class="m-history-label">' + this.esc(t('viewingHistory')) + '</span>';
     html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
     if (d.train_result) {
       const st = d.train_result.status || '';
       const dur = d.train_result.duration_str || '';
       const stClass = st === 'completed' ? 'ok' : (st === 'failed' ? 'danger' : 'muted');
-      const stLabel = st === 'completed' ? t('statusCompleted','Completed') : (st === 'failed' ? t('statusFailed','Failed') : (st === 'terminated' ? t('statusTerminated','Terminated') : st));
+      const stLabel = st === 'completed' ? t('statusCompleted') : (st === 'failed' ? t('statusFailed') : (st === 'terminated' ? t('statusTerminated') : st));
       html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
       if (dur) html += '<span class="m-history-dur">' + this.esc(dur) + '</span>';
     }
-    if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+    if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm" @click="clearRunDetail()">← ' + this.esc(t('backToLive','Back to live')) + '</button>';
+    html += '<button class="btn btn-sm" @click="clearRunDetail()">← ' + this.esc(t('backToLive')) + '</button>';
     html += '</div>';
     return html;
   },
@@ -389,8 +389,8 @@ window.monitorRenderMixin = {
       ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const values = {
       step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)',
-      loss: d.loss != null ? d.loss : this._seriesLatest('loss/average', '--'),
-      lr: d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet', '--'),
+      loss: d.loss != null ? d.loss : this._seriesLatest('loss/average'),
+      lr: d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet'),
       epoch: d.epoch != null ? d.epoch : '--',
       elapsed: d.elapsed || (isHistory && d.train_result && d.train_result.duration_str) || '--',
       eta: isHistory ? '—' : (d.eta || '--'),
@@ -422,7 +422,7 @@ window.monitorRenderMixin = {
     if (hasPreview) html += this._latestSampleCardHtml(t);
     html += '</div>';
     if (this.trainParams.length) html += this._parametersConsoleHtml(t);
-    else if (!isRunning) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainParams','Parameters')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint','Start training to see parameters')) + '</p></div></div>';
+    else if (!isRunning) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainParams')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint')) + '</p></div></div>';
     return html;
   },
 
@@ -430,26 +430,26 @@ window.monitorRenderMixin = {
     const tr = d.train_result || {};
     const completed = isHistory && tr.status === 'completed';
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average', '--');
-    const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet', '--');
+    const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average');
+    const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet');
     let html = '<section class="m-console-card m-overview-metrics">';
-    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary','Run summary') : t('liveMetrics','Live metrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? (tr.status || t('finished','Finished')) : (isRunning ? t('live','Live') : t('standby','Standby'))) + '</span></div>';
+    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? (tr.status || t('finished')) : (isRunning ? t('live') : t('standby'))) + '</span></div>';
     if (!isRunning && !isHistory) {
-      html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain','Ready for a new training run')) + '</strong><span>' + this.esc(t('readyToTrainHint','Configure a preset and start training to see live telemetry.')) + '</span></div></div>';
-      html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining','Go to training')) + ' →</button>';
+      html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain')) + '</strong><span>' + this.esc(t('readyToTrainHint')) + '</span></div></div>';
+      html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';
       if (d.last_config && d.last_config.name) {
         const lc = d.last_config;
-        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining','Last training')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · LR ' + (lc.lr || '--') + ' · ' + (lc.epochs || '--') + ' Epochs') + '</small></div>';
+        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · LR ' + (lc.lr || '--') + ' · ' + (lc.epochs || '--') + ' Epochs') + '</small></div>';
       }
       html += '</section>';
       return html;
     }
-    html += '<div class="m-overview-progress-head"><div><span>' + this.esc(t('overallProgress','Overall progress')) + '</span><strong data-live-field="step">' + this.esc((d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)') + '</strong></div><b data-overview-percent>' + percent + '%</b></div>';
+    html += '<div class="m-overview-progress-head"><div><span>' + this.esc(t('overallProgress')) + '</span><strong data-live-field="step">' + this.esc((d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)') + '</strong></div><b data-overview-percent>' + percent + '%</b></div>';
     html += '<div class="m-overview-progress"><i data-overview-progress style="width:' + percent + '%"></i></div>';
     const metrics = [
-      ['loss', t('loss','Loss'), loss], ['lr', t('lr','LR'), lr],
-      ['epoch', t('epoch','Epoch'), d.epoch != null ? d.epoch : '--'], ['speed', t('speed','Speed'), d.speed || '--'],
-      ['elapsed', t('elapsed','Elapsed'), d.elapsed || tr.duration_str || '--'], ['eta', t('remaining','Remaining'), isHistory ? '—' : (d.eta || '--')],
+      ['loss', t('loss'), loss], ['lr', t('lr'), lr],
+      ['epoch', t('epoch'), d.epoch != null ? d.epoch : '--'], ['speed', t('speed'), d.speed || '--'],
+      ['elapsed', t('elapsed'), d.elapsed || tr.duration_str || '--'], ['eta', t('remaining'), isHistory ? '—' : (d.eta || '--')],
     ];
     html += '<div class="m-live-metrics">';
     metrics.forEach((item, idx) => {
@@ -598,23 +598,23 @@ window.monitorRenderMixin = {
       },
       converging: {
         label: ['diagnosticConverging', '训练 Loss 持续下降'],
-        summary: ['diagnosticConvergingSummary', '近期训练 Loss 均值持续下降，优化目标仍在改善。'],
+        summary: ['diagnosticConvergingSummary', '近期训练 Loss 平均值持续下降，优化目标仍在改善。'],
         advice: ['diagnosticConvergingAdvice', '可保持当前配置继续观察，并用固定提示词样本确认实际质量变化。'],
       },
       plateau: {
         label: ['diagnosticPlateau', '进入平台期'],
-        summary: ['diagnosticPlateauSummary', '近期变化很小且波动受控，Loss 可能进入平台期。'],
+        summary: ['diagnosticPlateauSummary', '近期变化很小且波动不大，Loss 可能进入平台期。'],
         advice: ['diagnosticPlateauAdvice', '结合样本质量判断是否继续；需要细节时打开 TensorBoard。'],
       },
       rebound: {
         label: ['diagnosticRebound', '近期反弹'],
-        summary: ['diagnosticReboundSummary', '近期 Loss 均值明显高于前一窗口。'],
+        summary: ['diagnosticReboundSummary', '近期 Loss 平均值明显高于前一段时间。'],
         advice: ['diagnosticReboundAdvice', '先观察下一 Epoch；若持续反弹，再检查学习率与数据。'],
       },
       volatile: {
         label: ['diagnosticVolatile', '波动异常'],
-        summary: ['diagnosticVolatileSummary', '近期 Loss 离散度偏高，训练稳定性需要关注。'],
-        advice: ['diagnosticVolatileAdvice', '优先检查学习率、batch size 和异常样本，不要仅凭单点终止。'],
+        summary: ['diagnosticVolatileSummary', '近期 Loss 起伏较大，训练稳定性需要关注。'],
+        advice: ['diagnosticVolatileAdvice', '优先检查学习率、batch size 和异常样本，不要因为某一步的数值变化就停止训练。'],
       },
       steady: {
         label: ['diagnosticSteady', '平稳运行'],
@@ -650,21 +650,21 @@ window.monitorRenderMixin = {
       plateauVolatility: rules.plateauCv,
     };
     const copy = {
-      insufficient: ['diagnosticEvidenceInsufficient', '当前 {count} 个有效点；至少 {minimum} 个点后才会比较两个相邻窗口。'],
-      converging: ['diagnosticEvidenceConverging', '近期窗口均值下降 {magnitude}，达到 ≤ -{converging}% 的下降条件；波动 {volatility} 未达到 {volatile}% 异常阈值。'],
-      plateau: ['diagnosticEvidencePlateau', '窗口均值变化绝对值 {magnitude} < {plateauChange}%，且波动 {volatility} < {plateauVolatility}%，符合平台期条件。'],
-      rebound: ['diagnosticEvidenceRebound', '近期窗口均值上升 {magnitude}，达到 ≥ +{rebound}% 的反弹条件；反弹规则优先判定。'],
-      volatile: ['diagnosticEvidenceVolatile', '近期波动系数 {volatility}，达到 ≥ {volatile}% 的异常条件；同期均值变化为 {change}。'],
-      steady: ['diagnosticEvidenceSteady', '均值变化 {change}、波动 {volatility}，未命中下降、反弹、异常波动或平台期条件。'],
+      insufficient: ['diagnosticEvidenceInsufficient', '当前 {count} 个有效 Loss 点；至少 {minimum} 个点后才会比较两个相邻时间段。'],
+      converging: ['diagnosticEvidenceConverging', '近期平均值下降 {magnitude}，达到 ≤ -{converging}% 的下降条件；波动程度 {volatility} 未达到 {volatile}% 异常阈值。'],
+      plateau: ['diagnosticEvidencePlateau', '平均值变化幅度 {magnitude} < {plateauChange}%，且波动程度 {volatility} < {plateauVolatility}%，符合平台期条件。'],
+      rebound: ['diagnosticEvidenceRebound', '近期平均值上升 {magnitude}，达到 ≥ +{rebound}% 的反弹条件；反弹信号优先判定。'],
+      volatile: ['diagnosticEvidenceVolatile', '近期波动程度 {volatility}，达到 ≥ {volatile}% 的异常条件；同期平均值变化为 {change}。'],
+      steady: ['diagnosticEvidenceSteady', '平均值变化 {change}、波动程度 {volatility}，不符合下降、反弹、异常波动或平台期条件。'],
     };
     const item = copy[diagnostic.code] || copy.insufficient;
     return this._fillDiagnosticTemplate(t(item[0], item[1]), values);
   },
 
   _diagnosticWindowEvidence(t, diagnostic) {
-    if (!diagnostic.windowSize) return t('diagnosticWindowPending','等待建立两个相邻统计窗口');
+    if (!diagnostic.windowSize) return t('diagnosticWindowPending');
     return this._fillDiagnosticTemplate(
-      t('diagnosticWindowEvidence','Step {recentStart}–{recentEnd} 对比 Step {previousStart}–{previousEnd} · 每窗 {window} 点'),
+      t('diagnosticWindowEvidence'),
       {
         recentStart: Math.round(diagnostic.recentStartStep),
         recentEnd: Math.round(diagnostic.recentEndStep),
@@ -678,42 +678,42 @@ window.monitorRenderMixin = {
   _trainingDiagnosticsHtml(t) {
     const rules = this._trainingDiagnosticRules();
     let html = '<section class="m-console-card m-training-diagnostics">';
-    html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics','训练诊断')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle','窗口统计 · 自动判读')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard','打开 TensorBoard')) + '</button></div>';
+    html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
-    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal','收敛信号')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
+    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
     html += '<div class="m-diagnostic-metrics">';
     const metrics = [
-      ['change', t('recentLossChange','近期变化'), t('comparedPreviousWindow','对比上一窗口')],
-      ['volatility', t('lossVolatility','波动系数'), t('lowerIsMoreStable','越低越稳定')],
-      ['best', t('bestLoss','最低观测 Loss'), t('bestObservedValue','已观测最低值')],
-      ['gap', t('gapFromBest','距最低值'), t('latestVsBest','最新值对比最低值')],
+      ['change', t('recentLossChange'), t('comparedPreviousWindow')],
+      ['volatility', t('lossVolatility'), t('lowerIsMoreStable')],
+      ['best', t('bestLoss'), t('bestObservedValue')],
+      ['gap', t('gapFromBest'), t('latestVsBest')],
     ];
     metrics.forEach(metric => {
       html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
     });
     html += '</div></div>';
-    html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence','判定依据')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
-    html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice','建议')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
-    html += '<details class="m-diagnostic-method"><summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01"/></svg>' + this.esc(t('diagnosticMethodTitle','算法依据与适用边界')) + '</span><small>' + this.esc(t('diagnosticMethodMeta','工程预警 · 非质量评分')) + '</small><svg class="m-diagnostic-method-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary>';
+    html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
+    html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
+    html += '<details class="m-diagnostic-method"><summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01"/></svg>' + this.esc(t('diagnosticMethodTitle')) + '</span><small>' + this.esc(t('diagnosticMethodMeta')) + '</small><svg class="m-diagnostic-method-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary>';
     html += '<div class="m-diagnostic-method-content">';
-    html += '<p class="m-diagnostic-boundary"><strong>' + this.esc(t('diagnosticScopeTitle','适用边界')) + '</strong><span>' + this.esc(t('diagnosticScopeText','仅分析训练 Loss，不评价样本图或验证 Loss；不能判断成图质量、过拟合或最佳 checkpoint，也不会自动终止训练。')) + '</span></p>';
+    html += '<p class="m-diagnostic-boundary"><strong>' + this.esc(t('diagnosticScopeTitle')) + '</strong><span>' + this.esc(t('diagnosticScopeText')) + '</span></p>';
     const methodItems = [
-      [t('diagnosticMethodSource','数据源'), t('diagnosticMethodSourceText','优先使用 TensorBoard loss/average（训练器移动平均，通常约覆盖一个 Epoch）；缺失时回退噪声更大的 loss/current。')],
-      [t('diagnosticMethodWindow','统计窗口'), t('diagnosticMethodWindowText','比较两个相邻等长窗口的均值；目标窗口为数据点的 15%，限制在 12–60 点，短序列各取可用数据的一半。')],
-      [t('diagnosticMethodVolatility','波动系数'), t('diagnosticMethodVolatilityText','近期窗口标准差 ÷ 近期均值绝对值；它衡量相对抖动，不是质量分数。')],
+      [t('diagnosticMethodSource'), t('diagnosticMethodSourceText')],
+      [t('diagnosticMethodWindow'), t('diagnosticMethodWindowText')],
+      [t('diagnosticMethodVolatility'), t('diagnosticMethodVolatilityText')],
     ];
     html += '<div class="m-diagnostic-method-grid">';
     methodItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><p>' + this.esc(item[1]) + '</p></div>'; });
-    html += '</div><div class="m-diagnostic-rule-title">' + this.esc(t('diagnosticRuleOrder','按顺序命中第一条规则')) + '</div><div class="m-diagnostic-rules">';
+    html += '</div><div class="m-diagnostic-rule-title">' + this.esc(t('diagnosticRuleOrder')) + '</div><div class="m-diagnostic-rules">';
     const ruleItems = [
-      [t('diagnosticRuleRebound','近期反弹'), this._fillDiagnosticTemplate(t('diagnosticRuleReboundCondition','均值变化 ≥ +{value}%'), { value: rules.reboundChange })],
-      [t('diagnosticRuleVolatile','波动偏高'), this._fillDiagnosticTemplate(t('diagnosticRuleVolatileCondition','波动系数 ≥ {value}%'), { value: rules.volatileCv })],
-      [t('diagnosticRuleConverging','Loss 下降'), this._fillDiagnosticTemplate(t('diagnosticRuleConvergingCondition','均值变化 ≤ {value}%'), { value: rules.convergingChange })],
-      [t('diagnosticRulePlateau','平台期'), this._fillDiagnosticTemplate(t('diagnosticRulePlateauCondition','|变化| < {change}% · 波动 < {volatility}%'), { change: rules.plateauAbsChange, volatility: rules.plateauCv })],
-      [t('diagnosticRuleSteady','无明显趋势'), t('diagnosticRuleOtherwise','其余情况')],
+      [t('diagnosticRuleRebound'), this._fillDiagnosticTemplate(t('diagnosticRuleReboundCondition'), { value: rules.reboundChange })],
+      [t('diagnosticRuleVolatile'), this._fillDiagnosticTemplate(t('diagnosticRuleVolatileCondition'), { value: rules.volatileCv })],
+      [t('diagnosticRuleConverging'), this._fillDiagnosticTemplate(t('diagnosticRuleConvergingCondition'), { value: rules.convergingChange })],
+      [t('diagnosticRulePlateau'), this._fillDiagnosticTemplate(t('diagnosticRulePlateauCondition'), { change: rules.plateauAbsChange, volatility: rules.plateauCv })],
+      [t('diagnosticRuleSteady'), t('diagnosticRuleOtherwise')],
     ];
     ruleItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><code>' + this.esc(item[1]) + '</code></div>'; });
-    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote','长训练历史可能经过面向显示的降采样；需要完整曲线、缩放和逐点分析时请打开 TensorBoard。')) + '</p></div></details>';
+    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote')) + '</p></div></details>';
     html += '</section>';
     return html;
   },
@@ -729,8 +729,8 @@ window.monitorRenderMixin = {
       const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
       if (element) element.textContent = value;
     };
-    setText('title', isPreviousRun ? t('previousTrainingDiagnostics','上次训练诊断') : t('trainingDiagnostics','训练诊断'));
-    setText('subtitle', isPreviousRun ? t('previousDiagnosticSubtitle','上次训练数据 · 自动判读') : t('diagnosticSubtitle','窗口统计 · 自动判读'));
+    setText('title', isPreviousRun ? t('previousTrainingDiagnostics') : t('trainingDiagnostics'));
+    setText('subtitle', isPreviousRun ? t('previousDiagnosticSubtitle') : t('diagnosticSubtitle'));
     const verdict = root.querySelector('.m-diagnostic-verdict');
     if (verdict) verdict.dataset.diagnosticTone = diagnostic.tone;
     setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
@@ -738,16 +738,16 @@ window.monitorRenderMixin = {
     setText('advice', this._diagnosticText(t, diagnostic.code, 'advice'));
     setText('evidence', this._diagnosticEvidence(t, diagnostic));
     setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
-    setText('source', diagnostic.sourceTag === 'loss/current' ? t('currentLossSource','原始 Loss') : t('averageLossSource','平均 Loss'));
-    setText('through-step', diagnostic.latestStep == null ? t('waitingData','等待数据…') : t('throughStep','截至 Step {n}').replace('{n}', Math.round(diagnostic.latestStep)));
+    setText('source', diagnostic.sourceTag === 'loss/current' ? t('currentLossSource') : t('averageLossSource'));
+    setText('through-step', diagnostic.latestStep == null ? t('waitingData') : t('throughStep').replace('{n}', Math.round(diagnostic.latestStep)));
     setText('change', this._formatDiagnosticPercent(diagnostic.changePct, true));
     setText('volatility', this._formatDiagnosticPercent(diagnostic.volatilityPct, false));
     setText('best', this._formatDiagnosticValue(diagnostic.bestValue));
     setText('gap', this._formatDiagnosticPercent(diagnostic.gapFromBestPct, true));
-    setText('change-meta', diagnostic.windowSize ? t('windowComparison','最近 {n} 点 vs 前一窗口').replace('{n}', diagnostic.windowSize) : t('needsMorePoints','至少需要 6 个点'));
-    setText('volatility-meta', diagnostic.windowSize ? t('recentWindowPoints','最近 {n} 个点').replace('{n}', diagnostic.windowSize) : t('lowerIsMoreStable','越低越稳定'));
-    setText('best-meta', diagnostic.bestStep == null ? t('bestObservedValue','已观测最低值') : t('atStep','出现于 Step {n}').replace('{n}', Math.round(diagnostic.bestStep)));
-    setText('gap-meta', t('latestVsBest','最新值对比最低值'));
+    setText('change-meta', diagnostic.windowSize ? t('windowComparison').replace('{n}', diagnostic.windowSize) : t('needsMorePoints'));
+    setText('volatility-meta', diagnostic.windowSize ? t('recentWindowPoints').replace('{n}', diagnostic.windowSize) : t('lowerIsMoreStable'));
+    setText('best-meta', diagnostic.bestStep == null ? t('bestObservedValue') : t('atStep').replace('{n}', Math.round(diagnostic.bestStep)));
+    setText('gap-meta', t('latestVsBest'));
     const changeMetric = root.querySelector('[data-diagnostic-metric="change"]');
     const volatilityMetric = root.querySelector('[data-diagnostic-metric="volatility"]');
     const gapMetric = root.querySelector('[data-diagnostic-metric="gap"]');
@@ -760,7 +760,7 @@ window.monitorRenderMixin = {
   _latestSampleCardHtml(t) {
     const index = this.previews.length - 1;
     const preview = this.previews[index];
-    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample','Latest sample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll','View all')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')">' + this._previewThumbImageHtml(preview) + '<span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
+    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')">' + this._previewThumbImageHtml(preview) + '<span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
   },
 
   _previewThumbImageHtml(preview) {
@@ -787,7 +787,7 @@ window.monitorRenderMixin = {
       { key: 'max_train_epochs', short: 'historyEpochs' }, { key: 'optimizer_type', short: 'historyOptimizer' },
       { key: 'train_batch_size', short: 'historyBatch' }, { key: 'resolution', short: 'historyResolution' }, { key: 'seed', short: 'historySeed' },
     ];
-    let html = '<section class="m-console-card m-parameters-console"><div class="m-card-heading"><div><span>' + this.esc(t('trainParams','Parameters')) + '</span><small>' + this.trainParams.length + ' ' + this.esc(t('items','items')) + '</small></div></div>';
+    let html = '<section class="m-console-card m-parameters-console"><div class="m-card-heading"><div><span>' + this.esc(t('trainParams')) + '</span><small>' + this.trainParams.length + ' ' + this.esc(t('items')) + '</small></div></div>';
     html += '<div class="param-keygrid">';
     keyDefs.forEach(definition => {
       const param = byKey[definition.key];
@@ -797,14 +797,14 @@ window.monitorRenderMixin = {
       html += '<div class="param-key-item"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value">' + this._paramValueHtml({ value, type: param.type }) + '</span></div>';
     });
     html += '</div>';
-    html += '<div class="m-param-toolbar"><label class="m-param-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch','Search parameters…')) + '" aria-label="' + this.esc(t('parameterSearch','Search parameters')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"/></label><span class="m-param-match" data-param-match></span><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(true)">' + this.esc(t('expandAll','Expand all')) + '</button><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(false)">' + this.esc(t('collapseAll','Collapse all')) + '</button></div>';
+    html += '<div class="m-param-toolbar"><label class="m-param-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch')) + '" aria-label="' + this.esc(t('parameterSearch')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"/></label><span class="m-param-match" data-param-match></span><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(true)">' + this.esc(t('expandAll')) + '</button><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(false)">' + this.esc(t('collapseAll')) + '</button></div>';
     const groups = {};
     const order = ['model','network','training','optimizer','regularization','caption','performance','save','preview','basic'];
     this.trainParams.forEach(param => { const group = param.section || param.group || ''; (groups[group] || (groups[group] = [])).push(param); });
     const keys = Object.keys(groups).sort((a, b) => { const ai = order.indexOf(a), bi = order.indexOf(b); return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi); });
     html += '<div class="m-param-groups">';
     keys.forEach(group => {
-      const groupTitle = group && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(group) ? t('section.' + group, group) : (group || t('other','Other'));
+      const groupTitle = group && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(group) ? t('section.' + group, group) : (group || t('other'));
       html += '<details class="m-param-group"><summary><span>' + this.esc(groupTitle) + '</span><small>' + groups[group].length + '</small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="m-param-list">';
       groups[group].forEach(param => {
         const rawLabel = param.label_raw || param.label || param.key || '';
@@ -834,7 +834,7 @@ window.monitorRenderMixin = {
       if (query && count > 0) group.open = true;
     });
     const result = root.querySelector('[data-param-match]');
-    if (result) result.textContent = query ? matches + ' ' + (this.t('monitor.matches','matches') || 'matches') : '';
+    if (result) result.textContent = query ? matches + ' ' + this.t('monitor.matches') : '';
   },
 
   setMonitorParamGroups(open) {
@@ -849,23 +849,23 @@ window.monitorRenderMixin = {
   _logsTabShellHtml(t) {
     let html = '<div class="m-section m-logs-section">';
     const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode','History') : t('live','Live')) + '</span></div>';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
     html += '<div class="m-view-actions m-logs-tools">';
     if (this.logMode === 'full') {
       html += this._logFullToolbarHtml(t);
     } else {
-      html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode','Full log')) + '</button><button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': ON\':\'' + this.esc(t('logAutoScroll','Auto-scroll')) + ': OFF\'"></span></button></div>';
-      html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch','Search logs...')) + '" @input.debounce.300ms="renderDashboard()">';
+      html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode')) + '</button><button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll')) + ': ON\':\'' + this.esc(t('logAutoScroll')) + ': OFF\'"></span></button></div>';
+      html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch')) + '" @input.debounce.300ms="renderDashboard()">';
       const levels = ['all','info','warn','error'];
-      const levelLabels = {all:t('logLevelAll','All'),info:t('logLevelInfo','Info'),warn:t('logLevelWarn','Warn'),error:t('logLevelError','Error')};
+      const levelLabels = {all:t('logLevelAll'),info:t('logLevelInfo'),warn:t('logLevelWarn'),error:t('logLevelError')};
       levels.forEach(l => {
         html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
       });
-      html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy','Copy')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs','Clear all logs?')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear','Clear')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop','↑ Top')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom','↓ Bottom')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload','Download')) + '</button></div>';
+      html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload')) + '</button></div>';
     }
     html += '</div></div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
@@ -875,21 +875,21 @@ window.monitorRenderMixin = {
   // 完整日志工具栏：一层操作，直接覆盖浏览、搜索、复制和下载。
   _logFullToolbarHtml(t) {
     let html = '';
-    const tailLabel = this.selectedRunDir ? t('logBottom','Bottom') : t('logLiveTail','Live tail');
+    const tailLabel = this.selectedRunDir ? t('logBottom') : t('logLiveTail');
     html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-primary log-follow-btn" @click="logFullLastPage()">↓ ' + this.esc(tailLabel) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage','Top')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage','‹ Prev')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage','Next ›')) + '</button></div>';
-    html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog','Search full file...')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search','Search')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button></div>';
+    html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
     html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
     html += '<span class="m-logs-match" x-text="logFullMatchText()"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
-    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh','Refresh')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('copyPage','Copy page')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog','Download full log')) + '</button></div>';
+    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
     return html;
   },
 
@@ -1136,7 +1136,7 @@ window.monitorRenderMixin = {
         if (!container.querySelector('.log-line') && entries.length > 0) {
           const empty = document.createElement('div');
           empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults') || 'No matches') + '</p>';
+          empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults')) + '</p>';
           container.appendChild(empty);
         }
         self._renderedLogCount = lines.length;
@@ -1269,15 +1269,15 @@ window.monitorRenderMixin = {
   },
   /** 日志空态文案：按场景区分（实时无训练 / 实时训练中等待输出 / 历史无日志 / 加载中） */
   _logEmptyMessage(isLoading) {
-    if (isLoading) return this.t('monitor.loading') || 'Loading...';
+    if (isLoading) return this.t('monitor.loading');
     if (this.selectedRunDir) {
-      return this.t('monitor.noLogsHistoryHint') || 'No log file in this run';
+      return this.t('monitor.noLogsHistoryHint');
     }
     const state = (this.monitorData && this.monitorData.state) || 'IDLE';
     if (state === 'RUNNING') {
-      return this.t('monitor.noLogsRunningHint') || 'Waiting for log output from training...';
+      return this.t('monitor.noLogsRunningHint');
     }
-    return this.t('monitor.noLogsIdleHint') || 'Start a training task to see real-time logs here';
+    return this.t('monitor.noLogsIdleHint');
   },
   // 完整日志工具栏文本（reactive：x-text 调用）
   logFullRangeText() {
@@ -1467,7 +1467,7 @@ window.monitorRenderMixin = {
         if (runDir) params.set('run_dir', runDir);
         else params.set('task_id', taskId);
         this._triggerDownload('/api/monitor/log-download?' + params.toString());
-        this.toast(this.t('monitor.logDownloadStarted','Download started'));
+        this.toast(this.t('monitor.logDownloadStarted'));
         return;
       }
     }
@@ -1483,7 +1483,7 @@ window.monitorRenderMixin = {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    this.toast(this.t('common.downloaded','Downloaded!'));
+    this.toast(this.t('common.downloaded'));
   },
 
   _formatFileSize(bytes) {
@@ -1497,9 +1497,9 @@ window.monitorRenderMixin = {
   _artifactLocationHtml(t, d) {
     if (!d || d.artifact_available !== false || !d.artifact_dir) return '';
     let html = '<div class="m-artifact-location is-offline">';
-    html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+    html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<code title="' + this.esc(d.artifact_dir) + '">' + this.esc(d.artifact_dir) + '</code>';
-    html += '<small>' + this.esc(t('artifactOfflineHint','Logs and TensorBoard are still available. Restore the output path to view models, previews and downloads.')) + '</small>';
+    html += '<small>' + this.esc(t('artifactOfflineHint')) + '</small>';
     html += '</div>';
     return html;
   },
@@ -1514,11 +1514,11 @@ window.monitorRenderMixin = {
     const lastIdx = this.previews.length - 1;
 
     const canRefresh = !!this.currentOutputRunDir;
-    let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples','Preview')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
-    html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder','Sample order')) + '">';
-    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder','Training order')) + '</button>';
-    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst','Latest first')) + '</button></div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading','Loading'))+'…') : this.esc(t('refresh','Refresh'))) + '</button></div>';
+    let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
+    html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
+    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
+    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading'))+'…') : this.esc(t('refresh'))) + '</button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
@@ -1526,7 +1526,7 @@ window.monitorRenderMixin = {
       this._previewDisplayIndices().forEach(i => {
         const pv = this.previews[i];
         html += '<button type="button" class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
-        if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest','Latest')) + '</span>';
+        if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
         html += this._previewThumbImageHtml(pv);
         html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small title="' + this.esc(pv.name) + '">' + this.esc(pv.name) + '</small></span>';
         html += '</button>';
@@ -1563,22 +1563,22 @@ window.monitorRenderMixin = {
   _previewLightboxHtml(t) {
     // 在 shell 阶段注入一次；通过 .open 类切换显隐，开/关/翻页仅原地填充。
     return '<div class="preview-lightbox" id="previewLightbox" x-cloak @click="closePreviewLightbox()">'
-      + '<button type="button" class="preview-lightbox-close" @click.stop="closePreviewLightbox()" aria-label="' + this.esc(t('close','Close')) + '">×</button>'
-      + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev','Prev')) + '">‹</button>'
+      + '<button type="button" class="preview-lightbox-close" @click.stop="closePreviewLightbox()" aria-label="' + this.esc(t('close')) + '">×</button>'
+      + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev')) + '">‹</button>'
       + '<div class="preview-lightbox-inner" @click.stop>'
       + '<img class="preview-lightbox-img" id="previewLightboxImg" alt=""/>'
        + '<div class="preview-lightbox-bar">'
        + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
        + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
        + '<div class="preview-lightbox-actions">'
-       + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata','Metadata')) + '</button>'
-       + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal','Open original')) + '</a>'
+       + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata')) + '</button>'
+       + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal')) + '</a>'
        + '</div>'
-       + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate','navigate')) + ' · Esc ' + this.esc(t('close','Close')) + '</span>'
+       + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate')) + ' · Esc ' + this.esc(t('close')) + '</span>'
        + '</div>'
        + '<pre class="preview-lightbox-metadata" id="previewLightboxMetadata" hidden></pre>'
        + '</div>'
-      + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next','Next')) + '">›</button>'
+      + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next')) + '">›</button>'
       + '</div>';
   },
 
@@ -1689,23 +1689,23 @@ window.monitorRenderMixin = {
     const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
     const visibleCount = this._visibleOutputFiles().length;
     let html = '<div class="m-section m-outputs-section">';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs','Training Outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
     html += '<div class="m-view-actions">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh','Refresh')) + '</button>';
-    html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" placeholder="' + this.esc(t('searchOutputs','Search files...')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
-    html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter','File type filter')) + '">';
-    [['all', t('filterAll','All')], ['models', t('filterModels','Models')], ['others', t('filterOthers','Other')]].forEach(item => {
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh')) + '</button>';
+    html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
+    html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter')) + '">';
+    [['all', t('filterAll')], ['models', t('filterModels')], ['others', t('filterOthers')]].forEach(item => {
       html += '<button type="button" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
     });
     html += '</div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible','Select visible')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll','Deselect All')) + '</button>';
-    html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll','Download All')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll')) + '</button>';
+    html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll')) + '</button>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
 
     if (this.outputFilesLoading) {
-      html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading','Loading...')) + '</p></div>';
+      html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading')) + '</p></div>';
       html += '</div>';
       return html;
     }
@@ -1729,7 +1729,7 @@ window.monitorRenderMixin = {
     }
 
     const selectedCount = this.selectedOutputFiles.length;
-    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected','Selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><div><button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection','Clear selection')) + '</button><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected','Download Selected')) + '</button></div></div>';
+    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><div><button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection')) + '</button><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected')) + '</button></div></div>';
 
     // Scrollable content
     html += '<div class="m-outputs-scroll">';
@@ -1737,17 +1737,17 @@ window.monitorRenderMixin = {
     const { models, others } = this._sortedOutputs();
 
     if (!models.length && !others.length) {
-      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs','No files match the current filters.')) + '</p></div>';
+      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs')) + '</p></div>';
     }
 
     // ── 模型存档区（带 loss + 排序）──
     if (this.outputFilter !== 'others') {
     html += '<div class="m-ckpt-section">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints','Model Checkpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
+    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
 
     if (models.length) {
       const bestPath = this._bestCheckpointPath(models);
-      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName','File')) + '<span>' + this.esc(t('checkpoint','Checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss','Loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize','Size')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime','Modified')) + '<span>' + this.esc(t('actions','Actions')) + '</span></div>';
+      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName')) + '<span>' + this.esc(t('checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       models.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
@@ -1755,7 +1755,7 @@ window.monitorRenderMixin = {
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss','Lowest loss')) + '</small>' : '') + '</span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
         const badge = this._ckptBadgeHtml(f, t);
         if (badge) html += badge;
         else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
@@ -1766,12 +1766,12 @@ window.monitorRenderMixin = {
         html += '<span class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
     } else {
-      html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles','No model files')) + '</p></div>';
+      html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles')) + '</p></div>';
     }
     html += '</div>';
     }
@@ -1779,8 +1779,8 @@ window.monitorRenderMixin = {
     // ── 其他文件区 ──
     if (this.outputFilter !== 'models' && others.length) {
       html += '<div class="m-ckpt-section" style="margin-top:12px">';
-      html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles','Other Files')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
-      html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName','File')) + this._outputSortHeadHtml('others', 'type', t('fileType','Type')) + this._outputSortHeadHtml('others', 'size', t('sortSize','Size')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime','Modified')) + '<span>' + this.esc(t('actions','Actions')) + '</span></div>';
+      html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
+      html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName')) + this._outputSortHeadHtml('others', 'type', t('fileType')) + this._outputSortHeadHtml('others', 'size', t('sortSize')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.escapeJsString(f.path);
@@ -1793,7 +1793,7 @@ window.monitorRenderMixin = {
         html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download','Download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
@@ -1861,13 +1861,13 @@ window.monitorRenderMixin = {
   // checkpoint 类型 → 小标签（Epoch N / Step N / 最终）
   _ckptBadgeHtml(f, t) {
     if (f.ckpt_type === 'epoch' && f.ckpt_epoch != null) {
-      return '<span class="m-ckpt-badge m-ckpt-epoch">' + this.esc(t('ckptEpoch','Epoch {n}').replace('{n}', f.ckpt_epoch)) + '</span>';
+      return '<span class="m-ckpt-badge m-ckpt-epoch">' + this.esc(t('ckptEpoch').replace('{n}', f.ckpt_epoch)) + '</span>';
     }
     if (f.ckpt_type === 'step' && f.ckpt_step != null) {
-      return '<span class="m-ckpt-badge m-ckpt-step">' + this.esc(t('ckptStep','Step {n}').replace('{n}', f.ckpt_step)) + '</span>';
+      return '<span class="m-ckpt-badge m-ckpt-step">' + this.esc(t('ckptStep').replace('{n}', f.ckpt_step)) + '</span>';
     }
     if (f.ckpt_type === 'final') {
-      return '<span class="m-ckpt-badge m-ckpt-final">' + this.esc(t('ckptFinal','Final')) + '</span>';
+      return '<span class="m-ckpt-badge m-ckpt-final">' + this.esc(t('ckptFinal')) + '</span>';
     }
     return '';
   },
@@ -1892,7 +1892,7 @@ window.monitorRenderMixin = {
 
     if (!hasRunning && !hasHistory && !(this.historyItems && this.historyItems.length)) {
       el.innerHTML = 
-        '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + this.esc(t('historyNoRecords', 'No training history')) + '</p><p class="m-empty-sub">' + this.esc(t('historyWillAppear', 'Records will appear after training')) + '</p></div>';
+        '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + this.esc(t('historyNoRecords')) + '</p><p class="m-empty-sub">' + this.esc(t('historyWillAppear')) + '</p></div>';
       return;
     }
 
@@ -1902,28 +1902,28 @@ window.monitorRenderMixin = {
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
-      html += '<div class="card-header">' + this.esc(t('running', 'Running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training', 'Training') || 'Training') + '</span>';
-      if (r.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+      html += '<div class="card-header">' + this.esc(t('running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training')) + '</span>';
+      if (r.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
       html += '</div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
-      html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
-      html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
-      if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir', 'Folder') || 'Folder') + ': ' + this.esc(r.run_dir) + '</div>';
+      html += '<div class="hist-meta">' + this.esc(t('historyModel')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
+      html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
+      if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir')) + ': ' + this.esc(r.run_dir) + '</div>';
       if (r.artifact_available === false && r.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(r.artifact_dir) + '</div>';
-      html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard','View Dashboard')) + '</button></div>';
+      html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard')) + '</button></div>';
       html += '</div>';
     }
 
     if (this.historyItems && this.historyItems.length) {
       html += '<div class="hist-toolbar">';
-      html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('searchHistory','Search history...')) + '" @input.debounce.200ms="renderHistory()">';
-      const filters = [['all', t('logLevelAll','All')], ['completed', t('statusCompleted','Completed')], ['failed', t('statusFailed','Failed')], ['terminated', t('statusTerminated','Terminated')]];
+      html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('searchHistory')) + '" @input.debounce.200ms="renderHistory()">';
+      const filters = [['all', t('logLevelAll')], ['completed', t('statusCompleted')], ['failed', t('statusFailed')], ['terminated', t('statusTerminated')]];
       filters.forEach(f => {
         html += '<button type="button" class="hist-filter-btn" :class="{active:historyFilter===\'' + f[0] + '\'}" @click="historyFilter=\'' + f[0] + '\';renderHistory()">' + this.esc(f[1]) + '</button>';
       });
       html += '</div>';
 
-      if (hasRunning) html += '<div class="hist-section-label">' + this.esc(t('pastRuns', 'Past Runs')) + '</div>';
+      if (hasRunning) html += '<div class="hist-section-label">' + this.esc(t('pastRuns')) + '</div>';
       html += '<div class="history-grid">';
       items.forEach(h => {
         const runDirJs = this.escapeJsString(h.run_dir || '');
@@ -1933,28 +1933,28 @@ window.monitorRenderMixin = {
         html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
         if (h.status) {
           const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
-          const statusLabels = { completed: t('statusCompleted','Completed'), failed: t('statusFailed','Failed'), error: t('statusError','Error'), terminated: t('statusTerminated','Terminated') };
+          const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), error: t('statusError'), terminated: t('statusTerminated') };
           html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || h.status) + '</span>';
         }
         if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
-        if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline','Output unavailable')) + '</span>';
+        if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
         html += '</div>';
         html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';
         html += '<div class="hist-name"><b>' + this.esc(h.name || '') + '</b></div>';
-        html += '<div class="hist-meta">' + this.esc(t('historyModel', 'Model')) + ': ' + this.esc(h.model || '') + '</div>';
-        html += '<div class="hist-meta">' + this.esc(t('historyLR', 'LR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim', 'Dim')) + ': ' + this.esc(h.dim || '') + (h.alpha ? ' / α ' + this.esc(h.alpha) : '') + ' | ' + this.esc(t('historyEpochs', 'Epochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
-        if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset', 'Dataset') || 'Dataset') + ': ' + this.esc(h.dataset) + '</div>';
+        html += '<div class="hist-meta">' + this.esc(t('historyModel')) + ': ' + this.esc(h.model || '') + '</div>';
+        html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(h.dim || '') + (h.alpha ? ' / α ' + this.esc(h.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
+        if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset')) + ': ' + this.esc(h.dataset) + '</div>';
         if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
         html += '</div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
-          html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails', 'View Details')) + '</button>';
-          html += '<button class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig', 'View Config')) + '</button>';
-          html += '<button class="hist-action hist-action-secondary" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig', 'Reuse')) + '</button>';
+          html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails')) + '</button>';
+          html += '<button class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig')) + '</button>';
+          html += '<button class="hist-action hist-action-secondary" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig')) + '</button>';
           html += '<span class="hist-actions-spacer" aria-hidden="true"></span>';
-          const downloadTitle = artifactOffline ? t('artifactOfflineHint','Restore the output path to download files.') : t('downloadAll','Download All');
+          const downloadTitle = artifactOffline ? t('artifactOfflineHint') : t('downloadAll');
           html += '<button class="hist-action hist-action-icon hist-download" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(downloadTitle) + '" aria-label="' + this.esc(downloadTitle) + '"' + (artifactOffline ? ' disabled' : '') + '><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
-          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('deleteHistoryOnly','Delete history data; keep models and previews')) + '" aria-label="' + this.esc(t('deleteHistoryOnly','Delete history data; keep models and previews')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('deleteHistoryOnly')) + '" aria-label="' + this.esc(t('deleteHistoryOnly')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
           html += '</div>';
         }
         html += '</div>';
@@ -1962,10 +1962,10 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
-    html += '<div id="configSnapshotModal" class="modal-overlay" style="display:none"><div class="modal" style="max-width:700px"><div class="modal-header"><span>' + this.esc(t('configSnapshot','Config Snapshot')) + '</span><button class="btn btn-sm" @click="closeSnapshotModal()" style="font-size:18px;line-height:1;padding:4px 8px">&times;</button></div><div class="modal-body" id="configSnapshotContent"></div></div></div>';
+    html += '<div id="configSnapshotModal" class="modal-overlay" style="display:none"><div class="modal" style="max-width:700px"><div class="modal-header"><span>' + this.esc(t('configSnapshot')) + '</span><button class="btn btn-sm" @click="closeSnapshotModal()" style="font-size:18px;line-height:1;padding:4px 8px">&times;</button></div><div class="modal-body" id="configSnapshotContent"></div></div></div>';
     el.innerHTML = html;
     } catch (e) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') || 'Error displaying history. Check browser console (F12).' : 'Error displaying history. Check browser console (F12).') + '</p></div>';
+      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }
   },
 
@@ -1983,10 +1983,10 @@ window.monitorRenderMixin = {
       if (j.status === 'success') {
         this.showSnapshotModal(j.data);
       } else {
-        this.toast(j.message || t('configLoadError', 'Failed to load config'), 'error');
+        this.toast(j.message || t('configLoadError'), 'error');
       }
     } catch (e) {
-      this.toast(t('configLoadError', 'Failed to load config'), 'error');
+      this.toast(t('configLoadError'), 'error');
     } finally {
       this.finishProgress();
     }
@@ -2035,11 +2035,11 @@ window.monitorRenderMixin = {
       }
     }
     if (snapshot.content) {
-      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig', 'Raw Config (TOML)')) + '</summary>';
+      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig')) + '</summary>';
       html += '<pre class="m-config-pre">' + this.esc(snapshot.content) + '</pre></details>';
     }
-    html += '<div class="m-modal-footer"><button class="btn btn-sm btn-secondary" @click="copyConfigContent()">' + this.esc(t('copyConfig', 'Copy Config')) + '</button>';
-    html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.escapeJsString(snapshot.run_dir || '') + '\')">' + this.esc(t('reuseConfig', 'Reuse Config')) + '</button></div>';
+    html += '<div class="m-modal-footer"><button class="btn btn-sm btn-secondary" @click="copyConfigContent()">' + this.esc(t('copyConfig')) + '</button>';
+    html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.escapeJsString(snapshot.run_dir || '') + '\')">' + this.esc(t('reuseConfig')) + '</button></div>';
 
     content.innerHTML = html;
     modal.style.display = 'flex';
@@ -2053,7 +2053,7 @@ window.monitorRenderMixin = {
 
   copyConfigContent() {
     if (this._currentSnapshot && this._currentSnapshot.content) {
-      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toast(this.t('common.copied') || 'Copied!'));
+      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toastthis.t('common.copied'));
     }
   },
 
@@ -2065,13 +2065,13 @@ window.monitorRenderMixin = {
       const j = await r.json();
       if (j.status === 'success' && j.data.params) {
         this._applyConfigToTraining(j.data.params);
-        this.toast(t('configLoaded', 'Config loaded! Redirecting to training page...'), 'success');
+        this.toast(t('configLoaded'), 'success');
         this.navigate('train-basic');
       } else {
-        this.toast(j.message || t('configLoadError', 'Failed to load config'), 'error');
+        this.toast(j.message || t('configLoadError'), 'error');
       }
     } catch (e) {
-      this.toast(t('configLoadError', 'Failed to load config'), 'error');
+      this.toast(t('configLoadError'), 'error');
     } finally {
       this.finishProgress();
     }

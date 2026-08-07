@@ -135,7 +135,7 @@ window.taggerMixin = {
       }
       this.handleTaggerModelChange(false);
     } catch (error) {
-      this.toast(this.t('tagger.modelLoadFailed', 'Unable to load Tagger models') + ': ' + error.message, 'error');
+      this.toast(this.t('tagger.modelLoadFailed') + ': ' + error.message, 'error');
     }
   },
 
@@ -144,8 +144,8 @@ window.taggerMixin = {
   },
 
   taggerModelSelectConfig() {
-    const separator = this.t('tagger.factSeparator', '; ');
-    const groups = [['tagger', this.t('tagger.dedicatedModels', 'Dedicated Taggers')]];
+    const separator = this.t('tagger.factSeparator');
+    const groups = [['tagger', this.t('tagger.dedicatedModels')]];
     return {
       groups: groups.map(([family, label]) => ({
         label,
@@ -288,8 +288,8 @@ window.taggerMixin = {
   },
 
   taggerStartLabel() {
-    if (this.taggerStarting) return this.t('common.starting', 'Starting');
-    return this.t('tagger.start', 'Start');
+    if (this.taggerStarting) return this.t('common.starting');
+    return this.t('tagger.start');
   },
 
   applyTaggerPreset(preset) {
@@ -324,8 +324,8 @@ window.taggerMixin = {
   },
 
   taggerPresetOptions() {
-    if (this.taggerUsesCategoryThresholds()) return [['macro', this.t('tagger.presetMacro', 'Macro')], ['micro', this.t('tagger.presetMicro', 'Micro')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
-    return [['recall', this.t('tagger.presetRecall', 'Recall')], ['balanced', this.t('tagger.presetBalanced', 'Balanced')], ['precise', this.t('tagger.presetPrecise', 'Precise')], ['custom', this.t('tagger.presetCustom', 'Custom')]];
+    if (this.taggerUsesCategoryThresholds()) return [['macro', this.t('tagger.presetMacro')], ['micro', this.t('tagger.presetMicro')], ['custom', this.t('tagger.presetCustom')]];
+    return [['recall', this.t('tagger.presetRecall')], ['balanced', this.t('tagger.presetBalanced')], ['precise', this.t('tagger.presetPrecise')], ['custom', this.t('tagger.presetCustom')]];
   },
 
   setTaggerCustomPreset() {
@@ -477,7 +477,7 @@ window.taggerMixin = {
         this.taggerSourcePath = body.data.path;
         await this.scanTaggerSource();
       }
-    } catch (_) { this.toast(this.t('common.localPickerNA', 'Local picker unavailable')); }
+    } catch (_) { this.toast(this.t('common.localPickerNA')); }
   },
 
   scheduleTaggerSourceScan() {
@@ -537,7 +537,7 @@ window.taggerMixin = {
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || 'Upload failed');
-      body.data.display_name = file.name || this.t('tagger.singleImage', 'Single image');
+      body.data.display_name = file.name || this.t('tagger.singleImage');
       this.setTaggerSource(body.data);
     } catch (error) {
       this.toast(error.message, 'error');
@@ -781,8 +781,8 @@ window.taggerMixin = {
     if (!category) return;
     const text = category.visibleTags.map(tag => this.formatTaggerOutputName(tag[0])).join(', ');
     if (!text) return;
-    try { await navigator.clipboard.writeText(text); this.toast(this.t('tagger.copied', 'Copied')); }
-    catch (_) { this.toast(this.t('common.failed', 'Failed'), 'error'); }
+    try { await navigator.clipboard.writeText(text); this.toast(this.t('tagger.copied')); }
+    catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
 
   async startTagger() {
@@ -896,7 +896,7 @@ window.taggerMixin = {
     }
     if (terminal) {
       this._setTaggerRealtimeTask(null);
-      if (data.status === 'done') this.toast(this.t('tagger.completed', 'Tagging completed'));
+      if (data.status === 'done') this.toast(this.t('tagger.completed'));
     }
   },
 
@@ -967,8 +967,8 @@ window.taggerMixin = {
 
   async copyTaggerResult() {
     if (!this.taggerResultText) return;
-    try { await navigator.clipboard.writeText(this.taggerResultText); this.toast(this.t('tagger.copied', 'Copied')); }
-    catch (_) { this.toast(this.t('common.failed', 'Failed'), 'error'); }
+    try { await navigator.clipboard.writeText(this.taggerResultText); this.toast(this.t('tagger.copied')); }
+    catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
 
   openTaggerDatasetInEditor() {

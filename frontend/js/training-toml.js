@@ -662,7 +662,7 @@ window.trainingTomlMixin = {
     if (this.isTraining || this.trainingStarting) return;
     if ((this.form.model_train_type || '') !== 'krea2-lora') return;
     if (!this.validateForm()) {
-      this.toast(this.t('common.formErrors') || 'Please fix form errors before preparing cache', 'error');
+      this.toast(this.t('common.formErrors'), 'error');
       return;
     }
 
@@ -681,10 +681,10 @@ window.trainingTomlMixin = {
       this.taskId = (data.data && data.data.task_id) || null;
       this.isTraining = true;
       this.isIdle = false;
-      this.statusText = this.t('krea2.caching', 'Preparing Krea 2 caches') + '...';
-      this.toast(this.t('krea2.cacheStarted', 'Krea 2 cache pipeline started'));
+      this.statusText = this.t('krea2.caching') + '...';
+      this.toast(this.t('krea2.cacheStarted'));
     } catch (error) {
-      this.toast((this.t('common.requestFailed') || 'Request failed') + ': ' + error.message, 'error');
+      this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
     } finally {
       this.trainingStarting = false;
     }
@@ -696,7 +696,7 @@ window.trainingTomlMixin = {
 
     // Form validation before starting
     if (!this.validateForm()) {
-      this.toast(this.t('common.formErrors') || 'Please fix form errors before starting training', 'error');
+      this.toast(this.t('common.formErrors'), 'error');
       return;
     }
 
@@ -705,11 +705,11 @@ window.trainingTomlMixin = {
     // Validation: Check required fields based on train type
     if (trainType === 'anima-lora') {
       if (!this.form.vae || this.form.vae.trim() === '') {
-        this.toast(this.t('common.vaeRequired', 'VAE is required for Anima training'), 'error');
+        this.toast(this.t('common.vaeRequired'), 'error');
         return;
       }
       if (!this.form.qwen3 || this.form.qwen3.trim() === '') {
-        this.toast(this.t('common.qwen3Required', 'Qwen3 model is required for Anima training'), 'error');
+        this.toast(this.t('common.qwen3Required'), 'error');
         return;
       }
     }
@@ -725,7 +725,7 @@ window.trainingTomlMixin = {
     const estimate = await this.refreshStepEstimate(true);
     if (!estimate) {
       this.toast(
-        this.stepEstimateErrorText() || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+        this.stepEstimateErrorText() || this.t('stepEstimate.failed'),
         'error'
       );
       this.trainingStarting = false;
@@ -748,16 +748,16 @@ window.trainingTomlMixin = {
           this.toast(data.message || 'Failed', 'error');
           this.isTraining = false;
           this.isIdle = true;
-          this.statusText = this.t('monitor.idle', 'Idle');
+          this.statusText = this.t('monitor.idle');
         } else {
           this.taskId = (data.data && data.data.task_id) || null;
           this.toast(this.t('common.trainingStarted'));
         }
       } catch (error) {
-        this.toast((this.t('common.requestFailed') || 'Request failed') + ': ' + error.message, 'error');
+        this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
         this.isTraining = false;
         this.isIdle = true;
-        this.statusText = this.t('monitor.idle', 'Idle');
+        this.statusText = this.t('monitor.idle');
       }
       this.trainingStarting = false;
       return;
@@ -832,7 +832,7 @@ window.trainingTomlMixin = {
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
-      if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle','Idle'); }
+      if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle'); }
       else {
         this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted'));
         // 弹出适配器警告（如有）
@@ -879,8 +879,8 @@ window.trainingTomlMixin = {
       this.isTraining = true;
       this.isIdle = false;
       this.statusText = active.status_label || (active.status === 'CREATED'
-        ? this.t('monitor.created', 'Pending')
-        : this.t('monitor.training', 'Training'));
+        ? this.t('monitor.created')
+        : this.t('monitor.training'));
       this.realtimeTaskStateUnknown = false;
       return;
     }
@@ -888,7 +888,7 @@ window.trainingTomlMixin = {
       this.isTraining = false;
       this.isIdle = true;
       this.taskId = null;
-      this.statusText = this.t('monitor.idle', 'Idle');
+      this.statusText = this.t('monitor.idle');
     }
   },
 
@@ -900,7 +900,7 @@ window.trainingTomlMixin = {
     this.trainingActive = false;
     this.isTraining = false;
     this.isIdle = true;
-    if (wasRunning) this.statusText = this.t('monitor.taskStateUnknown', 'Task state unknown');
+    if (wasRunning) this.statusText = this.t('monitor.taskStateUnknown');
     return wasRunning;
   }
 };

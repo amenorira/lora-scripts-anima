@@ -320,7 +320,7 @@ window.realtimeMixin = {
           : this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir;
         const query = new URLSearchParams();
         if (explicitDetail) {
-          query.set('detail', 'true');
+          query.set('detail');
           // Zero explicitly requests every compact preview metadata entry.
           // Weak-network mode controls image loading, not list visibility.
           query.set('preview_limit', String(0));
@@ -427,8 +427,8 @@ window.realtimeMixin = {
     this.realtimeTaskStateUnknown = hadLiveTask;
     this.toast(
       hadLiveTask
-        ? this.t('monitor.taskStateUnknown', 'Backend restarted; previous live task state is unknown')
-        : this.t('common.backendRestarted', 'Backend restarted; live task state was refreshed'),
+        ? this.t('monitor.taskStateUnknown')
+        : this.t('common.backendRestarted'),
       'warning',
     );
   },

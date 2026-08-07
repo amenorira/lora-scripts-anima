@@ -878,7 +878,7 @@ window.trainingCoreMixin = {
   _setStepEstimateError(key, fallback, params, localizeLegacy) {
     this.stepEstimateError = {
       key: key || '',
-      fallback: fallback || this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+      fallback: fallback || this.t('stepEstimate.failed'),
       params: params && typeof params === 'object' ? params : {},
       localizeLegacy: !!localizeLegacy,
     };
@@ -905,7 +905,7 @@ window.trainingCoreMixin = {
       code ? `stepEstimate.errors.${code}` : '',
       result && result.message
         ? result.message
-        : this.t('stepEstimate.failed', 'Unable to calculate training steps'),
+        : this.t('stepEstimate.failed'),
       params,
       !code
     );
@@ -916,7 +916,7 @@ window.trainingCoreMixin = {
     if (!error) return '';
     if (typeof error === 'string') return error;
     if (!error.key) {
-      const fallback = error.fallback || this.t('stepEstimate.failed', 'Unable to calculate training steps');
+      const fallback = error.fallback || this.t('stepEstimate.failed');
       return error.localizeLegacy ? this._localizeLegacyStepEstimateMessage(fallback) : fallback;
     }
     return this._stepEstimateText(error.key, error.fallback, error.params);
@@ -1010,35 +1010,33 @@ window.trainingCoreMixin = {
   outputPathSummaryText() {
     const info = this.outputPathInfo;
     if (this.outputPathInfoError === 'invalidOutputPath') {
-      return this.t('training.outputPathInvalid', 'The output path is invalid.');
+      return this.t('training.outputPathInvalid');
     }
     if (this.outputPathInfoError) {
-      return this.t('training.outputPathCheckFailed', 'Unable to check the output path.');
+      return this.t('training.outputPathCheckFailed');
     }
     if (!info) return '';
     if (info.path_exists && info.path_is_directory === false) {
-      return this.t('training.outputPathNotDirectory', 'The selected output path is a file, not a folder.');
+      return this.t('training.outputPathNotDirectory');
     }
     if (!info.available) {
-      return this.t('training.outputPathUnavailable', 'The drive or parent folder is currently unavailable.');
+      return this.t('training.outputPathUnavailable');
     }
     if (!info.writable) {
-      return this.t('training.outputPathNotWritable', 'The output folder is not writable.');
+      return this.t('training.outputPathNotWritable');
     }
     if (info.is_default) return '';
     return this.t(
-      'training.outputPathCustomSummary',
-      'Models and previews will use this folder; logs and TensorBoard remain managed by the trainer.'
-    );
+      'training.outputPathCustomSummary');
   },
 
   outputPathBlockingText() {
-    return this.outputPathSummaryText() || this.t('training.outputPathCheckFailed', 'Unable to check the output path.');
+    return this.outputPathSummaryText() || this.t('training.outputPathCheckFailed');
   },
 
   stepEstimateTitle() {
     if (!this.stepEstimate) return '';
-    return this._stepEstimateText('stepEstimate.total', 'Estimated total: {steps} steps', {
+    return this._stepEstimateText('stepEstimate.total', undefined, {
       steps: this.stepEstimate.total_steps,
     });
   },
@@ -1046,11 +1044,11 @@ window.trainingCoreMixin = {
   stepEstimateImageFormula() {
     if (!this.stepEstimate) return '';
     const terms = this.stepEstimate.subsets.map(subset => this._stepEstimateText(
-      'stepEstimate.imageTerm', '{images} images × {repeats} repeats',
+      'stepEstimate.imageTerm', undefined,
       { images: subset.image_count, repeats: subset.repeats }
     ));
     return this._stepEstimateText(
-      'stepEstimate.imageFormula', '{images} source images: [{terms}] = {samples} training samples',
+      'stepEstimate.imageFormula', undefined,
       {
         images: this.stepEstimate.original_images,
         terms: terms.join(' + '),
@@ -1064,8 +1062,7 @@ window.trainingCoreMixin = {
     if (!estimate) return '';
     if (estimate.enable_bucket) {
       return this._stepEstimateText(
-        'stepEstimate.bucketFormula',
-        '{samples} samples → {buckets} size buckets; split each bucket by Batch {batch} = {batches} batches/epoch',
+        'stepEstimate.bucketFormula', undefined,
         {
           samples: estimate.repeated_samples,
           buckets: estimate.bucket_count,
@@ -1075,8 +1072,7 @@ window.trainingCoreMixin = {
       );
     }
     return this._stepEstimateText(
-      'stepEstimate.batchFormula',
-      '⌈{samples} samples ÷ Batch {batch}⌉ = {batches} batches/epoch',
+      'stepEstimate.batchFormula', undefined,
       {
         samples: estimate.repeated_samples,
         batch: estimate.batch_size,
@@ -1106,8 +1102,7 @@ window.trainingCoreMixin = {
     const estimate = this.stepEstimate;
     if (!estimate) return '';
     return this._stepEstimateText(
-      'stepEstimate.totalFormula',
-      'Total: {steps} steps/epoch × {epochs} Epoch = {total} steps',
+      'stepEstimate.totalFormula', undefined,
       { steps: estimate.steps_per_epoch, epochs: estimate.epochs, total: estimate.total_steps }
     );
   },
@@ -1295,12 +1290,12 @@ window.trainingCoreMixin = {
             const sgBlockHidden = sgCondMet ? '' : ' field-hidden';
             // 该子组的高级折叠标题
             const sgAdvTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupAdvanced' : 'common.inlineAdvancedParams';
-            const sgAdvTitle = this.t(sgAdvTitleKey) || this.t('common.inlineAdvancedParams') || 'More options';
+            const sgAdvTitle = this.t(sgAdvTitleKey) || this.t('common.inlineAdvancedParams');
 
             if (sg.basic.length > 0) {
               // 有 basic 字段：渲染完整子组盒子（标题 + body + advanced 折叠）
               const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
-              const sgTitle = sgTitleKey ? (this.t(sgTitleKey) || 'LyCORIS') : f.subGroup;
+              const sgTitle = sgTitleKey ? this.t(sgTitleKey) : f.subGroup;
               html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
               html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
               html += `<div class="subgroup-body">`;
@@ -1774,7 +1769,7 @@ window.trainingCoreMixin = {
 
   _resolveFieldHintText(field, values, trainType) {
     const key = this._resolveFieldHintKey(field, values, trainType);
-    return key ? (this.t(key) || '') : '';
+    return key ? this.t(key) : '';
   },
 
   fieldHintText(fieldKey) {
@@ -1800,7 +1795,7 @@ window.trainingCoreMixin = {
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
     const docLink = field.docSlug
-      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide', 'Open guide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide', 'Open guide'))}</span></button>`
+      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
       : '';
     const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
     const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
@@ -1829,7 +1824,7 @@ window.trainingCoreMixin = {
 
       const resolveOption = (o) => {
         const cloned = { v: o.v, l: o.l };
-        if (o.dKey) { cloned.d = self.t(o.dKey) || ''; }
+        if (o.dKey) { cloned.d = self.t(o.dKey); }
         else if (o.d) { cloned.d = o.d; }
         return cloned;
       };
@@ -1902,7 +1897,7 @@ window.trainingCoreMixin = {
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
     if (field.role && field.role.startsWith('file-') && !isStaticReadonly) {
-      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker','Local picker')" :aria-label="t('common.browseLocal','Browse local files')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser','Built-in browser')" :aria-label="t('common.searchBuiltin','Search built-in models')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
+      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;
     }
@@ -2067,12 +2062,12 @@ window.trainingCoreMixin = {
           <span class="field-hint" x-text="t('timestepPreview.entryHint')"></span>
         </div>`;
       case 'attn_mode':
-        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')||'Flash Attention not installed'}</div>`
-             + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+             + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
-        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')||'xformers not installed'}</div>`;
+        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
-        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')||'Triton not installed'}</div>`;
+        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')}</div>`;
     }
     return '';
   },
@@ -2239,7 +2234,7 @@ window.trainingCoreMixin = {
 
   copyFieldName(key) {
     navigator.clipboard.writeText(key).then(() => {
-      this.toast(this.t('common.paramCopied') || 'Copied');
+      this.toastthis.t('common.paramCopied');
     });
   },
 
@@ -3014,7 +3009,7 @@ window.trainingCoreMixin = {
         .replace('{parameter}', conflict.parameter)
         .replace('{value}', String(conflict.value))
         .replace('{required}', String(conflict.required ?? ''));
-    }).join(this.t('field.automagic_fusedConflictSeparator', '; '));
+    }).join(this.t('field.automagic_fusedConflictSeparator'));
   },
 
   _enforceEmosensUiConstraints(changedKey, previousConstraints = null) {
@@ -3044,7 +3039,7 @@ window.trainingCoreMixin = {
         .replace('{parameter}', item.parameter)
         .replace('{value}', String(item.value))
         .replace('{required}', String(item.required)))
-        .join(this.t('field.emosensConstraintSeparator', '; '));
+        .join(this.t('field.emosensConstraintSeparator'));
       this.toast(this.t('field.emosensAutoAdjusted').replace('{details}', details), 'warning');
     }
 
@@ -3402,7 +3397,7 @@ window.trainingCoreMixin = {
         if (!isFieldRequired) continue;
         const val = this.form[field.key];
         if (val === undefined || val === null || val === '') {
-          errors[field.key] = this.t('common.fieldRequired') || 'This field is required';
+          errors[field.key] = this.t('common.fieldRequired');
         }
       }
     }
@@ -3411,7 +3406,7 @@ window.trainingCoreMixin = {
       const minR = Number(this.form.min_bucket_reso);
       const maxR = Number(this.form.max_bucket_reso);
       if (!isNaN(minR) && !isNaN(maxR) && minR > maxR) {
-        errors.min_bucket_reso = this.t('common.minBucketResoError') || 'Min resolution cannot exceed max resolution';
+        errors.min_bucket_reso = this.t('common.minBucketResoError');
       }
     }
     // Cross-field: min_timestep < max_timestep (Anima)
@@ -3424,17 +3419,17 @@ window.trainingCoreMixin = {
       const minT = Number(minTsRaw);
       const maxT = Number(maxTsRaw);
       if (!isNaN(minT) && !isNaN(maxT) && minT >= maxT) {
-        errors.min_timestep = this.t('common.minTimestepError') || 'Min timestep must be less than max timestep';
+        errors.min_timestep = this.t('common.minTimestepError');
       }
     }
 
     // Anima mode: vae and qwen3 are required
     if (String(this.form.model_train_type) === 'anima-lora') {
       if (!this.form.vae || String(this.form.vae).trim() === '') {
-        errors['vae'] = window.t('common.vaeRequired') || 'Anima training requires a VAE model';
+        errors['vae'] = window.t('common.vaeRequired');
       }
       if (!this.form.qwen3 || String(this.form.qwen3).trim() === '') {
-        errors['qwen3'] = window.t('common.qwen3Required') || 'Anima training requires a Qwen3 model';
+        errors['qwen3'] = window.t('common.qwen3Required');
       }
     }
 
@@ -3462,7 +3457,7 @@ window.trainingCoreMixin = {
         if (msg.indexOf('unavailable') !== -1) {
           this.toast(this.t('common.localPickerNA'), 'error');
         } else {
-          this.toast(this.t('common.localPickerCancelled','Cancelled'));
+          this.toast(this.t('common.localPickerCancelled'));
         }
       }
     } catch(e) { this.toast(this.t('common.localPickerNA'), 'error'); }

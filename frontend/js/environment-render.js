@@ -91,7 +91,7 @@ window.environmentRenderMixin = {
 
   // 刷新图标按钮（FA/xf/triton/Anima 共用）。
   _renderRefreshBtn(id, disabled) {
-    return `<button id="${id}" class="btn-icon" ${disabled?'disabled':''} title="${this.t('environment.refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
+    return `<button id="${id}" class="btn-icon" ${disabled?'disabled':''} title="${this.t('environment.refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
   },
 
   // 统一进度面板。opts: {stage, pct, speedMB, downloadedGB, totalGB, elapsed, label, fileIndex, fileTotal}

@@ -290,7 +290,7 @@ window.trainingPresetsMixin = {
     for (const e of this.presetEditor.entries) {
       if (e.hidden) continue; // hidden 字段不渲染
       if (search) {
-        const label = (e.def && e.def.descKey) ? (this.t(e.def.descKey) || '') : '';
+        const label = (e.def && e.def.descKey) ? this.t(e.def.descKey) : '';
         const hay = (e.key + ' ' + label + ' ' + String(e.value)).toLowerCase();
         if (!hay.includes(search)) continue;
       }
@@ -317,7 +317,7 @@ window.trainingPresetsMixin = {
 
   // 子组标题
   presetSubGroupTitle(name) {
-    if (name === 'kohya') return this.t('common.lycorisSubgroupTitle') || 'LyCORIS';
+    if (name === 'kohya') return this.t('common.lycorisSubgroupTitle');
     return name;
   },
 
@@ -410,7 +410,7 @@ window.trainingPresetsMixin = {
   presetFieldOptions(def) {
     if (!def) return [];
     if (def.options) return [{ label: '', options: def.options }];
-    if (def.groups) return def.groups.map(g => ({ label: this.t(g.labelKey) || '', options: g.options }));
+    if (def.groups) return def.groups.map(g => ({ label: this.t(g.labelKey), options: g.options }));
     return [];
   },
 

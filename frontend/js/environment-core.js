@@ -119,7 +119,7 @@ window.environmentCoreMixin = {
     const slots = ['fa', 'xf', 'triton', 'animaModel'];
     const hadTasks = !!(this.faBusy || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.faInstallJobId || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
     slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
-    const unknown = this.t('monitor.taskStateUnknown', 'Task state unknown');
+    const unknown = this.t('monitor.taskStateUnknown');
     if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
     if (this.tritonBusy || this.tritonInstallJobId) this.tritonInstallLog = unknown;
@@ -162,7 +162,7 @@ window.environmentCoreMixin = {
     this[busyKey] = false;
     this[idKey] = null;
     this._setEnvironmentRealtimeTask(slot, null);
-    const fallback = this.t('environment.installFailed', 'Install failed');
+    const fallback = this.t('environment.installFailed');
     if (slot === 'fa') {
       if (failed) this.faError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
       else this.toast(this.t('environment.refreshed'), 'success');
@@ -176,7 +176,7 @@ window.environmentCoreMixin = {
     } else if (slot === 'animaModel') {
       if (failed) {
         this.animaModelError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
-        this.toast(this.t('environment.installFailed', 'Download failed'), 'error');
+        this.toast(this.t('environment.installFailed'), 'error');
       }
       this.animaModelRefresh(true).catch(() => {});
     }
@@ -398,7 +398,7 @@ window.environmentCoreMixin = {
           this.faInstallJobId = result.job_id;
           this._setEnvironmentRealtimeTask('fa', result.job_id);
         } else {
-          this.faBusy = false; this.faError = result.error||this.t('environment.installFailed','Install failed');
+          this.faBusy = false; this.faError = result.error||this.t('environment.installFailed');
           this.finishProgress(); this.renderEnvironment();
         }
       } catch (e) { this.faBusy = false; this.faError = String(e); this.finishProgress(); this.renderEnvironment(); }
@@ -413,7 +413,7 @@ window.environmentCoreMixin = {
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
     try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
       if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('xf', result.job_id); }
-      else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed','Install failed'); this.finishProgress(); this.renderEnvironment(); }
+      else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
   },
 
@@ -429,7 +429,7 @@ window.environmentCoreMixin = {
       const r = await fetch('/api/triton/install', { method: 'POST' });
       const result = await r.json();
       if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('triton', result.job_id); }
-      else { this.tritonBusy = false; this.toast(this.t('environment.installFailed','Install failed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
+      else { this.tritonBusy = false; this.toast(this.t('environment.installFailed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.tritonBusy = false; this.toast(String(e), 'error'); this.finishProgress(); this.renderEnvironment(); }
   },
 
@@ -463,7 +463,7 @@ window.environmentCoreMixin = {
         this._setEnvironmentRealtimeTask('animaModel', result.job_id);
       } else {
         this.animaModelBusy = false;
-        this.animaModelError = result.message || this.t('environment.installFailed', 'Download failed');
+        this.animaModelError = result.message || this.t('environment.installFailed');
         this.finishProgress(); this.renderEnvironment();
       }
     } catch (e) {

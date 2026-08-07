@@ -375,10 +375,10 @@ document.addEventListener('alpine:init', () => {
       // enabled until the user accepts the built-in confirmation dialog.
       if (input) input.checked = true;
       this.openConfirm(
-        this.t('settings.disableSlowConnectionTitle', 'Turn off slow connection compatibility?'),
-        this.t('settings.disableSlowConnectionMessage', 'This can slow realtime data on unstable connections.'),
+        this.t('settings.disableSlowConnectionTitle'),
+        this.t('settings.disableSlowConnectionMessage'),
         () => this.setWeakNetworkMode(false),
-        this.t('settings.disableSlowConnectionConfirm', 'Turn off'),
+        this.t('settings.disableSlowConnectionConfirm'),
       );
     },
 

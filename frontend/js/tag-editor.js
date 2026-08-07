@@ -1159,7 +1159,7 @@ window.tagEditorMixin = {
       include_tags: '', exclude_tags: '', tag_logic: 'AND', sort_by: 'name', sort_asc: 'true',
       sort_by2: '', sort_asc2: 'true'
     });
-    base.set('page_size', '240');
+    base.set('page_size');
     var all = [];
     var totalPages = 1;
     for (var page = 1; page <= totalPages; page++) {

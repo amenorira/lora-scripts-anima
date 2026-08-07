@@ -192,9 +192,9 @@ window.monitorCoreMixin = {
       const body = await response.json();
       if (requestSeq !== this._previewMetadataRequestSeq) return;
       if (body.status === 'success') this.previewMetadata = body.data;
-      else this.previewMetadataError = body.message || this.t('common.failed', 'Failed');
+      else this.previewMetadataError = body.message || this.t('common.failed');
     } catch (_) {
-      if (requestSeq === this._previewMetadataRequestSeq) this.previewMetadataError = this.t('common.failed', 'Failed');
+      if (requestSeq === this._previewMetadataRequestSeq) this.previewMetadataError = this.t('common.failed');
     } finally {
       if (requestSeq === this._previewMetadataRequestSeq) {
         this.previewMetadataLoading = false;
@@ -211,7 +211,7 @@ window.monitorCoreMixin = {
     if (!panel) return;
     panel.hidden = !this.previewMetadataOpen;
     if (!this.previewMetadataOpen) return;
-    if (this.previewMetadataLoading) panel.textContent = this.t('monitor.loading', 'Loading...');
+    if (this.previewMetadataLoading) panel.textContent = this.t('monitor.loading');
     else if (this.previewMetadataError) panel.textContent = this.previewMetadataError;
     else panel.textContent = this.previewMetadata ? JSON.stringify(this.previewMetadata, null, 2) : '';
   },
@@ -307,7 +307,7 @@ window.monitorCoreMixin = {
       // A fresh backend has no in-memory ownership of the old process. Do not
       // turn its absence into an idle/completed claim from disk state.
       next.state = 'UNKNOWN';
-      next.state_label = this.t('monitor.taskStateUnknown', 'Task state unknown');
+      next.state_label = this.t('monitor.taskStateUnknown');
       next.active_task = null;
       next.tensorboard_loss = [];
       next.log_lines = [];
@@ -347,7 +347,7 @@ window.monitorCoreMixin = {
       this.trainingActive = false;
       this.isTraining = false;
       this.isIdle = true;
-      this.statusText = this.t('monitor.idle', 'Idle');
+      this.statusText = this.t('monitor.idle');
     }
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
@@ -364,7 +364,7 @@ window.monitorCoreMixin = {
     );
     this._setMonitorRealtimeTask(null);
     this._prevState = null;
-    this.monitorData = { state: 'UNKNOWN', state_label: this.t('monitor.taskStateUnknown', 'Task state unknown') };
+    this.monitorData = { state: 'UNKNOWN', state_label: this.t('monitor.taskStateUnknown') };
     this.gpuInfo = null;
     this.sysInfo = null;
     this.runningTask = null;
@@ -399,8 +399,8 @@ window.monitorCoreMixin = {
   handleTaskCompletion(prevState, newState) {
     if (prevState !== 'RUNNING' || newState === 'RUNNING') return;
     const msg = newState === 'FINISHED'
-      ? (this.t('monitor.trainCompleted') || 'Training completed!')
-      : (this.t('monitor.trainTerminated') || 'Training terminated');
+      ? this.t('monitor.trainCompleted')
+      : this.t('monitor.trainTerminated');
     this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });
@@ -432,11 +432,11 @@ window.monitorCoreMixin = {
     }
     else if (data.status === 'CREATED') {
       this.isTraining = true; this.isIdle = false;
-      this.statusText = data.status_label || this.t('monitor.created', 'Pending');
+      this.statusText = data.status_label || this.t('monitor.created');
       this.trainingActive = true;
       this.realtimeTaskStateUnknown = false;
     }
-    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle','Idle'); }
+    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle'); }
     else if (data.status === 'FINISHED' || data.status === 'TERMINATED' || data.status === 'FAILED') {
       this.isTraining = false; this.isIdle = true; this.statusText = data.status_label || data.status;
       this.trainingActive = false;
@@ -645,7 +645,7 @@ window.monitorCoreMixin = {
       void this.refreshMonitorRealtimeDetail();
     }
     else {
-      if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle', 'Idle') };
+      if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle') };
       this.renderDashboard();
     }
   },
@@ -805,7 +805,7 @@ window.monitorCoreMixin = {
   followFullTail(opts) {
     opts = opts || {};
     if (!this._hasLogSource()) {
-      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
+      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource'), 'error');
       return;
     }
     this.logAutoScroll = true;
@@ -831,7 +831,7 @@ window.monitorCoreMixin = {
     const taskId = this._logSliceTaskId();
     if (!runDir && !taskId) {
       this.logFullLoading = false;
-      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource','No log source available'), 'error');
+      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource'), 'error');
       return;
     }
     const requestSeq = ++this._logSliceRequestSeq;
@@ -855,7 +855,7 @@ window.monitorCoreMixin = {
     params.set('offset', String(offset));
     params.set('limit', String(limit));
     params.set('q', q);
-    if (opts.tail) params.set('tail', '1');
+    if (opts.tail) params.set('tail');
     try {
       const r = await fetch('/api/monitor/log-slice?' + params.toString());
       const j = await r.json();
@@ -902,11 +902,11 @@ window.monitorCoreMixin = {
         }
         this._forceLogRebuild = true;
       } else {
-        if (!opts.silent) this.toast(j.message || this.t('monitor.logSliceError','Failed to load log slice'), 'error');
+        if (!opts.silent) this.toast(j.message || this.t('monitor.logSliceError'), 'error');
       }
     } catch (e) {
       if (requestSeq !== this._logSliceRequestSeq) return;
-      if (!opts.silent) this.toast(this.t('monitor.logSliceError','Failed to load log slice'), 'error');
+      if (!opts.silent) this.toast(this.t('monitor.logSliceError'), 'error');
     } finally {
       if (requestSeq === this._logSliceRequestSeq) {
         this.logFullLoading = false;
@@ -1036,7 +1036,7 @@ window.monitorCoreMixin = {
         this.historyItems = d.data.history || [];
       }
     } catch(e) {
-      this.toast(this.t('monitor.historyLoadError') || 'Failed to load history', 'error');
+      this.toast(this.t('monitor.historyLoadError'), 'error');
     } finally {
       try { this.renderHistory(); } catch (e) {}
       this.finishProgress();
@@ -1056,7 +1056,7 @@ window.monitorCoreMixin = {
 
   async deleteHistoryRun(runDir) {
     if (!runDir) return;
-    if (!confirm(this.t('monitor.confirmDeleteRun','Delete the trainer history, logs and TensorBoard data for this run? Models, checkpoints and preview images will be kept.'))) return;
+    if (!confirm(this.t('monitor.confirmDeleteRun'))) return;
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/history/delete', {
@@ -1065,13 +1065,13 @@ window.monitorCoreMixin = {
       });
       const j = await r.json();
       if (j.status === 'success') {
-        this.toast(this.t('monitor.runDeleted','History deleted; models and previews were kept.'), 'success');
+        this.toast(this.t('monitor.runDeleted'), 'success');
         await this.loadHistory();
       } else {
-        this.toast(j.message || this.t('monitor.deleteFailed','Failed to delete'), 'error');
+        this.toast(j.message || this.t('monitor.deleteFailed'), 'error');
       }
     } catch(e) {
-      this.toast(this.t('monitor.deleteFailed','Failed to delete'), 'error');
+      this.toast(this.t('monitor.deleteFailed'), 'error');
     } finally { this.finishProgress(); }
   },
 
@@ -1142,10 +1142,10 @@ window.monitorCoreMixin = {
         this._logAtBottom = true;
         this.renderDashboard();
       } else {
-        this.toast(j.message || this.t('monitor.loadRunFailed','Failed to load run detail'));
+        this.toast(j.message || this.t('monitor.loadRunFailed'));
       }
     } catch (e) {
-      this.toast(this.t('monitor.runDetailError','Error loading run detail'));
+      this.toast(this.t('monitor.runDetailError'));
     } finally {
       this.finishProgress();
     }
@@ -1366,7 +1366,7 @@ window.monitorCoreMixin = {
     if (!runDir) return;
     const selected = this.selectedOutputFiles;
     if (!selected.length) {
-      this.toast(this.t('monitor.selectFilesFirst') || 'Please select files first');
+      this.toastthis.t('monitor.selectFilesFirst');
       return;
     }
     const filesParam = selected.map(f => encodeURIComponent(f)).join(',');
