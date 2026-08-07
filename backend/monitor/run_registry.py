@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -18,6 +19,8 @@ from typing import Any
 
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR, REPO_ROOT
 
+
+log = logging.getLogger(__name__)
 
 RUN_META_NAME = "task_meta.json"
 RUN_SCHEMA_VERSION = 2
@@ -61,6 +64,37 @@ def run_dir_ref(run_dir: str | Path) -> str:
     return str(resolved.relative_to(REPO_ROOT)).replace("\\", "/")
 
 
+def artifact_dir_ref(artifact: Path) -> str:
+    """返回供记录存储的产物目录：项目内存相对路径，项目外存绝对路径。
+
+    产物目录位于项目内（如默认 ``./output``）时以项目根目录为基准存储，
+    保证运行目录在机器间整体拷贝（如 AutoDL ↔ 本机）后记录仍可解析；
+    跨盘/项目外目录必须保留绝对路径。
+    """
+    root = REPO_ROOT.resolve()
+    try:
+        artifact.relative_to(root)
+    except ValueError:
+        return str(artifact)
+    return os.path.relpath(artifact, root).replace("\\", "/")
+
+
+def write_output_dir_reference(run_dir: str | Path, artifact_dir: str | Path) -> None:
+    """在项目内运行目录写入实际模型产物位置，便于直接从文件管理器定位。"""
+    try:
+        reference_path = Path(run_dir) / "output_dir.txt"
+        reference_path.write_text(
+            "Artifact directory / 模型产物目录\n"
+            "Models, checkpoints, training states, and previews are saved here.\n"
+            "模型、检查点、训练状态和预览图保存在此处。\n"
+            "\n"
+            f"{artifact_dir}\n",
+            encoding="utf-8",
+        )
+    except OSError as e:
+        log.warning(f"Failed to write output_dir.txt / 写入失败: {e}")
+
+
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -99,7 +133,7 @@ def write_run_record(
         "schema_version": RUN_SCHEMA_VERSION,
         "task_id": task_id,
         "run_dir": run_dir_ref(internal),
-        "artifact_dir": str(artifact),
+        "artifact_dir": artifact_dir_ref(artifact),
         "output_base_dir": str(output_base_dir) if output_base_dir is not None else str(artifact.parent),
         "autosave_file": str(autosave_file) if autosave_file else "",
         "created_at": datetime.now().isoformat(),
@@ -132,6 +166,26 @@ def _config_output_dir(run_dir: Path) -> str | None:
         return None
 
 
+def _run_dir_holds_artifacts(run_dir: Path) -> bool:
+    """运行目录自身是否承载模型/预览产物（整个运行目录被拷贝/搬迁的场景）。
+
+    与 ``artifacts.LORA_EXTENSIONS`` 保持一致；此处不能导入 artifacts（循环依赖），
+    故内联模型扩展名集合。判定足够保守：只有运行目录内确实存在模型或预览产物
+    才认为发生了整体搬迁，避免误修"产物目录暂不可用"的正常记录。
+    """
+    if not run_dir.is_dir():
+        return False
+    if (run_dir / "sample").is_dir():
+        return True
+    return any(run_dir.glob("*.safetensors")) or any(run_dir.glob("*.pt")) or any(run_dir.glob("*.pth"))
+
+
+def _repair_artifact_location(run_dir: Path, meta: dict[str, Any], artifact: Path) -> None:
+    """将运行记录中的产物目录修复为本机真实位置（原子写、幂等）。"""
+    _atomic_write_json(run_dir / RUN_META_NAME, {**meta, "artifact_dir": str(artifact)})
+    write_output_dir_reference(run_dir, artifact)
+
+
 def load_run_record(
     run_dir: str | Path,
     *,
@@ -158,6 +212,13 @@ def load_run_record(
         artifact = resolve_user_path(artifact_raw)
     except (OSError, ValueError):
         artifact = Path(artifact_raw)
+
+    # 记录中的产物目录在本机不可用，但运行目录自身承载了模型/预览产物
+    # （整个运行目录被从其他机器拷贝到 output/ 下）。此时修复记录元数据，
+    # 使其指向真实位置，而不是每次读取都做临时回退。
+    if not artifact.is_dir() and _run_dir_holds_artifacts(internal):
+        artifact = internal
+        _repair_artifact_location(internal, meta, artifact)
 
     output_base = meta.get("output_base_dir")
     if not output_base:
@@ -262,7 +323,7 @@ def mark_run_deleted(run_dir: str | Path) -> bool:
     tombstone.update({
         "schema_version": RUN_SCHEMA_VERSION,
         "run_dir": run_dir_ref(internal),
-        "artifact_dir": str(artifact),
+        "artifact_dir": artifact_dir_ref(artifact),
         "deleted": True,
         "deleted_at": datetime.now().isoformat(),
     })

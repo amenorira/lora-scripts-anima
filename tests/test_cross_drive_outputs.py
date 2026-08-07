@@ -110,6 +110,67 @@ class RunRegistryTests(CrossDriveSandbox):
         self.assertTrue(record["artifact_external"])
         self.assertIsNone(record["preview_enabled"])
 
+    def test_internal_artifact_stored_relative_but_external_absolute(self):
+        # 项目内的产物目录以相对路径写入记录，保证整目录在机器间拷贝后仍可解析
+        internal = self.output / "portable_run"
+        internal.mkdir(parents=True)
+        (internal / "sample").mkdir()
+        (internal / "portable.safetensors").write_bytes(b"weights")
+
+        run_registry.write_run_record(internal, artifact_dir=internal, task_id="portable-task")
+
+        meta = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["artifact_dir"], "output/portable_run")
+        record = run_registry.load_run_record(internal)
+        self.assertTrue(record["artifact_available"])
+        self.assertEqual(record["artifact_path"], internal.resolve())
+        self.assertFalse(record["artifact_external"])
+
+        # 项目外（跨盘/外部目录）仍必须存绝对路径
+        with tempfile.TemporaryDirectory() as other_root:
+            external = Path(other_root) / "portable_external"
+            external.mkdir()
+            run_registry.write_run_record(internal, artifact_dir=external, task_id="portable-external")
+            meta = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["artifact_dir"], str(external.resolve()))
+
+    def test_relocated_cloud_run_repairs_artifact_location(self):
+        # AutoDL 风格：记录里是云端绝对路径，整个运行目录被拷贝到本地 output/ 下
+        internal = self.output / "narumi_toa_20260802-182942"
+        internal.mkdir(parents=True)
+        (internal / "sample").mkdir()
+        (internal / "model.safetensors").write_bytes(b"weights")
+        cloud_path = "/root/autodl-tmp/lora-scripts-anima/output/narumi_toa_20260802-182942"
+        (internal / "task_meta.json").write_text(
+            json.dumps({
+                "schema_version": 2,
+                "task_id": "cloud-task",
+                "run_dir": "output/narumi_toa_20260802-182942",
+                "artifact_dir": cloud_path,
+                "output_base_dir": "./output",
+                "autosave_file": "",
+                "created_at": "2026-08-02T18:29:42.550136",
+                "imported": False,
+                "deleted": False,
+                "extra": {"output_dir": cloud_path, "preview_enabled": True},
+            }),
+            encoding="utf-8",
+        )
+        (internal / "output_dir.txt").write_text("stale cloud reference\n", encoding="utf-8")
+
+        record = run_registry.load_run_record(internal)
+
+        self.assertTrue(record["artifact_available"])
+        self.assertEqual(record["artifact_path"], internal.resolve())
+        self.assertEqual(record["artifact_dir"], str(internal.resolve()))
+        self.assertFalse(record["artifact_external"])
+        # 元数据与引用文件已被修复，且幂等（再次加载不重复改动）
+        repaired = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(repaired["artifact_dir"], str(internal.resolve()))
+        self.assertEqual(repaired["task_id"], "cloud-task")
+        self.assertIn(str(internal.resolve()), (internal / "output_dir.txt").read_text(encoding="utf-8"))
+        self.assertEqual(run_registry.load_run_record(internal)["artifact_path"], internal.resolve())
+
     def test_deleting_history_keeps_models_checkpoints_and_previews(self):
         for suffix, external in (("external", True), ("default", False)):
             with self.subTest(storage=suffix):

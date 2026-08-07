@@ -13,7 +13,7 @@ import toml
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 
 from backend.constants import OUTPUT_DIR
-from backend.monitor.run_registry import resolve_user_path
+from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
 from backend.training import run_train
 from backend.training.core_registry import (
     TrainingProfileError,
@@ -297,22 +297,6 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
         log.warning(f"Failed to write run_info.txt / 写入失败: {e}")
 
 
-def _write_output_dir_reference(run_dir: str, artifact_dir: str) -> None:
-    """在项目内运行目录写入实际模型产物位置，便于直接从文件管理器定位。"""
-    try:
-        reference_path = Path(run_dir) / "output_dir.txt"
-        reference_path.write_text(
-            "Artifact directory / 模型产物目录\n"
-            "Models, checkpoints, training states, and previews are saved here.\n"
-            "模型、检查点、训练状态和预览图保存在此处。\n"
-            "\n"
-            f"{artifact_dir}\n",
-            encoding="utf-8",
-        )
-    except OSError as e:
-        log.warning(f"Failed to write output_dir.txt / 写入失败: {e}")
-
-
 def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
     return APIResponseFail(
         message="Krea 2 configuration is not ready / Krea 2 配置尚未就绪:\n" + "\n".join(errors),
@@ -395,7 +379,7 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
             timestamp,
             is_resume,
         ),
-        asyncio.to_thread(_write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
+        asyncio.to_thread(write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
     )
 
     return run_train(
@@ -497,7 +481,7 @@ async def create_krea2_cache(request: Request):
                 timestamp,
                 False,
             ),
-            asyncio.to_thread(_write_output_dir_reference, str(run_dir), str(cache_dir)),
+            asyncio.to_thread(write_output_dir_reference, str(run_dir), str(cache_dir)),
         )
     except OSError as exc:
         return APIResponseFail(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
@@ -734,7 +718,7 @@ async def create_toml_file(request: Request):
     await asyncio.gather(
         asyncio.to_thread(_write_configs),
         asyncio.to_thread(_write_run_info, str(internal_run_dir), config, model_train_type, timestamp, is_resume),
-        asyncio.to_thread(_write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
+        asyncio.to_thread(write_output_dir_reference, str(internal_run_dir), str(artifact_run_dir)),
     )
     # ──────────────────────────────────────────────────────────
 
