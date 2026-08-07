@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Upstream sync
+
+- Updated vendored `sd-scripts` to `37a1cbb` (`v0.11.1-30-g37a1cbb`): added per-subset `timestep_sampling.offset` and the `--show_timesteps_offset` preview flag, updated IPEX libraries, and fixed typos.
+
 ## v2.2.4 - 2026-08-05
 
 This patch release improves the training parameter guides with FAQ sections, a unified evidence format, and consistent terminology.

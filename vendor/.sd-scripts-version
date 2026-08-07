@@ -5,10 +5,10 @@
 [upstream]
 repo = "kohya-ss/sd-scripts"
 branch = "main"
-commit = "656587768f0d36a90702fd329a5826e585d9cf8d"
-sync_date = "2026-07-23T00:00:00+08:00"
-tag = "v0.11.1-9-g6565877"
-last_check = "2026-07-23"
+commit = "37a1cbbc5725ed2a3575506e7bd2001c9908ac92"
+sync_date = "2026-08-07T00:00:00+08:00"
+tag = "v0.11.1-30-g37a1cbb"
+last_check = "2026-08-07"
 
 [local]
 # Files/directories added locally (not from upstream)

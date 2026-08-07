@@ -6,6 +6,10 @@
 
 ## 未发布
 
+### 上游同步
+
+- 同步 vendored `sd-scripts` 至 `37a1cbb`（`v0.11.1-30-g37a1cbb`）：新增 per-subset `timestep_sampling.offset` 与 `--show_timesteps_offset` 预览参数，更新 IPEX 库并修复拼写。
+
 ## v2.2.4 - 2026-08-05
 
 本补丁版本完善训练参数指南：新增常见问题与统一证据格式，并统一术语。
