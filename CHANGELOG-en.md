@@ -6,9 +6,27 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.0 - 2026-08-07
+
+This release focuses on a complete per-training-subset timestep sampling offset workflow, with direct visual comparison of the training regions before and after each offset. It also completes regularization dataset support and auditable training-step estimation.
+
+### Per-subset timestep sampling offset
+
+- Added a subset editor below the existing timestep controls so numeric-prefix training folders such as `10_face` and `3_full_body` can configure `timestep_sampling.offset` independently, with decimal keyboard input, steppers, undo, and reset actions.
+- Training now generates a complete sd-scripts `dataset.toml` and passes it through `--dataset_config`; empty and zero values are omitted, stale subsets are rejected, and regularization subsets always remain unbiased.
+- Expanded the timestep chart with baseline, overall training, and individual subset scopes, comparing distributions, median timestep movement, and low-, mid-, and high-noise region shares.
+- Clarified that offset is applied to the normal sample before sigmoid: negative values favor low-noise detail, positive values favor high-noise structure, and the setting is active only for `sigmoid`, `shift`, and `flux_shift`.
+
+### Datasets and training steps
+
+- Added Anima regularization dataset controls for enabling regularization, selecting its directory, and setting prior loss weight, with training and regularization subsets distinguished in step estimates.
+- Aligned step estimation with sd-scripts directory registration, bucketing, and ceiling rules, and exposed the complete calculation as verifiable steps.
+
 ### Upstream sync
 
 - Updated vendored `sd-scripts` to `37a1cbb` (`v0.11.1-30-g37a1cbb`): added per-subset `timestep_sampling.offset` and the `--show_timesteps_offset` preview flag, updated IPEX libraries, and fixed typos.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.2.4...v2.3.0)
 
 ## v2.2.4 - 2026-08-05
 
