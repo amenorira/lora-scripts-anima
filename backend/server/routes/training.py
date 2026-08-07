@@ -34,6 +34,11 @@ from backend.training.musubi_krea2 import (
     validate_krea2_config,
 )
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.sd_dataset_config import (
+    SUBSET_TIMESTEP_OFFSETS_KEY,
+    build_sd_scripts_dataset_config,
+    normalize_subset_timestep_offsets,
+)
 from backend import launch_utils
 from backend.server.models import APIResponseFail, APIResponseSuccess
 from backend.log import log
@@ -555,6 +560,15 @@ async def create_toml_file(request: Request):
     if profile.id == KREA2_PROFILE_ID:
         return await _create_krea2_run(config, gpu_ids, timestamp)
 
+    try:
+        subset_timestep_offsets = normalize_subset_timestep_offsets(
+            config.pop(SUBSET_TIMESTEP_OFFSETS_KEY, None)
+        )
+    except ValueError as exc:
+        return APIResponseFail(message=str(exc))
+    if profile.id != "anima-lora":
+        subset_timestep_offsets = {}
+
     # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
     # metadata is restored at the supervisor boundary instead of being passed
     # through to sd-scripts as an unknown command line field.
@@ -730,6 +744,15 @@ async def create_toml_file(request: Request):
 
     toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
     toml_content = toml.dumps(config)
+    dataset_config_file: Path | None = None
+    dataset_toml = ""
+    if subset_timestep_offsets:
+        try:
+            dataset_config = build_sd_scripts_dataset_config(config, subset_timestep_offsets)
+        except ValueError as exc:
+            return APIResponseFail(message=str(exc))
+        dataset_config_file = internal_run_dir / "dataset.toml"
+        dataset_toml = toml.dumps(dataset_config)
 
     def _write_configs():
         with open(toml_file, "w", encoding="utf-8") as f:
@@ -737,6 +760,8 @@ async def create_toml_file(request: Request):
         run_config_file = str(internal_run_dir / "config.toml")
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
+        if dataset_config_file is not None:
+            dataset_config_file.write_text(dataset_toml, encoding="utf-8")
 
     # ── A-2: 并发写入 config + run 信息（写入不同文件，无依赖）──
     await asyncio.gather(
@@ -746,11 +771,13 @@ async def create_toml_file(request: Request):
     )
     # ──────────────────────────────────────────────────────────
 
+    extra_args = ["--dataset_config", str(dataset_config_file)] if dataset_config_file is not None else None
     result = run_train(
         toml_file,
         trainer_file,
         gpu_ids,
         suggest_cpu_threads,
+        extra_args=extra_args,
         run_dir=str(internal_run_dir),
         artifact_dir=str(artifact_run_dir),
         output_base_dir=requested_output_dir,

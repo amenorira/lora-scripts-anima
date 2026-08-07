@@ -65,6 +65,8 @@ window.trainingCoreMixin = {
   _pickerCwd: '',
   timestepPreviewOpen: false,
   timestepPreviewData: null,
+  timestepPreviewScope: 'base',
+  subsetTimestepOffsetDrafts: {},
 
   // Training state
   trainingBlocked: false,
@@ -274,7 +276,9 @@ window.trainingCoreMixin = {
     allSections.forEach(s => { s.fields.forEach(f => {
       const hasExplicitDefault = f.default !== undefined && f.default !== null && f.default !== '';
       if (hasExplicitDefault) {
-        defaults[f.key] = f.default;
+        defaults[f.key] = f.default && typeof f.default === 'object'
+          ? (Array.isArray(f.default) ? [...f.default] : { ...f.default })
+          : f.default;
       } else if (!f.hidden) {
         if (f.type === 'toggle') defaults[f.key] = false;
         else if (f.type === 'number' || f.type === 'stepper') defaults[f.key] = '';
@@ -851,6 +855,8 @@ window.trainingCoreMixin = {
       }
       this.stepEstimate = result.data;
       this.stepEstimateError = null;
+      this._reconcileSubsetTimestepOffsets();
+      this._refreshSubsetTimestepEditor();
       return result.data;
     } catch (error) {
       if (requestSeq !== this._stepEstimateRequestSeq) return null;
@@ -1359,6 +1365,7 @@ window.trainingCoreMixin = {
         } else if (!f.advanced) {
           // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
           html += this.renderField(f);
+          if (f.key === 'discrete_flow_shift') html += this.renderSubsetTimestepOffsets();
         }
       });
 
@@ -2107,8 +2114,223 @@ window.trainingCoreMixin = {
     return [1024, 1024];
   },
 
-  _buildTimestepPreview(values) {
+  timestepOffsetSupported() {
+    return ['sigmoid', 'shift', 'flux_shift'].includes(String(this.form.timestep_sampling || ''));
+  },
+
+  timestepOffsetSubsets() {
+    return ((this.stepEstimate && this.stepEstimate.subsets) || []).filter(subset => !subset.is_reg);
+  },
+
+  subsetTimestepOffsetValue(name) {
+    const offsets = this.form.subset_timestep_offsets;
+    if (!offsets || typeof offsets !== 'object' || Array.isArray(offsets)) return '';
+    return Object.prototype.hasOwnProperty.call(offsets, name) ? offsets[name] : '';
+  },
+
+  subsetTimestepOffsetInputValue(name) {
+    if (Object.prototype.hasOwnProperty.call(this.subsetTimestepOffsetDrafts || {}, name)) {
+      return this.subsetTimestepOffsetDrafts[name];
+    }
+    const value = this.subsetTimestepOffsetValue(name);
+    return value === '' ? '' : String(value);
+  },
+
+  setSubsetTimestepOffsetDraft(name, rawValue) {
+    const raw = String(rawValue ?? '');
+    this.subsetTimestepOffsetDrafts = { ...(this.subsetTimestepOffsetDrafts || {}), [name]: raw };
+    // Keep intermediate keyboard states such as "-", "." and "0." visible.
+    if (/^[-+]?\d*\.?\d+$/.test(raw)) this.setSubsetTimestepOffset(name, raw);
+  },
+
+  commitSubsetTimestepOffsetDraft(name) {
+    const drafts = this.subsetTimestepOffsetDrafts || {};
+    if (!Object.prototype.hasOwnProperty.call(drafts, name)) return;
+    const raw = String(drafts[name] ?? '').trim();
+    if (raw === '' || /^[-+]?\d*\.?\d+$/.test(raw)) {
+      this.setSubsetTimestepOffset(name, raw);
+    }
+    const nextDrafts = { ...drafts };
+    delete nextDrafts[name];
+    this.subsetTimestepOffsetDrafts = nextDrafts;
+  },
+
+  subsetTimestepOffsetCount() {
+    return Object.keys(this.form.subset_timestep_offsets || {}).filter(name => {
+      const value = Number(this.form.subset_timestep_offsets[name]);
+      return Number.isFinite(value) && value !== 0;
+    }).length;
+  },
+
+  _reconcileSubsetTimestepOffsets() {
+    if (!this.form || this.form.model_train_type !== 'anima-lora') return;
+    const validNames = new Set(this.timestepOffsetSubsets().map(subset => subset.name));
+    const current = this.form.subset_timestep_offsets;
+    const clean = {};
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+      Object.entries(current).forEach(([name, value]) => {
+        const offset = Number(value);
+        if (validNames.has(name) && Number.isFinite(offset) && offset !== 0) clean[name] = offset;
+      });
+    }
+    if (JSON.stringify(clean) !== JSON.stringify(current || {})) this.form.subset_timestep_offsets = clean;
+  },
+
+  setSubsetTimestepOffset(name, rawValue) {
+    const previous = this.form.subset_timestep_offsets || {};
+    const next = { ...(this.form.subset_timestep_offsets || {}) };
+    if (rawValue === '' || rawValue === null || rawValue === undefined) {
+      delete next[name];
+    } else {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || value === 0) delete next[name];
+      else next[name] = value;
+    }
+    this.form.subset_timestep_offsets = next;
+    this._setFieldSource('subset_timestep_offsets', 'user');
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      this.pushHistory({ ...this.form, subset_timestep_offsets: { ...next } });
+      if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange('subset_timestep_offsets');
+      if (typeof this.updateToml === 'function') this.updateToml();
+    }
+    if (this.timestepPreviewOpen) this.refreshTimestepPreview();
+  },
+
+  stepSubsetTimestepOffset(name, delta) {
+    const current = Number(this.subsetTimestepOffsetValue(name) || 0);
+    const nextDrafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
+    delete nextDrafts[name];
+    this.subsetTimestepOffsetDrafts = nextDrafts;
+    this.setSubsetTimestepOffset(name, Math.round((current + delta) * 100) / 100);
+  },
+
+  _subsetTimestepOffsetFromSnapshot(snapshot, name) {
+    const offsets = snapshot && snapshot.subset_timestep_offsets;
+    if (!offsets || typeof offsets !== 'object' || Array.isArray(offsets)) return '';
+    return Object.prototype.hasOwnProperty.call(offsets, name) ? offsets[name] : '';
+  },
+
+  undoSubsetTimestepOffset(name) {
+    const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
+    delete drafts[name];
+    this.subsetTimestepOffsetDrafts = drafts;
+    const current = this.subsetTimestepOffsetValue(name);
+    for (let i = this.formHistoryIdx - 1; i >= 0; i -= 1) {
+      const previous = this._subsetTimestepOffsetFromSnapshot(this.formHistory[i], name);
+      if (String(previous) !== String(current)) {
+        const next = { ...(this.form.subset_timestep_offsets || {}) };
+        if (previous === '' || previous === null || previous === undefined || Number(previous) === 0) delete next[name];
+        else next[name] = Number(previous);
+        this.form.subset_timestep_offsets = next;
+        this.formHistoryIdx = i;
+        this._setFieldSource('subset_timestep_offsets', 'user');
+        this._persistProfileFieldSources();
+        if (typeof this.updateToml === 'function') this.updateToml();
+        return;
+      }
+    }
+    this.resetSubsetTimestepOffset(name);
+  },
+
+  resetSubsetTimestepOffset(name) {
+    const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
+    delete drafts[name];
+    this.subsetTimestepOffsetDrafts = drafts;
+    this.setSubsetTimestepOffset(name, '');
+    this._setFieldSource('subset_timestep_offsets', 'default');
+    this._persistProfileFieldSources();
+  },
+
+  renderSubsetTimestepOffsets() {
+    const supported = this.timestepOffsetSupported();
+    const subsets = this.timestepOffsetSubsets();
+    const disabled = ' :disabled="!timestepOffsetSupported()"';
+    const rows = subsets.map(subset => {
+      const name = String(subset.name || '');
+      const nameExpr = this.escapeAttr(JSON.stringify(name));
+      const sampleText = this.t('timestepOffset.sampleFormat')
+        .replace('{images}', String(subset.image_count || 0))
+        .replace('{repeats}', String(subset.repeats || 0));
+      return `<div class="subset-timestep-row">
+        <span class="subset-timestep-name" title="${this.escapeAttr(name)}">${this.esc(name)}</span>
+        <span class="subset-timestep-meta">${this.esc(sampleText)}</span>
+        <div class="stepper subset-timestep-stepper">
+          <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, -0.05)"${disabled}>−</button>
+          <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" :value="subsetTimestepOffsetInputValue(${nameExpr})" @input="setSubsetTimestepOffsetDraft(${nameExpr}, $event.target.value)" @blur="commitSubsetTimestepOffsetDraft(${nameExpr})"${disabled}>
+          <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, 0.05)"${disabled}>+</button>
+        </div>
+        <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} title="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}" aria-label="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
+        </button>
+        <div class="field-menu-wrap subset-timestep-menu">
+          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </button>
+          <div class="field-menu-popup">
+            <button type="button" @click="undoSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
+            <button type="button" @click="resetSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    const body = rows || `<div class="subset-timestep-empty field-hint">${this.esc(this.t('timestepOffset.empty'))}</div>`;
+    const previewDisabled = subsets.length ? '' : ' disabled';
+    return `<div class="subset-timestep-editor${supported ? '' : ' is-disabled'}" :class="{ 'is-disabled': !timestepOffsetSupported() }">
+      <div class="subset-timestep-header">
+        <div>
+          <div class="subset-timestep-title">${this.esc(this.t('timestepOffset.title'))}</div>
+          <div class="field-hint" x-show="timestepOffsetSupported()">${this.esc(this.t('timestepOffset.hint'))}</div>
+          <div class="field-hint" x-show="!timestepOffsetSupported()">${this.esc(this.t('timestepOffset.unsupported'))}</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
+          <span>${this.esc(this.t('timestepOffset.preview'))}</span>
+        </button>
+      </div>
+      ${rows ? `<div class="subset-timestep-list"><div class="subset-timestep-row subset-timestep-row--head"><span>${this.esc(this.t('timestepOffset.subset'))}</span><span>${this.esc(this.t('timestepOffset.samples'))}</span><span>${this.esc(this.t('timestepOffset.offset'))}</span><span></span></div>${body}</div>` : body}
+      <div class="field-hint subset-timestep-footnote">${this.esc(this.t('timestepOffset.rangeWarning'))}</div>
+    </div>`;
+  },
+
+  _refreshSubsetTimestepEditor() {
+    const current = document.querySelector('.subset-timestep-editor');
+    if (!current || !current.parentNode) return;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = this.renderSubsetTimestepOffsets();
+    const next = wrapper.firstElementChild;
+    if (!next) return;
+    const alpine = window.Alpine;
+    if (alpine && typeof alpine.mutateDom === 'function' && typeof alpine.destroyTree === 'function' && typeof alpine.initTree === 'function') {
+      alpine.mutateDom(() => {
+        alpine.destroyTree(current);
+        current.replaceWith(next);
+        alpine.initTree(next);
+      });
+    } else {
+      current.replaceWith(next);
+    }
+  },
+
+  timestepPreviewOptions() {
+    const options = [{ value: 'base', label: this.t('timestepPreview.baseDistribution') }];
+    const subsets = this.timestepOffsetSubsets();
+    if (subsets.length) options.push({ value: 'overall', label: this.t('timestepPreview.overallDistribution') });
+    subsets.forEach(subset => {
+      const raw = this.subsetTimestepOffsetValue(subset.name);
+      const suffix = raw === '' ? '0' : `${Number(raw) > 0 ? '+' : ''}${raw}`;
+      options.push({ value: subset.name, label: `${subset.name} (${suffix})` });
+    });
+    return options;
+  },
+
+  setTimestepPreviewScope(scope) {
+    this.timestepPreviewScope = scope;
+    this.refreshTimestepPreview();
+  },
+
+  _buildTimestepPreview(values, requestedScope) {
     const source = values || this.form || {};
+    const scope = requestedScope || this.timestepPreviewScope || 'base';
     const sampling = String(source.timestep_sampling || 'sigmoid');
     const weighting = String(source.weighting_scheme || 'uniform');
     const isKrea2 = String(source.model_train_type || '') === 'krea2-lora';
@@ -2119,32 +2341,7 @@ window.trainingCoreMixin = {
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
     const [width, height] = this._timestepPreviewResolution(source.resolution);
     const binCount = 32;
-    const counts = Array(binCount).fill(0);
     const sampleCount = 32768;
-
-    // Deterministic PRNG keeps the chart stable while preserving the upstream distributions.
-    let state = 0x6d2b79f5;
-    const random = () => {
-      state |= 0;
-      state = state + 0x6d2b79f5 | 0;
-      let value = Math.imul(state ^ state >>> 15, 1 | state);
-      value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
-      return ((value ^ value >>> 14) >>> 0) / 4294967296;
-    };
-    let spareNormal = null;
-    const normal = () => {
-      if (spareNormal !== null) {
-        const value = spareNormal;
-        spareNormal = null;
-        return value;
-      }
-      const u = Math.max(random(), 1e-12);
-      const v = random();
-      const radius = Math.sqrt(-2 * Math.log(u));
-      const angle = 2 * Math.PI * v;
-      spareNormal = radius * Math.sin(angle);
-      return radius * Math.cos(angle);
-    };
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
     const fixedShift = value => (value * flowShift) / (1 + (flowShift - 1) * value);
 
@@ -2160,38 +2357,84 @@ window.trainingCoreMixin = {
     const fluxShift = resolutionShift(4096);
     const krea2Shift = resolutionShift(6400);
 
-    for (let index = 0; index < sampleCount; index += 1) {
-      let sigma;
-      if (sampling === 'uniform') {
-        sigma = random();
-      } else if (sampling === 'shift') {
-        sigma = fixedShift(sigmoid(sigmoidScale * normal()));
-      } else if (sampling === 'flux_shift') {
-        sigma = fluxShift(sigmoid(sigmoidScale * normal()));
-      } else if (sampling === 'krea2_shift') {
-        sigma = krea2Shift(sigmoid(sigmoidScale * normal()));
-      } else if (sampling === 'sigma') {
-        let density;
-        if (weighting === 'logit_normal') {
-          density = sigmoid(logitMean + logitStd * normal());
-        } else if (weighting === 'mode') {
-          const u = random();
-          density = 1 - u - modeScale * (Math.cos(Math.PI * u / 2) ** 2 - 1 + u);
-        } else {
-          density = random();
+    const sampleCounts = offset => {
+      const counts = Array(binCount).fill(0);
+      let state = 0x6d2b79f5;
+      let spareNormal = null;
+      const random = () => {
+        state |= 0;
+        state = state + 0x6d2b79f5 | 0;
+        let value = Math.imul(state ^ state >>> 15, 1 | state);
+        value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+        return ((value ^ value >>> 14) >>> 0) / 4294967296;
+      };
+      const normal = () => {
+        if (spareNormal !== null) {
+          const value = spareNormal;
+          spareNormal = null;
+          return value;
         }
-        // FlowMatchEulerDiscreteScheduler is descending; index u maps to sigma ~= 1-u.
-        sigma = fixedShift(1 - Math.max(0, Math.min(1, density)));
-      } else if (sampling === 'logsnr') {
-        sigma = sigmoid(-(logitMean + logitStd * normal()) / 2);
-      } else {
-        sigma = sigmoid(sigmoidScale * normal());
+        const u = Math.max(random(), 1e-12);
+        const v = random();
+        const radius = Math.sqrt(-2 * Math.log(u));
+        const angle = 2 * Math.PI * v;
+        spareNormal = radius * Math.sin(angle);
+        return radius * Math.cos(angle);
+      };
+      const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
+      for (let index = 0; index < sampleCount; index += 1) {
+        let sigma;
+        if (sampling === 'uniform') {
+          sigma = random();
+        } else if (sampling === 'shift') {
+          sigma = fixedShift(sigmoid(sigmoidScale * (normal() + appliedOffset)));
+        } else if (sampling === 'flux_shift') {
+          sigma = fluxShift(sigmoid(sigmoidScale * (normal() + appliedOffset)));
+        } else if (sampling === 'krea2_shift') {
+          sigma = krea2Shift(sigmoid(sigmoidScale * normal()));
+        } else if (sampling === 'sigma') {
+          let density;
+          if (weighting === 'logit_normal') density = sigmoid(logitMean + logitStd * normal());
+          else if (weighting === 'mode') {
+            const u = random();
+            density = 1 - u - modeScale * (Math.cos(Math.PI * u / 2) ** 2 - 1 + u);
+          } else density = random();
+          sigma = fixedShift(1 - Math.max(0, Math.min(1, density)));
+        } else if (sampling === 'logsnr') {
+          sigma = sigmoid(-(logitMean + logitStd * normal()) / 2);
+        } else {
+          sigma = sigmoid(sigmoidScale * (normal() + appliedOffset));
+        }
+        sigma = Math.max(0, Math.min(0.999999, sigma));
+        counts[Math.min(binCount - 1, Math.floor(sigma * binCount))] += 1;
       }
-      sigma = Math.max(0, Math.min(0.999999, sigma));
-      counts[Math.min(binCount - 1, Math.floor(sigma * binCount))] += 1;
+      return counts;
+    };
+
+    const baselineCounts = sampleCounts(0);
+    let counts = [...baselineCounts];
+    let scopeLabel = this.t('timestepPreview.baseDistribution');
+    let offset = 0;
+    const subsets = this.timestepOffsetSubsets();
+    if (scope === 'overall' && subsets.length) {
+      const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0) || subsets.length;
+      counts = Array(binCount).fill(0);
+      subsets.forEach(subset => {
+        const weight = totalSamples === subsets.length ? 1 / subsets.length : Number(subset.sample_count || 0) / totalSamples;
+        const subsetCounts = sampleCounts(Number(this.subsetTimestepOffsetValue(subset.name) || 0));
+        subsetCounts.forEach((count, index) => { counts[index] += count * weight; });
+      });
+      scopeLabel = this.t('timestepPreview.overallDistribution');
+    } else {
+      const selectedSubset = subsets.find(subset => subset.name === scope);
+      if (selectedSubset) {
+        offset = Number(this.subsetTimestepOffsetValue(selectedSubset.name) || 0);
+        counts = sampleCounts(offset);
+        scopeLabel = selectedSubset.name;
+      }
     }
 
-    const maxCount = Math.max(...counts, 1);
+    const maxCount = Math.max(...counts, ...baselineCounts, 1);
     const weights = counts.map((_, index) => {
       const sigma = Math.max((index + 0.5) / binCount, 1e-6);
       if (weighting === 'sigma_sqrt') return sigma ** -2;
@@ -2205,12 +2448,23 @@ window.trainingCoreMixin = {
       count,
       percent: count * 100 / sampleCount,
       height: Math.max(1.5, count * 100 / maxCount),
+      baselinePercent: baselineCounts[index] * 100 / sampleCount,
+      baselineHeight: Math.max(1.5, baselineCounts[index] * 100 / maxCount),
       weight: weights[index],
       weightY: 100 - logWeights[index] * 92 / maxLogWeight,
     }));
     const weightPoints = bins.map((bin, index) => `${(index * 100 / (binCount - 1)).toFixed(2)},${bin.weightY.toFixed(2)}`).join(' ');
     const third = Math.floor(binCount / 3);
-    const sumRange = (start, end) => counts.slice(start, end).reduce((total, value) => total + value, 0) * 100 / sampleCount;
+    const sumRange = (sourceCounts, start, end) => sourceCounts.slice(start, end).reduce((total, value) => total + value, 0) * 100 / sampleCount;
+    const median = sourceCounts => {
+      const midpoint = sourceCounts.reduce((sum, value) => sum + value, 0) / 2;
+      let cumulative = 0;
+      for (let index = 0; index < sourceCounts.length; index += 1) {
+        cumulative += sourceCounts[index];
+        if (cumulative >= midpoint) return Math.round((index + 0.5) * 1000 / binCount);
+      }
+      return 1000;
+    };
     const notes = [];
     if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
@@ -2227,24 +2481,36 @@ window.trainingCoreMixin = {
     return {
       sampling,
       weighting,
+      scope,
+      scopeLabel,
+      offset,
+      effectiveOffset: sigmoidScale * offset,
       resolution: `${width} × ${height}`,
       sampleCount,
       bins,
       weightPoints,
-      lowPercent: sumRange(0, third),
-      midPercent: sumRange(third, binCount - third),
-      highPercent: sumRange(binCount - third, binCount),
+      median: median(counts),
+      baselineMedian: median(baselineCounts),
+      lowPercent: sumRange(counts, 0, third),
+      midPercent: sumRange(counts, third, binCount - third),
+      highPercent: sumRange(counts, binCount - third, binCount),
+      baselineLowPercent: sumRange(baselineCounts, 0, third),
+      baselineMidPercent: sumRange(baselineCounts, third, binCount - third),
+      baselineHighPercent: sumRange(baselineCounts, binCount - third, binCount),
+      compare: scope !== 'base',
       notes,
     };
   },
 
-  openTimestepPreview() {
-    this.timestepPreviewData = this._buildTimestepPreview();
+  openTimestepPreview(scope) {
+    const available = new Set(this.timestepPreviewOptions().map(option => option.value));
+    this.timestepPreviewScope = available.has(scope) ? scope : (available.has(this.timestepPreviewScope) ? this.timestepPreviewScope : 'base');
+    this.timestepPreviewData = this._buildTimestepPreview(null, this.timestepPreviewScope);
     this.timestepPreviewOpen = true;
   },
 
   refreshTimestepPreview() {
-    this.timestepPreviewData = this._buildTimestepPreview();
+    this.timestepPreviewData = this._buildTimestepPreview(null, this.timestepPreviewScope);
   },
 
   _getOutputPathHint(dataKey) {
@@ -3130,6 +3396,15 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (key === 'timestep_sampling') {
+      this._refreshSubsetTimestepEditor();
+    }
+    if (this.timestepPreviewOpen && [
+      'timestep_sampling', 'sigmoid_scale', 'discrete_flow_shift', 'weighting_scheme',
+      'logit_mean', 'logit_std', 'mode_scale', 'resolution'
+    ].includes(key)) {
+      this.refreshTimestepPreview();
+    }
     if (key === 'cache_latents_to_disk' && oldVal !== true && value === true) {
       this.form.cache_latents = true;
       this._setFieldSource('cache_latents', 'auto');

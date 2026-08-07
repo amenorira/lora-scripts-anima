@@ -1760,8 +1760,19 @@
       </button>
     </div>
     <div class="modal-body" x-show="timestepPreviewData">
+      <div class="timestep-preview-toolbar">
+        <label for="timestep-preview-scope" x-text="t('timestepPreview.previewRange')"></label>
+        <select id="timestep-preview-scope" :value="timestepPreviewScope" @change="setTimestepPreviewScope($event.target.value)">
+          <template x-for="option in timestepPreviewOptions()" :key="option.value">
+            <option :value="option.value" x-text="option.label"></option>
+          </template>
+        </select>
+      </div>
       <div class="timestep-preview-meta">
         <span><b x-text="timestepPreviewData && timestepPreviewData.sampling"></b><small x-text="t('timestepPreview.sampling')"></small></span>
+        <span><b x-text="timestepPreviewData && timestepPreviewData.scopeLabel"></b><small x-text="t('timestepPreview.previewRange')"></small></span>
+        <span><b x-text="timestepPreviewData ? ((timestepPreviewData.offset > 0 ? '+' : '') + timestepPreviewData.offset) : '0'"></b><small x-text="t('timestepPreview.offset')"></small></span>
+        <span><b x-text="timestepPreviewData ? (timestepPreviewData.baselineMedian + ' → ' + timestepPreviewData.median + ' (' + ((timestepPreviewData.median - timestepPreviewData.baselineMedian) > 0 ? '+' : '') + (timestepPreviewData.median - timestepPreviewData.baselineMedian) + ')') : ''"></b><small x-text="t('timestepPreview.medianTimestep')"></small></span>
         <span><b x-text="timestepPreviewData && timestepPreviewData.weighting"></b><small x-text="t('timestepPreview.weighting')"></small></span>
         <span><b x-text="timestepPreviewData && timestepPreviewData.resolution"></b><small x-text="t('timestepPreview.resolution')"></small></span>
       </div>
@@ -1769,7 +1780,10 @@
       <div class="timestep-preview-chart" aria-hidden="true">
         <div class="timestep-preview-bars">
           <template x-for="bin in (timestepPreviewData ? timestepPreviewData.bins : [])" :key="bin.index">
-            <i :style="`height:${bin.height}%`" :title="`${Math.round(bin.index * 1000 / 32)}–${Math.round((bin.index + 1) * 1000 / 32)}: ${bin.percent.toFixed(2)}%`"></i>
+            <span class="timestep-preview-bin" :title="`${Math.round(bin.index * 1000 / 32)}–${Math.round((bin.index + 1) * 1000 / 32)}: ${bin.baselinePercent.toFixed(2)}% → ${bin.percent.toFixed(2)}%`">
+              <i class="timestep-preview-bar-baseline" :style="`height:${bin.baselineHeight}%`"></i>
+              <i class="timestep-preview-bar-current" :style="`height:${bin.height}%`"></i>
+            </span>
           </template>
         </div>
         <svg class="timestep-preview-weight-line" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1778,17 +1792,19 @@
       </div>
       <div class="timestep-preview-axis">
         <span x-text="t('timestepPreview.clean')">Clean</span>
+        <span>250</span><span>500</span><span>750</span>
         <span x-text="t('timestepPreview.noisy')">Noisy</span>
       </div>
       <div class="timestep-preview-legend">
-        <span><i class="legend-distribution"></i><span x-text="t('timestepPreview.distribution')"></span></span>
+        <span><i class="legend-baseline"></i><span x-text="t('timestepPreview.baseline')"></span></span>
+        <span><i class="legend-distribution"></i><span x-text="t('timestepPreview.currentDistribution')"></span></span>
         <span><i class="legend-weight"></i><span x-text="t('timestepPreview.lossWeight')"></span></span>
       </div>
 
       <div class="timestep-preview-summary">
-        <div><b x-text="timestepPreviewData ? timestepPreviewData.lowPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.detailZone')"></span></div>
-        <div><b x-text="timestepPreviewData ? timestepPreviewData.midPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.middleZone')"></span></div>
-        <div><b x-text="timestepPreviewData ? timestepPreviewData.highPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.structureZone')"></span></div>
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.baselineLowPercent.toFixed(1) + '% → ' + timestepPreviewData.lowPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.detailZone')"></span></div>
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.baselineMidPercent.toFixed(1) + '% → ' + timestepPreviewData.midPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.middleZone')"></span></div>
+        <div><b x-text="timestepPreviewData ? timestepPreviewData.baselineHighPercent.toFixed(1) + '% → ' + timestepPreviewData.highPercent.toFixed(1) + '%' : ''"></b><span x-text="t('timestepPreview.structureZone')"></span></div>
       </div>
 
       <div class="timestep-preview-notes" x-show="timestepPreviewData && timestepPreviewData.notes.length">
@@ -1799,7 +1815,6 @@
       <p class="timestep-preview-footnote" x-text="t('timestepPreview.footnote')"></p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" @click="refreshTimestepPreview()" x-text="t('timestepPreview.refresh')">Refresh</button>
       <button class="btn btn-primary btn-sm" @click="timestepPreviewOpen = false" x-text="t('common.close')">Close</button>
     </div>
   </div>
