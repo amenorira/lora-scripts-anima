@@ -631,6 +631,14 @@ async def create_toml_file(request: Request):
     if not train_utils.validate_data_dir(config["train_data_dir"]):
         return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
+    # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据
+    reg_data_dir = str(config.get("reg_data_dir") or "").strip()
+    if reg_data_dir and not os.path.isdir(reg_data_dir):
+        return APIResponseFail(
+            message=f"Regularization data directory not found: {reg_data_dir} / 正则化数据目录不存在: {reg_data_dir}",
+            data={"errorCode": "regDataDirNotFound"},
+        )
+
     image_count = await asyncio.to_thread(
         train_utils.count_images, config["train_data_dir"], True, 201
     )

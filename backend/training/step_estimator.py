@@ -213,6 +213,16 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
 
     BucketManager, glob_images, _ = _sd_dataset_helpers()
     subsets = _dataset_subsets(train_data_dir, glob_images)
+    # 正则化数据（DreamBooth 正则）与训练数据同批参与训练：把 reg_data_dir 子集一并计入步数估算。
+    # 与 sd-scripts 行为保持一致：reg 目录不存在时静默忽略（generate_dreambooth_subsets_config_by_subdirs）。
+    reg_data_value = config.get("reg_data_dir")
+    if reg_data_value:
+        reg_data_dir = Path(str(reg_data_value))
+        if reg_data_dir.is_dir():
+            reg_subsets = _dataset_subsets(reg_data_dir, glob_images)
+            for subset in reg_subsets:
+                subset["is_reg"] = True
+            subsets += reg_subsets
     if not subsets:
         raise StepEstimateError(
             "No valid image folder found (example: 5_character) / 未找到有效图片目录（例如 5_character）",

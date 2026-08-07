@@ -171,6 +171,15 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "hint_key": "field.qwen3Hint", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
+# ── 正则化数据（DreamBooth 正则）──
+# sd-scripts 侧：train_network.py:942 经 generate_dreambooth_subsets_config_by_subdirs 把 reg_data_dir 子目录
+# 生成 is_reg=True 的 subset，loss 按 prior_loss_weight 加权（library/dataset.py:1016）。
+# 开关关闭时字段不可见 → 不进 TOML，行为与不填完全一致；目录须为独立目录，不能混入训练目录
+# （*_reg 文件夹放在训练目录里会被当作普通训练子集，见 config_util.py extract_dreambooth_params）。
+# prior_loss_weight 与 reg_data_dir 同槽展示（开开关即可见），不放进"正则化与损失"折叠区。
+{"key": "enable_reg_data", "type": "toggle", "default": False, "section": "model", "desc_key": "field.enable_reg_data", "hint_key": "field.enable_reg_dataHint", "target": "ui"},
+{"key": "reg_data_dir", "type": "text", "default": "", "section": "model", "desc_key": "field.reg_data_dir", "hint_key": "field.reg_data_dirHint", "target": "toml", "role": "file-folder", "omit_default": True, "show_if": {"key": "enable_reg_data", "eq": True}},
+{"key": "prior_loss_weight", "type": "number", "default": 1.0, "section": "model", "desc_key": "field.prior_loss_weight", "hint_key": "field.prior_loss_weightHint", "target": "toml", "min": 0, "step": 0.1, "show_if": {"key": "enable_reg_data", "eq": True}, "omit_default": True},
 {"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "hint_key": "field.resumeHint", "target": "toml", "role": "file-folder"},
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
 {"key": "enable_bucket", "type": "toggle", "default": True, "section": "model", "desc_key": "field.enable_bucket", "target": "toml", "hint_key": "field.enable_bucketHint"},

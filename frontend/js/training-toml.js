@@ -60,6 +60,7 @@ window.trainingTomlMixin = {
       'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
       'enable_preview','positive_prompts','negative_prompts',
       'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
+      'enable_reg_data',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','prodigy_safeguard_warmup',
       'prodigyplus_use_stableadamw','schedulefree_warmup_steps',
