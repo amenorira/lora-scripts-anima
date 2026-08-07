@@ -449,6 +449,78 @@ class TrainingStepEstimatorTests(unittest.TestCase):
 
             self.assertEqual(estimate["batches_per_epoch"], len(dataset))
 
+    def test_regularization_samples_match_sd_scripts_registration_loop(self):
+        # sd-scripts 正则注册规则（dreambooth_dataset.py:320-345）：正则样本数以训练样本总数为
+        # 目标补足/截断，子目录 repeats 只影响首轮注册比例。用真实 DreamBoothDataset 交叉验证。
+        from library.config_util import DreamBoothSubsetParams
+        from library.dreambooth_dataset import DreamBoothDataset
+        from library.subset import DreamBoothSubset
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_images(root / "train" / "2_char", 3, (512, 512))
+            self._write_images(root / "reg1" / "1_class", 3, (512, 512))
+            self._write_images(root / "reg2" / "1_overflow", 10, (512, 512))
+            self._write_images(root / "reg3" / "20_big", 2, (512, 512))
+
+            cases = [
+                ("reg1", "1_class", 1, 12),  # 补足：reg 3 图 x1 -> 实际 6 样本
+                ("reg2", "1_overflow", 1, 12),  # 截断：reg 10 图 x1 -> 只用前 6 张
+                ("reg3", "20_big", 20, 26),  # 大 repeats：首轮即超，只用 1 张图注册 20 次
+            ]
+            for reg_parent, reg_subdir, repeats, expected in cases:
+                with self.subTest(reg_parent=reg_parent):
+                    config = self._config(
+                        root / "train",
+                        reg_data_dir=str(root / reg_parent),
+                        train_batch_size=1,
+                    )
+                    estimate = estimate_training_steps(config)
+
+                    subsets = [
+                        DreamBoothSubset(
+                            **asdict(
+                                DreamBoothSubsetParams(
+                                    image_dir=str(root / "train" / "2_char"), num_repeats=2, class_tokens="char"
+                                )
+                            )
+                        ),
+                        DreamBoothSubset(
+                            **asdict(
+                                DreamBoothSubsetParams(
+                                    image_dir=str(root / reg_parent / reg_subdir),
+                                    num_repeats=repeats,
+                                    class_tokens="class",
+                                    is_reg=True,
+                                )
+                            )
+                        ),
+                    ]
+                    dataset = DreamBoothDataset(
+                        subsets=subsets,
+                        is_training_dataset=True,
+                        batch_size=1,
+                        resolution=(512, 512),
+                        network_multiplier=1.0,
+                        enable_bucket=False,
+                        min_bucket_reso=256,
+                        max_bucket_reso=1024,
+                        bucket_reso_steps=64,
+                        bucket_no_upscale=True,
+                        prior_loss_weight=1.0,
+                        train_inpainting=False,
+                        debug_dataset=False,
+                        validation_split=0.0,
+                        validation_seed=0,
+                        resize_interpolation=None,
+                    )
+                    dataset.make_buckets()
+
+                    self.assertEqual(estimate["batches_per_epoch"], len(dataset))
+                    self.assertEqual(estimate["batches_per_epoch"], expected)
+                    reg_subset = next(subset for subset in estimate["subsets"] if subset["is_reg"])
+                    self.assertEqual(reg_subset["sample_count"], expected - 6)
+
     def test_gpu_processes_follow_sd_scripts_ceiling_order(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

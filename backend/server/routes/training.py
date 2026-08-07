@@ -631,13 +631,29 @@ async def create_toml_file(request: Request):
     if not train_utils.validate_data_dir(config["train_data_dir"]):
         return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
-    # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据
+    # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
+    # 目录存在但没有任何"数字_类名"子目录时同样报错——sd-scripts 只扫描子目录（子目录缺失时
+    # 生成空子集并仅打警告，训练照常跑但没有正则化）。
     reg_data_dir = str(config.get("reg_data_dir") or "").strip()
-    if reg_data_dir and not os.path.isdir(reg_data_dir):
-        return APIResponseFail(
-            message=f"Regularization data directory not found: {reg_data_dir} / 正则化数据目录不存在: {reg_data_dir}",
-            data={"errorCode": "regDataDirNotFound"},
-        )
+    if reg_data_dir:
+        if not os.path.isdir(reg_data_dir):
+            return APIResponseFail(
+                message=f"Regularization data directory not found: {reg_data_dir} / 正则化数据目录不存在: {reg_data_dir}",
+                data={"errorCode": "regDataDirNotFound"},
+            )
+        reg_subdirs = [
+            name
+            for name in os.listdir(reg_data_dir)
+            if os.path.isdir(os.path.join(reg_data_dir, name)) and name.split("_")[0].isdigit()
+        ]
+        if not reg_subdirs:
+            return APIResponseFail(
+                message=(
+                    f"No valid subfolders (e.g. 10_face) found in regularization data directory: {reg_data_dir}"
+                    " / 正则化数据目录中未找到有效子文件夹（如 10_face）：{reg_data_dir}"
+                ),
+                data={"errorCode": "regDataDirNoSubfolders"},
+            )
 
     image_count = await asyncio.to_thread(
         train_utils.count_images, config["train_data_dir"], True, 201

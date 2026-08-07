@@ -1043,10 +1043,11 @@ window.trainingCoreMixin = {
 
   stepEstimateImageFormula() {
     if (!this.stepEstimate) return '';
-    const terms = this.stepEstimate.subsets.map(subset => this._stepEstimateText(
-      subset.is_reg ? 'stepEstimate.regImageTerm' : 'stepEstimate.imageTerm', undefined,
-      { images: subset.image_count, repeats: subset.repeats }
-    ));
+    const terms = this.stepEstimate.subsets.map(subset => subset.is_reg
+      ? this._stepEstimateText('stepEstimate.regImageTerm', undefined,
+          { images: subset.image_count, samples: subset.sample_count })
+      : this._stepEstimateText('stepEstimate.imageTerm', undefined,
+          { images: subset.image_count, repeats: subset.repeats }));
     return this._stepEstimateText(
       'stepEstimate.imageFormula', undefined,
       {

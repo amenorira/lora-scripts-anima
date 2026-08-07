@@ -230,6 +230,41 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
             code="noValidImageFolder",
         )
 
+    # DreamBooth 正则注册规则（复刻 dreambooth_dataset.py:320-345）：
+    # 正则样本数不是"图数 × 子目录重复次数"，而是以训练样本总数为目标补足/截断——
+    # 首轮按子目录 repeats 逐图注册，未达到训练样本数时逐轮每图 +1 直到追平；
+    # 首轮即超出时按子目录顺序截断。子目录 repeats 只影响首轮注册比例。
+    # 这里把每张正则图的实际注册次数回写进子集，供样本统计与分桶使用。
+    reg_subsets = [s for s in subsets if s.get("is_reg")]
+    if reg_subsets:
+        num_train_samples = sum(s["sample_count"] for s in subsets if not s.get("is_reg"))
+        reg_repeats: list[int] = []
+        for s in reg_subsets:
+            reg_repeats.extend([s["repeats"]] * s["image_count"])
+        counts = [0] * len(reg_repeats)
+        n = 0
+        first_loop = True
+        while n < num_train_samples:
+            for i, repeats in enumerate(reg_repeats):
+                if first_loop:
+                    counts[i] += repeats
+                    n += repeats
+                else:
+                    counts[i] += 1
+                    n += 1
+                if n >= num_train_samples:
+                    break
+            first_loop = False
+        idx = 0
+        for s in reg_subsets:
+            sub_counts = counts[idx : idx + s["image_count"]]
+            idx += s["image_count"]
+            # 只保留实际注册的图（未注册的图不参与训练与分桶）
+            s["image_paths"] = [p for p, c in zip(s["image_paths"], sub_counts) if c > 0]
+            s["per_image_repeats"] = [c for c in sub_counts if c > 0]
+            s["image_count"] = len(s["image_paths"])
+            s["sample_count"] = sum(s["per_image_repeats"])
+
     resolution = _parse_resolution(config.get("resolution", "1024,1024"))
     batch_size = _positive_int(config, "train_batch_size", 1)
     epochs = _positive_int(config, "max_train_epochs", 1)
@@ -276,7 +311,8 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
         original_images += subset["image_count"]
         repeated_samples += subset["sample_count"]
         public_subsets.append({key: subset[key] for key in ("name", "image_count", "repeats", "sample_count", "is_reg")})
-        for image_path in subset["image_paths"]:
+        per_image_repeats = subset.get("per_image_repeats")
+        for j, image_path in enumerate(subset["image_paths"]):
             width, height = _read_image_size(image_path)
             try:
                 bucket_resolution, _, _ = bucket_manager.select_bucket(width, height)
@@ -286,7 +322,9 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
                     code="bucketAssignmentFailed",
                     path=image_path,
                 ) from exc
-            bucket_samples[bucket_resolution] += subset["repeats"]
+            bucket_samples[bucket_resolution] += (
+                per_image_repeats[j] if per_image_repeats is not None else subset["repeats"]
+            )
 
     batches_per_epoch = sum(math.ceil(count / batch_size) for count in bucket_samples.values())
     if enable_bucket:
