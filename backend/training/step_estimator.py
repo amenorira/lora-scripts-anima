@@ -259,9 +259,11 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
         for s in reg_subsets:
             sub_counts = counts[idx : idx + s["image_count"]]
             idx += s["image_count"]
+            original_count = len(sub_counts)
             # 只保留实际注册的图（未注册的图不参与训练与分桶）
             s["image_paths"] = [p for p, c in zip(s["image_paths"], sub_counts) if c > 0]
             s["per_image_repeats"] = [c for c in sub_counts if c > 0]
+            s["unused_images"] = original_count - len(s["per_image_repeats"])
             s["image_count"] = len(s["image_paths"])
             s["sample_count"] = sum(s["per_image_repeats"])
 
@@ -310,7 +312,25 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
     for subset in subsets:
         original_images += subset["image_count"]
         repeated_samples += subset["sample_count"]
-        public_subsets.append({key: subset[key] for key in ("name", "image_count", "repeats", "sample_count", "is_reg")})
+        per_image_repeats = subset.get("per_image_repeats")
+        if per_image_repeats is not None:
+            # 正则子集：每张图的实际重复次数由注册循环分配（可能不同），按次数聚合供公式展示
+            repeat_dist = sorted((repeats, count) for repeats, count in Counter(per_image_repeats).items())
+            unused_images = subset.get("unused_images", 0)
+        else:
+            repeat_dist = [(subset["repeats"], subset["image_count"])]
+            unused_images = 0
+        public_subsets.append(
+            {
+                "name": subset["name"],
+                "image_count": subset["image_count"],
+                "repeats": subset["repeats"],
+                "sample_count": subset["sample_count"],
+                "is_reg": subset["is_reg"],
+                "repeat_dist": repeat_dist,
+                "unused_images": unused_images,
+            }
+        )
         per_image_repeats = subset.get("per_image_repeats")
         for j, image_path in enumerate(subset["image_paths"]):
             width, height = _read_image_size(image_path)

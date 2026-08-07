@@ -362,7 +362,10 @@
 			"requestFailed": "请求失败：{message}"
 		},
 		"recalculate": "重新计算",
-		"imageFormula": "训练图 {trainImages} 张 → {trainSamples} 份（含重复）；正则图 {regImages} 张 → {regSamples} 份（自动按训练份数计算）；每轮共 {samples} 份",
+		"imageTerm": "{images} 张 × 重复 {repeats}",
+		"imageFormula": "训练图 {trainImages} 张：[{trainTerms}] = {trainSamples} 份",
+		"regFormula": "正则图 {regImages} 张：[{regTerms}] = {regSamples} 份（重复次数由系统自动分配{unusedNote}）",
+		"regUnusedNote": "，另有 {unused} 张未使用",
 		"bucketFormula": "{samples} 份按画面尺寸分到 {buckets} 组；每组按 Batch {batch} 切批 → 每轮 {batches} 批",
 		"batchFormula": "{samples} 份 ÷ Batch {batch}（向上取整）= 每轮 {batches} 批",
 		"epochFormula": "每轮：{batches} 批 ÷ 梯度累积 {accumulation} = {steps} 步",

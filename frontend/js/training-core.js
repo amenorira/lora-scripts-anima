@@ -1041,30 +1041,40 @@ window.trainingCoreMixin = {
     });
   },
 
+  _formatSubsetTerms(subset) {
+    const dist = subset.repeat_dist && subset.repeat_dist.length ? subset.repeat_dist : [[subset.repeats, subset.image_count]];
+    return dist.map(([repeats, count]) => this._stepEstimateText(
+      'stepEstimate.imageTerm', undefined,
+      { images: count, repeats }
+    )).join(' + ');
+  },
+
   stepEstimateImageFormula() {
     if (!this.stepEstimate) return '';
-    const estimate = this.stepEstimate;
-    // 汇总训练/正则子集：正则图的实际重复次数由 sd-scripts 按训练份数自动计算，
-    // 逐子集明细无法表达，直接给出训练/正则各自的总图数与总份数。
-    let trainImages = 0;
-    let trainSamples = 0;
-    let regImages = 0;
-    let regSamples = 0;
-    for (const subset of estimate.subsets || []) {
-      if (subset.is_reg) {
-        regImages += subset.image_count;
-        regSamples += subset.sample_count;
-      } else {
-        trainImages += subset.image_count;
-        trainSamples += subset.sample_count;
-      }
-    }
+    const train = (this.stepEstimate.subsets || []).filter(subset => !subset.is_reg);
+    const trainImages = train.reduce((sum, subset) => sum + subset.image_count, 0);
+    const trainSamples = train.reduce((sum, subset) => sum + subset.sample_count, 0);
+    const trainTerms = train.map(subset => this._formatSubsetTerms(subset)).join(' + ');
     return this._stepEstimateText(
       'stepEstimate.imageFormula', undefined,
-      {
-        trainImages, trainSamples, regImages, regSamples,
-        samples: estimate.repeated_samples,
-      }
+      { trainImages, trainTerms, trainSamples }
+    );
+  },
+
+  stepEstimateRegFormula() {
+    if (!this.stepEstimate) return '';
+    const reg = (this.stepEstimate.subsets || []).filter(subset => subset.is_reg);
+    if (!reg.length) return '';
+    const regImages = reg.reduce((sum, subset) => sum + subset.image_count, 0);
+    const regSamples = reg.reduce((sum, subset) => sum + subset.sample_count, 0);
+    const unused = reg.reduce((sum, subset) => sum + (subset.unused_images || 0), 0);
+    const regTerms = reg.map(subset => this._formatSubsetTerms(subset)).join(' + ');
+    const unusedNote = unused > 0
+      ? this._stepEstimateText('stepEstimate.regUnusedNote', undefined, { unused })
+      : '';
+    return this._stepEstimateText(
+      'stepEstimate.regFormula', undefined,
+      { regImages, regTerms, regSamples, unusedNote }
     );
   },
 
@@ -1133,9 +1143,10 @@ window.trainingCoreMixin = {
       </div>
       <div class="step-estimate-formula" x-show="stepEstimate">
         <div class="step-estimate-line"><span class="step-estimate-number">1</span><span x-text="stepEstimateImageFormula()"></span></div>
-        <div class="step-estimate-line"><span class="step-estimate-number">2</span><span x-text="stepEstimateBatchFormula()"></span></div>
-        <div class="step-estimate-line"><span class="step-estimate-number">3</span><span x-text="stepEstimateEpochFormula()"></span></div>
-        <div class="step-estimate-line step-estimate-line-total"><span class="step-estimate-number">4</span><span x-text="stepEstimateTotalFormula()"></span></div>
+        <div class="step-estimate-line" x-show="stepEstimateRegFormula()"><span class="step-estimate-number">2</span><span x-text="stepEstimateRegFormula()"></span></div>
+        <div class="step-estimate-line"><span class="step-estimate-number">3</span><span x-text="stepEstimateBatchFormula()"></span></div>
+        <div class="step-estimate-line"><span class="step-estimate-number">4</span><span x-text="stepEstimateEpochFormula()"></span></div>
+        <div class="step-estimate-line step-estimate-line-total"><span class="step-estimate-number">5</span><span x-text="stepEstimateTotalFormula()"></span></div>
         <div class="step-estimate-note" x-text="t('stepEstimate.sdScriptsNote')"></div>
       </div>
     </div>`;

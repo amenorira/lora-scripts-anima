@@ -362,7 +362,10 @@
 			"requestFailed": "Request failed: {message}"
 		},
 		"recalculate": "Recalculate",
-		"imageFormula": "Training images {trainImages} → {trainSamples} samples (incl. repeats); regularization images {regImages} → {regSamples} samples (auto-computed from training count); {samples} samples/epoch total",
+		"imageTerm": "{images} images × {repeats} repeats",
+		"imageFormula": "Training images {trainImages}: [{trainTerms}] = {trainSamples} samples",
+		"regFormula": "Regularization images {regImages}: [{regTerms}] = {regSamples} samples (repeats assigned automatically{unusedNote})",
+		"regUnusedNote": "; {unused} images unused",
 		"bucketFormula": "{samples} samples split into {buckets} size groups; each group cut by Batch {batch} → {batches} batches/epoch",
 		"batchFormula": "{samples} samples ÷ Batch {batch} (rounded up) = {batches} batches/epoch",
 		"epochFormula": "Per epoch: {batches} batches ÷ accumulation {accumulation} = {steps} steps",
