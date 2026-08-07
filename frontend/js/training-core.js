@@ -1044,7 +1044,7 @@ window.trainingCoreMixin = {
   stepEstimateImageFormula() {
     if (!this.stepEstimate) return '';
     const terms = this.stepEstimate.subsets.map(subset => this._stepEstimateText(
-      'stepEstimate.imageTerm', undefined,
+      subset.is_reg ? 'stepEstimate.regImageTerm' : 'stepEstimate.imageTerm', undefined,
       { images: subset.image_count, repeats: subset.repeats }
     ));
     return this._stepEstimateText(

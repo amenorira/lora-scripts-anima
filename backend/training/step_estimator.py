@@ -153,6 +153,7 @@ def _dataset_subsets(train_data_dir: Path, glob_images) -> list[dict[str, Any]]:
                 "image_count": len(image_paths),
                 "repeats": repeats,
                 "sample_count": len(image_paths) * repeats,
+                "is_reg": False,
                 "image_paths": image_paths,
             }
         )
@@ -274,7 +275,7 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
     for subset in subsets:
         original_images += subset["image_count"]
         repeated_samples += subset["sample_count"]
-        public_subsets.append({key: subset[key] for key in ("name", "image_count", "repeats", "sample_count")})
+        public_subsets.append({key: subset[key] for key in ("name", "image_count", "repeats", "sample_count", "is_reg")})
         for image_path in subset["image_paths"]:
             width, height = _read_image_size(image_path)
             try:

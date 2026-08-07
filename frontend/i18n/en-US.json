@@ -363,6 +363,7 @@
 		},
 		"recalculate": "Recalculate",
 		"imageTerm": "{images} images × {repeats} repeats",
+		"regImageTerm": "{images} images × {repeats} repeats (regularization)",
 		"imageFormula": "{images} source images: [{terms}] = {samples} training samples",
 		"bucketFormula": "{samples} samples go into {buckets} size buckets; split each bucket by Batch {batch} = {batches} batches/epoch",
 		"batchFormula": "⌈{samples} samples ÷ Batch {batch}⌉ = {batches} batches/epoch",

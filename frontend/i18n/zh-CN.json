@@ -363,6 +363,7 @@
 		},
 		"recalculate": "重新计算",
 		"imageTerm": "{images} 张 × 重复 {repeats}",
+		"regImageTerm": "{images} 张 × 重复 {repeats}（正则）",
 		"imageFormula": "原图共 {images} 张：[{terms}] = {samples} 个训练样本",
 		"bucketFormula": "{samples} 个样本按尺寸分到 {buckets} 个桶；每个桶分别 ÷ Batch {batch} = {batches} 批/轮",
 		"batchFormula": "⌈{samples} 个样本 ÷ Batch {batch}⌉ = {batches} 批/轮",
