@@ -362,14 +362,12 @@
 			"requestFailed": "请求失败：{message}"
 		},
 		"recalculate": "重新计算",
-		"imageTerm": "{images} 张 × 重复 {repeats}",
-		"regImageTerm": "{images} 张 → {samples} 个样本（正则）",
-		"imageFormula": "原图共 {images} 张：[{terms}] = {samples} 个训练样本",
-		"bucketFormula": "{samples} 个样本按尺寸分到 {buckets} 个桶；每个桶分别 ÷ Batch {batch} = {batches} 批/轮",
-		"batchFormula": "⌈{samples} 个样本 ÷ Batch {batch}⌉ = {batches} 批/轮",
-		"epochFormula": "Batch {batch} × 梯度累积 {accumulation} = 理论等效 Batch {effectiveBatch}；每轮：⌈{batches} 批 ÷ 梯度累积 {accumulation}⌉ = {steps} 步",
-		"epochFormulaMultiGpu": "Batch {batch} × 梯度累积 {accumulation} × {gpus} 张 GPU = 理论等效 Batch {effectiveBatch}；每轮：⌈{batches} 批 ÷ {gpus} 张 GPU ÷ 梯度累积 {accumulation}⌉ = {steps} 步",
-		"totalFormula": "总计：{steps} 步/轮 × {epochs} Epoch = {total} 步",
+		"imageFormula": "训练图 {trainImages} 张 → {trainSamples} 份（含重复）；正则图 {regImages} 张 → {regSamples} 份（自动按训练份数计算）；每轮共 {samples} 份",
+		"bucketFormula": "{samples} 份按画面尺寸分到 {buckets} 组；每组按 Batch {batch} 切批 → 每轮 {batches} 批",
+		"batchFormula": "{samples} 份 ÷ Batch {batch}（向上取整）= 每轮 {batches} 批",
+		"epochFormula": "每轮：{batches} 批 ÷ 梯度累积 {accumulation} = {steps} 步",
+		"epochFormulaMultiGpu": "每轮：{batches} 批 ÷ {gpus} 张 GPU ÷ 梯度累积 {accumulation} = {steps} 步",
+		"totalFormula": "{epochs} 轮 × 每轮 {steps} 步 = 总共 {total} 步",
 		"sdScriptsNote": "按 sd-scripts 的分桶与向上取整规则计算；开始训练前会再算一次。"
 	},
 	"field": {

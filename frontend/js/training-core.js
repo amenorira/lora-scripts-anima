@@ -1043,17 +1043,27 @@ window.trainingCoreMixin = {
 
   stepEstimateImageFormula() {
     if (!this.stepEstimate) return '';
-    const terms = this.stepEstimate.subsets.map(subset => subset.is_reg
-      ? this._stepEstimateText('stepEstimate.regImageTerm', undefined,
-          { images: subset.image_count, samples: subset.sample_count })
-      : this._stepEstimateText('stepEstimate.imageTerm', undefined,
-          { images: subset.image_count, repeats: subset.repeats }));
+    const estimate = this.stepEstimate;
+    // 汇总训练/正则子集：正则图的实际重复次数由 sd-scripts 按训练份数自动计算，
+    // 逐子集明细无法表达，直接给出训练/正则各自的总图数与总份数。
+    let trainImages = 0;
+    let trainSamples = 0;
+    let regImages = 0;
+    let regSamples = 0;
+    for (const subset of estimate.subsets || []) {
+      if (subset.is_reg) {
+        regImages += subset.image_count;
+        regSamples += subset.sample_count;
+      } else {
+        trainImages += subset.image_count;
+        trainSamples += subset.sample_count;
+      }
+    }
     return this._stepEstimateText(
       'stepEstimate.imageFormula', undefined,
       {
-        images: this.stepEstimate.original_images,
-        terms: terms.join(' + '),
-        samples: this.stepEstimate.repeated_samples,
+        trainImages, trainSamples, regImages, regSamples,
+        samples: estimate.repeated_samples,
       }
     );
   },
