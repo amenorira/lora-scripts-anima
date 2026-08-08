@@ -291,6 +291,7 @@ window.monitorCoreMixin = {
 
     if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
       this._logSliceRequestSeq++;
+      this.logFullLoading = false;
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logFullTotal = 0;
@@ -471,6 +472,7 @@ window.monitorCoreMixin = {
 
     if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
       this._logSliceRequestSeq++;
+      this.logFullLoading = false;
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logFullTotal = 0;
@@ -855,7 +857,7 @@ window.monitorCoreMixin = {
     params.set('offset', String(offset));
     params.set('limit', String(limit));
     params.set('q', q);
-    if (opts.tail) params.set('tail');
+    if (opts.tail) params.set('tail', 'true');
     try {
       const r = await fetch('/api/monitor/log-slice?' + params.toString());
       const j = await r.json();
@@ -1020,9 +1022,29 @@ window.monitorCoreMixin = {
     return this.previewSortDir === 'desc' ? indices.reverse() : indices;
   },
 
+  _patchPreviewSortOrder() {
+    const content = document.getElementById('monitorTabContent');
+    if (!content) return false;
+    const grid = content.querySelector('.m-samples-section .preview-grid');
+    if (!grid) return false;
+    const items = new Map(Array.from(grid.querySelectorAll('.preview-grid-item')).map(item => [Number(item.dataset.previewIndex), item]));
+    for (const index of this._previewDisplayIndices()) {
+      const item = items.get(index);
+      if (item) grid.appendChild(item);
+    }
+    content.querySelectorAll('[data-preview-sort]').forEach(button => {
+      const active = button.dataset.previewSort === this.previewSortDir;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    return true;
+  },
+
   setPreviewSort(dir) {
     if (dir !== 'asc' && dir !== 'desc') return;
+    if (dir === this.previewSortDir) return;
     this.previewSortDir = dir;
+    if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples' && this._patchPreviewSortOrder()) return;
     this.renderDashboard();
   },
 

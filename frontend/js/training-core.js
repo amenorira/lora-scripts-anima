@@ -2023,8 +2023,9 @@ window.trainingCoreMixin = {
     // ── Nested detection (child of a showIf/showIfAny parent) ──
     // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf/showIfAny 父字段的层级 + 1，父级若无则为 0。
     // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
-    const nestLevel = this._nestLevel(field);
-    const nestedClass = (field.showIf || field.showIfAny) ? ' field-nested' : '';
+    const isNested = (field.showIf || field.showIfAny) && field.nested !== false;
+    const nestLevel = isNested ? this._nestLevel(field) : 0;
+    const nestedClass = isNested ? ' field-nested' : '';
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──

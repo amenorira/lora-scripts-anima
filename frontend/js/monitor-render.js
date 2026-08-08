@@ -303,7 +303,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + this._previewCollectionSignature() + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.train_result ? d.train_result.status : '');
+      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (d.train_result ? d.train_result.status : '');
       if (tabChanged || this._builtOverviewSig !== sig) {
         this._cancelPreviewMediaQueue();
         this._releasePreviewMediaObjectUrls();
@@ -313,12 +313,11 @@ window.monitorRenderMixin = {
         delete contentEl.dataset.paramQuery;
       }
       this._patchOverviewStatus(d, t, isHistory);
-      this.schedulePreviewMediaLoads(contentEl);
       this._builtTab = 'overview';
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + this.previewSortDir + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
+      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (tabChanged || this._builtSamplesSig !== sig) {
         // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
         const scrollTop = contentEl.scrollTop || 0;
@@ -415,11 +414,9 @@ window.monitorRenderMixin = {
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
     const isRunning = d.state === 'RUNNING';
-    const hasPreview = this.previews.length > 0;
-    html += '<div class="m-overview-grid' + (hasPreview ? '' : ' no-preview') + '">';
+    html += '<div class="m-overview-grid">';
     html += this._overviewMetricsHtml(d, t, isHistory, isRunning);
     html += this._trainingDiagnosticsHtml(t);
-    if (hasPreview) html += this._latestSampleCardHtml(t);
     html += '</div>';
     if (this.trainParams.length) html += this._parametersConsoleHtml(t);
     else if (!isRunning) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainParams')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint')) + '</p></div></div>';
@@ -755,12 +752,6 @@ window.monitorRenderMixin = {
     if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
     if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
     if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : (diagnostic.gapFromBestPct >= 10 ? 'danger' : (diagnostic.gapFromBestPct <= 2 ? 'ok' : 'neutral'));
-  },
-
-  _latestSampleCardHtml(t) {
-    const index = this.previews.length - 1;
-    const preview = this.previews[index];
-    return '<section class="m-console-card m-latest-sample"><div class="m-card-heading"><span>' + this.esc(t('latestSample')) + '</span><button type="button" @click="monitorTab=\'samples\';renderDashboard()">' + this.esc(t('viewAll')) + '</button></div><button type="button" class="m-latest-sample-image" @click="openPreviewLightbox(' + index + ')">' + this._previewThumbImageHtml(preview) + '<span>' + this.esc(this._parseSampleInfo(preview.name)) + '</span></button></section>';
   },
 
   _previewThumbImageHtml(preview) {
@@ -1516,8 +1507,8 @@ window.monitorRenderMixin = {
     const canRefresh = !!this.currentOutputRunDir;
     let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
     html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
-    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
-    html += '<button type="button" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
+    html += '<button type="button" data-preview-sort="asc" aria-pressed="' + (this.previewSortDir === 'asc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
+    html += '<button type="button" data-preview-sort="desc" aria-pressed="' + (this.previewSortDir === 'desc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading'))+'…') : this.esc(t('refresh'))) + '</button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
@@ -1525,7 +1516,7 @@ window.monitorRenderMixin = {
       html += '<div class="preview-grid">';
       this._previewDisplayIndices().forEach(i => {
         const pv = this.previews[i];
-        html += '<button type="button" class="preview-grid-item" @click="openPreviewLightbox(' + i + ')">';
+        html += '<button type="button" class="preview-grid-item" data-preview-index="' + i + '" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
         html += this._previewThumbImageHtml(pv);
         html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small title="' + this.esc(pv.name) + '">' + this.esc(pv.name) + '</small></span>';

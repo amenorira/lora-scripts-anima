@@ -203,8 +203,6 @@
 		"noPreviewHistoryHint": "本次训练未生成预览样本",
 		"noPreviewDisabledHint": "本次训练没有启用预览图生成功能。",
 		"noPreviewArtifactUnavailableHint": "模型输出目录当前不可用（磁盘未连接或文件夹已移动）。恢复该路径后点击“刷新”即可查看预览图。",
-		"latestSample": "最新样本",
-		"viewAll": "查看全部",
 		"items": "项",
 		"parameterSearch": "搜索训练参数…",
 		"expandAll": "全部展开",

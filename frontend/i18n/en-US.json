@@ -203,8 +203,6 @@
 		"noPreviewHistoryHint": "No preview samples in this run",
 		"noPreviewDisabledHint": "Preview generation was not enabled for this run.",
 		"noPreviewArtifactUnavailableHint": "The model output folder is unavailable because the drive is disconnected or the folder moved. Restore the path, then click Refresh to view preview images.",
-		"latestSample": "Latest sample",
-		"viewAll": "View all",
 		"items": "items",
 		"parameterSearch": "Search training parameters…",
 		"expandAll": "Expand all",

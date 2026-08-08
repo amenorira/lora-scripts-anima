@@ -52,6 +52,7 @@ from backend.training.optimizer_metadata import (
 #   show_if_any — 条件显示（可选，OR-of-ANDs）: list[list[dict]]，外层 OR、内层 AND。
 #                任一内层 AND 组全部成立即显示。用于"原生模块 OR (lycoris + 特定 algo)"
 #                这类跨两个字段的复合条件。show_if 与 show_if_any 互斥。
+#   nested     — 条件字段是否显示为父字段的缩进子项（可选，默认 true）。
 #   hint_key   — 提示文本 i18n 键（可选）
 #   hint_key_by — 按另一个字段当前值选择提示文本：
 #                 {"key": "optimizer_type", "values": {"AdamW": "field.someHint"}}
@@ -188,6 +189,8 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "constraints_by_group": {"sdxl": {"min": 32, "step": 32}, "anima": {"min": 16, "step": 16}}, "show_if": {"key": "enable_bucket", "eq": True}, "hint_key": "field.bucket_reso_stepsHint", "omit_default": True},
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "hint_key": "field.v_parameterizationHint", "target": "toml", "group": "sdxl"},
+# 与 v_parameterization 属于同一训练目标设置；保留条件显示，但不作为缩进子项。
+{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "model", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": "sdxl", "show_if": {"key": "v_parameterization", "eq": True}, "nested": False, "omit_default": True},
 # ── Network ──
 # 通用基础参数在前（对所有 module 生效）；network_module 作为"算法开关"置于其后。
 # show_if 子参数紧随触发源展开（A1 重排）。带 sub_group 的字段在渲染时形成子组（含子折叠）。
@@ -351,8 +354,6 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "multires_noise_discount", "type": "number", "default": 0.3, "section": "regularization", "desc_key": "field.multires_noise_discount", "target": "toml", "step": 0.01, "show_if": {"key": "multires_noise_iterations", "neq": ""}, "group": "sdxl", "advanced": True, "omit_default": True, "hint_key": "field.multires_noise_discountHint"},
 {"key": "ip_noise_gamma", "type": "number", "section": "regularization", "desc_key": "field.ip_noise_gamma", "target": "toml", "step": 0.001, "advanced": True},
 {"key": "ip_noise_gamma_random_strength", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.ip_noise_gamma_random_strength", "target": "toml", "show_if": {"key": "ip_noise_gamma", "neq": ""}, "advanced": True, "omit_default": True},
-# zero_terminal_snr 需配合 v_parameterization（sd-scripts 未启用 v_pred 时会警告"结果异常"）
-{"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "regularization", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": "sdxl", "show_if": {"key": "v_parameterization", "eq": True}, "omit_default": True},
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": "sdxl"},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": "sdxl", "omit_default": True},

@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,7 +13,7 @@ from PIL import Image
 from backend.monitor import artifacts
 from backend.tasks import TaskManager
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import FIELDS, get_all_fields
+from backend.training.field_registry import FIELDS, get_all_fields, get_fields_json
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.validation import validate_training_config
 from backend.utils.train_utils import count_images
@@ -36,6 +37,20 @@ def valid_anima_config() -> dict:
         "output_dir": "output",
     })
     return config
+
+
+class TrainingFieldLayoutTests(unittest.TestCase):
+    def test_zero_terminal_snr_follows_v_parameterization_without_nested_styling(self):
+        sections = get_fields_json()["sections"]
+        model_fields = next(section["fields"] for section in sections if section["key"] == "model")
+        keys = [field["key"] for field in model_fields]
+
+        v_pred_index = keys.index("v_parameterization")
+        zero_snr = model_fields[v_pred_index + 1]
+
+        self.assertEqual(zero_snr["key"], "zero_terminal_snr")
+        self.assertEqual(zero_snr["showIf"], {"key": "v_parameterization", "eq": True})
+        self.assertFalse(zero_snr["nested"])
 
 
 class TrainingValidationTests(unittest.TestCase):
@@ -336,6 +351,31 @@ class ScanOptimizationTests(unittest.TestCase):
                 previews = artifacts.newest_previews(str(run_dir), force_refresh=True)
 
             self.assertEqual({item["name"] for item in previews}, {"sample.png", "root.png"})
+
+    def test_preview_scan_uses_embedded_training_order_before_file_mtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+            sample_dir = run_dir / "sample"
+            sample_dir.mkdir(parents=True)
+            early = sample_dir / "model_e000001_00_20260808120000_1.png"
+            later_prompt_1 = sample_dir / "model_e000002_01_20260808120100_2.png"
+            later_prompt_0 = run_dir / "model_e000002_00_20260808120100_3.png"
+            for path in (early, later_prompt_1, later_prompt_0):
+                path.touch()
+
+            # Deliberately reverse mtimes to model copied/restored artifacts.
+            os.utime(early, ns=(30, 30))
+            os.utime(later_prompt_0, ns=(20, 20))
+            os.utime(later_prompt_1, ns=(10, 10))
+
+            previews = artifacts.newest_previews(str(run_dir), force_refresh=True)
+            latest = artifacts.newest_previews(str(run_dir), limit=1, force_refresh=True)
+
+            self.assertEqual(
+                [item["name"] for item in previews],
+                [early.name, later_prompt_0.name, later_prompt_1.name],
+            )
+            self.assertEqual([item["name"] for item in latest], [later_prompt_1.name])
 
 
 class TrainingStepEstimatorTests(unittest.TestCase):

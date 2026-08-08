@@ -394,6 +394,7 @@ const app = Object.assign(Object.create(mixin), {
   _logFullLoaded: true,
   _logFullNeedsResync: false,
   _logSliceRequestSeq: 0,
+  logFullLoading: true,
   logFullLines: ['old-task'],
   logFullOffset: 0,
   logFullTotal: 1,
@@ -425,6 +426,7 @@ process.stdout.write(JSON.stringify({
   lines: app.logFullLines,
   total: app.logFullTotal,
   loaded: app._logFullLoaded,
+  loading: app.logFullLoading,
   needsResync: app._logFullNeedsResync,
 }));
 """
@@ -442,7 +444,140 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(state["lines"], [])
         self.assertEqual(state["total"], 0)
         self.assertFalse(state["loaded"])
+        self.assertFalse(state["loading"])
         self.assertTrue(state["needsResync"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_realtime_log_source_change_releases_stale_loading_state(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+const app = Object.assign(Object.create(mixin), {
+  selectedRunDir: null,
+  _monitorRealtimeTopic: 'task:train-2',
+  _logFullSourceKey: 'task:train-1',
+  _logSliceRequestSeq: 3,
+  logFullLoading: true,
+  logFullLines: ['old-task'],
+  logFullOffset: 10,
+  logFullTotal: 11,
+  logFullMatches: [10],
+  logFullMatchIdx: 0,
+  _logFullLoaded: true,
+  _logFullNeedsResync: false,
+  logLines: [],
+  logMode: 'full',
+  currentRoute: 'settings',
+});
+app.handleRealtimeTaskLog({data: {lines: []}});
+process.stdout.write(JSON.stringify({
+  source: app._logFullSourceKey,
+  requestSeq: app._logSliceRequestSeq,
+  loading: app.logFullLoading,
+  loaded: app._logFullLoaded,
+  needsResync: app._logFullNeedsResync,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["source"], "task:train-2")
+        self.assertEqual(state["requestSeq"], 4)
+        self.assertFalse(state["loading"])
+        self.assertFalse(state["loaded"])
+        self.assertTrue(state["needsResync"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_full_log_tail_request_sends_a_valid_boolean_query_value(self):
+        script = r"""
+global.window = {};
+let requestedUrl = '';
+global.fetch = async url => {
+  requestedUrl = String(url);
+  return {json: async () => ({status:'success', data:{offset:0, total:0, lines:[], match_indices:[]}})};
+};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+const app = Object.assign(Object.create(mixin), {
+  selectedRunDir: 'output/test-run',
+  logFullOffset: 0,
+  logFullMatches: [],
+  logFullMatchIdx: -1,
+  logFullQuery: '',
+  _logSliceRequestSeq: 0,
+  renderDashboard() {},
+  toast() {},
+});
+(async () => {
+  await app.fetchLogSlice({tail:true, silent:true});
+  process.stdout.write(requestedUrl);
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+
+        self.assertIn("tail=true", result.stdout)
+        self.assertNotIn("tail=undefined", result.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend monitor checks")
+    def test_preview_sort_reorders_existing_nodes_without_dashboard_rebuild(self):
+        script = r"""
+global.window = {};
+const items = [0, 1, 2].map(index => ({dataset: {previewIndex: String(index)}}));
+const grid = {
+  items: items.slice(),
+  querySelectorAll() { return this.items.slice(); },
+  appendChild(item) {
+    this.items = this.items.filter(existing => existing !== item);
+    this.items.push(item);
+  },
+};
+const buttons = ['asc', 'desc'].map(dir => ({
+  dataset: {previewSort: dir},
+  classList: {toggle(_name, active) { this.active = active; }},
+  setAttribute(name, value) { this[name] = value; },
+}));
+const content = {
+  querySelector(selector) { return selector.includes('preview-grid') ? grid : null; },
+  querySelectorAll(selector) { return selector === '[data-preview-sort]' ? buttons : []; },
+};
+global.document = {getElementById(id) { return id === 'monitorTabContent' ? content : null; }};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const mixin = window.monitorCoreMixin;
+let renders = 0;
+const app = Object.assign(Object.create(mixin), {
+  previews: [{name:'one'}, {name:'two'}, {name:'three'}],
+  previewSortDir: 'asc',
+  currentRoute: 'monitor-dashboard',
+  monitorTab: 'samples',
+  renderDashboard() { renders++; },
+});
+app.setPreviewSort('desc');
+process.stdout.write(JSON.stringify({
+  order: grid.items.map(item => Number(item.dataset.previewIndex)),
+  sameNodes: items.every(item => grid.items.includes(item)),
+  renders,
+  active: buttons.map(button => button.classList.active),
+  pressed: buttons.map(button => button['aria-pressed']),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["order"], [2, 1, 0])
+        self.assertTrue(state["sameNodes"])
+        self.assertEqual(state["renders"], 0)
+        self.assertEqual(state["active"], [False, True])
+        self.assertEqual(state["pressed"], ["false", "true"])
 
     def test_leaving_tail_mode_requires_a_fresh_full_log_page(self):
         stop_body = self.monitor_source.split("stopMonitorRealtime() {", 1)[1].split("\n  },", 1)[0]

@@ -19,6 +19,10 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
 _HIDDEN_PREFIXES = (".", "__")
+_TRAINING_SAMPLE_RE = re.compile(
+    r"(?:^|_)(?P<progress>e?\d{6})_(?P<prompt>\d{2})_(?P<timestamp>\d{14})(?:_-?\d+)?$",
+    re.IGNORECASE,
+)
 
 
 def _is_hidden(name: str) -> bool:
@@ -33,6 +37,23 @@ def _iter_dir(root: Path):
         if any(_is_hidden(part) for part in p.relative_to(root).parts):
             continue
         yield p
+
+
+def _preview_sort_key(path: Path, stat) -> tuple[int, int, int, int, str]:
+    """Return a stable generation-order key for trainer sample filenames."""
+    match = _TRAINING_SAMPLE_RE.search(path.stem)
+    if match:
+        progress_token = match.group("progress").lower()
+        progress_value = int(progress_token[1:] if progress_token.startswith("e") else progress_token)
+        return (
+            int(match.group("timestamp")),
+            progress_value,
+            int(match.group("prompt")),
+            stat.st_mtime_ns,
+            path.as_posix().lower(),
+        )
+    fallback_time = int(datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d%H%M%S"))
+    return (fallback_time, -1, -1, stat.st_mtime_ns, path.as_posix().lower())
 
 
 # ── 缓存 + 线程安全锁 ────────────────────────────────────
@@ -63,7 +84,7 @@ def newest_previews(
 ) -> list[dict]:
     """扫描最新的训练样本图（扁平结构：run_dir/sample/ → run_dir/；兼容旧 outputs/sample/）
 
-    limit: 返回的最新样本数量上限；0 表示返回全部（按 mtime 升序，最新在末尾）。
+    limit: 返回的最新样本数量上限；0 表示返回全部（按训练生成顺序升序，最新在末尾）。
     force_refresh: True 时跳过 5s 缓存，立即重新扫描磁盘并覆盖缓存。
     """
     global _previews_cache
@@ -117,17 +138,20 @@ def newest_previews(
             seen.add(p)
             found.append(p)
 
-    found.sort(key=lambda p: p.stat().st_mtime)
-    selected = found[-limit:] if limit else found
+    ordered: list[tuple[Path, object]] = []
+    for p in found:
+        try:
+            ordered.append((p, p.stat()))
+        except OSError:
+            continue
+    ordered.sort(key=lambda item: _preview_sort_key(item[0], item[1]))
+    selected = ordered[-limit:] if limit else ordered
 
     result = []
-    for p in selected:
+    for p, stat in selected:
         try:
             rel = str(p.relative_to(od)).replace("\\", "/")
-            stat = p.stat()
         except ValueError:
-            continue
-        except OSError:
             continue
         encoded_run = quote(run_dir, safe="")
         encoded_path = quote(rel, safe="/")
