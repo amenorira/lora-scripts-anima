@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.2 - 2026-08-08
+
+This patch release fixes training-monitor log and preview behavior and refines the layout of SDXL training-objective settings.
+
+### Training monitor
+
+- Preview samples now prefer the generation timestamp, training progress, and prompt index encoded in trainer filenames. The latest sample and training order remain correct after copied or restored output folders change file modification times.
+- Fixed invalid tail parameters on the initial full-log request and immediately clear stale loading state when the training task or log source changes.
+- Switching between training order and latest-first on the Samples tab now reorders existing preview nodes in place instead of rebuilding the entire grid, avoiding flicker and transient broken images.
+- Removed the duplicate “Latest sample” card from Overview and used the space to expand training diagnostics.
+
+### SDXL parameter form
+
+- Moved `zero_terminal_snr` beside `v_parameterization`. It remains visible only when v-parameterization is enabled, but is no longer rendered as an indented child field.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.1...v2.3.2)
+
 ## v2.3.1 - 2026-08-08
 
 This patch release updates the timestep parameter guide with a new per-subset offset section and fixes wording and references.
