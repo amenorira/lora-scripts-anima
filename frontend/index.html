@@ -20,8 +20,8 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260802-tageditor1">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260801-tagger24">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260808-ui-align6">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260808-ui-align7">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -29,15 +29,15 @@
   <script src="/anima-ui/js/anima-select.js?v=20260728-tagger4" defer></script>
   <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
-  <script src="/anima-ui/js/monitor-render.js" defer></script>
+  <script src="/anima-ui/js/monitor-render.js?v=20260808-ui-align4" defer></script>
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
-  <script src="/anima-ui/js/training-core.js" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260808-timestep-docs2" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-presets.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260801-tagger18" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260802-tageditor1" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260808-single-ux2" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260808-progress1" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -200,7 +200,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-	          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger', 'route-tagger-single': currentRoute === 'tagger' && taggerSourceMode === 'single', 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -1178,8 +1178,11 @@
 
       <!-- Route: Settings -->
       <div x-show="currentRoute === 'settings'" x-cloak>
+        <div class="page-header">
+          <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
+          <p class="page-subtitle" x-text="t('settings.subtitle')">Customize your training UI experience</p>
+        </div>
         <div class="env-section">
-          <div class="env-section-header" x-text="t('settings.title')">UI Settings</div>
           <div class="settings-row">
             <div class="settings-row-main">
               <div class="settings-row-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>

@@ -278,7 +278,7 @@ window.monitorRenderMixin = {
       const st = d.train_result.status || '';
       const dur = d.train_result.duration_str || '';
       const stClass = st === 'completed' ? 'ok' : (st === 'failed' ? 'danger' : 'muted');
-      const stLabel = st === 'completed' ? t('statusCompleted') : (st === 'failed' ? t('statusFailed') : (st === 'terminated' ? t('statusTerminated') : st));
+      const stLabel = st === 'completed' ? t('statusCompleted') : (st === 'failed' ? t('statusFailed') : (st === 'terminated' ? t('statusTerminated') : (st === 'running' ? t('statusRunning') : st)));
       html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
       if (dur) html += '<span class="m-history-dur">' + this.esc(dur) + '</span>';
     }
@@ -426,11 +426,15 @@ window.monitorRenderMixin = {
   _overviewMetricsHtml(d, t, isHistory, isRunning) {
     const tr = d.train_result || {};
     const completed = isHistory && tr.status === 'completed';
+    const historyStatus = tr.status === 'completed' ? t('statusCompleted')
+      : (tr.status === 'failed' ? t('statusFailed')
+        : (tr.status === 'terminated' ? t('statusTerminated')
+          : (tr.status === 'running' ? t('statusRunning') : (tr.status || t('finished')))));
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average');
     const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet');
     let html = '<section class="m-console-card m-overview-metrics">';
-    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? (tr.status || t('finished')) : (isRunning ? t('live') : t('standby'))) + '</span></div>';
+    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? historyStatus : (isRunning ? t('live') : t('standby'))) + '</span></div>';
     if (!isRunning && !isHistory) {
       html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain')) + '</strong><span>' + this.esc(t('readyToTrainHint')) + '</span></div></div>';
       html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';

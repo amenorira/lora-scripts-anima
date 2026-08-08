@@ -21,11 +21,20 @@ window.taggerMixin = {
   taggerFilmstripCollapsed: false,
   taggerFailedOnly: false,
   taggerLogsOpen: false,
-  taggerPreviewActual: false,
-  taggerPreviewLight: false,
+  taggerPreviewScale: 1,
+  taggerPreviewX: 0,
+  taggerPreviewY: 0,
+  taggerPreviewPanning: false,
+  taggerPreviewPointerId: null,
+  taggerPreviewPanStartX: 0,
+  taggerPreviewPanStartY: 0,
   taggerDragOver: false,
   taggerSingleLeftWidth: 55,
   taggerSingleResizing: false,
+  taggerSingleResultHeight: 190,
+  taggerResultResizing: false,
+  _taggerResultResizeStartY: 0,
+  _taggerResultResizeStartHeight: 190,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -85,7 +94,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260801-tagger23');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260808-tagger24');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -99,6 +108,7 @@ window.taggerMixin = {
     this.realtimeUnsubscribe('hardware');
     this._setTaggerRealtimeTask(null);
     this.stopTaggerSingleResize();
+    this.stopTaggerResultResize();
     this._releaseTaggerPreview();
     Object.values(this._taggerModeStates).forEach(state => {
       if (!state?.previewObjectUrl) return;
@@ -379,11 +389,13 @@ window.taggerMixin = {
     if (this.taggerRunning || this.taggerStarting || this.taggerScanning
       || !['folder', 'single'].includes(mode) || mode === this.taggerSourceMode) return;
     this.stopTaggerSingleResize();
+    this.stopTaggerResultResize();
     this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
     this.taggerSourceMode = mode;
     const stored = this._taggerModeStates[mode];
     this._taggerModeStates[mode] = null;
     this._restoreTaggerModeState(stored);
+    this.resetTaggerPreview();
   },
 
   _captureTaggerModeState() {
@@ -427,9 +439,11 @@ window.taggerMixin = {
   clearTaggerSource() {
     if (this.taggerRunning || this.taggerStarting || this.taggerScanning) return;
     this.stopTaggerSingleResize();
+    this.stopTaggerResultResize();
     this._taggerModeStates[this.taggerSourceMode] = null;
     this._releaseTaggerPreview();
     this._restoreTaggerModeState(null);
+    this.resetTaggerPreview();
   },
 
   _clearStoredTaggerResult(state) {
@@ -583,12 +597,67 @@ window.taggerMixin = {
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
     this._taggerLoadedResultKey = '';
+    this.resetTaggerPreview();
     this.saveTaggerSettings();
   },
 
   taggerPreviewUrl(index) {
     if (this.taggerSourceMode === 'single' && this._taggerPreviewObjectUrl && index === 0) return this._taggerPreviewObjectUrl;
     return this.taggerSource ? `/api/tagger/source/${this.taggerSource.source_token}/${index}` : '';
+  },
+
+  taggerPreviewTransform() {
+    return `transform: translate3d(${this.taggerPreviewX}px, ${this.taggerPreviewY}px, 0) scale(${this.taggerPreviewScale})`;
+  },
+
+  resetTaggerPreview() {
+    this.taggerPreviewScale = 1;
+    this.taggerPreviewX = 0;
+    this.taggerPreviewY = 0;
+    this.taggerPreviewPanning = false;
+    this.taggerPreviewPointerId = null;
+  },
+
+  zoomTaggerPreview(event) {
+    if (!this.taggerSource) return;
+    const current = Number(this.taggerPreviewScale) || 1;
+    const factor = event.deltaY < 0 ? 1.15 : (1 / 1.15);
+    const next = Math.min(8, Math.max(1, Number((current * factor).toFixed(3))));
+    if (next === current) return;
+    if (next === 1) {
+      this.resetTaggerPreview();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const cursorX = event.clientX - (rect.left + rect.width / 2);
+    const cursorY = event.clientY - (rect.top + rect.height / 2);
+    const ratio = next / current;
+    this.taggerPreviewX = cursorX - ratio * (cursorX - this.taggerPreviewX);
+    this.taggerPreviewY = cursorY - ratio * (cursorY - this.taggerPreviewY);
+    this.taggerPreviewScale = next;
+  },
+
+  startTaggerPreviewPan(event) {
+    if (event.button !== 0 || this.taggerPreviewScale <= 1) return;
+    this.taggerPreviewPanning = true;
+    this.taggerPreviewPointerId = event.pointerId;
+    this.taggerPreviewPanStartX = event.clientX - this.taggerPreviewX;
+    this.taggerPreviewPanStartY = event.clientY - this.taggerPreviewY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  },
+
+  moveTaggerPreviewPan(event) {
+    if (!this.taggerPreviewPanning || event.pointerId !== this.taggerPreviewPointerId) return;
+    this.taggerPreviewX = event.clientX - this.taggerPreviewPanStartX;
+    this.taggerPreviewY = event.clientY - this.taggerPreviewPanStartY;
+  },
+
+  stopTaggerPreviewPan(event) {
+    if (!this.taggerPreviewPanning || (event && event.pointerId !== this.taggerPreviewPointerId)) return;
+    event?.currentTarget?.releasePointerCapture?.(this.taggerPreviewPointerId);
+    this.taggerPreviewPanning = false;
+    this.taggerPreviewPointerId = null;
   },
 
   startTaggerSingleResize(event) {
@@ -610,6 +679,44 @@ window.taggerMixin = {
   stopTaggerSingleResize() {
     this.taggerSingleResizing = false;
     document.body.classList.remove('tagger-single-resizing');
+  },
+
+  taggerResultResizeMax() {
+    const main = document.querySelector('.tagger-single-main');
+    const tags = document.querySelector('.tagger-result-tags');
+    if (!main || !tags) return 190;
+    const divider = document.querySelector('.tagger-result-divider');
+    const actions = document.querySelector('.tagger-single-result .tagger-result-actions');
+    const reserved = Number(divider?.offsetHeight || 0) + Number(actions?.offsetHeight || 0);
+    return Math.max(94, Math.floor(main.getBoundingClientRect().bottom - tags.getBoundingClientRect().top - reserved));
+  },
+
+  adjustTaggerResultHeight(delta) {
+    const next = Number(this.taggerSingleResultHeight || 190) + Number(delta || 0);
+    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, next));
+  },
+
+  startTaggerResultResize(event) {
+    if (event && event.button !== 0) return;
+    const tags = document.querySelector('.tagger-result-tags');
+    if (!tags) return;
+    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, tags.getBoundingClientRect().height));
+    this._taggerResultResizeStartY = event.clientY;
+    this._taggerResultResizeStartHeight = this.taggerSingleResultHeight;
+    this.taggerResultResizing = true;
+    document.body.classList.add('tagger-result-resizing');
+  },
+
+  resizeTaggerResult(event) {
+    if (!this.taggerResultResizing) return;
+    const delta = event.clientY - this._taggerResultResizeStartY;
+    const next = this._taggerResultResizeStartHeight + delta;
+    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, Math.round(next)));
+  },
+
+  stopTaggerResultResize() {
+    this.taggerResultResizing = false;
+    document.body.classList.remove('tagger-result-resizing');
   },
 
   taggerThumbUrl(index) {

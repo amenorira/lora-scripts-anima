@@ -308,6 +308,8 @@ timestep_sampling = { offset = -0.25 }
 
 它只改变“抽到哪些时间步”，不改变 Loss 权重。它可以与全局 `discrete_flow_shift` 同时使用：前者按子集逐图片生效，后者对整个采样方式生效。
 
+`timestep_sampling=sigma` 时，`weighting_scheme=logit_normal` 或 `mode` 也会改变抽样分布，但改变的是所有子集共用的全局基础分布，而不是某一个子集的偏移。`sigma` 路径不会读取 `subset_timestep_offsets`，因此这两个权重选项无法代替按子集单独设置偏移。
+
 ### 支持的模式与推荐范围
 
 分组偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 不读取这个偏移；即使通过 API 传入该值，训练也会正常运行，只是它不会生效。

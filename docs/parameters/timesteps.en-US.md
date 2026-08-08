@@ -308,6 +308,8 @@ In other words, before the sigmoid mapping, the distribution shifts as a whole b
 
 This changes **which timesteps are sampled**, not the loss weighting. It can be combined with the global `discrete_flow_shift`: the subset offset is applied per image, while `discrete_flow_shift` applies to the sampling mode as a whole.
 
+With `timestep_sampling=sigma`, `weighting_scheme=logit_normal` or `mode` also changes the sampled distribution, but it changes the base distribution shared by every subset, not the offset of a single subset. The `sigma` path never reads `subset_timestep_offsets`, so these weighting options cannot substitute for a per-subset offset.
+
 ### Supported modes and recommended range
 
 Subset offsets are supported by `sigmoid`, `shift`, and `flux_shift`. `uniform` and `sigma` do not read this value; if the value is passed through the API anyway, training still runs and the offset simply has no effect.

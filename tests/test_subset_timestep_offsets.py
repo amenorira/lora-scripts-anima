@@ -122,6 +122,22 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
 
 
 class SubsetTimestepFrontendTests(unittest.TestCase):
+    def test_editor_is_rendered_after_weighting_parameters(self):
+        repo = Path(__file__).resolve().parents[1]
+        source = (repo / "frontend" / "js" / "training-core.js").read_text(encoding="utf-8")
+
+        self.assertIn("if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();", source)
+        self.assertNotIn("if (f.key === 'discrete_flow_shift') html += this.renderSubsetTimestepOffsets();", source)
+
+    def test_editor_links_to_subset_offset_documentation(self):
+        repo = Path(__file__).resolve().parents[1]
+        source = (repo / "frontend" / "js" / "training-core.js").read_text(encoding="utf-8")
+        docs = (repo / "docs" / "parameters" / "timesteps.zh-CN.md").read_text(encoding="utf-8")
+
+        self.assertIn("openParameterDoc('timesteps','subset-offsets')", source)
+        self.assertIn("<!-- doc-anchor: subset-offsets -->", docs)
+        self.assertIn("sigma` 路径不会读取 `subset_timestep_offsets", docs)
+
     def test_preview_applies_offset_and_editor_uses_existing_stepper(self):
         repo = Path(__file__).resolve().parents[1]
         core_path = repo / "frontend" / "js" / "training-core.js"

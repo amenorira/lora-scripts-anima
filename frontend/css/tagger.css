@@ -1,16 +1,16 @@
 /* Tagger follows the training form language while keeping single-image review focused. */
-.tagger-route { overflow: auto; min-width: 960px; }
-#taggerWorkspaceHost { min-height: 100%; }
+.tagger-route { position: relative; inset: auto; display: flex; flex: 1 0 auto; min-width: 960px; min-height: 100%; overflow: visible; }
+#taggerWorkspaceHost { display: flex; flex: 1 0 auto; flex-direction: column; min-height: 100%; }
 .tagger-ui-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
-.tagger-page-shell { min-height: 100%; padding: 24px 28px 40px; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; }
+.tagger-page-shell { display: flex; flex: 1 0 auto; flex-direction: column; width: 100%; min-height: 100%; padding: 24px 28px 40px; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; }
 .tagger-page-shell svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tagger-page-shell :is(button, input, textarea) { border-radius: var(--radius-sm); font-family: inherit; letter-spacing: 0; }
 
-.tagger-page-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 30px; margin-bottom: 10px; }
+.tagger-page-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; min-height: 30px; margin-bottom: 10px; }
 .tagger-page-header .page-title { margin-bottom: 0; }
-.tagger-page-resbar { padding: 0; }
+.tagger-page-resbar { flex: 0 1 auto; min-height: 30px; padding: 0; }
 .tagger-mode-tabs { display: flex; gap: 0; margin: 0 0 16px; border-bottom: 1px solid var(--border-default); }
-.tagger-mode-tabs button { min-width: 104px; padding: 8px 15px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; }
+.tagger-mode-tabs button { min-width: 104px; height: 38px; min-height: 38px; padding: 0 16px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
 .tagger-mode-tabs button:hover { color: var(--text-primary); }
 .tagger-mode-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); }
 .tagger-training-notice { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-default)); background: var(--danger-soft); color: var(--danger); font-size: 12px; }
@@ -73,31 +73,31 @@
 .tagger-action-log { display: flex; flex: 1 1 260px; min-height: 220px; margin-top: 2px; overflow: hidden; border-top: 1px solid var(--border-default); flex-direction: column; }
 .tagger-action-log > header { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 0 12px; }
 .tagger-action-log > header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.tagger-action-log > header strong { font-size: 10.5px; }
-.tagger-log-phase { overflow: hidden; color: var(--text-tertiary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-action-log > header strong { font-size: 11.5px; }
+.tagger-log-phase { overflow: hidden; color: var(--text-tertiary); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .tagger-log-phase::before { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--text-tertiary); content: ""; vertical-align: 1px; }
 .tagger-log-phase.running::before { background: var(--accent); }
-.tagger-action-log > header button { padding: 2px 4px; border: 0; background: transparent; color: var(--text-secondary); font-size: 9px; cursor: pointer; }
+.tagger-action-log > header button { padding: 2px 4px; border: 0; background: transparent; color: var(--text-secondary); font-size: 10.5px; cursor: pointer; }
 .tagger-log-stream { flex: 1 1 auto; min-height: 0; padding: 7px 0; overflow: auto; border-top: 1px solid var(--border-subtle); background: var(--bg-input); }
-.tagger-log-line { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; min-height: 24px; padding: 3px 12px; border-left: 2px solid transparent; color: var(--text-secondary); font: 10px/1.65 var(--font-mono); word-break: break-word; }
+.tagger-log-line { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; min-height: 25px; padding: 3px 12px; border-left: 2px solid transparent; color: var(--text-secondary); font: 11px/1.55 var(--font-mono); word-break: break-word; }
 .tagger-log-time { color: var(--text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tagger-log-message { min-width: 0; }
 .tagger-log-line.phase { border-left-color: var(--accent); color: var(--text-primary); }
 .tagger-log-line.success { color: var(--success); }
 .tagger-log-line.warning { color: var(--warning); }
 .tagger-log-line.error { border-left-color: var(--danger); color: var(--danger); }
-.tagger-log-empty { padding: 10px 12px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.55; }
+.tagger-log-empty { padding: 10px 12px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
 .tagger-action-source { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; padding: 9px 0; border: 0; border-bottom: 1px solid var(--border-subtle); background: transparent; }
 .tagger-action-source > svg { width: 22px; height: 22px; color: var(--text-tertiary); }
 .tagger-action-source strong, .tagger-action-source span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tagger-action-source strong { font-size: 11px; }
-.tagger-action-source span { margin-top: 3px; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9px; }
+.tagger-action-source strong { font-size: 12px; }
+.tagger-action-source span { margin-top: 3px; color: var(--text-tertiary); font-family: var(--font-sans); font-size: 10.5px; }
 .tagger-action-source.ready > svg { color: var(--accent); }
 .tagger-source-summary { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border-subtle); }
 .tagger-source-summary span { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-right: 1px solid var(--border-subtle); }
 .tagger-source-summary span:last-child { border-right: 0; }
 .tagger-source-summary strong { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
-.tagger-source-summary small { color: var(--text-tertiary); font-size: 8.5px; }
+.tagger-source-summary small { color: var(--text-tertiary); font-size: 10px; }
 .tagger-start-button, .tagger-stop-button, .tagger-secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-height: var(--control-height); padding: 7px 16px; border: 1px solid transparent; border-radius: var(--radius-control); font-size: 13px; font-weight: 550; cursor: pointer; }
 .tagger-start-button { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .tagger-start-button:hover:not(:disabled) { border-color: var(--accent-solid); background: var(--accent-solid); color: #fff; }
@@ -112,29 +112,29 @@
 .tagger-task-title i.running, .tagger-task-title i.created { background: var(--accent); }
 .tagger-task-title i.done { background: var(--success); }
 .tagger-task-title i.error, .tagger-task-title i.cancelled { background: var(--danger); }
-.tagger-task-title strong { font-size: 10.5px; }
-.tagger-task-title span { color: var(--text-tertiary); font-family: inherit; font-size: 9px; font-variant-numeric: tabular-nums; }
+.tagger-task-title strong { font-size: 11.5px; }
+.tagger-task-title span { color: var(--text-tertiary); font-family: inherit; font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .tagger-progress-track { height: 3px; margin: 8px 0 5px; overflow: hidden; background: var(--border-default); }
 .tagger-progress-track i { display: block; height: 100%; background: var(--accent-solid); }
-.tagger-task-file { overflow: hidden; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-task-file { overflow: hidden; color: var(--text-tertiary); font-family: var(--font-sans); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .tagger-task-status dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; margin: 10px 0 0; }
 .tagger-task-status dl div { display: flex; justify-content: space-between; }
-.tagger-task-status dt { color: var(--text-tertiary); font-size: 9px; }
-.tagger-task-status dd { margin: 0; font-family: inherit; font-size: 9px; font-variant-numeric: tabular-nums; }
+.tagger-task-status dt { color: var(--text-tertiary); font-size: 10.5px; }
+.tagger-task-status dd { margin: 0; font-family: inherit; font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .tagger-task-status dd.success { color: var(--success); }.tagger-task-status dd.skipped { color: var(--warning); }.tagger-task-status dd.failed { color: var(--danger); }
 .tagger-error-summary { display: flex; gap: 8px; padding: 8px 14px; background: var(--danger-soft); color: var(--danger); font-size: 10px; }
 
 .tagger-single-layout { display: grid; grid-template-columns: minmax(320px, var(--tagger-single-left, 55%)) 8px minmax(420px, 1fr); align-items: stretch; gap: 0; width: 100%; }
 .tagger-single-main, .tagger-single-sidebar { display: grid; align-content: start; gap: 14px; min-width: 0; }
-.tagger-single-main { padding-right: 12px; }
+.tagger-single-main { grid-template-rows: auto auto minmax(0, 1fr); padding-right: 12px; }
 .tagger-single-sidebar { padding-left: 12px; }
 .tagger-single-divider { position: relative; min-height: 100%; cursor: col-resize; touch-action: none; }
 .tagger-single-divider::before { position: absolute; inset: 0 3px; background: var(--border-default); content: ""; transition: background-color var(--duration-fast) ease; }
 .tagger-single-divider:hover::before, .tagger-single-divider.dragging::before { background: var(--accent); }
 .tagger-single-divider:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize !important; user-select: none !important; }
+body.tagger-result-resizing, body.tagger-result-resizing * { cursor: row-resize !important; user-select: none !important; }
 .tagger-single-preview { display: grid; grid-template-rows: 36px clamp(300px, 46vh, 520px); min-width: 0; overflow: hidden; border: 1px solid var(--border-default); background: var(--bg-surface); }
-.tagger-single-preview.light { background: #dedede; }
 .tagger-single-preview.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tagger-preview-toolbar { display: flex; align-items: center; gap: 3px; padding: 3px 5px 3px 10px; border-bottom: 1px solid var(--border-default); }
 .tagger-preview-toolbar > span { flex: 1; min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -145,17 +145,25 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-drop-zone svg { width: 38px; height: 38px; stroke-width: 1.3; }
 .tagger-drop-zone strong { font-size: 14px; font-weight: 600; }
 .tagger-drop-zone span { font-size: 12px; }
-.tagger-preview-image { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: auto; background: var(--bg-preview); }
-.tagger-preview-image img { display: block; max-width: calc(100% - 28px); max-height: calc(100% - 28px); object-fit: contain; }
-.tagger-preview-image img.actual { max-width: none; max-height: none; object-fit: none; }
+.tagger-preview-image { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-preview); user-select: none; }
+.tagger-preview-image.zoomed { cursor: grab; touch-action: none; }
+.tagger-preview-image.panning { cursor: grabbing; }
+.tagger-preview-image img { display: block; max-width: calc(100% - 28px); max-height: calc(100% - 28px); object-fit: contain; transform-origin: center; will-change: transform; }
+.tagger-preview-image:not(.panning) img { transition: transform 100ms ease-out; }
 .tagger-single-sidebar .tagger-form-card > h2, .tagger-single-main .tagger-form-card > h2 { padding-top: 0; }
 .tagger-single-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .tagger-single-actions .tagger-clear-button { width: auto; min-width: 84px; }
-.tagger-result-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px 6px; width: 100%; min-height: 94px; max-height: 190px; margin: 10px 0 0; padding: 10px 11px; overflow-y: auto; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-size: 13px; line-height: 1.55; }
+.tagger-single-result { display: flex; min-height: 0; overflow: hidden; flex-direction: column; }
+.tagger-result-tags { display: flex; flex: 0 1 var(--tagger-result-height, 190px); flex-wrap: wrap; align-content: flex-start; gap: 4px 6px; width: 100%; height: var(--tagger-result-height, 190px); min-height: 94px; margin: 10px 0 0; padding: 10px 11px; overflow-y: auto; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-size: 13px; line-height: 1.55; }
 .tagger-result-tag { display: inline-flex; align-items: baseline; white-space: nowrap; }
 .tagger-result-tag i { margin-left: 1px; color: var(--text-tertiary); font-style: normal; }
 .tagger-result-empty { min-height: 94px; margin-top: 10px; border: 1px dashed var(--border-default); }
-.tagger-single-result .tagger-result-actions { padding: 7px 0 0; }
+.tagger-result-divider { position: relative; height: 10px; cursor: row-resize; touch-action: none; }
+.tagger-result-divider::before { position: absolute; inset: 4px 0 auto; height: 2px; background: var(--border-default); content: ""; transition: background-color var(--duration-fast) ease; }
+.tagger-result-divider:hover::before, .tagger-result-divider.dragging::before { background: var(--accent); }
+.tagger-result-divider:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tagger-single-result .tagger-result-actions { padding: 0; }
+.tagger-single-result .tagger-result-divider, .tagger-single-result .tagger-result-actions { flex: 0 0 auto; }
 .tagger-result-actions { display: flex; justify-content: flex-end; gap: 5px; padding: 7px 14px 10px; }
 .tagger-result-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-secondary); font-size: 11.5px; cursor: pointer; }
 .tagger-result-actions button:hover { border-color: var(--accent); color: var(--accent); }
@@ -174,15 +182,16 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-category-total b { color: var(--text-primary); font-family: inherit; font-size: inherit; font-variant-numeric: tabular-nums; }
 .tagger-category-section { margin-bottom: 8px; overflow: hidden; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); }
 .tagger-category-section.collapsed { background: transparent; }
-.tagger-category-heading { display: grid; grid-template-columns: 28px minmax(100px, 1fr) auto 18px 30px; align-items: center; gap: 8px; min-height: 40px; padding: 5px 8px; background: var(--bg-surface-raised); }
-.tagger-category-heading strong { overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.tagger-category-heading > span { color: var(--text-tertiary); font-family: inherit; font-size: 11px; font-variant-numeric: tabular-nums; }
+.tagger-category-heading { display: grid; grid-template-columns: minmax(0, 1fr) 18px 30px; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px 0 0; background: var(--bg-surface-raised); }
+.tagger-category-heading-toggle { display: grid; grid-template-columns: 28px minmax(100px, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 40px; padding: 5px 0 5px 8px; border: 0; background: transparent; color: var(--text-tertiary); text-align: left; cursor: pointer; }
+.tagger-category-heading-toggle:hover { background: var(--bg-hover); }
+.tagger-category-heading-toggle strong { overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-heading-toggle > span { color: var(--text-tertiary); font-family: inherit; font-size: 11px; font-variant-numeric: tabular-nums; }
 .tagger-category-visible { display: flex; align-items: center; justify-content: center; }
 .tagger-category-heading > .tagger-category-visible .tagger-checkbox { width: 14px; height: 14px; flex: 0 0 14px; padding: 0; border: 1px solid var(--border-input); border-radius: 2px; background: var(--bg-input); box-shadow: none; text-align: initial; }
 .tagger-category-heading > .tagger-category-visible .tagger-checkbox:checked { border-color: var(--accent-solid); background: var(--accent-solid); }
-.tagger-category-collapse { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; }
-.tagger-category-collapse svg { width: 12px; height: 12px; transform: rotate(-90deg); }
-.tagger-category-collapse svg.open { transform: rotate(0); }
+.tagger-category-heading-toggle svg { width: 12px; height: 12px; justify-self: center; transform: rotate(-90deg); }
+.tagger-category-heading-toggle svg.open { transform: rotate(0); }
 .tagger-category-copy { width: var(--control-height); padding: 0; }
 .tagger-category-copy svg { width: 13px; height: 13px; }
 .tagger-category-body { border-top: 1px solid var(--border-default); }
@@ -198,14 +207,15 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-category-tags p, .tagger-category-tags small { flex: 1 0 100%; color: var(--text-tertiary); font-size: 11.5px; }
 
 @media (min-width: 1024px) and (max-width: 1250px) {
-  .tagger-page-shell { padding-inline: 16px; }
+  .tagger-route { min-width: 0; }
+  .tagger-page-shell { min-width: 0; padding-inline: 16px; }
   .tagger-batch-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
   .tagger-form-field { grid-template-columns: minmax(220px, 1fr) minmax(200px, 44%); gap: 14px; }
   .tagger-category-field { gap: 14px; }
   .tagger-single-layout { grid-template-columns: minmax(320px, var(--tagger-single-left, 52%)) 8px minmax(400px, 1fr); }
 }
 
-.tagger-page-shell:has(.tagger-single-layout) { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.tagger-page-shell:has(.tagger-single-layout) { flex: 1 1 auto; height: 100%; min-height: 0; overflow: hidden; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-layout { flex: 1 1 auto; min-height: 0; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-main,
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { min-height: 0; }

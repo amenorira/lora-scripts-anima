@@ -1365,7 +1365,7 @@ window.trainingCoreMixin = {
         } else if (!f.advanced) {
           // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
           html += this.renderField(f);
-          if (f.key === 'discrete_flow_shift') html += this.renderSubsetTimestepOffsets();
+          if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
         }
       });
 
@@ -2279,9 +2279,14 @@ window.trainingCoreMixin = {
     return `<div class="subset-timestep-editor${supported ? '' : ' is-disabled'}" :class="{ 'is-disabled': !timestepOffsetSupported() }">
       <div class="subset-timestep-header">
         <div>
-          <div class="subset-timestep-title">${this.esc(this.t('timestepOffset.title'))}</div>
-          <div class="field-hint" x-show="timestepOffsetSupported()">${this.esc(this.t('timestepOffset.hint'))}</div>
-          <div class="field-hint" x-show="!timestepOffsetSupported()">${this.esc(this.t('timestepOffset.unsupported'))}</div>
+          <div class="subset-timestep-title">
+            <span>${this.esc(this.t('timestepOffset.title'))}</span>
+            <button type="button" class="field-doc-link" @click.stop="openParameterDoc('timesteps','subset-offsets')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              <span>${this.esc(this.t('docs.openGuide'))}</span>
+            </button>
+          </div>
+          <div class="field-hint">${this.esc(this.t('timestepOffset.hint'))}</div>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
