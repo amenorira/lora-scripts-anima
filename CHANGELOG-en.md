@@ -6,6 +6,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.3 - 2026-08-08
+
+This patch release aligns layout and interaction patterns across the trainer, improves the Tagger single-image review workflow, and fixes details in startup output, training monitoring, and Tag Editor navigation.
+
+### Startup and UI consistency
+
+- Improved Windows and Linux startup progress and ready output. Service, TensorBoard, and log paths now wrap naturally in narrow consoles instead of being constrained by persistent panel borders.
+- Aligned page shells, toolbar heights, controls, typography, and scrolling across Dashboard, Tagger, and Settings, reducing pixel shifts and visual discontinuity when switching views.
+- Fixed the localized “Running” state in training history and standardized the Chinese training-summary term for Epoch as “轮次”.
+- Fixed the top loading indicator remaining active when Tag Editor opens without a selected dataset directory.
+
+### Tagger single-image workspace
+
+- Added wheel zoom, drag-to-pan, and double-click or toolbar reset to fit the preview; removed the ineffective preview-background toggle.
+- Made the Total Tags area vertically resizable with pointer and keyboard controls, constrained by the available space in the left pane.
+- Made the confidence-category arrow, name, and count region a full-width expand/collapse control while keeping visibility and copy actions independent.
+
+### Timestep settings and documentation
+
+- Moved the per-subset sampling-offset editor after `weighting_scheme` and its conditional fields, with a direct link to the relevant guide section.
+- Clarified that subset offsets work only with `sigmoid`, `shift`, and `flux_shift`; under `sigma`, `logit_normal` and `mode` change the shared base distribution rather than an individual subset offset.
+- Updated the English and Chinese timestep guides, field hints, and regression coverage accordingly.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.2...v2.3.3)
+
 ## v2.3.2 - 2026-08-08
 
 This patch release fixes training-monitor log and preview behavior and refines the layout of SDXL training-objective settings.
