@@ -270,6 +270,52 @@ Let <var>s</var> be the shift value. The transform is:
 
 This value is applied directly by `shift` and through the scheduler by `sigma`. `sigmoid`, `uniform`, `flux_shift`, `krea2_shift`, and `logsnr` ignore the fixed value.
 
+<!-- doc-anchor: subset-offsets -->
+## Per-subset timestep offsets
+
+`subset_timestep_offsets` moves the timestep distribution separately for each training subset, so one run can treat close-up face crops and full-body shots differently. It currently works for **Anima** training only; Krea 2 and SDXL do not support it.
+
+A subset is a subfolder whose name starts with a number followed by an underscore (for example `10_face` and `3_full_body`); the leading number is the repeat count. In the UI and API, the setting is a mapping from subset name to offset, not one global value:
+
+```json
+{"10_face": -0.25, "3_full_body": 0.20}
+```
+
+When training starts, the backend writes a separate `dataset.toml`; the field itself stays out of the main training configuration:
+
+```toml
+[[datasets.subsets]]
+image_dir = ".../10_face"
+[datasets.subsets.custom_attributes]
+timestep_sampling = { offset = -0.25 }
+```
+
+During training, the offset travels with each image into the batch. Images from `10_face` use `-0.25`, while images from `3_full_body` use `0.20`; mixed batches do not overwrite one subset with another. Regularization data does not receive these offsets.
+
+### Where the offset is applied
+
+The offset is added to the normal random sample first. The result is then scaled by `sigmoid_scale` and passed through `sigmoid`; with `shift` or `flux_shift`, an additional overall remapping follows:
+
+```text
+timestep = sigmoid( sigmoid_scale × (random sample + offset) )
+```
+
+In other words, before the sigmoid mapping, the distribution shifts as a whole by `offset × sigmoid_scale`.
+
+- Negative values bias sampling toward lower noise, usually putting more samples in detail, texture, and line-quality regions.
+- Positive values bias sampling toward higher noise, usually putting more samples in global-structure, pose, and composition regions.
+- `0` or an empty value leaves that subset's base distribution unchanged.
+
+This changes **which timesteps are sampled**, not the loss weighting. It can be combined with the global `discrete_flow_shift`: the subset offset is applied per image, while `discrete_flow_shift` applies to the sampling mode as a whole.
+
+### Supported modes and recommended range
+
+Subset offsets are supported by `sigmoid`, `shift`, and `flux_shift`. `uniform` and `sigma` do not read this value; if the value is passed through the API anyway, training still runs and the offset simply has no effect.
+
+Start with values in the `-0.5` to `+0.5` range. Larger absolute values push the whole distribution toward one end; with `shift` or `flux_shift`, positive offsets can starve the low-noise side quickly. Close-up and texture-heavy subsets are reasonable candidates for a small negative value, while full-body or structure-heavy subsets can be tested with a small positive value. These are experiment starting points, not fixed recipes.
+
+The UI preview can show the base distribution (all offsets zero), the overall training distribution, and an individual subset. Keep the default run as a control and adjust one subset offset at a time. Offsets affect training sampling only; validation stays unbiased so validation loss remains comparable.
+
 <!-- doc-anchor: weighting -->
 ## Sampling frequency and loss weight are separate controls
 
@@ -341,6 +387,7 @@ The scheduler shift also affects the final mapping, so use the preview to confir
 | `discrete_flow_shift` | Ignored | Ignored | Used | Used | Ignored | Ignored |
 | `logit_mean/std` | Ignored | Ignored | Ignored | `logit_normal` density only | Ignored | Used directly |
 | `mode_scale` | Ignored | Ignored | Ignored | `mode` density only | Ignored | Ignored |
+| `subset_timestep_offsets` | Used | Ignored | Used | Ignored | Only `flux_shift` | Ignored |
 | `sigma_sqrt/cosmap` weight | Used | Used | Used | Used | Used | Used |
 
 “Ignored” means the training code does not read that value. Leaving it in a configuration does not create a hidden effect. The form hides most inactive fields, and the preview warns about ignored combinations.
@@ -370,6 +417,8 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 6. The training `seed` changes the random sequence of sampled timesteps, but not the long-run theoretical distribution. The document preview uses a fixed simulation seed, so changing the training seed does not change the chart.
 7. Batch size and GPU count do not change the theoretical distribution, although they affect short-run sampling variance.
 8. Timestep settings do not change the exported LoRA format or require an identically named sampler during inference.
+9. `subset_timestep_offsets` only works with `sigmoid`, `shift`, and `flux_shift`; it has no effect with `uniform` or `sigma`.
+10. Subset offsets are applied per image according to its subset, not once for the whole batch using the last subset value.
 
 <!-- doc-anchor: testing -->
 ## Controlled comparison methodology
@@ -385,11 +434,13 @@ Training loss is supporting evidence rather than a complete evaluation. Whether 
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Fact-checked on **2026-08-05**. Code links below are pinned to the reviewed revisions.
+Fact-checked on **2026-08-08**. Code links below are pinned to the reviewed revisions.
 
-**Implementation facts:** The formulas and parameter activation behavior in this guide reflect the training code actually loaded from this project's `vendor` directory:
+**Implementation facts:** The formulas and parameter activation behavior in this guide reflect the training code and configuration wiring actually used in this project:
 
 - The sd-scripts fork's `library/flux_train_utils.py`: `sigmoid`, `shift`, and `flux_shift` sampling, the `sigma_sqrt` and `cosmap` weighting formulas, and the `discrete_flow_shift` transform.
+- The Anima trainer's `anima_train_network.py`: reads per-sample subset offsets from batch `custom_attributes` and applies them only during training.
+- The backend's `backend/training/sd_dataset_config.py` and `backend/server/routes/training.py`: validates subset offsets, writes the separate `dataset.toml`, and passes it to the trainer through `--dataset_config`.
 - `library/anima_train_utils.py`: Anima's sampling and loss-weighting dispatch.
 - The musubi-tuner fork's `src/musubi_tuner/training/timesteps.py` and `training/trainer_base.py`: Krea 2's `krea2_shift` and `logsnr` modes and the shared formulas.
 - The frontend distribution preview simulation lives in `frontend/js/training-core.js` (32 bins, 32,768 fixed-seed simulations).
@@ -400,11 +451,13 @@ Fact-checked on **2026-08-05**. Code links below are pinned to the reviewed revi
 
 References:
 
-- [This project's sd-scripts fork: `library/flux_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/flux_train_utils.py)
-- [This project's sd-scripts fork: `library/anima_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/anima_train_utils.py)
-- [This project's musubi-tuner fork: `src/musubi_tuner/training/timesteps.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
-- [This project's musubi-tuner fork: `training/trainer_base.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
-- [This project's frontend: `frontend/js/training-core.js` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/frontend/js/training-core.js)
+- [This project's sd-scripts fork: `library/flux_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)
+- [This project's Anima trainer: `anima_train_network.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)
+- [This project's dataset configuration adapter: `backend/training/sd_dataset_config.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)
+- [This project's sd-scripts fork: `library/anima_train_utils.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)
+- [This project's musubi-tuner fork: `src/musubi_tuner/training/timesteps.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
+- [This project's musubi-tuner fork: `training/trainer_base.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
+- [This project's frontend: `frontend/js/training-core.js` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
 - [Official Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)

@@ -270,6 +270,52 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 
 这个参数在 `shift` 中直接生效，在 `sigma` 中通过 scheduler 生效；`sigmoid`、`uniform`、`flux_shift`、`krea2_shift` 和 `logsnr` 不会使用这个固定值。
 
+<!-- doc-anchor: subset-offsets -->
+## 按子集设置时间步偏移
+
+`subset_timestep_offsets` 可以按训练数据子集分别移动时间步分布，适合在同一组训练中区分脸部特写、全身图等不同内容。它目前只在 **Anima** 训练中生效，Krea 2 和 SDXL 不适用。
+
+训练目录中每个以“数字_”开头的子文件夹（例如 `10_face`、`3_full_body`）会被识别为一个子集，开头的数字是重复次数。界面和 API 中，这个设置是“子集名称 → 偏移值”的映射，而不是一个全局值：
+
+```json
+{"10_face": -0.25, "3_full_body": 0.20}
+```
+
+启动训练时，后端会为它单独生成一份 `dataset.toml`；这个界面字段本身不写进主训练配置：
+
+```toml
+[[datasets.subsets]]
+image_dir = ".../10_face"
+[datasets.subsets.custom_attributes]
+timestep_sampling = { offset = -0.25 }
+```
+
+训练时，偏移值会跟着每张图片进入 batch。来自 `10_face` 的图片使用 `-0.25`，来自 `3_full_body` 的图片使用 `0.20`；同一个 batch 混合多个子集时也不会互相覆盖。正则化数据不会应用这个设置。
+
+### 偏移加在哪里
+
+偏移先加在正态随机采样值上，再乘以 `sigmoid_scale` 并经过 `sigmoid` 变换；使用 `shift` 或 `flux_shift` 时，之后还会再做一次整体映射：
+
+```text
+时间步 = sigmoid( sigmoid_scale × (随机采样值 + 偏移) )
+```
+
+换句话说，sigmoid 变换之前，分布整体平移了 `偏移 × sigmoid_scale`。
+
+- 负值：更偏向低噪声，通常让抽样更多落在细节、纹理和线条区域。
+- 正值：更偏向高噪声，通常让抽样更多落在整体结构、姿势和构图区域。
+- `0` 或留空：不改变该子集的基础分布。
+
+它只改变“抽到哪些时间步”，不改变 Loss 权重。它可以与全局 `discrete_flow_shift` 同时使用：前者按子集逐图片生效，后者对整个采样方式生效。
+
+### 支持的模式与推荐范围
+
+分组偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 不读取这个偏移；即使通过 API 传入该值，训练也会正常运行，只是它不会生效。
+
+建议先在 `-0.5～+0.5` 范围内测试。偏移绝对值越大，分布越容易被整体推到某一端；在已经使用 `shift` 或 `flux_shift` 的配置中，正偏移会更快抽干低噪声一侧。脸部特写、纹理图可以先试小幅负值，全身图或结构图可以先试小幅正值，但这些只是实验起点，不是固定配方。
+
+分布预览可以分别显示基础分布（所有偏移为 0）、整体训练分布和某个子集的分布。建议先保存默认配置作为对照，然后一次只调整一个子集的偏移。偏移只作用于训练采样；验证时保持无偏，验证 loss 仍然可以直接比较。
+
 <!-- doc-anchor: weighting -->
 ## 采样频率与 Loss 权重
 
@@ -341,6 +387,7 @@ scheduler shift 还会参与最后的映射，所以应以预览结果判断实�
 | `discrete_flow_shift` | 忽略 | 忽略 | 生效 | 生效 | 忽略 | 忽略 |
 | `logit_mean/std` | 忽略 | 忽略 | 忽略 | 仅影响 `logit_normal` 分布 | 忽略 | 直接生效 |
 | `mode_scale` | 忽略 | 忽略 | 忽略 | 仅影响 `mode` 分布 | 忽略 | 忽略 |
+| `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
 | `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
 
 “忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会产生隐藏效果。界面会尽量隐藏当前组合中无效的字段，分布预览也会提示被忽略的设置。
@@ -370,6 +417,8 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 6. 训练随机种子（seed）会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览使用固定模拟种子，因此修改训练随机种子不会让图形变化。
 7. batch size 和多卡数量不会改变理论分布，但会影响短训练中实际抽样的波动大小。
 8. 时间步设置不会改变导出的 LoRA 文件格式，推理时也不要求使用同名采样方式。
+9. `subset_timestep_offsets` 只对 `sigmoid`、`shift`、`flux_shift` 生效；`uniform`、`sigma` 下不会改变训练。
+10. 分组偏移按图片所属子集逐样本应用，不是对整个 batch 使用最后一个分组的值。
 
 <!-- doc-anchor: testing -->
 ## 对照实验方法
@@ -385,11 +434,13 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
-事实核查日期：**2026-08-05**。下列代码链接固定到核查时的提交。
+事实核查日期：**2026-08-08**。下列代码链接固定到核查时的提交。
 
-**实现事实：** 本文公式与参数生效关系，以本项目 vendor 中实际加载的训练代码为准：
+**实现事实：** 本文公式与参数生效关系，以本项目实际加载的训练代码与配置链路为准：
 
 - sd-scripts fork 的 `library/flux_train_utils.py`：`sigmoid`、`shift`、`flux_shift` 采样，`sigma_sqrt` 与 `cosmap` 权重公式，`discrete_flow_shift` 变换。
+- Anima 训练器的 `anima_train_network.py`：从 batch 的 `custom_attributes` 读取逐样本分组偏移，并且只在训练阶段应用。
+- 后端的 `backend/training/sd_dataset_config.py` 与 `backend/server/routes/training.py`：校验分组偏移、生成独立 `dataset.toml`，并通过 `--dataset_config` 传给训练器。
 - `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
 - musubi-tuner fork 的 `src/musubi_tuner/training/timesteps.py` 与 `training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 及共享公式。
 - 前端分布预览的模拟实现见 `frontend/js/training-core.js`（32 根柱子、32,768 次固定随机种子模拟）。
@@ -400,11 +451,13 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 
 参考资料：
 
-- [本项目 sd-scripts fork：`library/flux_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/flux_train_utils.py)
-- [本项目 sd-scripts fork：`library/anima_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/library/anima_train_utils.py)
-- [本项目 musubi-tuner fork：`src/musubi_tuner/training/timesteps.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
-- [本项目 musubi-tuner fork：`training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
-- [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/frontend/js/training-core.js)
+- [本项目 sd-scripts fork：`library/flux_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)
+- [本项目 Anima 训练器：`anima_train_network.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)
+- [本项目数据集配置适配器：`backend/training/sd_dataset_config.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)
+- [本项目 sd-scripts fork：`library/anima_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)
+- [本项目 musubi-tuner fork：`src/musubi_tuner/training/timesteps.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
+- [本项目 musubi-tuner fork：`training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
+- [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
