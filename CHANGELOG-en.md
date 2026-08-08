@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.1 - 2026-08-08
+
+This patch release updates the timestep parameter guide with a new per-subset offset section and fixes wording and references.
+
+### Parameter documentation
+
+- Added a "Per-subset timestep offsets" section to the timestep guide (`docs/parameters/timesteps*.md`): numeric-prefix subset rules, the `subset_timestep_offsets` mapping and its `dataset.toml` conversion, the offset formula and the sampling modes where it is active, plus a recommended range and comparison tips.
+- Updated the parameter activation matrix and common misconceptions, fixed wording in both languages, and pinned the evidence references to the reviewed revision (2026-08-08).
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.0...v2.3.1)
+
 ## v2.3.0 - 2026-08-07
 
 This release focuses on a complete per-training-subset timestep sampling offset workflow, with direct visual comparison of the training regions before and after each offset. It also completes regularization dataset support and auditable training-step estimation.
