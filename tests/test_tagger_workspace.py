@@ -10,6 +10,32 @@ from PIL import Image
 from backend.tagger import interrogator, workspace
 from backend.tagger.registry import MODEL_SPECS, model_payload
 
+
+class TaggerSingleUiContractTests(unittest.TestCase):
+    def test_category_heading_has_wide_native_toggle_and_separate_actions(self):
+        repo = Path(__file__).resolve().parents[1]
+        html = (repo / "frontend" / "tagger-workspace.html").read_text(encoding="utf-8")
+        heading = html.split('<div class="tagger-category-heading">', 1)[1].split('</div>', 1)[0]
+
+        self.assertIn('type="button" class="tagger-category-heading-toggle"', heading)
+        self.assertIn(':aria-expanded="String(!category.collapsed)"', heading)
+        self.assertLess(heading.index('</button>'), heading.index('class="tagger-category-visible"'))
+        self.assertLess(heading.index('</button>'), heading.index('class="tagger-category-copy"'))
+
+    def test_total_tags_area_has_pointer_and_keyboard_resize_contract(self):
+        repo = Path(__file__).resolve().parents[1]
+        html = (repo / "frontend" / "tagger-workspace.html").read_text(encoding="utf-8")
+        source = (repo / "frontend" / "js" / "tagger.js").read_text(encoding="utf-8")
+        css = (repo / "frontend" / "css" / "tagger.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="tagger-result-divider"', html)
+        self.assertIn('aria-orientation="horizontal"', html)
+        self.assertIn('@keydown.up.prevent="adjustTaggerResultHeight(-10)"', html)
+        self.assertIn('@keydown.down.prevent="adjustTaggerResultHeight(10)"', html)
+        self.assertIn("taggerResultResizeMax()", source)
+        self.assertIn("height: var(--tagger-result-height, 190px)", css)
+
+
 class TaggerRegistryTests(unittest.TestCase):
     def test_registry_contains_only_supported_onnx_taggers(self):
         self.assertEqual(

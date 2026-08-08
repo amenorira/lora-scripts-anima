@@ -9,7 +9,6 @@ $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [Console]::InputEncoding = $script:Utf8NoBom
 [Console]::OutputEncoding = $script:Utf8NoBom
 $OutputEncoding = $script:Utf8NoBom
-$script:InlineLength = 0
 $script:StartupProgressActive = $false
 $script:StartupProgressFrame = 0
 $script:StartupProgressStopwatch = $null
@@ -142,40 +141,22 @@ function Format-Duration {
 function Write-InlineProgress {
     param([string]$Text)
     if ([Console]::IsOutputRedirected) { return }
-    $padding = ""
-    if ($script:InlineLength -gt $Text.Length) {
-        $padding = " " * ($script:InlineLength - $Text.Length)
-    }
-    [Console]::Write("`r" + $Text + $padding)
-    $script:InlineLength = $Text.Length
+    [Console]::Write("`r$([char]27)[2K" + $Text)
 }
 
 function Complete-InlineProgress {
     if (-not [Console]::IsOutputRedirected) {
-        if ($script:InlineLength -gt 0) {
-            [Console]::Write("`r" + (" " * $script:InlineLength) + "`r")
-        }
-        $script:InlineLength = 0
+        [Console]::Write("`r$([char]27)[2K")
     }
 }
 
 function Update-StartupProgress {
     if (-not $script:StartupProgressActive -or [Console]::IsOutputRedirected) { return }
 
-    $width = 24
-    $pulseWidth = 5
-    $travel = $width - $pulseWidth
-    $cycle = [Math]::Max(1, $travel * 2)
-    $position = $script:StartupProgressFrame % $cycle
-    if ($position -gt $travel) { $position = $cycle - $position }
-
-    $characters = ("." * $width).ToCharArray()
-    for ($i = 0; $i -lt $pulseWidth; $i++) {
-        $characters[$position + $i] = if ($i -eq ($pulseWidth - 1)) { '>' } else { '=' }
-    }
-    $bar = -join $characters
+    $frames = @([char]0x25D0, [char]0x25D3, [char]0x25D1, [char]0x25D2)
+    $spinner = $frames[$script:StartupProgressFrame % $frames.Count]
     $elapsed = Format-Duration $script:StartupProgressStopwatch.Elapsed
-    Write-InlineProgress ("[{0}] {1}  {2}" -f $bar, (Get-Text "startup_preparing"), $elapsed)
+    Write-InlineProgress ("{0}  {1}  {2}" -f $spinner, (Get-Text "startup_preparing"), $elapsed)
     $script:StartupProgressFrame++
 }
 

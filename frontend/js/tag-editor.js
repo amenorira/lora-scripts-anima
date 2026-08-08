@@ -531,7 +531,10 @@ window.tagEditorMixin = {
       if (cached) { dir = cached; }
     }
     var d = dir || this.tagEditorDir || '';
-    if (!d) return;
+    if (!d) {
+      this.finishProgress();
+      return;
+    }
     var epoch = ++this._teLoadEpoch;
     if (this._teLoadAbort) this._teLoadAbort.abort();
     if (this._tePageAbort) { this._tePageAbort.abort(); this._tePageAbort = null; }

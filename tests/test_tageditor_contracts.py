@@ -158,6 +158,13 @@ class TagEditorBackendTests(unittest.TestCase):
 
 
 class TagEditorFrontendContractTests(unittest.TestCase):
+    def test_empty_editor_route_finishes_global_progress(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        load_body = source.split("async tagEditorLoad(dir) {", 1)[1].split("\n  },", 1)[0]
+        empty_dir_branch = load_body.split("if (!d) {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("this.finishProgress();", empty_dir_branch)
+
     def test_history_uses_deltas_and_rename_records_after_mutation(self):
         source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
         history_body = source.split("_tePushHistory(meta) {", 1)[1].split("\n  },", 1)[0]

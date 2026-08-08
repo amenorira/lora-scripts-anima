@@ -131,12 +131,17 @@ class BootstrapContractTests(unittest.TestCase):
         )
         self.assertIn("while (-not $process.WaitForExit(120))", windows_script)
         self.assertIn('Get-Text "startup_preparing"', windows_script)
+        self.assertIn("@([char]0x25D0, [char]0x25D3, [char]0x25D1, [char]0x25D2)", windows_script)
+        self.assertIn('$([char]27)[2K', windows_script)
+        self.assertNotIn("$pulseWidth", windows_script)
         self.assertIn("正在准备启动环境", messages["startup_preparing"])
 
         launch_notice = linux_script.index('echo "[Launch] Starting lora-scripts-anima')
         python_probe = linux_script.index("if [ -f \"$VENV_PYTHON\" ]")
         self.assertLess(launch_notice, python_probe)
         self.assertIn("_startup_spinner()", linux_script)
+        self.assertIn("local frames=('◐' '◓' '◑' '◒')", linux_script)
+        self.assertIn("printf '\\r\\033[2K%s", linux_script)
         self.assertIn("sleep 0.12", linux_script)
 
     def test_quiet_runtime_check_hides_success_but_keeps_errors(self):

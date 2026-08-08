@@ -4,7 +4,6 @@
   <symbol id="ti-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
   <symbol id="ti-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol>
   <symbol id="ti-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
-  <symbol id="ti-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="ti-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
   <symbol id="ti-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
   <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
@@ -149,16 +148,16 @@
   <template x-if="taggerSourceMode === 'single'">
     <div
       class="tagger-single-layout"
-      :style="'--tagger-single-left:' + taggerSingleLeftWidth + '%'"
-      @pointermove.window="resizeTaggerSingleLayout($event)"
-      @pointerup.window="stopTaggerSingleResize()"
-      @pointercancel.window="stopTaggerSingleResize()"
+      :style="'--tagger-single-left:' + taggerSingleLeftWidth + '%; --tagger-result-height:' + taggerSingleResultHeight + 'px'"
+      @pointermove.window="resizeTaggerSingleLayout($event); resizeTaggerResult($event)"
+      @pointerup.window="stopTaggerSingleResize(); stopTaggerResultResize()"
+      @pointercancel.window="stopTaggerSingleResize(); stopTaggerResultResize()"
     >
       <div class="tagger-single-main">
-        <main class="tagger-single-preview" :class="{ light: taggerPreviewLight, 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
-          <div class="tagger-preview-toolbar"><span x-text="taggerSource?.display_name || taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="taggerPreviewActual = !taggerPreviewActual" :class="{ active: taggerPreviewActual }" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button><button x-show="taggerSource" @click="taggerPreviewLight = !taggerPreviewLight" :title="t('tagger.previewBackground')" :aria-label="t('tagger.previewBackground')"><svg><use href="#ti-sun"></use></svg></button></div>
+        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
+          <div class="tagger-preview-toolbar"><span x-text="taggerSource?.display_name || taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button></div>
           <button class="tagger-drop-zone" x-show="!taggerSource" @click="pickTaggerSource()"><svg><use href="#ti-image"></use></svg><strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span></button>
-          <div class="tagger-preview-image" x-show="taggerSource"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :class="{ actual: taggerPreviewActual }" :alt="t('tagger.preview')"></div>
+          <div class="tagger-preview-image" :class="{ zoomed: taggerPreviewScale > 1, panning: taggerPreviewPanning }" x-show="taggerSource" @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)" @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)" @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" draggable="false"></div>
         </main>
 
         <div class="tagger-single-actions" x-show="taggerSource">
@@ -175,6 +174,21 @@
             </template>
           </div>
           <div class="tagger-single-empty tagger-result-empty" x-show="!taggerResultText" x-text="t('tagger.noResult')"></div>
+          <div
+            class="tagger-result-divider"
+            :class="{ dragging: taggerResultResizing }"
+            x-show="taggerResultText"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-valuemin="94"
+            :aria-valuemax="taggerResultResizeMax()"
+            :aria-valuenow="Math.round(Math.min(taggerSingleResultHeight, taggerResultResizeMax()))"
+            :aria-label="t('tagger.resizeResult')"
+            tabindex="0"
+            @pointerdown.prevent="startTaggerResultResize($event)"
+            @keydown.up.prevent="adjustTaggerResultHeight(-10)"
+            @keydown.down.prevent="adjustTaggerResultHeight(10)"
+          ></div>
           <div class="tagger-result-actions" x-show="taggerResultText"><button type="button" @click="copyTaggerResult()"><svg><use href="#ti-copy"></use></svg><span x-text="t('tagger.copyTags')"></span></button></div>
         </section>
       </div>
@@ -228,9 +242,11 @@
             <template x-for="(category, key) in taggerCategoryState" :key="key">
               <section class="tagger-category-section" :class="{ collapsed: category.collapsed }">
                 <div class="tagger-category-heading">
-                  <button class="tagger-category-collapse" @click="category.collapsed = !category.collapsed" :title="category.collapsed ? t('common.expand') : t('common.collapse')"><svg :class="{ open: !category.collapsed }"><use href="#ti-chevron"></use></svg></button>
-                  <strong x-text="category.label"></strong>
-                  <span x-text="category.visibleTags.length + ' / ' + category.total"></span>
+                  <button type="button" class="tagger-category-heading-toggle" @click="category.collapsed = !category.collapsed" :title="category.collapsed ? t('common.expand') : t('common.collapse')" :aria-expanded="String(!category.collapsed)">
+                    <svg aria-hidden="true" :class="{ open: !category.collapsed }"><use href="#ti-chevron"></use></svg>
+                    <strong x-text="category.label"></strong>
+                    <span x-text="category.visibleTags.length + ' / ' + category.total"></span>
+                  </button>
                   <label class="tagger-category-visible" :title="category.visible ? t('tagger.hideAll') : t('tagger.showAll')"><input class="tagger-checkbox" type="checkbox" x-model="category.visible" @change="toggleTaggerResultCategory(key)" :aria-label="category.label"></label>
                   <button class="tagger-category-copy" @click="copyTaggerCategory(key)" :disabled="!category.visibleTags.length" :title="t('tagger.copyCategoryTags')" :aria-label="t('tagger.copyCategoryTags')"><svg><use href="#ti-copy"></use></svg></button>
                 </div>

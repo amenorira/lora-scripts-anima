@@ -34,6 +34,31 @@ class StartupRenderingTests(unittest.TestCase):
         self.assertIn("2026-08-01 12:34:56-123456  READY / 服务已就绪", rendered)
         self.assertIn("Startup:     4.2s", rendered)
 
+    def test_ready_console_layout_wraps_without_persistent_box_borders(self):
+        from rich.console import Console
+
+        output = io.StringIO()
+        narrow_console = Console(
+            file=output,
+            width=58,
+            color_system=None,
+            force_terminal=False,
+        )
+        with patch.object(startup_output, "console", narrow_console), patch.object(
+            startup_output, "_timestamp", return_value="2026-08-01 12:34:56-123456"
+        ), patch.object(startup_output, "_elapsed", return_value="4.2s"):
+            startup_output.show_ready(
+                "http://127.0.0.1:12333/",
+                tensorboard_url="http://127.0.0.1:6006/",
+                log_path=Path("C:/Users/test/very-long-project-directory/logs/anima.log"),
+            )
+
+        rendered = output.getvalue()
+        self.assertIn("READY / 服务已就绪", rendered)
+        self.assertIn("very-long-project-directory", rendered)
+        self.assertNotIn("│", rendered)
+        self.assertNotIn("╰", rendered)
+
     def test_console_filter_keeps_normal_runtime_logs_visible(self):
         visibility_filter = _ConsoleVisibilityFilter()
         normal = logging.LogRecord("test", logging.INFO, "", 0, "download", (), None)
