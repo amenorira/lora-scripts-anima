@@ -11,31 +11,14 @@ echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima�
 
 STARTUP_SPINNER_PID=""
 _startup_spinner() {
-    local width=24
-    local pulse_width=5
-    local travel=$((width - pulse_width))
-    local cycle=$((travel * 2))
+    local frames=('◐' '◓' '◑' '◒')
     local frame=0
     local started=$SECONDS
     while true; do
-        local position=$((frame % cycle))
-        if [ "$position" -gt "$travel" ]; then
-            position=$((cycle - position))
-        fi
-        local bar=""
-        local i
-        for ((i = 0; i < width; i++)); do
-            if [ "$i" -ge "$position" ] && [ "$i" -lt $((position + pulse_width - 1)) ]; then
-                bar="${bar}="
-            elif [ "$i" -eq $((position + pulse_width - 1)) ]; then
-                bar="${bar}>"
-            else
-                bar="${bar}."
-            fi
-        done
+        local spinner="${frames[frame % ${#frames[@]}]}"
         local elapsed=$((SECONDS - started))
-        printf '\r[%s] Preparing startup environment... / 正在准备启动环境……  %02d:%02d' \
-            "$bar" $((elapsed / 60)) $((elapsed % 60))
+        printf '\r\033[2K%s  Preparing startup environment... / 正在准备启动环境……  %02d:%02d' \
+            "$spinner" $((elapsed / 60)) $((elapsed % 60))
         frame=$((frame + 1))
         sleep 0.12
     done

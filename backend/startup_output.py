@@ -88,29 +88,26 @@ def show_ready(
         print("  Keep this window open / 使用期间请保持此窗口开启\n", flush=True)
         return
 
-    from rich import box
-    from rich.panel import Panel
+    from rich.align import Align
     from rich.table import Table
     from rich.text import Text
 
-    table = Table.grid(padding=(0, 2))
+    table = Table.grid(expand=True, padding=(0, 1))
     table.add_column(style="bold", no_wrap=True)
-    table.add_column(overflow="fold")
+    table.add_column(ratio=1, overflow="fold")
     table.add_row("GUI", Text(gui_url, style="bold cyan"))
     table.add_row("TensorBoard", Text(tensorboard, style="cyan" if tensorboard_url else "dim"))
     table.add_row("Startup / 启动", elapsed)
     table.add_row("Log / 日志", Text(str(log_path), style="dim"))
-    table.add_row("", Text("Keep this window open / 使用期间请保持此窗口开启", style="yellow"))
     title = Text()
     title.append(timestamp, style="dim cyan")
     title.append("  READY / 服务已就绪", style="bold green")
     console.print()
+    console.print(title)
+    console.print(table)
     console.print(
-        Panel(
-            table,
-            title=title,
-            border_style="green",
-            box=box.ROUNDED,
-            padding=(0, 1),
+        Align.center(
+            Text("Keep this window open / 使用期间请保持此窗口开启", style="yellow")
         )
     )
+    console.print()
