@@ -984,16 +984,17 @@
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange()"></textarea>
                   </div>
-                  <div class="te-editor-add" x-show="tagEditorDetailView === 'chip'">
+                  <div class="te-editor-add" x-show="tagEditorDetailView === 'chip'"
+                    @resize.window="tagEditorRefreshSuggestPosition()">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t('tagEditor.addTagPlaceholder')"
                       @keydown.enter="tagEditorAddTagToSelected()"
-                      @input="tagEditorGetSuggestions(tagEditorAddInput)"
-                      @focus="tagEditorGetSuggestions(tagEditorAddInput)"
+                      @input="tagEditorGetSuggestions(tagEditorAddInput, $event.target)"
+                      @focus="tagEditorGetSuggestions(tagEditorAddInput, $event.target)"
                       @blur="tagEditorBlurSuggest()">
                     <button @click="tagEditorAddTagToSelected()">+</button>
                     <div class="te-suggest" x-show="tagEditorSuggestions.length > 0"
                       :class="{ floating: _teSuggestCoords != null }"
-                      :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;top:'+_teSuggestCoords.bottom+'px') : ''">
+                      :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;bottom:'+_teSuggestCoords.bottom+'px;width:'+_teSuggestCoords.width+'px;max-height:'+_teSuggestCoords.maxHeight+'px') : ''">
                       <template x-for="(s, sIdx) in tagEditorSuggestions" :key="s">
                         <div class="te-suggest-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
                           @mousedown.prevent="tagEditorSelectSuggestion(s)" x-text="s"></div>

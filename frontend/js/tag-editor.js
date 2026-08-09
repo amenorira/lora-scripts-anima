@@ -26,41 +26,23 @@ function _teSuggestFromFreq(freq, query, limit, onResult) {
   onResult(out);
 }
 
-function _teGetCaretCoords(inputEl) {
-  var style = window.getComputedStyle(inputEl);
-  var mirror = document.createElement('div');
-  var cs = [
-    'position', 'width', 'height', 'padding', 'font', 'fontSize', 'fontFamily',
-    'lineHeight', 'letterSpacing', 'wordSpacing', 'whiteSpace', 'boxSizing',
-    'textIndent', 'textTransform', 'overflowWrap', 'tabSize'
-  ];
-  for (var i = 0; i < cs.length; i++) {
-    try { mirror.style[cs[i]] = style[cs[i]]; } catch(e) {}
-  }
-  mirror.style.position = 'absolute';
-  mirror.style.visibility = 'hidden';
-  mirror.style.whiteSpace = 'pre-wrap';
-  mirror.style.overflow = 'hidden';
-  mirror.style.top = '0';
-  mirror.style.left = '0';
-  document.body.appendChild(mirror);
-
-  var val = inputEl.value;
-  var pos = inputEl.selectionStart || 0;
-  mirror.textContent = val.substring(0, pos);
-  var span = document.createElement('span');
-  span.textContent = val.substring(pos) || '.';
-  mirror.appendChild(span);
-
+function _teGetSuggestCoords(inputEl) {
   var rect = inputEl.getBoundingClientRect();
-  var mirrorRect = mirror.getBoundingClientRect();
-  var spanRect = span.getBoundingClientRect();
-
-  var x = rect.left + (spanRect.left - mirrorRect.left);
-  var y = rect.top + (spanRect.top - mirrorRect.top) + (parseInt(style.lineHeight) || 0);
-
-  document.body.removeChild(mirror);
-  return { x: x, y: y, top: y, left: x, bottom: y + (parseInt(style.lineHeight) || 0) };
+  var viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  var margin = 8;
+  var gap = 4;
+  var width = Math.min(Math.max(rect.width, 180), Math.max(0, viewportWidth - margin * 2));
+  var maxLeft = Math.max(margin, viewportWidth - width - margin);
+  var left = Math.min(Math.max(rect.left, margin), maxLeft);
+  var maxHeight = Math.max(0, Math.min(180, rect.top - gap - margin));
+  var bottom = Math.max(margin, viewportHeight - rect.top + gap);
+  return {
+    left: Math.round(left),
+    bottom: Math.round(bottom),
+    width: Math.round(width),
+    maxHeight: Math.floor(maxHeight)
+  };
 }
 
 function _teGetCurrentToken(val, pos) {
@@ -704,11 +686,13 @@ window.tagEditorMixin = {
     this.tagEditorResizing = false;
     document.body.classList.remove('te-resizing');
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
+    this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorAdjustRightWidth(delta) {
     this.tagEditorRightWidth = Math.max(280, Math.min(520, this.tagEditorRightWidth + delta));
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
+    this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorRestorePanelWidth() {
@@ -1537,13 +1521,23 @@ window.tagEditorMixin = {
       _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(items) {
         self.tagEditorSuggestions = items;
         if (items.length > 0 && el) {
-          self._teSuggestCoords = _teGetCaretCoords(el);
+          self._teSuggestCoords = _teGetSuggestCoords(el);
           self._teSuggestInputEl = el;
         } else {
           self._teSuggestCoords = null;
         }
       });
     }, 50);
+  },
+
+  tagEditorRefreshSuggestPosition() {
+    var self = this;
+    this.$nextTick(function() {
+      var el = self._teSuggestInputEl;
+      if (self._teSuggestCoords && el && el.isConnected) {
+        self._teSuggestCoords = _teGetSuggestCoords(el);
+      }
+    });
   },
 
   tagEditorBlurSuggest() {
