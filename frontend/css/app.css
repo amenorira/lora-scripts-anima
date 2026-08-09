@@ -3364,7 +3364,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── Tag Editor ────────────────────────────────────────── */
 
 /* ===== Shell & Topbar ===== */
-.te-shell { display: flex; flex-direction: column; flex: 1; min-width: 960px; overflow: hidden; }
+.te-shell { display: flex; flex-direction: column; flex: 1; min-width: 960px; min-height: 0; overflow: hidden; }
 .te-topbar { flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; min-height: 34px; border-bottom: 1px solid var(--border-default); }
 .te-topbar-btn { height: 26px; padding: 0 8px; font-size: 11px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: border-color 0.1s, color 0.1s; }
 .te-topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -3516,7 +3516,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card-tag { font-size: 9px; padding: 0 4px; border-radius: var(--radius-control); background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); white-space: nowrap; }
 
 /* ===== Right Editor Panel ===== */
-.te-editor { width: 100%; min-width: 0; display: flex; flex-direction: column; background: var(--bg-canvas); }
+.te-editor { width: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-canvas); }
 .te-editor.is-idle { width: 100%; }
 .te-editor-state { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .te-editor-divider { position: relative; min-height: 0; cursor: col-resize; touch-action: none; border-left: 1px solid var(--border-default); border-right: 1px solid var(--border-default); background: var(--bg-canvas); }
@@ -3524,7 +3524,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-editor-divider:hover::before, .te-editor-divider.dragging::before { background: var(--accent); }
 .te-editor-divider:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-select: none !important; }
-.te-editor-inner { flex: 1; overflow: hidden; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.te-editor-inner { flex: 1; min-height: 0; overflow: hidden; padding: 0; display: flex; flex-direction: column; gap: 0; }
 .te-editor-inner::-webkit-scrollbar { width: 4px; }
 .te-editor-inner::-webkit-scrollbar-track { background: transparent; }
 .te-editor-inner::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
