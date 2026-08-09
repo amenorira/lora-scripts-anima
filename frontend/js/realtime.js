@@ -373,6 +373,13 @@ window.realtimeMixin = {
     return this._realtimeSnapshotPromise;
   },
 
+  async refreshRealtimeAfterTaskStart() {
+    // Do not let an older in-flight bootstrap snapshot satisfy this refresh:
+    // wait for it, then fetch the post-create task state explicitly.
+    if (this._realtimeSnapshotPromise) await this._realtimeSnapshotPromise;
+    return this._refreshRealtimeSnapshot(null, null, { monitorDetail: false });
+  },
+
   _applyRealtimeSnapshotCursors(snapshotCursors, options) {
     if (!this._realtimeCursors) this._realtimeCursors = {};
     const preserveSubscribed = !!(options && options.preserveSubscribedCursors);

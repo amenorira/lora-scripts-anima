@@ -216,6 +216,7 @@ class RealtimeFrontendContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.client_source = Path("frontend/js/realtime.js").read_text(encoding="utf-8")
         cls.monitor_source = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
+        cls.training_source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
         cls.tagger_source = Path("frontend/js/tagger.js").read_text(encoding="utf-8")
         cls.environment_source = Path("frontend/js/environment-core.js").read_text(encoding="utf-8")
 
@@ -283,6 +284,83 @@ process.stdout.write(JSON.stringify({
         self.assertIn("this.realtimeSnapshot = null;", self.client_source)
         self.assertIn("this.taskId = null;", self.monitor_source)
         self.assertIn("this.gpuInfo = null;", self.monitor_source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend training checks")
+    def test_training_start_updates_shared_state_and_refreshes_snapshot(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/training-toml.js', 'utf8'));
+const calls = [];
+const app = Object.assign({}, window.trainingTomlMixin, {
+  trainingActive: false,
+  trainingBlocked: false,
+  activeTaskId: null,
+  realtimeTaskStateUnknown: true,
+  t: key => key,
+  refreshRealtimeAfterTaskStart() { calls.push('snapshot'); return Promise.resolve(true); },
+});
+app._acceptTrainingStart({task_id: 'train-42'});
+process.stdout.write(JSON.stringify({
+  taskId: app.taskId,
+  activeTaskId: app.activeTaskId,
+  trainingActive: app.trainingActive,
+  trainingBlocked: app.trainingBlocked,
+  isTraining: app.isTraining,
+  isIdle: app.isIdle,
+  statusText: app.statusText,
+  unknown: app.realtimeTaskStateUnknown,
+  calls,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["taskId"], "train-42")
+        self.assertEqual(state["activeTaskId"], "train-42")
+        self.assertTrue(state["trainingActive"])
+        self.assertTrue(state["trainingBlocked"])
+        self.assertTrue(state["isTraining"])
+        self.assertFalse(state["isIdle"])
+        self.assertEqual(state["statusText"], "monitor.created")
+        self.assertFalse(state["unknown"])
+        self.assertEqual(state["calls"], ["snapshot"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend realtime checks")
+    def test_post_start_refresh_waits_for_an_older_snapshot_then_fetches_again(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/realtime.js', 'utf8'));
+const calls = [];
+let release;
+const older = new Promise(resolve => { release = resolve; });
+const app = Object.assign({}, window.realtimeMixin, {
+  _realtimeSnapshotPromise: older,
+  _refreshRealtimeSnapshot(instanceId, socket, options) {
+    calls.push({instanceId, socket, options});
+    return Promise.resolve(true);
+  },
+});
+const pending = app.refreshRealtimeAfterTaskStart();
+setTimeout(() => release(false), 0);
+pending.then(result => {
+  process.stdout.write(JSON.stringify({result, calls}));
+}).catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertTrue(state["result"])
+        self.assertEqual(state["calls"], [{
+            "instanceId": None,
+            "socket": None,
+            "options": {"monitorDetail": False},
+        }])
 
     def test_monitor_detail_is_invalidated_when_leaving_the_dashboard(self):
         self.assertIn("monitorDetailGeneration", self.client_source)
