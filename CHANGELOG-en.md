@@ -6,6 +6,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.4 - 2026-08-09
+
+This patch release fixes training state not appearing immediately on the training page, Dashboard, and sidebar after a task is created successfully.
+
+### Training state synchronization
+
+- Update the shared training state and task identifiers as soon as the start request succeeds, without waiting for the next WebSocket event.
+- Fetch a fresh realtime snapshot to reconcile backend task state, so a new task appears without a page refresh when using SSH port forwarding, a proxy, or a delayed network connection.
+- Prevent an older in-flight snapshot from masking the newly created task and add frontend regression coverage for state updates and the snapshot race.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.3...v2.3.4)
+
 ## v2.3.3 - 2026-08-08
 
 This patch release aligns layout and interaction patterns across the trainer, improves the Tagger single-image review workflow, and fixes details in startup output, training monitoring, and Tag Editor navigation.
