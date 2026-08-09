@@ -266,6 +266,24 @@ class TagEditorFrontendContractTests(unittest.TestCase):
         self.assertIn("flex: 0 0 18px", edit_css)
         self.assertNotIn("position: absolute", edit_css)
 
+    def test_detail_suggestions_open_above_input_with_viewport_bounds(self):
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        html = Path("frontend/index.html").read_text(encoding="utf-8")
+        floating_css = css.split(".te-suggest.floating {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("function _teGetSuggestCoords(inputEl)", source)
+        self.assertIn("viewportHeight - rect.top + gap", source)
+        self.assertIn("rect.top - gap - margin", source)
+        self.assertIn("tagEditorGetSuggestions(tagEditorAddInput, $event.target)", html)
+        self.assertIn('@resize.window="tagEditorRefreshSuggestPosition()"', html)
+        self.assertIn("bottom:'+_teSuggestCoords.bottom+'px", html)
+        self.assertIn("max-height:'+_teSuggestCoords.maxHeight+'px", html)
+        self.assertIn("self._teSuggestCoords = _teGetSuggestCoords(el)", source)
+        self.assertIn("top: auto !important", floating_css)
+        self.assertNotIn("bottom: auto !important", floating_css)
+        self.assertNotIn("left: auto !important", floating_css)
+
 
 if __name__ == "__main__":
     unittest.main()

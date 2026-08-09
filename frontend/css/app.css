@@ -3630,11 +3630,10 @@ body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-selec
 
 .te-suggest.floating {
   position: fixed !important;
-  bottom: auto !important;
-  left: auto !important;
+  top: auto !important;
   right: auto !important;
-  min-width: 120px;
-  max-height: 180px;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
