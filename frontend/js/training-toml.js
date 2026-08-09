@@ -751,7 +751,7 @@ window.trainingTomlMixin = {
           this.isIdle = true;
           this.statusText = this.t('monitor.idle');
         } else {
-          this.taskId = (data.data && data.data.task_id) || null;
+          this._acceptTrainingStart(data.data);
           this.toast(this.t('common.trainingStarted'));
         }
       } catch (error) {
@@ -835,7 +835,7 @@ window.trainingTomlMixin = {
       const data = await resp.json();
       if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle'); }
       else {
-        this.taskId = (data.data&&data.data.task_id)||null; this.toast(this.t('common.trainingStarted'));
+        this._acceptTrainingStart(data.data); this.toast(this.t('common.trainingStarted'));
         // 弹出适配器警告（如有）
         const warnings = data.data && data.data.warnings;
         if (warnings && warnings.length > 0) {
@@ -849,6 +849,25 @@ window.trainingTomlMixin = {
       }
     } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
     this.trainingStarting = false;
+  },
+
+  _acceptTrainingStart(data) {
+    const taskId = data && data.task_id || null;
+    this.taskId = taskId;
+    this.activeTaskId = taskId;
+    this.trainingActive = true;
+    this.trainingBlocked = true;
+    this.isTraining = true;
+    this.isIdle = false;
+    this.statusText = this.t('monitor.created');
+    this.realtimeTaskStateUnknown = false;
+
+    // The create response is authoritative enough to paint the shared training
+    // state immediately. A compact snapshot then reconciles it without waiting
+    // for the next WebSocket sample, which may be delayed by a proxy or tunnel.
+    if (typeof this.refreshRealtimeAfterTaskStart === 'function') {
+      void this.refreshRealtimeAfterTaskStart();
+    }
   },
 
   async stopTraining() {
