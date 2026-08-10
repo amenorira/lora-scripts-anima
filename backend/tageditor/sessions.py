@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.tageditor.core import get_cached_scan_dataset, resolve_dir, tag_list
+from backend.image_preview import build_image_preview_url
 
 
 @dataclass(frozen=True)
@@ -154,8 +155,22 @@ class DatasetSessionService:
         total_pages = max(1, (total + page_size - 1) // page_size)
         page = max(1, min(page, total_pages))
         start = (page - 1) * page_size
+        page_items = []
+        for item in items[start:start + page_size]:
+            payload = dict(item)
+            rel_path = str(payload.get("rel_path", payload.get("name", ""))).replace("\\", "/")
+            version = str(payload.get("modified_ns", ""))
+            payload["thumbnail"] = build_image_preview_url(
+                scope="dataset", session_id=session_id, path=rel_path,
+                variant="thumb", size=320, version=version,
+            )
+            payload["preview"] = build_image_preview_url(
+                scope="dataset", session_id=session_id, path=rel_path,
+                variant="preview", size=960, version=version,
+            )
+            page_items.append(payload)
         return {
-            "items": items[start:start + page_size],
+            "items": page_items,
             "total": total,
             "page": page,
             "page_size": page_size,

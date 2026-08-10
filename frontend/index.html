@@ -464,7 +464,7 @@
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
         @keydown.window="tagEditorHandleKeydown($event)"
-        @click="tagEditorContextMenu = null">
+        @click="tagEditorContextMenu = null; tagEditorImageContextMenu = null">
 
         <!-- Saving overlay -->
         <div x-show="tagEditorSaving" class="te-saving-overlay" x-transition>
@@ -491,6 +491,51 @@
           </div>
         </div>
 
+        <!-- Image lightbox -->
+        <div x-show="tagEditorLightboxOpen" class="te-lightbox" role="dialog" aria-modal="true"
+          :aria-label="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || t('tagEditor.viewOriginal')"
+          @click.self="tagEditorCloseLightbox()" x-transition>
+          <div class="te-lightbox-topbar">
+            <span class="te-lightbox-name"
+              x-text="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"
+              :title="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"></span>
+            <div class="te-lightbox-tools">
+              <button @click="tagEditorSetLightboxScale(tagEditorLightboxScale / 1.18)" :disabled="tagEditorLightboxScale <= 1"
+                :title="t('tagEditor.zoomOut')" :aria-label="t('tagEditor.zoomOut')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+              <button class="te-lightbox-scale" @click="tagEditorResetLightbox()" :title="t('tagEditor.resetZoom')"
+                x-text="Math.round(tagEditorLightboxScale * 100) + '%'"></button>
+              <button @click="tagEditorSetLightboxScale(tagEditorLightboxScale * 1.18)" :disabled="tagEditorLightboxScale >= 8"
+                :title="t('tagEditor.zoomIn')" :aria-label="t('tagEditor.zoomIn')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+              <button class="te-lightbox-close" @click="tagEditorCloseLightbox()" :title="t('common.close')" :aria-label="t('common.close')">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="te-lightbox-stage" :class="{ zoomed: tagEditorLightboxScale > 1, panning: tagEditorLightboxPanning }"
+            @click.stop @wheel.prevent="tagEditorZoomLightbox($event)"
+            @pointerdown="tagEditorStartLightboxPan($event)" @pointermove="tagEditorMoveLightboxPan($event)"
+            @pointerup="tagEditorStopLightboxPan($event)" @pointercancel="tagEditorStopLightboxPan($event)"
+            @dblclick.prevent="tagEditorResetLightbox()">
+            <div class="te-lightbox-spinner" x-show="tagEditorLightboxLoading"></div>
+            <img class="te-lightbox-image" :src="tagEditorOriginalUrl(tagEditorLightboxImage)"
+              :alt="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"
+              :style="'transform:' + tagEditorLightboxTransform()"
+              @load="tagEditorLightboxLoading = false" @error="tagEditorLightboxLoading = false" draggable="false">
+          </div>
+          <button class="te-lightbox-nav te-lightbox-prev" x-show="tagEditorCanNavDetail(-1)"
+            @click.stop="tagEditorLightboxNav(-1)" :title="t('tagEditor.prevImage')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button class="te-lightbox-nav te-lightbox-next" x-show="tagEditorCanNavDetail(1)"
+            @click.stop="tagEditorLightboxNav(1)" :title="t('tagEditor.nextImage')">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+
         <!-- Context menu -->
         <div x-show="tagEditorContextMenu" class="te-ctx"
           :style="'left:' + (tagEditorContextMenu?.x || 0) + 'px; top:' + (tagEditorContextMenu?.y || 0) + 'px'"
@@ -502,6 +547,16 @@
           <div class="te-ctx-item" @click="tagEditorCtxAddAll()" x-text="t('tagEditor.contextAddAll')"></div>
           <div class="te-ctx-divider"></div>
           <div class="te-ctx-item te-ctx-danger" @click="tagEditorCtxDeleteTag()" x-text="t('tagEditor.contextDeleteTag')"></div>
+        </div>
+
+        <!-- Image context menu -->
+        <div x-show="tagEditorImageContextMenu" class="te-ctx te-image-ctx"
+          :style="'left:' + (tagEditorImageContextMenu?.x || 0) + 'px; top:' + (tagEditorImageContextMenu?.y || 0) + 'px'"
+          @click.away="tagEditorImageContextMenu = null">
+          <button class="te-ctx-item te-ctx-button" @click="tagEditorCtxViewImage()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span x-text="t('tagEditor.viewOriginal')"></span>
+          </button>
         </div>
 
         <!-- Empty State -->
@@ -891,6 +946,7 @@
                     :class="{ selected: tagEditorSelected.includes(img.path), modified: img.tags !== tagEditorOriginal[img.path], 'te-card-no-cap': !img.has_caption }"
                     @click="tagEditorCardClick(img, idx, $event)"
                     @dblclick="tagEditorCardDblClick(img, idx, $event)"
+                    @contextmenu.prevent.stop="tagEditorImageCtx($event, img)"
                     tabindex="0"
                     @keydown.enter="tagEditorCardClick(img, idx, $event)"
                     @keydown.space.prevent="tagEditorCardClick(img, idx, $event)">
@@ -949,9 +1005,13 @@
                       </button>
                     </div>
                   </div>
-                  <div class="te-editor-preview">
+                  <div class="te-editor-preview" role="button" tabindex="0"
+                    @click="tagEditorOpenLightbox(tagEditorGetSelectedImg())"
+                    @keydown.enter.prevent="tagEditorOpenLightbox(tagEditorGetSelectedImg())"
+                    @keydown.space.prevent="tagEditorOpenLightbox(tagEditorGetSelectedImg())"
+                    :title="t('tagEditor.viewOriginal')">
                     <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail"
-                      :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name">
+                      :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name" draggable="false">
                   </div>
                   <div class="te-editor-toolbar">
                     <div class="te-editor-view">

@@ -8,9 +8,7 @@ from PIL import Image
 
 from backend.tageditor.core import (
     _invalidate_cache,
-    _prune_thumbnail_cache,
     get_cached_scan_dataset,
-    get_thumbnail_path,
 )
 from backend.tageditor.routes import _resolve_target_images, save_all_tags, save_image_tags
 
@@ -31,33 +29,9 @@ class TagEditorBackendTests(unittest.TestCase):
                 {"tag": "cat", "count": 2},
                 {"tag": "blue eyes", "count": 1},
             ])
-            self.assertIn("size=320", images[0]["thumbnail"])
-            self.assertIn("size=960", images[0]["preview"])
+            self.assertNotIn("thumbnail", images[0])
+            self.assertNotIn("preview", images[0])
             _invalidate_cache(root)
-
-    def test_thumbnail_is_resized_and_cached(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            source = Path(temp_dir) / "large.png"
-            Image.new("RGB", (1200, 800), "red").save(source)
-
-            first = get_thumbnail_path(source, 320)
-            second = get_thumbnail_path(source, 320)
-
-            self.assertEqual(first, second)
-            self.assertTrue(first.is_file())
-            with Image.open(first) as image:
-                self.assertLessEqual(max(image.size), 320)
-
-    def test_thumbnail_cache_prunes_old_files(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cache_dir = Path(temp_dir)
-            for index in range(4):
-                (cache_dir / f"{index}.jpg").touch()
-
-            removed = _prune_thumbnail_cache(cache_dir, max_files=3, retain_files=2)
-
-            self.assertEqual(removed, 2)
-            self.assertEqual(len(list(cache_dir.glob("*.jpg"))), 2)
 
     def test_batch_scope_resolves_selected_and_rejects_unknown_scope(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -191,6 +165,21 @@ class TagEditorFrontendContractTests(unittest.TestCase):
         self.assertIn("tagEditor.selectPage", html)
         self.assertIn("tagEditor.selectFiltered", html)
         self.assertIn("tagEditorHistory[tagEditorHistoryDetailIdx]?.meta?.desc", html)
+
+    def test_image_lightbox_loads_original_on_demand_and_supports_zoom_pan(self):
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        html = Path("frontend/index.html").read_text(encoding="utf-8")
+        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
+
+        self.assertIn("@contextmenu.prevent.stop=\"tagEditorImageCtx($event, img)\"", html)
+        self.assertIn("@click=\"tagEditorOpenLightbox(tagEditorGetSelectedImg())\"", html)
+        self.assertIn("@wheel.prevent=\"tagEditorZoomLightbox($event)\"", html)
+        self.assertIn("@pointerdown=\"tagEditorStartLightboxPan($event)\"", html)
+        self.assertIn("/api/image-preview?", source)
+        self.assertIn("tagEditorLightboxScale: 1", source)
+        self.assertIn("this._teLightboxPreviousSelection = this.tagEditorSelected.slice()", source)
+        self.assertIn("this.tagEditorSelected = this._teLightboxPreviousSelection", source)
+        self.assertIn("body.te-lightbox-open", css)
 
     def test_frequency_error_reset_also_clears_index(self):
         source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")

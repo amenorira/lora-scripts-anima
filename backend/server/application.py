@@ -141,7 +141,7 @@ async def add_cache_control_header(request, call_next):
     path = request.url.path
     # Generated preview variants are immutable for their versioned URL and
     # must keep their own ETag/cache policy on slow remote links.
-    if path in {"/api/monitor/preview-image", "/api/monitor/preview-metadata"}:
+    if path in {"/api/image-preview", "/api/monitor/preview-metadata"}:
         return response
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"

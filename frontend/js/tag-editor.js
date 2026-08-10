@@ -123,8 +123,22 @@ window.tagEditorMixin = {
   tagEditorPage: 1,
   tagEditorPageSize: 60,
   tagEditorContextMenu: null,
+  tagEditorImageContextMenu: null,
   tagEditorLeftCollapsed: false,
   _teLastSelected: null,
+
+  // ===== Image Lightbox =====
+  tagEditorLightboxOpen: false,
+  tagEditorLightboxImage: null,
+  tagEditorLightboxLoading: false,
+  tagEditorLightboxScale: 1,
+  tagEditorLightboxX: 0,
+  tagEditorLightboxY: 0,
+  tagEditorLightboxPanning: false,
+  tagEditorLightboxPointerId: null,
+  tagEditorLightboxPanStartX: 0,
+  tagEditorLightboxPanStartY: 0,
+  _teLightboxPreviousSelection: null,
 
   // ===== Right Panel Editor =====
   tagEditorDetailView: 'chip',
@@ -358,6 +372,7 @@ window.tagEditorMixin = {
     this._teCloseSession(this.tagEditorSessionId);
     this.tagEditorSessionId = '';
     this.tagEditorStopResize();
+    this.tagEditorCloseLightbox();
     this._teStopAutoSave();
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
     if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
@@ -1029,6 +1044,7 @@ window.tagEditorMixin = {
     var menuW = 180, menuH = 150;
     var x = Math.min(e.clientX, window.innerWidth - menuW - 4);
     var y = Math.min(e.clientY, window.innerHeight - menuH - 4);
+    this.tagEditorImageContextMenu = null;
     this.tagEditorContextMenu = { x: x, y: y, tag: tag };
   },
 
@@ -1139,6 +1155,131 @@ window.tagEditorMixin = {
   },
 
   // ===== Card Interactions =====
+  tagEditorImageCtx(e, img) {
+    var menuW = 168, menuH = 38, margin = 4;
+    var x = Math.max(margin, Math.min(e.clientX, window.innerWidth - menuW - margin));
+    var y = Math.max(margin, Math.min(e.clientY, window.innerHeight - menuH - margin));
+    this.tagEditorContextMenu = null;
+    this.tagEditorImageContextMenu = { x: x, y: y, image: img };
+  },
+
+  tagEditorCtxViewImage() {
+    var img = this.tagEditorImageContextMenu && this.tagEditorImageContextMenu.image;
+    this.tagEditorImageContextMenu = null;
+    if (img) this.tagEditorOpenLightbox(img);
+  },
+
+  tagEditorOriginalUrl(img) {
+    if (!img || !this.tagEditorSessionId) return '';
+    var params = new URLSearchParams();
+    params.set('scope', 'dataset');
+    params.set('session_id', this.tagEditorSessionId);
+    params.set('path', img.rel_path || img.name || '');
+    params.set('variant', 'original');
+    return '/api/image-preview?' + params.toString();
+  },
+
+  tagEditorOpenLightbox(img) {
+    if (!img) return;
+    if (!this.tagEditorLightboxOpen) this._teLightboxPreviousSelection = this.tagEditorSelected.slice();
+    this.tagEditorSelected = [img.path];
+    this._updateEditorPanel();
+    this.tagEditorLightboxImage = img;
+    this.tagEditorLightboxLoading = true;
+    this.tagEditorLightboxOpen = true;
+    this.tagEditorImageContextMenu = null;
+    this.tagEditorResetLightbox();
+    document.body.classList.add('te-lightbox-open');
+    var self = this;
+    this.$nextTick(function() {
+      var closeButton = document.querySelector('.te-lightbox-close');
+      if (closeButton) closeButton.focus();
+      var image = document.querySelector('.te-lightbox-image');
+      if (image && image.complete) self.tagEditorLightboxLoading = false;
+    });
+  },
+
+  tagEditorCloseLightbox() {
+    this.tagEditorLightboxOpen = false;
+    this.tagEditorLightboxLoading = false;
+    this.tagEditorLightboxImage = null;
+    this.tagEditorStopLightboxPan();
+    this.tagEditorResetLightbox();
+    if (Array.isArray(this._teLightboxPreviousSelection)) {
+      this.tagEditorSelected = this._teLightboxPreviousSelection;
+      this._teLightboxPreviousSelection = null;
+      this._updateEditorPanel();
+    }
+    document.body.classList.remove('te-lightbox-open');
+  },
+
+  tagEditorLightboxTransform() {
+    return 'translate3d(' + this.tagEditorLightboxX + 'px,' + this.tagEditorLightboxY + 'px,0) scale(' + this.tagEditorLightboxScale + ')';
+  },
+
+  tagEditorResetLightbox() {
+    this.tagEditorLightboxScale = 1;
+    this.tagEditorLightboxX = 0;
+    this.tagEditorLightboxY = 0;
+  },
+
+  tagEditorSetLightboxScale(next, event) {
+    var current = this.tagEditorLightboxScale || 1;
+    next = Math.max(1, Math.min(8, next));
+    if (Math.abs(next - current) < 0.001) return;
+    var ratio = next / current;
+    if (event) {
+      var stage = event.currentTarget.closest('.te-lightbox-stage') || event.currentTarget;
+      var rect = stage.getBoundingClientRect();
+      var cursorX = event.clientX - (rect.left + rect.width / 2);
+      var cursorY = event.clientY - (rect.top + rect.height / 2);
+      this.tagEditorLightboxX = cursorX - (cursorX - this.tagEditorLightboxX) * ratio;
+      this.tagEditorLightboxY = cursorY - (cursorY - this.tagEditorLightboxY) * ratio;
+    }
+    this.tagEditorLightboxScale = next;
+    if (next === 1) {
+      this.tagEditorLightboxX = 0;
+      this.tagEditorLightboxY = 0;
+    }
+  },
+
+  tagEditorZoomLightbox(event) {
+    var factor = event.deltaY < 0 ? 1.18 : (1 / 1.18);
+    this.tagEditorSetLightboxScale(this.tagEditorLightboxScale * factor, event);
+  },
+
+  tagEditorStartLightboxPan(event) {
+    if (event.button !== 0 || this.tagEditorLightboxScale <= 1) return;
+    this.tagEditorLightboxPanning = true;
+    this.tagEditorLightboxPointerId = event.pointerId;
+    this.tagEditorLightboxPanStartX = event.clientX - this.tagEditorLightboxX;
+    this.tagEditorLightboxPanStartY = event.clientY - this.tagEditorLightboxY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  },
+
+  tagEditorMoveLightboxPan(event) {
+    if (!this.tagEditorLightboxPanning || event.pointerId !== this.tagEditorLightboxPointerId) return;
+    this.tagEditorLightboxX = event.clientX - this.tagEditorLightboxPanStartX;
+    this.tagEditorLightboxY = event.clientY - this.tagEditorLightboxPanStartY;
+  },
+
+  tagEditorStopLightboxPan(event) {
+    if (event && this.tagEditorLightboxPointerId !== null) {
+      event.currentTarget.releasePointerCapture?.(this.tagEditorLightboxPointerId);
+    }
+    this.tagEditorLightboxPanning = false;
+    this.tagEditorLightboxPointerId = null;
+  },
+
+  async tagEditorLightboxNav(dir) {
+    await this.tagEditorNavDetail(dir);
+    var img = this.tagEditorGetSelectedImg();
+    if (!img) return;
+    this.tagEditorLightboxImage = img;
+    this.tagEditorLightboxLoading = true;
+    this.tagEditorResetLightbox();
+  },
+
   async _teFetchAllSessionItems(useCurrentFilters) {
     if (!this.tagEditorSessionId) return this.tagEditorGetFiltered().slice();
     var base = useCurrentFilters ? this._teSessionQuery(1) : new URLSearchParams({
@@ -2461,6 +2602,28 @@ window.tagEditorMixin = {
     if (e.isComposing || e.keyCode === 229) return;
     var modifier = e.ctrlKey || e.metaKey;
     var editableTarget = this._teIsEditableTarget(e.target);
+    if (this.tagEditorLightboxOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.tagEditorCloseLightbox();
+      } else if (e.key === 'ArrowLeft' && this.tagEditorCanNavDetail(-1)) {
+        e.preventDefault();
+        this.tagEditorLightboxNav(-1);
+      } else if (e.key === 'ArrowRight' && this.tagEditorCanNavDetail(1)) {
+        e.preventDefault();
+        this.tagEditorLightboxNav(1);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        this.tagEditorSetLightboxScale(this.tagEditorLightboxScale * 1.18);
+      } else if (e.key === '-') {
+        e.preventDefault();
+        this.tagEditorSetLightboxScale(this.tagEditorLightboxScale / 1.18);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        this.tagEditorResetLightbox();
+      }
+      return;
+    }
     if (this.tagEditorConfirmOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();

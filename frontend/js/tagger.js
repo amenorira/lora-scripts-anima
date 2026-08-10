@@ -603,7 +603,12 @@ window.taggerMixin = {
 
   taggerPreviewUrl(index) {
     if (this.taggerSourceMode === 'single' && this._taggerPreviewObjectUrl && index === 0) return this._taggerPreviewObjectUrl;
-    return this.taggerSource ? `/api/tagger/source/${this.taggerSource.source_token}/${index}` : '';
+    if (!this.taggerSource) return '';
+    const params = new URLSearchParams({
+      scope: 'tagger', source_token: this.taggerSource.source_token,
+      index: String(index), variant: 'original'
+    });
+    return `/api/image-preview?${params.toString()}`;
   },
 
   taggerPreviewTransform() {
@@ -717,10 +722,6 @@ window.taggerMixin = {
   stopTaggerResultResize() {
     this.taggerResultResizing = false;
     document.body.classList.remove('tagger-result-resizing');
-  },
-
-  taggerThumbUrl(index) {
-    return this.taggerSource ? `/api/tagger/thumbnails/${this.taggerSource.source_token}/${index}` : '';
   },
 
   selectTaggerItem(item) {

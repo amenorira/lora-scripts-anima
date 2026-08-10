@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from backend.constants import REPO_ROOT, OUTPUT_DIR
+from backend.image_preview import build_image_preview_url
 from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
@@ -153,17 +154,14 @@ def newest_previews(
             rel = str(p.relative_to(od)).replace("\\", "/")
         except ValueError:
             continue
-        encoded_run = quote(run_dir, safe="")
-        encoded_path = quote(rel, safe="/")
         version = f"{stat.st_mtime_ns}-{stat.st_size}"
-        base = f"/api/monitor/preview-image?run_dir={encoded_run}&path={encoded_path}&v={version}"
         result.append({
             "name": p.name,
             "path": rel,
-            "url": base + "&variant=original",
-            "inspect_url": base + "&variant=inspect",
-            "thumb_url": base + "&variant=thumb",
-            "metadata_url": f"/api/monitor/preview-metadata?run_dir={encoded_run}&path={encoded_path}&v={version}",
+            "url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="original", version=version),
+            "inspect_url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="inspect", version=version),
+            "thumb_url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="thumb", size=320, version=version),
+            "metadata_url": f"/api/monitor/preview-metadata?run_dir={quote(run_dir, safe='')}&path={quote(rel, safe='/')}&v={version}",
             "size": stat.st_size,
             "version": version,
         })
