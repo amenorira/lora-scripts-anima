@@ -13,7 +13,6 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from backend.constants import TAGGER_CACHE_DIR
 from backend.log import log
 from backend.tagger.interrogator import (
     available_interrogators,
@@ -118,7 +117,17 @@ def source_item(source_token: str, index: int) -> Path:
         paths = source["paths"]
         if index < 0 or index >= len(paths):
             raise IndexError("Image index out of range / 图片索引超出范围")
-        return paths[index]
+        candidate = paths[index].resolve()
+        root = Path(str(source["root"])).resolve()
+        if source.get("kind") in {"file", "upload"}:
+            if candidate != root:
+                raise ValueError("Image escaped source scope / 图片超出输入源范围")
+        else:
+            try:
+                candidate.relative_to(root)
+            except ValueError as exc:
+                raise ValueError("Image escaped source scope / 图片超出输入源范围") from exc
+        return candidate
 
 
 def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
@@ -143,20 +152,6 @@ def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
             for index, path in enumerate(page)
         ],
     }
-
-
-def thumbnail_path(source_token: str, index: int) -> Path:
-    source = source_item(source_token, index)
-    cache_dir = TAGGER_CACHE_DIR / "thumbnails" / source_token
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    target = cache_dir / f"{index}.jpg"
-    if target.exists() and target.stat().st_mtime_ns >= source.stat().st_mtime_ns:
-        return target
-    with Image.open(source) as image:
-        image = image.convert("RGB")
-        image.thumbnail((160, 160), Image.Resampling.LANCZOS)
-        image.save(target, "JPEG", quality=82, optimize=True)
-    return target
 
 
 def training_active() -> bool:

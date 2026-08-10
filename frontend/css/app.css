@@ -3537,8 +3537,11 @@ body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-selec
 .te-editor-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
 
 
-.te-editor-preview { width: 100%; height: clamp(180px, 34vh, 320px); border-radius: 0; background: var(--bg-preview); overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.te-editor-preview img { width: 100%; height: 100%; object-fit: contain; }
+.te-editor-preview { width: 100%; height: clamp(180px, 34vh, 320px); border-radius: 0; background: var(--bg-preview); overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: zoom-in; position: relative; }
+.te-editor-preview::after { content: ''; position: absolute; inset: 0; border: 2px solid transparent; pointer-events: none; transition: border-color 0.12s ease; }
+.te-editor-preview:hover::after, .te-editor-preview:focus-visible::after { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.te-editor-preview:focus-visible { outline: none; }
+.te-editor-preview img { width: 100%; height: 100%; object-fit: contain; user-select: none; }
 
 .te-editor-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; flex-shrink: 0; flex-wrap: wrap; border-bottom: 1px solid var(--border-default); }
 
@@ -3654,6 +3657,30 @@ body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-selec
 .te-ctx-item.te-ctx-danger { color: var(--danger); }
 .te-ctx-item.te-ctx-danger:hover { background: var(--danger-soft); color: var(--danger); }
 .te-ctx-divider { height: 1px; background: var(--border-default); margin: 2px 5px; }
+.te-image-ctx { min-width: 168px; }
+.te-ctx-button { width: 100%; display: flex; align-items: center; gap: 7px; border: 0; background: transparent; text-align: left; font-family: inherit; }
+
+/* ===== Image Lightbox ===== */
+body.te-lightbox-open { overflow: hidden; }
+.te-lightbox { position: fixed; inset: 0; z-index: 4000; display: grid; grid-template-rows: 44px minmax(0, 1fr); background: rgba(8, 10, 14, 0.96); color: #fff; }
+.te-lightbox-topbar { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 0 10px 0 14px; border-bottom: 1px solid rgba(255,255,255,0.12); background: rgba(18,21,27,0.96); }
+.te-lightbox-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,0.86); font-family: var(--font-mono); font-size: 11px; }
+.te-lightbox-tools { display: flex; align-items: center; gap: 3px; }
+.te-lightbox-tools button { width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: rgba(255,255,255,0.76); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.te-lightbox-tools button:hover, .te-lightbox-tools button:focus-visible { color: #fff; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.12); outline: none; }
+.te-lightbox-tools button:disabled { opacity: 0.28; cursor: default; background: transparent; border-color: transparent; }
+.te-lightbox-tools .te-lightbox-scale { width: 54px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.te-lightbox-tools .te-lightbox-close { margin-left: 5px; }
+.te-lightbox-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
+.te-lightbox-stage.zoomed { cursor: grab; }
+.te-lightbox-stage.panning { cursor: grabbing; }
+.te-lightbox-image { display: block; max-width: calc(100vw - 72px); max-height: calc(100vh - 64px); object-fit: contain; transform-origin: center; will-change: transform; user-select: none; }
+.te-lightbox-stage:not(.panning) .te-lightbox-image { transition: transform 100ms ease-out; }
+.te-lightbox-nav { position: fixed; z-index: 4001; top: 50%; width: 38px; height: 56px; margin-top: -6px; border: 1px solid rgba(255,255,255,0.12); border-radius: var(--radius-control); background: rgba(18,21,27,0.7); color: rgba(255,255,255,0.8); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.te-lightbox-nav:hover, .te-lightbox-nav:focus-visible { color: #fff; background: rgba(35,40,49,0.94); outline: 1px solid rgba(255,255,255,0.28); }
+.te-lightbox-prev { left: 10px; }
+.te-lightbox-next { right: 10px; }
+.te-lightbox-spinner { position: absolute; width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.18); border-top-color: rgba(255,255,255,0.82); border-radius: 50%; animation: spin 0.7s linear infinite; }
 
 /* ===== Drag ===== */
 .te-pill-drag-src { opacity: 0.3; }

@@ -15,6 +15,7 @@ from backend.training.optimizer_contracts import (
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
+    MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
@@ -109,6 +110,7 @@ class OptimizerFieldContractTests(unittest.TestCase):
                 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
                 AUTOMAGIC_OPTIMIZER_TYPE,
                 "vendor.emo_optimizer.emosens.EmoSens",
+                MUON_OPTIMIZER_TYPE,
             ],
         )
         self.assertEqual(len(optimizer_entries(KREA2_PROFILE)), 11)
@@ -128,6 +130,17 @@ class OptimizerFieldContractTests(unittest.TestCase):
             [group["label_key"] for group in optimizer_groups(KREA2_PROFILE)],
             expected_group_order[:-1],
         )
+        experimental = next(
+            group
+            for group in optimizer_groups(SD_SCRIPTS_PROFILE)
+            if group["label_key"] == "opt.optimizer_group_experimental"
+        )
+        muon = next(
+            option
+            for option in experimental["options"]
+            if option["v"] == MUON_OPTIMIZER_TYPE
+        )
+        self.assertEqual(muon["group"], "anima")
 
         for profile in (SD_SCRIPTS_PROFILE, KREA2_PROFILE):
             lengths = optimizer_beta_lengths(profile)
@@ -145,6 +158,42 @@ class OptimizerFieldContractTests(unittest.TestCase):
                     self.assertEqual(hints[selector], entry.beta_hint_key)
                     self.assertTrue(entry.description_key.startswith("opt.optimizer_type_"))
 
+    def test_frontend_shows_muon_only_for_anima(self):
+        optimizer_field = fields_by_key()["optimizer_type"]
+        script = r"""
+global.window = { t: (key, fallback) => fallback || key };
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+
+function optimizerValues(trainType) {
+  let selectConfig = null;
+  const ctx = Object.assign({}, core, {
+    form: { model_train_type: trainType, optimizer_type: 'AdamW8bit' },
+    t(key) { return key; },
+    escJson(value) { selectConfig = value; return ''; },
+  });
+  ctx.renderField(__OPTIMIZER_FIELD__);
+  return selectConfig.groups.flatMap(group => group.options.map(option => option.v));
+}
+
+console.log(JSON.stringify({
+  anima: optimizerValues('anima-lora'),
+  sdxl: optimizerValues('sdxl-lora'),
+}));
+""".replace("__OPTIMIZER_FIELD__", json.dumps(optimizer_field))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        values = json.loads(result.stdout)
+        self.assertIn(MUON_OPTIMIZER_TYPE, values["anima"])
+        self.assertNotIn(MUON_OPTIMIZER_TYPE, values["sdxl"])
+
     def test_registry_displays_product_defaults_and_anima_recommendations(self):
         from pytorch_optimizer import StableAdamW
 
@@ -156,6 +205,7 @@ class OptimizerFieldContractTests(unittest.TestCase):
         self.assertEqual(auto_value_for(learning_rate, PRODIGY_OPTIMIZER_TYPE), "1.0")
         self.assertEqual(auto_value_for(learning_rate, AUTOMAGIC_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(auto_value_for(learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE), "1e-4")
+        self.assertEqual(auto_value_for(learning_rate, MUON_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(
             contextual_auto_value_for(learning_rate, "AdamW8bit", "anima-lora"),
             "2e-5",
@@ -171,6 +221,12 @@ class OptimizerFieldContractTests(unittest.TestCase):
         self.assertEqual(
             contextual_auto_value_for(
                 learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE, "anima-lora"
+            ),
+            "2e-5",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(
+                learning_rate, MUON_OPTIMIZER_TYPE, "anima-lora"
             ),
             "2e-5",
         )
@@ -206,10 +262,20 @@ class OptimizerFieldContractTests(unittest.TestCase):
         self.assertEqual(auto_value_for(weight_decay, "Lion8bit"), 0.0)
         self.assertEqual(auto_value_for(weight_decay, CAME_OPTIMIZER_TYPE), 0.0)
         self.assertEqual(auto_value_for(weight_decay, STABLE_ADAMW_OPTIMIZER_TYPE), 0.0)
+        self.assertEqual(auto_value_for(weight_decay, MUON_OPTIMIZER_TYPE), 0.0)
         self.assertEqual(inspect.signature(StableAdamW).parameters["weight_decay"].default, 0.01)
 
         self.assertEqual(auto_value_for(fields["betas"], STABLE_ADAMW_OPTIMIZER_TYPE), "0.9, 0.99")
         self.assertEqual(auto_value_for(fields["eps"], STABLE_ADAMW_OPTIMIZER_TYPE), "1e-8")
+        self.assertEqual(auto_value_for(fields["eps"], MUON_OPTIMIZER_TYPE), "1e-7")
+        self.assertEqual(fields["muon_adjust_lr_fn"]["default"], "match_rms_adamw")
+        self.assertEqual(fields["muon_momentum"]["default"], 0.95)
+        self.assertTrue(fields["muon_nesterov"]["default"])
+        self.assertEqual(fields["muon_ns_steps"]["default"], 5)
+        self.assertEqual(
+            fields["muon_ns_coefficients"]["default"],
+            "3.4445, -4.775, 2.0315",
+        )
         self.assertTrue(fields["stableadamw_kahan_sum"]["default"])
         self.assertTrue(fields["stableadamw_kahan_sum"]["advanced"])
         self.assertTrue(fields["stableadamw_weight_decouple"]["default"])
@@ -256,6 +322,10 @@ class OptimizerValidationTests(unittest.TestCase):
             ("AdamW8bit", {"bnb_percentile_clipping": 0}, "percentile_clipping"),
             ("Lion8bit", {"bnb_percentile_clipping": 101}, "percentile_clipping"),
             ("PagedAdamW8bit", {"bnb_min_8bit_size": -1}, "min_8bit_size"),
+            (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 0}, "ns_steps"),
+            (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 100}, "ns_steps"),
+            (MUON_OPTIMIZER_TYPE, {"muon_ns_coefficients": "1, 2"}, "exactly 3"),
+            (MUON_OPTIMIZER_TYPE, {"muon_adjust_lr_fn": "unknown"}, "one of"),
         )
         for optimizer_type, updates, expected in cases:
             with self.subTest(optimizer_type=optimizer_type, updates=updates):
@@ -269,6 +339,14 @@ class OptimizerValidationTests(unittest.TestCase):
         config["optimizer_args"] = ["silently_ignored_option=1"]
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
+
+    def test_native_muon_is_limited_to_anima_profile(self):
+        anima = valid_config(MUON_OPTIMIZER_TYPE, "anima-lora")
+        self.assertEqual(validate_training_config(anima), [])
+
+        sdxl = valid_config(MUON_OPTIMIZER_TYPE, "sdxl-lora")
+        errors = validate_training_config(sdxl)
+        self.assertTrue(any("only for Anima LoRA" in error for error in errors), errors)
 
         config = valid_config(STABLE_ADAMW_OPTIMIZER_TYPE)
         config["optimizer_args"] = ["unknown_stability_knob=True"]
@@ -309,6 +387,66 @@ class OptimizerValidationTests(unittest.TestCase):
         self.assertEqual(optimizer.param_groups[0]["weight_decay"], 0)
         self.assertEqual(optimizer.param_groups[0]["betas"], (0.9, 0.99))
 
+    def test_real_sd_scripts_factory_runs_native_muon_step(self):
+        if not torch.cuda.is_available():
+            self.skipTest("Muon CUDA smoke requires CUDA")
+
+        config = valid_config(MUON_OPTIMIZER_TYPE)
+        config.update(
+            {
+                "learning_rate": "2e-5",
+                "weight_decay": 0,
+                "eps": "1e-7",
+                "muon_momentum": 0.95,
+                "muon_nesterov": True,
+                "muon_ns_steps": 5,
+                "muon_ns_coefficients": "3.4445, -4.775, 2.0315",
+                "muon_adjust_lr_fn": "match_rms_adamw",
+            }
+        )
+        self.assertEqual(validate_training_config(config), [])
+        adapted, warnings = adapt_config(config)
+        self.assertEqual(warnings, [])
+
+        sd_scripts = Path("vendor/sd-scripts").resolve()
+        sys.path.insert(0, str(sd_scripts))
+        try:
+            from library.optimizer import get_optimizer
+
+            args = type(
+                "Args",
+                (),
+                {
+                    "optimizer_type": MUON_OPTIMIZER_TYPE,
+                    "use_8bit_adam": False,
+                    "use_lion_optimizer": False,
+                    "fused_backward_pass": False,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": float(adapted["learning_rate"]),
+                    "optimizer_args": adapted["optimizer_args"],
+                },
+            )()
+            parameter = torch.nn.Parameter(torch.ones((4, 4), device="cuda"))
+            _, _, optimizer = get_optimizer(args, [parameter])
+            before = parameter.detach().clone()
+            parameter.square().mean().backward()
+            optimizer.step()
+        finally:
+            sys.path.remove(str(sd_scripts))
+
+        self.assertIs(type(optimizer), torch.optim.Muon)
+        group = optimizer.param_groups[0]
+        self.assertEqual(group["lr"], 2e-5)
+        self.assertEqual(group["weight_decay"], 0)
+        self.assertEqual(group["momentum"], 0.95)
+        self.assertTrue(group["nesterov"])
+        self.assertEqual(group["ns_steps"], 5)
+        self.assertEqual(group["ns_coefficients"], (3.4445, -4.775, 2.0315))
+        self.assertEqual(group["eps"], 1e-7)
+        self.assertEqual(group["adjust_lr_fn"], "match_rms_adamw")
+        self.assertTrue(torch.isfinite(parameter).all())
+        self.assertTrue(torch.ne(parameter.detach(), before).any())
+
         config = valid_config("AdamW8bit")
         config["optimizer_args"] = ["fused=True"]
         errors = validate_training_config(config)
@@ -343,6 +481,36 @@ class OptimizerValidationTests(unittest.TestCase):
 
 
 class OptimizerAdapterTests(unittest.TestCase):
+    def test_muon_merges_all_exposed_arguments(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": MUON_OPTIMIZER_TYPE,
+                "learning_rate": "2e-5",
+                "weight_decay": 0,
+                "eps": "1e-7",
+                "muon_momentum": 0.95,
+                "muon_nesterov": True,
+                "muon_ns_steps": 5,
+                "muon_ns_coefficients": "3.4445, -4.775, 2.0315",
+                "muon_adjust_lr_fn": "match_rms_adamw",
+            }
+        )
+
+        self.assertEqual(adapted["optimizer_type"], MUON_OPTIMIZER_TYPE)
+        self.assertIn("weight_decay=0", adapted["optimizer_args"])
+        self.assertIn("eps=1e-7", adapted["optimizer_args"])
+        self.assertIn("momentum=0.95", adapted["optimizer_args"])
+        self.assertIn("nesterov=True", adapted["optimizer_args"])
+        self.assertIn("ns_steps=5", adapted["optimizer_args"])
+        self.assertIn(
+            "ns_coefficients=(3.4445, -4.775, 2.0315)",
+            adapted["optimizer_args"],
+        )
+        self.assertIn("adjust_lr_fn='match_rms_adamw'", adapted["optimizer_args"])
+        self.assertEqual(warnings, [])
+
     def test_stableadamw_keeps_external_training_controls_and_loraplus(self):
         adapted, warnings = adapt_config(
             {
@@ -1224,6 +1392,11 @@ const stableCustom = args({
   stableadamw_kahan_sum: false,
   stableadamw_weight_decouple: false,
 });
+const muonDefaults = args({
+  optimizer_type: 'Muon',
+  weight_decay: 0,
+  eps: '1e-7',
+});
 const bnbDefaults = args({
   optimizer_type: 'AdamW8bit',
   bnb_percentile_clipping: 100,
@@ -1350,6 +1523,7 @@ console.log(JSON.stringify({
   automagicDefaults,
   stableDefaults,
   stableCustom,
+  muonDefaults,
   bnbDefaults,
   bnbCustom,
   previousAuto: previousAuto.form.lr_scheduler,
@@ -1382,6 +1556,7 @@ console.log(JSON.stringify({
             state["stableCustom"],
             ["weight_decay=0.02", "kahan_sum=False", "weight_decouple=False"],
         )
+        self.assertEqual(state["muonDefaults"], ["weight_decay=0"])
         self.assertEqual(state["bnbDefaults"], [])
         self.assertEqual(
             state["bnbCustom"],

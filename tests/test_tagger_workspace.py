@@ -73,7 +73,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.fail("Tagger task did not finish")
 
 
-    def test_scan_thumbnail_task_results_and_atomic_caption_write(self):
+    def test_scan_task_results_and_atomic_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             image_path = root / "sample.png"
@@ -84,12 +84,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             page = workspace.source_items(source["source_token"], 0, 1)
             self.assertEqual(page["total"], 1)
             self.assertEqual(page["items"][0]["index"], 0)
-
-            with patch.object(workspace, "TAGGER_CACHE_DIR", root / "cache"):
-                thumb = workspace.thumbnail_path(source["source_token"], 0)
-                self.assertTrue(thumb.is_file())
-                with Image.open(thumb) as generated:
-                    self.assertLessEqual(max(generated.size), 160)
 
             with patch.object(workspace, "training_active", return_value=False), patch.object(
                 workspace, "_onnx_tags", return_value=(

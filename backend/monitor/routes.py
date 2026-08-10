@@ -5,7 +5,6 @@
   GET  /api/monitor/run-detail     — 指定训练的图表 + 日志 + 配置
   GET  /api/monitor/log-slice      — 完整训练日志分页读取
   GET  /api/monitor/log-download   — 下载完整训练日志
-  GET  /api/monitor/preview-image  — 预览图片代理
 """
 from __future__ import annotations
 
@@ -33,11 +32,6 @@ from backend.monitor.run_registry import (
 from backend.tasks import tm
 
 router = APIRouter()
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CACHE_DIR = REPO_ROOT / "cache"
-PREVIEW_THUMB_DIR = CACHE_DIR / "preview-thumbs"
-PREVIEW_INSPECT_DIR = CACHE_DIR / "preview-inspect"
 
 # run-detail 仅回传日志尾部行数（与前端 LOG.MAX_LINES 对齐）；完整日志经
 # /monitor/log-slice 分页拉取，避免大日志全量回传撑爆响应。
@@ -553,77 +547,6 @@ async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query(""
         media_type="text/plain",
         filename=log_path.name,
     )
-
-
-@router.get("/monitor/preview-image")
-async def monitor_preview_image(
-    run_dir: str = Query(""),
-    path: str = Query(""),
-    variant: str = Query("original"),
-    thumb: bool = Query(False),
-    request: Request = None,
-):
-    """Serve cached thumbnail/inspection variants or the requested original."""
-    import hashlib
-    import mimetypes
-    import urllib.parse
-    from fastapi.responses import FileResponse, Response
-
-    if not run_dir or not path:
-        return {"status": "error", "message": "run_dir and path are required"}
-    decoded = urllib.parse.unquote(path)
-    p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
-    if not p:
-        return {"status": "error", "message": "禁止访问"}
-
-    if not p.is_file():
-        return {"status": "error", "message": "文件不存在"}
-
-    if thumb:
-        variant = "thumb"
-    if variant not in {"thumb", "inspect", "original"}:
-        return {"status": "error", "message": "Invalid preview variant"}
-
-    st = p.stat()
-    version_key = f"{p}|{st.st_mtime_ns}|{st.st_size}|{variant}"
-    etag = hashlib.sha1(version_key.encode("utf-8", errors="ignore")).hexdigest()
-    headers = {
-        "Cache-Control": "private, max-age=86400, immutable",
-        "ETag": f'"{etag}"',
-    }
-    if request and request.headers.get("if-none-match") == headers["ETag"]:
-        return Response(status_code=304, headers=headers)
-
-    if variant in {"thumb", "inspect"}:
-        try:
-            from PIL import Image, ImageOps
-
-            is_thumb = variant == "thumb"
-            key_src = f"{p}|{st.st_mtime_ns}|{st.st_size}|{variant}|webp-q{82 if is_thumb else 92}"
-            key = hashlib.sha1(key_src.encode("utf-8", errors="ignore")).hexdigest()
-            cache_dir = PREVIEW_THUMB_DIR if is_thumb else PREVIEW_INSPECT_DIR
-            rendered_path = cache_dir / f"{key}.webp"
-            if not rendered_path.exists():
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                with Image.open(p) as img:
-                    img = ImageOps.exif_transpose(img)
-                    if is_thumb:
-                        img.thumbnail((320, 320))
-                    if img.mode not in ("RGB", "RGBA", "L"):
-                        img = img.convert("RGB")
-                    img.save(
-                        rendered_path,
-                        format="WEBP",
-                        quality=82 if is_thumb else 92,
-                        method=6,
-                    )
-            return FileResponse(rendered_path, media_type="image/webp", headers=headers)
-        except Exception:
-            if variant != "original":
-                return {"status": "error", "message": "Preview conversion failed"}
-
-    mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-    return FileResponse(p, media_type=mt, headers=headers)
 
 
 @router.get("/monitor/preview-metadata")

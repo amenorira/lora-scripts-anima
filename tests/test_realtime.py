@@ -768,7 +768,10 @@ const loaders = delays.map((delay, index) => ({
         application_source = Path("backend/server/application.py").read_text(encoding="utf-8")
         monitor_routes = Path("backend/monitor/routes.py").read_text(encoding="utf-8")
 
-        self.assertIn('"/api/monitor/preview-image", "/api/monitor/preview-metadata"', application_source)
+        self.assertIn('"/api/image-preview", "/api/monitor/preview-metadata"', application_source)
+        self.assertNotIn('/api/monitor/preview-image', application_source)
+        artifacts_source = Path("backend/monitor/artifacts.py").read_text(encoding="utf-8")
+        self.assertIn('build_image_preview_url(scope="artifact"', artifacts_source)
         self.assertIn('"Cache-Control": "private, max-age=86400, immutable"', monitor_routes)
         self.assertIn('"ETag":', monitor_routes)
 

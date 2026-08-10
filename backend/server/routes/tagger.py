@@ -7,7 +7,6 @@ from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 
 from backend.constants import TAGGER_CACHE_DIR
@@ -34,7 +33,6 @@ from backend.tagger.workspace import (
     source_items,
     task_items,
     task_snapshot,
-    thumbnail_path,
     training_active,
 )
 
@@ -155,28 +153,10 @@ async def tagger_upload(file: UploadFile = File(...)):
         return APIResponseFail(message=f"Upload failed / 上传失败: {str(exc)[:240]}")
 
 
-@router.get("/tagger/thumbnails/{source_token}/{index}")
-async def tagger_thumbnail(source_token: str, index: int):
-    try:
-        path = await asyncio.to_thread(thumbnail_path, source_token, index)
-        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
-    except Exception as exc:
-        return APIResponseFail(message=str(exc))
-
-
 @router.get("/tagger/source/{source_token}/items")
 async def list_tagger_source_items(source_token: str, offset: int = 0, limit: int = 120):
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(source_items, source_token, offset, limit))
-    except Exception as exc:
-        return APIResponseFail(message=str(exc))
-
-
-@router.get("/tagger/source/{source_token}/{index}")
-async def tagger_source_image(source_token: str, index: int):
-    try:
-        path = await asyncio.to_thread(source_item, source_token, index)
-        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
     except Exception as exc:
         return APIResponseFail(message=str(exc))
 

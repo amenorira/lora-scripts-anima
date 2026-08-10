@@ -11,7 +11,6 @@ Tag Editor API 路由
   POST /api/tageditor/batch                  — 批量操作（支持 scope=selected）
   POST /api/tageditor/restore-backup         — 还原备份
   GET  /api/tageditor/download-zip?dir=...   — 下载 zip
-  GET  /api/tageditor/thumbnail?path=...     — 缩略图代理
   POST /api/tageditor/snapshots              — 创建还原点快照
   GET  /api/tageditor/snapshots              — 列出所有快照
   POST /api/tageditor/snapshots/{sid}/restore — 还原指定快照
@@ -26,15 +25,13 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
-from backend.constants import REPO_ROOT
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
     scan_selected_images, get_autocomplete, IMAGE_EXTENSIONS,
     _invalidate_cache, _invalidate_caches_for_path,
-    get_cached_scan_images, get_cached_scan_dataset,
-    get_thumbnail_path, tag_list,
+    get_cached_scan_images, get_cached_scan_dataset, tag_list,
 )
 from backend.tageditor.operations import apply_operation
 from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event
@@ -508,36 +505,6 @@ async def download_dataset_zip(dir: str = Query("")):
         buf, media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
     )
-
-
-@router.get("/tageditor/thumbnail")
-async def tag_editor_thumbnail(path: str = Query(""), size: int = Query(320, ge=128, le=1600), dataset_dir: str = Query("")):
-    """标签编辑器缩略图代理"""
-    import urllib.parse
-    import mimetypes
-
-    decoded = urllib.parse.unquote(path)
-    p = Path(decoded)
-    if not p.is_absolute():
-        p = (REPO_ROOT / decoded).resolve()
-
-    if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
-        return PlainTextResponse("", status_code=404)
-    if dataset_dir:
-        root = _valid_directory(dataset_dir)
-        if root is None or _assert_within(str(p), root) is None:
-            return PlainTextResponse("", status_code=404)
-
-    try:
-        thumb_path = await asyncio.to_thread(get_thumbnail_path, p, size)
-        return FileResponse(
-            thumb_path,
-            media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=31536000, immutable"},
-        )
-    except Exception:
-        mt = mimetypes.guess_type(p.name)[0] or "image/jpeg"
-        return FileResponse(p, media_type=mt, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @router.get("/tageditor/timeline")

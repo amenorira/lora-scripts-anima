@@ -17,6 +17,7 @@ ADAFACTOR_OPTIMIZER_TYPE = "AdaFactor"
 CAME_OPTIMIZER_TYPE = "pytorch_optimizer.CAME"
 STABLE_ADAMW_OPTIMIZER_TYPE = "pytorch_optimizer.StableAdamW"
 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE = "AdamWScheduleFree"
+MUON_OPTIMIZER_TYPE = "Muon"
 
 PRODIGY_OPTIMIZERS = frozenset(
     {PRODIGY_OPTIMIZER_TYPE, PRODIGYPLUS_OPTIMIZER_TYPE}
@@ -306,11 +307,30 @@ _EMOSENS_ARGS = {
     "notify": _boolean(),
 }
 
+_MUON_ARGS = {
+    "weight_decay": _NON_NEGATIVE,
+    "momentum": _NON_NEGATIVE,
+    "nesterov": _boolean(),
+    "ns_coefficients": ArgumentSpec(
+        kind="sequence",
+        length=3,
+        item_minimum=None,
+        item_maximum=None,
+    ),
+    "eps": _POSITIVE,
+    "ns_steps": _integer(1, 99),
+    "adjust_lr_fn": _choice(None, "original", "match_rms_adamw"),
+}
+
 
 OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
     "AdamW": OptimizerContract(_TORCH_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
     "AdamW8bit": OptimizerContract(_BNB_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
     "PagedAdamW8bit": OptimizerContract(_BNB_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
+    MUON_OPTIMIZER_TYPE: OptimizerContract(
+        _MUON_ARGS,
+        learning_rate_minimum_inclusive=True,
+    ),
     "Lion": OptimizerContract(_LION_ARGS),
     "Lion8bit": OptimizerContract(_BNB_LION_ARGS),
     "PagedLion8bit": OptimizerContract(_BNB_LION_ARGS),
@@ -366,11 +386,21 @@ _ADAM_OPTIMIZERS = frozenset(
 _BETAS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
     {"Lion", "Lion8bit", "PagedLion8bit", CAME_OPTIMIZER_TYPE}
 )
+_EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset({MUON_OPTIMIZER_TYPE})
 
 FORM_ARGUMENTS: dict[str, FormArgument] = {
     "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS)),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
-    "eps": FormArgument("eps", _ADAM_OPTIMIZERS),
+    "eps": FormArgument("eps", _EPS_OPTIMIZERS),
+    "muon_momentum": FormArgument("momentum", frozenset({MUON_OPTIMIZER_TYPE})),
+    "muon_nesterov": FormArgument("nesterov", frozenset({MUON_OPTIMIZER_TYPE})),
+    "muon_ns_steps": FormArgument("ns_steps", frozenset({MUON_OPTIMIZER_TYPE})),
+    "muon_ns_coefficients": FormArgument(
+        "ns_coefficients", frozenset({MUON_OPTIMIZER_TYPE})
+    ),
+    "muon_adjust_lr_fn": FormArgument(
+        "adjust_lr_fn", frozenset({MUON_OPTIMIZER_TYPE})
+    ),
     "bnb_percentile_clipping": FormArgument(
         "percentile_clipping",
         frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
@@ -540,6 +570,15 @@ def validate_optimizer_contract(
                 "不是有效的优化器参数"
             )
 
+    if (
+        optimizer_type == MUON_OPTIMIZER_TYPE
+        and config.get("model_train_type") != "anima-lora"
+    ):
+        errors.append(
+            "Muon: currently supported only for Anima LoRA / "
+            "当前仅支持 Anima LoRA"
+        )
+
     contract = OPTIMIZER_CONTRACTS.get(optimizer_type)
     if contract is None:
         return errors
@@ -608,7 +647,12 @@ def _set_optimizer_arg(config: dict[str, Any], key: str, value: Any) -> None:
     values = list(config.get("optimizer_args") or [])
     prefix = f"{key}="
     values = [item for item in values if not str(item).strip().startswith(prefix)]
-    values.append(f"{key}={_format_optimizer_value(value)}")
+    formatted = (
+        repr(value)
+        if key == "adjust_lr_fn" and isinstance(value, str)
+        else _format_optimizer_value(value)
+    )
+    values.append(f"{key}={formatted}")
     config["optimizer_args"] = values
 
 
@@ -632,6 +676,8 @@ def _merge_form_arguments(config: dict[str, Any]) -> None:
             continue
         value = config.get(form_key)
         if not is_empty_optimizer_value(value):
+            if mapping.argument == "ns_coefficients":
+                value = _coerce_form_argument(value)
             _set_optimizer_arg(config, mapping.argument, value)
 
 

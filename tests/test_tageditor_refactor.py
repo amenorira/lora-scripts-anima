@@ -137,6 +137,11 @@ class TagEditorSessionTests(unittest.TestCase):
             self.assertEqual(created["data"]["count"], 35)
             self.assertEqual(len(created["data"]["items"]), 30)
             session_id = created["data"]["session_id"]
+            first_item = created["data"]["items"][0]
+            self.assertIn("/api/image-preview?", first_item["thumbnail"])
+            self.assertIn("scope=dataset", first_item["thumbnail"])
+            self.assertIn(f"session_id={session_id}", first_item["thumbnail"])
+            self.assertIn("variant=preview", first_item["preview"])
 
             second = client.get(f"/api/tageditor/sessions/{session_id}/images", params={
                 "page": 2, "page_size": 30,

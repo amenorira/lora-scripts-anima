@@ -12,19 +12,12 @@ from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 
-from backend.constants import CACHE_DIR, REPO_ROOT
+from backend.constants import REPO_ROOT
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 CAPTION_EXTENSIONS = (".txt", ".caption")
-THUMBNAIL_CACHE_DIR = CACHE_DIR / "tageditor-thumbnails"
-_THUMBNAIL_CACHE_MAX_FILES = 12000
-_THUMBNAIL_CACHE_RETAIN_FILES = 10000
-_THUMBNAIL_PRUNE_INTERVAL = 128
-_thumbnail_writes_since_prune = _THUMBNAIL_PRUNE_INTERVAL - 1
 _dataset_locks: dict[str, threading.RLock] = {}
 _dataset_locks_guard = threading.Lock()
 _cache_lock = threading.RLock()
-_thumbnail_locks: dict[str, threading.Lock] = {}
-_thumbnail_locks_guard = threading.Lock()
 
 
 def resolve_dir(dir_path: str) -> Path:
@@ -117,19 +110,6 @@ def write_tags(cap_path: Path, tags: str, create_backup: bool = False) -> bool:
         return False
 
 
-def thumbnail_url(img_path: Path, size: int = 320, dataset_dir: Path | None = None) -> str:
-    """图片缩略图 API URL"""
-    import urllib.parse
-    try:
-        rel = str(img_path.relative_to(REPO_ROOT)).replace("\\", "/")
-    except ValueError:
-        rel = str(img_path).replace("\\", "/")
-    url = f"/api/tageditor/thumbnail?path={urllib.parse.quote(rel, safe='')}&size={size}"
-    if dataset_dir is not None:
-        url += f"&dataset_dir={urllib.parse.quote(str(dataset_dir.resolve()), safe='')}"
-    return url
-
-
 def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], list[dict]]:
     """单次扫描图片、标签文本与标签频率，避免同一目录重复遍历。"""
     images = []
@@ -159,8 +139,6 @@ def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], li
             "caption_revision": caption_revision(cap) if cap else "missing",
             "caption_conflict": len(candidates) > 1,
             "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
-            "thumbnail": thumbnail_url(p, 320, dir_path),
-            "preview": thumbnail_url(p, 960, dir_path),
         })
     images.sort(key=lambda x: x["name"])
     tags_data = [{"tag": tag, "count": count} for tag, count in counter.most_common()]
@@ -205,8 +183,6 @@ def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]
             "caption_revision": caption_revision(cap) if cap else "missing",
             "caption_conflict": len(candidates) > 1,
             "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
-            "thumbnail": thumbnail_url(p, 320, dir_path),
-            "preview": thumbnail_url(p, 960, dir_path),
         })
     images.sort(key=lambda x: x["name"])
     return images
@@ -289,73 +265,6 @@ def _invalidate_caches_for_path(file_path: Path) -> None:
             continue
         with _cache_lock:
             _scan_dataset_cache.pop(cache_key, None)
-
-
-def _prune_thumbnail_cache(
-    cache_dir: Path = THUMBNAIL_CACHE_DIR,
-    max_files: int = _THUMBNAIL_CACHE_MAX_FILES,
-    retain_files: int = _THUMBNAIL_CACHE_RETAIN_FILES,
-) -> int:
-    """按生成时间清理旧缩略图，避免缓存目录无限增长。"""
-    try:
-        files = [path for path in cache_dir.glob("*.jpg") if path.is_file()]
-    except OSError:
-        return 0
-    if len(files) <= max_files:
-        return 0
-
-    retain_files = max(0, min(retain_files, max_files))
-    try:
-        files.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
-    except OSError:
-        files.sort(key=lambda path: path.name)
-
-    removed = 0
-    for old_path in files[retain_files:]:
-        try:
-            old_path.unlink(missing_ok=True)
-            removed += 1
-        except OSError:
-            continue
-    return removed
-
-
-def get_thumbnail_path(img_path: Path, size: int = 320) -> Path:
-    """生成带内容版本键的磁盘缩略图，并返回缓存文件路径。"""
-    from PIL import Image, ImageOps
-
-    size = max(128, min(int(size), 1600))
-    stat = img_path.stat()
-    key_src = f"{img_path.resolve()}|{stat.st_mtime_ns}|{stat.st_size}|{size}"
-    key = hashlib.sha1(key_src.encode("utf-8", errors="ignore")).hexdigest()
-    thumb_path = THUMBNAIL_CACHE_DIR / f"{key}.jpg"
-    if thumb_path.exists():
-        return thumb_path
-
-    with _thumbnail_locks_guard:
-        thumb_lock = _thumbnail_locks.setdefault(key, threading.Lock())
-    with thumb_lock:
-        if thumb_path.exists():
-            return thumb_path
-        THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        temp_path = THUMBNAIL_CACHE_DIR / f".{key}.{os.getpid()}.{threading.get_ident()}.tmp"
-        try:
-            with Image.open(img_path) as source:
-                image = ImageOps.exif_transpose(source)
-                image.thumbnail((size, size))
-                if image.mode != "RGB":
-                    image = image.convert("RGB")
-                image.save(temp_path, format="JPEG", quality=84, optimize=True)
-            os.replace(temp_path, thumb_path)
-        finally:
-            temp_path.unlink(missing_ok=True)
-
-    global _thumbnail_writes_since_prune
-    _thumbnail_writes_since_prune += 1
-    if _thumbnail_writes_since_prune >= _THUMBNAIL_PRUNE_INTERVAL:
-        _thumbnail_writes_since_prune = 0
-        _prune_thumbnail_cache()
-    return thumb_path
 
 
 def get_autocomplete(dir_path: Path, prefix: str, limit: int = 20, recursive: bool = True) -> list[str]:
