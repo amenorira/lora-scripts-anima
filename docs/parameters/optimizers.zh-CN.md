@@ -19,6 +19,7 @@
 | LoRA 可训练权重为 FP16/BF16 | StableAdamW | `kahan_sum` 主要在低精度参数更新中发挥作用 |
 | 优化器状态显存不足 | AdamW8bit；仍不足时用 PagedAdamW8bit | Paged 版本改变内存调度方式；发生 CPU/GPU 数据交换时可能降低训练速度 |
 | 想减少学习率调参 | Prodigy | 项目要求基础学习率为 `1.0` |
+| 想比较矩阵正交化更新 | Muon | 先保持 AdamW 基线学习率，只更换优化器 |
 
 少图人物训练可以优先比较 **AdamW8bit、CAME、StableAdamW**。对照时一次只改一个主要变量，否则无法判断差异来源。
 
@@ -41,6 +42,7 @@
 | CAME | 来源混合、更新尺度波动较大时对照 | 使用三个 beta 和内部 RMS 裁剪 |
 | AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 支持内部 warmup，但本项目默认 `warmup_steps=0`；短训练不建议作为第一选择 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1，不支持 LoRA+ |
+| Muon | 对二维 LoRA 矩阵执行动量正交化 | 当前使用 PyTorch 原生实现；建议与 AdamW8bit 做同条件对照 |
 
 表中的显存说明只指优化器状态。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
 
@@ -67,6 +69,7 @@ Anima 只训练 DiT 主干时，可从下面的工程起点开始。官方 Anima
 | --- | ---: | --- |
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
 | StableAdamW | `2e-5` | 先与 AdamW 同尺度，单独比较稳定化更新 |
+| Muon (`match_rms_adamw`) | `2e-5` | 按矩阵尺寸匹配 AdamW 更新 RMS；尚不是 Anima 实测最优值 |
 | CAME | `1.5e-5` | CAME 官方建议用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion 官方建议 LR 比 AdamW 小约 `3`～`10` 倍 |
 | AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
@@ -85,7 +88,7 @@ SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4
 <!-- doc-anchor: scheduler-warmup -->
 ### 学习率调度器与预热（scheduler 和 warmup）
 
-AdamW、AdamW8bit、StableAdamW、Lion、CAME 都使用外部学习率调度器。Anima 新配置默认用 `constant`，以匹配上游 Anima 示例，并减少短训练中的额外变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启，只有 cycles 大于 1 才会周期重启。已有的手动配置可以继续使用；想测试预热，可改用 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
+AdamW、AdamW8bit、StableAdamW、Lion、CAME、Muon 都使用外部学习率调度器。Anima 新配置默认用 `constant`，以匹配上游 Anima 示例，并减少短训练中的额外变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启，只有 cycles 大于 1 才会周期重启。已有的手动配置可以继续使用；想测试预热，可改用 `constant_with_warmup`，并先控制在总优化器步数的 `5%` 以内。
 
 AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，界面会把外部调度器固定为 constant。两者的内部预热与 `lr_warmup_steps` 是两回事。
 
@@ -103,16 +106,42 @@ beta 越高，更新越平滑，但对新梯度的响应越慢。常规调优优
 <!-- doc-anchor: eps -->
 ### 数值稳定项（eps）
 
-`eps` 防止分母过小导致数值放大。StableAdamW 默认 `1e-8`。没有可复现的数值问题时，不建议修改。
+`eps` 防止分母过小导致数值放大。StableAdamW 默认 `1e-8`；PyTorch Muon 默认 `1e-7`。没有可复现的数值问题时，不建议修改。
 
 <!-- doc-anchor: weight-decay -->
 ### 权重衰减（weight decay）
 
-本文重点介绍的优化器，本训练器提供以下起点：AdamW、AdamW8bit 和 PagedAdamW8bit 为 `0.01`；CAME 与 StableAdamW 为 `0`。这些值用于建立可复现的基准，不表示 `0.01` 一定优于 `0`。
+本文重点介绍的优化器，本训练器提供以下起点：AdamW、AdamW8bit 和 PagedAdamW8bit 为 `0.01`；CAME、StableAdamW 与 Muon 为 `0`。PyTorch Muon 自身默认 `0.1`，本训练器为 LoRA 起步显式覆盖为 `0`，用户仍可修改。
 
 人物 LoRA 容量有限，没有对照结果时不宜使用较大的权重衰减。想为 AdamW8bit 测试 `weight_decay=0`，应把它当作单独的参数实验，保持数据、步数和其他设置不变。
 
 StableAdamW 库默认 `weight_decay=0.01`，本训练器会明确写出 `weight_decay=0` 覆盖它。这是有意设置，不是参数缺失。
+
+<!-- doc-anchor: muon-options -->
+### Muon 参数
+
+Muon 先累积梯度动量，再把二维矩阵的更新做近似正交化。AdamW 按元素的二阶统计缩放更新，Muon 更关注整个矩阵的更新方向。对 LoRA 来说，它会分别处理 `lora_down` 和 `lora_up`；可能改变收敛速度和学习到的方向，但不保证最终画质优于 AdamW8bit。
+
+Muon 每个参数只维护一组动量状态，少于全精度 AdamW 的两组状态，但每一步会增加矩阵乘法。实际显存和速度仍取决于矩阵大小、rank、batch 和注意力实现。
+
+#### 更新幅度
+
+- **学习率**（`learning_rate`，Anima 默认 `2e-5`）：直接控制更新幅度。过高时可能很快过拟合、loss 波动或更新不稳定；过低时学习缓慢。使用默认缩放时可从 AdamW 基线开始比较。
+- **学习率缩放**（`adjust_lr_fn`，默认 `match_rms_adamw`）：`match_rms_adamw` 可沿用 AdamW 配方的学习率和权重衰减，适合比较两种优化器本身的差异。`original` 按矩阵长宽比缩放更新，通常需要单独确定学习率；不同形状的矩阵在相同学习率下并不具有相同的实际更新幅度。
+- **权重衰减**（`weight_decay`，默认 `0`）：数值增大会使 LoRA 因子进一步收缩，可能抑制过拟合，也可能削弱角色学习。PyTorch Muon 的库默认值为 `0.1`，本训练器会显式传入界面中的值。
+
+#### 动量
+
+- **动量系数**（`momentum`，默认 `0.95`）：数值越高，更新越平滑，但对新梯度的响应越慢；数值越低，对当前 batch 越敏感。
+- **Nesterov 动量**（`nesterov`，默认开启）：决定正交化前如何组合当前梯度和历史动量。关闭后会改变优化轨迹，不是单纯的性能开关。
+
+#### 正交化
+
+- **迭代次数**（`ns_steps`，默认 `5`）：次数越多，正交化近似越充分，单步计算量也越高；减少次数可以降低计算量，但会改变更新结果。界面允许的上限为 `99`。
+- **迭代系数**（`ns_coefficients`，默认 `3.4445, -4.775, 2.0315`）：决定 Newton-Schulz 迭代使用的多项式。其他取值可能降低近似效果或带来数值问题，主要用于受控实验。
+- **数值稳定项**（`eps`，默认 `1e-7`）：防止归一化时除数过小。它通常不影响正常训练，主要用于排查可复现的 NaN 或异常放大。
+
+第一次比较建议只把 AdamW8bit 换成 Muon，保持数据、rank、alpha、scheduler、步数和学习率不变。确认训练稳定后，再单独测试学习率或 weight decay。同时修改 NS 系数和迭代次数会让结果难以解释，建议一次只调整一个。
 
 <!-- doc-anchor: gradient-clipping -->
 ### 最大梯度范数（max gradient norm）

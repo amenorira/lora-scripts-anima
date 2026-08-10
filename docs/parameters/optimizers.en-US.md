@@ -19,6 +19,7 @@ This guide distinguishes "what the papers and implementations actually say" from
 | LoRA trainable weights are FP16/BF16 | StableAdamW | `kahan_sum` helps most when parameter updates run at low precision |
 | Not enough VRAM for optimizer state | AdamW8bit; if still tight, PagedAdamW8bit | Paging changes memory scheduling; host-device transfers may slow training |
 | Want less learning-rate tuning | Prodigy | Requires a base LR of `1.0`; this project does not support LoRA+ with it |
+| Want to compare matrix-orthogonalized updates | Muon | Keep the AdamW baseline LR and change only the optimizer first |
 
 For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** is a reasonable start. Change one major variable per comparison, or you cannot attribute the result.
 
@@ -41,6 +42,7 @@ For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** 
 | CAME | Comparison when source images mix and update scale varies | Uses three betas and internal RMS clipping |
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Supports internal warmup, but this project leaves `warmup_steps=0`; not a first choice for short runs |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; LoRA+ not supported |
+| Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
 
 Memory notes above refer only to optimizer state. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
 
@@ -67,6 +69,7 @@ When training Anima DiT blocks only, start from the engineering baselines below.
 | --- | ---: | --- |
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Official Anima rank-32 baseline; 8-bit and paged builds keep the same LR semantics |
 | StableAdamW | `2e-5` | Same scale as AdamW first; isolate the stabilized updates |
+| Muon (`match_rms_adamw`) | `2e-5` | Matches AdamW update RMS by matrix size; this is not an Anima-tuned optimum |
 | CAME | `1.5e-5` | CAME's own guidance is roughly `0.5`–`0.9`× AdamW; this is a ported start, not an Anima-tuned optimum |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's guidance is roughly `3`–`10`× smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
@@ -85,7 +88,7 @@ When a character locks in, colors bleed, or prompt adherence drops too early, lo
 <!-- doc-anchor: scheduler-warmup -->
 ### LR scheduler and warmup
 
-AdamW, AdamW8bit, StableAdamW, Lion, and CAME run under the external scheduler. New Anima configurations default to `constant`, matching the upstream Anima examples and removing one variable from short runs. `cosine_with_restarts` with the default `num_cycles=1` does not restart mid-training; only cycles greater than 1 do. Existing hand-made configs keep working; to test warmup, `constant_with_warmup` is the simple option, and keep it under `5%` of total optimizer steps first.
+AdamW, AdamW8bit, StableAdamW, Lion, CAME, and Muon run under the external scheduler. New Anima configurations default to `constant`, matching the upstream Anima examples and removing one variable from short runs. `cosine_with_restarts` with the default `num_cycles=1` does not restart mid-training; only cycles greater than 1 do. Existing hand-made configs keep working; to test warmup, `constant_with_warmup` is the simple option, and keep it under `5%` of total optimizer steps first.
 
 AdamWScheduleFree and ProdigyPlus manage their own schedule, so the UI forces the external scheduler to constant. Their internal warmup is separate from `lr_warmup_steps`.
 
@@ -103,16 +106,42 @@ Higher betas smooth updates but respond slower to new gradients. In practice tun
 <!-- doc-anchor: eps -->
 ### Numerical stabilizer (eps)
 
-`eps` keeps denominators from magnifying small numbers. StableAdamW defaults to `1e-8`. Unless samples show reproducible numerical issues, leave it.
+`eps` keeps denominators from magnifying small numbers. StableAdamW defaults to `1e-8`; PyTorch Muon defaults to `1e-7`. Unless samples show reproducible numerical issues, leave it.
 
 <!-- doc-anchor: weight-decay -->
 ### Weight decay
 
-For the optimizers covered here, this trainer defaults to AdamW/AdamW8bit/PagedAdamW8bit at `0.01`, and CAME and StableAdamW at `0`. These establish reproducible baselines, not a claim that `0.01` beats `0`.
+For the optimizers covered here, this trainer defaults to AdamW/AdamW8bit/PagedAdamW8bit at `0.01`, and CAME, StableAdamW, and Muon at `0`. PyTorch Muon itself defaults to `0.1`; this trainer explicitly overrides it to `0` as a LoRA starting point, and the field remains editable.
 
 Character LoRA capacity is limited; avoid aggressive weight decay without side-by-side evidence. Testing `weight_decay=0` on AdamW8bit means one parameter experiment with the same data, steps, and everything else.
 
 StableAdamW's library defaults to `weight_decay=0.01`; this trainer explicitly writes `weight_decay=0` to override it. That is a deliberate choice, not a missing field.
+
+<!-- doc-anchor: muon-options -->
+### Muon options
+
+Muon first accumulates gradient momentum, then approximately orthogonalizes updates for two-dimensional matrices. AdamW scales individual elements with second-moment statistics, while Muon focuses more on the direction of the whole matrix update. For LoRA, it processes `lora_down` and `lora_up` separately. This can change convergence speed and what directions are learned, but does not guarantee better final images than AdamW8bit.
+
+Muon keeps one momentum state per parameter instead of the two states used by full-precision AdamW, but performs extra matrix multiplications on every step. Actual memory use and speed still depend on matrix sizes, rank, batch size, and the attention backend.
+
+#### Update scale
+
+- **Learning rate** (`learning_rate`, Anima default `2e-5`): Directly controls update size. Values that are too high can cause rapid overfitting, noisy loss, or unstable updates; values that are too low learn slowly. With the default scaling, an AdamW baseline is a useful starting point for comparison.
+- **Learning-rate scaling** (`adjust_lr_fn`, default `match_rms_adamw`): `match_rms_adamw` can reuse the learning rate and weight decay from an AdamW recipe, making it suitable for isolating optimizer differences. `original` scales updates by matrix aspect ratio and usually needs separate learning-rate calibration; equal learning rates do not produce equal update scales across different matrix shapes.
+- **Weight decay** (`weight_decay`, default `0`): Higher values shrink the LoRA factors further. This may reduce overfitting or may weaken character learning. PyTorch Muon defaults to `0.1`; the trainer explicitly passes the value shown in the UI.
+
+#### Momentum
+
+- **Momentum coefficient** (`momentum`, default `0.95`): Higher values produce smoother updates but respond more slowly to new gradients; lower values are more sensitive to the current batch.
+- **Nesterov momentum** (`nesterov`, enabled by default): Controls how the current gradient and momentum history are combined before orthogonalization. Disabling it changes the optimization path rather than just performance.
+
+#### Orthogonalization
+
+- **Iteration count** (`ns_steps`, default `5`): More iterations improve the orthogonalization approximation and increase per-step compute. Fewer iterations reduce compute but change the update. The UI accepts values up to `99`.
+- **Iteration coefficients** (`ns_coefficients`, default `3.4445, -4.775, 2.0315`): Define the polynomial used by the Newton-Schulz iteration. Other values can degrade the approximation or cause numerical problems and are mainly useful in controlled experiments.
+- **Numerical stabilizer** (`eps`, default `1e-7`): Prevents division by very small values during normalization. It rarely affects normal training and is mainly relevant when investigating reproducible NaNs or abnormal amplification.
+
+For a first comparison, change only AdamW8bit to Muon and keep the data, rank, alpha, scheduler, step count, and learning rate unchanged. Once the run is stable, test LR or weight decay separately. Changing the NS coefficients and iteration count together makes the result difficult to interpret; adjust one at a time.
 
 <!-- doc-anchor: gradient-clipping -->
 ### Max gradient norm

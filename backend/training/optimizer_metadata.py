@@ -10,6 +10,7 @@ from backend.training.optimizer_contracts import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
@@ -45,6 +46,7 @@ class OptimizerUIEntry:
     beta_hint_key: str | None = None
     supports_eps: bool = False
     scheduler_owner: str = "external"
+    train_group: str | tuple[str, ...] | None = None
 
 
 SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
@@ -169,6 +171,14 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         True,
         "internal",
     ),
+    OptimizerUIEntry(
+        MUON_OPTIMIZER_TYPE,
+        "Muon",
+        "opt.optimizer_type_Muon",
+        GROUP_EXPERIMENTAL,
+        supports_eps=True,
+        train_group="anima",
+    ),
 )
 
 KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
@@ -287,15 +297,18 @@ def optimizer_groups(profile: str) -> list[dict[str, Any]]:
         GROUP_ADAPTIVE,
         GROUP_EXPERIMENTAL,
     ):
-        options = [
-            {
+        options = []
+        for entry in entries:
+            if entry.group_key != group_key:
+                continue
+            option = {
                 "v": entry.selector,
                 "l": entry.label,
                 "dk": entry.description_key,
             }
-            for entry in entries
-            if entry.group_key == group_key
-        ]
+            if entry.train_group is not None:
+                option["group"] = entry.train_group
+            options.append(option)
         if options:
             groups.append({"label_key": group_key, "options": options})
     return groups
@@ -375,6 +388,20 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             "watch": "optimizer_type",
             "when": "PagedLion8bit",
             "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": {
+                "optimizer_type": MUON_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": MUON_OPTIMIZER_TYPE,
+            "set": "1e-4",
             "set_if_default": True,
         },
         {
@@ -485,6 +512,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (PRODIGY_OPTIMIZER_TYPE, "1e-8"),
             (PRODIGYPLUS_OPTIMIZER_TYPE, "1e-8"),
             (AUTOMAGIC_OPTIMIZER_TYPE, "1e-30"),
+            (MUON_OPTIMIZER_TYPE, "1e-7"),
         )
     ],
     "weight_decay": [
@@ -509,6 +537,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, 0.0),
             (AUTOMAGIC_OPTIMIZER_TYPE, 0.0),
             (EMOSENS_OPTIMIZER_TYPE, 0.01),
+            (MUON_OPTIMIZER_TYPE, 0.0),
         )
     ],
 }

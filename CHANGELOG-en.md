@@ -6,6 +6,25 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.5 - 2026-08-10
+
+This release adds native PyTorch Muon support for Anima LoRA and completes the path from UI configuration and validation through sd-scripts startup and CUDA updates. It also unifies image previews across training artifacts, Tagger, and Tag Editor.
+
+### Muon optimizer
+
+- Added native `torch.optim.Muon` to the Anima LoRA optimizer menu while keeping it hidden for SDXL. sd-scripts uses the native `Muon` selector directly without an additional wrapper.
+- Added controls for learning-rate scaling, momentum, Nesterov momentum, Newton-Schulz iteration count and coefficients, `eps`, and weight decay. The product default uses `match_rms_adamw`, with `2e-5` as the Anima learning-rate starting point.
+- Explicitly passes the product default `weight_decay=0` to sd-scripts, overriding PyTorch Muon's library default of `0.1` so the UI and actual training configuration stay aligned.
+- Added parameter-domain, Anima-only visibility, frontend filtering, and configuration-adaptation coverage. The generated argument set creates native Muon through sd-scripts and completes a CUDA `backward()` and `step()` update.
+- Expanded the English and Chinese optimizer guides with Muon versus AdamW behavior, parameter effects, compute costs, comparison guidance, and a layout that remains readable in narrow documentation panes.
+
+### Image previews
+
+- Added a unified image-preview API that generates WebP thumbnails, previews, and inspection images for datasets, training artifacts, and Tagger while preserving direct access to originals.
+- Added a large-image lightbox, zoom and pan, and open-original actions to Tag Editor, and removed legacy image routes and duplicate cache implementations.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.4...v2.3.5)
+
 ## v2.3.4 - 2026-08-09
 
 This patch release fixes training state not appearing immediately on the training page, Dashboard, and sidebar after a task is created successfully.

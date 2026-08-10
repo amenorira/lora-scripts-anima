@@ -6,6 +6,25 @@
 
 ## 未发布
 
+## v2.3.5 - 2026-08-10
+
+本版本为 Anima LoRA 引入 PyTorch 原生 Muon 优化器，并补齐从界面配置、参数校验到 sd-scripts 启动和 CUDA 更新的完整链路；同时统一训练产物、Tagger 与标签编辑器的图片预览能力。
+
+### Muon 优化器
+
+- 在 Anima LoRA 优化器菜单中加入原生 `torch.optim.Muon`，SDXL 配置中不显示该选项；sd-scripts 继续使用原生选择器 `Muon`，无需额外包装器。
+- 提供学习率缩放、动量、Nesterov、Newton-Schulz 迭代次数与系数、`eps` 和权重衰减配置；默认使用 `match_rms_adamw`，Anima 学习率起点为 `2e-5`。
+- 将产品默认 `weight_decay=0` 明确传给 sd-scripts，覆盖 PyTorch Muon 的库默认 `0.1`，避免界面值与实际训练参数不一致。
+- 增加参数范围、Anima 限定、前端显示和配置适配测试；使用项目生成的完整参数创建原生 Muon，并通过 CUDA `backward()` 与 `step()` 验证实际更新。
+- 扩充中英文优化器文档，说明 Muon 与 AdamW 的更新差异、参数影响、计算开销和对照实验方式，并优化窄文档栏中的参数排版。
+
+### 图片预览
+
+- 新增统一图片预览接口，按数据集、训练产物和 Tagger 场景生成 WebP 缩略图、预览图与检查图，同时保留原图直出。
+- 标签编辑器增加大图灯箱、缩放拖动和右键查看原图，并移除旧图片路由与重复缓存实现。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.4...v2.3.5)
+
 ## v2.3.4 - 2026-08-09
 
 本补丁版本修复训练任务创建成功后，训练页、仪表盘与侧栏状态未能即时同步的问题。

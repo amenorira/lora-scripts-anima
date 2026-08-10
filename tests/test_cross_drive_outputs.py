@@ -378,7 +378,7 @@ class CrossDriveRouteTests(CrossDriveSandbox):
 
         self.assertEqual(previews[0]["path"], "sample/preview.png")
         self.assertIn("run_dir=output%2Froute_run", previews[0]["url"])
-        self.assertIn("path=sample/preview.png", previews[0]["url"])
+        self.assertIn("path=sample%2Fpreview.png", previews[0]["url"])
         self.assertTrue(preview_response["meta"]["artifact_available"])
         self.assertTrue(preview_response["meta"]["preview_enabled"])
         self.assertEqual({item["path"] for item in files}, {"route.safetensors", "sample/preview.png"})
