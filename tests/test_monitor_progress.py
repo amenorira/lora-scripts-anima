@@ -49,8 +49,10 @@ class ProgressParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            lines = read_clean_log_lines(log_path)
             page = read_log_slice(log_path, offset=0, limit=20)
 
+        self.assertEqual(lines, page["lines"])
         self.assertEqual(page["total"], 4)
         self.assertEqual(page["lines"][0].split("avr_loss=")[-1], "0.0287]")
         self.assertEqual(page["lines"][1:3], ["ordinary duplicate", "ordinary duplicate"])
@@ -323,6 +325,11 @@ process.stdout.write(JSON.stringify({
             "this.logFullMatches = [];",
         ):
             self.assertLess(body.index(statement), navigate_at)
+
+    def test_history_detail_seeds_full_log_count_from_normalized_total(self):
+        body = self.core_source.split("async _fetchRunDetail(runDir) {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("this.logFullTotal = this.logTotal;", body)
 
     def test_full_log_top_button_scrolls_on_first_page(self):
         method = self.core_source.split("async logFullFirstPage() {", 1)[1].split("\n  },", 1)[0]

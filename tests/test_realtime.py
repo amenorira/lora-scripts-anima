@@ -677,7 +677,7 @@ process.stdout.write(JSON.stringify({
         self.assertNotIn("pollTaggerProgress", combined)
         self.assertNotIn("_startProgressPolling", combined)
 
-    def test_environment_cold_start_is_throttled_and_shows_progress(self):
+    def test_environment_cold_start_is_throttled_and_shows_spinner(self):
         render_source = Path("frontend/js/environment-render.js").read_text(encoding="utf-8")
         self.assertIn("_runEnvironmentLoadQueue(loaders, 2)", self.environment_source)
         self.assertIn("_commitEnvironmentLoad", self.environment_source)
@@ -685,6 +685,9 @@ process.stdout.write(JSON.stringify({
         self.assertIn("environmentLoadCompleted", self.environment_source)
         self.assertIn("scheduleEnvironmentRender", self.environment_source)
         self.assertIn('class="env-load-status"', render_source)
+        self.assertIn('class="env-load-spinner"', render_source)
+        self.assertNotIn('class="env-load-track"', render_source)
+        self.assertNotIn('class="env-load-count"', render_source)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend state-machine checks")
     def test_environment_results_commit_one_painted_step_at_a_time(self):

@@ -481,7 +481,9 @@ def _normalized_log_lines(log_path: Path):
     """Yield cleaned rows while collapsing adjacent updates of one tqdm step."""
     pending: str | None = None
     pending_signature: tuple[str, str] | None = None
-    with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as handle:
+    # Split records only on LF. Bare CR is a terminal overwrite inside one
+    # record and must remain visible to _clean_log_text().
+    with open(log_path, "r", encoding="utf-8", errors="replace", newline="\n") as handle:
         for raw_line in handle:
             cleaned = _clean_log_text(raw_line.rstrip("\r\n"))
             for line in cleaned.split("\n"):
@@ -521,13 +523,8 @@ def _clean_log_text(text: str) -> str:
 
 
 def read_clean_log_lines(path: Path) -> list[str]:
-    """Read a terminal log without universal-newline conversion changing CR overwrites."""
-    content = path.read_bytes().decode("utf-8", errors="replace")
-    content = _clean_log_text(content)
-    lines = content.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    return lines
+    """Read the same normalized rows used by full-log pagination."""
+    return list(_normalized_log_lines(path))
 
 
 def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:

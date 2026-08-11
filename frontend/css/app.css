@@ -4260,17 +4260,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border: 2px solid var(--border-default); border-top-color: var(--accent);
   border-radius: 50%; animation: env-spin 0.7s linear infinite;
 }
-.env-load-main { flex: 1; min-width: 0; }
-.env-load-copy { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.env-load-count { flex-shrink: 0; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 10.5px; }
-.env-load-track {
-  height: 3px; margin-top: 6px; overflow: hidden;
-  border-radius: var(--radius-pill); background: var(--accent-muted);
-}
-.env-load-track > span {
-  display: block; height: 100%; border-radius: inherit;
-  background: var(--accent); transition: width 0.2s ease;
-}
 
 .env-install-progress { display: flex; flex-direction: column; gap: 6px; }
 .env-install-row {
