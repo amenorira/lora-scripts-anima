@@ -82,7 +82,7 @@ window.trainingTomlMixin = {
       if (sectionLines[sectionKey]) sectionLines[sectionKey].push(line);
     };
 
-    // Portable presets need to retain the application profile selector. The
+    // Portable configs need to retain the application profile selector. The
     // backend consumes it for core routing and filters it before trainer launch.
     pushLine('model', `model_train_type = "${trainType}"`);
 
@@ -484,7 +484,7 @@ window.trainingTomlMixin = {
   },
 
   _updateKrea2Toml() {
-    // This is a portable application preset. The backend writes musubi's
+    // This is a portable application config. The backend writes musubi's
     // separate train and dataset TOMLs when the run is launched.
     const quote = (value) => '"' + String(value ?? '')
       .replace(/\\/g, '\\\\')

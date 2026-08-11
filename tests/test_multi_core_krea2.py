@@ -1137,7 +1137,6 @@ const ctx = Object.assign({}, window.trainingCoreMixin, {
   setupShowIfWatchers: noop,
   setupReadonlyWatchers: noop,
   updateToml: noop,
-  loadPresets: noop,
   rebuildForm: noop,
   toast: noop,
   t: (_key, fallback) => fallback || '',
@@ -1155,8 +1154,8 @@ const animaSource = ctx._fieldSources.learning_rate;
 ctx.switchTrainType('krea2-lora');
 const kreaRestored = { ...ctx.form };
 const kreaSource = ctx._fieldSources.learning_rate;
-ctx.formDefaults.learning_rate = 'preset-baseline';
-ctx.form.learning_rate = 'edited-after-preset';
+ctx.formDefaults.learning_rate = 'imported-baseline';
+ctx.form.learning_rate = 'edited-after-import';
 ctx.setField = (key, value) => { ctx.form[key] = value; };
 ctx.resetField('learning_rate');
 const kreaFieldReset = ctx.form.learning_rate;
@@ -1377,7 +1376,7 @@ console.log(JSON.stringify({
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_krea_preset_preview_uses_the_shared_toml_highlighter(self):
+    def test_krea_config_preview_uses_the_shared_toml_highlighter(self):
         script = r"""
 global.window = {};
 const preview = { innerHTML: '', textContent: 'must-not-be-used' };

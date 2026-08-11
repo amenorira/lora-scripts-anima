@@ -74,7 +74,7 @@
 		"openOriginal": "打开原图",
 		"pollingFallback": "轮询模式",
 		"readyToTrain": "已准备好开始新训练",
-		"readyToTrainHint": "配置预设并启动训练后，这里将显示实时训练数据。",
+		"readyToTrainHint": "配置训练参数并启动训练后，这里将显示实时训练数据。",
 		"liveMetrics": "实时指标",
 		"runSummary": "训练摘要",
 		"live": "实时",

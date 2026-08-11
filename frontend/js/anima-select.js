@@ -79,7 +79,7 @@ document.addEventListener('alpine:init', () => {
       window.addEventListener('resize', this._resizeHandler);
 
       // Sync display when the hidden input value is changed externally
-      // (e.g. by autoValue, preset load, undo, reset, or any programmatic form update).
+      // (e.g. by autoValue, config import, undo, reset, or any programmatic form update).
       // Alpine x-model sets el.value directly on the DOM property, so we intercept
       // the native setter to keep this.value in sync.
       const input = this.$refs.modelInput;

@@ -828,18 +828,6 @@ input[type="checkbox"]:focus-visible {
 .log-level-btn:hover { border-color: var(--border-input); color: var(--text-primary); }
 .log-level-btn.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
 
-/* ── toast + action button ──────────────────────────────── */
-.toast-action { display: flex; align-items: center; gap: 10px; padding-right: 8px; }
-.toast-action-msg { flex: 1; min-width: 0; }
-.toast-action-btn {
-  appearance: none; border: 1px solid var(--border-input);
-  background: var(--bg-surface); color: var(--accent);
-  font-size: 12px; font-weight: 600; padding: 3px 10px;
-  border-radius: var(--radius-sm); cursor: pointer;
-  transition: background var(--duration-fast);
-  flex-shrink: 0;
-}
-.toast-action-btn:hover { background: var(--accent-soft); }
 /* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
   padding: 10px 0 10px 10px;
@@ -862,7 +850,7 @@ input[type="checkbox"]:focus-visible {
   border-left-color: var(--state-changed);
 }
 /* ── Filled indicator: green left bar —— 仅指定字段（必填/关键路径字段）
-     判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被预设/导入重置影响）。
+     判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被配置导入重置影响）。
      优先级高于橙色 field-changed：同时命中时绿色覆盖，表示"已就绪填写"。 ── */
 .field.field-filled {
   border-left-color: var(--state-filled);
@@ -1968,7 +1956,6 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-.toast.toast-action { align-items: center; }
 .toast.out {
   animation: toast-out 140ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
@@ -4751,19 +4738,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   }
 }
 
-
-/* ── Diff Toolbar (主表单顶部对比 bar) ─────────────────── */
-.diff-toolbar {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 8px 14px; margin-bottom: 12px;
-  background: var(--bg-secondary); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 13px;
-}
-.diff-toolbar-label { color: var(--text-secondary); font-weight: 500; }
-.diff-toolbar-stats { display: flex; gap: 10px; color: var(--text-tertiary); font-size: 12px; }
-.diff-stat-modified { color: var(--diff-modified); }
-.diff-stat-added { color: var(--diff-added); }
-.diff-toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
 
 /* ── Input sm ──────────────────────────────────────────── */
 .input-sm { font-size: 13px; padding: 4px 8px; min-height: unset; }

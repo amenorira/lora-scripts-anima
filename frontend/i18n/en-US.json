@@ -74,7 +74,7 @@
 		"openOriginal": "Open original",
 		"pollingFallback": "Polling fallback",
 		"readyToTrain": "Ready for a new training run",
-		"readyToTrainHint": "Configure a preset and start training to see live training data.",
+		"readyToTrainHint": "Configure the training parameters and start training to see live data.",
 		"liveMetrics": "Live metrics",
 		"runSummary": "Run summary",
 		"live": "Live",

@@ -5,7 +5,7 @@
 
 // 绿色"已填"指示条字段清单：仅这些字段在"非空且非 schema 原始默认值"时显示绿色左边条，
 // 表示关键路径字段已就绪填写。优先级高于橙色 field-changed。
-// 用 field.default（schema 原始默认）而非 formDefaults 做基准，不被预设/导入重置影响。
+// 用 field.default（schema 原始默认）而非 formDefaults 做基准，不被配置导入重置影响。
 window.FILLED_INDICATOR_KEYS = new Set([
   'pretrained_model_name_or_path', 'dit', 'vae', 'qwen3', 'text_encoder', 'train_data_dir', 'dataset_cache_dir',
   'output_name', 'output_dir',
@@ -3589,7 +3589,7 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
-    // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被预设、
+    // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被
     // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;
     const profileDefaults = this._buildFormDefaults(currentTrainType);
