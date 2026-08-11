@@ -13,6 +13,7 @@ from backend.training.sd_dataset_config import (
     build_sd_scripts_dataset_config,
     normalize_subset_timestep_offsets,
 )
+from backend.training.training_config import extract_training_form, load_training_config
 
 
 class _BodyRequest:
@@ -119,6 +120,11 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
         self.assertEqual(subset["custom_attributes"]["timestep_sampling"]["offset"], -0.25)
         training_config = tomllib.loads((dataset_path.parent / "config.toml").read_text(encoding="utf-8"))
         self.assertNotIn("subset_timestep_offsets", training_config)
+        app_config = load_training_config(dataset_path.parent / "training.yaml")
+        self.assertEqual(
+            extract_training_form(app_config)["subset_timestep_offsets"],
+            {"10_face_detail": -0.25},
+        )
 
 
 class SubsetTimestepFrontendTests(unittest.TestCase):

@@ -536,6 +536,14 @@ window.trainingTomlMixin = {
     return payload;
   },
 
+  _collectTrainingFormSnapshot() {
+    try {
+      return JSON.parse(JSON.stringify(this.form || {}));
+    } catch (error) {
+      return { ...(this.form || {}) };
+    }
+  },
+
   // Helper: check if a field's showIf condition is met
   _fieldShowIfMet(f) {
     const sf = f.showIf;
@@ -738,6 +746,7 @@ window.trainingTomlMixin = {
 
     if (trainType === 'krea2-lora') {
       const payload = this._collectKrea2Payload();
+      payload._form_state = this._collectTrainingFormSnapshot();
       try {
         const response = await fetch('/api/run', {
           method: 'POST',
@@ -829,6 +838,7 @@ window.trainingTomlMixin = {
       delete payload[key];
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;
+    payload._form_state = this._collectTrainingFormSnapshot();
 
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });

@@ -29,6 +29,12 @@ from backend.monitor.run_registry import (
     mark_run_deleted,
     resolve_artifact_file,
 )
+from backend.training.training_config import (
+    TRAINING_CONFIG_NAME,
+    TrainingConfigError,
+    extract_training_form,
+    load_training_config,
+)
 from backend.tasks import tm
 
 router = APIRouter()
@@ -761,17 +767,38 @@ async def get_config_from_run(run_dir: str = Query("")):
         return {"status": "error", "message": "Config file not found"}
     
     try:
-        content = config_file.read_text(encoding="utf-8")
-        params = _parse_toml_config(config_file)
+        training_file = abs_run_dir / TRAINING_CONFIG_NAME
+        config_format = "toml"
+        schema_version = None
+        yaml_warning = None
+        if training_file.exists():
+            try:
+                document = await asyncio.to_thread(load_training_config, training_file)
+                content = training_file.read_text(encoding="utf-8")
+                params = extract_training_form(document)
+                config_format = "yaml"
+                schema_version = document["schema_version"]
+            except TrainingConfigError as exc:
+                yaml_warning = str(exc)
+                content = config_file.read_text(encoding="utf-8")
+                params = _parse_toml_config(config_file)
+        else:
+            content = config_file.read_text(encoding="utf-8")
+            params = _parse_toml_config(config_file)
         reusable_params = dict(params or {})
         # 非续训复用时恢复用户填写的输出根目录，避免继续嵌套上次时间戳目录。
-        if not reusable_params.get("resume"):
+        if not reusable_params.get("resume") and (
+            config_format == "toml" or not reusable_params.get("output_dir")
+        ):
             reusable_params["output_dir"] = record["output_base_dir"]
         return {
             "status": "success",
             "data": {
                 "content": content,
                 "params": reusable_params,
+                "config_format": config_format,
+                "schema_version": schema_version,
+                "config_warning": yaml_warning,
                 "run_dir": record["run_dir"],
                 "artifact_dir": record["artifact_dir"],
                 "artifact_available": record["artifact_available"],

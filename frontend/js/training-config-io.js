@@ -1,21 +1,38 @@
-/* Training TOML import/export and shared confirmation dialog. */
+/* Training YAML/TOML import/export and shared confirmation dialog. */
 window.trainingConfigIoMixin = {
   showConfirmModal: false,
   confirmTitle: '',
   confirmMessage: '',
   confirmCallback: null,
   confirmActionLabel: '',
+  _trainingDocumentId: null,
 
-  downloadConfig() {
-    const blob = new Blob([this.tomlRaw], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const isKrea2Config = this.form.model_train_type === 'krea2-lora';
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = (this.form.output_name || 'config') + (isKrea2Config ? '-krea2.toml' : '.toml');
-    a.click();
-    URL.revokeObjectURL(url);
-    this.toast(this.t('common.downloaded'));
+  async downloadConfig() {
+    try {
+      const response = await fetch('/api/training/export-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          form: this._collectTrainingFormSnapshot ? this._collectTrainingFormSnapshot() : { ...(this.form || {}) },
+          document_id: this._trainingDocumentId || null,
+        }),
+      });
+      const data = await response.json();
+      if (data.status !== 'success' || !data.data || !data.data.content) {
+        throw new Error(data.message || 'Failed to export configuration');
+      }
+      const blob = new Blob([data.data.content], { type: 'application/yaml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.data.filename || 'training.yaml';
+      a.click();
+      URL.revokeObjectURL(url);
+      this._trainingDocumentId = data.data.document_id || this._trainingDocumentId || null;
+      this.toast(this.t('common.downloaded'));
+    } catch (error) {
+      this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
+    }
   },
 
   importConfigFile() {
@@ -53,7 +70,8 @@ window.trainingConfigIoMixin = {
       this._persistProfileDrafts();
       this._persistProfileFieldSources();
       if (this.currentRoute && typeof localStorage !== 'undefined') {
-        try { localStorage.setItem('anima-form-' + this.currentRoute, JSON.stringify(this.form)); } catch (e) {}
+        const targetRoute = this.currentRoute.startsWith('train-') ? this.currentRoute : 'train-basic';
+        try { localStorage.setItem('anima-form-' + targetRoute, JSON.stringify(this.form)); } catch (e) {}
       }
     };
 
@@ -87,6 +105,7 @@ window.trainingConfigIoMixin = {
         const parsed = d.data.data || {};
         if (Object.keys(parsed).length === 0) throw new Error(this.t('common.invalidToml'));
         await this._applyImportedFlatConfig(parsed);
+        this._trainingDocumentId = d.data.document_id || null;
         this.toast(this.t('common.imported'));
       } catch (err) {
         this.toast(this.t('common.parseError') + ': ' + err.message);

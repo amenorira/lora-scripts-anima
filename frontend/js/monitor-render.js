@@ -2059,7 +2059,7 @@ window.monitorRenderMixin = {
       const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
       if (j.status === 'success' && j.data.params) {
-        this._applyConfigToTraining(j.data.params);
+        await this._applyConfigToTraining(j.data.params);
         this.toast(t('configLoaded'), 'success');
         this.navigate('train-basic');
       } else {
@@ -2077,8 +2077,12 @@ window.monitorRenderMixin = {
     if (runDir) this.reuseConfig(runDir);
   },
 
-  _applyConfigToTraining(params) {
+  async _applyConfigToTraining(params) {
     if (!params || !this.form) return;
+    if (typeof this._applyImportedFlatConfig === 'function') {
+      await this._applyImportedFlatConfig(params);
+      return;
+    }
     for (const key of Object.keys(params)) {
       if (key === 'sample_prompts' || key.startsWith('_')) continue;
       if (params[key] !== undefined && params[key] !== null && this.form.hasOwnProperty(key)) {

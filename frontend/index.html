@@ -1299,7 +1299,7 @@
 <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
 
 <!-- ── Hidden file inputs for importing ─────────────────── -->
-<input type="file" id="configFileInput" accept=".toml" style="display:none" @change="handleConfigFileImport($event)">
+<input type="file" id="configFileInput" accept=".toml,.yaml,.yml" style="display:none" @change="handleConfigFileImport($event)">
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
 <div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()" x-cloak>
