@@ -720,20 +720,18 @@ class OptimizerAdapterTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class OptimizerFrontendTests(unittest.TestCase):
-    def test_dynamic_beta_hints_match_main_form_and_preset_editor(self):
+    def test_dynamic_beta_hints_match_main_form(self):
         fields = fields_by_key()
         betas_field = fields["betas"]
         script = r"""
 global.window = {};
 require('./frontend/js/training-core.js');
-require('./frontend/js/training-presets.js');
 const messages = {
   'field.betasHint_adam': 'adam beta mechanism',
   'field.betasHint_lion': 'lion beta mechanism',
   'field.betasHint_came': 'came beta mechanism',
 };
 const core = window.trainingCoreMixin;
-const presets = window.trainingPresetsMixin;
 const ctx = Object.assign({}, core, {
   form: { model_train_type: 'anima-lora', optimizer_type: 'AdamW' },
   t(key) { return messages[key] || key; },
@@ -743,18 +741,7 @@ const mainAdam = ctx._resolveFieldHintText(field, ctx.form, 'anima-lora');
 ctx.form.optimizer_type = 'Lion';
 const mainLion = ctx._resolveFieldHintText(field, ctx.form, 'anima-lora');
 
-const preset = Object.assign({}, core, presets, {
-  presetEditor: {
-    meta: { train_type: 'anima-lora' },
-    entries: [
-      { key: 'optimizer_type', value: 'pytorch_optimizer.CAME' },
-      { key: 'betas', value: '0.9, 0.999, 0.9999', def: field },
-    ],
-  },
-  t(key) { return messages[key] || key; },
-});
-const presetCame = preset.presetFieldHint(preset.presetEditor.entries[1]);
-console.log(JSON.stringify({ mainAdam, mainLion, presetCame }));
+console.log(JSON.stringify({ mainAdam, mainLion }));
 """.replace("__FIELD__", json.dumps(betas_field))
 
         result = subprocess.run(
@@ -770,7 +757,6 @@ console.log(JSON.stringify({ mainAdam, mainLion, presetCame }));
             {
                 "mainAdam": "adam beta mechanism",
                 "mainLion": "lion beta mechanism",
-                "presetCame": "came beta mechanism",
             },
         )
 
@@ -1021,7 +1007,7 @@ console.log(JSON.stringify({ sameValueUser, sameValueReset }));
             {"value": "2e-5", "source": "auto", "persistCalls": 3},
         )
 
-    def test_import_and_preset_keys_remain_explicit(self):
+    def test_import_keys_remain_explicit(self):
         fields = fields_by_key()
         visible_fields = [
             fields["model_train_type"],
@@ -1038,13 +1024,12 @@ console.log(JSON.stringify({ sameValueUser, sameValueReset }));
 global.window = {};
 window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
 require('./frontend/js/training-core.js');
-require('./frontend/js/training-presets.js');
+require('./frontend/js/training-config-io.js');
 const core = window.trainingCoreMixin;
-const presets = window.trainingPresetsMixin;
 const rules = __RULES__;
 
 function makeContext() {
-  const ctx = Object.assign({}, core, presets, {
+  const ctx = Object.assign({}, core, window.trainingConfigIoMixin, {
     currentRoute: '',
     trainTypes: [{ v: 'anima-lora' }, { v: 'sdxl-lora' }],
     form: {
@@ -1064,7 +1049,6 @@ function makeContext() {
     renderTrainingForm() {},
     updateReadonlyStates() {},
     rebuildForm() { this._applyInitialAutoValues(); },
-    toastWithAction() {},
     toast() {},
     t(_key, fallback) { return fallback || ''; },
     $nextTick(fn) { fn(); },
@@ -1102,61 +1086,11 @@ async function imported(data) {
   });
   const missingValues = await imported({ optimizer_type: 'pytorch_optimizer.CAME' });
 
-  const preset = makeContext();
-  preset.applyPreset({
-    metadata: { name: 'explicit' },
-    data: {
-      optimizer_type: 'pytorch_optimizer.CAME',
-      learning_rate: '1e-4',
-      lr_scheduler: 'cosine_with_restarts',
-    },
-  });
-
-  const selective = makeContext();
-  Object.assign(selective.form, {
-    optimizer_type: 'pytorch_optimizer.CAME',
-    learning_rate: '1.5e-5',
-    lr_scheduler: 'constant',
-  });
-  selective.formDefaults = { ...selective.form };
-  selective._fieldSources = { learning_rate: 'auto', lr_scheduler: 'auto' };
-  selective._profileFieldSources = {
-    'anima-lora': { learning_rate: 'auto', lr_scheduler: 'auto' },
-  };
-  selective.presetEditor = { entries: [
-    { key: 'learning_rate', value: '1e-4' },
-    { key: 'lr_scheduler', value: 'cosine_with_restarts' },
-  ] };
-  selective.applyPresetDiffSelected(['learning_rate', 'lr_scheduler']);
-  const selectiveApplied = {
-    learning_rate: selective.form.learning_rate,
-    lr_scheduler: selective.form.lr_scheduler,
-    defaultLearningRate: selective.formDefaults.learning_rate,
-    lrSource: selective._fieldSources.learning_rate,
-  };
-  selective.undoApplyPreset();
-  const selectiveUndone = {
-    learning_rate: selective.form.learning_rate,
-    lr_scheduler: selective.form.lr_scheduler,
-    lrSource: selective._fieldSources.learning_rate,
-  };
-  selective.form.optimizer_type = 'Lion8bit';
-  selective._applyInitialAutoValues();
-
   console.log(JSON.stringify({
     cameExplicit,
     cameLegacy,
     stableExplicit,
     missingValues,
-    preset: {
-      learning_rate: preset.form.learning_rate,
-      lr_scheduler: preset.form.lr_scheduler,
-      lrSource: preset._fieldSources.learning_rate,
-      schedulerSource: preset._fieldSources.lr_scheduler,
-    },
-    selectiveApplied,
-    selectiveUndone,
-    selectiveAfterSwitch: selective.form.learning_rate,
   }));
 })().catch(error => { console.error(error); process.exit(1); });
 """.replace("__FIELDS__", json.dumps(visible_fields)).replace("__RULES__", json.dumps(rules))
@@ -1189,33 +1123,6 @@ async function imported(data) {
         )
         self.assertEqual(state["missingValues"]["lrSource"], "auto")
         self.assertEqual(state["missingValues"]["schedulerSource"], "auto")
-        self.assertEqual(
-            state["preset"],
-            {
-                "learning_rate": "1e-4",
-                "lr_scheduler": "cosine_with_restarts",
-                "lrSource": "preset",
-                "schedulerSource": "preset",
-            },
-        )
-        self.assertEqual(
-            state["selectiveApplied"],
-            {
-                "learning_rate": "1e-4",
-                "lr_scheduler": "cosine_with_restarts",
-                "defaultLearningRate": "1e-4",
-                "lrSource": "preset",
-            },
-        )
-        self.assertEqual(
-            state["selectiveUndone"],
-            {
-                "learning_rate": "1.5e-5",
-                "lr_scheduler": "constant",
-                "lrSource": "auto",
-            },
-        )
-        self.assertEqual(state["selectiveAfterSwitch"], "5e-6")
 
     def test_legacy_drafts_and_placeholder_use_registry_provenance(self):
         fields = fields_by_key()
@@ -1277,6 +1184,14 @@ const reloaded = Object.assign({}, core, {
   currentRoute: 'train-anima',
   trainTypes: ctx.trainTypes,
 })._loadProfileFieldSources('train-anima');
+storage.set(ctx._profileFieldSourceStorageKey(), JSON.stringify({
+  version: 1,
+  profiles: { 'anima-lora': { learning_rate: 'preset' } },
+}));
+const migratedPresetSources = Object.assign({}, core, {
+  currentRoute: 'train-anima',
+  trainTypes: ctx.trainTypes,
+})._loadProfileFieldSources('train-anima');
 
 const learningRateField = __LR_FIELD__;
 const placeholders = ctx._optimizerAutoValueMap(learningRateField, 'anima-lora');
@@ -1284,6 +1199,7 @@ console.log(JSON.stringify({
   legacySources,
   preserved,
   reloaded,
+  migratedPresetSources,
   placeholders,
   storageKey: ctx._profileFieldSourceStorageKey(),
 }));
@@ -1311,6 +1227,10 @@ console.log(JSON.stringify({
         )
         self.assertEqual(
             state["reloaded"]["anima-lora"]["lr_scheduler"], "auto"
+        )
+        self.assertEqual(
+            state["migratedPresetSources"]["anima-lora"]["learning_rate"],
+            "import",
         )
         self.assertEqual(
             state["storageKey"], "anima-form-profile-sources-v1-train-anima"

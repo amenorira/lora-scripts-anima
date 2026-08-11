@@ -98,7 +98,6 @@ window.ROUTE_CONFIG = {
   'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
   'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
   'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
-  'presets': { titleKey: 'preset.title', subtitleKey: 'preset.subtitle' },
   'docs': { titleKey: 'docs.title' },
   'tensorboard': { title: 'TensorBoard', subtitle: '' },
 };

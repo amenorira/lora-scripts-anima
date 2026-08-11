@@ -37,7 +37,7 @@ lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegara
 
 ## ✨ 功能特性
 
-- **训练 WebUI** — 一站式工作台，包含 LoRA 训练表单、TOML 配置预览、预设管理（保存/加载/删除）和训练历史记录
+- **训练 WebUI** — 一站式工作台，包含 LoRA 训练表单、TOML 配置预览、配置导入导出和训练历史记录
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **多模型 Tagger 工作台** — 集成 WD、CL Tagger 与 Camie Tagger，支持单图检查、分类阈值控制和批量标签写入
@@ -62,7 +62,7 @@ lora-scripts-anima/
 │   ├── tagger/                 ← WD14 标注模块
 │   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
 ├── frontend/                   ← Alpine.js SPA 前端
-├── config/                     ← TOML 配置预设
+├── config/                     ← 本地配置与自动保存
 ├── tools/                      ← 独立工具（Flash Attn 安装等）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
 ├── start.bat / start.sh        ← 启动脚本
@@ -216,13 +216,12 @@ Linux：
 
 在训练表单的优化器下拉菜单中选择 `EmoSens` 即可使用。
 
-## 预设管理
+## TOML 配置导入导出
 
-支持 TOML 格式的训练预设保存、加载和删除，预设文件存储在 `config/presets/` 目录。
+支持将当前训练参数导出为 TOML 文件，并从 TOML 文件导入到训练表单。
 
-- **保存**：在训练页面配置好参数后，点击右上角的 **保存预设**
-- **加载**：在预设下拉菜单中选择已保存的预设
-- **删除**：在预设管理界面删除不需要的预设
+- **导出**：在训练页右侧参数预览中下载当前 TOML 配置
+- **导入**：选择 TOML 文件，将有效字段填入对应训练类型的表单
 
 ## 环境管理
 

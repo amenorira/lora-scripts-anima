@@ -10,11 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
-from backend.server.config import app_config
-from backend.server.state import load_presets
 from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
-from backend.server.routes.presets import router as presets_router
 from backend.server.proxy import router as proxy_router
 from backend.monitor import router as monitor_router
 from backend.tageditor import router as tageditor_router
@@ -41,9 +38,6 @@ class SPAStaticFiles(StaticFiles):
 
 
 async def app_startup():
-    app_config.load_config()
-
-    await load_presets()
     from backend.log import log as _log
     try:
         migration = await asyncio.to_thread(import_legacy_external_runs)
@@ -115,7 +109,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # 关闭时
-    app_config._flush_config()  # 确保防抖写入在关闭前完成
     await task_monitor.stop()
 
 
@@ -155,7 +148,6 @@ async def add_cache_control_header(request, call_next):
 
 app.include_router(api_router, prefix="/api")
 app.include_router(training_router, prefix="/api")
-app.include_router(presets_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
 app.include_router(tageditor_router, prefix="/api")
 

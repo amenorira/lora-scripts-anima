@@ -728,7 +728,7 @@ const loaders = delays.map((delay, index) => ({
     def test_weak_network_media_queue_and_explicit_original_are_present(self):
         render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
         app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
-        preset_source = Path("frontend/js/training-presets.js").read_text(encoding="utf-8")
+        config_io_source = Path("frontend/js/training-config-io.js").read_text(encoding="utf-8")
         index_source = Path("frontend/index.html").read_text(encoding="utf-8")
         self.assertIn("weakNetworkMode: true", self.monitor_source)
         self.assertIn("_previewMediaPaused", self.monitor_source)
@@ -737,7 +737,7 @@ const loaders = delays.map((delay, index) => ({
         self.assertIn("requestWeakNetworkModeChange", app_source)
         self.assertIn("this.openConfirm(", app_source)
         self.assertIn("weakNetworkMode: this.weakNetworkMode", app_source)
-        self.assertIn("confirmActionLabel", preset_source)
+        self.assertIn("confirmActionLabel", config_io_source)
         self.assertIn("settings.slowConnectionMode", index_source)
         self.assertNotIn("toggleWeakNetworkMode", render_source)
         self.assertNotIn("visiblePreviews", render_source)

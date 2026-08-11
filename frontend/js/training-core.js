@@ -204,10 +204,6 @@ window.trainingCoreMixin = {
   },
 
   switchTrainType(v) {
-    // 训练类型变化后，旧的预设对比数据已无意义，清理避免误显示"已修改"标识
-    this.formDiffMap = null;
-    this.diffCounts = { modified: 0, added: 0 };
-    this.previewPreset = null;
     // Update display labels and descriptions
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
@@ -251,13 +247,6 @@ window.trainingCoreMixin = {
     this.renderTrainingForm(v, null);
     this._scheduleProfileFieldWatchers(v);
     this.updateToml();
-    // 预设列表与训练类型无关，切换时只在内存中重新筛选，避免重复请求。
-    if (this.presetsLoaded) {
-      this._refreshFilteredPresets();
-    } else {
-      this.loadPresets();
-    }
-
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
     // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
@@ -329,13 +318,16 @@ window.trainingCoreMixin = {
         return {};
       }
       const validTypes = new Set(this.trainTypes.map(item => item.v));
-      const validSources = new Set(['default', 'auto', 'user', 'import', 'preset', 'saved']);
+      const validSources = new Set(['default', 'auto', 'user', 'import', 'saved']);
       return Object.fromEntries(
         Object.entries(parsed.profiles).filter(([trainType, sources]) =>
           validTypes.has(trainType) && sources && typeof sources === 'object' && !Array.isArray(sources)
         ).map(([trainType, sources]) => [
           trainType,
-          Object.fromEntries(Object.entries(sources).filter(([, source]) => validSources.has(source))),
+          Object.fromEntries(Object.entries(sources).map(([key, source]) => [
+            key,
+            source === 'preset' ? 'import' : source,
+          ]).filter(([, source]) => validSources.has(source))),
         ])
       );
     } catch (e) {
@@ -594,11 +586,6 @@ window.trainingCoreMixin = {
     this.scheduleOutputPathInfo();
     this.$nextTick(() => this.updateToml());
 
-    if (this._pendingPreset) {
-      const pending = this._pendingPreset;
-      this._pendingPreset = null;
-      this.$nextTick(() => this.applyPreset(pending));
-    }
     return true;
   },
 
@@ -679,8 +666,6 @@ window.trainingCoreMixin = {
     this._captureProfileDraft(this.form.model_train_type, this.form, defaults);
     this._persistProfileDrafts(r);
     this._persistProfileFieldSources(r);
-    this.loadPresets();
-
     const self = this;
 
     if (self._formWatcher) {
@@ -765,12 +750,6 @@ window.trainingCoreMixin = {
     this.xfRefresh(true).catch(() => {});
     if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
-    // Apply pending preset if queued by applyPresetNavigate()
-    if (this._pendingPreset) {
-      const pending = this._pendingPreset;
-      this._pendingPreset = null;
-      this.$nextTick(() => this.applyPreset(pending));
-    }
     this.scheduleStepEstimate();
   },
 
@@ -2055,20 +2034,12 @@ window.trainingCoreMixin = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
-    return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}) && !(formDiffMap && formDiffMap['${dataKey}']), 'field-filled': ${_filledExpr}, 'field-diff-modified': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified', 'field-diff-added': formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added' }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
+    return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         ${fieldMenuHtml}
       </div>
       ${fullWidthRow}
-      <div class="field-diff-info" x-show="formDiffMap && formDiffMap['${dataKey}']" x-cloak>
-        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'modified'">
-          <span class="field-diff-change"><span class="field-diff-old" x-text="String((formDiffMap['${dataKey}']||{}).oldVal||'')"></span> <span class="field-diff-arrow">&rarr;</span> <span class="field-diff-new" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span></span>
-        </template>
-        <template x-if="formDiffMap && formDiffMap['${dataKey}'] && formDiffMap['${dataKey}'].type === 'added'">
-          <span class="field-diff-type-added" x-text="String((formDiffMap['${dataKey}']||{}).newVal||'')"></span>
-        </template>
-      </div>
       ${field.hintKeyBy
         ? `<div class="field-hint" x-text="fieldHintText('${this.escapeAttr(dataKey)}')"></div>`
         : (hint ? `<div class="field-hint">${hint}</div>` : '')}
@@ -3595,7 +3566,7 @@ window.trainingCoreMixin = {
   },
 
   resetField(key) {
-    // formDefaults may represent an applied preset baseline. "Reset to default"
+    // formDefaults may reflect imported values. "Reset to default"
     // must use the active dependency-aware default. Optimizer fields commonly
     // replace the static registry default through autoValue rules.
     const def = this._currentEffectiveFieldDefault(key);
@@ -3618,10 +3589,6 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
-    // 重置所有参数后，旧的预设对比数据无意义
-    this.formDiffMap = null;
-    this.diffCounts = { modified: 0, added: 0 };
-    this.previewPreset = null;
     // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被预设、
     // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;
@@ -3678,7 +3645,7 @@ window.trainingCoreMixin = {
     this._normalizeProfileSelectValues(activeType, profileDefaults);
     this._normalizeProfileSelectValues(activeType, profileDefaults, this.formDefaults);
     // Re-apply autoValue rules so select fields, locked fields etc. stay consistent
-    // after preset load, config import, or full reset.
+    // after config import or full reset.
     this._applyInitialAutoValues();
     const cachePathChanged = this._syncKrea2CacheDir();
     this.renderTrainingForm(activeType);

@@ -332,8 +332,6 @@ document.addEventListener('alpine:init', () => {
         if (!routeTransition) this.startProgress();
         this.buildEnvironmentPage();
         progressManagedByRoute = true;
-      } else if (r === 'presets') {
-        this.loadPresets();
       } else if (r === 'docs') {
         if (!routeTransition) this.startProgress();
         this.loadDocsPage().finally(() => this.finishProgress());
@@ -533,7 +531,7 @@ document.addEventListener('alpine:init', () => {
     window.docsMixin,
     window.trainingCoreMixin,
     window.trainingTomlMixin,
-    window.trainingPresetsMixin,
+    window.trainingConfigIoMixin,
     window.taggerMixin,
     window.tagEditorMixin,
   ];

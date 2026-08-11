@@ -37,7 +37,7 @@ lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](h
 
 ## ✨ Features
 
-- **Training WebUI** — An all-in-one workspace with a LoRA training form, TOML configuration preview, preset management (save/load/delete), and training history
+- **Training WebUI** — An all-in-one workspace with a LoRA training form, TOML configuration preview, configuration import/export, and training history
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Multi-model Tagger Workspace** — WD, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output
@@ -62,7 +62,7 @@ lora-scripts-anima/
 │   ├── tagger/                 ← WD14 tagging module
 │   └── gui.py                  ← Internal GUI entry (called by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
-├── config/                     ← TOML config presets
+├── config/                     ← Local configuration and autosaves
 ├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
 ├── start.bat / start.sh        ← Launch scripts
@@ -214,13 +214,12 @@ The project includes the EmoSens v3.9 adaptive optimizer (`vendor/emo_optimizer/
 
 Select `EmoSens` from the optimizer dropdown in the training form.
 
-## Preset Management
+## TOML Configuration Import and Export
 
-Save, load, and delete training presets in TOML format. Presets are stored in `config/presets/`.
+Export the current training parameters to TOML and import TOML files into the training form.
 
-- **Save**: Configure the training parameters, then click **Save Preset**
-- **Load**: Select a saved preset from the dropdown
-- **Delete**: Remove unwanted presets from the management panel
+- **Export**: Download the current TOML configuration from the training preview panel
+- **Import**: Load a TOML file and apply supported fields to the matching training form
 
 ## Environment Management
 

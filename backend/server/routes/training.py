@@ -40,11 +40,30 @@ from backend.training.sd_dataset_config import (
     normalize_subset_timestep_offsets,
 )
 from backend import launch_utils
-from backend.server.models import APIResponseFail, APIResponseSuccess
+from backend.server.models import APIResponseFail, APIResponseSuccess, TrainingTomlParseRequest
 from backend.log import log
 from backend.utils import train_utils
 
 router = APIRouter()
+
+
+@router.post("/training/parse-config")
+async def parse_training_toml(req: TrainingTomlParseRequest):
+    """Parse a flat TOML configuration exported by the training form."""
+    try:
+        parsed = toml.loads(req.content)
+    except toml.TomlDecodeError as exc:
+        return APIResponseFail(message=f"Invalid TOML / TOML 解析失败: {exc}")
+    if not isinstance(parsed, dict):
+        return APIResponseFail(message="Invalid training config / 训练配置结构无效")
+    if "metadata" in parsed or "data" in parsed:
+        return APIResponseFail(
+            message=(
+                "Structured preset files are no longer supported; import a flat training TOML instead / "
+                "不再支持结构化预设文件，请导入扁平训练 TOML"
+            )
+        )
+    return APIResponseSuccess(data={"data": parsed})
 
 avaliable_scripts = [
     "networks/extract_lora_from_models.py",
