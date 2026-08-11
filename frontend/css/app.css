@@ -2344,6 +2344,15 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .timestep-preview-bars { position: absolute; inset: 12px 12px 10px; display: flex; align-items: stretch; gap: 3px; }
 .timestep-preview-bin { position: relative; flex: 1 1 0; min-width: 2px; }
 .timestep-preview-bin i { position: absolute; right: 0; bottom: 0; left: 0; border-radius: 3px 3px 0 0; }
+.docs-timestep-widget .timestep-preview-bars > i {
+  align-self: flex-end;
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
+  opacity: .78;
+}
+.docs-timestep-widget .timestep-preview-bars > i:hover { opacity: 1; }
 .timestep-preview-bar-current {
   background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
   opacity: .78; transition: height .22s var(--ease-out), opacity .15s;
