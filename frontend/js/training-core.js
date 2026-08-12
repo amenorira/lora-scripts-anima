@@ -589,7 +589,6 @@ window.trainingCoreMixin = {
 
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
-    this._autoLoaded = false; // Reset so _markAutoLoaded can run again
     const r = this.currentRoute;
     if (this._resumeTrainForm(r)) return;
     if (this._trainFormMountedRoute) this._disposeTrainForm();
@@ -2042,13 +2041,6 @@ window.trainingCoreMixin = {
     this.subsetTimestepOffsetDrafts = nextDrafts;
   },
 
-  subsetTimestepOffsetCount() {
-    return Object.keys(this.form.subset_timestep_offsets || {}).filter(name => {
-      const value = Number(this.form.subset_timestep_offsets[name]);
-      return Number.isFinite(value) && value !== 0;
-    }).length;
-  },
-
   _reconcileSubsetTimestepOffsets() {
     if (!this.form || this.form.model_train_type !== 'anima-lora') return;
     const validNames = new Set(this.timestepOffsetSubsets().map(subset => subset.name));
@@ -2410,12 +2402,6 @@ window.trainingCoreMixin = {
     return `<div class="output-path-hint" x-show="outputPathHintVisible()" :class="outputPathStatusClass()" role="status" aria-live="polite" x-cloak>
       <div class="output-path-hint-summary"><span class="output-path-hint-dot" aria-hidden="true"></span><span x-text="outputPathSummaryText()"></span></div>
     </div>`;
-  },
-
-  copyFieldName(key) {
-    navigator.clipboard.writeText(key).then(() => {
-      this.toastthis.t('common.paramCopied');
-    });
   },
 
   // positive prompts line count hint: real-time sample count below textarea

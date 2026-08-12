@@ -771,10 +771,6 @@ window.taggerMixin = {
     }
   },
 
-  taggerCategoryEntries() {
-    return Object.entries(this.taggerCategoryState).map(([key, category]) => ({ key, ...category }));
-  },
-
   recalculateTaggerCategory(key, updateResult = true) {
     const category = this.taggerCategoryState[key];
     if (!category) return;
@@ -829,10 +825,6 @@ window.taggerMixin = {
   setAllTaggerCategoriesVisible(visible) {
     Object.values(this.taggerCategoryState).forEach(category => { category.visible = visible; });
     this.recalculateAllTaggerCategories(true);
-  },
-
-  setAllTaggerCategoriesCollapsed(collapsed) {
-    Object.values(this.taggerCategoryState).forEach(category => { category.collapsed = collapsed; });
   },
 
   formatTaggerOutputName(name) {

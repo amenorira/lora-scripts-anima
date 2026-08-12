@@ -311,6 +311,65 @@ process.stdout.write(JSON.stringify({
         self.assertIn("decrease threshold 2%", data["decliningEvidence"])
         self.assertIn("window 12", data["decliningWindow"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend snapshot checks")
+    def test_config_snapshot_requests_share_encoded_fetch_helper(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
+const mixin = window.monitorRenderMixin;
+const urls = [];
+global.fetch = async url => {
+  urls.push(url);
+  return {json: async () => ({status: 'success', data: {params: {seed: 7}, content: 'seed = 7'}})};
+};
+const events = [];
+const app = Object.assign({}, mixin, {
+  form: {},
+  t(key, fallback) { return fallback || key; },
+  startProgress() { events.push('start'); },
+  finishProgress() { events.push('finish'); },
+  showSnapshotModal(snapshot) { events.push('show:' + snapshot.content); },
+  async _applyConfigToTraining(params) { events.push('apply:' + params.seed); },
+  toast(message, kind) { events.push('toast:' + kind); },
+  navigate(route) { events.push('navigate:' + route); },
+});
+(async () => {
+  await app.viewSnapshot('run & one');
+  await app.reuseConfig('run & one');
+  process.stdout.write(JSON.stringify({urls, events}));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        data = json.loads(result.stdout)
+
+        self.assertEqual(
+            data["urls"],
+            [
+                "/api/monitor/config-from-run?run_dir=run%20%26%20one",
+                "/api/monitor/config-from-run?run_dir=run%20%26%20one",
+            ],
+        )
+        self.assertEqual(
+            data["events"],
+            [
+                "start",
+                "show:seed = 7",
+                "finish",
+                "start",
+                "apply:7",
+                "toast:success",
+                "navigate:train-basic",
+                "finish",
+            ],
+        )
+
     def test_history_log_source_resets_before_navigation(self):
         body = self.core_source.split("async viewRunDetail(runDir) {", 1)[1].split("\n  },", 1)[0]
         navigate_at = body.index("this.navigate('monitor-dashboard');")

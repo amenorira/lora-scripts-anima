@@ -728,6 +728,50 @@ const loaders = delays.map((delay, index) => ({
         self.assertEqual(state["applied"][0], 1)
         self.assertEqual(sorted(state["applied"]), list(range(6)))
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for environment URL checks")
+    def test_flash_attention_status_url_is_shared_and_encoded(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/environment-core.js', 'utf8'));
+const mixin = window.environmentCoreMixin;
+const urls = [];
+global.fetch = async url => {
+  urls.push(url);
+  return {ok: true, json: async () => ({available: true})};
+};
+const app = Object.assign({}, mixin, {
+  faSource: 'wheel & local',
+  faError: null,
+  faStatus: null,
+  scheduleEnvironmentRender() {},
+  renderEnvironment() {},
+});
+(async () => {
+  const loader = app._environmentJsonLoader(app._flashAttentionStatusUrl(), value => { app.faStatus = value; });
+  loader.apply(await loader.load());
+  await app.faRefresh(true);
+  process.stdout.write(JSON.stringify({urls, status: app.faStatus}));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(
+            state["urls"],
+            [
+                "/api/flash-attention/status?source=wheel%20%26%20local",
+                "/api/flash-attention/status?source=wheel%20%26%20local",
+            ],
+        )
+        self.assertEqual(state["status"], {"available": True})
+
     def test_weak_network_media_queue_and_explicit_original_are_present(self):
         render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
         app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")

@@ -1969,12 +1969,16 @@ window.monitorRenderMixin = {
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));
   },
 
+  async _fetchConfigSnapshot(runDir) {
+    const response = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
+    return response.json();
+  },
+
   async viewSnapshot(runDir) {
     const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
     try {
       this.startProgress();
-      const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
-      const j = await r.json();
+      const j = await this._fetchConfigSnapshot(runDir);
       if (j.status === 'success') {
         this.showSnapshotModal(j.data);
       } else {
@@ -2048,7 +2052,7 @@ window.monitorRenderMixin = {
 
   copyConfigContent() {
     if (this._currentSnapshot && this._currentSnapshot.content) {
-      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toastthis.t('common.copied'));
+      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toast(this.t('common.copied')));
     }
   },
 
@@ -2056,8 +2060,7 @@ window.monitorRenderMixin = {
     const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
     try {
       this.startProgress();
-      const r = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
-      const j = await r.json();
+      const j = await this._fetchConfigSnapshot(runDir);
       if (j.status === 'success' && j.data.params) {
         await this._applyConfigToTraining(j.data.params);
         this.toast(t('configLoaded'), 'success');

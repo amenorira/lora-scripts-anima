@@ -1390,7 +1390,7 @@ window.monitorCoreMixin = {
     if (!runDir) return;
     const selected = this.selectedOutputFiles;
     if (!selected.length) {
-      this.toastthis.t('monitor.selectFilesFirst');
+      this.toast(this.t('monitor.selectFilesFirst'));
       return;
     }
     const filesParam = selected.map(f => encodeURIComponent(f)).join(',');

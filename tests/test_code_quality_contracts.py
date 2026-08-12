@@ -224,6 +224,17 @@ class FrontendMixinCleanupContractTests(unittest.TestCase):
 
         self.assertNotIn("_teResetModifiedCount", frontend_sources)
         self.assertNotIn("_taggerPresetInitialized", frontend_sources)
+        for removed_member in (
+            "_markAutoLoaded",
+            "_autoLoaded",
+            "copyFieldName",
+            "subsetTimestepOffsetCount",
+            "taggerCategoryEntries",
+            "setAllTaggerCategoriesCollapsed",
+            "_teCreateSnapshot",
+            "_teFormatSize",
+        ):
+            self.assertNotIn(removed_member, frontend_sources)
         self.assertEqual(
             len(re.findall(r"^\s*async stopTraining\(\)\s*\{", monitor_core, re.MULTILINE)),
             0,
@@ -232,6 +243,26 @@ class FrontendMixinCleanupContractTests(unittest.TestCase):
             len(re.findall(r"^\s*async stopTraining\(\)\s*\{", training_toml, re.MULTILINE)),
             1,
         )
+
+    def test_frontend_toasts_use_the_callable_helper(self):
+        frontend_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (REPO_ROOT / "frontend/js").glob("*.js")
+        )
+        monitor_core = (REPO_ROOT / "frontend/js/monitor-core.js").read_text(encoding="utf-8")
+        monitor_render = (REPO_ROOT / "frontend/js/monitor-render.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("toastthis", frontend_sources)
+        self.assertIn("this.toast(this.t('monitor.selectFilesFirst'))", monitor_core)
+        self.assertIn("this.toast(this.t('common.copied'))", monitor_render)
+
+    def test_ui_constants_only_expose_shared_runtime_values(self):
+        constants_source = (REPO_ROOT / "frontend/js/constants.js").read_text(encoding="utf-8")
+
+        for used_member in ("PROGRESS_STAGES", "MAX_LINES", "FULL_PAGE_SIZE"):
+            self.assertIn(used_member, constants_source)
+        for removed_member in ("SELECTORS", "LOCALES", "DEFAULT_LOCALE", "TIMING", "FILE_PICKER", "MAX_MATCHES"):
+            self.assertNotIn(removed_member, constants_source)
 
 
 if __name__ == "__main__":

@@ -121,10 +121,6 @@ document.addEventListener('alpine:init', () => {
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
       });
 
-      if (this.autoLoadHistory) {
-        setTimeout(() => this._markAutoLoaded(), 500);
-      }
-
       this.startRealtime();
 
       this._initPanelResizer();
