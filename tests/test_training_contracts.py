@@ -40,6 +40,29 @@ def valid_anima_config() -> dict:
 
 
 class TrainingFieldLayoutTests(unittest.TestCase):
+    def test_registry_has_no_advanced_field_classification(self):
+        self.assertTrue(all("advanced" not in field for field in get_all_fields()))
+
+    def test_optimizer_layout_places_learning_rate_controls_first(self):
+        sections = get_fields_json()["sections"]
+        all_optimizer_fields = next(section["fields"] for section in sections if section["key"] == "optimizer")
+        optimizer_fields = [field for field in all_optimizer_fields if not field.get("profiles")]
+        keys = [field["key"] for field in optimizer_fields]
+
+        self.assertLess(keys.index("learning_rate"), keys.index("optimizer_type"))
+        self.assertLess(keys.index("max_grad_norm"), keys.index("optimizer_type"))
+        weight_decay = next(field for field in optimizer_fields if field["key"] == "weight_decay")
+        self.assertEqual(weight_decay["layoutParent"], "optimizer_type")
+
+        krea_fields = [field for field in all_optimizer_fields if "krea2-lora" in field.get("profiles", [])]
+        krea_keys = [field["key"] for field in krea_fields]
+        self.assertLess(krea_keys.index("lr_scheduler"), krea_keys.index("optimizer_type"))
+        self.assertLess(krea_keys.index("max_grad_norm"), krea_keys.index("optimizer_type"))
+        krea_weight_decay = next(
+            field for field in krea_fields if field["key"] == "krea_optimizer_weight_decay"
+        )
+        self.assertEqual(krea_weight_decay["layoutParent"], "optimizer_type")
+
     def test_zero_terminal_snr_follows_v_parameterization_without_nested_styling(self):
         sections = get_fields_json()["sections"]
         model_fields = next(section["fields"] for section in sections if section["key"] == "model")
@@ -277,6 +300,17 @@ class TrainingFieldSchemaTests(unittest.TestCase):
                     if key:
                         with self.subTest(field=field["key"], attr=attr, key=key):
                             self.assertIn(key, registered)
+
+    def test_layout_parents_reference_fields_in_the_same_section(self):
+        fields = get_all_fields()
+        by_key = {field["key"]: field for field in fields}
+        for field in fields:
+            parent_key = field.get("layout_parent")
+            if not parent_key:
+                continue
+            with self.subTest(field=field["key"], parent=parent_key):
+                self.assertIn(parent_key, by_key)
+                self.assertEqual(field["section"], by_key[parent_key]["section"])
 
     def test_select_defaults_are_declared_options(self):
         for field in get_all_fields():

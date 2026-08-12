@@ -963,7 +963,7 @@ input[type="checkbox"]:focus-visible {
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
-  border-top-width: 0 !important;
+  border-width: 0 !important;
   pointer-events: none;
   visibility: hidden;
   overflow: hidden !important;
@@ -1556,15 +1556,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   visibility: hidden;
   overflow: hidden;
 }
-/* 仅 advanced 字段的子组（无 basic）：折叠容器自身跟随模块显隐 */
-#trainFormContent .advanced-fold--inline.field-hidden {
-  max-height: 0 !important; opacity: 0;
-  margin: 0;
-  padding: 0;
-  pointer-events: none;
-  visibility: hidden;
-  overflow: hidden;
-}
 #trainFormContent .subgroup-header {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 2px;
@@ -1579,59 +1570,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 #trainFormContent .subgroup-body {
   padding: 0;
-}
-
-/* ── 进阶参数折叠区（A3）── */
-#trainFormContent .advanced-fold {
-  margin-top: 8px;
-  border-top: 1px dashed var(--border-default);
-  padding-top: 8px;
-}
-/* inline 折叠：无分隔线，紧贴上级基础参数（用于 kohya 子组等） */
-#trainFormContent .advanced-fold--inline {
-  margin-top: 4px;
-  border-top: none;
-  padding-top: 4px;
-  padding-left: 0;
-}
-#trainFormContent .advanced-fold-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  user-select: none;
-  padding: 4px 2px;
-  letter-spacing: 0.4px;
-  transition: color 0.15s ease;
-}
-#trainFormContent .advanced-fold-toggle:hover {
-  color: var(--text-secondary);
-}
-#trainFormContent .advanced-chevron {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  transition: transform 0.2s var(--ease-out);
-}
-#trainFormContent .advanced-fold-collapsed .advanced-chevron {
-  transform: rotate(-90deg);
-}
-#trainFormContent .advanced-count {
-  font-weight: 400;
-  opacity: 0.7;
-}
-#trainFormContent .advanced-fold-body {
-  transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
-}
-/* 初始渲染即为收起态 */
-#trainFormContent .advanced-fold.advanced-fold-collapsed > .advanced-fold-body {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
 }
 
 /* Field rows: subtle background on hover */

@@ -302,7 +302,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.krea_network_args",
         "hint_key": "field.krea_network_argsHint",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -378,7 +377,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_gradient_checkpointing_cpu_offload",
         "hint_key": "field.krea_gradient_checkpointing_cpu_offloadHint",
         "show_if": {"key": "gradient_checkpointing", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -528,19 +526,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "mode",
-    },
-    {
-        "key": "optimizer_type",
-        "type": "select",
-        "default": "adamw8bit",
-        "section": "optimizer",
-        "desc_key": "field.optimizer_type",
-        # The product allowlist is grouped by update mechanism rather than by
-        # a recommendation or popularity ranking.
-        "groups": optimizer_groups(KREA2_PROFILE),
-        "doc_slug": "optimizers",
-        "doc_anchor": "optimizer-type",
-        "profiles": [KREA2_PROFILE_ID],
     },
     {
         "key": "max_grad_norm",
@@ -694,6 +679,19 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
     },
     {
+        "key": "optimizer_type",
+        "type": "select",
+        "default": "adamw8bit",
+        "section": "optimizer",
+        "desc_key": "field.optimizer_type",
+        # The product allowlist is grouped by update mechanism rather than by
+        # a recommendation or popularity ranking.
+        "groups": optimizer_groups(KREA2_PROFILE),
+        "doc_slug": "optimizers",
+        "doc_anchor": "optimizer-type",
+        "profiles": [KREA2_PROFILE_ID],
+    },
+    {
         "key": "krea_optimizer_weight_decay",
         "type": "number",
         "default": "",
@@ -702,6 +700,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.krea_optimizer_weight_decayHint",
         "min": 0,
         "step": 0.001,
+        "layout_parent": "optimizer_type",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -791,7 +790,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_adafactor_scale_parameter",
         "hint_key": "field.krea_adafactor_scale_parameterHint",
         "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -805,7 +803,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"key": "optimizer_type", "eq": "AdaFactor"},
             {"key": "krea_adafactor_relative_step", "eq": True},
         ],
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -817,7 +814,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 0.00000001,
         "step": 0.1,
         "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -828,7 +824,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_adafactor_eps",
         "hint_key": "field.krea_adafactor_epsHint",
         "show_if": {"key": "optimizer_type", "eq": "AdaFactor"},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -854,7 +849,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 0,
         "max": 26,
         "step": 1,
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -865,7 +859,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_use_pinned_memory_for_block_swap",
         "hint_key": "field.krea_use_pinned_memory_for_block_swapHint",
         "show_if": {"key": "blocks_to_swap", "neq": 0},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -876,7 +869,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_block_swap_h2d_only",
         "hint_key": "field.krea_block_swap_h2d_onlyHint",
         "show_if": {"key": "blocks_to_swap", "neq": 0},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -891,7 +883,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"key": "blocks_to_swap", "neq": 0},
             {"key": "block_swap_h2d_only", "eq": True},
         ],
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -901,7 +892,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.krea_fp8_base",
         "hint_key": "field.krea_fp8_baseHint",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -911,7 +901,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.krea_compile",
         "hint_key": "field.krea_compileHint",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -921,7 +910,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.compile_backend",
         "show_if": {"key": "compile", "eq": True},
-        "advanced": True,
         "options": [
             {"v": "inductor", "l": "inductor"},
             {"v": "eager", "l": "eager"},
@@ -936,7 +924,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.compile_mode",
         "show_if": {"key": "compile", "eq": True},
-        "advanced": True,
         "options": [
             {"v": "default", "l": "default"},
             {"v": "reduce-overhead", "l": "reduce-overhead"},
@@ -952,7 +939,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.compile_dynamic",
         "show_if": {"key": "compile", "eq": True},
-        "advanced": True,
         "options": [
             {"v": "auto", "l": "auto"},
             {"v": "true", "l": "true"},
@@ -967,7 +953,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.compile_fullgraph",
         "show_if": {"key": "compile", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -979,7 +964,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 1,
         "step": 1,
         "show_if": {"key": "compile", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -988,7 +972,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "performance",
         "desc_key": "field.persistent_data_loader_workers",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -999,7 +982,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.max_data_loader_n_workers",
         "min": 0,
         "step": 1,
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1008,7 +990,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": False,
         "section": "performance",
         "desc_key": "field.cuda_allow_tf32",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1017,7 +998,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": False,
         "section": "performance",
         "desc_key": "field.cuda_cudnn_benchmark",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1029,7 +1009,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.krea_text_cache_batch_sizeHint",
         "min": 1,
         "step": 1,
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1091,7 +1070,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.save_every_n_steps",
         "min": 1,
         "step": 1,
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1102,7 +1080,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.save_last_n_epochs",
         "min": 1,
         "step": 1,
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1111,7 +1088,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": False,
         "section": "save",
         "desc_key": "field.save_state",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1123,7 +1099,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 1,
         "step": 1,
         "show_if": {"key": "save_state", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1133,7 +1108,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "save",
         "desc_key": "field.save_state_on_train_end",
         "hint_key": "field.save_state_on_train_endHint",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1143,7 +1117,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "save",
         "desc_key": "field.resume",
         "role": "file-folder",
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1185,7 +1158,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 1,
         "step": 1,
         "show_if": {"key": "enable_krea_samples", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1195,7 +1167,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "preview",
         "desc_key": "field.sample_at_first",
         "show_if": {"key": "enable_krea_samples", "eq": True},
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1220,7 +1191,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"key": "enable_krea_samples", "eq": True},
             {"key": "turbo_dit", "neq": ""},
         ],
-        "advanced": True,
         "profiles": [KREA2_PROFILE_ID],
     },
 ]

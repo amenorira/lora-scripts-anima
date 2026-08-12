@@ -120,6 +120,9 @@ class CoreRegistryTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_registry_has_no_advanced_field_classification(self):
+        self.assertTrue(all("advanced" not in field for field in KREA2_FIELDS))
+
     def test_registry_keeps_krea_fields_out_of_sd_adapter_schema(self):
         fields = get_fields_json()
         all_fields = [field for section in fields["sections"] for field in section["fields"]]
@@ -854,6 +857,60 @@ class MusubiRuntimeContractTests(unittest.TestCase):
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_fields_follow_explicit_or_conditional_layout_parents(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const ctx = Object.assign({}, window.trainingCoreMixin);
+const fields = [
+  { key: 'learning_rate' },
+  { key: 'scheduler' },
+  { key: 'optimizer_type' },
+  { key: 'weight_decay', layoutParent: 'optimizer_type' },
+  { key: 'stable_a', showIf: { key: 'optimizer_type', eq: 'Stable' } },
+  { key: 'stable_b', showIf: { key: 'optimizer_type', eq: 'Stable' } },
+  { key: 'came_parent', showIf: { key: 'optimizer_type', eq: 'CAME' } },
+  { key: 'came_child', showIf: [
+    { key: 'optimizer_type', eq: 'CAME' },
+    { key: 'came_parent', eq: true },
+  ] },
+];
+console.log(JSON.stringify(ctx._orderFieldsByDependencies(fields).map(field => field.key)));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            [
+                "learning_rate",
+                "scheduler",
+                "optimizer_type",
+                "weight_decay",
+                "stable_a",
+                "stable_b",
+                "came_parent",
+                "came_child",
+            ],
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_field_reset_updates_the_changed_state_baseline(self):
+        source = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
+        reset_body = source.split("resetField(key) {", 1)[1].split("\n  },", 1)[0]
+        self.assertIn("this.formDefaults[key] = value;", reset_body)
+
+    def test_hidden_conditional_fields_remove_all_border_width(self):
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        hidden_rule = css.split(".field-conditional.field-hidden {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("border-width: 0 !important;", hidden_rule)
+
     def test_krea_ui_has_cache_and_core_registry_paths(self):
         training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
         environment = Path("frontend/js/environment-core.js").read_text(encoding="utf-8")
@@ -1234,14 +1291,12 @@ global.document = {
   },
 };
 const applied = {};
-let countRefreshes = 0;
 const ctx = Object.assign({}, window.trainingCoreMixin, {
   form: { mode: 'fast', enabled: true },
   _setConditionalState(row, visible) { applied[row.id] = visible; },
-  _updateAdvancedCounts() { countRefreshes += 1; },
 });
 ctx._syncAllConditionalFields();
-console.log(JSON.stringify({ queryCount, countRefreshes, applied }));
+console.log(JSON.stringify({ queryCount, applied }));
 """
         result = subprocess.run(
             ["node", "-e", script],
@@ -1252,7 +1307,6 @@ console.log(JSON.stringify({ queryCount, countRefreshes, applied }));
         )
         state = json.loads(result.stdout)
         self.assertEqual(state["queryCount"], 1)
-        self.assertEqual(state["countRefreshes"], 1)
         self.assertEqual(state["applied"], {"single": True, "all": True, "any": False})
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")

@@ -277,7 +277,6 @@ console.log(JSON.stringify({
             "3.4445, -4.775, 2.0315",
         )
         self.assertTrue(fields["stableadamw_kahan_sum"]["default"])
-        self.assertTrue(fields["stableadamw_kahan_sum"]["advanced"])
         self.assertTrue(fields["stableadamw_weight_decouple"]["default"])
         self.assertEqual(fields["bnb_percentile_clipping"]["default"], 100)
         self.assertEqual(fields["bnb_min_8bit_size"]["default"], 4096)

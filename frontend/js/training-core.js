@@ -30,10 +30,8 @@ window.trainingCoreMixin = {
   _fieldSources: {},
   _activeTrainType: '',
 
-  // 分组折叠状态（B2）与进阶参数折叠状态（A3），响应式驱动 UI
+  // 分组折叠状态，响应式驱动 UI
   _sectionCollapsed: {},
-  _advancedCollapsed: {},
-  _lazyAdvancedFields: {},
   _trainTypePanelCache: null,
   _trainFieldsRevision: 0,
   _profileWatcherSetupHandle: null,
@@ -1233,8 +1231,6 @@ window.trainingCoreMixin = {
 
     if (!targetId && !force && this._trainTypePanelIsReady(activeType)) {
       this._nestLevelCache = null;
-      this._advCountFields = container._advCountFields || {};
-      this._lazyAdvancedFields = container._lazyAdvancedFields || {};
       this.buildSectionNav();
       this._syncAllConditionalFields();
       return;
@@ -1242,26 +1238,20 @@ window.trainingCoreMixin = {
     const sections = window.getVisibleSections(activeType);
     // 失效嵌套层级缓存（字段集随训练类型变化）
     this._nestLevelCache = null;
-    // 进阶参数计数映射：countKey → [field objects]，供 _updateAdvancedCounts 运行期重算。
-    // 渲染期建立后，showConditionalFields 切换字段显隐时用 _fieldVisible 按表单状态重计括号数字。
-    this._advCountFields = {};
-    this._lazyAdvancedFields = {};
-    // 渲染前读取折叠状态，默认折叠的高级字段可以延迟到首次展开时创建。
     this._initCollapseState(sections);
     let html = '';
       sections.forEach(section => {
-      const allFields = section.fields.filter(f => !f.hidden);
+      const visibleFields = section.fields.filter(f => !f.hidden);
+      const allFields = this._orderFieldsByDependencies(visibleFields);
       // 拆分：常规字段（无 subGroup）与 kohya 子组字段
       const regularFields = allFields.filter(f => !f.subGroup);
       const subGroupFields = allFields.filter(f => f.subGroup);
-      const regularAdvanced = regularFields.filter(f => f.advanced);
       // 子组字段按 subGroup 值分组
       const subGroups = new Map();
       subGroupFields.forEach(f => {
         const sg = f.subGroup;
-        if (!subGroups.has(sg)) subGroups.set(sg, { basic: [], advanced: [] });
-        const g = subGroups.get(sg);
-        if (f.advanced) g.advanced.push(f); else g.basic.push(f);
+        if (!subGroups.has(sg)) subGroups.set(sg, []);
+        subGroups.get(sg).push(f);
       });
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
@@ -1272,17 +1262,17 @@ window.trainingCoreMixin = {
       html += `<div class="card-body">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
-      // 按 FIELDS 顺序渲染：常规 basic、子组 basic、子组 inline 折叠 穿插
+      // 按 FIELDS 顺序渲染常规字段和条件子组。
       const doneSubGroups = new Set();
       allFields.forEach(f => {
         if (f.subGroup) {
           if (!doneSubGroups.has(f.subGroup)) {
             doneSubGroups.add(f.subGroup);
-            const sg = subGroups.get(f.subGroup);
+            const sg = subGroups.get(f.subGroup) || [];
             // 子组公共显隐条件：取该子组字段的 showIf/showIfAny 中 network_module 的 eq 值。
             // kohya 子组所有字段 showIf 均含 network_module eq lycoris.kohya，整个子区块跟随它显隐。
-            const sgShowIf = (sg.basic[0] && (sg.basic[0].showIf || sg.basic[0].showIfAny))
-              || (sg.advanced[0] && (sg.advanced[0].showIf || sg.advanced[0].showIfAny));
+            const conditionalField = sg.find(field => field.showIf || field.showIfAny);
+            const sgShowIf = conditionalField && (conditionalField.showIf || conditionalField.showIfAny);
             let sgCondMet = true;
             let sgShowIfAttrs = '';
             if (sgShowIf) {
@@ -1295,74 +1285,19 @@ window.trainingCoreMixin = {
               }
             }
             const sgBlockHidden = sgCondMet ? '' : ' field-hidden';
-            // 该子组的高级折叠标题
-            const sgAdvTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupAdvanced' : 'common.inlineAdvancedParams';
-            const sgAdvTitle = this.t(sgAdvTitleKey) || this.t('common.inlineAdvancedParams');
-
-            if (sg.basic.length > 0) {
-              // 有 basic 字段：渲染完整子组盒子（标题 + body + advanced 折叠）
-              const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
-              const sgTitle = sgTitleKey ? this.t(sgTitleKey) : f.subGroup;
-              html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
-              html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
-              html += `<div class="subgroup-body">`;
-              sg.basic.forEach(bf => { html += this.renderField(bf); });
-              if (sg.advanced.length > 0) {
-                const sgKey = section.key + '--' + f.subGroup;
-                const sgAdvVisible = sg.advanced.filter(af => this._fieldVisible(af)).length;
-                this._advCountFields[sgKey] = sg.advanced;
-                html += `<div class="advanced-fold advanced-fold--inline" data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
-                html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
-                html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
-                html += `<span>${this.esc(sgAdvTitle)}</span>`;
-                html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
-                html += `</div>`;
-                const sgAdvancedLoaded = this._advancedCollapsed[sgKey] === false;
-                html += `<div class="advanced-fold-body" data-advanced-loaded="${sgAdvancedLoaded ? '1' : '0'}">`;
-                html += this._renderAdvancedFields(sgKey, sg.advanced);
-                html += `</div></div>`;
-              }
-              html += `</div></div>`;
-            } else if (sg.advanced.length > 0) {
-              // 仅 advanced 字段：不渲染子组盒子/标题，直接渲染独立的高级折叠块。
-              // 折叠容器自身带 network_module 显隐属性，模块切换时整体跟随显隐。
-              const sgKey = section.key + '--' + f.subGroup;
-              const sgAdvVisible = sg.advanced.filter(af => this._fieldVisible(af)).length;
-              this._advCountFields[sgKey] = sg.advanced;
-              html += `<div class="advanced-fold advanced-fold--inline${sgBlockHidden}"${sgShowIfAttrs} data-adv-key="${sgKey}" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${sgKey}'] !== false }">`;
-              html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${sgKey}')">`;
-              html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
-              html += `<span>${this.esc(sgAdvTitle)}</span>`;
-              html += `<span class="advanced-count" data-adv-count-key="${sgKey}">(${sgAdvVisible})</span>`;
-              html += `</div>`;
-              const sgAdvancedLoaded = this._advancedCollapsed[sgKey] === false;
-              html += `<div class="advanced-fold-body" data-advanced-loaded="${sgAdvancedLoaded ? '1' : '0'}">`;
-              html += this._renderAdvancedFields(sgKey, sg.advanced);
-              html += `</div></div>`;
-            }
+            const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
+            const sgTitle = sgTitleKey ? this.t(sgTitleKey) : f.subGroup;
+            html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
+            html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
+            html += `<div class="subgroup-body">`;
+            sg.forEach(field => { html += this.renderField(field); });
+            html += `</div></div>`;
           }
-        } else if (!f.advanced) {
-          // 常规 basic 字段：直接渲染（常规 advanced 统一进底部全局折叠）
+        } else {
           html += this.renderField(f);
           if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
         }
       });
-
-      // 底部全局高级折叠（仅常规字段中的 advanced）
-      if (regularAdvanced.length > 0) {
-        const regularAdvVisible = regularAdvanced.filter(f => this._fieldVisible(f)).length;
-        this._advCountFields[section.key] = regularAdvanced;
-        html += `<div class="advanced-fold" :class="{ 'advanced-fold-collapsed': _advancedCollapsed['${section.key}'] !== false }">`;
-        html += `<div class="advanced-fold-toggle" @click="toggleAdvanced('${section.key}')">`;
-        html += `<svg class="advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
-        html += `<span>${this.t('common.advancedParams')}</span>`;
-        html += `<span class="advanced-count" data-adv-count-key="${section.key}">(${regularAdvVisible})</span>`;
-        html += `</div>`;
-        const regularAdvancedLoaded = this._advancedCollapsed[section.key] === false;
-        html += `<div class="advanced-fold-body" data-advanced-loaded="${regularAdvancedLoaded ? '1' : '0'}">`;
-        html += this._renderAdvancedFields(section.key, regularAdvanced);
-        html += `</div></div>`;
-      }
 
       html += `</div></div>`;
     });
@@ -1371,22 +1306,12 @@ window.trainingCoreMixin = {
       container.setAttribute('data-panel-ready', '1');
       container.dataset.panelLocale = String(this.locale || '');
       container.dataset.fieldsRevision = String(this._trainFieldsRevision || 0);
-      container._advCountFields = this._advCountFields;
-      container._lazyAdvancedFields = this._lazyAdvancedFields;
     }
     // 构建右侧分组导航指示器（#1）并绑定滚动高亮
     this.buildSectionNav();
     // 整张表单刚重建时一次性同步全部条件字段。旧实现按每个条件 key
     // 重复扫描 DOM、重算计数和生成 TOML，训练类型切换时会产生明显卡顿。
     this._syncAllConditionalFields();
-  },
-
-  _renderAdvancedFields(key, fields) {
-    if (this._advancedCollapsed[key] !== false) {
-      this._lazyAdvancedFields[key] = fields;
-      return '';
-    }
-    return fields.map(field => this.renderField(field)).join('');
   },
 
   _replaceTrainingFormHtml(container, html) {
@@ -1407,32 +1332,66 @@ window.trainingCoreMixin = {
     });
   },
 
-  // ── Section / Advanced collapse state (B2 / A3) ──
+  _orderFieldsByDependencies(fields) {
+    const keys = new Set(fields.map(field => field.key));
+    const children = new Map();
+    const roots = [];
+
+    fields.forEach(field => {
+      const parent = this._fieldLayoutParentKey(field, keys);
+      if (!parent || parent === field.key) {
+        roots.push(field);
+        return;
+      }
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(field);
+    });
+
+    const ordered = [];
+    const visited = new Set();
+    const append = field => {
+      if (visited.has(field.key)) return;
+      visited.add(field.key);
+      ordered.push(field);
+      (children.get(field.key) || []).forEach(append);
+    };
+    roots.forEach(append);
+    fields.forEach(append);
+    return ordered;
+  },
+
+  _fieldLayoutParentKey(field, availableKeys = null) {
+    if (!field || field.nested === false) return null;
+    const accepted = key => key && (!availableKeys || availableKeys.has(key));
+    if (accepted(field.layoutParent)) return field.layoutParent;
+    if (field.showIf && !Array.isArray(field.showIf)) {
+      return accepted(field.showIf.key) ? field.showIf.key : null;
+    }
+    if (Array.isArray(field.showIf)) {
+      for (let index = field.showIf.length - 1; index >= 0; index -= 1) {
+        const key = field.showIf[index] && field.showIf[index].key;
+        if (accepted(key)) return key;
+      }
+    }
+    if (Array.isArray(field.showIfAny)) {
+      for (const group of field.showIfAny) {
+        if (!Array.isArray(group)) continue;
+        for (let index = group.length - 1; index >= 0; index -= 1) {
+          const key = group[index] && group[index].key;
+          if (accepted(key)) return key;
+        }
+      }
+    }
+    return null;
+  },
+
+  // ── Section collapse state ──
   _initCollapseState(sections) {
     if (!this._sectionCollapsed) this._sectionCollapsed = {};
-    if (!this._advancedCollapsed) this._advancedCollapsed = {};
     sections.forEach(s => {
       if (this._sectionCollapsed[s.key] === undefined) {
         this._sectionCollapsed[s.key] = localStorage.getItem('anima-section-collapsed-' + s.key) === '1';
       }
-      // 全局高级折叠（无 subGroup 的 advanced 字段）
-      const hasRegularAdvanced = s.fields.some(f => f.advanced && !f.hidden && !f.subGroup);
-      if (hasRegularAdvanced && this._advancedCollapsed[s.key] === undefined) {
-        this._advancedCollapsed[s.key] = localStorage.getItem('anima-advanced-collapsed-' + s.key) !== '0';
-      }
-      // 子组 inline 高级折叠（有 subGroup 的 advanced 字段）
-      const subGroups = {};
-      s.fields.forEach(f => {
-        if (f.subGroup && f.advanced && !f.hidden) {
-          subGroups[f.subGroup] = true;
-        }
-      });
-      Object.keys(subGroups).forEach(sg => {
-        const sgKey = s.key + '--' + sg;
-        if (this._advancedCollapsed[sgKey] === undefined) {
-          this._advancedCollapsed[sgKey] = localStorage.getItem('anima-advanced-collapsed-' + sgKey) !== '0';
-        }
-      });
     });
   },
 
@@ -1445,31 +1404,6 @@ window.trainingCoreMixin = {
     // 动画：测量 card-body 真实高度 → 锁定 → 过渡到 0/原高
     const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
     const body = card && card.querySelector('.card-body');
-    if (body) this._animateCollapse(body, willCollapse);
-  },
-
-  toggleAdvanced(key) {
-    const willCollapse = !this._advancedCollapsed[key];
-    this._advancedCollapsed[key] = willCollapse;
-    localStorage.setItem('anima-advanced-collapsed-' + key, willCollapse ? '1' : '0');
-    // Try section-level fold first, then fall back to data-adv-key (sub-group inline fold)
-    let fold;
-    if (key.indexOf('--') >= 0) {
-      fold = document.querySelector(`#trainFormContent .advanced-fold[data-adv-key="${this.escapeAttr(key)}"]`);
-    } else {
-      const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
-      fold = card && card.querySelector('.advanced-fold:not([data-adv-key])');
-    }
-    const body = fold && fold.querySelector('.advanced-fold-body');
-    if (!willCollapse && body && body.getAttribute('data-advanced-loaded') !== '1') {
-      const fields = this._lazyAdvancedFields[key] || [];
-      const html = fields.map(field => this.renderField(field)).join('');
-      this._replaceTrainingFormHtml(body, html);
-      body.setAttribute('data-advanced-loaded', '1');
-      delete this._lazyAdvancedFields[key];
-      this._syncAllConditionalFields();
-      this.updateReadonlyStates();
-    }
     if (body) this._animateCollapse(body, willCollapse);
   },
 
@@ -1696,25 +1630,6 @@ window.trainingCoreMixin = {
     }
     if (c.neq !== undefined) {
       return String(pv) !== String(c.neq) && pv !== null && pv !== undefined && pv !== '';
-    }
-    return true;
-  },
-
-  // 字段在当前表单状态下是否「实际可见」——综合 showIf / showIfAny 求值。
-  // 用于进阶参数计数：被条件隐藏的 advanced 字段不计入括号数字，避免计数虚高。
-  // renderField 渲染期与 showConditionalFields 运行期共用同一判定逻辑。
-  _fieldVisible(field) {
-    if (field.hidden) return false;
-    if (field.showIf) {
-      const sf = field.showIf;
-      if (Array.isArray(sf)) {
-        if (!sf.every(c => this._evalShowIfCond(c))) return false;
-      } else {
-        if (!this._evalShowIfCond(sf)) return false;
-      }
-    }
-    if (field.showIfAny) {
-      if (!field.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)))) return false;
     }
     return true;
   },
@@ -1999,10 +1914,10 @@ window.trainingCoreMixin = {
       }
     }
 
-    // ── Nested detection (child of a showIf/showIfAny parent) ──
-    // 计算嵌套层级（A2）：一个字段的层级 = 其 showIf/showIfAny 父字段的层级 + 1，父级若无则为 0。
+    // ── Nested detection (explicit layout parent or conditional parent) ──
+    // 计算嵌套层级：一个字段的层级 = 其布局父字段的层级 + 1，父级若无则为 0。
     // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
-    const isNested = (field.showIf || field.showIfAny) && field.nested !== false;
+    const isNested = Boolean(this._fieldLayoutParentKey(field));
     const nestLevel = isNested ? this._nestLevel(field) : 0;
     const nestedClass = isNested ? ' field-nested' : '';
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
@@ -2515,21 +2430,6 @@ window.trainingCoreMixin = {
     return h.join('');
   },
 
-  // 重算所有进阶参数折叠块的括号计数：仅统计当前表单状态下实际可见的 advanced 字段。
-  // 渲染期在 _advCountFields 建立了 countKey→[fields] 映射，这里按 _fieldVisible 重计并
-  // 写入对应 [data-adv-count-key] span 的文本。不依赖 DOM field-hidden 类，避免动画时序竞态。
-  _updateAdvancedCounts() {
-    const map = this._advCountFields;
-    if (!map) return;
-    document.querySelectorAll('#trainFormContent [data-adv-count-key]').forEach(span => {
-      const key = span.getAttribute('data-adv-count-key');
-      const fields = map[key];
-      if (!fields) return;
-      const visible = fields.filter(f => this._fieldVisible(f)).length;
-      span.textContent = '(' + visible + ')';
-    });
-  },
-
   // 完整渲染后的快速初始化路径：每个条件节点只解析和求值一次，不播放动画，
   // 不生成 TOML（调用方会在表单初始化完成后统一生成）。
   _syncAllConditionalFields() {
@@ -2568,7 +2468,6 @@ window.trainingCoreMixin = {
       this._setConditionalState(row, match);
     });
 
-    this._updateAdvancedCounts();
   },
 
   showConditionalFields(parentKey) {
@@ -2576,9 +2475,6 @@ window.trainingCoreMixin = {
     if (!container) { this.updateToml(); return; }
     const expectedVal = this.form[parentKey];
     const toAnimate = [];
-    // 进阶参数计数随字段显隐联动重算（按表单状态，与 DOM 动画时序无关）。
-    this._updateAdvancedCounts();
-
     // Handle multi-condition show_if (data-show-if-all)
     container.querySelectorAll(`[data-show-if-all]`).forEach(row => {
       try {
@@ -2680,7 +2576,7 @@ window.trainingCoreMixin = {
       }
 
       const hiddenAncestor = row.parentElement
-        && row.parentElement.closest('.field-hidden, .advanced-fold-collapsed, .card-collapsed');
+        && row.parentElement.closest('.field-hidden, .card-collapsed');
       if (hiddenAncestor && !changedRows.has(hiddenAncestor)) {
         this._setConditionalState(row, item.match);
         return;
@@ -3495,12 +3391,12 @@ window.trainingCoreMixin = {
     return null;
   },
 
-  // ── Nest level: depth of showIf/showIfAny ancestry (A2) ──
-  // 一个字段的层级 = 其 showIf/showIfAny 父字段层级 + 1；无则为 0。
+  // ── Nest level: depth of explicit/conditional layout ancestry ──
+  // 一个字段的层级 = 其布局父字段层级 + 1；无则为 0。
   // 用于递增缩进与左边框深浅，让"开关→选项→子选项"层级一眼可读。
   _nestLevelCache: null,
   _nestLevel(field) {
-    if (!field.showIf && !field.showIfAny) return 0;
+    if (!this._fieldLayoutParentKey(field)) return 0;
     // 构建一次 key→field 映射，避免重复遍历（render 时调用频繁）
     if (!this._nestLevelCache) {
       const map = {};
@@ -3510,17 +3406,10 @@ window.trainingCoreMixin = {
     let level = 0;
     let cur = field;
     const guard = new Set();
-    while (cur && (cur.showIf || cur.showIfAny) && !guard.has(cur.key)) {
+    while (cur && this._fieldLayoutParentKey(cur) && !guard.has(cur.key)) {
       guard.add(cur.key);
       level += 1;
-      // 确定父字段 key：showIf dict → .key；showIf 数组(AND) → 无明确父级(终止);
-      // showIfAny → 取第一个 AND 组的第一个 key 作为父级近似
-      let parentKey;
-      if (cur.showIf) {
-        parentKey = Array.isArray(cur.showIf) ? undefined : cur.showIf.key;
-      } else if (cur.showIfAny) {
-        parentKey = cur.showIfAny[0] && cur.showIfAny[0][0] && cur.showIfAny[0][0].key;
-      }
+      const parentKey = this._fieldLayoutParentKey(cur);
       cur = parentKey ? this._nestLevelCache[parentKey] : undefined;
     }
     return level;
@@ -3576,6 +3465,7 @@ window.trainingCoreMixin = {
     const value = def !== undefined ? def : '';
     const unchanged = this.form[key] === value;
     this.setField(key, value);
+    this.formDefaults[key] = value;
     if (matched && matched.set !== null && matched.set !== undefined) {
       this._setFieldSource(key, 'auto');
     } else {

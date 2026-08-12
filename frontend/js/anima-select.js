@@ -142,7 +142,7 @@ document.addEventListener('alpine:init', () => {
         this.positioned = false;
         this.setRevealOrigin(event);
         // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
-        // （如分组的 .card-body、.advanced-fold-body）裁剪。
+        // （如分组的 .card-body）裁剪。
         this.$nextTick(() => this.positionMenu());
       }
     },
