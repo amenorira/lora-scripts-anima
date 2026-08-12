@@ -28,9 +28,9 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 "enable_preview": True,
                 "positive_prompts": "一名角色",
                 "sample_seed": 42,
+                "train_batch_size": 1,
             },
             profile_id="anima-lora",
-            adapter_id="lora",
         )
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "training.yaml"
@@ -41,8 +41,11 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(loaded["schema_version"], TRAINING_CONFIG_SCHEMA_VERSION)
         UUID(loaded["document_id"])
         self.assertEqual(loaded["profile"]["id"], "anima-lora")
+        self.assertNotIn("adapter_id", loaded["profile"])
         self.assertEqual(restored["subset_timestep_offsets"], {"10_character": [1, 2]})
         self.assertEqual(restored["positive_prompts"], "一名角色")
+        self.assertEqual(loaded["parameters"]["training"]["train_batch_size"], 1)
+        self.assertEqual(restored["train_batch_size"], 1)
         self.assertNotIn("runtime", loaded)
 
     def test_conditional_fields_follow_ui_hierarchy(self):
@@ -63,7 +66,6 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 "logging_dir": "./logs",
             },
             profile_id="anima-lora",
-            adapter_id="lora",
         )
 
         params = document["parameters"]
@@ -149,7 +151,6 @@ class TrainingConfigYamlTests(unittest.TestCase):
                         "positive_prompts": "完整预览提示词",
                     },
                     profile_id="anima-lora",
-                    adapter_id="lora",
                 ),
             )
 
@@ -198,6 +199,7 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(response.data["filename"], "中文预设.yaml")
         UUID(response.data["document_id"])
         self.assertIn("kind: training", response.data["content"])
+        self.assertNotIn("adapter_id:", response.data["content"])
         self.assertIn("parameters:", response.data["content"])
         self.assertIn("positive_prompts: 一名角色", response.data["content"])
         self.assertIn("network_dim: 32", response.data["content"])

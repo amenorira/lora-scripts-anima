@@ -864,9 +864,9 @@ global.window = {};
 require('./frontend/js/training-core.js');
 const ctx = Object.assign({}, window.trainingCoreMixin);
 const fields = [
+  { key: 'optimizer_type', keepChildrenPosition: true },
   { key: 'learning_rate' },
   { key: 'scheduler' },
-  { key: 'optimizer_type' },
   { key: 'weight_decay', layoutParent: 'optimizer_type' },
   { key: 'stable_a', showIf: { key: 'optimizer_type', eq: 'Stable' } },
   { key: 'stable_b', showIf: { key: 'optimizer_type', eq: 'Stable' } },
@@ -888,9 +888,9 @@ console.log(JSON.stringify(ctx._orderFieldsByDependencies(fields).map(field => f
         self.assertEqual(
             json.loads(result.stdout),
             [
+                "optimizer_type",
                 "learning_rate",
                 "scheduler",
-                "optimizer_type",
                 "weight_decay",
                 "stable_a",
                 "stable_b",

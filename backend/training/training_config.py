@@ -29,6 +29,7 @@ SECTION_ORDER = [
     "preview",
     "misc",
 ]
+INTERNAL_PROFILE_KEYS = {"model_train_type", "engine_id", "adapter_id", "gpu_ids"}
 
 
 class TrainingConfigError(ValueError):
@@ -151,14 +152,6 @@ def _is_empty_value(value: Any) -> bool:
     return isinstance(value, float) and value != value
 
 
-def _matches_default(value: Any, default: Any) -> bool:
-    if value == default:
-        return True
-    if isinstance(value, (dict, list)) or isinstance(default, (dict, list)):
-        return False
-    return _value_text(value) == _value_text(default)
-
-
 def _dependency_parent(
     field: dict[str, Any],
     field_defs: dict[str, dict[str, Any]],
@@ -225,16 +218,15 @@ def group_training_form(
     included_keys = set()
     for key, value in form.items():
         field = field_defs.get(key)
-        if not field or key in {"model_train_type", "gpu_ids"}:
+        if not field or key in INTERNAL_PROFILE_KEYS:
             continue
         if field.get("hidden") and field.get("_target") != "ui":
             continue
         if not _field_is_active(field, form) or _is_empty_value(value):
             continue
-        # Match the sidebar TOML preview: only fields explicitly marked
-        # omitDefault are suppressed when they equal their registry default.
-        if field.get("omitDefault") and "default" in field and _matches_default(value, field.get("default")):
-            continue
+        # Application YAML is a versioned form snapshot. Keep active defaults
+        # explicit so importing an older document cannot silently adopt newer
+        # registry defaults. Runtime TOML omission remains a separate concern.
         included_keys.add(key)
 
     context_keys = set(included_keys)
@@ -258,7 +250,7 @@ def group_training_form(
             current = parent
 
     grouped: dict[str, Any] = {}
-    consumed = {"model_train_type", "gpu_ids"}
+    consumed = set(INTERNAL_PROFILE_KEYS)
     for section_key in SECTION_ORDER:
         available = [
             key
@@ -310,7 +302,7 @@ def group_training_form(
         key: value
         for key, value in form.items()
         if key not in field_defs
-        and key not in {"model_train_type", "gpu_ids"}
+        and key not in INTERNAL_PROFILE_KEYS
         and not key.startswith("_")
         and not _is_empty_value(value)
     }
@@ -356,7 +348,6 @@ def build_training_config(
     form: dict[str, Any],
     *,
     profile_id: str,
-    adapter_id: str,
     created_at: str | None = None,
     document_id: str | None = None,
 ) -> dict[str, Any]:
@@ -378,10 +369,7 @@ def build_training_config(
     app_version = str(os.environ.get("ANIMA_VERSION") or "").strip()
     if app_version:
         document["app_version"] = app_version
-    document["profile"] = {
-        "id": str(profile_id),
-        "adapter_id": str(adapter_id),
-    }
+    document["profile"] = {"id": str(profile_id)}
     document["parameters"] = group_training_form(form, profile_id)
     return document
 

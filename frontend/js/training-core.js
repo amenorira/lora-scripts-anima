@@ -1333,12 +1333,14 @@ window.trainingCoreMixin = {
 
   _orderFieldsByDependencies(fields) {
     const keys = new Set(fields.map(field => field.key));
+    const fieldsByKey = new Map(fields.map(field => [field.key, field]));
     const children = new Map();
     const roots = [];
 
     fields.forEach(field => {
       const parent = this._fieldLayoutParentKey(field, keys);
-      if (!parent || parent === field.key) {
+      const parentField = fieldsByKey.get(parent);
+      if (!parent || parent === field.key || parentField?.keepChildrenPosition) {
         roots.push(field);
         return;
       }

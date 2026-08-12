@@ -43,14 +43,14 @@ class TrainingFieldLayoutTests(unittest.TestCase):
     def test_registry_has_no_advanced_field_classification(self):
         self.assertTrue(all("advanced" not in field for field in get_all_fields()))
 
-    def test_optimizer_layout_places_learning_rate_controls_first(self):
+    def test_optimizer_layout_places_selector_before_learning_rate_controls(self):
         sections = get_fields_json()["sections"]
         all_optimizer_fields = next(section["fields"] for section in sections if section["key"] == "optimizer")
         optimizer_fields = [field for field in all_optimizer_fields if not field.get("profiles")]
         keys = [field["key"] for field in optimizer_fields]
 
-        self.assertLess(keys.index("learning_rate"), keys.index("optimizer_type"))
-        self.assertLess(keys.index("max_grad_norm"), keys.index("optimizer_type"))
+        self.assertLess(keys.index("optimizer_type"), keys.index("learning_rate"))
+        self.assertLess(keys.index("optimizer_type"), keys.index("max_grad_norm"))
         weight_decay = next(field for field in optimizer_fields if field["key"] == "weight_decay")
         self.assertEqual(weight_decay["layoutParent"], "optimizer_type")
 

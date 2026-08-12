@@ -73,7 +73,6 @@ async def export_training_config(request: Request):
     document = build_training_config(
         form,
         profile_id=profile.id,
-        adapter_id=profile.adapter_id,
         document_id=payload.get("document_id"),
     )
     filename = f"{_safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
@@ -457,7 +456,6 @@ async def _create_krea2_run(
     training_document = build_training_config(
         snapshot_form,
         profile_id=KREA2_PROFILE_ID,
-        adapter_id="musubi_lora",
     )
 
     def _write_configs():
@@ -846,7 +844,6 @@ async def create_toml_file(request: Request):
     training_document = build_training_config(
         form_snapshot,
         profile_id=profile.id,
-        adapter_id=adapter_id,
     )
     dataset_config_file: Path | None = None
     dataset_toml = ""
