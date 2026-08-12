@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.6 - 2026-08-12
+
+This patch release replaces the legacy preset manager with portable training YAML files and refines the training-form hierarchy, parameter preview, and monitoring details so saved configurations restore the behavior users actually trained with.
+
+### Training configuration YAML
+
+- Added versioned training YAML download, import, and automatic per-run saving. Documents preserve all active form values, conditional parameters, and preview settings so older configurations do not silently adopt newer application defaults.
+- Training history now prefers `training.yaml` when restoring the complete form while retaining compatibility with legacy flat TOML imports.
+- Removed derivable `engine_id` and `adapter_id` metadata from user-facing YAML. Internal run records still retain core information for scheduling and diagnostics.
+- Removed the legacy training-preset UI, API, and local state in favor of a single download-and-import file workflow.
+
+### Form and parameter preview
+
+- Simplified duplicate form containers, explanatory UI, and obsolete interactions while keeping conditional fields stably ordered and clearly indented by dependency.
+- Moved the optimizer selector before learning-rate and scheduler controls while keeping optimizer-specific parameters below the shared controls.
+- The sidebar TOML preview continues to reflect the actual runtime arguments and now de-emphasizes application defaults that must still be passed explicitly. Copied TOML remains unchanged.
+
+### Fixes and cleanup
+
+- Fixed the timestep-distribution chart in parameter documentation and aligned training-monitor log counts and progress-state updates.
+- Simplified environment-loading messages and removed stale frontend calls, duplicate constants, and unused styles left by preset removal.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.5...v2.3.6)
+
 ## v2.3.5 - 2026-08-10
 
 This release adds native PyTorch Muon support for Anima LoRA and completes the path from UI configuration and validation through sd-scripts startup and CUDA updates. It also unifies image previews across training artifacts, Tagger, and Tag Editor.
