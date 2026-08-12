@@ -465,12 +465,11 @@ def extract_train_params(config: dict) -> list[dict]:
 
     返回条目格式（供前端分组渲染 + 本地化标签）::
 
-        {key, desc_key, value, section, advanced, type, label_raw?}
+        {key, desc_key, value, section, type, label_raw?}
 
     - ``desc_key`` — registry 字段的 i18n 键，前端 ``t(desc_key)`` 取本地化标签
     - ``section``   — registry 分组（model/network/.../preview），前端 ``t('section.'+s)`` 取组标题
     - ``type``      — 字段输入类型（toggle → 前端渲染 ✓/✕ 徽标）
-    - ``advanced``  — 是否进阶参数（本次平铺显示，保留供未来折叠）
     - ``label_raw`` — 仅 network_args/optimizer_args 解析出的 ``algo=lokr`` 这类自定义项：
                       无 desc_key，直接显示键名作为标签
     """
@@ -500,7 +499,6 @@ def extract_train_params(config: dict) -> list[dict]:
                 "desc_key": f.get("desc_key", ""),
                 "value": _format_param_value(key, v, f),
                 "section": section,
-                "advanced": bool(f.get("advanced", False)),
                 "type": f.get("type", "text"),
             }
             params.append(entry)
@@ -528,7 +526,6 @@ def extract_train_params(config: dict) -> list[dict]:
                 "desc_key": "",
                 "value": val,
                 "section": section,
-                "advanced": True,
                 "type": "text",
                 "label_raw": k,
             })

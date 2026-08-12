@@ -79,7 +79,7 @@ document.addEventListener('alpine:init', () => {
       window.addEventListener('resize', this._resizeHandler);
 
       // Sync display when the hidden input value is changed externally
-      // (e.g. by autoValue, preset load, undo, reset, or any programmatic form update).
+      // (e.g. by autoValue, config import, undo, reset, or any programmatic form update).
       // Alpine x-model sets el.value directly on the DOM property, so we intercept
       // the native setter to keep this.value in sync.
       const input = this.$refs.modelInput;
@@ -142,7 +142,7 @@ document.addEventListener('alpine:init', () => {
         this.positioned = false;
         this.setRevealOrigin(event);
         // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
-        // （如分组的 .card-body、.advanced-fold-body）裁剪。
+        // （如分组的 .card-body）裁剪。
         this.$nextTick(() => this.positionMenu());
       }
     },

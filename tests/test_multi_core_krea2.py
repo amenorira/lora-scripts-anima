@@ -120,6 +120,9 @@ class CoreRegistryTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_registry_has_no_advanced_field_classification(self):
+        self.assertTrue(all("advanced" not in field for field in KREA2_FIELDS))
+
     def test_registry_keeps_krea_fields_out_of_sd_adapter_schema(self):
         fields = get_fields_json()
         all_fields = [field for section in fields["sections"] for field in section["fields"]]
@@ -854,6 +857,60 @@ class MusubiRuntimeContractTests(unittest.TestCase):
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_fields_follow_explicit_or_conditional_layout_parents(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const ctx = Object.assign({}, window.trainingCoreMixin);
+const fields = [
+  { key: 'optimizer_type', keepChildrenPosition: true },
+  { key: 'learning_rate' },
+  { key: 'scheduler' },
+  { key: 'weight_decay', layoutParent: 'optimizer_type' },
+  { key: 'stable_a', showIf: { key: 'optimizer_type', eq: 'Stable' } },
+  { key: 'stable_b', showIf: { key: 'optimizer_type', eq: 'Stable' } },
+  { key: 'came_parent', showIf: { key: 'optimizer_type', eq: 'CAME' } },
+  { key: 'came_child', showIf: [
+    { key: 'optimizer_type', eq: 'CAME' },
+    { key: 'came_parent', eq: true },
+  ] },
+];
+console.log(JSON.stringify(ctx._orderFieldsByDependencies(fields).map(field => field.key)));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            [
+                "optimizer_type",
+                "learning_rate",
+                "scheduler",
+                "weight_decay",
+                "stable_a",
+                "stable_b",
+                "came_parent",
+                "came_child",
+            ],
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_field_reset_updates_the_changed_state_baseline(self):
+        source = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
+        reset_body = source.split("resetField(key) {", 1)[1].split("\n  },", 1)[0]
+        self.assertIn("this.formDefaults[key] = value;", reset_body)
+
+    def test_hidden_conditional_fields_remove_all_border_width(self):
+        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
+        hidden_rule = css.split(".field-conditional.field-hidden {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("border-width: 0 !important;", hidden_rule)
+
     def test_krea_ui_has_cache_and_core_registry_paths(self):
         training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
         environment = Path("frontend/js/environment-core.js").read_text(encoding="utf-8")
@@ -941,6 +998,16 @@ console.log(JSON.stringify([
     def test_flat_config_import_switches_profile_before_filtering_fields(self):
         script = r"""
 global.window = {};
+const storage = new Map([
+  ['anima-form-train-basic', JSON.stringify({
+    model_train_type: 'anima-lora',
+    qwen3: './models/stale-qwen.safetensors',
+  })],
+]);
+global.localStorage = {
+  getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+  setItem(key, value) { storage.set(key, value); },
+};
 window.getVisibleSections = type => [{
   key: 'model',
   fields: type === 'sdxl-lora'
@@ -953,10 +1020,11 @@ window.getVisibleSections = type => [{
     : [{ key: 'model_train_type' }, { key: 'qwen3' }],
 }];
 require('./frontend/js/training-core.js');
-require('./frontend/js/training-presets.js');
+require('./frontend/js/training-config-io.js');
 const events = [];
 const tickQueue = [];
-const ctx = Object.assign({}, window.trainingCoreMixin, window.trainingPresetsMixin, {
+const ctx = Object.assign({}, window.trainingCoreMixin, window.trainingConfigIoMixin, {
+  currentRoute: 'train-basic',
   trainTypes: [{ v: 'sdxl-lora' }, { v: 'anima-lora' }, { v: 'krea2-lora' }],
   form: { model_train_type: 'anima-lora', qwen3: './models/old-qwen.safetensors' },
   _activeTrainType: 'anima-lora',
@@ -999,7 +1067,11 @@ const importing = ctx._applyImportedFlatConfig({
   unknown_field: 123,
 });
 while (tickQueue.length > 0) tickQueue.shift()();
-importing.then(() => console.log(JSON.stringify({ events, form: ctx.form })));
+importing.then(() => console.log(JSON.stringify({
+  events,
+  form: ctx.form,
+  persisted: JSON.parse(storage.get('anima-form-train-basic')),
+})));
 """
         result = subprocess.run(
             ["node", "-e", script],
@@ -1018,6 +1090,7 @@ importing.then(() => console.log(JSON.stringify({ events, form: ctx.form })));
         self.assertTrue(state["form"]["xformers"])
         self.assertNotIn("qwen3", state["form"])
         self.assertNotIn("unknown_field", state["form"])
+        self.assertEqual(state["persisted"], state["form"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_krea_profile_resets_incompatible_shared_select_values(self):
@@ -1121,7 +1194,6 @@ const ctx = Object.assign({}, window.trainingCoreMixin, {
   setupShowIfWatchers: noop,
   setupReadonlyWatchers: noop,
   updateToml: noop,
-  loadPresets: noop,
   rebuildForm: noop,
   toast: noop,
   t: (_key, fallback) => fallback || '',
@@ -1139,8 +1211,8 @@ const animaSource = ctx._fieldSources.learning_rate;
 ctx.switchTrainType('krea2-lora');
 const kreaRestored = { ...ctx.form };
 const kreaSource = ctx._fieldSources.learning_rate;
-ctx.formDefaults.learning_rate = 'preset-baseline';
-ctx.form.learning_rate = 'edited-after-preset';
+ctx.formDefaults.learning_rate = 'imported-baseline';
+ctx.form.learning_rate = 'edited-after-import';
 ctx.setField = (key, value) => { ctx.form[key] = value; };
 ctx.resetField('learning_rate');
 const kreaFieldReset = ctx.form.learning_rate;
@@ -1219,14 +1291,12 @@ global.document = {
   },
 };
 const applied = {};
-let countRefreshes = 0;
 const ctx = Object.assign({}, window.trainingCoreMixin, {
   form: { mode: 'fast', enabled: true },
   _setConditionalState(row, visible) { applied[row.id] = visible; },
-  _updateAdvancedCounts() { countRefreshes += 1; },
 });
 ctx._syncAllConditionalFields();
-console.log(JSON.stringify({ queryCount, countRefreshes, applied }));
+console.log(JSON.stringify({ queryCount, applied }));
 """
         result = subprocess.run(
             ["node", "-e", script],
@@ -1237,7 +1307,6 @@ console.log(JSON.stringify({ queryCount, countRefreshes, applied }));
         )
         state = json.loads(result.stdout)
         self.assertEqual(state["queryCount"], 1)
-        self.assertEqual(state["countRefreshes"], 1)
         self.assertEqual(state["applied"], {"single": True, "all": True, "any": False})
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
@@ -1360,34 +1429,8 @@ console.log(JSON.stringify({
         self.assertEqual(state["queuedFrames"], 0)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_training_preset_filter_uses_switched_form_type_before_route_default(self):
-        script = r"""
-global.window = {};
-global.ROUTE_CONFIG = { 'train-lora': { trainType: 'anima-lora' } };
-require('./frontend/js/training-presets.js');
-const ctx = Object.assign({}, window.trainingPresetsMixin, {
-  currentRoute: 'train-lora',
-  form: { model_train_type: 'krea2-lora' },
-  allPresets: [
-    { metadata: { name: 'Anima', train_type: 'anima-lora' } },
-    { metadata: { name: 'Krea', train_type: 'krea2-lora' } },
-    { metadata: { name: 'Shared' } },
-  ],
-});
-ctx._refreshFilteredPresets();
-console.log(JSON.stringify(ctx.presets.map(item => item.metadata.name)));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        self.assertEqual(json.loads(result.stdout), ["Krea", "Shared"])
-
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_krea_preset_preview_uses_the_shared_toml_highlighter(self):
+    def test_krea_config_preview_uses_the_shared_toml_highlighter(self):
         script = r"""
 global.window = {};
 const preview = { innerHTML: '', textContent: 'must-not-be-used' };

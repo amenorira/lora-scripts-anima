@@ -34,17 +34,97 @@ from backend.training.musubi_krea2 import (
     validate_krea2_config,
 )
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.training_config import (
+    TRAINING_CONFIG_NAME,
+    TrainingConfigError,
+    build_training_config,
+    dump_training_config,
+    extract_training_form,
+    parse_training_config_text,
+    write_training_config,
+)
 from backend.training.sd_dataset_config import (
     SUBSET_TIMESTEP_OFFSETS_KEY,
     build_sd_scripts_dataset_config,
     normalize_subset_timestep_offsets,
 )
 from backend import launch_utils
-from backend.server.models import APIResponseFail, APIResponseSuccess
+from backend.server.models import APIResponseFail, APIResponseSuccess, TrainingTomlParseRequest
 from backend.log import log
 from backend.utils import train_utils
 
 router = APIRouter()
+
+
+@router.post("/training/export-config")
+async def export_training_config(request: Request):
+    """Serialize the current form into the application-level YAML format."""
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(payload, dict) or not isinstance(payload.get("form"), dict):
+        return APIResponseFail(message="Training form must be an object / 训练表单必须是对象")
+    form = dict(payload["form"])
+    try:
+        profile = resolve_training_profile(form)
+    except TrainingProfileError as exc:
+        return APIResponseFail(message=str(exc))
+    document = build_training_config(
+        form,
+        profile_id=profile.id,
+        document_id=payload.get("document_id"),
+    )
+    filename = f"{_safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
+    return APIResponseSuccess(
+        data={
+            "content": dump_training_config(document),
+            "filename": filename,
+            "format": "yaml",
+            "document_id": document["document_id"],
+        }
+    )
+
+
+@router.post("/training/parse-config")
+async def parse_training_toml(req: TrainingTomlParseRequest):
+    """Parse a YAML application config or a legacy flat TOML config."""
+    first_content_line = next(
+        (
+            line.strip()
+            for line in req.content.splitlines()
+            if line.strip() and not line.lstrip().startswith("#") and line.strip() != "---"
+        ),
+        "",
+    )
+    if first_content_line.startswith("kind:"):
+        try:
+            document = parse_training_config_text(req.content, allowed_kinds={"training", "preset"})
+            form = extract_training_form(document)
+            return APIResponseSuccess(
+                data={
+                    "data": form,
+                    "format": "yaml",
+                    "kind": document["kind"],
+                    "document_id": document.get("document_id"),
+                }
+            )
+        except TrainingConfigError as exc:
+            return APIResponseFail(message=f"Invalid YAML / YAML 解析失败: {exc}")
+    try:
+        parsed = toml.loads(req.content)
+    except toml.TomlDecodeError as exc:
+        return APIResponseFail(message=f"Invalid TOML / TOML 解析失败: {exc}")
+    if not isinstance(parsed, dict):
+        return APIResponseFail(message="Invalid training config / 训练配置结构无效")
+    if "metadata" in parsed or "data" in parsed:
+        return APIResponseFail(
+            message=(
+                "Structured preset files are no longer supported; import a flat training TOML instead / "
+                "不再支持结构化预设文件，请导入扁平训练 TOML"
+            )
+        )
+    return APIResponseSuccess(data={"data": parsed})
 
 avaliable_scripts = [
     "networks/extract_lora_from_models.py",
@@ -309,8 +389,16 @@ def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
     )
 
 
-async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
+async def _create_krea2_run(
+    config: dict,
+    gpu_ids: list | None,
+    timestamp: str,
+    form_snapshot: dict | None = None,
+):
     """Launch the musubi Krea 2 training profile without touching sd-scripts."""
+
+    snapshot_form = dict(form_snapshot) if isinstance(form_snapshot, dict) else dict(config)
+    snapshot_form["model_train_type"] = KREA2_PROFILE_ID
 
     validation_errors = validate_krea2_config(config)
     if validation_errors:
@@ -365,10 +453,15 @@ async def _create_krea2_run(config: dict, gpu_ids: list | None, timestamp: str):
     toml_file = autosave_dir / f"{timestamp}-krea2.toml"
     train_toml = toml.dumps(train_config)
     dataset_toml = toml.dumps(dataset_config)
+    training_document = build_training_config(
+        snapshot_form,
+        profile_id=KREA2_PROFILE_ID,
+    )
 
     def _write_configs():
         toml_file.write_text(train_toml, encoding="utf-8")
         (internal_run_dir / "config.toml").write_text(train_toml, encoding="utf-8")
+        write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
         dataset_config_file.write_text(dataset_toml, encoding="utf-8")
         if sample_prompts_file is not None:
             prompts = str(config["krea_sample_prompts"]).replace("\r\n", "\n").replace("\r", "\n").rstrip()
@@ -551,14 +644,18 @@ async def create_toml_file(request: Request):
     if not isinstance(config, dict):
         return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
 
+    form_snapshot = config.pop("_form_state", None)
+    if not isinstance(form_snapshot, dict):
+        form_snapshot = {key: value for key, value in config.items() if not key.startswith("_")}
     gpu_ids = config.pop("gpu_ids", None)
 
     try:
         profile = resolve_training_profile(config)
     except TrainingProfileError as exc:
         return APIResponseFail(message=str(exc))
+    form_snapshot["model_train_type"] = profile.id
     if profile.id == KREA2_PROFILE_ID:
-        return await _create_krea2_run(config, gpu_ids, timestamp)
+        return await _create_krea2_run(config, gpu_ids, timestamp, form_snapshot)
 
     try:
         subset_timestep_offsets = normalize_subset_timestep_offsets(
@@ -744,6 +841,10 @@ async def create_toml_file(request: Request):
 
     toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
     toml_content = toml.dumps(config)
+    training_document = build_training_config(
+        form_snapshot,
+        profile_id=profile.id,
+    )
     dataset_config_file: Path | None = None
     dataset_toml = ""
     if subset_timestep_offsets:
@@ -760,6 +861,7 @@ async def create_toml_file(request: Request):
         run_config_file = str(internal_run_dir / "config.toml")
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
+        write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
         if dataset_config_file is not None:
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
 

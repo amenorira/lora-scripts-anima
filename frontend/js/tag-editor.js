@@ -2431,10 +2431,6 @@ window.tagEditorMixin = {
     }
   },
 
-  _teCreateSnapshot() {
-    this.tagEditorLoadSnapshots(this._teLoadEpoch);
-  },
-
   tagEditorLoadSnapshots(epoch) {
     var self = this;
     var requestEpoch = epoch == null ? this._teLoadEpoch : epoch;
@@ -2506,13 +2502,6 @@ window.tagEditorMixin = {
     var numeric = Number(ts);
     var d = new Date(numeric > 1000000000000 ? numeric : numeric * 1000);
     return d.toLocaleString();
-  },
-
-  _teFormatSize(bytes) {
-    if (bytes == null) return '';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(1) + ' MB';
   },
 
   // ===== Auto-save Draft =====

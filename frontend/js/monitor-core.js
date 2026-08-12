@@ -1159,7 +1159,9 @@ window.monitorCoreMixin = {
         this._logFullEvictK = 0;
         this.logFullLines = [];
         this.logFullLoading = false;
-        this.logFullTotal = 0;
+        // run-detail and log-slice share one normalized row definition, so the
+        // count stays stable while the first full-log page is loading.
+        this.logFullTotal = this.logTotal;
         this.logAutoScroll = true;
         this._logAtBottom = true;
         this.renderDashboard();
@@ -1388,7 +1390,7 @@ window.monitorCoreMixin = {
     if (!runDir) return;
     const selected = this.selectedOutputFiles;
     if (!selected.length) {
-      this.toastthis.t('monitor.selectFilesFirst');
+      this.toast(this.t('monitor.selectFilesFirst'));
       return;
     }
     const filesParam = selected.map(f => encodeURIComponent(f)).join(',');

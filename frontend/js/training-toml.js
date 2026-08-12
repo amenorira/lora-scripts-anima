@@ -82,7 +82,7 @@ window.trainingTomlMixin = {
       if (sectionLines[sectionKey]) sectionLines[sectionKey].push(line);
     };
 
-    // Portable presets need to retain the application profile selector. The
+    // Portable configs need to retain the application profile selector. The
     // backend consumes it for core routing and filters it before trainer launch.
     pushLine('model', `model_train_type = "${trainType}"`);
 
@@ -484,7 +484,7 @@ window.trainingTomlMixin = {
   },
 
   _updateKrea2Toml() {
-    // This is a portable application preset. The backend writes musubi's
+    // This is a portable application config. The backend writes musubi's
     // separate train and dataset TOMLs when the run is launched.
     const quote = (value) => '"' + String(value ?? '')
       .replace(/\\/g, '\\\\')
@@ -534,6 +534,14 @@ window.trainingTomlMixin = {
     });
     if (this.form.gpu_ids !== undefined && this.form.gpu_ids !== null) payload.gpu_ids = this.form.gpu_ids;
     return payload;
+  },
+
+  _collectTrainingFormSnapshot() {
+    try {
+      return JSON.parse(JSON.stringify(this.form || {}));
+    } catch (error) {
+      return { ...(this.form || {}) };
+    }
   },
 
   // Helper: check if a field's showIf condition is met
@@ -738,6 +746,7 @@ window.trainingTomlMixin = {
 
     if (trainType === 'krea2-lora') {
       const payload = this._collectKrea2Payload();
+      payload._form_state = this._collectTrainingFormSnapshot();
       try {
         const response = await fetch('/api/run', {
           method: 'POST',
@@ -829,6 +838,7 @@ window.trainingTomlMixin = {
       delete payload[key];
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;
+    payload._form_state = this._collectTrainingFormSnapshot();
 
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });

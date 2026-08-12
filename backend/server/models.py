@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 
@@ -70,22 +70,5 @@ class APIResponseFail(APIResponse):
     status: str = "fail"
 
 
-class PresetSaveRequest(BaseModel):
-    name: str
-    description: str = ""
-    version: str = "1.0"
-    author: str = ""
-    train_type: str = ""
-    data: Dict[str, Any] = {}
-
-
-class PresetRenameRequest(BaseModel):
-    new_name: str
-
-
-class PresetBatchDeleteRequest(BaseModel):
-    names: List[str]
-
-
-class PresetParseRequest(BaseModel):
+class TrainingTomlParseRequest(BaseModel):
     content: str

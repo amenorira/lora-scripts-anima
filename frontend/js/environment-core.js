@@ -271,6 +271,13 @@ window.environmentCoreMixin = {
     };
   },
 
+  _flashAttentionStatusUrl() {
+    const source = this.faSource && this.faSource !== 'default'
+      ? '?source=' + encodeURIComponent(this.faSource)
+      : '';
+    return '/api/flash-attention/status' + source;
+  },
+
   async buildEnvironmentPage() {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
@@ -290,9 +297,8 @@ window.environmentCoreMixin = {
       const loaders = [];
       if (needsFa) {
         this.faError = null;
-        const source = this.faSource && this.faSource !== 'default' ? '?source=' + encodeURIComponent(this.faSource) : '';
         loaders.push(this._environmentJsonLoader(
-          '/api/flash-attention/status' + source,
+          this._flashAttentionStatusUrl(),
           data => { this.faStatus = data; },
           error => { this.faError = String(error); this.faStatus = null; },
         ));
@@ -376,7 +382,7 @@ window.environmentCoreMixin = {
     this.faError = null;
     if (!silent) { this.startProgress(); this.toast(this.t('environment.refreshing')); }
     try {
-      const r = await fetch('/api/flash-attention/status' + (this.faSource && this.faSource!=='default' ? '?source='+this.faSource : ''));
+      const r = await fetch(this._flashAttentionStatusUrl());
       this.faStatus = await r.json();
       if (!silent) this.toast(this.t('environment.refreshed'));
     } catch (e) { this.faError = String(e); this.faStatus = null; }

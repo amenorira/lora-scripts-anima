@@ -1,4 +1,4 @@
-﻿/* ================================================================
+/* ================================================================
    lora-scripts-anima UI — Desktop Workbench
    Dense information · Crisp boundaries · Restrained motion
    ================================================================ */
@@ -678,36 +678,6 @@ a:focus-visible {
   display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap;
 }
-.preset-badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; line-height: 1;
-  color: var(--accent); background: var(--accent-soft);
-  padding: 5px 10px; border-radius: var(--radius-control);
-  white-space: nowrap; user-select: none;
-}
-.preset-badge-label {
-  color: var(--text-tertiary); font-weight: 400;
-}
-.preset-badge strong {
-  font-weight: 600; color: var(--accent);
-}
-.preset-badge-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; padding: 0; margin-left: 2px;
-  border: none; background: transparent;
-  color: var(--accent); opacity: 0.45; cursor: pointer;
-  border-radius: var(--radius-control);
-  transition: opacity 0.15s var(--ease-out), background 0.15s var(--ease-out);
-}
-.preset-badge-close:hover {
-  opacity: 0.85; background: var(--hover-overlay);
-}
-.preset-badge-arrow {
-  background: none; border: none; color: var(--text-tertiary);
-  cursor: pointer; padding: 2px 4px; line-height: 1;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.preset-badge-arrow:hover { color: var(--text-primary); }
 .page-title { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: 0; margin-bottom: 4px; }
 .page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
 
@@ -858,227 +828,6 @@ input[type="checkbox"]:focus-visible {
 .log-level-btn:hover { border-color: var(--border-input); color: var(--text-primary); }
 .log-level-btn.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
 
-/* ── Preset Page (双栏布局) ──────────────────────────────── */
-
-.preset-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-
-.preset-page-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap; padding-bottom: 10px;
-}
-.preset-page-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-.preset-toolbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 0; border-bottom: 1px solid var(--border-default);
-}
-.preset-toolbar-spacer { flex: 1; }
-.preset-search { position: relative; flex: 1; min-width: 160px; max-width: 320px; }
-.preset-search-icon {
-  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-  width: 14px; height: 14px; color: var(--text-tertiary); pointer-events: none;
-}
-.preset-search-input { padding-left: 28px !important; width: 100%; }
-
-.preset-batchbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 12px; margin-top: 8px;
-  background: var(--bg-secondary); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 12px;
-}
-
-/* 双栏主体 */
-.preset-workspace {
-  display: grid; grid-template-columns: 280px minmax(500px, 1fr);
-  gap: 14px; flex: 1; min-width: 794px; min-height: 0; margin-top: 10px;
-}
-
-/* 左栏列表 */
-.preset-list {
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  background: var(--bg-surface); overflow-y: auto; min-height: 120px;
-}
-.preset-empty { padding: 24px 12px; text-align: center; }
-.preset-list-item {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 10px 12px; cursor: pointer;
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background var(--duration-fast);
-}
-.preset-list-item:last-child { border-bottom: none; }
-.preset-list-item:hover { background: var(--accent-muted); }
-.preset-list-item.selected {
-  background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.preset-list-item.checked { background: var(--danger-soft); }
-.preset-list-check { padding-top: 2px; }
-.preset-list-main { min-width: 0; flex: 1; }
-.preset-list-name-row {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 2px;
-}
-.preset-list-name {
-  font-weight: 600; font-size: 13.5px; color: var(--text-primary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.preset-list-item.selected .preset-list-name { color: var(--accent); }
-.preset-list-desc {
-  font-size: 11.5px; color: var(--text-tertiary); line-height: 1.35;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px;
-}
-.preset-list-meta { font-size: 11px; color: var(--text-tertiary); }
-
-/* 右栏详情 */
-.preset-detail {
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  background: var(--bg-surface); display: flex; flex-direction: column;
-  min-height: 120px; overflow: hidden;
-}
-.preset-detail-empty {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; color: var(--text-tertiary); padding: 32px;
-}
-.preset-detail-empty-icon svg { width: 36px; height: 36px; opacity: 0.5; }
-
-.preset-detail-inner {
-  display: flex; flex-direction: column; height: 100%; min-height: 0;
-}
-.preset-detail-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 12px 14px; border-bottom: 1px solid var(--border-default);
-}
-.preset-detail-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.preset-detail-name-input { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; }
-.preset-detail-name-input:disabled {
-  font-weight: 600; font-size: 15px; color: var(--text-primary);
-  background: transparent; border-color: transparent; cursor: default; opacity: 1;
-}
-.preset-detail-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
-
-/* Tabs */
-.preset-tabs {
-  display: flex; gap: 2px; padding: 0 12px;
-  border-bottom: 1px solid var(--border-default);
-}
-.preset-tab {
-  appearance: none; background: transparent; border: none; cursor: pointer;
-  font-size: 13px; color: var(--text-secondary);
-  padding: 8px 14px; border-bottom: 2px solid transparent;
-  transition: color var(--duration-fast), border-color var(--duration-fast);
-}
-.preset-tab:hover { color: var(--text-primary); }
-.preset-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
-
-.preset-tab-body {
-  flex: 1; overflow-y: auto; padding: 14px; min-height: 0;
-}
-
-/* Meta tab */
-.preset-meta-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px; margin-bottom: 10px;
-}
-
-/* Params tab */
-.preset-param-toolbar {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
-}
-.preset-param-toolbar .preset-search { max-width: 280px; }
-
-/* ── 预设参数编辑器：直接复用训练表单 .field 系列（通过 :is 扩展）── */
-.preset-form-scope .card { margin-bottom: 0; }
-.preset-form-scope .card-body { padding: 0; }
-/* 字段行结构与训练表统一：.field / .field-row / .field-info / .field-key / .field-desc /
-   .field-control / .field-hint / .field-input-row 全部复用同名 class，样式由
-   :is(#trainFormContent, .preset-form-scope) 规则提供，保证视觉完全一致。 */
-/* custom 键行：左侧加柔和标记条（仅预设编辑器特有） */
-.preset-form-scope .field.preset-field-custom { border-left: 3px solid var(--bg-tertiary); padding-left: 12px; }
-.badge-custom {
-  font-size: 10px; padding: 0 5px; border-radius: var(--radius-control); margin-left: 6px;
-  background: var(--bg-tertiary); color: var(--text-tertiary); vertical-align: middle;
-}
-/* 字段键用等宽字体显示原始 key */
-.preset-form-scope .field-key { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--accent); letter-spacing: 0; }
-/* 所有预设编辑器字段行允许 flex-wrap，让提示/hint 自然换行到下一行 */
-.preset-form-scope .field.field-row { flex-wrap: wrap; }
-/* .field-hint 始终独占整行（在 field-row 外或内皆可） */
-.preset-form-scope .field-hint { flex: 1 1 100%; width: 100%; }
-/* 全宽字段（textarea / 文件路径）：info 在上、控件在下 */
-.preset-form-scope .field.field-row.field-fullwidth { align-items: flex-start; }
-.preset-form-scope .field.field-row.field-fullwidth > .field-info { flex: 1 1 100%; min-width: 0; }
-.preset-form-scope .field.field-row.field-fullwidth > .field-control { flex: 1 1 100%; width: 100%; margin-top: 6px; justify-content: stretch; }
-.preset-form-scope .field.field-row.field-fullwidth > .field-control .input { width: 100%; min-width: 0; max-width: none; }
-/* 预设编辑器输入框统一宽度（右栏较窄，需约束） */
-.preset-form-scope .field-control { min-width: 200px; }
-.preset-form-scope .field-control .input { width: 100%; }
-.preset-form-scope .field-control select.input { min-width: 200px; }
-.preset-form-scope .field-control input[type="number"].input { min-width: 140px; }
-/* 消除训练表 .field 的 margin:0 -8px 在编辑器窄容器中的溢出声 */
-.preset-form-scope .field { margin: 0; }
-/* subgroup / advanced-fold 在预设编辑器内的内边距微调 */
-.preset-form-scope .subgroup-block { margin: 4px 0; }
-.preset-form-scope .advanced-fold { margin-top: 4px; }
-.preset-form-scope .advanced-fold-body { padding-left: 10px; }
-
-/* toggle（紧凑开关，复用原样式） */
-
-
-/* Diff tab */
-.preset-diff-summary {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 8px 10px; background: var(--bg-secondary);
-  border-radius: var(--radius-sm); margin-bottom: 10px;
-}
-.preset-diff-actions { display: flex; gap: 6px; margin-bottom: 10px; }
-.preset-diff-list { display: flex; flex-direction: column; gap: 4px; }
-.preset-diff-row {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 6px 8px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle); font-size: 12px;
-}
-.preset-diff-row.diff-modified { border-left: 3px solid var(--diff-modified); }
-.preset-diff-row.diff-added { border-left: 3px solid var(--diff-added); }
-.preset-diff-row.diff-removed { border-left: 3px solid var(--diff-removed); opacity: 0.7; }
-.preset-diff-check { padding-top: 2px; }
-.preset-diff-content { flex: 1; min-width: 0; }
-.preset-diff-key { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 500; word-break: break-all; }
-.preset-diff-type {
-  display: inline-block; margin-left: 6px; font-size: 10px; padding: 0 5px;
-  border-radius: var(--radius-control); color: var(--text-tertiary); background: var(--bg-tertiary);
-}
-.preset-diff-values { margin-top: 2px; color: var(--text-secondary); word-break: break-all; }
-.diff-old { text-decoration: line-through; color: var(--diff-removed); }
-.diff-arrow { color: var(--text-tertiary); margin: 0 4px; }
-.diff-new { color: var(--diff-added); font-weight: 500; }
-.diff-label { font-size: 10px; color: var(--text-tertiary); margin-right: 3px; font-weight: 400; }
-.diff-stat-removed { color: var(--diff-removed); }
-.badge-train-type {
-  font-size: 10px; padding: 1px 6px; border-radius: var(--radius-control);
-  background: var(--bg-tertiary); color: var(--text-tertiary);
-}
-.btn-danger-text { color: var(--danger); }
-.btn-danger-text:hover { background: var(--danger-soft); }
-
-/* Footer */
-.preset-detail-footer {
-  padding: 10px 14px; border-top: 1px solid var(--border-default);
-  background: var(--bg-surface);
-}
-.preset-footer-row { display: flex; align-items: center; gap: 6px; }
-.preset-footer-spacer { flex: 1; }
-
-/* ── toast + action button ──────────────────────────────── */
-.toast-action { display: flex; align-items: center; gap: 10px; padding-right: 8px; }
-.toast-action-msg { flex: 1; min-width: 0; }
-.toast-action-btn {
-  appearance: none; border: 1px solid var(--border-input);
-  background: var(--bg-surface); color: var(--accent);
-  font-size: 12px; font-weight: 600; padding: 3px 10px;
-  border-radius: var(--radius-sm); cursor: pointer;
-  transition: background var(--duration-fast);
-  flex-shrink: 0;
-}
-.toast-action-btn:hover { background: var(--accent-soft); }
 /* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
   padding: 10px 0 10px 10px;
@@ -1101,7 +850,7 @@ input[type="checkbox"]:focus-visible {
   border-left-color: var(--state-changed);
 }
 /* ── Filled indicator: green left bar —— 仅指定字段（必填/关键路径字段）
-     判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被预设/导入重置影响）。
+     判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被配置导入重置影响）。
      优先级高于橙色 field-changed：同时命中时绿色覆盖，表示"已就绪填写"。 ── */
 .field.field-filled {
   border-left-color: var(--state-filled);
@@ -1214,7 +963,7 @@ input[type="checkbox"]:focus-visible {
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
-  border-top-width: 0 !important;
+  border-width: 0 !important;
   pointer-events: none;
   visibility: hidden;
   overflow: hidden !important;
@@ -1259,7 +1008,7 @@ input[type="checkbox"]:focus-visible {
 
 /* 训练表单内：点点菜单默认弱化，行 hover 或弹窗可见时凸显；
    右侧留白使其与 hover 高亮背景分离，不再贴边。 */
-:is(#trainFormContent, .preset-form-scope) .field-menu-wrap {
+#trainFormContent .field-menu-wrap {
   margin-left: 6px;
   margin-right: -2px;
 }
@@ -1268,8 +1017,8 @@ input[type="checkbox"]:focus-visible {
   border-color: transparent;
   background: transparent;
 }
-:is(#trainFormContent, .preset-form-scope) .field:hover .btn-menu,
-:is(#trainFormContent, .preset-form-scope) .field-menu-wrap:hover .btn-menu {
+#trainFormContent .field:hover .btn-menu,
+#trainFormContent .field-menu-wrap:hover .btn-menu {
   opacity: 1;
   border-color: var(--border-default);
 }
@@ -1603,7 +1352,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 
 
 /* ── Training Form — Flat Design (no card boxes) ─────────── */
-:is(#trainFormContent, .preset-form-scope) .card {
+#trainFormContent .card {
   background: transparent;
   border: none;
   border-left: none;
@@ -1612,7 +1361,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin-bottom: 0;
   box-shadow: none;
 }
-:is(#trainFormContent, .preset-form-scope) .card-header {
+#trainFormContent .card-header {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1627,14 +1376,14 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   user-select: none;
   transition: color var(--duration-fast) ease, border-bottom-color var(--duration-fast) ease;
 }
-:is(#trainFormContent, .preset-form-scope) .card-header:hover {
+#trainFormContent .card-header:hover {
   color: var(--text-secondary);
 }
-:is(#trainFormContent, .preset-form-scope) .card:first-child .card-header {
+#trainFormContent .card:first-child .card-header {
   padding-top: 0;
 }
 /* 分组标题左侧色条（与导航指示器圆点同色，强化分组身份识别） */
-:is(#trainFormContent, .preset-form-scope) .card-header::before {
+#trainFormContent .card-header::before {
   content: '';
   width: 3px;
   height: 14px;
@@ -1644,34 +1393,34 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   transition: background-color var(--duration-fast) var(--ease-out);
 }
 /* 各分组色条：加 #trainFormContent 前缀提升优先级，覆盖上方灰色默认 */
-:is(#trainFormContent, .preset-form-scope) [data-section="model"] .card-header::before         { background: var(--section-model); }
-:is(#trainFormContent, .preset-form-scope) [data-section="network"] .card-header::before       { background: var(--section-network); }
-:is(#trainFormContent, .preset-form-scope) [data-section="training"] .card-header::before      { background: var(--section-training); }
-:is(#trainFormContent, .preset-form-scope) [data-section="optimizer"] .card-header::before     { background: var(--section-optimizer); }
-:is(#trainFormContent, .preset-form-scope) [data-section="regularization"] .card-header::before{ background: var(--section-regularization); }
-:is(#trainFormContent, .preset-form-scope) [data-section="performance"] .card-header::before   { background: var(--section-performance); }
-:is(#trainFormContent, .preset-form-scope) [data-section="save"] .card-header::before          { background: var(--section-save); }
-:is(#trainFormContent, .preset-form-scope) [data-section="caption"] .card-header::before       { background: var(--section-caption); }
-:is(#trainFormContent, .preset-form-scope) [data-section="preview"] .card-header::before       { background: var(--section-preview); }
-:is(#trainFormContent, .preset-form-scope) [data-section="misc"] .card-header::before          { background: var(--section-caption); }
+#trainFormContent [data-section="model"] .card-header::before         { background: var(--section-model); }
+#trainFormContent [data-section="network"] .card-header::before       { background: var(--section-network); }
+#trainFormContent [data-section="training"] .card-header::before      { background: var(--section-training); }
+#trainFormContent [data-section="optimizer"] .card-header::before     { background: var(--section-optimizer); }
+#trainFormContent [data-section="regularization"] .card-header::before{ background: var(--section-regularization); }
+#trainFormContent [data-section="performance"] .card-header::before   { background: var(--section-performance); }
+#trainFormContent [data-section="save"] .card-header::before          { background: var(--section-save); }
+#trainFormContent [data-section="caption"] .card-header::before       { background: var(--section-caption); }
+#trainFormContent [data-section="preview"] .card-header::before       { background: var(--section-preview); }
+#trainFormContent [data-section="misc"] .card-header::before          { background: var(--section-caption); }
 /* 折叠箭头（B2）：默认指向下（展开），收起时旋转 -90° */
-:is(#trainFormContent, .preset-form-scope) .card-chevron {
+#trainFormContent .card-chevron {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
   color: var(--text-tertiary);
   transition: transform var(--duration-fast) var(--ease-out);
 }
-:is(#trainFormContent, .preset-form-scope) .card-collapsed .card-chevron {
+#trainFormContent .card-collapsed .card-chevron {
   transform: rotate(-90deg);
 }
 /* 分组主体：高度折叠动画由 JS _animateCollapse 驱动（测量 scrollHeight），
    此处仅声明过渡属性；初始渲染的持久化收起态由下方 .card-collapsed 规则承接。 */
-:is(#trainFormContent, .preset-form-scope) .card-body {
+#trainFormContent .card-body {
   transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
 }
 /* 初始渲染即为收起态（页面加载 / 切训练类型重建时，无动画直接收起） */
-:is(#trainFormContent, .preset-form-scope) .card.card-collapsed > .card-body {
+#trainFormContent .card.card-collapsed > .card-body {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
@@ -1796,27 +1545,18 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 /* ── 子组区块（kohya/LyCORIS 算法参数等）──
    仅用小标题 + 圆点作视觉区分，表明这是某个算法开关（network_module）专属的子参数集合，
    与分组底部的"显示进阶参数"折叠区分。不加背景色/大色条，保持简洁。 */
-:is(#trainFormContent, .preset-form-scope) .subgroup-block {
+#trainFormContent .subgroup-block {
   margin: 10px 0 6px;
   max-height: none; opacity: 1;
 }
-:is(:is(#trainFormContent, .preset-form-scope), .preset-form-scope) .subgroup-block.field-hidden {
+#trainFormContent .subgroup-block.field-hidden {
   max-height: 0 !important; opacity: 0;
   margin: 0;
   pointer-events: none;
   visibility: hidden;
   overflow: hidden;
 }
-/* 仅 advanced 字段的子组（无 basic）：折叠容器自身跟随模块显隐 */
-:is(:is(#trainFormContent, .preset-form-scope), .preset-form-scope) .advanced-fold--inline.field-hidden {
-  max-height: 0 !important; opacity: 0;
-  margin: 0;
-  padding: 0;
-  pointer-events: none;
-  visibility: hidden;
-  overflow: hidden;
-}
-:is(#trainFormContent, .preset-form-scope) .subgroup-header {
+#trainFormContent .subgroup-header {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 2px;
   font-size: 12px; font-weight: 700;
@@ -1824,83 +1564,30 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   letter-spacing: 0.2px;
   user-select: none;
 }
-:is(#trainFormContent, .preset-form-scope) .subgroup-dot {
+#trainFormContent .subgroup-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0; opacity: 0.8;
 }
-:is(#trainFormContent, .preset-form-scope) .subgroup-body {
+#trainFormContent .subgroup-body {
   padding: 0;
 }
 
-/* ── 进阶参数折叠区（A3）── */
-:is(#trainFormContent, .preset-form-scope) .advanced-fold {
-  margin-top: 8px;
-  border-top: 1px dashed var(--border-default);
-  padding-top: 8px;
-}
-/* inline 折叠：无分隔线，紧贴上级基础参数（用于 kohya 子组等） */
-:is(#trainFormContent, .preset-form-scope) .advanced-fold--inline {
-  margin-top: 4px;
-  border-top: none;
-  padding-top: 4px;
-  padding-left: 0;
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-fold-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  user-select: none;
-  padding: 4px 2px;
-  letter-spacing: 0.4px;
-  transition: color 0.15s ease;
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-fold-toggle:hover {
-  color: var(--text-secondary);
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-chevron {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  transition: transform 0.2s var(--ease-out);
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-fold-collapsed .advanced-chevron {
-  transform: rotate(-90deg);
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-count {
-  font-weight: 400;
-  opacity: 0.7;
-}
-:is(#trainFormContent, .preset-form-scope) .advanced-fold-body {
-  transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
-}
-/* 初始渲染即为收起态 */
-:is(#trainFormContent, .preset-form-scope) .advanced-fold.advanced-fold-collapsed > .advanced-fold-body {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 /* Field rows: subtle background on hover */
-:is(#trainFormContent, .preset-form-scope) .field {
+#trainFormContent .field {
   border-radius: 2px;
   padding: 8px 8px 8px 10px;
   margin: 0 -8px;
   transition: background-color var(--duration-fast) ease, border-left-color var(--duration-fast) var(--ease-out);
 }
 /* 条件字段的位移和淡入淡出由批量 FLIP 动画处理。 */
-:is(#trainFormContent, .preset-form-scope) .field-conditional {
+#trainFormContent .field-conditional {
   overflow: visible;
   transition: none;
 }
-:is(#trainFormContent, .preset-form-scope) .field:hover {
+#trainFormContent .field:hover {
   background: var(--hover-overlay);
 }
-:is(#trainFormContent, .preset-form-scope) .field + .field {
+#trainFormContent .field + .field {
   border-top: none;
 }
 /* 嵌套字段缩进（A2）：按 data-nest-level 递增，加深左边框，区分"开关→选项→子选项"层级 */
@@ -2121,29 +1808,16 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
     animation-duration: 180ms;
   }
 }
-/* 预设编辑器 TOML 预览（与训练侧边同款着色） */
-.preset-toml-preview {
-  font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
-  color: var(--text-primary); white-space: pre-wrap; word-break: break-all;
-  overflow-y: auto; min-height: 60px;
-}
-.preset-toml-preview .toml-key { color: var(--text-preview-key); }
-.preset-toml-preview .toml-eq { color: var(--text-preview-eq); }
-.preset-toml-preview .toml-num { color: var(--text-preview-num); }
-.preset-toml-preview .toml-str { color: var(--text-preview-str); }
-.preset-toml-preview .toml-comment { color: var(--text-preview-comment); font-style: italic; }
 
+/* ── Page Progress Bar (determinate 0→100%) ─────────────── */
 .panel-actions {
   padding: 10px 12px; border-top: 1px solid var(--border-default);
   display: flex; flex-direction: column; gap: 6px;
   transition: opacity 0.2s ease;
 }
 .panel-actions .btn-row { display: flex; gap: 6px; }
-
 .panel-actions .btn-row .btn { flex: 1; }
 
-
-/* ── Page Progress Bar (determinate 0→100%) ─────────────── */
 .page-progress {
   position: fixed;
   top: 0;
@@ -2220,7 +1894,6 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-.toast.toast-action { align-items: center; }
 .toast.out {
   animation: toast-out 140ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
@@ -2344,6 +2017,15 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .timestep-preview-bars { position: absolute; inset: 12px 12px 10px; display: flex; align-items: stretch; gap: 3px; }
 .timestep-preview-bin { position: relative; flex: 1 1 0; min-width: 2px; }
 .timestep-preview-bin i { position: absolute; right: 0; bottom: 0; left: 0; border-radius: 3px 3px 0 0; }
+.docs-timestep-widget .timestep-preview-bars > i {
+  align-self: flex-end;
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
+  opacity: .78;
+}
+.docs-timestep-widget .timestep-preview-bars > i:hover { opacity: 1; }
 .timestep-preview-bar-current {
   background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
   opacity: .78; transition: height .22s var(--ease-out), opacity .15s;
@@ -4516,17 +4198,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   border: 2px solid var(--border-default); border-top-color: var(--accent);
   border-radius: 50%; animation: env-spin 0.7s linear infinite;
 }
-.env-load-main { flex: 1; min-width: 0; }
-.env-load-copy { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.env-load-count { flex-shrink: 0; color: var(--text-tertiary); font-family: var(--font-mono); font-size: 10.5px; }
-.env-load-track {
-  height: 3px; margin-top: 6px; overflow: hidden;
-  border-radius: var(--radius-pill); background: var(--accent-muted);
-}
-.env-load-track > span {
-  display: block; height: 100%; border-radius: inherit;
-  background: var(--accent); transition: width 0.2s ease;
-}
 
 .env-install-progress { display: flex; flex-direction: column; gap: 6px; }
 .env-install-row {
@@ -4994,28 +4665,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   }
 }
 
-/* ── Preset Diff Highlighting (training form 联动) ────── */
-.field-diff-modified { border-left-color: var(--diff-modified) !important; background: color-mix(in srgb, var(--diff-modified) 7%, transparent); }
-.field-diff-added { border-left-color: var(--diff-added) !important; background: color-mix(in srgb, var(--diff-added) 7%, transparent); }
-.field-diff-info { font-size: 11px; padding: 2px 0 2px 12px; color: var(--text-tertiary); }
-.field-diff-change { display: inline-flex; align-items: center; gap: 4px; }
-.field-diff-old { text-decoration: line-through; color: var(--diff-removed); }
-.field-diff-arrow { color: var(--text-tertiary); }
-.field-diff-new { color: var(--diff-added); font-weight: 500; }
-.field-diff-type-added { color: var(--diff-added); font-weight: 500; }
-
-/* ── Diff Toolbar (主表单顶部对比 bar) ─────────────────── */
-.diff-toolbar {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 8px 14px; margin-bottom: 12px;
-  background: var(--bg-secondary); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 13px;
-}
-.diff-toolbar-label { color: var(--text-secondary); font-weight: 500; }
-.diff-toolbar-stats { display: flex; gap: 10px; color: var(--text-tertiary); font-size: 12px; }
-.diff-stat-modified { color: var(--diff-modified); }
-.diff-stat-added { color: var(--diff-added); }
-.diff-toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
 
 /* ── Input sm ──────────────────────────────────────────── */
 .input-sm { font-size: 13px; padding: 4px 8px; min-height: unset; }

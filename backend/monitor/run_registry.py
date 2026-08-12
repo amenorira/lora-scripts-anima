@@ -27,6 +27,7 @@ RUN_SCHEMA_VERSION = 2
 
 _CONTROL_FILES = {
     "config.toml",
+    "training.yaml",
     "run_info.txt",
     "output_dir.txt",
     "prompts.txt",

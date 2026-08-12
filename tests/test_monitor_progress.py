@@ -49,8 +49,10 @@ class ProgressParsingTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            lines = read_clean_log_lines(log_path)
             page = read_log_slice(log_path, offset=0, limit=20)
 
+        self.assertEqual(lines, page["lines"])
         self.assertEqual(page["total"], 4)
         self.assertEqual(page["lines"][0].split("avr_loss=")[-1], "0.0287]")
         self.assertEqual(page["lines"][1:3], ["ordinary duplicate", "ordinary duplicate"])
@@ -309,6 +311,65 @@ process.stdout.write(JSON.stringify({
         self.assertIn("decrease threshold 2%", data["decliningEvidence"])
         self.assertIn("window 12", data["decliningWindow"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend snapshot checks")
+    def test_config_snapshot_requests_share_encoded_fetch_helper(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
+const mixin = window.monitorRenderMixin;
+const urls = [];
+global.fetch = async url => {
+  urls.push(url);
+  return {json: async () => ({status: 'success', data: {params: {seed: 7}, content: 'seed = 7'}})};
+};
+const events = [];
+const app = Object.assign({}, mixin, {
+  form: {},
+  t(key, fallback) { return fallback || key; },
+  startProgress() { events.push('start'); },
+  finishProgress() { events.push('finish'); },
+  showSnapshotModal(snapshot) { events.push('show:' + snapshot.content); },
+  async _applyConfigToTraining(params) { events.push('apply:' + params.seed); },
+  toast(message, kind) { events.push('toast:' + kind); },
+  navigate(route) { events.push('navigate:' + route); },
+});
+(async () => {
+  await app.viewSnapshot('run & one');
+  await app.reuseConfig('run & one');
+  process.stdout.write(JSON.stringify({urls, events}));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        data = json.loads(result.stdout)
+
+        self.assertEqual(
+            data["urls"],
+            [
+                "/api/monitor/config-from-run?run_dir=run%20%26%20one",
+                "/api/monitor/config-from-run?run_dir=run%20%26%20one",
+            ],
+        )
+        self.assertEqual(
+            data["events"],
+            [
+                "start",
+                "show:seed = 7",
+                "finish",
+                "start",
+                "apply:7",
+                "toast:success",
+                "navigate:train-basic",
+                "finish",
+            ],
+        )
+
     def test_history_log_source_resets_before_navigation(self):
         body = self.core_source.split("async viewRunDetail(runDir) {", 1)[1].split("\n  },", 1)[0]
         navigate_at = body.index("this.navigate('monitor-dashboard');")
@@ -323,6 +384,11 @@ process.stdout.write(JSON.stringify({
             "this.logFullMatches = [];",
         ):
             self.assertLess(body.index(statement), navigate_at)
+
+    def test_history_detail_seeds_full_log_count_from_normalized_total(self):
+        body = self.core_source.split("async _fetchRunDetail(runDir) {", 1)[1].split("\n  },", 1)[0]
+
+        self.assertIn("this.logFullTotal = this.logTotal;", body)
 
     def test_full_log_top_button_scrolls_on_first_page(self):
         method = self.core_source.split("async logFullFirstPage() {", 1)[1].split("\n  },", 1)[0]

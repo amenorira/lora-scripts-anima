@@ -19,13 +19,9 @@ window.environmentRenderMixin = {
     let html = '';
 
     if (this.environmentLoading) {
-      const total = Math.max(1, this.environmentLoadTotal || 0);
-      const done = Math.min(total, this.environmentLoadCompleted || 0);
-      const pct = Math.round(done * 100 / total);
       html += `<div class="env-load-status" role="status" aria-live="polite">`
         + `<span class="env-load-spinner" aria-hidden="true"></span>`
-        + `<div class="env-load-main"><div class="env-load-copy"><span>${T('loading','Loading environment info...')}</span><span class="env-load-count">${done}/${total}</span></div>`
-        + `<div class="env-load-track"><span style="width:${pct}%"></span></div></div></div>`;
+        + `<span>${T('loading','Loading environment info...')}</span></div>`;
     }
 
     html += `<div class="env-layout"><div class="env-layout-column env-layout-training">`;
