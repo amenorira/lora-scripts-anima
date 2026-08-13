@@ -237,8 +237,10 @@ GUI 的 **环境** 标签页提供：
 运行后端测试套件（需先安装测试依赖，仅开发需要，不影响训练运行时）：
 
 ```
-venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-venv\Scripts\python.exe -m pytest tests
+.envScriptspython.exe -m pip install -r requirements-dev.txt
+.envScriptspython.exe -m pytest tests
+# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
+#        ./venv/bin/python -m pytest tests
 ```
 
 ## 致谢

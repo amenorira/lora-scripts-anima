@@ -235,8 +235,10 @@ The GUI **Environment** tab provides:
 Run the backend test suite (install the test-only dependencies first; they do not affect the training runtime):
 
 ```
-venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-venv\Scripts\python.exe -m pytest tests
+.envScriptspython.exe -m pip install -r requirements-dev.txt
+.envScriptspython.exe -m pytest tests
+# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
+#        ./venv/bin/python -m pytest tests
 ```
 
 ## Acknowledgements
