@@ -19,10 +19,6 @@ CAPTION_EXTS = {".txt", ".caption"}
 SNAPSHOT_KEEP = 10  # 默认自动保留最近快照数，防止 .snapshots/ 无限膨胀（A3/C5）
 
 
-def _snapshot_dir(dataset_dir: str) -> Path:
-    return Path(dataset_dir) / SNAPSHOT_DIR_NAME
-
-
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())

@@ -1,7 +1,6 @@
 from enum import Enum
 import os
 import re
-import shutil
 import sys
 import json
 from pathlib import Path
@@ -223,23 +222,6 @@ def suggest_num_repeat(img_count):
         return 3
 
     return 1
-
-
-def check_training_params(data):
-    potential_path = [
-        "train_data_dir", "reg_data_dir", "output_dir"
-    ]
-    file_paths = [
-        "sample_prompts"
-    ]
-    for p in potential_path:
-        if p in data and not os.path.exists(data[p]):
-            return False
-
-    for f in file_paths:
-        if f in data and not os.path.exists(data[f]):
-            return False
-    return True
 
 
 def get_total_images(path, recursive=True):

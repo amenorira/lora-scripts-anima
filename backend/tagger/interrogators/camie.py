@@ -10,13 +10,11 @@ Output: dual (initial + refined logits), we use refined
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
 from PIL import Image
-from huggingface_hub import hf_hub_download
 
 from backend.tagger.interrogators.base import Interrogator, create_onnx_session
 from backend.tagger.tagger_download import tagger_hub_download

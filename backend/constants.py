@@ -11,17 +11,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENDOR_ROOT = REPO_ROOT / "vendor"
 OUTPUT_DIR = REPO_ROOT / "output"
-CONFIG_DIR = REPO_ROOT / "config"
-LOGS_DIR = REPO_ROOT / "logs"
-TOOLS_DIR = REPO_ROOT / "tools"
 SD_SCRIPTS_DIR = VENDOR_ROOT / "sd-scripts"
-
-EMO_OPTIMIZER_DIR = VENDOR_ROOT / "emo_optimizer"
 CACHE_DIR = REPO_ROOT / "cache"
 HF_CACHE_DIR = REPO_ROOT / "huggingface"
-TRAIN_DIR = REPO_ROOT / "train"
 SD_MODELS_DIR = REPO_ROOT / "models"
 TAGGER_CACHE_DIR = CACHE_DIR / "tagger"
-FRONTEND_DIR = REPO_ROOT / "frontend"
 DOCS_DIR = REPO_ROOT / "docs"
-AUTOSAVE_DIR = CONFIG_DIR / "autosave"
+AUTOSAVE_DIR = REPO_ROOT / "config" / "autosave"

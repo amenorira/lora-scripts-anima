@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import os
 import zipfile
 from pathlib import Path
 
@@ -30,7 +29,7 @@ from fastapi.responses import StreamingResponse
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
     scan_selected_images, get_autocomplete, IMAGE_EXTENSIONS,
-    _invalidate_cache, _invalidate_caches_for_path,
+    _invalidate_cache,
     get_cached_scan_images, get_cached_scan_dataset, tag_list,
 )
 from backend.tageditor.operations import apply_operation
@@ -43,20 +42,6 @@ router = APIRouter()
 
 
 # ── Helper ───────────────────────────────────────────────────────
-
-def _assert_within(img_path: str, dataset_dir: Path) -> Path | None:
-    """校验图片路径必须位于数据集目录内，返回 resolved Path 或 None（越界）。
-    用于 save / save-all / batch 等写盘端点，统一一道守卫（A11）。"""
-    try:
-        p = Path(img_path).resolve()
-    except Exception:
-        return None
-    try:
-        p.relative_to(dataset_dir.resolve())
-    except ValueError:
-        return None
-    return p
-
 
 def _resolve_target_images(data: dict, dir_path: Path) -> tuple[list[dict], str | None]:
     """根据批量操作作用域解析目标图片，并约束路径位于数据集目录内。"""
