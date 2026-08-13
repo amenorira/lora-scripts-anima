@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
+from starlette.middleware.gzip import GZipMiddleware
 
 from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
@@ -128,6 +129,12 @@ if os.environ.get("ANIMA_DEV") == "1":
     )
 
 
+# Compress text-heavy responses (static JS/CSS, field registry JSON, ...).
+# Content is byte-identical after decompression, so nothing observable
+# changes except transfer size.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
     response = await call_next(request)
@@ -137,9 +144,22 @@ async def add_cache_control_header(request, call_next):
     if path in {"/api/image-preview", "/api/monitor/preview-metadata"}:
         return response
     if path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    elif path.startswith("/anima-ui/"):
+        # no-store forced a full re-download on every load even for stable
+        # registries (e.g. /api/fields, which now carries its own ETag and
+        # answers 304 when unchanged). no-cache keeps revalidation semantics
+        # while allowing validators to short-circuit.
         response.headers["Cache-Control"] = "no-cache, max-age=0"
+    elif path.startswith("/anima-ui/"):
+        # Every /anima-ui asset referenced from index.html carries a ?v=
+        # content-version (see index.html). The same URL never changes, so
+        # versioned assets may be cached immutably for a year; index.html
+        # itself stays unversioned and revalidates, and it carries the new
+        # versioned URLs whenever assets change. Unversioned /anima-ui files
+        # keep the old no-cache policy for development safety.
+        if request.url.query:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache, max-age=0"
     elif any(path.endswith(ext) for ext in (".png", ".ico", ".svg", ".woff2")):
         response.headers["Cache-Control"] = "public, max-age=3600"
     elif any(path.endswith(ext) for ext in (".js", ".css")):

@@ -2,12 +2,14 @@
 
 import asyncio
 import concurrent.futures
+import hashlib
+import json
 import re
 import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 
 from backend import launch_utils
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT
@@ -65,12 +67,41 @@ async def get_version():
     return APIResponseSuccess(data={"version": version})
 
 
-@router.get("/fields")
-async def get_fields():
-    """返回训练字段定义（前端表单渲染 + 后端白名单共用同一数据源）"""
-    from backend.training.field_registry import get_fields_json
+_fields_payload_cache: dict[str, tuple[str, bytes]] = {}
+_fields_payload_lock = threading.Lock()
 
-    return APIResponseSuccess(data=get_fields_json())
+
+def _fields_payload() -> tuple[str, bytes]:
+    """Process-stable fields JSON + strong ETag (body hash).
+
+    The registry is static per process (get_fields_json caches it), so the
+    serialized payload is built once and reused; unchanged clients get a 304
+    instead of re-downloading ~88 KB on every page load.
+    """
+    global _fields_payload_cache
+    with _fields_payload_lock:
+        cached = _fields_payload_cache.get("v1")
+        if cached is not None:
+            return cached
+        from backend.training.field_registry import get_fields_json
+
+        body = json.dumps(
+            {"status": "success", "message": None, "data": get_fields_json()},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        etag = '"' + hashlib.sha1(body).hexdigest() + '"'
+        _fields_payload_cache = {"v1": (etag, body)}
+        return etag, body
+
+
+@router.get("/fields")
+async def get_fields(request: Request):
+    """返回训练字段定义（前端表单渲染 + 后端白名单共用同一数据源）"""
+    etag, body = await asyncio.to_thread(_fields_payload)
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+    return Response(content=body, media_type="application/json", headers={"ETag": etag})
 
 
 @router.get("/pick_file")

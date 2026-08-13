@@ -1331,7 +1331,7 @@
 		"autoLoadHistory": "自动加载历史参数",
 		"autoLoadHistoryDesc": "启动时自动恢复上次的训练参数",
 		"slowConnectionMode": "慢速远程连接兼容",
-		"slowConnectionModeDesc": "默认开启：完整显示当前运行或历史记录的样本列表，缩略图在后台按单请求、低优先级加载；实时数据延迟时会暂停后台加载。版本化缩略图会由浏览器缓存 24 小时，重复浏览不会重复下载未变化的图片。关闭后改为浏览器并行加载，适合稳定的高速连接。",
+		"slowConnectionModeDesc": "在慢速或不稳定连接下自动开启：完整显示当前运行或历史记录的样本列表，缩略图在后台按单请求、低优先级加载；实时数据延迟时会暂停后台加载。版本化缩略图会由浏览器缓存 24 小时，重复浏览不会重复下载未变化的图片。也可随时手动开启或关闭。",
 		"disableSlowConnectionTitle": "关闭慢速远程连接兼容？",
 		"disableSlowConnectionMessage": "关闭后会同时请求更多预览图片。慢速或波动连接下，这可能拖慢实时状态更新和页面响应。",
 		"disableSlowConnectionConfirm": "仍然关闭",

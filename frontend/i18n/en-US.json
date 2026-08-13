@@ -1331,7 +1331,7 @@
 		"autoLoadHistory": "Auto-load History",
 		"autoLoadHistoryDesc": "Automatically restore last training parameters on startup",
 		"slowConnectionMode": "Slow connection compatibility",
-		"slowConnectionModeDesc": "Enabled by default: show the complete sample list for the current run or history record while loading thumbnails one at a time at low priority. Background media pauses when realtime data is delayed. Versioned thumbnails stay in the browser cache for 24 hours, so unchanged images are not downloaded again. Turn it off only on a stable fast connection.",
+		"slowConnectionModeDesc": "Auto-enabled on slow or unstable connections: show the complete sample list for the current run or history record while loading thumbnails one at a time at low priority. Background media pauses when realtime data is delayed. Versioned thumbnails stay in the browser cache for 24 hours, so unchanged images are not downloaded again. You can also turn it on or off manually.",
 		"disableSlowConnectionTitle": "Turn off slow connection compatibility?",
 		"disableSlowConnectionMessage": "More preview images will load at once. On slow or unstable connections, that can delay realtime status updates and page response.",
 		"disableSlowConnectionConfirm": "Turn off anyway",
