@@ -29,7 +29,6 @@ from backend.tagger.workspace import (
     register_upload,
     retry_failed_task,
     scan_source,
-    source_item,
     source_items,
     task_items,
     task_snapshot,

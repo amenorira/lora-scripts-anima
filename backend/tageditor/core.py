@@ -145,12 +145,6 @@ def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], li
     return images, tags_data
 
 
-def scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:
-    """扫描目录下所有图片及对应标签。"""
-    images, _ = scan_dataset(dir_path, recursive=recursive)
-    return images
-
-
 def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]:
     """Only scan and read tags for selected images, instead of full directory scan."""
     dir_resolved = dir_path.resolve()
@@ -198,12 +192,6 @@ def tag_str(tag_list: list[str]) -> str:
     return ", ".join(tag_list)
 
 
-def count_tags(dir_path: Path, recursive: bool = True) -> tuple[list[dict], int]:
-    """统计所有标签出现频率"""
-    images, tags_data = scan_dataset(dir_path, recursive=recursive)
-    return tags_data, len(images)
-
-
 # ── 缓存 ────────────────────────────────────────────────────────
 _scan_dataset_cache: dict[str, tuple[float, tuple[list[dict], list[dict]]]] = {}
 _CACHE_TTL = 300  # seconds
@@ -246,23 +234,6 @@ def _invalidate_cache(dir_path: Path, recursive: bool | None = None) -> None:
                 _scan_dataset_cache.pop(cache_key, None)
     else:
         cache_key = f"{dir_path.resolve()}:{recursive}"
-        with _cache_lock:
-            _scan_dataset_cache.pop(cache_key, None)
-
-
-def _invalidate_caches_for_path(file_path: Path) -> None:
-    """失效所有包含指定文件的已缓存数据集，包括递归扫描的上层根目录。"""
-    resolved = file_path.resolve()
-    with _cache_lock:
-        cache_keys = list(_scan_dataset_cache)
-    for cache_key in cache_keys:
-        root_text, _, _recursive = cache_key.rpartition(":")
-        if not root_text:
-            continue
-        try:
-            resolved.relative_to(Path(root_text))
-        except ValueError:
-            continue
         with _cache_lock:
             _scan_dataset_cache.pop(cache_key, None)
 

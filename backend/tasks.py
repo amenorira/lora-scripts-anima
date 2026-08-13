@@ -17,13 +17,6 @@ import psutil
 
 from backend.log import log
 
-try:
-    import msvcrt
-    import _winapi
-    _mswindows = True
-except ModuleNotFoundError:
-    _mswindows = False
-
 # 已完成任务最大保留数（超出后自动清理最旧的）
 _MAX_FINISHED_TASKS = 20
 # 已完成任务最大保留时间（秒），超过此时间的任务自动清理
@@ -196,13 +189,6 @@ class TaskManager:
         if task:
             task.terminate()
 
-    def wait_for_process(self, task_id: str) -> None:
-        task = None
-        with self._lock:
-            task = self.tasks.get(task_id)
-        if task:
-            task.wait()
-
     def dump(self) -> List[Dict]:
         """返回所有任务的快照（线程安全）"""
         with self._lock:
@@ -213,10 +199,5 @@ class TaskManager:
                 }
                 for t in self.tasks.values()
             ]
-
-    def get_task(self, task_id: str) -> Optional[Task]:
-        with self._lock:
-            return self.tasks.get(task_id)
-
 
 tm = TaskManager()

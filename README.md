@@ -232,6 +232,17 @@ GUI 的 **环境** 标签页提供：
 - Flash Attention 安装状态检测与一键安装
 - 候选 wheel 列表预览
 
+## 开发测试
+
+运行后端测试套件（需先安装测试依赖，仅开发需要，不影响训练运行时）：
+
+```
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\venv\Scripts\python.exe -m pytest tests
+# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
+#        ./venv/bin/python -m pytest tests
+```
+
 ## 致谢
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 训练引擎

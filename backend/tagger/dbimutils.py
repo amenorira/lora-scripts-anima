@@ -1,36 +1,8 @@
 # DanBooru IMage Utility functions
 
-import cv2
-import numpy as np
-from PIL import Image
-
-
-def smart_imread(img, flag=cv2.IMREAD_UNCHANGED):
-    if img.lower().endswith(".gif"):
-        img = Image.open(img)
-        img = img.convert("RGB")
-        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    else:
-        img = cv2.imread(img, flag)
-        if img is None:
-            raise IOError(f"Failed to read image: {img}")
-    return img
-
-
-def smart_24bit(img):
-    if img.dtype == np.dtype(np.uint16):
-        img = (img / 257).astype(np.uint8)
-
-    if len(img.shape) == 2:
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    elif img.shape[2] == 4:
-        trans_mask = img[:, :, 3] == 0
-        img[trans_mask] = [255, 255, 255, 255]
-        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-    return img
-
 
 def make_square(img, target_size):
+    import cv2
     old_size = img.shape[:2]
     desired_size = max(old_size)
     desired_size = max(desired_size, target_size)
@@ -48,6 +20,7 @@ def make_square(img, target_size):
 
 
 def smart_resize(img, size):
+    import cv2
     # Assumes the image has already gone through make_square
     if img.shape[0] > size:
         img = cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)

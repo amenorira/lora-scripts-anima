@@ -29,7 +29,6 @@ from backend.training.optimizer_metadata import (
     optimizer_beta_hint_map,
     optimizer_eps_selectors,
     optimizer_groups,
-    optimizer_selectors,
 )
 
 

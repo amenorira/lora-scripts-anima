@@ -1,0 +1,8 @@
+# ============================================================
+# 开发 / 测试依赖（仅开发者需要，不参与训练运行时）
+# 安装：venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# 运行：venv\Scripts\python.exe -m pytest tests
+# ============================================================
+
+pytest>=8.0
+pytest-asyncio>=0.23

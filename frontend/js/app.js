@@ -51,6 +51,10 @@ document.addEventListener('alpine:init', () => {
       // Initialize I18N first — must be ready before any t() call
       I18N.init();
       this.locale = I18N.getLocale();
+      // Keep <html lang> in sync with the active locale from the very first
+      // paint (index.html defaults to lang="en"): screen readers and browser
+      // translation/checking features rely on it.
+      document.documentElement.lang = this.locale === 'zh-CN' ? 'zh-CN' : 'en';
 
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
@@ -344,9 +348,29 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
-        if (typeof s.weakNetworkMode === 'boolean') this.weakNetworkMode = s.weakNetworkMode;
+        if (typeof s.weakNetworkMode === 'boolean') {
+          this.weakNetworkMode = s.weakNetworkMode;
+        } else {
+          // No explicit choice stored: enable serialized thumbnail loading
+          // only on genuinely slow connections (2g/3g/save-data). Local and
+          // LAN users get native parallel thumbnail loading by default.
+          this.weakNetworkMode = this._detectSlowConnection();
+        }
       } catch(e){}
       this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
+    },
+
+    // Network Quality Hints: slow-2g/2g/3g or save-data → weak mode on.
+    _detectSlowConnection() {
+      try {
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (!conn) return false;
+        if (conn.saveData) return true;
+        const et = String(conn.effectiveType || '');
+        return et === 'slow-2g' || et === '2g' || et === '3g';
+      } catch (e) {
+        return false;
+      }
     },
 
     saveUISettings() {
@@ -451,6 +475,16 @@ document.addEventListener('alpine:init', () => {
     t(key, fallback) {
       void this.locale;
       return window.t ? window.t(key, fallback) : (fallback||key);
+    },
+
+    // Home hero "Release" badge: use the real version from /api/version
+    // (e.g. "v2.3.6-4-g3dc39b4f" → "v2.3.6"). Falls back to the static text
+    // until the version fetch resolves or when the backend is unreachable.
+    displayVersion() {
+      const v = String(this.version || '');
+      if (!v || v === '...' || v === 'dev') return 'v1.3.3';
+      const m = v.match(/^v?\d+\.\d+\.\d+/);
+      return m ? m[0] : v;
     },
 
     // ── Right Panel Resizer ─────────────────────────────────

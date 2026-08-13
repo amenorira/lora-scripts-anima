@@ -211,18 +211,6 @@ def download_anima_files(
     return results
 
 
-def list_local_anima_files(dest_dir: Path) -> list[dict]:
-    """扫描 models/ 下与 ANIMA_FILES 同名的文件，返回 {filename, desc, exists, size_gb}。"""
-    out = []
-    for _hf_path, local_name, desc in ANIMA_FILES:
-        p = dest_dir / local_name
-        if p.exists() and p.is_file():
-            out.append({"filename": local_name, "desc": desc, "exists": True, "size_gb": round(p.stat().st_size / (1024**3), 2)})
-        else:
-            out.append({"filename": local_name, "desc": desc, "exists": False, "size_gb": 0})
-    return out
-
-
 def list_local_model_files(dest_dir: Path) -> list[dict]:
     """扫描全部可下载训练模型，并返回 UI 所需的仓库与用途信息。"""
     out = []

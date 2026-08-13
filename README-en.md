@@ -230,6 +230,17 @@ The GUI **Environment** tab provides:
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
 
+## Development & Testing
+
+Run the backend test suite (install the test-only dependencies first; they do not affect the training runtime):
+
+```
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\venv\Scripts\python.exe -m pytest tests
+# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
+#        ./venv/bin/python -m pytest tests
+```
+
 ## Acknowledgements
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine

@@ -374,12 +374,6 @@ def pip_install(package: str, version: Optional[str] = None, index_url: Optional
     run_pip(command, desc=f"Installing {package}", live=live)
 
 
-def check_run(file: str) -> bool:
-    result = subprocess.run([python_bin, file], capture_output=True, shell=False)
-    log.info(decode_subprocess_output(result.stdout).strip())
-    return result.returncode == 0
-
-
 def check_requirements():
     """Check and install missing packages from requirements.txt."""
     req_file = Path(__file__).parents[1] / "requirements.txt"
@@ -441,16 +435,7 @@ def prepare_environment(prepare_onnxruntime: bool = True):
             log.warning("onnxruntime-gpu setup skipped (GPU may be unavailable) / onnxruntime-gpu 初始化跳过 (可能无 GPU)")
 
 
-def catch_exception(f):
-    def wrapper(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except Exception as e:
-            log.error(f"An error occurred: {e}")
-    return wrapper
-
-
-def check_port_avaliable(port: int):
+def check_port_available(port: int):
     """Check if a port is available.
 
     Note: TOCTOU race exists — the port may be taken between check and bind.
@@ -466,11 +451,11 @@ def check_port_avaliable(port: int):
         return False
 
 
-def find_avaliable_ports(port_init: int, port_range: int):
+def find_available_ports(port_init: int, port_range: int):
     server_ports = range(port_init, port_range)
 
     for p in server_ports:
-        if check_port_avaliable(p):
+        if check_port_available(p):
             return p
 
     log.error(f"error finding available ports in range: {port_init} -> {port_range}")

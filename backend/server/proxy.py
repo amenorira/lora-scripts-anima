@@ -1,15 +1,10 @@
-import asyncio
 import os
 
 import httpx
-import starlette
-import websockets
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, Request
 from httpx import ConnectError
 from starlette.background import BackgroundTask
 from starlette.responses import PlainTextResponse, StreamingResponse
-
-from backend.log import log
 
 router = APIRouter()
 
@@ -64,34 +59,6 @@ def reverse_proxy_maker(url_type: str, full_path: bool = False):
 
     return _reverse_proxy
 
-
-async def proxy_ws_forward(ws_a: WebSocket, ws_b: websockets.WebSocketClientProtocol):
-    while True:
-        try:
-            msg = await ws_a.receive()
-            if msg["type"] == "websocket.disconnect":
-                break
-            if "text" in msg and msg["text"] is not None:
-                await ws_b.send(msg["text"])
-            elif "bytes" in msg and msg["bytes"] is not None:
-                await ws_b.send(msg["bytes"])
-        except starlette.websockets.WebSocketDisconnect:
-            break
-        except Exception as e:
-            log.error(f"Error when proxy data client -> backend: {e}")
-            break
-
-
-async def proxy_ws_reverse(ws_a: WebSocket, ws_b: websockets.WebSocketClientProtocol):
-    while True:
-        try:
-            data = await ws_b.recv()
-            await ws_a.send_text(data)
-        except websockets.exceptions.ConnectionClosed:
-            break
-        except Exception as e:
-            log.error(f"Error when proxy data backend -> client: {e}")
-            break
 
 router.add_route("/proxy/tensorboard/{path:path}", reverse_proxy_maker("tensorboard"), ["GET", "POST"])
 router.add_route("/font-roboto/{path:path}", reverse_proxy_maker("tensorboard", full_path=True), ["GET", "POST"])

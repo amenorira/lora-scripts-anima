@@ -1,10 +1,13 @@
 /* ================================================================
    lora-scripts-anima UI — I18n System v3
-   Loads ALL locale JSON files synchronously at script execution
-   time (before Alpine boots), so t() always has data available.
+   Loads the ACTIVE locale JSON synchronously at script execution
+   time (before Alpine boots), so t() always has data for the active
+   language. The other locale is preloaded in the background, so a
+   language switch is instant in practice; if the user switches before
+   the preload finishes, setLocale falls back to a one-time blocking
+   load. This halves the startup blocking payload (192 KB → ~96 KB).
    To add a new language: drop a JSON file in i18n/ and add its
    code to the LOCALES array below.
-   Memory: ~10 KB per locale. For 2 locales = ~20 KB. Negligible.
    ================================================================ */
 
 const I18N = (() => {
@@ -13,7 +16,8 @@ const I18N = (() => {
 
   let _locale = 'en-US';
   let _messages = null;
-  const _cache = {};  // locale → messages (all preloaded)
+  const _cache = {};    // locale → messages (loaded so far)
+  let _loadingOther = null;  // async preload promise for the inactive locale
 
   // ── Synchronous JSON loader (blocks until data is ready) ─
   function _loadJSON(url) {
@@ -34,14 +38,49 @@ const I18N = (() => {
     }
   }
 
-  // ── Preload ALL locales synchronously ────────────────────
-  LOCALES.forEach(function(loc) {
+  // ── Asynchronous JSON loader (background preload only) ───
+  function _loadJSONAsync(url) {
+    return fetch(url)
+      .then(function(response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .catch(function() { return null; });
+  }
+
+  // ── Bootstrap: block on the ACTIVE locale only, preload the other ──
+  // The active locale must be present before Alpine renders (t() is called
+  // by every x-text). The other locale is fetched in the background so a
+  // later language switch is instant in practice; if the user switches
+  // before the preload finishes, setLocale falls back to a blocking load.
+  function _bootstrap() {
+    const active = _activeLocale();
     try {
-      _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json');
+      _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json');
     } catch (e) {
-      console.warn('[i18n] Failed to preload locale: ' + loc, e);
+      console.warn('[i18n] Failed to preload locale: ' + active, e);
     }
-  });
+    const other = _otherLocale(active);
+    if (other) {
+      _loadingOther = _loadJSONAsync('/anima-ui/i18n/' + other + '.json')
+        .then(function(messages) {
+          if (messages) _cache[other] = messages;
+          _loadingOther = null;
+          return messages;
+        });
+    }
+  }
+
+  function _activeLocale() {
+    return localStorage.getItem('anima-locale') || detectBrowserLocale() || 'en-US';
+  }
+
+  function _otherLocale(loc) {
+    for (let i = 0; i < LOCALES.length; i++) {
+      if (LOCALES[i] !== loc) return LOCALES[i];
+    }
+    return null;
+  }
 
   /**
    * Detect browser language from navigator.language.
@@ -54,8 +93,10 @@ const I18N = (() => {
     return null;
   }
 
+  _bootstrap();
+
   /**
-   * Initialize I18N. Synchronous — data already loaded, no await needed.
+   * Initialize I18N. Synchronous — active locale already loaded.
    * Priority: explicit arg > localStorage > browser language > 'en-US'
    */
   function init(locale) {
@@ -83,10 +124,19 @@ const I18N = (() => {
   function getLocale() { return _locale; }
 
   /**
-   * Switch locale instantly (all data preloaded). Synchronous.
+   * Switch locale instantly. The target is normally already preloaded; if
+   * not (very early switch before the background preload finishes), load it
+   * synchronously so the switch is still correct and complete.
    */
   function setLocale(loc) {
     if (loc === _locale) return;
+    if (!_cache[loc]) {
+      try {
+        _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json');
+      } catch (e) {
+        console.warn('[i18n] Failed to load locale: ' + loc, e);
+      }
+    }
     _locale = loc;
     localStorage.setItem('anima-locale', loc);
     _messages = _cache[loc] || _cache['en-US'] || null;
@@ -99,7 +149,7 @@ const I18N = (() => {
    */
   function getAvailableLocales() {
     const names = { 'zh-CN': '中文', 'en-US': 'English' };
-    return LOCALES.filter(l => _cache[l]).map(l => ({ code: l, name: names[l] || l }));
+    return LOCALES.map(l => ({ code: l, name: names[l] || l }));
   }
 
   return { init, t, getLocale, setLocale, getAvailableLocales };
