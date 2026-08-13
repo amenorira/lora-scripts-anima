@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.7 - 2026-08-13
+
+This patch release focuses on frontend performance and polish: static assets are now gzip-compressed with versioned caching, so startup and page-refresh transfer drop dramatically; the stale release badge on the home page and a corrupted README command path are fixed.
+
+### Performance and transfer
+
+- gzip compression for all static assets and API responses: first-load transfer drops from ~1.3 MB to ~280 KB (biggest win on LAN or slow links).
+- Versioned assets (?v=) now use one-year immutable caching while unversioned files keep revalidation; a page refresh drops from 21 static requests to 1 (index.html only).
+- /api/fields answers 304 with an ETag when unchanged, avoiding an ~88 KB re-download on every load.
+- i18n now blocks on the active locale only (~96 KB); the other locale preloads in the background, and language switching behaves exactly as before.
+- Weak-network mode (serialized thumbnail loading) now defaults adaptively: parallel loading on local/LAN connections, auto-enabled on 2g/3g/save-data, always switchable manually.
+- Lazy-loaded pandas/numpy/cv2 cut GUI cold start by ~31%.
+
+### Fixes and cleanup
+
+- The home-page Release badge now shows the real backend version (previously the stale v1.3.3).
+- `<html lang>` is synced with the startup language for correct screen-reader and translation behavior.
+- Fixed corrupted venv command paths in the README (control-character pollution made the Windows commands un-copyable).
+- Fixed a typo and added test-dependency and Linux command docs in the README.
+- Removed confirmed dead code (unused functions, imports, constants, and Chart.js static files).
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.6...v2.3.7)
+
 ## v2.3.6 - 2026-08-12
 
 This patch release replaces the legacy preset manager with portable training YAML files and refines the training-form hierarchy, parameter preview, and monitoring details so saved configurations restore the behavior users actually trained with.
