@@ -1,9 +1,8 @@
 # DanBooru IMage Utility functions
 
-import cv2
-
 
 def make_square(img, target_size):
+    import cv2
     old_size = img.shape[:2]
     desired_size = max(old_size)
     desired_size = max(desired_size, target_size)
@@ -21,6 +20,7 @@ def make_square(img, target_size):
 
 
 def smart_resize(img, size):
+    import cv2
     # Assumes the image has already gone through make_square
     if img.shape[0] > size:
         img = cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)

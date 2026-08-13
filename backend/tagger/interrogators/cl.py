@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 from typing import Tuple
 
-import numpy as np
 from PIL import Image
 from dataclasses import dataclass
 from backend.tagger.interrogators.base import Interrogator, create_onnx_session
@@ -14,14 +15,14 @@ from backend.log import log
 @dataclass
 class LabelData:
     names: list[str]
-    rating: list[np.int64]
-    general: list[np.int64]
-    artist: list[np.int64]
-    character: list[np.int64]
-    copyright: list[np.int64]
-    meta: list[np.int64]
-    quality: list[np.int64]
-    model: list[np.int64]
+    rating: list[int]
+    general: list[int]
+    artist: list[int]
+    character: list[int]
+    copyright: list[int]
+    meta: list[int]
+    quality: list[int]
+    model: list[int]
 
 
 def pil_ensure_rgb(image: Image.Image) -> Image.Image:
@@ -46,6 +47,7 @@ def pil_pad_square(image: Image.Image) -> Image.Image:
 
 
 def get_tags(probs, labels: LabelData):
+    import numpy as np
     result = {
         "rating": [],
         "general": [],
@@ -157,6 +159,7 @@ class CLTaggerInterrogator(Interrogator):
         self.tags = self.load_tag_mapping(tag_mapping_path)
 
     def load_tag_mapping(self, mapping_path):
+        import numpy as np
         # Use the implementation from the original app.py as it was confirmed working
         with open(mapping_path, 'r', encoding='utf-8') as f:
             tag_mapping_data = json.load(f)
@@ -204,6 +207,7 @@ class CLTaggerInterrogator(Interrogator):
                          character=np.array(character, dtype=np.int64), copyright=np.array(copyright, dtype=np.int64), meta=np.array(meta, dtype=np.int64), quality=np.array(quality, dtype=np.int64), model=np.array(model_name, dtype=np.int64)), idx_to_tag, tag_to_category
 
     def preprocess_image(self, image: Image.Image, target_size=(448, 448)):
+        import numpy as np
         # Adapted from onnx_predict.py's version
         image = pil_ensure_rgb(image)
         image = pil_pad_square(image)
@@ -223,6 +227,7 @@ class CLTaggerInterrogator(Interrogator):
             image: Image
     ) -> dict[str, list]:
 
+        import numpy as np
         # init model
         if not hasattr(self, 'model') or self.model is None:
             self.load()

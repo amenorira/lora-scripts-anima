@@ -9,11 +9,12 @@ Input: 512×512 RGB, ImageNet normalization
 Output: dual (initial + refined logits), we use refined
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-import numpy as np
 from PIL import Image
 
 from backend.tagger.interrogators.base import Interrogator, create_onnx_session
@@ -86,7 +87,7 @@ class CamieTaggerInterrogator(Interrogator):
               f"Categories: {len(set(self.tag_to_category.values()))}, "
               f"Image size: {self.img_size}")
 
-    def preprocess_image(self, image: Image.Image) -> np.ndarray:
+    def preprocess_image(self, image: Image.Image) -> Any:
         """
         Camie v2 预处理：
         - 转 RGB
@@ -95,6 +96,7 @@ class CamieTaggerInterrogator(Interrogator):
         - ImageNet 归一化: mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]
         - 输出 CHW 格式，加 batch 维度
         """
+        import numpy as np
         image = image.convert("RGB")
         w, h = image.size
         size = self.img_size
@@ -131,6 +133,7 @@ class CamieTaggerInterrogator(Interrogator):
     ) -> Dict[str, List[Tuple[str, float]]]:
         """推理并返回分类标签。"""
 
+        import numpy as np
         if not hasattr(self, "model") or self.model is None:
             self.load()
 

@@ -3,8 +3,6 @@ import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-import numpy as np
-import pandas as pd
 from PIL import Image
 from backend.tagger.interrogators.base import Interrogator, create_onnx_session
 from backend.tagger import dbimutils
@@ -37,6 +35,7 @@ class WaifuDiffusionInterrogator(Interrogator):
         return model_path, tags_path
 
     def load(self) -> None:
+        import pandas as pd
         model_path, tags_path = self.download()
 
         self.model = create_onnx_session(model_path)
@@ -52,6 +51,7 @@ class WaifuDiffusionInterrogator(Interrogator):
             self,
             image: Image
     ) -> Dict[str, List[Tuple[str, float]]]:
+        import numpy as np
         # init model
         if not hasattr(self, 'model') or self.model is None:
             self.load()
