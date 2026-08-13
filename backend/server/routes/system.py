@@ -176,7 +176,7 @@ async def terminate_task(task_id: str):
 
 
 @router.get("/graphic_cards")
-async def list_avaliable_cards() -> APIResponse:
+async def list_available_cards() -> APIResponse:
     if not printable_devices:
         return APIResponse(status="pending")
 

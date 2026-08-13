@@ -36,7 +36,7 @@ from backend.startup_output import show_step
 show_step("Loading application / 正在加载应用")
 
 from backend.launch_utils import (base_dir_path, check_environment, git_tag,
-                                   prepare_environment, check_port_avaliable, find_avaliable_ports)
+                                   prepare_environment, check_port_available, find_available_ports)
 
 # Windows: use SelectorEventLoop to avoid Proactor "ConnectionResetError" noise
 if sys.platform == "win32":
@@ -125,10 +125,10 @@ def launch():
         prepare_environment()
 
     requested_port = args.port
-    if not check_port_avaliable(requested_port):
-        avaliable = find_avaliable_ports(30000, 30000 + 20)
-        if avaliable:
-            args.port = avaliable
+    if not check_port_available(requested_port):
+        available = find_available_ports(30000, 30000 + 20)
+        if available:
+            args.port = available
             log.warning(
                 "Port %s is already in use; using %s instead. / "
                 "端口 %s 已被占用，已改用 %s。",

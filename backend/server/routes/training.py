@@ -126,7 +126,7 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
         )
     return APIResponseSuccess(data={"data": parsed})
 
-avaliable_scripts = [
+available_scripts = [
     "networks/extract_lora_from_models.py",
     "networks/extract_lora_from_dylora.py",
     "networks/merge_lora.py",
@@ -907,7 +907,7 @@ async def run_script(request: Request, background_tasks: BackgroundTasks):
     paras = await request.body()
     j = json.loads(paras.decode("utf-8"))
     script_name = j["script_name"]
-    if script_name not in avaliable_scripts:
+    if script_name not in available_scripts:
         return APIResponseFail(message="Script not found")
     del j["script_name"]
     result = []
