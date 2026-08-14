@@ -101,6 +101,7 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
             stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={}))
             stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
             stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
+            stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.root / "config" / "autosave"))
             run_train = stack.enter_context(
                 patch.object(
                     training_routes,

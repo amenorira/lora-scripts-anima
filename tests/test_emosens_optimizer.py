@@ -9,19 +9,15 @@ from pathlib import Path
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
     EMOSENS_OPTIMIZER_TYPE,
-    FIELDS,
     get_fields_json,
 )
 from backend.training.supervisor import _build_train_env
 from backend.training.validation import get_emosens_conflicts, validate_training_config
+from tests.helpers import config_from_field_defaults
 
 
 def valid_emosens_config() -> dict:
-    config = {
-        field["key"]: field["default"]
-        for field in FIELDS
-        if "default" in field
-    }
+    config = config_from_field_defaults()
     config.update(
         {
             "model_train_type": "anima-lora",

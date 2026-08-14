@@ -49,27 +49,6 @@ window.realtimeMixin = {
     this._connectRealtimeNow();
   },
 
-  stopRealtime() {
-    this._realtimeStopped = true;
-    if (this._realtimeReconnectTimer) clearTimeout(this._realtimeReconnectTimer);
-    if (this._realtimeConnectTimer) clearTimeout(this._realtimeConnectTimer);
-    if (this._realtimeSnapshotRetryTimer) clearTimeout(this._realtimeSnapshotRetryTimer);
-    if (this._realtimeFreshnessTimer) clearInterval(this._realtimeFreshnessTimer);
-    this._stopRealtimePing();
-    if (this._realtimeHealthTimer) clearInterval(this._realtimeHealthTimer);
-    this._realtimeReconnectTimer = this._realtimeConnectTimer = this._realtimeFreshnessTimer = this._realtimeHealthTimer = this._realtimeSnapshotRetryTimer = null;
-    if (this._realtimeSnapshotAbort) this._realtimeSnapshotAbort.abort();
-    this._realtimeSnapshotAbort = null;
-    if (this._realtimeVisibilityHandler) {
-      document.removeEventListener('visibilitychange', this._realtimeVisibilityHandler);
-      this._realtimeVisibilityHandler = null;
-    }
-    if (this.realtimeSocket) {
-      try { this.realtimeSocket.close(); } catch (_) {}
-      this.realtimeSocket = null;
-    }
-  },
-
   _realtimeUrl() {
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return scheme + '//' + window.location.host + '/ws/realtime';

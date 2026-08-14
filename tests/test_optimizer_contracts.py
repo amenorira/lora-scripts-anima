@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import FIELDS, get_fields_json
+from backend.training.field_registry import get_fields_json
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
@@ -29,14 +29,11 @@ from backend.training.optimizer_metadata import (
     optimizer_groups,
 )
 from backend.training.validation import validate_training_config
+from tests.helpers import config_from_field_defaults
 
 
 def valid_config(optimizer_type: str, train_type: str = "anima-lora") -> dict:
-    config = {
-        field["key"]: field["default"]
-        for field in FIELDS
-        if "default" in field
-    }
+    config = config_from_field_defaults()
     config.update(
         {
             "model_train_type": train_type,
@@ -162,12 +159,13 @@ class OptimizerFieldContractTests(unittest.TestCase):
         optimizer_field = fields_by_key()["optimizer_type"]
         script = r"""
 global.window = { t: (key, fallback) => fallback || key };
+require('./frontend/js/utils.js');
 require('./frontend/js/training-core.js');
 const core = window.trainingCoreMixin;
 
 function optimizerValues(trainType) {
   let selectConfig = null;
-  const ctx = Object.assign({}, core, {
+  const ctx = Object.assign({}, core, window.utilsMixin, {
     form: { model_train_type: trainType, optimizer_type: 'AdamW8bit' },
     t(key) { return key; },
     escJson(value) { selectConfig = value; return ''; },

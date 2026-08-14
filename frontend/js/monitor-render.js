@@ -22,7 +22,7 @@ window.monitorRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const gpu = isHistory ? null : this.gpuInfo;
     const sys = isHistory ? null : this.sysInfo;
-    const t = (k,fb) => { const fullKey = k.includes('.') ? k : ('monitor.'+k); return this.t(fullKey, fb)||fb||k; };
+    const t = (k, fb) => this.tMonitor(k, fb);
     const tab = this.monitorTab||'overview';
     const locale = String(this.locale || (window.I18N && window.I18N.getLocale ? window.I18N.getLocale() : ''));
 
@@ -1880,7 +1880,7 @@ window.monitorRenderMixin = {
   renderHistory() {
     const el = document.getElementById('historyList');
     try {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
+    const t = (k, fb) => this.tMonitor(k, fb);
     const hasRunning = this.runningTask && this.runningTask.status === 'RUNNING';
     const items = this.filteredHistoryItems;
     const hasHistory = items && items.length;
@@ -1975,7 +1975,7 @@ window.monitorRenderMixin = {
   },
 
   async viewSnapshot(runDir) {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
+    const t = (k, fb) => this.tMonitor(k, fb);
     try {
       this.startProgress();
       const j = await this._fetchConfigSnapshot(runDir);
@@ -1995,7 +1995,7 @@ window.monitorRenderMixin = {
     const modal = document.getElementById('configSnapshotModal');
     const content = document.getElementById('configSnapshotContent');
     if (!modal || !content) return;
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
+    const t = (k, fb) => this.tMonitor(k, fb);
 
     let html = '';
     if (snapshot.params) {
@@ -2057,7 +2057,7 @@ window.monitorRenderMixin = {
   },
 
   async reuseConfig(runDir) {
-    const t = (k, fb) => { const fullKey = k.includes('.') ? k : ('monitor.' + k); return this.t(fullKey, fb) || fb || k; };
+    const t = (k, fb) => this.tMonitor(k, fb);
     try {
       this.startProgress();
       const j = await this._fetchConfigSnapshot(runDir);

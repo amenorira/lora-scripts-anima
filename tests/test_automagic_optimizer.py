@@ -7,21 +7,17 @@ import torch
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
-    FIELDS,
     get_fields_json,
 )
 from backend.training.validation import validate_training_config
 from backend.training.optimizer_contracts import AUTOMAGIC_MAX_LR_DEFAULT
 from tools.python_startup.lr_logging import read_learning_rates
 from vendor.automagic_optimizer.integration import Automagic3
+from tests.helpers import config_from_field_defaults
 
 
 def valid_automagic_config() -> dict:
-    config = {
-        field["key"]: field["default"]
-        for field in FIELDS
-        if "default" in field
-    }
+    config = config_from_field_defaults()
     config.update(
         {
             "model_train_type": "anima-lora",

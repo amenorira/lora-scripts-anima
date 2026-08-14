@@ -1637,8 +1637,7 @@ window.trainingCoreMixin = {
 
   _numberConstraints(field) {
     if (!field) return {};
-    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
-    const group = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
+    const group = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     return { ...field, ...((field.constraintsByGroup || {})[group] || {}) };
   },
 
@@ -1721,8 +1720,7 @@ window.trainingCoreMixin = {
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
       : '';
-    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
-    const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
+    const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;
     if (!isRequired && field.requiredGroups && Array.isArray(field.requiredGroups)) {
       isRequired = field.requiredGroups.includes(currentGroup);
@@ -1743,8 +1741,7 @@ window.trainingCoreMixin = {
       const fc = {};
       const self = this;
       const currentTrainType = this.form.model_train_type || 'anima-lora';
-      const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
-      const currentGroup = groupMap[currentTrainType] || 'all';
+      const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
         const cloned = { v: o.v, l: o.l };
@@ -3101,9 +3098,7 @@ window.trainingCoreMixin = {
     ));
   },
 
-  // Canonical HTML escape (text content & "-delimited attributes).
-  // Handles null/undefined/0 correctly.
-  esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
+  // esc() 定义在 utils.js（跨模块共享，monitor/environment 渲染层同样依赖）。
   // Canonical HTML escape for '-delimited attributes (also escapes single quotes).
   escapeAttr(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); },
   // JS string escape for embedding values into @click="func('...')" etc.
@@ -3535,8 +3530,7 @@ window.trainingCoreMixin = {
   validateForm() {
     const errors = {};
     // Check all required fields
-    const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
-    const currentGroup = groupMap[this.form.model_train_type || 'anima-lora'] || 'all';
+    const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     const sections = this._allSections();
     for (const section of sections) {
       for (const field of section.fields) {

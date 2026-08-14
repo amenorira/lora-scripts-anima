@@ -66,7 +66,7 @@ lora-scripts-anima/
 ├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
 ├── start.bat / start.sh        ← Launch scripts
-├── requirements.txt            ← Main application / sd-scripts dependencies
+├── requirements.txt            ← Additional project dependencies (sd-scripts core deps installed via vendor)
 └── requirements-musubi-krea2.txt ← Shared Krea 2 version-convergence dependencies
 ```
 

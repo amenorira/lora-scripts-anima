@@ -13,18 +13,15 @@ from PIL import Image
 from backend.monitor import artifacts
 from backend.tasks import TaskManager
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import FIELDS, get_all_fields, get_fields_json
+from backend.training.field_registry import get_all_fields, get_fields_json
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.validation import validate_training_config
 from backend.utils.train_utils import count_images
+from tests.helpers import config_from_field_defaults
 
 
 def valid_anima_config() -> dict:
-    config = {
-        field["key"]: field["default"]
-        for field in FIELDS
-        if "default" in field
-    }
+    config = config_from_field_defaults()
     config.update({
         "model_train_type": "anima-lora",
         "network_module": "networks.lora_anima",
@@ -673,6 +670,7 @@ class TrainingFormFrontendTests(unittest.TestCase):
     def test_profile_constraints_and_caption_cache_interlocks(self):
         script = r"""
 global.window = {};
+require('./frontend/js/utils.js');
 require('./frontend/js/training-core.js');
 const mixin = window.trainingCoreMixin;
 const bucketField = {

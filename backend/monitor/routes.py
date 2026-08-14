@@ -23,6 +23,7 @@ from backend.monitor.artifacts import (
     list_output_files, enrich_model_files_with_loss, read_clean_log_lines,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
+from backend.monitor.monitor import _PROGRESS_FIELDS
 from backend.monitor.run_registry import (
     find_run_record_by_task_id,
     load_run_record,
@@ -49,6 +50,17 @@ STATE_LABELS = {
     "TERMINATED": "Terminated / 已终止",
     "CREATED": "Pending / 等待启动",
 }
+
+
+def _read_train_result(run_dir_path: Path) -> dict | None:
+    """读取 run 目录的 result.json；缺失或损坏时返回 None。"""
+    result_file = run_dir_path / "result.json"
+    if not result_file.exists():
+        return None
+    try:
+        return json.loads(result_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def _resolve_run_record(run_dir: str = "", task_id: str = "") -> dict | None:
@@ -182,9 +194,7 @@ async def build_live_monitor_snapshot(
     if active_status == "RUNNING" and run_path:
         log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, run_path)
         if log_lines:
-            for key in ("step", "total_steps", "percent", "loss",
-                         "lr", "epoch", "eta", "elapsed", "speed",
-                         "has_error", "error_msg"):
+            for key in _PROGRESS_FIELDS:
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
             result["log_lines"] = log_lines
@@ -200,12 +210,9 @@ async def build_live_monitor_snapshot(
             result["last_config"] = _last_config_from_autosave(train_config)
 
         if run_path:
-            result_file = run_path / "result.json"
-            if result_file.exists():
-                try:
-                    result["train_result"] = json.loads(result_file.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+            train_result = _read_train_result(run_path)
+            if train_result is not None:
+                result["train_result"] = train_result
             log_lines, _ = await asyncio.to_thread(_read_run_log_and_progress, run_path)
             if log_lines:
                 result["log_lines"] = log_lines
@@ -476,22 +483,14 @@ async def monitor_run_detail(run_dir: str = Query("")):
     if log_lines:
         result["log_total"] = len(log_lines)
         result["log_lines"] = log_lines[-_LOG_DETAIL_TAIL_LINES:]
-        for key in ("step", "total_steps", "percent", "loss",
-                     "lr", "epoch", "eta", "elapsed", "speed",
-                     "has_error", "error_msg"):
+        for key in _PROGRESS_FIELDS:
             if key in progress and progress[key] is not None:
                 result[key] = progress[key]
 
     # ── result.json（训练结果）──
     def _read_meta_files(run_dir_path: Path) -> tuple[dict | None, str | None]:
-        train_result = None
+        train_result = _read_train_result(run_dir_path)
         run_info = None
-        result_file = run_dir_path / "result.json"
-        if result_file.exists():
-            try:
-                train_result = json.loads(result_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
         info_file = run_dir_path / "run_info.txt"
         if info_file.exists():
             try:

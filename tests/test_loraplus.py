@@ -9,7 +9,6 @@ from transformers.optimization import Adafactor
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
     EMOSENS_OPTIMIZER_TYPE,
-    FIELDS,
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
     LORAPLUS_NETWORK_MODULES,
     get_fields_json,
@@ -17,14 +16,11 @@ from backend.training.field_registry import (
 from backend.training.optimizer_contracts import ADAFACTOR_OPTIMIZER_TYPE
 from backend.training.validation import validate_training_config
 from vendor.emo_optimizer.emosens import EmoSens
+from tests.helpers import config_from_field_defaults
 
 
 def valid_loraplus_config(optimizer_type: str = "AdamW") -> dict:
-    config = {
-        field["key"]: field["default"]
-        for field in FIELDS
-        if "default" in field
-    }
+    config = config_from_field_defaults()
     config.update(
         {
             "model_train_type": "sdxl-lora",

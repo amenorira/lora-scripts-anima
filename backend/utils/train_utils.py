@@ -1,14 +1,11 @@
 from enum import Enum
 import os
 import re
-import sys
 import json
 from pathlib import Path
 from typing import Dict
 
 from backend.log import log
-
-python_bin = sys.executable
 
 
 class ModelType(Enum):
