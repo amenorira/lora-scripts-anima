@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.3.8 - 2026-08-15
+
+This patch release focuses on code hygiene and reliability: duplicated backend implementations are consolidated, confirmed dead code is removed, autosave no longer depends implicitly on the launch directory, and mutable default arguments are eliminated; three parameter docs also get factual corrections and polished bilingual wording.
+
+### Refactoring and cleanup
+
+- The Automagic field mapping table now lives in optimizer_contracts, giving adapter and validation a single source of truth; tageditor routes and core share extracted helpers, and monitor centralizes TensorBoard scalar labels and progress-bar kwargs.
+- Removed confirmed dead code (zero-call frontend methods, the legacy config.js compatibility branch, and backend aliases such as python_bin and _MUSUBI_RUNTIME_PACKAGES); the training route's five JSON-parse snippets converge into a shared _read_json_object, and monitor progress fields and result.json reading are unified.
+- autosave now resolves its output directory from constants.AUTOSAVE_DIR instead of implicitly depending on the launch directory; postprocess_tags replaces its mutable default argument with None plus in-function normalization; removed 13 placeholder-less f-strings.
+- New frontend/js/utils.js centralizes cross-module helpers (esc / tMonitor / training-group mapping); test factories move to tests/helpers.py; the bare config rule in .gitignore becomes an allowlist.
+
+### Documentation
+
+- Corrected factual errors in the lora-plus, optimizers, and timesteps parameter docs (Krea 2 support, the LoRA+ compatibility list, Muon applicability, the percentile_clipping parameter name, musubi-tuner source paths, etc.), removed translationese, and polished the bilingual wording.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.7...v2.3.8)
+
 ## v2.3.7 - 2026-08-13
 
 This patch release focuses on frontend performance and polish: static assets are now gzip-compressed with versioned caching, so startup and page-refresh transfer drop dramatically; the stale release badge on the home page and a corrupted README command path are fixed.

@@ -6,6 +6,23 @@
 
 ## 未发布
 
+## v2.3.8 - 2026-08-15
+
+本补丁版本聚焦代码整洁与可靠性：合并后端重复实现、清理确认无引用的死代码，autosave 不再隐式依赖启动目录，并消除可变默认参数隐患；同时修正三篇参数文档的事实性错误、润色中英双语行文。
+
+### 重构与清理
+
+- Automagic 字段映射表统一收拢到 optimizer_contracts，adapter 与 validation 不再各自维护一份；tageditor 路由与 core 分别提取公共前置逻辑，monitor 集中定义 TensorBoard 标签常量与进度条参数。
+- 删除前端零调用方法、config.js 旧 API 兼容分支，以及后端 python_bin、_MUSUBI_RUNTIME_PACKAGES 别名等确认无引用的死代码；training 路由 5 处 JSON 解析样板收敛为共享 _read_json_object，monitor 进度字段与 result.json 读取统一实现。
+- autosave 改为由 constants.AUTOSAVE_DIR 定位输出目录，不再隐式依赖启动目录；postprocess_tags 可变默认参数改为 None 并在函数内归一化；清理 13 处无占位符 f-string。
+- 新增 frontend/js/utils.js 收拢跨模块共享的 esc、tMonitor 与训练分组映射；测试工厂收敛至 tests/helpers.py；.gitignore 裸 config 规则改为白名单写法。
+
+### 文档
+
+- 修正 lora-plus、optimizers、timesteps 三篇参数文档的事实性错误（Krea 2 兼容性、LoRA+ 适用列表、Muon 适用范围、percentile_clipping 参数名、musubi-tuner 源码路径归属等），去除翻译腔并润色中英双语行文。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.7...v2.3.8)
+
 ## v2.3.7 - 2026-08-13
 
 本补丁版本聚焦前端性能与体验：静态资源启用 gzip 压缩与版本化缓存，冷启动与页面刷新传输量大幅下降；并修复首页版本徽章过期、README 命令路径损坏等问题。
