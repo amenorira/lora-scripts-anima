@@ -19,7 +19,7 @@ weighting_scheme = "uniform"
 
 Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5` 和 `weighting_scheme=none`，这组参数同样适合作为基准。
 
-两组默认值都会覆盖不同强度的噪声，而不是只集中于细节或整体结构，适用于人物、画风和普通概念训练的初始实验。
+两组默认值都会覆盖不同强度的噪声，而不是只集中于细节或整体结构，适用于人物、画风和普通概念训练的初始实验。以上参数均在训练表单的“时间步/采样”区域。
 
 > **配置说明：** 时间步不是“画质开关”。没有基准结果时，同时修改多个时间步参数会让结果难以归因。先用默认配置跑一次，后续才有对照依据。
 
@@ -34,7 +34,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | 训练时间步 | 当前图片被加入了多少噪声 | `timestep_sampling` |
 | 生成采样步数 | 生成图片时执行多少次去噪计算 | `sample_steps` |
 
-例如，日志中的“训练到第 500 步”表示 LoRA 已经更新了 500 次，和噪声时间步 `t≈500` 并没有“都进行到一半”的关系。同一次训练更新中，不同图片也可以抽到不同的噪声时间步。
+例如，日志中的“训练到第 500 步”表示 LoRA 已经更新了 500 次，它和噪声时间步 `t≈500` 是两回事，不表示“都进行到一半”。同一次训练更新中，不同图片也可以抽到不同的噪声时间步。
 
 <!-- doc-anchor: visualizer -->
 ## 分布预览说明
@@ -79,7 +79,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 这里说的数量是 **有效独立图片数**。连续视频帧、同一张图的多个裁剪，以及高度相似的卡面，都无法提供等量的新信息。
 
-例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，样本曝光次数可能相近，但前者仍然只有 10 张图提供的角度和构图。`repeats`（重复次数）可以增加训练次数，不能增加数据多样性。
+例如，10 张图片重复 20 次和 100 张不同图片重复 2 次，样本被训练到的总次数可能相近，但前者仍然只有 10 张图提供的角度和构图。`repeats`（重复次数）可以增加训练次数，不能增加数据多样性。
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="每轮训练更新数的近似估算">
   <div class="doc-equation-kicker">单卡训练的粗略估算</div>
@@ -92,13 +92,13 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 ### 少图人物
 
-少图人物更容易把脸、姿势、背景和构图一起记住。`sigmoid 0.8～1.0 + uniform` 可作为基准；`sigma_sqrt` 或明显偏向高噪声的 shift 会增加局部记忆和构图绑定风险，因此不在初始默认配置中。
+少图人物更容易把脸、姿势、背景和构图一起记住。`sigmoid` + `sigmoid_scale=0.8～1.0` + `uniform` 可作为基准；`sigma_sqrt` 或明显偏向高噪声的 shift 会增加局部记忆和构图绑定风险，因此默认配置不采用这些选项。
 
 角色身份没有学出来时，还需要检查触发词、标注、学习率和训练步数，时间步调整本身不能修复这些基础问题。
 
 ### 多图人物与高还原度
 
-一个角色要在新姿势、新镜头下仍然保持身份，不能只靠低噪声训练。低噪声有助于保留五官和服装细节，中噪声负责身份与结构的平衡，高噪声影响模型如何从模糊信息中建立整体角色。
+一个角色要在新姿势、新镜头下仍然保持身份，不能只靠低噪声训练。低噪声有助于保留五官和服装细节，中噪声负责身份与结构的平衡，高噪声决定模型如何从模糊信息中构建角色的整体形象。
 
 当数据确实包含不同角度、姿势和构图时，`sigmoid_scale` 可从 `1.0` 逐步测试到 `1.1～1.4`。保留默认版本作为对照，有助于判断扩大分布后的实际变化。
 
@@ -129,11 +129,11 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | --- | --- | --- |
 | 熟悉姿势很像，换姿势后身份消失 | 适度提高 `sigmoid_scale` | 角度是否足够、标注是否合理、是否已经过拟合 |
 | 小细节一直出不来 | 小幅提高 `sigmoid_scale`，增加两端覆盖 | 原图是否真的包含清晰细节 |
-| 总是生成同一姿势或背景 | 减少高噪声偏移，回到 sigmoid 基线 | 数据是否重复、背景是否正确标注 |
+| 总是生成同一姿势或背景 | 减少高噪声平移，回到 sigmoid 基线 | 数据是否重复、背景是否正确标注 |
 | 轮廓或身体结构不稳定 | 数据充分时测试轻微 `shift>1` | 是否有全身图和多角度图片 |
 | 纹理过锐、脏点多、重复输出训练图 | 停用 `sigma_sqrt` 或回到均匀权重 | 学习率、总步数和推理 LoRA 权重 |
 | 画风只有颜色，缺少形体特点 | 适度扩大 sigmoid，或单独测试轻微高噪声 shift | 主体类型和构图是否足够多样 |
-| 画风压制提示词，总把构图带回训练集 | 减少高噪声偏移 | 总训练强度是否过高 |
+| 画风压制提示词，总把构图带回训练集 | 减少高噪声平移 | 总训练强度是否过高 |
 
 同一种现象可能有多个原因。时间步分布只是排查的一部分，不能代替对数据、标注、学习率和固定提示词采样图的检查。
 
@@ -176,7 +176,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none` |
 
-在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 使用 `none`，还为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
+在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 使用 `none`，同时也是为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
 
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`：决定哪些时间步更常出现
@@ -187,7 +187,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | --- | --- | --- |
 | `sigmoid` | 以中噪声为主，同时保留两端 | Anima、Krea 2 |
 | `uniform` | 在完整范围内均匀抽取 | Anima、Krea 2 |
-| `shift` | 基于 sigmoid 分布，再整体向一侧移动 | Anima、Krea 2 |
+| `shift` | 在 sigmoid 分布基础上整体向一侧平移 | Anima、Krea 2 |
 | `sigma` | 按训练 scheduler 的离散噪声表抽取 | Anima、Krea 2 |
 | `flux_shift` | 根据当前分辨率计算 FLUX 风格的 shift | Anima |
 | `krea2_shift` | 根据当前分辨率计算 Krea 2 的 shift | Krea 2 |
@@ -213,17 +213,17 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 ### `shift`
 
-`shift` 先生成 sigmoid 分布，再通过 `discrete_flow_shift` 把整组分布向低噪声或高噪声移动。它适用于已有基准结果、且对照图显示整体分布方向需要调整的情况。
+`shift` 先生成 sigmoid 分布，再通过 `discrete_flow_shift` 把整组分布向低噪声或高噪声平移。它适用于已有基准结果、且对照图显示整体分布方向需要调整的情况。
 
 ### `sigma`
 
 `sigma` 从训练 scheduler（预先定义的离散噪声表）中选择时间步，`discrete_flow_shift` 会改变这张噪声表。
 
-当 `weighting_scheme` 选择 `logit_normal` 或 `mode` 时，它还会改变抽取位置的分布；选择 `sigma_sqrt` 或 `cosmap` 时，抽取分布保持普通密度，只在计算 Loss 时改变权重。
+当 `weighting_scheme` 选择 `logit_normal` 或 `mode` 时，它还会改变抽取位置的分布；选择 `sigma_sqrt` 或 `cosmap` 时，抽样分布保持原有的均匀密度，只在计算 Loss 时改变权重。
 
 ### `flux_shift` 与 `krea2_shift`
 
-这两种方式根据当前 latent 网格大小计算 shift。通常分辨率越高，最终分布越可能向高噪声移动，它们不读取固定的 `discrete_flow_shift`。
+这两种方式根据当前 latent 网格大小计算 shift。通常分辨率越高，最终分布越可能向高噪声平移，它们不读取固定的 `discrete_flow_shift`。
 
 开启 bucket 后，相近分辨率和宽高比的图片会分组训练。每个 bucket 都按自己的 latent 尺寸计算分布，因此文档图表中的参考分辨率不能代表数据集里的所有 bucket。
 
@@ -239,7 +239,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
   <p><var>μ</var> 对应 <code>logit_mean</code>，<var>σ</var> 对应 <code>logit_std</code>。</p>
 </div>
 
-它和 `sigma + logit_normal` 使用相同的两个参数名，但转换过程不同。参数正负无法完整表示最终方向，分布预览会直接显示转换后的结果。
+它和 `sigma + logit_normal` 使用相同的两个参数名，但转换过程不同。仅凭参数正负无法判断最终的偏移方向，分布预览会直接显示转换后的结果。
 
 <!-- doc-anchor: sigmoid-scale -->
 ## `sigmoid_scale`：控制分布向两端展开多少
@@ -251,10 +251,10 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 - `1.2～1.5`：低噪声与高噪声两端都会增加。
 - 数值过大：样本可能过度集中到两个端点。
 
-提高 `sigmoid_scale` 不是单纯提高质量。它可能补充细节和整体结构，也可能让背景、固定构图、压缩痕迹和错误标注更快被学进去。
+提高 `sigmoid_scale` 并不等于单纯提升质量。它可能补充细节和整体结构，也可能让背景、固定构图、压缩痕迹和错误标注更快被学进去。
 
 <!-- doc-anchor: flow-shift -->
-## `discrete_flow_shift`：把整组分布向一侧移动
+## `discrete_flow_shift`：把整组分布向一侧平移
 
 设 shift 为 <var>s</var>，它对时间步的变换为：
 
@@ -264,18 +264,24 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
   <p><var>s</var> 对应 <code>discrete_flow_shift</code>。</p>
 </div>
 
-- `1.0`：不移动。
-- 大于 `1.0`：整体向高噪声移动。
-- 小于 `1.0`：整体向低噪声移动。
+- `1.0`：不做平移。
+- 大于 `1.0`：整体向高噪声平移。
+- 小于 `1.0`：整体向低噪声平移。
 
 这个参数在 `shift` 中直接生效，在 `sigma` 中通过 scheduler 生效；`sigmoid`、`uniform`、`flux_shift`、`krea2_shift` 和 `logsnr` 不会使用这个固定值。
 
 <!-- doc-anchor: subset-offsets -->
 ## 按子集设置时间步偏移
 
-`subset_timestep_offsets` 可以按训练数据子集分别移动时间步分布，适合在同一组训练中区分脸部特写、全身图等不同内容。它目前只在 **Anima** 训练中生效，Krea 2 和 SDXL 不适用。
+`subset_timestep_offsets` 可以按训练数据子集分别平移时间步分布，适合在同一组训练中区分脸部特写、全身图等不同内容。它目前只在 **Anima** 训练中生效，Krea 2 和 SDXL 不适用。
 
-训练目录中每个以“数字_”开头的子文件夹（例如 `10_face`、`3_full_body`）会被识别为一个子集，开头的数字是重复次数。界面和 API 中，这个设置是“子集名称 → 偏移值”的映射，而不是一个全局值：
+训练目录中每个以“数字_”开头的子文件夹（例如 `10_face`、`3_full_body`）会被识别为一个子集，开头的数字是重复次数。界面和 API 中，这个设置是“子集名称 → 偏移值”的映射，而不是一个全局值。最小操作流程：
+
+1. 在训练目录下建立以“数字_”开头的子集目录，并按内容把图片放入对应目录。
+2. 在界面的“子集偏移”映射里填入子集目录名和偏移值。
+3. 打开分布预览，确认分布变化符合预期。
+
+映射的写法如下：
 
 ```json
 {"10_face": -0.25, "3_full_body": 0.20}
@@ -294,7 +300,7 @@ timestep_sampling = { offset = -0.25 }
 
 ### 偏移加在哪里
 
-偏移先加在正态随机采样值上，再乘以 `sigmoid_scale` 并经过 `sigmoid` 变换；使用 `shift` 或 `flux_shift` 时，之后还会再做一次整体映射：
+偏移先加在正态随机采样值上，再乘以 `sigmoid_scale` 并经过 `sigmoid` 变换；使用 `shift` 或 `flux_shift` 时，之后还会做一次整体映射：
 
 ```text
 时间步 = sigmoid( sigmoid_scale × (随机采样值 + 偏移) )
@@ -308,7 +314,7 @@ timestep_sampling = { offset = -0.25 }
 
 它只改变“抽到哪些时间步”，不改变 Loss 权重。它可以与全局 `discrete_flow_shift` 同时使用：前者按子集逐图片生效，后者对整个采样方式生效。
 
-`timestep_sampling=sigma` 时，`weighting_scheme=logit_normal` 或 `mode` 也会改变抽样分布，但改变的是所有子集共用的全局基础分布，而不是某一个子集的偏移。`sigma` 路径不会读取 `subset_timestep_offsets`，因此这两个权重选项无法代替按子集单独设置偏移。
+`timestep_sampling=sigma` 时，`weighting_scheme=logit_normal` 或 `mode` 也会改变抽样分布，但改变的是所有子集共用的全局基础分布，而不是某一个子集的偏移。`sigma` 路径不会读取 `subset_timestep_offsets`，因此这两个权重选项起不到按子集设置偏移的作用。
 
 ### 支持的模式与推荐范围
 
@@ -316,7 +322,7 @@ timestep_sampling = { offset = -0.25 }
 
 建议先在 `-0.5～+0.5` 范围内测试。偏移绝对值越大，分布越容易被整体推到某一端；在已经使用 `shift` 或 `flux_shift` 的配置中，正偏移会更快抽干低噪声一侧。脸部特写、纹理图可以先试小幅负值，全身图或结构图可以先试小幅正值，但这些只是实验起点，不是固定配方。
 
-分布预览可以分别显示基础分布（所有偏移为 0）、整体训练分布和某个子集的分布。建议先保存默认配置作为对照，然后一次只调整一个子集的偏移。偏移只作用于训练采样；验证时保持无偏，验证 loss 仍然可以直接比较。
+分布预览可以分别显示基础分布（所有偏移为 0）、整体训练分布和某个子集的分布。建议先保存默认配置作为对照，然后一次只调整一个子集的偏移。偏移只作用于训练采样；验证采样不加偏移，验证 loss 仍然可以直接比较。
 
 <!-- doc-anchor: weighting -->
 ## 采样频率与 Loss 权重
@@ -392,7 +398,7 @@ scheduler shift 还会参与最后的映射，所以应以预览结果判断实�
 | `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
 | `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
 
-“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会产生隐藏效果。界面会尽量隐藏当前组合中无效的字段，分布预览也会提示被忽略的设置。
+“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会暗中生效。界面会尽量隐藏当前组合中无效的字段，分布预览也会提示被忽略的设置。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
@@ -426,12 +432,12 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 ## 对照实验方法
 
 1. **基准组：** 采用当前训练类型的默认值。
-2. **固定条件：** 数据集、随机种子、Rank、Alpha、学习率和总训练步数保持一致。
+2. **固定条件：** 数据集、随机种子、rank、alpha、学习率和总训练步数保持一致。
 3. **单一变量：** 每组实验仅改变一个参数，例如将 `sigmoid_scale` 从 `1.0` 改为 `1.25`。
-4. **同条件对比：** 检查点（checkpoint）处于相同训练步数，并采用相同的提示词、生成种子、分辨率和推理 LoRA 权重。
+4. **同条件对比：** 取相同训练步数处的检查点，并使用相同的提示词、生成种子、分辨率和推理 LoRA 权重。
 5. **评估维度：** 身份或画风还原、背景泄漏、构图僵化、提示词服从度，以及在未见场景中的表现。
 
-训练 Loss 只能作为辅助信息。某组时间步设置是否更好，最终应由固定条件下的多组生成图和你的实际使用目标决定。
+训练 Loss 只能作为辅助信息。某组时间步设置是否更好，最终应由固定条件下的多组生成图和实际使用目标决定。
 
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
@@ -444,7 +450,8 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 - Anima 训练器的 `anima_train_network.py`：从 batch 的 `custom_attributes` 读取逐样本分组偏移，并且只在训练阶段应用。
 - 后端的 `backend/training/sd_dataset_config.py` 与 `backend/server/routes/training.py`：校验分组偏移、生成独立 `dataset.toml`，并通过 `--dataset_config` 传给训练器。
 - `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
-- musubi-tuner fork 的 `src/musubi_tuner/training/timesteps.py` 与 `training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 及共享公式。
+- musubi-tuner fork 的 `src/musubi_tuner/training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 等采样实现。
+- `src/musubi_tuner/training/timesteps.py`：共享密度与损失权重公式。
 - 前端分布预览的模拟实现见 `frontend/js/training-core.js`（32 根柱子、32,768 次固定随机种子模拟）。
 
 **模型与上游依据：** Anima 与 Krea 2 的训练路径使用 flow matching（流匹配）加噪方式与目标公式 `v = ε − x`；`sigmoid` 采样与 `discrete_flow_shift` 的变换形式出自 [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis（SD3 论文）](https://arxiv.org/abs/2403.03206)。本文数据集规模对应的经验起点不属于任何官方推荐。
@@ -458,7 +465,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 - [本项目数据集配置适配器：`backend/training/sd_dataset_config.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)
 - [本项目 sd-scripts fork：`library/anima_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)
 - [本项目 musubi-tuner fork：`src/musubi_tuner/training/timesteps.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
-- [本项目 musubi-tuner fork：`training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
+- [本项目 musubi-tuner fork：`src/musubi_tuner/training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
 - [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
