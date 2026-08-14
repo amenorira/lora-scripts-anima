@@ -21,7 +21,6 @@ const FALLBACK_COMMON = [{"key":"model","titleKey":"section.model","fields":[{"k
 // ── Runtime field definitions ─────────────────────────────
 // Loaded from API; fallback to hardcoded above.
 // New API returns { sections: [...] } — unified list with "group" per field.
-// Old API returned { sections_common, sections_anima } — handled for backward compat.
 window.TRAIN_SECTIONS = FALLBACK_COMMON;
 
 (async function loadFields() {
@@ -32,13 +31,6 @@ window.TRAIN_SECTIONS = FALLBACK_COMMON;
       // New format: { sections: [...] }
       if (d.data.sections && d.data.sections.length) {
         window.TRAIN_SECTIONS = d.data.sections;
-        window.dispatchEvent(new Event('training-fields-loaded'));
-      }
-      // Old backward compat: { sections_common, sections_anima }
-      else if (d.data.sections_common && d.data.sections_common.length) {
-        const merged = [...d.data.sections_common];
-        if (d.data.sections_anima && d.data.sections_anima.length) merged.push(...d.data.sections_anima);
-        window.TRAIN_SECTIONS = merged;
         window.dispatchEvent(new Event('training-fields-loaded'));
       }
     }
@@ -64,8 +56,7 @@ window.getVisibleSections = function(trainType) {
   }
   if (visibleSectionsCache.has(trainType)) return visibleSectionsCache.get(trainType);
 
-  const groupMap = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
-  const targetGroup = groupMap[trainType] || 'all';
+  const targetGroup = window.TRAIN_GROUP_MAP[trainType] || 'all';
   const sections = (window.TRAIN_SECTIONS || []).map(function(section) {
     const filteredFields = (section.fields || []).filter(function(field) {
       // Profile-scoped fields belong to an independent runtime schema. Legacy

@@ -553,6 +553,7 @@ document.addEventListener('alpine:init', () => {
   // IMPORTANT: ...spread evaluates getters to static values.
   // Object.defineProperties preserves them as reactive getters.
   const _mixinSources = [
+    window.utilsMixin,
     window.realtimeMixin,
     window.monitorCoreMixin,
     window.monitorRenderMixin,

@@ -10,6 +10,17 @@ from typing import Any, Mapping
 AUTOMAGIC_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic3"
 AUTOMAGIC_MAX_LR_DEFAULT = 1e3
 AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "1e3"
+# Automagic3 UI 顶层字段 → optimizer_args 键的映射（adapter 与 validation 共用，Single Source of Truth）
+AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
+    "automagic_min_lr": "min_lr",
+    "automagic_max_lr": "max_lr",
+    "automagic_beta2": "beta2",
+    "automagic_clip_threshold": "clip_threshold",
+    "automagic_polarity_history": "polarity_history",
+    "automagic_fused": "fused",
+    "eps": "eps",
+    "weight_decay": "weight_decay",
+}
 EMOSENS_OPTIMIZER_TYPE = "vendor.emo_optimizer.emosens.EmoSens"
 PRODIGY_OPTIMIZER_TYPE = "Prodigy"
 PRODIGYPLUS_OPTIMIZER_TYPE = "prodigyplus.ProdigyPlusScheduleFree"

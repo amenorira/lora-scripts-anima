@@ -225,33 +225,24 @@ class TaskMonitor:
                 self._console_progress = _build_console_progress()
 
             cp = self._console_progress
+            description = f"Training {output_name or ''}".strip()
+            progress_kwargs = dict(
+                total=total, completed=step,
+                elapsed=progress.get("elapsed") or "",
+                eta=progress.get("eta") or "",
+                loss=progress.get("loss"),
+                lr=progress.get("lr"),
+                epoch=progress.get("epoch"),
+                speed=progress.get("speed"),
+            )
             # 首次启动进度条
             if not cp.live.is_started:
                 cp.start()
             if self._progress_task_id is None:
-                self._progress_task_id = cp.add_task(
-                    f"Training {output_name or ''}".strip(),
-                    total=total, completed=step,
-                    elapsed=progress.get("elapsed") or "",
-                    eta=progress.get("eta") or "",
-                    loss=progress.get("loss"),
-                    lr=progress.get("lr"),
-                    epoch=progress.get("epoch"),
-                    speed=progress.get("speed"),
-                )
+                self._progress_task_id = cp.add_task(description, **progress_kwargs)
                 self._progress_active_task = task_id
             else:
-                cp.update(
-                    self._progress_task_id,
-                    description=f"Training {output_name or ''}".strip(),
-                    total=total, completed=step,
-                    elapsed=progress.get("elapsed") or "",
-                    eta=progress.get("eta") or "",
-                    loss=progress.get("loss"),
-                    lr=progress.get("lr"),
-                    epoch=progress.get("epoch"),
-                    speed=progress.get("speed"),
-                )
+                cp.update(self._progress_task_id, description=description, **progress_kwargs)
         except Exception:
             # 控制台进度条是辅助显示，不应影响监控主流程
             pass

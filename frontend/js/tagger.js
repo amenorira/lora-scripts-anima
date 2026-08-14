@@ -532,13 +532,6 @@ window.taggerMixin = {
     if (file) await this.uploadTaggerFile(file);
   },
 
-  async handleTaggerPaste(event) {
-    if (this.currentRoute !== 'tagger' || this.taggerSourceMode !== 'single') return;
-    const items = Array.from((event.clipboardData && event.clipboardData.items) || []);
-    const image = items.find(item => item.type && item.type.startsWith('image/'));
-    if (image) await this.uploadTaggerFile(image.getAsFile());
-  },
-
   async uploadTaggerFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
     this.taggerScanning = true;
@@ -1022,31 +1015,6 @@ window.taggerMixin = {
     const merged = new Map(this.taggerItems.map(item => [item.index, item]));
     items.forEach(item => merged.set(item.index, item));
     this.taggerItems = Array.from(merged.values()).sort((left, right) => left.index - right.index);
-  },
-
-  async loadMoreTaggerItems(event) {
-    const element = event.currentTarget;
-    if (!this.taggerSource || !element || element.scrollLeft + element.clientWidth < element.scrollWidth - 240) return;
-    const total = Number(this.taggerItemsTotal || this.taggerTask?.total || this.taggerSource.total || 0);
-    if (this.taggerItems.length >= total) return;
-    try {
-      const lastIndex = this.taggerItems.reduce((highest, item) => Math.max(highest, Number(item.index)), -1);
-      const offset = this.taggerFailedOnly ? this.taggerItems.length : lastIndex + 1;
-      const url = this.taggerTaskId
-        ? `/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/items?offset=${offset}&limit=120&failed_only=${this.taggerFailedOnly}`
-        : `/api/tagger/source/${encodeURIComponent(this.taggerSource.source_token)}/items?offset=${offset}&limit=120`;
-      const response = await fetch(url);
-      const body = await response.json();
-      if (body.status === 'success') {
-        this.taggerItemsTotal = Number(body.data.total || this.taggerItemsTotal);
-        this._mergeTaggerItems(body.data.items || [], false);
-      }
-    } catch (_) {}
-  },
-
-  async toggleTaggerFailedOnly() {
-    this.taggerFailedOnly = !this.taggerFailedOnly;
-    await this.refreshTaggerItems(true);
   },
 
   async cancelTagger() {

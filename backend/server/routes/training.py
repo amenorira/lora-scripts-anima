@@ -12,7 +12,7 @@ from pathlib import Path
 import toml
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 
-from backend.constants import OUTPUT_DIR
+from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
 from backend.training import run_train
 from backend.training.core_registry import (
@@ -56,14 +56,44 @@ from backend.utils import train_utils
 router = APIRouter()
 
 
+async def _read_json_object(
+    request: Request,
+    *,
+    with_error_code: bool = False,
+    object_message: str = "Training configuration must be an object / 训练参数必须是对象",
+) -> tuple[dict | None, APIResponseFail | None]:
+    """解析请求体为 JSON 对象；失败时返回与原调用方一致的错误响应。"""
+    try:
+        payload = await request.json()
+    except AttributeError:
+        # 测试替身可能只实现 .body()（如 _BodyRequest）；语义与 request.json() 等价。
+        payload = json.loads((await request.body()).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        if with_error_code:
+            return None, APIResponseFail(
+                message="Invalid JSON request / 请求 JSON 格式无效",
+                data={"errorCode": "invalidJson", "errorParams": {}},
+            )
+        return None, APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
+    if not isinstance(payload, dict):
+        if with_error_code:
+            return None, APIResponseFail(
+                message=object_message,
+                data={"errorCode": "invalidConfig", "errorParams": {}},
+            )
+        return None, APIResponseFail(message=object_message)
+    return payload, None
+
+
 @router.post("/training/export-config")
 async def export_training_config(request: Request):
     """Serialize the current form into the application-level YAML format."""
-    try:
-        payload = await request.json()
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
-    if not isinstance(payload, dict) or not isinstance(payload.get("form"), dict):
+    payload, error = await _read_json_object(
+        request, object_message="Training form must be an object / 训练表单必须是对象"
+    )
+    if error:
+        return error
+    if not isinstance(payload.get("form"), dict):
         return APIResponseFail(message="Training form must be an object / 训练表单必须是对象")
     form = dict(payload["form"])
     try:
@@ -233,18 +263,9 @@ async def output_path_info(
 
 @router.post("/training/estimate")
 async def estimate_steps(request: Request):
-    try:
-        config = await request.json()
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(
-            message="Invalid JSON request / 请求 JSON 格式无效",
-            data={"errorCode": "invalidJson", "errorParams": {}},
-        )
-    if not isinstance(config, dict):
-        return APIResponseFail(
-            message="Training configuration must be an object / 训练参数必须是对象",
-            data={"errorCode": "invalidConfig", "errorParams": {}},
-        )
+    config, error = await _read_json_object(request, with_error_code=True)
+    if error:
+        return error
 
     try:
         estimate = await asyncio.to_thread(estimate_training_steps, config)
@@ -368,8 +389,8 @@ def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str,
             f"Mixed Prec:   {config.get('mixed_precision', '?')}",
             f"Seed:         {config.get('seed', '?')}",
             "",
-            f"Full config:  config.toml",
-            f"Training log: train_*.log",
+            "Full config:  config.toml",
+            "Training log: train_*.log",
             f"TensorBoard:  {os.path.join(run_dir, 'log')}",
             f"Artifacts:    {config.get('output_dir', run_dir)}",
             f"Model files:  {os.path.join(str(config.get('output_dir', run_dir)), '*.safetensors')}",
@@ -447,10 +468,9 @@ async def _create_krea2_run(
         sample_prompts_file,
     )
 
-    autosave_dir = Path(os.getcwd()) / "config" / "autosave"
-    autosave_dir.mkdir(parents=True, exist_ok=True)
-    _cleanup_autosave(str(autosave_dir), keep=50)
-    toml_file = autosave_dir / f"{timestamp}-krea2.toml"
+    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
+    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
+    toml_file = AUTOSAVE_DIR / f"{timestamp}-krea2.toml"
     train_toml = toml.dumps(train_config)
     dataset_toml = toml.dumps(dataset_config)
     training_document = build_training_config(
@@ -512,12 +532,9 @@ async def training_cores():
 
 @router.post("/training/krea2/cache-status")
 async def krea2_cache_status(request: Request):
-    try:
-        config = await request.json()
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
-    if not isinstance(config, dict):
-        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+    config, error = await _read_json_object(request)
+    if error:
+        return error
     try:
         profile = resolve_training_profile(config)
     except TrainingProfileError as exc:
@@ -532,12 +549,9 @@ async def create_krea2_cache(request: Request):
     """Start the required latent and Qwen3-VL cache pipeline as one task."""
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    try:
-        config = await request.json()
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
-    if not isinstance(config, dict):
-        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+    config, error = await _read_json_object(request)
+    if error:
+        return error
 
     gpu_ids = config.pop("gpu_ids", None)
     try:
@@ -635,14 +649,9 @@ async def create_toml_file(request: Request):
             message="Tagger is using the GPU. Stop tagging before training / 反推任务正在使用 GPU，请停止后再训练"
         )
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    json_data = await request.body()
-
-    try:
-        config: dict = json.loads(json_data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return APIResponseFail(message="Invalid JSON request / 请求 JSON 格式无效")
-    if not isinstance(config, dict):
-        return APIResponseFail(message="Training configuration must be an object / 训练参数必须是对象")
+    config, error = await _read_json_object(request)
+    if error:
+        return error
 
     form_snapshot = config.pop("_form_state", None)
     if not isinstance(form_snapshot, dict):
@@ -835,11 +844,10 @@ async def create_toml_file(request: Request):
         log.info(f"Wrote prompts to file {sample_prompts_file}")
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
-    autosave_dir = os.path.join(os.getcwd(), "config", "autosave")
-    os.makedirs(autosave_dir, exist_ok=True)
-    _cleanup_autosave(autosave_dir, keep=50)
+    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
+    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
 
-    toml_file = os.path.join(autosave_dir, f"{timestamp}.toml")
+    toml_file = str(AUTOSAVE_DIR / f"{timestamp}.toml")
     toml_content = toml.dumps(config)
     training_document = build_training_config(
         form_snapshot,
@@ -902,8 +910,6 @@ async def create_toml_file(request: Request):
 
 @router.post("/run_script")
 async def run_script(request: Request, background_tasks: BackgroundTasks):
-    from pathlib import Path
-
     paras = await request.body()
     j = json.loads(paras.decode("utf-8"))
     script_name = j["script_name"]

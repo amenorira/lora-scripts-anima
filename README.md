@@ -66,7 +66,7 @@ lora-scripts-anima/
 ├── tools/                      ← 独立工具（Flash Attn 安装等）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
 ├── start.bat / start.sh        ← 启动脚本
-├── requirements.txt            ← 主应用 / sd-scripts 依赖
+├── requirements.txt            ← 项目额外依赖（sd-scripts 核心依赖由 vendor 单独安装）
 └── requirements-musubi-krea2.txt ← 主环境的 Krea 2 版本收敛依赖
 ```
 

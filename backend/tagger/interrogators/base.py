@@ -88,14 +88,18 @@ class Interrogator:
             add_rating_tag=False,
             add_model_tag=False,
 
-            additional_tags: List[str] = [],
-            exclude_tags: List[str] = [],
+            additional_tags: Optional[List[str]] = None,
+            exclude_tags: Optional[List[str]] = None,
             sort_by_alphabetical_order=False,
             add_confident_as_weight=False,
             replace_underscore=False,
-            replace_underscore_excludes: List[str] = [],
+            replace_underscore_excludes: Optional[List[str]] = None,
             escape_tag=False
     ) -> Dict[str, float]:
+
+        additional_tags = additional_tags or []
+        exclude_tags = exclude_tags or []
+        replace_underscore_excludes = replace_underscore_excludes or []
 
         ok_tags = {}
 

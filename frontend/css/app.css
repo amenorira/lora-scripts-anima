@@ -3171,9 +3171,6 @@ input[type="range"]::-webkit-slider-thumb {
 /* ===== Grid ===== */
 .te-grid-wrap { display: flex; flex-direction: column; min-width: 0; position: relative; overflow: hidden; }
 .te-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--te-card-size, 160px)); grid-auto-rows: var(--te-card-size, 160px); justify-content: start; gap: 8px; flex: 1; overflow-y: auto; padding: 8px; align-content: start; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--border-default) transparent; contain: layout paint; }
-.te-grid::-webkit-scrollbar { width: 5px; }
-.te-grid::-webkit-scrollbar-track { background: transparent; }
-.te-grid::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: var(--radius-pill); }
 
 /* ===== Card ===== */
 .te-card { width: 100%; min-width: 0; height: 100%; border: 2px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface); position: relative; cursor: pointer; overflow: hidden; transition: border-color 0.1s; contain: layout paint; }
@@ -3409,7 +3406,6 @@ body.te-lightbox-open { overflow: hidden; }
 
 /* ===== Saving Overlay ===== */
 .te-saving-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--accent); font-weight: 600; }
-[data-theme="dark"] .te-saving-overlay { background: rgba(0,0,0,0.4); }
 
 /* ===== Skeleton Loading ===== */
 @keyframes te-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }

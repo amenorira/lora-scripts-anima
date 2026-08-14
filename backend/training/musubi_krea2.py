@@ -131,12 +131,6 @@ _KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
     "prodigyplus.": "prodigy-plus-schedule-free",
     "schedulefree.": "schedulefree",
 }
-# Compatibility alias for integrations which imported the previous private
-# constant. The authoritative contract now lives in musubi_runtime and is
-# shared by launchers, the Environment tab, and Krea preflight.
-_MUSUBI_RUNTIME_PACKAGES = MUSUBI_RUNTIME_PACKAGES
-
-
 def _show_if_one_of(key: str, values: Iterable[str]) -> dict[str, Any]:
     ordered = list(values)
     condition: dict[str, Any] = {"key": key, "eq": ordered[0]}

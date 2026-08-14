@@ -365,19 +365,6 @@ window.environmentCoreMixin = {
     this.renderEnvironment(); this.finishProgress();
   },
 
-  async trainingCoresRefresh() {
-    this.trainingCoresError = null;
-    try {
-      const response = await fetch('/api/training/cores');
-      const payload = await response.json();
-      if (!response.ok || payload.status !== 'success') throw new Error(payload.message || 'Failed to load training cores');
-      this.trainingCores = payload.data || null;
-    } catch (error) {
-      this.trainingCoresError = String(error.message || error);
-      this.trainingCores = null;
-    }
-  },
-
   async faRefresh(silent) {
     this.faError = null;
     if (!silent) { this.startProgress(); this.toast(this.t('environment.refreshing')); }

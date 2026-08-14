@@ -19,7 +19,11 @@ runtime/
 .anima_tmp/
 bootstrap-backups/
 
+config/*
+!config/sample_prompts.txt
 config/state.json
+config/autosave/
+config/presets/
 
 py310
 python
@@ -28,9 +32,6 @@ wd14_tagger_model
 
 logs/*
 !logs/.keep
-
-config/autosave/*
-config
 
 vendor/sd-scripts/tests/
 

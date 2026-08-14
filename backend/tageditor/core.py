@@ -110,6 +110,28 @@ def write_tags(cap_path: Path, tags: str, create_backup: bool = False) -> bool:
         return False
 
 
+def _build_image_entry(p: Path, base_dir: Path) -> dict:
+    """构建单张图片的条目字典（scan_dataset / scan_selected_images 共用）。"""
+    candidates = caption_candidates(p)
+    cap = candidates[0] if candidates else None
+    tags = read_tags(cap) if cap else ""
+    try:
+        rel = str(p.relative_to(base_dir)).replace("\\", "/")
+    except ValueError:
+        rel = p.name
+    return {
+        "name": p.name,
+        "path": str(p),
+        "rel_path": rel,
+        "tags": tags,
+        "has_caption": cap is not None,
+        "caption_path": str(cap) if cap else str(p.with_suffix(CAPTION_EXTENSIONS[0])),
+        "caption_revision": caption_revision(cap) if cap else "missing",
+        "caption_conflict": len(candidates) > 1,
+        "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
+    }
+
+
 def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], list[dict]]:
     """单次扫描图片、标签文本与标签频率，避免同一目录重复遍历。"""
     images = []
@@ -121,25 +143,9 @@ def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], li
             continue
         if p.suffix.lower() not in img_exts:
             continue
-        candidates = caption_candidates(p)
-        cap = candidates[0] if candidates else None
-        tags = read_tags(cap) if cap else ""
-        counter.update(tag_list(tags))
-        try:
-            rel = str(p.relative_to(dir_path)).replace("\\", "/")
-        except ValueError:
-            rel = p.name
-        images.append({
-            "name": p.name,
-            "path": str(p),
-            "rel_path": rel,
-            "tags": tags,
-            "has_caption": cap is not None,
-            "caption_path": str(cap) if cap else str(p.with_suffix(CAPTION_EXTENSIONS[0])),
-            "caption_revision": caption_revision(cap) if cap else "missing",
-            "caption_conflict": len(candidates) > 1,
-            "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
-        })
+        entry = _build_image_entry(p, dir_path)
+        counter.update(tag_list(entry["tags"]))
+        images.append(entry)
     images.sort(key=lambda x: x["name"])
     tags_data = [{"tag": tag, "count": count} for tag, count in counter.most_common()]
     return images, tags_data
@@ -160,24 +166,7 @@ def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]
             p.relative_to(dir_resolved)
         except ValueError:
             continue
-        candidates = caption_candidates(p)
-        cap = candidates[0] if candidates else None
-        tags = read_tags(cap) if cap else ""
-        try:
-            rel = str(p.relative_to(dir_resolved)).replace("\\", "/")
-        except ValueError:
-            rel = p.name
-        images.append({
-            "name": p.name,
-            "path": str(p),
-            "rel_path": rel,
-            "tags": tags,
-            "has_caption": cap is not None,
-            "caption_path": str(cap) if cap else str(p.with_suffix(CAPTION_EXTENSIONS[0])),
-            "caption_revision": caption_revision(cap) if cap else "missing",
-            "caption_conflict": len(candidates) > 1,
-            "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
-        })
+        images.append(_build_image_entry(p, dir_resolved))
     images.sort(key=lambda x: x["name"])
     return images
 

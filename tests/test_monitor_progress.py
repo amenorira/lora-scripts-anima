@@ -250,6 +250,7 @@ class MonitorFrontendContractTests(unittest.TestCase):
     def test_diagnostic_and_checkpoint_helpers_execute_edge_cases(self):
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/utils.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
 const mixin = window.monitorRenderMixin;
 const points = values => values.map((value, step) => ({step: step + 1, value}));
@@ -315,6 +316,7 @@ process.stdout.write(JSON.stringify({
     def test_config_snapshot_requests_share_encoded_fetch_helper(self):
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/utils.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
 const mixin = window.monitorRenderMixin;
 const urls = [];
@@ -323,7 +325,7 @@ global.fetch = async url => {
   return {json: async () => ({status: 'success', data: {params: {seed: 7}, content: 'seed = 7'}})};
 };
 const events = [];
-const app = Object.assign({}, mixin, {
+const app = Object.assign({}, mixin, window.utilsMixin, {
   form: {},
   t(key, fallback) { return fallback || key; },
   startProgress() { events.push('start'); },

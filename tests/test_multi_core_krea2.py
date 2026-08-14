@@ -674,7 +674,7 @@ class Krea2CodecTests(unittest.TestCase):
                 "backend.server.routes.training.run_train", return_value={"status": "success"}
             ), patch.object(training_routes, "OUTPUT_DIR", root / "runs"), patch(
                 "backend.server.routes.training.os.getcwd", return_value=str(root)
-            ):
+            ), patch.object(training_routes, "AUTOSAVE_DIR", root / "config" / "autosave"):
                 result = asyncio.run(training_routes._create_krea2_run(config, None, timestamp))
 
             run_dir = root / "runs" / f"krea2_test_{timestamp}"

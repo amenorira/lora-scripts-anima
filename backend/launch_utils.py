@@ -281,7 +281,7 @@ def setup_windows_bitsandbytes():
 
     if not installed_bnb or not bnb_cuda_setup:
         log.error("detected wrong install of bitsandbytes, reinstall it")
-        run_pip(f"uninstall bitsandbytes -y", "bitsandbytes", live=True)
+        run_pip("uninstall bitsandbytes -y", "bitsandbytes", live=True)
         run_pip(f"install {bnb_package}", bnb_package, live=True)
 
 
@@ -335,13 +335,13 @@ def setup_onnxruntime(
 
     if onnx_version and not is_installed(f"onnxruntime-gpu=={onnx_version}"):
         log.info("uninstalling wrong onnxruntime version")
-        run_pip(f"uninstall onnxruntime -y", "onnxruntime", live=True)
-        run_pip(f"uninstall onnxruntime-gpu -y", "onnxruntime", live=True)
+        run_pip("uninstall onnxruntime -y", "onnxruntime", live=True)
+        run_pip("uninstall onnxruntime-gpu -y", "onnxruntime", live=True)
 
-    if not is_installed(f"onnxruntime-gpu"):
-        log.info(f"installing onnxruntime")
+    if not is_installed("onnxruntime-gpu"):
+        log.info("installing onnxruntime")
         if is_installed("onnxruntime"):
-            run_pip(f"uninstall onnxruntime -y", "onnxruntime", live=True)
+            run_pip("uninstall onnxruntime -y", "onnxruntime", live=True)
         pip_install("onnxruntime-gpu", onnx_version, index_url=index_url, live=True)
 
 

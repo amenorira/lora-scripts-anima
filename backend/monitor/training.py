@@ -34,6 +34,12 @@ _last_seen_step: dict[tuple[str, str], int] = {}
 _last_seen_step_lock = threading.Lock()
 _MAX_SEEN_ENTRIES = 200  # 防止无限增长
 
+# 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
+_SCALAR_TAGS = (
+    "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
+    "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
+)
+
 # ── Autosave TOML glob 缓存 ─────────────────────────────────
 _autosave_glob_cache: tuple[float, list[Path]] | None = None
 _autosave_glob_cache_lock = threading.Lock()
@@ -172,10 +178,7 @@ def read_tensorboard_loss(
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
 
-    scalar_tags = (
-        "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
-        "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
-    )
+    scalar_tags = _SCALAR_TAGS
 
     for log_dir in (log_dirs[:1] if run_dir else log_dirs[:5]):
         ea = _get_cached_accumulator(log_dir)
@@ -238,10 +241,7 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
 
-    scalar_tags = (
-        "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
-        "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
-    )
+    scalar_tags = _SCALAR_TAGS
 
     result: dict[str, list[dict]] = {}
 
