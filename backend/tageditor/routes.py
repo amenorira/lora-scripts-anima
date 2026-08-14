@@ -320,22 +320,35 @@ async def save_all_tags(data: dict):
     return {"status": "success", "data": result}
 
 
-@router.post("/tageditor/batch")
-async def batch_edit_tags(data: dict):
-    """批量操作图片标签"""
+async def _resolve_batch_context(data: dict) -> tuple[dict | None, Path | None, str, dict, list[dict]]:
+    """批量操作的公共前置：解析参数、校验目录、解析目标图片。
+
+    返回 (error_response, d, operation, args, target_images)。
+    error_response 非 None 时直接返回它即可，其余字段无效。
+    """
     dir_path = data.get("dir", "")
     operation = data.get("operation", "")
     args = data.get("args", {})
     if not dir_path or not operation:
-        return {"status": "error", "message": "缺少参数"}
+        return {"status": "error", "message": "缺少参数"}, None, "", {}, []
 
     d = _valid_directory(dir_path)
     if d is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "目录不存在"}, None, "", {}, []
 
     target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
     if err:
-        return {"status": "error", "message": err}
+        return {"status": "error", "message": err}, None, "", {}, []
+
+    return None, d, operation, args, target_images
+
+
+@router.post("/tageditor/batch")
+async def batch_edit_tags(data: dict):
+    """批量操作图片标签"""
+    error, d, operation, args, target_images = await _resolve_batch_context(data)
+    if error is not None:
+        return error
 
     def _apply_batch() -> tuple[list[dict], list[str]]:
         changes = []
@@ -377,19 +390,9 @@ async def batch_edit_tags(data: dict):
 @router.post("/tageditor/batch/preview")
 async def preview_batch_edit(data: dict):
     """预览批量操作（不实际执行）"""
-    dir_path = data.get("dir", "")
-    operation = data.get("operation", "")
-    args = data.get("args", {})
-    if not dir_path or not operation:
-        return {"status": "error", "message": "缺少参数"}
-
-    d = _valid_directory(dir_path)
-    if d is None:
-        return {"status": "error", "message": "目录不存在"}
-
-    target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
-    if err:
-        return {"status": "error", "message": err}
+    error, d, operation, args, target_images = await _resolve_batch_context(data)
+    if error is not None:
+        return error
 
     def _build_preview() -> list[dict]:
         preview_items = []

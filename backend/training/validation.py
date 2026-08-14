@@ -16,6 +16,7 @@ from backend.training.field_registry import (
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     AUTOMAGIC_MAX_LR_DEFAULT,
+    AUTOMAGIC_MERGED_ARG_MAP,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
@@ -219,17 +220,7 @@ def _validate_automagic(
     for key in sorted(args.keys() - supported_args):
         errors.append(f"Automagic3 optimizer_args: unsupported argument {key!r} / 不支持此参数")
 
-    top_level_map = {
-        "automagic_min_lr": "min_lr",
-        "automagic_max_lr": "max_lr",
-        "automagic_beta2": "beta2",
-        "automagic_clip_threshold": "clip_threshold",
-        "automagic_polarity_history": "polarity_history",
-        "automagic_fused": "fused",
-        "eps": "eps",
-        "weight_decay": "weight_decay",
-    }
-    for form_key, arg_key in top_level_map.items():
+    for form_key, arg_key in AUTOMAGIC_MERGED_ARG_MAP.items():
         if not _is_empty(config.get(form_key)):
             args[arg_key] = config[form_key]
 

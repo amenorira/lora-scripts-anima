@@ -21,6 +21,7 @@ from backend.training.field_registry import (
 )
 from backend.training.optimizer_contracts import (
     AUTOMAGIC_MAX_LR_DEFAULT,
+    AUTOMAGIC_MERGED_ARG_MAP,
     normalize_optimizer_config,
 )
 from backend.training.validation import get_automagic_fused_conflicts
@@ -81,17 +82,6 @@ LYCORIS_KOHYA_UI_FIELDS = (
     | set(LYCORIS_KOHYA_ONLY_ARG_MAP.keys())
     | set(LYCORIS_KOHYA_SPECIFIC_ARG_MAP.keys())
 )
-
-AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
-    "automagic_min_lr": "min_lr",
-    "automagic_max_lr": "max_lr",
-    "automagic_beta2": "beta2",
-    "automagic_clip_threshold": "clip_threshold",
-    "automagic_polarity_history": "polarity_history",
-    "automagic_fused": "fused",
-    "eps": "eps",
-    "weight_decay": "weight_decay",
-}
 
 
 def _is_empty_value(value: Any) -> bool:

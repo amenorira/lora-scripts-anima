@@ -299,7 +299,7 @@ def run_train(
 
     return {
         "status": "success",
-        "message": f"Training started / 训练已启动",
+        "message": "Training started / 训练已启动",
         "data": {
             "task_id": task_id,
             "run_dir": str(run_path),
@@ -340,17 +340,17 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
         return requested, ""
 
     if requested == "xformers" and "torch" in available:
-        msg = f"xformers not available / xformers 不可用; falling back to torch SDPA / 降级为 torch SDPA"
+        msg = "xformers not available / xformers 不可用; falling back to torch SDPA / 降级为 torch SDPA"
         log.warning(msg)
         return "torch", msg
 
     if requested == "flash" and "xformers" in available:
-        msg = f"flash_attn not available / flash_attn 不可用; falling back to xformers / 降级为 xformers"
+        msg = "flash_attn not available / flash_attn 不可用; falling back to xformers / 降级为 xformers"
         log.warning(msg)
         return "xformers", msg
 
     if requested == "flash" and "torch" in available:
-        msg = f"flash_attn and xformers both unavailable / 均不可用; falling back to torch SDPA / 降级为 torch SDPA"
+        msg = "flash_attn and xformers both unavailable / 均不可用; falling back to torch SDPA / 降级为 torch SDPA"
         log.warning(msg)
         return "torch", msg
 
