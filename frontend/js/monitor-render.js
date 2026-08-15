@@ -320,6 +320,14 @@ window.monitorRenderMixin = {
         const isActive = panel.dataset.tab === tab;
         panel.classList.toggle('active', isActive);
         panel.hidden = !isActive;
+        if (isActive) {
+          // tab 切换激活：允许进入动画播放（移除内容重建时可能加过的抑制类）
+          panel.classList.remove('no-enter-anim');
+          // 入场动画期间隐藏滚动条 thumb（动画的向下位移会临时撑大滚动区，导致 thumb 闪现）
+          panel.classList.add('scroll-entering');
+          clearTimeout(panel._scrollEnteringTimer);
+          panel._scrollEnteringTimer = setTimeout(() => panel.classList.remove('scroll-entering'), 520);
+        }
       });
       requestAnimationFrame(() => this._syncMonitorTabIndicator());
     }
@@ -338,6 +346,7 @@ window.monitorRenderMixin = {
         this._cancelPreviewMediaQueue();
         this._releasePreviewMediaObjectUrls();
         this._builtOverviewSig = sig;
+        if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
         delete panel.dataset.diagnosticVersion;
         delete panel.dataset.paramQuery;
@@ -353,6 +362,7 @@ window.monitorRenderMixin = {
         this._cancelPreviewMediaQueue();
         this._releasePreviewMediaObjectUrls();
         this._builtSamplesSig = sig;
+        if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderSamplesTab(t);
         panel.scrollTop = scrollTop;
       }
@@ -367,6 +377,8 @@ window.monitorRenderMixin = {
         const scrollEl = panel.querySelector('.m-outputs-scroll');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
+        // 非 tab 切换的原地重建（如点击表头排序）抑制进入动画，避免整面板闪烁
+        if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderOutputsTab(t);
         const newScrollEl = panel.querySelector('.m-outputs-scroll');
         if (newScrollEl) newScrollEl.scrollTop = scrollTop;

@@ -308,11 +308,12 @@ document.addEventListener('alpine:init', () => {
     // 新页面内容自上而下错峰浮现（CSS: route-cascade，非线性缓出）
     _playRouteEnter(mainContent) {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      mainContent.classList.remove('route-enter');
+      mainContent.classList.remove('route-enter', 'scroll-entering');
       void mainContent.offsetWidth; // 强制 reflow，让连续切换能重启动画
-      mainContent.classList.add('route-enter');
+      // scroll-entering：入场动画期间隐藏滚动条 thumb，避免向下位移撑大滚动区导致闪现
+      mainContent.classList.add('route-enter', 'scroll-entering');
       clearTimeout(this._routeEnterTimer);
-      this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter'), 900);
+      this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter', 'scroll-entering'), 900);
     },
 
     // 侧栏滑动高亮：跟随激活导航项的位置与高度（首次定位不播放动画）。

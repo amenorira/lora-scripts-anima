@@ -126,8 +126,11 @@
 
 .tagger-single-layout { display: grid; grid-template-columns: minmax(320px, var(--tagger-single-left, 55%)) 8px minmax(420px, 1fr); align-items: stretch; gap: 0; width: 100%; }
 /* 模式切换：两种布局由 x-if 销毁/重建，CSS 动画随挂载自动播放（自上而下分层，
-   与监控台 tab 面板共用 m-tab-enter 关键帧，见 app.css） */
-.tagger-batch-layout > *, .tagger-single-layout > * { animation: m-tab-enter 340ms var(--ease-out) both; }
+   与监控台 tab 面板共用 m-tab-enter 关键帧，见 app.css）。
+   注意：fill 必须用 backwards 而非 both/forwards —— Chromium 会把带 forwards 填充的
+   transform 动画元素当作 position:fixed 后代的包含块，导致内部的 anima-select
+   固定定位下拉菜单相对卡片错位并被裁剪。backwards 在动画结束后不留任何填充。 */
+.tagger-batch-layout > *, .tagger-single-layout > * { animation: m-tab-enter 340ms var(--ease-out) backwards; }
 .tagger-batch-layout > *:nth-child(2), .tagger-single-layout > *:nth-child(2) { animation-delay: 50ms; }
 .tagger-batch-layout > *:nth-child(n+3), .tagger-single-layout > *:nth-child(n+3) { animation-delay: 100ms; }
 .tagger-single-main, .tagger-single-sidebar { display: grid; align-content: start; gap: 14px; min-width: 0; }

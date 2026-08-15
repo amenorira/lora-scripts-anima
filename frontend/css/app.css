@@ -350,13 +350,6 @@ a:focus-visible {
               height 300ms var(--ease-out),
               opacity var(--duration-fast) var(--ease-out);
 }
-.sidebar-nav-indicator::before {
-  content: '';
-  position: absolute; left: 1px; top: 50%;
-  width: 3px; height: 16px; border-radius: 1px;
-  background: var(--accent);
-  transform: translateY(-50%);
-}
 .sidebar-nav.indicator-ready .sidebar-nav-indicator { opacity: 1; }
 .sidebar-nav.no-anim .sidebar-nav-indicator { transition: none; }
 
@@ -393,33 +386,37 @@ a:focus-visible {
   width: calc(100% - 12px); text-align: left;
   transition: background-color var(--duration-fast) var(--ease-out),
               color var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-spring),
               padding var(--duration-slow) var(--ease-out),
               margin var(--duration-slow) var(--ease-out),
               gap var(--duration-slow) var(--ease-out);
   user-select: none;
 }
 
+/* hover 不画背景（背景只有滑动 pill 一个，快速来回点击不会叠出两块高亮），
+   只做文字/图标提亮；按下时轻微内缩回弹，模拟物理按压 */
 .sidebar-item:hover {
-  background: var(--hover-overlay);
   color: var(--text-sidebar-active);
   text-decoration: none;
 }
+.sidebar-item:hover .nav-icon { opacity: 1; }
 
-.sidebar-item:active { background: var(--active-overlay); }
+.sidebar-item:active { transform: scale(0.96); }
 
 .sidebar-item.active {
-  /* 背景高亮由 .sidebar-nav-indicator 滑动提供，这里只保留文字态 */
+  /* 背景高亮由 .sidebar-nav-indicator 滑动提供，这里只保留文字态；
+     激活不加粗字重，避免文字宽度跳动 */
   color: var(--text-sidebar-active);
-  font-weight: 550;
 }
-.sidebar-item.active:hover { background: transparent; }
 
 .sidebar-item .nav-icon {
   width: 19px; height: 19px; flex-shrink: 0;
   opacity: 0.70; display: flex; align-items: center; justify-content: center;
-  transition: opacity var(--duration-normal) var(--ease-out);
+  transition: opacity var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out);
 }
-.sidebar-item.active .nav-icon { opacity: 1; }
+/* 激活态用图标着主题色替代左侧短竖线 */
+.sidebar-item.active .nav-icon { opacity: 1; color: var(--accent); }
 .sidebar-item .nav-icon svg { width: 16px; height: 16px; }
 
 /* ── Sidebar item text (animatable collapse) ────────────── */
@@ -643,8 +640,9 @@ a:focus-visible {
 .main-content > div { transition: opacity 90ms var(--ease-out); }
 .main-content.route-transitioning > div { opacity: 0; }
 @keyframes route-cascade { from { opacity: 0; transform: translateY(12px); } }
+/* fill 用 backwards：动画结束不保留 transform 填充，避免祖先成为 fixed 下拉菜单的包含块 */
 .main-content.route-enter > div > * {
-  animation: route-cascade 380ms var(--ease-out) both;
+  animation: route-cascade 380ms var(--ease-out) backwards;
 }
 .main-content.route-enter > div > *:nth-child(2) { animation-delay: 40ms; }
 .main-content.route-enter > div > *:nth-child(3) { animation-delay: 80ms; }
@@ -2185,18 +2183,35 @@ input[type="range"]::-webkit-slider-thumb {
 .monitor-dashboard { padding: 12px 0 18px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #monitorDashboard { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 #monitorTabContent { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-/* 持久标签面板：各自独立滚动，切走再切回时滚动位置天然保留 */
-.m-tab-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* 持久标签面板：各自独立滚动，切走再切回时滚动位置天然保留。
+   scrollbar-gutter: stable 恒留滚动条槽位，避免切换 tab 时滚动条
+   出现/消失引起内容宽度跳动（与 .main-content 的处理一致） */
+.m-tab-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; scrollbar-gutter: stable; }
 .m-tab-panel[hidden] { display: none; }
-/* 面板内容自上而下分层浮现（切换 tab 时 .active 重新挂载触发动画） */
+/* 面板内容自上而下分层浮现（切换 tab 时 .active 重新挂载触发动画）。
+   fill 用 backwards，动画结束不保留 transform（forwards/both 填充会让 Chromium
+   把该元素当作 fixed 定位后代（如下拉菜单）的包含块，导致错位/裁剪） */
 @keyframes m-tab-enter { from { opacity: 0; transform: translateY(10px); } }
-.m-tab-panel.active > * { animation: m-tab-enter 340ms var(--ease-out) both; }
+.m-tab-panel.active > * { animation: m-tab-enter 340ms var(--ease-out) backwards; }
+/* 内容原地重建（排序/筛选/追加样本等）不应重播进入动画，否则整面板看起来像闪烁；
+   JS 在非 tab 切换的 innerHTML 重建前给面板加 .no-enter-anim，切换激活时移除 */
+.m-tab-panel.no-enter-anim > * { animation: none; }
 .m-tab-panel.active > *:nth-child(2) { animation-delay: 50ms; }
 .m-tab-panel.active > *:nth-child(3) { animation-delay: 100ms; }
 .m-tab-panel.active > *:nth-child(n+4) { animation-delay: 150ms; }
 .m-tab-panel::-webkit-scrollbar { width: 7px; }
 .m-tab-panel::-webkit-scrollbar-track { background: transparent; }
 .m-tab-panel::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-tertiary) 36%, transparent); border-radius: var(--radius-pill); }
+/* 进入动画（向上浮入）播放期间，translateY 正值会临时撑大滚动容器的可滚动
+   区域，使滚动条 thumb 闪现。动画播放期间由 JS 给滚动容器加 .scroll-entering
+   隐藏 thumb（槽位已由 scrollbar-gutter: stable 预留，隐藏不引起宽度跳动）。
+   注意：不能用 scrollbar-color 实现 —— Chromium 下它会接管滚动条样式并
+   丢弃 ::-webkit-scrollbar 的 7px 宽度，回退到系统默认宽度，反而引起重排。 */
+.scroll-entering::-webkit-scrollbar-thumb { background: transparent; }
+/* Firefox 不认识 ::-webkit-scrollbar，用 scrollbar-color 兜底（不影响宽度） */
+@supports not (selector(::-webkit-scrollbar)) {
+  .scroll-entering { scrollbar-color: transparent transparent; }
+}
 #historyList { min-height: 120px; contain: style; }
 #environmentPage { min-width: 900px; min-height: 300px; contain: style; container-type: inline-size; }
 #trainFormContent { min-height: 400px; contain: style; }
@@ -2469,9 +2484,11 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .m-output-selection-bar {
   display: none; position: sticky; top: 0; z-index: 5; align-items: center; justify-content: space-between; gap: 12px;
-  min-height: 40px; margin-bottom: 8px; padding: 6px 9px;
+  min-height: 40px; margin-bottom: 0; padding: 6px 9px 14px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--monitor-card-border)); border-radius: 0;
-  background: color-mix(in srgb, var(--accent-soft) 78%, var(--bg-surface)); color: var(--text-secondary); font-size: 12px;
+  /* 不透明实色：原 accent-soft 本身是半透明的，吸顶时行内容会透过来形成"缝隙"；
+     底部间距用 padding 而非 margin，使吸顶后下方 8px 也是实心背景，不透出滚动内容 */
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface)); color: var(--text-secondary); font-size: 12px;
 }
 .m-output-selection-bar.visible { display: flex; }
 .m-output-selection-bar > div { display: flex; align-items: center; gap: 6px; }
@@ -2488,8 +2505,11 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center; gap: 9px; min-height: 46px; padding: 7px 11px;
 }
 .output-table-head {
-  position: sticky; top: 0; z-index: 3; min-height: 38px; border-bottom: 1px solid var(--monitor-card-border);
-  background: color-mix(in srgb, var(--bg-surface-raised) 68%, transparent);
+  /* top:-1px 盖住 .m-outputs-scroll 的 1px 上 padding，否则吸顶时行内容会
+     从这条 1px 细缝里透出来（高分屏下像一条虚线） */
+  position: sticky; top: -1px; z-index: 3; min-height: 38px; border-bottom: 1px solid var(--monitor-card-border);
+  /* 必须不透明：半透明时滚动后行内容会透过表头，看起来像缝隙/叠影 */
+  background: var(--monitor-card-bg);
   color: var(--text-secondary); font-size: 11px; font-weight: 650; letter-spacing: 0;
 }
 .output-table-sort { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }

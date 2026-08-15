@@ -397,6 +397,13 @@ window.taggerMixin = {
     this._taggerModeStates[mode] = null;
     this._restoreTaggerModeState(stored);
     this.resetTaggerPreview();
+    // 布局重建触发入场动画（m-tab-enter），期间隐藏页面滚动条 thumb 避免位移撑大滚动区导致闪现
+    const scroller = document.querySelector('.main-content');
+    if (scroller) {
+      scroller.classList.add('scroll-entering');
+      clearTimeout(this._scrollEnteringTimer);
+      this._scrollEnteringTimer = setTimeout(() => scroller.classList.remove('scroll-entering'), 520);
+    }
     requestAnimationFrame(() => this._syncTaggerTabIndicator());
   },
 
