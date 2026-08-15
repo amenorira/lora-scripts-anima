@@ -475,6 +475,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_logit_mean",
         "hint_key": "field.krea_logit_meanHint",
+        "layout_parent": "weighting_scheme",
         "show_if_any": [
             [{"key": "timestep_sampling", "eq": "logsnr"}],
             [
@@ -494,6 +495,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_logit_std",
         "hint_key": "field.krea_logit_stdHint",
+        "layout_parent": "weighting_scheme",
         "show_if_any": [
             [{"key": "timestep_sampling", "eq": "logsnr"}],
             [
@@ -513,6 +515,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_mode_scale",
         "hint_key": "field.krea_mode_scaleHint",
+        "layout_parent": "weighting_scheme",
         "show_if": [
             {"key": "timestep_sampling", "eq": "sigma"},
             {"key": "weighting_scheme", "eq": "mode"},
