@@ -1410,7 +1410,7 @@
 		"coreRegistryTitle": "Training core registry",
 		"coreRegistryDesc": "sd-scripts, mounted LyCORIS, and musubi-tuner",
 		"coreReady": "Ready",
-		"coreNotReady": "Needs setup",
+		"coreNotReady": "Not configured",
 		"coreRuntime": "Runtime",
 		"coreAdapters": "Adapter cores",
 		"coreProfiles": "Training profiles",
@@ -1438,6 +1438,22 @@
 		"verLabel": "Ver",
 		"connectionLost": "Connection lost, please refresh",
 		"installFailed": "Install failed",
+		"refreshAll": "Refresh all",
+		"advancedOptions": "Advanced options",
+		"copyLog": "Copy log",
+		"copied": "Copied to clipboard",
+		"optionalNotInstalled": "Optional · Not installed",
+		"loadingShort": "Loading…",
+		"overview": {
+			"allReady": "Running normally",
+			"needsAttention": "Needs attention",
+			"checking": "Checking environment...",
+			"subReady": "Acceleration libraries and models are optional enhancements — install them as needed.",
+			"subError": "Check the highlighted rows for error details.",
+			"accel": "Acceleration",
+			"core": "Training core",
+			"models": "Models"
+		},
 		"animaModel": {
 			"title": "Model Downloads",
 			"subtitle": "Anima / Krea 2",
@@ -1455,15 +1471,15 @@
 			"connecting": "Connecting",
 			"failed": "Failed",
 			"allReady": "All ready",
-			"incomplete": "Incomplete",
 			"download": "Download",
 			"redownload": "Redownload",
 			"downloadAll": "Download All",
 			"downloadAllAgain": "Re-download All",
 			"progressLog": "Progress Log",
-			"destHint": "Models download to the models/ directory for training or inference.",
+			"destShort": "Downloads to models/",
 			"fileOf": "File {i}/{n}",
-			"openRepository": "Open model repository"
+			"openRepository": "Open model repository",
+			"downloadedCount": "{x}/{y} downloaded · {size}"
 		}
 	},
 	"opt": {

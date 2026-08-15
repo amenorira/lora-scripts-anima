@@ -2,9 +2,13 @@
    environment-render.js — renderEnvironment + event bindings
    Mixin merged into animaApp Alpine component
 
-   设计：按训练环境与本地资源分栏；抽取共享 helper
-   （_renderDetailGroup / _renderProgressPanel / _renderLog / _renderRefreshBtn）
-   消除四处重复 HTML + 内联 style。日志可读性为核心目标。
+   架构：分槽增量渲染。renderEnvironment() 首次建立稳定骨架
+   （加载状态 / Hero 总览 / 6 个组件行槽位 / 2 个模型组槽位），
+   之后每帧按槽位比对 HTML，只替换变化的槽位 → 进度 tick 不再
+   摧毁整页 DOM，折叠动画、输入焦点、日志滚动位置全部存活。
+
+   布局：Hero（全宽）→ 运行环境（双列独立堆叠）→ 模型文件（双组并排）。
+   组件以"行 + 行内展开详情"取代旧 details 卡片墙；健康组件只占一行。
    ================================================================ */
 
 window.environmentRenderMixin = {
@@ -16,50 +20,83 @@ window.environmentRenderMixin = {
       this._environmentRenderFrame = null;
     }
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
-    let html = '';
+    this._ensureEnvSkeleton(el, T);
+    this._updateEnvSectionTitles(el, T);
 
-    if (this.environmentLoading) {
-      html += `<div class="env-load-status" role="status" aria-live="polite">`
-        + `<span class="env-load-spinner" aria-hidden="true"></span>`
-        + `<span>${T('loading','Loading environment info...')}</span></div>`;
+    const slots = {
+      overview: this._renderOverview(T),
+      fa: this._renderFaRow(T),
+      xf: this._renderXfRow(T),
+      triton: this._renderTritonRow(T),
+      sd: this._renderSdRow(T),
+      lycoris: this._renderLycorisRow(T),
+      musubi: this._renderMusubiRow(T),
+      animaModel: this._renderModelGroup(T, 'Anima'),
+      krea2: this._renderModelGroup(T, 'Krea 2'),
+    };
+    if (!this._envSlotHtml) this._envSlotHtml = {};
+    for (const slot of Object.keys(slots)) {
+      const host = el.querySelector('[data-env-slot="' + slot + '"]');
+      if (!host) continue;
+      const html = slots[slot];
+      if (this._envSlotHtml[slot] === html) continue; // 无变化 → DOM 保留
+      this._envSlotHtml[slot] = html;
+      host.innerHTML = html;
+      this._bindSlotEvents(host, slot, T);
     }
-
-    html += `<div class="env-layout"><div class="env-layout-column env-layout-training">`;
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionAccel', 'Performance acceleration')}</div>`;
-    html += this._renderFaRow(T);
-    html += this._renderXfRow(T);
-    html += this._renderTritonRow(T);
-    html += `</div>`;
-
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionCore', 'Training Core')}</div>`;
-    html += this._renderSdRow(T);
-    html += this._renderLycorisRow(T);
-    html += this._renderMusubiRow(T);
-    html += `</div>`;
-
-    html += `</div><div class="env-layout-column env-layout-resources">`;
-    html += `<div class="env-section"><div class="env-section-header">${T('sectionModels', 'Models')}</div>`;
-    html += this._renderAnimaModelRow(T, 'Anima');
-    html += this._renderAnimaModelRow(T, 'Krea 2');
-    html += `</div>`;
-    html += `</div></div>`;
-
-    el.innerHTML = html;
-    this._bindFaEvents(el, T);
-    this._bindXfEvents(el);
-    this._bindTritonEvents(el);
-    this._bindAnimaModelEvents(el);
-    this._bindCardToggle(el);
     this._autoScrollLogs(el);
   },
 
-  // 每次 renderEnvironment 用 innerHTML 全量重建 DOM，新建的 .env-log 容器
-  // scrollTop 重置为 0（回顶部）；安装/下载日志是增量追加，用户要看最新行，
-  // 所以渲染后把所有可见的 .env-log 滚到底部。仅滚"正在更新"的活跃日志，
-  // 静态卡片里的日志若用户手动滚到中间则不强制（这里无活跃态时可忽略，影响小）。
+  // ── 稳定骨架（只建一次）──────────────────────────────
+  _ensureEnvSkeleton(el, T) {
+    if (el.dataset.envSkeleton === '1' && el.querySelector('[data-env-slot="overview"]')) return;
+    el.dataset.envSkeleton = '1';
+    el.innerHTML = ''
+      + '<div data-env-slot="overview"></div>'
+      + '<div class="env-env-grid">'
+      +   '<div class="env-col" data-env-anchor-target="accel">'
+      +     '<div class="env-section-title" data-env-title="accel"></div>'
+      +     '<div data-env-slot="fa"></div>'
+      +     '<div data-env-slot="xf"></div>'
+      +     '<div data-env-slot="triton"></div>'
+      +   '</div>'
+      +   '<div class="env-col" data-env-anchor-target="core">'
+      +     '<div class="env-section-title" data-env-title="core"></div>'
+      +     '<div data-env-slot="sd"></div>'
+      +     '<div data-env-slot="lycoris"></div>'
+      +     '<div data-env-slot="musubi"></div>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="env-models-wrap" data-env-anchor-target="models">'
+      +   '<div class="env-section-title"><span data-env-title="models"></span><span class="env-section-note" data-env-note="models"></span></div>'
+      +   '<div class="env-models-grid">'
+      +     '<div data-env-slot="animaModel"></div>'
+      +     '<div data-env-slot="krea2"></div>'
+      +   '</div>'
+      + '</div>';
+  },
+
+  _updateEnvSectionTitles(el, T) {
+    const set = (key, text) => {
+      const n = el.querySelector('[data-env-title="' + key + '"]');
+      if (n && n.textContent !== text) n.textContent = text;
+    };
+    set('accel', T('sectionAccel', 'Performance acceleration'));
+    set('core', T('sectionCore', 'Training Core'));
+    set('models', T('sectionModels', 'Models'));
+    // 「下载到哪」的极短说明只在区标题行出现一次（文件行已逐行显示目标路径）
+    const note = el.querySelector('[data-env-note="models"]');
+    const noteText = T('animaModel.destShort', 'Downloads to models/');
+    if (note && note.textContent !== noteText) note.textContent = noteText;
+  },
+
+  // 页面级加载指示已并入 Hero 骨架（env-load-spinner + env-load-status，
+  // 类名为 tests/test_realtime.py 契约），不再单独渲染顶部横条。
+
+  // 分槽渲染只替换变化的槽位 DOM，未变化槽位的 .env-log 滚动位置天然保留；
+  // 这里只把"刚重建且内容溢出"的日志滚到底（实时日志持续追加，用户要看最新行）。
   _autoScrollLogs(el) {
     el.querySelectorAll('.env-log').forEach(pre => {
-      // 仅当容器有滚动高度（内容溢出）时才有意义
       if (pre.scrollHeight > pre.clientHeight) {
         pre.scrollTop = pre.scrollHeight;
       }
@@ -67,34 +104,130 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
-  //  Shared render helpers（消除重复 HTML + 内联 style）
+  //  Hero 总览面板
+  // ═══════════════════════════════════════════════════════
+  _renderOverview(T) {
+    const faOk = !!(this.faStatus && this.faStatus.installed);
+    const xfOk = !!(this.xfStatus && this.xfStatus.installed);
+    const trOk = !!(this.tritonStatus && this.tritonStatus.installed);
+    const accelReady = !!(this.faStatus && this.xfStatus && this.tritonStatus);
+    const accelDone = [faOk, xfOk, trOk].filter(Boolean).length;
+
+    const sdOk = !!(this.sdStatus && this.sdStatus.local);
+    const lyAdapter = this.trainingCores && (this.trainingCores.adapters || []).find(i => i.id === 'lycoris');
+    const muEngine = this.trainingCores && (this.trainingCores.engines || []).find(i => i.id === 'musubi_tuner');
+    const lyOk = !!(lyAdapter && lyAdapter.available);
+    const muOk = !!(muEngine && muEngine.available);
+    const coreReady = !!(this.sdStatus && this.trainingCores);
+    const coreDone = [sdOk, lyOk, muOk].filter(Boolean).length;
+
+    const files = this.animaModelStatus || [];
+    const modelsReady = !!this.animaModelStatus;
+    const modelDone = files.filter(f => f.exists).length;
+    const modelTotal = files.length;
+
+    const hasError = !!(this.faError || this.xfError || this.tritonError || this.trainingCoresError || this.animaModelError);
+    const allLoaded = accelReady && coreReady && modelsReady;
+
+    // 三态 Hero：加载中 / 有真实错误（红）/ 运行正常（绿）。
+    // 未安装、未下载、未配置都是可选增强的中性状态，不进 Hero 状态机。
+    let heroState, heroTitle, heroSub;
+    if (hasError) {
+      heroState = 'err';
+      heroTitle = T('overview.needsAttention', 'Needs attention');
+      heroSub = T('overview.subError', 'Check the highlighted rows for error details.');
+    } else if (!allLoaded) {
+      heroState = 'loading';
+      heroTitle = T('overview.checking', 'Checking environment...');
+      heroSub = '';
+    } else {
+      heroState = 'ok';
+      heroTitle = T('overview.allReady', 'Running normally');
+      heroSub = T('overview.subReady', 'Acceleration libraries and models are optional enhancements — install them as needed.');
+    }
+
+    // chip 只留「大数字 + 标签」；组内有真实错误时整颗 chip 文字标红
+    const chip = (anchor, done, total, ready, label, groupError) => {
+      const num = ready ? done : '–';
+      const tot = ready ? total : '–';
+      return `<button class="env-chip${groupError ? ' env-chip-err' : ''}" data-env-anchor="${anchor}" title="${label}">`
+        + `<span class="env-chip-num">${num}<span class="env-chip-total">/${tot}</span></span>`
+        + `<span class="env-chip-label">${label}</span></button>`;
+    };
+
+    // 加载态：spinner + 文案并入 Hero 标题行（页面级仅此一个加载指示，
+    // env-load-spinner / env-load-status 类名为测试契约，勿改）
+    const heroStatusHtml = heroState === 'loading'
+      ? `<div class="env-hero-status"><span class="env-load-spinner" aria-hidden="true"></span><span class="env-load-status" role="status" aria-live="polite">${heroTitle}</span></div>`
+      : `<div class="env-hero-status">${heroTitle}</div>`;
+
+    return `<section class="env-hero env-hero-${heroState}">`
+      + `<div class="env-hero-main">`
+      +   `<div class="env-hero-text">`
+      +     heroStatusHtml
+      +     (heroSub ? `<div class="env-hero-sub">${heroSub}</div>` : '')
+      +   `</div>`
+      + `</div>`
+      + `<div class="env-hero-side">`
+      +   `<div class="env-hero-chips">`
+      +     chip('accel', accelDone, 3, accelReady, T('overview.accel', 'Acceleration'), !!(this.faError || this.xfError || this.tritonError))
+      +     chip('core', coreDone, 3, coreReady, T('overview.core', 'Training core'), !!this.trainingCoresError)
+      +     chip('models', modelDone, modelTotal, modelsReady, T('overview.models', 'Models'), !!this.animaModelError)
+      +   `</div>`
+      +   `<button class="btn btn-sm btn-secondary env-refresh-all" data-env-refresh-all ${this.environmentLoading ? 'disabled' : ''}>`
+      +     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
+      +     `<span>${T('refreshAll', 'Refresh all')}</span></button>`
+      + `</div>`
+      + `</section>`;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  //  行组件（状态点 | 名称+描述 | 版本 | 徽标 | 箭头）+ 行内展开详情
+  // ═══════════════════════════════════════════════════════
+  _renderRowHead(slotId, open, parts) {
+    return `<div class="env-row-head" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
+      + `<span class="env-row-name">${parts.name}</span>`
+      + (parts.desc ? `<span class="env-row-desc">${parts.desc}</span>` : '')
+      + (parts.version || '')
+      + ((parts.badge || parts.action) ? `<span class="env-row-ops">${parts.badge || ''}${parts.action || ''}</span>` : '')
+      + `<span class="env-row-arrow" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg></span>`
+      + `</div>`;
+  },
+
+  _renderRow(slotId, state, open, headHtml, bodyHtml) {
+    const hasBody = !!bodyHtml;
+    return `<div class="env-row env-row-${state}${open && hasBody ? ' env-open' : ''}" data-env-row="${slotId}">`
+      + headHtml
+      + (hasBody ? `<div class="env-row-body" data-env-body="${slotId}"><div class="env-row-body-inner">${bodyHtml}</div></div>` : '')
+      + `</div>`;
+  },
+
+  // 错误条：常驻显示失败原因 + 可选"复制日志"按钮
+  _renderErrorBar(T, msg, logKey) {
+    const copyBtn = logKey
+      ? `<button class="btn btn-ghost btn-sm env-copy-log" data-env-copy="${logKey}">${T('copyLog', 'Copy log')}</button>`
+      : '';
+    return `<div class="env-msg env-msg-err env-errorbar"><pre>${this.esc(msg)}</pre>${copyBtn}</div>`;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  //  Shared render helpers
   // ═══════════════════════════════════════════════════════
 
-  // 卡片外框：统一 details。state ∈ ok/warn/err/loading/idle，状态由 env-badge 承载。
-  _renderCardOpen(id, state, open, summaryInner) {
-    return `<details id="${id}" class="env-card env-card-${state}" ${open?'open':''}><summary class="env-card-header">${summaryInner}</summary><div class="env-card-body">`;
-  },
-  _renderCardClose() { return `</div></details>`; },
-
-  _renderCardSummary(arrow, title, subtitle, badge) {
-    return `<span class="env-card-arrow">${arrow}</span><span class="env-card-title">${title}</span>${subtitle?`<span class="env-card-subtitle">${subtitle}</span>`:''}${badge||''}`;
-  },
-
-  // 详情行：label(42px) + content，替代内联 env-detail-group。
+  // 详情行：label(42px) + content。
   _renderDetailGroup(label, contentHtml) {
     return `<div class="env-detail-group"><span class="env-detail-label">${label||''}</span><div class="env-detail-content">${contentHtml}</div></div>`;
   },
 
-  // 刷新图标按钮（FA/xf/triton/Anima 共用）。
-  _renderRefreshBtn(id, disabled) {
-    return `<button id="${id}" class="btn-icon" ${disabled?'disabled':''} title="${this.t('environment.refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
+  // 刷新图标按钮（FA/xf/triton/模型 共用）。
+  _renderRefreshBtn(id, disabled, cls) {
+    return `<button id="${id}" class="btn-icon ${cls || ''}" ${disabled?'disabled':''} title="${this.t('environment.refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
   },
 
-  // 统一进度面板。opts: {stage, pct, speedMB, downloadedGB, totalGB, elapsed, label, fileIndex, fileTotal}
+  // 统一进度面板。opts: {stage, pct, speedMB, downloadedBytes, totalBytes, elapsed, fileIndex, fileTotal}
   //   stage: 'downloading' → 进度条+百分比+速度+大小
   //          'connecting'  → 不定式条 + 连接中文案
   //          'installing'/'working' → spinner + 阶段文案 + 计时
-  //   elapsed: 秒（已格式化为 mm:ss 的字符串）
   _renderProgressPanel(opts) {
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
     const stage = opts.stage || 'working';
@@ -124,7 +257,6 @@ window.environmentRenderMixin = {
 
 
   // 日志渲染：按行套色（ERROR/RETRY/WARN 红/橙，完成/Successfully 绿），输出到 <pre class="env-log">。
-  // text 为多行字符串。核心可读性修复：字号/颜色由 CSS 接管，这里只做语义着色。
   _renderLog(text) {
     if (!text) return '';
     const lines = String(text).split('\n');
@@ -142,7 +274,7 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
-  //  Flash Attention card
+  //  Flash Attention 行
   // ═══════════════════════════════════════════════════════
   _renderFaRow(T) {
     const s = this.faStatus;
@@ -152,22 +284,33 @@ window.environmentRenderMixin = {
     const best = usable[0] || null;
     const canAuto = !!env.torch_tag && !!env.platform && usable.length > 0;
     const faInstalled = s?.installed;
-    let h = '';
+    const open = this._envCardOpen('fa');
 
-    // 卡片状态：busy→loading，error→err，installed→ok，未安装→warn，无数据→loading
-    const cardState = this.faBusy ? 'loading' : this.faError ? 'err' : !s ? 'loading' : faInstalled ? 'ok' : 'warn';
+    const state = this.faBusy ? 'loading' : this.faError ? 'err' : !s ? 'loading' : faInstalled ? 'ok' : 'muted';
+    const badge = this.faBusy
+      ? `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`
+      : this.faError
+        ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+        : !s
+          ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
+          : faInstalled
+            ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
+            : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
+    const version = faInstalled && s.version ? `<span class="env-row-version">v${this.esc(s.version)}</span>` : '';
+    const head = this._renderRowHead('fa', open, {
+      state, name: 'Flash Attention',
+      desc: T('trainingAccel','Training acceleration (optional)'),
+      version, badge,
+    });
 
-    // Busy: 显示下载/安装进度面板 + 日志（核心修复）
+    // Busy: 下载/安装进度面板 + 日志
     if (this.faBusy) {
       const p = this.faProgress || {};
       const stage = p.stage || 'downloading';
-      const summary = this._renderCardSummary('&#9654;', 'Flash Attention', '',
-        `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`);
-      h += this._renderCardOpen('env-flash-attn', cardState, this.faCardOpen, summary);
-      // 进度面板：下载阶段用结构化进度条；安装阶段用 spinner
+      let body = '';
       if (stage === 'downloading' && p.total > 0) {
         const pct = Math.max(0, Math.min(100, Math.round((p.downloaded||0) * 100 / p.total)));
-        h += this._renderProgressPanel({
+        body += this._renderProgressPanel({
           stage: 'downloading', pct,
           speedMB: p.speed || 0,
           downloadedBytes: p.downloaded||0,
@@ -175,27 +318,16 @@ window.environmentRenderMixin = {
           elapsed: this.faInstallElapsed,
         });
       } else if (stage === 'downloading') {
-        // 连接中/total 未知
-        h += this._renderProgressPanel({ stage: 'connecting', elapsed: this.faInstallElapsed });
+        body += this._renderProgressPanel({ stage: 'connecting', elapsed: this.faInstallElapsed });
       } else {
-        // installing / done / error
-        h += this._renderProgressPanel({ stage: stage === 'done' ? 'done' : 'installing', elapsed: this.faInstallElapsed });
+        body += this._renderProgressPanel({ stage: stage === 'done' ? 'done' : 'installing', elapsed: this.faInstallElapsed });
       }
-      h += this._renderLog(this.faLog);
-      h += this._renderCardClose();
-      return h;
+      body += this._renderLog(this.faLog);
+      return this._renderRow('fa', state, open, head, body);
     }
 
-    const faBadge = this.faError
-      ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
-      : !s ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : faInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')} &middot; v${s.version||'?'}</span>`
-      : `<span class="env-badge env-badge-warn">${T('notInstalled','Not installed')}</span>`;
-
-    const summary = this._renderCardSummary('&#9654;', 'Flash Attention', T('trainingAccel','Training acceleration (optional)'), faBadge);
-    h += this._renderCardOpen('env-flash-attn', cardState, this.faCardOpen, summary);
-
-    if (this.faError) h += `<div class="env-msg env-msg-err"><pre>${this.esc(this.faError)}</pre></div>`;
+    let body = '';
+    if (this.faError) body += this._renderErrorBar(T, this.faError, 'faLog');
 
     if (s) {
       // Environment info
@@ -205,82 +337,90 @@ window.environmentRenderMixin = {
       if (env.cuda_tag) envItems.push(`<span class="env-env-item">CUDA <em>${env.cuda_tag}</em> <span class="env-text-dim">(${env.cuda_ver||'?'})</span></span>`);
       if (env.torch_tag) envItems.push(`<span class="env-env-item">PyTorch <em>${env.torch_tag}</em></span>`);
       if (env.platform) envItems.push(`<span class="env-env-item"><em>${env.platform}</em></span>`);
-      h += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
+      body += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
 
       // Error / info messages
       if (s.fetch_error) {
-        if (s.from_disk_cache) h+=`<div class="env-msg env-msg-info">${T('usingCachedData','Using cached data.')} ${T('cachedDataHint','Auto-updates on next success.')}</div>`;
-        else if (/rate limit|限流/i.test(s.fetch_error)) h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}<br>${T('rateLimitHint','Will retry. Paste URL manually.')}</div>`;
-        else h+=`<div class="env-msg env-msg-warn">${T('githubApiFail','GitHub API unavailable')}: ${this.esc(s.fetch_error)}<br>${T('manualUrlHint','Paste wheel URL manually.')}</div>`;
+        if (s.from_disk_cache) body +=`<div class="env-msg env-msg-info">${T('usingCachedData','Using cached data.')} ${T('cachedDataHint','Auto-updates on next success.')}</div>`;
+        else if (/rate limit|限流/i.test(s.fetch_error)) body +=`<div class="env-msg env-msg-info">${T('githubApiFail','GitHub API unavailable')}<br>${T('rateLimitHint','Will retry. Paste URL manually.')}</div>`;
+        else body +=`<div class="env-msg env-msg-info">${T('githubApiFail','GitHub API unavailable')}: ${this.esc(s.fetch_error)}<br>${T('manualUrlHint','Paste wheel URL manually.')}</div>`;
       }
-      if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) h+=`<div class="env-msg env-msg-warn">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
+      if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) body +=`<div class="env-msg env-msg-info">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
 
       // Confirm dialog
       if (this.faConfirmMsg) {
-        h+=`<div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div>`;
+        body +=`<div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div>`;
       } else {
-        // Install group
-        h += this._renderDetailGroup(T('installLabel','Install'), (() => {
-          let inner = `<div class="env-install-controls">`;
-          inner += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}" title="${T('sourceDefaultHint','Direct to GitHub, auto-fallback to mirrors')}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}" title="${T('sourceMirrorHint','Use mirrors directly')}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}" title="${T('sourceFallbackHint','Alternate wheel repository')}">${T('sourceFallback','Alt')}</button></span>`;
-          if (best) {
-            inner += `<button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${this.escapeAttr(best.url)}">${T('installThis','Install this')}</button>`;
-            inner += `<code class="env-best-name" title="${this.escapeAttr(best.name)}">${this.esc(best.name)}</code>`;
-          }
-          inner += `</div>`;
-          // Candidates toggle
-          inner += `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm env-toggle-candidates">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
-          // Candidate list
-          if (this.faCandidatesOpen && candidates.length) {
-            inner += `<ul class="env-candidate-list">`;
-            candidates.forEach(c => {
-              const mark = c.usable?'ok':'warn';
-              inner += `<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${this.escapeAttr(c.name)}">${this.esc(c.name)}</code>${c.notes.length?`<span class="env-candidate-notes">${this.esc(c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; '))}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${this.escapeAttr(c.url)}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
-            });
-            inner += `</ul>`;
-          }
-          // Manual URL
-          inner += `<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-secondary">${T('installUrl','URL Install')}</button></div>`;
-          return inner;
-        })());
+        // 主操作行：source 三选一 + 安装此版本 + 自动/重装 + 刷新
+        let ops = `<div class="env-actions">`;
+        ops += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}" title="${T('sourceDefaultHint','Direct to GitHub, auto-fallback to mirrors')}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}" title="${T('sourceMirrorHint','Use mirrors directly')}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}" title="${T('sourceFallbackHint','Alternate wheel repository')}">${T('sourceFallback','Alt')}</button></span>`;
+        if (best) {
+          ops += `<button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${this.escapeAttr(best.url)}" title="${this.escapeAttr(best.name)}">${T('installThis','Install this')}</button>`;
+        }
+        ops += `<button id="fa-auto-btn" class="btn btn-sm btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?this.escapeAttr(best.name):''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button>`;
+        ops += this._renderRefreshBtn('fa-refresh-btn', this.faBusy);
+        ops += `</div>`;
+        body += ops;
 
-        // Actions
-        h += this._renderDetailGroup(T('actionLabel','Actions'),
-          `<div class="env-actions"><button id="fa-auto-btn" class="btn btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?this.escapeAttr(best.name):''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button>${this._renderRefreshBtn('fa-refresh-btn', this.faBusy)}</div>`);
+        // 高级选项子折叠：候选 wheel 列表 + 手动 URL
+        let adv = `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm env-toggle-candidates">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
+        if (this.faCandidatesOpen && candidates.length) {
+          adv += `<ul class="env-candidate-list">`;
+          candidates.forEach(c => {
+            const mark = c.usable?'ok':'warn';
+            adv += `<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${this.escapeAttr(c.name)}">${this.esc(c.name)}</code>${c.notes.length?`<span class="env-candidate-notes">${this.esc(c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; '))}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${this.escapeAttr(c.url)}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
+          });
+          adv += `</ul>`;
+        }
+        adv += `<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-sm btn-secondary">${T('installUrl','URL Install')}</button></div>`;
+        body += this._renderSubCollapse('faAdvanced', T('advancedOptions','Advanced options'), this.faAdvancedOpen, adv);
       }
     }
 
-    h += this._renderCardClose();
-    return h;
+    return this._renderRow('fa', state, open, head, body);
+  },
+
+  // 子折叠面板（高级选项 / 下载日志共用）。open 为当前展开状态。
+  _renderSubCollapse(key, label, open, innerHtml) {
+    return `<div class="env-sub${open ? ' env-open' : ''}" data-env-sub="${key}">`
+      + `<div class="env-sub-head" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-sub-head="${key}">`
+      + `<span class="env-sub-arrow" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg></span>`
+      + `<span>${label}</span></div>`
+      + `<div class="env-sub-body"><div class="env-sub-body-inner">${innerHtml}</div></div>`
+      + `</div>`;
   },
 
   // ═══════════════════════════════════════════════════════
-  //  xformers card
+  //  xformers 行
   // ═══════════════════════════════════════════════════════
   _renderXfRow(T) {
     const xs = this.xfStatus; const xfEnv = xs?.env || {}; const xfInstalled = xs?.installed;
-    let h = '';
+    const open = this._envCardOpen('xf');
 
     if (this.xfBusy) {
-      const summary = this._renderCardSummary('&#9654;', 'xformers', '',
-        `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`);
-      h += this._renderCardOpen('env-xformers', 'loading', this.xfCardOpen, summary);
-      h += this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, label: T('xfInstallingHint','Downloading...') });
-      h += this._renderLog(this.xfInstallLog);
-      h += this._renderCardClose();
-      return h;
+      const head = this._renderRowHead('xf', open, {
+        state: 'loading', name: 'xformers',
+        badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+      });
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, label: T('xfInstallingHint','Downloading...') })
+        + this._renderLog(this.xfInstallLog);
+      return this._renderRow('xf', 'loading', open, head, body);
     }
 
-    const cardState = this.xfError ? 'err' : !xs ? 'loading' : xfInstalled ? 'ok' : 'warn';
-    const xfBadge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
-      : !xs ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')} &middot; v${xs.version||'?'}</span>`
-      : `<span class="env-badge env-badge-warn">${T('notInstalled','Not installed')}</span>`;
+    const state = this.xfError ? 'err' : !xs ? 'loading' : xfInstalled ? 'ok' : 'muted';
+    const badge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+      : !xs ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
+      : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
+      : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
+    const version = xfInstalled && xs.version ? `<span class="env-row-version">v${this.esc(xs.version)}</span>` : '';
+    const head = this._renderRowHead('xf', open, {
+      state, name: 'xformers',
+      desc: T('xfHint','Memory-efficient attention (optional)'),
+      version, badge,
+    });
 
-    const summary = this._renderCardSummary('&#9654;', 'xformers', T('xfHint','Memory-efficient attention (optional)'), xfBadge);
-    h += this._renderCardOpen('env-xformers', cardState, this.xfCardOpen, summary);
-
-    if (this.xfError) h += `<div class="env-msg env-msg-err"><pre>${this.esc(this.xfError)}</pre></div>`;
+    let body = '';
+    if (this.xfError) body += this._renderErrorBar(T, this.xfError, 'xfInstallLog');
 
     if (xs) {
       const envItems = [];
@@ -288,35 +428,36 @@ window.environmentRenderMixin = {
       if (xfEnv.python_tag) envItems.push(`<span class="env-env-item"><em>${xfEnv.python_tag}</em></span>`);
       if (xfEnv.torch_ver) envItems.push(`<span class="env-env-item">PyTorch <em>${xfEnv.torch_ver}</em></span>`);
       if (xfEnv.cuda_ver) envItems.push(`<span class="env-env-item">CUDA <em>cu${xfEnv.cuda_ver.replace('.','')}</em></span>`);
-      h += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
+      body += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
 
-      if (!xfInstalled) h += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
+      if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
 
-      h += this._renderDetailGroup(T('actionLabel','Actions'),
-        `<div class="env-actions"><button id="xf-install-btn" class="btn btn-secondary" ${this.xfBusy?'disabled':''}>${xfInstalled?T('reinstall','Reinstall'):T('xfInstallBtn','Install via PyPI')}</button>${this._renderRefreshBtn('xf-refresh-btn', this.xfBusy)}</div>`);
+      body += `<div class="env-actions"><button id="xf-install-btn" class="btn btn-sm btn-secondary" ${this.xfBusy?'disabled':''}>${xfInstalled?T('reinstall','Reinstall'):T('xfInstallBtn','Install via PyPI')}</button>${this._renderRefreshBtn('xf-refresh-btn', this.xfBusy)}</div>`;
     }
 
-    h += this._renderCardClose();
-    return h;
+    return this._renderRow('xf', state, open, head, body);
   },
 
   // ═══════════════════════════════════════════════════════
-  //  sd-scripts card
+  //  训练核心行（sd-scripts / LyCORIS / musubi-tuner）
   // ═══════════════════════════════════════════════════════
-  _renderCoreVersionBadge(T, meta, available = true, error = null) {
-    if (error) return `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>`;
-    if (!meta) return `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`;
-    if (!available) return `<span class="env-badge env-badge-warn">${T('coreNotReady', 'Needs setup')}</span>`;
+  // 行头右侧：版本号（mono，链 GitHub）+ 状态徽标。
+  _renderCoreHeadParts(T, meta, available = true, error = null) {
+    if (error) return { version: '', badge: `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>` };
+    if (!meta) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>` };
+    if (!available) return { version: '', badge: `<span class="env-badge env-badge-muted">${T('coreNotReady', 'Not configured')}</span>` };
     const displayVersion = meta.describe || meta.tag;
+    let version = '';
     if (displayVersion) {
       const repoUrl = `https://github.com/${meta.repo}`;
       const versionUrl = meta.local_commit
         ? `${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}`
         : `${repoUrl}/releases/tag/${this.escapeAttr(meta.tag)}`;
-      return `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-badge env-badge-info env-badge-link"><code>${this.esc(displayVersion)}</code></a>`;
+      version = `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-row-version env-link"><code>${this.esc(displayVersion)}</code></a>`;
+    } else if (meta.local_commit) {
+      version = `<span class="env-row-version"><code>${this.esc(meta.local_commit.slice(0,7))}</code></span>`;
     }
-    if (meta.local_commit) return `<span class="env-badge env-badge-info"><code>${this.esc(meta.local_commit.slice(0,7))}</code></span>`;
-    return `<span class="env-badge env-badge-info">${T('sdScriptsLocal','Local')}</span>`;
+    return { version, badge: `<span class="env-badge env-badge-ok">${T('coreReady','Ready')}</span>` };
   },
 
   _renderCoreRepositoryDetails(T, meta, fallbackRepo) {
@@ -337,21 +478,21 @@ window.environmentRenderMixin = {
       meta?.sync_date ? `<span class="env-env-item">Sync <span class="env-text-dim">${this.esc(meta.sync_date)}</span></span>` : null,
     ].filter(Boolean);
     return this._renderDetailGroup(T('verLabel','Ver'), verItems.join(' &middot; '))
-      + this._renderDetailGroup('', `<a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a>`);
+      + `<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div>`;
   },
 
   _renderSdRow(T) {
-    const sd = this.sdStatus; const sdLocal = sd?.local || {};
-    let h = '';
-
-    const sdBadge = this._renderCoreVersionBadge(T, sd ? sdLocal : null);
-    const cardState = !sd ? 'loading' : 'idle';
-    const summary = this._renderCardSummary('&#9654;', T('sdScriptsTitle','sd-scripts'), T('sdScriptsDesc','kohya-ss/sd-scripts'), sdBadge);
-    h += this._renderCardOpen('env-sdscripts', cardState, this.sdCardOpen, summary);
-
-    if (sd) h += this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts');
-    h += this._renderCardClose();
-    return h;
+    const sd = this.sdStatus; const sdLocal = sd?.local || null;
+    const open = this._envCardOpen('sd');
+    const state = !sd ? 'loading' : 'ok';
+    const parts = this._renderCoreHeadParts(T, sd ? sdLocal : null);
+    const head = this._renderRowHead('sd', open, {
+      state, name: T('sdScriptsTitle','sd-scripts'),
+      desc: T('sdScriptsDesc','kohya-ss/sd-scripts'),
+      version: parts.version, badge: parts.badge,
+    });
+    const body = sd ? this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts') : '';
+    return this._renderRow('sd', state, open, head, body);
   },
 
   _renderLycorisRow(T) {
@@ -359,15 +500,18 @@ window.environmentRenderMixin = {
     const error = this.trainingCoresError;
     const adapter = registry?.adapters?.find(item => item.id === 'lycoris');
     const available = !!adapter?.available;
-    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'warn';
-    const badge = this._renderCoreVersionBadge(T, adapter?.version || null, available, error);
-    let h = '';
-    h += this._renderCardOpen('env-lycoris', state, this.lycorisCardOpen,
-      this._renderCardSummary('&#9654;', 'LyCORIS', T('lycorisDesc', 'LoRA adapter core'), badge));
-    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
-    if (adapter) h += this._renderCoreRepositoryDetails(T, adapter.version, 'KohakuBlueleaf/LyCORIS');
-    h += this._renderCardClose();
-    return h;
+    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'muted';
+    const open = this._envCardOpen('lycoris');
+    const parts = this._renderCoreHeadParts(T, adapter?.version || null, available, error);
+    const head = this._renderRowHead('lycoris', open, {
+      state, name: 'LyCORIS',
+      desc: T('lycorisDesc', 'LoRA adapter core'),
+      version: parts.version, badge: parts.badge,
+    });
+    let body = '';
+    if (error) body += this._renderErrorBar(T, error, null);
+    if (adapter) body += this._renderCoreRepositoryDetails(T, adapter.version, 'KohakuBlueleaf/LyCORIS');
+    return this._renderRow('lycoris', state, open, head, body);
   },
 
   _renderMusubiRow(T) {
@@ -375,68 +519,77 @@ window.environmentRenderMixin = {
     const error = this.trainingCoresError;
     const engine = registry?.engines?.find(item => item.id === 'musubi_tuner');
     const available = !!engine?.available;
-    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'warn';
-    const badge = this._renderCoreVersionBadge(T, engine?.version || null, available, error);
-    let h = '';
-    h += this._renderCardOpen('env-musubi', state, this.musubiCardOpen,
-      this._renderCardSummary('&#9654;', 'musubi-tuner', T('musubiDesc', 'Krea 2 training core'), badge));
-    if (error) h += `<div class="env-msg env-msg-err"><pre>${this.esc(error)}</pre></div>`;
+    const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'muted';
+    const open = this._envCardOpen('musubi');
+    const parts = this._renderCoreHeadParts(T, engine?.version || null, available, error);
+    const head = this._renderRowHead('musubi', open, {
+      state, name: 'musubi-tuner',
+      desc: T('musubiDesc', 'Krea 2 training core'),
+      version: parts.version, badge: parts.badge,
+    });
+    let body = '';
+    if (error) body += this._renderErrorBar(T, error, null);
     if (engine) {
-      h += this._renderCoreRepositoryDetails(T, engine.version, 'kohya-ss/musubi-tuner');
+      body += this._renderCoreRepositoryDetails(T, engine.version, 'kohya-ss/musubi-tuner');
       const runtimeErrors = Array.isArray(engine.runtime_errors) ? engine.runtime_errors : [];
-      if (runtimeErrors.length) h += `<div class="env-msg env-msg-warn"><pre>${this.esc(runtimeErrors.join('\n'))}</pre></div>`;
+      if (runtimeErrors.length) body += `<div class="env-msg env-msg-err"><pre>${this.esc(runtimeErrors.join('\n'))}</pre></div>`;
     }
-    h += this._renderCardClose();
-    return h;
+    return this._renderRow('musubi', state, open, head, body);
   },
 
   // ═══════════════════════════════════════════════════════
-  //  Triton card
+  //  Triton 行
   // ═══════════════════════════════════════════════════════
   _renderTritonRow(T) {
     const tr = this.tritonStatus;
-    let h = '';
+    const open = this._envCardOpen('triton');
 
     // Busy: installing
     if (this.tritonBusy) {
-      const summary = this._renderCardSummary('&#9654;', 'Triton', '',
-        `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`);
-      h += this._renderCardOpen('env-triton', 'loading', this.tritonCardOpen, summary);
-      h += this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, label: T('tritonInstallingHint','Downloading...') });
-      h += this._renderLog(this.tritonInstallLog);
-      h += this._renderCardClose();
-      return h;
+      const head = this._renderRowHead('triton', open, {
+        state: 'loading', name: 'Triton',
+        badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+      });
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, label: T('tritonInstallingHint','Downloading...') })
+        + this._renderLog(this.tritonInstallLog);
+      return this._renderRow('triton', 'loading', open, head, body);
     }
 
-    const cardState = !tr ? 'loading' : tr.installed ? 'ok' : 'warn';
-    const trBadge = !tr
-      ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
-      : tr.installed
-        ? `<span class="env-badge env-badge-ok">${T('tritonInstalled','Installed')}${tr.version ? ' &middot; v'+this.esc(tr.version) : ''}${tr.package ? ' &middot; '+this.esc(tr.package) : ''}</span>`
-        : `<span class="env-badge env-badge-warn">${T('tritonNotInstalled','Not installed')}</span>`;
+    const state = this.tritonError ? 'err' : !tr ? 'loading' : tr.installed ? 'ok' : 'muted';
+    const badge = this.tritonError
+      ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+      : !tr
+        ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
+        : tr.installed
+          ? `<span class="env-badge env-badge-ok">${T('tritonInstalled','Installed')}</span>`
+          : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
+    const version = tr && tr.installed && tr.version
+      ? `<span class="env-row-version">v${this.esc(tr.version)}${tr.package ? ' · ' + this.esc(tr.package) : ''}</span>` : '';
+    const head = this._renderRowHead('triton', open, {
+      state, name: 'Triton',
+      desc: T('tritonDesc','GPU compile backend for torch.compile'),
+      version, badge,
+    });
 
-    const summary = this._renderCardSummary('&#9654;', 'Triton', T('tritonDesc','GPU compile backend for torch.compile'), trBadge);
-    h += this._renderCardOpen('env-triton', cardState, this.tritonCardOpen, summary);
+    let body = '';
+    if (this.tritonError) body += this._renderErrorBar(T, this.tritonError, 'tritonInstallLog');
 
     if (tr) {
       if (tr.installed) {
-        h += this._renderDetailGroup(T('verLabel','Ver'), `<span class="env-env-item">${this.esc(tr.package||'triton')} <em>v${this.esc(tr.version||'?')}</em></span>`);
-        h += this._renderDetailGroup(T('actionLabel','Actions'),
-          `<div class="env-actions"><button id="triton-reinstall-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('reinstall','Reinstall')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`);
+        body += this._renderDetailGroup(T('verLabel','Ver'), `<span class="env-env-item">${this.esc(tr.package||'triton')} <em>v${this.esc(tr.version||'?')}</em></span>`);
+        body += `<div class="env-actions"><button id="triton-reinstall-btn" class="btn btn-sm btn-secondary" ${this.tritonBusy?'disabled':''}>${T('reinstall','Reinstall')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
       } else {
-        h += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
-        h += this._renderDetailGroup(T('actionLabel','Actions'),
-          `<div class="env-actions"><button id="triton-install-btn" class="btn btn-secondary btn-sm" ${this.tritonBusy?'disabled':''}>${T('tritonInstallBtn','Install')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`);
+        body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
+        body += `<div class="env-actions"><button id="triton-install-btn" class="btn btn-sm btn-secondary" ${this.tritonBusy?'disabled':''}>${T('tritonInstallBtn','Install')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
       }
     }
-    h += this._renderCardClose();
-    return h;
+    return this._renderRow('triton', state, open, head, body);
   },
 
   // ═══════════════════════════════════════════════════════
-  //  模型下载 cards
+  //  模型组（Anima / Krea 2）：组头统计 + 文件行 + 日志子折叠
   // ═══════════════════════════════════════════════════════
-  _renderAnimaModelRow(T, modelGroup) {
+  _renderModelGroup(T, modelGroup) {
     const files = (this.animaModelStatus || []).filter(file => file.group === modelGroup);
     const progress = this.animaModelProgress;
     const aggregate = this.animaModelAggregate;
@@ -451,42 +604,57 @@ window.environmentRenderMixin = {
     const groupBusy = busy && groupTask;
     const groupError = error && groupTask ? error : null;
     const isKrea2 = modelGroup === 'Krea 2';
-    const cardId = isKrea2 ? 'env-krea2-model' : 'env-anima-model';
-    const cardOpen = isKrea2 ? this.kreaModelCardOpen : this.animaModelCardOpen;
+    const slotId = isKrea2 ? 'krea2' : 'animaModel';
+    const open = this._envCardOpen(slotId);
     const title = isKrea2 ? T('animaModel.krea2Title','Krea 2 Models') : T('animaModel.animaTitle','Anima Models');
-    const subtitle = isKrea2
-      ? T('animaModel.krea2Subtitle','RAW / Turbo / Qwen3-VL / VAE')
-      : T('animaModel.animaSubtitle','Base / Qwen3 / VAE');
-    let h = '';
 
-    // 卡片标题行 + 整体状态徽标
     const allReady = files.length > 0 && files.every(f => f.exists);
-    const cardState = groupError ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : groupBusy ? 'loading' : 'warn';
-    const cardBadge = groupError
+    const state = groupError ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : groupBusy ? 'loading' : 'muted';
+    // 未齐全不是警告：组头已有 x/y 计数，不再出徽标
+    const badge = groupError
       ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
       : !files.length
-        ? `<span class="env-badge env-badge-loading">${T('loading','Loading...')}</span>`
+        ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
         : allReady
           ? `<span class="env-badge env-badge-ok">${T('animaModel.allReady','All ready')}</span>`
           : groupBusy
             ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
-            : `<span class="env-badge env-badge-warn">${T('animaModel.incomplete','Incomplete')}</span>`;
+            : '';
 
-    const summary = this._renderCardSummary('&#9654;', title, subtitle, cardBadge);
-    h += this._renderCardOpen(cardId, cardState, cardOpen, summary);
+    // 组头统计：x/y 已下载 · 合计大小
+    const doneFiles = files.filter(f => f.exists);
+    const totalBytes = doneFiles.reduce((sum, f) => sum + (f.size_gb || 0) * 1073741824, 0);
+    const countText = totalBytes > 0
+      ? T('animaModel.downloadedCount','{x}/{y} downloaded · {size}').replace('{x}', doneFiles.length).replace('{y}', files.length).replace('{size}', this._humanBytes(totalBytes))
+      : `${doneFiles.length}/${files.length}`;
+    const countHtml = files.length
+      ? `<span class="env-mgroup-count">${countText}</span>`
+      : '';
 
-    // 错误提示
-    if (groupError) h += `<div class="env-msg env-msg-err"><pre>${this.esc(groupError)}</pre></div>`;
+    // 组头操作：一键下载 + 刷新 + 仓库链接
+    const hasMissing = files.some(f => !f.exists);
+    const dlAllLabel = groupBusy
+      ? T('animaModel.downloading','Downloading...')
+      : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
+    const repoId = files[0]?.repo_id || (isKrea2 ? 'Comfy-Org/Krea-2' : 'circlestone-labs/Anima');
+    const repoUrl = `https://huggingface.co/${this.escapeAttr(repoId)}/tree/main`;
+    const actionHtml = files.length
+      ? `<button class="btn btn-sm btn-secondary env-model-dl-all" data-group="${this.escapeAttr(modelGroup)}" ${busy?'disabled':''}>${dlAllLabel}</button>`
+        + this._renderRefreshBtn('', busy, 'env-model-refresh')
+        + `<a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm env-mgroup-repo" title="${T('animaModel.openRepository','Open model repository')}">&#8599;</a>`
+      : '';
 
-    // ── 目标路径说明 banner（"下载到哪里"）──
-    if (files.length) {
-      h += `<div class="env-model-banner">${T('animaModel.destHint','Models download to the models/ directory, used as base / text encoder / VAE during training.')}</div>`;
-    }
+    const head = this._renderRowHead(slotId, open, {
+      state, name: title, version: countHtml, badge, action: actionHtml,
+    });
 
-    // ── 整体批量进度（下载中显示）──
+    let body = '';
+    if (groupError) body += this._renderErrorBar(T, groupError, 'animaModelLog');
+
+    // 整体批量进度（下载中显示）
     if (groupBusy && aggregate) {
       const fileOf = T('animaModel.fileOf','File {i}/{n}').replace('{i}', aggregate.fileIndex).replace('{n}', aggregate.fileTotal);
-      h += `<div class="env-model-aggregate">
+      body += `<div class="env-model-aggregate">
         <div class="env-progress-bar"><div style="width:${aggregate.pct}%"></div></div>
         <div class="env-progress-meta">
           <span class="env-progress-pct">${aggregate.pct}%</span>
@@ -495,58 +663,50 @@ window.environmentRenderMixin = {
       </div>`;
     }
 
-    // ── 文件清单（逐文件卡片，带单文件下载按钮）──
-    h += `<div class="env-model-list">`;
-
+    // 文件行
+    body += `<div class="env-file-list">`;
     for (const f of files) {
       const inBatch = !batch || batch.includes(f.filename);
       const isCurrent = groupBusy && curFile === f.filename;
       const isQueued = groupBusy && inBatch && !isCurrent;
-      let statusHtml = '';
-      let actionHtml = '';
-      let rowCls = 'env-model-item';
+      let statusHtml = '', actionHtml = '', rowCls = 'env-file', progressHtml = '';
 
       if (isCurrent && p.total > 0) {
-        // 正在下载此文件，有字节进度
         const pct = Math.max(0, Math.min(100, Math.round(p.downloaded * 100 / p.total)));
-        rowCls += ' env-model-item-active';
-        statusHtml = `<div class="env-model-progress">
-            <div class="env-model-progress-bar"><div style="width:${pct}%"></div></div>
-            <div class="env-model-progress-meta">
-              <span class="env-model-pct">${pct}%</span>
-              <span class="env-model-speed">${(p.speed||0).toFixed(1)} MB/s &middot; ${this._humanBytes(p.downloaded||0)}/${this._humanBytes(p.total||0)}</span>
+        rowCls += ' env-file-active';
+        progressHtml = `<div class="env-file-progress">
+            <div class="env-progress-bar"><div style="width:${pct}%"></div></div>
+            <div class="env-progress-meta">
+              <span class="env-progress-pct">${pct}%</span>
+              <span class="env-progress-meta-r">${(p.speed||0).toFixed(1)} MB/s &middot; ${this._humanBytes(p.downloaded||0)}/${this._humanBytes(p.total||0)}</span>
             </div>
           </div>`;
       } else if (isCurrent) {
-        // 正在下载但还没拿到 total（HEAD/连接阶段）
-        rowCls += ' env-model-item-active';
+        rowCls += ' env-file-active';
         const idx = p.file_index != null ? (p.file_index + 1) : '?';
         const tt = p.file_total || '?';
-        statusHtml = `<div class="env-model-progress">
-            <div class="env-model-progress-bar env-model-progress-indeterminate"><div></div></div>
-            <div class="env-model-progress-meta">
-              <span class="env-badge env-badge-loading">${T('animaModel.connecting','Connecting')} ${idx}/${tt}</span>
+        progressHtml = `<div class="env-file-progress">
+            <div class="env-progress-bar env-progress-indeterminate"><div></div></div>
+            <div class="env-progress-meta">
+              <span class="env-progress-stage">${T('animaModel.connecting','Connecting')} ${idx}/${tt}</span>
             </div>
           </div>`;
       } else if (isQueued) {
-        // 本次任务排队中（尚未轮到）
-        rowCls += ' env-model-item-queued';
+        rowCls += ' env-file-queued';
         statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending','Pending')}</span>`;
       } else if (f.exists) {
-        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')} &middot; ${this._humanBytes((f.size_gb||0)*1073741824)}</span>`;
+        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')}</span>`;
       } else if (!busy && groupTask && phase === 'error' && curFile === f.filename) {
-        // 本次任务里此文件失败
-        rowCls += ' env-model-item-failed';
+        rowCls += ' env-file-failed';
         statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
       } else if (!busy && groupTask && inBatch && phase === 'done') {
-        // 本次任务正常结束但该文件没落盘 → 视为失败
-        rowCls += ' env-model-item-failed';
+        rowCls += ' env-file-failed';
         statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
       } else {
-        statusHtml = `<span class="env-badge env-badge-warn">${T('animaModel.notDownloaded','Not downloaded')}</span>`;
+        // 未下载是中性状态：灰徽标，不用警告色
+        statusHtml = `<span class="env-badge env-badge-muted">${T('animaModel.notDownloaded','Not downloaded')}</span>`;
       }
 
-      // 操作按钮：每行可单独下载
       if (isCurrent || isQueued) {
         actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" disabled>${T('animaModel.downloading','Downloading')}</button>`;
       } else if (f.exists) {
@@ -555,80 +715,150 @@ window.environmentRenderMixin = {
         actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
       }
 
-      // 每文件目标相对路径作为副标题（"下载到哪里"的逐文件体现）
+      const sizeHtml = f.exists ? `<span class="env-file-size">${this._humanBytes((f.size_gb||0)*1073741824)}</span>` : '';
       const destPath = f.dest_path || (destDir + f.filename);
-      h += `<div class="${rowCls}">
-        <div class="env-model-item-top">
-          <div class="env-model-item-main">
-            <div class="env-model-item-name"><a href="${this.escapeAttr(f.source_url || '#')}" target="_blank" rel="noopener" class="env-link"><code title="${this.escapeAttr(f.filename)}">${this.esc(f.filename)}</code></a></div>
-            <div class="env-model-item-desc">${this.esc(f.desc || '')}</div>
-            <div class="env-model-destpath">${this.esc(destPath)}</div>
-          </div>
-          <div class="env-model-item-action">${actionHtml}</div>
+      body += `<div class="${rowCls}">
+        <div class="env-file-main">
+          <a href="${this.escapeAttr(f.source_url || '#')}" target="_blank" rel="noopener" class="env-link env-file-name"><code title="${this.escapeAttr(f.filename)}">${this.esc(f.filename)}</code></a>
+          <span class="env-file-desc">${this.esc(f.desc || '')} <span class="env-file-dest">${this.esc(destPath)}</span></span>
         </div>
-        <div class="env-model-item-status">${statusHtml}</div>
+        ${sizeHtml}
+        <span class="env-file-status">${statusHtml}</span>
+        <span class="env-file-action">${actionHtml}</span>
+        ${progressHtml}
       </div>`;
     }
 
-    // Loading 占位（status 还没拉回来）
     if (!files.length) {
-      h += `<div class="env-model-item"><span class="env-badge env-badge-loading">${T('loading','Loading...')}</span></div>`;
+      body += `<div class="env-file"><span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span></div>`;
     }
-    h += `</div>`; // .env-model-list
+    body += `</div>`; // .env-file-list
 
-    // ── 底部操作栏：一键下载全部 + 刷新 ──
-    const hasMissing = files.some(f => !f.exists);
-    const dlAllLabel = groupBusy
-      ? T('animaModel.downloading','Downloading...')
-      : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
-    const repoId = files[0]?.repo_id || (isKrea2 ? 'Comfy-Org/Krea-2' : 'circlestone-labs/Anima');
-    const repoUrl = `https://huggingface.co/${this.escapeAttr(repoId)}/tree/main`;
-    h += `<div class="env-model-footer"><div class="env-actions"><button class="btn btn-secondary env-model-dl-all" data-group="${this.escapeAttr(modelGroup)}" ${busy?'disabled':''}>${dlAllLabel}</button><button class="btn-icon env-model-refresh" ${busy?'disabled':''} title="${T('refresh','Refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">${T('animaModel.openRepository','Open model repository')} &#8599;</a></div></div>`;
-
-    // ── 下载日志（可折叠，状态持久化避免重渲染被收起）──
+    // 下载日志（子折叠，覆盖持久化）
     if (this.animaModelLog && groupTask) {
-      h += `<details class="env-model-log-wrap" data-model-log ${this.animaModelLogOpen?'open':''}><summary>${T('animaModel.progressLog','Progress Log')}</summary>${this._renderLog(this.animaModelLog)}</details>`;
+      body += this._renderSubCollapse('animaModelLog', T('animaModel.progressLog','Progress Log'), this._envCardOpen('animaModelLog'), this._renderLog(this.animaModelLog));
     }
 
-    h += this._renderCardClose();
-    return h;
+    return `<div class="env-mgroup env-row-${state}${open ? ' env-open' : ''}" data-env-row="${slotId}">`
+      + head
+      + `<div class="env-row-body" data-env-body="${slotId}"><div class="env-row-body-inner">${body}</div></div>`
+      + `</div>`;
   },
 
-  _bindAnimaModelEvents(el) {
+  // ═══════════════════════════════════════════════════════
+  //  Event bindings（按槽位绑定，只有重建的槽位重绑）
+  // ═══════════════════════════════════════════════════════
+  _bindSlotEvents(host, slot, T) {
+    this._bindRowToggle(host);
+    this._bindSubToggles(host);
+    host.querySelectorAll('[data-env-copy]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const a = window.__anima || this;
+        a._envCopyLog(a[btn.dataset.envCopy] || '');
+      });
+    });
+    if (slot === 'overview') this._bindOverviewEvents(host);
+    else if (slot === 'fa') this._bindFaEvents(host, T);
+    else if (slot === 'xf') this._bindXfEvents(host);
+    else if (slot === 'triton') this._bindTritonEvents(host);
+    else if (slot === 'animaModel' || slot === 'krea2') this._bindModelGroupEvents(host);
+  },
+
+  // 行头点击/键盘展开收起。行内 a/button/input 不触发展开（修 summary 链接误触 bug）。
+  // 不重渲染：直接在现有 DOM 上做高度动画 + 类/aria 更新 + 覆盖持久化。
+  _bindRowToggle(host) {
     const a = window.__anima || this;
-    el.querySelectorAll('.env-model-dl-all[data-group]').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelDownload(null, btn.dataset.group));
+    host.querySelectorAll('[data-env-toggle]').forEach(head => {
+      const slotId = head.dataset.envToggle;
+      const doToggle = () => {
+        const row = head.parentElement;
+        if (!row) return;
+        const body = row.querySelector('[data-env-body]');
+        if (!body) return;
+        const open = !row.classList.contains('env-open');
+        row.classList.toggle('env-open', open);
+        head.setAttribute('aria-expanded', open ? 'true' : 'false');
+        a._envSetCardOpen(slotId, open);
+        a._animateCollapse(body, !open);
+      };
+      head.addEventListener('click', e => {
+        if (e.target.closest('a, button, input, select, textarea')) return;
+        doToggle();
+      });
+      head.addEventListener('keydown', e => {
+        if (e.target !== head) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doToggle(); }
+      });
     });
-    el.querySelectorAll('.env-model-refresh').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelRefresh());
-    });
+  },
 
-    // 逐文件下载按钮
-    el.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file, btn.dataset.group));
-    });
-
-    // 日志折叠持久化 + 自动滚到底
-    el.querySelectorAll('[data-model-log]').forEach(logDet => {
-      logDet.addEventListener('toggle', () => {
-        a.animaModelLogOpen = logDet.open;
-        a._envSaveCardState();
-        if (logDet.open) {
-          const pre = logDet.querySelector('.env-log');
+  // 子折叠（高级选项 / 下载日志）
+  _bindSubToggles(host) {
+    const a = window.__anima || this;
+    host.querySelectorAll('[data-env-sub-head]').forEach(head => {
+      const key = head.dataset.envSubHead;
+      const doToggle = () => {
+        const wrap = head.parentElement;
+        const body = wrap.querySelector('.env-sub-body');
+        const open = !wrap.classList.contains('env-open');
+        wrap.classList.toggle('env-open', open);
+        head.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (key === 'faAdvanced') a.faAdvancedOpen = open;
+        else if (key === 'animaModelLog') a._envSetCardOpen('animaModelLog', open);
+        if (body) a._animateCollapse(body, !open);
+        if (open && key === 'animaModelLog') {
+          const pre = wrap.querySelector('.env-log');
           if (pre) pre.scrollTop = pre.scrollHeight;
         }
+      };
+      head.addEventListener('click', e => {
+        if (e.target.closest('a, button, input')) return;
+        doToggle();
       });
-      // 默认展开时也滚到底（实时日志持续追加）
-      if (logDet.open) {
-        const pre = logDet.querySelector('.env-log');
-        if (pre) pre.scrollTop = pre.scrollHeight;
-      }
+      head.addEventListener('keydown', e => {
+        if (e.target !== head) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doToggle(); }
+      });
     });
   },
 
-  // ═══════════════════════════════════════════════════════
-  //  Event bindings
-  // ═══════════════════════════════════════════════════════
+  _bindOverviewEvents(host) {
+    const a = window.__anima || this;
+    host.querySelectorAll('[data-env-anchor]').forEach(chip => {
+      chip.addEventListener('click', () => a._envScrollTo(chip.dataset.envAnchor));
+    });
+    const btn = host.querySelector('[data-env-refresh-all]');
+    if (btn) btn.addEventListener('click', () => {
+      btn.disabled = true;
+      a._envRefreshAll().finally(() => { btn.disabled = false; });
+    });
+  },
+
+  // Hero chip 点击：平滑滚动到对应区 + 短暂高亮
+  _envScrollTo(anchor) {
+    const el = document.getElementById('environmentPage');
+    if (!el) return;
+    const target = el.querySelector('[data-env-anchor-target="' + anchor + '"]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.classList.remove('env-flash');
+    void target.offsetWidth;
+    target.classList.add('env-flash');
+  },
+
+  _bindModelGroupEvents(host) {
+    const a = window.__anima || this;
+    host.querySelectorAll('.env-model-dl-all[data-group]').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelDownload(null, btn.dataset.group));
+    });
+    host.querySelectorAll('.env-model-refresh').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelRefresh());
+    });
+    host.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
+      btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file, btn.dataset.group));
+    });
+  },
+
   _bindFaEvents(el, T) {
     const a = window.__anima || this;
     const autoBtn = el.querySelector('#fa-auto-btn');
@@ -665,22 +895,4 @@ window.environmentRenderMixin = {
     if (reinstallBtn) reinstallBtn.addEventListener('click', () => a.tritonInstall());
     if (refreshBtn) refreshBtn.addEventListener('click', () => a.tritonRefresh());
   },
-
-  _bindCardToggle(el) {
-    const a = window.__anima || this;
-    ['env-flash-attn','env-xformers','env-sdscripts','env-lycoris','env-musubi','env-triton','env-anima-model','env-krea2-model'].forEach(id => {
-      const card = el.querySelector('#'+id); if (!card) return;
-      card.addEventListener('toggle', () => {
-        if (id==='env-flash-attn') a.faCardOpen = card.open;
-        else if (id==='env-xformers') a.xfCardOpen = card.open;
-        else if (id==='env-sdscripts') a.sdCardOpen = card.open;
-        else if (id==='env-lycoris') a.lycorisCardOpen = card.open;
-        else if (id==='env-musubi') a.musubiCardOpen = card.open;
-        else if (id==='env-triton') a.tritonCardOpen = card.open;
-        else if (id==='env-anima-model') a.animaModelCardOpen = card.open;
-        else if (id==='env-krea2-model') a.kreaModelCardOpen = card.open;
-        a._envSaveCardState();
-      });
-    });
-  }
 };

@@ -1410,7 +1410,7 @@
 		"coreRegistryTitle": "训练核心注册表",
 		"coreRegistryDesc": "sd-scripts、挂载式 LyCORIS 与 musubi-tuner",
 		"coreReady": "就绪",
-		"coreNotReady": "需要安装",
+		"coreNotReady": "未配置",
 		"coreRuntime": "运行环境",
 		"coreAdapters": "适配器核心",
 		"coreProfiles": "训练配置档",
@@ -1438,6 +1438,22 @@
 		"verLabel": "版本",
 		"connectionLost": "连接丢失，请刷新页面重试",
 		"installFailed": "安装失败",
+		"refreshAll": "全部刷新",
+		"advancedOptions": "高级选项",
+		"copyLog": "复制日志",
+		"copied": "已复制到剪贴板",
+		"optionalNotInstalled": "可选 · 未安装",
+		"loadingShort": "加载中…",
+		"overview": {
+			"allReady": "运行正常",
+			"needsAttention": "需要处理",
+			"checking": "正在检测环境…",
+			"subReady": "加速库与模型均为可选增强，可按需安装。",
+			"subError": "查看标红条目的错误详情。",
+			"accel": "性能加速",
+			"core": "训练核心",
+			"models": "模型文件"
+		},
 		"animaModel": {
 			"title": "模型下载",
 			"subtitle": "Anima / Krea 2",
@@ -1455,15 +1471,15 @@
 			"connecting": "连接中",
 			"failed": "失败",
 			"allReady": "全部就绪",
-			"incomplete": "未齐全",
 			"download": "下载",
 			"redownload": "重新下载",
 			"downloadAll": "一键下载全部",
 			"downloadAllAgain": "重新下载全部",
 			"progressLog": "下载日志",
-			"destHint": "模型将下载到 models/ 目录，供训练或推理使用。",
+			"destShort": "下载到 models/",
 			"fileOf": "第 {i}/{n} 个文件",
-			"openRepository": "打开模型仓库"
+			"openRepository": "打开模型仓库",
+			"downloadedCount": "已下载 {x}/{y} · {size}"
 		}
 	},
 	"opt": {

@@ -25,7 +25,7 @@ window.environmentCoreMixin = {
   trainingCores: null, trainingCoresError: null,
 
   // ── Triton State ─────────────────────────────────────
-  tritonStatus: null, tritonBusy: false,
+  tritonStatus: null, tritonBusy: false, tritonError: null,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
 
   // ── 模型下载 State ──────────────────────────────────
@@ -37,10 +37,14 @@ window.environmentCoreMixin = {
   animaModelAggregate: null,// 前端计算的批量整体进度 {pct, fileIndex, fileTotal, label}
   animaModelLog: '',
   animaModelError: null,
-  animaModelLogOpen: false, // 日志折叠状态（持久化，避免实时重渲染被收起）
+  animaModelLogOpen: false, // 日志折叠状态（并入 _envCardOpen 覆盖机制）
 
-  // ── Card open/close state (persisted) ────────────────
-  faCardOpen: true, xfCardOpen: true, sdCardOpen: true, lycorisCardOpen: true, musubiCardOpen: true, tritonCardOpen: true, animaModelCardOpen: true, kreaModelCardOpen: true,
+  // ── Card open/close state ────────────────────────────
+  // 覆盖模型：anima_env_cards_v2 只存用户显式展开/收起的槽位；
+  // 未覆盖的槽位由 _envDefaultCardOpen 按健康度智能决定默认值。
+  _envCardOverrides: null,
+  _envSlotHtml: null, // 分槽渲染缓存 {slotId: html}
+  faAdvancedOpen: false, // FA 高级选项子折叠（会话内状态）
   _envRealtimeTopics: null,
   environmentLoading: false,
   environmentLoadCompleted: 0,
@@ -51,24 +55,65 @@ window.environmentCoreMixin = {
 
   _envInitCardState() {
     try {
-      const v = localStorage.getItem('anima_env_cards');
-      if (v) { const s = JSON.parse(v);
-        if (typeof s.fa === 'boolean') this.faCardOpen = s.fa;
-        if (typeof s.xf === 'boolean') this.xfCardOpen = s.xf;
-        if (typeof s.sd === 'boolean') this.sdCardOpen = s.sd;
-        if (typeof s.lycoris === 'boolean') this.lycorisCardOpen = s.lycoris;
-        else if (typeof s.coreRegistry === 'boolean') this.lycorisCardOpen = s.coreRegistry;
-        if (typeof s.musubi === 'boolean') this.musubiCardOpen = s.musubi;
-        else if (typeof s.coreRegistry === 'boolean') this.musubiCardOpen = s.coreRegistry;
-        if (typeof s.triton === 'boolean') this.tritonCardOpen = s.triton;
-        if (typeof s.animaModel === 'boolean') this.animaModelCardOpen = s.animaModel;
-        if (typeof s.kreaModel === 'boolean') this.kreaModelCardOpen = s.kreaModel;
-        if (typeof s.animaModelLog === 'boolean') this.animaModelLogOpen = s.animaModelLog;
+      const v2 = localStorage.getItem('anima_env_cards_v2');
+      this._envCardOverrides = (v2 && JSON.parse(v2)) || {};
+      // 旧版 key（完整布尔表）迁移为覆盖后删除
+      const old = localStorage.getItem('anima_env_cards');
+      if (old) {
+        const s = JSON.parse(old) || {};
+        const map = { fa:'fa', xf:'xf', sd:'sd', lycoris:'lycoris', musubi:'musubi', triton:'triton', animaModel:'animaModel', kreaModel:'krea2', animaModelLog:'animaModelLog' };
+        for (const k of Object.keys(map)) {
+          if (typeof s[k] === 'boolean' && typeof this._envCardOverrides[map[k]] === 'undefined') this._envCardOverrides[map[k]] = s[k];
+        }
+        if (typeof s.coreRegistry === 'boolean') {
+          if (typeof this._envCardOverrides.lycoris === 'undefined') this._envCardOverrides.lycoris = s.coreRegistry;
+          if (typeof this._envCardOverrides.musubi === 'undefined') this._envCardOverrides.musubi = s.coreRegistry;
+        }
+        localStorage.removeItem('anima_env_cards');
+        this._envSaveCardState();
       }
-    } catch (_) {}
+    } catch (_) { this._envCardOverrides = this._envCardOverrides || {}; }
   },
   _envSaveCardState() {
-    try { localStorage.setItem('anima_env_cards', JSON.stringify({fa:this.faCardOpen,xf:this.xfCardOpen,sd:this.sdCardOpen,lycoris:this.lycorisCardOpen,musubi:this.musubiCardOpen,triton:this.tritonCardOpen,animaModel:this.animaModelCardOpen,kreaModel:this.kreaModelCardOpen,animaModelLog:this.animaModelLogOpen})); } catch (_) {}
+    try { localStorage.setItem('anima_env_cards_v2', JSON.stringify(this._envCardOverrides || {})); } catch (_) {}
+  },
+
+  // 智能默认展开：本页一切皆为可选增强，缺失不是警告。
+  // 只有 busy / error 默认展开；未安装、未下载、未配置默认收起
+  // （行上仍有安装/下载快捷按钮，不影响发现性）。
+  _envDefaultCardOpen(slotId) {
+    switch (slotId) {
+      case 'fa': return !!(this.faBusy || this.faError);
+      case 'xf': return !!(this.xfBusy || this.xfError);
+      case 'triton': return !!(this.tritonBusy || this.tritonError);
+      case 'sd': return false;
+      case 'lycoris':
+      case 'musubi': return !!this.trainingCoresError;
+      case 'animaModel':
+      case 'krea2': return !!(this.animaModelBusy || this.animaModelError);
+      case 'animaModelLog': return !!this.animaModelLogOpen;
+      default: return false;
+    }
+  },
+
+  // 当前生效的展开状态 = 用户覆盖 ?? 智能默认
+  _envCardOpen(slotId) {
+    const o = (this._envCardOverrides || {})[slotId];
+    return typeof o === 'boolean' ? o : this._envDefaultCardOpen(slotId);
+  },
+  _envSetCardOpen(slotId, open) {
+    if (!this._envCardOverrides) this._envCardOverrides = {};
+    this._envCardOverrides[slotId] = !!open;
+    if (slotId === 'animaModelLog') this.animaModelLogOpen = !!open;
+    this._envSaveCardState();
+  },
+  // 进入 busy 时强制展开一次：丢弃该槽覆盖，让智能默认（busy→true）生效
+  _envForceOpen(slotId) {
+    if (!this._envCardOverrides) return;
+    if (slotId in this._envCardOverrides) {
+      delete this._envCardOverrides[slotId];
+      this._envSaveCardState();
+    }
   },
 
   // ── Realtime task bridge ─────────────────────────────
@@ -122,7 +167,7 @@ window.environmentCoreMixin = {
     const unknown = this.t('monitor.taskStateUnknown');
     if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
-    if (this.tritonBusy || this.tritonInstallJobId) this.tritonInstallLog = unknown;
+    if (this.tritonBusy || this.tritonInstallJobId) this.tritonError = unknown;
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
     this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
     this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
@@ -153,10 +198,12 @@ window.environmentCoreMixin = {
       this.scheduleEnvironmentRender();
       return;
     }
-    this._finalizeEnvironmentRealtimeTask(slot, data, failed);
+    this._finalizeEnvironmentRealtimeTask(slot, data, failed).catch(() => {});
   },
 
-  _finalizeEnvironmentRealtimeTask(slot, data, failed) {
+  // 任务收尾：先刷新状态（silent refresh 会清掉 error 字段），失败时再写回错误，
+  // 保证失败原因常驻可见，不被紧随其后的 refresh 吞掉。
+  async _finalizeEnvironmentRealtimeTask(slot, data, failed) {
     const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
     const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
     this[busyKey] = false;
@@ -164,21 +211,23 @@ window.environmentCoreMixin = {
     this._setEnvironmentRealtimeTask(slot, null);
     const fallback = this.t('environment.installFailed');
     if (slot === 'fa') {
-      if (failed) this.faError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
-      else this.toast(this.t('environment.refreshed'), 'success');
-      this.faRefresh(true).catch(() => {});
+      const msg = failed ? ((data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback) : null;
+      if (!failed) this.toast(this.t('environment.refreshed'), 'success');
+      await this.faRefresh(true).catch(() => {});
+      if (failed) this.faError = msg;
     } else if (slot === 'xf') {
-      if (failed) this.xfError = data.error || data.lines || fallback;
-      this.xfRefresh(true).catch(() => {});
+      const msg = failed ? (data.error || data.lines || fallback) : null;
+      await this.xfRefresh(true).catch(() => {});
+      if (failed) this.xfError = msg;
     } else if (slot === 'triton') {
-      if (failed) this.tritonInstallLog = (this.tritonInstallLog ? this.tritonInstallLog + '\n' : '') + '[ERROR] ' + fallback;
-      this.tritonRefresh(true).catch(() => {});
+      const msg = failed ? ((Array.isArray(data.lines) && data.lines[data.lines.length - 1]) || data.lines || this.tritonInstallLog || fallback) : null;
+      await this.tritonRefresh(true).catch(() => {});
+      if (failed) this.tritonError = msg;
     } else if (slot === 'animaModel') {
-      if (failed) {
-        this.animaModelError = (data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback;
-        this.toast(this.t('environment.installFailed'), 'error');
-      }
-      this.animaModelRefresh(true).catch(() => {});
+      const msg = failed ? ((data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback) : null;
+      if (failed) this.toast(this.t('environment.installFailed'), 'error');
+      await this.animaModelRefresh(true).catch(() => {});
+      if (failed) this.animaModelError = msg;
     }
     this.finishProgress();
     this.scheduleEnvironmentRender();
@@ -383,6 +432,7 @@ window.environmentCoreMixin = {
     this.faShowConfirm(msg, async () => {
       this.faBusy = true; this.faError = null;
       this.faProgress = null; this.faLog = ''; this.faInstallElapsed = 0;
+      this._envForceOpen('fa');
       this.startProgress(); this.renderEnvironment();
       try {
         const r = await fetch('/api/flash-attention/install', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:url||null,source:this.faSource||'default'}) });
@@ -403,7 +453,7 @@ window.environmentCoreMixin = {
     try { const r = await fetch('/api/xformers/status'); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
-  async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
+  async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this._envForceOpen('xf'); this.startProgress(); this.renderEnvironment();
     try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
       if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('xf', result.job_id); }
       else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed'); this.finishProgress(); this.renderEnvironment(); }
@@ -412,12 +462,13 @@ window.environmentCoreMixin = {
 
   // ── Triton Methods ──────────────────────────────────
   async tritonRefresh(silent) {
+    this.tritonError = null;
     try { const r = await fetch('/api/triton/status'); this.tritonStatus = await r.json(); } catch (_) { this.tritonStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
   async tritonInstall() {
-    this.tritonBusy = true; this.tritonInstallLog = ''; this.tritonInstallElapsed = 0; this.startProgress(); this.renderEnvironment();
+    this.tritonBusy = true; this.tritonError = null; this.tritonInstallLog = ''; this.tritonInstallElapsed = 0; this._envForceOpen('triton'); this.startProgress(); this.renderEnvironment();
     try {
       const r = await fetch('/api/triton/install', { method: 'POST' });
       const result = await r.json();
@@ -429,6 +480,9 @@ window.environmentCoreMixin = {
   // ── Anima 模型下载 Methods ──────────────────────────
   async animaModelRefresh(silent) {
     this.animaModelError = null;
+    // 手动刷新时清掉过期任务进度：旧 progress 残留（phase='done'+batch）会让
+    // 手动删除的文件被误报为"失败"（bug 3）。silent（任务收尾）时保留，供失败行标红。
+    if (!silent) { this.animaModelProgress = null; this.animaModelAggregate = null; }
     try {
       const r = await fetch('/api/anima-model/status');
       const data = await r.json();
@@ -444,6 +498,9 @@ window.environmentCoreMixin = {
     this.animaModelLog = ''; this.animaModelProgress = null;
     this.animaModelAggregate = null;
     this.animaModelLogOpen = false;  // 新任务默认收起日志，用户可手动展开
+    if (group === 'Krea 2') this._envForceOpen('krea2');
+    else if (group === 'Anima') this._envForceOpen('animaModel');
+    else { this._envForceOpen('animaModel'); this._envForceOpen('krea2'); }
     this.startProgress(); this.renderEnvironment();
     try {
       const body = JSON.stringify({file: file || null, group: group || null});
@@ -464,6 +521,40 @@ window.environmentCoreMixin = {
       this.animaModelError = String(e);
       this.finishProgress(); this.renderEnvironment();
     }
+  },
+
+  // 复制日志到剪贴板（错误条"复制日志"按钮，FA/Triton/模型通用）
+  _envCopyLog(text) {
+    const done = () => this.toast(this.t('environment.copied') || 'Copied', 'success');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text || '').then(done, () => {});
+      }
+    } catch (_) {}
+  },
+
+  // Hero「全部刷新」：并行静默刷新各组件状态
+  async _envRefreshAll() {
+    const tasks = [
+      this.faRefresh(true).catch(() => {}),
+      this.xfRefresh(true).catch(() => {}),
+      this.tritonRefresh(true).catch(() => {}),
+      this.animaModelRefresh(true).catch(() => {}),
+      (async () => {
+        try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); }
+        catch (_) { this.sdStatus = null; }
+      })(),
+      (async () => {
+        try {
+          const r = await fetch('/api/training/cores');
+          const payload = await r.json();
+          if (payload.status === 'success') { this.trainingCores = payload.data || null; this.trainingCoresError = null; }
+          else { this.trainingCoresError = payload.message || 'Failed to load training cores'; this.trainingCores = null; }
+        } catch (e) { this.trainingCoresError = String(e && e.message || e); this.trainingCores = null; }
+      })(),
+    ];
+    await Promise.allSettled(tasks);
+    this.renderEnvironment();
   },
 
   // 由后端 progress dict 计算批量整体进度（前端展示"第 i/n 个 · pct%"）。

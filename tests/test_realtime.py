@@ -772,6 +772,177 @@ const app = Object.assign({}, mixin, {
         )
         self.assertEqual(state["status"], {"available": True})
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for environment card-state checks")
+    def test_environment_default_card_open_follows_health(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/environment-core.js', 'utf8'));
+const mixin = window.environmentCoreMixin;
+const app = Object.assign({}, mixin, { t: (key, fallback) => fallback || key });
+// 全部健康 → 全部收起
+Object.assign(app, {
+  faBusy: false, faError: null, faStatus: {installed: true},
+  xfBusy: false, xfError: null, xfStatus: {installed: true},
+  tritonBusy: false, tritonError: null, tritonStatus: {installed: true},
+  sdStatus: {local: {tag: 'v1'}},
+  trainingCores: {adapters: [{id: 'lycoris', available: true}], engines: [{id: 'musubi_tuner', available: true}]},
+  trainingCoresError: null,
+  animaModelBusy: false, animaModelError: null,
+  animaModelStatus: [
+    {group: 'Anima', filename: 'a', exists: true},
+    {group: 'Krea 2', filename: 'b', exists: true},
+  ],
+});
+const healthy = ['fa','xf','triton','sd','lycoris','musubi','animaModel','krea2']
+  .map(slot => app._envDefaultCardOpen(slot));
+// 未安装 / 未齐全不再默认展开（可选增强，缺失不是警告）；只有 busy / error 展开
+app.faStatus = {installed: false};
+app.xfBusy = true;
+app.tritonError = 'boom';
+app.trainingCores = {adapters: [{id: 'lycoris', available: false}], engines: [{id: 'musubi_tuner', available: true}]};
+app.animaModelStatus = [
+  {group: 'Anima', filename: 'a', exists: false},
+  {group: 'Krea 2', filename: 'b', exists: true},
+];
+const unhealthy = {
+  fa: app._envDefaultCardOpen('fa'),
+  xf: app._envDefaultCardOpen('xf'),
+  triton: app._envDefaultCardOpen('triton'),
+  lycoris: app._envDefaultCardOpen('lycoris'),
+  musubi: app._envDefaultCardOpen('musubi'),
+  animaModel: app._envDefaultCardOpen('animaModel'),
+  krea2: app._envDefaultCardOpen('krea2'),
+};
+// 注册表/模型加载错误 → 对应槽位展开
+app.trainingCoresError = 'load failed';
+app.animaModelError = 'status 500';
+const errored = {
+  lycoris: app._envDefaultCardOpen('lycoris'),
+  musubi: app._envDefaultCardOpen('musubi'),
+  animaModel: app._envDefaultCardOpen('animaModel'),
+  krea2: app._envDefaultCardOpen('krea2'),
+};
+process.stdout.write(JSON.stringify({healthy, unhealthy, errored}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["healthy"], [False] * 8)
+        # 未安装/未配置/模型缺文件 → 收起；busy/error → 展开
+        self.assertEqual(
+            state["unhealthy"],
+            {"fa": False, "xf": True, "triton": True, "lycoris": False,
+             "musubi": False, "animaModel": False, "krea2": False},
+        )
+        self.assertEqual(
+            state["errored"],
+            {"lycoris": True, "musubi": True, "animaModel": True, "krea2": True},
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for environment finalize checks")
+    def test_environment_finalize_keeps_failure_reason_after_silent_refresh(self):
+        script = r"""
+global.window = {};
+global.requestAnimationFrame = callback => setTimeout(callback, 0);
+eval(require('fs').readFileSync('frontend/js/environment-core.js', 'utf8'));
+const mixin = window.environmentCoreMixin;
+const renders = [];
+global.fetch = async () => ({ok: true, json: async () => ({installed: false})});
+const app = Object.assign({}, mixin, {
+  currentRoute: 'environment',
+  t: (key, fallback) => fallback || key,
+  toast: () => {},
+  startProgress() {}, finishProgress() {},
+  scheduleEnvironmentRender() { renders.push(1); },
+  renderEnvironment() {},
+  realtimeSubscribe() {}, realtimeUnsubscribe() {},
+});
+app._setEnvironmentRealtimeTask('fa', 'job-1');
+app._setEnvironmentRealtimeTask('triton', 'job-2');
+(async () => {
+  await app._finalizeEnvironmentRealtimeTask(
+    'fa', {progress: {error: 'wheel 404'}, log: ['line1', 'wheel 404']}, true);
+  await app._finalizeEnvironmentRealtimeTask(
+    'triton', {lines: 'pip exit code 1'}, true);
+  process.stdout.write(JSON.stringify({
+    faError: app.faError, tritonError: app.tritonError,
+    faBusy: app.faBusy, tritonBusy: app.tritonBusy,
+    renders: renders.length,
+  }));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        # silent refresh 会清掉 error 字段；finalize 必须在 refresh 之后写回失败原因
+        self.assertEqual(state["faError"], "wheel 404")
+        self.assertEqual(state["tritonError"], "pip exit code 1")
+        self.assertFalse(state["faBusy"])
+        self.assertFalse(state["tritonBusy"])
+        self.assertGreaterEqual(state["renders"], 2)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for environment card-state checks")
+    def test_environment_card_overrides_persist_and_migrate_legacy_key(self):
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/environment-core.js', 'utf8'));
+const mixin = window.environmentCoreMixin;
+const store = {
+  'anima_env_cards': JSON.stringify({fa: false, triton: true, coreRegistry: false}),
+};
+global.localStorage = {
+  getItem: key => (key in store ? store[key] : null),
+  setItem: (key, value) => { store[key] = String(value); },
+  removeItem: key => { delete store[key]; },
+};
+const app = Object.assign({}, mixin, { t: (key, fallback) => fallback || key });
+app._envInitCardState();
+const migrated = {
+  fa: app._envCardOverrides.fa,
+  triton: app._envCardOverrides.triton,
+  lycoris: app._envCardOverrides.lycoris,
+  musubi: app._envCardOverrides.musubi,
+  legacyRemoved: !('anima_env_cards' in store),
+};
+// 覆盖优先于智能默认：健康 fa 默认收起，覆盖 true 后展开
+app.faStatus = {installed: true}; app.faBusy = false; app.faError = null;
+app._envSetCardOpen('fa', true);
+const faOverridden = app._envCardOpen('fa');
+delete app._envCardOverrides.fa;
+const faHealthyDefault = app._envCardOpen('fa');
+app.faStatus = {installed: false};
+const faUninstalledDefault = app._envCardOpen('fa'); // 未安装也默认收起（可选增强）
+app.faBusy = true;
+const faBusyDefault = app._envCardOpen('fa'); // busy 默认展开
+// toggle 写入 v2 key
+app._envSetCardOpen('krea2', true);
+const saved = JSON.parse(store['anima_env_cards_v2']);
+process.stdout.write(JSON.stringify({
+  migrated, faOverridden, faHealthyDefault, faUninstalledDefault, faBusyDefault, savedKrea2: saved.krea2,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(
+            state["migrated"],
+            {"fa": False, "triton": True, "lycoris": False, "musubi": False, "legacyRemoved": True},
+        )
+        self.assertTrue(state["faOverridden"])
+        self.assertFalse(state["faHealthyDefault"])
+        self.assertFalse(state["faUninstalledDefault"])
+        self.assertTrue(state["faBusyDefault"])
+        self.assertTrue(state["savedKrea2"])
+
     def test_weak_network_media_queue_and_explicit_original_are_present(self):
         render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
         app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
