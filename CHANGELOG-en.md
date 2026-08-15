@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.5.0 - 2026-08-15
+
+This release redesigns the environment management page and fixes a batch of interface details: the page moves to a full-width three-section layout with incremental rendering so status is clear at a glance; sidebar interaction, the dashboard tab indicator, the outputs page, and other animation/layout issues are addressed.
+
+### Environment page redesign
+
+- Layout: the card wall becomes a full-width three-section layout (Hero overview + two-column runtimes + full-width models), replacing details cards with row-based components.
+- Rendering: incremental per-section updates — progress refreshes only touch the affected section instead of rebuilding the DOM, so collapse animations, input focus, and log scrolling survive.
+- Interaction: custom collapse reuses the height animation; busy/failed states auto-expand, and panel expand state is persisted.
+- Semantics: statuses shrink to four states — green (ready) / red (real failure) / gray (not configured) / accent (in progress) — and all status lamps are removed; not-installed/not-downloaded items use neutral gray.
+- Fixes: install/download failure reasons are no longer swallowed by silent refreshes, version links no longer trigger collapse by accident, and stale download progress no longer misreports failure; action buttons are consistently right-aligned and loading states merge into the Hero.
+- Three new node unit tests cover default expand rules, failure-reason retention, and persistence migration.
+
+### Fixes and polish
+
+- Sidebar interaction: the active state drops the bold text and the left blue bar (the icon takes the accent color instead); hover/press backgrounds are gone, leaving the sliding pill as the only highlight; pressing now scales the whole item for a tactile feel, eliminating text flicker.
+- Fixed animation/layout issues including Tagger dropdown misplacement/clipping (enter-animation fill changed from both to backwards), content-width jumps from scrollbars when switching dashboard tabs, and the gap bleeding through the sticky header in the outputs panel.
+- Dashboard tab indicator: the run-detail response now includes output_count, so the badge is there on first paint and button widths stop changing late; the indicator now tracks button sizes via ResizeObserver and repositions smoothly when badges appear, digit counts change, or the language switches.
+- The outputs page no longer flashes on first entry (the loading placeholder skips the enter animation, and the real file list fades in on first render), and leaving history now clears the badge counter.
+- The quick-nav rail no longer flashes mid-page on the training page: it is teleported to body, fully out of the route animation ancestors.
+- Fixed factual errors in training form help text (vae_disable_cache speed direction, Krea 2 gradient-checkpoint CPU offload being a no-op, conv_dim/conv_alpha empty behavior, Prodigy scheduler exceptions, etc.), added missing field descriptions such as prodigy_d_coef and debiased_estimation_loss, removed dead keys, and synced the Chinese/English copy.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.4.0...v2.5.0)
+
 ## v2.4.0 - 2026-08-15
 
 This release focuses on interface motion and navigation: page switches, tab switches, and sidebar navigation all get smooth, layered animations; the training dashboard tabs become persistent panels, so switching no longer rebuilds content and scroll/expand state is preserved.
