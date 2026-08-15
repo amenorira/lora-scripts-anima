@@ -724,6 +724,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "1.0",
         "section": "optimizer",
         "desc_key": "field.krea_prodigy_d_coef",
+        "hint_key": "field.krea_prodigy_d_coefHint",
         "show_if": {
             "key": "optimizer_type",
             "eq": "prodigyopt.Prodigy",

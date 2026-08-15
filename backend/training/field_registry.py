@@ -495,6 +495,10 @@ _FIELD_HINTS_BY_KEY = {
     "cache_latents": "field.cache_latentsHint",
     "lowram": "field.lowramHint",
     "compile_fullgraph": "field.compile_fullgraphHint",
+    "prodigy_d_coef": "field.prodigy_d_coefHint",
+    "debiased_estimation_loss": "field.debiased_estimation_lossHint",
+    "noise_offset_random_strength": "field.noise_offset_random_strengthHint",
+    "ip_noise_gamma_random_strength": "field.ip_noise_gamma_random_strengthHint",
 }
 for _field in FIELDS:
     if _field["key"] in _FIELD_HINTS_BY_KEY:
