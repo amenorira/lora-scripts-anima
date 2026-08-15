@@ -16,6 +16,7 @@ window.monitorCoreMixin = {
   monitorParamQuery: '',
   outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
+  _outputFilesKnownCount: 0,  // run-detail 首屏带回的输出文件计数（文件列表未加载时供 tab 徽标显示）
   outputSearch: '', outputFilter: 'all',
   outputModelSortKey: 'loss', outputModelSortDir: 'asc',
   outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
@@ -234,6 +235,7 @@ window.monitorCoreMixin = {
     this.outputFilesSelected = {};
     this.outputFilesError = '';
     this.outputFilesLoading = false;
+    this._outputFilesKnownCount = 0;
   },
 
   _setMonitorRealtimeTask(taskId) {
@@ -1140,6 +1142,7 @@ window.monitorCoreMixin = {
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
         this.previews = j.data.previews || [];
+        this._outputFilesKnownCount = Number(j.data.output_count) || 0;
         // 历史记录进入时定位到最新样本（末尾）
         this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
         // 后端已截断为尾部 _LOG_DETAIL_TAIL_LINES 行；slice(-cap) 防御性兜底
@@ -1298,6 +1301,11 @@ window.monitorCoreMixin = {
 
   get selectedOutputFiles() {
     return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
+  },
+
+  // tab 徽标计数：文件列表已加载用真实长度，否则用 run-detail 首屏带回的计数
+  get outputTabCount() {
+    return this.outputFiles.length || this._outputFilesKnownCount || 0;
   },
 
   _visibleOutputFiles() {

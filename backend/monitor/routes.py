@@ -463,6 +463,11 @@ async def monitor_run_detail(run_dir: str = Query("")):
         record["run_dir"],
     )
 
+    # ── 输出文件计数（轻量目录扫描；让前端 tab 徽标与日志/样本计数一样
+    #    首屏即有，避免懒加载完成后按钮宽度变化引起指示条错位）──
+    if record["artifact_available"]:
+        result["output_count"] = len(await asyncio.to_thread(list_output_files, str(artifact_dir)))
+
     # ── 训练日志 ──
     # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），
     # 但只回传尾部 _LOG_DETAIL_TAIL_LINES 行；完整日志由前端「完整日志」模式

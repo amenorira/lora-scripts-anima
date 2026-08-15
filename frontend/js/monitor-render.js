@@ -68,7 +68,7 @@ window.monitorRenderMixin = {
     this._renderTab(tab, d, gpu, sys, t, isHistory);
 
     // ── 4. Tab 滑动指示条：按钮文本/计数徽标变化时重算位置 ──
-    const tabIndicatorSig = tab + '|' + locale + '|' + (this.logFullTotal || this.logTotal || this.logLines.length) + '|' + this.previews.length + '|' + this.outputFiles.length;
+    const tabIndicatorSig = tab + '|' + locale + '|' + (this.logFullTotal || this.logTotal || this.logLines.length) + '|' + this.previews.length + '|' + this.outputTabCount;
     if (this._tabIndicatorSig !== tabIndicatorSig) {
       this._tabIndicatorSig = tabIndicatorSig;
       requestAnimationFrame(() => this._syncMonitorTabIndicator());
@@ -396,19 +396,39 @@ window.monitorRenderMixin = {
     if (!indicator || !active || !active.offsetWidth) {
       // 路由隐藏时布局不可用：清空签名，让下一次 renderDashboard 重新调度定位
       this._tabIndicatorSig = null;
+      this._tabIndicatorGeom = null;
       return;
     }
+    // 计数徽标出现/位数变化、语言切换等会改变按钮宽度，且响应式 DOM 更新的
+    // 时序晚于 renderDashboard 的 rAF 同步（同帧更晚执行），靠"先读几何"永远
+    // 会读到旧值。ResizeObserver 在布局变化后、绘制前回调，直接从根源修正：
+    // 重写只是平滑改变进行中的动画终点，不打断滑动。
+    if (!this._tabIndicatorRO) {
+      this._tabIndicatorRO = new ResizeObserver(() => {
+        const a = bar.querySelector('.monitor-tab.active');
+        const g = this._tabIndicatorGeom;
+        if (!a || !a.offsetWidth || !g) return;
+        if (a.offsetLeft === g.l && a.offsetWidth === g.w) return;
+        this._syncMonitorTabIndicator();
+      });
+      bar.querySelectorAll('.monitor-tab').forEach(btn => this._tabIndicatorRO.observe(btn));
+    }
+    const l = active.offsetLeft, w = active.offsetWidth;
     if (!bar.classList.contains('indicator-ready')) {
       bar.classList.add('no-anim');
-      indicator.style.width = active.offsetWidth + 'px';
-      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+      indicator.style.width = w + 'px';
+      indicator.style.transform = 'translateX(' + l + 'px)';
       void indicator.offsetWidth; // 强制 reflow，确保无动画落位先生效
       bar.classList.remove('no-anim');
       bar.classList.add('indicator-ready');
+      this._tabIndicatorGeom = { l, w };
       return;
     }
-    indicator.style.width = active.offsetWidth + 'px';
-    indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+    const g = this._tabIndicatorGeom;
+    if (g && g.l === l && g.w === w) return; // 几何未变，避免重复写入打断进行中的过渡
+    indicator.style.width = w + 'px';
+    indicator.style.transform = 'translateX(' + l + 'px)';
+    this._tabIndicatorGeom = { l, w };
   },
 
   // ═══════════════════════════════════════════════════════════

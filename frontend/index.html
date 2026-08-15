@@ -269,7 +269,7 @@
                     @click="setMonitorTab('outputs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg>
               <span x-text="t('monitor.outputs','Outputs')">Outputs</span>
-              <span class="monitor-tab-count" x-show="outputFiles.length > 0" x-text="outputFiles.length"></span>
+              <span class="monitor-tab-count" x-show="outputTabCount > 0" x-text="outputTabCount"></span>
             </button>
             <span class="monitor-tab-indicator" aria-hidden="true"></span>
           </div>
