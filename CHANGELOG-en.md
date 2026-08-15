@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.5.1 - 2026-08-15
+
+This patch fixes the placement of weighting_scheme in the LoRA training form's timestep & weighting group: logit_mean/logit_std/mode_scale were rendered before it because of the frontend parent-key resolution rule (show_if arrays resolve to their last key), pushing weighting_scheme to the end of the group. The three fields now declare their layout parent explicitly, restoring the registry order; the Krea 2 profile gets the same fix. A regression test runs the real frontend ordering logic in node and pins the field order for both profiles.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.5.0...v2.5.1)
+
 ## v2.5.0 - 2026-08-15
 
 This release redesigns the environment management page and fixes a batch of interface details: the page moves to a full-width three-section layout with incremental rendering so status is clear at a glance; sidebar interaction, the dashboard tab indicator, the outputs page, and other animation/layout issues are addressed.
