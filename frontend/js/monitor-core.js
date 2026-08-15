@@ -1194,6 +1194,7 @@ window.monitorCoreMixin = {
     this.outputFilesError = '';
     this._outputFilesRunDir = '';
     this._outputFilesRequestSeq++;
+    this._outputFilesKnownCount = 0;
     this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;

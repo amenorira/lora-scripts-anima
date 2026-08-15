@@ -377,8 +377,14 @@ window.monitorRenderMixin = {
         const scrollEl = panel.querySelector('.m-outputs-scroll');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
-        // 非 tab 切换的原地重建（如点击表头排序）抑制进入动画，避免整面板闪烁
-        if (!tabChanged) panel.classList.add('no-enter-anim');
+        // 进入动画策略：加载/空占位（dashboard-empty）转瞬即逝，不播动画；
+        // 真实内容首次落位（替换占位）播放动画；排序/筛选等原地重建抑制，避免整面板闪烁
+        const replacingPlaceholder = !!panel.querySelector('.dashboard-empty');
+        if (this.outputFilesLoading || (!tabChanged && !panelEmpty && !replacingPlaceholder)) {
+          panel.classList.add('no-enter-anim');
+        } else {
+          panel.classList.remove('no-enter-anim');
+        }
         panel.innerHTML = this._renderOutputsTab(t);
         const newScrollEl = panel.querySelector('.m-outputs-scroll');
         if (newScrollEl) newScrollEl.scrollTop = scrollTop;
