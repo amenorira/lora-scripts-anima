@@ -6,6 +6,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.4.0 - 2026-08-15
+
+This release focuses on interface motion and navigation: page switches, tab switches, and sidebar navigation all get smooth, layered animations; the training dashboard tabs become persistent panels, so switching no longer rebuilds content and scroll/expand state is preserved.
+
+### Motion and navigation
+
+- Route switching is now "old page fades out quickly → new page content cascades in top to bottom", scoped to the main content area only — the sidebar and top bar no longer move with it. The system "reduce motion" preference is respected throughout.
+- The sidebar gains a sliding highlight indicator: the moment a nav item is clicked, the highlight glides over — click feedback no longer waits for the page to mount.
+- The four training dashboard tabs (Overview / Logs / Samples / Outputs) are now persistent panels: switching only toggles visibility, so incremental log rendering, sample scroll position, and output-file expand state survive round trips. The tab bar gets a sliding indicator, panel content cascades in top to bottom, and leaving the Samples tab cancels the background media-loading queue.
+- The Tagger batch/single mode switch gets a layered enter animation, and its mode tabs now share the dashboard tab styling with the same sliding indicator; the tag editor's sidebar tabs get a fade-in transition.
+- The LoRA training page's quick section nav is now built ahead of the heavy form render (it only depends on the train type), so it appears immediately on page entry instead of waiting for the form to mount.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.3.8...v2.4.0)
+
 ## v2.3.8 - 2026-08-15
 
 This patch release focuses on code hygiene and reliability: duplicated backend implementations are consolidated, confirmed dead code is removed, autosave no longer depends implicitly on the launch directory, and mutable default arguments are eliminated; three parameter docs also get factual corrections and polished bilingual wording.
