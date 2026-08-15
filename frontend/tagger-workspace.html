@@ -23,6 +23,7 @@
   <nav class="tagger-mode-tabs" :aria-label="t('tagger.sourceType', 'Source type')">
     <button type="button" :class="{ active: taggerSourceMode === 'folder' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('folder')" x-text="t('tagger.batchMode', 'Batch mode')"></button>
     <button type="button" :class="{ active: taggerSourceMode === 'single' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('single')" x-text="t('tagger.singleMode', 'Single image')"></button>
+    <span class="monitor-tab-indicator" aria-hidden="true"></span>
   </nav>
 
   <div class="tagger-training-notice" x-show="trainingActive">

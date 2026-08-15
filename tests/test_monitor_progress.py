@@ -169,14 +169,14 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertIn('role="progressbar"', body)
 
     def test_overview_uses_live_field_patching(self):
-        patch_body = self.render_source.split("_patchOverviewStatus(d, t, isHistory) {", 1)[1].split("\n  },", 1)[0]
+        patch_body = self.render_source.split("_patchOverviewStatus(root, d, t, isHistory) {", 1)[1].split("\n  },", 1)[0]
         metrics_body = self.render_source.split("const metrics = [", 1)[1].split("];", 1)[0]
         for field in ("step", "loss", "lr", "epoch", "elapsed", "eta", "speed"):
             self.assertIn(f"{field}:", patch_body)
         for field in ("loss", "lr", "epoch", "speed", "elapsed", "eta"):
             self.assertIn(f"['{field}'", metrics_body)
         self.assertIn("data-live-field=\"' + item[0] + '\"", self.render_source)
-        self.assertIn("this._patchOverviewStatus(d, t, isHistory);", self.render_source)
+        self.assertIn("this._patchOverviewStatus(panel, d, t, isHistory);", self.render_source)
         self.assertIn("(d.state||'')", self.render_source)
 
         render_tab = self.render_source.split("_renderTab(tab, d, gpu, sys, t, isHistory) {", 1)[1].split("\n  },", 1)[0]

@@ -338,7 +338,27 @@ a:focus-visible {
   max-height: 0;
 }
 
-.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; }
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; position: relative; }
+
+/* 滑动高亮：跟随激活导航项（位置/高度由 app.js _syncSidebarIndicator 写入） */
+.sidebar-nav-indicator {
+  position: absolute; left: 6px; right: 6px; top: 0; height: 0;
+  border-radius: var(--radius-sm);
+  background: var(--active-overlay);
+  opacity: 0; pointer-events: none;
+  transition: transform 300ms var(--ease-out),
+              height 300ms var(--ease-out),
+              opacity var(--duration-fast) var(--ease-out);
+}
+.sidebar-nav-indicator::before {
+  content: '';
+  position: absolute; left: 1px; top: 50%;
+  width: 3px; height: 16px; border-radius: 1px;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+.sidebar-nav.indicator-ready .sidebar-nav-indicator { opacity: 1; }
+.sidebar-nav.no-anim .sidebar-nav-indicator { transition: none; }
 
 .sidebar-section-label {
   padding: 12px 16px 5px;
@@ -388,21 +408,11 @@ a:focus-visible {
 .sidebar-item:active { background: var(--active-overlay); }
 
 .sidebar-item.active {
-  background: var(--active-overlay);
+  /* 背景高亮由 .sidebar-nav-indicator 滑动提供，这里只保留文字态 */
   color: var(--text-sidebar-active);
   font-weight: 550;
 }
-.sidebar-item.active::before {
-  content: '';
-  position: absolute;
-  left: 1px;
-  top: 50%;
-  width: 3px;
-  height: 16px;
-  border-radius: 1px;
-  background: var(--accent);
-  transform: translateY(-50%);
-}
+.sidebar-item.active:hover { background: transparent; }
 
 .sidebar-item .nav-icon {
   width: 19px; height: 19px; flex-shrink: 0;
@@ -627,12 +637,22 @@ a:focus-visible {
   padding: 24px 28px;
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
-.main-content > div {
-  transition: opacity 120ms var(--ease-out);
+/* 路由切换：旧页快速淡出（routeTransitioning 由 app.js 路由状态机驱动），
+   新页内容自上而下错峰浮现（route-enter，app.js _playRouteEnter）。
+   只作用于主内容区，侧栏/顶条不参与。 */
+.main-content > div { transition: opacity 90ms var(--ease-out); }
+.main-content.route-transitioning > div { opacity: 0; }
+@keyframes route-cascade { from { opacity: 0; transform: translateY(12px); } }
+.main-content.route-enter > div > * {
+  animation: route-cascade 380ms var(--ease-out) both;
 }
-.main-content.route-transitioning > div {
-  opacity: 0.78;
-}
+.main-content.route-enter > div > *:nth-child(2) { animation-delay: 40ms; }
+.main-content.route-enter > div > *:nth-child(3) { animation-delay: 80ms; }
+.main-content.route-enter > div > *:nth-child(4) { animation-delay: 120ms; }
+.main-content.route-enter > div > *:nth-child(5) { animation-delay: 160ms; }
+.main-content.route-enter > div > *:nth-child(6) { animation-delay: 200ms; }
+.main-content.route-enter > div > *:nth-child(7) { animation-delay: 240ms; }
+.main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 280ms; }
 
 /* Fullscreen routes: remove padding so iframe fills edge-to-edge */
 .main-fullscreen {
@@ -761,6 +781,7 @@ a:focus-visible {
   border: 0; border-bottom: 1px solid var(--border-default); border-radius: 0;
   background: transparent;
   overflow-x: auto; scrollbar-width: none;
+  position: relative; /* anchor for the sliding active indicator */
 }
 .monitor-tabs::-webkit-scrollbar { display: none; }
 .monitor-tab {
@@ -779,9 +800,20 @@ a:focus-visible {
   color: var(--text-primary); background: var(--hover-overlay);
 }
 .monitor-tab.active {
-  color: var(--accent); border-color: transparent transparent var(--accent);
+  color: var(--accent); border-color: transparent;
   background: transparent; box-shadow: none;
 }
+/* 滑动激活指示条：位置/宽度由 JS（_syncMonitorTabIndicator）写入 */
+.monitor-tab-indicator {
+  position: absolute; bottom: 0; left: 0;
+  width: 0; height: 2px; border-radius: var(--radius-pill);
+  background: var(--accent); opacity: 0; pointer-events: none;
+  transition: transform 300ms var(--ease-out),
+              width 300ms var(--ease-out),
+              opacity var(--duration-fast) var(--ease-out);
+}
+.indicator-ready > .monitor-tab-indicator { opacity: 1; }
+.no-anim > .monitor-tab-indicator { transition: none; }
 .monitor-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .monitor-tab-count { min-width: 20px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--bg-sunken); color: var(--text-tertiary); font: 11px/18px var(--font-mono); }
 .monitor-tab.active .monitor-tab-count { background: var(--accent-soft); color: var(--accent); }
@@ -2152,17 +2184,26 @@ input[type="range"]::-webkit-slider-thumb {
 .monitor-page-kicker { min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: 12px; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
 .monitor-dashboard { padding: 12px 0 18px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #monitorDashboard { min-height: 0; flex: 1; display: flex; flex-direction: column; }
-#monitorTabContent { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
-#monitorTabContent::-webkit-scrollbar { width: 7px; }
-#monitorTabContent::-webkit-scrollbar-track { background: transparent; }
-#monitorTabContent::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-tertiary) 36%, transparent); border-radius: var(--radius-pill); }
+#monitorTabContent { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+/* 持久标签面板：各自独立滚动，切走再切回时滚动位置天然保留 */
+.m-tab-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.m-tab-panel[hidden] { display: none; }
+/* 面板内容自上而下分层浮现（切换 tab 时 .active 重新挂载触发动画） */
+@keyframes m-tab-enter { from { opacity: 0; transform: translateY(10px); } }
+.m-tab-panel.active > * { animation: m-tab-enter 340ms var(--ease-out) both; }
+.m-tab-panel.active > *:nth-child(2) { animation-delay: 50ms; }
+.m-tab-panel.active > *:nth-child(3) { animation-delay: 100ms; }
+.m-tab-panel.active > *:nth-child(n+4) { animation-delay: 150ms; }
+.m-tab-panel::-webkit-scrollbar { width: 7px; }
+.m-tab-panel::-webkit-scrollbar-track { background: transparent; }
+.m-tab-panel::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-tertiary) 36%, transparent); border-radius: var(--radius-pill); }
 #historyList { min-height: 120px; contain: style; }
 #environmentPage { min-width: 900px; min-height: 300px; contain: style; container-type: inline-size; }
 #trainFormContent { min-height: 400px; contain: style; }
 /* ── Monitor Dashboard — Compact statusbar design ──────── */
 /* Tab content sections: lightweight, no card decoration */
 .monitor-dashboard > .m-section,
-#monitorTabContent > .m-section {
+.m-tab-panel > .m-section {
   background: transparent; box-shadow: none; border: none;
   border-radius: 0; padding: 0; margin-bottom: 16px;
 }
@@ -2587,11 +2628,11 @@ input[type="range"]::-webkit-slider-thumb {
 .m-outputs-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 /* ═══════════ VSCode-style log viewer ═══════════ */
 /* Log/output tab: toolbar fixed, only content scrolls */
-#monitorTabContent > .m-section:only-child {
+.m-tab-panel > .m-section:only-child {
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
-#monitorTabContent > .m-section:only-child > .m-view-header {
+.m-tab-panel > .m-section:only-child > .m-view-header {
   flex-shrink: 0;
 }
 .monitor-logs-container {
@@ -3454,7 +3495,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 }
 /* ── Dark mode overrides for light-mode defaults ─────────── */
 [data-theme="dark"] .sidebar-item:hover { background: var(--hover-overlay); }
-[data-theme="dark"] .sidebar-item.active { background: var(--active-overlay); }
+[data-theme="dark"] .sidebar-item.active:hover { background: transparent; }
 [data-theme="dark"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="dark"] .sidebar-bottom .bottom-btn:hover { background: var(--hover-btn); }
 [data-theme="dark"] .sidebar-bottom .divider { background: var(--border-subtle); }

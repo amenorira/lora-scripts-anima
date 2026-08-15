@@ -82,6 +82,13 @@ document.addEventListener('alpine:init', () => {
 
       window.addEventListener('hashchange', () => this.handleRoute());
 
+      // 窗口尺寸变化时重算监控台 tab 滑动指示条的位置
+      window.addEventListener('resize', () => {
+        if (this.currentRoute === 'monitor-dashboard' && typeof this._syncMonitorTabIndicator === 'function') {
+          requestAnimationFrame(() => this._syncMonitorTabIndicator());
+        }
+      });
+
       window.addEventListener('beforeunload', (e) => {
         // Tag editor: 检查是否有未保存的修改
         if (this.currentRoute === 'tagEditor' && typeof this._teFlushAllPendingTextEdits === 'function') {
@@ -111,6 +118,7 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.buildRouteContent();
+      this.$nextTick(() => this._syncSidebarIndicator());
 
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
@@ -123,6 +131,11 @@ document.addEventListener('alpine:init', () => {
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
+        this.$nextTick(() => this._syncSidebarIndicator());
+        // tagger 模式 tab 文本随语言变化，指示条需重算位置
+        if (r === 'tagger' && typeof this._syncTaggerTabIndicator === 'function') {
+          requestAnimationFrame(() => this._syncTaggerTabIndicator());
+        }
       });
 
       this.startRealtime();
@@ -216,6 +229,8 @@ document.addEventListener('alpine:init', () => {
         this.showLoadModal = false;
         return;
       }
+      // 点击即时反馈：侧栏高亮立即滑向目标项，不等路由提交
+      this._syncSidebarIndicator(route);
       this.routeTransitioning = true;
       this.startProgress();
       window.location.hash = route;
@@ -235,13 +250,16 @@ document.addEventListener('alpine:init', () => {
         this.routeTransitioning = true;
         this.startProgress();
       }
+      // 浏览器前进/后退等 hash 直改场景：同样立即滑动侧栏高亮
+      this._syncSidebarIndicator(route);
 
       // The training form mounts hundreds of controls. Leave a short paint
       // window so the active nav state, content fade and progress bar become
       // visible before that work starts. A timer also keeps routing reliable
       // in background tabs, where requestAnimationFrame may be paused.
+      // 动画开启时延时让旧页淡出与点击反馈先被看到，再提交重量级挂载。
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const mountDelay = route.startsWith('train-') && !reduceMotion ? 48 : 16;
+      const mountDelay = reduceMotion ? 16 : 70;
       setTimeout(() => {
         if (transitionSeq !== this._routeTransitionSeq) return;
         this._commitRoute(route, prev, transitionSeq);
@@ -274,14 +292,59 @@ document.addEventListener('alpine:init', () => {
       const progressManagedByRoute = this.buildRouteContent({ routeTransition: true });
       const restoreScrollTop = this._routeScrollPositions[route] || 0;
       this.$nextTick(() => setTimeout(() => {
-        if (transitionSeq === this._routeTransitionSeq && this.currentRoute === route) {
-          const scroller = document.getElementById('mainContent');
-          if (scroller) scroller.scrollTop = restoreScrollTop;
-          this.routeTransitioning = false;
-          if (!progressManagedByRoute) this.finishProgress();
+        if (transitionSeq !== this._routeTransitionSeq || this.currentRoute !== route) return;
+        const scroller = document.getElementById('mainContent');
+        if (scroller) {
+          scroller.scrollTop = restoreScrollTop;
+          this._playRouteEnter(scroller);
         }
+        this._syncSidebarIndicator();
+        this.routeTransitioning = false;
+        if (!progressManagedByRoute) this.finishProgress();
       }, 16));
       this.showLoadModal = false;
+    },
+
+    // 新页面内容自上而下错峰浮现（CSS: route-cascade，非线性缓出）
+    _playRouteEnter(mainContent) {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      mainContent.classList.remove('route-enter');
+      void mainContent.offsetWidth; // 强制 reflow，让连续切换能重启动画
+      mainContent.classList.add('route-enter');
+      clearTimeout(this._routeEnterTimer);
+      this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter'), 900);
+    },
+
+    // 侧栏滑动高亮：跟随激活导航项的位置与高度（首次定位不播放动画）。
+    // 可传入目标 route 在路由提交前提前滑动（点击即时反馈），否则按当前路由定位。
+    _syncSidebarIndicator(route) {
+      const nav = document.getElementById('sidebarNav');
+      if (!nav) return;
+      const indicator = nav.querySelector('.sidebar-nav-indicator');
+      if (!indicator) return;
+      const r = route || this.currentRoute;
+      let active = null;
+      if (r) {
+        active = nav.querySelector('.sidebar-item[data-route="' + r + '"]')
+          || (r.startsWith('train-') ? nav.querySelector('.sidebar-item[data-route="train-*"]') : null);
+      }
+      if (!active) active = nav.querySelector('.sidebar-item.active');
+      if (!active || !active.offsetHeight) {
+        // 无激活项（如首页）或布局不可用时隐藏高亮
+        nav.classList.remove('indicator-ready');
+        return;
+      }
+      if (!nav.classList.contains('indicator-ready')) {
+        nav.classList.add('no-anim');
+        indicator.style.height = active.offsetHeight + 'px';
+        indicator.style.transform = 'translateY(' + active.offsetTop + 'px)';
+        void indicator.offsetWidth; // 强制 reflow，确保无动画落位先生效
+        nav.classList.remove('no-anim');
+        nav.classList.add('indicator-ready');
+        return;
+      }
+      indicator.style.height = active.offsetHeight + 'px';
+      indicator.style.transform = 'translateY(' + active.offsetTop + 'px)';
     },
 
     showRightPanel() {

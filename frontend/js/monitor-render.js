@@ -33,7 +33,12 @@ window.monitorRenderMixin = {
       this._shellLocale = locale;
       this._builtTab = null;
       let shell = '<div class="monitor-dashboard">';
-      shell += '<div id="monitorTabContent"></div>';
+      shell += '<div id="monitorTabContent">';
+      shell += '<div class="m-tab-panel" data-tab="overview" hidden></div>';
+      shell += '<div class="m-tab-panel" data-tab="logs" hidden></div>';
+      shell += '<div class="m-tab-panel" data-tab="samples" hidden></div>';
+      shell += '<div class="m-tab-panel" data-tab="outputs" hidden></div>';
+      shell += '</div>';
       shell += this._previewLightboxHtml(t);
       shell += '</div>';
       el.innerHTML = shell;
@@ -61,6 +66,13 @@ window.monitorRenderMixin = {
 
     // ── 3. 标签页内容 ──
     this._renderTab(tab, d, gpu, sys, t, isHistory);
+
+    // ── 4. Tab 滑动指示条：按钮文本/计数徽标变化时重算位置 ──
+    const tabIndicatorSig = tab + '|' + locale + '|' + (this.logFullTotal || this.logTotal || this.logLines.length) + '|' + this.previews.length + '|' + this.outputFiles.length;
+    if (this._tabIndicatorSig !== tabIndicatorSig) {
+      this._tabIndicatorSig = tabIndicatorSig;
+      requestAnimationFrame(() => this._syncMonitorTabIndicator());
+    }
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -297,55 +309,94 @@ window.monitorRenderMixin = {
     if (!contentEl) return;
     const tabChanged = this._builtTab !== tab;
 
+    // ── 持久面板：切换只翻转激活态（进入动画由 CSS 承担），各面板 DOM 常驻，
+    //    切走再切回时滚动位置/展开状态天然保留；内容仅在数据签名变化时重建 ──
+    if (tabChanged) {
+      const prevTab = this._builtTab;
+      this._builtTab = tab;
+      // 切离样本标签：取消弱网模式下的后台媒体加载队列（面板 DOM 保留，不释放 object URL）
+      if (prevTab === 'samples' && tab !== 'samples') this._cancelPreviewMediaQueue();
+      contentEl.querySelectorAll('.m-tab-panel').forEach(panel => {
+        const isActive = panel.dataset.tab === tab;
+        panel.classList.toggle('active', isActive);
+        panel.hidden = !isActive;
+      });
+      requestAnimationFrame(() => this._syncMonitorTabIndicator());
+    }
+
+    const panel = contentEl.querySelector('.m-tab-panel[data-tab="' + tab + '"]');
+    if (!panel) return;
+    const panelEmpty = !panel.firstElementChild;
+
     if (tab === 'logs') {
-      this._renderLogs(contentEl, d, t, tabChanged);
-      this._builtTab = 'logs';
+      this._renderLogs(panel, d, t, panelEmpty);
       return;
     }
     if (tab === 'overview') {
       const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (d.train_result ? d.train_result.status : '');
-      if (tabChanged || this._builtOverviewSig !== sig) {
+      if (panelEmpty || this._builtOverviewSig !== sig) {
         this._cancelPreviewMediaQueue();
         this._releasePreviewMediaObjectUrls();
         this._builtOverviewSig = sig;
-        contentEl.innerHTML = this._renderOverviewTab(d, t, isHistory);
-        delete contentEl.dataset.diagnosticVersion;
-        delete contentEl.dataset.paramQuery;
+        panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
+        delete panel.dataset.diagnosticVersion;
+        delete panel.dataset.paramQuery;
       }
-      this._patchOverviewStatus(d, t, isHistory);
-      this._builtTab = 'overview';
+      this._patchOverviewStatus(panel, d, t, isHistory);
       return;
     }
     if (tab === 'samples') {
       const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
-      if (tabChanged || this._builtSamplesSig !== sig) {
+      if (panelEmpty || this._builtSamplesSig !== sig) {
         // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
-        const scrollTop = contentEl.scrollTop || 0;
+        const scrollTop = panel.scrollTop || 0;
         this._cancelPreviewMediaQueue();
         this._releasePreviewMediaObjectUrls();
         this._builtSamplesSig = sig;
-        contentEl.innerHTML = this._renderSamplesTab(t);
-        contentEl.scrollTop = scrollTop;
+        panel.innerHTML = this._renderSamplesTab(t);
+        panel.scrollTop = scrollTop;
       }
-      this.schedulePreviewMediaLoads(contentEl);
-      this._builtTab = 'samples';
+      this.schedulePreviewMediaLoads(panel);
       return;
     }
     if (tab === 'outputs') {
       if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
       const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
-      if (tabChanged || this._builtOutputsSig !== sig) {
+      if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
-        const scrollEl = contentEl.querySelector('.m-outputs-scroll');
+        const scrollEl = panel.querySelector('.m-outputs-scroll');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
-        contentEl.innerHTML = this._renderOutputsTab(t);
-        const newScrollEl = contentEl.querySelector('.m-outputs-scroll');
+        panel.innerHTML = this._renderOutputsTab(t);
+        const newScrollEl = panel.querySelector('.m-outputs-scroll');
         if (newScrollEl) newScrollEl.scrollTop = scrollTop;
       }
-      this._builtTab = 'outputs';
       return;
     }
+  },
+
+  // 滑动指示条：跟随激活 tab 的位置与宽度（首次定位不播放动画）
+  _syncMonitorTabIndicator() {
+    const bar = document.querySelector('.monitor-tabs');
+    if (!bar) return;
+    const indicator = bar.querySelector('.monitor-tab-indicator');
+    const active = bar.querySelector('.monitor-tab.active');
+    if (!indicator || !active || !active.offsetWidth) {
+      // 路由隐藏时布局不可用：清空签名，让下一次 renderDashboard 重新调度定位
+      this._tabIndicatorSig = null;
+      return;
+    }
+    if (!bar.classList.contains('indicator-ready')) {
+      bar.classList.add('no-anim');
+      indicator.style.width = active.offsetWidth + 'px';
+      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+      void indicator.offsetWidth; // 强制 reflow，确保无动画落位先生效
+      bar.classList.remove('no-anim');
+      bar.classList.add('indicator-ready');
+      return;
+    }
+    indicator.style.width = active.offsetWidth + 'px';
+    indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -380,10 +431,8 @@ window.monitorRenderMixin = {
     return this.esc(v);
   },
 
-  _patchOverviewStatus(d, t, isHistory) {
-    if (!d) return;
-    const root = document.getElementById('monitorTabContent');
-    if (!root) return;
+  _patchOverviewStatus(root, d, t, isHistory) {
+    if (!d || !root) return;
     const percent = isHistory && d.train_result && d.train_result.status === 'completed'
       ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const values = {

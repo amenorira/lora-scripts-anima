@@ -9,10 +9,10 @@
 .tagger-page-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; min-height: 30px; margin-bottom: 10px; }
 .tagger-page-header .page-title { margin-bottom: 0; }
 .tagger-page-resbar { flex: 0 1 auto; min-height: 30px; padding: 0; }
-.tagger-mode-tabs { display: flex; gap: 0; margin: 0 0 16px; border-bottom: 1px solid var(--border-default); }
-.tagger-mode-tabs button { min-width: 104px; height: 38px; min-height: 38px; padding: 0 16px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
-.tagger-mode-tabs button:hover { color: var(--text-primary); }
-.tagger-mode-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tagger-mode-tabs { display: flex; gap: 0; margin: 0 0 16px; border-bottom: 1px solid var(--border-default); position: relative; }
+.tagger-mode-tabs button { min-width: 104px; height: 38px; min-height: 38px; padding: 0 16px; border: 0; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
+.tagger-mode-tabs button:hover { color: var(--text-primary); background: var(--hover-overlay); }
+.tagger-mode-tabs button.active { color: var(--accent); }
 .tagger-training-notice { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-default)); background: var(--danger-soft); color: var(--danger); font-size: 12px; }
 .tagger-training-notice button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 650; cursor: pointer; }
 
@@ -125,6 +125,11 @@
 .tagger-error-summary { display: flex; gap: 8px; padding: 8px 14px; background: var(--danger-soft); color: var(--danger); font-size: 10px; }
 
 .tagger-single-layout { display: grid; grid-template-columns: minmax(320px, var(--tagger-single-left, 55%)) 8px minmax(420px, 1fr); align-items: stretch; gap: 0; width: 100%; }
+/* 模式切换：两种布局由 x-if 销毁/重建，CSS 动画随挂载自动播放（自上而下分层，
+   与监控台 tab 面板共用 m-tab-enter 关键帧，见 app.css） */
+.tagger-batch-layout > *, .tagger-single-layout > * { animation: m-tab-enter 340ms var(--ease-out) both; }
+.tagger-batch-layout > *:nth-child(2), .tagger-single-layout > *:nth-child(2) { animation-delay: 50ms; }
+.tagger-batch-layout > *:nth-child(n+3), .tagger-single-layout > *:nth-child(n+3) { animation-delay: 100ms; }
 .tagger-single-main, .tagger-single-sidebar { display: grid; align-content: start; gap: 14px; min-width: 0; }
 .tagger-single-main { grid-template-rows: auto auto minmax(0, 1fr); padding-right: 12px; }
 .tagger-single-sidebar { padding-left: 12px; }

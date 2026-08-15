@@ -94,11 +94,12 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260808-tagger24');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260815-tagger27');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
       if (window.Alpine) Alpine.initTree(host);
+      requestAnimationFrame(() => this._syncTaggerTabIndicator());
     } catch (error) {
       host.textContent = error.message;
     }
@@ -396,6 +397,27 @@ window.taggerMixin = {
     this._taggerModeStates[mode] = null;
     this._restoreTaggerModeState(stored);
     this.resetTaggerPreview();
+    requestAnimationFrame(() => this._syncTaggerTabIndicator());
+  },
+
+  // 模式 tab 滑动指示条：与监控台 tab 共用 .monitor-tab-indicator 样式
+  _syncTaggerTabIndicator() {
+    const bar = document.querySelector('.tagger-mode-tabs');
+    if (!bar) return;
+    const indicator = bar.querySelector('.monitor-tab-indicator');
+    const active = bar.querySelector('button.active');
+    if (!indicator || !active || !active.offsetWidth) return;
+    if (!bar.classList.contains('indicator-ready')) {
+      bar.classList.add('no-anim');
+      indicator.style.width = active.offsetWidth + 'px';
+      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+      void indicator.offsetWidth; // 强制 reflow，首次定位不播放动画
+      bar.classList.remove('no-anim');
+      bar.classList.add('indicator-ready');
+      return;
+    }
+    indicator.style.width = active.offsetWidth + 'px';
+    indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
   },
 
   _captureTaggerModeState() {

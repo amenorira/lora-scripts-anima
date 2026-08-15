@@ -1,4 +1,4 @@
-﻿/* ================================================================
+/* ================================================================
    training-core.js — State, Form building, File pickers
    Mixin merged into animaApp Alpine component
    ================================================================ */
@@ -648,6 +648,11 @@ window.trainingCoreMixin = {
     const tt = this.trainTypes.find(t => t.v === this.form.model_train_type);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
     this.currentTrainTypeLabel = tt ? tt.l : '';
+
+    // 分组导航只依赖训练类型（_allSections → getVisibleSections），
+    // 先于重量级表单渲染构建，让快速导航随页面进入动画立即可见；
+    // 渲染完成后 renderTrainingForm 会再次调用以同步折叠态。
+    this.buildSectionNav();
 
     this.renderTrainingForm(trainType, null);
     this._warmTrainTypePanels(trainType);
