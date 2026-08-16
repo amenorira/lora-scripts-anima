@@ -31,10 +31,8 @@ window.taggerMixin = {
   taggerDragOver: false,
   taggerSingleLeftWidth: 55,
   taggerSingleResizing: false,
-  taggerSingleResultHeight: 190,
-  taggerResultResizing: false,
-  _taggerResultResizeStartY: 0,
-  _taggerResultResizeStartHeight: 190,
+  taggerSingleOutputCollapsed: true,
+  taggerSingleModelCollapsed: false,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -45,6 +43,7 @@ window.taggerMixin = {
     escapeTag: true,
     addRatingTag: false,
     addModelTag: false,
+    unloadModel: false,
     removeDuplicated: false,
     categoryThresholds: {},
     categoryEnabledByModel: {},
@@ -94,7 +93,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260815-tagger27');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260816-tagger31');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -109,7 +108,6 @@ window.taggerMixin = {
     this.realtimeUnsubscribe('hardware');
     this._setTaggerRealtimeTask(null);
     this.stopTaggerSingleResize();
-    this.stopTaggerResultResize();
     this._releaseTaggerPreview();
     Object.values(this._taggerModeStates).forEach(state => {
       if (!state?.previewObjectUrl) return;
@@ -246,7 +244,8 @@ window.taggerMixin = {
   },
 
   taggerCategoryEnabled(key) {
-    return this.taggerSettings.categoryEnabledByModel?.[this.taggerSelectedModel]?.[key] !== false;
+    const stored = this.taggerSettings.categoryEnabledByModel?.[this.taggerSelectedModel]?.[key];
+    return key === 'model' ? stored === true : stored !== false;
   },
 
   setTaggerCategoryEnabled(key, enabled) {
@@ -390,7 +389,6 @@ window.taggerMixin = {
     if (this.taggerRunning || this.taggerStarting || this.taggerScanning
       || !['folder', 'single'].includes(mode) || mode === this.taggerSourceMode) return;
     this.stopTaggerSingleResize();
-    this.stopTaggerResultResize();
     this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
     this.taggerSourceMode = mode;
     const stored = this._taggerModeStates[mode];
@@ -468,7 +466,6 @@ window.taggerMixin = {
   clearTaggerSource() {
     if (this.taggerRunning || this.taggerStarting || this.taggerScanning) return;
     this.stopTaggerSingleResize();
-    this.stopTaggerResultResize();
     this._taggerModeStates[this.taggerSourceMode] = null;
     this._releaseTaggerPreview();
     this._restoreTaggerModeState(null);
@@ -708,44 +705,6 @@ window.taggerMixin = {
     document.body.classList.remove('tagger-single-resizing');
   },
 
-  taggerResultResizeMax() {
-    const main = document.querySelector('.tagger-single-main');
-    const tags = document.querySelector('.tagger-result-tags');
-    if (!main || !tags) return 190;
-    const divider = document.querySelector('.tagger-result-divider');
-    const actions = document.querySelector('.tagger-single-result .tagger-result-actions');
-    const reserved = Number(divider?.offsetHeight || 0) + Number(actions?.offsetHeight || 0);
-    return Math.max(94, Math.floor(main.getBoundingClientRect().bottom - tags.getBoundingClientRect().top - reserved));
-  },
-
-  adjustTaggerResultHeight(delta) {
-    const next = Number(this.taggerSingleResultHeight || 190) + Number(delta || 0);
-    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, next));
-  },
-
-  startTaggerResultResize(event) {
-    if (event && event.button !== 0) return;
-    const tags = document.querySelector('.tagger-result-tags');
-    if (!tags) return;
-    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, tags.getBoundingClientRect().height));
-    this._taggerResultResizeStartY = event.clientY;
-    this._taggerResultResizeStartHeight = this.taggerSingleResultHeight;
-    this.taggerResultResizing = true;
-    document.body.classList.add('tagger-result-resizing');
-  },
-
-  resizeTaggerResult(event) {
-    if (!this.taggerResultResizing) return;
-    const delta = event.clientY - this._taggerResultResizeStartY;
-    const next = this._taggerResultResizeStartHeight + delta;
-    this.taggerSingleResultHeight = Math.min(this.taggerResultResizeMax(), Math.max(94, Math.round(next)));
-  },
-
-  stopTaggerResultResize() {
-    this.taggerResultResizing = false;
-    document.body.classList.remove('tagger-result-resizing');
-  },
-
   selectTaggerItem(item) {
     this.taggerSelectedIndex = Number(item.index || 0);
     const result = item.result || (this.taggerTask && this.taggerTask.current_result && this.taggerTask.current_result.index === this.taggerSelectedIndex ? this.taggerTask.current_result : null);
@@ -786,7 +745,15 @@ window.taggerMixin = {
         };
       });
     }
-    this.taggerCategoryState = state;
+    // 固定分类顺序：特征在前、模型等辅助分类在后，避免后端原始顺序把噪声分类顶到最前
+    const ordered = {};
+    ['general', 'character', 'copyright', 'artist', 'meta', 'quality', 'rating'].forEach(key => {
+      if (state[key]) ordered[key] = state[key];
+    });
+    Object.keys(state).forEach(key => {
+      if (!ordered[key]) ordered[key] = state[key];
+    });
+    this.taggerCategoryState = ordered;
     if (Object.keys(state).length) {
       this.taggerCategoryGlobalThreshold = Number(state.general?.threshold ?? this.taggerSettings.threshold ?? 0.5);
       this.recalculateAllTaggerCategories(true);
@@ -932,9 +899,12 @@ window.taggerMixin = {
           add_rating_tag: categoryKeys.includes('rating')
             ? categoryOptionEnabled('rating')
             : this.taggerSourceMode === 'folder' && this.taggerSettings.addRatingTag,
-          add_model_tag: this.taggerSourceMode === 'folder'
-            && this.taggerSupportsModelTag()
-            && this.taggerSettings.addModelTag,
+          add_model_tag: this.taggerSupportsModelTag() && (
+            this.taggerSourceMode === 'folder'
+              ? this.taggerSettings.addModelTag
+              : this.taggerCategoryEnabled('model')
+          ),
+          unload_model_after: this.taggerSettings.unloadModel === true,
           remove_duplicated: this.taggerSettings.removeDuplicated,
           additional_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.additionalTags : '',
           exclude_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.excludeTags : '',

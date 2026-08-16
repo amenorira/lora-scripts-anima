@@ -458,6 +458,13 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
     finally:
         prefetch_stop.set()
         producer.join(timeout=1)
+        if options.get("unload_model_after"):
+            try:
+                with gpu_inference_lock:
+                    if available_interrogators[task["model_id"]].unload():
+                        _task_log(task, f"Model unloaded: {spec.name}")
+            except Exception:
+                log.exception("Failed to unload tagger model")
         task["updated_at"] = time.time()
 
 
