@@ -1311,7 +1311,19 @@
 			"historyTabSnapshots": "Timeline",
 		"historyHintUnsaved": "This session's edits (cleared on save/reload)",
 			"historyHintSaved": "Incremental save events that can be reverted",
-		"historyFuture": "undone"
+		"historyFuture": "undone",
+		"savedArchived": "Saved — edit history archived to timeline",
+		"batchAddPlaceholder": "Tag to add",
+		"batchRemovePlaceholder": "Tag to remove",
+		"batchOldPlaceholder": "Original tag",
+		"batchTriggerPlaceholder": "Trigger tag",
+		"shortcutHelpTitle": "Keyboard shortcuts",
+		"shortcutAddTag": "Focus the add-tag input",
+		"shortcutFocusSearch": "Focus search",
+		"shortcutEsc": "Close dialogs / clear selection",
+		"shortcutTab": "Move focus between card and editor",
+		"shortcutMouse": "Double-click card",
+		"shortcutNav": "Previous / next image"
 	},
 	"bulkAction": {
 		"add": "Add",

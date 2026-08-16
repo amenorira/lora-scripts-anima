@@ -189,6 +189,7 @@ window.tagEditorMixin = {
   tagEditorConfirmOpen: false,
   tagEditorConfirmMsg: '',
   tagEditorConfirmCb: null,
+  tagEditorShortcutsOpen: false,
 
   // ===== Auto-save =====
   _teAutoSaveInterval: null,
@@ -1287,7 +1288,7 @@ window.tagEditorMixin = {
       include_tags: '', exclude_tags: '', tag_logic: 'AND', sort_by: 'name', sort_asc: 'true',
       sort_by2: '', sort_asc2: 'true'
     });
-    base.set('page_size');
+    base.set('page_size', '240');
     var all = [];
     var totalPages = 1;
     for (var page = 1; page <= totalPages; page++) {
@@ -1355,9 +1356,31 @@ window.tagEditorMixin = {
     this._updateEditorPanel();
   },
 
+  _teFocusEditorInput() {
+    // 只聚焦当前视图可见的编辑控件（Chip=添加框 / Text=文本域），隐藏元素 focus 无效
+    var selector = this.tagEditorDetailView === 'text'
+      ? '.te-editor:not(.is-idle) .te-editor-textarea'
+      : '.te-editor:not(.is-idle) .te-editor-add input';
+    var el = document.querySelector(selector);
+    if (el) el.focus();
+    return !!el;
+  },
+
+  tagEditorCardEnter(img, idx, e) {
+    // 焦点在已单选的本卡上时，Enter 视为“开始编辑”聚焦添加框；否则保持选中切换语义
+    if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
+      if (this._teFocusEditorInput()) {
+        e.preventDefault();
+        return;
+      }
+    }
+    this.tagEditorCardClick(img, idx, e);
+  },
+
   tagEditorCardDblClick(img, idx, e) {
-    var input = document.querySelector('.te-editor-add input');
-    if (input) input.focus();
+    // 双击卡片 = 查看大图（聚焦添加框用 Enter 键，见 tagEditorHandleKeydown）
+    if (e) e.preventDefault();
+    this.tagEditorOpenLightbox(img);
   },
 
   tagEditorToggleSelect(path, e) {
@@ -1620,6 +1643,7 @@ window.tagEditorMixin = {
     if (newIdx >= 0 && newIdx < filtered.length) {
       this.tagEditorSelected = [filtered[newIdx].path];
       this._updateEditorPanel();
+      this._teScrollSelectedIntoView();
       return;
     }
     if (this.tagEditorSessionId) {
@@ -1631,7 +1655,49 @@ window.tagEditorMixin = {
       if (next) {
         this.tagEditorSelected = [next.path];
         this._updateEditorPanel();
+        this._teScrollSelectedIntoView();
       }
+    }
+  },
+
+  tagEditorShortcutRows() {
+    return [
+      { k: 'Ctrl+S', d: this.t('common.save') },
+      { k: 'Ctrl+Z / Ctrl+Shift+Z', d: this.t('tagEditor.undoHint') + ' / ' + this.t('tagEditor.redoHint') },
+      { k: 'Ctrl+A', d: this.t('tagEditor.selectPage') },
+      { k: 'Ctrl+C / Ctrl+V', d: this.t('tagEditor.copyTags') + ' / ' + this.t('tagEditor.pasteTags') },
+      { k: 'Ctrl+F', d: this.t('tagEditor.shortcutFocusSearch') },
+      { k: 'Enter', d: this.t('tagEditor.shortcutAddTag') },
+      { k: '← / →', d: this.t('tagEditor.shortcutNav') },
+      { k: 'Tab / Shift+Tab', d: this.t('tagEditor.shortcutTab') },
+      { k: 'Esc', d: this.t('tagEditor.shortcutEsc') },
+      { k: this.t('tagEditor.shortcutMouse'), d: this.t('tagEditor.viewOriginal') }
+    ];
+  },
+
+  _teScrollSelectedIntoView() {
+    if (this.tagEditorSelected.length !== 1) return;
+    var path = this.tagEditorSelected[0];
+    // 等 Alpine 渲染完再滚动；block:'nearest' 只在卡片出屏时才滚
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        var cards = document.querySelectorAll('#teV3Grid .te-card');
+        for (var i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-path') === path) {
+            cards[i].scrollIntoView({ block: 'nearest' });
+            break;
+          }
+        }
+      });
+    });
+  },
+
+  tagEditorSetTagSort(by) {
+    if (this.tagEditorTagSortBy === by) {
+      this.tagEditorTagSortAsc = !this.tagEditorTagSortAsc;
+    } else {
+      this.tagEditorTagSortBy = by;
+      this.tagEditorTagSortAsc = by !== 'freq';
     }
   },
 
@@ -2394,6 +2460,7 @@ window.tagEditorMixin = {
       this._teSaveProgress = 0;
     }
 
+    var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
     this.tagEditorModified = this._teModifiedCount > 0;
     if (processedCount > 0 || this._teModifiedCount === 0) {
@@ -2421,7 +2488,7 @@ window.tagEditorMixin = {
       }
       this._teSaveDraft();
     } else {
-      this.toast(this.t('common.saved'));
+      this.toast(hadHistory ? this.t('tagEditor.savedArchived') : this.t('common.saved'));
       this._teDraftSavedAt = '';
       this._teRemoveDraft();
     }
@@ -2556,6 +2623,7 @@ window.tagEditorMixin = {
             });
             self.tagEditorModified = true;
             self._teRecountModified();
+            self._teRemoveDraft();
             var restoredState = {};
             var restoredModified = self._teGetModified();
             for (var i = 0; i < restoredModified.length; i++) restoredState[restoredModified[i].path] = restoredModified[i].tags;
@@ -2581,7 +2649,16 @@ window.tagEditorMixin = {
     if (this.currentRoute !== 'tagEditor') return true;
     this._teFlushAllPendingTextEdits();
     if (!this.tagEditorModified) return true;
-    return window.confirm(this.t('tagEditor.unsavedConfirm'));
+    // 与编辑器内其它确认保持一致，用自定义弹窗代替原生 window.confirm
+    if (this._teNavConfirmed) { this._teNavConfirmed = false; return true; }
+    var self = this;
+    this.tagEditorConfirmMsg = this.t('tagEditor.unsavedConfirm');
+    this.tagEditorConfirmCb = function() {
+      self._teNavConfirmed = true;
+      self.navigate(route);
+    };
+    this.tagEditorConfirmOpen = true;
+    return false;
   },
 
   // ===== Keyboard Shortcuts =====
@@ -2681,6 +2758,10 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Escape') {
+      if (this.tagEditorShortcutsOpen) {
+        this.tagEditorShortcutsOpen = false;
+        return;
+      }
       if (this.tagEditorContextMenu) {
         this.tagEditorContextMenu = null;
         return;
@@ -2711,13 +2792,21 @@ window.tagEditorMixin = {
       this.tagEditorNavDetail(1);
       return;
     }
+    if (e.key === 'Enter' && !modifier && !editableTarget && this.tagEditorSelected.length === 1) {
+      // 卡片上的 Enter 由 tagEditorCardEnter 处理；其余区域 Enter 聚焦添加框，补全键盘流
+      var enterCard = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
+      if (!enterCard && this._teFocusEditorInput()) {
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.key === 'Tab' && !modifier) {
       var card = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
       if (card && !e.shiftKey) {
-        e.preventDefault();
-        var editorInput = document.querySelector('.te-editor:not(.is-idle) .te-editor-add input, .te-editor:not(.is-idle) .te-editor-textarea');
-        if (editorInput) editorInput.focus();
-        return;
+        if (this._teFocusEditorInput()) {
+          e.preventDefault();
+          return;
+        }
       }
       if (editableTarget && e.shiftKey && e.target && e.target.closest && e.target.closest('.te-editor')) {
         var selectedCard = document.querySelector('.te-card.selected');

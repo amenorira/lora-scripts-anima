@@ -460,6 +460,19 @@
           </div>
         </div>
 
+        <!-- Shortcuts help -->
+        <div x-show="tagEditorShortcutsOpen" class="te-shortcuts" role="dialog" aria-modal="true"
+          :aria-label="t('tagEditor.shortcutHelpTitle')" @click.self="tagEditorShortcutsOpen = false" x-transition>
+          <div class="te-shortcuts-box">
+            <h3 class="te-shortcuts-title" x-text="t('tagEditor.shortcutHelpTitle')"></h3>
+            <div class="te-shortcuts-list">
+              <template x-for="row in tagEditorShortcutRows()" :key="row.k">
+                <div class="te-shortcuts-row"><kbd x-text="row.k"></kbd><span x-text="row.d"></span></div>
+              </template>
+            </div>
+          </div>
+        </div>
+
         <!-- Image lightbox -->
         <div x-show="tagEditorLightboxOpen" class="te-lightbox" role="dialog" aria-modal="true"
           :aria-label="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || t('tagEditor.viewOriginal')"
@@ -665,6 +678,8 @@
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
             </button>
+            <button class="te-topbar-btn te-shortcuts-btn" @click="tagEditorShortcutsOpen = true"
+              :title="t('tagEditor.shortcutHelpTitle')" :aria-label="t('tagEditor.shortcutHelpTitle')">?</button>
           </div>
           <div class="te-main" data-te-main="active"
             :style="'--te-right-w:' + tagEditorRightWidth + 'px'"
@@ -714,17 +729,17 @@
                 <div class="te-sidebar-undo">
                   <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                      <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
                     </svg>
                   </button>
                   <button @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" :title="t('tagEditor.redoHint')">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:scaleX(-1)">
-                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
                     </svg>
                   </button>
                   <button @click="tagEditorRestoreBackup()" :title="t('tagEditor.restoreBackupHint')" style="margin-left:auto">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                      <rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/>
                     </svg>
                   </button>
                 </div>
@@ -740,6 +755,13 @@
                     :title="t('tagEditor.logicAndHint')">AND</button>
                   <button :class="{ active: tagEditorTagLogic === 'OR' }" @click="tagEditorTagLogic = 'OR'; tagEditorSchedulePageFetch(true)"
                     :title="t('tagEditor.logicOrHint')">OR</button>
+                  <span class="te-logic-sep" aria-hidden="true"></span>
+                  <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'freq' }" @click="tagEditorSetTagSort('freq')"
+                    :title="t('tagEditor.sort')" x-text="t('tagEditor.sortFreq')"></button>
+                  <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'alpha' }" @click="tagEditorSetTagSort('alpha')"
+                    :title="t('tagEditor.sort')" x-text="t('tagEditor.sortAlpha')"></button>
+                  <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'length' }" @click="tagEditorSetTagSort('length')"
+                    :title="t('tagEditor.sort')" x-text="t('tagEditor.sortLength')"></button>
                 </div>
                 <div class="te-filter-chips" x-show="tagEditorTagSelection.length > 0 || tagEditorExcludedTags.length > 0">
                   <template x-for="tag in tagEditorTagSelection" :key="'inc-' + tag">
@@ -917,7 +939,7 @@
                     @dblclick="tagEditorCardDblClick(img, idx, $event)"
                     @contextmenu.prevent.stop="tagEditorImageCtx($event, img)"
                     tabindex="0"
-                    @keydown.enter="tagEditorCardClick(img, idx, $event)"
+                    @keydown.enter="tagEditorCardEnter(img, idx, $event)"
                     @keydown.space.prevent="tagEditorCardClick(img, idx, $event)">
                     <div class="te-card-thumb">
                       <div class="te-card-skeleton"></div>
@@ -1058,7 +1080,7 @@
                   <div class="te-batch-section">
                     <span class="te-batch-section-title" x-text="t('bulkAction.add')"></span>
                     <div class="te-batch-row">
-                      <input type="text" x-model="batchAddInput" :placeholder="t('tagEditor.batchPlaceholder')"
+                      <input type="text" x-model="batchAddInput" :placeholder="t('tagEditor.batchAddPlaceholder')"
                         @input="tagEditorBatchSuggest('add')" @focus="tagEditorBatchSuggest('add')"
                         @blur="tagEditorBatchBlur()" @keydown.enter="tagEditorBatchAdd()">
                       <div class="te-batch-pos">
@@ -1076,7 +1098,7 @@
                   <div class="te-batch-section">
                     <span class="te-batch-section-title" x-text="t('bulkAction.removeTag')"></span>
                     <div class="te-batch-row">
-                      <input type="text" x-model="batchRemoveInput" :placeholder="t('tagEditor.batchPlaceholder')"
+                      <input type="text" x-model="batchRemoveInput" :placeholder="t('tagEditor.batchRemovePlaceholder')"
                         @input="tagEditorBatchSuggest('remove')" @focus="tagEditorBatchSuggest('remove')"
                         @blur="tagEditorBatchBlur()" @keydown.enter="tagEditorBatchRemove()">
                       <button @click="tagEditorBatchRemove()" x-text="t('common.apply')"></button>
@@ -1090,7 +1112,7 @@
                   <div class="te-batch-section">
                     <span class="te-batch-section-title" x-text="t('bulkAction.replace')"></span>
                     <div class="te-batch-row">
-                      <input type="text" x-model="batchOldTag" :placeholder="t('tagEditor.batchPlaceholder')"
+                      <input type="text" x-model="batchOldTag" :placeholder="t('tagEditor.batchOldPlaceholder')"
                         @input="tagEditorBatchSuggest('old')" @focus="tagEditorBatchSuggest('old')"
                         @blur="tagEditorBatchBlur()">
                       <span class="te-batch-arrow">&rarr;</span>
@@ -1118,7 +1140,7 @@
                   <div class="te-batch-section">
                     <span class="te-batch-section-title" x-text="t('tagEditor.injectTriggerHint')"></span>
                     <div class="te-batch-row">
-                      <input type="text" x-model="batchTriggerInput" :placeholder="t('tagEditor.batchPlaceholder')"
+                      <input type="text" x-model="batchTriggerInput" :placeholder="t('tagEditor.batchTriggerPlaceholder')"
                         @keydown.enter="tagEditorBatchInjectTrigger()">
                       <button @click="tagEditorBatchInjectTrigger()" x-text="t('tagEditor.batchApplyTrigger')"></button>
                     </div>

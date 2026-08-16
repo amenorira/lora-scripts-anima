@@ -1311,7 +1311,19 @@
 			"historyTabSnapshots": "时间线",
 		"historyHintUnsaved": "本次编辑历史（未保存，切走即清空）",
 			"historyHintSaved": "每次保存记录增量变更，可撤销恢复",
-		"historyFuture": "已撤销"
+		"historyFuture": "已撤销",
+		"savedArchived": "已保存，编辑历史已归档至时间线",
+		"batchAddPlaceholder": "要添加的标签",
+		"batchRemovePlaceholder": "要移除的标签",
+		"batchOldPlaceholder": "原标签",
+		"batchTriggerPlaceholder": "触发词",
+		"shortcutHelpTitle": "快捷键",
+		"shortcutAddTag": "聚焦添加标签框",
+		"shortcutFocusSearch": "聚焦搜索框",
+		"shortcutEsc": "关闭弹窗 / 清除选择",
+		"shortcutTab": "卡片与编辑框间切换焦点",
+		"shortcutMouse": "双击卡片",
+		"shortcutNav": "上一张 / 下一张"
 	},
 	"bulkAction": {
 		"add": "添加",
