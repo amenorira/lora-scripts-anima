@@ -6,6 +6,28 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.6.0 - 2026-08-16
+
+This release upgrades the Tagger and the tag editor: the single-image mode gets a reworked layout plus a new "unload model after task" switch, and the tag editor fixes the full-folder fetch crash while gaining a complete keyboard workflow.
+
+### Tagger single-image mode
+
+- The right column now scrolls as a whole instead of each category scrolling inside; categories lose the card look and keep a fixed order, the total-tag block drops its fixed-height frame, and the left column layout no longer truncates.
+- Collapse/expand for model settings, output options, and categories now animates.
+- The CL model-tag switch in single-image mode is now a real toggle, fixing "add model tag" not taking effect in that mode.
+- Both modes gain an "unload model after task" switch: the model is released from VRAM when inference finishes; leave it off to keep the model resident for faster consecutive runs.
+- The category-threshold grid no longer overflows in narrow windows (the stepper was pushed out of its border), and the single-image WD threshold becomes a stepper, matching batch mode.
+
+### Tag editor
+
+- Fixed the TypeError from a missing URL parameter when fetching all images: select-all-of-filter, batch operations on filtered/all images, right-click global tag add/remove, and inline tag-cloud renaming all work again.
+- Double-clicking a card now opens the full-size view; Enter focuses the add-tag box, ←/→ navigation scrolls the selected card into view, and Tab/Enter focus switching no longer hits hidden inputs.
+- The route-leave guard now uses the same custom confirm dialog as the rest of the editor (Esc cancels / Enter confirms).
+- Undo/redo/restore-backup get distinguishable icons; the tag cloud gains sort by frequency/name/length; a shortcut-help overlay joins the toolbar.
+- Restoring a draft clears it so the prompt no longer repeats, and saving notes that the edit history was archived to the timeline.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.5.1...v2.6.0)
+
 ## v2.5.1 - 2026-08-15
 
 This patch fixes the placement of weighting_scheme in the LoRA training form's timestep & weighting group: logit_mean/logit_std/mode_scale were rendered before it because of the frontend parent-key resolution rule (show_if arrays resolve to their last key), pushing weighting_scheme to the end of the group. The three fields now declare their layout parent explicitly, restoring the registry order; the Krea 2 profile gets the same fix. A regression test runs the real frontend ordering logic in node and pins the field order for both profiles.
