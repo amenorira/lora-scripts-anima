@@ -3,13 +3,20 @@
    Mixin merged into animaApp Alpine component
 
    架构：分槽增量渲染。renderEnvironment() 首次建立稳定骨架
-   （加载状态 / Hero 总览 / 6 个组件行槽位 / 2 个模型组槽位），
+   （加载状态 / Hero 总览 / 6 个组件行槽位 / 模型组槽位），
    之后每帧按槽位比对 HTML，只替换变化的槽位 → 进度 tick 不再
    摧毁整页 DOM，折叠动画、输入焦点、日志滚动位置全部存活。
 
-   布局：Hero（全宽）→ 运行环境（双列独立堆叠）→ 模型文件（双组并排）。
+   布局：Hero（全宽）→ 运行环境（双列独立堆叠）→ 模型文件（组并排）。
    组件以"行 + 行内展开详情"取代旧 details 卡片墙；健康组件只占一行。
    ================================================================ */
+
+// 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
+const ENV_MODEL_GROUPS = {
+  'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
+  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2' },
+  'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models' },
+};
 
 window.environmentRenderMixin = {
   renderEnvironment() {
@@ -22,6 +29,13 @@ window.environmentRenderMixin = {
     const T = (k, fb) => this.t('environment.' + k) || fb || k;
     this._ensureEnvSkeleton(el, T);
     this._updateEnvSectionTitles(el, T);
+    this._syncEnvTabDom(el);
+    if (!this._envTabsBound && el.querySelector('[data-env-tabs]')) {
+      this._envTabsBound = true;
+      el.querySelectorAll('[data-env-tab]').forEach(btn => {
+        btn.addEventListener('click', () => this.envSetTab(btn.dataset.envTab));
+      });
+    }
 
     const slots = {
       overview: this._renderOverview(T),
@@ -33,6 +47,7 @@ window.environmentRenderMixin = {
       musubi: this._renderMusubiRow(T),
       animaModel: this._renderModelGroup(T, 'Anima'),
       krea2: this._renderModelGroup(T, 'Krea 2'),
+      trainUse: this._renderModelGroup(T, 'Train Use'),
     };
     if (!this._envSlotHtml) this._envSlotHtml = {};
     for (const slot of Object.keys(slots)) {
@@ -53,27 +68,102 @@ window.environmentRenderMixin = {
     el.dataset.envSkeleton = '1';
     el.innerHTML = ''
       + '<div data-env-slot="overview"></div>'
-      + '<div class="env-env-grid">'
-      +   '<div class="env-col" data-env-anchor-target="accel">'
-      +     '<div class="env-section-title" data-env-title="accel"></div>'
-      +     '<div data-env-slot="fa"></div>'
-      +     '<div data-env-slot="xf"></div>'
-      +     '<div data-env-slot="triton"></div>'
-      +   '</div>'
-      +   '<div class="env-col" data-env-anchor-target="core">'
-      +     '<div class="env-section-title" data-env-title="core"></div>'
-      +     '<div data-env-slot="sd"></div>'
-      +     '<div data-env-slot="lycoris"></div>'
-      +     '<div data-env-slot="musubi"></div>'
+      + '<div class="env-tabs" role="tablist" data-env-tabs>'
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="env">${this.esc(T('envTabEnv','Environment'))}</button>`
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="models">${this.esc(T('envTabModels','Models'))}</button>`
+      +   '<span class="env-tab-indicator" aria-hidden="true"></span>'
+      + '</div>'
+      + '<div class="env-tab-panel" data-env-tab-panel="env">'
+      +   '<div class="env-env-grid">'
+      +     '<div class="env-col" data-env-anchor-target="accel">'
+      +       '<div class="env-section-title" data-env-title="accel"></div>'
+      +       '<div data-env-slot="fa"></div>'
+      +       '<div data-env-slot="xf"></div>'
+      +       '<div data-env-slot="triton"></div>'
+      +     '</div>'
+      +     '<div class="env-col" data-env-anchor-target="core">'
+      +       '<div class="env-section-title" data-env-title="core"></div>'
+      +       '<div data-env-slot="sd"></div>'
+      +       '<div data-env-slot="lycoris"></div>'
+      +       '<div data-env-slot="musubi"></div>'
+      +     '</div>'
       +   '</div>'
       + '</div>'
-      + '<div class="env-models-wrap" data-env-anchor-target="models">'
-      +   '<div class="env-section-title"><span data-env-title="models"></span><span class="env-section-note" data-env-note="models"></span></div>'
-      +   '<div class="env-models-grid">'
-      +     '<div data-env-slot="animaModel"></div>'
-      +     '<div data-env-slot="krea2"></div>'
+      + '<div class="env-tab-panel" data-env-tab-panel="models">'
+      +   '<div class="env-models-wrap" data-env-anchor-target="models">'
+      +     '<div class="env-section-title"><span data-env-title="models"></span><span class="env-section-note" data-env-note="models"></span></div>'
+      +     '<div class="env-models-grid">'
+      +       '<div data-env-slot="animaModel"></div>'
+      +       '<div data-env-slot="krea2"></div>'
+      +       '<div data-env-slot="trainUse"></div>'
+      +     '</div>'
       +   '</div>'
       + '</div>';
+  },
+
+  // Tab 状态同步到 DOM（隐藏面板 + active 按钮 + 面板淡入动画）
+  _syncEnvTabDom(el) {
+    const tab = this.environmentTab === 'models' ? 'models' : 'env';
+    el.querySelectorAll('[data-env-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.envTab === tab);
+    });
+    el.querySelectorAll('[data-env-tab-panel]').forEach(p => {
+      p.hidden = p.dataset.envTabPanel !== tab;
+    });
+    // 面板初次落位/切换回时播放淡入（避免进度 tick 重渲染反复触发）
+    if (this._envVisiblePanel !== tab) {
+      this._envVisiblePanel = tab;
+      const panel = el.querySelector('[data-env-tab-panel="' + tab + '"]');
+      if (panel) {
+        panel.classList.remove('env-panel-in');
+        void panel.offsetWidth;
+        panel.classList.add('env-panel-in');
+      }
+    }
+    if (this._envTabIndicatorScheduled) return;
+    this._envTabIndicatorScheduled = true;
+    requestAnimationFrame(() => {
+      this._envTabIndicatorScheduled = false;
+      this._syncEnvTabIndicator();
+    });
+  },
+
+  // 滑动指示条：跟随激活 tab 的位置与宽度（参照监控台实现）
+  _syncEnvTabIndicator() {
+    const bar = document.getElementById('environmentPage')?.querySelector('.env-tabs');
+    if (!bar) return;
+    const indicator = bar.querySelector('.env-tab-indicator');
+    const active = bar.querySelector('.env-tab.active');
+    if (!indicator || !active || !active.offsetWidth) {
+      this._envTabIndicatorGeom = null;
+      return;
+    }
+    if (!this._envTabIndicatorRO) {
+      this._envTabIndicatorRO = new ResizeObserver(() => {
+        const a = bar.querySelector('.env-tab.active');
+        const g = this._envTabIndicatorGeom;
+        if (!a || !a.offsetWidth || !g) return;
+        if (a.offsetLeft === g.l && a.offsetWidth === g.w) return;
+        this._syncEnvTabIndicator();
+      });
+      bar.querySelectorAll('.env-tab').forEach(btn => this._envTabIndicatorRO.observe(btn));
+    }
+    const l = active.offsetLeft, w = active.offsetWidth;
+    const g = this._envTabIndicatorGeom;
+    if (g && g.l === l && g.w === w) return;
+    if (!g) {
+      bar.classList.add('no-anim');
+      indicator.style.width = w + 'px';
+      indicator.style.transform = 'translateX(' + l + 'px)';
+      void indicator.offsetWidth;
+      bar.classList.remove('no-anim');
+      bar.classList.add('indicator-ready');
+      this._envTabIndicatorGeom = { l, w };
+      return;
+    }
+    indicator.style.width = w + 'px';
+    indicator.style.transform = 'translateX(' + l + 'px)';
+    this._envTabIndicatorGeom = { l, w };
   },
 
   _updateEnvSectionTitles(el, T) {
@@ -146,14 +236,18 @@ window.environmentRenderMixin = {
       heroSub = T('overview.subReady', 'Acceleration libraries and models are optional enhancements — install them as needed.');
     }
 
-    // chip 只留「大数字 + 标签」；组内有真实错误时整颗 chip 文字标红
-    const chip = (anchor, done, total, ready, label, groupError) => {
-      const num = ready ? done : '–';
-      const tot = ready ? total : '–';
-      return `<button class="env-chip${groupError ? ' env-chip-err' : ''}" data-env-anchor="${anchor}" title="${label}">`
-        + `<span class="env-chip-num">${num}<span class="env-chip-total">/${tot}</span></span>`
-        + `<span class="env-chip-label">${label}</span></button>`;
+    // 控制面板式摘要行：纯文字计数（加速 x/3 · 核心 x/3 · 模型 x/y），不做可点芯片
+    const summary = (done, total, ready, label) => {
+      const num = ready ? `${done}/${ready ? total : '–'}` : '–';
+      return `<span>${label} ${num}</span>`;
     };
+    const summaryHtml = `<div class="env-hero-summary">`
+      + summary(accelDone, 3, accelReady, T('overview.accel', 'Acceleration'))
+      + `<span class="env-summary-sep">·</span>`
+      + summary(coreDone, 3, coreReady, T('overview.core', 'Training core'))
+      + `<span class="env-summary-sep">·</span>`
+      + summary(modelDone, modelTotal, modelsReady, T('overview.models', 'Models'))
+      + `</div>`;
 
     // 加载态：spinner + 文案并入 Hero 标题行（页面级仅此一个加载指示，
     // env-load-spinner / env-load-status 类名为测试契约，勿改）
@@ -166,14 +260,12 @@ window.environmentRenderMixin = {
       +   `<div class="env-hero-text">`
       +     heroStatusHtml
       +     (heroSub ? `<div class="env-hero-sub">${heroSub}</div>` : '')
+      +     summaryHtml
       +   `</div>`
       + `</div>`
       + `<div class="env-hero-side">`
-      +   `<div class="env-hero-chips">`
-      +     chip('accel', accelDone, 3, accelReady, T('overview.accel', 'Acceleration'), !!(this.faError || this.xfError || this.tritonError))
-      +     chip('core', coreDone, 3, coreReady, T('overview.core', 'Training core'), !!this.trainingCoresError)
-      +     chip('models', modelDone, modelTotal, modelsReady, T('overview.models', 'Models'), !!this.animaModelError)
-      +   `</div>`
+      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="open">${T('envExpandAll','Expand all')}</button>`
+      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="close">${T('envCollapseAll','Collapse all')}</button>`
       +   `<button class="btn btn-sm btn-secondary env-refresh-all" data-env-refresh-all ${this.environmentLoading ? 'disabled' : ''}>`
       +     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
       +     `<span>${T('refreshAll', 'Refresh all')}</span></button>`
@@ -182,21 +274,29 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
-  //  行组件（状态点 | 名称+描述 | 版本 | 徽标 | 箭头）+ 行内展开详情
+  //  行组件（自然语言流式）：首行 名称+状态+版本，次行 次级说明，
+  //  末行 主操作 + 详情文字链接；整行可点击展开（链接/按钮不触发）
   // ═══════════════════════════════════════════════════════
   _renderRowHead(slotId, open, parts) {
     return `<div class="env-row-head" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
-      + `<span class="env-row-name">${parts.name}</span>`
-      + (parts.desc ? `<span class="env-row-desc">${parts.desc}</span>` : '')
-      + (parts.version || '')
-      + ((parts.badge || parts.action) ? `<span class="env-row-ops">${parts.badge || ''}${parts.action || ''}</span>` : '')
-      + `<span class="env-row-arrow" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg></span>`
+      + `<div class="env-flow-main">`
+      +   `<span class="env-row-name">${parts.name}</span>`
+      +   (parts.badge || '')
+      +   (parts.version || '')
+      + `</div>`
+      + (parts.desc ? `<div class="env-row-desc">${parts.desc}</div>` : '')
+      + `<div class="env-row-ops">`
+      +   (parts.action || '')
+      +   (parts.detailKey
+          ? `<button type="button" class="env-text-link env-detail-link" data-env-detail="${parts.detailKey}" aria-expanded="${open ? 'true' : 'false'}">${this.esc(parts.detailLabel || this.t('environment.details','Details'))}<span class="env-caret" aria-hidden="true"></span></button>`
+          : '')
+      + `</div>`
       + `</div>`;
   },
 
   _renderRow(slotId, state, open, headHtml, bodyHtml) {
     const hasBody = !!bodyHtml;
-    return `<div class="env-row env-row-${state}${open && hasBody ? ' env-open' : ''}" data-env-row="${slotId}">`
+    return `<div class="env-trow env-trow-${state}${open && hasBody ? ' env-open' : ''}" data-env-row="${slotId}">`
       + headHtml
       + (hasBody ? `<div class="env-row-body" data-env-body="${slotId}"><div class="env-row-body-inner">${bodyHtml}</div></div>` : '')
       + `</div>`;
@@ -297,10 +397,14 @@ window.environmentRenderMixin = {
             ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
             : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
     const version = faInstalled && s.version ? `<span class="env-row-version">v${this.esc(s.version)}</span>` : '';
+    const headBtn = this.faBusy
+      ? `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`
+      : `<button type="button" class="btn btn-sm ${faInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="fa" ${!faInstalled && !canAuto ? '' : ''}>${faInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
     const head = this._renderRowHead('fa', open, {
-      state, name: 'Flash Attention',
+      name: 'Flash Attention',
       desc: T('trainingAccel','Training acceleration (optional)'),
-      version, badge,
+      version, badge, action: headBtn,
+      detailKey: 'fa', detailLabel: T('details','Details'),
     });
 
     // Busy: 下载/安装进度面板 + 日志
@@ -399,8 +503,11 @@ window.environmentRenderMixin = {
 
     if (this.xfBusy) {
       const head = this._renderRowHead('xf', open, {
-        state: 'loading', name: 'xformers',
-        badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+        name: 'xformers',
+        desc: T('xfHint','Memory-efficient attention (optional)'),
+        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+        action: `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`,
+        detailKey: 'xf', detailLabel: T('details','Details'),
       });
       const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, label: T('xfInstallingHint','Downloading...') })
         + this._renderLog(this.xfInstallLog);
@@ -413,10 +520,12 @@ window.environmentRenderMixin = {
       : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
       : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
     const version = xfInstalled && xs.version ? `<span class="env-row-version">v${this.esc(xs.version)}</span>` : '';
+    const headBtn = `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
     const head = this._renderRowHead('xf', open, {
-      state, name: 'xformers',
+      name: 'xformers',
       desc: T('xfHint','Memory-efficient attention (optional)'),
-      version, badge,
+      version, badge, action: headBtn,
+      detailKey: 'xf', detailLabel: T('details','Details'),
     });
 
     let body = '';
@@ -487,9 +596,10 @@ window.environmentRenderMixin = {
     const state = !sd ? 'loading' : 'ok';
     const parts = this._renderCoreHeadParts(T, sd ? sdLocal : null);
     const head = this._renderRowHead('sd', open, {
-      state, name: T('sdScriptsTitle','sd-scripts'),
+      name: T('sdScriptsTitle','sd-scripts'),
       desc: T('sdScriptsDesc','kohya-ss/sd-scripts'),
       version: parts.version, badge: parts.badge,
+      detailKey: 'sd', detailLabel: T('details','Details'),
     });
     const body = sd ? this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts') : '';
     return this._renderRow('sd', state, open, head, body);
@@ -504,9 +614,10 @@ window.environmentRenderMixin = {
     const open = this._envCardOpen('lycoris');
     const parts = this._renderCoreHeadParts(T, adapter?.version || null, available, error);
     const head = this._renderRowHead('lycoris', open, {
-      state, name: 'LyCORIS',
+      name: 'LyCORIS',
       desc: T('lycorisDesc', 'LoRA adapter core'),
       version: parts.version, badge: parts.badge,
+      detailKey: 'lycoris', detailLabel: T('details','Details'),
     });
     let body = '';
     if (error) body += this._renderErrorBar(T, error, null);
@@ -523,9 +634,10 @@ window.environmentRenderMixin = {
     const open = this._envCardOpen('musubi');
     const parts = this._renderCoreHeadParts(T, engine?.version || null, available, error);
     const head = this._renderRowHead('musubi', open, {
-      state, name: 'musubi-tuner',
+      name: 'musubi-tuner',
       desc: T('musubiDesc', 'Krea 2 training core'),
       version: parts.version, badge: parts.badge,
+      detailKey: 'musubi', detailLabel: T('details','Details'),
     });
     let body = '';
     if (error) body += this._renderErrorBar(T, error, null);
@@ -547,8 +659,11 @@ window.environmentRenderMixin = {
     // Busy: installing
     if (this.tritonBusy) {
       const head = this._renderRowHead('triton', open, {
-        state: 'loading', name: 'Triton',
-        badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+        name: 'Triton',
+        desc: T('tritonDesc','GPU compile backend for torch.compile'),
+        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
+        action: `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`,
+        detailKey: 'triton', detailLabel: T('details','Details'),
       });
       const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, label: T('tritonInstallingHint','Downloading...') })
         + this._renderLog(this.tritonInstallLog);
@@ -565,10 +680,12 @@ window.environmentRenderMixin = {
           : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
     const version = tr && tr.installed && tr.version
       ? `<span class="env-row-version">v${this.esc(tr.version)}${tr.package ? ' · ' + this.esc(tr.package) : ''}</span>` : '';
+    const headBtn = `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
     const head = this._renderRowHead('triton', open, {
-      state, name: 'Triton',
+      name: 'Triton',
       desc: T('tritonDesc','GPU compile backend for torch.compile'),
-      version, badge,
+      version, badge, action: headBtn,
+      detailKey: 'triton', detailLabel: T('details','Details'),
     });
 
     let body = '';
@@ -603,10 +720,10 @@ window.environmentRenderMixin = {
     const groupTask = !p.group || p.group === 'all' || p.group === modelGroup;
     const groupBusy = busy && groupTask;
     const groupError = error && groupTask ? error : null;
-    const isKrea2 = modelGroup === 'Krea 2';
-    const slotId = isKrea2 ? 'krea2' : 'animaModel';
+    const view = ENV_MODEL_GROUPS[modelGroup] || { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' };
+    const slotId = view.slot;
     const open = this._envCardOpen(slotId);
-    const title = isKrea2 ? T('animaModel.krea2Title','Krea 2 Models') : T('animaModel.animaTitle','Anima Models');
+    const title = T(view.titleKey, view.titleFallback);
 
     const allReady = files.length > 0 && files.every(f => f.exists);
     const state = groupError ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : groupBusy ? 'loading' : 'muted';
@@ -631,21 +748,18 @@ window.environmentRenderMixin = {
       ? `<span class="env-mgroup-count">${countText}</span>`
       : '';
 
-    // 组头操作：一键下载 + 刷新 + 仓库链接
+    // 组头操作：只有主按钮（下载全部 / 重新下载全部）；刷新已有 Hero 全局，仓库在文件名链接
     const hasMissing = files.some(f => !f.exists);
     const dlAllLabel = groupBusy
       ? T('animaModel.downloading','Downloading...')
       : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
-    const repoId = files[0]?.repo_id || (isKrea2 ? 'Comfy-Org/Krea-2' : 'circlestone-labs/Anima');
-    const repoUrl = `https://huggingface.co/${this.escapeAttr(repoId)}/tree/main`;
     const actionHtml = files.length
       ? `<button class="btn btn-sm btn-secondary env-model-dl-all" data-group="${this.escapeAttr(modelGroup)}" ${busy?'disabled':''}>${dlAllLabel}</button>`
-        + this._renderRefreshBtn('', busy, 'env-model-refresh')
-        + `<a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm env-mgroup-repo" title="${T('animaModel.openRepository','Open model repository')}">&#8599;</a>`
       : '';
 
     const head = this._renderRowHead(slotId, open, {
-      state, name: title, version: countHtml, badge, action: actionHtml,
+      name: title, version: countHtml, badge, action: actionHtml,
+      detailKey: slotId, detailLabel: T('animaModel.filesLabel','Files'),
     });
 
     let body = '';
@@ -717,14 +831,17 @@ window.environmentRenderMixin = {
 
       const sizeHtml = f.exists ? `<span class="env-file-size">${this._humanBytes((f.size_gb||0)*1073741824)}</span>` : '';
       const destPath = f.dest_path || (destDir + f.filename);
+      const originHtml = f.source_page
+        ? ` <a href="${this.escapeAttr(f.source_page)}" target="_blank" rel="noopener" class="env-link" title="${T('animaModel.openOriginalPage','Open the original model page')}">${T('animaModel.originalPage','Original page')} &#8599;</a>`
+        : '';
       body += `<div class="${rowCls}">
         <div class="env-file-main">
           <a href="${this.escapeAttr(f.source_url || '#')}" target="_blank" rel="noopener" class="env-link env-file-name"><code title="${this.escapeAttr(f.filename)}">${this.esc(f.filename)}</code></a>
-          <span class="env-file-desc">${this.esc(f.desc || '')} <span class="env-file-dest">${this.esc(destPath)}</span></span>
+          ${sizeHtml}
+          <span class="env-file-status">${statusHtml}</span>
+          <span class="env-file-action">${actionHtml}</span>
         </div>
-        ${sizeHtml}
-        <span class="env-file-status">${statusHtml}</span>
-        <span class="env-file-action">${actionHtml}</span>
+        <div class="env-file-sub">${this.esc(f.desc || '')}${originHtml}<span class="env-file-dest">${this.esc(destPath)}</span></div>
         ${progressHtml}
       </div>`;
     }
@@ -750,6 +867,8 @@ window.environmentRenderMixin = {
   // ═══════════════════════════════════════════════════════
   _bindSlotEvents(host, slot, T) {
     this._bindRowToggle(host);
+    this._bindDetailToggles(host);
+    this._bindHeadActionEvents(host);
     this._bindSubToggles(host);
     host.querySelectorAll('[data-env-copy]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -761,7 +880,38 @@ window.environmentRenderMixin = {
     else if (slot === 'fa') this._bindFaEvents(host, T);
     else if (slot === 'xf') this._bindXfEvents(host);
     else if (slot === 'triton') this._bindTritonEvents(host);
-    else if (slot === 'animaModel' || slot === 'krea2') this._bindModelGroupEvents(host);
+    else if (slot === 'animaModel' || slot === 'krea2' || slot === 'trainUse') this._bindModelGroupEvents(host);
+  },
+
+  // 行尾"详情"按钮：显式开合行下展开面板（行本身不再可点击）
+  _bindDetailToggles(host) {
+    const a = window.__anima || this;
+    host.querySelectorAll('[data-env-detail]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.envDetail;
+        const row = host.querySelector('[data-env-row="' + key + '"]');
+        if (!row) return;
+        const body = row.querySelector('[data-env-body]');
+        const open = !row.classList.contains('env-open');
+        row.classList.toggle('env-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        a._envSetCardOpen(key, open);
+        if (body) a._animateCollapse(body, !open);
+      });
+    });
+  },
+
+  // 行尾主按钮（安装/重装）：FA 走自动匹配+确认，xf/triton 直接安装
+  _bindHeadActionEvents(host) {
+    const a = window.__anima || this;
+    host.querySelectorAll('[data-env-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.envAction;
+        if (act === 'fa') a.faInstall(null);
+        else if (act === 'xf') a.xfInstall();
+        else if (act === 'triton') a.tritonInstall();
+      });
+    });
   },
 
   // 行头点击/键盘展开收起。行内 a/button/input 不触发展开（修 summary 链接误触 bug）。
@@ -831,6 +981,32 @@ window.environmentRenderMixin = {
     if (btn) btn.addEventListener('click', () => {
       btn.disabled = true;
       a._envRefreshAll().finally(() => { btn.disabled = false; });
+    });
+    host.querySelectorAll('[data-env-toggle-all]').forEach(btn2 => {
+      btn2.addEventListener('click', () => a._envToggleAll(btn2.dataset.envToggleAll === 'open'));
+    });
+  },
+
+  // 全部展开/收起：作用于当前 Tab 的行（组件行 + 模型组），子折叠（高级选项/日志）不受影响。
+  // 未渲染的槽位通过覆盖持久化（_envSetCardOpen），渲染时就带上目标状态。
+  _envToggleAll(open) {
+    const page = document.getElementById('environmentPage');
+    if (!page) return;
+    const tab = this.environmentTab || 'env';
+    const panel = page.querySelector('[data-env-tab-panel="' + tab + '"]');
+    if (!panel) return;
+    panel.querySelectorAll('.env-trow[data-env-row], .env-mgroup[data-env-row]').forEach(row => {
+      // 已处于目标状态的行跳过：不重播动画，也不重复写覆盖
+      if (row.classList.contains('env-open') === open) return;
+      const key = row.dataset.envRow;
+      const body = row.querySelector('[data-env-body]');
+      row.classList.toggle('env-open', open);
+      const head = row.querySelector('[data-env-toggle]');
+      if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const link = row.querySelector('[data-env-detail="' + key + '"]');
+      if (link) link.setAttribute('aria-expanded', open ? 'true' : 'false');
+      this._envSetCardOpen(key, open);
+      if (body) this._animateCollapse(body, !open);
     });
   },
 

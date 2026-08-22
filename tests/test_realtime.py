@@ -793,9 +793,9 @@ Object.assign(app, {
     {group: 'Krea 2', filename: 'b', exists: true},
   ],
 });
-const healthy = ['fa','xf','triton','sd','lycoris','musubi','animaModel','krea2']
+const healthy = ['fa','xf','triton','sd','lycoris','musubi','animaModel','krea2','trainUse']
   .map(slot => app._envDefaultCardOpen(slot));
-// 未安装 / 未齐全不再默认展开（可选增强，缺失不是警告）；只有 busy / error 展开
+// 默认全部收起；只有 busy（安装/下载进行中）自动展开以显示进度。
 app.faStatus = {installed: false};
 app.xfBusy = true;
 app.tritonError = 'boom';
@@ -812,8 +812,9 @@ const unhealthy = {
   musubi: app._envDefaultCardOpen('musubi'),
   animaModel: app._envDefaultCardOpen('animaModel'),
   krea2: app._envDefaultCardOpen('krea2'),
+  trainUse: app._envDefaultCardOpen('trainUse'),
 };
-// 注册表/模型加载错误 → 对应槽位展开
+// 注册表/模型加载错误 → 同样收起（Hero/行内色字提示，不默认展开）
 app.trainingCoresError = 'load failed';
 app.animaModelError = 'status 500';
 const errored = {
@@ -821,6 +822,7 @@ const errored = {
   musubi: app._envDefaultCardOpen('musubi'),
   animaModel: app._envDefaultCardOpen('animaModel'),
   krea2: app._envDefaultCardOpen('krea2'),
+  trainUse: app._envDefaultCardOpen('trainUse'),
 };
 process.stdout.write(JSON.stringify({healthy, unhealthy, errored}));
 """
@@ -830,16 +832,16 @@ process.stdout.write(JSON.stringify({healthy, unhealthy, errored}));
         )
         state = json.loads(result.stdout)
 
-        self.assertEqual(state["healthy"], [False] * 8)
-        # 未安装/未配置/模型缺文件 → 收起；busy/error → 展开
+        self.assertEqual(state["healthy"], [False] * 9)
+        # 默认全部收起（含未安装/未配置/模型缺文件/错误）；仅 busy → 展开
         self.assertEqual(
             state["unhealthy"],
-            {"fa": False, "xf": True, "triton": True, "lycoris": False,
-             "musubi": False, "animaModel": False, "krea2": False},
+            {"fa": False, "xf": True, "triton": False, "lycoris": False,
+             "musubi": False, "animaModel": False, "krea2": False, "trainUse": False},
         )
         self.assertEqual(
             state["errored"],
-            {"lycoris": True, "musubi": True, "animaModel": True, "krea2": True},
+            {"lycoris": False, "musubi": False, "animaModel": False, "krea2": False, "trainUse": False},
         )
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for environment finalize checks")

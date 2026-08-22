@@ -39,6 +39,10 @@ window.environmentCoreMixin = {
   animaModelError: null,
   animaModelLogOpen: false, // 日志折叠状态（并入 _envCardOpen 覆盖机制）
 
+  // ── 环境页 Tab（运行环境 / 模型库）───────────────────
+  environmentTab: 'env',    // 'env' | 'models'，localStorage 记忆
+  _envTabsBound: false,
+
   // ── Card open/close state ────────────────────────────
   // 覆盖模型：anima_env_cards_v2 只存用户显式展开/收起的槽位；
   // 未覆盖的槽位由 _envDefaultCardOpen 按健康度智能决定默认值。
@@ -78,19 +82,20 @@ window.environmentCoreMixin = {
     try { localStorage.setItem('anima_env_cards_v2', JSON.stringify(this._envCardOverrides || {})); } catch (_) {}
   },
 
-  // 智能默认展开：本页一切皆为可选增强，缺失不是警告。
-  // 只有 busy / error 默认展开；未安装、未下载、未配置默认收起
-  // （行上仍有安装/下载快捷按钮，不影响发现性）。
+  // 默认全部收起；仅 busy（安装/下载进行中）自动展开以显示进度。
+  // 错误、未安装、未下载都只靠 Hero / 行内色字提示，不默认展开
+  // （行上仍有操作按钮，不影响发现性；顶部提供全部展开/收起）。
   _envDefaultCardOpen(slotId) {
     switch (slotId) {
-      case 'fa': return !!(this.faBusy || this.faError);
-      case 'xf': return !!(this.xfBusy || this.xfError);
-      case 'triton': return !!(this.tritonBusy || this.tritonError);
+      case 'fa': return !!this.faBusy;
+      case 'xf': return !!this.xfBusy;
+      case 'triton': return !!this.tritonBusy;
       case 'sd': return false;
       case 'lycoris':
-      case 'musubi': return !!this.trainingCoresError;
+      case 'musubi': return false;
       case 'animaModel':
-      case 'krea2': return !!(this.animaModelBusy || this.animaModelError);
+      case 'krea2':
+      case 'trainUse': return false;
       case 'animaModelLog': return !!this.animaModelLogOpen;
       default: return false;
     }
@@ -331,6 +336,11 @@ window.environmentCoreMixin = {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
+    // Tab 记忆（用户上次看哪个分区）
+    try {
+      const savedTab = localStorage.getItem('anima_env_tab');
+      if (savedTab === 'models' || savedTab === 'env') this.environmentTab = savedTab;
+    } catch (_) {}
     if (this._environmentLoadPromise) {
       this.renderEnvironment();
       await this._environmentLoadPromise;
@@ -500,6 +510,7 @@ window.environmentCoreMixin = {
     this.animaModelLogOpen = false;  // 新任务默认收起日志，用户可手动展开
     if (group === 'Krea 2') this._envForceOpen('krea2');
     else if (group === 'Anima') this._envForceOpen('animaModel');
+    else if (group === 'Train Use') this._envForceOpen('trainUse');
     else { this._envForceOpen('animaModel'); this._envForceOpen('krea2'); }
     this.startProgress(); this.renderEnvironment();
     try {
@@ -521,6 +532,15 @@ window.environmentCoreMixin = {
       this.animaModelError = String(e);
       this.finishProgress(); this.renderEnvironment();
     }
+  },
+
+  // 环境页 Tab 切换（内存 + localStorage，重渲染走现有分槽机制）
+  envSetTab(tab) {
+    const next = tab === 'models' ? 'models' : 'env';
+    if (this.environmentTab === next) return;
+    this.environmentTab = next;
+    try { localStorage.setItem('anima_env_tab', next); } catch (_) {}
+    this.renderEnvironment();
   },
 
   // 复制日志到剪贴板（错误条"复制日志"按钮，FA/Triton/模型通用）
