@@ -7,9 +7,13 @@ from typing import Any
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
+    ADAN_OPTIMIZER_TYPE,
+    ADEMAMIX8BIT_OPTIMIZER_TYPE,
+    ADEMAMIX_OPTIMIZER_TYPE,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
@@ -23,17 +27,21 @@ KREA2_PRODIGY_OPTIMIZER_TYPE = "prodigyopt.Prodigy"
 KREA2_PRODIGYPLUS_OPTIMIZER_TYPE = "prodigyplus.ProdigyPlusScheduleFree"
 KREA2_SCHEDULEFREE_OPTIMIZER_TYPE = "schedulefree.AdamWScheduleFree"
 
-GROUP_ADAMW = "opt.optimizer_group_adamw"
-GROUP_SIGN = "opt.optimizer_group_sign"
-GROUP_FACTORIZED = "opt.optimizer_group_factorized"
-GROUP_ADAPTIVE = "opt.optimizer_group_adaptive"
-GROUP_EXPERIMENTAL = "opt.optimizer_group_experimental"
+# 分组按技术特征命名（机制/状态存储/学习率归属），不做推荐性表述。
+GROUP_BASELINE = "opt.optimizer_group_baseline"
+GROUP_STABLE = "opt.optimizer_group_stable"
+GROUP_FAST = "opt.optimizer_group_fast"
+GROUP_LONGRUN = "opt.optimizer_group_longrun"
+GROUP_AUTOLR = "opt.optimizer_group_autolr"
+GROUP_MATRIX = "opt.optimizer_group_matrix"
 
 BETA_HINT_ADAM = "field.betasHint_adam"
 BETA_HINT_LION = "field.betasHint_lion"
 BETA_HINT_CAME = "field.betasHint_came"
 BETA_HINT_PRODIGY = "field.betasHint_prodigy"
 BETA_HINT_SCHEDULEFREE = "field.betasHint_schedulefree"
+BETA_HINT_ADAN = "field.betasHint_adan"
+BETA_HINT_ADEMAMIX = "field.betasHint_ademamix"
 
 
 @dataclass(frozen=True)
@@ -51,19 +59,19 @@ class OptimizerUIEntry:
 
 SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
     OptimizerUIEntry(
-        "AdamW",
-        "AdamW",
-        "opt.optimizer_type_AdamW",
-        GROUP_ADAMW,
+        "AdamW8bit",
+        "AdamW8bit",
+        "opt.optimizer_type_AdamW8bit",
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
     ),
     OptimizerUIEntry(
-        "AdamW8bit",
-        "AdamW8bit",
-        "opt.optimizer_type_AdamW8bit",
-        GROUP_ADAMW,
+        "AdamW",
+        "AdamW",
+        "opt.optimizer_type_AdamW",
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
@@ -72,7 +80,7 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "PagedAdamW8bit",
         "PagedAdamW8bit",
         "opt.optimizer_type_PagedAdamW8bit",
-        GROUP_ADAMW,
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
@@ -81,16 +89,33 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         STABLE_ADAMW_OPTIMIZER_TYPE,
         "StableAdamW",
         "opt.optimizer_type_StableAdamW",
-        GROUP_ADAMW,
+        GROUP_STABLE,
         2,
         BETA_HINT_ADAM,
+        True,
+    ),
+    OptimizerUIEntry(
+        CAME_OPTIMIZER_TYPE,
+        "CAME",
+        "opt.optimizer_type_CAME",
+        GROUP_STABLE,
+        3,
+        BETA_HINT_CAME,
+    ),
+    OptimizerUIEntry(
+        ADAN_OPTIMIZER_TYPE,
+        "Adan",
+        "opt.optimizer_type_Adan",
+        GROUP_FAST,
+        3,
+        BETA_HINT_ADAN,
         True,
     ),
     OptimizerUIEntry(
         "Lion",
         "Lion",
         "opt.optimizer_type_Lion",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
@@ -98,7 +123,7 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "Lion8bit",
         "Lion8bit",
         "opt.optimizer_type_Lion8bit",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
@@ -106,29 +131,33 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "PagedLion8bit",
         "PagedLion8bit",
         "opt.optimizer_type_PagedLion8bit",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
     OptimizerUIEntry(
-        ADAFACTOR_OPTIMIZER_TYPE,
-        "AdaFactor",
-        "opt.optimizer_type_AdaFactor",
-        GROUP_FACTORIZED,
+        ADEMAMIX_OPTIMIZER_TYPE,
+        "AdEMAMix",
+        "opt.optimizer_type_AdEMAMix",
+        GROUP_LONGRUN,
+        3,
+        BETA_HINT_ADEMAMIX,
+        True,
     ),
     OptimizerUIEntry(
-        CAME_OPTIMIZER_TYPE,
-        "CAME",
-        "opt.optimizer_type_CAME",
-        GROUP_FACTORIZED,
+        ADEMAMIX8BIT_OPTIMIZER_TYPE,
+        "AdEMAMix8bit",
+        "opt.optimizer_type_AdEMAMix8bit",
+        GROUP_LONGRUN,
         3,
-        BETA_HINT_CAME,
+        BETA_HINT_ADEMAMIX,
+        True,
     ),
     OptimizerUIEntry(
         PRODIGY_OPTIMIZER_TYPE,
         "Prodigy",
         "opt.optimizer_type_Prodigy",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_PRODIGY,
         True,
@@ -137,7 +166,7 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         PRODIGYPLUS_OPTIMIZER_TYPE,
         "ProdigyPlusScheduleFree",
         "opt.optimizer_type_ProdigyPlus",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_SCHEDULEFREE,
         True,
@@ -147,17 +176,41 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
         "AdamWScheduleFree",
         "opt.optimizer_type_AdamWScheduleFree",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_SCHEDULEFREE,
         True,
         "internal",
     ),
     OptimizerUIEntry(
+        ADAFACTOR_OPTIMIZER_TYPE,
+        "AdaFactor",
+        "opt.optimizer_type_AdaFactor",
+        GROUP_AUTOLR,
+    ),
+    OptimizerUIEntry(
+        MUON_OPTIMIZER_TYPE,
+        "Muon",
+        "opt.optimizer_type_Muon",
+        GROUP_MATRIX,
+        supports_eps=True,
+        train_group="anima",
+    ),
+    OptimizerUIEntry(
+        LORARITE_OPTIMIZER_TYPE,
+        "LoRA-RITE",
+        "opt.optimizer_type_LoRARite",
+        GROUP_MATRIX,
+        2,
+        BETA_HINT_ADAM,
+        True,
+        train_group="anima",
+    ),
+    OptimizerUIEntry(
         AUTOMAGIC_OPTIMIZER_TYPE,
         "Automagic3",
         "opt.optimizer_type_Automagic3",
-        GROUP_EXPERIMENTAL,
+        GROUP_AUTOLR,
         supports_eps=True,
         scheduler_owner="internal",
     ),
@@ -165,19 +218,11 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         EMOSENS_OPTIMIZER_TYPE,
         "EmoSens",
         "opt.optimizer_type_EmoSens",
-        GROUP_EXPERIMENTAL,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_ADAM,
         True,
         "internal",
-    ),
-    OptimizerUIEntry(
-        MUON_OPTIMIZER_TYPE,
-        "Muon",
-        "opt.optimizer_type_Muon",
-        GROUP_EXPERIMENTAL,
-        supports_eps=True,
-        train_group="anima",
     ),
 )
 
@@ -186,7 +231,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "adamw8bit",
         "AdamW 8-bit",
         "opt.optimizer_type_AdamW8bit",
-        GROUP_ADAMW,
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
@@ -195,7 +240,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "AdamW",
         "AdamW",
         "opt.optimizer_type_AdamW",
-        GROUP_ADAMW,
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
@@ -204,7 +249,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "bitsandbytes.optim.PagedAdamW8bit",
         "PagedAdamW8bit",
         "opt.optimizer_type_PagedAdamW8bit",
-        GROUP_ADAMW,
+        GROUP_BASELINE,
         2,
         BETA_HINT_ADAM,
         True,
@@ -213,7 +258,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "bitsandbytes.optim.Lion8bit",
         "Lion8bit",
         "opt.optimizer_type_Lion8bit",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
@@ -221,7 +266,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "bitsandbytes.optim.PagedLion8bit",
         "PagedLion8bit",
         "opt.optimizer_type_PagedLion8bit",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
@@ -229,7 +274,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "pytorch_optimizer.Lion",
         "Lion",
         "opt.optimizer_type_Lion",
-        GROUP_SIGN,
+        GROUP_FAST,
         2,
         BETA_HINT_LION,
     ),
@@ -237,13 +282,13 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         ADAFACTOR_OPTIMIZER_TYPE,
         "AdaFactor",
         "opt.optimizer_type_AdaFactor",
-        GROUP_FACTORIZED,
+        GROUP_AUTOLR,
     ),
     OptimizerUIEntry(
         CAME_OPTIMIZER_TYPE,
         "CAME",
         "opt.optimizer_type_CAME",
-        GROUP_FACTORIZED,
+        GROUP_STABLE,
         3,
         BETA_HINT_CAME,
     ),
@@ -251,7 +296,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         KREA2_PRODIGY_OPTIMIZER_TYPE,
         "Prodigy",
         "opt.optimizer_type_Prodigy",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_PRODIGY,
         True,
@@ -260,7 +305,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         KREA2_PRODIGYPLUS_OPTIMIZER_TYPE,
         "ProdigyPlusScheduleFree",
         "opt.optimizer_type_ProdigyPlus",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_SCHEDULEFREE,
         True,
@@ -270,7 +315,7 @@ KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         KREA2_SCHEDULEFREE_OPTIMIZER_TYPE,
         "AdamWScheduleFree",
         "opt.optimizer_type_AdamWScheduleFree",
-        GROUP_ADAPTIVE,
+        GROUP_AUTOLR,
         2,
         BETA_HINT_SCHEDULEFREE,
         True,
@@ -291,11 +336,12 @@ def optimizer_groups(profile: str) -> list[dict[str, Any]]:
     entries = optimizer_entries(profile)
     groups: list[dict[str, Any]] = []
     for group_key in (
-        GROUP_ADAMW,
-        GROUP_SIGN,
-        GROUP_FACTORIZED,
-        GROUP_ADAPTIVE,
-        GROUP_EXPERIMENTAL,
+        GROUP_BASELINE,
+        GROUP_STABLE,
+        GROUP_FAST,
+        GROUP_LONGRUN,
+        GROUP_AUTOLR,
+        GROUP_MATRIX,
     ):
         options = []
         for entry in entries:
@@ -472,6 +518,59 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             "set": "1.0",
             "set_if_default": True,
         },
+        # Adan 的有效步长比 AdamW 大，从 0.5× 基线起步
+        {
+            "watch": {
+                "optimizer_type": ADAN_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "1e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": ADAN_OPTIMIZER_TYPE,
+            "set": "5e-5",
+            "set_if_default": True,
+        },
+        # AdEMAMix 论文沿用 AdamW 同量级学习率
+        {
+            "watch": {
+                "optimizer_type": ADEMAMIX_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": {
+                "optimizer_type": ADEMAMIX8BIT_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": ADEMAMIX_OPTIMIZER_TYPE,
+            "set": "1e-4",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": ADEMAMIX8BIT_OPTIMIZER_TYPE,
+            "set": "1e-4",
+            "set_if_default": True,
+        },
+        # LoRA-RITE 的更新量级与 Adam 不同，anima 上从 1e-4 起步
+        {
+            "watch": {
+                "optimizer_type": LORARITE_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "1e-4",
+            "set_if_default": True,
+        },
     ],
     "betas": [
         {
@@ -493,6 +592,10 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "0.9, 0.999"),
             (PRODIGY_OPTIMIZER_TYPE, "0.9, 0.999"),
             (PRODIGYPLUS_OPTIMIZER_TYPE, "0.9, 0.99"),
+            (ADAN_OPTIMIZER_TYPE, "0.98, 0.92, 0.99"),
+            (ADEMAMIX_OPTIMIZER_TYPE, "0.9, 0.999, 0.9999"),
+            (ADEMAMIX8BIT_OPTIMIZER_TYPE, "0.9, 0.999, 0.9999"),
+            (LORARITE_OPTIMIZER_TYPE, "0.9, 0.999"),
         )
     ],
     "eps": [
@@ -513,6 +616,10 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (PRODIGYPLUS_OPTIMIZER_TYPE, "1e-8"),
             (AUTOMAGIC_OPTIMIZER_TYPE, "1e-30"),
             (MUON_OPTIMIZER_TYPE, "1e-7"),
+            (ADAN_OPTIMIZER_TYPE, "1e-8"),
+            (ADEMAMIX_OPTIMIZER_TYPE, "1e-8"),
+            (ADEMAMIX8BIT_OPTIMIZER_TYPE, "1e-8"),
+            (LORARITE_OPTIMIZER_TYPE, "1e-6"),
         )
     ],
     "weight_decay": [
@@ -538,6 +645,10 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (AUTOMAGIC_OPTIMIZER_TYPE, 0.0),
             (EMOSENS_OPTIMIZER_TYPE, 0.01),
             (MUON_OPTIMIZER_TYPE, 0.0),
+            (ADAN_OPTIMIZER_TYPE, 0.01),
+            (ADEMAMIX_OPTIMIZER_TYPE, 0.01),
+            (ADEMAMIX8BIT_OPTIMIZER_TYPE, 0.01),
+            (LORARITE_OPTIMIZER_TYPE, 0.0),
         )
     ],
 }

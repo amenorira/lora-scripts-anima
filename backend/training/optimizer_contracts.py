@@ -29,6 +29,14 @@ CAME_OPTIMIZER_TYPE = "pytorch_optimizer.CAME"
 STABLE_ADAMW_OPTIMIZER_TYPE = "pytorch_optimizer.StableAdamW"
 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE = "AdamWScheduleFree"
 MUON_OPTIMIZER_TYPE = "Muon"
+ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
+ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
+ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
+LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRARite"
+
+ADEMAMIX_OPTIMIZERS = frozenset(
+    {ADEMAMIX_OPTIMIZER_TYPE, ADEMAMIX8BIT_OPTIMIZER_TYPE}
+)
 
 PRODIGY_OPTIMIZERS = frozenset(
     {PRODIGY_OPTIMIZER_TYPE, PRODIGYPLUS_OPTIMIZER_TYPE}
@@ -333,6 +341,50 @@ _MUON_ARGS = {
     "adjust_lr_fn": _choice(None, "original", "match_rms_adamw"),
 }
 
+_BETAS_3 = _sequence(3, 0.0, 1.0)
+
+_ADAN_ARGS = {
+    "betas": _BETAS_3,
+    "eps": _NON_NEGATIVE,
+    "weight_decay": _NON_NEGATIVE,
+    "weight_decouple": _boolean(),
+    "max_grad_norm": _NON_NEGATIVE,
+    "foreach": _boolean(allow_none=True),
+    "maximize": _boolean(),
+}
+
+_ADEMAMIX_SHARED_ARGS = {
+    "betas": _BETAS_3,
+    "alpha": _NON_NEGATIVE,
+    "t_alpha": _integer(0, allow_none=True),
+    "t_beta3": _integer(0, allow_none=True),
+    "eps": _NON_NEGATIVE,
+    "weight_decay": _NON_NEGATIVE,
+    "min_8bit_size": _integer(0),
+    "is_paged": _boolean(),
+}
+
+_ADEMAMIX_ARGS = {
+    **_ADEMAMIX_SHARED_ARGS,
+    "optim_bits": _choice(8, 32),
+}
+
+_LORARITE_ARGS = {
+    "betas": _BETAS_2,
+    # LoRA-RITE 的 eps 是根 ε（内部平方后使用），默认 1e-6，与 Adam 系语义不同
+    "eps": _NON_NEGATIVE,
+    "weight_decay": _NON_NEGATIVE,
+    "clip_unmagnified_grad": _NON_NEGATIVE,
+    "update_capping": _NON_NEGATIVE,
+    "update_skipping": _NON_NEGATIVE,
+    "relative_epsilon": _boolean(),
+    "apply_escape": _boolean(),
+    "lora_l_dim": _integer(),
+    "lora_r_dim": _integer(),
+    "maybe_inf_to_nan": _boolean(),
+    "balance_param": _boolean(),
+}
+
 
 OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
     "AdamW": OptimizerContract(_TORCH_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
@@ -373,6 +425,13 @@ OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
         scheduler_owner="optimizer",
         warmup_owner="none",
     ),
+    ADAN_OPTIMIZER_TYPE: OptimizerContract(_ADAN_ARGS),
+    ADEMAMIX_OPTIMIZER_TYPE: OptimizerContract(_ADEMAMIX_ARGS),
+    ADEMAMIX8BIT_OPTIMIZER_TYPE: OptimizerContract(_ADEMAMIX_SHARED_ARGS),
+    LORARITE_OPTIMIZER_TYPE: OptimizerContract(
+        _LORARITE_ARGS,
+        external_grad_clip="forbidden",
+    ),
 }
 
 
@@ -395,9 +454,26 @@ _ADAM_OPTIMIZERS = frozenset(
     }
 )
 _BETAS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
-    {"Lion", "Lion8bit", "PagedLion8bit", CAME_OPTIMIZER_TYPE}
+    {
+        "Lion",
+        "Lion8bit",
+        "PagedLion8bit",
+        CAME_OPTIMIZER_TYPE,
+        ADAN_OPTIMIZER_TYPE,
+        ADEMAMIX_OPTIMIZER_TYPE,
+        ADEMAMIX8BIT_OPTIMIZER_TYPE,
+        LORARITE_OPTIMIZER_TYPE,
+    }
 )
-_EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset({MUON_OPTIMIZER_TYPE})
+_EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
+    {
+        MUON_OPTIMIZER_TYPE,
+        ADAN_OPTIMIZER_TYPE,
+        ADEMAMIX_OPTIMIZER_TYPE,
+        ADEMAMIX8BIT_OPTIMIZER_TYPE,
+        LORARITE_OPTIMIZER_TYPE,
+    }
+)
 
 FORM_ARGUMENTS: dict[str, FormArgument] = {
     "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS)),
@@ -461,6 +537,15 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "came_ams_bound": FormArgument("ams_bound", frozenset({CAME_OPTIMIZER_TYPE})),
     "came_eps1": FormArgument("eps1", frozenset({CAME_OPTIMIZER_TYPE})),
     "came_eps2": FormArgument("eps2", frozenset({CAME_OPTIMIZER_TYPE})),
+    "adan_weight_decouple": FormArgument(
+        "weight_decouple", frozenset({ADAN_OPTIMIZER_TYPE})
+    ),
+    "ademamix_alpha": FormArgument("alpha", ADEMAMIX_OPTIMIZERS),
+    "ademamix_t_alpha": FormArgument("t_alpha", ADEMAMIX_OPTIMIZERS),
+    "ademamix_t_beta3": FormArgument("t_beta3", ADEMAMIX_OPTIMIZERS),
+    "lorarite_clip_unmagnified_grad": FormArgument(
+        "clip_unmagnified_grad", frozenset({LORARITE_OPTIMIZER_TYPE})
+    ),
 }
 
 
@@ -556,6 +641,34 @@ def _is_effectively_enabled(value: Any) -> bool:
     return True
 
 
+def apply_ademamix_step_schedule(
+    config: dict[str, Any], total_steps: int
+) -> list[str]:
+    """AdEMAMix 的 α/β3 需要按总步数缓升（论文设置）。表单字段留空时，
+    在启动前按预估总步数自动注入；填 0 表示显式关闭调度，自定义值原样保留。
+    """
+    warnings: list[str] = []
+    if str(config.get("optimizer_type", "")) not in ADEMAMIX_OPTIMIZERS:
+        return warnings
+    if not isinstance(total_steps, int) or total_steps <= 0:
+        return warnings
+    args, _ = parse_optimizer_args(config)
+    for arg_key, form_key in (
+        ("t_alpha", "ademamix_t_alpha"),
+        ("t_beta3", "ademamix_t_beta3"),
+    ):
+        if not is_empty_optimizer_value(config.get(form_key)):
+            continue  # 用户显式设置（含 0=关闭调度）
+        if arg_key in args:
+            continue  # optimizer_args_custom 中已提供
+        _set_optimizer_arg(config, arg_key, total_steps)
+        warnings.append(
+            f"AdEMAMix: {arg_key} auto-set to estimated total steps {total_steps} / "
+            f"已按预估总步数自动设置为 {total_steps}"
+        )
+    return warnings
+
+
 def validate_optimizer_contract(
     config: Mapping[str, Any], parsed_args: Mapping[str, Any]
 ) -> list[str]:
@@ -587,6 +700,15 @@ def validate_optimizer_contract(
     ):
         errors.append(
             "Muon: currently supported only for Anima LoRA / "
+            "当前仅支持 Anima LoRA"
+        )
+
+    if (
+        optimizer_type == LORARITE_OPTIMIZER_TYPE
+        and config.get("model_train_type") != "anima-lora"
+    ):
+        errors.append(
+            "LoRA-RITE: currently supported only for Anima LoRA / "
             "当前仅支持 Anima LoRA"
         )
 
@@ -774,6 +896,15 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
                     "AdaFactor: external lr_warmup_steps disabled in relative_step mode / "
                     "relative_step 模式已关闭外部预热"
                 )
+
+    if optimizer_type == LORARITE_OPTIMIZER_TYPE:
+        # LoRA-RITE 必须使用自己的 clip_unmagnified_grad；外部全局裁剪会双重缩放
+        if _numeric_value(config.get("max_grad_norm"), 1.0) != 0:
+            config["max_grad_norm"] = 0
+            warnings.append(
+                "LoRA-RITE: max_grad_norm forced to 0; use clip_unmagnified_grad / "
+                "已关闭外部梯度裁剪，请使用 clip_unmagnified_grad"
+            )
 
     if optimizer_type == PRODIGYPLUS_OPTIMIZER_TYPE:
         if _is_effectively_enabled(args.get("fused_back_pass")):

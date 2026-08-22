@@ -27,6 +27,10 @@ window.OPTIMIZER_DEFAULTS = {
     'pytorch_optimizer.CAME': '1e-4', 'AdamWScheduleFree': '3e-4',
     'vendor.automagic_optimizer.integration.Automagic3': '1e-4',
     'Muon': '1e-4',
+    'pytorch_optimizer.Adan': '5e-5',
+    'bitsandbytes.optim.AdEMAMix': '1e-4',
+    'bitsandbytes.optim.AdEMAMix8bit': '1e-4',
+    'vendor.lora_rite.lora_rite.LoRARite': '1e-4',
   },
   automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
   automagic_max_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e3 },
@@ -42,6 +46,10 @@ window.OPTIMIZER_DEFAULTS = {
     'vendor.emo_optimizer.emosens.EmoSens': '0.9, 0.995',
     'AdamWScheduleFree': '0.9, 0.999',
     'Prodigy': '0.9, 0.999', 'prodigyplus.ProdigyPlusScheduleFree': '0.9, 0.99',
+    'pytorch_optimizer.Adan': '0.98, 0.92, 0.99',
+    'bitsandbytes.optim.AdEMAMix': '0.9, 0.999, 0.9999',
+    'bitsandbytes.optim.AdEMAMix8bit': '0.9, 0.999, 0.9999',
+    'vendor.lora_rite.lora_rite.LoRARite': '0.9, 0.999',
   },
   eps: {
     'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
@@ -51,6 +59,10 @@ window.OPTIMIZER_DEFAULTS = {
     'AdamWScheduleFree': '1e-8',
     'Prodigy': '1e-8', 'prodigyplus.ProdigyPlusScheduleFree': '1e-8',
     'Muon': '1e-7',
+    'pytorch_optimizer.Adan': '1e-8',
+    'bitsandbytes.optim.AdEMAMix': '1e-8',
+    'bitsandbytes.optim.AdEMAMix8bit': '1e-8',
+    'vendor.lora_rite.lora_rite.LoRARite': '1e-6',
   },
   weight_decay: {
     'AdamW': 0.01, 'AdamW8bit': 0.01, 'PagedAdamW8bit': 0.01,
@@ -62,7 +74,23 @@ window.OPTIMIZER_DEFAULTS = {
     'vendor.emo_optimizer.emosens.EmoSens': 0.01,
     // Muon must emit the product default 0 to override torch.optim.Muon's 0.1.
     'Muon': 0.1,
+    'pytorch_optimizer.Adan': 0.01,
+    'bitsandbytes.optim.AdEMAMix': 0.01,
+    'bitsandbytes.optim.AdEMAMix8bit': 0.01,
+    'vendor.lora_rite.lora_rite.LoRARite': 0,
   },
+  adan_weight_decouple: { 'pytorch_optimizer.Adan': true },
+  ademamix_alpha: {
+    'bitsandbytes.optim.AdEMAMix': 5.0, 'bitsandbytes.optim.AdEMAMix8bit': 5.0,
+  },
+  // 留空 = 启动时按预估总步数自动注入；0 = 关闭调度
+  ademamix_t_alpha: {
+    'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '',
+  },
+  ademamix_t_beta3: {
+    'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '',
+  },
+  lorarite_clip_unmagnified_grad: { 'vendor.lora_rite.lora_rite.LoRARite': 1.0 },
   muon_adjust_lr_fn: { 'Muon': 'match_rms_adamw' },
   muon_momentum: { 'Muon': 0.95 },
   muon_nesterov: { 'Muon': true },

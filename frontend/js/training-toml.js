@@ -72,6 +72,8 @@ window.trainingTomlMixin = {
       'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
       'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
       'came_ams_bound','came_eps1','came_eps2',
+      'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
+      'lorarite_clip_unmagnified_grad',
     ]);
 
     // 分组桶：key=sectionKey → value=行数组。按 allSections 顺序填充再拼接，保证预览==表单顺序。
@@ -314,6 +316,11 @@ window.trainingTomlMixin = {
       came_ams_bound: 'ams_bound',
       came_eps1: 'eps1',
       came_eps2: 'eps2',
+      adan_weight_decouple: 'weight_decouple',
+      ademamix_alpha: 'alpha',
+      ademamix_t_alpha: 't_alpha',
+      ademamix_t_beta3: 't_beta3',
+      lorarite_clip_unmagnified_grad: 'clip_unmagnified_grad',
     };
     return Object.prototype.hasOwnProperty.call(optimizerArgs, key)
       ? { paramKey: 'optimizer_args', argKey: optimizerArgs[key] }
@@ -644,6 +651,11 @@ window.trainingTomlMixin = {
       { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: DEFS.came_fixed_decay || { 'pytorch_optimizer.CAME': false } },
       { form: 'came_clip_threshold', arg: 'clip_threshold', defaults: DEFS.came_clip_threshold || { 'pytorch_optimizer.CAME': 1.0 } },
       { form: 'came_ams_bound', arg: 'ams_bound', defaults: DEFS.came_ams_bound || { 'pytorch_optimizer.CAME': false } },
+      { form: 'adan_weight_decouple', arg: 'weight_decouple', defaults: DEFS.adan_weight_decouple || { 'pytorch_optimizer.Adan': true } },
+      { form: 'ademamix_alpha', arg: 'alpha', defaults: DEFS.ademamix_alpha || { 'bitsandbytes.optim.AdEMAMix': 5.0, 'bitsandbytes.optim.AdEMAMix8bit': 5.0 } },
+      { form: 'ademamix_t_alpha', arg: 't_alpha', defaults: DEFS.ademamix_t_alpha || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
+      { form: 'ademamix_t_beta3', arg: 't_beta3', defaults: DEFS.ademamix_t_beta3 || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
+      { form: 'lorarite_clip_unmagnified_grad', arg: 'clip_unmagnified_grad', defaults: DEFS.lorarite_clip_unmagnified_grad || { 'vendor.lora_rite.lora_rite.LoRARite': 1.0 } },
       { form: 'came_eps1', arg: 'eps1', defaults: DEFS.came_eps1 || { 'pytorch_optimizer.CAME': '1e-30' } },
       { form: 'came_eps2', arg: 'eps2', defaults: DEFS.came_eps2 || { 'pytorch_optimizer.CAME': '1e-16' } },
     ];
@@ -834,7 +846,9 @@ window.trainingTomlMixin = {
                         'automagic_min_lr','automagic_max_lr','automagic_beta2',
                         'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
                         'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
-                        'came_ams_bound','came_eps1','came_eps2']) {
+                        'came_ams_bound','came_eps1','came_eps2',
+                        'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
+                        'lorarite_clip_unmagnified_grad']) {
       delete payload[key];
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;

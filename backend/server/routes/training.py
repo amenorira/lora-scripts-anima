@@ -714,12 +714,22 @@ async def create_toml_file(request: Request):
     if gpu_ids is not None:
         estimate_config["gpu_ids"] = gpu_ids
     try:
-        await asyncio.to_thread(estimate_training_steps, estimate_config)
+        step_estimate = await asyncio.to_thread(estimate_training_steps, estimate_config)
     except StepEstimateError as exc:
         return APIResponseFail(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
     except Exception as exc:
         log.exception("Failed to estimate training steps before launch / 启动前训练步数计算失败")
         return APIResponseFail(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
+
+    # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
+    try:
+        from backend.training.optimizer_contracts import apply_ademamix_step_schedule
+
+        total_steps = int((step_estimate or {}).get("total_steps") or 0)
+        for w in apply_ademamix_step_schedule(config, total_steps):
+            log.warning(f"[Adapter] {w}")
+    except Exception as exc:
+        log.warning(f"[Adapter] AdEMAMix schedule injection skipped / AdEMAMix 调度注入跳过: {exc}")
 
     if "attn_mode" in config:
         attn_requested = config.get("attn_mode", "torch")

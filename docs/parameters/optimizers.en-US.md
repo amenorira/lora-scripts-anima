@@ -43,6 +43,10 @@ For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** 
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Supports internal warmup, but this project leaves `warmup_steps=0`; not a first choice for short runs |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
 | Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Anima LoRA only; uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
+| Adan | Comparison when you want features to form in fewer steps | Converges more aggressively; set the LR below the AdamW baseline; uses three betas |
+| AdEMAMix | Comparison for long runs or visibly noisy gradients | Benefit of the slow moving average is uncertain in short runs; alpha and ramp lengths should match the training length |
+| AdEMAMix8bit | AdEMAMix when optimizer-state memory is tight | Differs from the full-precision version mainly in state quantization |
+| LoRA-RITE | Trying an update rule designed for LoRA's structure | Anima LoRA and standard LoRA structure only; no LoRA+; uses its own clipping, `max_grad_norm` (global gradient clipping threshold) locks to 0 |
 
 Memory notes above refer only to optimizer state. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
 
@@ -71,6 +75,9 @@ When training Anima DiT blocks only, start from the engineering baselines below.
 | StableAdamW | `2e-5` | Same scale as AdamW first; isolate the stabilized updates |
 | Muon (`match_rms_adamw`) | `2e-5` | Matches AdamW update RMS by matrix size; this is not an Anima-tuned optimum |
 | CAME | `1.5e-5` | CAME's own guidance is roughly `0.5`–`0.9`× AdamW; this is a ported start, not an Anima-tuned optimum |
+| Adan | `1e-5` | Larger effective step than AdamW at the same LR; start at `0.5`× the baseline |
+| AdEMAMix / AdEMAMix8bit | `2e-5` | The paper keeps Adam-scale learning rates; 8-bit keeps the same LR semantics |
+| LoRA-RITE | `1e-4` | Paper's best values were ~20× Adam's; in our small-sample runs `2e-4` stayed smooth and `5e-4` ran hot |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's guidance is roughly `3`–`10`× smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
@@ -143,8 +150,41 @@ Muon keeps one momentum state per parameter instead of the two states used by fu
 
 For a first comparison, swap AdamW8bit for Muon and keep data, rank, alpha, scheduler, step count, and learning rate unchanged. Once the run is stable, test LR or weight decay separately. Changing the NS coefficients and iteration count together makes the result difficult to interpret; adjust one at a time.
 
+<!-- doc-anchor: adan-options -->
+### Adan options
+
+Adan tracks the difference between consecutive gradients on top of Adam's first/second moments and uses it for a lookahead-style update. In practice it converges more aggressively: features form in fewer steps, but overfitting and overshoot can also set in earlier. The paper's evidence comes from mid-length vision and language-model training, not small-data LoRA.
+
+- **Learning rate** (Anima default `1e-5`): Adan's effective step is larger than AdamW's at the same LR. Try 0.3–1× the AdamW baseline (`2e-5`); do not copy the high rates from the paper's pretraining tasks.
+- **Betas** (default `0.98, 0.92, 0.99`): control the gradient average, the gradient-difference average, and the squared-gradient statistics respectively.
+- **Epsilon** (default `1e-8`): same semantics as AdamW.
+- **Weight decay** (default `0.01`) and **decoupled toggle** (`weight_decouple`, default on): weight decay gently shrinks weights toward zero every step, keeping LoRA weights from growing without bound. With decoupling on, the shrink is applied proportionally before the parameter update — the same as AdamW; the library default scales the whole parameter after the update instead. At the default `0.01` the difference is tiny; keeping it on matches the semantics of AdamW recipes shared by others.
+- Adan's own `max_grad_norm` argument stays `0` here; gradient clipping is handled by the `max_grad_norm` field (labeled global gradient clipping threshold in the UI).
+
+<!-- doc-anchor: ademamix-options -->
+### AdEMAMix options
+
+AdEMAMix keeps two gradient moving averages: a fast one (β1=0.9) and a slow one (β3=0.9999). The update is fast average + alpha × slow average. The paper's premise is that gradients thousands of steps old remain useful, with evidence mainly from long language-model runs. For the short runs typical of LoRA, the slow average may smooth timestep-sampling gradient noise, or it may keep early directions alive for too long — confirm with a controlled comparison.
+
+- **Slow-EMA mixing strength** (`alpha`, default `5.0`): how much the slow average contributes; `0` falls back to a single moving average.
+- **Ramp steps** (`t_alpha`, `t_beta3`, empty by default): ramp alpha from 0 and β3 from β1 to their targets over this many steps; the paper uses the total training steps. When left empty, the trainer fills in the estimated total steps at launch; `0` disables the ramp.
+- **Betas** (default `0.9, 0.999, 0.9999`) and **epsilon** (default `1e-8`): same semantics as AdamW. `weight_decay` (default `0.01`) folds decay × current weight into every update, so its strength scales with the learning rate; with this trainer's default constant schedule it behaves as a fixed strength.
+- The 8-bit variant stores all three states quantized, at roughly a quarter of the full-precision memory; tensors smaller than 4096 elements stay unquantized, which is expected.
+
+<!-- doc-anchor: lorarite-options -->
+### LoRA-RITE options
+
+LoRA-RITE is one of the few optimizers designed specifically for LoRA's factorized structure. Plain optimizers update the two low-rank factors A and B separately, but the same LoRA update can be represented by infinitely many equivalent (A, B) pairs, and plain optimizers produce different actual updates for different representations. LoRA-RITE removes this arbitrariness with unmagnified gradients and matrix preconditioning on the low-rank side. The paper's evidence comes from language models (Gemma, mT5); there are no published results for diffusion LoRA yet, so compare it against AdamW8bit under identical conditions first.
+
+- **Learning rate** (Anima default `1e-4`): update magnitudes differ from the Adam family; in the paper's experiments LoRA-RITE's best learning rate was about 20× Adam's. Compare within `5e-5`–`2e-4`; in this project's 4-image, 40-step stability runs, `1e-4` and `2e-4` were smooth while `5e-4` showed clear loss spikes.
+- **Betas** (default `0.9, 0.999`): the usual two.
+- **Epsilon** (default `1e-6`): note the semantics — this is a root epsilon, squared internally before use; do not carry over the Adam-style `1e-8`.
+- **Gradient clip threshold** (`clip_unmagnified_grad`, default `1.0`): suppresses the effect of occasional gradient spikes on the update; the default is sufficient in most cases. The norm is measured after removing the scaling induced by the LoRA factors. When this optimizer is selected, the UI's `max_grad_norm` (global gradient clipping threshold) locks to `0` and this setting takes over; `0` disables clipping.
+- Limits: Anima LoRA only; standard LoRA structure only (LyCORIS LoHa, LoKr, DoRA, etc. are not applicable); incompatible with LoRA+ (grouped learning rates break the A/B pairing assumption).
+- Cold-start note: with the usual zero-initialized up matrix, the first few steps mostly update the up matrix and the down matrix joins a few steps later. This is expected behavior, not a stall.
+
 <!-- doc-anchor: gradient-clipping -->
-### Max gradient norm
+### Global gradient clipping (max_grad_norm)
 
 `max_grad_norm=1` is the common start; `0` disables it. StableAdamW works with it normally.
 
@@ -193,7 +233,7 @@ Stochastic rounding reduces the drift from low-precision updates that consistent
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, and EmoSens; AdaFactor requires relative step to be turned off first.
+LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, EmoSens, and LoRA-RITE (LoRA+'s grouped learning rates break LoRA-RITE's A/B pairing); AdaFactor requires relative step to be turned off first.
 
 After switching optimizers, reassess the LoRA+ ratio. The ratio scales the effective LR of one LoRA parameter group; it offers no quality benefit on its own.
 
@@ -338,5 +378,9 @@ References:
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
 - [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
 - [LoRA+: Efficient Low-Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
+- [Adan: Adaptive Nesterov Momentum Algorithm for Faster Optimizing Deep Models](https://arxiv.org/abs/2208.06677)
+- [The AdEMAMix Optimizer: Better, Faster, Older](https://arxiv.org/abs/2409.03137)
+- [LoRA Done RITE: Robust Invariant Transformation Equilibration for LoRA Optimization](https://arxiv.org/abs/2410.20625)
+- [LoRA-RITE official implementation at a fixed commit](https://github.com/gkevinyen5418/LoRA-RITE/tree/d4186b6fedb39300d23c00ce0334db09719da9fc)
 - [pytorch-optimizer implementation at a fixed commit](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
 - [bitsandbytes optimizer implementation at a fixed commit](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)

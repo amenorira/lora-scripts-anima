@@ -43,6 +43,10 @@
 | AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 支持内部 warmup，但本项目默认 `warmup_steps=0`；短训练不建议作为第一选择 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1、禁用 mixed_precision=fp16、仅支持单卡，不支持 LoRA+ |
 | Muon | 对二维 LoRA 矩阵执行动量正交化 | 仅 Anima LoRA 可用；当前使用 PyTorch 原生实现；建议与 AdamW8bit 做同条件对照 |
+| Adan | 想在相近步数内更快建立特征时对照 AdamW | 收敛更激进，学习率应低于 AdamW 基线；使用三个 beta |
+| AdEMAMix | 长训练或梯度噪声明显时用作对照 | 短训练中慢速状态的收益不确定；alpha 与缓升步数需要和训练总长匹配 |
+| AdEMAMix8bit | 使用 AdEMAMix 且优化器状态显存紧张时 | 与全精度版本的差异主要在状态量化 |
+| LoRA-RITE | 试验专为 LoRA 结构设计的更新方式 | 仅 Anima LoRA、仅标准 LoRA 结构；不支持 LoRA+；自带梯度裁剪，`max_grad_norm`（全局梯度裁剪阈值）锁定为 0 |
 
 表中的显存说明仅针对优化器状态。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
 
@@ -71,13 +75,16 @@ Anima 只训练 DiT 主干时，可从下面的工程起点开始。官方 Anima
 | StableAdamW | `2e-5` | 先与 AdamW 同尺度，单独比较稳定化更新 |
 | Muon (`match_rms_adamw`) | `2e-5` | 按矩阵尺寸匹配 AdamW 更新 RMS；尚不是 Anima 实测最优值 |
 | CAME | `1.5e-5` | CAME 官方建议用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
+| Adan | `1e-5` | 实际步长大于同学习率的 AdamW，按基线的 `0.5` 倍起步 |
+| AdEMAMix / AdEMAMix8bit | `2e-5` | 论文沿用 Adam 量级的学习率；8-bit 不改变学习率语义 |
+| LoRA-RITE | `1e-4` | 论文中最优值约为 Adam 的 20 倍；本项目小样本实测 `2e-4` 平稳、`5e-4` 出现过热 |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion 官方建议 LR 比 AdamW 小约 `3`～`10` 倍 |
 | AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
 | AdaFactor relative step | 由优化器接管 | 关闭 relative step 后，Anima 手动模式从 `2e-5` 开始 |
 | Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
 
-Lion 的 `5e-6` 只沿用了官方给出的“LR 比 AdamW 小约 3～10 倍”这一比例。官方还建议同时把 weight decay 增大 3～10 倍，本项目没有照搬，因此这不是完整的官方 Lion 配方。
+Lion 的 `5e-6` 只沿用了官方给出的“LR 比 AdamW 小约 3～10 倍”这一比例。官方还建议同时把 weight decay 增大 3～10 倍，本项目未沿用，因此这不是完整的官方 Lion 配方。
 
 SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4`、Lion 为 `2e-5`、AdamWScheduleFree 为 `3e-4`。切换模型类型或优化器时，界面只替换尚未手动修改的推荐值；导入的配置和自定义值保持原样。
 
@@ -143,8 +150,41 @@ Muon 每个参数只维护一组动量状态，少于全精度 AdamW 的两组�
 
 第一次比较建议只把 AdamW8bit 换成 Muon，保持数据、rank、alpha、scheduler、步数和学习率不变。确认训练稳定后，再单独测试学习率或 weight decay。同时修改 NS 系数和迭代次数会让结果难以解释，建议一次只调整一个。
 
+<!-- doc-anchor: adan-options -->
+### Adan 参数
+
+Adan 在 Adam 的一阶、二阶统计之外，额外跟踪相邻两步梯度的差分，并用它做前瞻式更新。直观效果是收敛更激进：相同步数下特征建立更快，但过拟合和过冲也更早出现。论文证据来自视觉与语言模型的中长训练，不是小数据 LoRA。
+
+- **学习率**（Anima 默认 `1e-5`）：Adan 的实际步长大于同学习率的 AdamW，建议在 AdamW 基线（`2e-5`）的 0.3～1 倍之间尝试，不宜照搬论文预训练任务中的高学习率。
+- **动量参数**（`betas`，默认 `0.98, 0.92, 0.99`）：三个值分别控制梯度平均、梯度差分平均和梯度平方统计。
+- **数值稳定项**（`eps`，默认 `1e-8`）：与 AdamW 语义相同。
+- **权重衰减**（`weight_decay`，默认 `0.01`）与**解耦开关**（`weight_decouple`，默认开启）：权重衰减是每步把权重向 0 轻微收缩，防止 LoRA 权重无限制增大。开启解耦后，收缩在参数更新之前按比例进行，与 AdamW 一致；库默认的耦合式在更新之后整体缩放参数。默认 `0.01` 下两者差异很小，开启解耦是为了与他人分享的 AdamW 配方保持语义一致。
+- Adan 自带的 `max_grad_norm` 参数在本训练器中保持 `0`，梯度裁剪统一由界面上的 `max_grad_norm`（全局梯度裁剪阈值）字段负责。
+
+<!-- doc-anchor: ademamix-options -->
+### AdEMAMix 参数
+
+AdEMAMix 同时维护两组梯度移动平均：一组反应快（β1=0.9），一组反应慢（β3=0.9999），更新 = 快速平均 + alpha × 慢速平均。论文的出发点是几千乃至几万步之前的梯度仍有价值，主要证据来自长时间语言模型训练。对步数有限的 LoRA 训练，慢速状态可能平滑时间步采样带来的梯度噪声，也可能把早期方向留得过久，需要通过对照实验确认。
+
+- **慢速状态混合强度**（`alpha`，默认 `5.0`）：慢速平均在更新中的占比；`0` 表示退化为单个移动平均。
+- **缓升步数**（`t_alpha`、`t_beta3`，默认留空）：让 alpha 从 0、β3 从 β1 在该步数内缓升到目标值，论文取训练总步数。留空时本训练器在启动前按预估总步数自动填入；填 `0` 表示不缓升。
+- **动量参数**（`betas`，默认 `0.9, 0.999, 0.9999`）、**数值稳定项**（`eps`，默认 `1e-8`）：语义与 AdamW 相同。`weight_decay`（默认 `0.01`）把“衰减值 × 当前权重”并入每次更新，力度随学习率缩放；本训练器默认恒定学习率，可视为固定强度。
+- 8-bit 变体把三组状态量化存储，显存约为全精度的四分之一；小于 4096 元素的张量不量化，这是正常行为。
+
+<!-- doc-anchor: lorarite-options -->
+### LoRA-RITE 参数
+
+LoRA-RITE 是少数专门为 LoRA 结构设计的优化器。普通优化器分别更新 A、B 两个低秩因子，但同一个 LoRA 更新可以由无数组等价的 (A, B) 表示，普通优化器对不同的表示会给出不同的实际更新。LoRA-RITE 用未放大梯度和低秩侧的矩阵预条件消除这种任意性。论文证据来自语言模型（Gemma、mT5），在扩散模型 LoRA 上尚无公开结果，建议先与 AdamW8bit 做同条件对照。
+
+- **学习率**（Anima 默认 `1e-4`）：它的更新量级与 Adam 族不同，论文实验里 LoRA-RITE 的最优学习率约为 Adam 的 20 倍。可在 `5e-5`～`2e-4` 之间对照；本项目 4 图 40 步的稳定性实测中，`1e-4` 与 `2e-4` 平稳，`5e-4` 出现明显 loss 尖峰。
+- **动量参数**（`betas`，默认 `0.9, 0.999`）：常规两项。
+- **数值稳定项**（`eps`，默认 `1e-6`）：语义是"根 eps"，内部会平方后使用，请勿沿用 Adam 习惯的 `1e-8`。
+- **梯度裁剪阈值**（`clip_unmagnified_grad`，默认 `1.0`）：抑制个别突然激增的梯度对整步更新的影响，一般保持默认即可；范数按不受 LoRA 因子缩放影响的方式计算。选中本优化器后，界面的 `max_grad_norm`（全局梯度裁剪阈值）锁定为 `0`，由本项接管；`0` 表示不裁剪。
+- 限制：仅 Anima LoRA 可用；仅标准 LoRA 结构（LyCORIS 的 LoHa、LoKr、DoRA 等不适用）；不能与 LoRA+ 同用（分组学习率会破坏 A/B 配对假设）。
+- 冷启动提示：LoRA 的 up 矩阵零初始化时，最初几步的更新主要落在 up 上，down 随后才加入，这是该方法的正常行为，并非训练停滞。
+
 <!-- doc-anchor: gradient-clipping -->
-### 最大梯度范数（max gradient norm）
+### 全局梯度裁剪（max_grad_norm）
 
 `max_grad_norm=1` 是常用起点，`0` 表示关闭。StableAdamW 可以正常搭配这个参数。
 
@@ -193,7 +233,7 @@ AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 会被�
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-大多数优化器都可以搭配 LoRA+，包括 Muon 和 Automagic3；例外是 Prodigy、ProdigyPlus 和 EmoSens（它们与 LoRA+ 不兼容），AdaFactor 则需要先关闭 relative step。
+大多数优化器都可以搭配 LoRA+，包括 Muon 和 Automagic3；例外是 Prodigy、ProdigyPlus、EmoSens 和 LoRA-RITE（LoRA+ 的分组学习率会破坏 LoRA-RITE 的 A/B 配对），AdaFactor 则需要先关闭 relative step。
 
 切换优化器后，应重新评估 LoRA+ 倍率。倍率改变部分 LoRA 参数的有效学习率，本身不提供独立的画质收益。
 
@@ -338,5 +378,9 @@ Prodigy、ProdigyPlus 和 EmoSens 不能可靠保留不同参数组的学习率�
 - [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
 - [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
 - [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
+- [Adan: Adaptive Nesterov Momentum Algorithm for Faster Optimizing Deep Models](https://arxiv.org/abs/2208.06677)
+- [The AdEMAMix Optimizer: Better, Faster, Older](https://arxiv.org/abs/2409.03137)
+- [LoRA Done RITE: Robust Invariant Transformation Equilibration for LoRA Optimization](https://arxiv.org/abs/2410.20625)
+- [LoRA-RITE 官方实现（固定提交）](https://github.com/gkevinyen5418/LoRA-RITE/tree/d4186b6fedb39300d23c00ce0334db09719da9fc)
 - [pytorch-optimizer 实现（固定提交）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
 - [bitsandbytes 优化器实现（固定提交）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)

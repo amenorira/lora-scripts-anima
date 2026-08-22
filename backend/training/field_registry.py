@@ -14,10 +14,14 @@ from typing import Any
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
+    ADAN_OPTIMIZER_TYPE,
+    ADEMAMIX8BIT_OPTIMIZER_TYPE,
+    ADEMAMIX_OPTIMIZER_TYPE,
     AUTOMAGIC_MAX_LR_DEFAULT_TEXT,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
@@ -87,6 +91,8 @@ LORAPLUS_INCOMPATIBLE_OPTIMIZERS = (
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    # LoRA-RITE 要求参数按 A/B 交替配对；LoRA+ 的分组学习率会破坏该前提
+    LORARITE_OPTIMIZER_TYPE,
 )
 
 
@@ -305,7 +311,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "target": "toml", "min": 0, "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": AUTOMAGIC_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": 0}, {"watch": {"optimizer_type": ADAFACTOR_OPTIMIZER_TYPE, "adafactor_relative_step": True}, "set": 0}], "readonly_if_any": [{"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}]], "readonly_reason_key": "field.lr_warmup_steps_internalLocked", "omit_default": True, "doc_slug": "optimizers", "doc_anchor": "scheduler-warmup"},
 {"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "target": "toml", "min": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts"}, "omit_default": True},
 {"key": "lr_scheduler_power", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lr_scheduler_power", "target": "toml", "min": 0.1, "step": 0.1, "show_if": {"key": "lr_scheduler", "eq": "polynomial"}, "omit_default": True},
-{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "min": 0, "step": 0.1, "hint_key": "field.max_grad_normHint", "auto_value": [{"watch": "optimizer_type", "when": ADAFACTOR_OPTIMIZER_TYPE, "set": 0}, {"watch": {"optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE, "prodigyplus_use_stableadamw": True}, "set": 0}, {"watch": {"optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE, "eps": "None"}, "set": 0}, {"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": 0, "set_if_default": True}], "readonly_if_any": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, [{"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, {"key": "prodigyplus_use_stableadamw", "eq": True}], [{"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, {"key": "eps", "eq": "None"}]], "readonly_reason_key": "field.max_grad_norm_optimizerLocked", "omit_default": True, "doc_slug": "optimizers", "doc_anchor": "gradient-clipping"},
+{"key": "max_grad_norm", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.max_grad_norm", "target": "toml", "min": 0, "step": 0.1, "hint_key": "field.max_grad_normHint", "auto_value": [{"watch": "optimizer_type", "when": ADAFACTOR_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": LORARITE_OPTIMIZER_TYPE, "set": 0}, {"watch": {"optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE, "prodigyplus_use_stableadamw": True}, "set": 0}, {"watch": {"optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE, "eps": "None"}, "set": 0}, {"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": 0, "set_if_default": True}], "readonly_if_any": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": LORARITE_OPTIMIZER_TYPE}, [{"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, {"key": "prodigyplus_use_stableadamw", "eq": True}], [{"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, {"key": "eps", "eq": "None"}]], "readonly_reason_key": "field.max_grad_norm_optimizerLocked", "omit_default": True, "doc_slug": "optimizers", "doc_anchor": "gradient-clipping"},
 {"key": "weight_decay", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.weight_decay", "target": "merged", "min": 0, "step": 0.001, "hint_key": "field.weight_decayHint", "doc_slug": "optimizers", "doc_anchor": "weight-decay", "auto_value": SD_OPTIMIZER_AUTO_VALUES["weight_decay"], "layout_parent": "optimizer_type"},
 {"key": "bnb_percentile_clipping", "type": "number", "default": 100, "section": "optimizer", "desc_key": "field.bnb_percentile_clipping", "target": "merged", "min": 1, "max": 100, "step": 1, "show_if": {"key": "optimizer_type", "eq": "AdamW8bit", "_or": ["PagedAdamW8bit", "Lion8bit", "PagedLion8bit"]}, "hint_key": "field.bnb_percentile_clippingHint", "doc_slug": "optimizers", "doc_anchor": "percentile-clipping"},
 {"key": "bnb_min_8bit_size", "type": "number", "default": 4096, "section": "optimizer", "desc_key": "field.bnb_min_8bit_size", "target": "merged", "min": 0, "step": 1, "show_if": {"key": "optimizer_type", "eq": "AdamW8bit", "_or": ["PagedAdamW8bit", "Lion8bit", "PagedLion8bit"]}, "hint_key": "field.bnb_min_8bit_sizeHint", "doc_slug": "optimizers", "doc_anchor": "min-8bit-size"},
@@ -334,9 +340,17 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "adafactor_warmup_init", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.adafactor_warmup_init", "target": "merged", "show_if": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}], "hint_key": "field.adafactor_warmup_initHint", "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False}]},
 {"key": "adafactor_clip_threshold", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.adafactor_clip_threshold", "target": "merged", "min": 1e-8, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}},
 {"key": "adafactor_eps", "type": "text", "default": "1e-30, 1e-3", "section": "optimizer", "desc_key": "field.adafactor_eps", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_epsHint"},
+# ── Adan 专用参数 ──
+{"key": "adan_weight_decouple", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adan_weight_decouple", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAN_OPTIMIZER_TYPE}, "hint_key": "field.adan_weight_decoupleHint", "doc_slug": "optimizers", "doc_anchor": "adan-options"},
+# ── AdEMAMix 专用参数 ──
+{"key": "ademamix_alpha", "type": "number", "default": 5.0, "section": "optimizer", "desc_key": "field.ademamix_alpha", "target": "merged", "min": 0, "step": 0.5, "show_if": {"key": "optimizer_type", "eq": ADEMAMIX_OPTIMIZER_TYPE, "_or": [ADEMAMIX8BIT_OPTIMIZER_TYPE]}, "hint_key": "field.ademamix_alphaHint", "doc_slug": "optimizers", "doc_anchor": "ademamix-options"},
+{"key": "ademamix_t_alpha", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.ademamix_t_alpha", "target": "merged", "min": 0, "show_if": {"key": "optimizer_type", "eq": ADEMAMIX_OPTIMIZER_TYPE, "_or": [ADEMAMIX8BIT_OPTIMIZER_TYPE]}, "hint_key": "field.ademamix_t_alphaHint", "doc_slug": "optimizers", "doc_anchor": "ademamix-options"},
+{"key": "ademamix_t_beta3", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.ademamix_t_beta3", "target": "merged", "min": 0, "show_if": {"key": "optimizer_type", "eq": ADEMAMIX_OPTIMIZER_TYPE, "_or": [ADEMAMIX8BIT_OPTIMIZER_TYPE]}, "hint_key": "field.ademamix_t_beta3Hint", "doc_slug": "optimizers", "doc_anchor": "ademamix-options"},
+# ── LoRA-RITE 专用参数 ──
+{"key": "lorarite_clip_unmagnified_grad", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lorarite_clip_unmagnified_grad", "target": "merged", "min": 0, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": LORARITE_OPTIMIZER_TYPE}, "hint_key": "field.lorarite_clip_unmagnified_gradHint", "doc_slug": "optimizers", "doc_anchor": "lorarite-options"},
 # ── Optimizer Merged: betas / eps ──
 {"key": "betas", "type": "text", "section": "optimizer", "desc_key": "field.betas", "target": "merged", "hint_key": "field.betasHint", "hint_key_by": {"key": "optimizer_type", "values": _SD_BETA_HINTS}, "doc_slug": "optimizers", "doc_anchor": "betas", "show_if": _show_if_one_of("optimizer_type", tuple(_SD_BETA_HINTS)), "auto_value": SD_OPTIMIZER_AUTO_VALUES["betas"]},
-{"key": "eps", "type": "text", "section": "optimizer", "desc_key": "field.eps", "target": "merged", "hint_key": "field.epsHint", "doc_slug": "optimizers", "doc_anchor": "eps", "show_if": _show_if_one_of("optimizer_type", tuple(selector for selector in _SD_OPTIMIZER_SELECTORS if selector in _SD_EPS_OPTIMIZERS)), "auto_value": SD_OPTIMIZER_AUTO_VALUES["eps"]},
+{"key": "eps", "type": "text", "section": "optimizer", "desc_key": "field.eps", "target": "merged", "hint_key": "field.epsHint", "hint_key_by": {"key": "optimizer_type", "values": {LORARITE_OPTIMIZER_TYPE: "field.epsHint_lorarite"}}, "doc_slug": "optimizers", "doc_anchor": "eps", "show_if": _show_if_one_of("optimizer_type", tuple(selector for selector in _SD_OPTIMIZER_SELECTORS if selector in _SD_EPS_OPTIMIZERS)), "auto_value": SD_OPTIMIZER_AUTO_VALUES["eps"]},
 # ── CAME 专用参数 ──
 {"key": "came_weight_decouple", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.came_weight_decouple", "target": "merged", "hint_key": "field.came_weight_decoupleHint", "show_if": {"key": "optimizer_type", "eq": "pytorch_optimizer.CAME"}},
 {"key": "came_fixed_decay", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.came_fixed_decay", "target": "merged", "hint_key": "field.came_fixed_decayHint", "show_if": [{"key": "optimizer_type", "eq": "pytorch_optimizer.CAME"}, {"key": "came_weight_decouple", "eq": True}]},
