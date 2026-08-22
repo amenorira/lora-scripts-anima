@@ -71,14 +71,28 @@ KREA2_FILES: list[tuple[str, str, str]] = [
     ),
 ]
 
-# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组)
-MODEL_FILES: list[tuple[str, str, str, str, str]] = [
+# ── 附加模型（自用 HF 仓库，与 ame-la/train_use_models 的 index.json 保持对应）──
+# 前置字段同 MODEL_FILES： (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组)
+# 最后一列是可选字段：原始出处页面（Civitai 等），无则省略。
+TRAIN_USE_FILES: list[tuple[str, str, str, str, str, str]] = [
+    (
+        "ame-la/train_use_models",
+        "any-anima-for-lora-training/anyAnimaForLora_102.safetensors",
+        "anyAnimaForLora_102.safetensors",
+        "Any Anima (for LoRA training) v1.0.2",
+        "Train Use",
+        "https://civitai.red/models/2454865/any-anima-for-lora-training?modelVersionId=3017846",
+    ),
+]
+
+# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面])
+MODEL_FILES: list[tuple] = [
     (ANIMA_REPO_ID, hf_path, local_name, desc, "Anima")
     for hf_path, local_name, desc in ANIMA_FILES
 ] + [
     (KREA2_REPO_ID, hf_path, local_name, desc, "Krea 2")
     for hf_path, local_name, desc in KREA2_FILES
-]
+] + TRAIN_USE_FILES
 
 
 def _normalize_file(
@@ -92,7 +106,8 @@ def _normalize_file(
     if len(item) == 4:
         repo, hf_path, local_name, desc = item
         return repo, hf_path, local_name, desc
-    repo, hf_path, local_name, desc, _group = item
+    # 5 元组或 6 元组（group / source_page 仅 UI 用，下载时不需要）
+    repo, hf_path, local_name, desc = item[0], item[1], item[2], item[3]
     return repo, hf_path, local_name, desc
 
 
@@ -214,7 +229,9 @@ def download_anima_files(
 def list_local_model_files(dest_dir: Path) -> list[dict]:
     """扫描全部可下载训练模型，并返回 UI 所需的仓库与用途信息。"""
     out = []
-    for repo_id, hf_path, local_name, desc, group in MODEL_FILES:
+    for item in MODEL_FILES:
+        repo_id, hf_path, local_name, desc, group = item[:5]
+        source_page = item[5] if len(item) > 5 else None
         path = dest_dir / local_name
         exists = path.exists() and path.is_file()
         out.append(
@@ -224,6 +241,7 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
                 "group": group,
                 "repo_id": repo_id,
                 "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
+                "source_page": source_page,
                 "exists": exists,
                 "size_gb": round(path.stat().st_size / (1024**3), 2) if exists else 0,
             }
