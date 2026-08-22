@@ -6,6 +6,25 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.8.0 - 2026-08-22
+
+This release reworks the environment management page: the whole page becomes a panel-style flow layout — large row titles with status and version on one line, the secondary description on its own line below — and the table-header look is gone. Environment and Models now switch via in-page tabs with a sliding indicator and fade-in animation; component rows and model groups are collapsed by default, with new "Expand all / Collapse all" actions at the top. Divider lines no longer cut through an expanded row unit. The Models tab gains an "Additional Models" download group, which already includes Any Anima (for LoRA training) v1.0.2.
+
+### Environment page
+
+- The top summary consolidates state and progress: a three-state banner (running normally / needs attention / checking) plus plain-text counters — acceleration x/3 · training core x/3 · models x/y — and a persistent "Refresh all" button.
+- Environment and Models become in-page tabs: a sliding indicator follows the active tab (same technique as the monitor), panels fade in on switch, and the choice is remembered locally.
+- Component rows (Flash Attention, xformers, Triton, sd-scripts, LyCORIS, musubi-tuner) use the flow layout: a first line with name + status + version, a second line with the secondary description, and a last line with the main action and a "Details" text link; table column headers are gone, and the expand state is shown by an inline caret.
+- Everything is collapsed by default, except rows busy with an install or download, which auto-open to show progress. "Expand all / Collapse all" applies to the rows and model groups of the current tab, and clicking the same state again no longer replays the animation.
+- Divider lines fixed: a row's header and expanded body are now one unit (no line between them), while individual rows keep a subtle divider between each other.
+
+### Models
+
+- A new "Additional Models" group downloads from the ame-la/train_use_models repository, shipping with Any Anima (for LoRA training) v1.0.2 (an Anima base model), with a link to the original page on each file row.
+- Groups and files use the same two-line flow: filename + size + status + action on the first line, description + source + local path on the second; group headers show an x/y download count plus total size.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.7.0...v2.8.0)
+
 ## v2.7.0 - 2026-08-22
 
 This release adds four optimizers for Anima LoRA training — Adan, AdEMAMix (with an 8-bit variant), and LoRA-RITE, which is purpose-built for the LoRA structure — with all their dedicated parameters wired into the training form and defaults tuned for LoRA work. The optimizer dropdown is regrouped and every option gains a one-line description.
