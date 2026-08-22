@@ -6,6 +6,28 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.7.0 - 2026-08-22
+
+This release adds four optimizers for Anima LoRA training — Adan, AdEMAMix (with an 8-bit variant), and LoRA-RITE, which is purpose-built for the LoRA structure — with all their dedicated parameters wired into the training form and defaults tuned for LoRA work. The optimizer dropdown is regrouped and every option gains a one-line description.
+
+### New optimizers
+
+- Adan: tracks consecutive-gradient differences on top of Adam's moments for a lookahead update, with an optional decoupled weight-decay toggle; default LR 1e-5 (half the AdamW baseline), and the description explains how its effective step relates to AdamW at the same LR.
+- AdEMAMix and AdEMAMix8bit: dual-timescale gradient memory — fast (β1=0.9) and slow (β3=0.9999); mixing strength alpha and both ramp-step fields are directly editable, auto-filled from the estimated total steps when left empty.
+- LoRA-RITE: removes update differences between equivalent reparameterizations of the same LoRA; ships its own clipping measured on unmagnified gradients (the global clipping threshold locks to 0 in this case), and its eps uses root-epsilon semantics with a dedicated hint. Anima LoRA only, standard LoRA structure only, incompatible with LoRA+ — marked in both the UI and the docs.
+- All four passed real-training smoke runs (4 images, 40 steps); LoRA-RITE's metadata name is written as LoRARITE so metadata viewers don't truncate it at the hyphen.
+
+### Optimizer dropdown
+
+- Options are regrouped into six characteristic-based groups: AdamW and storage variants, built-in stabilization, lookahead-difference and sign updates, dual-timescale gradient memory, internal LR estimation and scheduling, and matrix-structure updates; empty groups are hidden automatically.
+- Every option gets a one-line description of its characteristics (update mechanism, memory footprint, LR semantics) — facts only, no recommendations.
+
+### Docs
+
+- The optimizer guide gains parameter sections for Adan, AdEMAMix, and LoRA-RITE plus a gradient-clipping section; the LR auto-start table now covers the three new optimizers, and the LoRA+ section notes LoRA-RITE's incompatibility.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.6.0...v2.7.0)
+
 ## v2.6.0 - 2026-08-16
 
 This release upgrades the Tagger and the tag editor: the single-image mode gets a reworked layout plus a new "unload model after task" switch, and the tag editor fixes the full-folder fetch crash while gaining a complete keyboard workflow.
