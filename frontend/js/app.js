@@ -45,6 +45,8 @@ document.addEventListener('alpine:init', () => {
     _disconnectedTimer: null,
     // 训练状态（由 /api/health 返回，驱动侧栏连接指示器三态）
       trainingActive: false,
+    // 本地系统文件选择器是否可用（无图形环境的 Linux 服务器上不可用，对应按钮直接隐藏）
+    localPickerAvailable: true,
 
       // ── Init ───────────────────────────────────────────────
     async init() {
@@ -74,6 +76,13 @@ document.addEventListener('alpine:init', () => {
           this.version = 'dev';
         }
       } catch (e) { this.version = 'dev'; }
+
+      // 本地选择器可用性：请求失败保持默认 true（本地场景），只在后端明确返回 false 时隐藏按钮
+      try {
+        const pr = await fetch('/api/file_picker_available');
+        const pd = await pr.json();
+        if (pd.status === 'success' && pd.data) this.localPickerAvailable = !!pd.data.available;
+      } catch (e) { /* 保持默认 */ }
 
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();

@@ -104,6 +104,28 @@ async def get_fields(request: Request):
     return Response(content=body, media_type="application/json", headers={"ETag": etag})
 
 
+def _to_picker_path(path) -> str:
+    """选择器返回路径：项目目录内的转为相对路径（正斜杠），目录外保持绝对路径。
+    刻意不 resolve()：避免把符号链接目录（如 models/ 指向别的盘）穿透成链接目标，
+    用户在界面上看到的目录结构是什么，写回输入框的就是什么。"""
+    abs_path = Path(path)
+    if not abs_path.is_absolute():
+        abs_path = REPO_ROOT / abs_path
+    try:
+        rel = abs_path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(abs_path).replace("\\", "/")
+    # 与字段默认值（如 ./models/anima-base-v1.0.safetensors）保持同一书写风格
+    return f"./{rel}" if rel != "." else "."
+
+
+@router.get("/file_picker_available")
+async def file_picker_available():
+    """本地系统文件选择器是否可用。无图形环境的 Linux 服务器（AutoDL 等云平台）
+    上不可用，前端据此隐藏本地选择按钮，只保留内置浏览器。"""
+    return APIResponseSuccess(data={"available": tk_is_available()})
+
+
 @router.get("/pick_file")
 async def pick_file(picker_type: str):
     if not tk_is_available():
@@ -134,12 +156,29 @@ async def pick_file(picker_type: str):
     if result == "":
         return APIResponseFail(message="cancelled")
 
-    return APIResponseSuccess(data={"path": result})
+    return APIResponseSuccess(data={"path": _to_picker_path(result)})
 
 
 _files_cache: dict[str, tuple[float, list[dict]]] = {}
 _files_cache_lock = threading.Lock()
 _FILES_CACHE_TTL = 60
+
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif"}
+
+
+def _dataset_folder_stats(folder: Path) -> dict:
+    """统计数据集文件夹：递归数图片，以及其中有同名 .txt 打标的数量。"""
+    images = 0
+    captioned = 0
+    try:
+        for item in folder.rglob("*"):
+            if item.is_file() and item.suffix.lower() in _IMAGE_EXTS:
+                images += 1
+                if item.with_suffix(".txt").is_file():
+                    captioned += 1
+    except OSError:
+        pass
+    return {"images": images, "captioned": captioned}
 
 
 @router.get("/get_files")
@@ -173,21 +212,28 @@ async def get_files(pick_type) -> APIResponse:
             else:
                 files = [file for file in path.glob("**/*") if file.is_file()]
             for file in files:
+                st = file.stat()
                 result_list.append({
-                    "path": str(file.resolve().absolute()).replace("\\", "/"),
+                    "path": _to_picker_path(file),
                     "name": file.name,
-                    "size": f"{round(file.stat().st_size / (1024**3), 2)} GB",
+                    "size": f"{round(st.st_size / (1024**3), 2)} GB",
+                    "size_bytes": st.st_size,
+                    "mtime": st.st_mtime,
                 })
         elif file_type == "folder":
             folders = [folder for folder in path.iterdir() if folder.is_dir()]
             for folder in folders:
                 if folder.name in folder_blacklist:
                     continue
-                result_list.append({
-                    "path": str(folder.resolve().absolute()).replace("\\", "/"),
+                entry = {
+                    "path": _to_picker_path(folder),
                     "name": folder.name,
                     "size": 0,
-                })
+                    "size_bytes": 0,
+                    "mtime": folder.stat().st_mtime,
+                }
+                entry.update(_dataset_folder_stats(folder))
+                result_list.append(entry)
 
         return result_list
 

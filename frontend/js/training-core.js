@@ -60,7 +60,6 @@ window.trainingCoreMixin = {
   _pickerKey: '',
   _pickerFiles: [],
   _pickerFilter: '',
-  _pickerCwd: '',
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
@@ -1823,7 +1822,11 @@ window.trainingCoreMixin = {
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
     if (field.role && field.role.startsWith('file-') && !isStaticReadonly) {
-      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions"><button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button><button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
+      // 本地系统选择器在无图形环境的服务器上不可用：整颗按钮不渲染，只留内置浏览器
+      const localBtnHtml = this.localPickerAvailable
+        ? `<button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`
+        : '';
+      controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions">${localBtnHtml}<button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;
     }
@@ -3619,22 +3622,163 @@ window.trainingCoreMixin = {
       const r = await fetch('/api/get_files?pick_type='+pickType);
       const d = await r.json();
       const files = (d.status==='success'&&d.data) ? (d.data.files||d.data) : [];
-      this.showFilePickerModal(key, Array.isArray(files)?files:[]);
+      this.showFilePickerModal(key, Array.isArray(files)?files:[], pickType);
     } catch(e) { this.toast(this.t('common.fileBrowserFailed')); }
   },
 
-  showFilePickerModal(key, files) {
+  // 与后端 get_files 的扫描根目录保持一致，用于弹窗上下文显示与子目录分组
+  PICKER_ROOTS: { 'model-file': './models', 'model-saved-file': './output', 'train-dir': './train' },
+
+  showFilePickerModal(key, files, pickType) {
     this._pickerKey = key;
     this._pickerFiles = files || [];
     this._pickerFilter = '';
-    this._pickerCwd = '';
+    this._pickerKind = pickType || '';
+    this._pickerRoot = this.PICKER_ROOTS[pickType] || '';
+    this._pickerCurrent = this._normalizePickerPath(this.form[key]);
     this.showFilePickerModalFlag = true;
+    // 键盘高亮初始落在当前值所在行，并滚动到它
+    const cur = this._pickerCurrent;
+    this._pickerIndex = cur ? this.filteredPickerFiles.findIndex(f => this._normalizePickerPath(f.path) === cur) : -1;
+    this.$nextTick(() => {
+      const inp = document.getElementById('pickerFilterInput');
+      if (inp) inp.focus();
+      const active = document.querySelector('.picker-row.is-current');
+      if (active) active.scrollIntoView({ block: 'center' });
+    });
+  },
+
+  _normalizePickerPath(p) {
+    return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  },
+
+  pickerIsCurrent(f) {
+    return !!this._pickerCurrent && this._normalizePickerPath(f.path) === this._pickerCurrent;
   },
 
   get filteredPickerFiles() {
     const filter = (this._pickerFilter || '').toLowerCase();
     if (!filter) return this._pickerFiles || [];
     return (this._pickerFiles || []).filter(f => f.name.toLowerCase().includes(filter));
+  },
+
+  // 按扫描根目录下的子目录分组；全部直接在根目录时只有一组（不显示分组头）
+  get pickerGroups() {
+    const byDir = new Map();
+    for (const f of this.filteredPickerFiles) {
+      const dir = this._pickerRelDir(f.path);
+      if (!byDir.has(dir)) byDir.set(dir, []);
+      byDir.get(dir).push(f);
+    }
+    const dirs = [...byDir.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+    return dirs.map(d => ({ dir: d, files: byDir.get(d) }));
+  },
+
+  _pickerRelDir(path) {
+    let p = String(path || '');
+    const root = String(this._pickerRoot || '');
+    if (root && p.startsWith(root + '/')) p = p.slice(root.length + 1);
+    const idx = p.lastIndexOf('/');
+    return idx === -1 ? '' : p.slice(0, idx);
+  },
+
+  // 注意：这些方法依赖 this.t()，不能写成 getter——测试会用 Object.assign 展开
+  // mixin，getter 会在展开时被立即调用（此时 this 上还没有 t），直接抛错。
+  pickerTitle() {
+    return this.t('common.pickerSelect', 'Select') + ' ' + this._pickerFieldLabel(this._pickerKey);
+  },
+
+  // 与 renderField 的标签解析同规则：优先训练类型专属 descKey
+  _pickerFieldLabel(key) {
+    const trainType = this.form.model_train_type || 'anima-lora';
+    const field = this._fieldDefinition(key, trainType);
+    if (!field || !field.descKey) return key || '';
+    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const specific = this.t(field.descKey + suffix);
+    if (specific && specific !== field.descKey + suffix) return specific;
+    return this.t(field.descKey) || key || '';
+  },
+
+  pickerContextText() {
+    const n = this.filteredPickerFiles.length;
+    const unit = this._pickerKind === 'train-dir'
+      ? this.t('common.pickerFolderUnit', 'folders')
+      : this.t('common.pickerFileUnit', 'files');
+    return (this._pickerRoot || '') + ' · ' + n + ' ' + unit;
+  },
+
+  // 底部计数：仅在筛选时显示“命中/总数”，未筛选时头部已有目录与总数，不重复展示
+  pickerCountText() {
+    const total = (this._pickerFiles || []).length;
+    const n = this.filteredPickerFiles.length;
+    if (!this._pickerFilter || n === total) return '';
+    const unit = this._pickerKind === 'train-dir'
+      ? this.t('common.pickerFolderUnit', 'folders')
+      : this.t('common.pickerFileUnit', 'files');
+    return n + ' / ' + total + ' ' + unit;
+  },
+
+  pickerEmptyText() {
+    return this.t('common.pickerEmpty', 'No files found') + (this._pickerRoot ? ' · ' + this._pickerRoot : '');
+  },
+
+  pickerSizeText(f) {
+    const b = Number(f && f.size_bytes);
+    if (!b || !isFinite(b) || b <= 0) return '';
+    const gb = b / (1024 * 1024 * 1024);
+    if (gb >= 1) return (Math.round(gb * 10) / 10) + ' GB';
+    const mb = b / (1024 * 1024);
+    if (mb >= 1) return (Math.round(mb * 10) / 10) + ' MB';
+    return Math.max(1, Math.round(b / 1024)) + ' KB';
+  },
+
+  // 行内第二行详情：数据集给图片/打标进度，所有条目末尾补修改时间
+  pickerDetailText(f) {
+    const parts = [];
+    if (this._pickerKind === 'train-dir' && typeof f.images === 'number') {
+      let s = f.images + ' ' + this.t('common.pickerImagesUnit', 'images');
+      if (f.images > 0) s += ' · ' + (f.captioned || 0) + ' ' + this.t('common.pickerCaptionedUnit', 'captioned');
+      parts.push(s);
+    }
+    if (f.mtime) {
+      const d = this._pickerFormatDate(f.mtime);
+      if (d) parts.push(this.t('common.pickerModified', 'Modified') + ' ' + d);
+    }
+    return parts.join(' · ');
+  },
+
+  _pickerFormatDate(ts) {
+    const d = new Date(Number(ts) * 1000);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  },
+
+  pickerMove(delta, e) {
+    if (!this.showFilePickerModalFlag) return;
+    const n = this.filteredPickerFiles.length;
+    if (!n) return;
+    if (e) e.preventDefault();
+    let i = (typeof this._pickerIndex === 'number' ? this._pickerIndex : -1) + delta;
+    if (i < 0) i = n - 1;
+    if (i >= n) i = 0;
+    this._pickerIndex = i;
+    this.$nextTick(() => {
+      const el = document.querySelector('.picker-row.is-kb-active');
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    });
+  },
+
+  pickerConfirm(e) {
+    if (!this.showFilePickerModalFlag) return;
+    // 焦点在取消/关闭按钮上时，让按钮自身的点击行为生效
+    if (e && e.target && e.target.tagName === 'BUTTON') return;
+    if (e) e.preventDefault();
+    const files = this.filteredPickerFiles;
+    if (!files.length) return;
+    let i = this._pickerIndex;
+    if (typeof i !== 'number' || i < 0 || i >= files.length) i = 0;
+    this.pickFileFromModal(files[i]);
   },
 
   pickFileFromModal(file) {

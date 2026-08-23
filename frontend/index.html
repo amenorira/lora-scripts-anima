@@ -20,7 +20,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260812-full-fields1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260824-picker1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260823-ai10">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -34,10 +34,10 @@
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260808-timestep-docs2" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260824-picker1" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260823-ai4" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260823-picker1" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260808-progress1" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -1349,34 +1349,57 @@
 </div>
 
 <!-- ── Built-in File Picker Modal ─────────────────────── -->
-<!-- builtinFilePicker() 拉取 /api/get_files 列表后置 showFilePickerModalFlag=true 弹出。
-     之前该 flag 无对应模板，按钮形同失效；此处补全弹窗。 -->
+<!-- 内置文件浏览器：builtinFilePicker() 拉取 /api/get_files 列表后置 showFilePickerModalFlag=true 弹出。
+     标题显示目标字段与扫描目录，当前值高亮，支持 ↑↓/Enter/Esc 键盘操作。 -->
 <div class="modal-overlay" x-show="showFilePickerModalFlag" @click.self="showFilePickerModalFlag = false"
      @keydown.escape.window="showFilePickerModalFlag = false" x-cloak>
-  <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <span x-text="t('common.builtinBrowser')">Built-in browser</span>
+  <div class="modal picker-modal">
+    <div class="modal-header picker-header">
+      <div class="picker-title-wrap">
+        <span x-text="pickerTitle()"></span>
+        <span class="picker-context" x-text="pickerContextText()"></span>
+      </div>
       <button class="btn-icon" @click="showFilePickerModalFlag = false" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body" style="max-height:60vh;overflow-y:auto;padding:12px 16px">
-      <div class="modal-field" style="margin-bottom:10px">
-        <input type="text" class="input" x-model="_pickerFilter" :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
-      </div>
-      <p class="text-muted text-sm" style="padding:6px 2px" x-show="filteredPickerFiles.length === 0"
-         x-text="t('common.pickerEmpty','No files found')"></p>
-      <template x-for="f in filteredPickerFiles" :key="f.path">
-        <div class="config-list-item" @click="pickFileFromModal(f)" :title="f.path">
-          <div style="min-width:0;flex:1">
-            <div class="config-name" x-text="f.name || ''"></div>
-            <div class="text-xs text-muted" x-text="f.path" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-          </div>
-          <span class="text-xs text-muted" x-show="f.size && f.size !== 0" x-text="f.size" style="flex-shrink:0"></span>
+    <div class="picker-filter-row">
+      <input type="text" class="input" id="pickerFilterInput" x-model="_pickerFilter" @input="_pickerIndex = -1"
+             @keydown.arrow-down.prevent="pickerMove(1, $event)"
+             @keydown.arrow-up.prevent="pickerMove(-1, $event)"
+             @keydown.enter.prevent="pickerConfirm($event)"
+             @keydown.escape.prevent="showFilePickerModalFlag = false"
+             :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
+      <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint','↑↓ select · Enter confirm')"></span>
+    </div>
+    <div class="picker-list">
+      <p class="picker-empty" x-show="filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
+      <template x-for="group in pickerGroups" :key="group.dir || '__root'">
+        <div class="picker-group">
+          <div class="picker-group-header" x-show="group.dir" x-text="group.dir + '/'"></div>
+          <template x-for="f in group.files" :key="f.path">
+            <div class="picker-row" :class="{ 'is-current': pickerIsCurrent(f), 'is-kb-active': filteredPickerFiles.indexOf(f) === _pickerIndex }"
+                 @click="pickFileFromModal(f)" :title="f.path">
+              <svg class="picker-row-icon" x-show="_pickerKind !== 'train-dir'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <svg class="picker-row-icon" x-show="_pickerKind === 'train-dir'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <div class="picker-row-main">
+                <div class="picker-row-title">
+                  <span class="picker-row-name" x-text="f.name || ''"></span>
+                  <span class="picker-row-current" x-show="pickerIsCurrent(f)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span x-text="t('common.pickerCurrentTag','Current')"></span>
+                  </span>
+                </div>
+                <span class="picker-row-detail" x-show="pickerDetailText(f)" x-text="pickerDetailText(f)"></span>
+              </div>
+              <span class="picker-row-size" x-text="pickerSizeText(f)"></span>
+            </div>
+          </template>
         </div>
       </template>
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer picker-footer">
+      <span class="picker-count" x-show="pickerCountText()" x-text="pickerCountText()"></span>
       <button class="btn btn-ghost btn-sm" @click="showFilePickerModalFlag = false" x-text="t('common.cancel')">Cancel</button>
     </div>
   </div>

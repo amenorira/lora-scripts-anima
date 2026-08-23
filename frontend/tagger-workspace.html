@@ -46,7 +46,7 @@
             <div class="tagger-field-info"><label x-text="t('tagger.imageDir', 'Image folder')"></label><p x-text="t('tagger.imageDirDesc', 'Folder containing images to tag')"></p></div>
             <div class="tagger-path-control">
               <input type="text" x-model="taggerSourcePath" @input="scheduleTaggerSourceScan()" @keydown.enter.prevent="scanTaggerSource()" :placeholder="t('tagger.sourcePath', 'Select an image folder')">
-              <button type="button" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
+              <button type="button" x-show="localPickerAvailable" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
             </div>
           </div>
         </section>
@@ -277,7 +277,7 @@
             <div class="tagger-field-info"><label x-text="t('tagger.imageDir', 'Image folder')"></label><p x-text="t('tagger.imageDirDesc', 'Folder containing images to tag')"></p></div>
             <div class="tagger-path-control">
               <input type="text" x-model="taggerSourcePath" @input="scheduleTaggerSourceScan()" @keydown.enter.prevent="scanTaggerSource()" :placeholder="t('tagger.sourcePath', 'Select an image folder')">
-              <button type="button" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
+              <button type="button" x-show="localPickerAvailable" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
             </div>
           </div>
         </section>
