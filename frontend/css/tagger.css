@@ -216,6 +216,43 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-confidence-item b { color: var(--text-secondary); font-family: inherit; font-size: 10.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .tagger-category-tags p, .tagger-category-tags small { flex: 1 0 100%; color: var(--text-tertiary); font-size: 11.5px; }
 
+/* AI API tabs */
+.tagger-key-control input { font-family: var(--font-mono); font-size: 12.5px; }
+.tagger-prompt-textarea { width: 100%; min-height: 108px; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-sans); font-size: 12.5px; line-height: 1.55; resize: vertical; }
+.tagger-prompt-textarea:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
+.tagger-prompt-actions { display: flex; gap: 8px; }
+.tagger-prompt-actions button, .tagger-prompt-naming button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.tagger-prompt-actions button:hover, .tagger-prompt-naming button:hover { border-color: var(--accent); color: var(--accent); }
+.tagger-prompt-actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
+.tagger-prompt-naming { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+.tagger-prompt-naming input { height: 30px; padding: 0 10px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-size: 12.5px; }
+.tagger-prompt-naming input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
+.tagger-api-test-control { flex-direction: row; align-items: center; justify-content: flex-end; gap: 10px; }
+.tagger-api-test-button { width: auto; min-width: 118px; }
+.tagger-api-test-result { max-width: 260px; margin-right: auto; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-api-test-result.ok { color: var(--success); }
+.tagger-api-test-result.fail { color: var(--danger); }
+/* 模型名组合框：整行占满；整体触发器即输入框外壳，内部输入框去边框，右侧挂下拉按钮 */
+.tagger-form-field-stacked .tagger-field-control { justify-content: flex-start; align-items: flex-start; }
+.tagger-form-field-stacked .tagger-field-control > .anima-select { width: 100%; margin-left: 0; }
+.tagger-api-model-combo { padding: 0 4px 0 0; justify-content: flex-start; cursor: text; }
+.tagger-api-model-combo:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
+.tagger-api-model-combo .tagger-text-input { flex: 1 1 auto; min-width: 0; max-width: none; margin-left: 0; border: 0; background: transparent; box-shadow: none; }
+.tagger-api-model-combo .tagger-text-input:focus { border: 0; box-shadow: none; }
+.tagger-api-model-chevron { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; padding: 0; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+.tagger-api-model-chevron:hover:not(:disabled) { color: var(--accent); }
+.tagger-api-model-chevron:disabled { cursor: default; opacity: 0.45; }
+.tagger-api-model-chevron .anima-select-chevron { width: 14px; height: 14px; }
+/* 模型菜单盖过 positionMenu 的内联窄宽度，长模型名折行显示完整 */
+.tagger-api-model-menu { min-width: 320px; }
+.tagger-api-model-menu .anima-select-option-label { white-space: normal; word-break: break-all; }
+.tagger-api-error { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: var(--radius-control); background: var(--bg-input); color: var(--danger); font-size: 12px; line-height: 1.6; word-break: break-word; }
+.tagger-api-note { padding: 7px 10px; border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.tagger-api-raw-card .tagger-raw-response { max-height: 220px; margin: 10px 0 0; padding: 10px 11px; overflow: auto; border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-secondary); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.tagger-api-sidebar .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.tagger-api-sidebar .tagger-field-control > .anima-select, .tagger-api-sidebar .tagger-field-control > .tagger-text-input { width: 100%; max-width: 100%; }
+.tagger-api-sidebar .tagger-field-control .tagger-field-stepper { margin-left: auto; }
+
 @media (min-width: 1024px) and (max-width: 1250px) {
   .tagger-route { min-width: 0; }
   .tagger-page-shell { min-width: 0; padding-inline: 16px; }

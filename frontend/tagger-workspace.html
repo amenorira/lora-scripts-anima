@@ -9,6 +9,10 @@
   <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="ti-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
   <symbol id="ti-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="ti-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="ti-eye-off" viewBox="0 0 24 24"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/></symbol>
+  <symbol id="ti-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="ti-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
 </svg>
 
 <section class="tagger-page-shell">
@@ -23,10 +27,12 @@
   <nav class="tagger-mode-tabs" :aria-label="t('tagger.sourceType', 'Source type')">
     <button type="button" :class="{ active: taggerSourceMode === 'folder' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('folder')" x-text="t('tagger.batchMode', 'Batch mode')"></button>
     <button type="button" :class="{ active: taggerSourceMode === 'single' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('single')" x-text="t('tagger.singleMode', 'Single image')"></button>
+    <button type="button" :class="{ active: taggerSourceMode === 'api-folder' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('api-folder')" x-text="t('tagger.apiBatchMode', 'AI batch')"></button>
+    <button type="button" :class="{ active: taggerSourceMode === 'api-single' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('api-single')" x-text="t('tagger.apiSingleMode', 'AI single')"></button>
     <span class="monitor-tab-indicator" aria-hidden="true"></span>
   </nav>
 
-  <div class="tagger-training-notice" x-show="trainingActive">
+  <div class="tagger-training-notice" x-show="trainingActive && !taggerModeIsApi()">
     <span x-text="t('tagger.trainingBlocked', 'Training is using the GPU. Tagger is unavailable.')"></span>
     <button @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor', 'Open monitor')"></span><svg><use href="#ti-external"></use></svg></button>
   </div>
@@ -101,7 +107,7 @@
           <h2 x-text="t('tagger.outputOptions', 'Output options')"></h2>
           <div class="tagger-form-field">
             <div class="tagger-field-info"><label x-text="t('tagger.conflictAction')"></label><p x-text="t('tagger.conflictActionDesc')"></p></div>
-            <div class="tagger-field-control"><div class="anima-select tagger-conflict-select" x-data="animaSelect(() => taggerConflictSelectConfig(), taggerSettings.conflict)" x-effect="value = taggerSettings.conflict" @click.outside="closeOnOutside()" @anima-select-change="taggerSettings.conflict = $event.detail.value; saveTaggerSettings()"><input type="hidden" x-ref="modelInput" :value="taggerSettings.conflict"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.conflict; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template></div></div>
+            <div class="tagger-field-control"><div class="anima-select tagger-conflict-select" x-data="animaSelect(() => taggerConflictSelectConfig(), taggerSettings.conflict)" x-effect="value = taggerSettings.conflict" @click.outside="closeOnOutside()" @anima-select-change="taggerSettings.conflict = $event.detail.value; saveTaggerSettings()"><input type="hidden" x-ref="modelInput" :value="taggerSettings.conflict"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.conflict; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu tagger-api-model-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template></div></div>
           </div>
           <div class="tagger-form-field">
             <div class="tagger-field-info"><label x-text="t('tagger.additionalTags')"></label><p x-text="t('tagger.additionalTagsDesc')"></p></div>
@@ -257,6 +263,320 @@
                 </div></div>
               </section>
             </template>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </template>
+  <template x-if="taggerSourceMode === 'api-folder'">
+    <div class="tagger-batch-layout">
+      <main class="tagger-form-column">
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.basicSettings', 'Basic settings')"></h2>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <div class="tagger-field-info"><label x-text="t('tagger.imageDir', 'Image folder')"></label><p x-text="t('tagger.imageDirDesc', 'Folder containing images to tag')"></p></div>
+            <div class="tagger-path-control">
+              <input type="text" x-model="taggerSourcePath" @input="scheduleTaggerSourceScan()" @keydown.enter.prevent="scanTaggerSource()" :placeholder="t('tagger.sourcePath', 'Select an image folder')">
+              <button type="button" @click="pickTaggerSource()" :title="t('common.browse', 'Browse')"><svg><use href="#ti-folder"></use></svg></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.apiSettings')"></h2>
+          <div class="tagger-section-note" x-text="t('tagger.apiSettingsDesc')"></div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiProvider')"></label><p x-text="t('tagger.apiProviderDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-provider-select" x-data="animaSelect(() => taggerApiProviderConfig(), taggerApiSettings.provider)" x-effect="value = taggerApiSettings.provider" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerApiProvider($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.provider">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="value = taggerApiSettings.provider; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiProtocol')"></label><p x-text="t('tagger.apiProtocolDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-protocol-select" x-data="animaSelect(() => taggerApiProtocolConfig(), taggerApiSettings.protocol)" x-effect="value = taggerApiSettings.protocol" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerApiProtocol($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.protocol">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="value = taggerApiSettings.protocol; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiBaseUrl')"></label><p x-text="t('tagger.apiBaseUrlDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerApiSettings.baseUrl" @input.debounce.400ms="taggerApiSettings.provider = 'custom'; saveTaggerApiSettings()" placeholder="https://api.deepseek.com" spellcheck="false"></div>
+          </div>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiKey')"></label><p x-text="t('tagger.apiKeyDesc')"></p></div>
+            <div class="tagger-path-control tagger-key-control">
+              <input :type="taggerApiShowKey ? 'text' : 'password'" x-model="taggerApiSettings.apiKey" @input.debounce.400ms="saveTaggerApiSettings()" placeholder="sk-..." autocomplete="off" spellcheck="false">
+              <button type="button" @click="taggerApiShowKey = !taggerApiShowKey" :title="taggerApiShowKey ? t('tagger.apiKeyHide') : t('tagger.apiKeyShow')" :aria-label="taggerApiShowKey ? t('tagger.apiKeyHide') : t('tagger.apiKeyShow')"><svg><use :href="taggerApiShowKey ? '#ti-eye-off' : '#ti-eye'"></use></svg></button>
+            </div>
+          </div>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiModelName')"></label><p x-text="t('tagger.apiModelNameDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select" x-data="animaSelect(() => taggerApiModelConfig(), taggerApiSettings.model)" x-effect="value = taggerApiSettings.model" @click.outside="closeOnOutside()" @anima-select-change="taggerApiSettings.model = $event.detail.value; saveTaggerApiSettings()">
+                <div class="anima-select-trigger tagger-api-model-combo" :class="{ focused: open }">
+                  <input class="tagger-text-input" type="text" x-model="taggerApiSettings.model" @change="saveTaggerApiSettings()" placeholder="deepseek-v4-flash-vision-exp" spellcheck="false">
+                  <button type="button" class="tagger-api-model-chevron" :disabled="!taggerApiModelSuggestions.length" :title="taggerApiModelSuggestions.length ? '' : t('tagger.apiModelListEmpty')" @click="value = taggerApiSettings.model; toggle($event)"><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                </div>
+                <template x-if="open"><div class="anima-select-menu tagger-api-model-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiTest')"></label><p x-text="t('tagger.apiTestDesc')"></p></div>
+            <div class="tagger-field-control tagger-api-test-control">
+              <span class="tagger-api-test-result" :class="taggerApiTestInfo.state" x-show="taggerApiTestInfo.text" x-text="taggerApiTestInfo.text"></span>
+              <button type="button" class="tagger-secondary-button tagger-api-test-button" :disabled="taggerApiTesting" @click="testTaggerApiConnection()"><svg><use href="#ti-zap"></use></svg><span x-text="taggerApiTesting ? t('tagger.apiTesting') : t('tagger.apiTest')"></span></button>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiConcurrency')"></label><p x-text="t('tagger.apiConcurrencyDesc')"></p></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerApiSettings.concurrency = Math.max(1, Number(taggerApiSettings.concurrency) - 1); saveTaggerApiSettings()">&minus;</button><input type="number" min="1" max="8" step="1" x-model.number="taggerApiSettings.concurrency" @change="taggerApiSettings.concurrency = Math.max(1, Math.min(8, Number(taggerApiSettings.concurrency) || 4)); saveTaggerApiSettings()"><button type="button" @click="taggerApiSettings.concurrency = Math.min(8, Number(taggerApiSettings.concurrency) + 1); saveTaggerApiSettings()">+</button></div></div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.apiPrompt')"></h2>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiPromptPreset')"></label><p x-text="t('tagger.apiPromptPresetDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-prompt-select" x-data="animaSelect(() => taggerApiPromptSelectConfig(), taggerApiSettings.promptPresetId)" x-effect="value = taggerApiSettings.promptPresetId" @click.outside="closeOnOutside()" @anima-select-change="selectTaggerApiPromptPreset($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.promptPresetId">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.promptPresetId; toggle($event)"><span class="anima-select-trigger-text" x-text="taggerApiPresetLabel()"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="group in displayGroups" :key="group.label"><div class="anima-select-group"><div class="anima-select-group-label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <textarea class="tagger-prompt-textarea" rows="6" x-model="taggerApiSettings.promptText" @input.debounce.500ms="saveTaggerApiSettings()" :placeholder="t('tagger.apiPromptPlaceholder')" spellcheck="false"></textarea>
+            <div class="tagger-prompt-actions" x-show="!taggerApiPresetNaming">
+              <button type="button" @click="startTaggerApiPresetNaming('save')"><svg><use href="#ti-save"></use></svg><span x-text="t('tagger.apiPromptSaveAs')"></span></button>
+              <button type="button" x-show="taggerApiPresetIsUser()" @click="startTaggerApiPresetNaming('rename')"><span x-text="t('tagger.apiPromptRename')"></span></button>
+              <button type="button" class="danger" x-show="taggerApiPresetIsUser()" @click="deleteTaggerApiPrompt()"><span x-text="t('common.delete', 'Delete')"></span></button>
+            </div>
+            <div class="tagger-prompt-naming" x-show="taggerApiPresetNaming">
+              <input type="text" x-model="taggerApiPresetNameInput" x-init="$watch('taggerApiPresetNaming', open => { if (open) $nextTick(() => $el.focus()) })" @keydown.enter.prevent="confirmTaggerApiPresetSave()" @keydown.esc.prevent="taggerApiPresetNaming = false" :placeholder="t('tagger.apiPromptNamePlaceholder')">
+              <button type="button" @click="confirmTaggerApiPresetSave()" x-text="t('common.confirm', 'Confirm')"></button>
+              <button type="button" @click="taggerApiPresetNaming = false" x-text="t('common.cancel', 'Cancel')"></button>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiParseMode')"></label><p x-text="t('tagger.apiParseModeDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-parse-select" x-data="animaSelect(() => taggerApiParseModeConfig(), taggerApiSettings.parseMode)" x-effect="value = taggerApiSettings.parseMode" @click.outside="closeOnOutside()" @anima-select-change="taggerApiSettings.parseMode = $event.detail.value; saveTaggerApiSettings()">
+                <input type="hidden" :value="taggerApiSettings.parseMode">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.parseMode; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.outputOptions', 'Output options')"></h2>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.conflictAction')"></label><p x-text="t('tagger.conflictActionDesc')"></p></div>
+            <div class="tagger-field-control"><div class="anima-select tagger-conflict-select" x-data="animaSelect(() => taggerConflictSelectConfig(), taggerApiSettings.conflict)" x-effect="value = taggerApiSettings.conflict" @click.outside="closeOnOutside()" @anima-select-change="taggerApiSettings.conflict = $event.detail.value; saveTaggerApiSettings()"><input type="hidden" :value="taggerApiSettings.conflict"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.conflict; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu tagger-api-model-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template></div></div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.additionalTags')"></label><p x-text="t('tagger.additionalTagsDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerApiSettings.additionalTags" @change="saveTaggerApiSettings()" placeholder="1girl, solo"></div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.excludeTags')"></label><p x-text="t('tagger.excludeTagsDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerApiSettings.excludeTags" @change="saveTaggerApiSettings()" placeholder="watermark, text"></div>
+          </div>
+          <div class="tagger-option-grid">
+            <label><span><b x-text="t('tagger.recursive')"></b><small x-text="t('tagger.recursiveDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.recursive" @change="saveTaggerApiSettings(); scanTaggerSource()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.replaceUnderscore')"></b><small x-text="t('tagger.replaceUnderscoreDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.replaceUnderscore" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.escapeTag')"></b><small x-text="t('tagger.escapeTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.escapeTag" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.removeDuplicated')"></b><small x-text="t('tagger.removeDuplicatedDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.removeDuplicated" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+          </div>
+        </section>
+      </main>
+
+      <aside class="tagger-action-panel">
+        <h2 x-text="t('tagger.apiBatchMode')"></h2>
+        <div class="tagger-action-source" :class="{ ready: taggerSource?.total }"><svg><use href="#ti-folder"></use></svg><div><strong x-text="taggerSource?.total ? (taggerSource.total + ' ' + t('tagger.images')) : t('tagger.noSource')"></strong><span x-text="taggerSource?.path || t('tagger.imageDirDesc')"></span></div></div>
+        <div class="tagger-source-summary" x-show="taggerSource"><span><strong x-text="taggerSource?.total || 0"></strong><small x-text="t('tagger.images')"></small></span><span><strong x-text="taggerSource?.directories || 0"></strong><small x-text="t('tagger.folders')"></small></span><span><strong x-text="taggerSource?.with_caption || 0"></strong><small x-text="t('tagger.captions')"></small></span></div>
+        <div class="tagger-api-note" x-show="taggerSource?.total" x-text="t('tagger.apiRequestNote').replace('{count}', String(taggerSource?.total || 0))"></div>
+        <button class="tagger-start-button" x-show="!taggerRunning" @click="startApiTagger()" :disabled="!taggerApiCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
+        <button class="tagger-stop-button" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>
+        <div class="tagger-task-status" x-show="taggerTask">
+          <div class="tagger-task-title"><i :class="taggerTask?.status || 'idle'"></i><strong x-text="taggerPhaseLabel()"></strong><span x-text="taggerTaskProgressText()"></span></div>
+          <div class="tagger-progress-track"><i :style="'width:' + taggerProgressPercent() + '%'"></i></div>
+          <div class="tagger-task-file" x-text="taggerTask?.current_file || ''"></div>
+          <dl><div><dt x-text="t('tagger.speed')"></dt><dd x-text="taggerTask?.speed ? taggerTask.speed + ' img/s' : '--'"></dd></div><div><dt>ETA</dt><dd x-text="formatTaggerEta(taggerTask?.eta_seconds)"></dd></div><div><dt x-text="t('tagger.success')"></dt><dd class="success" x-text="taggerTask?.success || 0"></dd></div><div><dt x-text="t('tagger.skipped')"></dt><dd class="skipped" x-text="taggerTask?.skipped || 0"></dd></div><div><dt x-text="t('tagger.failed')"></dt><dd class="failed" x-text="taggerTask?.failed || 0"></dd></div></dl>
+        </div>
+        <button class="tagger-secondary-button" x-show="taggerTask?.failed" @click="retryFailedTagger()"><svg><use href="#ti-retry"></use></svg><span x-text="t('tagger.retryFailed')"></span></button>
+        <button class="tagger-secondary-button" x-show="taggerTask?.status === 'done' && taggerSource?.kind === 'folder'" @click="openTaggerDatasetInEditor()"><span x-text="t('tagger.openTagEditor')"></span><svg><use href="#ti-external"></use></svg></button>
+        <section class="tagger-action-log">
+          <header><div><strong x-text="t('tagger.logTitle', 'Tagger log')"></strong><span class="tagger-log-phase" :class="{ running: taggerRunning }" x-text="taggerPhaseLabel()"></span></div><button x-show="taggerHasLogs()" @click="taggerLogsOpen = !taggerLogsOpen" x-text="taggerLogsOpen ? t('common.collapse', 'Collapse') : t('common.expand', 'Expand')"></button></header>
+          <div class="tagger-error-summary" x-show="taggerTask?.error_detail"><strong x-text="t('tagger.error')"></strong><span x-text="taggerTask?.error_detail"></span></div>
+          <div class="tagger-log-stream" x-effect="taggerLogCount(); $nextTick(() => { $el.scrollTop = $el.scrollHeight })"><template x-for="(line, index) in taggerVisibleLogs()" :key="index + ':' + line"><div class="tagger-log-line" :class="taggerLogTone(line)"><time class="tagger-log-time" x-text="taggerLogTime(line)"></time><code class="tagger-log-message" x-text="taggerLogMessage(line)"></code></div></template><div class="tagger-log-empty" x-show="!taggerHasLogs()" x-text="t('tagger.logsEmpty')"></div></div>
+        </section>
+      </aside>
+    </div>
+  </template>
+
+  <template x-if="taggerSourceMode === 'api-single'">
+    <div
+      class="tagger-single-layout"
+      :style="'--tagger-single-left:' + taggerSingleLeftWidth + '%'"
+      @pointermove.window="resizeTaggerSingleLayout($event)"
+      @pointerup.window="stopTaggerSingleResize()"
+      @pointercancel.window="stopTaggerSingleResize()"
+    >
+      <div class="tagger-single-main">
+        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
+          <div class="tagger-preview-toolbar"><span x-text="taggerSource?.display_name || taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button></div>
+          <button class="tagger-drop-zone" x-show="!taggerSource" @click="pickTaggerSource()"><svg><use href="#ti-image"></use></svg><strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span></button>
+          <div class="tagger-preview-image" :class="{ zoomed: taggerPreviewScale > 1, panning: taggerPreviewPanning }" x-show="taggerSource" @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)" @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)" @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" draggable="false"></div>
+        </main>
+
+        <div class="tagger-single-actions" x-show="taggerSource">
+          <button class="tagger-start-button" @click="runApiTaggerSingle()" :disabled="!taggerApiCanStart() || taggerApiSingleRunning"><svg><use href="#ti-play"></use></svg><span x-text="taggerApiSingleRunning ? t('tagger.inferring') : t('tagger.startInference')"></span></button>
+          <button type="button" class="tagger-secondary-button tagger-clear-button" :disabled="taggerApiSingleRunning || taggerScanning" @click="clearTaggerSource()" x-text="t('common.clear')"></button>
+        </div>
+
+        <div class="tagger-api-error" x-show="taggerApiError" x-text="taggerApiError" role="alert"></div>
+
+        <section class="tagger-form-card tagger-single-result">
+          <h2><span x-text="t('tagger.totalTags')"></span><small x-text="taggerResultTags().length"></small></h2>
+          <div class="tagger-result-tags" x-show="taggerResultText">
+            <template x-for="(tag, index) in taggerResultTags()" :key="index + ':' + tag">
+              <span class="tagger-result-tag"><span x-text="tag"></span><i x-show="index < taggerResultTags().length - 1">,</i></span>
+            </template>
+          </div>
+          <div class="tagger-single-empty tagger-result-empty" x-show="!taggerResultText" x-text="t('tagger.noResult')"></div>
+          <div class="tagger-result-actions" x-show="taggerResultText"><button type="button" @click="copyTaggerResult()"><svg><use href="#ti-copy"></use></svg><span x-text="t('tagger.copyTags')"></span></button></div>
+        </section>
+
+        <section class="tagger-form-card tagger-api-raw-card" x-show="taggerApiRaw">
+          <h2><span x-text="t('tagger.apiRawResponse')"></span><small x-text="taggerApiElapsed ? taggerApiElapsed + 's' : ''"></small></h2>
+          <pre class="tagger-raw-response" x-text="taggerApiRaw"></pre>
+        </section>
+      </div>
+
+      <div
+        class="tagger-single-divider"
+        :class="{ dragging: taggerSingleResizing }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuemin="30"
+        aria-valuemax="70"
+        :aria-valuenow="taggerSingleLeftWidth"
+        :aria-label="t('tagger.resizePanels')"
+        tabindex="0"
+        @pointerdown.prevent="startTaggerSingleResize($event)"
+        @keydown.left.prevent="taggerSingleLeftWidth = Math.max(30, taggerSingleLeftWidth - 1)"
+        @keydown.right.prevent="taggerSingleLeftWidth = Math.min(70, taggerSingleLeftWidth + 1)"
+      ></div>
+
+      <aside class="tagger-single-sidebar tagger-api-sidebar">
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.apiSettings')"></h2>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiProvider')"></label><p x-text="t('tagger.apiProviderDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-provider-select" x-data="animaSelect(() => taggerApiProviderConfig(), taggerApiSettings.provider)" x-effect="value = taggerApiSettings.provider" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerApiProvider($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.provider">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.provider; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiProtocol')"></label><p x-text="t('tagger.apiProtocolDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-protocol-select" x-data="animaSelect(() => taggerApiProtocolConfig(), taggerApiSettings.protocol)" x-effect="value = taggerApiSettings.protocol" @click.outside="closeOnOutside()" @anima-select-change="applyTaggerApiProtocol($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.protocol">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.protocol; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiBaseUrl')"></label><p x-text="t('tagger.apiBaseUrlDesc')"></p></div>
+            <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerApiSettings.baseUrl" @input.debounce.400ms="taggerApiSettings.provider = 'custom'; saveTaggerApiSettings()" placeholder="https://api.deepseek.com" spellcheck="false"></div>
+          </div>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiKey')"></label><p x-text="t('tagger.apiKeyDesc')"></p></div>
+            <div class="tagger-path-control tagger-key-control">
+              <input :type="taggerApiShowKey ? 'text' : 'password'" x-model="taggerApiSettings.apiKey" @input.debounce.400ms="saveTaggerApiSettings()" placeholder="sk-..." autocomplete="off" spellcheck="false">
+              <button type="button" @click="taggerApiShowKey = !taggerApiShowKey" :title="taggerApiShowKey ? t('tagger.apiKeyHide') : t('tagger.apiKeyShow')" :aria-label="taggerApiShowKey ? t('tagger.apiKeyHide') : t('tagger.apiKeyShow')"><svg><use :href="taggerApiShowKey ? '#ti-eye-off' : '#ti-eye'"></use></svg></button>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiModelName')"></label><p x-text="t('tagger.apiModelNameDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select" x-data="animaSelect(() => taggerApiModelConfig(), taggerApiSettings.model)" x-effect="value = taggerApiSettings.model" @click.outside="closeOnOutside()" @anima-select-change="taggerApiSettings.model = $event.detail.value; saveTaggerApiSettings()">
+                <div class="anima-select-trigger tagger-api-model-combo" :class="{ focused: open }">
+                  <input class="tagger-text-input" type="text" x-model="taggerApiSettings.model" @change="saveTaggerApiSettings()" placeholder="deepseek-v4-flash-vision-exp" spellcheck="false">
+                  <button type="button" class="tagger-api-model-chevron" :disabled="!taggerApiModelSuggestions.length" :title="taggerApiModelSuggestions.length ? '' : t('tagger.apiModelListEmpty')" @click="value = taggerApiSettings.model; toggle($event)"><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                </div>
+                <template x-if="open"><div class="anima-select-menu tagger-api-model-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiTest')"></label><p x-text="t('tagger.apiTestDesc')"></p></div>
+            <div class="tagger-field-control tagger-api-test-control">
+              <span class="tagger-api-test-result" :class="taggerApiTestInfo.state" x-show="taggerApiTestInfo.text" x-text="taggerApiTestInfo.text"></span>
+              <button type="button" class="tagger-secondary-button tagger-api-test-button" :disabled="taggerApiTesting" @click="testTaggerApiConnection()"><svg><use href="#ti-zap"></use></svg><span x-text="taggerApiTesting ? t('tagger.apiTesting') : t('tagger.apiTest')"></span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card">
+          <h2 x-text="t('tagger.apiPrompt')"></h2>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiPromptPreset')"></label><p x-text="t('tagger.apiPromptPresetDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-prompt-select" x-data="animaSelect(() => taggerApiPromptSelectConfig(), taggerApiSettings.promptPresetId)" x-effect="value = taggerApiSettings.promptPresetId" @click.outside="closeOnOutside()" @anima-select-change="selectTaggerApiPromptPreset($event.detail.value)">
+                <input type="hidden" :value="taggerApiSettings.promptPresetId">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.promptPresetId; toggle($event)"><span class="anima-select-trigger-text" x-text="taggerApiPresetLabel()"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="group in displayGroups" :key="group.label"><div class="anima-select-group"><div class="anima-select-group-label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="tagger-form-field tagger-form-field-stacked">
+            <textarea class="tagger-prompt-textarea" rows="6" x-model="taggerApiSettings.promptText" @input.debounce.500ms="saveTaggerApiSettings()" :placeholder="t('tagger.apiPromptPlaceholder')" spellcheck="false"></textarea>
+            <div class="tagger-prompt-actions" x-show="!taggerApiPresetNaming">
+              <button type="button" @click="startTaggerApiPresetNaming('save')"><svg><use href="#ti-save"></use></svg><span x-text="t('tagger.apiPromptSaveAs')"></span></button>
+              <button type="button" x-show="taggerApiPresetIsUser()" @click="startTaggerApiPresetNaming('rename')"><span x-text="t('tagger.apiPromptRename')"></span></button>
+              <button type="button" class="danger" x-show="taggerApiPresetIsUser()" @click="deleteTaggerApiPrompt()"><span x-text="t('common.delete', 'Delete')"></span></button>
+            </div>
+            <div class="tagger-prompt-naming" x-show="taggerApiPresetNaming">
+              <input type="text" x-model="taggerApiPresetNameInput" @keydown.enter.prevent="confirmTaggerApiPresetSave()" @keydown.esc.prevent="taggerApiPresetNaming = false" :placeholder="t('tagger.apiPromptNamePlaceholder')">
+              <button type="button" @click="confirmTaggerApiPresetSave()" x-text="t('common.confirm', 'Confirm')"></button>
+              <button type="button" @click="taggerApiPresetNaming = false" x-text="t('common.cancel', 'Cancel')"></button>
+            </div>
+          </div>
+          <div class="tagger-form-field">
+            <div class="tagger-field-info"><label x-text="t('tagger.apiParseMode')"></label><p x-text="t('tagger.apiParseModeDesc')"></p></div>
+            <div class="tagger-field-control">
+              <div class="anima-select tagger-api-parse-select" x-data="animaSelect(() => taggerApiParseModeConfig(), taggerApiSettings.parseMode)" x-effect="value = taggerApiSettings.parseMode" @click.outside="closeOnOutside()" @anima-select-change="taggerApiSettings.parseMode = $event.detail.value; saveTaggerApiSettings()">
+                <input type="hidden" :value="taggerApiSettings.parseMode">
+                <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerApiSettings.parseMode; toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                <template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></div></template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tagger-form-card tagger-single-output-settings">
+          <h2 x-text="t('tagger.outputOptions', 'Output options')"></h2>
+          <div class="tagger-option-grid tagger-single-option-grid">
+            <label><span><b x-text="t('tagger.replaceUnderscore')"></b><small x-text="t('tagger.replaceUnderscoreDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.replaceUnderscore" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.escapeTag')"></b><small x-text="t('tagger.escapeTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.escapeTag" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.removeDuplicated')"></b><small x-text="t('tagger.removeDuplicatedDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerApiSettings.removeDuplicated" @change="saveTaggerApiSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
           </div>
         </section>
       </aside>

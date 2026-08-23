@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -21,6 +22,7 @@ from backend.tagger.interrogator import (
     on_interrogate,
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
+from backend.tagger import api_engine
 from backend.tagger.registry import model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
@@ -29,10 +31,12 @@ from backend.tagger.workspace import (
     register_upload,
     retry_failed_task,
     scan_source,
+    source_item,
     source_items,
     task_items,
     task_snapshot,
     training_active,
+    _finalize_api_tags,
 )
 
 router = APIRouter()
@@ -261,4 +265,59 @@ async def tagger_single_image(
         "model": interrogator_model,
         "categories": categories,
         "labels": labels,
+    })
+
+
+@router.post("/tagger/api/test")
+async def tagger_api_test(request: Request):
+    """Probe GET {base_url}/models to verify connectivity and credentials."""
+    body = await request.json()
+    protocol = str(body.get("protocol") or api_engine.PROTOCOL_CHAT)
+    if protocol not in api_engine.PROTOCOLS:
+        protocol = api_engine.PROTOCOL_CHAT
+    try:
+        models = await asyncio.to_thread(
+            api_engine.list_models,
+            str(body.get("base_url") or ""),
+            str(body.get("api_key") or ""),
+            protocol,
+        )
+        return APIResponseSuccess(data={"models": models[:100], "count": len(models)})
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+
+@router.post("/tagger/api/single")
+async def tagger_api_single_image(request: Request):
+    """Single-image tagging via an OpenAI-compatible vision API.
+
+    No GPU involved, so it stays available while training is running.
+    """
+    body = await request.json()
+    try:
+        config = api_engine.validate_config(dict(body.get("api") or {}))
+        path = source_item(str(body.get("source_token") or ""), int(body.get("index") or 0))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+    def _infer():
+        with Image.open(path) as opened:
+            image = opened.copy()
+        try:
+            return api_engine.interrogate(config, image)
+        finally:
+            image.close()
+
+    started = time.monotonic()
+    try:
+        tags_raw, raw_text = await asyncio.to_thread(_infer)
+    except Exception as exc:
+        return APIResponseFail(message=f"{type(exc).__name__}: {str(exc)[:240]}")
+    tags = _finalize_api_tags(tags_raw, dict(body.get("options") or {}))
+    return APIResponseSuccess(data={
+        "model": config.model,
+        "tags": tags,
+        "text": ", ".join(tags),
+        "raw": raw_text,
+        "elapsed": round(time.monotonic() - started, 2),
     })

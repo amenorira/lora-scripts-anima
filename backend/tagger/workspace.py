@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import threading
 import time
 import uuid
 from collections import OrderedDict, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from queue import Full, Queue
 from typing import Any
@@ -14,6 +16,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from backend.log import log
+from backend.tagger import api_engine
 from backend.tagger.interrogator import (
     available_interrogators,
     gpu_inference_lock,
@@ -190,6 +193,7 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "source_kind": task["source_kind"],
         "source_root": task["source_root"],
         "model_id": task["model_id"],
+        "engine": task.get("engine", "onnx"),
         "logs": list(task["logs"]),
         "error_detail": task.get("error_detail"),
         "current_result": task.get("current_result"),
@@ -296,6 +300,184 @@ def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated
         except FileNotFoundError:
             pass
     return "success"
+
+
+def _finalize_api_tags(tags: list[str], options: dict) -> list[str]:
+    """Apply additional/exclude/dedupe/underscore/escape to API-parsed tags."""
+    excludes = {tag.strip().lower() for tag in split_str(str(options.get("exclude_tags", "")))}
+    replace_underscore = bool(options.get("replace_underscore", True))
+    escape = bool(options.get("escape_tag", True))
+    dedupe = bool(options.get("remove_duplicated", True))
+    result: list[str] = []
+    seen: set[str] = set()
+    for tag in split_str(str(options.get("additional_tags", ""))) + list(tags):
+        if tag.strip().lower() in excludes:
+            continue
+        value = tag.strip()
+        if replace_underscore:
+            value = value.replace("_", " ")
+        if escape:
+            value = re.sub(r"([\\()])", r"\\\1", value)
+        if not value:
+            continue
+        key = value.lower()
+        if dedupe and key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
+
+
+def _api_tag_one(
+    cancel_event: threading.Event,
+    config: api_engine.ApiConfig,
+    client: Any,
+    index: int,
+    path: Path,
+    options: dict,
+    conflict: str,
+    write_captions: bool,
+) -> dict:
+    """Worker body for API tasks. Never raises except ApiAuthError (task-fatal)."""
+    if cancel_event.is_set():
+        return {"status": "aborted"}
+    try:
+        existing = ""
+        if write_captions and conflict == "ignore":
+            caption = path.with_suffix(".txt")
+            existing = caption.read_text(encoding="utf-8", errors="ignore").strip() if caption.is_file() else ""
+        if existing:
+            tags = [part.strip() for part in existing.split(",") if part.strip()]
+            return {
+                "status": "skipped",
+                "tag_count": len(tags),
+                "result": {
+                    "index": index, "name": path.name, "path": str(path),
+                    "tags": tags, "text": existing, "categories": {},
+                },
+            }
+        with Image.open(path) as opened:
+            image = opened.copy()
+        tags_raw, raw_text = api_engine.interrogate(config, image, client=client, cancel_event=cancel_event)
+        image.close()
+        if cancel_event.is_set():
+            return {"status": "aborted"}
+        tags = _finalize_api_tags(tags_raw, options)
+        outcome = "success"
+        if write_captions:
+            outcome = _write_caption(path, tags, conflict, bool(options.get("remove_duplicated", True)))
+        result = {
+            "index": index, "name": path.name, "path": str(path),
+            "tags": tags, "text": ", ".join(tags), "categories": {}, "raw": raw_text,
+        }
+        return {"status": outcome, "tag_count": len(tags), "result": result}
+    except api_engine.ApiAuthError:
+        raise
+    except InterruptedError:
+        return {"status": "aborted"}
+    except UnidentifiedImageError:
+        return {"status": "failed", "error": "Unsupported image"}
+    except Exception as exc:
+        return {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
+
+def _run_api_task(
+    task: dict,
+    paths: list[Path],
+    options: dict,
+    conflict: str,
+    write_captions: bool,
+    config: api_engine.ApiConfig,
+) -> None:
+    task["started_at"] = time.time()
+    task["status"] = "running"
+    task["phase"] = "api_request"
+    _task_log(
+        task,
+        f"API task started: {len(paths)} images; model: {config.model}; "
+        f"endpoint: {config.base_url}; concurrency: {config.concurrency}",
+    )
+    client = api_engine.create_client(config)
+    pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
+    try:
+        futures = {
+            pool.submit(
+                _api_tag_one,
+                task["cancel_event"], config, client, index, path, options, conflict, write_captions,
+            ): (index, path)
+            for index, path in enumerate(paths)
+        }
+        for future in as_completed(futures):
+            index, path = futures[future]
+            try:
+                outcome = future.result()
+            except api_engine.ApiAuthError as exc:
+                task["cancel_event"].set()
+                with task["lock"]:
+                    task["status"] = "error"
+                    task["phase"] = "error"
+                    task["error_detail"] = f"API authentication failed / API 鉴权失败: {str(exc)[:240]}"
+                _task_log(task, f"Task aborted: {task['error_detail']}")
+                break
+            except Exception as exc:
+                outcome = {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+            status = outcome["status"]
+            if status == "aborted":
+                if task["cancel_event"].is_set():
+                    break
+                continue
+            with task["lock"]:
+                task["current"] += 1
+                task["current_file"] = path.name
+                if status == "success":
+                    task["success"] += 1
+                    task["items"][index].update({"status": "success", "tag_count": outcome["tag_count"]})
+                    task["current_result"] = outcome["result"]
+                    task["results"][index] = outcome["result"]
+                elif status == "skipped":
+                    task["skipped"] += 1
+                    task["items"][index].update({"status": "skipped", "tag_count": outcome["tag_count"]})
+                    task["current_result"] = outcome["result"]
+                    task["results"][index] = outcome["result"]
+                else:
+                    task["failed"] += 1
+                    task["items"][index].update({"status": "failed", "error": outcome.get("error", "")})
+                task["updated_at"] = time.time()
+                current = task["current"]
+            if status == "skipped":
+                _task_log(task, f"[{current}/{len(paths)}] {path.name}: existing caption skipped")
+            elif status == "failed":
+                _task_log(task, f"[{current}/{len(paths)}] Failed {path.name}: {outcome.get('error', '')}")
+            else:
+                _task_log(task, f"[{current}/{len(paths)}] {path.name}: {outcome['tag_count']} tags ({status})")
+            if task["cancel_event"].is_set():
+                break
+        if task["status"] == "running":
+            if task["cancel_event"].is_set():
+                task["status"] = "cancelled"
+                task["phase"] = "cancelled"
+                _task_log(task, "Task cancelled by user")
+            else:
+                task["status"] = "done"
+                task["phase"] = "completed"
+                elapsed = max(0.0, time.time() - task["started_at"])
+                _task_log(
+                    task,
+                    f"Task completed in {elapsed:.1f}s: {task['success']} succeeded, "
+                    f"{task['skipped']} skipped, {task['failed']} failed",
+                )
+    except Exception as exc:
+        log.exception("Tagger API task failed")
+        with task["lock"]:
+            task["status"] = "error"
+            task["phase"] = "error"
+            task["error_detail"] = str(exc)[:500]
+        _task_log(task, f"Task failed: {str(exc)[:500]}")
+    finally:
+        task["cancel_event"].set()
+        pool.shutdown(wait=False, cancel_futures=True)
+        client.close()
+        task["updated_at"] = time.time()
 
 
 def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: threading.Event) -> tuple[Queue, threading.Thread]:
@@ -470,13 +652,21 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
 
 def create_task(payload: dict) -> str:
     _cleanup()
-    if training_active():
-        raise RuntimeError("Training is using the GPU / 训练任务正在使用 GPU")
+    engine = str(payload.get("engine") or "onnx")
+    if engine not in {"onnx", "api"}:
+        raise ValueError("Unknown engine / 未知引擎")
+    config: api_engine.ApiConfig | None = None
+    if engine == "api":
+        config = api_engine.validate_config(dict(payload.get("api") or {}))
+        model_id = f"api:{config.model}"
+    else:
+        if training_active():
+            raise RuntimeError("Training is using the GPU / 训练任务正在使用 GPU")
+        model_id = str(payload.get("model_id") or "")
+        if model_id not in MODEL_SPEC_BY_ID:
+            raise ValueError("Unknown model / 未知模型")
     if has_active_tagger_task():
         raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
-    model_id = str(payload.get("model_id") or "")
-    if model_id not in MODEL_SPEC_BY_ID:
-        raise ValueError("Unknown model / 未知模型")
     source_token = str(payload.get("source_token") or "")
     with _sources_lock:
         source = _sources.get(source_token)
@@ -501,6 +691,8 @@ def create_task(payload: dict) -> str:
         "source_kind": source_kind,
         "source_root": source_root,
         "model_id": model_id,
+        "engine": engine,
+        "api_payload": dict(payload.get("api") or {}) if engine == "api" else None,
         "total": len(paths),
         "current": 0,
         "success": 0,
@@ -522,12 +714,20 @@ def create_task(payload: dict) -> str:
     }
     with _tasks_lock:
         _tasks[task_id] = task
-    threading.Thread(
-        target=_run_task,
-        args=(task, paths, options, conflict, write_captions),
-        daemon=True,
-        name=f"tagger-{task_id}",
-    ).start()
+    if engine == "api":
+        threading.Thread(
+            target=_run_api_task,
+            args=(task, paths, options, conflict, write_captions, config),
+            daemon=True,
+            name=f"tagger-{task_id}",
+        ).start()
+    else:
+        threading.Thread(
+            target=_run_task,
+            args=(task, paths, options, conflict, write_captions),
+            daemon=True,
+            name=f"tagger-{task_id}",
+        ).start()
     return task_id
 
 
@@ -542,10 +742,12 @@ def retry_failed_task(task_id: str) -> str:
             for item in previous["items"]
             if item.get("status") == "failed"
         ]
+        engine = previous.get("engine", "onnx")
         model_id = previous["model_id"]
         options = dict(previous.get("options") or {})
         conflict = previous.get("conflict", "ignore")
         write_captions = bool(previous.get("write_captions", True))
+        api_payload = dict(previous.get("api_payload") or {}) if engine == "api" else None
     if not failed_paths:
         raise ValueError("No failed items to retry / 没有可重试的失败项")
     token = uuid.uuid4().hex[:16]
@@ -558,13 +760,18 @@ def retry_failed_task(task_id: str) -> str:
             "paths": failed_paths,
             "created_at": time.time(),
         }
-    return create_task({
+    payload: dict[str, Any] = {
         "source_token": token,
-        "model_id": model_id,
         "options": options,
         "conflict": conflict,
         "write_captions": write_captions,
-    })
+    }
+    if engine == "api":
+        payload["engine"] = "api"
+        payload["api"] = api_payload
+    else:
+        payload["model_id"] = model_id
+    return create_task(payload)
 
 
 def cancel_task(task_id: str) -> bool:

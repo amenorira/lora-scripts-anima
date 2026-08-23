@@ -21,7 +21,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260812-full-fields1">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260816-single-flat5">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260823-ai10">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
@@ -37,7 +37,7 @@
   <script src="/anima-ui/js/training-core.js?v=20260808-timestep-docs2" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260816-single-flat3" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260823-ai4" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260808-progress1" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -195,7 +195,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger', 'route-tagger-single': currentRoute === 'tagger' && taggerSourceMode === 'single', 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger', 'route-tagger-single': currentRoute === 'tagger' && ['single', 'api-single'].includes(taggerSourceMode), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
