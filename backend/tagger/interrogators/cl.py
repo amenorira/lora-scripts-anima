@@ -1,133 +1,119 @@
+"""CL Tagger（cella110n/cl_tagger） interrogator。
+
+模型约定（依据模型仓库自带的 tag_mapping.json 与公开推理脚本）：
+- 输入 448×448、白底补齐方形、BICUBIC 缩放、/255 后按 0.5 均值/方差归一化的
+  BGR float32 张量
+- tag_mapping.json 是数据而非代码，支持两种布局：
+  {"idx_to_tag": {...}, "tag_to_category": {...}}
+  或 {索引: {"tag": ..., "category": ...}}
+- rating / quality 分类只取置信度最高的一条，其余分类全量输出（阈值交给后处理）
+"""
 from __future__ import annotations
 
 import json
-import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 from PIL import Image
-from dataclasses import dataclass
+
+from backend.log import log
+from backend.tagger import image_prep
 from backend.tagger.interrogators.base import Interrogator, create_onnx_session
 from backend.tagger.tagger_download import tagger_hub_download
-from backend.log import log
+
+_INPUT_SIZE = 448
+# 均值/方差同为 0.5，即映射到 [-1, 1]
+_NORM = 0.5
+
+CATEGORY_NAMES = ("rating", "general", "character", "copyright",
+                  "artist", "meta", "quality", "model")
+# mapping JSON 里的类别写法（首字母大写）→ 内部键名
+_CATEGORY_FROM_MAPPING = {name.capitalize(): name for name in CATEGORY_NAMES}
+# 只保留 argmax 单标签的分类
+_SINGLETON_CATEGORIES = frozenset({"rating", "quality"})
 
 
 @dataclass
 class LabelData:
-    names: list[str]
-    rating: list[int]
-    general: list[int]
-    artist: list[int]
-    character: list[int]
-    copyright: list[int]
-    meta: list[int]
-    quality: list[int]
-    model: list[int]
+    """标签名表 + 各分类的输出神经元索引。"""
+    names: list                       # 神经元索引 → 标签名（空洞为 None）
+    category_indices: dict            # 分类 → int64 索引数组
 
 
-def pil_ensure_rgb(image: Image.Image) -> Image.Image:
-    if image.mode not in ["RGB", "RGBA"]:
-        image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
-    if image.mode == "RGBA":
-        background = Image.new("RGB", image.size, (255, 255, 255))
-        background.paste(image, mask=image.split()[3])
-        image = background
-    return image
-
-
-def pil_pad_square(image: Image.Image) -> Image.Image:
-    width, height = image.size
-    if width == height:
-        return image
-    new_size = max(width, height)
-    new_image = Image.new(image.mode, (new_size, new_size), (255, 255, 255))  # Use image.mode
-    paste_position = ((new_size - width) // 2, (new_size - height) // 2)
-    new_image.paste(image, paste_position)
-    return new_image
-
-
-def get_tags(probs, labels: LabelData):
+def _parse_tag_mapping(mapping: dict) -> LabelData:
     import numpy as np
-    result = {
-        "rating": [],
-        "general": [],
-        "character": [],
-        "copyright": [],
-        "artist": [],
-        "meta": [],
-        "quality": [],
-        "model": []
-    }
-    # Rating (select max)
-    if len(labels.rating) > 0:
-        valid_indices = labels.rating[labels.rating < len(probs)]
-        if len(valid_indices) > 0:
-            rating_probs = probs[valid_indices]
-            if len(rating_probs) > 0:
-                rating_idx_local = np.argmax(rating_probs)
-                rating_idx_global = valid_indices[rating_idx_local]
-                if rating_idx_global < len(labels.names) and labels.names[rating_idx_global] is not None:
-                    rating_name = labels.names[rating_idx_global]
-                    rating_conf = float(rating_probs[rating_idx_local])
-                    result["rating"].append((rating_name, rating_conf))
-                else:
-                    log.warning(f"Invalid global index {rating_idx_global} for rating tag.")
-            else:
-                log.warning("rating_probs became empty after filtering.")
+
+    if "idx_to_tag" in mapping:
+        idx_to_tag = {int(k): v for k, v in mapping["idx_to_tag"].items()}
+        tag_to_category = mapping["tag_to_category"]
+    else:
+        try:
+            entries = {int(k): v for k, v in mapping.items()}
+            idx_to_tag = {idx: data["tag"] for idx, data in entries.items()}
+            tag_to_category = {data["tag"]: data["category"] for data in entries.values()}
+        except (KeyError, ValueError, AttributeError) as e:
+            raise ValueError(
+                f"Unsupported tag mapping format: {e}. "
+                "Expect {'idx_to_tag', 'tag_to_category'} or per-index {'tag', 'category'} entries."
+            )
+
+    names = [None] * (max(idx_to_tag) + 1)
+    buckets = {name: [] for name in CATEGORY_NAMES}
+    for idx, tag in idx_to_tag.items():
+        names[idx] = tag
+        category = _CATEGORY_FROM_MAPPING.get(tag_to_category.get(tag, ""))
+        if category is not None:
+            buckets[category].append(idx)
+    return LabelData(
+        names=names,
+        category_indices={k: np.array(v, dtype=np.int64) for k, v in buckets.items()},
+    )
+
+
+def _collect_tags(probs, labels: LabelData) -> Dict[str, List[Tuple[str, float]]]:
+    """把输出概率整理成 {分类: [(标签, 置信度), ...]}，各分类内按置信度降序。"""
+    import numpy as np
+
+    result: Dict[str, List[Tuple[str, float]]] = {name: [] for name in CATEGORY_NAMES}
+    for category in CATEGORY_NAMES:
+        indices = labels.category_indices[category]
+        valid = indices[indices < len(probs)]
+        if len(valid) == 0:
+            continue
+        scores = probs[valid]
+        if category in _SINGLETON_CATEGORIES:
+            best = int(np.argmax(scores))
+            name = labels.names[valid[best]]
+            if name is not None:
+                result[category].append((name, float(scores[best])))
         else:
-            log.warning("No valid indices found for rating tags within probs length.")
-
-    # Quality (select max)
-    if len(labels.quality) > 0:
-        valid_indices = labels.quality[labels.quality < len(probs)]
-        if len(valid_indices) > 0:
-            quality_probs = probs[valid_indices]
-            if len(quality_probs) > 0:
-                quality_idx_local = np.argmax(quality_probs)
-                quality_idx_global = valid_indices[quality_idx_local]
-                if quality_idx_global < len(labels.names) and labels.names[quality_idx_global] is not None:
-                    quality_name = labels.names[quality_idx_global]
-                    quality_conf = float(quality_probs[quality_idx_local])
-                    result["quality"].append((quality_name, quality_conf))
-                else:
-                    log.warning(f"Invalid global index {quality_idx_global} for quality tag.")
-            else:
-                log.warning("quality_probs became empty after filtering.")
-        else:
-            log.warning("No valid indices found for quality tags within probs length.")
-
-    # All tags for each category (no threshold)
-    category_map = {
-        "general": labels.general,
-        "character": labels.character,
-        "copyright": labels.copyright,
-        "artist": labels.artist,
-        "meta": labels.meta,
-        "model": labels.model
-    }
-    for category, indices in category_map.items():
-        if len(indices) > 0:
-            valid_indices = indices[(indices < len(probs))]
-            if len(valid_indices) > 0:
-                category_probs = probs[valid_indices]
-                for idx_local, idx_global in enumerate(valid_indices):
-                    if idx_global < len(labels.names) and labels.names[idx_global] is not None:
-                        result[category].append((labels.names[idx_global], float(category_probs[idx_local])))
-                    else:
-                        log.warning(f"Invalid global index {idx_global} for {category} tag.")
-
-    # Sort by probability (descending)
-    for k in result:
-        result[k] = sorted(result[k], key=lambda x: x[1], reverse=True)
+            for idx, score in zip(valid, scores):
+                name = labels.names[idx]
+                if name is not None:
+                    result[category].append((name, float(score)))
+    for entries in result.values():
+        entries.sort(key=lambda item: item[1], reverse=True)
     return result
+
+
+def _to_input_tensor(image: Image.Image):
+    import numpy as np
+
+    prepared = image_prep.pad_to_square(image_prep.flatten_to_white(image))
+    prepared = prepared.resize((_INPUT_SIZE, _INPUT_SIZE), Image.BICUBIC)
+    tensor = np.asarray(prepared, dtype=np.float32) / 255.0
+    tensor = tensor.transpose(2, 0, 1)[::-1]  # HWC → CHW，同时 RGB → BGR
+    tensor = (tensor - _NORM) / _NORM
+    return tensor[np.newaxis, ...]
 
 
 class CLTaggerInterrogator(Interrogator):
     def __init__(
             self,
             name: str,
-            model_path='model.onnx',
-            tag_mapping_path='tag_mapping.json',
+            model_path: str = 'model.onnx',
+            tag_mapping_path: str = 'tag_mapping.json',
             **kwargs
     ) -> None:
         super().__init__(name)
@@ -135,120 +121,44 @@ class CLTaggerInterrogator(Interrogator):
         self.tag_mapping_path = tag_mapping_path
         self.kwargs = kwargs
 
-    def download(self) -> Tuple[os.PathLike, os.PathLike]:
-        log.info(f"Loading {self.name} model file from {self.kwargs['repo_id']}")
+    def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs['repo_id']
         cache_dir = self.kwargs.get('cache_dir')
-
-        model_path = Path(tagger_hub_download(
+        log.info(f"Loading {self.name} model file from {repo_id}")
+        model_file = Path(tagger_hub_download(
             repo_id=repo_id, filename=self.model_path, cache_dir=cache_dir))
-        tag_mapping_path = Path(tagger_hub_download(
+        mapping_file = Path(tagger_hub_download(
             repo_id=repo_id, filename=self.tag_mapping_path, cache_dir=cache_dir))
-        return model_path, tag_mapping_path
+        return model_file, mapping_file
 
     def load(self) -> None:
-        model_path, tag_mapping_path = self.download()
-
-        self.model = create_onnx_session(model_path)
+        model_file, mapping_file = self.download()
+        self.model = create_onnx_session(model_file)
+        with open(mapping_file, "r", encoding="utf-8") as stream:
+            self.labels = _parse_tag_mapping(json.load(stream))
 
         device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
-        log.info(f'Loaded {self.name} model from {model_path} (device: {device})')
+        log.info(f'Loaded {self.name} model from {model_file} (device: {device})')
         if device == "CPU":
             log.info('  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
-
-        self.tags = self.load_tag_mapping(tag_mapping_path)
-
-    def load_tag_mapping(self, mapping_path):
-        import numpy as np
-        # Use the implementation from the original app.py as it was confirmed working
-        with open(mapping_path, 'r', encoding='utf-8') as f:
-            tag_mapping_data = json.load(f)
-        # Check format compatibility (can be dict of dicts or dict with idx_to_tag/tag_to_category)
-        if isinstance(tag_mapping_data, dict) and "idx_to_tag" in tag_mapping_data:
-            idx_to_tag = {int(k): v for k, v in tag_mapping_data["idx_to_tag"].items()}
-            tag_to_category = tag_mapping_data["tag_to_category"]
-        elif isinstance(tag_mapping_data, dict):
-            # Assuming the dict-of-dicts format from previous tests
-            try:
-                tag_mapping_data_int_keys = {int(k): v for k, v in tag_mapping_data.items()}
-                idx_to_tag = {idx: data['tag'] for idx, data in tag_mapping_data_int_keys.items()}
-                tag_to_category = {data['tag']: data['category'] for data in tag_mapping_data_int_keys.values()}
-            except (KeyError, ValueError) as e:
-                raise ValueError(f"Unsupported tag mapping format (dict): {e}. Expected int keys with 'tag' and 'category'.")
-        else:
-            raise ValueError("Unsupported tag mapping format: Expected a dictionary.")
-
-        names = [None] * (max(idx_to_tag.keys()) + 1)
-        rating, general, artist, character, copyright, meta, quality, model_name = [], [], [], [], [], [], [], []
-        for idx, tag in idx_to_tag.items():
-            if idx >= len(names):
-                names.extend([None] * (idx - len(names) + 1))
-            names[idx] = tag
-            category = tag_to_category.get(tag, 'Unknown')  # Handle missing category mapping gracefully
-            idx_int = int(idx)
-            if category == 'Rating':
-                rating.append(idx_int)
-            elif category == 'General':
-                general.append(idx_int)
-            elif category == 'Artist':
-                artist.append(idx_int)
-            elif category == 'Character':
-                character.append(idx_int)
-            elif category == 'Copyright':
-                copyright.append(idx_int)
-            elif category == 'Meta':
-                meta.append(idx_int)
-            elif category == 'Quality':
-                quality.append(idx_int)
-            elif category == 'Model':
-                model_name.append(idx_int)
-
-        return LabelData(names=names, rating=np.array(rating, dtype=np.int64), general=np.array(general, dtype=np.int64), artist=np.array(artist, dtype=np.int64),
-                         character=np.array(character, dtype=np.int64), copyright=np.array(copyright, dtype=np.int64), meta=np.array(meta, dtype=np.int64), quality=np.array(quality, dtype=np.int64), model=np.array(model_name, dtype=np.int64)), idx_to_tag, tag_to_category
-
-    def preprocess_image(self, image: Image.Image, target_size=(448, 448)):
-        import numpy as np
-        # Adapted from onnx_predict.py's version
-        image = pil_ensure_rgb(image)
-        image = pil_pad_square(image)
-        image_resized = image.resize(target_size, Image.BICUBIC)
-        img_array = np.array(image_resized, dtype=np.float32) / 255.0
-        img_array = img_array.transpose(2, 0, 1)  # HWC -> CHW
-        # Assuming model expects RGB based on original code, no BGR conversion here
-        img_array = img_array[::-1, :, :]  # BGR conversion if needed - UNCOMMENTED based on user feedback
-        mean = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(3, 1, 1)
-        std = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(3, 1, 1)
-        img_array = (img_array - mean) / std
-        img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-        return image, img_array
 
     def interrogate(
             self,
             image: Image
-    ) -> dict[str, list]:
-
+    ) -> Dict[str, List[Tuple[str, float]]]:
         import numpy as np
-        # init model
-        if not hasattr(self, 'model') or self.model is None:
+
+        if getattr(self, "model", None) is None:
             self.load()
 
         input_name = self.model.get_inputs()[0].name
         output_name = self.model.get_outputs()[0].name
+        logits = self.model.run([output_name], {input_name: _to_input_tensor(image)})[0][0]
 
-        original_pil_image, input_tensor = self.preprocess_image(image)
-        input_tensor = input_tensor.astype(np.float32)
-
-        outputs = self.model.run([output_name], {input_name: input_tensor})[0]
-
-        if np.isnan(outputs).any() or np.isinf(outputs).any():
+        if not np.isfinite(logits).all():
             log.warning("NaN or Inf detected in model output. Clamping...")
-            outputs = np.nan_to_num(outputs, nan=0.0, posinf=1.0, neginf=0.0)  # Clamp to 0-1 range
+            logits = np.nan_to_num(logits, nan=0.0, posinf=1.0, neginf=0.0)
 
-        # Apply sigmoid (outputs are likely logits)
-        # Use a stable sigmoid implementation
-        def stable_sigmoid(x):
-            return 1 / (1 + np.exp(-np.clip(x, -30, 30)))  # Clip to avoid overflow
-        probs = stable_sigmoid(outputs[0])  # Assuming batch size 1
-
-        predictions = get_tags(probs, self.tags[0])  # g_labels_data
-        return predictions
+        # 输出是 logits，套一层裁剪过的 sigmoid 防 exp 溢出
+        probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -30, 30)))
+        return _collect_tags(probs, self.labels)

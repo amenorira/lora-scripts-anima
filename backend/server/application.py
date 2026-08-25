@@ -4,8 +4,8 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
+import fastapi.middleware.cors as fastapi_cors
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
@@ -13,6 +13,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
+from backend.server.proxy import close_client as close_proxy_client
 from backend.server.proxy import router as proxy_router
 from backend.monitor import router as monitor_router
 from backend.tageditor import router as tageditor_router
@@ -23,22 +24,25 @@ from backend.server.routes.realtime import router as realtime_router
 from backend.constants import REPO_ROOT
 from backend.startup_output import show_environment, show_ready
 
-mimetypes.add_type("application/javascript", ".js")
-mimetypes.add_type("text/css", ".css")
+# Windows 注册表常把 .js 映射成 text/plain，导致浏览器拒执行模块脚本
+mimetypes.add_type(ext=".js", type="application/javascript")
+mimetypes.add_type(ext=".css", type="text/css")
 
 
 class SPAStaticFiles(StaticFiles):
+    """SPA 静态托管：路径不存在时回退 index.html，交给前端路由处理。"""
+
     async def get_response(self, path: str, scope):
         try:
             return await super().get_response(path, scope)
         except HTTPException as ex:
             if ex.status_code == 404:
-                return await super().get_response("index.html", scope)
-            else:
-                raise ex
+                index_response = await super().get_response("index.html", scope)
+                return index_response
+            raise
 
 
-async def app_startup():
+async def report_runtime_banner() -> None:
     from backend.log import log as _log
     try:
         migration = await asyncio.to_thread(import_legacy_external_runs)
@@ -102,86 +106,82 @@ async def app_startup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时
     await task_monitor.start()
-
-    await app_startup()
-
-    yield
-
-    # 关闭时
-    await task_monitor.stop()
+    await report_runtime_banner()
+    try:
+        yield
+    finally:
+        await task_monitor.stop()
+        await close_proxy_client()
 
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(proxy_router)
 app.include_router(realtime_router)
 
-
-# CORS only needed for dev debugging; not required for localhost use
+# CORS 只服务本地调试（ANIMA_DEV=1）；常规 localhost 使用不需要
 if os.environ.get("ANIMA_DEV") == "1":
     app.add_middleware(
-        CORSMiddleware,
+        fastapi_cors.CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-
-# Compress text-heavy responses (static JS/CSS, field registry JSON, ...).
-# Content is byte-identical after decompression, so nothing observable
-# changes except transfer size.
+# 压缩文本型响应（静态 JS/CSS、字段注册表 JSON 等）；解压后字节不变
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+_IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
 
 @app.middleware("http")
-async def add_cache_control_header(request, call_next):
+async def apply_cache_policy(request, call_next):
+    """按资源类型分级缓存策略：
+
+    - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
+    - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
+    - /anima-ui 带 ?v= 内容版本号的资源 immutable 缓存一年；index.html 本身
+      不版本化、保持 revalidate，由它引用新的版本化 URL
+    - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
+    """
     response = await call_next(request)
     path = request.url.path
-    # Generated preview variants are immutable for their versioned URL and
-    # must keep their own ETag/cache policy on slow remote links.
-    if path in {"/api/image-preview", "/api/monitor/preview-metadata"}:
+    if path in _IMMUTABLE_PREVIEW_PATHS:
         return response
     if path.startswith("/api/"):
-        # no-store forced a full re-download on every load even for stable
-        # registries (e.g. /api/fields, which now carries its own ETag and
-        # answers 304 when unchanged). no-cache keeps revalidation semantics
-        # while allowing validators to short-circuit.
         response.headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.startswith("/anima-ui/"):
-        # Every /anima-ui asset referenced from index.html carries a ?v=
-        # content-version (see index.html). The same URL never changes, so
-        # versioned assets may be cached immutably for a year; index.html
-        # itself stays unversioned and revalidates, and it carries the new
-        # versioned URLs whenever assets change. Unversioned /anima-ui files
-        # keep the old no-cache policy for development safety.
         if request.url.query:
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         else:
             response.headers["Cache-Control"] = "no-cache, max-age=0"
-    elif any(path.endswith(ext) for ext in (".png", ".ico", ".svg", ".woff2")):
+    elif path.endswith((".png", ".ico", ".svg", ".woff2")):
         response.headers["Cache-Control"] = "public, max-age=3600"
-    elif any(path.endswith(ext) for ext in (".js", ".css")):
+    elif path.endswith((".js", ".css")):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     return response
+
 
 app.include_router(api_router, prefix="/api")
 app.include_router(training_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
 app.include_router(tageditor_router, prefix="/api")
 
-# Anima UI (SPA frontend) — static assets + catch-all
+# Anima UI（SPA 前端）：静态资源 + 回退
 app.mount("/anima-ui", StaticFiles(directory="frontend", html=True), name="anima-ui")
 
 
 @app.get("/")
-async def index():
+async def serve_index():
     return FileResponse("frontend/index.html")
 
 
-@app.get("/favicon.ico", response_class=FileResponse)
-async def favicon():
+async def serve_favicon():
     return FileResponse("frontend/assets/favicon.ico")
+
+
+app.add_api_route("/favicon.ico", serve_favicon, methods=["GET"], response_class=FileResponse)
+
 
 app.mount("/", SPAStaticFiles(directory="frontend", html=True), name="static")

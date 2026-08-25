@@ -31,10 +31,19 @@ def check_torch_gpu():
                 log.warning("You are using torch CPU version. Training will not work. / 当前使用 CPU 版 PyTorch，无法训练。")
             return report
 
-        if Version(torch.__version__) < Version("2.3.0"):
-            log.warning("Torch version is lower than 2.3.0, which may not be able to train FLUX model properly. Please re-run the installation script (start.bat or start.sh) to upgrade Torch.")
-            log.warning("！！！Torch 版本低于 2.3.0，将无法正常训练 FLUX 模型。请考虑重新运行安装脚本以升级 Torch！！！")
-            log.warning("！！！若您正在使用训练包，请直接下载最新训练包！！！")
+        # 项目启动脚本（ensure_runtime）会把 torch 钉在指定构建上；
+        # 走到这里版本仍不一致，说明环境被手工动过，提示用启动脚本自修复
+        try:
+            from tools.ensure_runtime import TORCH as _PINNED_TORCH
+        except Exception:
+            _PINNED_TORCH = None
+        if _PINNED_TORCH and Version(torch.__version__) != Version(_PINNED_TORCH):
+            log.warning(
+                "Torch %s differs from the pinned build %s; training may fail. "
+                "Re-run start.bat / start.sh to repair automatically. / "
+                "Torch %s 与项目指定版本 %s 不一致，训练可能失败：重新运行 start.bat / start.sh 可自动修复。",
+                torch.__version__, _PINNED_TORCH, torch.__version__, _PINNED_TORCH,
+            )
 
         if torch.version.cuda:
             report["backend"] = f"CUDA {torch.version.cuda}"

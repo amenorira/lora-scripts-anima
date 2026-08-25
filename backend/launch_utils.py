@@ -1,3 +1,11 @@
+"""主 venv 的环境准备与 pip 依赖管理。
+
+约定：
+- 子进程输出统一走 decode_subprocess_output（Windows 本机编码兜底）
+- 依赖检测用 packaging.Requirement 解析 + importlib.metadata 查版本，
+  结果缓存进 _PKG_VERSION_CACHE；任何 pip 变更后由 run_pip 失效缓存
+- prepare_environment 是 gui.py 启动时唯一的编排入口
+"""
 from __future__ import annotations
 
 import locale
@@ -10,15 +18,12 @@ import socket
 import subprocess
 import sys
 import sysconfig
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import List, Optional
 
-from importlib import metadata as importlib_metadata
-
-try:
-    from packaging.version import Version as _Version
-except ImportError:
-    _Version = None
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 from backend.log import log
 
@@ -26,7 +31,7 @@ python_bin = sys.executable
 
 
 def decode_subprocess_output(output: bytes | str | None) -> str:
-    """Decode captured command output without assuming Windows tools emit UTF-8."""
+    """子进程输出兜底解码：先 UTF-8，失败回退本机编码（Windows 工具常输出 GBK）。"""
     if output is None:
         return ""
     if isinstance(output, str):
@@ -40,7 +45,7 @@ def decode_subprocess_output(output: bytes | str | None) -> str:
 
 
 def run_capture_text(command, **kwargs) -> subprocess.CompletedProcess:
-    """Run a command with binary pipes, then decode stdout/stderr defensively."""
+    """以二进制管道跑命令，再把 stdout/stderr 兜底解码成文本返回。"""
     if any(key in kwargs for key in ("capture_output", "stdout", "stderr", "text", "encoding", "errors")):
         raise TypeError("run_capture_text manages subprocess output arguments")
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
@@ -52,13 +57,15 @@ def run_capture_text(command, **kwargs) -> subprocess.CompletedProcess:
     )
 
 
-def base_dir_path():
+def base_dir_path() -> Path:
     return Path(__file__).parents[1].absolute()
+
 
 _GIT_TAG_CACHE: dict[str, str] = {}
 
 
 def git_tag(path: str) -> str:
+    """返回 git 描述（tag 或短 commit），失败为 <none>；按路径缓存避免重复起 git 进程。"""
     if path in _GIT_TAG_CACHE:
         return _GIT_TAG_CACHE[path]
     try:
@@ -66,27 +73,33 @@ def git_tag(path: str) -> str:
             ["git", "-C", path, "describe", "--tags"],
             stderr=subprocess.DEVNULL,
         )
-        tag = decode_subprocess_output(tag).strip()
-        _GIT_TAG_CACHE[path] = tag
-        return tag
+        result = decode_subprocess_output(tag).strip()
     except Exception:
         try:
             commit = decode_subprocess_output(
                 subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"])
             ).strip()
             result = f"commit {commit}"
-            _GIT_TAG_CACHE[path] = result
-            return result
         except Exception:
             result = "<none>"
-            _GIT_TAG_CACHE[path] = result
-            return result
+    _GIT_TAG_CACHE[path] = result
+    return result
 
 
-def check_dirs(dirs: List):
+def check_dirs(dirs: List) -> None:
     for d in dirs:
-        if not os.path.exists(d):
-            os.makedirs(d)
+        os.makedirs(d, exist_ok=True)
+
+
+def _command_error(errdesc: Optional[str], command, returncode: int,
+                   stdout: str = "", stderr: str = "") -> str:
+    parts = [f"{errdesc or 'Error running command'}.",
+             f"Command: {command}",
+             f"Error code: {returncode}"]
+    if stdout or stderr:
+        parts.append(f"stdout: {stdout.strip() or '<empty>'}")
+        parts.append(f"stderr: {stderr.strip() or '<empty>'}")
+    return "\n".join(parts)
 
 
 def run(command,
@@ -95,197 +108,147 @@ def run(command,
         custom_env: Optional[list] = None,
         live: Optional[bool] = True,
         shell: Optional[bool] = None):
+    """跑命令。live=True 直连控制台（返回 ""），否则捕获输出并返回解码后的 stdout。
 
+    一律默认 shell=False，规避命令注入。
+    """
     if shell is None:
-        shell = False  # Always use shell=False for safety; avoids command injection on Linux
-
+        shell = False
     if desc is not None:
         print(desc)
 
+    env = os.environ if custom_env is None else custom_env
     if live:
-        result = subprocess.run(command, shell=shell, env=os.environ if custom_env is None else custom_env)
+        result = subprocess.run(command, shell=shell, env=env)
         if result.returncode != 0:
-            raise RuntimeError(f"""{errdesc or 'Error running command'}.
-Command: {command}
-Error code: {result.returncode}""")
-
+            raise RuntimeError(_command_error(errdesc, command, result.returncode))
         return ""
 
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            shell=shell, env=os.environ if custom_env is None else custom_env)
-
+    result = run_capture_text(command, shell=shell, env=env)
     if result.returncode != 0:
-        message = f"""{errdesc or 'Error running command'}.
-Command: {command}
-Error code: {result.returncode}
-stdout: {result.stdout.decode(encoding="utf8", errors="ignore") if len(result.stdout) > 0 else '<empty>'}
-stderr: {result.stderr.decode(encoding="utf8", errors="ignore") if len(result.stderr) > 0 else '<empty>'}
-"""
-        raise RuntimeError(message)
-
-    return result.stdout.decode(encoding="utf8", errors="ignore")
+        raise RuntimeError(_command_error(errdesc, command, result.returncode,
+                                          result.stdout, result.stderr))
+    return result.stdout
 
 
-def _check_version(installed, constraint):
-    """Check if installed version satisfies a PEP 440 constraint string.
-    Handles compound constraints (commas) and all comparison operators."""
-    if _Version is None:
-        return True
-    try:
-        iv = _Version(installed)
-    except Exception:
-        return False
-
-    for part in constraint.split(','):
-        part = part.strip()
-        if not part:
-            continue
-        for op in ('>=', '<=', '!=', '==', '~=', '>', '<'):
-            if part.startswith(op):
-                ver_str = part[len(op):].strip()
-                try:
-                    v = _Version(ver_str)
-                except Exception:
-                    continue
-                if op == '==' and iv != v:
-                    return False
-                if op == '>=' and iv < v:
-                    return False
-                if op == '<=' and iv > v:
-                    return False
-                if op == '>' and not (iv > v):
-                    return False
-                if op == '<' and not (iv < v):
-                    return False
-                if op == '!=' and iv == v:
-                    return False
-                if op == '~=':
-                    if iv < v:
-                        return False
-                    release = v.release
-                    if len(release) >= 2:
-                        next_major = _Version(f"{release[0] + 1}.0")
-                    else:
-                        next_major = _Version(f"{release[0] + 1}")
-                    if iv >= next_major:
-                        return False
-                break
-    return True
-
+# ── 已安装包版本查询（快照缓存 + 逐包回退） ─────────────────
 
 _PKG_VERSION_CACHE: dict[str, str] | None = None
 
 
-def _build_pkg_version_cache() -> dict[str, str]:
-    """构建 package_name → version 的反向映射（O(1) 查找，替代多次 filesystem 遍历）
-    失败时回退到空 dict，is_installed 将逐包查找。"""
-    cache: dict[str, str] = {}
+def _snapshot_pkg_versions() -> dict[str, str]:
+    """全量扫描已安装包，构建 name → version 映射（连字符/下划线双写）。
+
+    扫描失败返回空 dict，调用方回退到逐包查询。
+    """
+    versions: dict[str, str] = {}
     try:
         for dist in importlib_metadata.distributions():
-            name = dist.metadata.get("Name", "")
-            version = dist.metadata.get("Version", "")
-            if name:
-                cache[name.lower()] = version
-                # 也注册 normalized 名称（连字符 → 下划线）
-                cache[name.lower().replace('-', '_')] = version
+            name = (dist.metadata.get("Name") or "").strip()
+            if not name:
+                continue
+            version = dist.metadata.get("Version") or ""
+            versions[name.lower()] = version
+            versions[name.lower().replace("-", "_")] = version
     except Exception:
-        return {}  # 构建失败时返回空 dict，强制 is_installed 回退到逐包查找
-    return cache
+        return {}
+    return versions
 
 
-def is_installed(package, friendly: str = None):
-    #
-    # This function was adapted from code written by vladimandic: https://github.com/vladmandic/automatic/commits/master
-    #
+def _installed_version(pkg_name: str, cache: dict[str, str]) -> Optional[str]:
+    lowered = pkg_name.lower()
+    for key in (lowered, lowered.replace("_", "-"), lowered.replace("-", "_")):
+        if cache.get(key):
+            return cache[key]
+    # 缓存未命中（快照漏报或缓存被禁用）：逐包查 metadata
+    for candidate in (pkg_name, lowered, lowered.replace("_", "-")):
+        try:
+            return importlib_metadata.distribution(candidate).metadata["Version"]
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    return None
+
+
+def is_installed(requirement: str, friendly: str = None) -> bool:
+    """检查 requirement 字符串（如 'diffusers[torch]==0.10.2'）是否已安装且满足版本约束。
+
+    friendly 传入时按空格拆分优先使用（兼容旧调用）。
+    """
     global _PKG_VERSION_CACHE
     if _PKG_VERSION_CACHE is None:
-        _PKG_VERSION_CACHE = _build_pkg_version_cache()
+        _PKG_VERSION_CACHE = _snapshot_pkg_versions()
 
-    # Remove brackets and their contents from the line using regular expressions
-    # e.g., diffusers[torch]==0.10.2 becomes diffusers==0.10.2
-    package = re.sub(r'\[.*?\]', '', package)
+    specs = friendly.split() if friendly else [
+        token for token in requirement.split()
+        if not token.startswith("-") and not token.startswith("=")
+    ]
+    for spec in specs:
+        # 从 URL 安装的包只取最后的包名部分
+        candidate = spec.rsplit("/", 1)[-1]
+        try:
+            req = Requirement(candidate)
+        except Exception:
+            # 非 PEP 508 写法（裸 URL 等）：退化为纯包名，不做版本判断
+            req = Requirement(re.split(r"[<>=!~\[]", candidate)[0].strip())
+        version = _installed_version(req.name, _PKG_VERSION_CACHE)
+        if version is None:
+            log.warning(f"Package version not found: {req.name}")
+            return False
+        if req.specifier and not req.specifier.contains(version, prereleases=True):
+            log.info(f"Package wrong version: {req.name} {version} required {req.specifier}")
+            return False
+    return True
 
+
+# ── pip 变更 ─────────────────────────────────────────────
+
+def run_pip(command: str, desc=None, live: bool = False):
+    """通过当前解释器跑 pip。pip 可能增删改包，结束后必须失效版本缓存。"""
+    global _PKG_VERSION_CACHE
+    args = [python_bin, "-m", "pip"] + shlex.split(command)
     try:
-        if friendly:
-            pkgs = friendly.split()
-        else:
-            pkgs = [
-                p
-                for p in package.split()
-                if not p.startswith('-') and not p.startswith('=')
-            ]
-            pkgs = [
-                p.split('/')[-1] for p in pkgs
-            ]   # get only package name if installing from URL
-
-        for pkg in pkgs:
-            # Extract package name (strip all version constraints)
-            pkg_name = re.split(r'[<>=!~]', pkg)[0].strip()
-            constraint_str = pkg[len(pkg_name):].strip()
-
-            version = None
-            # 从缓存查找（O(1)，如果可用）
-            if _PKG_VERSION_CACHE:
-                version = _PKG_VERSION_CACHE.get(pkg_name.lower())
-                if version is None:
-                    version = _PKG_VERSION_CACHE.get(pkg_name.lower().replace('_', '-'))
-
-            if version is not None:
-                if constraint_str and not _check_version(version, constraint_str):
-                    log.info(f'Package wrong version: {pkg_name} {version} required {constraint_str}')
-                    return False
-                continue
-
-            # 缓存未命中：回退到逐包 metadata 查找（兼容 distributions() 漏报的情况）
-            spec = None
-            for try_name in (pkg_name, pkg_name.lower(), pkg_name.replace('_', '-')):
-                try:
-                    spec = importlib_metadata.distribution(try_name)
-                    break
-                except importlib_metadata.PackageNotFoundError:
-                    continue
-            if spec is not None:
-                version = spec.metadata["Version"]
-                if constraint_str and not _check_version(version, constraint_str):
-                    log.info(f'Package wrong version: {pkg_name} {version} required {constraint_str}')
-                    return False
-            else:
-                log.warning(f'Package version not found: {pkg_name}')
-                return False
-
-        return True
-    except ModuleNotFoundError:
-        log.warning(f'Package not installed: {pkgs}')
-        return False
+        return run(args, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}",
+                   live=live, shell=False)
+    finally:
+        _PKG_VERSION_CACHE = None
 
 
+def pip_install(package: str, version: Optional[str] = None,
+                index_url: Optional[str] = None, live: bool = True) -> None:
+    """安装一个包；version/index_url 可选。"""
+    requirement = f"{package}=={version}" if version else package
+    command = f"install {requirement}"
+    if index_url:
+        command += f" -i {index_url}"
+    run_pip(command, desc=requirement, live=live)
 
-def setup_windows_bitsandbytes():
+
+# ── 特定依赖的装机/修复逻辑 ───────────────────────────────
+
+def setup_windows_bitsandbytes() -> None:
+    """Windows 下校验 bitsandbytes 的 CUDA dll 与 torch 构建匹配，不匹配则重装。"""
     if sys.platform != "win32":
         return
 
-    bnb_package = "bitsandbytes"
-    bnb_path = os.path.join(sysconfig.get_paths()["purelib"], "bitsandbytes")
-
-    installed_bnb = is_installed("bitsandbytes")  # don't check version here
     try:
         import torch
-
-        expected_binary = f"libbitsandbytes_cuda{torch.version.cuda.replace('.', '')}.dll" if torch.version.cuda else None
+        cuda = torch.version.cuda
+        expected_dll = f"libbitsandbytes_cuda{cuda.replace('.', '')}.dll" if cuda else None
     except Exception:
-        expected_binary = None
-    binaries = os.listdir(bnb_path) if os.path.isdir(bnb_path) else []
-    bnb_cuda_setup = expected_binary in binaries if expected_binary else any(
-        re.fullmatch(r"libbitsandbytes_cuda.+?\.dll", filename) for filename in binaries
-    )
+        expected_dll = None
 
-    if not installed_bnb or not bnb_cuda_setup:
-        log.error("detected wrong install of bitsandbytes, reinstall it")
+    bnb_dir = Path(sysconfig.get_paths()["purelib"]) / "bitsandbytes"
+    dlls = [p.name for p in bnb_dir.glob("libbitsandbytes_cuda*.dll")] if bnb_dir.is_dir() else []
+    cuda_dll_ok = (expected_dll in dlls) if expected_dll else bool(dlls)
+
+    if not is_installed("bitsandbytes") or not cuda_dll_ok:
+        log.error("bitsandbytes 安装异常（未安装或 CUDA dll 与 torch 构建不匹配），正在重装 / "
+                  "bitsandbytes install is broken (missing or CUDA dll mismatch); reinstalling")
         run_pip("uninstall bitsandbytes -y", "bitsandbytes", live=True)
-        run_pip(f"install {bnb_package}", bnb_package, live=True)
+        run_pip("install bitsandbytes", "bitsandbytes", live=True)
 
 
-# onnxruntime-gpu 与 CUDA 的版本对应（仅列项目用到的组合）
+# onnxruntime-gpu 与 CUDA 的对应表（仅列项目用到的组合）：
 # 1.20.1 需 CUDA 12.x + cuDNN 9；1.27.0 需 CUDA 13 + cuDNN 9
 _ORT_VERSION_BY_CUDA_MAJOR = {
     "12": "1.20.1",
@@ -294,130 +257,95 @@ _ORT_VERSION_BY_CUDA_MAJOR = {
 
 
 def _resolve_ort_version_for_torch() -> Optional[str]:
-    """根据已安装 torch 的 CUDA 版本返回兼容的 onnxruntime-gpu 版本。
+    """按已安装 torch 的 CUDA 后缀推导兼容的 onnxruntime-gpu 版本。
 
-    torch 未安装（首次启动可能还在装）或读不到 CUDA 后缀时返回 None，
-    交由调用方走"不约束版本"的原有路径。
+    torch 未装好（首次启动还在装）或读不到 CUDA 后缀时返回 None，
+    由调用方走不约束版本的路径。
     """
     try:
-        import torch  # noqa: F401
-        m = re.search(r"\+cu(\d+)", torch.__version__)
-        if not m:
+        import torch
+        match = re.search(r"\+cu(\d+)", torch.__version__)
+        if not match:
             return None
-        cuda_major = m.group(1)[:-1] if len(m.group(1)) > 1 else m.group(1)
+        digits = match.group(1)
+        cuda_major = digits[:-1] if len(digits) > 1 else digits
         return _ORT_VERSION_BY_CUDA_MAJOR.get(cuda_major)
     except Exception:
         return None
 
 
-def setup_onnxruntime(
-        onnx_version: Optional[str] = None,
-        index_url: Optional[str] = None
-):
-    if sys.platform == "linux":
-        libc_ver = platform.libc_ver()
-        if libc_ver[0] == "glibc" and libc_ver[1] <= "2.27":
-            onnx_version = "1.16.3"
-
-    # 环境变量优先（保留覆盖入口），其次按 torch CUDA 版本动态匹配
-    env_ver = os.environ.get("ONNXRUNTIME_VERSION")
-    if env_ver:
-        onnx_version = env_ver
-    elif onnx_version is None:
-        resolved = _resolve_ort_version_for_torch()
-        if resolved:
-            onnx_version = resolved
+def setup_onnxruntime(onnx_version: Optional[str] = None,
+                      index_url: Optional[str] = None) -> None:
+    """确保 onnxruntime-gpu 就位且版本与 torch 的 CUDA 构建匹配；版本不符时整体换装。"""
+    env_version = os.environ.get("ONNXRUNTIME_VERSION")
+    if env_version:
+        pinned = env_version
+    elif onnx_version:
+        pinned = onnx_version
+    else:
+        pinned = _resolve_ort_version_for_torch()
+        if pinned:
             log.info(
                 "Resolved onnxruntime-gpu==%s from torch CUDA build",
-                resolved,
+                pinned,
                 extra={"console": False},
             )
 
-    if onnx_version and not is_installed(f"onnxruntime-gpu=={onnx_version}"):
-        log.info("uninstalling wrong onnxruntime version")
-        run_pip("uninstall onnxruntime -y", "onnxruntime", live=True)
-        run_pip("uninstall onnxruntime-gpu -y", "onnxruntime", live=True)
+    target = f"onnxruntime-gpu=={pinned}" if pinned else "onnxruntime-gpu"
+    if is_installed(target):
+        return
 
-    if not is_installed("onnxruntime-gpu"):
-        log.info("installing onnxruntime")
-        if is_installed("onnxruntime"):
-            run_pip("uninstall onnxruntime -y", "onnxruntime", live=True)
-        pip_install("onnxruntime-gpu", onnx_version, index_url=index_url, live=True)
-
-
-def run_pip(command, desc=None, live=False):
-    global _PKG_VERSION_CACHE
-    # Use shell=False with list args to avoid shell injection
-    cmd = [python_bin, "-m", "pip"] + shlex.split(command)
-    try:
-        return run(cmd, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live, shell=False)
-    finally:
-        # pip may add, remove, or replace a distribution in this interpreter.
-        _PKG_VERSION_CACHE = None
+    # 目标版本不在位：清掉两种 flavors 后统一安装，避免 cpu/gpu 包互相顶包
+    for package in ("onnxruntime", "onnxruntime-gpu"):
+        if is_installed(package):
+            run_pip(f"uninstall {package} -y", "onnxruntime", live=True)
+    log.info("installing onnxruntime")
+    pip_install("onnxruntime-gpu", pinned, index_url=index_url, live=True)
 
 
-def pip_install(package: str, version: Optional[str] = None, index_url: Optional[str] = None, live: bool = True):
-    """
-    Install a package using pip.
-    :param package: The name of the package to install.
-    :param version: The version of the package to install (optional).
-    :param index_url: The index URL to use for installing the package (optional).
-    """
-    if version:
-        package = f"{package}=={version}"
+# ── 启动编排 ─────────────────────────────────────────────
 
-    command = f"install {package}"
-
-    if index_url:
-        command = f"{command} -i {index_url}"
-
-    run_pip(command, desc=f"Installing {package}", live=live)
-
-
-def check_requirements():
-    """Check and install missing packages from requirements.txt."""
+def check_requirements() -> None:
+    """对照 requirements.txt 补齐缺失依赖。"""
     req_file = Path(__file__).parents[1] / "requirements.txt"
     if not req_file.exists():
         return
 
     log.info("Checking requirements / 检查依赖", extra={"console": False})
     missing = []
-    with open(req_file, "r", encoding="utf-8") as f:
-        for line in f:
-            # Remove inline comments and strip whitespace
-            line = line.split("#")[0].strip()
-            if not line:
-                continue
-            if not is_installed(line):
-                missing.append(line)
+    for raw_line in req_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line and not is_installed(line):
+            missing.append(line)
 
-    if missing:
-        log.info(f"Installing {len(missing)} missing packages / 安装 {len(missing)} 个缺失的包")
-        for pkg in missing:
-            try:
-                run_pip(f"install {pkg}", desc=pkg, live=True)
-            except Exception as e:
-                log.warning(f"Failed to install {pkg}: {e}")
-    else:
+    if not missing:
         log.info("All requirements satisfied / 所有依赖已满足", extra={"console": False})
+        return
+
+    log.info(f"Installing {len(missing)} missing packages / 安装 {len(missing)} 个缺失的包")
+    for package in missing:
+        try:
+            run_pip(f"install {package}", desc=package, live=True)
+        except Exception as e:
+            log.warning(f"Failed to install {package}: {e}")
 
 
-def prepare_environment(prepare_onnxruntime: bool = True):
+def prepare_environment(prepare_onnxruntime: bool = True) -> None:
     if sys.platform == "win32":
-        # disable triton on windows
+        # Windows 上 triton 不可用，关掉 xformers 的 triton 探测
         os.environ["XFORMERS_FORCE_DISABLE_TRITON"] = "1"
 
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     os.environ["BITSANDBYTES_NOWELCOME"] = "1"
-    os.environ["PYTHONWARNINGS"] = "ignore::UserWarning"
+    # 不覆盖用户显式设置的过滤规则
+    os.environ.setdefault("PYTHONWARNINGS", "ignore::UserWarning")
     os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
 
     if not os.environ.get("PATH"):
-        os.environ["PATH"] = os.path.dirname(sys.executable)
+        os.environ["PATH"] = str(Path(sys.executable).parent)
 
     check_dirs(["config/autosave", "logs"])
 
-    # Check and install missing requirements
     try:
         check_requirements()
     except Exception as e:
@@ -435,29 +363,24 @@ def prepare_environment(prepare_onnxruntime: bool = True):
             log.warning("onnxruntime-gpu setup skipped (GPU may be unavailable) / onnxruntime-gpu 初始化跳过 (可能无 GPU)")
 
 
-def check_port_available(port: int):
-    """Check if a port is available.
+# ── 端口与磁盘 ───────────────────────────────────────────
 
-    Note: TOCTOU race exists — the port may be taken between check and bind.
-    Callers should handle binding failures gracefully.
-    """
+def check_port_available(port: int) -> bool:
+    """端口空闲性探测。存在 TOCTOU 竞态：检测到绑定之间端口可能被抢，调用方需兜底绑定失败。"""
     try:
-        s = socket.socket()
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(("127.0.0.1", port))
-        s.close()
+        with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(("127.0.0.1", port))
         return True
-    except (OSError, socket.error):
+    except OSError:
         return False
 
 
 def find_available_ports(port_init: int, port_range: int):
-    server_ports = range(port_init, port_range)
-
-    for p in server_ports:
-        if check_port_available(p):
-            return p
-
+    """在 [port_init, port_range) 里找第一个空闲端口；找不到返回 None。"""
+    for port in range(port_init, port_range):
+        if check_port_available(port):
+            return port
     log.error(f"error finding available ports in range: {port_init} -> {port_range}")
     return None
 
@@ -466,35 +389,30 @@ _ENV_CHECKED = False
 
 
 def check_environment():
-    """Check launch-critical disk space and return the free capacity in GiB."""
+    """检查启动关键的磁盘余量，返回可用 GiB（检查时只跑一次）。"""
     global _ENV_CHECKED
-
     if _ENV_CHECKED:
         return None
     _ENV_CHECKED = True
 
     try:
-        usage = shutil.disk_usage(base_dir_path())
-        free_gb = usage.free // (1024 ** 3)
-        if free_gb < 10:
-            log.error(
-                "Critically low disk space: %d GB free. Model downloads or checkpoints may fail; "
-                "free space before training. / 磁盘空间严重不足：仅剩 %d GB，模型下载或 checkpoint "
-                "保存可能失败，请先清理空间。",
-                free_gb, free_gb,
-            )
-        elif free_gb < 30:
-            log.warning(
-                "Low disk space: %d GB free. Large model downloads and checkpoints need more room. / "
-                "磁盘空间偏低：仅剩 %d GB，大模型下载和 checkpoint 保存可能需要更多空间。",
-                free_gb, free_gb,
-            )
-        else:
-            log.info(
-                "Disk free: %d GB / 磁盘剩余空间",
-                free_gb,
-                extra={"console": False},
-            )
-        return free_gb
+        free_gb = shutil.disk_usage(base_dir_path()).free // (1024 ** 3)
     except OSError:
         return None
+
+    if free_gb < 10:
+        log.error(
+            "Critically low disk space: %d GB free. Model downloads or checkpoints may fail; "
+            "free space before training. / 磁盘空间严重不足：仅剩 %d GB，模型下载或 checkpoint "
+            "保存可能失败，请先清理空间。",
+            free_gb, free_gb,
+        )
+    elif free_gb < 30:
+        log.warning(
+            "Low disk space: %d GB free. Large model downloads and checkpoints need more room. / "
+            "磁盘空间偏低：仅剩 %d GB，大模型下载和 checkpoint 保存可能需要更多空间。",
+            free_gb, free_gb,
+        )
+    else:
+        log.info("Disk free: %d GB / 磁盘剩余空间", free_gb, extra={"console": False})
+    return free_gb

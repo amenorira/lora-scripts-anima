@@ -286,14 +286,12 @@ async def estimate_steps(request: Request):
 def get_sample_prompts(config: dict):
     """Extract and format sample prompt configuration."""
     import random
-    from glob import glob
 
     # backward compatibility
-    if "sample_prompts" in config and "positive_prompts" not in config:
+    if "positive_prompts" not in config and "sample_prompts" in config:
         return None, config["sample_prompts"]
 
-    train_data_dir = config["train_data_dir"]
-    sub_dir = [dir for dir in glob(os.path.join(train_data_dir, '*')) if os.path.isdir(dir)]
+    dataset_subdirs = [p for p in Path(config["train_data_dir"]).iterdir() if p.is_dir()]
 
     positive_prompts = config.get('positive_prompts', None)
     negative_prompts = config.get('negative_prompts', '')
@@ -306,21 +304,21 @@ def get_sample_prompts(config: dict):
     randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
-        if len(sub_dir) != 1:
+        if len(dataset_subdirs) != 1:
             raise ValueError(
                 'Multiple subdirectories found / 多子文件夹; '
                 'random prompt selection requires a single subdirectory / 随机选取 Prompt 需要单一子文件夹'
             )
 
-        txt_files = glob(os.path.join(sub_dir[0], '*.txt'))
-        if not txt_files:
+        # 排序保证同一 seed 下选中的文件稳定（glob 顺序依赖文件系统，不可预期）
+        caption_files = sorted(dataset_subdirs[0].glob('*.txt'))
+        if not caption_files:
             raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
         try:
             seed_val = config.get("seed", 2333)
-            sample_prompt_file = random.Random(int(seed_val)).choice(txt_files)
-            with open(sample_prompt_file, 'r', encoding='utf-8') as f:
-                positive_prompts = f.read()
-        except IOError:
+            sample_prompt_file = random.Random(int(seed_val)).choice(caption_files)
+            positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
+        except OSError:
             log.error(f"Failed to read prompt file / 读取失败: {sample_prompt_file}")
 
     # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
@@ -548,7 +546,8 @@ async def krea2_cache_status(request: Request):
 async def create_krea2_cache(request: Request):
     """Start the required latent and Qwen3-VL cache pipeline as one task."""
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime(
+        "%Y%m%d-%H%M%S")  # 运行目录命名用时间戳
     config, error = await _read_json_object(request)
     if error:
         return error
@@ -648,7 +647,8 @@ async def create_toml_file(request: Request):
         return APIResponseFail(
             message="Tagger is using the GPU. Stop tagging before training / 反推任务正在使用 GPU，请停止后再训练"
         )
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime(
+        "%Y%m%d-%H%M%S")  # 训练运行目录命名用时间戳
     config, error = await _read_json_object(request)
     if error:
         return error
@@ -758,7 +758,8 @@ async def create_toml_file(request: Request):
     artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
-    if not train_utils.validate_data_dir(config["train_data_dir"]):
+    dataset_ok = train_utils.validate_data_dir(config["train_data_dir"])
+    if not dataset_ok:
         return APIResponseFail(message="Dataset directory not found or no images / 数据集路径不存在或无图片")
 
     # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
@@ -847,11 +848,10 @@ async def create_toml_file(request: Request):
     config["logging_dir"] = str(internal_run_dir / "log")
 
     if sample_prompts_arg:
-        sample_prompts_file = str(internal_run_dir / "prompts.txt")
-        with open(sample_prompts_file, "w", encoding="utf-8") as f:
-            f.write(sample_prompts_arg)
-        config["sample_prompts"] = sample_prompts_file
-        log.info(f"Wrote prompts to file {sample_prompts_file}")
+        prompts_path = internal_run_dir / "prompts.txt"
+        prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
+        config["sample_prompts"] = str(prompts_path)
+        log.info(f"采样 prompt 已写入 / Sample prompts written to {prompts_path}")
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -919,12 +919,12 @@ async def create_toml_file(request: Request):
 
 
 @router.post("/run_script")
-async def run_script(request: Request, background_tasks: BackgroundTasks):
+async def run_vendor_script(request: Request, background_tasks: BackgroundTasks):
     paras = await request.body()
     j = json.loads(paras.decode("utf-8"))
     script_name = j["script_name"]
     if script_name not in available_scripts:
-        return APIResponseFail(message="Script not found")
+        return APIResponseFail(message=f"Unknown script / 未登记的脚本: {script_name}")
     del j["script_name"]
     result = []
     for k, v in j.items():

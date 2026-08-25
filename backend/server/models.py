@@ -1,6 +1,14 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any
+"""API 请求/响应的 pydantic 模型。"""
 from pathlib import Path
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+# 含下划线的颜文字标签：下划线转空格时要豁免的名单
+KAOMOJI_KEEP_UNDERSCORE = (
+    "0_0, ._., ^_^, >_<, o_o, u_u, x_x, =_=, +_+, +_-, >_o, @_@, "
+    "3_3, 6_9, (o)_(o), <o>_<o>, <|>_<|>, |_|, ||_||"
+)
 
 
 class TaggerInterrogateRequest(BaseModel):
@@ -38,22 +46,19 @@ class TaggerInterrogateRequest(BaseModel):
     sort_by_alphabetical_order: bool = False
     add_confident_as_weight: bool = False
     replace_underscore: bool = True
-    replace_underscore_excludes: str = Field(
-        default="0_0, (o)_(o), +_+, +_-, ._., <o>_<o>, <|>_<|>, =_=, >_<, 3_3, 6_9, >_o, @_@, ^_^, o_o, u_u, x_x, |_|, ||_||"
-    )
+    replace_underscore_excludes: str = Field(default=KAOMOJI_KEEP_UNDERSCORE)
 
     @field_validator('path')
     @classmethod
     def validate_path(cls, v: str) -> str:
-        """防止路径遍历攻击"""
+        """归一化路径并拦截非法输入（根目录/不可解析路径）。"""
         try:
-            p = Path(v).resolve()
+            resolved = Path(v).resolve()
         except (ValueError, OSError):
             raise ValueError(f"Invalid path: {v}")
-        # 确保路径不为空且在合理的文件系统范围内
-        if not str(p) or p == p.root:
+        if not str(resolved) or resolved == resolved.parent:
             raise ValueError(f"Path must not be filesystem root: {v}")
-        return str(p)
+        return str(resolved)
 
 
 class APIResponse(BaseModel):

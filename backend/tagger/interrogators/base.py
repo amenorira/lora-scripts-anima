@@ -1,7 +1,17 @@
+"""打标器基类与标签后处理流水线。
+
+Interrogator 子类约定：load() 惰性加载模型，interrogate(image) 返回
+{分类: [(标签, 置信度), ...]}；postprocess_tags 把原始结果按阈值/开关
+收敛成 {最终标签文本: 置信度}。
+"""
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
 from PIL import Image
+
 from backend.log import log
 
 tag_escape_pattern = re.compile(r'([\\()])')
@@ -51,32 +61,32 @@ CATEGORY_LABELS = {
 
 
 def create_onnx_session(model_path: str | Path):
-    """Create a CUDA-preferred ONNX session with the tagger's shared defaults.
+    """创建 CUDA 优先的 ONNX 会话（打标模型共享的默认配置）。
 
-    Importing torch immediately before onnxruntime intentionally loads the CUDA
-    libraries bundled with torch.  Do not make either dependency eager at module
-    import time: tagger models are loaded on demand.
+    导入 onnxruntime 前先导入 torch 是有意为之：让 torch 自带的 CUDA 运行库
+    先进入进程。两个依赖都不允许在模块 import 时就加载——打标模型按需加载。
     """
-    import torch  # noqa: F401  # ensure CUDA libraries are loaded
+    import torch  # noqa: F401  # 确保 CUDA 运行库已加载
     from onnxruntime import InferenceSession
 
-    opts = None
     try:
         from onnxruntime import SessionOptions
 
-        opts = SessionOptions()
-        opts.log_severity_level = 3
+        options = SessionOptions()
+        options.log_severity_level = 3
     except Exception:
-        pass
+        options = None
 
     return InferenceSession(
         str(model_path),
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-        sess_options=opts,
+        sess_options=options,
     )
 
 
 class Interrogator:
+    """单个打标模型：惰性加载、可卸载、可对单图推理。"""
+
     @staticmethod
     def postprocess_tags(
             tags: Dict[str, List[Tuple[str, float]]],
@@ -96,66 +106,48 @@ class Interrogator:
             replace_underscore_excludes: Optional[List[str]] = None,
             escape_tag=False
     ) -> Dict[str, float]:
+        """按阈值与开关把分类原始结果收敛为最终标签表。
 
-        additional_tags = additional_tags or []
-        exclude_tags = exclude_tags or []
-        replace_underscore_excludes = replace_underscore_excludes or []
+        不改动传入的 tags；返回 {标签文本: 置信度}，默认按置信度降序。
+        """
+        overrides = category_thresholds or {}
+        picked: Dict[str, float] = {}
 
-        ok_tags = {}
+        for category, entries in tags.items():
+            if category == 'rating' and not add_rating_tag:
+                continue
+            if category == 'model' and not add_model_tag:
+                continue
+            floor = overrides.get(category)
+            if floor is None:
+                # 角色标签默认更严格（误标代价高），其余分类用全局阈值
+                floor = character_threshold if category == 'character' else threshold
+            for name, confidence in entries:
+                if confidence >= floor:
+                    picked[name] = confidence
 
-        if not add_rating_tag and 'rating' in tags:
-            del tags['rating']
-
-        if not add_model_tag and 'model' in tags:
-            del tags['model']
-
-        # 角色标签：优先用 category_thresholds，其次用 character_threshold
-        if 'character' in tags:
-            char_th = character_threshold
-            if category_thresholds and 'character' in category_thresholds:
-                char_th = category_thresholds['character']
-            for t, c in tags['character']:
-                if c >= char_th:
-                    ok_tags[t] = c
-            del tags['character']
-
-        for t in additional_tags:
-            ok_tags[t] = 1.0
-
-        for category in tags:
-            # 确定本分类的阈值：分类阈值 > 全局 threshold
-            cat_th = threshold
-            if category_thresholds and category in category_thresholds:
-                cat_th = category_thresholds[category]
-            for t, c in tags[category]:
-                if c >= cat_th:
-                    ok_tags[t] = c
-
-        for e in exclude_tags:
-            ok_tags.pop(e, None)
+        for name in additional_tags or []:
+            picked[name] = 1.0
+        for name in exclude_tags or []:
+            picked.pop(name, None)
 
         if sort_by_alphabetical_order:
-            ok_tags = dict(sorted(ok_tags.items()))
-        # sort tag by confidence
+            ordered = dict(sorted(picked.items()))
         else:
-            ok_tags = dict(sorted(ok_tags.items(), key=lambda item: item[1], reverse=True))
+            ordered = dict(sorted(picked.items(), key=lambda item: item[1], reverse=True))
 
-        new_tags = []
-        for tag in list(ok_tags):
-            new_tag = tag
-
-            if replace_underscore and tag not in replace_underscore_excludes:
-                new_tag = new_tag.replace('_', ' ')
-
+        underscore_exempt = replace_underscore_excludes or []
+        rendered: Dict[str, float] = {}
+        for name, confidence in ordered.items():
+            text = name
+            if replace_underscore and name not in underscore_exempt:
+                text = text.replace('_', ' ')
             if escape_tag:
-                new_tag = tag_escape_pattern.sub(r'\\\1', new_tag)
-
+                text = tag_escape_pattern.sub(r'\\\1', text)
             if add_confident_as_weight:
-                new_tag = f'({new_tag}:{ok_tags[tag]})'
-
-            new_tags.append((new_tag, ok_tags[tag]))
-
-        return dict(new_tags)
+                text = f'({text}:{confidence})'
+            rendered[text] = confidence
+        return rendered
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -165,15 +157,12 @@ class Interrogator:
 
     def unload(self) -> bool:
         unloaded = False
-
-        if hasattr(self, 'model') and self.model is not None:
-            del self.model
-            unloaded = True
+        for attr in ("model", "tags", "labels"):
+            if getattr(self, attr, None) is not None:
+                delattr(self, attr)
+                unloaded = True
+        if unloaded:
             log.info(f'Unloaded {self.name}')
-
-        if hasattr(self, 'tags'):
-            del self.tags
-
         return unloaded
 
     def interrogate(
@@ -181,11 +170,8 @@ class Interrogator:
             image: Image
     ) -> Dict[str, List[Tuple[str, float]]]:
         """
-        Interrogate the given image and return tags with their confidence scores.
-        :param image: The input image to be interrogated.
-        :return: A dictionary with categories as keys and lists of (tag, confidence)
+        对给定图片推理，返回 {分类: [(标签, 置信度), ...]}。
 
-        categories: "rating", "general", "character", "copyright", "artist", "meta", "year", "quality", "model"
+        分类约定: "rating", "general", "character", "copyright", "artist", "meta", "year", "quality", "model"
         """
-
         raise NotImplementedError()

@@ -246,15 +246,15 @@ class TaggerWorkspaceTests(unittest.TestCase):
 
     def test_legacy_cancel_returns_without_reacquiring_progress_lock(self):
         task_id = "cancel-lock-test"
-        with interrogator._tagger_progress_lock:
-            interrogator._tagger_progress[task_id] = {"status": "running", "logs": []}
+        with interrogator._states_lock:
+            interrogator._task_states[task_id] = {"status": "running", "logs": []}
         thread = threading.Thread(target=interrogator.cancel_tagger_task, args=(task_id,))
         thread.start()
         thread.join(timeout=1)
         self.assertFalse(thread.is_alive())
         self.assertEqual(interrogator.get_tagger_task_snapshot(task_id)["status"], "cancelled")
-        with interrogator._tagger_progress_lock:
-            interrogator._tagger_progress.pop(task_id, None)
+        with interrogator._states_lock:
+            interrogator._task_states.pop(task_id, None)
 
 
 

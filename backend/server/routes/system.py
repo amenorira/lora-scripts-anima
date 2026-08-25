@@ -133,10 +133,13 @@ async def pick_file(picker_type: str):
     if picker_type == "folder":
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "")
     elif picker_type == "model-file":
-        file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt"), ("all files", "*.*")]
+        model_file_kinds = [
+            ("模型文件 (checkpoints)", "*.safetensors;*.ckpt;*.pt"),
+            ("所有文件 (all files)", "*.*"),
+        ]
 
         def _pick():
-            return open_file_selector("", "Select file", file_types)
+            return open_file_selector("", "Select file", model_file_kinds)
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
     elif picker_type == "image-file":
@@ -194,7 +197,8 @@ async def get_files(pick_type) -> APIResponse:
         "model-saved-file": {"type": "file", "path": "./output", "filter": "(.safetensors|.ckpt|.pt)"},
         "train-dir": {"type": "folder", "path": "./train", "filter": None},
     }
-    folder_blacklist = [".ipynb_checkpoints", ".DS_Store"]
+    # 目录选择器里无意义的杂项目录
+    hidden_dir_names = {".ipynb_checkpoints", ".DS_Store"}
 
     def list_path_or_files(preset_info):
         path = Path(preset_info["path"])
@@ -223,7 +227,7 @@ async def get_files(pick_type) -> APIResponse:
         elif file_type == "folder":
             folders = [folder for folder in path.iterdir() if folder.is_dir()]
             for folder in folders:
-                if folder.name in folder_blacklist:
+                if folder.name in hidden_dir_names:
                     continue
                 entry = {
                     "path": _to_picker_path(folder),
@@ -246,7 +250,10 @@ async def get_files(pick_type) -> APIResponse:
     return APIResponseSuccess(data={"files": dirs})
 
 
-@router.get("/tasks/terminate/{task_id}", response_model_exclude_none=True)
+_RESPONSE_TRIM_NONE = {"response_model_exclude_none": True}
+
+
+@router.get("/tasks/terminate/{task_id}", **_RESPONSE_TRIM_NONE)
 async def terminate_task(task_id: str):
     tm.terminate_task(task_id)
     return APIResponseSuccess()

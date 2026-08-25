@@ -3,12 +3,11 @@ import sys
 from backend.log import log
 try:
     import tkinter
-    from tkinter.filedialog import askdirectory, askopenfilename
+    import tkinter.filedialog as _filedialog
 except ImportError:
     tkinter = None
-    askdirectory = None
-    askopenfilename = None
-    log.warning("tkinter not found, file selector will not work.")
+    _filedialog = None
+    log.warning("tkinter 不可用，本地文件选择功能已禁用 / tkinter is unavailable, native file picker disabled.")
 
 last_dir = ""
 
@@ -77,7 +76,7 @@ def open_file_selector(
         initialdir = os.getcwd()
     try:
         _get_tk_root()
-        filename = askopenfilename(
+        filename = _filedialog.askopenfilename(
             initialdir=initialdir, title=title,
             filetypes=filetypes
         )
@@ -95,7 +94,7 @@ def open_directory_selector(initialdir) -> str:
         initialdir = os.getcwd()
     try:
         _get_tk_root()
-        directory = askdirectory(
+        directory = _filedialog.askdirectory(
             initialdir=initialdir
         )
         last_dir = directory
