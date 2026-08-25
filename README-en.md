@@ -21,7 +21,7 @@ A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://gi
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
 </p>
 
-lora-scripts-anima is a LoRA training GUI forked from [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts). A training-core registry keeps each backend isolated: **sd-scripts** handles SDXL / Anima, **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
+lora-scripts-anima is a local LoRA training GUI. A training-core registry keeps each backend isolated: **sd-scripts** handles SDXL / Anima, **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`, and **musubi-tuner** handles Krea 2 RAW DiT LoRA.
 
 ### Supported Model Types
 
@@ -163,8 +163,8 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 | `--host` | str | "127.0.0.1" | Server hostname |
 | `--port` | int | 12333 | Server port |
 | `--listen` | bool | false | Enable listening mode (allow external access) |
-| `--skip-prepare-environment` | bool | false | Skip environment preparation |
-| `--disable-tensorboard` | bool | false | Disable TensorBoard |
+| `--skip-prepare-environment` | bool | false | Do not check or repair dependencies at startup |
+| `--disable-tensorboard` | bool | false | Do not launch the bundled TensorBoard with the GUI |
 | `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
 | `--tensorboard-port` | int | 6006 | TensorBoard port |
 | `--localization` | str | | Interface language and localization setting |
@@ -245,5 +245,9 @@ Run the backend test suite (install the test-only dependencies first; they do no
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
-- [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Training GUI framework
+- [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Early design reference
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel source
+
+## License
+
+This project is released under the [MIT License](LICENSE). Third-party components under `vendor/` keep their original licenses (Apache-2.0 / MIT).

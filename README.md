@@ -21,7 +21,7 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-lora-scripts-anima 是基于 [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) 继续开发的 LoRA 训练图形界面。项目通过训练核心注册表隔离不同后端：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端，**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
+lora-scripts-anima 是一款本地 LoRA 训练图形界面。项目通过训练核心注册表隔离不同后端：**sd-scripts** 负责 SDXL / Anima，**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端，**musubi-tuner** 负责 Krea 2 RAW DiT LoRA。
 
 ### 支持的模型类型
 
@@ -165,8 +165,8 @@ cd lora-scripts-anima
 | `--host` | str | "127.0.0.1" | 服务器主机名 |
 | `--port` | int | 12333 | 服务器端口 |
 | `--listen` | bool | false | 启用监听模式（允许外部访问） |
-| `--skip-prepare-environment` | bool | false | 跳过环境准备步骤 |
-| `--disable-tensorboard` | bool | false | 禁用 TensorBoard |
+| `--skip-prepare-environment` | bool | false | 启动时不再自动检查和修复依赖环境 |
+| `--disable-tensorboard` | bool | false | 不随 GUI 启动内置的 TensorBoard |
 | `--tensorboard-host` | str | "127.0.0.1" | TensorBoard 主机 |
 | `--tensorboard-port` | int | 6006 | TensorBoard 端口 |
 | `--localization` | str | | 界面语言与本地化设置 |
@@ -247,5 +247,9 @@ GUI 的 **环境** 标签页提供：
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 训练引擎
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 训练核心
-- [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 训练 GUI 框架
+- [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 早期设计参考
 - [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel 源
+
+## 许可证
+
+本项目以 [MIT 许可证](LICENSE) 发布。`vendor/` 目录下的第三方组件各自保留其原始许可证（Apache-2.0 / MIT）。
