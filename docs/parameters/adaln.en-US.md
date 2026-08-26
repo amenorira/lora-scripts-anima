@@ -1,6 +1,6 @@
 # AdaLN Modulation Layers
 
-Each DiT block in Anima contains three structures LoRA can modify — self-attention, cross-attention, MLP — and a set of AdaLN modulation layers. sd-scripts excludes the modulation layers from LoRA by default; the "Train AdaLN modulation layers" toggle on the parameter page adds them back to the training targets.
+> Each DiT block in Anima contains three structures LoRA can modify — self-attention, cross-attention, MLP — and a set of AdaLN modulation layers. sd-scripts excludes the modulation layers from LoRA by default; the "Train AdaLN modulation layers" toggle on the parameter page adds them back to the training targets.
 
 <!-- doc-anchor: overview -->
 ## What the modulation layers are

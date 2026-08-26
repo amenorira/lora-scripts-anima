@@ -1,6 +1,6 @@
 # AdaLN 调制层
 
-Anima 的每个 DiT 块包含三类可被 LoRA 修改的结构：自注意力、交叉注意力、MLP，以及一组 AdaLN 调制层。sd-scripts 默认把调制层排除在 LoRA 之外；参数页的"训练 AdaLN 调制层"开关可以把它们加回训练目标。
+> Anima 的每个 DiT 块包含三类可被 LoRA 修改的结构：自注意力、交叉注意力、MLP，以及一组 AdaLN 调制层。sd-scripts 默认把调制层排除在 LoRA 之外；参数页的"训练 AdaLN 调制层"开关可以把它们加回训练目标。
 
 <!-- doc-anchor: overview -->
 ## 调制层是什么
