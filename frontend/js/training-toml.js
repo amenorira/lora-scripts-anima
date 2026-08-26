@@ -60,6 +60,7 @@ window.trainingTomlMixin = {
       'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
       'enable_preview','positive_prompts','negative_prompts',
       'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
+      'train_adaln',
       'enable_reg_data',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','prodigy_safeguard_warmup',
@@ -155,6 +156,23 @@ window.trainingTomlMixin = {
         setNetworkArg(argKey, value);
       });
     }
+    // AdaLN 调制层开关（Anima）→ include_patterns，与 adapter.py 2.6 节一致：
+    // 用户在 network_args_custom 手写的同 key 项必须并集合成单条，
+    // 否则 sd-scripts 端 net_kwargs 同 key 后者覆盖前者，会静默丢一边。
+    const ADALN_INCLUDE_PATTERN = '.*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_modulation_self_attn).*';
+    const adalnField = fieldByKey.get('train_adaln');
+    if (this.form.train_adaln === true && adalnField && this._fieldShowIfMet(adalnField)) {
+      const idx = netArgsArr.findIndex(item => String(item).split('=', 1)[0].trim() === 'include_patterns');
+      let patterns = [];
+      if (idx >= 0) {
+        const raw = String(netArgsArr.splice(idx, 1)[0]).split('=').slice(1).join('=').trim();
+        const quoted = [...raw.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)].map(m => (m[1] !== undefined ? m[1] : m[2]));
+        patterns = quoted.length > 0 ? quoted : (raw ? [raw] : []);
+      }
+      if (!patterns.includes(ADALN_INCLUDE_PATTERN)) patterns.push(ADALN_INCLUDE_PATTERN);
+      const literal = '[' + patterns.map(p => `'${String(p).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(', ') + ']';
+      netArgsArr.push(`include_patterns=${literal}`);
+    }
     // LyCORIS UI fields → key=value
     for (const k of activeLycorisKeys) {
       const v = this.form[k];
@@ -249,7 +267,7 @@ window.trainingTomlMixin = {
     if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return sourceKey;
     const argTarget = this._tomlPreviewArgTarget(sourceKey);
     if (argTarget) return argTarget.paramKey;
-    if (sourceKey === 'network_args_custom' || sourceKey === 'enable_loraplus') return 'network_args';
+    if (sourceKey === 'network_args_custom' || sourceKey === 'enable_loraplus' || sourceKey === 'train_adaln') return 'network_args';
     if (sourceKey === 'optimizer_args_custom') return 'optimizer_args';
     return sourceKey;
   },

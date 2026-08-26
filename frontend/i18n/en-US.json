@@ -625,6 +625,8 @@
 		"network_weights": "LoRA weights to continue training",
 		"network_weightsHint": "Enter an existing LoRA model path to initialize this training network.",
 			"network_dropout": "LoRA neuron dropout",
+		"train_adaln": "Train AdaLN modulation layers",
+		"train_adalnHint": "Upstream excludes the modulation layers and trains only attention and MLP. When enabled, an include_patterns entry is injected into network_args to train the three per-block modulation branches as well; the file grows by roughly half at the same rank.",
 		"enable_loraplus": "Enable LoRA+ learning-rate groups",
 		"enable_loraplusHint": "Sets separate regular and plus group rates; incompatible optimizers disable this option.",
 			"enable_loraplus_optimizerLocked": "Set to off. Reason: the current trainer does not support LoRA+ with Prodigy, ProdigyPlusScheduleFree, EmoSens, or LoRA-RITE; AdaFactor requires both relative_step and warmup_init to be disabled.",

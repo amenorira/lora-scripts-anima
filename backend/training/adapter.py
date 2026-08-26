@@ -6,11 +6,14 @@ UI JSON → TOML 转换：白名单过滤 + 字段映射 + 防御性过滤。
 """
 from __future__ import annotations
 
+import ast
 import math
 from typing import Any
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
 from backend.training.field_registry import (
+    ADALN_INCLUDE_MODULES,
+    ADALN_INCLUDE_PATTERN,
     AUTOMAGIC_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
@@ -187,6 +190,39 @@ def _remove_key_value_args(values: list[str], keys: tuple[str, ...]) -> list[str
     ]
 
 
+def _merge_include_patterns(network_args: list[str], pattern: str) -> list[str]:
+    """
+    把 pattern 并入 network_args 中唯一的 include_patterns 项（不存在则新建）。
+
+    sd-scripts 端 network_args 解析为 net_kwargs 字典，同 key 后者覆盖前者——
+    若用户在 network_args_custom 手写过 include_patterns，各自单写会静默丢一边，
+    故必须解析后取并集合成单条。
+    """
+    result: list[str] = []
+    existing: list[str] = []
+    for item in network_args:
+        key, sep, value = item.partition("=")
+        if sep and key.strip() == "include_patterns":
+            try:
+                parsed = ast.literal_eval(value.strip())
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, list):
+                existing = [str(p) for p in parsed]
+            elif parsed is not None:
+                existing = [str(parsed)]
+            elif value.strip():
+                # 无法按字面量解析时按单条模式保留原文（与 sd-scripts 对非标量
+                # 包一层的容错一致），避免静默吞掉用户输入。
+                existing = [value.strip()]
+        else:
+            result.append(item)
+    if pattern not in existing:
+        existing.append(pattern)
+    result.append(f"include_patterns={existing!r}")
+    return result
+
+
 def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str, Any], list[str]]:
     """
     将 UI JSON 配置转换为 sd-scripts TOML 配置。
@@ -251,6 +287,15 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     else:
         for arg_key in LORAPLUS_RATIO_KEYS:
             source.pop(arg_key, None)
+
+    # ── 2.6. AdaLN 调制层 UI 开关 → include_patterns ─────────────
+    # train_adaln 仅是产品开关，不传给 sd-scripts。开启时把三条调制分支的 include
+    # 正则并入 network_args（豁免上游默认排除）；模块不在支持集合内（或 SDXL 配置
+    # 残留了该字段）时只剥离不注入——对无 adaln_modulation 模块的架构正则本也不命中。
+    train_adaln = source.pop("train_adaln", False) is True
+    if train_adaln and source.get("network_module") in ADALN_INCLUDE_MODULES:
+        network_args = list(source.get("network_args") or [])
+        source["network_args"] = _merge_include_patterns(network_args, ADALN_INCLUDE_PATTERN)
 
     # ── 3. 原生模块字段 → network_args（按各模块实际支持的参数透传）──
     # sd-scripts 各 create_network 的真实消费面（已逐行核对）：

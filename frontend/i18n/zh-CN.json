@@ -625,6 +625,8 @@
 		"network_weights": "继续训练的 LoRA 权重",
 		"network_weightsHint": "填写已有 LoRA 模型路径，用其权重初始化本次网络。",
 			"network_dropout": "LoRA 神经元 Dropout",
+		"train_adaln": "训练 AdaLN 调制层",
+		"train_adalnHint": "上游默认排除调制层，只训练注意力与 MLP。开启后向 network_args 注入 include_patterns，把各块三个调制分支一并纳入训练，同 rank 下文件约增大五成。",
 		"enable_loraplus": "启用 LoRA+ 学习率分组",
 		"enable_loraplusHint": "分别设置普通组与 plus 组学习率；不兼容的优化器会关闭此项。",
 			"enable_loraplus_optimizerLocked": "已锁定为关闭。原因：当前训练器不支持 LoRA+ 与 Prodigy、ProdigyPlusScheduleFree、EmoSens 或 LoRA-RITE 组合；AdaFactor 必须同时关闭 relative_step 与 warmup_init。",

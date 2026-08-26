@@ -95,6 +95,24 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 
+    def test_adaln_documents_render_registered_field_anchors(self):
+        expected_anchors = {
+            field["doc_anchor"]
+            for field in FIELDS
+            if field.get("doc_slug") == "adaln" and field.get("doc_anchor")
+        }
+        self.assertEqual(expected_anchors, {"overview"})
+        for locale in ("zh-CN", "en-US"):
+            path = _document_path("adaln", locale)
+            self.assertTrue(path.is_file())
+            html, toc = _render_markdown(
+                path.read_text(encoding="utf-8"),
+                PurePosixPath(f"parameters/adaln.{locale}.md"),
+            )
+            for anchor in expected_anchors:
+                self.assertIn(f'id="{anchor}"', html)
+                self.assertIn(f'href="#{anchor}"', toc)
+
     def test_timestep_documents_render_registered_field_anchors_and_widget(self):
         expected_anchors = {
             field["doc_anchor"]

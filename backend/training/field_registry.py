@@ -95,6 +95,17 @@ LORAPLUS_INCOMPATIBLE_OPTIMIZERS = (
     LORARITE_OPTIMIZER_TYPE,
 )
 
+# AdaLN 调制层（Anima 专属）：上游默认经排除正则剔出 LoRA（lora_anima.py:254 追加
+# .*(_modulation|_norm|_embedder|final_layer).*；loha/lokr 经 network_base.py 的 Anima
+# ArchConfig 继承同一排除）。UI 开关由 adapter 注入 include_patterns 强制豁免排除，
+# 三个模块的 include/exclude 机制一致（均对 original_name 做 fullmatch）。
+ADALN_INCLUDE_MODULES = (
+    "networks.lora_anima",
+    "networks.loha",
+    "networks.lokr",
+)
+ADALN_INCLUDE_PATTERN = r".*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_modulation_self_attn).*"
+
 
 def _show_if_one_of(key: str, values: tuple[str, ...]) -> dict[str, Any]:
     condition: dict[str, Any] = {"key": key, "eq": values[0]}
@@ -213,12 +224,18 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 0.5, "step": 0.01, "hint_key": "field.network_dropoutHint"},
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
+    # ── 平级开关（nested: False）：与 network_module 同级渲染，仅显隐与其联动 ──
+    # AdaLN 调制层（Anima 专属，见上方 ADALN_* 常量注释）。lycoris.kohya 的 Anima
+    # 路径未验证，不在支持集合内。
+    {"key": "train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_adaln", "target": "ui", "group": "anima", "nested": False, "show_if": _show_if_one_of("network_module", ADALN_INCLUDE_MODULES), "hint_key": "field.train_adalnHint", "doc_slug": "adaln", "doc_anchor": "overview"},
     # LoRA+ 是 network_args 功能，不是顶层 CLI 参数。UI 开关仅控制是否生成下列三个
     # sd-scripts 原生参数；支持面与各 network module 的 create_network 实现保持一致。
-    {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "show_if": _show_if_one_of("network_module", LORAPLUS_NETWORK_MODULES), "hint_key": "field.enable_loraplusHint", "auto_value": _loraplus_auto_disable_rules(), "readonly_if_any": _loraplus_readonly_conditions(), "readonly_reason_key": "field.enable_loraplus_optimizerLocked", "doc_slug": "lora-plus", "doc_anchor": "overview"},
-    {"key": "loraplus_lr_ratio", "type": "number", "default": 2.0, "section": "network", "desc_key": "field.loraplus_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-lr-ratio"},
-    {"key": "loraplus_unet_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_unet_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_unet_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-unet-lr-ratio"},
-    {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
+    {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "nested": False, "show_if": _show_if_one_of("network_module", LORAPLUS_NETWORK_MODULES), "hint_key": "field.enable_loraplusHint", "auto_value": _loraplus_auto_disable_rules(), "readonly_if_any": _loraplus_readonly_conditions(), "readonly_reason_key": "field.enable_loraplus_optimizerLocked", "doc_slug": "lora-plus", "doc_anchor": "overview"},
+    # 三个比率项的 show_if_any 每组末位是 network_module，不显式 layout_parent 会被
+    # 归到 network_module 下；这里显式挂到 enable_loraplus 作为其子项。
+    {"key": "loraplus_lr_ratio", "type": "number", "default": 2.0, "section": "network", "desc_key": "field.loraplus_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "layout_parent": "enable_loraplus", "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-lr-ratio"},
+    {"key": "loraplus_unet_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_unet_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "layout_parent": "enable_loraplus", "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_unet_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-unet-lr-ratio"},
+    {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "layout_parent": "enable_loraplus", "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
     # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开。
     # 不带 sub_group → 渲染为常规 inline 子参数（不包在"LyCORIS 算法参数"子组盒子里）。
     {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},

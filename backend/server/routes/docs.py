@@ -73,6 +73,19 @@ _DOCUMENTS = {
             "en-US": "parameters/lora-plus.en-US.md",
         },
     },
+    "adaln": {
+        "category": "network",
+        "order": 20,
+        "titles": {"zh-CN": "AdaLN 调制层", "en-US": "AdaLN Modulation Layers"},
+        "summaries": {
+            "zh-CN": "AdaLN 调制层的作用、上游默认排除行为、训练影响与使用建议。",
+            "en-US": "What the AdaLN modulation layers do, the upstream default exclusion, training impact, and recommendations.",
+        },
+        "files": {
+            "zh-CN": "parameters/adaln.zh-CN.md",
+            "en-US": "parameters/adaln.en-US.md",
+        },
+    },
 }
 
 
