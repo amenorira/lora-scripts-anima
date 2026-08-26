@@ -273,11 +273,7 @@ window.docsMixin = {
       `${tr('timestepPreview.middleZone', 'Mid noise')}: ${percent(data.midPercent)}`,
       `${tr('timestepPreview.structureZone', 'High noise')}: ${percent(data.highPercent)}`,
     ].join('; ');
-    const bars = data.bins.map(bin => {
-      const start = Math.round(bin.index * 1000 / 32);
-      const end = Math.round((bin.index + 1) * 1000 / 32);
-      return `<i style="height:${bin.height}%" title="${start}-${end}: ${bin.percent.toFixed(2)}%"></i>`;
-    }).join('');
+
     const notes = data.notes.map(note => (
       `<div><span aria-hidden="true">&#8226;</span><span>${escapeHtml(note)}</span></div>`
     )).join('');
@@ -302,24 +298,8 @@ window.docsMixin = {
         <span><b>${escapeHtml(data.weighting)}</b><small>${tr('timestepPreview.weighting', 'Loss weighting')}</small></span>
         <span><b>${escapeHtml(data.resolution)}</b><small>${tr('timestepPreview.resolution', 'Reference resolution')}</small></span>
       </div>
-      <div class="timestep-preview-chart" role="img" aria-label="${escapeHtml(summary)}">
-        <div class="timestep-preview-bars" aria-hidden="true">${bars}</div>
-        <svg class="timestep-preview-weight-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <polyline points="${escapeHtml(data.weightPoints)}"></polyline>
-        </svg>
-      </div>
-      <div class="timestep-preview-axis">
-        <span>${tr('timestepPreview.clean', 'Low noise')}</span>
-        <span>${tr('timestepPreview.noisy', 'High noise')}</span>
-      </div>
-      <div class="timestep-preview-legend">
-        <span><i class="legend-distribution"></i><span>${tr('timestepPreview.distribution', 'Sampling probability')}</span></span>
-        <span><i class="legend-weight"></i><span>${tr('timestepPreview.lossWeight', 'Loss weight')}</span></span>
-      </div>
-      <div class="timestep-preview-summary">
-        <div><b>${percent(data.lowPercent)}</b><span>${tr('timestepPreview.detailZone', 'Low noise')}</span></div>
-        <div><b>${percent(data.midPercent)}</b><span>${tr('timestepPreview.middleZone', 'Mid noise')}</span></div>
-        <div><b>${percent(data.highPercent)}</b><span>${tr('timestepPreview.structureZone', 'High noise')}</span></div>
+      <div class="timestep-layout-chart">
+        ${this._buildTimestepChartHtml(data)}
       </div>
       ${notes ? `<div class="timestep-preview-notes">${notes}</div>` : ''}
       <p class="timestep-preview-footnote">${tr('timestepPreview.footnote', 'Deterministic local preview of the current trainer formulas.')}</p>
@@ -327,6 +307,16 @@ window.docsMixin = {
 
     const refresh = container.querySelector('.docs-timestep-refresh');
     if (refresh) refresh.addEventListener('click', () => this._renderDocsTimestepPreview(container));
+    const chartHolder = container.querySelector('.timestep-layout-chart');
+    const chart = chartHolder && chartHolder.querySelector('.timestep-preview-chart');
+    if (chart) {
+      chart.addEventListener('mousemove', event => this.onTimestepChartHover({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        currentTarget: chartHolder,
+      }, data));
+      chart.addEventListener('mouseleave', event => this.onTimestepChartLeave({ currentTarget: chartHolder }));
+    }
   },
 
   _cancelDocsContentRequest() {

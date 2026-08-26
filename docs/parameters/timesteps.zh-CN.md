@@ -43,13 +43,13 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 分布预览包含三个主要部分：
 
-1. **蓝色柱子。** 柱子越高，代表对应的噪声区域越常被抽到。
-2. **橙色曲线。** Loss 表示模型预测与训练目标之间的误差。橙线显示样本被抽到以后，这个误差还会乘上多大的额外权重。
-3. **低、中、高噪声占比。** 这三个数值概括当前设置更偏向细节、平衡区域还是整体结构。
+1. **蓝色连续概率密度曲线（PDF）。** 曲线越高，代表对应的噪声时间步在训练中越常被抽到。
+2. **黄色曲线。** Loss 表示模型预测与训练目标之间的误差。黄线显示样本被抽到以后，这个误差还会乘上多大的额外权重。
+3. **高、中、低噪声占比。** 这三个数值概括当前设置更偏向整体结构、平衡过渡还是细节微调。
 
-32 根蓝柱只是把完整时间范围分成 32 个区间方便观察，并不表示训练器只有 32 个时间步。柱高以最高的一根为基准缩放，因此不能直接当作纵轴概率读取。
+横轴按照生图的去噪物理过程排列：左侧为最大噪声时间步 `t≈1000`（纯噪声、构图与大结构阶段），右侧为 `t≈0`（低噪声、画面细节微调阶段）。
 
-橙线使用对数刻度，只用来比较权重变化的趋势。它不是训练日志中的实际 Loss，也不能和蓝柱的高度直接比较。橙线保持水平，表示没有对不同时间步额外加权，不代表 Loss 本身保持不变。
+纵轴展示真实的数学概率密度 <var>f</var>(<var>t</var>)，黄色 Loss 权重线使用对数刻度展示相对变化趋势。黄线保持水平表示没有对不同时间步额外加权（等价于均匀权重），不代表训练日志中的实际 Loss 保持不变。
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="某个噪声区域对训练影响的近似关系">
   <div class="doc-equation-kicker">帮助理解，不是精确预测</div>
@@ -57,7 +57,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p>图片、标注和训练阶段都会改变“当前误差”，所以分布图只能说明训练如何分配抽样与权重。</p>
 </div>
 
-预览会在本地进行 32,768 次固定随机种子的模拟，参数相同，图形就相同。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
+预览直接基于当前算法与位移公式的闭式解析密度函数（PDF）精确计算，完全确定且无随机噪点。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
 
 <!-- doc-anchor: dataset-guidance -->
 ## 数据集规模与时间步选择
@@ -181,7 +181,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`：决定哪些时间步更常出现
 
-`timestep_sampling` 决定蓝色柱子的基本形状，也就是训练更常抽到哪些噪声强度。
+`timestep_sampling` 决定蓝色采样密度曲线的基本形状，也就是训练更常抽到哪些噪声强度。
 
 | 选项 | 它会怎样抽取时间步 | 可用训练类型 |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p><var>s</var> 对应 <code>sigmoid_scale</code>。默认值为 1.0。</p>
 </div>
 
-默认 `sigmoid_scale=1.0` 时，分布左右对称，明显集中在中噪声。以 1024×1024 的默认预览为例，低、中、高噪声占比大约是 21%、57% 和 21%（按 32 根柱子的平均三等分统计，即低、中、高分别对应 10、12、10 根柱子）；具体数值会随参数和统计区间略有变化。
+默认 `sigmoid_scale=1.0` 时，分布左右对称，明显集中在中噪声。以 1024×1024 的默认预览为例，低、中、高噪声占比大约是 21%、57% 和 21%；具体数值会随参数和统计区间略有变化。
 
 ### `uniform`
 
@@ -329,7 +329,7 @@ timestep_sampling = { offset = -0.25 }
 
 时间步对训练的影响有两个独立环节：
 
-1. **抽样位置。** 由 `timestep_sampling` 和相关分布参数控制，对应图中的蓝柱。
+1. **抽样位置。** 由 `timestep_sampling` 和相关分布参数控制，对应图中的蓝色采样密度曲线。
 2. **Loss 权重。** 表示样本被抽到后对误差施加的额外权重，对应图中的橙线。
 
 `weighting_scheme` 这个名称容易误导：其中有些选项改变 Loss 权重，有些选项只在 `timestep_sampling=sigma` 时改变抽样分布。
@@ -364,7 +364,7 @@ timestep_sampling = { offset = -0.25 }
   <p>它会相对降低两个端点的影响，并平滑强调中噪声。</p>
 </div>
 
-`cosmap` 只改变橙色权重曲线，不会改变蓝色采样柱。
+`cosmap` 只改变橙色权重曲线，不会改变蓝色采样密度曲线。
 
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`、`logit_mean` 与 `logit_std`
@@ -422,7 +422,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 3. 高噪声不代表质量更高，低噪声也不保证细节一定更好。
 4. 时间步无法创造训练集中没有的角度、结构和绘画规律。
 5. `sample_flow_shift` 是生成预览参数，不会改变训练时间步分布。
-6. 训练随机种子（seed）会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览使用固定模拟种子，因此修改训练随机种子不会让图形变化。
+6. 训练随机种子（seed）会改变实际抽取时间步的随机顺序，但不会改变长时间训练下的理论分布。文档预览直接确定性计算解析 PDF，不使用随机模拟，因此修改训练随机种子不会让图形变化。
 7. batch size 和多卡数量不会改变理论分布，但会影响短训练中实际抽样的波动大小。
 8. 时间步设置不会改变导出的 LoRA 文件格式，推理时也不要求使用同名采样方式。
 9. `subset_timestep_offsets` 只对 `sigmoid`、`shift`、`flux_shift` 生效；`uniform`、`sigma` 下不会改变训练。
@@ -452,7 +452,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 - `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
 - musubi-tuner fork 的 `src/musubi_tuner/training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 等采样实现。
 - `src/musubi_tuner/training/timesteps.py`：共享密度与损失权重公式。
-- 前端分布预览的模拟实现见 `frontend/js/training-core.js`（32 根柱子、32,768 次固定随机种子模拟）。
+- 前端分布预览见 `frontend/js/training-core.js`：通过 120 个采样点绘制确定性的解析 PDF，并在适用时单独绘制 Loss 权重曲线。
 
 **模型与上游依据：** Anima 与 Krea 2 的训练路径使用 flow matching（流匹配）加噪方式与目标公式 `v = ε − x`；`sigmoid` 采样与 `discrete_flow_shift` 的变换形式出自 [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis（SD3 论文）](https://arxiv.org/abs/2403.03206)。本文数据集规模对应的经验起点不属于任何官方推荐。
 

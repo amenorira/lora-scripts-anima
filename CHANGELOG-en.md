@@ -6,6 +6,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.1 - 2026-08-26
+
+This release fixes documentation and UI issues exposed by the timestep distribution preview rewrite. The parameter guide now reuses the trainer's actual analytical PDF chart, the chart renders correctly in the docs page and supports hover inspection, and the probability-density labels, inline math markup, localization, and layout stability are corrected.
+
+### Timestep preview and documentation
+
+- Reuse the same analytical PDF curve, loss-weight curve, and zone-summary renderer in the parameter documentation and the training preview.
+- Fix the docs-page chart collapsing to zero width, and add the same hover inspection behavior used by the parameter preview.
+- Replace the obsolete 32-bin/fixed-random-simulation description with the current deterministic 120-point analytical PDF implementation.
+- Correct the probability-density terminology and replace unsupported `$f(t)$` inline math markup.
+- Stabilize the density inspection bar so it does not jump while entering, moving across, or leaving the chart; add localized English and Chinese labels.
+
 ## v2.9.0 - 2026-08-26
 
 The headline of this release is the new "Train AdaLN modulation layers" toggle on the parameter page. Anima's per-block modulation layers — which adjust feature scale, shift, and gating per noise level in real time — were previously excluded from LoRA by sd-scripts by default; they can now be included with one switch, and style datasets are worth an A/B comparison against the off version. The same release promotes the LoRA+ toggle to a peer control and bundles assorted improvements to AI tagging, the built-in file picker, and the backend core, with the project license changed to MIT.

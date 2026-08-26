@@ -2231,131 +2231,225 @@ window.trainingCoreMixin = {
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
     const [width, height] = this._timestepPreviewResolution(source.resolution);
-    const binCount = 32;
-    const sampleCount = 32768;
+    const pointCount = 120; // 120 points for smooth analytical PDF curves
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
-    const fixedShift = value => (value * flowShift) / (1 + (flowShift - 1) * value);
+    const logit = value => {
+      const clamped = Math.max(1e-7, Math.min(1 - 1e-7, value));
+      return Math.log(clamped / (1 - clamped));
+    };
+
+    // Flow shift transformation: sigma = (u * shift) / (1 + (shift - 1) * u)
+    // Inverse shift: u = sigma / (shift + (1 - shift) * sigma)
+    // Derivative du/dsigma: shift / (shift + (1 - shift) * sigma)^2
+    const flowShiftJacobian = (sigma, shift) => {
+      if (Math.abs(shift - 1.0) < 1e-9) return { u: sigma, jacobian: 1.0 };
+      const denom = shift + (1.0 - shift) * sigma;
+      if (Math.abs(denom) < 1e-12) return { u: sigma, jacobian: 1.0 };
+      const u = sigma / denom;
+      const jacobian = shift / (denom * denom);
+      return { u: Math.max(1e-7, Math.min(1 - 1e-7, u)), jacobian };
+    };
 
     // Anima and Krea 2 both use VAE f8 latents with 2x2 DiT patch packing.
     const latentH = Math.floor(height / 8);
     const latentW = Math.floor(width / 8);
     const tokenCount = Math.floor(latentH / 2) * Math.floor(latentW / 2);
-    const resolutionShift = maxTokens => {
+    const getShiftParam = maxTokens => {
       const mu = 0.5 + ((1.15 - 0.5) / (maxTokens - 256)) * (tokenCount - 256);
-      const shift = Math.exp(mu);
-      return value => (value * shift) / (1 + (shift - 1) * value);
+      return Math.exp(mu);
     };
-    const fluxShift = resolutionShift(4096);
-    const krea2Shift = resolutionShift(6400);
 
-    const sampleCounts = offset => {
-      const counts = Array(binCount).fill(0);
-      let state = 0x6d2b79f5;
-      let spareNormal = null;
-      const random = () => {
-        state |= 0;
-        state = state + 0x6d2b79f5 | 0;
-        let value = Math.imul(state ^ state >>> 15, 1 | state);
-        value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
-        return ((value ^ value >>> 14) >>> 0) / 4294967296;
-      };
-      const normal = () => {
-        if (spareNormal !== null) {
-          const value = spareNormal;
-          spareNormal = null;
-          return value;
-        }
-        const u = Math.max(random(), 1e-12);
-        const v = random();
-        const radius = Math.sqrt(-2 * Math.log(u));
-        const angle = 2 * Math.PI * v;
-        spareNormal = radius * Math.sin(angle);
-        return radius * Math.cos(angle);
-      };
+    let activeShift = 1.0;
+    if (sampling === 'shift' || (sampling === 'sigma' && isKrea2)) {
+      activeShift = flowShift;
+    } else if (sampling === 'flux_shift') {
+      activeShift = getShiftParam(4096);
+    } else if (sampling === 'krea2_shift') {
+      activeShift = getShiftParam(6400);
+    }
+
+    // Standard Normal PDF: phi(z) = 1/sqrt(2pi) * exp(-0.5 * z^2)
+    const normalPdf = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+
+    // Analytical PDF evaluator f(sigma) for sigma in (0, 1)
+    const evaluatePdf = (sigma, offset) => {
+      const s = Math.max(1e-6, Math.min(1 - 1e-6, sigma));
       const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
-      for (let index = 0; index < sampleCount; index += 1) {
-        let sigma;
-        if (sampling === 'uniform') {
-          sigma = random();
-        } else if (sampling === 'shift') {
-          sigma = fixedShift(sigmoid(sigmoidScale * (normal() + appliedOffset)));
-        } else if (sampling === 'flux_shift') {
-          sigma = fluxShift(sigmoid(sigmoidScale * (normal() + appliedOffset)));
-        } else if (sampling === 'krea2_shift') {
-          sigma = krea2Shift(sigmoid(sigmoidScale * normal()));
-        } else if (sampling === 'sigma') {
-          let density;
-          if (weighting === 'logit_normal') density = sigmoid(logitMean + logitStd * normal());
-          else if (weighting === 'mode') {
-            const u = random();
-            density = 1 - u - modeScale * (Math.cos(Math.PI * u / 2) ** 2 - 1 + u);
-          } else density = random();
-          sigma = fixedShift(1 - Math.max(0, Math.min(1, density)));
-        } else if (sampling === 'logsnr') {
-          sigma = sigmoid(-(logitMean + logitStd * normal()) / 2);
-        } else {
-          sigma = sigmoid(sigmoidScale * (normal() + appliedOffset));
-        }
-        sigma = Math.max(0, Math.min(0.999999, sigma));
-        counts[Math.min(binCount - 1, Math.floor(sigma * binCount))] += 1;
+
+      if (sampling === 'uniform') {
+        return 1.0;
       }
-      return counts;
+
+      // Cases with flow shift: shift, flux_shift, krea2_shift, sigma
+      if (['shift', 'flux_shift', 'krea2_shift'].includes(sampling)) {
+        const { u, jacobian } = flowShiftJacobian(s, activeShift);
+        // u = sigmoid(sigmoidScale * (z + appliedOffset))
+        // z = logit(u) / sigmoidScale - appliedOffset
+        // du/dz = sigmoidScale * u * (1 - u) => dz/du = 1 / (sigmoidScale * u * (1 - u))
+        const z = logit(u) / sigmoidScale - appliedOffset;
+        const pdfU = normalPdf(z) / (sigmoidScale * u * (1 - u));
+        return Math.max(0, pdfU * jacobian);
+      }
+
+      if (sampling === 'sigma') {
+        const { u, jacobian } = flowShiftJacobian(s, flowShift);
+        // density in trainer is defined over (1 - u)
+        const densityVal = 1 - u;
+        let pdfDensity = 1.0;
+        if (weighting === 'logit_normal') {
+          const z = (logit(densityVal) - logitMean) / logitStd;
+          pdfDensity = normalPdf(z) / (logitStd * densityVal * (1 - densityVal));
+        } else if (weighting === 'mode') {
+          // Mode weighting density approximation
+          pdfDensity = Math.max(0, 1 + modeScale * Math.sin(Math.PI * densityVal));
+        } else {
+          pdfDensity = 1.0; // uniform
+        }
+        return Math.max(0, pdfDensity * jacobian);
+      }
+
+      if (sampling === 'logsnr') {
+        // sigma = sigmoid(-(logitMean + logitStd * z) / 2)
+        // -2 * logit(sigma) = logitMean + logitStd * z => z = (-2 * logit(s) - logitMean) / logitStd
+        // dz/ds = 2 / (logitStd * s * (1 - s))
+        const z = (-2 * logit(s) - logitMean) / logitStd;
+        const pdf = (normalPdf(z) * 2) / (logitStd * s * (1 - s));
+        return Math.max(0, pdf);
+      }
+
+      // Default: pure sigmoid
+      const z = logit(s) / sigmoidScale - appliedOffset;
+      const pdf = normalPdf(z) / (sigmoidScale * s * (1 - s));
+      return Math.max(0, pdf);
     };
 
-    const baselineCounts = sampleCounts(0);
-    let counts = [...baselineCounts];
+    // Calculate real mathematical density over t in [0, 1000]
+    // Note: Integral f(t) dt over [0, 1000] = 1, so baseline peak at t=500 is ~0.0016
+    const evaluateTimestepDensity = (t, offset) => {
+      const sigma = Math.max(1e-6, Math.min(1 - 1e-6, t / 1000));
+      return evaluatePdf(sigma, offset) / 1000;
+    };
+
+    // Generate 120 points from t=1000 (noisy) on the left to t=0 (clean) on the right
+    const generatePdfCurve = offset => {
+      const points = [];
+      for (let i = 0; i < pointCount; i += 1) {
+        const t = (1 - (i + 0.5) / pointCount) * 1000;
+        points.push(evaluateTimestepDensity(t, offset));
+      }
+      return points;
+    };
+
+    const baselineDensities = generatePdfCurve(0);
+    let densities = [...baselineDensities];
     let scopeLabel = this.t('timestepPreview.baseDistribution');
     let offset = 0;
     const subsets = this.timestepOffsetSubsets();
     if (scope === 'overall' && subsets.length) {
       const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0) || subsets.length;
-      counts = Array(binCount).fill(0);
+      densities = Array(pointCount).fill(0);
       subsets.forEach(subset => {
         const weight = totalSamples === subsets.length ? 1 / subsets.length : Number(subset.sample_count || 0) / totalSamples;
-        const subsetCounts = sampleCounts(Number(this.subsetTimestepOffsetValue(subset.name) || 0));
-        subsetCounts.forEach((count, index) => { counts[index] += count * weight; });
+        const subsetDensities = generatePdfCurve(Number(this.subsetTimestepOffsetValue(subset.name) || 0));
+        subsetDensities.forEach((val, index) => { densities[index] += val * weight; });
       });
       scopeLabel = this.t('timestepPreview.overallDistribution');
     } else {
       const selectedSubset = subsets.find(subset => subset.name === scope);
       if (selectedSubset) {
         offset = Number(this.subsetTimestepOffsetValue(selectedSubset.name) || 0);
-        counts = sampleCounts(offset);
+        densities = generatePdfCurve(offset);
         scopeLabel = selectedSubset.name;
       }
     }
 
-    const maxCount = Math.max(...counts, ...baselineCounts, 1);
-    const weights = counts.map((_, index) => {
-      const sigma = Math.max((index + 0.5) / binCount, 1e-6);
-      if (weighting === 'sigma_sqrt') return sigma ** -2;
-      if (weighting === 'cosmap') return 2 / (Math.PI * (1 - 2 * sigma + 2 * sigma * sigma));
-      return 1;
-    });
-    const logWeights = weights.map(value => Math.log1p(value));
+    const maxDensity = Math.max(...densities, ...baselineDensities, 0.00001);
+
+    // Calculate clean scientific Y-Axis upper bound (e.g. 0.00175, 0.00200, 0.00250)
+    let yUpper = 0.0020;
+    if (maxDensity <= 0.0012) yUpper = 0.00125;
+    else if (maxDensity <= 0.0017) yUpper = 0.00175;
+    else if (maxDensity <= 0.0020) yUpper = 0.00200;
+    else if (maxDensity <= 0.0025) yUpper = 0.00250;
+    else if (maxDensity <= 0.0030) yUpper = 0.00300;
+    else yUpper = Math.ceil(maxDensity * 10000) / 10000;
+
+    const yTickCount = 4; // 0, 1/4, 2/4, 3/4, 4/4
+    const yTicks = [];
+    for (let i = 0; i <= yTickCount; i += 1) {
+      const val = (yUpper * (yTickCount - i)) / yTickCount;
+      const yPercent = (i / yTickCount) * 100; // 0% to 100% full coordinate span
+      yTicks.push({
+        label: val.toFixed(5),
+        y: yPercent.toFixed(2),
+        isZero: i === yTickCount,
+      });
+    }
+
+    // Compute Loss Weighting Curve (matched from t=1000 down to t=0)
+    const weights = [];
+    const logWeights = [];
+    for (let i = 0; i < pointCount; i += 1) {
+      const sigma = 1 - (i + 0.5) / pointCount;
+      let w = 1.0;
+      if (weighting === 'sigma_sqrt') w = sigma ** -2;
+      else if (weighting === 'cosmap') w = 2 / (Math.PI * (1 - 2 * sigma + 2 * sigma * sigma));
+      weights.push(w);
+      logWeights.push(Math.log1p(w));
+    }
     const maxLogWeight = Math.max(...logWeights, 1);
-    const bins = counts.map((count, index) => ({
-      index,
-      count,
-      percent: count * 100 / sampleCount,
-      height: Math.max(1.5, count * 100 / maxCount),
-      baselinePercent: baselineCounts[index] * 100 / sampleCount,
-      baselineHeight: Math.max(1.5, baselineCounts[index] * 100 / maxCount),
-      weight: weights[index],
-      weightY: 100 - logWeights[index] * 92 / maxLogWeight,
-    }));
-    const weightPoints = bins.map((bin, index) => `${(index * 100 / (binCount - 1)).toFixed(2)},${bin.weightY.toFixed(2)}`).join(' ');
-    const third = Math.floor(binCount / 3);
-    const sumRange = (sourceCounts, start, end) => sourceCounts.slice(start, end).reduce((total, value) => total + value, 0) * 100 / sampleCount;
-    const median = sourceCounts => {
-      const midpoint = sourceCounts.reduce((sum, value) => sum + value, 0) / 2;
-      let cumulative = 0;
-      for (let index = 0; index < sourceCounts.length; index += 1) {
-        cumulative += sourceCounts[index];
-        if (cumulative >= midpoint) return Math.round((index + 0.5) * 1000 / binCount);
-      }
-      return 1000;
+
+    // Build SVG Coordinates (x: 0~100, y: 0~100) mapped directly to 0~100%
+    const buildSvgPath = values => {
+      const coords = values.map((val, idx) => {
+        const x = (idx / (pointCount - 1)) * 100;
+        const y = 100 - (val / yUpper) * 100; // 0 maps strictly to 100% (bottom axis), yUpper maps to 0% (top)
+        return `${x.toFixed(2)},${Math.max(0, y).toFixed(2)}`;
+      });
+      const linePath = 'M ' + coords.join(' L ');
+      const areaPath = `M 0,100 L ${coords.join(' L ')} L 100,100 Z`;
+      return { linePath, areaPath, coords };
     };
+
+    const currentSvg = buildSvgPath(densities);
+    const baselineSvg = buildSvgPath(baselineDensities);
+
+    const weightPoints = logWeights.map((lw, idx) => {
+      const x = ((idx / (pointCount - 1)) * 100).toFixed(2);
+      const y = (100 - (lw * 100 / maxLogWeight)).toFixed(2);
+      return `${x},${y}`;
+    }).join(' ');
+
+    // Calculate zone integrals and continuous interpolated median (Left: Structure/High noise, Mid: Middle, Right: Detail/Low noise)
+    const computeZoneIntegrals = sourceDensities => {
+      const total = sourceDensities.reduce((a, b) => a + b, 0) || 1;
+      const idx1 = Math.floor(pointCount / 3);
+      const idx2 = Math.floor((pointCount * 2) / 3);
+      const high = sourceDensities.slice(0, idx1).reduce((a, b) => a + b, 0) * 100 / total;
+      const mid = sourceDensities.slice(idx1, idx2).reduce((a, b) => a + b, 0) * 100 / total;
+      const low = sourceDensities.slice(idx2).reduce((a, b) => a + b, 0) * 100 / total;
+
+      // Continuous linear interpolation for exact median (CDF = 0.5)
+      let cumulative = 0;
+      const half = total / 2;
+      let medianT = 500;
+      let medianPercent = 50;
+      for (let i = 0; i < sourceDensities.length; i += 1) {
+        const prevCumulative = cumulative;
+        cumulative += sourceDensities[i];
+        if (cumulative >= half) {
+          const frac = sourceDensities[i] > 1e-12 ? (half - prevCumulative) / sourceDensities[i] : 0.5;
+          const progress = (i + frac) / pointCount; // 0 (left, t=1000) -> 1 (right, t=0)
+          medianT = Math.round((1 - progress) * 1000);
+          medianPercent = progress * 100;
+          break;
+        }
+      }
+      return { low, mid, high, median: medianT, medianPercent: medianPercent.toFixed(1) };
+    };
+
+    const currentStats = computeZoneIntegrals(densities);
+    const baselineStats = computeZoneIntegrals(baselineDensities);
     const notes = [];
     if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
@@ -2377,20 +2471,153 @@ window.trainingCoreMixin = {
       offset,
       effectiveOffset: sigmoidScale * offset,
       resolution: `${width} × ${height}`,
-      sampleCount,
-      bins,
+      densities,
+      baselineDensities,
+      yTicks,
+      currentLinePath: currentSvg.linePath,
+      currentAreaPath: currentSvg.areaPath,
+      baselineLinePath: baselineSvg.linePath,
       weightPoints,
-      median: median(counts),
-      baselineMedian: median(baselineCounts),
-      lowPercent: sumRange(counts, 0, third),
-      midPercent: sumRange(counts, third, binCount - third),
-      highPercent: sumRange(counts, binCount - third, binCount),
-      baselineLowPercent: sumRange(baselineCounts, 0, third),
-      baselineMidPercent: sumRange(baselineCounts, third, binCount - third),
-      baselineHighPercent: sumRange(baselineCounts, binCount - third, binCount),
+      median: currentStats.median,
+      baselineMedian: baselineStats.median,
+      medianPercent: currentStats.medianPercent,
+      lowPercent: currentStats.low,
+      midPercent: currentStats.mid,
+      highPercent: currentStats.high,
+      baselineLowPercent: baselineStats.low,
+      baselineMidPercent: baselineStats.mid,
+      baselineHighPercent: baselineStats.high,
       compare: scope !== 'base',
       notes,
     };
+  },
+
+  // Shared HTML renderer: used by both the modal preview (via x-html) and the docs widget.
+  _buildTimestepChartHtml(data) {
+    if (!data) return '';
+    const esc = value => String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const t = (key, fallback) => {
+      const translated = typeof this.t === 'function' ? this.t(key) : '';
+      return esc(translated || fallback);
+    };
+    const fmtPercent = (base, current, compare) => compare
+      ? `${base.toFixed(1)}% → ${current.toFixed(1)}%`
+      : `${current.toFixed(1)}%`;
+
+    const yticks = (data.yTicks || []).map(tick =>
+      `<span class="timestep-ytick-label" style="bottom:${(100 - parseFloat(tick.y)).toFixed(1)}%">${esc(tick.label)}</span>`
+    ).join('');
+    const gridH = (data.yTicks || []).map(tick =>
+      `<line x1="0" y1="${esc(tick.y)}" x2="100" y2="${esc(tick.y)}" class="timestep-grid-h" />`
+    ).join('');
+
+    const baselineCurve = data.compare && data.baselineLinePath
+      ? `<path class="timestep-curve-baseline" d="${esc(data.baselineLinePath)}"></path>` : '';
+    const weightLine = data.weighting !== 'uniform'
+      ? `<polyline class="timestep-curve-weight" points="${esc(data.weightPoints)}"></polyline>` : '';
+    const baselineLegend = data.compare
+      ? `<span><i class="legend-baseline"></i><span>${t('timestepPreview.baseline', 'Base distribution')}</span></span>` : '';
+    const weightLegend = data.weighting !== 'uniform'
+      ? `<span><i class="legend-weight"></i><span>${t('timestepPreview.lossWeight', 'Loss weight (log scale)')}</span></span>` : '';
+
+    return `
+    <div class="timestep-chart-box">
+      <div class="timestep-inspect-bar">
+        <span class="timestep-inspect-title">${t('timestepPreview.relativeDensity', 'Relative PDF')}</span>
+        <span class="timestep-inspect-value" aria-live="polite">
+          <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
+        </span>
+      </div>
+      <div class="timestep-chart-yaxis">
+        <div class="timestep-yaxis-ticks">${yticks}</div>
+      </div>
+      <div class="timestep-preview-chart" aria-hidden="true">
+        <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          ${gridH}
+          <line x1="25" y1="0" x2="25" y2="100" class="timestep-grid-v" />
+          <line x1="50" y1="0" x2="50" y2="100" class="timestep-grid-v" />
+          <line x1="75" y1="0" x2="75" y2="100" class="timestep-grid-v" />
+        </svg>
+        <div class="timestep-preview-zones">
+          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
+          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
+          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
+        </div>
+        <svg class="timestep-preview-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          ${baselineCurve}
+          <path class="timestep-curve-area" d="${esc(data.currentAreaPath)}"></path>
+          <path class="timestep-curve-current" d="${esc(data.currentLinePath)}"></path>
+          ${weightLine}
+        </svg>
+        <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
+          <span class="timestep-median-tag">Median t=${esc(data.median)}</span>
+        </div>
+        <div class="timestep-hover-indicator" style="display:none"></div>
+      </div>
+    </div>
+    <div class="timestep-preview-axis">
+      <span class="axis-left">${t('timestepPreview.noisy', 'High noise · structure t≈1000')}</span>
+      <div class="axis-mid-ticks"><span>750</span><span>500</span><span>250</span></div>
+      <span class="axis-right">${t('timestepPreview.clean', 'Low noise · detail t≈0')}</span>
+    </div>
+    <div class="timestep-preview-legend">
+      ${baselineLegend}
+      <span><i class="legend-distribution"></i><span>${t('timestepPreview.currentDistribution', 'Current distribution')}</span></span>
+      ${weightLegend}
+    </div>
+    <div class="timestep-preview-summary">
+      <div><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
+      <div><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
+      <div><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
+    </div>`;
+  },
+
+  onTimestepChartHover(event, previewData) {
+    if (!event || !event.currentTarget) return;
+    const holder = event.currentTarget;
+    const chart = holder.querySelector ? holder.querySelector('.timestep-preview-chart') : null;
+    if (!chart) return;
+    const rect = chart.getBoundingClientRect();
+    if (!rect.width) return;
+    if (event.clientX < rect.left || event.clientX > rect.right
+      || event.clientY < rect.top || event.clientY > rect.bottom) {
+      this.onTimestepChartLeave(event);
+      return;
+    }
+    const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const data = previewData || this.timestepPreviewData;
+    if (!data) return;
+    const densities = data.densities || [];
+    const idx = Math.min(densities.length - 1, Math.floor(relX * densities.length));
+    const density = densities.length ? (densities[idx] || 0) : 0;
+
+    const hoverLine = chart.querySelector('.timestep-hover-indicator');
+    if (hoverLine) {
+      hoverLine.style.left = `${(relX * 100).toFixed(2)}%`;
+      hoverLine.style.display = 'block';
+    }
+    const tEl = holder.querySelector('.ts-hover-t');
+    const dEl = holder.querySelector('.ts-hover-density');
+    const valueBox = holder.querySelector('.timestep-inspect-value');
+    const translate = (key, fallback, value) => {
+      const raw = typeof this.t === 'function' ? this.t(key) : '';
+      return String(raw || fallback).replace('{value}', String(value));
+    };
+    if (tEl) tEl.textContent = translate('timestepPreview.timestepValue', 't = {value}', Math.round((1 - relX) * 1000));
+    if (dEl) dEl.textContent = translate('timestepPreview.densityValue', 'Probability density: {value}', density.toFixed(5));
+    if (valueBox) valueBox.classList.add('is-visible');
+  },
+
+  onTimestepChartLeave(event) {
+    if (event && event.currentTarget && event.currentTarget.querySelector) {
+      const holder = event.currentTarget;
+      const hoverLine = holder.querySelector('.timestep-hover-indicator');
+      if (hoverLine) hoverLine.style.display = 'none';
+      const valueBox = holder.querySelector('.timestep-inspect-value');
+      if (valueBox) valueBox.classList.remove('is-visible');
+    }
   },
 
   openTimestepPreview(scope) {

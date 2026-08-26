@@ -43,13 +43,13 @@ For example, “training step 500” means the LoRA has received 500 optimizer u
 
 The preview contains three main elements:
 
-1. **Blue bars:** taller bars mean the corresponding noise range is sampled more often.
-2. **Orange curve:** loss measures the error between the model's prediction and its training target. The curve shows any extra weight applied to that error after a timestep has been sampled.
-3. **Low, mid, and high percentages:** these summarize whether the current setup leans toward detail, the balanced mid-noise region, or global structure.
+1. **Blue continuous probability density curve (PDF):** higher points mean the corresponding noise timestep is sampled more often during training.
+2. **Yellow curve:** loss measures the error between the model's prediction and its training target. The yellow line shows any extra weight applied to that error after a timestep has been sampled.
+3. **High, mid, and low noise percentages:** these summarize whether the current setup leans toward global structure, balanced transition, or fine detail.
 
-The 32 blue bars are histogram bins, not the trainer's complete set of timesteps. Bar height is normalized against the tallest bin, so the y-axis is not a literal probability scale.
+The horizontal axis follows the physical denoising order of image generation: left is maximum noise `t≈1000` (pure noise, structure & composition stage), while right is clean `t≈0` (low noise, fine detail stage).
 
-The orange curve uses a logarithmic display scale. It is not the loss reported in the training log, and its height cannot be compared directly with the blue bars. A flat line means no timestep receives extra explicit weighting; it does not mean the observed loss stays constant.
+The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the yellow loss weighting line uses a logarithmic display scale. A flat yellow line means no timestep receives extra explicit weighting (equivalent to uniform weighting); it does not mean the observed loss stays constant.
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Approximate influence of a noise region on training">
   <div class="doc-equation-kicker">Simplified relationship, not an exact prediction</div>
@@ -57,7 +57,7 @@ The orange curve uses a logarithmic display scale. It is not the loss reported i
   <p>The current error changes with the image, caption, and stage of training. The preview therefore shows allocation, not a guaranteed amount of learning.</p>
 </div>
 
-The preview runs 32,768 deterministic local simulations; identical settings produce an identical chart. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
+The preview is calculated directly using the closed-form analytical probability density function (PDF) of the active formulas, completely deterministic and noise-free. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
 
 <!-- doc-anchor: dataset-guidance -->
 ## Dataset size and timestep selection
@@ -181,7 +181,7 @@ In the current implementations, `uniform` and `none` both mean that no extra per
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`: which timesteps appear most often
 
-`timestep_sampling` determines the basic shape of the blue histogram: which noise levels are sampled most often.
+`timestep_sampling` determines the basic shape of the blue sampling-density curve: which noise levels are sampled most often.
 
 | Option | Sampling behavior | Available for |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ Sigmoid sampling takes a standard normal random value and maps it into the `0–
   <p><var>s</var> is <code>sigmoid_scale</code>. Its default value is 1.0.</p>
 </div>
 
-With `sigmoid_scale=1.0`, the distribution is symmetric and clearly concentrated around mid noise. In the default 1024×1024 preview, the low, mid, and high regions are roughly 21%, 57%, and 21% (averaged thirds of the 32 bins: 10, 12, and 10 bins respectively); exact values vary slightly with settings and histogram boundaries.
+With `sigmoid_scale=1.0`, the distribution is symmetric and clearly concentrated around mid noise. In the default 1024×1024 preview, the low, mid, and high regions are roughly 21%, 57%, and 21%; exact values vary slightly with settings and the region boundaries.
 
 ### `uniform`
 
@@ -329,7 +329,7 @@ The UI preview can show the base distribution (all offsets zero), the overall tr
 
 A timestep affects training in two separate stages:
 
-1. **Where the sample comes from.** Sampling controls shape the blue histogram.
+1. **Where the sample comes from.** Sampling controls shape the blue sampling-density curve.
 2. **How much that sample counts.** Actual loss weighting shapes the orange curve.
 
 The name `weighting_scheme` is slightly misleading because some choices change loss weight, while others affect sampling — and only when `timestep_sampling=sigma`.
@@ -364,7 +364,7 @@ This can make low-noise samples dominate the update. On small datasets, it may a
   <p>This reduces the relative influence of both endpoints and smoothly emphasizes the middle.</p>
 </div>
 
-`cosmap` changes only the orange loss-weight curve, not the blue sampling histogram.
+`cosmap` changes only the orange loss-weight curve, not the blue sampling-density curve.
 
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`, `logit_mean`, and `logit_std`
@@ -422,7 +422,7 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 3. High noise does not automatically mean higher quality, and low noise does not guarantee better detail.
 4. Timestep tuning cannot create views, structures, or drawing rules missing from the dataset.
 5. `sample_flow_shift` is a generation-preview control, not a training timestep setting.
-6. The training `seed` changes the random sequence of sampled timesteps, but not the long-run theoretical distribution. The document preview uses a fixed simulation seed, so changing the training seed does not change the chart.
+6. The training `seed` changes the random sequence of sampled timesteps, but not the long-run theoretical distribution. The document preview evaluates the analytical PDF deterministically without random simulation, so changing the training seed does not change the chart.
 7. Batch size and GPU count do not change the theoretical distribution, although they affect short-run sampling variance.
 8. Timestep settings do not change the exported LoRA format or require an identically named sampler during inference.
 9. `subset_timestep_offsets` only works with `sigmoid`, `shift`, and `flux_shift`; it has no effect with `uniform` or `sigma`.
@@ -452,7 +452,7 @@ Fact-checked on **2026-08-08**. Code links below are pinned to the reviewed revi
 - `library/anima_train_utils.py`: Anima's sampling and loss-weighting dispatch.
 - The musubi-tuner fork's `src/musubi_tuner/training/trainer_base.py`: Krea 2's `krea2_shift` and `logsnr` sampling implementations.
 - The musubi-tuner fork's `src/musubi_tuner/training/timesteps.py`: the shared density and loss-weighting formulas.
-- The frontend distribution preview simulation lives in `frontend/js/training-core.js` (32 bins, 32,768 fixed-seed simulations).
+- The frontend distribution preview is implemented in `frontend/js/training-core.js` as a deterministic analytical PDF sampled at 120 points, with a separate loss-weight curve when applicable.
 
 **Model and upstream evidence:** The Anima and Krea 2 training paths use flow-matching noise and the training target `v = ε − x`. The `sigmoid` sampling scheme and the `discrete_flow_shift` transform come from [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3)](https://arxiv.org/abs/2403.03206). The empirical starting points for dataset sizes in this guide are not official recommendations.
 

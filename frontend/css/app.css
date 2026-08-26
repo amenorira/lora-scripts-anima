@@ -2076,60 +2076,198 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 }
 .timestep-preview-entry .btn { display: inline-flex; align-items: center; gap: 6px; }
 .timestep-preview-entry .field-hint { width: auto; margin: 0; }
-.timestep-preview-modal { width: min(760px, calc(100vw - 32px)); max-width: 760px; max-height: 88vh; }
-.timestep-preview-subtitle { margin-top: 3px; color: var(--text-tertiary); font-size: 11.5px; font-weight: 400; }
-.timestep-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.timestep-preview-toolbar label { color: var(--text-secondary); font-size: 11.5px; }
-.timestep-preview-toolbar select { width: min(360px, 58%); }
-.timestep-preview-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+
+/* ── Desktop Two-Column Responsive Workbench (Logical Geometry) ── */
+.timestep-preview-modal {
+  width: min(60rem, calc(100vw - 2.5rem)); max-width: 60rem;
+  max-height: calc(100vh - 3rem); display: flex; flex-direction: column;
+}
+.timestep-preview-layout {
+  display: grid; grid-template-columns: minmax(15rem, 17.5rem) 1fr; gap: 1.5rem;
+  padding: 1.25rem 1.5rem; overflow: hidden; align-items: start;
+}
+.timestep-layout-sidebar {
+  min-width: 0; display: flex; flex-direction: column; gap: 10px;
+}
+.timestep-layout-chart {
+  min-width: 0; display: flex; flex-direction: column; gap: 4px;
+}
+
+.timestep-preview-subtitle { margin-top: 2px; color: var(--text-tertiary); font-size: 11.5px; font-weight: 400; }
+.timestep-preview-toolbar { display: flex; flex-direction: column; gap: 5px; }
+.timestep-preview-toolbar label { color: var(--text-secondary); font-size: 11.5px; font-weight: 500; }
+.timestep-preview-toolbar select { width: 100%; padding: 5px 8px; font-size: 12px; }
+
+.timestep-preview-meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .timestep-preview-meta > span {
-  min-width: 0; padding: 9px 11px; border: 1px solid var(--border-default);
+  min-width: 0; padding: 6px 8px; border: 1px solid var(--border-default);
   border-radius: var(--radius-sm); background: var(--bg-surface-raised);
+  display: flex; flex-direction: column; gap: 2px;
 }
-.timestep-preview-meta b { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.timestep-preview-meta small { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 10.5px; }
+.timestep-preview-meta b { display: block; overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.timestep-preview-meta small { display: block; color: var(--text-tertiary); font-size: 9.5px; opacity: 0.85; }
+
+.timestep-preview-notes { padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.timestep-preview-notes > div { display: flex; gap: 6px; }
+.timestep-preview-notes > div + div { margin-top: 3px; }
+.timestep-preview-footnote { margin: 2px 1px 0; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.45; }
+
+.timestep-chart-box {
+  position: relative; display: flex; gap: 8px; width: 100%; align-items: stretch; margin-top: 26px;
+}
+/* Top Live Inspection Bar */
+.timestep-inspect-bar {
+  position: absolute; top: -22px; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  pointer-events: none; z-index: 5;
+}
+.timestep-inspect-title {
+  min-width: 96px;
+  font-size: 10.5px; color: var(--text-tertiary);
+  font-family: var(--font-sans, system-ui, sans-serif); font-style: normal; opacity: 0.85;
+}
+.timestep-inspect-value {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-width: 168px; justify-content: flex-end;
+  padding: 2px 8px; border-radius: var(--radius-xs);
+  background: var(--bg-surface-raised); border: 1px solid var(--border-default);
+  color: var(--text-primary); font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono, monospace); font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  visibility: hidden; opacity: 0; transition: opacity var(--duration-fast);
+}
+.timestep-inspect-value.is-visible {
+  visibility: visible; opacity: 1;
+}
+.timestep-inspect-value small { color: var(--text-tertiary); }
+.timestep-inspect-hint small {
+  color: var(--text-tertiary); font-size: 10px; opacity: 0.7;
+}
+
+.timestep-chart-yaxis {
+  position: relative; width: 48px; flex: 0 0 48px; display: flex; flex-direction: column;
+}
+.timestep-yaxis-ticks {
+  position: relative; width: 100%; height: 100%;
+}
+.timestep-ytick-label {
+  position: absolute; right: 4px; transform: translateY(50%);
+  font-size: 9.5px; color: var(--text-tertiary); font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+
+/* Right Chart Workspace: 5:4 Scientific Ratio matching Kohya Plot */
 .timestep-preview-chart {
-  position: relative; height: 230px; overflow: hidden; border: 1px solid var(--border-default);
-  border-radius: var(--radius-panel); background:
-    linear-gradient(to top, transparent 24.5%, var(--border-subtle) 25%, transparent 25.5%, transparent 49.5%, var(--border-subtle) 50%, transparent 50.5%, transparent 74.5%, var(--border-subtle) 75%, transparent 75.5%),
-    var(--bg-surface-raised);
+  position: relative; flex: 1 1 0; aspect-ratio: 5 / 4;
+  overflow: hidden; border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel); background: var(--bg-surface-raised);
+  cursor: crosshair; user-select: none;
 }
-.timestep-preview-bars { position: absolute; inset: 12px 12px 10px; display: flex; align-items: stretch; gap: 3px; }
-.timestep-preview-bin { position: relative; flex: 1 1 0; min-width: 2px; }
-.timestep-preview-bin i { position: absolute; right: 0; bottom: 0; left: 0; border-radius: 3px 3px 0 0; }
-.docs-timestep-widget .timestep-preview-bars > i {
-  align-self: flex-end;
-  flex: 1 1 0;
-  min-width: 2px;
-  border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
-  opacity: .78;
+
+/* Background Scientific Grid Lines */
+.timestep-grid-svg {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 0;
 }
-.docs-timestep-widget .timestep-preview-bars > i:hover { opacity: 1; }
-.timestep-preview-bar-current {
-  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 62%, transparent));
-  opacity: .78; transition: height .22s var(--ease-out), opacity .15s;
+.timestep-grid-h, .timestep-grid-v {
+  stroke: color-mix(in srgb, var(--border-subtle) 50%, transparent);
+  stroke-width: 1; stroke-dasharray: 2, 3; vector-effect: non-scaling-stroke;
 }
-.timestep-preview-bar-baseline { background: color-mix(in srgb, var(--text-tertiary) 28%, transparent); }
-.timestep-preview-bin:hover .timestep-preview-bar-current { opacity: 1; }
-.timestep-preview-weight-line { position: absolute; inset: 12px; width: calc(100% - 24px); height: calc(100% - 22px); overflow: visible; pointer-events: none; }
-.timestep-preview-weight-line polyline { fill: none; stroke: var(--warning); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
-.timestep-preview-axis, .timestep-preview-legend { display: flex; align-items: center; justify-content: space-between; color: var(--text-tertiary); font-size: 10.5px; }
-.timestep-preview-axis { margin-top: 5px; }
-.timestep-preview-legend { justify-content: flex-end; gap: 16px; margin-top: 8px; }
-.timestep-preview-legend > span { display: inline-flex; align-items: center; gap: 5px; }
-.timestep-preview-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+
+.timestep-preview-zones {
+  position: absolute; inset: 0; display: flex; pointer-events: none; z-index: 1;
+}
+.timestep-preview-zones .zone-col {
+  flex: 1 1 0; height: 100%; border-right: 1px dashed color-mix(in srgb, var(--border-subtle) 75%, transparent);
+  padding: 8px 12px; display: flex; justify-content: center; align-items: flex-start;
+}
+.timestep-preview-zones .zone-col:last-child { border-right: none; }
+.timestep-preview-zones .zone-col span {
+  color: var(--text-tertiary); font-size: 10px; opacity: 0.75;
+}
+
+.timestep-preview-svg {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 2;
+  border-radius: var(--radius-panel);
+}
+.timestep-curve-area {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.timestep-curve-current {
+  fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.timestep-curve-baseline {
+  fill: none; stroke: var(--text-tertiary); stroke-width: 1.6; stroke-dasharray: 4,4;
+  opacity: 0.6; vector-effect: non-scaling-stroke;
+}
+.timestep-curve-weight {
+  fill: none; stroke: var(--warning); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  vector-effect: non-scaling-stroke; opacity: 0.88;
+}
+
+/* Median & hover indicators */
+.timestep-median-line {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  border-left: 1px dashed color-mix(in srgb, var(--accent) 85%, transparent);
+  pointer-events: none; z-index: 3;
+}
+.timestep-median-tag {
+  position: absolute; bottom: 6px; left: 4px;
+  padding: 2px 6px; border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent); font-size: 10px; font-weight: 600; white-space: nowrap;
+  font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.timestep-hover-indicator {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--text-primary); opacity: 0.8;
+  pointer-events: none; z-index: 10;
+}
+
+/* ── Perfectly Aligned Scientific X-Axis ── */
+.timestep-preview-axis {
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  margin-top: 4px; margin-left: 56px; height: 16px; color: var(--text-secondary);
+  font-size: 10px; font-variant-numeric: tabular-nums;
+}
+.timestep-preview-axis .axis-left {
+  position: absolute; left: 0; transform: none; white-space: nowrap;
+}
+.timestep-preview-axis .axis-right {
+  position: absolute; right: 0; transform: none; white-space: nowrap;
+}
+.timestep-preview-axis .axis-mid-ticks {
+  position: absolute; inset: 0; pointer-events: none;
+}
+.timestep-preview-axis .axis-mid-ticks > span:nth-child(1) {
+  position: absolute; left: 25%; transform: translateX(-50%);
+}
+.timestep-preview-axis .axis-mid-ticks > span:nth-child(2) {
+  position: absolute; left: 50%; transform: translateX(-50%);
+}
+.timestep-preview-axis .axis-mid-ticks > span:nth-child(3) {
+  position: absolute; left: 75%; transform: translateX(-50%);
+}
+
+.timestep-preview-legend {
+  display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  margin-top: 4px; margin-left: 56px; font-size: 10.5px; color: var(--text-tertiary);
+}
+.timestep-preview-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.timestep-preview-legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; }
 .legend-distribution { background: var(--accent); }
-.legend-baseline { background: color-mix(in srgb, var(--text-tertiary) 45%, transparent); }
+.legend-baseline { background: color-mix(in srgb, var(--text-tertiary) 60%, transparent); }
 .legend-weight { background: var(--warning); }
-.timestep-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 15px; }
-.timestep-preview-summary > div { padding: 10px; text-align: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
-.timestep-preview-summary b { display: block; color: var(--text-primary); font-size: 16px; font-variant-numeric: tabular-nums; }
-.timestep-preview-summary span { color: var(--text-tertiary); font-size: 10.5px; }
-.timestep-preview-notes { margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); font-size: 11.5px; line-height: 1.55; }
-.timestep-preview-notes > div { display: flex; gap: 7px; }
-.timestep-preview-notes > div + div { margin-top: 4px; }
-.timestep-preview-footnote { margin: 12px 1px 0; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.5; }
+
+/* 3-Column Summary Cards below chart */
+.timestep-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; margin-left: 56px; }
+.timestep-preview-summary > div {
+  padding: 8px 6px; text-align: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+}
+.timestep-preview-summary b { display: block; color: var(--text-primary); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.timestep-preview-summary span { color: var(--text-tertiary); font-size: 10px; }
 
 .subset-timestep-editor { margin: 2px 0 14px; padding: 12px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
 .subset-timestep-editor.is-disabled .subset-timestep-list { opacity: .48; }
@@ -3992,7 +4130,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   color: inherit;
   font-size: inherit;
 }
-.docs-timestep-widget .timestep-preview-chart { height: 230px; }
+.docs-timestep-widget .timestep-layout-chart {
+  width: 100%;
+  max-width: 880px;
+}
+.docs-timestep-widget .timestep-preview-svg,
+.docs-timestep-widget .timestep-grid-svg {
+  border-radius: var(--radius-panel);
+}
 .docs-timestep-widget .timestep-preview-footnote { margin-bottom: 0; }
 
 [data-theme="dark"] .toast {

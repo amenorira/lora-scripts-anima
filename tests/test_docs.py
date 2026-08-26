@@ -360,7 +360,7 @@ const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
   form: {
     model_train_type: 'anima-lora',
     timestep_sampling: 'sigmoid',
-    weighting_scheme: 'uniform',
+    weighting_scheme: 'sigma_sqrt',
     sigmoid_scale: 1,
     discrete_flow_shift: 1,
     resolution: '1024,768',
@@ -370,9 +370,9 @@ const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
 context._renderDocsTimestepPreview(container);
 console.log(JSON.stringify({
   className: container.className,
-  barCount: (container.innerHTML.match(/title="\d+-\d+:/g) || []).length,
-  hasMiddleSummary: container.innerHTML.includes('57.0%'),
-  hasWeightCurve: container.innerHTML.includes('<polyline points='),
+  hasSmoothCurve: container.innerHTML.includes('timestep-curve-current'),
+  hasMiddleSummary: container.innerHTML.includes('timestep-preview-summary') && /\d+\.\d+%/.test(container.innerHTML),
+  hasWeightCurve: container.innerHTML.includes('timestep-curve-weight'),
   refreshBound: typeof refreshHandler === 'function',
   resolution: context._buildTimestepPreview().resolution,
 }));
@@ -387,7 +387,7 @@ console.log(JSON.stringify({
         )
         state = json.loads(result.stdout)
         self.assertEqual(state["className"], "docs-timestep-widget")
-        self.assertEqual(state["barCount"], 32)
+        self.assertTrue(state["hasSmoothCurve"])
         self.assertTrue(state["hasMiddleSummary"])
         self.assertTrue(state["hasWeightCurve"])
         self.assertTrue(state["refreshBound"])
@@ -571,6 +571,9 @@ console.log(JSON.stringify({
         self.assertIn("scrollbar-color: transparent transparent", css)
         self.assertIn("table.docs-table-wide", css)
         self.assertNotIn("@container (max-width:", css)
+        docs_widget_css = css[css.index(".docs-timestep-widget {") : css.index('[data-theme="dark"] .toast')]
+        self.assertIn("max-width: 880px", docs_widget_css)
+        self.assertNotIn("flex: none", docs_widget_css)
 
 
 if __name__ == "__main__":
