@@ -6,6 +6,38 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.0 - 2026-08-26
+
+The headline of this release is the new "Train AdaLN modulation layers" toggle on the parameter page. Anima's per-block modulation layers — which adjust feature scale, shift, and gating per noise level in real time — were previously excluded from LoRA by sd-scripts by default; they can now be included with one switch, and style datasets are worth an A/B comparison against the off version. The same release promotes the LoRA+ toggle to a peer control and bundles assorted improvements to AI tagging, the built-in file picker, and the backend core, with the project license changed to MIT.
+
+### Training AdaLN modulation layers (new)
+
+- Anima-only toggle covering networks.lora_anima / loha / lokr. sd-scripts applies a built-in exclusion regex `.*(_modulation|_norm|_embedder|final_layer).*` when creating the LoRA network, so the modulation layers do not train by default; enabling it injects include_patterns into network_args, adding the three per-block modulation branches (self-attention / cross-attention / MLP) back. A user-written include_patterns in the custom network arguments is merged into a single entry, visible in the TOML preview.
+- The modulation layers steer the per-step global statistics of features (tone, contrast, channel energy): without them these stay as in the base model, and with them the LoRA can additionally reshape global properties. Analysis of the official turbo↔base weight delta shows this pathway changed significantly during distillation, yet no public side-by-side renders show that training style LoRAs with modulation helps — compare both variants with the same seed and keep whichever renders better.
+- The modulation layers share the main network's rank and alpha, so both sides scale identically; a dedicated rank is deliberately not offered because upstream cannot set per-module alpha. The file grows by roughly half at the same rank.
+- A bilingual "AdaLN Modulation Layers" documentation page is added and linked from the parameter page; the output loads in ComfyUI directly, with no conversion needed.
+
+### LoRA+
+
+- The LoRA+ toggle moves out of the network-module nesting and becomes a peer control, with the three ratio fields as its children.
+
+### AI tagging
+
+- New custom API mode with batch and single-image tabs: supports OpenAI Chat Completions, Responses, and Anthropic protocols, with provider presets and a model dropdown, configurable concurrency (1–8), and per-request error display. API keys are stored in browser local storage, never in backend configuration.
+
+### File picker
+
+- The built-in picker is rebuilt: larger dialog, subdirectory grouping, two-line rows (size and modified time), image and caption statistics for training directories, keyboard navigation, and name filtering with a live match count.
+- Selections are written back as project-relative paths (./models/...); paths outside the directory stay absolute, and symlinks are not resolved.
+- Per-Monitor V2 DPI awareness on Windows fixes blurry dialogs on high-DPI screens; on headless Linux (such as AutoDL) the local picker button is hidden and only the built-in browser remains.
+
+### Other
+
+- Backend and tagger stack refactored: model identification now matches safetensors header keys exactly, dependency checks use packaging version comparison, tagging image preprocessing is a pure-PIL implementation, and batch tagging skips unnecessary decoding; behavior is unchanged, with better performance and stability.
+- The project license is changed to MIT.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.8.0...v2.9.0)
+
 ## v2.8.0 - 2026-08-22
 
 This release reworks the environment management page: the whole page becomes a panel-style flow layout — large row titles with status and version on one line, the secondary description on its own line below — and the table-header look is gone. Environment and Models now switch via in-page tabs with a sliding indicator and fade-in animation; component rows and model groups are collapsed by default, with new "Expand all / Collapse all" actions at the top. Divider lines no longer cut through an expanded row unit. The Models tab gains an "Additional Models" download group, which already includes Any Anima (for LoRA training) v1.0.2.
