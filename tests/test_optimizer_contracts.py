@@ -13,8 +13,13 @@ from backend.training.field_registry import get_fields_json
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
+    ADAN_OPTIMIZER_TYPE,
+    ADEMAMIX8BIT_OPTIMIZER_TYPE,
+    ADEMAMIX_OPTIMIZER_TYPE,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
+    EMOSENS_OPTIMIZER_TYPE,
+    LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
@@ -93,48 +98,57 @@ class OptimizerFieldContractTests(unittest.TestCase):
         self.assertEqual(
             [entry.selector for entry in optimizer_entries(SD_SCRIPTS_PROFILE)],
             [
-                "AdamW",
                 "AdamW8bit",
+                "AdamW",
                 "PagedAdamW8bit",
                 STABLE_ADAMW_OPTIMIZER_TYPE,
+                CAME_OPTIMIZER_TYPE,
+                ADAN_OPTIMIZER_TYPE,
                 "Lion",
                 "Lion8bit",
                 "PagedLion8bit",
-                ADAFACTOR_OPTIMIZER_TYPE,
-                CAME_OPTIMIZER_TYPE,
+                ADEMAMIX_OPTIMIZER_TYPE,
+                ADEMAMIX8BIT_OPTIMIZER_TYPE,
                 PRODIGY_OPTIMIZER_TYPE,
                 PRODIGYPLUS_OPTIMIZER_TYPE,
                 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
-                AUTOMAGIC_OPTIMIZER_TYPE,
-                "vendor.emo_optimizer.emosens.EmoSens",
+                ADAFACTOR_OPTIMIZER_TYPE,
                 MUON_OPTIMIZER_TYPE,
+                LORARITE_OPTIMIZER_TYPE,
+                AUTOMAGIC_OPTIMIZER_TYPE,
+                EMOSENS_OPTIMIZER_TYPE,
             ],
         )
         self.assertEqual(len(optimizer_entries(KREA2_PROFILE)), 11)
 
-        expected_group_order = [
-            "opt.optimizer_group_adamw",
-            "opt.optimizer_group_sign",
-            "opt.optimizer_group_factorized",
-            "opt.optimizer_group_adaptive",
-            "opt.optimizer_group_experimental",
-        ]
         self.assertEqual(
             [group["label_key"] for group in optimizer_groups(SD_SCRIPTS_PROFILE)],
-            expected_group_order,
+            [
+                "opt.optimizer_group_baseline",
+                "opt.optimizer_group_stable",
+                "opt.optimizer_group_fast",
+                "opt.optimizer_group_longrun",
+                "opt.optimizer_group_autolr",
+                "opt.optimizer_group_matrix",
+            ],
         )
         self.assertEqual(
             [group["label_key"] for group in optimizer_groups(KREA2_PROFILE)],
-            expected_group_order[:-1],
+            [
+                "opt.optimizer_group_baseline",
+                "opt.optimizer_group_stable",
+                "opt.optimizer_group_fast",
+                "opt.optimizer_group_autolr",
+            ],
         )
-        experimental = next(
+        matrix = next(
             group
             for group in optimizer_groups(SD_SCRIPTS_PROFILE)
-            if group["label_key"] == "opt.optimizer_group_experimental"
+            if group["label_key"] == "opt.optimizer_group_matrix"
         )
         muon = next(
             option
-            for option in experimental["options"]
+            for option in matrix["options"]
             if option["v"] == MUON_OPTIMIZER_TYPE
         )
         self.assertEqual(muon["group"], "anima")

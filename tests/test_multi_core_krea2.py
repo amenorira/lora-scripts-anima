@@ -355,21 +355,21 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(
             optimizer_groups,
             {
-                "opt.optimizer_group_adamw": [
+                "opt.optimizer_group_baseline": [
                     "adamw8bit",
                     "AdamW",
                     "bitsandbytes.optim.PagedAdamW8bit",
                 ],
-                "opt.optimizer_group_sign": [
+                "opt.optimizer_group_stable": [
+                    "pytorch_optimizer.CAME",
+                ],
+                "opt.optimizer_group_fast": [
                     "bitsandbytes.optim.Lion8bit",
                     "bitsandbytes.optim.PagedLion8bit",
                     "pytorch_optimizer.Lion",
                 ],
-                "opt.optimizer_group_factorized": [
+                "opt.optimizer_group_autolr": [
                     "AdaFactor",
-                    "pytorch_optimizer.CAME",
-                ],
-                "opt.optimizer_group_adaptive": [
                     "prodigyopt.Prodigy",
                     "prodigyplus.ProdigyPlusScheduleFree",
                     "schedulefree.AdamWScheduleFree",

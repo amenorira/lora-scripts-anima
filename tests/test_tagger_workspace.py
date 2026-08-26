@@ -28,12 +28,19 @@ class TaggerSingleUiContractTests(unittest.TestCase):
         source = (repo / "frontend" / "js" / "tagger.js").read_text(encoding="utf-8")
         css = (repo / "frontend" / "css" / "tagger.css").read_text(encoding="utf-8")
 
-        self.assertIn('class="tagger-result-divider"', html)
-        self.assertIn('aria-orientation="horizontal"', html)
-        self.assertIn('@keydown.up.prevent="adjustTaggerResultHeight(-10)"', html)
-        self.assertIn('@keydown.down.prevent="adjustTaggerResultHeight(10)"', html)
-        self.assertIn("taggerResultResizeMax()", source)
-        self.assertIn("height: var(--tagger-result-height, 190px)", css)
+        self.assertIn('class="tagger-single-divider"', html)
+        self.assertIn('aria-orientation="vertical"', html)
+        self.assertIn(
+            '@keydown.left.prevent="taggerSingleLeftWidth = Math.max(30, taggerSingleLeftWidth - 1)"',
+            html,
+        )
+        self.assertIn(
+            '@keydown.right.prevent="taggerSingleLeftWidth = Math.min(70, taggerSingleLeftWidth + 1)"',
+            html,
+        )
+        self.assertIn("startTaggerSingleResize", source)
+        self.assertIn("resizeTaggerSingleLayout", source)
+        self.assertIn("cursor: col-resize", css)
 
 
 class TaggerRegistryTests(unittest.TestCase):
