@@ -374,6 +374,10 @@ console.log(JSON.stringify({
   hasMiddleSummary: container.innerHTML.includes('timestep-preview-summary') && /\d+\.\d+%/.test(container.innerHTML),
   hasWeightCurve: container.innerHTML.includes('timestep-curve-weight'),
   refreshBound: typeof refreshHandler === 'function',
+  dualLayout: container.innerHTML.includes('timestep-preview-layout') && container.innerHTML.includes('timestep-layout-sidebar'),
+  scopeSelect: container.innerHTML.includes('docs-timestep-scope') && container.innerHTML.includes('timestepPreview.previewRange'),
+  metaCards: (container.innerHTML.match(/<span><small>/g) || []).length,
+  offsetCard: container.innerHTML.includes('timestepPreview.offset') && container.innerHTML.includes('timestepPreview.medianTimestep'),
   resolution: context._buildTimestepPreview().resolution,
 }));
 """
@@ -391,6 +395,10 @@ console.log(JSON.stringify({
         self.assertTrue(state["hasMiddleSummary"])
         self.assertTrue(state["hasWeightCurve"])
         self.assertTrue(state["refreshBound"])
+        self.assertTrue(state["dualLayout"])
+        self.assertTrue(state["scopeSelect"])
+        self.assertEqual(state["metaCards"], 6)
+        self.assertTrue(state["offsetCard"])
         self.assertEqual(state["resolution"], "1024 × 768")
 
     def test_scrollspy_uses_section_at_viewport_top_and_preserves_click_target(self):

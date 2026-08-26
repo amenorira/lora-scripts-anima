@@ -31,6 +31,7 @@ window.docsMixin = {
   _docsTocRevealRaf: 0,
   _docsScrollTarget: null,
   _docsPinnedAnchor: null,
+  docsTimestepScope: 'base',
 
   docsCurrentDocument() {
     return this.docsDocuments.find(doc => doc.slug === this.docsSelectedSlug) || null;
@@ -256,7 +257,15 @@ window.docsMixin = {
       mode_scale: 1.29,
       resolution: currentForm.resolution || '1024,1024',
     };
-    const data = this._buildTimestepPreview(previewValues);
+    // 与训练页预览共用同一套 base/overall/子集范围切换；没有 flow-matching
+    // 表单时没有真实数据集，只有基础分布基准示例。
+    const scopeOptions = usesFlowMatching
+      ? this.timestepPreviewOptions()
+      : [{ value: 'base', label: this.t ? this.t('timestepPreview.baseDistribution') : 'Base distribution' }];
+    const scopeSet = new Set(scopeOptions.map(option => option.value));
+    const scope = this.docsTimestepScope && scopeSet.has(this.docsTimestepScope) ? this.docsTimestepScope : 'base';
+    this.docsTimestepScope = scope;
+    const data = this._buildTimestepPreview(previewValues, scope);
     const escapeHtml = value => String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -267,19 +276,30 @@ window.docsMixin = {
       const translated = typeof this.t === 'function' ? this.t(key) : '';
       return escapeHtml(translated || fallback);
     };
-    const percent = value => Number(value || 0).toFixed(1) + '%';
-    const summary = [
-      `${tr('timestepPreview.detailZone', 'Low noise')}: ${percent(data.lowPercent)}`,
-      `${tr('timestepPreview.middleZone', 'Mid noise')}: ${percent(data.midPercent)}`,
-      `${tr('timestepPreview.structureZone', 'High noise')}: ${percent(data.highPercent)}`,
-    ].join('; ');
-
     const notes = data.notes.map(note => (
       `<div><span aria-hidden="true">&#8226;</span><span>${escapeHtml(note)}</span></div>`
     )).join('');
     const subtitleKey = usesFlowMatching
       ? 'timestepPreview.subtitle'
       : 'timestepPreview.docsFallback';
+
+    const offsetText = (data.offset > 0 ? '+' : '') + data.offset;
+    const medianDelta = data.median - data.baselineMedian;
+    const medianText = `${data.baselineMedian} → ${data.median} (${medianDelta > 0 ? '+' : ''}${medianDelta})`;
+    const metaItems = [
+      { label: tr('timestepPreview.sampling', 'Sampling'), value: data.sampling },
+      { label: tr('timestepPreview.offset', 'Sampling offset'), value: offsetText },
+      { label: tr('timestepPreview.medianTimestep', 'Median timestep'), value: medianText },
+      { label: tr('timestepPreview.weighting', 'Loss weighting'), value: data.weighting },
+      { label: tr('timestepPreview.resolution', 'Reference resolution'), value: data.resolution },
+      { label: tr('timestepPreview.previewRange', 'Preview range'), value: data.scopeLabel },
+    ];
+    const metaHtml = metaItems.map(item =>
+      `<span><small>${item.label}</small><b>${escapeHtml(item.value)}</b></span>`
+    ).join('');
+    const scopeHtml = scopeOptions.map(option =>
+      `<option value="${escapeHtml(option.value)}"${option.value === scope ? ' selected' : ''}>${escapeHtml(option.label)}</option>`
+    ).join('');
 
     container.className = 'docs-timestep-widget';
     container.innerHTML = `
@@ -293,20 +313,29 @@ window.docsMixin = {
           <span>${tr('timestepPreview.refresh', 'Refresh')}</span>
         </button>
       </div>
-      <div class="timestep-preview-meta">
-        <span><b>${escapeHtml(data.sampling)}</b><small>${tr('timestepPreview.sampling', 'Sampling')}</small></span>
-        <span><b>${escapeHtml(data.weighting)}</b><small>${tr('timestepPreview.weighting', 'Loss weighting')}</small></span>
-        <span><b>${escapeHtml(data.resolution)}</b><small>${tr('timestepPreview.resolution', 'Reference resolution')}</small></span>
+      <div class="timestep-preview-layout">
+        <div class="timestep-layout-sidebar">
+          <div class="timestep-preview-toolbar">
+            <label for="docs-timestep-scope">${tr('timestepPreview.previewRange', 'Preview range')}</label>
+            <select id="docs-timestep-scope" class="docs-timestep-scope">${scopeHtml}</select>
+          </div>
+          <div class="timestep-preview-meta">${metaHtml}</div>
+          ${notes ? `<div class="timestep-preview-notes">${notes}</div>` : ''}
+          <p class="timestep-preview-footnote">${tr('timestepPreview.footnote', 'Deterministic local preview of the current trainer formulas.')}</p>
+        </div>
+        <div class="timestep-layout-chart">
+          ${this._buildTimestepChartHtml(data)}
+        </div>
       </div>
-      <div class="timestep-layout-chart">
-        ${this._buildTimestepChartHtml(data)}
-      </div>
-      ${notes ? `<div class="timestep-preview-notes">${notes}</div>` : ''}
-      <p class="timestep-preview-footnote">${tr('timestepPreview.footnote', 'Deterministic local preview of the current trainer formulas.')}</p>
     `;
 
     const refresh = container.querySelector('.docs-timestep-refresh');
     if (refresh) refresh.addEventListener('click', () => this._renderDocsTimestepPreview(container));
+    const scopeSelect = container.querySelector('.docs-timestep-scope');
+    if (scopeSelect) scopeSelect.addEventListener('change', event => {
+      this.docsTimestepScope = String(event.target.value || 'base');
+      this._renderDocsTimestepPreview(container);
+    });
     const chartHolder = container.querySelector('.timestep-layout-chart');
     const chart = chartHolder && chartHolder.querySelector('.timestep-preview-chart');
     if (chart) {
