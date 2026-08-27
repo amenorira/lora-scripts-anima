@@ -6,6 +6,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.2 - 2026-08-27
+
+This release unifies the timestep distribution preview in the parameter guide with the training-page dialog — the same two-column workspace — and realigns three contract tests that had gone stale as features evolved. The full test suite now passes.
+
+### Preview alignment
+
+- The docs-page timestep preview now uses the same two-column workspace as the training page: the left column holds the preview-range dropdown and six parameter readouts (sampling mode, sampling offset, median timestep, loss weighting, reference resolution, preview range), and the right column holds the analytical PDF chart with the shared hover inspector, median line, and zone-summary cards.
+- When the current profile is Anima/Krea 2, the preview-range dropdown can switch between the overall training distribution and per-subset distributions, matching the training page; otherwise the Anima baseline example is shown.
+
+### Contract test alignment
+
+- The optimizer metadata contract is updated to the current 19-entry list and six mechanism groups (baseline/stable/fast/longrun/autolr/matrix); the Krea 2 menu grouping now asserts the current four groups.
+- The Tagger editor divider contract now checks the current left/right panel drag implementation (`tagger-single-divider`, pointer plus left/right arrow keys).
+- The full test suite passes with all 408 tests.
+
 ## v2.9.1 - 2026-08-26
 
 This release fixes documentation and UI issues exposed by the timestep distribution preview rewrite. The parameter guide now reuses the trainer's actual analytical PDF chart, the chart renders correctly in the docs page and supports hover inspection, and the probability-density labels, inline math markup, localization, and layout stability are corrected.
