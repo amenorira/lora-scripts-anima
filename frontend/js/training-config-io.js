@@ -5,6 +5,12 @@ window.trainingConfigIoMixin = {
   confirmMessage: '',
   confirmCallback: null,
   confirmActionLabel: '',
+  confirmDanger: false,
+  confirmNotice: false,
+  confirmTitle: '',
+  confirmMessage: '',
+  confirmCallback: null,
+  confirmActionLabel: '',
   _trainingDocumentId: null,
 
   async downloadConfig() {
@@ -115,11 +121,13 @@ window.trainingConfigIoMixin = {
     event.target.value = '';
   },
 
-  openConfirm(title, message, callback, actionLabel = '') {
+  openConfirm(title, message, callback, actionLabel = '', opts = {}) {
     this.confirmTitle = title;
     this.confirmMessage = message;
     this.confirmCallback = callback;
     this.confirmActionLabel = actionLabel;
+    this.confirmDanger = !!opts.danger;
+    this.confirmNotice = !!opts.notice;
     this.showConfirmModal = true;
   },
 

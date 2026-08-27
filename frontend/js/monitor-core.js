@@ -11,6 +11,7 @@ window.monitorCoreMixin = {
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
+  configSnapshotOpen: false,
   logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
@@ -713,6 +714,9 @@ window.monitorCoreMixin = {
     const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
     navigator.clipboard.writeText(lines.join('\n')).then(() => this.toast(this.t('common.copied')));
   },
+  requestClearLogs() {
+    this.openConfirm(this.t('monitor.confirmClearLogsTitle'), this.t('monitor.confirmClearLogs'), () => this.clearLogs(), this.t('common.confirm'), { danger: true });
+  },
   clearLogs() {
     this.logLines = []; this._logContentVersion = 0;
     this._renderedLogCount = 0; this._renderedLogFilterKey = '';
@@ -1078,9 +1082,12 @@ window.monitorCoreMixin = {
     });
   },
 
-  async deleteHistoryRun(runDir) {
+  deleteHistoryRun(runDir) {
     if (!runDir) return;
-    if (!confirm(this.t('monitor.confirmDeleteRun'))) return;
+    this.openConfirm(this.t('monitor.confirmDeleteRunTitle'), this.t('monitor.confirmDeleteRun'), () => this._deleteHistoryRun(runDir), this.t('common.confirm'), { danger: true });
+  },
+
+  async _deleteHistoryRun(runDir) {
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/history/delete', {

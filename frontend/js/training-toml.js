@@ -884,8 +884,8 @@ window.trainingTomlMixin = {
           setTimeout(() => {
             const msg = warnings.join('\n');
             this.toast('⚠️ ' + this.t('common.adapterWarnings'));
-            // 使用 alert 确保用户看到重要警告（如 torch_compile 被自动关闭）
-            alert('⚠️ ' + this.t('common.adapterWarnings') + ':\n\n' + msg);
+            // 单按钮警告弹窗：必须看到（如 torch_compile 被自动关闭）再关闭
+            this.openConfirm(this.t('common.adapterWarnings'), msg, null, this.t('common.acknowledge'), { notice: true });
           }, 500);
         }
       }

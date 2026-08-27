@@ -235,7 +235,6 @@ document.addEventListener('alpine:init', () => {
     navigate(route) {
       if (!this._teConfirmNav(route)) return;
       if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
-        this.showLoadModal = false;
         return;
       }
       // 点击即时反馈：侧栏高亮立即滑向目标项，不等路由提交
@@ -251,7 +250,6 @@ document.addEventListener('alpine:init', () => {
 
       const prev = this.currentRoute;
       if (route === prev) {
-        this.showLoadModal = false;
         return;
       }
       const transitionSeq = ++this._routeTransitionSeq;
@@ -311,7 +309,6 @@ document.addEventListener('alpine:init', () => {
         this.routeTransitioning = false;
         if (!progressManagedByRoute) this.finishProgress();
       }, 16));
-      this.showLoadModal = false;
     },
 
     // 新页面内容自上而下错峰浮现（CSS: route-cascade，非线性缓出）

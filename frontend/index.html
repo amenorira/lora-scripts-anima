@@ -20,7 +20,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260826-shared1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260827-revert1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260823-ai10">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -30,15 +30,15 @@
   <script src="/anima-ui/js/anima-select.js?v=20260728-tagger4" defer></script>
   <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
-  <script src="/anima-ui/js/monitor-render.js?v=20260808-ui-align4" defer></script>
+  <script src="/anima-ui/js/monitor-render.js?v=20260827-aurora1" defer></script>
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
   <script src="/anima-ui/js/training-core.js?v=20260826-shared1" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260823-picker1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260808-progress1" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260827-aurora1" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -442,21 +442,6 @@
             <template x-if="_teSaveProgress > 0">
               <span class="te-saving-progress" x-text="_teSaveProgress + '%'"></span>
             </template>
-          </div>
-        </div>
-
-        <!-- Confirm dialog -->
-        <div x-show="tagEditorConfirmOpen" class="te-confirm" role="dialog" aria-modal="true"
-          :aria-label="tagEditorConfirmMsg" @click.self="tagEditorConfirmOpen = false; tagEditorConfirmCb = null"
-          x-effect="if (tagEditorConfirmOpen) $nextTick(() => $refs.teConfirmPrimary?.focus())" x-transition>
-          <div class="te-confirm-box">
-            <div class="te-confirm-msg" x-text="tagEditorConfirmMsg"></div>
-            <div class="te-confirm-btns">
-              <button class="btn btn-ghost btn-sm" @click="tagEditorConfirmOpen = false; tagEditorConfirmCb = null"
-                x-text="t('common.cancel')"></button>
-              <button class="btn btn-primary btn-sm" x-ref="teConfirmPrimary" @click="let cb = tagEditorConfirmCb; tagEditorConfirmOpen = false; tagEditorConfirmCb = null; if (cb) cb()"
-                x-text="t('common.confirm')"></button>
-            </div>
           </div>
         </div>
 
@@ -1332,18 +1317,22 @@
 <input type="file" id="configFileInput" accept=".toml,.yaml,.yml" style="display:none" @change="handleConfigFileImport($event)">
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
-<div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()" x-cloak>
-  <div class="modal modal-confirm">
+<div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()"
+     @keydown.escape.window="cancelConfirm()" x-cloak>
+  <div class="modal modal-confirm" role="dialog" aria-modal="true" :aria-label="confirmTitle"
+       x-effect="if (showConfirmModal) $nextTick(() => $refs.confirmPrimary?.focus())">
     <div class="modal-body">
       <div class="confirm-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg x-show="!confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg x-show="confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </div>
       <div class="confirm-title" x-text="confirmTitle">Confirm</div>
       <div class="confirm-message" x-text="confirmMessage">Are you sure?</div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-danger btn-sm" @click="confirmAction()" x-text="confirmActionLabel || t('common.confirm')">Confirm</button>
+      <button class="btn btn-ghost btn-sm" x-show="!confirmNotice" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-sm" :class="confirmDanger ? 'btn-danger' : 'btn-primary'" x-ref="confirmPrimary"
+              @click="confirmAction()" x-text="confirmActionLabel || (confirmNotice ? t('common.acknowledge') : t('common.confirm'))">Confirm</button>
     </div>
   </div>
 </div>
@@ -1457,6 +1446,17 @@
     <div class="modal-footer">
       <button class="btn btn-primary btn-sm" @click="timestepPreviewOpen = false" x-text="t('common.close')">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Config Snapshot Modal ───────────────────────────── -->
+<div class="modal-overlay" x-show="configSnapshotOpen" @click.self="configSnapshotOpen = false" @keydown.escape.window="configSnapshotOpen = false" x-cloak>
+  <div class="modal" style="max-width:700px" role="dialog" aria-modal="true" :aria-label="t('monitor.configSnapshot')">
+    <div class="modal-header">
+      <span x-text="t('monitor.configSnapshot')">Config Snapshot</span>
+      <button class="btn-icon" @click="configSnapshotOpen = false" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body" id="configSnapshotContent"></div>
   </div>
 </div>
 

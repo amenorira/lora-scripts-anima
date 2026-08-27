@@ -944,7 +944,7 @@ window.monitorRenderMixin = {
         html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
       });
       html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="confirm(\'' + this.esc(t('monitor.confirmClearLogs')).replace(/'/g,"\\'") + '\') && clearLogs()">' + this.esc(t('logClear')) + '</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" @click="requestClearLogs()">' + this.esc(t('logClear')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom')) + '</button>';
       html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload')) + '</button></div>';
@@ -2044,7 +2044,6 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
-    html += '<div id="configSnapshotModal" class="modal-overlay" style="display:none"><div class="modal" style="max-width:700px"><div class="modal-header"><span>' + this.esc(t('configSnapshot')) + '</span><button class="btn btn-sm" @click="closeSnapshotModal()" style="font-size:18px;line-height:1;padding:4px 8px">&times;</button></div><div class="modal-body" id="configSnapshotContent"></div></div></div>';
     el.innerHTML = html;
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
@@ -2079,9 +2078,8 @@ window.monitorRenderMixin = {
   },
 
   showSnapshotModal(snapshot) {
-    const modal = document.getElementById('configSnapshotModal');
     const content = document.getElementById('configSnapshotContent');
-    if (!modal || !content) return;
+    if (!content) return;
     const t = (k, fb) => this.tMonitor(k, fb);
 
     let html = '';
@@ -2128,13 +2126,12 @@ window.monitorRenderMixin = {
     html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.escapeJsString(snapshot.run_dir || '') + '\')">' + this.esc(t('reuseConfig')) + '</button></div>';
 
     content.innerHTML = html;
-    modal.style.display = 'flex';
     this._currentSnapshot = snapshot;
+    this.configSnapshotOpen = true;
   },
 
   closeSnapshotModal() {
-    const modal = document.getElementById('configSnapshotModal');
-    if (modal) modal.style.display = 'none';
+    this.configSnapshotOpen = false;
   },
 
   copyConfigContent() {

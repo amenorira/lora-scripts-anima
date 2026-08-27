@@ -342,6 +342,8 @@ window.taggerMixin = {
         this._saveTaggerApiUserPresets();
         this.selectTaggerApiPromptPreset('booru');
       },
+      this.t('common.confirm'),
+      { danger: true }
     );
   },
 

@@ -3658,12 +3658,6 @@ body.te-lightbox-open { overflow: hidden; }
 .te-empty-actions input { font-size: 12px; padding: 5px 8px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); width: 280px; max-width: 100%; outline: none; }
 .te-recursive-toggle.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
-/* ===== Confirm Dialog ===== */
-.te-confirm { position: fixed; inset: 0; z-index: 2500; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; }
-.te-confirm-box { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-panel); padding: 20px; max-width: 380px; width: 90vw; }
-.te-confirm-msg { font-size: 13px; color: var(--text-primary); margin-bottom: 16px; line-height: 1.5; }
-.te-confirm-btns { display: flex; gap: 6px; justify-content: flex-end; }
-
 /* ===== Saving Overlay ===== */
 .te-saving-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--accent); font-weight: 600; }
 
@@ -4143,7 +4137,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 [data-theme="dark"] .toast {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
 }
-[data-theme="dark"] .te-confirm { background: var(--bg-overlay); }
 [data-theme="dark"] .te-saving-overlay { background: rgba(0, 0, 0, 0.46); }
 [data-theme="dark"] .home-badge-l { background: #55555a; }
 [data-theme="dark"] .home-badge-v-license { background: #267806; }
