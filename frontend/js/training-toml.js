@@ -871,11 +871,23 @@ window.trainingTomlMixin = {
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;
     payload._form_state = this._collectTrainingFormSnapshot();
+    // 一次性放行：用户在缓存过期弹窗里选择"使用旧缓存继续"后置位
+    if (this._ignoreTeCacheWarnings) {
+      payload.ignore_te_cache_warnings = true;
+      this._ignoreTeCacheWarnings = false;
+    }
 
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
-      if (data.status !== 'success') { this.toast(data.message||'Failed'); this.isTraining=false; this.isIdle=true; this.statusText=this.t('monitor.idle'); }
+      if (data.status !== 'success') {
+        if (data.data && data.data.errorCode === 'teCacheStale') {
+          this._showTeCacheStaleDialog(data.data.warnings || []);
+        } else {
+          this.toast(data.message || 'Failed');
+        }
+        this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle');
+      }
       else {
         this._acceptTrainingStart(data.data); this.toast(this.t('common.trainingStarted'));
         // 弹出适配器警告（如有）
@@ -891,6 +903,54 @@ window.trainingTomlMixin = {
       }
     } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
     this.trainingStarting = false;
+  },
+
+  // ── TE 磁盘缓存过期弹窗：删除重建 或 按旧缓存继续 ──
+  _showTeCacheStaleDialog(warnings) {
+    // 后端只回 {code, 参数}，文案按当前语言渲染（{name} 占位符，同 stepEstimate 惯例）
+    const lines = (warnings || [])
+      .filter(w => w && w.code)
+      .map(w => {
+        let text = this.t(`teCache.warn.${w.code}`, '');
+        Object.entries(w).forEach(([name, value]) => {
+          if (name !== 'code') text = text.replaceAll(`{${name}}`, String(value));
+        });
+        return text;
+      })
+      .filter(Boolean);
+    this.openConfirm(
+      this.t('teCache.staleTitle'),
+      lines.join('\n\n'),
+      () => this._rebuildTeCacheAndStart(),
+      this.t('teCache.rebuildStart'),
+      { secondaryLabel: this.t('teCache.useOld'), secondaryCallback: () => this._startWithTeCacheOverride() }
+    );
+  },
+
+  async _rebuildTeCacheAndStart() {
+    const dirs = [this.form.train_data_dir];
+    if (this.form.enable_reg_data && this.form.reg_data_dir) dirs.push(this.form.reg_data_dir);
+    try {
+      const resp = await fetch('/api/training/te-cache/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dirs: dirs.filter(Boolean) }),
+      });
+      const data = await resp.json();
+      if (data.status !== 'success') {
+        this.toast(data.message || this.t('teCache.deleteFailed'), 'error');
+        return;
+      }
+    } catch (error) {
+      this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
+      return;
+    }
+    void this.startTraining();
+  },
+
+  _startWithTeCacheOverride() {
+    this._ignoreTeCacheWarnings = true;
+    void this.startTraining();
   },
 
   _acceptTrainingStart(data) {

@@ -20,7 +20,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260827-revert1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260829-tecache1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260823-ai10">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -1331,6 +1331,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" x-show="!confirmNotice" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-ghost btn-sm" x-show="confirmSecondaryLabel" @click="confirmSecondaryAction()" x-text="confirmSecondaryLabel">Secondary</button>
       <button class="btn btn-sm" :class="confirmDanger ? 'btn-danger' : 'btn-primary'" x-ref="confirmPrimary"
               @click="confirmAction()" x-text="confirmActionLabel || (confirmNotice ? t('common.acknowledge') : t('common.confirm'))">Confirm</button>
     </div>

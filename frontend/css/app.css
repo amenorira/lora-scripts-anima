@@ -2050,7 +2050,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   margin-bottom: 8px;
 }
 .confirm-message {
-  font-size: 13px; color: var(--text-tertiary); line-height: 1.6;
+  font-size: 13px; color: var(--text-tertiary); line-height: 1.6; white-space: pre-line;
 }
 .modal-confirm .modal-footer {
   border-top: none; padding: 0 28px 22px;

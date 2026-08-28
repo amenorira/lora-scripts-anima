@@ -1,6 +1,6 @@
 """API 请求/响应的 pydantic 模型。"""
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -73,6 +73,12 @@ class APIResponseSuccess(APIResponse):
 
 class APIResponseFail(APIResponse):
     status: str = "fail"
+
+
+class TeCacheDeleteRequest(BaseModel):
+    """请求删除这些目录树下的各引擎 TE 输出缓存（按 TE_DELETE_SUFFIXES 后缀匹配）。"""
+
+    dirs: List[str] = Field(default_factory=list)
 
 
 class TrainingTomlParseRequest(BaseModel):

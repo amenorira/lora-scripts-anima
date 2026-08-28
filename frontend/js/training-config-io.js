@@ -7,6 +7,8 @@ window.trainingConfigIoMixin = {
   confirmActionLabel: '',
   confirmDanger: false,
   confirmNotice: false,
+  confirmSecondaryLabel: '',
+  confirmSecondaryCallback: null,
   confirmTitle: '',
   confirmMessage: '',
   confirmCallback: null,
@@ -128,6 +130,8 @@ window.trainingConfigIoMixin = {
     this.confirmActionLabel = actionLabel;
     this.confirmDanger = !!opts.danger;
     this.confirmNotice = !!opts.notice;
+    this.confirmSecondaryLabel = opts.secondaryLabel || '';
+    this.confirmSecondaryCallback = opts.secondaryCallback || null;
     this.showConfirmModal = true;
   },
 
@@ -135,11 +139,20 @@ window.trainingConfigIoMixin = {
     this.showConfirmModal = false;
     const cb = this.confirmCallback;
     this.confirmCallback = null;
+    this.confirmSecondaryCallback = null;
+    if (typeof cb === 'function') cb();
+  },
+
+  confirmSecondaryAction() {
+    this.showConfirmModal = false;
+    const cb = this.confirmSecondaryCallback;
+    this.confirmSecondaryCallback = null;
     if (typeof cb === 'function') cb();
   },
 
   cancelConfirm() {
     this.showConfirmModal = false;
     this.confirmCallback = null;
+    this.confirmSecondaryCallback = null;
   },
 };

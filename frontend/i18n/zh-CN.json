@@ -1,4 +1,15 @@
 {
+	"teCache": {
+		"staleTitle": "文本编码器缓存已过期",
+		"rebuildStart": "删除缓存并开始训练",
+		"useOld": "使用旧缓存继续",
+		"deleteFailed": "缓存删除失败",
+		"warn": {
+			"rateMismatch": "caption_dropout_rate 在缓存生成后被修改（{count} 个缓存文件）：缓存中是 {cached}，本次设置为 {current}，本次训练将按 {cached} 丢弃 caption，删除缓存重建后才会按 {current} 生效。",
+			"captionModified": "有 {count} 张图的 caption 在缓存生成后被修改过，本次训练将使用修改前的旧编码，删除缓存重建后才会使用新 caption。",
+			"everyNEpochs": "缓存开启时 caption_dropout_every_n_epochs 不生效，本次训练不会执行整轮 caption 丢弃。"
+		}
+	},
 	"nav": {
 		"monitor": "训练监控",
 		"monitorDashboard": "仪表盘",

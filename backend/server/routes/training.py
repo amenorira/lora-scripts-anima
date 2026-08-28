@@ -34,6 +34,11 @@ from backend.training.musubi_krea2 import (
     validate_krea2_config,
 )
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.te_cache_check import (
+    TE_CACHE_CHECK_PROFILES,
+    check_te_cache,
+    delete_te_cache,
+)
 from backend.training.training_config import (
     TRAINING_CONFIG_NAME,
     TrainingConfigError,
@@ -49,7 +54,12 @@ from backend.training.sd_dataset_config import (
     normalize_subset_timestep_offsets,
 )
 from backend import launch_utils
-from backend.server.models import APIResponseFail, APIResponseSuccess, TrainingTomlParseRequest
+from backend.server.models import (
+    APIResponseFail,
+    APIResponseSuccess,
+    TeCacheDeleteRequest,
+    TrainingTomlParseRequest,
+)
 from backend.log import log
 from backend.utils import train_utils
 
@@ -697,6 +707,20 @@ async def create_toml_file(request: Request):
         return APIResponseFail(
             message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
         )
+
+    # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
+    ignore_te_cache_warnings = bool(config.pop("ignore_te_cache_warnings", None))
+    if profile.id in TE_CACHE_CHECK_PROFILES and not ignore_te_cache_warnings:
+        try:
+            te_cache_warnings = await asyncio.to_thread(check_te_cache, config, profile.id)
+        except Exception as exc:
+            log.warning(f"[TE cache] staleness check failed / 缓存一致性检查失败: {exc}")
+            te_cache_warnings = []
+        if te_cache_warnings:
+            return APIResponseFail(
+                message="Text encoder cache may be stale / 文本编码器缓存可能已过期",
+                data={"errorCode": "teCacheStale", "warnings": te_cache_warnings},
+            )
     try:
         train_utils.fix_config_types(config)
     except (TypeError, ValueError) as e:
@@ -937,3 +961,16 @@ async def run_vendor_script(request: Request, background_tasks: BackgroundTasks)
     cmd_list = [launch_utils.python_bin, str(script_path)] + result
     background_tasks.add_task(launch_utils.run, cmd_list)
     return APIResponseSuccess()
+
+
+@router.post("/training/te-cache/delete")
+async def delete_te_cache_files(request: TeCacheDeleteRequest):
+    """删除训练/正则数据集目录树下的 TE 输出缓存（各引擎 npz 后缀）。"""
+    deleted, errors = await asyncio.to_thread(delete_te_cache, request.dirs)
+    if errors:
+        return APIResponseFail(
+            message="Failed to delete some cache files / 部分缓存文件删除失败:\n" + "\n".join(errors),
+            data={"deleted": deleted},
+        )
+    log.info(f"[TE cache] deleted {deleted} cache file(s) / 已删除 {deleted} 个缓存文件")
+    return APIResponseSuccess(data={"deleted": deleted})

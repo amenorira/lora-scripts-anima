@@ -1,4 +1,15 @@
 {
+	"teCache": {
+		"staleTitle": "Text encoder cache is stale",
+		"rebuildStart": "Delete cache & start training",
+		"useOld": "Continue with old cache",
+		"deleteFailed": "Failed to delete cache",
+		"warn": {
+			"rateMismatch": "caption_dropout_rate was changed after caching ({count} cache file(s)): cache stores {cached}, this run sets {current}; training will drop captions at {cached} unless the cache is rebuilt.",
+			"captionModified": "{count} caption file(s) were modified after the cache was generated; training will use the old encodings until the cache is rebuilt.",
+			"everyNEpochs": "caption_dropout_every_n_epochs has no effect while text encoder output caching is on; whole-epoch caption dropout will NOT happen this run."
+		}
+	},
 	"nav": {
 		"monitor": "Monitor",
 		"monitorDashboard": "Dashboard",
