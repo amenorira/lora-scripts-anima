@@ -727,9 +727,9 @@
 		"timestep_sampling": "训练时间步采样方式",
 		"timestep_samplingHint": "控制训练时如何抽取噪声时间步；各模式差异见下拉选项说明。",
 		"sigmoid_scale": "Sigmoid 时间步分布缩放",
-		"sigmoid_scaleHint": "用于 sigmoid、shift 和 flux_shift，控制采样向噪声区间中段或两端集中。",
+		"sigmoid_scaleHint": "值越小分布越集中在中噪声段；调大（如 1.2～1.5）会向高噪声和低噪声两端展开。用于 sigmoid、shift、flux_shift。",
 		"discrete_flow_shift": "固定 Flow Shift",
-		"discrete_flow_shiftHint": "仅 timestep_sampling=shift 或 sigma 时生效，用于移动 FlowMatch 时间步分布。",
+		"discrete_flow_shiftHint": "把整组时间步分布向一侧平移：大于 1 偏向高噪声，小于 1 偏向低噪声。仅 shift 或 sigma 采样时生效。",
 		"subset_timestep_offsets": "子集时间步采样偏移",
 		"weighting_scheme": "时间步密度 / Loss 权重方案",
 		"weighting_schemeHint": "所选方案可能改变 sigma 采样密度或逐时间步 Loss 权重，具体作用见下拉选项说明。",
@@ -898,7 +898,7 @@
 		"krea2ShiftNote": "krea2_shift 按 Krea 2 的参考分辨率公式自动计算位移；不同 AR bucket 的实际分布会不同。",
 		"densityIgnored": "logit_normal/mode 仅在 timestep_sampling=sigma 时改变采样密度。",
 		"uniformWeightNote": "当前 weighting_scheme 不附加逐时间步 Loss 权重（等价于均匀权重）。",
-			"footnote": "连续曲线为当前采样算法与位移公式的解析概率密度（PDF）；黄色折线为当前训练器实际使用的 Loss weighting 公式。多分辨率数据集请分别用主要 bucket 分辨率查看。",
+			"footnote": "连续曲线为当前采样算法与位移公式的解析概率密度（PDF）；权重折线为当前训练器实际使用的 Loss weighting 公式。多分辨率数据集请分别用主要 bucket 分辨率查看。",
 		"refresh": "按当前参数刷新"
 	},
 	"timestepOffset": {

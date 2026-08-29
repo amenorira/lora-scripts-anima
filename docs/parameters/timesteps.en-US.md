@@ -34,7 +34,7 @@ The trainer uses the word “step” for three unrelated things:
 | Training timestep | How much noise was added to the current image | `timestep_sampling` |
 | Generation steps | How many denoising calculations are used to generate an image | `sample_steps` |
 
-For example, “training step 500” means the LoRA has received 500 optimizer updates. Training step 500 has no correspondence to noise timestep `t≈500`; neither one means “halfway done”. Images within the same optimizer update may also receive different noise timesteps.
+For example, “training step 500” means the LoRA has received 500 optimizer updates. Noise timestep `t≈500` instead means the current sample is mixed with roughly half noise; the similar numbers are a coincidence. Images within the same optimizer update may also receive different noise timesteps.
 
 <!-- doc-anchor: visualizer -->
 ## Distribution preview
@@ -44,12 +44,12 @@ For example, “training step 500” means the LoRA has received 500 optimizer u
 The preview contains three main elements:
 
 1. **Blue continuous probability density curve (PDF):** higher points mean the corresponding noise timestep is sampled more often during training.
-2. **Yellow curve:** loss measures the error between the model's prediction and its training target. The yellow line shows any extra weight applied to that error after a timestep has been sampled.
+2. **Weight polyline:** loss measures the error between the model's prediction and its training target. This orange-yellow polyline (the exact shade varies slightly by theme) shows any extra weight applied to that error after a timestep has been sampled.
 3. **High, mid, and low noise percentages:** these summarize whether the current setup leans toward global structure, balanced transition, or fine detail.
 
 The horizontal axis follows the physical denoising order of image generation: left is maximum noise `t≈1000` (pure noise, structure & composition stage), while right is clean `t≈0` (low noise, fine detail stage).
 
-The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the yellow loss weighting line uses a logarithmic display scale. A flat yellow line means no timestep receives extra explicit weighting (equivalent to uniform weighting); it does not mean the observed loss stays constant.
+The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the weight polyline uses a logarithmic display scale. A flat polyline means no timestep receives extra explicit weighting (equivalent to uniform weighting); it does not mean the observed loss stays constant.
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Approximate influence of a noise region on training">
   <div class="doc-equation-kicker">Simplified relationship, not an exact prediction</div>
@@ -57,7 +57,7 @@ The vertical axis displays the exact probability density <var>f</var>(<var>t</va
   <p>The current error changes with the image, caption, and stage of training. The preview therefore shows allocation, not a guaranteed amount of learning.</p>
 </div>
 
-The preview is calculated directly using the closed-form analytical probability density function (PDF) of the active formulas, completely deterministic and noise-free. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
+The preview curve is not a random simulation: it is computed directly from the active sampling algorithm and shift formulas, and looks the same on every refresh. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
 
 <!-- doc-anchor: dataset-guidance -->
 ## Dataset size and timestep selection
@@ -135,7 +135,7 @@ Front views alone cannot teach the back of an object. Missing views still requir
 | The style has the right colors but weak shape language | Broaden sigmoid or test a separate mild high-noise shift | Subject and composition diversity |
 | The style overrides prompt composition | Reduce high-noise shift | Overall training strength |
 
-The same symptom can have several causes. Timestep distribution is one diagnostic tool; it does not replace inspection of the dataset, captions, learning rate, and fixed-prompt samples.
+The same symptom can have several causes. Timestep distribution is one diagnostic tool; it does not replace inspection of the dataset, captions, learning rate, and fixed-prompt test images.
 
 <!-- doc-anchor: flow-matching -->
 ## How timesteps work
@@ -166,7 +166,7 @@ The current Anima and Krea 2 implementations train the model to predict the dire
   <p>Generation follows the learned path in reverse, starting from high noise and moving toward a clean image.</p>
 </div>
 
-Training code also uses <var>σ</var>, written as `sigma` in parameter names, for the noise mixing ratio. In the flow-matching paths covered here <var>σ</var> moves in the same direction as <var>t</var>: values near `0` are clean, values near `1` are close to pure noise. The UI presents this range as approximately `0–1000` timesteps.
+Training code also uses <var>σ</var> for the noise mixing ratio — this is the sigma in weight names such as `sigma_sqrt` and `cosmap`. In the flow-matching paths covered here <var>σ</var> moves in the same direction as <var>t</var>: values near `0` are clean, values near `1` are close to pure noise. The UI presents this range as approximately `0–1000` timesteps.
 
 <!-- doc-anchor: defaults -->
 ## Profile defaults
@@ -213,7 +213,7 @@ Even coverage is not automatically better. With a small or repetitive dataset, t
 
 ### `shift`
 
-`shift` first creates a sigmoid distribution, then uses `discrete_flow_shift` to move the whole distribution toward low or high noise. Use `shift` when you already have a baseline and controlled comparisons show the distribution needs to move toward one end.
+`shift` first creates a sigmoid distribution, then uses `discrete_flow_shift` to move the whole distribution toward low or high noise. Use `shift` after you have a baseline and test images confirm the distribution should lean toward one end.
 
 ### `sigma`
 
@@ -250,6 +250,8 @@ This mode shares parameter names with `sigma + logit_normal`, but the conversion
 - `1.0`: mid-noise emphasis with meaningful low- and high-noise coverage.
 - `1.2–1.5`: both endpoints receive more samples.
 - Very large values: samples can become overly concentrated near the two endpoints.
+
+The official Anima example style LoRA uses exactly this — `sigmoid_scale=1.3` (the full training configuration is published on its Civitai page), so this range already has an official reference point in style training.
 
 Raising `sigmoid_scale` is not a general quality improvement. It can help with detail and global structure, but it can also strengthen recurring backgrounds, fixed compositions, compression artifacts, and caption errors.
 
@@ -330,7 +332,7 @@ The UI preview can show the base distribution (all offsets zero), the overall tr
 A timestep affects training in two separate stages:
 
 1. **Where the sample comes from.** Sampling controls shape the blue sampling-density curve.
-2. **How much that sample counts.** Actual loss weighting shapes the orange curve.
+2. **How much that sample counts.** Actual loss weighting shapes the weight polyline.
 
 The name `weighting_scheme` is slightly misleading because some choices change loss weight, while others affect sampling — and only when `timestep_sampling=sigma`.
 
@@ -344,7 +346,7 @@ The name `weighting_scheme` is slightly misleading because some choices change l
 
 ### `uniform` / `none`
 
-No extra per-timestep loss weight is applied, so the orange line stays flat — a straightforward baseline for comparison.
+No extra per-timestep loss weight is applied, so the weight polyline stays flat — a straightforward baseline for comparison.
 
 ### `sigma_sqrt`
 
@@ -364,7 +366,7 @@ This can make low-noise samples dominate the update. On small datasets, it may a
   <p>This reduces the relative influence of both endpoints and smoothly emphasizes the middle.</p>
 </div>
 
-`cosmap` changes only the orange loss-weight curve, not the blue sampling-density curve.
+`cosmap` changes only the weight polyline, not the blue sampling-density curve.
 
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`, `logit_mean`, and `logit_std`
@@ -372,7 +374,7 @@ This can make low-noise samples dominate the update. On small datasets, it may a
 These controls change sampling only when `timestep_sampling=sigma`.
 
 - `logit_mean=0`: the density is roughly symmetric.
-- Given the current sigma scheduler's indexing, positive values usually shift the resulting sigma toward low noise; use the preview to confirm.
+- Positive values usually shift the sampled timesteps toward low noise; negative values toward high noise.
 - Smaller `logit_std` values concentrate samples. Larger values spread them toward the endpoints.
 
 The scheduler shift also affects the final mapping, so use the preview to confirm the direction and strength. With `sigmoid + logit_normal`, logit-normal changes neither sampling nor loss weight.
@@ -398,7 +400,7 @@ The scheduler shift also affects the final mapping, so use the preview to confir
 | `subset_timestep_offsets` | Used | Ignored | Used | Ignored | Only `flux_shift` | Ignored |
 | `sigma_sqrt/cosmap` weight | Used | Used | Used | Used | Used | Used |
 
-“Ignored” means the training code does not read that value. Leaving it in a configuration is harmless — it is simply not read. The form hides most inactive fields, and the preview warns about ignored combinations.
+“Ignored” means the training code does not read that value. Leaving it in a configuration is harmless — it is simply not read. The form hides or annotates inactive fields, and the preview warns about ignored combinations.
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL `min_timestep` and `max_timestep`
@@ -410,7 +412,7 @@ SDXL does not use the Anima/Krea 2 flow-matching sampling options described abov
 - Raising `min_timestep` removes the cleanest low-noise samples.
 - Lowering `max_timestep` removes the noisiest samples.
 
-These parameters crop the allowed range. They are not equivalents of `sigmoid_scale` or flow shift. The default configuration keeps the full range; range limits are meant for experiments that deliberately exclude one end of the noise range.
+These parameters crop the allowed range. They are not equivalents of `sigmoid_scale` or `discrete_flow_shift`. The default configuration keeps the full range; range limits are meant for experiments that deliberately exclude one end of the noise range.
 
 `min_snr_gamma`, `v_parameterization`, and `zero_terminal_snr` are also related to SDXL noise training, but they control loss reweighting, the prediction target, and scheduler behavior rather than the flow-matching distribution covered here.
 
@@ -442,7 +444,7 @@ Training loss is a supporting signal, not a sufficient evaluation on its own. Wh
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Fact-checked on **2026-08-08**. Code links below are pinned to the reviewed revisions.
+Fact-checked on **2026-08-29**. Code links below are pinned to the reviewed revisions.
 
 **Implementation facts:** The formulas and parameter activation behavior in this guide reflect the training code and configuration wiring actually used in this project:
 
@@ -454,9 +456,9 @@ Fact-checked on **2026-08-08**. Code links below are pinned to the reviewed revi
 - The musubi-tuner fork's `src/musubi_tuner/training/timesteps.py`: the shared density and loss-weighting formulas.
 - The frontend distribution preview is implemented in `frontend/js/training-core.js` as a deterministic analytical PDF sampled at 120 points, with a separate loss-weight curve when applicable.
 
-**Model and upstream evidence:** The Anima and Krea 2 training paths use flow-matching noise and the training target `v = ε − x`. The `sigmoid` sampling scheme and the `discrete_flow_shift` transform come from [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3)](https://arxiv.org/abs/2403.03206). The empirical starting points for dataset sizes in this guide are not official recommendations.
+**Model and upstream evidence:** The Anima and Krea 2 training paths use flow-matching noise and the training target `v = ε − x`. The `sigmoid` sampling scheme and the `discrete_flow_shift` transform come from [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3)](https://arxiv.org/abs/2403.03206). The empirical starting points for dataset sizes in this guide are this trainer's own suggestions; the `1.1–1.4` range for style training matches the official Anima example style LoRA, which uses `sigmoid_scale=1.3`.
 
-**Experience requiring local validation:** The `sigmoid_scale` ranges suggested for different dataset sizes, the tendencies described for few-shot characters and styles, and the intuitive division of low noise as detail and high noise as structure are community and engineering observations. They should be verified with a fixed-condition comparison on the target dataset.
+**Experience requiring local validation:** The exact `sigmoid_scale` values suggested for different dataset sizes, the tendencies described for few-shot characters and styles, and the intuitive division of low noise as detail and high noise as structure should be verified with a fixed-condition comparison on the target dataset.
 
 References:
 
@@ -468,5 +470,6 @@ References:
 - [This project's musubi-tuner fork: `src/musubi_tuner/training/trainer_base.py` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
 - [This project's frontend: `frontend/js/training-core.js` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
 - [Official Anima model card (pinned revision)](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [Official Anima example style LoRA: Greg Rutkowski Style - Anima (Civitai, published by Circlestone Labs, the Anima model authors)](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)

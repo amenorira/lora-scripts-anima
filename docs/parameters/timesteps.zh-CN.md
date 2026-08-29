@@ -1,13 +1,13 @@
 # 时间步
 
-> 训练时，系统会为图片加入随机噪声，再让模型学习如何处理它。时间步表示当前输入的噪声强度，它决定了训练更关注细节、整体结构，还是两者之间的平衡。
+> 训练时，系统会为图片加入随机噪声，再让模型学习如何处理它。时间步表示当前输入的噪声强度，决定训练更侧重细节、整体结构，还是两者的平衡。
 
-本指南讲解本训练器中 **Anima** 和 **Krea 2** 使用的 flow matching（流匹配）时间步。SDXL 采用另一套扩散训练方式，其时间步范围参数在文末单独说明。
+本指南介绍 **Anima** 和 **Krea 2** 训练使用的流匹配（flow matching）时间步。SDXL 采用另一套扩散训练方式，它的时间步范围参数在文末单独说明。
 
 <!-- doc-anchor: quick-start -->
 ## 基础设置
 
-尚未进行基准训练时，当前训练类型的默认值可以直接作为基准配置。时间步属于高级调优项；在多数训练问题中，数据质量、标注、学习率和停止时机的影响更直接。
+还没有基准结果时，直接把当前训练类型的默认值当作基准配置。时间步属于高级调优项；多数训练问题里，数据质量、标注、学习率和停止时机的影响更直接。
 
 Anima LoRA 的默认基准为：
 
@@ -19,7 +19,7 @@ weighting_scheme = "uniform"
 
 Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5` 和 `weighting_scheme=none`，这组参数同样适合作为基准。
 
-两组默认值都会覆盖不同强度的噪声，而不是只集中于细节或整体结构，适用于人物、画风和普通概念训练的初始实验。以上参数均在训练表单的“时间步/采样”区域。
+两组默认值都会在不同噪声强度上抽样，不会只偏重细节或整体结构，适合作为人物、画风和普通概念训练的起点。以上参数都在训练表单的“时间步/采样”区域。
 
 > **配置说明：** 时间步不是“画质开关”。没有基准结果时，同时修改多个时间步参数会让结果难以归因。先用默认配置跑一次，后续才有对照依据。
 
@@ -34,7 +34,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | 训练时间步 | 当前图片被加入了多少噪声 | `timestep_sampling` |
 | 生成采样步数 | 生成图片时执行多少次去噪计算 | `sample_steps` |
 
-例如，日志中的“训练到第 500 步”表示 LoRA 已经更新了 500 次，它和噪声时间步 `t≈500` 是两回事，不表示“都进行到一半”。同一次训练更新中，不同图片也可以抽到不同的噪声时间步。
+例如，日志里的“训练到第 500 步”表示 LoRA 已更新 500 次；噪声时间步 `t≈500` 则表示当前样本混入了约一半噪声。两者数字碰巧相近，含义完全无关。同一次训练更新中，不同图片也会抽到不同的噪声时间步。
 
 <!-- doc-anchor: visualizer -->
 ## 分布预览说明
@@ -44,12 +44,12 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 分布预览包含三个主要部分：
 
 1. **蓝色连续概率密度曲线（PDF）。** 曲线越高，代表对应的噪声时间步在训练中越常被抽到。
-2. **黄色曲线。** Loss 表示模型预测与训练目标之间的误差。黄线显示样本被抽到以后，这个误差还会乘上多大的额外权重。
+2. **权重折线。** Loss 表示模型预测与训练目标之间的误差。这条橙黄色的折线（颜色深浅随界面主题略有差异）显示样本被抽到以后，误差还会乘上多大的额外权重。
 3. **高、中、低噪声占比。** 这三个数值概括当前设置更偏向整体结构、平衡过渡还是细节微调。
 
 横轴按照生图的去噪物理过程排列：左侧为最大噪声时间步 `t≈1000`（纯噪声、构图与大结构阶段），右侧为 `t≈0`（低噪声、画面细节微调阶段）。
 
-纵轴展示真实的数学概率密度 <var>f</var>(<var>t</var>)，黄色 Loss 权重线使用对数刻度展示相对变化趋势。黄线保持水平表示没有对不同时间步额外加权（等价于均匀权重），不代表训练日志中的实际 Loss 保持不变。
+纵轴展示真实的数学概率密度 <var>f</var>(<var>t</var>)，权重折线使用对数刻度展示相对变化趋势。权重折线保持水平表示没有对不同时间步额外加权（等价于均匀权重），不代表训练日志中的实际 Loss 保持不变。
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="某个噪声区域对训练影响的近似关系">
   <div class="doc-equation-kicker">帮助理解，不是精确预测</div>
@@ -57,14 +57,14 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p>图片、标注和训练阶段都会改变“当前误差”，所以分布图只能说明训练如何分配抽样与权重。</p>
 </div>
 
-预览直接基于当前算法与位移公式的闭式解析密度函数（PDF）精确计算，完全确定且无随机噪点。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
+预览曲线不是随机模拟：它由当前采样算法与位移公式直接计算得出，每次刷新结果都相同。三个区域的百分比经过四舍五入，合计偶尔会显示为 `99.9%` 或 `100.1%`。打开或刷新预览不会启动训练，也不会修改 TOML 配置。
 
 <!-- doc-anchor: dataset-guidance -->
 ## 数据集规模与时间步选择
 
 图片越少，模型能参考的角度、姿势、背景和构图变化就越少。时间步不能补出这些缺失的信息，它只能决定现有图片更常在哪种噪声强度下参与训练。
 
-因此，少图或高度重复的数据集通常更适合保留稳定的中噪声倾向；图片足够多且内容真正多样时，才更有条件增加低噪声和高噪声两端的覆盖。
+因此，少图或重复度高的数据集通常更适合保持以中噪声为主的分布；图片足够多、内容真正多样时，才更有条件把低噪声和高噪声两端也纳入更多。
 
 下面的数值是经验起点，不是固定配方：
 
@@ -120,7 +120,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 特殊服装、道具和机械结构往往需要中噪声和高噪声来建立整体轮廓。局部纹理正确但整体结构不稳定时，可以在确认数据角度足够后，测试 `sigmoid_scale=1.2～1.4` 或轻微的 `shift>1`。
 
-只有正面图时，时间步无法推断物体背面的样子，缺少的视角仍然需要通过数据补充。
+只有正面图时，无论怎么调时间步，模型都补不出物体背面的样子；缺失的视角仍然要靠数据补充。
 
 <!-- doc-anchor: diagnosis -->
 ## 训练结果与调整方向
@@ -135,12 +135,12 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | 画风只有颜色，缺少形体特点 | 适度扩大 sigmoid，或单独测试轻微高噪声 shift | 主体类型和构图是否足够多样 |
 | 画风压制提示词，总把构图带回训练集 | 减少高噪声平移 | 总训练强度是否过高 |
 
-同一种现象可能有多个原因。时间步分布只是排查的一部分，不能代替对数据、标注、学习率和固定提示词采样图的检查。
+同一种现象可能有多个原因。时间步分布只是排查的一部分，不能代替对数据、标注、学习率和固定提示词试跑图的检查。
 
 <!-- doc-anchor: flow-matching -->
 ## 时间步的工作原理
 
-本节说明时间步在 flow matching 训练中的工作方式。初次训练无需掌握全部公式，需要进一步调参时再回来看即可。
+本节说明时间步在流匹配训练中的工作方式。初次训练无需掌握全部公式，需要进一步调参时再回来看即可。
 
 图片进入模型之前，会先由 VAE 压缩成 latent，也就是模型实际处理的图像特征。设原图 latent 为 <var>x</var>，随机噪声为 <var>ε</var>，归一化时间步为 <var>t</var>，加入噪声后的输入可以写成：
 
@@ -166,7 +166,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
   <p>生成图片时过程反过来：模型从高噪声出发，逐步走向清晰图像。</p>
 </div>
 
-训练代码里还经常使用 <var>σ</var>（界面参数中写作 `sigma`）表示噪声混合比例。在本文讨论的 flow matching 路径中，它的方向与 <var>t</var> 一致：越接近 `0` 越干净，越接近 `1` 越接近纯噪声。界面会把这个范围显示为大约 `0～1000` 的时间步。
+训练代码里还常用 <var>σ</var> 表示噪声混合比例，`sigma_sqrt`、`cosmap` 这些权重名称里的 sigma 指的就是它。在本文讨论的流匹配路径中，它的方向与 <var>t</var> 一致：越接近 `0` 越干净，越接近 `1` 越接近纯噪声。界面会把这个范围显示为大约 `0～1000` 的时间步。
 
 <!-- doc-anchor: defaults -->
 ## 当前训练类型的默认值
@@ -176,7 +176,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none` |
 
-在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 使用 `none`，同时也是为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
+在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 保留 `none` 是为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
 
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`：决定哪些时间步更常出现
@@ -195,7 +195,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 ### `sigmoid`
 
-`sigmoid` 先取得一个服从标准正态分布的随机数，再把它转换到 `0～1`：
+`sigmoid` 先抽取一个标准正态随机数，再把它映射到 `0～1`：
 
 <div class="doc-equation" role="group" aria-label="Sigmoid 时间步采样公式">
   <div class="doc-equation-kicker">sigmoid 采样</div>
@@ -213,7 +213,7 @@ Krea 2 的默认值是 `shift`、`sigmoid_scale=1.0`、`discrete_flow_shift=2.5`
 
 ### `shift`
 
-`shift` 先生成 sigmoid 分布，再通过 `discrete_flow_shift` 把整组分布向低噪声或高噪声平移。它适用于已有基准结果、且对照图显示整体分布方向需要调整的情况。
+`shift` 先生成 sigmoid 分布，再通过 `discrete_flow_shift` 把整组分布向低噪声或高噪声平移。它适合在已有基准结果、并从试跑图确认需要整体偏向某一端之后再使用。
 
 ### `sigma`
 
@@ -250,6 +250,8 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 - `1.0`：以中噪声为主，同时保留低噪声和高噪声。
 - `1.2～1.5`：低噪声与高噪声两端都会增加。
 - 数值过大：样本可能过度集中到两个端点。
+
+Anima 官方发布的示例画风 LoRA 使用的就是 `sigmoid_scale=1.3`（完整训练配置公开在其 Civitai 页面），说明这个区间在画风训练中已有官方实践参照。
 
 提高 `sigmoid_scale` 并不等于单纯提升质量。它可能补充细节和整体结构，也可能让背景、固定构图、压缩痕迹和错误标注更快被学进去。
 
@@ -318,9 +320,9 @@ timestep_sampling = { offset = -0.25 }
 
 ### 支持的模式与推荐范围
 
-分组偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 不读取这个偏移；即使通过 API 传入该值，训练也会正常运行，只是它不会生效。
+子集偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 不读取这个偏移；即使通过 API 传入该值，训练也会正常运行，只是它不会生效。
 
-建议先在 `-0.5～+0.5` 范围内测试。偏移绝对值越大，分布越容易被整体推到某一端；在已经使用 `shift` 或 `flux_shift` 的配置中，正偏移会更快抽干低噪声一侧。脸部特写、纹理图可以先试小幅负值，全身图或结构图可以先试小幅正值，但这些只是实验起点，不是固定配方。
+建议先在 `-0.5～+0.5` 范围内测试。偏移绝对值越大，分布越容易被整体推到某一端；在已经使用 `shift` 或 `flux_shift` 的配置中，正偏移会让低噪声一端更快被抽空。脸部特写、纹理图可以先试小幅负值，全身图或结构图可以先试小幅正值，但这些只是实验起点，不是固定配方。
 
 分布预览可以分别显示基础分布（所有偏移为 0）、整体训练分布和某个子集的分布。建议先保存默认配置作为对照，然后一次只调整一个子集的偏移。偏移只作用于训练采样；验证采样不加偏移，验证 loss 仍然可以直接比较。
 
@@ -330,7 +332,7 @@ timestep_sampling = { offset = -0.25 }
 时间步对训练的影响有两个独立环节：
 
 1. **抽样位置。** 由 `timestep_sampling` 和相关分布参数控制，对应图中的蓝色采样密度曲线。
-2. **Loss 权重。** 表示样本被抽到后对误差施加的额外权重，对应图中的橙线。
+2. **Loss 权重。** 表示样本被抽到后对误差施加的额外权重，对应图中的权重折线。
 
 `weighting_scheme` 这个名称容易误导：其中有些选项改变 Loss 权重，有些选项只在 `timestep_sampling=sigma` 时改变抽样分布。
 
@@ -344,7 +346,7 @@ timestep_sampling = { offset = -0.25 }
 
 ### `uniform` / `none`
 
-不对不同时间步添加额外 Loss 权重，图中的橙线保持水平，便于作为对照基准。
+不对不同时间步添加额外 Loss 权重，图中的权重折线保持水平，便于作为对照基准。
 
 ### `sigma_sqrt`
 
@@ -361,10 +363,10 @@ timestep_sampling = { offset = -0.25 }
 <div class="doc-equation" role="group" aria-label="Cosmap Loss 权重公式">
   <div class="doc-equation-kicker">中噪声权重</div>
   <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>2</span><span><var>π</var> · (1 − 2 · <var>σ</var> + 2 · <var>σ</var><sup>2</sup><span class="doc-math-close">)</span></span></span></div>
-  <p>它会相对降低两个端点的影响，并平滑强调中噪声。</p>
+  <p>它会相对削弱两个端点，温和地侧重中噪声。</p>
 </div>
 
-`cosmap` 只改变橙色权重曲线，不会改变蓝色采样密度曲线。
+`cosmap` 只改变权重折线，不会改变蓝色采样密度曲线。
 
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`、`logit_mean` 与 `logit_std`
@@ -372,7 +374,7 @@ timestep_sampling = { offset = -0.25 }
 这组设置只有在 `timestep_sampling=sigma` 时才会改变抽样分布。
 
 - `logit_mean=0`：分布大致对称。
-- 在当前 sigma scheduler 的索引方向下，正值通常使最终 sigma 偏向低噪声，负值通常偏向高噪声。
+- 正值通常让抽到的时间步偏向低噪声，负值偏向高噪声。
 - `logit_std` 越小，样本越集中；越大，样本越向两端展开。
 
 scheduler shift 还会参与最后的映射，所以应以预览结果判断实际方向和幅度。选择 `sigmoid + logit_normal` 时，`logit_normal` 不会改变采样，也不会增加 Loss 权重。
@@ -398,21 +400,21 @@ scheduler shift 还会参与最后的映射，所以应以预览结果判断实�
 | `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
 | `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
 
-“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会暗中生效。界面会尽量隐藏当前组合中无效的字段，分布预览也会提示被忽略的设置。
+“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会暗中生效。界面会隐藏或标注当前组合中无效的字段，分布预览也会提示被忽略的设置。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
 
-SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训练器为 SDXL 提供两个独立的范围参数：
+SDXL 不使用前面介绍的 Anima/Krea 2 流匹配采样选项，本训练器为 SDXL 提供两个独立的范围参数：
 
 - `min_timestep`：允许抽取的最低噪声时间步，留空时使用 `0`。
 - `max_timestep`：允许抽取的最高噪声时间步，留空时使用 `1000`。
 - 提高 `min_timestep`：排除最干净的低噪声样本。
 - 降低 `max_timestep`：排除噪声最高的样本。
 
-它们只是裁剪允许抽取的范围，不等同于 `sigmoid_scale` 或 flow shift。默认配置使用完整范围，只有需要排除特定噪声端点的实验才需要调整。
+它们只是裁剪允许抽取的范围，不等同于 `sigmoid_scale` 或 `discrete_flow_shift`。默认配置使用完整范围，只有需要排除特定噪声端点的实验才需要调整。
 
-`min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 也与 SDXL 的噪声训练有关，但分别控制 Loss 重加权、预测目标和 scheduler 行为，不属于本文介绍的 flow matching 分布参数。
+`min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 也与 SDXL 的噪声训练有关，但分别控制 Loss 重加权、预测目标和 scheduler 行为，不属于本文介绍的流匹配分布参数。
 
 <!-- doc-anchor: common-mistakes -->
 ## 常见误区
@@ -426,7 +428,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 7. batch size 和多卡数量不会改变理论分布，但会影响短训练中实际抽样的波动大小。
 8. 时间步设置不会改变导出的 LoRA 文件格式，推理时也不要求使用同名采样方式。
 9. `subset_timestep_offsets` 只对 `sigmoid`、`shift`、`flux_shift` 生效；`uniform`、`sigma` 下不会改变训练。
-10. 分组偏移按图片所属子集逐样本应用，不是对整个 batch 使用最后一个分组的值。
+10. 子集偏移按图片所属子集逐样本应用，不是对整个 batch 使用最后一个子集的值。
 
 <!-- doc-anchor: testing -->
 ## 对照实验方法
@@ -442,21 +444,21 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
-事实核查日期：**2026-08-08**。下列代码链接固定到核查时的提交。
+事实核查日期：**2026-08-29**。下列代码链接固定到核查时的提交。
 
 **实现事实：** 本文公式与参数生效关系，以本项目实际加载的训练代码与配置链路为准：
 
 - sd-scripts fork 的 `library/flux_train_utils.py`：`sigmoid`、`shift`、`flux_shift` 采样，`sigma_sqrt` 与 `cosmap` 权重公式，`discrete_flow_shift` 变换。
-- Anima 训练器的 `anima_train_network.py`：从 batch 的 `custom_attributes` 读取逐样本分组偏移，并且只在训练阶段应用。
-- 后端的 `backend/training/sd_dataset_config.py` 与 `backend/server/routes/training.py`：校验分组偏移、生成独立 `dataset.toml`，并通过 `--dataset_config` 传给训练器。
+- Anima 训练器的 `anima_train_network.py`：从 batch 的 `custom_attributes` 读取逐样本子集偏移，并且只在训练阶段应用。
+- 后端的 `backend/training/sd_dataset_config.py` 与 `backend/server/routes/training.py`：校验子集偏移、生成独立 `dataset.toml`，并通过 `--dataset_config` 传给训练器。
 - `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
 - musubi-tuner fork 的 `src/musubi_tuner/training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 等采样实现。
 - `src/musubi_tuner/training/timesteps.py`：共享密度与损失权重公式。
 - 前端分布预览见 `frontend/js/training-core.js`：通过 120 个采样点绘制确定性的解析 PDF，并在适用时单独绘制 Loss 权重曲线。
 
-**模型与上游依据：** Anima 与 Krea 2 的训练路径使用 flow matching（流匹配）加噪方式与目标公式 `v = ε − x`；`sigmoid` 采样与 `discrete_flow_shift` 的变换形式出自 [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis（SD3 论文）](https://arxiv.org/abs/2403.03206)。本文数据集规模对应的经验起点不属于任何官方推荐。
+**模型与上游依据：** Anima 与 Krea 2 的训练路径使用流匹配加噪方式与目标公式 `v = ε − x`；`sigmoid` 采样与 `discrete_flow_shift` 的变换形式出自 [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis（SD3 论文）](https://arxiv.org/abs/2403.03206)。文中各数据集规模的经验起点是本训练器给出的建议值；其中画风训练的 `1.1～1.4` 区间，与 Anima 官方发布的示例画风 LoRA 实际使用的 `sigmoid_scale=1.3` 一致。
 
-**需要实测的经验判断：** 各数据集规模对应的 `sigmoid_scale` 范围、少图人物与画风的倾向性建议，以及“低噪声负责细节、高噪声负责结构”的直觉分区，都属于社区与工程经验，应通过固定条件的 A/B 测试确认是否适用于当前数据集。
+**需要实测的经验判断：** 各数据集规模对应的具体取值、少图人物与画风的倾向性建议，以及“低噪声负责细节、高噪声负责结构”的直觉分区，仍应通过固定条件的 A/B 测试确认是否适用于当前数据集。
 
 参考资料：
 
@@ -468,5 +470,6 @@ SDXL 不使用前面介绍的 Anima/Krea 2 flow matching 采样选项，本训�
 - [本项目 musubi-tuner fork：`src/musubi_tuner/training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
 - [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
+- [Anima 官方示例画风 LoRA：Greg Rutkowski Style - Anima（Civitai，发布者为 Anima 模型作者 Circlestone Labs）](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
