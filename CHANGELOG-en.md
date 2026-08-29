@@ -6,6 +6,32 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.3 - 2026-08-29
+
+This release adds a pre-flight consistency check for the text encoder (TE) disk cache: changes that never invalidate the cache on their own — edited captions, an adjusted caption dropout rate — are now detected before training starts, with a dialog offering a rebuild instead of silently training on stale caches. The same release runs a round of dead-code cleanup — 651 lines of dead CSS rules removed, an unreachable backend function dropped — unifies the dialog implementations, and polishes two parameter docs.
+
+### TE cache staleness check (new)
+
+- Before launching, the trainer compares the TE cache npz snapshot against the current configuration per engine (Anima/SDXL) and detects three problems: a caption dropout rate that differs from the snapshot, modified caption contents, and an everyN_epochs cache path that has gone silently invalid.
+- When a problem is found, training does not start; a dialog lists the warnings one by one and offers one-click cache rebuild, with an explicit "continue with old cache" escape hatch for this launch.
+- A new cache-cleanup endpoint backs both the in-dialog rebuild and manual cleanup.
+
+### Unified dialogs
+
+- The two confirm-dialog implementations are merged into one; the three remaining native alert/confirm calls (adapter conflict warning, run deletion, log clearing) are replaced, and Escape / overlay-click closing now behaves consistently.
+- Dialog styles are restored to the original unified look.
+
+### Dead code cleanup
+
+- The stylesheets shed 651 lines: about 200 dead rules and 146 zero-reference class names, all leftovers from past redesigns of the old dashboard and the old tagger workspace, plus an orphaned `@keyframes`.
+- The backend drops the unreachable get_total_images helper.
+- The cleanup was verified several ways: a static retention check (zero used classes lost), an element-by-element style-equivalence comparison across nine page states (zero differences in 18 layout and color properties), and the full test suite (420 passing).
+
+### Docs
+
+- The AdaLN doc corrects the gating description and the diffusion-pipe comparison, and documents the modules trainable outside the blocks.
+- The timestep doc now cites the official example parameters and carries polished bilingual copy and interface hints.
+
 ## v2.9.2 - 2026-08-27
 
 This release unifies the timestep distribution preview in the parameter guide with the training-page dialog — the same two-column workspace — and realigns three contract tests that had gone stale as features evolved. The full test suite now passes.
