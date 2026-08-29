@@ -205,10 +205,6 @@ def _iter_images(path: str, recursive: bool) -> Iterator[Path]:
     return (p for p in iterator if p.is_file() and p.suffix.lower() in _IMAGE_EXTS)
 
 
-def get_total_images(path: str, recursive: bool = True) -> list:
-    return [str(p) for p in _iter_images(path, recursive)]
-
-
 def count_images(path: str, recursive: bool = True, stop_after: Optional[int] = None) -> int:
     """统计图片数；stop_after 命中即提前返回，避免为阈值判断遍历整个数据集。"""
     count = 0

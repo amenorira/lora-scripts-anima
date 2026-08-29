@@ -46,10 +46,9 @@
 .tagger-path-control button { display: inline-flex; align-items: center; justify-content: center; width: var(--control-height); border: 0; border-left: 1px solid var(--border-default); border-radius: 0; background: var(--bg-input-action); color: var(--text-secondary); cursor: pointer; }
 .tagger-path-control button:hover { color: var(--accent); background: var(--accent-soft); }
 .tagger-field-stepper { width: 140px; margin-left: auto; }
-.tagger-number-input, .tagger-text-input { width: 100%; height: var(--control-height); padding: 0 var(--control-padding-x); border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-size: 13px; }
+.tagger-text-input { width: 100%; height: var(--control-height); padding: 0 var(--control-padding-x); border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-size: 13px; }
 .tagger-text-input { max-width: 320px; margin-left: auto; }
-.tagger-number-input { max-width: 132px; margin-left: auto; font-family: inherit; font-variant-numeric: tabular-nums; text-align: right; }
-.tagger-number-input:focus, .tagger-text-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
+.tagger-text-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); outline: 0; }
 
 .tagger-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .tagger-option-grid > label { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; min-height: 58px; margin: 0; padding: 9px 10px; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; }
