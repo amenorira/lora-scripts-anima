@@ -255,7 +255,9 @@ _RESPONSE_TRIM_NONE = {"response_model_exclude_none": True}
 
 @router.get("/tasks/terminate/{task_id}", **_RESPONSE_TRIM_NONE)
 async def terminate_task(task_id: str):
-    tm.terminate_task(task_id)
+    # 杀进程树要等子进程退出（psutil wait 最长约 10 秒），必须放线程池，
+    # 否则事件循环被阻塞，期间的 HTTP/WS/监控轮询全部冻结、事件乱序。
+    await asyncio.to_thread(tm.terminate_task, task_id)
     return APIResponseSuccess()
 
 
