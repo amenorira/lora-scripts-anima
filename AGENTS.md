@@ -20,7 +20,8 @@
 - **发布流程（每次发版必须走完）**：
   1. 更新 `VERSION`、双语 `CHANGELOG.md` / `CHANGELOG-en.md`，提交信息为 `chore: 发布 vX.Y.Z 版本`；
   2. 打标签 `vX.Y.Z`；
-  3. 推送分支与标签；
-  4. 创建 GitHub Release（`gh release create`），正文以自然语言撰写（参照 v2.3.0/v2.3.1 风格），**最开头一行必须附双语更新日志链接**，格式：
+  3. 合并 dev 到 main（合并信息用中文），推送 dev、main 与标签；
+  4. 将 main 快进回 dev 并推送（`git merge --ff-only main`），保持两分支齐平、避免 GitHub 误显示 dev 落后；
+  5. 创建 GitHub Release（`gh release create`），正文以自然语言撰写（参照 v2.3.0/v2.3.1 风格），**最开头一行必须附双语更新日志链接**，格式：
      `**English release notes:** [CHANGELOG-en.md](https://github.com/amenorira/lora-scripts-anima/blob/main/CHANGELOG-en.md) · 中文更新日志：[CHANGELOG.md](https://github.com/amenorira/lora-scripts-anima/blob/main/CHANGELOG.md)`
 - **桌面端优先**：本项目是桌面训练器，不要求移动端界面适配。前端布局、交互和视觉验证以常规桌面窗口及桌面窄窗口为准，无需针对手机视口单独设计或测试。
