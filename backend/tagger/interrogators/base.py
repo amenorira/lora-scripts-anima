@@ -162,7 +162,7 @@ class Interrogator:
                 delattr(self, attr)
                 unloaded = True
         if unloaded:
-            log.info(f'Unloaded {self.name}')
+            log.info(f'Unloaded {self.name} / 模型已卸载')
         return unloaded
 
     def interrogate(

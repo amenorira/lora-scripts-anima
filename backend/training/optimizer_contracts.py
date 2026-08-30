@@ -847,13 +847,15 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
                     config[key] = 1.0
                     warnings.append(
                         "Prodigy: learning_rate defaulted to 1.0 "
-                        "(D-adaptation 缩放因子必须为 1.0)"
+                        "(D-adaptation requires factor 1.0) / "
+                        "learning_rate 已默认设为 1.0（D-adaptation 缩放因子必须为 1.0）"
                     )
                 continue
             if not math.isclose(_numeric_value(value, 1.0), 1.0):
                 config[key] = 1.0
                 warnings.append(
-                    f"Prodigy: {key} forced to 1.0 (D-adaptation 缩放因子必须为 1.0)"
+                    f"Prodigy: {key} forced to 1.0 (D-adaptation requires factor 1.0) / "
+                    f"{key} 已强制设为 1.0（D-adaptation 缩放因子必须为 1.0）"
                 )
 
     if optimizer_type in SCHEDULEFREE_OPTIMIZERS:

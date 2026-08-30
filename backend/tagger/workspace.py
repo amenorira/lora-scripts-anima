@@ -394,8 +394,8 @@ def _run_api_task(
     task["phase"] = "api_request"
     _task_log(
         task,
-        f"API task started: {len(paths)} images; model: {config.model}; "
-        f"endpoint: {config.base_url}; concurrency: {config.concurrency}",
+        f"API task started / API 任务已启动: {len(paths)} images / 共 {len(paths)} 张图片; "
+        f"model: {config.model}; endpoint: {config.base_url}; concurrency: {config.concurrency}",
     )
     client = api_engine.create_client(config)
     pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
@@ -417,7 +417,7 @@ def _run_api_task(
                     task["status"] = "error"
                     task["phase"] = "error"
                     task["error_detail"] = f"API authentication failed / API 鉴权失败: {str(exc)[:240]}"
-                _task_log(task, f"Task aborted: {task['error_detail']}")
+                _task_log(task, f"Task aborted / 任务中止: {task['error_detail']}")
                 break
             except Exception as exc:
                 outcome = {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
@@ -445,34 +445,35 @@ def _run_api_task(
                 task["updated_at"] = time.time()
                 current = task["current"]
             if status == "skipped":
-                _task_log(task, f"[{current}/{len(paths)}] {path.name}: existing caption skipped")
+                _task_log(task, f"[{current}/{len(paths)}] {path.name}: existing caption skipped / 已有标注，跳过")
             elif status == "failed":
-                _task_log(task, f"[{current}/{len(paths)}] Failed {path.name}: {outcome.get('error', '')}")
+                _task_log(task, f"[{current}/{len(paths)}] Failed {path.name} / 失败: {outcome.get('error', '')}")
             else:
-                _task_log(task, f"[{current}/{len(paths)}] {path.name}: {outcome['tag_count']} tags ({status})")
+                _task_log(task, f"[{current}/{len(paths)}] {path.name}: {outcome['tag_count']} tags ({status}) / {outcome['tag_count']} 个标签（{status}）")
             if task["cancel_event"].is_set():
                 break
         if task["status"] == "running":
             if task["cancel_event"].is_set():
                 task["status"] = "cancelled"
                 task["phase"] = "cancelled"
-                _task_log(task, "Task cancelled by user")
+                _task_log(task, "Task cancelled by user / 任务已被用户取消")
             else:
                 task["status"] = "done"
                 task["phase"] = "completed"
                 elapsed = max(0.0, time.time() - task["started_at"])
                 _task_log(
                     task,
-                    f"Task completed in {elapsed:.1f}s: {task['success']} succeeded, "
-                    f"{task['skipped']} skipped, {task['failed']} failed",
+                    f"Task completed in {elapsed:.1f}s / 任务完成，用时 {elapsed:.1f}s: "
+                    f"{task['success']} succeeded, {task['skipped']} skipped, {task['failed']} failed / "
+                    f"成功 {task['success']}，跳过 {task['skipped']}，失败 {task['failed']}",
                 )
     except Exception as exc:
-        log.exception("Tagger API task failed")
+        log.exception("Tagger API task failed / 打标 API 任务失败")
         with task["lock"]:
             task["status"] = "error"
             task["phase"] = "error"
             task["error_detail"] = str(exc)[:500]
-        _task_log(task, f"Task failed: {str(exc)[:500]}")
+        _task_log(task, f"Task failed / 任务失败: {str(exc)[:500]}")
     finally:
         task["cancel_event"].set()
         pool.shutdown(wait=False, cancel_futures=True)
@@ -524,7 +525,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
     task["status"] = "running"
     task["phase"] = "created"
     spec = MODEL_SPEC_BY_ID[task["model_id"]]
-    _task_log(task, f"Task started: {len(paths)} images; model: {spec.name}")
+    _task_log(task, f"Task started / 任务已启动: {len(paths)} images / 共 {len(paths)} 张图片; model: {spec.name}")
     prefetch_stop = threading.Event()
     pending, producer = _start_image_prefetch(paths, write_captions and conflict == "ignore", prefetch_stop)
     model_ready = False
@@ -539,7 +540,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     image.close()
                 task["status"] = "cancelled"
                 task["phase"] = "cancelled"
-                _task_log(task, "Task cancelled by user")
+                _task_log(task, "Task cancelled by user / 任务已被用户取消")
                 break
             if existing_text:
                 tags = [part.strip() for part in existing_text.split(",") if part.strip()]
@@ -558,7 +559,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     task["current_result"] = result
                     task["results"][index] = result
                     task["updated_at"] = time.time()
-                _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: existing caption skipped")
+                _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: existing caption skipped / 已有标注，跳过")
                 continue
             with task["lock"]:
                 task["phase"] = "inference" if model_ready else "loading_model"
@@ -569,11 +570,11 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 if decode_error:
                     raise decode_error
                 if not model_ready:
-                    _task_log(task, f"Loading model: {spec.name}")
+                    _task_log(task, f"Loading model / 正在加载模型: {spec.name}")
                 tags, categories = _onnx_tags(spec.id, image, options)
                 if not model_ready:
                     model_ready = True
-                    _task_log(task, f"Model ready: {spec.name}")
+                    _task_log(task, f"Model ready / 模型就绪: {spec.name}")
                 result = {
                     "index": index,
                     "name": path.name,
@@ -597,18 +598,18 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     task["items"][index].update({"status": outcome, "tag_count": len(tags)})
                     task["current_result"] = result
                     task["results"][index] = result
-                _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: {len(tags)} tags ({outcome})")
+                _task_log(task, f"[{index + 1}/{len(paths)}] {path.name}: {len(tags)} tags ({outcome}) / {len(tags)} 个标签（{outcome}）")
             except UnidentifiedImageError:
                 with task["lock"]:
                     task["failed"] += 1
-                    task["items"][index].update({"status": "failed", "error": "Unsupported image"})
-                _task_log(task, f"Unsupported image: {path.name}")
+                    task["items"][index].update({"status": "failed", "error": "Unsupported image / 不支持的图片"})
+                _task_log(task, f"Unsupported image / 不支持的图片: {path.name}")
             except Exception as exc:
                 message = f"{type(exc).__name__}: {str(exc)[:240]}"
                 with task["lock"]:
                     task["failed"] += 1
                     task["items"][index].update({"status": "failed", "error": message})
-                _task_log(task, f"Failed {path.name}: {message}")
+                _task_log(task, f"Failed {path.name} / 失败: {message}")
                 if "out of memory" in str(exc).lower() or (
                     "cuda" in str(exc).lower() and "memory" in str(exc).lower()
                 ):
@@ -627,16 +628,17 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             elapsed = max(0.0, time.time() - task["started_at"])
             _task_log(
                 task,
-                f"Task completed in {elapsed:.1f}s: {task['success']} succeeded, "
-                f"{task['skipped']} skipped, {task['failed']} failed",
+                f"Task completed in {elapsed:.1f}s / 任务完成，用时 {elapsed:.1f}s: "
+                f"{task['success']} succeeded, {task['skipped']} skipped, {task['failed']} failed / "
+                f"成功 {task['success']}，跳过 {task['skipped']}，失败 {task['failed']}",
             )
     except Exception as exc:
-        log.exception("Tagger workspace task failed")
+        log.exception("Tagger workspace task failed / 打标工作区任务失败")
         with task["lock"]:
             task["status"] = "error"
             task["phase"] = "error"
             task["error_detail"] = str(exc)[:500]
-        _task_log(task, f"Task failed: {str(exc)[:500]}")
+        _task_log(task, f"Task failed / 任务失败: {str(exc)[:500]}")
     finally:
         prefetch_stop.set()
         producer.join(timeout=1)
@@ -644,9 +646,9 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             try:
                 with gpu_inference_lock:
                     if available_interrogators[task["model_id"]].unload():
-                        _task_log(task, f"Model unloaded: {spec.name}")
+                        _task_log(task, f"Model unloaded / 模型已卸载: {spec.name}")
             except Exception:
-                log.exception("Failed to unload tagger model")
+                log.exception("Failed to unload tagger model / 打标模型卸载失败")
         task["updated_at"] = time.time()
 
 

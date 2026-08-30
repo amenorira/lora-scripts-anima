@@ -177,7 +177,7 @@ def restore_timeline_event(dataset_dir: Path, event_id: str) -> dict:
         for source in source_changes:
             target = (dataset_dir / source["rel_path"]).resolve()
             if not _within(target, dataset_dir):
-                raise ValueError("时间线包含越界路径")
+                raise ValueError("Timeline contains an out-of-bounds path / 时间线包含越界路径")
             current_exists = target.exists()
             current_text = read_tags(target) if current_exists else ""
             expected_exists = bool(source["after_exists"])
@@ -185,11 +185,11 @@ def restore_timeline_event(dataset_dir: Path, event_id: str) -> dict:
             if current_exists != expected_exists or (current_exists and current_text != expected_text):
                 conflicts.append({"path": str(target), "reason": "标签文件在该保存事件后已被修改"})
         if conflicts:
-            raise ValueError(f"时间线恢复冲突: {len(conflicts)} 个标签文件已变化")
+            raise ValueError(f"Timeline restore conflict: {len(conflicts)} tag file(s) changed / 时间线恢复冲突: {len(conflicts)} 个标签文件已变化")
         for source in reversed(source_changes):
             target = (dataset_dir / source["rel_path"]).resolve()
             if not _within(target, dataset_dir):
-                raise ValueError("时间线包含越界路径")
+                raise ValueError("Timeline contains an out-of-bounds path / 时间线包含越界路径")
             current_exists = target.exists()
             current_text = read_tags(target) if current_exists else ""
             desired_exists = bool(source["before_exists"])

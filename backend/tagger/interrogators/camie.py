@@ -40,7 +40,7 @@ class CamieTaggerInterrogator(Interrogator):
     def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs.get("repo_id", "Camais03/camie-tagger-v2")
         cache_dir = self.kwargs.get("cache_dir", None)
-        log.info(f"Loading {self.name} model from {repo_id}")
+        log.info(f"Loading {self.name} model from {repo_id} / 正在加载模型")
 
         model_path = Path(tagger_hub_download(
             repo_id=repo_id,
@@ -63,9 +63,9 @@ class CamieTaggerInterrogator(Interrogator):
             "CUDA" if "CUDAExecutionProvider" in self.model.get_providers()
             else "CPU"
         )
-        print(f"Loaded {self.name} model from {model_path} (device: {device})")
+        print(f"Loaded {self.name} model from {model_path} (device: {device}) / 模型加载完成")
         if device == "CPU":
-            print("  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。")
+            print("  ⚠ GPU inference not enabled, fell back to CPU. Check onnxruntime-gpu and CUDA versions to enable acceleration. / 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。")
 
         # ── Parse metadata JSON ──────────────────────────────
         with open(metadata_path, "r", encoding="utf-8") as f:
@@ -85,7 +85,8 @@ class CamieTaggerInterrogator(Interrogator):
         total_tags = dataset_info.get("total_tags", len(self.idx_to_tag))
         print(f"  Tags: {total_tags}, "
               f"Categories: {len(set(self.tag_to_category.values()))}, "
-              f"Image size: {self.img_size}")
+              f"Image size: {self.img_size} / 标签 {total_tags} 个，"
+              f"分类 {len(set(self.tag_to_category.values()))} 类，图像尺寸 {self.img_size}")
 
     def preprocess_image(self, image: Image.Image) -> Any:
         """

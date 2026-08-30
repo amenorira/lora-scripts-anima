@@ -963,6 +963,10 @@ window.trainingTomlMixin = {
     this.isIdle = false;
     this.statusText = this.t('monitor.created');
     this.realtimeTaskStateUnknown = false;
+    // 启动对账窗口：终止 → 立即重启时，针对旧任务取的快照可能在新任务
+    // 登记后才落地，内容仍是“无任务”。在启动后刷新对账完成前，这种
+    // 快照不得覆盖这里的乐观状态（见 realtime 的 _applyRealtimeSnapshot）。
+    this._startReconcilePending = true;
 
     // The create response is authoritative enough to paint the shared training
     // state immediately. A compact snapshot then reconciles it without waiting
@@ -1022,6 +1026,7 @@ window.trainingTomlMixin = {
     this.trainingActive = false;
     this.isTraining = false;
     this.isIdle = true;
+    this._startReconcilePending = false;
     if (wasRunning) this.statusText = this.t('monitor.taskStateUnknown');
     return wasRunning;
   }

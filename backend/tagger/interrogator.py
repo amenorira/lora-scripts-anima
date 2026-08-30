@@ -265,8 +265,8 @@ def on_interrogate(
     if batch_input_glob.strip():
         base_dir, image_paths = _expand_input(batch_input_glob.strip(), batch_input_recursive)
         if base_dir is None:
-            log.error('input path is not a directory')
-            return 'input path is not a directory'
+            log.error('input path is not a directory / 输入路径不是目录')
+            return 'input path is not a directory / 输入路径不是目录'
 
         total = len(image_paths)
         _sweep_expired()
@@ -275,12 +275,12 @@ def on_interrogate(
                 "status": "running", "current": 0, "total": total,
                 "current_file": "", "logs": [],
             }
-        log.info(f'found {total} image(s)')
-        _log_line(task_id, 'Loading model (first use may download automatically)...')
+        log.info(f'found {total} image(s) / 找到 {total} 张图片')
+        _log_line(task_id, 'Loading model (first use may download automatically)... / 正在加载模型（首次使用可能自动下载）……')
 
         for index, path in enumerate(image_paths):
             if _is_cancelled(task_id):
-                log.info(f'Task {task_id} cancelled at {index}/{total}')
+                log.info(f'Task {task_id} cancelled at {index}/{total} / 任务已取消')
                 break
             _update(task_id, current_file=str(path.name))
 
@@ -288,15 +288,15 @@ def on_interrogate(
                 output_path = _output_path_for(path, base_dir, out_root, template)
             except (TypeError, ValueError) as error:
                 # 模板写错属于配置问题：整批中止，让用户改完再来
-                message = f"Format error: {str(error)[:200]}"
-                _log_line(task_id, f'Error: {message}')
+                message = f"Format error / 格式错误: {str(error)[:200]}"
+                _log_line(task_id, f'Error / 错误: {message}')
                 _settle(task_id, "error", error_detail=message)
                 return str(error)
 
             # ignore 策略只看目标文件是否存在，不必先解码图片（批量跳过重图时显著省时）
             if batch_output_action_on_conflict == 'ignore' and output_path.is_file():
-                log.info(f'skipping {path}')
-                _log_line(task_id, f'Skip (exists): {path.name}')
+                log.info(f'skipping {path} / 跳过', extra={"console": False})
+                _log_line(task_id, f'Skip (already exists) / 跳过（已存在）: {path.name}')
                 _update(task_id, current=index + 1)
                 continue
 
@@ -310,21 +310,21 @@ def on_interrogate(
                     output_path, caption, batch_output_action_on_conflict,
                     batch_remove_duplicated_tag, batch_output_save_json, raw_tags,
                 )
-                log.info(f'[{index+1}/{total}] found {len(processed)} tags from {path.name}')
-                _log_line(task_id, f'[{index+1}/{total}] {path.name}: {len(processed)} tags')
+                log.info(f'[{index+1}/{total}] found {len(processed)} tags from {path.name} / 找到 {len(processed)} 个标签', extra={"console": False})
+                _log_line(task_id, f'[{index+1}/{total}] {path.name}: {len(processed)} tags / {len(processed)} 个标签')
             except UnidentifiedImageError:
-                log.warning(f'{path} is not supported image type')
-                _log_line(task_id, f'Skip (unsupported): {path.name}')
+                log.warning(f'{path} is not a supported image type / 不支持的图片格式')
+                _log_line(task_id, f'Skip (unsupported) / 跳过（格式不支持）: {path.name}')
             except Exception as e:
                 message = f'{path.name}: {type(e).__name__}: {str(e)[:200]}'
-                log.warning(f'Error processing {message}')
-                log.exception(f'Error processing {message}')
-                _log_line(task_id, f'Error: {message}')
+                log.warning(f'Error processing {message} / 处理出错')
+                log.exception(f'Error processing {message} / 处理出错')
+                _log_line(task_id, f'Error / 错误: {message}')
 
             _update(task_id, current=index + 1)
 
         _settle(task_id, "done")
-        log.info('all done')
+        log.info('all done / 全部完成')
 
     if unload_model_after_running:
         interrogator.unload()

@@ -46,7 +46,7 @@ class DatasetSessionService:
     def create(self, directory: str, recursive: bool = True) -> DatasetSession:
         path = resolve_dir(directory)
         if not path.exists() or not path.is_dir():
-            raise ValueError(f"目录不存在或不是目录: {directory}")
+            raise ValueError(f"Directory does not exist or is not a directory / 目录不存在或不是目录: {directory}")
         images, tags = get_cached_scan_dataset(path, recursive)
         image_snapshot = tuple(dict(item) for item in images)
         now = time.time()

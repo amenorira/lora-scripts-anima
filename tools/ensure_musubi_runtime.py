@@ -35,14 +35,14 @@ def main() -> int:
     elif status["ok"]:
         if not args.quiet:
             print(
-                "[Krea 2] Shared training runtime is ready"
+                "[Krea 2] Shared training runtime is ready / 共享训练运行时已就绪"
                 f" ({'full import verification' if args.verify_imports else 'fast metadata check'}): "
                 f"transformers={status['versions'].get('transformers')}, "
                 f"torch={status['versions'].get('torch')}",
                 flush=True,
             )
     else:
-        print("[Krea 2] Shared training runtime needs synchronization:", flush=True)
+        print("[Krea 2] Shared training runtime needs synchronization / 共享训练运行时需要同步:", flush=True)
         for error in status["errors"]:
             print(f"  - {error}", flush=True)
     return 0 if status["ok"] else 1

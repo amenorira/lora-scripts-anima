@@ -27,6 +27,7 @@ window.realtimeMixin = {
   _realtimeVisibilityHandler: null,
   _realtimeInboundChain: null,
   _realtimeSnapshotPromise: null,
+  _startReconcilePending: false,
   _realtimeSnapshotAbort: null,
   _realtimeCursorsStorageKey: 'anima-realtime-cursors',
   _realtimeInstanceStorageKey: 'anima-realtime-instance-id',
@@ -355,8 +356,16 @@ window.realtimeMixin = {
   async refreshRealtimeAfterTaskStart() {
     // Do not let an older in-flight bootstrap snapshot satisfy this refresh:
     // wait for it, then fetch the post-create task state explicitly.
-    if (this._realtimeSnapshotPromise) await this._realtimeSnapshotPromise;
-    return this._refreshRealtimeSnapshot(null, null, { monitorDetail: false });
+    // preserveSubscribedCursors: that waited snapshot may predate the new
+    // task, so it must not advance subscribed-topic cursors — otherwise the
+    // queued server.tasks frame carrying the new task gets dropped as
+    // "already seen" and the UI stays stuck on a stale idle/terminated state.
+    try {
+      if (this._realtimeSnapshotPromise) await this._realtimeSnapshotPromise;
+      return await this._refreshRealtimeSnapshot(null, null, { monitorDetail: false, preserveSubscribedCursors: true });
+    } finally {
+      this._startReconcilePending = false;
+    }
   },
 
   _applyRealtimeSnapshotCursors(snapshotCursors, options) {
@@ -378,6 +387,15 @@ window.realtimeMixin = {
   },
 
   _applyRealtimeSnapshot(snapshot, options) {
+    // A snapshot fetched before the new task was registered can land after
+    // _acceptTrainingStart already painted the shared state (the
+    // terminate → start race). Until the post-start refresh settles, a
+    // snapshot showing no active task must not clobber that optimistic
+    // state — the follow-up snapshot or a queued server.tasks event
+    // carries the authoritative verdict.
+    const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
+    const snapshotHasActive = managed.some(task => task && ['CREATED', 'RUNNING'].includes(task.status));
+    if (this._startReconcilePending && !snapshotHasActive) return;
     const server = snapshot.server || {};
     this.trainingActive = !!server.training_active;
     if ((!options || options.applyMonitor !== false) && typeof this.applyRealtimeMonitorSnapshot === 'function') {

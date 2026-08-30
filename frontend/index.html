@@ -38,7 +38,7 @@
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260827-aurora1" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260830-copy1" defer></script>
   <script src="/anima-ui/js/app.js" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -61,7 +61,7 @@
   <nav class="sidebar no-transition" id="sidebar" :class="{ collapsed: sidebarCollapsed }"
        x-init="sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1'; $nextTick(() => $el.classList.remove('no-transition'))">
     <div class="sidebar-header">
-      <div class="brand-clickable" @click="navigate('home')" title="Home" aria-label="Home">
+      <div class="brand-clickable" @click="navigate('home')" :title="t('nav.home')" :aria-label="t('nav.home')">
         <div class="brand-name">lora-scripts-anima</div>
       </div>
     </div>

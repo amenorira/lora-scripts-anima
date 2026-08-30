@@ -32,7 +32,7 @@ class StartupRenderingTests(unittest.TestCase):
         self.assertIn("2026-08-01 12:34:56-123456  > Loading / 加载", rendered)
         self.assertIn("2026-08-01 12:34:56-123456  Environment / 运行环境", rendered)
         self.assertIn("2026-08-01 12:34:56-123456  READY / 服务已就绪", rendered)
-        self.assertIn("Startup:     4.2s", rendered)
+        self.assertIn("Startup / 启动: 4.2s", rendered)
 
     def test_ready_console_layout_wraps_without_persistent_box_borders(self):
         from rich.console import Console

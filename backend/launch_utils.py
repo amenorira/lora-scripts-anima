@@ -192,10 +192,10 @@ def is_installed(requirement: str, friendly: str = None) -> bool:
             req = Requirement(re.split(r"[<>=!~\[]", candidate)[0].strip())
         version = _installed_version(req.name, _PKG_VERSION_CACHE)
         if version is None:
-            log.warning(f"Package version not found: {req.name}")
+            log.warning(f"Package version not found: {req.name} / 未找到包版本")
             return False
         if req.specifier and not req.specifier.contains(version, prereleases=True):
-            log.info(f"Package wrong version: {req.name} {version} required {req.specifier}")
+            log.info(f"Package wrong version: {req.name} {version} required {req.specifier} / 包版本不符")
             return False
     return True
 
@@ -207,7 +207,7 @@ def run_pip(command: str, desc=None, live: bool = False):
     global _PKG_VERSION_CACHE
     args = [python_bin, "-m", "pip"] + shlex.split(command)
     try:
-        return run(args, desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}",
+        return run(args, desc=f"Installing {desc} / 正在安装 {desc}", errdesc=f"Couldn't install {desc} / 无法安装 {desc}",
                    live=live, shell=False)
     finally:
         _PKG_VERSION_CACHE = None
@@ -242,8 +242,8 @@ def setup_windows_bitsandbytes() -> None:
     cuda_dll_ok = (expected_dll in dlls) if expected_dll else bool(dlls)
 
     if not is_installed("bitsandbytes") or not cuda_dll_ok:
-        log.error("bitsandbytes 安装异常（未安装或 CUDA dll 与 torch 构建不匹配），正在重装 / "
-                  "bitsandbytes install is broken (missing or CUDA dll mismatch); reinstalling")
+        log.error("bitsandbytes install is broken (missing or CUDA dll mismatch with torch build); reinstalling / "
+                  "bitsandbytes 安装异常（未安装或 CUDA dll 与 torch 构建不匹配），正在重装")
         run_pip("uninstall bitsandbytes -y", "bitsandbytes", live=True)
         run_pip("install bitsandbytes", "bitsandbytes", live=True)
 
@@ -299,7 +299,7 @@ def setup_onnxruntime(onnx_version: Optional[str] = None,
     for package in ("onnxruntime", "onnxruntime-gpu"):
         if is_installed(package):
             run_pip(f"uninstall {package} -y", "onnxruntime", live=True)
-    log.info("installing onnxruntime")
+    log.info("installing onnxruntime / 正在安装 onnxruntime")
     pip_install("onnxruntime-gpu", pinned, index_url=index_url, live=True)
 
 
@@ -327,7 +327,7 @@ def check_requirements() -> None:
         try:
             run_pip(f"install {package}", desc=package, live=True)
         except Exception as e:
-            log.warning(f"Failed to install {package}: {e}")
+            log.warning(f"Failed to install {package} / 安装失败: {e}")
 
 
 def prepare_environment(prepare_onnxruntime: bool = True) -> None:
@@ -381,7 +381,7 @@ def find_available_ports(port_init: int, port_range: int):
     for port in range(port_init, port_range):
         if check_port_available(port):
             return port
-    log.error(f"error finding available ports in range: {port_init} -> {port_range}")
+    log.error(f"error finding available ports in range: {port_init} -> {port_range} / 在该端口范围内找不到可用端口")
     return None
 
 

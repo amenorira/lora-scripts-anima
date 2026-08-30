@@ -265,7 +265,7 @@ async def output_path_info(
         data = await asyncio.to_thread(_inspect_output_path, path, output_name, resume)
     except (OSError, ValueError) as exc:
         return APIResponseFail(
-            message=f"输出路径无效：{exc}",
+            message=f"Invalid output path / 输出路径无效: {exc}",
             data={"errorCode": "invalidOutputPath"},
         )
     return APIResponseSuccess(data=data)
@@ -447,7 +447,7 @@ async def _create_krea2_run(
         output_base_path = await asyncio.to_thread(resolve_user_path, requested_output_dir)
     except (OSError, ValueError) as exc:
         return APIResponseFail(
-            message=f"输出路径无效：{exc}",
+            message=f"Invalid output path / 输出路径无效: {exc}",
             data={"errorCode": "invalidOutputPath"},
         )
 
@@ -775,7 +775,7 @@ async def create_toml_file(request: Request):
         output_base_path = await asyncio.to_thread(resolve_user_path, requested_output_dir)
     except (OSError, ValueError) as exc:
         return APIResponseFail(
-            message=f"输出路径无效：{exc}",
+            message=f"Invalid output path / 输出路径无效: {exc}",
             data={"errorCode": "invalidOutputPath"},
         )
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
@@ -784,7 +784,7 @@ async def create_toml_file(request: Request):
 
     dataset_ok = train_utils.validate_data_dir(config["train_data_dir"])
     if not dataset_ok:
-        return APIResponseFail(message="数据集路径不存在或无图片")
+        return APIResponseFail(message="Dataset path does not exist or has no images / 数据集路径不存在或无图片")
 
     # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
     # 目录存在但没有任何"数字_类名"子目录时同样报错——sd-scripts 只扫描子目录（子目录缺失时
@@ -793,7 +793,7 @@ async def create_toml_file(request: Request):
     if reg_data_dir:
         if not os.path.isdir(reg_data_dir):
             return APIResponseFail(
-                message=f"正则化数据目录不存在：{reg_data_dir}",
+                message=f"Regularization data dir does not exist / 正则化数据目录不存在: {reg_data_dir}",
                 data={"errorCode": "regDataDirNotFound"},
             )
         reg_subdirs = [
@@ -803,7 +803,7 @@ async def create_toml_file(request: Request):
         ]
         if not reg_subdirs:
             return APIResponseFail(
-                message=f"正则化数据目录中未找到有效子文件夹（如 10_face）：{reg_data_dir}",
+                message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {reg_data_dir}",
                 data={"errorCode": "regDataDirNoSubfolders"},
             )
 
@@ -823,19 +823,19 @@ async def create_toml_file(request: Request):
         qwen3_path = config.get("qwen3", "").strip()
         if not qwen3_path:
             return APIResponseFail(
-                message="Anima LoRA 训练需要填写 Qwen3 编码器路径"
+                message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径"
             )
         if not os.path.exists(qwen3_path):
-            return APIResponseFail(message=f"Qwen3 模型不存在：{qwen3_path}")
+            return APIResponseFail(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}")
         vae_path = config.get("vae", "").strip()
         if not os.path.exists(vae_path):
-            return APIResponseFail(message=f"VAE 模型不存在：{vae_path}")
+            return APIResponseFail(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
 
     sample_prompts_arg = ""
     if "prompt_file" in _ui_config and _ui_config["prompt_file"].strip() != "":
         prompt_file = _ui_config["prompt_file"].strip()
         if not os.path.exists(prompt_file):
-            return APIResponseFail(message=f"采样提示词文件不存在：{prompt_file}")
+            return APIResponseFail(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}")
         config["sample_prompts"] = prompt_file
     else:
         try:
@@ -844,7 +844,7 @@ async def create_toml_file(request: Request):
                 sample_prompts_arg = ""
 
         except ValueError as e:
-            log.error(f"处理采样提示词时出错 / Error while processing prompts: {e}")
+            log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
             return APIResponseFail(message=str(e))
 
     try:
@@ -871,7 +871,7 @@ async def create_toml_file(request: Request):
         prompts_path = internal_run_dir / "prompts.txt"
         prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
         config["sample_prompts"] = str(prompts_path)
-        log.info(f"采样 prompt 已写入 / Sample prompts written to {prompts_path}")
+        log.info(f"Sample prompts written / 采样 prompt 已写入: {prompts_path}")
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)

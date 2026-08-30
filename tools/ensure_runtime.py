@@ -47,9 +47,9 @@ def run(command: list[str], *, input_text: str | None = None, check: bool = True
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"command timed out after {timeout}s: {exc}")
+        raise RuntimeError(f"command timed out after {timeout}s / 命令超时: {exc}")
     if check and result.returncode != 0:
-        raise RuntimeError(f"command failed with exit code {result.returncode}")
+        raise RuntimeError(f"command failed with exit code {result.returncode} / 命令执行失败")
     return result.returncode
 
 
@@ -82,7 +82,7 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
         if pip(
             "install", "--upgrade", "--force-reinstall", "--no-deps", "bitsandbytes", check=False
         ) != 0:
-            warnings.append("bitsandbytes CUDA 13 upgrade failed")
+            warnings.append("bitsandbytes CUDA 13 upgrade failed / bitsandbytes CUDA 13 升级失败")
 
     if package_version("xformers") and (core_changed or xformers_cuda_build() != 1300):
         if pip(
@@ -96,7 +96,7 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
             check=False,
         ) != 0:
             pip("uninstall", "-y", "xformers", check=False)
-            warnings.append("xformers upgrade failed; removed the incompatible old wheel")
+            warnings.append("xformers upgrade failed; removed the incompatible old wheel / xformers 升级失败，已移除不兼容的旧包")
 
     flash_version = package_version("flash-attn")
     if flash_version and (core_changed or "cu130torch2.10" not in flash_version.lower()):
@@ -119,7 +119,7 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
             )
         except RuntimeError as exc:
             result = -1
-            print(f"[Runtime][ERROR] flash-attn upgrade timed out: {exc}", file=sys.stderr)
+            print(f"[Runtime][ERROR] flash-attn upgrade timed out / flash-attn 升级超时: {exc}", file=sys.stderr)
         if result != 0:
             # 升级失败时保留现有安装 —— 已可用的旧 wheel 远好于"卸载后没有"
             # （老逻辑直接卸载，被墙环境下会把用户原本可用的 flash-attn 静默移除）
@@ -133,7 +133,7 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
     triton_version = package_version(expected_triton)
     if triton_version and (core_changed or minor_version(triton_version) != (3, 6)):
         if pip("install", "--upgrade", f"{expected_triton}>=3.6,<3.7", check=False) != 0:
-            warnings.append(f"{expected_triton} upgrade failed; retry from the Environment page")
+            warnings.append(f"{expected_triton} upgrade failed; retry from the Environment page / {expected_triton} 升级失败，可到环境页重试")
 
     return warnings
 

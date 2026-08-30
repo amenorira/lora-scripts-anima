@@ -34,7 +34,7 @@ def _read_caption_exact(path: Path) -> str:
 def create_snapshot(dataset_dir: str) -> dict:
     src = Path(dataset_dir).resolve()
     if not src.is_dir():
-        raise ValueError(f"目录不存在或不是目录: {dataset_dir}")
+        raise ValueError(f"Directory does not exist or is not a directory / 目录不存在或不是目录: {dataset_dir}")
     snap_dir = src / SNAPSHOT_DIR_NAME
 
     with dataset_lock(src):
@@ -157,14 +157,14 @@ def restore_snapshot(dataset_dir: str, sid: str) -> bool:
                 if member.is_dir():
                     continue
                 if stat.S_ISLNK(member.external_attr >> 16):
-                    raise ValueError("快照包含符号链接")
+                    raise ValueError("Snapshot contains a symlink / 快照包含符号链接")
                 target = (src / member.filename).resolve()
                 if not _is_within(target, src):
-                    raise ValueError("快照包含越界路径")
+                    raise ValueError("Snapshot contains an out-of-bounds path / 快照包含越界路径")
                 if target.suffix.lower() not in CAPTION_EXTS:
-                    raise ValueError("快照包含非标签文件")
+                    raise ValueError("Snapshot contains a non-tag file / 快照包含非标签文件")
                 if member.file_size > 16 * 1024 * 1024:
-                    raise ValueError("快照标签文件过大")
+                    raise ValueError("Snapshot tag file too large / 快照标签文件过大")
                 desired[target] = zf.read(member).decode("utf-8")
 
         existing: set[Path] = set()
@@ -197,6 +197,7 @@ def restore_snapshot(dataset_dir: str, sid: str) -> bool:
                     rollback_failed.append(str(target))
             if rollback_failed:
                 raise RuntimeError(
+                    f"Snapshot restore failed, and rollback failed for {len(rollback_failed)} file(s) / "
                     f"快照恢复失败，且 {len(rollback_failed)} 个文件回滚失败"
                 ) from original_error
             raise

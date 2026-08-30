@@ -36,10 +36,10 @@ def main() -> None:
     text_script = root / "krea2_cache_text_encoder_outputs.py"
     for script in (latent_script, text_script):
         if not script.is_file():
-            raise SystemExit(f"musubi Krea cache script not found: {script}")
+            raise SystemExit(f"musubi Krea cache script not found / 未找到 Krea 缓存脚本: {script}")
 
     _run(
-        "latent cache",
+        "latent cache / 图像 Latent 缓存",
         [
             sys.executable,
             str(latent_script),
@@ -50,7 +50,7 @@ def main() -> None:
         ],
     )
     _run(
-        "text encoder cache",
+        "text encoder cache / 文本编码缓存",
         [
             sys.executable,
             str(text_script),
@@ -62,7 +62,7 @@ def main() -> None:
             str(args.text_cache_batch_size),
         ],
     )
-    print("[Krea 2 cache] completed", flush=True)
+    print("[Krea 2 cache] completed / 缓存完成", flush=True)
 
 
 if __name__ == "__main__":

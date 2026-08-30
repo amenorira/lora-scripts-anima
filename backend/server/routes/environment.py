@@ -185,7 +185,7 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
         and (not only_file or item[2] == only_file or item[1] == only_file)
     ]
     if not files:
-        raise RuntimeError(f"未知模型或分组: {group or '-'} / {only_file or '-'}")
+        raise RuntimeError(f"Unknown model or group / 未知模型或分组: group={group or '-'}, file={only_file or '-'}")
 
     job_id = uuid4().hex[:12]
     shared_progress: dict = {"group": group or "all"}
@@ -575,7 +575,7 @@ async def flash_attn_status(source: str = "") -> dict:
     try:
         return await asyncio.to_thread(_flash_attn_status_sync, source or "default")
     except Exception as exc:
-        log.error(f"flash_attn status error: {exc}")
+        log.error(f"flash_attn status error / flash_attn 状态检查失败: {exc}")
         return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(exc)}
 
 

@@ -83,7 +83,7 @@ def show_ready(
         print(f"\n{timestamp}  READY / 服务已就绪", flush=True)
         print(f"  GUI:         {gui_url}", flush=True)
         print(f"  TensorBoard: {tensorboard}", flush=True)
-        print(f"  Startup:     {elapsed}", flush=True)
+        print(f"  Startup / 启动: {elapsed}", flush=True)
         print(f"  Log / 日志:  {log_path}", flush=True)
         print("  Keep this window open / 使用期间请保持此窗口开启\n", flush=True)
         return

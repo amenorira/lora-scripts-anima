@@ -468,7 +468,7 @@ window.tagEditorMixin = {
       var payload = await response.json();
       if (epoch !== this._tePageEpoch || controller.signal.aborted) return;
       if (payload.status !== 'success') {
-        if ((payload.message || '').indexOf('过期') !== -1) return this.tagEditorReloadSessionPage(targetPage);
+        if (payload.code === 'session_expired') return this.tagEditorReloadSessionPage(targetPage);
         this.toast(payload.message || this.t('common.error'), 'error');
         return;
       }

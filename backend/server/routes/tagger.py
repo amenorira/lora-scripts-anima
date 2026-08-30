@@ -117,8 +117,8 @@ async def run_interrogate(req: TaggerInterrogateRequest):
 async def stop_interrogate(task_id: str):
     """Cancel a running tagger task."""
     if cancel_tagger_task(task_id):
-        return APIResponseSuccess(data={"message": "Task cancelled"})
-    return APIResponseFail(message="Task not found")
+        return APIResponseSuccess(data={"message": "Task cancelled / 任务已取消"})
+    return APIResponseFail(message="Task not found / 任务不存在")
 
 
 @router.get("/tagger/models")
@@ -245,7 +245,7 @@ async def tagger_single_image(
     except UnidentifiedImageError:
         return APIResponseFail(message="Cannot identify image format / 无法识别图片格式")
     except Exception as exc:
-        return APIResponseFail(message=f"Failed to read image: {str(exc)[:200]}")
+        return APIResponseFail(message=f"Failed to read image / 图片读取失败: {str(exc)[:200]}")
 
     interrogator = available_interrogators.get(interrogator_model)
     if interrogator is None:
@@ -258,8 +258,8 @@ async def tagger_single_image(
 
         tags = await asyncio.to_thread(_infer)
     except Exception as exc:
-        log.exception("Single-image inference failed")
-        return APIResponseFail(message=f"Inference failed: {str(exc)[:200]}")
+        log.exception("Single-image inference failed / 单张推理失败")
+        return APIResponseFail(message=f"Inference failed / 推理失败: {str(exc)[:200]}")
 
     categories = {
         category: [[tag_name, round(confidence, 4)] for tag_name, confidence in tag_list if confidence >= 0.01]

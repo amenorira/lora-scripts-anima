@@ -368,7 +368,7 @@ def install_import_hook() -> None:
             _patch_loaded_modules()
         except Exception as exc:  # pragma: no cover - defensive startup fallback
             if not _PATCH_ERROR_REPORTED:
-                print(f"warning: failed to install true-LR logging: {exc}", file=sys.stderr)
+                print(f"warning: failed to install true-LR logging / 真实学习率日志注入失败: {exc}", file=sys.stderr)
                 _PATCH_ERROR_REPORTED = True
         return imported
 

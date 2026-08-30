@@ -124,7 +124,7 @@ class CLTaggerInterrogator(Interrogator):
     def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs['repo_id']
         cache_dir = self.kwargs.get('cache_dir')
-        log.info(f"Loading {self.name} model file from {repo_id}")
+        log.info(f"Loading {self.name} model file from {repo_id} / 正在加载模型")
         model_file = Path(tagger_hub_download(
             repo_id=repo_id, filename=self.model_path, cache_dir=cache_dir))
         mapping_file = Path(tagger_hub_download(
@@ -138,9 +138,9 @@ class CLTaggerInterrogator(Interrogator):
             self.labels = _parse_tag_mapping(json.load(stream))
 
         device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
-        log.info(f'Loaded {self.name} model from {model_file} (device: {device})')
+        log.info(f'Loaded {self.name} model from {model_file} (device: {device}) / 模型加载完成')
         if device == "CPU":
-            log.info('  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
+            log.info('  ⚠ GPU inference not enabled, fell back to CPU. Check onnxruntime-gpu and CUDA versions to enable acceleration. / 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
 
     def interrogate(
             self,
@@ -156,7 +156,7 @@ class CLTaggerInterrogator(Interrogator):
         logits = self.model.run([output_name], {input_name: _to_input_tensor(image)})[0][0]
 
         if not np.isfinite(logits).all():
-            log.warning("NaN or Inf detected in model output. Clamping...")
+            log.warning("NaN or Inf detected in model output. Clamping... / 模型输出出现 NaN 或 Inf，已钳制……")
             logits = np.nan_to_num(logits, nan=0.0, posinf=1.0, neginf=0.0)
 
         # 输出是 logits，套一层裁剪过的 sigmoid 防 exp 溢出

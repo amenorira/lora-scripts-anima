@@ -37,7 +37,7 @@ class WaifuDiffusionInterrogator(Interrogator):
     def download(self) -> Tuple[Path, Path]:
         repo_id = self.kwargs['repo_id']
         cache_dir = self.kwargs.get('cache_dir')
-        log.info(f"Loading {self.name} model file from {repo_id}")
+        log.info(f"Loading {self.name} model file from {repo_id} / 正在加载模型")
         model_file = Path(tagger_hub_download(
             repo_id=repo_id, filename=self.model_path, cache_dir=cache_dir))
         tags_file = Path(tagger_hub_download(
@@ -52,9 +52,9 @@ class WaifuDiffusionInterrogator(Interrogator):
         self.tags = pd.read_csv(tags_file)
 
         device = "CUDA" if "CUDAExecutionProvider" in self.model.get_providers() else "CPU"
-        log.info(f'Loaded {self.name} model from {model_file} (device: {device})')
+        log.info(f'Loaded {self.name} model from {model_file} (device: {device}) / 模型加载完成')
         if device == "CPU":
-            log.info('  ⚠ 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
+            log.info('  ⚠ GPU inference not enabled, fell back to CPU. Check onnxruntime-gpu and CUDA versions to enable acceleration. / 未启用 GPU 推理，已回退 CPU。如需加速，请检查 onnxruntime-gpu 版本与 CUDA 是否匹配。')
 
     def interrogate(
             self,

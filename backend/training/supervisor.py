@@ -471,19 +471,19 @@ def _log_run_start(meta: dict, task_id_short: str, run_dir: Path) -> None:
     if meta.get("train_type"):
         parts.append(f"({meta['train_type']})")
     if meta.get("model"):
-        parts.append(f"模型 {meta['model']}")
+        parts.append(f"model {meta['model']}")
     # 输出目录用相对项目根的形式（更简短）
     try:
         rel = str(run_dir).replace("\\", "/")
         # 取 output/ 之后的部分
         if "/output/" in rel:
             rel = "output/" + rel.split("/output/", 1)[1]
-        parts.append(f"输出 {rel}")
+        parts.append(f"output {rel}")
     except Exception:
         pass
     parts.append(f"task={task_id_short}")
     detail = " · ".join(parts) if parts else f"task={task_id_short}"
-    log.info(f"训练已启动 / Training started: {detail}")
+    log.info(f"Training started / 训练已启动: {detail}")
 
 
 def _log_run_end(status: str, meta: dict, duration: float, exit_code: int, task_id_short: str) -> None:
@@ -493,12 +493,12 @@ def _log_run_end(status: str, meta: dict, duration: float, exit_code: int, task_
     if status == "completed":
         step_info = ""
         if meta.get("total_steps"):
-            step_info = f" · {meta['total_steps']}/{meta['total_steps']} 步"
+            step_info = f" · {meta['total_steps']}/{meta['total_steps']} steps"
         elif meta.get("epochs"):
             step_info = f" · {meta['epochs']} epochs"
-        log.info(f"训练完成 / Training completed: {name} · 用时 {dur}{step_info} · exit {exit_code}")
+        log.info(f"Training completed / 训练完成: {name} · elapsed {dur}{step_info} · exit {exit_code}")
     elif status == "timeout":
-        log.error(f"训练超时 / Training timed out: {name} · 用时 {dur} · task={task_id_short}")
+        log.error(f"Training timed out / 训练超时: {name} · elapsed {dur} · task={task_id_short}")
     else:
         # failed / error
-        log.error(f"训练失败 / Training failed: {name} · 用时 {dur} · exit {exit_code} · 错误日志见 error.log · task={task_id_short}")
+        log.error(f"Training failed / 训练失败: {name} · elapsed {dur} · exit {exit_code} · details in error.log / 详见 error.log · task={task_id_short}")

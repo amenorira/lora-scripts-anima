@@ -226,13 +226,13 @@ def download_wheel(url: str, source: str = "default", dest_dir: Optional[Path] =
     if dest.exists() and dest.stat().st_size > 0:
         print(f"[RESUME] Continuing partial download: {dest.stat().st_size / (1024**2):.1f} MB / 断点续传")
     elif expected is not None:
-        print(f"[DOWNLOAD] {dest.name}  ({expected / (1024**2):.1f} MB)")
+        print(f"[DOWNLOAD] {dest.name}  ({expected / (1024**2):.1f} MB) / 开始下载")
 
     candidates = download_urls_for(url, source)
     last_tail = ""
     for i, dl_url in enumerate(candidates):
         via = "direct" if dl_url == url else "mirror"
-        print(f"  [{i + 1}/{len(candidates)}] via {via}: {dl_url}")
+        print(f"  [{i + 1}/{len(candidates)}] via {via} / 尝试第 {i + 1} 个源: {dl_url}")
         try:
             _download_from(dl_url, dest)
         except Exception as exc:
@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  FlashAttention Installer (baseline cu130/torch2.10/cp312) / 安装工具")
     print("=" * 62)
     print(f"  Python  ABI : {env['python_tag']}")
-    print(f"  Platform    : {env['platform'] or 'Unsupported / 不支持'}")
+    print(f"  Platform / 平台    : {env['platform'] or 'Unsupported / 不支持'}")
     print(f"  PyTorch     : {env['torch_tag'] or 'Not detected / 未检测到'}  ({env.get('torch_ver') or 'N/A'})")
     print(f"  CUDA (ABI)  : {env['cuda_tag'] or 'Not detected / 未检测到'}")
     print()
@@ -374,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[ERROR] {exc}", file=sys.stderr)
         print("\n[TROUBLESHOOT] Common causes: / 常见原因:")
         print("       1. Network issue -> download .whl manually then use --url with local path / 网络问题 → 手动下载 .whl 后用 --url 指定本地路径")
-        print("       2. pip too old -> python -m pip install --upgrade pip")
+        print("       2. pip too old -> python -m pip install --upgrade pip / pip 版本过旧，请先升级 pip")
         _pause()
         return 1
 

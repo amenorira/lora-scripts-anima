@@ -260,7 +260,7 @@ window.monitorCoreMixin = {
     else if (event.type === 'task.log') this.handleRealtimeTaskLog(payload);
     else if (event.type === 'task.metrics') this.handleRealtimeTaskMetrics(payload);
     else if (event.type === 'task.artifacts') this.handleRealtimeTaskArtifacts(payload);
-    else if (event.type === 'task.result') this._refreshRealtimeSnapshot(this.realtimeInstanceId);
+    else if (event.type === 'task.result') this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
   },
 
   handleRealtimeResyncRequired(topics) {
@@ -422,6 +422,11 @@ window.monitorCoreMixin = {
 
   handleRealtimeTaskStatus(data) {
     if (!data) return;
+    // A late terminal event from a previous task (e.g. its kill finishes
+    // while a new task has already been started) must not overwrite the
+    // new task's live state or fire the completion toast.
+    const trackedId = this.activeTaskId || this.taskId;
+    if (data.task_id && trackedId && data.task_id !== trackedId) return;
     const prevState = this._prevState;
     this._prevState = data.status;
     if (this.monitorData) {
@@ -446,7 +451,7 @@ window.monitorCoreMixin = {
       this.trainingActive = false;
       // Final output/result details are hydrated from the HTTP bootstrap
       // snapshot, not placed in a potentially large WebSocket frame.
-      this._refreshRealtimeSnapshot(this.realtimeInstanceId);
+      this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
     }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
@@ -567,7 +572,7 @@ window.monitorCoreMixin = {
       // The server intentionally bounded a delayed TensorBoard catch-up.
       // Rebuild the curve from the HTTP snapshot instead of displaying a
       // convincing but incomplete increment.
-      this._refreshRealtimeSnapshot(this.realtimeInstanceId);
+      this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
     }
 
     const points = data.points;

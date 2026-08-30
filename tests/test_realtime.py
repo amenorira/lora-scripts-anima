@@ -359,8 +359,85 @@ pending.then(result => {
         self.assertEqual(state["calls"], [{
             "instanceId": None,
             "socket": None,
-            "options": {"monitorDetail": False},
+            # 等待中的旧快照可能早于新任务生成，不得推进已订阅频道的
+            # cursor，否则携带新任务状态的 server.tasks 事件会被当作
+            # 已消费而丢弃，界面将停留在过期的“已终止/待命”状态。
+            "options": {"monitorDetail": False, "preserveSubscribedCursors": True},
         }])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend realtime checks")
+    def test_stale_snapshot_during_start_reconcile_is_ignored(self):
+        """启动对账完成前，内容仍为“无任务”的过期快照不得覆盖乐观状态。"""
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/realtime.js', 'utf8'));
+const applied = [];
+const app = Object.assign({}, window.realtimeMixin, {
+  _startReconcilePending: true,
+  trainingActive: true,
+  applyRealtimeMonitorSnapshot() { applied.push('monitor'); },
+  applyRealtimeTrainingSnapshot() { applied.push('training'); },
+  applyRealtimeTaggerSnapshot() { applied.push('tagger'); },
+  applyRealtimeEnvironmentSnapshot() { applied.push('environment'); },
+});
+app._applyRealtimeSnapshot({server: {training_active: false}, tasks: {managed: [{id: 'old', status: 'TERMINATED'}]}}, {});
+const staleApplied = applied.slice();
+const staleTrainingActive = app.trainingActive;
+app._applyRealtimeSnapshot({server: {training_active: true}, tasks: {managed: [{id: 'new', status: 'RUNNING'}]}}, {});
+process.stdout.write(JSON.stringify({
+  staleApplied,
+  staleTrainingActive,
+  freshApplied: applied,
+  freshTrainingActive: app.trainingActive,
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertEqual(state["staleApplied"], [])
+        self.assertTrue(state["staleTrainingActive"])
+        self.assertEqual(state["freshApplied"], ["monitor", "training", "tagger", "environment"])
+        self.assertTrue(state["freshTrainingActive"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend realtime checks")
+    def test_start_reconcile_window_closes_when_post_start_refresh_settles(self):
+        """对账窗口随启动后刷新结束而关闭，无论刷新成败。"""
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/training-toml.js', 'utf8'));
+eval(require('fs').readFileSync('frontend/js/realtime.js', 'utf8'));
+let release;
+const older = new Promise(resolve => { release = resolve; });
+const refreshed = [];
+const app = Object.assign({}, window.trainingTomlMixin, window.realtimeMixin, {
+  t: key => key,
+  _realtimeSnapshotPromise: older,
+  _refreshRealtimeSnapshot(instanceId, socket, options) { refreshed.push(options); return Promise.resolve(true); },
+});
+app._acceptTrainingStart({task_id: 'train-42'});
+const pendingDuringStart = app._startReconcilePending;
+setTimeout(() => release(false), 0);
+// _acceptTrainingStart 内部 fire-and-forget 的对账刷新结束后检查窗口关闭
+setTimeout(() => {
+  process.stdout.write(JSON.stringify({
+    pendingDuringStart,
+    pendingAfterRefresh: app._startReconcilePending,
+    refreshed,
+  }));
+}, 20);
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        self.assertTrue(state["pendingDuringStart"])
+        self.assertFalse(state["pendingAfterRefresh"])
+        self.assertEqual(state["refreshed"], [{"monitorDetail": False, "preserveSubscribedCursors": True}])
 
     def test_monitor_detail_is_invalidated_when_leaving_the_dashboard(self):
         self.assertIn("monitorDetailGeneration", self.client_source)
@@ -368,6 +445,70 @@ pending.then(result => {
         self.assertIn("_monitorRealtimeDetailGeneration", self.monitor_source)
         self.assertIn("this._monitorRealtimeDetailGeneration++;", self.monitor_source)
         self.assertIn("void this.refreshMonitorRealtimeDetail();", self.monitor_source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend realtime checks")
+    def test_late_terminal_event_from_old_task_does_not_clobber_new_task(self):
+        """终止后立即重启训练时，旧任务的迟到终态事件不得覆盖新任务状态。"""
+        script = r"""
+global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
+const completions = [];
+const app = Object.assign({}, window.monitorCoreMixin, {
+  activeTaskId: 'new-task',
+  taskId: 'new-task',
+  _prevState: 'RUNNING',
+  monitorData: { state: 'RUNNING', state_label: 'Training' },
+  isTraining: true,
+  isIdle: false,
+  statusText: 'monitor.training',
+  trainingActive: true,
+  realtimeTaskStateUnknown: false,
+  currentRoute: 'elsewhere',
+  t: key => key,
+  _refreshRealtimeSnapshot() { return Promise.resolve(true); },
+  handleTaskCompletion(prev, next) { completions.push([prev, next]); },
+});
+app.handleRealtimeTaskStatus({task_id: 'old-task', status: 'TERMINATED', status_label: 'Terminated'});
+const afterStale = {
+  isTraining: app.isTraining,
+  isIdle: app.isIdle,
+  statusText: app.statusText,
+  trainingActive: app.trainingActive,
+  state: app.monitorData.state,
+  prevState: app._prevState,
+  completions: completions.slice(),
+};
+app.handleRealtimeTaskStatus({task_id: 'new-task', status: 'TERMINATED', status_label: 'Terminated'});
+process.stdout.write(JSON.stringify({
+  afterStale,
+  afterCurrent: {
+    isTraining: app.isTraining,
+    isIdle: app.isIdle,
+    state: app.monitorData.state,
+    completions: completions.slice(),
+  },
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+
+        # 旧任务迟到事件被忽略：状态与 toast 判定均不受影响
+        self.assertTrue(state["afterStale"]["isTraining"])
+        self.assertFalse(state["afterStale"]["isIdle"])
+        self.assertEqual(state["afterStale"]["statusText"], "monitor.training")
+        self.assertTrue(state["afterStale"]["trainingActive"])
+        self.assertEqual(state["afterStale"]["state"], "RUNNING")
+        self.assertEqual(state["afterStale"]["prevState"], "RUNNING")
+        self.assertEqual(state["afterStale"]["completions"], [])
+        # 当前任务自身的终态事件仍然正常生效
+        self.assertFalse(state["afterCurrent"]["isTraining"])
+        self.assertTrue(state["afterCurrent"]["isIdle"])
+        self.assertEqual(state["afterCurrent"]["state"], "TERMINATED")
+        self.assertEqual(state["afterCurrent"]["completions"], [["RUNNING", "TERMINATED"]])
+
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend cursor checks")
     def test_monitor_detail_snapshot_does_not_skip_queued_task_replay(self):

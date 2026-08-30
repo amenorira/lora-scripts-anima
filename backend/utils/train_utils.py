@@ -26,8 +26,8 @@ def validate_model(model_name: str):
     if os.path.isdir(model_name):
         # diffusers 目录含 model_index.json；路径里带 unet 的多半是拆好的组件目录
         if "model_index.json" not in os.listdir(model_name) and "unet" not in model_name:
-            log.warning(f"目录里没看到 model_index.json，请确认这是完整的 HF 模型目录 / "
-                        f"model_index.json not found under {model_name}, is this a complete HF model folder?")
+            log.warning(f"model_index.json not found under {model_name}, is this a complete HF model folder? / "
+                        f"目录里没看到 model_index.json，请确认这是完整的 HF 模型目录")
         return True, "ok"
 
     if os.path.isfile(model_name):
@@ -38,35 +38,35 @@ def validate_model(model_name: str):
             and model_name.rsplit(".", 1)[-1] not in ("pt", "pth", "ckpt", "safetensors"):
         return True, "ok"
 
-    return False, "校验失败：找不到底模文件，请检查路径"
+    return False, "Validation failed: base model file not found, check the path / 校验失败：找不到底模文件，请检查路径"
 
 
 def validate_data_dir(path: str) -> bool:
     """校验训练数据目录：需存在，且含 `数字_名称` 格式的子目录；没有的话给出可操作的修复提示。"""
     if not os.path.isdir(path):
-        log.error(f"数据目录不存在：{path}（请检查参数）/ Data dir {path} does not exist, check your params")
+        log.error(f"Data dir {path} does not exist, check your params / 数据目录不存在：{path}（请检查参数）")
         return False
 
     with os.scandir(path) as entries:
         subdirs = [e.name for e in entries if e.is_dir()]
     if not subdirs:
-        log.warning("数据目录下没有子目录 / No subdir found in data dir")
+        log.warning("No subdir found in data dir / 数据目录下没有子目录")
 
     legal = [name for name in subdirs if _DATASET_DIR_RE.match(name)]
     if legal:
-        log.info(f"找到 {len(legal)} 个合规数据集子目录 / Found {len(legal)} legal dataset subdirs")
+        log.info(f"Found {len(legal)} legal dataset subdirs / 找到 {len(legal)} 个合规数据集子目录")
         return True
 
-    log.warning(f"在 {path} 中未找到合规数据集子目录 / No legal dataset subdir found in {path}")
+    log.warning(f"No legal dataset subdir found in {path} / 在 {path} 中未找到合规数据集子目录")
     if count_images(path, recursive=False, stop_after=1) > 0:
         img_count = count_images(path, recursive=False)
         repeat = suggest_num_repeat(img_count)
         log.error(
-            f"数据目录 '{path}' 里有图片但没有 repeat 前缀子目录（如 '{repeat}_zkz'），"
-            f"请建立该子目录并移入图片 / Images present but no repeat-prefixed subdir, create '{path}/{repeat}_zkz'"
+            f"Images present but no repeat-prefixed subdir, create '{path}/{repeat}_zkz' and move images into it / "
+            f"数据目录 '{path}' 里有图片但没有 repeat 前缀子目录（如 '{repeat}_zkz'），请建立该子目录并移入图片"
         )
     else:
-        log.error(f"在 {path} 中没有找到图片 / No images found in {path}")
+        log.error(f"No images found in {path} / 在 {path} 中没有找到图片")
     return False
 
 

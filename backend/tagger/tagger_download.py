@@ -50,10 +50,10 @@ def tagger_hub_download(
     """
     dest = _snapshot_path(repo_id, filename, cache_dir, repo_type)
     if dest.exists() and dest.is_file() and dest.stat().st_size > 0:
-        log.info(f"[tagger-dl] {filename} 已存在 / already exists, 跳过下载 / skipping")
+        log.info(f"[tagger-dl] {filename} already exists, skipping / 已存在，跳过下载")
         return dest
 
-    log.info(f"[tagger-dl] 下载 / Downloading {filename} from {repo_id}")
+    log.info(f"[tagger-dl] Downloading {filename} from {repo_id} / 正在下载")
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -100,7 +100,7 @@ def tagger_hub_download(
         )
     except Exception as e:
         try:
-            log.error(f"[tagger-dl] {filename} 下载失败 / download failed: {type(e).__name__}: {e}")
+            log.error(f"[tagger-dl] {filename} download failed / 下载失败: {type(e).__name__}: {e}")
         except Exception:
             pass
         raise
@@ -118,5 +118,5 @@ def tagger_hub_download(
     except Exception:
         pass
 
-    log.info(f"[tagger-dl] {filename} 下载完成 / download complete: {dest}")
+    log.info(f"[tagger-dl] {filename} download complete / 下载完成: {dest}")
     return dest

@@ -72,11 +72,11 @@ def _valid_directory(raw_path: str) -> Path | None:
 async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
     """列出数据集目录下的所有图片及其标签"""
     if not dir:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     dir_path = _valid_directory(dir)
     if dir_path is None:
-        return {"status": "error", "message": f"目录不存在: {dir}"}
+        return {"status": "error", "message": f"Directory does not exist / 目录不存在: {dir}"}
 
     images, tags = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
     dir_name = dir_path.name or str(dir_path)
@@ -92,11 +92,11 @@ async def list_images(dir: str = Query(""), recursive: bool = Query(True)):
 async def get_tag_stats(dir: str = Query(""), recursive: bool = Query(True)):
     """获取所有标签及其出现频率"""
     if not dir:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     dir_path = _valid_directory(dir)
     if dir_path is None:
-        return {"status": "error", "message": f"目录不存在: {dir}"}
+        return {"status": "error", "message": f"Directory does not exist / 目录不存在: {dir}"}
 
     images, tags_data = await asyncio.to_thread(get_cached_scan_dataset, dir_path, recursive)
     total_images = len(images)
@@ -167,7 +167,7 @@ async def get_dataset_session_page(
         )
         return {"status": "success", "data": data}
     except KeyError:
-        return {"status": "error", "message": "数据集会话已过期"}
+        return {"status": "error", "code": "session_expired", "message": "Session expired / 数据集会话已过期"}
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -178,7 +178,7 @@ async def refresh_dataset_session(session_id: str):
         session = await asyncio.to_thread(dataset_sessions.refresh, session_id)
         return {"status": "success", "data": {"session_id": session.id, "generation": session.generation, "revision": session.revision, "count": len(session.images)}}
     except KeyError:
-        return {"status": "error", "message": "数据集会话已过期"}
+        return {"status": "error", "code": "session_expired", "message": "Session expired / 数据集会话已过期"}
 
 
 @router.delete("/tageditor/sessions/{session_id}")
@@ -190,11 +190,11 @@ async def close_dataset_session(session_id: str):
 async def get_dataset_stats(dir: str = Query(""), recursive: bool = Query(True)):
     """数据集统计概览：图片总数、标签总数、有/无标签文件的图片数"""
     if not dir:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     dir_path = _valid_directory(dir)
     if dir_path is None:
-        return {"status": "error", "message": f"目录不存在: {dir}"}
+        return {"status": "error", "message": f"Directory does not exist / 目录不存在: {dir}"}
 
     images = await asyncio.to_thread(get_cached_scan_images, dir_path, recursive)
     total = len(images)
@@ -239,11 +239,11 @@ async def filter_images(data: dict):
     """按标签过滤图片"""
     dir_path = data.get("dir", "")
     if not dir_path:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     d = _valid_directory(dir_path)
     if d is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
 
     include_tags = set(data.get("include_tags", []))
     include_any = set(data.get("include_any_tags", []))
@@ -276,7 +276,7 @@ async def save_image_tags(data: dict):
     img_path = data.get("path", "")
     dir_path = _valid_directory(data.get("dir", ""))
     if not img_path or dir_path is None:
-        return {"status": "error", "message": "图片路径或数据集目录无效"}
+        return {"status": "error", "message": "Invalid image path or dataset directory / 图片路径或数据集目录无效"}
     result = await asyncio.to_thread(
         save_caption_transaction,
         dir_path,
@@ -289,7 +289,7 @@ async def save_image_tags(data: dict):
         return {"status": "error", "message": (result["failed"] or result["conflicts"])[0]["reason"], "data": result}
     _invalidate_cache(dir_path, None)
     dataset_sessions.invalidate_dataset(dir_path)
-    return {"status": "success", "message": "已保存", "data": result}
+    return {"status": "success", "message": "Saved / 已保存", "data": result}
 
 
 @router.post("/tageditor/save-all")
@@ -301,11 +301,11 @@ async def save_all_tags(data: dict):
     """
     images = data.get("images", [])
     if not images:
-        return {"status": "error", "message": "无数据"}
+        return {"status": "error", "message": "No data / 无数据"}
     dir_str = data.get("dir", "")
     dataset_dir = _valid_directory(dir_str)
     if dataset_dir is None:
-        return {"status": "error", "message": "请指定有效的数据集目录路径"}
+        return {"status": "error", "message": "A valid dataset directory path is required / 请指定有效的数据集目录路径"}
     result = await asyncio.to_thread(
         save_caption_transaction,
         dataset_dir,
@@ -330,11 +330,11 @@ async def _resolve_batch_context(data: dict) -> tuple[dict | None, Path | None, 
     operation = data.get("operation", "")
     args = data.get("args", {})
     if not dir_path or not operation:
-        return {"status": "error", "message": "缺少参数"}, None, "", {}, []
+        return {"status": "error", "message": "Missing parameter / 缺少参数"}, None, "", {}, []
 
     d = _valid_directory(dir_path)
     if d is None:
-        return {"status": "error", "message": "目录不存在"}, None, "", {}, []
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}, None, "", {}, []
 
     target_images, err = await asyncio.to_thread(_resolve_target_images, data, d)
     if err:
@@ -425,11 +425,11 @@ async def restore_from_backup(data: dict):
     """从 .bak 备份还原标签文件"""
     dir_path = data.get("dir", "")
     if not dir_path:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     d = _valid_directory(dir_path)
     if d is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     try:
         result = await asyncio.to_thread(restore_legacy_backups, d)
     except Exception as exc:
@@ -444,11 +444,11 @@ async def restore_from_backup(data: dict):
 async def download_dataset_zip(dir: str = Query("")):
     """下载数据集目录为 zip"""
     if not dir:
-        return {"status": "error", "message": "请指定数据集目录路径"}
+        return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     dir_path = resolve_dir(dir)
     if not dir_path.exists():
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
 
     dir_name = dir_path.name or "dataset"
 
@@ -499,7 +499,7 @@ async def download_dataset_zip(dir: str = Query("")):
 async def api_list_timeline(dataset_dir: str = Query(...), limit: int = Query(100, ge=1, le=500)):
     directory = _valid_directory(dataset_dir)
     if directory is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     events = await asyncio.to_thread(timeline_store.list, directory, limit)
     return {"status": "success", "data": events}
 
@@ -508,14 +508,14 @@ async def api_list_timeline(dataset_dir: str = Query(...), limit: int = Query(10
 async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
     directory = _valid_directory(dataset_dir)
     if directory is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     try:
         result = await asyncio.to_thread(restore_timeline_event, directory, event_id)
         _invalidate_cache(directory, None)
         dataset_sessions.invalidate_dataset(directory)
         return {"status": "success", "data": result}
     except KeyError:
-        return {"status": "error", "message": "时间线事件不存在"}
+        return {"status": "error", "message": "Timeline event not found / 时间线事件不存在"}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -524,7 +524,7 @@ async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
 async def api_delete_timeline(event_id: str, dataset_dir: str = Query(...)):
     directory = _valid_directory(dataset_dir)
     if directory is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     deleted = await asyncio.to_thread(timeline_store.delete, event_id, directory)
     return {"status": "success", "data": {"deleted": deleted}}
 
@@ -533,7 +533,7 @@ async def api_delete_timeline(event_id: str, dataset_dir: str = Query(...)):
 async def api_clear_timeline(dataset_dir: str = Query(...)):
     directory = _valid_directory(dataset_dir)
     if directory is None:
-        return {"status": "error", "message": "目录不存在"}
+        return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     cleared = await asyncio.to_thread(timeline_store.clear, directory)
     return {"status": "success", "data": {"cleared": cleared}}
 
@@ -543,7 +543,7 @@ async def api_create_snapshot(dataset_dir: str = Query(...)):
     try:
         directory = _valid_directory(dataset_dir)
         if directory is None:
-            return {"status": "error", "message": "目录不存在"}
+            return {"status": "error", "message": "Directory does not exist / 目录不存在"}
         meta = await asyncio.to_thread(create_snapshot, str(directory))
         return {"status": "success", "data": meta}
     except Exception as e:
@@ -555,7 +555,7 @@ async def api_list_snapshots(dataset_dir: str = Query(...)):
     try:
         directory = _valid_directory(dataset_dir)
         if directory is None:
-            return {"status": "error", "message": "目录不存在"}
+            return {"status": "error", "message": "Directory does not exist / 目录不存在"}
         snaps = await asyncio.to_thread(list_snapshots, str(directory))
         return {"status": "success", "data": snaps}
     except Exception as e:
@@ -567,7 +567,7 @@ async def api_restore_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
         directory = _valid_directory(dataset_dir)
         if directory is None:
-            return {"status": "error", "message": "目录不存在"}
+            return {"status": "error", "message": "Directory does not exist / 目录不存在"}
         ok = await asyncio.to_thread(restore_snapshot, str(directory), sid)
         if ok:
             _invalidate_cache(directory, None)
@@ -583,7 +583,7 @@ async def api_delete_snapshot(sid: str, dataset_dir: str = Query(...)):
     try:
         directory = _valid_directory(dataset_dir)
         if directory is None:
-            return {"status": "error", "message": "目录不存在"}
+            return {"status": "error", "message": "Directory does not exist / 目录不存在"}
         await asyncio.to_thread(delete_snapshot, str(directory), sid)
         return {"status": "success", "message": "Snapshot deleted"}
     except Exception as e:
@@ -596,7 +596,7 @@ async def api_clear_all_snapshots(dataset_dir: str = Query(...)):
     try:
         directory = _valid_directory(dataset_dir)
         if directory is None:
-            return {"status": "error", "message": "目录不存在"}
+            return {"status": "error", "message": "Directory does not exist / 目录不存在"}
         n = await asyncio.to_thread(clear_all_snapshots, str(directory))
         return {"status": "success", "message": f"Cleared {n} snapshots", "data": {"cleared": n}}
     except Exception as e:
