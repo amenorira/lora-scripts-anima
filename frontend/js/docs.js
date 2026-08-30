@@ -283,17 +283,35 @@ window.docsMixin = {
       ? 'timestepPreview.subtitle'
       : 'timestepPreview.docsFallback';
 
-    const offsetText = (data.offset > 0 ? '+' : '') + data.offset;
     const medianDelta = data.median - data.baselineMedian;
     const medianText = `${data.baselineMedian} → ${data.median} (${medianDelta > 0 ? '+' : ''}${medianDelta})`;
     const metaItems = [
       { label: tr('timestepPreview.sampling', 'Sampling'), value: data.sampling },
-      { label: tr('timestepPreview.offset', 'Sampling offset'), value: offsetText },
+    ];
+    if (data.sigmoidScaleCard !== null && data.sigmoidScaleCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.sigmoidScale', 'Sigmoid scale'), value: data.sigmoidScaleCard });
+    }
+    if (data.flowShiftCard !== null && data.flowShiftCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.flowShift', 'Flow shift'), value: data.flowShiftCard });
+    }
+    if (data.derivedShiftCard !== null && data.derivedShiftCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.derivedShift', 'Derived shift'), value: data.derivedShiftCard });
+    }
+    if (data.logitMeanCard !== null && data.logitMeanCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.logitMean', 'Logit mean'), value: data.logitMeanCard });
+    }
+    if (data.logitStdCard !== null && data.logitStdCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.logitStd', 'Logit std'), value: data.logitStdCard });
+    }
+    if (data.modeScaleCard !== null && data.modeScaleCard !== undefined) {
+      metaItems.push({ label: tr('timestepPreview.modeScale', 'Mode scale'), value: data.modeScaleCard });
+    }
+    metaItems.push(
+      { label: tr('timestepPreview.offset', 'Sampling offset'), value: data.offsetText },
       { label: tr('timestepPreview.medianTimestep', 'Median timestep'), value: medianText },
       { label: tr('timestepPreview.weighting', 'Loss weighting'), value: data.weighting },
       { label: tr('timestepPreview.resolution', 'Reference resolution'), value: data.resolution },
-      { label: tr('timestepPreview.previewRange', 'Preview range'), value: data.scopeLabel },
-    ];
+    );
     const metaHtml = metaItems.map(item =>
       `<span><small>${item.label}</small><b>${escapeHtml(item.value)}</b></span>`
     ).join('');

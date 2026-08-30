@@ -368,16 +368,35 @@ const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
   t(key) { return key; },
 });
 context._renderDocsTimestepPreview(container);
+const sigmoidHtml = container.innerHTML;
+// shift mode adds the flow shift card; flux_shift shows the resolution-derived shift
+context.form.timestep_sampling = 'shift';
+context.form.discrete_flow_shift = 3;
+context._renderDocsTimestepPreview(container);
+const shiftHtml = container.innerHTML;
+context.form.timestep_sampling = 'flux_shift';
+context._renderDocsTimestepPreview(container);
+const fluxHtml = container.innerHTML;
+// sigma also consumes discrete_flow_shift (same as the form's show_if)
+context.form.timestep_sampling = 'sigma';
+context._renderDocsTimestepPreview(container);
+const sigmaHtml = container.innerHTML;
 console.log(JSON.stringify({
   className: container.className,
-  hasSmoothCurve: container.innerHTML.includes('timestep-curve-current'),
-  hasMiddleSummary: container.innerHTML.includes('timestep-preview-summary') && /\d+\.\d+%/.test(container.innerHTML),
-  hasWeightCurve: container.innerHTML.includes('timestep-curve-weight'),
+  hasSmoothCurve: sigmoidHtml.includes('timestep-curve-current'),
+  hasMiddleSummary: sigmoidHtml.includes('timestep-preview-summary') && /\d+\.\d+%/.test(sigmoidHtml),
+  hasWeightCurve: sigmoidHtml.includes('timestep-curve-weight'),
   refreshBound: typeof refreshHandler === 'function',
-  dualLayout: container.innerHTML.includes('timestep-preview-layout') && container.innerHTML.includes('timestep-layout-sidebar'),
-  scopeSelect: container.innerHTML.includes('docs-timestep-scope') && container.innerHTML.includes('timestepPreview.previewRange'),
-  metaCards: (container.innerHTML.match(/<span><small>/g) || []).length,
-  offsetCard: container.innerHTML.includes('timestepPreview.offset') && container.innerHTML.includes('timestepPreview.medianTimestep'),
+  dualLayout: sigmoidHtml.includes('timestep-preview-layout') && sigmoidHtml.includes('timestep-layout-sidebar'),
+  scopeSelect: sigmoidHtml.includes('docs-timestep-scope') && sigmoidHtml.includes('timestepPreview.previewRange'),
+  metaCards: (sigmoidHtml.match(/<span><small>/g) || []).length,
+  sigmoidCard: sigmoidHtml.includes('<small>timestepPreview.sigmoidScale</small>'),
+  noScopeCard: !sigmoidHtml.includes('<small>timestepPreview.previewRange</small>'),
+  flowShiftCard: shiftHtml.includes('<small>timestepPreview.flowShift</small>') && shiftHtml.includes('<b>3</b>'),
+  derivedShiftCard: fluxHtml.includes('<small>timestepPreview.derivedShift</small>'),
+  noFlowShiftOnFlux: !fluxHtml.includes('<small>timestepPreview.flowShift</small>'),
+  sigmaFlowShiftCard: sigmaHtml.includes('<small>timestepPreview.flowShift</small>'),
+  offsetCard: sigmoidHtml.includes('timestepPreview.offset') && sigmoidHtml.includes('timestepPreview.medianTimestep'),
   resolution: context._buildTimestepPreview().resolution,
 }));
 """
@@ -398,6 +417,12 @@ console.log(JSON.stringify({
         self.assertTrue(state["dualLayout"])
         self.assertTrue(state["scopeSelect"])
         self.assertEqual(state["metaCards"], 6)
+        self.assertTrue(state["sigmoidCard"])
+        self.assertTrue(state["noScopeCard"])
+        self.assertTrue(state["flowShiftCard"])
+        self.assertTrue(state["derivedShiftCard"])
+        self.assertTrue(state["noFlowShiftOnFlux"])
+        self.assertTrue(state["sigmaFlowShiftCard"])
         self.assertTrue(state["offsetCard"])
         self.assertEqual(state["resolution"], "1024 × 768")
 

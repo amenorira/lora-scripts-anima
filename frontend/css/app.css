@@ -2057,7 +2057,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   border-radius: var(--radius-sm); background: var(--bg-surface-raised);
   display: flex; flex-direction: column; gap: 2px;
 }
-.timestep-preview-meta b { display: block; overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.timestep-preview-meta b { display: block; color: var(--text-primary); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
 .timestep-preview-meta small { display: block; color: var(--text-tertiary); font-size: 9.5px; opacity: 0.85; }
 
 .timestep-preview-notes { padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
