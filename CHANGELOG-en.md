@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.5 - 2026-08-30
+
+This release rounds out parameter visibility in the timestep distribution preview: the modal and the docs-page preview now show exactly the parameters that shape the current curve, filling in the previously hidden shaping inputs and dropping one card that duplicated the scope dropdown.
+
+### Improvements
+
+- The timestep distribution preview now conditionally shows the parameters that actually apply to the selected sampling mode: Sigmoid scale (sigmoid / shift / flux_shift), Flow Shift (shift / sigma), resolution-derived shift (flux_shift / krea2_shift), Logit mean & std (sigma + logit_normal), and Mode scale (sigma + mode). The preview inside the parameter docs mirrors the same set.
+- Removed the parameter card that duplicated the "Preview range" dropdown above it (both in the modal and on the docs page).
+- Parameter card values now wrap instead of being truncated with an ellipsis.
+
 ## v2.9.4 - 2026-08-30
 
 This release unifies copy conventions across the project: console and API messages now follow one English-first bilingual format, and the frontend vocabulary gains missing keys while shedding historical dead keys. Also fixed: official base models being wrongly rejected, and a stale "terminated" state on the UI when a training run is restarted immediately after being stopped.
