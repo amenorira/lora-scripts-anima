@@ -20,7 +20,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260829-cssclean1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260830-cards2">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260829-cssclean1">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -34,7 +34,7 @@
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260826-shared1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260830-cards3" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
@@ -1422,11 +1422,28 @@
 
         <div class="timestep-preview-meta">
           <span><small x-text="t('timestepPreview.sampling')"></small><b x-text="timestepPreviewData && timestepPreviewData.sampling"></b></span>
-          <span><small x-text="t('timestepPreview.offset')"></small><b x-text="timestepPreviewData ? ((timestepPreviewData.offset > 0 ? '+' : '') + timestepPreviewData.offset) : '0'"></b></span>
+          <template x-if="timestepPreviewData && timestepPreviewData.sigmoidScaleCard !== null">
+            <span><small x-text="t('timestepPreview.sigmoidScale')"></small><b x-text="timestepPreviewData && timestepPreviewData.sigmoidScaleCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.flowShiftCard !== null">
+            <span><small x-text="t('timestepPreview.flowShift')"></small><b x-text="timestepPreviewData && timestepPreviewData.flowShiftCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.derivedShiftCard !== null">
+            <span><small x-text="t('timestepPreview.derivedShift')"></small><b x-text="timestepPreviewData && timestepPreviewData.derivedShiftCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.logitMeanCard !== null">
+            <span><small x-text="t('timestepPreview.logitMean')"></small><b x-text="timestepPreviewData && timestepPreviewData.logitMeanCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.logitStdCard !== null">
+            <span><small x-text="t('timestepPreview.logitStd')"></small><b x-text="timestepPreviewData && timestepPreviewData.logitStdCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.modeScaleCard !== null">
+            <span><small x-text="t('timestepPreview.modeScale')"></small><b x-text="timestepPreviewData && timestepPreviewData.modeScaleCard"></b></span>
+          </template>
+          <span><small x-text="t('timestepPreview.offset')"></small><b x-text="timestepPreviewData ? timestepPreviewData.offsetText : '0'"></b></span>
           <span><small x-text="t('timestepPreview.medianTimestep')"></small><b x-text="timestepPreviewData ? (timestepPreviewData.baselineMedian + ' → ' + timestepPreviewData.median + ' (' + ((timestepPreviewData.median - timestepPreviewData.baselineMedian) > 0 ? '+' : '') + (timestepPreviewData.median - timestepPreviewData.baselineMedian) + ')') : ''"></b></span>
           <span><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData && timestepPreviewData.weighting"></b></span>
           <span><small x-text="t('timestepPreview.resolution')"></small><b x-text="timestepPreviewData && timestepPreviewData.resolution"></b></span>
-          <span><small x-text="t('timestepPreview.previewRange')"></small><b x-text="timestepPreviewData && timestepPreviewData.scopeLabel"></b></span>
         </div>
 
         <div class="timestep-preview-notes" x-show="timestepPreviewData && timestepPreviewData.notes.length">

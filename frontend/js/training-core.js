@@ -2463,13 +2463,28 @@ window.trainingCoreMixin = {
       notes.push(this.t('timestepPreview.uniformWeightNote'));
     }
 
+    // Conditional parameter cards: only the inputs that actually shape the current
+    // curve get a card; everything else stays hidden to keep the matrix honest.
+    const fmtParam = value => String(Math.round(Number(value) * 1000) / 1000);
+    const sigmoidFamily = ['sigmoid', 'shift', 'flux_shift', 'krea2_shift'].includes(sampling);
+    const offsetText = `${offset > 0 ? '+' : ''}${fmtParam(offset)}`;
+
     return {
       sampling,
       weighting,
       scope,
       scopeLabel,
       offset,
-      effectiveOffset: sigmoidScale * offset,
+      offsetText,
+      sigmoidScaleCard: sigmoidFamily ? fmtParam(sigmoidScale) : null,
+      flowShiftCard: sampling === 'shift' || sampling === 'sigma' ? fmtParam(flowShift) : null,
+      derivedShiftCard: sampling === 'flux_shift' || sampling === 'krea2_shift'
+        ? fmtParam(Number(activeShift.toFixed(2))) : null,
+      logitMeanCard: sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
+        ? fmtParam(logitMean) : null,
+      logitStdCard: sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
+        ? fmtParam(logitStd) : null,
+      modeScaleCard: sampling === 'sigma' && weighting === 'mode' ? fmtParam(modeScale) : null,
       resolution: `${width} × ${height}`,
       densities,
       baselineDensities,
