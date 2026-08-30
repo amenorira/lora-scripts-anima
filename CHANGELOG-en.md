@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.9.4 - 2026-08-30
+
+This release unifies copy conventions across the project: console and API messages now follow one English-first bilingual format, and the frontend vocabulary gains missing keys while shedding historical dead keys. Also fixed: official base models being wrongly rejected, and a stale "terminated" state on the UI when a training run is restarted immediately after being stopped.
+
+### Unified copy conventions
+
+- Console and API messages now follow a single English-first bilingual format, closing historical gaps that were Chinese-only, English-only, or Chinese-first.
+- The frontend vocabulary gains 2 missing keys (home tooltip, browse button), fixes 5 translations, and drops 89 zero-reference dead keys.
+- Tag editor session expiry is now detected by error code instead of a fragile message-substring match.
+- Per-image tagger progress lines now go to the log file only instead of flooding the console; task summary lines are kept.
+
+### Fixes
+
+- Fix official base models being wrongly rejected: the base-model type detection check is removed, so official weights pass validation again.
+- Fix the UI falsely showing "terminated" when a training run is restarted immediately after being stopped, which required a manual page refresh to recover.
+
 ## v2.9.3 - 2026-08-29
 
 This release adds a pre-flight consistency check for the text encoder (TE) disk cache: changes that never invalidate the cache on their own — edited captions, an adjusted caption dropout rate — are now detected before training starts, with a dialog offering a rebuild instead of silently training on stale caches. The same release runs a round of dead-code cleanup — 651 lines of dead CSS rules removed, an unreachable backend function dropped — unifies the dialog implementations, and polishes two parameter docs.
