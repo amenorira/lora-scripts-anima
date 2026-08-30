@@ -117,7 +117,7 @@ class Task:
                 # 死后自行退出，强行杀父进程反而可能丢掉收尾日志
                 kill_proc_tree(self.process.pid, including_parent=False)
         except Exception as e:
-            log.error(f"Error when killing process: {e}")
+            log.error(f"Error when killing process / 终止进程时出错: {e}")
         finally:
             self._settle(TaskStatus.TERMINATED)
 

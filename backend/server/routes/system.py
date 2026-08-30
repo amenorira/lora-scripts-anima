@@ -129,7 +129,7 @@ async def file_picker_available():
 @router.get("/pick_file")
 async def pick_file(picker_type: str):
     if not tk_is_available():
-        return APIResponseFail(message="unavailable")
+        return APIResponseFail(message="unavailable / 不可用")
     if picker_type == "folder":
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "")
     elif picker_type == "model-file":
@@ -153,11 +153,11 @@ async def pick_file(picker_type: str):
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_image)
     else:
-        return APIResponseFail(message=f"Invalid picker_type: {picker_type}")
+        return APIResponseFail(message=f"Invalid picker_type / 无效的选择器类型: {picker_type}")
 
     result = await coro
     if result == "":
-        return APIResponseFail(message="cancelled")
+        return APIResponseFail(message="cancelled / 已取消")
 
     return APIResponseSuccess(data={"path": _to_picker_path(result)})
 
@@ -242,7 +242,7 @@ async def get_files(pick_type) -> APIResponse:
         return result_list
 
     if pick_type not in pick_preset:
-        return APIResponseFail(message="Invalid request")
+        return APIResponseFail(message="Invalid request / 无效请求")
 
     dirs = await asyncio.to_thread(list_path_or_files, pick_preset[pick_type])
     with _files_cache_lock:

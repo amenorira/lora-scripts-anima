@@ -429,7 +429,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         if should_set_recommended:
             source["learning_rate"] = emo_target
             warnings.append(
-                f"EmoSens + {model_type}: learning_rate auto-adjusted to {emo_target}"
+                f"EmoSens + {model_type}: learning_rate auto-adjusted to {emo_target} / "
+                f"learning_rate 已自动调整为 {emo_target}"
             )
         # 注：不主动改 unet_lr / text_encoder_lr——它们留空（默认）会自动回退到
         # learning_rate（即 emo_target），这正是 EmoSens 推荐用法（全層同一 LR）。
@@ -458,7 +459,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         if not has_wd:
             opt_args.append("weight_decay=0.01")
             source["optimizer_args"] = opt_args
-            warnings.append("EmoSens: weight_decay auto-set to 0.01")
+            warnings.append("EmoSens: weight_decay auto-set to 0.01 / weight_decay 已自动设为 0.01")
 
     # ── 5.6b. Automagic3：兼容模式 + 优化器内部 LR ─────────
     if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
@@ -484,7 +485,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         if fused_conflicts:
             _set_key_value_arg(opt_args, "fused", False)
             warnings.append(
-                "[Conflict] Automagic3 fused disabled: "
+                "[Conflict] Automagic3 fused disabled / fused 已自动关闭: "
                 + "; ".join(fused_conflicts)
             )
         elif fused_requested:
@@ -677,10 +678,10 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             continue
         # 未知 Anima 前缀字段
         if any(key.startswith(prefix) for prefix in ANIMA_KNOWN_PREFIX):
-            warnings.append(f"[Anima field ignored] {key}")
+            warnings.append(f"[Anima field ignored / Anima 字段已忽略] {key}")
             continue
         # 未知字段：警告但透传
-        warnings.append(f"[Unknown field passed through] {key}")
+        warnings.append(f"[Unknown field passed through / 未知字段已透传] {key}")
         if isinstance(value, str):
             value = _normalize_path(value)
         adapted[key] = value

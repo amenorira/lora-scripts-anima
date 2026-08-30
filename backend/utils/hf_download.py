@@ -331,13 +331,13 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
             # 属 IntegrityError（触发端点切换时清理，避免坏分块当续传基准），
             # 而非普通网络瞬断（保留以跨源续传）。
             if stream_total > 0 and got != stream_total:
-                raise IntegrityError(f"{filename}: 大小不匹配 {got} != {stream_total}")
+                raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {got} != {stream_total}")
             os.replace(str(partial), str(dest))
             with lock:
                 progress.update({"filename": filename, "file_index": file_index,
                                  "file_total": file_total, "downloaded": got, "total": stream_total or got,
                                  "speed": 0.0, "phase": "file_done"})
-            _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [完成 / Done]")
+            _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [Done / 完成]")
             return dest
         except IntegrityError:
             raise  # 坏数据重试无意义：清空 partial 由端点级 fallback 处理
@@ -405,7 +405,7 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
             cleanup_temp(dest)
             if is_last:
                 raise
-            _log(f"{label}: 源 {url} 完整性错误 / integrity error, 已清理并切换重下 / cleared, restarting from next source...")
+            _log(f"{label}: source {url} integrity error, cleared and restarting from next source / 源 {url} 完整性错误，已清理并切换重下...")
             continue
         except Exception as e:
             last_err = e
@@ -413,7 +413,7 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
             # 多分块按字节范围命名、与 URL 无关，新端点 Range 从 start+done 续传天然成立。
             if is_last:
                 raise
-            _log(f"{label}: 源 {url} 网络中断 / network error ({type(e).__name__}), 保留进度切换备用源续传 / keeping progress, resuming from next source...")
+            _log(f"{label}: source {url} network error ({type(e).__name__}), keeping progress and resuming from next source / 源 {url} 网络中断（{type(e).__name__}），保留进度切换备用源续传...")
     raise last_err if last_err else RuntimeError("download failed")
 
 
@@ -571,8 +571,8 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
 
         got = dest.stat().st_size
         if got != total:
-            raise IntegrityError(f"大小不匹配: {got} != {total}")
-        _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(total)} [完成 / Done]")
+            raise IntegrityError(f"Size mismatch / 大小不匹配: {got} != {total}")
+        _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(total)} [Done / 完成]")
         return dest
     except Exception:
         stop.set()

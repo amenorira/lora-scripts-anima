@@ -170,9 +170,9 @@ def download_anima_files(
                 progress.update({
                     "phase": "error", "filename": "",
                     "file_index": 0, "file_total": file_total,
-                    "error": f"磁盘剩余 {usage.free // (1024**3)} GB < 1GB",
+                    "error": f"Only {usage.free // (1024**3)} GB free (< 1GB) / 磁盘剩余 {usage.free // (1024**3)} GB < 1GB",
                 })
-            _log(f"[ERROR] 磁盘空间不足 / Insufficient disk space: {usage.free // (1024**3)} GB remaining")
+            _log(f"[ERROR] Insufficient disk space / 磁盘空间不足: {usage.free // (1024**3)} GB remaining")
             return [Path(".")] * file_total
     except OSError:
         pass
@@ -180,7 +180,7 @@ def download_anima_files(
     dest_dir.mkdir(parents=True, exist_ok=True)
     results: list[Path] = []
     for i, (file_repo_id, hf_path, local_name, desc) in enumerate(normalized_files):
-        _log(f"[{i+1}/{file_total}] 下载 / Downloading {local_name} ({desc}) ...")
+        _log(f"[{i+1}/{file_total}] Downloading / 下载 {local_name} ({desc}) ...")
         with lock:
             progress.update({
                 "filename": local_name,
@@ -200,7 +200,7 @@ def download_anima_files(
                 file_index=i, file_total=file_total,
             )
             results.append(path)
-            _log(f"[{i+1}/{file_total}] 已下载 / Downloaded: {path}")
+            _log(f"[{i+1}/{file_total}] Downloaded / 已下载: {path}")
         except Exception as e:
             with lock:
                 progress.update({
@@ -210,7 +210,7 @@ def download_anima_files(
                     "file_total": file_total,
                     "error": f"{type(e).__name__}: {e}",
                 })
-            _log(f"[{i+1}/{file_total}] 失败 / Failed: {e}")
+            _log(f"[{i+1}/{file_total}] Failed / 失败: {e}")
             results.append(Path("."))
             # 清理该文件的临时分块，避免孤儿占用磁盘（分块内重试已覆盖瞬时网络错误）
             cleanup_temp(dest)
@@ -264,13 +264,13 @@ def main():
     if args.file:
         files = [(h, l, d) for h, l, d in ANIMA_FILES if l == args.file or h == args.file]
         if not files:
-            print(f"未知文件: {args.file}，可选: {[l for _,l,_ in ANIMA_FILES]}")
+            print(f"Unknown file / 未知文件: {args.file}; choices / 可选: {[l for _,l,_ in ANIMA_FILES]}")
             return
 
-    print(f"dest = {dest}")
-    print(f"files = {[f for f,_ in files]}")
+    print(f"Target dir / 目标目录: {dest}")
+    print(f"Files / 文件: {[f for f,_ in files]}")
     # 尊重 HF_ENDPOINT（如已 export HF_ENDPOINT=https://hf-mirror.com）
-    print(f"HF_ENDPOINT = {os.environ.get('HF_ENDPOINT', '(default)')}")
+    print(f"HF_ENDPOINT / HF 端点 = {os.environ.get('HF_ENDPOINT', '(default)')}")
 
     is_tty = sys.stdout.isatty()
 
@@ -296,9 +296,9 @@ def main():
     if is_tty:
         sys.stdout.write("\r" + " " * 100 + "\r")
         sys.stdout.flush()
-    print("\n结果:")
+    print("\nResults / 结果:")
     for (fname, _), p in zip(files, paths):
-        print(f"  {fname:32s} -> {p if p != Path('.') else '失败'}")
+        print(f"  {fname:32s} -> {p if p != Path('.') else 'FAILED / 失败'}")
 
 
 if __name__ == "__main__":

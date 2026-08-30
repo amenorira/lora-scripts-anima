@@ -47,13 +47,13 @@ def regen(config_path: Path, check_only: bool = False) -> int:
 
     sections = get_fields_json().get("sections", [])
     if not sections:
-        print("ERROR: registry returned no sections", file=sys.stderr)
+        print("ERROR: registry returned no sections / 注册表没有返回任何分区", file=sys.stderr)
         return 2
 
     target_line = _build_fallback_line(sections)
 
     if not config_path.exists():
-        print(f"ERROR: config file not found: {config_path}", file=sys.stderr)
+        print(f"ERROR: config file not found / 配置文件不存在: {config_path}", file=sys.stderr)
         return 2
 
     text = config_path.read_text(encoding="utf-8")
@@ -69,17 +69,17 @@ def regen(config_path: Path, check_only: bool = False) -> int:
     new_text = _FALLBACK_LINE_RE.sub(target_line, text, count=1)
 
     if new_text == text:
-        print(f"OK: {config_path} already in sync with registry ({len(sections)} sections).")
+        print(f"OK: {config_path} already in sync with registry ({len(sections)} sections) / 已与注册表一致")
         return 0
 
     if check_only:
-        print(f"DRIFT: {config_path} FALLBACK_COMMON differs from registry.")
-        print("       Run without --check to regenerate.")
+        print(f"DRIFT: {config_path} FALLBACK_COMMON differs from registry / FALLBACK_COMMON 与注册表不一致")
+        print("       Run without --check to regenerate / 去掉 --check 重新运行即可再生成")
         return 1
 
     config_path.write_text(new_text, encoding="utf-8")
     print(f"OK: regenerated FALLBACK_COMMON in {config_path} ({len(sections)} sections, "
-          f"{len(target_line)} chars).")
+          f"{len(target_line)} chars) / 已重新生成")
     return 0
 
 

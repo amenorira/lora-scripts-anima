@@ -7,7 +7,7 @@ try:
 except ImportError:
     tkinter = None
     _filedialog = None
-    log.warning("tkinter 不可用，本地文件选择功能已禁用 / tkinter is unavailable, native file picker disabled.")
+    log.warning("tkinter is unavailable, native file picker disabled / tkinter 不可用，本地文件选择功能已禁用")
 
 last_dir = ""
 
