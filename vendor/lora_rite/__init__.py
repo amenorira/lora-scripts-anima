@@ -1,1 +1,1 @@
-from .lora_rite import LoRARite
+from .lora_rite import LoRA_RITE

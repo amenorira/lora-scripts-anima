@@ -1,3 +1,4 @@
+import importlib
 import inspect
 import json
 import shutil
@@ -1508,6 +1509,20 @@ console.log(JSON.stringify({
                 "schedulefreeLearningRate": {"value": "3e-4", "changed": False, "source": "auto"},
                 "adafactorScale": {"value": False, "changed": False, "source": "auto"},
             },
+        )
+
+
+class LorariteImportContractTests(unittest.TestCase):
+    def test_registered_selector_resolves_to_lora_rite(self):
+        # selector 即类真名；sd-scripts 按 __module__ + "." + __name__ 记录
+        # ss_optimizer，查看器按词边界取短名，下划线安全、横线会被截断
+        # （见 lora_rite.py 末尾注释）。
+        module_path, _, attr = LORARITE_OPTIMIZER_TYPE.rpartition(".")
+        resolved = getattr(importlib.import_module(module_path), attr)
+        self.assertEqual(resolved.__name__, "LoRA_RITE")
+        self.assertEqual(
+            resolved.__module__ + "." + resolved.__name__,
+            "vendor.lora_rite.lora_rite.LoRA_RITE",
         )
 
 

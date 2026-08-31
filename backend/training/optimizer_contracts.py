@@ -32,7 +32,7 @@ MUON_OPTIMIZER_TYPE = "Muon"
 ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
-LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRARite"
+LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRA_RITE"
 
 ADEMAMIX_OPTIMIZERS = frozenset(
     {ADEMAMIX_OPTIMIZER_TYPE, ADEMAMIX8BIT_OPTIMIZER_TYPE}

@@ -205,7 +205,7 @@ class _LoraRiteHelper:
     return update
 
 
-class LoRARite(Optimizer):
+class LoRA_RITE(Optimizer):
   def __init__(
       self,
       params,
@@ -535,8 +535,7 @@ class LoRARite(Optimizer):
 
 
 # sd-scripts records optimizer metadata as `__module__ + "." + __name__`
-# (library/optimizer.py); this makes trained LoRAs read "LoRARITE" instead of
-# the Python-legal class name. Import and pickling use the attribute name and
-# __qualname__, so both are left untouched. No hyphen: metadata viewers that
-# split the class name on "-" would otherwise show only "RITE".
-LoRARite.__name__ = "LoRARITE"
+# (library/optimizer.py), so trained LoRAs read "vendor.lora_rite.lora_rite.LoRA_RITE".
+# Underscore, not hyphen: metadata viewers that split the class name on non-word
+# characters would otherwise show only "RITE" (verified on
+# xypher7.github.io/lora-metadata-viewer).
