@@ -458,23 +458,11 @@ a:focus-visible {
   padding: 24px 28px;
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
-/* 路由切换：旧页快速淡出（routeTransitioning 由 app.js 路由状态机驱动），
-   新页内容自上而下错峰浮现（route-enter，app.js _playRouteEnter）。
-   只作用于主内容区，侧栏/顶条不参与。 */
+/* 路由切换：旧页快速淡出（routeTransitioning 由 app.js 路由状态机驱动）。
+   新页的进入动画（route-enter，app.js _playRouteEnter）属于展示型动效，
+   由各主题文件定义（默认见 themes/light.css）。 */
 .main-content > div { transition: opacity 90ms var(--ease-out); }
 .main-content.route-transitioning > div { opacity: 0; }
-@keyframes route-cascade { from { opacity: 0; transform: translateY(12px); } }
-/* fill 用 backwards：动画结束不保留 transform 填充，避免祖先成为 fixed 下拉菜单的包含块 */
-.main-content.route-enter > div > * {
-  animation: route-cascade 380ms var(--ease-out) backwards;
-}
-.main-content.route-enter > div > *:nth-child(2) { animation-delay: 40ms; }
-.main-content.route-enter > div > *:nth-child(3) { animation-delay: 80ms; }
-.main-content.route-enter > div > *:nth-child(4) { animation-delay: 120ms; }
-.main-content.route-enter > div > *:nth-child(5) { animation-delay: 160ms; }
-.main-content.route-enter > div > *:nth-child(6) { animation-delay: 200ms; }
-.main-content.route-enter > div > *:nth-child(7) { animation-delay: 240ms; }
-.main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 280ms; }
 
 /* Fullscreen routes: remove padding so iframe fills edge-to-edge */
 .main-fullscreen {
@@ -1724,14 +1712,12 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .modal-overlay {
   position: fixed; inset: 0; background: var(--bg-overlay);
   z-index: 1000; display: flex; align-items: center; justify-content: center;
-  animation: fade-in 0.35s var(--ease-out);
 }
 .modal {
   background: var(--bg-surface); border: 1px solid var(--border-default);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
   min-width: 380px; max-width: 520px; max-height: 80vh;
   display: flex; flex-direction: column;
-  animation: modal-in 0.3s var(--ease-out);
 }
 .modal-header {
   padding: 16px 22px; font-weight: 600; font-size: 15px;
@@ -1745,10 +1731,6 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 }
 
 @keyframes fade-in { from{opacity:0} to{opacity:1} }
-@keyframes modal-in {
-  from { opacity: 0; transform: scale(0.95) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
 
 /* ── Built-in file picker modal ──────────────────────────── */
 .picker-modal {
@@ -2103,17 +2085,11 @@ input[type="range"]::-webkit-slider-thumb {
    出现/消失引起内容宽度跳动（与 .main-content 的处理一致） */
 .m-tab-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; scrollbar-gutter: stable; }
 .m-tab-panel[hidden] { display: none; }
-/* 面板内容自上而下分层浮现（切换 tab 时 .active 重新挂载触发动画）。
-   fill 用 backwards，动画结束不保留 transform（forwards/both 填充会让 Chromium
-   把该元素当作 fixed 定位后代（如下拉菜单）的包含块，导致错位/裁剪） */
-@keyframes m-tab-enter { from { opacity: 0; transform: translateY(10px); } }
-.m-tab-panel.active > * { animation: m-tab-enter 340ms var(--ease-out) backwards; }
-/* 内容原地重建（排序/筛选/追加样本等）不应重播进入动画，否则整面板看起来像闪烁；
-   JS 在非 tab 切换的 innerHTML 重建前给面板加 .no-enter-anim，切换激活时移除 */
-.m-tab-panel.no-enter-anim > * { animation: none; }
-.m-tab-panel.active > *:nth-child(2) { animation-delay: 50ms; }
-.m-tab-panel.active > *:nth-child(3) { animation-delay: 100ms; }
-.m-tab-panel.active > *:nth-child(n+4) { animation-delay: 150ms; }
+/* 面板进入动画（.active 重新挂载触发）是展示型动效，由各主题文件定义（默认见 themes/light.css）。
+   内容原地重建（排序/筛选/追加样本等）不应重播进入动画，否则整面板看起来像闪烁；
+   JS 在非 tab 切换的 innerHTML 重建前给面板加 .no-enter-anim，切换激活时移除。
+   必须 !important：主题文件的进入动画规则加载更晚且比特度不低，需要明确压过。 */
+.m-tab-panel.no-enter-anim > * { animation: none !important; }
 .m-tab-panel::-webkit-scrollbar { width: 7px; }
 .m-tab-panel::-webkit-scrollbar-track { background: transparent; }
 .m-tab-panel::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-tertiary) 36%, transparent); border-radius: var(--radius-pill); }
@@ -3786,21 +3762,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   visibility: hidden;
 }
 
-.anima-select-menu-positioned {
-  visibility: visible;
-  animation: anima-select-menu-reveal 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes anima-select-menu-reveal {
-  from {
-    clip-path: circle(0 at var(--select-origin-x) var(--select-origin-y));
-    opacity: 0.96;
-  }
-  to {
-    clip-path: circle(150% at var(--select-origin-x) var(--select-origin-y));
-    opacity: 1;
-  }
-}
+/* 菜单浮现动画是展示型动效，由各主题文件定义（默认见 themes/light.css） */
+.anima-select-menu-positioned { visibility: visible; }
 
 .anima-select-menu-described {
   left: auto;
@@ -3946,12 +3909,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   background: transparent;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .anima-select-menu-positioned {
-    animation: none;
-  }
-}
-
 /* ================================================================
    Environment Page — Hero 总览 + 行式组件 + 模型组
    布局：Hero（全宽）→ 运行环境（双列独立堆叠）→ 模型文件（双组并排）
@@ -4023,12 +3980,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-tabs.indicator-ready > .env-tab-indicator { opacity: 1; }
 .env-tabs.no-anim > .env-tab-indicator { transition: none; }
 .env-tab-panel[hidden] { display: none; }
-/* Tab 面板切换淡入（只对"切换后可见的面板"播放一次） */
-.env-panel-in { animation: env-panel-in 220ms var(--ease-out); }
-@keyframes env-panel-in {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* Tab 面板切换的进入动画（env-panel-in，只对"切换后可见的面板"播放一次）
+   是展示型动效，由各主题文件定义（默认见 themes/light.css）。 */
 
 /* ── Hero 状态工具行（控制面板：无边框、一行文字 + 右侧刷新）── */
 .env-hero {
@@ -4404,7 +4357,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   .env-load-spinner,
   .env-file-active { animation: none; }
   .env-tab-indicator { transition: none; }
-  .env-panel-in { animation: none; }
 }
 
 /* 宽容器：运行环境升为双列；模型库保持单列（控制面板列表） */

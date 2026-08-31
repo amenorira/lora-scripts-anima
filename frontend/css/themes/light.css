@@ -127,3 +127,70 @@
 [data-theme="light"] .log-unit { color: #6a737d; }
 [data-theme="light"] .log-url  { color: #006ab1; }
 [data-theme="light"] .log-line mark { background: rgba(200, 150, 20, 0.25); }
+
+/* ── 默认动效（展示型进入/浮现动画）──────────────────────────
+   app.css 只保留功能性动画（spin/pulse 等）；这里定义默认主题的动效个性。
+   选择器不带主题属性前缀，dark 直接继承，其他主题用同名规则覆盖。 */
+
+/* 路由切换：新页内容自上而下错峰浮现（route-enter，app.js _playRouteEnter）。
+   只作用于主内容区，侧栏/顶条不参与。
+   fill 用 backwards：动画结束不保留 transform 填充，避免祖先成为 fixed 下拉菜单的包含块 */
+@keyframes route-cascade { from { opacity: 0; transform: translateY(12px); } }
+.main-content.route-enter > div > * {
+  animation: route-cascade 380ms var(--ease-out) backwards;
+}
+.main-content.route-enter > div > *:nth-child(2) { animation-delay: 40ms; }
+.main-content.route-enter > div > *:nth-child(3) { animation-delay: 80ms; }
+.main-content.route-enter > div > *:nth-child(4) { animation-delay: 120ms; }
+.main-content.route-enter > div > *:nth-child(5) { animation-delay: 160ms; }
+.main-content.route-enter > div > *:nth-child(6) { animation-delay: 200ms; }
+.main-content.route-enter > div > *:nth-child(7) { animation-delay: 240ms; }
+.main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 280ms; }
+
+/* 监控台 tab 面板：内容自上而下分层浮现（切换 tab 时 .active 重新挂载触发动画）。
+   fill 用 backwards，动画结束不保留 transform（forwards/both 填充会让 Chromium
+   把该元素当作 fixed 定位后代（如下拉菜单）的包含块，导致错位/裁剪） */
+@keyframes m-tab-enter { from { opacity: 0; transform: translateY(10px); } }
+.m-tab-panel.active > * { animation: m-tab-enter 340ms var(--ease-out) backwards; }
+.m-tab-panel.active > *:nth-child(2) { animation-delay: 50ms; }
+.m-tab-panel.active > *:nth-child(3) { animation-delay: 100ms; }
+.m-tab-panel.active > *:nth-child(n+4) { animation-delay: 150ms; }
+
+/* 打标器：模式切换时两种布局由 x-if 销毁/重建，CSS 动画随挂载自动播放（自上而下分层，
+   与监控台 tab 面板共用 m-tab-enter 关键帧）。
+   注意：fill 必须用 backwards 而非 both/forwards —— Chromium 会把带 forwards 填充的
+   transform 动画元素当作 position:fixed 后代的包含块，导致内部的 anima-select
+   固定定位下拉菜单相对卡片错位并被裁剪。backwards 在动画结束后不留任何填充。 */
+.tagger-batch-layout > *, .tagger-single-layout > * { animation: m-tab-enter 340ms var(--ease-out) backwards; }
+.tagger-batch-layout > *:nth-child(2), .tagger-single-layout > *:nth-child(2) { animation-delay: 50ms; }
+.tagger-batch-layout > *:nth-child(n+3), .tagger-single-layout > *:nth-child(n+3) { animation-delay: 100ms; }
+
+/* 环境管理：Tab 面板切换淡入（只对"切换后可见的面板"播放一次） */
+.env-panel-in { animation: env-panel-in 220ms var(--ease-out); }
+@keyframes env-panel-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 下拉菜单：从点击位置圆形展开浮现 */
+.anima-select-menu-positioned {
+  animation: anima-select-menu-reveal 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes anima-select-menu-reveal {
+  from {
+    clip-path: circle(0 at var(--select-origin-x) var(--select-origin-y));
+    opacity: 0.96;
+  }
+  to {
+    clip-path: circle(150% at var(--select-origin-x) var(--select-origin-y));
+    opacity: 1;
+  }
+}
+
+/* 弹窗：遮罩淡入 + 面板缩放浮现 */
+.modal-overlay { animation: fade-in 0.35s var(--ease-out); }
+.modal { animation: modal-in 0.3s var(--ease-out); }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}

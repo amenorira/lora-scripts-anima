@@ -183,9 +183,11 @@
 
 /* Tab：ComfyUI 选中项文字为白色（azure 只给底部指示条），hover 不染底色 */
 [data-theme="comfy"] .monitor-tab:hover,
-[data-theme="comfy"] .env-tab:hover { color: var(--text-primary); background: transparent; }
+[data-theme="comfy"] .env-tab:hover,
+[data-theme="comfy"] .tagger-mode-tabs button:hover { color: var(--text-primary); background: transparent; }
 [data-theme="comfy"] .monitor-tab.active,
-[data-theme="comfy"] .env-tab.active { color: var(--text-primary); }
+[data-theme="comfy"] .env-tab.active,
+[data-theme="comfy"] .tagger-mode-tabs button.active { color: var(--text-primary); }
 
 /* 实时日志：近黑基底 + VSCode dark+ 配色（基底规则即该配色，这里补容器与悬浮） */
 [data-theme="comfy"] .monitor-logs-container {
@@ -213,16 +215,18 @@
 [data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
 [data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
-/* ── 动效收敛：ComfyUI 无展示型动效，页面/面板切换只有快速淡入 ── */
+/* ── 动效：ComfyUI 无展示型动效，页面/面板切换只有快速淡入 ──
+   本节为完整定义，不依赖默认主题的动画声明；
+   属性选择器特异性高于 light.css 的裸选择器，稳定覆盖。 */
 
-/* 下拉菜单 360ms 圆形展开 → 120ms 淡入 */
+/* 下拉菜单：120ms 淡入 */
 [data-theme="comfy"] .anima-select-menu-positioned {
   animation: fade-in 120ms var(--ease-out) both;
 }
-/* 模态框 0.35s/0.3s → 150ms */
-[data-theme="comfy"] .modal-overlay { animation-duration: 150ms; }
-[data-theme="comfy"] .modal { animation-duration: 150ms; }
-/* 路由切换：去掉错峰位移，整页 150ms 纯淡入 */
+/* 模态框：遮罩 150ms 淡入，面板 150ms 缩放浮现（modal-in 关键帧沿用默认主题） */
+[data-theme="comfy"] .modal-overlay { animation: fade-in 150ms var(--ease-out); }
+[data-theme="comfy"] .modal { animation: modal-in 150ms var(--ease-out); }
+/* 路由切换：整页 150ms 纯淡入，无错峰位移 */
 [data-theme="comfy"] .main-content.route-enter > div > * {
   animation: fade-in 150ms var(--ease-out) backwards;
 }
@@ -233,13 +237,23 @@
 [data-theme="comfy"] .main-content.route-enter > div > *:nth-child(6),
 [data-theme="comfy"] .main-content.route-enter > div > *:nth-child(7),
 [data-theme="comfy"] .main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 0ms; }
-/* Tab 面板内容：340ms 分层位移浮现 → 150ms 纯淡入 */
+/* Tab 面板内容：150ms 纯淡入，无分层位移 */
 [data-theme="comfy"] .m-tab-panel.active > * {
   animation: fade-in 150ms var(--ease-out) backwards;
 }
 [data-theme="comfy"] .m-tab-panel.active > *:nth-child(2),
 [data-theme="comfy"] .m-tab-panel.active > *:nth-child(3),
 [data-theme="comfy"] .m-tab-panel.active > *:nth-child(n+4) { animation-delay: 0ms; }
+/* 打标器布局与环境管理面板：同样 150ms 纯淡入 */
+[data-theme="comfy"] .tagger-batch-layout > *,
+[data-theme="comfy"] .tagger-single-layout > * {
+  animation: fade-in 150ms var(--ease-out) backwards;
+}
+[data-theme="comfy"] .tagger-batch-layout > *:nth-child(2),
+[data-theme="comfy"] .tagger-single-layout > *:nth-child(2),
+[data-theme="comfy"] .tagger-batch-layout > *:nth-child(n+3),
+[data-theme="comfy"] .tagger-single-layout > *:nth-child(n+3) { animation-delay: 0ms; }
+[data-theme="comfy"] .env-panel-in { animation: fade-in 150ms var(--ease-out); }
 /* 监控/环境 Tab 滑动指示条 300ms → 200ms（侧栏选中态已在上方改为静态） */
 [data-theme="comfy"] .monitor-tab-indicator,
 [data-theme="comfy"] .env-tab-indicator {
