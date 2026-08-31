@@ -159,13 +159,33 @@
   background: var(--accent); color: #ffffff; border-color: var(--accent);
 }
 
-/* Sidebar: hover 补底色；激活项 hover 不再叠加 */
-[data-theme="comfy"] .sidebar-item:hover { background: var(--hover-overlay); }
+/* Sidebar: 对齐 ComfyUI 侧栏——hover #313235、选中静态 #3c3d42（无滑动 pill）、
+   按压不回弹、图标不单独着主题色 */
+[data-theme="comfy"] .sidebar-item {
+  transition: background-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              padding var(--duration-slow) var(--ease-out),
+              margin var(--duration-slow) var(--ease-out),
+              gap var(--duration-slow) var(--ease-out);
+}
+[data-theme="comfy"] .sidebar-item:active { transform: none; }
+[data-theme="comfy"] .sidebar-item:hover { background: #313235; }
 [data-theme="comfy"] .sidebar-item.active:hover { background: transparent; }
+[data-theme="comfy"] .sidebar-item.active .nav-icon { color: var(--text-sidebar-active); }
+[data-theme="comfy"] .sidebar-nav-indicator {
+  background: #3c3d42;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
 [data-theme="comfy"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="comfy"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
 [data-theme="comfy"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }
 [data-theme="comfy"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
+
+/* Tab：ComfyUI 选中项文字为白色（azure 只给底部指示条），hover 不染底色 */
+[data-theme="comfy"] .monitor-tab:hover,
+[data-theme="comfy"] .env-tab:hover { color: var(--text-primary); background: transparent; }
+[data-theme="comfy"] .monitor-tab.active,
+[data-theme="comfy"] .env-tab.active { color: var(--text-primary); }
 
 /* 实时日志：近黑基底 + VSCode dark+ 配色（基底规则即该配色，这里补容器与悬浮） */
 [data-theme="comfy"] .monitor-logs-container {
@@ -193,7 +213,7 @@
 [data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
 [data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
-/* ── 动效收敛：把本应用的展示型动效压到 ComfyUI 的 100-200ms ── */
+/* ── 动效收敛：ComfyUI 无展示型动效，页面/面板切换只有快速淡入 ── */
 
 /* 下拉菜单 360ms 圆形展开 → 120ms 淡入 */
 [data-theme="comfy"] .anima-select-menu-positioned {
@@ -202,19 +222,25 @@
 /* 模态框 0.35s/0.3s → 150ms */
 [data-theme="comfy"] .modal-overlay { animation-duration: 150ms; }
 [data-theme="comfy"] .modal { animation-duration: 150ms; }
-/* 路由错峰浮现 380ms → 200ms，错峰间隔收紧 */
+/* 路由切换：去掉错峰位移，整页 150ms 纯淡入 */
 [data-theme="comfy"] .main-content.route-enter > div > * {
-  animation-duration: 200ms;
+  animation: fade-in 150ms var(--ease-out) backwards;
 }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(2) { animation-delay: 20ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(3) { animation-delay: 40ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(4) { animation-delay: 60ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(5) { animation-delay: 80ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(6) { animation-delay: 100ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(7) { animation-delay: 120ms; }
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 140ms; }
-/* 三条滑动指示条 300ms → 200ms */
-[data-theme="comfy"] .sidebar-nav-indicator,
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(2),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(3),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(4),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(5),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(6),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(7),
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 0ms; }
+/* Tab 面板内容：340ms 分层位移浮现 → 150ms 纯淡入 */
+[data-theme="comfy"] .m-tab-panel.active > * {
+  animation: fade-in 150ms var(--ease-out) backwards;
+}
+[data-theme="comfy"] .m-tab-panel.active > *:nth-child(2),
+[data-theme="comfy"] .m-tab-panel.active > *:nth-child(3),
+[data-theme="comfy"] .m-tab-panel.active > *:nth-child(n+4) { animation-delay: 0ms; }
+/* 监控/环境 Tab 滑动指示条 300ms → 200ms（侧栏选中态已在上方改为静态） */
 [data-theme="comfy"] .monitor-tab-indicator,
 [data-theme="comfy"] .env-tab-indicator {
   transition-duration: 200ms, 200ms, var(--duration-fast);
