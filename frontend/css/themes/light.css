@@ -5,6 +5,9 @@
    ================================================================ */
 
 :root {
+  /* 原生控件（select 弹出列表、滚动条等）跟随浅色界面，不随 OS 深色 */
+  color-scheme: light;
+
   --accent: #3276d8;
   --accent-solid: var(--accent);
   --accent-hover: #2865bd;

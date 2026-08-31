@@ -4,6 +4,9 @@
    ================================================================ */
 
 [data-theme="dark"] {
+  /* 原生控件（select 弹出列表、滚动条等）跟随深色界面，不随 OS 设置漂移 */
+  color-scheme: dark;
+
   /* Neutral gray surfaces; color stays in text, states and section accents. */
   --accent: #6b9fe8;
   --accent-solid: #3276d8;
