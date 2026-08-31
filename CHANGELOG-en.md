@@ -6,6 +6,27 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.10.0 - 2026-08-31
+
+This release adds a ComfyUI theme (a recreation of its default dark interface) and refactors the theme system into one file per theme. It also fixes a config-serialization bug that blocked training from starting — paths containing a backslash-x sequence (e.g. D:\datasets\xyz) produced invalid TOML files — plus several theme-related UI issues.
+
+### ComfyUI theme (new)
+
+- New ComfyUI theme recreating its default dark interface: colors, sidebar, tabs, dialogs, and controls match ComfyUI v1.49.6, with the Inter font bundled.
+- Page-switch and tab-panel animations follow ComfyUI's plain 150ms fade-in; the sidebar selection becomes a static flat fill, and the monitor/environment tab indicator slide speeds up to 200ms.
+- The theme switcher shows the official ComfyUI "C" mark for the new theme.
+
+### Fixes
+
+- Fix invalid TOML config files when a path contains a backslash-x sequence (e.g. D:\datasets\xyz): the third-party TOML encoder collapsed every backslash in the path into one, so training failed at launch with a parse error. The backend now uses its own TOML writer across all five config write paths (training and dataset configs for Anima/SDXL/Krea 2); numeric-only directory names (e.g. "2024") are also no longer written as TOML integers.
+- Fix native browser control popups (such as dropdown lists) not following the interface theme under the light/dark themes.
+- Fix small dropdown arrow images tiling into a column of tiny triangles in places like the tag editor toolbar under the dark/ComfyUI themes.
+- Fix numeric input fields rendering wider than the dropdowns in the same row; widths are now aligned.
+
+### Refactoring
+
+- The theme system is decoupled: each theme (light/dark/ComfyUI) lives in its own file, and presentational animations (route entry, dialog fade, etc.) move from the global stylesheet into the theme files, so adding or adjusting a theme no longer touches the global CSS.
+
 ## v2.9.5 - 2026-08-30
 
 This release rounds out parameter visibility in the timestep distribution preview: the modal and the docs-page preview now show exactly the parameters that shape the current curve, filling in the previously hidden shaping inputs and dropping one card that duplicated the scope dropdown.
