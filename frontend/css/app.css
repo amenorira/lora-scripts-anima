@@ -730,9 +730,12 @@ input[type="checkbox"]:focus-visible {
 .field-control .stepper {
   width: 140px;
 }
-.field-control input[type="text"],
-.field-control input[type="number"] {
-  width: 100%;
+/* 直接子元素限定：stepper 内部的 input 由 .stepper 自己的 flex 规则管 */
+.field-control > input[type="text"],
+.field-control > input[type="number"] {
+  /* 与 .anima-select 的 min-width:200px 对齐；width:100% 在内容定宽的
+     flex 容器里会退化为字体相关的固有宽度（约 206px），比下拉框长一截 */
+  width: 200px;
 }
 /* 预填默认值淡色：值==schema 原始默认值时，input 字色淡化为 placeholder 视觉，
    提示"这是默认值、尚未自定义"。改值后 class 移除、恢复正常字色。假留空——值仍保留，
