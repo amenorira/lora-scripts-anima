@@ -1,0 +1,155 @@
+/* ================================================================
+   Dark Theme
+   在 light.css 的默认 token 上整体覆盖；组件级特判集中在文件后半。
+   ================================================================ */
+
+[data-theme="dark"] {
+  /* Neutral gray surfaces; color stays in text, states and section accents. */
+  --accent: #6b9fe8;
+  --accent-solid: #3276d8;
+  --accent-hover: #82aff0;
+  --accent-soft: rgba(107, 159, 232, 0.13);
+  --accent-muted: rgba(107, 159, 232, 0.07);
+  --danger-soft: rgba(224, 107, 103, 0.14);
+
+  --bg-root: #242426;
+  --bg-surface: #2d2d30;
+  --bg-surface-raised: #353539;
+  --bg-sidebar: #1f1f21;
+  --bg-preview: #28282b;
+  --bg-input: #29292c;
+  --bg-input-hover: #2d2d31;
+  --bg-input-action: #252527;
+  --bg-overlay: rgba(0, 0, 0, 0.58);
+
+  --text-primary: #f4f5f6;
+  --text-secondary: #cfd2d6;
+  --text-tertiary: #a3a8b0;
+  --text-sidebar: #d7dade;
+  --text-sidebar-muted: #9ba1aa;
+  --text-sidebar-active: #ffffff;
+
+  --border-default: #424247;
+  --border-input: #45454a;
+  --border-focus: #6b9fe8;
+
+  --text-preview: #f0f1f2;
+  --text-preview-key: #c4a0f0;
+  --text-preview-eq: #c4a0f0;
+  --text-preview-num: #f0a060;
+  --text-preview-str: #9ece6a;
+  --text-preview-comment: #8a8990;
+  --toml-change-flash: rgba(189, 145, 49, 0.52);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 8px 22px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 16px 38px rgba(0, 0, 0, 0.50);
+
+  --hover-overlay: rgba(255, 255, 255, 0.06);
+  --active-overlay: rgba(255, 255, 255, 0.10);
+  --hover-btn: rgba(255, 255, 255, 0.08);
+  --bg-sunken: #222224;
+  --border-subtle: #39393d;
+  --bg-canvas: #2d2d30;
+
+  --success: #34d399;
+  --warning: #f59e0b;
+  --info: #60a5fa;
+  --danger: #ff6b6b;
+  --danger-hover: #f05555;
+  --danger-soft: rgba(255, 107, 107, 0.12);
+
+  /* 资源监控状态色（暗色主题调亮，保持柔和） */
+  --res-ok: #34d399;
+  --res-warn: #fbbf24;
+  --res-danger: #f87171;
+
+  --bg-secondary: #353539;   /* alias: --bg-surface-raised */
+  --bg-tertiary: #222224;    /* alias: --bg-sunken */
+  --surface-default: var(--bg-surface);
+  --surface-2: var(--bg-surface-raised);
+  --text-muted: var(--text-tertiary);
+
+  --section-model: #4d94ff;
+  --section-network: #10b981;
+  --section-optimizer: #f59e0b;
+  --section-training: #8b5cf6;
+  --section-save: #0ea5e9;
+  --section-regularization: #f43f5e;
+  --section-performance: #6366f1;
+  --section-preview: #ec4899;
+  --section-caption: #78716c;
+  --state-changed: #f59e0b;
+  --state-filled: #4ade80;
+  --diff-modified: #e8d44d;
+  --diff-added: #55e055;
+  --diff-removed: #e05555;
+
+  --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-sunken));
+  --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
+  --monitor-card-shadow: none;
+}
+
+/* ── 本主题专属组件规则 ───────────────────────────────────── */
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(178, 178, 184, 0.24); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(178, 178, 184, 0.42); }
+
+/* Theme icon: CSS-driven visibility (decoupled from Alpine x-show) */
+[data-theme="dark"] .theme-icon-dark { display: block; }
+
+/* 原生 select 下拉箭头：换成浅灰描边 */
+[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a1a09a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Sidebar: hover 在暗色下补底色；激活项 hover 不再叠加 */
+[data-theme="dark"] .sidebar-item:hover { background: var(--hover-overlay); }
+[data-theme="dark"] .sidebar-item.active:hover { background: transparent; }
+[data-theme="dark"] .sidebar-bottom { border-top-color: var(--border-subtle); }
+[data-theme="dark"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
+[data-theme="dark"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }
+[data-theme="dark"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
+
+/* 实时日志：深色基底（VSCode dark+ 配色即 app.css 基底，这里只补容器与悬浮） */
+[data-theme="dark"] .monitor-logs-container {
+  --log-bg: #232325;
+  --log-fg: #e5e7ea;
+}
+/* Keep the original vivid syntax colors on the softer gray log surface. */
+[data-theme="dark"] .log-line:hover { background: #303034; }
+[data-theme="dark"] .log-line::before { color: #a0a5ad; }
+[data-theme="dark"] .log-lvl-INFO { color: #6796E6; }
+[data-theme="dark"] .log-lvl-WARN { color: #CD9731; }
+[data-theme="dark"] .log-lvl-ERROR { color: #F44747; }
+[data-theme="dark"] .log-lvl-DEBUG { color: #B267E6; }
+[data-theme="dark"] .log-ts,
+[data-theme="dark"] .log-unit,
+[data-theme="dark"] .log-punct { color: #8b949e; }
+[data-theme="dark"] .log-str { color: #a5d6ff; }
+[data-theme="dark"] .log-num,
+[data-theme="dark"] .log-const,
+[data-theme="dark"] .log-hex { color: #79c0ff; }
+[data-theme="dark"] .log-kw { color: #ff7b72; }
+[data-theme="dark"] .log-exc { color: #ffa198; }
+[data-theme="dark"] .log-path { color: #7ee787; }
+[data-theme="dark"] .log-module { color: #d2a8ff; }
+[data-theme="dark"] .log-url { color: #48A0C7; }
+[data-theme="dark"] .log-line mark { background: rgba(210, 164, 78, 0.32); }
+
+[data-theme="dark"] .toast {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+}
+[data-theme="dark"] .te-saving-overlay { background: rgba(0, 0, 0, 0.46); }
+[data-theme="dark"] .home-badge-l { background: #55555a; }
+[data-theme="dark"] .home-badge-v-license { background: #267806; }
+[data-theme="dark"] .home-badge-v-release { background: #7a3fc4; }
+
+/* 环境管理 */
+[data-theme="dark"] .env-source-btn:hover { background: var(--hover-overlay); }
+[data-theme="dark"] .env-log { background: var(--bg-input); color: var(--text-secondary); }
+[data-theme="dark"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
+[data-theme="dark"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
+[data-theme="dark"] .env-candidate-item:hover { background: var(--hover-overlay); }
+[data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
+[data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

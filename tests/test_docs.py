@@ -604,7 +604,7 @@ console.log(JSON.stringify({
         self.assertIn("scrollbar-color: transparent transparent", css)
         self.assertIn("table.docs-table-wide", css)
         self.assertNotIn("@container (max-width:", css)
-        docs_widget_css = css[css.index(".docs-timestep-widget {") : css.index('[data-theme="dark"] .toast')]
+        docs_widget_css = css[css.index(".docs-timestep-widget {") : css.index("Anima Custom Select — 2026-style dropdown")]
         self.assertIn("max-width: 880px", docs_widget_css)
         self.assertNotIn("flex: none", docs_widget_css)
 
