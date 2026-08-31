@@ -9,8 +9,10 @@
   <script>
     (function(){
       var t = localStorage.getItem('anima-theme') || 'auto';
-      var d = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+      // 具名主题直通；auto 跟随系统
+      var resolved = (t === 'light' || t === 'dark' || t === 'comfy') ? t
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', resolved);
       // Restore the desktop preview width before first paint without squeezing the form below its usable width.
       var pw = parseInt(localStorage.getItem('anima-panel-w'), 10);
       if (pw >= 300 && pw <= 760) {
@@ -23,6 +25,7 @@
   <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260831-themes1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260831-themes1">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260831-themes1">
+  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260831-comfy1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260829-cssclean1">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -165,10 +168,12 @@
         <button type="button"  class="bottom-btn" aria-label="Change theme" @click="showThemeDropdown = !showThemeDropdown; showLangDropdown = false">
           <svg class="theme-icon theme-icon-light" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
           <svg class="theme-icon theme-icon-dark" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+          <svg class="theme-icon theme-icon-comfy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
         </button>
         <div class="sidebar-dropdown-menu">
           <button type="button"  :class="{ active: theme === 'light' }" @click="setTheme('light')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> <span x-text="t('common.themeLight')">Light</span></button>
           <button type="button"  :class="{ active: theme === 'dark' }" @click="setTheme('dark')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg> <span x-text="t('common.themeDark')">Dark</span></button>
+          <button type="button"  :class="{ active: theme === 'comfy' }" @click="setTheme('comfy')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><rect x="3" y="3" width="8" height="8" rx="1"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg> <span x-text="t('common.themeComfy')">ComfyUI</span></button>
           <button type="button"  :class="{ active: theme === 'auto' }" @click="setTheme('auto')"><span x-text="t('common.themeAuto')">Auto</span></button>
         </div>
       </div>

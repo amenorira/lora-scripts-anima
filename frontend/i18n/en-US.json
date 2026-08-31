@@ -934,6 +934,7 @@
 		"close": "Close",
 		"themeLight": "Light Mode",
 		"themeDark": "Dark Mode",
+		"themeComfy": "ComfyUI",
 		"themeAuto": "Auto",
 		"undoField": "Undo changes",
 		"resetField": "Reset to default",

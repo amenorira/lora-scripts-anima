@@ -934,6 +934,7 @@
 		"close": "关闭",
 		"themeLight": "浅色模式",
 		"themeDark": "深色模式",
+		"themeComfy": "ComfyUI",
 		"themeAuto": "跟随系统",
 		"undoField": "撤销修改",
 		"resetField": "重置为默认值",

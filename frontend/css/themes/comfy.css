@@ -1,0 +1,221 @@
+/* ================================================================
+   ComfyUI Theme
+   复刻 ComfyUI 默认 Dark 主题（v1.49.6 构建产物实测值）：
+   近黑炭灰面板、azure 主色、6/10px 圆角、Inter 字体、
+   100-200ms Material 动效（无回弹）。与本应用不搭处做微调。
+   ================================================================ */
+
+/* Inter 可变字体（拉丁子集，随主题加载；中文回落系统字体，与 ComfyUI 一致）。
+   字体文件见 frontend/assets/fonts/，许可证 OFL-Inter.txt */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../assets/fonts/inter-latin-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../assets/fonts/inter-latin-italic.woff2") format("woff2");
+}
+
+[data-theme="comfy"] {
+  color-scheme: dark;
+
+  /* azure 主色：solid=azure-600 #0b8ce9，文字/hover=azure-400 #31b9f4 */
+  --accent: #31b9f4;
+  --accent-solid: #0b8ce9;
+  --accent-hover: #78bae9;
+  --accent-soft: rgba(49, 185, 244, 0.14);
+  --accent-muted: rgba(49, 185, 244, 0.08);
+
+  /* charcoal 面板层级：root=800，surface=700，raised=600 */
+  --bg-root: #171718;
+  --bg-surface: #202121;
+  --bg-surface-raised: #262729;
+  --bg-sidebar: #171718;
+  --bg-preview: #1d1d1f;
+  --bg-input: rgba(255, 255, 255, 0.06);   /* ComfyUI input-surface */
+  --bg-input-hover: rgba(255, 255, 255, 0.09);
+  --bg-input-action: #131314;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;   /* smoke-700 */
+  --text-tertiary: #8a8a8a;    /* smoke-800 */
+  --text-sidebar: #a0a0a0;
+  --text-sidebar-muted: #8a8a8a;
+  --text-sidebar-active: #ffffff;
+
+  /* interface-stroke=charcoal-400，subtle=300，default=200 */
+  --border-default: #3c3d42;
+  --border-input: #494a50;
+  --border-focus: #31b9f4;
+  --border-subtle: #313235;
+
+  --text-preview: #e6e6e6;
+  --text-preview-key: #78bae9;
+  --text-preview-eq: #78bae9;
+  --text-preview-num: #fd9903;
+  --text-preview-str: #00cd72;
+  --text-preview-comment: #6b6b6b;
+  --toml-change-flash: rgba(253, 153, 3, 0.45);
+
+  /* ComfyUI 面板阴影：1px 1px 8px #0006 */
+  --shadow-sm: 1px 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 1px 1px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --active-overlay: rgba(255, 255, 255, 0.09);
+  --hover-btn: rgba(255, 255, 255, 0.07);
+  --bg-sunken: #131315;
+  --bg-canvas: #202121;
+
+  /* PrimeVue Aura 圆角：control=md 6px，panel≈lg/xl 10px */
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-panel);
+  --radius-lg: var(--radius-panel);
+  --radius-xl: var(--radius-panel);
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ComfyUI/PrimeVue 动效：0.1s-0.2s，Material ease-out，无回弹 */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-normal: 150ms;
+  --duration-slow: 200ms;
+
+  /* 状态色：jade/gold/coral */
+  --success: #00cd72;
+  --warning: #fd9903;
+  --info: #31b9f4;
+  --danger: #f75951;
+  --danger-hover: #e04e48;
+  --danger-soft: rgba(247, 89, 81, 0.12);
+
+  --res-ok: #00cd72;
+  --res-warn: #fd9903;
+  --res-danger: #f75951;
+
+  --bg-secondary: #262729;   /* alias: --bg-surface-raised */
+  --bg-tertiary: #131315;    /* alias: --bg-sunken */
+  --surface-default: var(--bg-surface);
+  --surface-2: var(--bg-surface-raised);
+  --text-muted: var(--text-tertiary);
+
+  /* Section accents 是本应用的身份标识，沿用暗色主题值 */
+  --section-model: #4d94ff;
+  --section-network: #10b981;
+  --section-optimizer: #f59e0b;
+  --section-training: #8b5cf6;
+  --section-save: #0ea5e9;
+  --section-regularization: #f43f5e;
+  --section-performance: #6366f1;
+  --section-preview: #ec4899;
+  --section-caption: #78716c;
+  --state-changed: #fd9903;
+  --state-filled: #00cd72;
+  --diff-modified: #fd9903;
+  --diff-added: #00cd72;
+  --diff-removed: #f75951;
+
+  --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-sunken));
+  --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
+  --monitor-card-shadow: none;
+}
+
+/* ── 本主题专属组件规则 ───────────────────────────────────── */
+
+/* ComfyUI 滚动条：半透明白 */
+[data-theme="comfy"] ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); }
+[data-theme="comfy"] ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+
+/* Theme icon: CSS-driven visibility (decoupled from Alpine x-show) */
+[data-theme="comfy"] .theme-icon-comfy { display: block; }
+
+/* 原生 select 下拉箭头：换成浅灰描边 */
+[data-theme="comfy"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* ComfyUI 主按钮是实心 azure 白字；本应用默认是描边幽灵按钮，这里实心化 */
+[data-theme="comfy"] .btn-primary {
+  background: var(--accent-solid); color: #ffffff; border-color: var(--accent-solid);
+}
+[data-theme="comfy"] .btn-primary:hover {
+  background: var(--accent); color: #ffffff; border-color: var(--accent);
+}
+[data-theme="comfy"] .btn-start {
+  background: var(--accent-solid); color: #ffffff; border-color: var(--accent-solid);
+}
+[data-theme="comfy"] .btn-start:hover {
+  background: var(--accent); color: #ffffff; border-color: var(--accent);
+}
+
+/* Sidebar: hover 补底色；激活项 hover 不再叠加 */
+[data-theme="comfy"] .sidebar-item:hover { background: var(--hover-overlay); }
+[data-theme="comfy"] .sidebar-item.active:hover { background: transparent; }
+[data-theme="comfy"] .sidebar-bottom { border-top-color: var(--border-subtle); }
+[data-theme="comfy"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
+[data-theme="comfy"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }
+[data-theme="comfy"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
+
+/* 实时日志：近黑基底 + VSCode dark+ 配色（基底规则即该配色，这里补容器与悬浮） */
+[data-theme="comfy"] .monitor-logs-container {
+  --log-bg: #1b1c1e;
+  --log-fg: #e5e5e5;
+}
+[data-theme="comfy"] .log-line:hover { background: #262729; }
+[data-theme="comfy"] .log-line::before { color: #7a7a7a; }
+[data-theme="comfy"] .log-line mark { background: rgba(253, 153, 3, 0.32); }
+
+[data-theme="comfy"] .toast {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+[data-theme="comfy"] .te-saving-overlay { background: rgba(0, 0, 0, 0.46); }
+[data-theme="comfy"] .home-badge-l { background: #3c3d42; }
+[data-theme="comfy"] .home-badge-v-license { background: #267806; }
+[data-theme="comfy"] .home-badge-v-release { background: #7a3fc4; }
+
+/* 环境管理 */
+[data-theme="comfy"] .env-source-btn:hover { background: var(--hover-overlay); }
+[data-theme="comfy"] .env-log { background: var(--bg-input-action); color: var(--text-secondary); }
+[data-theme="comfy"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
+[data-theme="comfy"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
+[data-theme="comfy"] .env-candidate-item:hover { background: var(--hover-overlay); }
+[data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
+[data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ── 动效收敛：把本应用的展示型动效压到 ComfyUI 的 100-200ms ── */
+
+/* 下拉菜单 360ms 圆形展开 → 120ms 淡入 */
+[data-theme="comfy"] .anima-select-menu-positioned {
+  animation: fade-in 120ms var(--ease-out) both;
+}
+/* 模态框 0.35s/0.3s → 150ms */
+[data-theme="comfy"] .modal-overlay { animation-duration: 150ms; }
+[data-theme="comfy"] .modal { animation-duration: 150ms; }
+/* 路由错峰浮现 380ms → 200ms，错峰间隔收紧 */
+[data-theme="comfy"] .main-content.route-enter > div > * {
+  animation-duration: 200ms;
+}
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(2) { animation-delay: 20ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(3) { animation-delay: 40ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(4) { animation-delay: 60ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(5) { animation-delay: 80ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(6) { animation-delay: 100ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(7) { animation-delay: 120ms; }
+[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 140ms; }
+/* 三条滑动指示条 300ms → 200ms */
+[data-theme="comfy"] .sidebar-nav-indicator,
+[data-theme="comfy"] .monitor-tab-indicator,
+[data-theme="comfy"] .env-tab-indicator {
+  transition-duration: 200ms, 200ms, var(--duration-fast);
+}
