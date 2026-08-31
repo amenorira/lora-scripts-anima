@@ -143,7 +143,14 @@
 /* 原生 select 下拉箭头：换成浅灰描边 */
 [data-theme="comfy"] select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  /* 补全 repeat/position：.te-sort-wrap 等处用 background 简写只图改底色，
+     会把这两项重置成 repeat/0 0，箭头图平铺成一栏小三角 */
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
+/* 标签编辑器工具栏/分页的小下拉 padding 太小放不下箭头，保持无箭头（与浅色一致） */
+[data-theme="comfy"] .te-sort-wrap select,
+[data-theme="comfy"] .te-pager select { background-image: none; }
 
 /* ComfyUI 主按钮是实心 azure 白字；本应用默认是描边幽灵按钮，这里实心化 */
 [data-theme="comfy"] .btn-primary {
