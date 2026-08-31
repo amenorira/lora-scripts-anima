@@ -112,7 +112,7 @@ window.trainingTomlMixin = {
         if (typeof v === 'boolean') { pushLine(section.key, `${k} = ${v}`); }
         else if (typeof v === 'number') { pushLine(section.key, `${k} = ${v}`); }
         else {
-          const coerced = this._coerceNum(v);
+          const coerced = this._isPathFieldRole(f.role) ? v : this._coerceNum(v);
           if (coerced !== v) { pushLine(section.key, `${k} = ${coerced}`); }
           else { pushLine(section.key, `${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`); }
         }
@@ -515,10 +515,10 @@ window.trainingTomlMixin = {
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
       .replace(/\r\n|\r|\n/g, '\\n') + '"';
-    const valueToToml = (value) => {
+    const valueToToml = (value, field) => {
       if (typeof value === 'boolean') return value ? 'true' : 'false';
       if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-      const coerced = this._coerceNum(value);
+      const coerced = this._isPathFieldRole(field && field.role) ? value : this._coerceNum(value);
       if (typeof coerced === 'number' && Number.isFinite(coerced)) return String(coerced);
       return quote(value);
     };
@@ -532,7 +532,7 @@ window.trainingTomlMixin = {
         if (field.hidden || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if (value === '' || value === null || value === undefined) return;
-        sectionLines[section.key].push(`${field.key} = ${valueToToml(value)}`);
+        sectionLines[section.key].push(`${field.key} = ${valueToToml(value, field)}`);
       });
     });
 
@@ -554,7 +554,7 @@ window.trainingTomlMixin = {
         if (field.hidden || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if (value === '' || value === null || value === undefined) return;
-        payload[field.key] = this._coerceNum(value);
+        payload[field.key] = this._isPathFieldRole(field.role) ? value : this._coerceNum(value);
       });
     });
     if (this.form.gpu_ids !== undefined && this.form.gpu_ids !== null) payload.gpu_ids = this.form.gpu_ids;
@@ -823,6 +823,8 @@ window.trainingTomlMixin = {
       payload[k] = v;
     }
     for (const [k, v] of Object.entries(payload)) {
+      const fd = fieldDefMap[k];
+      if (fd && this._isPathFieldRole(fd.role)) continue;
       const coerced = this._coerceNum(v);
       if (coerced !== v) { payload[k] = coerced; }
     }

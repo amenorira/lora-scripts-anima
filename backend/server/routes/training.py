@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request
 
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
-from backend.training import run_train
+from backend.training import run_train, toml_writer
 from backend.training.core_registry import (
     TrainingProfileError,
     profile_payload,
@@ -479,8 +479,8 @@ async def _create_krea2_run(
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
     toml_file = AUTOSAVE_DIR / f"{timestamp}-krea2.toml"
-    train_toml = toml.dumps(train_config)
-    dataset_toml = toml.dumps(dataset_config)
+    train_toml = toml_writer.dumps(train_config)
+    dataset_toml = toml_writer.dumps(dataset_config)
     training_document = build_training_config(
         snapshot_form,
         profile_id=KREA2_PROFILE_ID,
@@ -589,7 +589,7 @@ async def create_krea2_cache(request: Request):
         )
 
     dataset_config_file = run_dir / "dataset.toml"
-    dataset_toml = toml.dumps(build_krea2_dataset_config(config))
+    dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
     try:
         await asyncio.to_thread(prepare_cache_manifest, config)
         await asyncio.gather(
@@ -878,7 +878,7 @@ async def create_toml_file(request: Request):
     _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
 
     toml_file = str(AUTOSAVE_DIR / f"{timestamp}.toml")
-    toml_content = toml.dumps(config)
+    toml_content = toml_writer.dumps(config)
     training_document = build_training_config(
         form_snapshot,
         profile_id=profile.id,
@@ -891,7 +891,7 @@ async def create_toml_file(request: Request):
         except ValueError as exc:
             return APIResponseFail(message=str(exc))
         dataset_config_file = internal_run_dir / "dataset.toml"
-        dataset_toml = toml.dumps(dataset_config)
+        dataset_toml = toml_writer.dumps(dataset_config)
 
     def _write_configs():
         with open(toml_file, "w", encoding="utf-8") as f:

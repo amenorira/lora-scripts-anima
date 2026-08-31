@@ -42,3 +42,6 @@ vendor/sd-scripts/tests/
 docs/*
 !docs/parameters/
 !docs/parameters/**
+
+# ZCode 会话工作区
+.zcode/

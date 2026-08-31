@@ -14,6 +14,7 @@ import unittest
 
 import toml
 
+from backend.training import toml_writer
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import (
     ADALN_INCLUDE_MODULES,
@@ -103,7 +104,7 @@ class TrainAdalnAdapterTests(unittest.TestCase):
             "train_adaln": True,
             "network_args_custom": "include_patterns=['.*final_layer.*']",
         })
-        parsed = toml.loads(toml.dumps(adapted))
+        parsed = toml.loads(toml_writer.dumps(adapted))
         self.assertEqual(parsed["network_args"], adapted["network_args"])
         # 与 sd-scripts 的 ast.literal_eval 解析保持一致
         self.assertEqual(

@@ -951,6 +951,8 @@ function previewFor(type) {
     },
     _fieldShowIfMet() { return true; },
     _coerceNum(value) { return value; },
+  _isPathFieldRole() { return false; },
+    _isPathFieldRole() { return false; },
     findFieldDef() { return null; },
     esc(value) { return String(value); },
     t(key, fallback) { return fallback || key; },
@@ -1454,6 +1456,7 @@ const ctx = Object.assign({}, window.trainingTomlMixin, {
   },
   _fieldShowIfMet() { return true; },
   _coerceNum(value) { return value; },
+  _isPathFieldRole() { return false; },
   esc(value) {
     return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');

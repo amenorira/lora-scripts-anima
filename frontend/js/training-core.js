@@ -3368,6 +3368,12 @@ window.trainingCoreMixin = {
     return v;
   },
 
+  /** file-* 角色的字段是路径，永不做数字转换——纯数字目录名（如 "2024"）
+   *  被转成 number 后会以整数写进 TOML，训练器拿到的就不是路径了。 */
+  _isPathFieldRole(role) {
+    return typeof role === 'string' && role.startsWith('file-');
+  },
+
   _automagicFusedConflicts() {
     const conflicts = [];
     const gpuIds = this.form.gpu_ids;
