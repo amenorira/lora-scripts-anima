@@ -67,13 +67,14 @@
 <!-- doc-anchor: learning-rate -->
 ### 学习率（learning rate）
 
-Anima 只训练 DiT 主干时，可从下面的工程起点开始。官方 Anima 依据只覆盖 rank 32 与约 `2e-5`；表中其他优化器数值和 `alpha=32` 属于迁移或项目选择：
+Anima 只训练 DiT 主干时，可从下面的工程起点开始。官方 Anima 依据只覆盖 rank 32 与约 `2e-5`；表中其他优化器数值和 `alpha=32` 属于迁移或项目选择。不同优化器的学习率不在同一数值尺度上：AdamW 依靠逐元素的一阶/二阶统计缩放，而 LoRA-Muon 将学习率直接作用于白化后的矩阵符号更新，因此相同的 `2e-5`、`1e-4` 或 `1e-3` 并不代表相同的实际参数步长，不能直接横向照搬。
 
 | 优化器 | Anima 自动起点 | 依据与含义 |
 | --- | ---: | --- |
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
 | StableAdamW | `2e-5` | 先与 AdamW 同尺度，单独比较稳定化更新 |
 | Muon (`match_rms_adamw`) | `2e-5` | 按矩阵尺寸匹配 AdamW 更新 RMS；尚不是 Anima 实测最优值 |
+| LoRA-Muon | `0.02` | 学习率尺度不同；论文的 `0.1` 只在小型 Transformer 上测试，本项目将 `0.02` 作为保守自动起点 |
 | CAME | `1.5e-5` | CAME 官方建议用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
 | Adan | `1e-5` | 实际步长大于同学习率的 AdamW，按基线的 `0.5` 倍起步 |
 | AdEMAMix / AdEMAMix8bit | `2e-5` | 论文沿用 Adam 量级的学习率；8-bit 不改变学习率语义 |
@@ -91,6 +92,8 @@ SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4
 `network_alpha / network_dim` 会缩放 LoRA 分支。上游 sd-scripts 的 `1e-4` 示例对应 `alpha=1`，并明确说明提高 alpha 时应重新降低或验证 LR；因此不能把这个示例直接套到本项目默认的 `rank=32, alpha=32`。
 
 人物过早出现构图僵化、串色或提示词响应下降时，可以降低学习率或减少训练步数。学习不足时，先确认触发词和有效训练步数，再小幅提高学习率。Lion 的合理学习率范围与 AdamW 不同，需要单独测试。
+
+LoRA-Muon 不建议只试一个学习率。对 Anima，建议固定数据、seed、`network_dim/network_alpha`、scheduler 和总步数，先做一轮由低到高的扫参：`2e-5`、`5e-5`、`1e-4`、`2e-4`、`5e-4`、`1e-3`、`2e-3`、`5e-3`、`1e-2`、`2e-2`。如果相邻结果接近，再围绕较好的区间加密测试；`5e-2` 和 `0.1` 可作为更激进的实验值或论文尺度复现实验，不应当作默认值。短跑只用于排除明显过小或过大的范围，最终应结合中途预览、loss 曲线和过拟合情况判断。
 
 <!-- doc-anchor: scheduler-warmup -->
 ### 学习率调度器与预热（scheduler 和 warmup）
@@ -149,6 +152,25 @@ Muon 每个参数只维护一组动量状态，少于全精度 AdamW 的两组�
 - **数值稳定项**（`eps`，默认 `1e-7`）：防止归一化时除数过小。它通常不影响正常训练，主要用于排查可复现的 NaN 或异常放大。
 
 第一次比较建议只把 AdamW8bit 换成 Muon，保持数据、rank、alpha、scheduler、步数和学习率不变。确认训练稳定后，再单独测试学习率或 weight decay。同时修改 NS 系数和迭代次数会让结果难以解释，建议一次只调整一个。
+
+<!-- doc-anchor: lora-muon-options -->
+### LoRA-Muon 参数
+
+LoRA-Muon 是面向一对 LoRA 因子设计的独立优化器，不是原生 Muon 的参数预设。它会联合处理 `lora_down` 与 `lora_up`，利用另一侧因子的 Gram 矩阵对白化后的动量做矩阵符号更新。界面中的这些字段最终都通过 `optimizer_args` 传递，例如 `momentum=0.85`、`ns_steps=6`，不会作为顶层 TOML 参数。
+
+- **学习率**（`learning_rate`，通用/论文起点 `0.1`；Anima 自动起点 `0.02`）：用于设定每一步在 LoRA **合成权重**上沿谱方向前进的更新预算；论文把它写成信赖域半径 `η`。它不是给 `lora_up`/`lora_down` 的每个参数或因子矩阵设置改变量上限：算法把合成权重的一阶更新预算约一半分给两条因子路径，再通过 Gram 白化和矩阵符号计算出实际因子更新。因此，因子参数的实际变化不会直接等于 `η`。它和 AdamW、AdamW8bit 等优化器的学习率不是同一尺度，数值不能直接比较或照搬。由于更新是矩阵级白化/矩阵符号步骤，`2e-5` 到 `1e-4` 可能只产生很小的 LoRA 改动，而 `1e-3` 到 `2e-2` 才逐渐进入更明显的更新区间；这不是固定规律，仍需按数据和 rank 验证。建议按上面的多点扫参，而不是直接把 AdamW 的默认值复制过来。论文的 `0.1` 只在小型 Transformer 上测试；长训仍应单独校准。
+- **动量系数**（`momentum`，默认 `0.9`）：一阶梯度 EMA。数值越大越平滑，但对新梯度的响应越慢。
+- **矩阵符号迭代次数**（`ns_steps`，默认 `8`）：Polar Express / Newton-Schulz 近似次数。减少可降低计算量，但会增加近似误差。
+- **Gram 逆平方根迭代次数**（`inv_sqrt_steps`，构造器与论文默认 `7`）：控制 LoRA 因子白化精度。选择 LoRA-Muon 后，Anima 界面对未手动修改的字段推荐 `5`，以小幅近似误差换取更低的优化器计算量；需要严格贴近论文时可改回 `7`。
+- **数值保护项**（`msign_eps=1e-20`、`inv_sqrt_eps=1e-5`、`inv_sqrt_gamma=1.001`）：分别控制矩阵符号归一化保护、Gram 正则和逆平方根阻尼。没有可复现的数值问题时保持默认。
+- **因子重平衡**（`gauge_rebalance`，默认关闭）：在保持 LoRA 合成权重不变的前提下平衡 down/up 因子尺度，并同步搬运动量状态。
+- **重平衡参数**（`gauge_rebalance_alpha=1`、`gauge_rebalance_interval=1`、`gauge_power_steps=2`）：分别控制重平衡强度、执行间隔和谱范数估计次数；仅在开启 `gauge_rebalance` 后显示并生效。
+- **权重衰减**（`weight_decay`，默认 `0`）：使用分拆式解耦衰减；要求 `learning_rate * weight_decay < 1`。
+- **全局梯度裁剪**（`max_grad_norm`，Anima 界面起点 `0`）：这是训练器在 `optimizer.step` 前执行的外部全局 L2 裁剪，不是 LoRA-Muon 构造参数，论文算法也没有此步骤。`0` 表示关闭；若训练中确有异常梯度尖峰，仍可手动设为正数。
+
+`network_dim` 与 `network_alpha` **不要求相等**。`network_dim` 决定 rank，`network_alpha / network_dim` 决定前向 LoRA 分支缩放；`alpha=dim` 只表示前向缩放为 `1`。优化器真正要求的是同一模块的 `lora_down` rank 与 `lora_up` rank 维度相匹配。选择 LoRA-Muon 时，Anima 界面对未手动修改的字段推荐 `dim=16, alpha=16`：与 `32/32` 相比，LoRA 参数和一阶动量状态约减半，而 Gram 相关计算随 rank 的平方增长，因此 rank 16 更适合作为速度/资源平衡起点。这不是所有 Anima LoRA 的全局默认，也不会覆盖手动、导入或已保存的显式值。
+
+实现支持 Linear LoRA 和 Anima 使用的 Conv LoRA 形状，在 FP16/BF16 参数上用 FP32 完成矩阵计算，并按兼容的 device、dtype 与 rank 批量计算 Gram 逆平方根。首次实验建议从界面推荐值开始，只单独比较学习率；`gauge_rebalance` 默认关闭，需要时再独立测试。
 
 <!-- doc-anchor: adan-options -->
 ### Adan 参数

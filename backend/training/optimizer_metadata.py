@@ -13,6 +13,7 @@ from backend.training.optimizer_contracts import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    LORA_MUON_OPTIMIZER_TYPE,
     LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
@@ -194,6 +195,13 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "opt.optimizer_type_Muon",
         GROUP_MATRIX,
         supports_eps=True,
+        train_group="anima",
+    ),
+    OptimizerUIEntry(
+        LORA_MUON_OPTIMIZER_TYPE,
+        "LoRA-Muon",
+        "opt.optimizer_type_LoRAMuon",
+        GROUP_MATRIX,
         train_group="anima",
     ),
     OptimizerUIEntry(
@@ -450,6 +458,23 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             "set": "1e-4",
             "set_if_default": True,
         },
+        # LoRA-Muon 的论文 0.1 只在小型 Transformer 上验证；Anima 的
+        # 短程真实训练对照显示 0.1/0.05 过于激进，因此仅把 Anima
+        # 的未手动修改值设为更保守的工程起点。通用规则仍保留 0.1。
+        {
+            "watch": {
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "0.02",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": LORA_MUON_OPTIMIZER_TYPE,
+            "set": "0.1",
+            "set_if_default": True,
+        },
         {
             "watch": "optimizer_type",
             "when": AUTOMAGIC_OPTIMIZER_TYPE,
@@ -649,6 +674,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADEMAMIX_OPTIMIZER_TYPE, 0.01),
             (ADEMAMIX8BIT_OPTIMIZER_TYPE, 0.01),
             (LORARITE_OPTIMIZER_TYPE, 0.0),
+            (LORA_MUON_OPTIMIZER_TYPE, 0.0),
         )
     ],
 }

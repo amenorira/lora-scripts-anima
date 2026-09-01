@@ -75,6 +75,8 @@ window.trainingTomlMixin = {
       'came_ams_bound','came_eps1','came_eps2',
       'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
       'lorarite_clip_unmagnified_grad',
+      'momentum','ns_steps','inv_sqrt_steps','msign_eps','inv_sqrt_eps','inv_sqrt_gamma',
+      'gauge_rebalance','gauge_rebalance_alpha','gauge_rebalance_interval','gauge_power_steps',
     ]);
 
     // 分组桶：key=sectionKey → value=行数组。按 allSections 顺序填充再拼接，保证预览==表单顺序。
@@ -339,6 +341,16 @@ window.trainingTomlMixin = {
       ademamix_t_alpha: 't_alpha',
       ademamix_t_beta3: 't_beta3',
       lorarite_clip_unmagnified_grad: 'clip_unmagnified_grad',
+      momentum: 'momentum',
+      ns_steps: 'ns_steps',
+      inv_sqrt_steps: 'inv_sqrt_steps',
+      msign_eps: 'msign_eps',
+      inv_sqrt_eps: 'inv_sqrt_eps',
+      inv_sqrt_gamma: 'inv_sqrt_gamma',
+      gauge_rebalance: 'gauge_rebalance',
+      gauge_rebalance_alpha: 'gauge_rebalance_alpha',
+      gauge_rebalance_interval: 'gauge_rebalance_interval',
+      gauge_power_steps: 'gauge_power_steps',
     };
     return Object.prototype.hasOwnProperty.call(optimizerArgs, key)
       ? { paramKey: 'optimizer_args', argKey: optimizerArgs[key] }
@@ -674,6 +686,16 @@ window.trainingTomlMixin = {
       { form: 'ademamix_t_alpha', arg: 't_alpha', defaults: DEFS.ademamix_t_alpha || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
       { form: 'ademamix_t_beta3', arg: 't_beta3', defaults: DEFS.ademamix_t_beta3 || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
       { form: 'lorarite_clip_unmagnified_grad', arg: 'clip_unmagnified_grad', defaults: DEFS.lorarite_clip_unmagnified_grad || { 'vendor.lora_rite.lora_rite.LoRA_RITE': 1.0 } },
+      { form: 'momentum', arg: 'momentum', defaults: DEFS.momentum || { 'vendor.lora_muon.LoRA_Muon': 0.9 } },
+      { form: 'ns_steps', arg: 'ns_steps', defaults: DEFS.ns_steps || { 'vendor.lora_muon.LoRA_Muon': 8 } },
+      { form: 'inv_sqrt_steps', arg: 'inv_sqrt_steps', defaults: DEFS.inv_sqrt_steps || { 'vendor.lora_muon.LoRA_Muon': 7 } },
+      { form: 'msign_eps', arg: 'msign_eps', defaults: DEFS.msign_eps || { 'vendor.lora_muon.LoRA_Muon': '1e-20' } },
+      { form: 'inv_sqrt_eps', arg: 'inv_sqrt_eps', defaults: DEFS.inv_sqrt_eps || { 'vendor.lora_muon.LoRA_Muon': '1e-5' } },
+      { form: 'inv_sqrt_gamma', arg: 'inv_sqrt_gamma', defaults: DEFS.inv_sqrt_gamma || { 'vendor.lora_muon.LoRA_Muon': '1.001' } },
+      { form: 'gauge_rebalance', arg: 'gauge_rebalance', defaults: DEFS.gauge_rebalance || { 'vendor.lora_muon.LoRA_Muon': false } },
+      { form: 'gauge_rebalance_alpha', arg: 'gauge_rebalance_alpha', defaults: DEFS.gauge_rebalance_alpha || { 'vendor.lora_muon.LoRA_Muon': 1.0 } },
+      { form: 'gauge_rebalance_interval', arg: 'gauge_rebalance_interval', defaults: DEFS.gauge_rebalance_interval || { 'vendor.lora_muon.LoRA_Muon': 1 } },
+      { form: 'gauge_power_steps', arg: 'gauge_power_steps', defaults: DEFS.gauge_power_steps || { 'vendor.lora_muon.LoRA_Muon': 2 } },
       { form: 'came_eps1', arg: 'eps1', defaults: DEFS.came_eps1 || { 'pytorch_optimizer.CAME': '1e-30' } },
       { form: 'came_eps2', arg: 'eps2', defaults: DEFS.came_eps2 || { 'pytorch_optimizer.CAME': '1e-16' } },
     ];
@@ -868,7 +890,9 @@ window.trainingTomlMixin = {
                         'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
                         'came_ams_bound','came_eps1','came_eps2',
                         'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
-                        'lorarite_clip_unmagnified_grad']) {
+                        'lorarite_clip_unmagnified_grad',
+                        'momentum','ns_steps','inv_sqrt_steps','msign_eps','inv_sqrt_eps','inv_sqrt_gamma',
+                        'gauge_rebalance','gauge_rebalance_alpha','gauge_rebalance_interval','gauge_power_steps']) {
       delete payload[key];
     }
     if (optArgs.length > 0) payload.optimizer_args = optArgs;

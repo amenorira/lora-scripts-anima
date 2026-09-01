@@ -6,6 +6,54 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.11.0 - 2026-09-01
+
+This release adds the LoRA-Muon optimizer together with its parameter controls, UI hints, defaults, and training documentation.
+
+LoRA-Muon is currently an experimental test optimizer for Anima LoRA training. Numerical stability, convergence, and speed may vary across models, ranks, hardware, and training settings. Future releases may change the algorithm, parameter names, defaults, configuration format, or training behavior, including breaking changes. Pin the version and keep the training configuration for important runs.
+
+### LoRA-Muon
+
+- Added `vendor.lora_muon.LoRA_Muon`; its options are passed through `optimizer_args`.
+- Handles paired LoRA `down/up` factors with Gram whitening, matrix-sign updates, and the Conv LoRA parameter shapes used by Anima.
+- Added momentum, matrix-sign iteration, Gram inverse-root iteration, numerical guard, and gauge-rebalance controls.
+- The Anima engineering starting point is learning rate `0.02`. LoRA-Muon uses a different LR scale from AdamW, so AdamW values such as `2e-5` or `1e-4` should not be copied directly.
+- Test LoRA-Muon across multiple learning rates, for example from `2e-5`, `1e-4`, and `1e-3` up to `2e-2`. The paper's `0.1` is not a fixed Anima recommendation.
+- `network_dim` and `network_alpha` do not need to be equal; the UI recommends starting from `16/16` when those fields have not been edited manually.
+- Optimizer-specific hints are shown as additional orange text while the existing generic field hints remain visible; gauge controls appear when the gauge switch is enabled.
+- Added parameter validation, legacy configuration-key migration, and dedicated LoRA-Muon tests.
+
+### Measured resource and speed comparison
+
+The following values come from the recorded Anima training run. Step time uses the full training-iteration ranges from the logs and excludes first-step initialization and steady-state-average timing.
+
+| Optimizer | Full training iteration | Peak allocated | Peak reserved |
+| --- | ---: | ---: | ---: |
+| LoRA-Muon | about 1.0–1.1 s/step | 4715 MiB | 4872 MiB |
+| AdamW | about 0.7–0.9 s/step | 4802 MiB | 4950 MiB |
+| AdamW8bit | about 0.75–0.9 s/step | 4672 MiB | 4820 MiB |
+
+Independent optimizer-state memory on the complete Anima LoRA shape set:
+
+| rank | LoRA-Muon | AdamW | AdamW8bit |
+| ---: | ---: | ---: | ---: |
+| 16 | 87.5 MiB | 175 MiB | 45.5 MiB |
+| 32 | 175 MiB | 350 MiB | 90.0 MiB |
+
+Actual memory use and training speed vary with GPU, rank, batch size, resolution, caching, and preview generation. These values are reference measurements for the recorded test environment.
+
+### LoRA-RITE metadata
+
+- Unified the LoRA-RITE class name, registered selector, and metadata name as `LoRA_RITE`, and synchronized frontend mappings, config migration, and contract tests to avoid truncation in metadata viewers.
+
+### Documentation and UI
+
+- Added LoRA-Muon parameter descriptions, LR-scale guidance, and multi-LR testing guidance.
+- Added Anima-specific notes on memory, compute cost, and `max_grad_norm`.
+- Added a neutral LoRA-Muon feature description to the optimizer dropdown without expanding restrictive wording.
+
+[Full changelog](https://github.com/amenorira/lora-scripts-anima/compare/v2.10.0...v2.11.0)
+
 ## v2.10.0 - 2026-08-31
 
 This release adds a ComfyUI theme (a recreation of its default dark interface) and refactors the theme system into one file per theme. It also fixes a config-serialization bug that blocked training from starting — paths containing a backslash-x sequence (e.g. D:\datasets\xyz) produced invalid TOML files — plus several theme-related UI issues.

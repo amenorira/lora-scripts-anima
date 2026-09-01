@@ -29,6 +29,26 @@ CAME_OPTIMIZER_TYPE = "pytorch_optimizer.CAME"
 STABLE_ADAMW_OPTIMIZER_TYPE = "pytorch_optimizer.StableAdamW"
 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE = "AdamWScheduleFree"
 MUON_OPTIMIZER_TYPE = "Muon"
+LORA_MUON_OPTIMIZER_TYPE = "vendor.lora_muon.LoRA_Muon"
+LORA_MUON_FORM_ARGUMENTS = (
+    "momentum",
+    "ns_steps",
+    "inv_sqrt_steps",
+    "msign_eps",
+    "inv_sqrt_eps",
+    "inv_sqrt_gamma",
+    "gauge_rebalance",
+    "gauge_rebalance_alpha",
+    "gauge_rebalance_interval",
+    "gauge_power_steps",
+)
+LORA_MUON_LEGACY_FIELD_ALIASES = {
+    f"lora_muon_{key}": key for key in LORA_MUON_FORM_ARGUMENTS
+}
+_LORA_MUON_CANONICAL_TO_LEGACY = {
+    canonical: legacy
+    for legacy, canonical in LORA_MUON_LEGACY_FIELD_ALIASES.items()
+}
 ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
@@ -341,6 +361,20 @@ _MUON_ARGS = {
     "adjust_lr_fn": _choice(None, "original", "match_rms_adamw"),
 }
 
+_LORA_MUON_ARGS = {
+    "weight_decay": _NON_NEGATIVE,
+    "momentum": _number(0.0, 1.0, maximum_inclusive=False),
+    "ns_steps": _integer(1, 8),
+    "inv_sqrt_steps": _integer(1, 7),
+    "msign_eps": _NON_NEGATIVE,
+    "inv_sqrt_eps": _NON_NEGATIVE,
+    "inv_sqrt_gamma": _POSITIVE,
+    "gauge_rebalance": _boolean(),
+    "gauge_rebalance_alpha": _number(0.0, 1.0, minimum_inclusive=False),
+    "gauge_rebalance_interval": _integer(1),
+    "gauge_power_steps": _integer(1),
+}
+
 _BETAS_3 = _sequence(3, 0.0, 1.0)
 
 _ADAN_ARGS = {
@@ -392,6 +426,10 @@ OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
     "PagedAdamW8bit": OptimizerContract(_BNB_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
     MUON_OPTIMIZER_TYPE: OptimizerContract(
         _MUON_ARGS,
+        learning_rate_minimum_inclusive=True,
+    ),
+    LORA_MUON_OPTIMIZER_TYPE: OptimizerContract(
+        _LORA_MUON_ARGS,
         learning_rate_minimum_inclusive=True,
     ),
     "Lion": OptimizerContract(_LION_ARGS),
@@ -488,6 +526,30 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "muon_adjust_lr_fn": FormArgument(
         "adjust_lr_fn", frozenset({MUON_OPTIMIZER_TYPE})
     ),
+    "momentum": FormArgument("momentum", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
+    "ns_steps": FormArgument("ns_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
+    "inv_sqrt_steps": FormArgument(
+        "inv_sqrt_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "msign_eps": FormArgument("msign_eps", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
+    "inv_sqrt_eps": FormArgument(
+        "inv_sqrt_eps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "inv_sqrt_gamma": FormArgument(
+        "inv_sqrt_gamma", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "gauge_rebalance": FormArgument(
+        "gauge_rebalance", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "gauge_rebalance_alpha": FormArgument(
+        "gauge_rebalance_alpha", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "gauge_rebalance_interval": FormArgument(
+        "gauge_rebalance_interval", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
+    "gauge_power_steps": FormArgument(
+        "gauge_power_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
+    ),
     "bnb_percentile_clipping": FormArgument(
         "percentile_clipping",
         frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
@@ -559,6 +621,28 @@ def _coerce_form_argument(value: Any) -> Any:
         return value
 
 
+def normalize_lora_muon_form_fields(config: dict[str, Any]) -> None:
+    """Migrate pre-release lora_muon_* form keys to the canonical optimizer names."""
+    if str(config.get("optimizer_type", "")) != LORA_MUON_OPTIMIZER_TYPE:
+        return
+    for legacy, canonical in LORA_MUON_LEGACY_FIELD_ALIASES.items():
+        if canonical not in config and legacy in config:
+            config[canonical] = config[legacy]
+        config.pop(legacy, None)
+
+
+def _form_argument_value(
+    config: Mapping[str, Any], optimizer_type: str, form_key: str
+) -> Any:
+    if form_key in config:
+        return config.get(form_key)
+    if optimizer_type == LORA_MUON_OPTIMIZER_TYPE:
+        legacy = _LORA_MUON_CANONICAL_TO_LEGACY.get(form_key)
+        if legacy is not None:
+            return config.get(legacy)
+    return None
+
+
 def collect_optimizer_args(
     config: Mapping[str, Any], parsed_args: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -567,7 +651,7 @@ def collect_optimizer_args(
     for form_key, mapping in FORM_ARGUMENTS.items():
         if optimizer_type not in mapping.optimizers:
             continue
-        value = config.get(form_key)
+        value = _form_argument_value(config, optimizer_type, form_key)
         if not is_empty_optimizer_value(value):
             result[mapping.argument] = _coerce_form_argument(value)
     return result
@@ -703,6 +787,15 @@ def validate_optimizer_contract(
             "当前仅支持 Anima LoRA"
         )
 
+    if optimizer_type == LORA_MUON_OPTIMIZER_TYPE and (
+        config.get("model_train_type") != "anima-lora"
+        or config.get("network_module") != "networks.lora_anima"
+    ):
+        errors.append(
+            "LoRA-Muon: currently supported only for anima-lora with networks.lora_anima / "
+            "LoRA-Muon 当前仅支持 anima-lora 与 networks.lora_anima"
+        )
+
     if (
         optimizer_type == LORARITE_OPTIMIZER_TYPE
         and config.get("model_train_type") != "anima-lora"
@@ -825,6 +918,7 @@ def _numeric_value(value: Any, default: float = 0.0) -> float:
 def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> None:
     """Normalize safe product behavior after validation and before TOML output."""
     optimizer_type = str(config.get("optimizer_type", ""))
+    normalize_lora_muon_form_fields(config)
     top_level_fused = config.pop("fused_backward_pass", None)
     if _is_effectively_enabled(top_level_fused):
         warnings.append(

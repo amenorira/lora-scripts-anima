@@ -11,6 +11,10 @@ from uuid import UUID, uuid4
 import yaml
 
 from backend.training.field_registry import get_all_fields, get_fields_json
+from backend.training.optimizer_contracts import (
+    LORA_MUON_LEGACY_FIELD_ALIASES,
+    normalize_lora_muon_form_fields,
+)
 
 
 TRAINING_CONFIG_NAME = "training.yaml"
@@ -314,13 +318,16 @@ def group_training_form(
 def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
     """Return the flat form expected by the frontend from any supported schema."""
     if document.get("schema_version") == 1:
-        return dict(document.get("form") or {})
+        flat = dict(document.get("form") or {})
+        normalize_lora_muon_form_fields(flat)
+        return flat
 
     field_keys = {
         str(field["key"])
         for section in get_fields_json().get("sections", [])
         for field in section.get("fields", [])
     }
+    field_keys.update(LORA_MUON_LEGACY_FIELD_ALIASES)
     flat: dict[str, Any] = {}
 
     def visit(mapping: dict[str, Any]) -> None:
@@ -341,6 +348,9 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
 
     visit(document.get("parameters") or {})
     flat["model_train_type"] = document["profile"]["id"]
+    normalize_lora_muon_form_fields(flat)
+    for legacy in LORA_MUON_LEGACY_FIELD_ALIASES:
+        flat.pop(legacy, None)
     return flat
 
 

@@ -48,6 +48,9 @@ window.trainingConfigIoMixin = {
   },
 
   _applyImportedFlatConfig(parsed) {
+    parsed = this._normalizeLegacyLoraMuonForm
+      ? this._normalizeLegacyLoraMuonForm(parsed)
+      : parsed;
     const validTypes = new Set((this.trainTypes || []).map(item => item.v));
     const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     const importedType = String(parsed.model_train_type || currentType);

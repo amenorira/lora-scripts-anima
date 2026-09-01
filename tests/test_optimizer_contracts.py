@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from backend.training.optimizer_contracts import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    LORA_MUON_OPTIMIZER_TYPE,
     LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
@@ -115,6 +117,7 @@ class OptimizerFieldContractTests(unittest.TestCase):
                 ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
                 ADAFACTOR_OPTIMIZER_TYPE,
                 MUON_OPTIMIZER_TYPE,
+                LORA_MUON_OPTIMIZER_TYPE,
                 LORARITE_OPTIMIZER_TYPE,
                 AUTOMAGIC_OPTIMIZER_TYPE,
                 EMOSENS_OPTIMIZER_TYPE,
@@ -153,6 +156,12 @@ class OptimizerFieldContractTests(unittest.TestCase):
             if option["v"] == MUON_OPTIMIZER_TYPE
         )
         self.assertEqual(muon["group"], "anima")
+        lora_muon = next(
+            option
+            for option in matrix["options"]
+            if option["v"] == LORA_MUON_OPTIMIZER_TYPE
+        )
+        self.assertEqual(lora_muon["group"], "anima")
 
         for profile in (SD_SCRIPTS_PROFILE, KREA2_PROFILE):
             lengths = optimizer_beta_lengths(profile)
@@ -219,6 +228,7 @@ console.log(JSON.stringify({
         self.assertEqual(auto_value_for(learning_rate, AUTOMAGIC_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(auto_value_for(learning_rate, STABLE_ADAMW_OPTIMIZER_TYPE), "1e-4")
         self.assertEqual(auto_value_for(learning_rate, MUON_OPTIMIZER_TYPE), "1e-4")
+        self.assertEqual(auto_value_for(learning_rate, LORA_MUON_OPTIMIZER_TYPE), "0.1")
         self.assertEqual(
             contextual_auto_value_for(learning_rate, "AdamW8bit", "anima-lora"),
             "2e-5",
@@ -242,6 +252,12 @@ console.log(JSON.stringify({
                 learning_rate, MUON_OPTIMIZER_TYPE, "anima-lora"
             ),
             "2e-5",
+        )
+        self.assertEqual(
+            contextual_auto_value_for(
+                learning_rate, LORA_MUON_OPTIMIZER_TYPE, "anima-lora"
+            ),
+            "0.02",
         )
         self.assertEqual(
             contextual_auto_value_for(
@@ -276,6 +292,7 @@ console.log(JSON.stringify({
         self.assertEqual(auto_value_for(weight_decay, CAME_OPTIMIZER_TYPE), 0.0)
         self.assertEqual(auto_value_for(weight_decay, STABLE_ADAMW_OPTIMIZER_TYPE), 0.0)
         self.assertEqual(auto_value_for(weight_decay, MUON_OPTIMIZER_TYPE), 0.0)
+        self.assertEqual(auto_value_for(weight_decay, LORA_MUON_OPTIMIZER_TYPE), 0.0)
         self.assertEqual(inspect.signature(StableAdamW).parameters["weight_decay"].default, 0.01)
 
         self.assertEqual(auto_value_for(fields["betas"], STABLE_ADAMW_OPTIMIZER_TYPE), "0.9, 0.99")
@@ -289,6 +306,47 @@ console.log(JSON.stringify({
             fields["muon_ns_coefficients"]["default"],
             "3.4445, -4.775, 2.0315",
         )
+        self.assertEqual(fields["momentum"]["default"], 0.9)
+        self.assertEqual(fields["ns_steps"]["default"], 8)
+        self.assertEqual(fields["inv_sqrt_steps"]["default"], 7)
+        for key, recommended in (
+            ("network_dim", 16),
+            ("network_alpha", 16),
+            ("max_grad_norm", 0),
+            ("inv_sqrt_steps", 5),
+        ):
+            with self.subTest(key=key):
+                rule = next(
+                    rule
+                    for rule in fields[key]["autoValue"]
+                    if rule.get("watch")
+                    == {
+                        "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                        "model_train_type": "anima-lora",
+                    }
+                )
+                self.assertEqual(rule["set"], recommended)
+                self.assertTrue(rule["setIfDefault"])
+        self.assertEqual(fields["msign_eps"]["type"], "text")
+        self.assertEqual(fields["msign_eps"]["default"], "1e-20")
+        self.assertEqual(fields["inv_sqrt_eps"]["type"], "text")
+        self.assertEqual(fields["inv_sqrt_eps"]["default"], "1e-5")
+        self.assertEqual(fields["inv_sqrt_gamma"]["type"], "text")
+        self.assertEqual(fields["inv_sqrt_gamma"]["default"], "1.001")
+        self.assertFalse(fields["gauge_rebalance"]["default"])
+        gauge_show_if = [
+            {"key": "optimizer_type", "eq": LORA_MUON_OPTIMIZER_TYPE},
+            {"key": "gauge_rebalance", "eq": True},
+        ]
+        for key in (
+            "gauge_rebalance_alpha",
+            "gauge_rebalance_interval",
+            "gauge_power_steps",
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(fields[key]["layoutParent"], "gauge_rebalance")
+                self.assertEqual(fields[key]["showIf"], gauge_show_if)
+        self.assertFalse(any(key.startswith("lora_muon_") for key in fields))
         self.assertTrue(fields["stableadamw_kahan_sum"]["default"])
         self.assertTrue(fields["stableadamw_weight_decouple"]["default"])
         self.assertEqual(fields["bnb_percentile_clipping"]["default"], 100)
@@ -338,6 +396,9 @@ class OptimizerValidationTests(unittest.TestCase):
             (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 100}, "ns_steps"),
             (MUON_OPTIMIZER_TYPE, {"muon_ns_coefficients": "1, 2"}, "exactly 3"),
             (MUON_OPTIMIZER_TYPE, {"muon_adjust_lr_fn": "unknown"}, "one of"),
+            (LORA_MUON_OPTIMIZER_TYPE, {"ns_steps": 0}, "ns_steps"),
+            (LORA_MUON_OPTIMIZER_TYPE, {"inv_sqrt_steps": 8}, "inv_sqrt_steps"),
+            (LORA_MUON_OPTIMIZER_TYPE, {"momentum": 1.0}, "momentum"),
         )
         for optimizer_type, updates, expected in cases:
             with self.subTest(optimizer_type=optimizer_type, updates=updates):
@@ -359,6 +420,30 @@ class OptimizerValidationTests(unittest.TestCase):
         sdxl = valid_config(MUON_OPTIMIZER_TYPE, "sdxl-lora")
         errors = validate_training_config(sdxl)
         self.assertTrue(any("only for Anima LoRA" in error for error in errors), errors)
+
+    def test_lora_muon_requires_anima_native_network(self):
+        valid = valid_config(LORA_MUON_OPTIMIZER_TYPE, "anima-lora")
+        self.assertEqual(validate_training_config(valid), [])
+
+        wrong_module = valid_config(LORA_MUON_OPTIMIZER_TYPE, "anima-lora")
+        wrong_module["network_module"] = "networks.lora"
+        errors = validate_training_config(wrong_module)
+        self.assertTrue(any("LoRA-Muon" in error for error in errors), errors)
+
+        sdxl = valid_config(LORA_MUON_OPTIMIZER_TYPE, "sdxl-lora")
+        errors = validate_training_config(sdxl)
+        self.assertTrue(any("LoRA-Muon" in error for error in errors), errors)
+
+    def test_lora_muon_and_loraplus_are_rejected_together(self):
+        config = valid_config(LORA_MUON_OPTIMIZER_TYPE)
+        config.update(
+            {
+                "enable_loraplus": True,
+                "loraplus_lr_ratio": 2,
+            }
+        )
+        errors = validate_training_config(config)
+        self.assertTrue(any("incompatible with LoRA+" in error for error in errors), errors)
 
         config = valid_config(STABLE_ADAMW_OPTIMIZER_TYPE)
         config["optimizer_args"] = ["unknown_stability_knob=True"]
@@ -521,6 +606,74 @@ class OptimizerAdapterTests(unittest.TestCase):
             adapted["optimizer_args"],
         )
         self.assertIn("adjust_lr_fn='match_rms_adamw'", adapted["optimizer_args"])
+        self.assertEqual(warnings, [])
+
+    def test_lora_muon_merges_all_exposed_arguments(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "learning_rate": "2e-5",
+                "weight_decay": 0,
+                "momentum": 0.9,
+                "ns_steps": 8,
+                "inv_sqrt_steps": 7,
+                "msign_eps": "1e-20",
+                "inv_sqrt_eps": "1e-5",
+                "inv_sqrt_gamma": "1.001",
+                "gauge_rebalance": False,
+                "gauge_rebalance_alpha": 1.0,
+                "gauge_rebalance_interval": 1,
+                "gauge_power_steps": 2,
+            }
+        )
+        self.assertEqual(adapted["optimizer_type"], LORA_MUON_OPTIMIZER_TYPE)
+        for expected in (
+            "weight_decay=0",
+            "momentum=0.9",
+            "ns_steps=8",
+            "inv_sqrt_steps=7",
+            "msign_eps=1e-20",
+            "inv_sqrt_eps=1e-5",
+            "inv_sqrt_gamma=1.001",
+            "gauge_rebalance=False",
+            "gauge_rebalance_alpha=1.0",
+            "gauge_rebalance_interval=1",
+            "gauge_power_steps=2",
+        ):
+            self.assertIn(expected, adapted["optimizer_args"])
+        self.assertFalse(any("lora_muon_" in item for item in adapted["optimizer_args"]))
+        self.assertEqual(warnings, [])
+
+    def test_lora_muon_accepts_legacy_form_keys_without_leaking_them(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "learning_rate": "2e-5",
+                "lora_muon_momentum": 0.85,
+                "lora_muon_ns_steps": 6,
+            }
+        )
+        self.assertIn("momentum=0.85", adapted["optimizer_args"])
+        self.assertIn("ns_steps=6", adapted["optimizer_args"])
+        self.assertFalse(any("lora_muon_" in item for item in adapted["optimizer_args"]))
+        self.assertEqual(warnings, [])
+
+    def test_lora_muon_accepts_direct_optimizer_args(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "learning_rate": "2e-5",
+                "optimizer_args": ["momentum=0.85", "ns_steps=6"],
+            }
+        )
+        self.assertIn("momentum=0.85", adapted["optimizer_args"])
+        self.assertIn("ns_steps=6", adapted["optimizer_args"])
         self.assertEqual(warnings, [])
 
     def test_stableadamw_keeps_external_training_controls_and_loraplus(self):
@@ -732,6 +885,178 @@ class OptimizerAdapterTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class OptimizerFrontendTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
+    def test_lora_muon_preview_serializes_only_optimizer_args(self):
+        fields = fields_by_key()
+        visible_fields = []
+        for key in (
+                "network_dim",
+                "network_alpha",
+                "optimizer_type",
+                "learning_rate",
+                "max_grad_norm",
+                "weight_decay",
+                "momentum",
+                "ns_steps",
+                "inv_sqrt_steps",
+                "msign_eps",
+                "inv_sqrt_eps",
+                "inv_sqrt_gamma",
+                "gauge_rebalance",
+                "gauge_rebalance_alpha",
+                "gauge_rebalance_interval",
+                "gauge_power_steps",
+        ):
+            field = fields[key]
+            visible_fields.append(
+                {
+                    name: field[name]
+                    for name in (
+                        "key",
+                        "default",
+                        "omitDefault",
+                        "showIf",
+                        "showIfAny",
+                        "role",
+                        "hidden",
+                    )
+                    if name in field
+                }
+            )
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return { innerHTML: '' }; } };
+require('./frontend/js/constants.js');
+window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
+require('./frontend/js/training-toml.js');
+const fieldMap = Object.fromEntries(__FIELDS__.map(field => [field.key, field]));
+const ctx = Object.assign({}, window.trainingTomlMixin, {
+	  form: {
+	    model_train_type: 'anima-lora',
+	    network_dim: 16,
+	    network_alpha: 16,
+	    optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+	    learning_rate: '2e-5',
+	    max_grad_norm: 0,
+	    weight_decay: 0,
+	    momentum: 0.85,
+	    ns_steps: 6,
+	    inv_sqrt_steps: 5,
+    msign_eps: '1e-20',
+    inv_sqrt_eps: '1e-5',
+    inv_sqrt_gamma: '1.001',
+    gauge_rebalance: false,
+    gauge_rebalance_alpha: 1,
+    gauge_rebalance_interval: 1,
+    gauge_power_steps: 2,
+  },
+  _fieldShowIfMet() { return true; },
+  _coerceNum(value) { return value; },
+  _isPathFieldRole() { return false; },
+  findFieldDef(key) { return fieldMap[key] || null; },
+  esc(value) { return String(value); },
+  t(key, fallback) { return fallback || key; },
+});
+ctx.updateToml();
+process.stdout.write(ctx.tomlRaw);
+""".replace("__FIELDS__", json.dumps(visible_fields))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        config = tomllib.loads(result.stdout)
+        self.assertEqual(
+            config["optimizer_args"],
+            ["momentum=0.85", "ns_steps=6", "inv_sqrt_steps=5"],
+        )
+        self.assertEqual(config["network_dim"], 16)
+        self.assertEqual(config["network_alpha"], 16)
+        self.assertEqual(config["max_grad_norm"], 0)
+        self.assertNotIn("momentum", config)
+        self.assertNotIn("ns_steps", config)
+        self.assertNotIn("lora_muon_momentum", config)
+
+    def test_lora_muon_frontend_keeps_native_network_pairing(self):
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return null; } };
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const optimizer = 'vendor.lora_muon.LoRA_Muon';
+
+function context(form) {
+  const toasts = [];
+  const ctx = Object.assign({}, core, {
+    form: { model_train_type: 'anima-lora', ...form },
+    formDefaults: {}, formHistory: [], formErrors: {},
+    timestepPreviewOpen: false,
+    _fieldSources: {}, _profileFieldSources: {},
+    _setFieldSource(key, source) { this._fieldSources[key] = source; },
+    _persistProfileFieldSources() {},
+    findFieldDef() { return null; },
+    _allShowIfKeys() { return []; },
+    queueTomlPreviewChange() {},
+    _enforceEmosensUiConstraints() {},
+    _automagicFusedConflicts() { return []; },
+    _automagicFusedHasConflict() { return false; },
+    scheduleOutputPathInfo() {}, pushHistory() {}, updateTomlDebounced() {},
+    showConditionalFields() {},
+    toast(message, kind) { toasts.push({ message, kind }); },
+    t(key) { return key; },
+  });
+  return { ctx, toasts };
+}
+
+const selectOptimizer = context({
+  network_module: 'networks.lokr', optimizer_type: 'AdamW8bit',
+});
+selectOptimizer.ctx.setField('optimizer_type', optimizer);
+
+const selectNetwork = context({
+  network_module: 'networks.lora_anima', optimizer_type: optimizer,
+});
+selectNetwork.ctx.setField('network_module', 'networks.loha');
+
+console.log(JSON.stringify({
+  selectOptimizer: {
+    network: selectOptimizer.ctx.form.network_module,
+    optimizer: selectOptimizer.ctx.form.optimizer_type,
+    toasts: selectOptimizer.toasts,
+  },
+  selectNetwork: {
+    network: selectNetwork.ctx.form.network_module,
+    optimizer: selectNetwork.ctx.form.optimizer_type,
+    toasts: selectNetwork.toasts,
+  },
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        self.assertEqual(state["selectOptimizer"]["network"], "networks.lora_anima")
+        self.assertEqual(state["selectOptimizer"]["optimizer"], LORA_MUON_OPTIMIZER_TYPE)
+        self.assertEqual(
+            state["selectOptimizer"]["toasts"],
+            [{"message": "field.lora_muonNetworkAutoSelected", "kind": "warning"}],
+        )
+        self.assertEqual(state["selectNetwork"]["network"], "networks.loha")
+        self.assertEqual(state["selectNetwork"]["optimizer"], "AdamW8bit")
+        self.assertEqual(
+            state["selectNetwork"]["toasts"],
+            [{"message": "field.lora_muonOptimizerAutoDisabled", "kind": "warning"}],
+        )
+
     def test_dynamic_beta_hints_match_main_form(self):
         fields = fields_by_key()
         betas_field = fields["betas"]
@@ -769,6 +1094,97 @@ console.log(JSON.stringify({ mainAdam, mainLion }));
             {
                 "mainAdam": "adam beta mechanism",
                 "mainLion": "lion beta mechanism",
+            },
+        )
+
+    def test_optimizer_specific_hints_append_to_base_hint(self):
+        fields = fields_by_key()
+        script = r"""
+global.window = {
+  TRAIN_GROUP_MAP: { 'anima-lora': 'anima' },
+  FILLED_INDICATOR_KEYS: new Set(),
+  DEFAULT_DIM_KEYS: new Set(),
+  OPTIMIZER_DEFAULTS: {},
+};
+global.document = { querySelector() { return null; } };
+require('./frontend/js/utils.js');
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const messages = {
+  'field.network_dim': 'LoRA Rank',
+  'field.network_dimHint': 'base rank hint',
+  'field.network_dimHint_lora_muon': 'Muon rank hint',
+  'field.network_alpha': 'LoRA Alpha',
+  'field.network_alphaHint': 'base alpha hint',
+  'field.network_alphaHint_lora_muon': 'Muon alpha hint',
+};
+
+function context(optimizer) {
+  return Object.assign({}, core, window.utilsMixin, {
+    form: { model_train_type: 'anima-lora', optimizer_type: optimizer },
+    formDefaults: {}, formErrors: {},
+    t(key) { return messages[key] || key; },
+    setField() {}, stepField() {}, undoField() {}, resetField() {},
+    _fieldSources: {}, _profileFieldSources: {},
+  });
+}
+
+function summarize(fieldKey, optimizer) {
+  const ctx = context(optimizer);
+  const field = __FIELDS__[fieldKey];
+  const html = ctx.renderField(field);
+  return {
+    base: ctx._resolveFieldBaseHintText(field, 'anima-lora'),
+    override: ctx._resolveFieldHintOverrideText(field, ctx.form),
+    hasBaseHtml: html.includes(`class="field-hint">${messages[field.hintKey]}</div>`),
+    hasOrangeBinding: html.includes('class="field-hint field-hint-warn"')
+      && html.includes(`fieldHintOverrideText('${fieldKey}')`),
+  };
+}
+
+console.log(JSON.stringify({
+  dimMuon: summarize('network_dim', 'vendor.lora_muon.LoRA_Muon'),
+  dimAdam: summarize('network_dim', 'AdamW8bit'),
+  alphaMuon: summarize('network_alpha', 'vendor.lora_muon.LoRA_Muon'),
+}));
+""".replace("__FIELDS__", json.dumps({
+            key: fields[key] for key in ("network_dim", "network_alpha")
+        }))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        summary = json.loads(result.stdout)
+        self.assertEqual(
+            summary["dimMuon"],
+            {
+                "base": "base rank hint",
+                "override": "Muon rank hint",
+                "hasBaseHtml": True,
+                "hasOrangeBinding": True,
+            },
+        )
+        self.assertEqual(
+            summary["dimAdam"],
+            {
+                "base": "base rank hint",
+                "override": "",
+                "hasBaseHtml": True,
+                "hasOrangeBinding": True,
+            },
+        )
+        self.assertEqual(
+            summary["alphaMuon"],
+            {
+                "base": "base alpha hint",
+                "override": "Muon alpha hint",
+                "hasBaseHtml": True,
+                "hasOrangeBinding": True,
             },
         )
 
@@ -1026,10 +1442,34 @@ console.log(JSON.stringify({ sameValueUser, sameValueReset }));
             fields["optimizer_type"],
             fields["learning_rate"],
             fields["lr_scheduler"],
+            fields["network_dim"],
+            fields["network_alpha"],
+            fields["max_grad_norm"],
+        ] + [
+            fields[key]
+            for key in (
+                "momentum",
+                "ns_steps",
+                "inv_sqrt_steps",
+                "msign_eps",
+                "inv_sqrt_eps",
+                "inv_sqrt_gamma",
+                "gauge_rebalance",
+                "gauge_rebalance_alpha",
+                "gauge_rebalance_interval",
+                "gauge_power_steps",
+            )
         ]
         rules = [
             {"target": key, **rule}
-            for key in ("learning_rate", "lr_scheduler")
+            for key in (
+                "learning_rate",
+                "lr_scheduler",
+                "network_dim",
+                "network_alpha",
+                "max_grad_norm",
+                "inv_sqrt_steps",
+            )
             for rule in fields[key].get("autoValue", [])
         ]
         script = r"""
@@ -1074,12 +1514,28 @@ function makeContext() {
 async function imported(data) {
   const ctx = makeContext();
   await ctx._applyImportedFlatConfig({ model_train_type: 'anima-lora', ...data });
-  return {
-    learning_rate: ctx.form.learning_rate,
-    lr_scheduler: ctx.form.lr_scheduler,
-    lrSource: ctx._fieldSources.learning_rate,
-    schedulerSource: ctx._fieldSources.lr_scheduler,
-  };
+	  const result = {
+	    learning_rate: ctx.form.learning_rate,
+	    lr_scheduler: ctx.form.lr_scheduler,
+	    lrSource: ctx._fieldSources.learning_rate,
+	    schedulerSource: ctx._fieldSources.lr_scheduler,
+	  };
+	  if (ctx.form.optimizer_type === 'vendor.lora_muon.LoRA_Muon') {
+	    result.momentum = ctx.form.momentum;
+	    result.nsSteps = ctx.form.ns_steps;
+	    result.networkDim = ctx.form.network_dim;
+	    result.networkAlpha = ctx.form.network_alpha;
+	    result.maxGradNorm = ctx.form.max_grad_norm;
+	    result.invSqrtSteps = ctx.form.inv_sqrt_steps;
+	    result.sources = {
+	      networkDim: ctx._fieldSources.network_dim,
+	      networkAlpha: ctx._fieldSources.network_alpha,
+	      maxGradNorm: ctx._fieldSources.max_grad_norm,
+	      invSqrtSteps: ctx._fieldSources.inv_sqrt_steps,
+	    };
+	    result.hasLegacyMomentum = Object.prototype.hasOwnProperty.call(ctx.form, 'lora_muon_momentum');
+	  }
+  return result;
 }
 
 (async () => {
@@ -1097,12 +1553,32 @@ async function imported(data) {
     learning_rate: '1e-4',
   });
   const missingValues = await imported({ optimizer_type: 'pytorch_optimizer.CAME' });
+  const loraMuonLegacy = await imported({
+    optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+    lora_muon_momentum: 0.85,
+    lora_muon_ns_steps: 6,
+  });
+	  const loraMuonCanonicalWins = await imported({
+	    optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+	    momentum: 0.8,
+	    lora_muon_momentum: 0.85,
+	  });
+	  const loraMuonExplicit = await imported({
+	    optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+	    network_dim: 24,
+	    network_alpha: 12,
+	    max_grad_norm: 1,
+	    inv_sqrt_steps: 7,
+	  });
 
   console.log(JSON.stringify({
     cameExplicit,
     cameLegacy,
     stableExplicit,
     missingValues,
+	    loraMuonLegacy,
+	    loraMuonCanonicalWins,
+	    loraMuonExplicit,
   }));
 })().catch(error => { console.error(error); process.exit(1); });
 """.replace("__FIELDS__", json.dumps(visible_fields)).replace("__RULES__", json.dumps(rules))
@@ -1135,6 +1611,128 @@ async function imported(data) {
         )
         self.assertEqual(state["missingValues"]["lrSource"], "auto")
         self.assertEqual(state["missingValues"]["schedulerSource"], "auto")
+        self.assertEqual(state["loraMuonLegacy"]["momentum"], 0.85)
+        self.assertEqual(state["loraMuonLegacy"]["nsSteps"], 6)
+        self.assertFalse(state["loraMuonLegacy"]["hasLegacyMomentum"])
+        self.assertEqual(state["loraMuonCanonicalWins"]["momentum"], 0.8)
+        self.assertEqual(
+            {
+                key: state["loraMuonLegacy"][key]
+                for key in ("networkDim", "networkAlpha", "maxGradNorm", "invSqrtSteps")
+            },
+            {
+                "networkDim": 16,
+                "networkAlpha": 16,
+                "maxGradNorm": 0,
+                "invSqrtSteps": 5,
+            },
+        )
+        self.assertEqual(
+            set(state["loraMuonLegacy"]["sources"].values()), {"auto"}
+        )
+        self.assertEqual(
+            {
+                key: state["loraMuonExplicit"][key]
+                for key in ("networkDim", "networkAlpha", "maxGradNorm", "invSqrtSteps")
+            },
+            {
+                "networkDim": 24,
+                "networkAlpha": 12,
+                "maxGradNorm": 1,
+                "invSqrtSteps": 7,
+            },
+        )
+        self.assertEqual(
+            set(state["loraMuonExplicit"]["sources"].values()), {"import"}
+        )
+
+    def test_lora_muon_recommendations_preserve_explicit_field_sources(self):
+        fields = fields_by_key()
+        keys = ("network_dim", "network_alpha", "max_grad_norm", "inv_sqrt_steps")
+        selected_fields = {key: fields[key] for key in keys}
+        rules = [
+            {"target": key, **rule}
+            for key in keys
+            for rule in fields[key].get("autoValue", [])
+            if rule.get("watch")
+            == {
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            }
+        ]
+        script = r"""
+global.window = {};
+require('./frontend/js/training-core.js');
+const core = window.trainingCoreMixin;
+const fields = __FIELDS__;
+const rules = __RULES__;
+const keys = ['network_dim', 'network_alpha', 'max_grad_norm', 'inv_sqrt_steps'];
+const defaults = { network_dim: 32, network_alpha: 32, max_grad_norm: 1, inv_sqrt_steps: 7 };
+const explicit = { network_dim: 24, network_alpha: 12, max_grad_norm: 0.5, inv_sqrt_steps: 6 };
+
+function apply(source, values) {
+  const ctx = Object.assign({}, core, {
+    form: {
+      model_train_type: 'anima-lora',
+      optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+      ...values,
+    },
+    formDefaults: { ...defaults },
+    _autoValueRules: rules,
+    _fieldSources: Object.fromEntries(keys.map(key => [key, source])),
+    _profileFieldSources: {},
+    findFieldDef(key) { return fields[key] || null; },
+  });
+  ctx._applyInitialAutoValues();
+  return {
+    values: Object.fromEntries(keys.map(key => [key, ctx.form[key]])),
+    sources: Object.fromEntries(keys.map(key => [key, ctx._fieldSources[key]])),
+  };
+}
+
+console.log(JSON.stringify({
+  defaults: apply('default', defaults),
+  previousAuto: apply('auto', defaults),
+  user: apply('user', explicit),
+  imported: apply('import', explicit),
+  saved: apply('saved', explicit),
+}));
+""".replace("__FIELDS__", json.dumps(selected_fields)).replace(
+            "__RULES__", json.dumps(rules)
+        )
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        recommended = {
+            "network_dim": 16,
+            "network_alpha": 16,
+            "max_grad_norm": 0,
+            "inv_sqrt_steps": 5,
+        }
+        explicit = {
+            "network_dim": 24,
+            "network_alpha": 12,
+            "max_grad_norm": 0.5,
+            "inv_sqrt_steps": 6,
+        }
+        for source in ("defaults", "previousAuto"):
+            with self.subTest(source=source):
+                self.assertEqual(state[source]["values"], recommended)
+                self.assertEqual(set(state[source]["sources"].values()), {"auto"})
+        for source in ("user", "imported", "saved"):
+            with self.subTest(source=source):
+                self.assertEqual(state[source]["values"], explicit)
+                expected_source = "import" if source == "imported" else source
+                self.assertEqual(
+                    set(state[source]["sources"].values()), {expected_source}
+                )
 
     def test_legacy_drafts_and_placeholder_use_registry_provenance(self):
         fields = fields_by_key()
@@ -1329,6 +1927,34 @@ const muonDefaults = args({
   weight_decay: 0,
   eps: '1e-7',
 });
+const loraMuonDefaults = args({
+  optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+  weight_decay: 0,
+  momentum: 0.9,
+  ns_steps: 8,
+  inv_sqrt_steps: 7,
+  msign_eps: '1e-20',
+  inv_sqrt_eps: '1e-5',
+  inv_sqrt_gamma: '1.001',
+  gauge_rebalance: false,
+  gauge_rebalance_alpha: 1,
+  gauge_rebalance_interval: 1,
+  gauge_power_steps: 2,
+});
+const loraMuonCustom = args({
+  optimizer_type: 'vendor.lora_muon.LoRA_Muon',
+  weight_decay: 0.01,
+  momentum: 0.85,
+  ns_steps: 6,
+  inv_sqrt_steps: 5,
+  msign_eps: '1e-12',
+  inv_sqrt_eps: '1e-4',
+  inv_sqrt_gamma: 1.01,
+  gauge_rebalance: true,
+  gauge_rebalance_alpha: 0.5,
+  gauge_rebalance_interval: 4,
+  gauge_power_steps: 3,
+});
 const bnbDefaults = args({
   optimizer_type: 'AdamW8bit',
   bnb_percentile_clipping: 100,
@@ -1456,6 +2082,8 @@ console.log(JSON.stringify({
   stableDefaults,
   stableCustom,
   muonDefaults,
+  loraMuonDefaults,
+  loraMuonCustom,
   bnbDefaults,
   bnbCustom,
   previousAuto: previousAuto.form.lr_scheduler,
@@ -1489,6 +2117,23 @@ console.log(JSON.stringify({
             ["weight_decay=0.02", "kahan_sum=False", "weight_decouple=False"],
         )
         self.assertEqual(state["muonDefaults"], ["weight_decay=0"])
+        self.assertEqual(state["loraMuonDefaults"], [])
+        self.assertEqual(
+            state["loraMuonCustom"],
+            [
+                "weight_decay=0.01",
+                "momentum=0.85",
+                "ns_steps=6",
+                "inv_sqrt_steps=5",
+                "msign_eps=1e-12",
+                "inv_sqrt_eps=1e-4",
+                "inv_sqrt_gamma=1.01",
+                "gauge_rebalance=True",
+                "gauge_rebalance_alpha=0.5",
+                "gauge_rebalance_interval=4",
+                "gauge_power_steps=3",
+            ],
+        )
         self.assertEqual(state["bnbDefaults"], [])
         self.assertEqual(
             state["bnbCustom"],

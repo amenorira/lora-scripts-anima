@@ -279,6 +279,33 @@ window.trainingCoreMixin = {
     return defaults;
   },
 
+  _normalizeLegacyLoraMuonForm(source) {
+    const normalized = source && typeof source === 'object' && !Array.isArray(source)
+      ? { ...source }
+      : {};
+    if (normalized.optimizer_type !== 'vendor.lora_muon.LoRA_Muon') return normalized;
+    const aliases = {
+      lora_muon_momentum: 'momentum',
+      lora_muon_ns_steps: 'ns_steps',
+      lora_muon_inv_sqrt_steps: 'inv_sqrt_steps',
+      lora_muon_msign_eps: 'msign_eps',
+      lora_muon_inv_sqrt_eps: 'inv_sqrt_eps',
+      lora_muon_inv_sqrt_gamma: 'inv_sqrt_gamma',
+      lora_muon_gauge_rebalance: 'gauge_rebalance',
+      lora_muon_gauge_rebalance_alpha: 'gauge_rebalance_alpha',
+      lora_muon_gauge_rebalance_interval: 'gauge_rebalance_interval',
+      lora_muon_gauge_power_steps: 'gauge_power_steps',
+    };
+    Object.entries(aliases).forEach(([legacy, canonical]) => {
+      if (!Object.prototype.hasOwnProperty.call(normalized, canonical) &&
+          Object.prototype.hasOwnProperty.call(normalized, legacy)) {
+        normalized[canonical] = normalized[legacy];
+      }
+      delete normalized[legacy];
+    });
+    return normalized;
+  },
+
   _profileDraftStorageKey(route = this.currentRoute) {
     return route && route.startsWith('train-') ? `anima-form-profiles-${route}` : '';
   },
@@ -406,7 +433,9 @@ window.trainingCoreMixin = {
   },
 
   _profileFormFromDraft(trainType, defaults = this._buildFormDefaults(trainType), source = null) {
-    const draft = source || this._profileFormDrafts[trainType] || {};
+    const draft = this._normalizeLegacyLoraMuonForm(
+      source || this._profileFormDrafts[trainType] || {}
+    );
     const clean = { ...defaults };
     Object.keys(defaults).forEach(key => {
       if (Object.prototype.hasOwnProperty.call(draft, key)) clean[key] = draft[key];
@@ -1676,15 +1705,8 @@ window.trainingCoreMixin = {
     return null;
   },
 
-  _resolveFieldHintKey(field, values, trainType) {
-    if (!field) return '';
-    const hintBy = field.hintKeyBy;
-    if (hintBy && hintBy.key && hintBy.values) {
-      const selected = values ? values[hintBy.key] : undefined;
-      const dynamicKey = hintBy.values[String(selected)];
-      if (dynamicKey) return dynamicKey;
-    }
-    if (!field.hintKey) return '';
+  _resolveFieldBaseHintKey(field, trainType) {
+    if (!field || !field.hintKey) return '';
     const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
     if (suffix) {
       const specificKey = field.hintKey + suffix;
@@ -1694,8 +1716,31 @@ window.trainingCoreMixin = {
     return field.hintKey;
   },
 
+  _resolveFieldHintOverrideKey(field, values) {
+    if (!field) return '';
+    const hintBy = field.hintKeyBy;
+    if (!hintBy || !hintBy.key || !hintBy.values) return '';
+    const selected = values ? values[hintBy.key] : undefined;
+    return hintBy.values[String(selected)] || '';
+  },
+
+  _resolveFieldHintKey(field, values, trainType) {
+    return this._resolveFieldHintOverrideKey(field, values)
+      || this._resolveFieldBaseHintKey(field, trainType);
+  },
+
   _resolveFieldHintText(field, values, trainType) {
     const key = this._resolveFieldHintKey(field, values, trainType);
+    return key ? this.t(key) : '';
+  },
+
+  _resolveFieldBaseHintText(field, trainType) {
+    const key = this._resolveFieldBaseHintKey(field, trainType);
+    return key ? this.t(key) : '';
+  },
+
+  _resolveFieldHintOverrideText(field, values) {
+    const key = this._resolveFieldHintOverrideKey(field, values);
     return key ? this.t(key) : '';
   },
 
@@ -1705,6 +1750,14 @@ window.trainingCoreMixin = {
       this._fieldDefinition(fieldKey, trainType),
       this.form,
       trainType
+    );
+  },
+
+  fieldHintOverrideText(fieldKey) {
+    const trainType = this.form.model_train_type || 'anima-lora';
+    return this._resolveFieldHintOverrideText(
+      this._fieldDefinition(fieldKey, trainType),
+      this.form
     );
   },
 
@@ -1721,6 +1774,7 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
+    const baseHint = this._resolveFieldBaseHintText(field, trainType);
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
       : '';
@@ -1955,15 +2009,17 @@ window.trainingCoreMixin = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
+    const hintOverrideExpr = `fieldHintOverrideText('${this.escapeAttr(dataKey)}')`;
+    const hintHtml = field.hintKeyBy
+      ? `${baseHint ? `<div class="field-hint">${baseHint}</div>` : ''}<div class="field-hint field-hint-warn" x-show="${hintOverrideExpr}" x-text="${hintOverrideExpr}" x-cloak></div>`
+      : (hint ? `<div class="field-hint">${hint}</div>` : '');
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         ${fieldMenuHtml}
       </div>
       ${fullWidthRow}
-      ${field.hintKeyBy
-        ? `<div class="field-hint" x-text="fieldHintText('${this.escapeAttr(dataKey)}')"></div>`
-        : (hint ? `<div class="field-hint">${hint}</div>` : '')}
+      ${hintHtml}
       ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
@@ -3456,6 +3512,20 @@ window.trainingCoreMixin = {
   setField(key, value) {
     if (key === 'dataset_cache_dir' && this.form.model_train_type === 'krea2-lora') {
       value = this._deriveKrea2CacheDir(this.form.train_data_dir);
+    }
+    const loraMuonType = 'vendor.lora_muon.LoRA_Muon';
+    const loraMuonNetwork = 'networks.lora_anima';
+    if (key === 'optimizer_type' && value === loraMuonType &&
+        this.form.network_module !== loraMuonNetwork) {
+      this.form.network_module = loraMuonNetwork;
+      this._setFieldSource('network_module', 'auto');
+      this.toast(this.t('field.lora_muonNetworkAutoSelected'), 'warning');
+    }
+    if (key === 'network_module' && value !== loraMuonNetwork &&
+        this.form.optimizer_type === loraMuonType) {
+      this.form.optimizer_type = 'AdamW8bit';
+      this._setFieldSource('optimizer_type', 'auto');
+      this.toast(this.t('field.lora_muonOptimizerAutoDisabled'), 'warning');
     }
     const oldVal = this.form[key];
     if (oldVal === value) {

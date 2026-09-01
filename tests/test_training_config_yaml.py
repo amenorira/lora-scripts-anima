@@ -17,6 +17,7 @@ from backend.training.training_config import (
     load_training_config,
     write_training_config,
 )
+from backend.training.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
@@ -29,6 +30,11 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 "positive_prompts": "一名角色",
                 "sample_seed": 42,
                 "train_batch_size": 1,
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "network_dim": 16,
+                "network_alpha": 16,
+                "max_grad_norm": 0,
+                "inv_sqrt_steps": 5,
             },
             profile_id="anima-lora",
         )
@@ -46,6 +52,10 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(restored["positive_prompts"], "一名角色")
         self.assertEqual(loaded["parameters"]["training"]["train_batch_size"], 1)
         self.assertEqual(restored["train_batch_size"], 1)
+        self.assertEqual(restored["network_dim"], 16)
+        self.assertEqual(restored["network_alpha"], 16)
+        self.assertEqual(restored["max_grad_norm"], 0)
+        self.assertEqual(restored["inv_sqrt_steps"], 5)
         self.assertNotIn("runtime", loaded)
 
     def test_conditional_fields_follow_ui_hierarchy(self):
@@ -126,6 +136,51 @@ class TrainingConfigYamlTests(unittest.TestCase):
 
         self.assertTrue(restored["enable_preview"])
         self.assertEqual(restored["positive_prompts"], "legacy prompt")
+
+    def test_schema_v1_lora_muon_fields_migrate_to_optimizer_argument_names(self):
+        document = {
+            "kind": "training",
+            "schema_version": 1,
+            "profile": {"id": "anima-lora"},
+            "form": {
+                "model_train_type": "anima-lora",
+                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
+                "lora_muon_momentum": 0.85,
+                "lora_muon_ns_steps": 6,
+            },
+        }
+
+        restored = extract_training_form(document)
+
+        self.assertEqual(restored["momentum"], 0.85)
+        self.assertEqual(restored["ns_steps"], 6)
+        self.assertNotIn("lora_muon_momentum", restored)
+        self.assertNotIn("lora_muon_ns_steps", restored)
+
+    def test_schema_v2_lora_muon_fields_migrate_before_field_filtering(self):
+        document = {
+            "kind": "training",
+            "schema_version": 2,
+            "profile": {"id": "anima-lora"},
+            "parameters": {
+                "optimizer": {
+                    "optimizer_type": {
+                        "selected": LORA_MUON_OPTIMIZER_TYPE,
+                        "options": {
+                            "lora_muon_momentum": 0.85,
+                            "lora_muon_ns_steps": 6,
+                        },
+                    }
+                }
+            },
+        }
+
+        restored = extract_training_form(document)
+
+        self.assertEqual(restored["momentum"], 0.85)
+        self.assertEqual(restored["ns_steps"], 6)
+        self.assertNotIn("lora_muon_momentum", restored)
+        self.assertNotIn("lora_muon_ns_steps", restored)
 
     def test_history_prefers_training_yaml_form_state(self):
         with tempfile.TemporaryDirectory() as temp:
