@@ -20,6 +20,7 @@
 | 优化器状态显存不足 | AdamW8bit；仍不足时用 PagedAdamW8bit | Paged 版本改变内存调度方式；发生 CPU/GPU 数据交换时可能降低训练速度 |
 | 想减少学习率调参 | Prodigy | 项目要求基础学习率为 `1.0` |
 | 想比较矩阵正交化更新 | Muon | 先保持 AdamW 基线学习率，只更换优化器 |
+| 想测试针对 LoRA 因子设计的矩阵优化 | LoRA-Muon | 与 AdamW8bit 固定条件对照；学习率需要单独校准 |
 
 少图人物训练可以优先比较 **AdamW8bit、CAME、StableAdamW**。对照时一次只改一个主要变量，否则无法判断差异来源。
 
@@ -43,6 +44,7 @@
 | AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 支持内部 warmup，但本项目默认 `warmup_steps=0`；短训练不建议作为第一选择 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1、禁用 mixed_precision=fp16、仅支持单卡，不支持 LoRA+ |
 | Muon | 对二维 LoRA 矩阵执行动量正交化 | 仅 Anima LoRA 可用；当前使用 PyTorch 原生实现；建议与 AdamW8bit 做同条件对照 |
+| LoRA-Muon | 联合处理 LoRA 的两个低秩因子 | 仅 Anima LoRA 可用；学习率尺度与 AdamW 不同，需要单独校准 |
 | Adan | 想在相近步数内更快建立特征时对照 AdamW | 收敛更激进，学习率应低于 AdamW 基线；使用三个 beta |
 | AdEMAMix | 长训练或梯度噪声明显时用作对照 | 短训练中慢速状态的收益不确定；alpha 与缓升步数需要和训练总长匹配 |
 | AdEMAMix8bit | 使用 AdEMAMix 且优化器状态显存紧张时 | 与全精度版本的差异主要在状态量化 |
@@ -69,12 +71,12 @@
 
 Anima 只训练 DiT 主干时，可从下面的工程起点开始。官方 Anima 依据只覆盖 rank 32 与约 `2e-5`；表中其他优化器数值和 `alpha=32` 属于迁移或项目选择。不同优化器的学习率不在同一数值尺度上：AdamW 依靠逐元素的一阶/二阶统计缩放，而 LoRA-Muon 将学习率直接作用于白化后的矩阵符号更新，因此相同的 `2e-5`、`1e-4` 或 `1e-3` 并不代表相同的实际参数步长，不能直接横向照搬。
 
-| 优化器 | Anima 自动起点 | 依据与含义 |
+| 优化器 | Anima 工程起点 | 依据与含义 |
 | --- | ---: | --- |
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
 | StableAdamW | `2e-5` | 先与 AdamW 同尺度，单独比较稳定化更新 |
 | Muon (`match_rms_adamw`) | `2e-5` | 按矩阵尺寸匹配 AdamW 更新 RMS；尚不是 Anima 实测最优值 |
-| LoRA-Muon | `0.02` | 学习率尺度不同；论文的 `0.1` 只在小型 Transformer 上测试，本项目将 `0.02` 作为保守自动起点 |
+| LoRA-Muon | `0.02` | 学习率尺度不同；论文的 `0.1` 只在小型 Transformer 上测试，本项目将 `0.02` 作为保守的工程起点 |
 | CAME | `1.5e-5` | CAME 官方建议用 AdamW 的 `0.5`～`0.9` 倍；这是迁移起点，不是 Anima 实测最优值 |
 | Adan | `1e-5` | 实际步长大于同学习率的 AdamW，按基线的 `0.5` 倍起步 |
 | AdEMAMix / AdEMAMix8bit | `2e-5` | 论文沿用 Adam 量级的学习率；8-bit 不改变学习率语义 |
@@ -93,12 +95,12 @@ SDXL 保留独立的通用起点：AdamW/StableAdamW 为 `1e-4`、CAME 为 `1e-4
 
 人物过早出现构图僵化、串色或提示词响应下降时，可以降低学习率或减少训练步数。学习不足时，先确认触发词和有效训练步数，再小幅提高学习率。Lion 的合理学习率范围与 AdamW 不同，需要单独测试。
 
-LoRA-Muon 不建议只试一个学习率。对 Anima，建议固定数据、seed、`network_dim/network_alpha`、scheduler 和总步数，先做一轮由低到高的扫参：`2e-5`、`5e-5`、`1e-4`、`2e-4`、`5e-4`、`1e-3`、`2e-3`、`5e-3`、`1e-2`、`2e-2`。如果相邻结果接近，再围绕较好的区间加密测试；`5e-2` 和 `0.1` 可作为更激进的实验值或论文尺度复现实验，不应当作默认值。短跑只用于排除明显过小或过大的范围，最终应结合中途预览、loss 曲线和过拟合情况判断。
+LoRA-Muon 不建议只试一个学习率。对 Anima，建议固定数据、seed、`network_dim/network_alpha`、scheduler 和总步数，先做一轮由低到高的扫参：`2e-5`、`5e-5`、`1e-4`、`2e-4`、`5e-4`、`1e-3`、`2e-3`、`5e-3`、`1e-2`、`2e-2`。如果相邻结果接近，再围绕较好的区间加密测试；`5e-2` 和 `0.1` 可作为更激进的实验值或论文尺度复现实验，不应当作默认值。短训练只用于排除明显过小或过大的范围，最终应结合中途预览、loss 曲线和过拟合情况判断。
 
 <!-- doc-anchor: scheduler-warmup -->
 ### 学习率调度器与预热（scheduler 和 warmup）
 
-AdamW、AdamW8bit、StableAdamW、Lion、CAME、Muon 都使用外部学习率调度器。Anima 新配置默认用 `constant`，以匹配上游 Anima 示例，并减少短训练中的额外变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启，只有 cycles 大于 1 才会周期重启。已有的手动配置可以继续使用；想测试预热，可改用 `constant_with_warmup`，并把预热步数控制在总优化器步数的 `5%` 以内。
+AdamW、AdamW8bit、StableAdamW、Lion、CAME、Muon 和 LoRA-Muon 都使用外部学习率调度器。Anima 新配置默认用 `constant`，以匹配上游 Anima 示例，并减少短训练中的额外变量。`cosine_with_restarts` 在默认 `num_cycles=1` 时不会在训练中途重启，只有 cycles 大于 1 才会周期重启。已有的手动配置可以继续使用；想测试预热，可改用 `constant_with_warmup`，并把预热步数控制在总优化器步数的 `5%` 以内。
 
 AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，界面会把外部调度器固定为 constant。AdamWScheduleFree 的内部预热与 `lr_warmup_steps` 是两回事；ProdigyPlusScheduleFree 没有暴露对应的可调预热参数。
 
@@ -156,19 +158,32 @@ Muon 每个参数只维护一组动量状态，少于全精度 AdamW 的两组�
 <!-- doc-anchor: lora-muon-options -->
 ### LoRA-Muon 参数
 
-LoRA-Muon 是面向一对 LoRA 因子设计的独立优化器，不是原生 Muon 的参数预设。它会联合处理 `lora_down` 与 `lora_up`，利用另一侧因子的 Gram 矩阵对白化后的动量做矩阵符号更新。界面中的这些字段最终都通过 `optimizer_args` 传递，例如 `momentum=0.85`、`ns_steps=6`，不会作为顶层 TOML 参数。
+LoRA-Muon 是专门针对 LoRA 因子设计的独立优化器，不是 Muon 的一个配置选项。Muon 通常把二维参数矩阵作为整体优化；在 LoRA 训练中，`lora_down` 和 `lora_up` 是共同构成更新的两个低秩因子，原生 Muon 会分别处理它们。
 
-- **学习率**（`learning_rate`，通用/论文起点 `0.1`；Anima 自动起点 `0.02`）：用于设定每一步在 LoRA **合成权重**上沿谱方向前进的更新预算；论文把它写成信赖域半径 `η`。它不是给 `lora_up`/`lora_down` 的每个参数或因子矩阵设置改变量上限：算法把合成权重的一阶更新预算约一半分给两条因子路径，再通过 Gram 白化和矩阵符号计算出实际因子更新。因此，因子参数的实际变化不会直接等于 `η`。它和 AdamW、AdamW8bit 等优化器的学习率不是同一尺度，数值不能直接比较或照搬。由于更新是矩阵级白化/矩阵符号步骤，`2e-5` 到 `1e-4` 可能只产生很小的 LoRA 改动，而 `1e-3` 到 `2e-2` 才逐渐进入更明显的更新区间；这不是固定规律，仍需按数据和 rank 验证。建议按上面的多点扫参，而不是直接把 AdamW 的默认值复制过来。论文的 `0.1` 只在小型 Transformer 上测试；长训仍应单独校准。
-- **动量系数**（`momentum`，默认 `0.9`）：一阶梯度 EMA。数值越大越平滑，但对新梯度的响应越慢。
-- **矩阵符号迭代次数**（`ns_steps`，默认 `8`）：Polar Express / Newton-Schulz 近似次数。减少可降低计算量，但会增加近似误差。
-- **Gram 逆平方根迭代次数**（`inv_sqrt_steps`，构造器与论文默认 `7`）：控制 LoRA 因子白化精度。选择 LoRA-Muon 后，Anima 界面对未手动修改的字段推荐 `5`，以小幅近似误差换取更低的优化器计算量；需要严格贴近论文时可改回 `7`。
-- **数值保护项**（`msign_eps=1e-20`、`inv_sqrt_eps=1e-5`、`inv_sqrt_gamma=1.001`）：分别控制矩阵符号归一化保护、Gram 正则和逆平方根阻尼。没有可复现的数值问题时保持默认。
-- **因子重平衡**（`gauge_rebalance`，默认关闭）：在保持 LoRA 合成权重不变的前提下平衡 down/up 因子尺度，并同步搬运动量状态。
+LoRA-Muon 会把这两个因子作为一对参数联合处理，并利用另一侧因子的 Gram 矩阵调整当前因子的更新，再进行矩阵符号计算。这样计算更新时就会利用两个因子之间的结构关系，但不代表它在所有数据集或训练设置下都优于其他优化器。
+
+| | Muon | LoRA-Muon |
+| --- | --- | --- |
+| 处理对象 | 二维参数矩阵 | LoRA 的两个低秩因子 |
+| `lora_down` / `lora_up` | 分别处理 | 联合考虑 |
+| 主要矩阵操作 | 动量与正交化 | 因子耦合、Gram 白化与矩阵符号 |
+| 学习率 | 可使用 `match_rms_adamw` 对齐 AdamW 更新 RMS | 与 AdamW 不同，需要单独校准 |
+
+对大多数用户，先调整 `learning_rate` 即可；`momentum`、`ns_steps` 和 `inv_sqrt_steps` 建议保持默认值。`gauge_rebalance` 只在需要测试因子重平衡时启用。界面中的这些字段最终都通过 `optimizer_args` 传递，不会作为顶层 TOML 参数。
+
+- **学习率**（`learning_rate`，论文设置 `0.1`；Anima 工程起点 `0.02`）：控制每一步 LoRA 更新走多远，不是 `lora_up` 或 `lora_down` 单个参数的变化上限。调大：更新更猛，学得快，也更容易过拟合或训练不稳定；调小：更稳，但训练更慢。Anima 从 `0.02` 附近开始，按上面的多点扫参调整；论文的 `0.1` 只在小型 Transformer 上验证过，不宜当作 Anima 默认值。
+- **为什么 AdamW 的数值不能直接用**：AdamW 把学习率按元素乘到每个参数上，含义是"每个参数走多远"；LoRA-Muon 先得到整体更新的方向，再沿这个方向步进，含义是"整体走多远"。两者单位不同，所以 `2e-5`、`1e-4` 在 LoRA-Muon 上通常几乎看不出更新，`1e-3` 到 `2e-2` 才是明显的更新区间——这不是固定规律，仍要按数据和 rank 验证。
+- **原理**（可选阅读）：先用另一侧因子的 Gram 逆平方根把动量各方向拉到同一尺度（白化），再取矩阵符号得到更新方向，最后按 `η` 缩放。论文把 `η` 称为信赖域半径，即合成权重沿谱方向（spectral steepest descent）前进的更新预算；预算分成两半，各走一条因子路径，所以实际因子变化量不会直接等于 `η`。
+- **动量系数**（`momentum`，默认 `0.9`）：一阶梯度 EMA，让更新参考之前几步的梯度方向。数值越大，更新越平滑，但对新梯度的响应越慢。
+- **矩阵符号计算次数**（`ns_steps`，默认 `8`）：使用 Polar Express / Newton-Schulz 近似计算矩阵符号方向。次数越多，近似通常越充分，但计算量也越高。
+- **Gram 逆平方根迭代次数**（`inv_sqrt_steps`，代码与论文默认都是 `7`）：控制因子白化计算的精度。这里的白化指按 Gram 矩阵调整因子不同方向的尺度。选择 LoRA-Muon 后，Anima 界面对未手动修改的字段推荐 `5`，以轻微降低近似精度为代价换取更低的优化器计算量；需要严格贴近论文时可改回 `7`。
+- **数值保护项**（`msign_eps=1e-20`、`inv_sqrt_eps=1e-5`、`inv_sqrt_gamma=1.001`）：分别控制矩阵符号归一化保护、Gram 正则化和逆平方根阻尼。没有可复现的数值问题时保持默认。
+- **因子重平衡**（`gauge_rebalance`，默认关闭）：同一个 LoRA 更新可以由不同大小的 down/up 组合表示，训练中两边尺度可能越来越失衡。开启后，优化器会定期把两边调回平衡，同时保持 LoRA 当前产生的效果不变，并把动量状态按相反比例搬移。
 - **重平衡参数**（`gauge_rebalance_alpha=1`、`gauge_rebalance_interval=1`、`gauge_power_steps=2`）：分别控制重平衡强度、执行间隔和谱范数估计次数；仅在开启 `gauge_rebalance` 后显示并生效。
 - **权重衰减**（`weight_decay`，默认 `0`）：使用分拆式解耦衰减；要求 `learning_rate * weight_decay < 1`。
 - **全局梯度裁剪**（`max_grad_norm`，Anima 界面起点 `0`）：这是训练器在 `optimizer.step` 前执行的外部全局 L2 裁剪，不是 LoRA-Muon 构造参数，论文算法也没有此步骤。`0` 表示关闭；若训练中确有异常梯度尖峰，仍可手动设为正数。
 
-`network_dim` 与 `network_alpha` **不要求相等**。`network_dim` 决定 rank，`network_alpha / network_dim` 决定前向 LoRA 分支缩放；`alpha=dim` 只表示前向缩放为 `1`。优化器真正要求的是同一模块的 `lora_down` rank 与 `lora_up` rank 维度相匹配。选择 LoRA-Muon 时，Anima 界面对未手动修改的字段推荐 `dim=16, alpha=16`：与 `32/32` 相比，LoRA 参数和一阶动量状态约减半，而 Gram 相关计算随 rank 的平方增长，因此 rank 16 更适合作为速度/资源平衡起点。这不是所有 Anima LoRA 的全局默认，也不会覆盖手动、导入或已保存的显式值。
+`network_dim` 与 `network_alpha` **不要求相等**。`network_dim` 决定 rank，`network_alpha / network_dim` 决定前向 LoRA 分支缩放；`alpha=dim` 只表示前向缩放为 `1`。优化器真正要求的是同一模块的 `lora_down` rank 与 `lora_up` rank 维度相匹配。选择 LoRA-Muon 时，Anima 界面对未手动修改的字段推荐 `dim=16, alpha=16`：与 `32/32` 相比，LoRA 参数和一阶动量状态约减半，而 Gram 相关计算随 rank 的平方增长，因此 rank 16 更适合作为速度/资源平衡起点。这不是所有 Anima LoRA 的全局默认，也不会覆盖手动、导入或已保存的值。
 
 实现支持 Linear LoRA 和 Anima 使用的 Conv LoRA 形状，在 FP16/BF16 参数上用 FP32 完成矩阵计算，并按兼容的 device、dtype 与 rank 批量计算 Gram 逆平方根。首次实验建议从界面推荐值开始，只单独比较学习率；`gauge_rebalance` 默认关闭，需要时再独立测试。
 
@@ -255,7 +270,7 @@ AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 会被�
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-大多数优化器都可以搭配 LoRA+，包括 Muon 和 Automagic3；例外是 Prodigy、ProdigyPlus、EmoSens 和 LoRA-RITE（LoRA+ 的分组学习率会破坏 LoRA-RITE 的 A/B 配对），AdaFactor 则需要先关闭 relative step。
+大多数优化器都可以搭配 LoRA+，包括 Muon 和 Automagic3；例外是 Prodigy、ProdigyPlus、EmoSens、LoRA-RITE 和 LoRA-Muon（LoRA+ 的分组学习率与 LoRA-RITE 的 A/B 配对、LoRA-Muon 的联合更新路径均不兼容），AdaFactor 则需要先关闭 relative step。
 
 切换优化器后，应重新评估 LoRA+ 倍率。倍率改变部分 LoRA 参数的有效学习率，本身不提供独立的画质收益。
 
@@ -310,6 +325,7 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高检查点（checkpoint
 | Anima 通用基准 | AdamW8bit，LR 用上方主表，`weight_decay=0.01` | constant，`max_grad_norm=1`，项目默认 rank/alpha，只训练 DiT |
 | Anima 混合来源对照 | CAME，LR 用上方主表；其余保持默认 | constant，`max_grad_norm=1`；结果需用固定条件验证 |
 | Anima 梯度尖峰对照 | StableAdamW，LR 用上方主表，保留项目默认稳定性参数 | Kahan 开启，constant，`max_grad_norm=1` |
+| Anima LoRA-Muon 实验 | LoRA-Muon，LR 用上方主表，其他参数保持默认 | constant，`max_grad_norm=0`，先使用界面推荐的 rank/alpha；只单独比较学习率 |
 | Anima Lion 实验 | Lion / Lion8bit，LR 用上方主表 | constant；这不是完整的官方 Lion 配方 |
 | 温和的 8-bit 裁剪 | AdamW8bit，沿用基准参数，`percentile_clipping=99` | 保持其他参数不变 |
 
@@ -335,6 +351,8 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高检查点（checkpoint
 3. Anima 配方对照使用上方学习率主表中对应的工程起点。这比较的是完整起始配方；想单独区分算法本身的差异，需要另做相同 LR 的实验。
 4. 比较相同步数的训练检查点，同时记录梯度范数、峰值显存和训练时间。
 5. 评估不止看损失值，还要看人物还原、服装控制、背景或姿势绑定以及提示词响应。
+
+Muon 和 LoRA-Muon 应分别使用各自的工程起点。若要比较两者的更新机制，再另做相同 LR 的对照，不要把 `0.02` 或 `2e-5` 视为通用换算值。
 
 每组对照从同一底模重新开始。不要加载另一优化器保存的训练状态后再切换优化器，动量和状态结构并不等价。
 
@@ -387,6 +405,8 @@ Prodigy、ProdigyPlus 和 EmoSens 不能可靠保留不同参数组的学习率�
 
 **需要实测的经验判断：** CAME 可能更适合来源混合的数据，StableAdamW 可能更能容忍尖峰批次。这些属于社区与工程经验，应通过固定条件的 A/B 测试确认是否适用于当前数据集。
 
+**LoRA-Muon 依据：** 本节参数语义、默认值与论文出处按本项目接入的 vendor 实现及其来源说明核对（vendor/lora_muon/SOURCE.md）。
+
 参考资料：
 
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
@@ -404,5 +424,6 @@ Prodigy、ProdigyPlus 和 EmoSens 不能可靠保留不同参数组的学习率�
 - [The AdEMAMix Optimizer: Better, Faster, Older](https://arxiv.org/abs/2409.03137)
 - [LoRA Done RITE: Robust Invariant Transformation Equilibration for LoRA Optimization](https://arxiv.org/abs/2410.20625)
 - [LoRA-RITE 官方实现（固定提交）](https://github.com/gkevinyen5418/LoRA-RITE/tree/d4186b6fedb39300d23c00ce0334db09719da9fc)
+- [LoRA-Muon: Spectral Steepest Descent on the Low-Rank Manifold](https://arxiv.org/abs/2606.12921)
 - [pytorch-optimizer 实现（固定提交）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
 - [bitsandbytes 优化器实现（固定提交）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
