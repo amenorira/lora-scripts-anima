@@ -559,7 +559,7 @@
 		"lora_muon_inv_sqrt_epsHint": "Small safety term for the whitening computation, keeping tiny values from destabilizing it. Default: 1e-5; usually no need to change.",
 		"lora_muon_inv_sqrt_gamma": "Inverse-root damping gamma",
 		"lora_muon_inv_sqrt_gammaHint": "Mild damping for the inverse-root iteration; it mainly affects numerical stability. Default: 1.001; usually no need to change.",
-		"lora_muon_gauge_rebalance": "Factor rebalance (gauge rebalance)",
+		"lora_muon_gauge_rebalance": "Factor rebalance",
 		"lora_muon_gauge_rebalanceHint": "The same LoRA update can be written with different down/up scale pairs, and the two scales can drift apart during training. When enabled, the optimizer periodically rebalances them without changing the update, and rescales the momentum state in the opposite direction. Off by default.",
 		"lora_muon_gauge_rebalance_alpha": "Rebalance damping exponent",
 		"lora_muon_gauge_rebalance_alphaHint": "Controls how aggressively each rebalance changes the factor scales. Range (0, 1]; lower is more conservative. Default: 1.",
