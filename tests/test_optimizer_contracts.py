@@ -309,9 +309,12 @@ console.log(JSON.stringify({
         self.assertEqual(fields["momentum"]["default"], 0.9)
         self.assertEqual(fields["ns_steps"]["default"], 8)
         self.assertEqual(fields["inv_sqrt_steps"]["default"], 7)
+        self.assertEqual(fields["network_dim"].get("autoValue", []), [])
+        self.assertEqual(fields["network_alpha"].get("autoValue", []), [])
+        self.assertTrue(fields["adafactor_scale_parameter"]["autoValue"][0]["setIfDefault"])
+        self.assertTrue(fields["adafactor_warmup_init"]["autoValue"][0]["setIfDefault"])
+        self.assertTrue(fields["split_attn"]["autoValue"][0]["setIfDefault"])
         for key, recommended in (
-            ("network_dim", 16),
-            ("network_alpha", 16),
             ("max_grad_norm", 0),
             ("inv_sqrt_steps", 5),
         ):
@@ -1621,14 +1624,20 @@ async function imported(data) {
                 for key in ("networkDim", "networkAlpha", "maxGradNorm", "invSqrtSteps")
             },
             {
-                "networkDim": 16,
-                "networkAlpha": 16,
+                "networkDim": 32,
+                "networkAlpha": 32,
                 "maxGradNorm": 0,
                 "invSqrtSteps": 5,
             },
         )
         self.assertEqual(
-            set(state["loraMuonLegacy"]["sources"].values()), {"auto"}
+            state["loraMuonLegacy"]["sources"],
+            {
+                "networkDim": "default",
+                "networkAlpha": "default",
+                "maxGradNorm": "auto",
+                "invSqrtSteps": "auto",
+            },
         )
         self.assertEqual(
             {
@@ -1648,7 +1657,9 @@ async function imported(data) {
 
     def test_lora_muon_recommendations_preserve_explicit_field_sources(self):
         fields = fields_by_key()
-        keys = ("network_dim", "network_alpha", "max_grad_norm", "inv_sqrt_steps")
+        self.assertEqual(fields["network_dim"].get("autoValue", []), [])
+        self.assertEqual(fields["network_alpha"].get("autoValue", []), [])
+        keys = ("max_grad_norm", "inv_sqrt_steps")
         selected_fields = {key: fields[key] for key in keys}
         rules = [
             {"target": key, **rule}
@@ -1666,9 +1677,9 @@ require('./frontend/js/training-core.js');
 const core = window.trainingCoreMixin;
 const fields = __FIELDS__;
 const rules = __RULES__;
-const keys = ['network_dim', 'network_alpha', 'max_grad_norm', 'inv_sqrt_steps'];
-const defaults = { network_dim: 32, network_alpha: 32, max_grad_norm: 1, inv_sqrt_steps: 7 };
-const explicit = { network_dim: 24, network_alpha: 12, max_grad_norm: 0.5, inv_sqrt_steps: 6 };
+const keys = ['max_grad_norm', 'inv_sqrt_steps'];
+const defaults = { max_grad_norm: 1, inv_sqrt_steps: 7 };
+const explicit = { max_grad_norm: 0.5, inv_sqrt_steps: 6 };
 
 function apply(source, values) {
   const ctx = Object.assign({}, core, {
@@ -1711,14 +1722,10 @@ console.log(JSON.stringify({
         )
         state = json.loads(result.stdout)
         recommended = {
-            "network_dim": 16,
-            "network_alpha": 16,
             "max_grad_norm": 0,
             "inv_sqrt_steps": 5,
         }
         explicit = {
-            "network_dim": 24,
-            "network_alpha": 12,
             "max_grad_norm": 0.5,
             "inv_sqrt_steps": 6,
         }
