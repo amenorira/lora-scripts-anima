@@ -17,6 +17,7 @@
 - **必须使用 venv**：项目运行在 `venv/` 虚拟环境。任何 Python 命令（版本检查、测试、pip 等）都必须通过 `venv\Scripts\python.exe`（Windows）或 `venv/bin/python`（Linux）执行，**禁止使用系统 Python**。系统 Python 可能版本不同或缺少关键依赖（如 CUDA torch）。
 - **PyTorch 环境**：训练环境可能安装了特定 CUDA 版本的 PyTorch（当前默认如 `2.10.0+cu130`），版本号和依赖关系以 venv 中实际安装为准。
 - **提交信息使用中文**：所有 git commit message 必须用中文撰写（可使用 Conventional Commits 前缀，如 `feat: 新增 xxx`、`fix: 修复 xxx`），禁止纯英文提交信息。
+- **提交正文使用真实换行**：多行 commit body 必须包含实际换行和中文项目符号，禁止把 `\\n` 作为字面量写入提交信息；优先使用提交模板文件或 shell 的多行字符串传入正文。
 - **发布流程（每次发版必须走完）**：
   1. 更新 `VERSION`、双语 `CHANGELOG.md` / `CHANGELOG-en.md`，提交信息为 `chore: 发布 vX.Y.Z 版本`；
   2. 打标签 `vX.Y.Z`；

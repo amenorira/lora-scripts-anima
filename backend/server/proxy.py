@@ -11,7 +11,9 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Request
 from starlette.background import BackgroundTask
+from starlette.requests import ClientDisconnect
 from starlette.responses import PlainTextResponse
+from starlette.responses import Response
 from starlette.responses import StreamingResponse
 
 router = APIRouter()
@@ -63,6 +65,10 @@ async def _forward(request: Request, preserve_full_path: bool) -> StreamingRespo
     )
     try:
         upstream_response = await client.send(upstream_request, stream=True)
+    except ClientDisconnect:
+        # 浏览器刷新、切页或 SSH 转发中断时，请求体可能在转发期间被取消。
+        # 这是正常的客户端取消，不应打印成未处理的 ASGI 异常。
+        return Response(status_code=499)
     except httpx.ConnectError:
         return PlainTextResponse(
             "TensorBoard 尚未就绪：首次启动需要一点时间，请稍后刷新。\n"
