@@ -27,7 +27,6 @@ window.realtimeMixin = {
   _realtimeVisibilityHandler: null,
   _realtimeInboundChain: null,
   _realtimeSnapshotPromise: null,
-  _startReconcilePending: false,
   _realtimeSnapshotAbort: null,
   _realtimeCursorsStorageKey: 'anima-realtime-cursors',
   _realtimeInstanceStorageKey: 'anima-realtime-instance-id',
@@ -44,9 +43,15 @@ window.realtimeMixin = {
         if (!document.hidden && (!this.realtimeSocket || this.realtimeSocket.readyState > WebSocket.OPEN)) {
           this._connectRealtimeNow();
         }
+        // 回到前台立即对账一次（休眠/后台节流期间状态可能已陈旧）。
+        if (!document.hidden && typeof this._pollTrainingState === 'function') {
+          void this._pollTrainingState();
+        }
       };
       document.addEventListener('visibilitychange', this._realtimeVisibilityHandler);
     }
+    // 训练生命周期状态走串行 HTTP 轮询（单一写入方）；WS 只承载流式增量。
+    if (typeof this.startTrainingStatePoll === 'function') this.startTrainingStatePoll();
     this._connectRealtimeNow();
   },
 
@@ -353,21 +358,6 @@ window.realtimeMixin = {
     return this._realtimeSnapshotPromise;
   },
 
-  async refreshRealtimeAfterTaskStart() {
-    // Do not let an older in-flight bootstrap snapshot satisfy this refresh:
-    // wait for it, then fetch the post-create task state explicitly.
-    // preserveSubscribedCursors: that waited snapshot may predate the new
-    // task, so it must not advance subscribed-topic cursors — otherwise the
-    // queued server.tasks frame carrying the new task gets dropped as
-    // "already seen" and the UI stays stuck on a stale idle/terminated state.
-    try {
-      if (this._realtimeSnapshotPromise) await this._realtimeSnapshotPromise;
-      return await this._refreshRealtimeSnapshot(null, null, { monitorDetail: false, preserveSubscribedCursors: true });
-    } finally {
-      this._startReconcilePending = false;
-    }
-  },
-
   _applyRealtimeSnapshotCursors(snapshotCursors, options) {
     if (!this._realtimeCursors) this._realtimeCursors = {};
     const preserveSubscribed = !!(options && options.preserveSubscribedCursors);
@@ -387,31 +377,17 @@ window.realtimeMixin = {
   },
 
   _applyRealtimeSnapshot(snapshot, options) {
-    // A snapshot fetched before the new task was registered can land after
-    // _acceptTrainingStart already painted the shared state (the
-    // terminate → start race). Until the post-start refresh settles, a
-    // snapshot showing no active task must not clobber that optimistic
-    // state — the follow-up snapshot or a queued server.tasks event
-    // carries the authoritative verdict.
-    const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
-    const snapshotHasActive = managed.some(task => task && ['CREATED', 'RUNNING'].includes(task.status));
-    if (this._startReconcilePending && !snapshotHasActive) return;
-    const server = snapshot.server || {};
-    this.trainingActive = !!server.training_active;
+    // 训练生命周期状态不在这里拼装：轮询（_applyManagedTrainingState）是唯一
+    // 写入方。这里只回填各领域快照（监控详情/打标/环境）。
     if ((!options || options.applyMonitor !== false) && typeof this.applyRealtimeMonitorSnapshot === 'function') {
       this.applyRealtimeMonitorSnapshot(snapshot);
     }
-    if (typeof this.applyRealtimeTrainingSnapshot === 'function') this.applyRealtimeTrainingSnapshot(snapshot);
     if (typeof this.applyRealtimeTaggerSnapshot === 'function') this.applyRealtimeTaggerSnapshot(snapshot);
     if (typeof this.applyRealtimeEnvironmentSnapshot === 'function') this.applyRealtimeEnvironmentSnapshot(snapshot);
   },
 
   _dispatchRealtimeEvent(event) {
-    if (event.type === 'server.tasks' && event.payload) {
-      this.trainingActive = !!event.payload.training_active;
-    }
     if (typeof this.handleRealtimeMonitorEvent === 'function') this.handleRealtimeMonitorEvent(event);
-    if (typeof this.handleRealtimeTrainingEvent === 'function') this.handleRealtimeTrainingEvent(event);
     if (typeof this.handleRealtimeTaggerEvent === 'function') this.handleRealtimeTaggerEvent(event);
     if (typeof this.handleRealtimeEnvironmentEvent === 'function') this.handleRealtimeEnvironmentEvent(event);
   },
@@ -465,7 +441,7 @@ window.realtimeMixin = {
       if (!response.ok) throw new Error('health failed');
       const data = await response.json();
       this._realtimeHealthFailures = 0;
-      this.trainingActive = !!data.training_active;
+      // 探针只负责连通性指示；训练状态归轮询写入方，这里不得改写。
       // A healthy HTTP response does not make an absent realtime session green.
       if (this._realtimeSocketClosed) this._setRealtimeState('degraded');
     } catch (_) {

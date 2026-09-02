@@ -38,11 +38,12 @@ async def _snapshot_payload(
     monitor_detail: bool = False,
     preview_limit: int = 36,
 ) -> dict[str, Any]:
-    managed_tasks = tm.dump()
-    # Capture cursors *before* reading disk-backed monitor state. Events
-    # emitted while that snapshot is assembled will then have a later seq and
-    # are replayed after subscribe instead of being accidentally skipped.
+    # Capture cursors *before* reading any state. Events emitted after this
+    # point have a later seq and are replayed after subscribe instead of being
+    # accidentally skipped, and the task list read below is then guaranteed to
+    # include every change up to the captured cursors.
     cursors = await realtime_hub.cursors()
+    managed_tasks = tm.dump()
     gpu, system, tracked_tasks, monitor = await asyncio.gather(
         asyncio.to_thread(gpu_info, True),
         asyncio.to_thread(system_info, True),

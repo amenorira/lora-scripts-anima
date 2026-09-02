@@ -12,6 +12,11 @@
 
 window.monitorRenderMixin = {
 
+  // CREATED/RUNNING 都算"活跃"：等待启动的任务也要能终止，且不显示待命文案。
+  _isActiveState(stateCode) {
+    return stateCode === 'RUNNING' || stateCode === 'CREATED';
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  主入口：renderDashboard
   // ═══════════════════════════════════════════════════════════
@@ -83,6 +88,7 @@ window.monitorRenderMixin = {
     const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
+    const isActive = this._isActiveState(stateCode);
     const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
     const stepText = (d.step != null ? d.step : 0) + ' / ' + (d.total_steps != null ? d.total_steps : 0);
     const connection = this._monitorConnectionMeta(t, stateCode);
@@ -98,15 +104,15 @@ window.monitorRenderMixin = {
     html += '</div>';
     html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error')) + '</span>';
     html += '<span class="m-sb-error" data-role="restart"' + (this.realtimeTaskStateUnknown ? '' : ' hidden') + '>' + this.esc(t('taskStateUnknown')) + '</span>';
-    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isTraining ? ' hidden' : '') + '>' + this.esc(t('readyToTrain')) + '</div>';
-    html += '<div class="m-sb-right" data-role="actions"' + (isTraining ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining')) + '</button></div>';
+    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isActive ? ' hidden' : '') + '>' + this.esc(t('readyToTrain')) + '</div>';
+    html += '<div class="m-sb-right" data-role="actions"' + (isActive ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining')) + '</button></div>';
     html += '</div>';
     return html;
   },
 
   _monitorConnectionMeta(t, stateCode) {
     if (this.realtimeState === 'online') {
-      return stateCode === 'RUNNING'
+      return this._isActiveState(stateCode)
         ? { label: t('liveConnected'), tone: 'ok' }
         : { label: t('standby'), tone: 'muted' };
     }
@@ -242,6 +248,7 @@ window.monitorRenderMixin = {
     const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
     const state = stateLabels[stateCode] || stateCode;
     const isTraining = stateCode === 'RUNNING';
+    const isActive = this._isActiveState(stateCode);
     bar.dataset.state = stateCode.toLowerCase();
     const stateEl = bar.querySelector('[data-field="state"]');
     if (stateEl) stateEl.textContent = state;
@@ -265,9 +272,9 @@ window.monitorRenderMixin = {
     if (connectionWrap) connectionWrap.dataset.tone = connection.tone;
     if (connectionEl) connectionEl.textContent = connection.label;
     const actions = bar.querySelector('[data-role="actions"]');
-    if (actions) actions.hidden = !isTraining;
+    if (actions) actions.hidden = !isActive;
     const idleCopy = bar.querySelector('[data-role="idle-copy"]');
-    if (idleCopy) idleCopy.hidden = isTraining;
+    if (idleCopy) idleCopy.hidden = isActive;
     const errorEl = bar.querySelector('[data-role="error"]');
     if (errorEl) {
       errorEl.hidden = !d.has_error;

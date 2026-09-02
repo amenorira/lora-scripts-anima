@@ -402,7 +402,9 @@ const app = Object.assign({}, mixin, window.utilsMixin, {
         self.assertIn("logFullTotal<=0 || logFullLoading", toolbar)
 
     def test_realtime_merges_fields_and_updates_state(self):
-        self.assertIn("this.monitorData.state = data.status;", self.core_source)
+        # 状态只经 _applyTaskView 单一写入方落到 monitorData；WS 只合并进度字段。
+        self.assertIn("this.monitorData.state = code;", self.core_source)
+        self.assertNotIn("this.monitorData.state = data.status;", self.core_source)
         self.assertIn("Object.prototype.hasOwnProperty.call(progress, key)", self.core_source)
 
 

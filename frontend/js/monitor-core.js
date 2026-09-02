@@ -247,6 +247,132 @@ window.monitorCoreMixin = {
     if (next) this.realtimeSubscribe(next);
   },
 
+  // ── 训练状态所有权 ─────────────────────────────────────
+  // 训练生命周期状态（在训/终态/空闲）只有一个事实来源：对
+  // /api/realtime/snapshot 的串行轮询；也只有一个写入方：_applyTaskView。
+  // WebSocket 只负责流式数据（日志/loss/硬件/进度），不做状态拼装，
+  // 因此"旧任务迟到事件/过期快照覆盖新状态"这类问题在结构上不存在。
+  liveTaskId: null,
+  liveTaskBoundaryAt: 0,      // 最近一次所有权变更（claim/release）的本地时刻
+  _statePollTimer: null,
+  _statePollInFlight: false,
+
+  claimLiveTask(taskId) {
+    const id = String(taskId || '').trim();
+    if (!id) return;
+    this.liveTaskId = id;
+    this.taskId = id;
+    this.activeTaskId = id;
+    this.liveTaskBoundaryAt = Date.now();
+  },
+
+  releaseLiveTask() {
+    this.liveTaskId = null;
+    this.taskId = null;
+    this.activeTaskId = null;
+    this.liveTaskBoundaryAt = Date.now();
+  },
+
+  // 训练状态的唯一写入方：侧栏（training mixin 字段）与仪表盘（monitorData）
+  // 永远一起更新，不会出现两处各写各的导致的不同步。
+  _applyTaskView(status, label) {
+    const code = String(status || 'IDLE').toUpperCase();
+    const active = code === 'CREATED' || code === 'RUNNING';
+    this.trainingActive = active;
+    this.trainingBlocked = active;
+    this.isTraining = active;
+    this.isIdle = !active;
+    const keys = {
+      CREATED: 'monitor.created', RUNNING: 'monitor.training',
+      FINISHED: 'monitor.finished', TERMINATED: 'monitor.terminated',
+      FAILED: 'monitor.error', UNKNOWN: 'monitor.taskStateUnknown', IDLE: 'monitor.idle',
+    };
+    this.statusText = label || (keys[code] ? this.t(keys[code]) : code);
+    if (!this.monitorData || typeof this.monitorData !== 'object') this.monitorData = {};
+    this.monitorData.state = code;
+    this.monitorData.state_label = this.statusText;
+    this._prevState = code;
+  },
+
+  startTrainingStatePoll() {
+    if (this._statePollTimer) return;
+    this._statePollTimer = setInterval(() => { void this._pollTrainingState(); }, 1500);
+    void this._pollTrainingState();
+  },
+
+  async _pollTrainingState() {
+    if (this._statePollInFlight) return;
+    this._statePollInFlight = true;
+    const requestedAt = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch('/api/realtime/snapshot', { cache: 'no-store', signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) return;
+      const body = await response.json();
+      if (body.status !== 'success' || !body.data) return;
+      const snapshot = body.data;
+      const nextId = snapshot.server_instance_id;
+      if (nextId && this.realtimeInstanceId && nextId !== this.realtimeInstanceId) {
+        this.realtimeInstanceId = nextId;
+        this._saveRealtimeInstanceId();
+        this._handleRealtimeServerRestart();
+      }
+      this.realtimeSnapshot = snapshot;
+      // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
+      if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
+      this._applyManagedTrainingState(snapshot, requestedAt);
+    } catch (_) {
+      // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
+    } finally {
+      this._statePollInFlight = false;
+    }
+  },
+
+  _applyManagedTrainingState(snapshot, requestedAt) {
+    // 快照只代表"取回前"的事实：所有权在本轮请求发出后才变过的，
+    // 这份任务列表既不能证明新任务存在，也不能证明旧任务已结束。
+    if (requestedAt != null && requestedAt < (this.liveTaskBoundaryAt || 0)) return;
+    const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
+    const active = managed.find(task => task && task.id
+      && (task.status === 'CREATED' || task.status === 'RUNNING')) || null;
+    const activeId = active ? active.id : '';
+    const prevId = this.liveTaskId;
+
+    if (this.selectedRunDir && activeId !== prevId) return; // 浏览历史时不打断视图；返回实时后下轮生效
+
+    if (activeId && activeId !== prevId) {
+      // 任务边界（新启动/页面刷新恢复/他处启动）：清理上一轮残留并切换订阅。
+      this.beginLiveMonitorTask(activeId, active.status);
+      return;
+    }
+    if (!activeId && prevId) {
+      // 拥有的任务已到终态。注册表只驱逐终态任务，所以"列表里没有"或
+      // "已是终态"都可作为结算依据（终态事件丢失时由这里兜底）。
+      const finished = managed.find(task => task && task.id === prevId) || null;
+      const status = finished ? finished.status : 'IDLE';
+      const prevStatus = this._prevState;
+      this.releaseLiveTask();
+      this._applyTaskView(status);
+      if (finished) this.handleTaskCompletion(prevStatus, finished.status);
+      if (this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail();
+      return;
+    }
+    if (active) {
+      // 同一任务：同步状态（如 CREATED → RUNNING），进度字段由 WS 流维护。
+      this._applyTaskView(active.status);
+      this.realtimeTaskStateUnknown = false;
+      return;
+    }
+    if (!this.realtimeTaskStateUnknown && !this.trainingStarting
+      && (this.isTraining || this.trainingActive)) {
+      // 没有任务却仍处于"训练中"视图：启动实际失败等场景，回到空闲。
+      // 启动请求在途（trainingStarting）时不矫正，避免闪烁。
+      this._applyTaskView('IDLE');
+    }
+  },
+
   handleRealtimeMonitorEvent(event) {
     if (!event) return;
     if (event.type === 'hardware.sample') {
@@ -255,12 +381,12 @@ window.monitorCoreMixin = {
     }
     if (!this._monitorRealtimeTopic || event.topic !== this._monitorRealtimeTopic) return;
     const payload = event.payload || {};
-    if (event.type === 'task.status') this.handleRealtimeTaskStatus(payload);
-    else if (event.type === 'task.progress') this.handleRealtimeTaskProgress(payload);
+    // task.status / task.result 不在这里消费：生命周期状态由轮询统一结算，
+    // 这里只处理流式增量（进度/日志/指标/产物）。
+    if (event.type === 'task.progress') this.handleRealtimeTaskProgress(payload);
     else if (event.type === 'task.log') this.handleRealtimeTaskLog(payload);
     else if (event.type === 'task.metrics') this.handleRealtimeTaskMetrics(payload);
     else if (event.type === 'task.artifacts') this.handleRealtimeTaskArtifacts(payload);
-    else if (event.type === 'task.result') this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
   },
 
   handleRealtimeResyncRequired(topics) {
@@ -339,20 +465,8 @@ window.monitorCoreMixin = {
       this._resetOutputFilesForRun(liveOutputRunDir);
     }
 
-    this._setMonitorRealtimeTask(active && active.id);
-    this._prevState = next.state;
-    if (active) {
-      this.trainingActive = true;
-      this.isTraining = true;
-      this.isIdle = false;
-      this.statusText = next.state_label || active.status;
-      this.realtimeTaskStateUnknown = false;
-    } else if (!this.realtimeTaskStateUnknown) {
-      this.trainingActive = false;
-      this.isTraining = false;
-      this.isIdle = true;
-      this.statusText = this.t('monitor.idle');
-    }
+    // 生命周期状态（state/statusText/isTraining…）由轮询写入方负责，
+    // 这里只回填快照携带的详情内容（曲线/日志/样本/参数/目录）。
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
       this.finishProgress();
@@ -368,6 +482,7 @@ window.monitorCoreMixin = {
     );
     this._setMonitorRealtimeTask(null);
     this._prevState = null;
+    this.releaseLiveTask();
     this.monitorData = { state: 'UNKNOWN', state_label: this.t('monitor.taskStateUnknown') };
     this.gpuInfo = null;
     this.sysInfo = null;
@@ -400,30 +515,27 @@ window.monitorCoreMixin = {
     return wasRunning;
   },
 
-  beginLiveMonitorTask(taskId) {
+  beginLiveMonitorTask(taskId, status) {
     /** Establish a new live-task boundary before any progress event arrives. */
-    if (!taskId) return;
+    const id = String(taskId || '').trim();
+    if (!id) return;
+    const code = String(status || 'CREATED').toUpperCase();
     this.selectedRunDir = null;
     this.runDetailData = null;
     this.resetRealtimeMonitorState();
-    this.taskId = taskId;
-    this.activeTaskId = taskId;
-    this.trainingActive = true;
-    this.trainingBlocked = true;
-    this.isTraining = true;
-    this.isIdle = false;
-    this.statusText = this.t('monitor.created');
+    this.claimLiveTask(id);
     this.realtimeTaskStateUnknown = false;
+    this._applyTaskView(code);
     this.monitorData = {
-      state: 'CREATED',
-      state_label: this.t('monitor.created'),
-      active_task: { id: taskId, status: 'CREATED' },
+      state: code,
+      state_label: this.statusText,
+      active_task: { id, status: code },
       run_dir: '',
       output_dir: '',
       detail: false,
     };
-    this._logFullSourceKey = 'task:' + taskId;
-    this._setMonitorRealtimeTask(taskId);
+    this._logFullSourceKey = 'task:' + id;
+    this._setMonitorRealtimeTask(id);
     if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
   },
 
@@ -445,42 +557,6 @@ window.monitorCoreMixin = {
       flashCount++;
       if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
     }, 800);
-  },
-
-  handleRealtimeTaskStatus(data) {
-    if (!data) return;
-    // A late terminal event from a previous task (e.g. its kill finishes
-    // while a new task has already been started) must not overwrite the
-    // new task's live state or fire the completion toast.
-    const trackedId = this.activeTaskId || this.taskId;
-    if (data.task_id && trackedId && data.task_id !== trackedId) return;
-    const prevState = this._prevState;
-    this._prevState = data.status;
-    if (this.monitorData) {
-      this.monitorData.state = data.status;
-      this.monitorData.state_label = data.status_label || data.status;
-    }
-    this.handleTaskCompletion(prevState, data.status);
-    if (data.status === 'RUNNING') {
-      this.isTraining = true; this.isIdle = false; this.statusText = data.status_label || data.status;
-      this.trainingActive = true;
-      this.realtimeTaskStateUnknown = false;
-    }
-    else if (data.status === 'CREATED') {
-      this.isTraining = true; this.isIdle = false;
-      this.statusText = data.status_label || this.t('monitor.created');
-      this.trainingActive = true;
-      this.realtimeTaskStateUnknown = false;
-    }
-    else if (data.status === 'IDLE') { this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle'); }
-    else if (data.status === 'FINISHED' || data.status === 'TERMINATED' || data.status === 'FAILED') {
-      this.isTraining = false; this.isIdle = true; this.statusText = data.status_label || data.status;
-      this.trainingActive = false;
-      // Final output/result details are hydrated from the HTTP bootstrap
-      // snapshot, not placed in a potentially large WebSocket frame.
-      this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
-    }
-    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   handleRealtimeTaskProgress(data) {
@@ -688,8 +764,11 @@ window.monitorCoreMixin = {
   },
   async refreshMonitorRealtimeDetail() {
     if (this.currentRoute !== 'monitor-dashboard') return;
-    const socket = this.realtimeSocket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    // 详情是 HTTP 读取，不要求 WS 存活：隧道弱网下 WS 可能长期不可用，
+    // 而状态轮询仍在工作。socket 在线时传入它作为过期判据，离线时传 null。
+    const socket = this.realtimeSocket && this.realtimeSocket.readyState === WebSocket.OPEN
+      ? this.realtimeSocket
+      : null;
     const generation = ++this._monitorRealtimeDetailGeneration;
     await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
       monitorDetail: true,
@@ -699,18 +778,16 @@ window.monitorCoreMixin = {
     if (this.currentRoute !== 'monitor-dashboard' || generation !== this._monitorRealtimeDetailGeneration) return;
     // If this call joined a compact bootstrap already in flight, issue one
     // detail request after it settles instead of leaving the dashboard empty.
-    if (this.currentRoute === 'monitor-dashboard'
+    if (socket
+      && this.currentRoute === 'monitor-dashboard'
       && generation === this._monitorRealtimeDetailGeneration
       && this.realtimeSnapshot
       && !(this.realtimeSnapshot.monitor && this.realtimeSnapshot.monitor.detail)) {
-      const currentSocket = this.realtimeSocket;
-      if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-        await this._refreshRealtimeSnapshot(this.realtimeInstanceId, currentSocket, {
-          monitorDetail: true,
-          monitorDetailGeneration: generation,
-          preserveSubscribedCursors: true,
-        });
-      }
+      await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
+        monitorDetail: true,
+        monitorDetailGeneration: generation,
+        preserveSubscribedCursors: true,
+      });
     }
   },
   stopMonitorRealtime() {

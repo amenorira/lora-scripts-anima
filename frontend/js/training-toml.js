@@ -739,14 +739,8 @@ window.trainingTomlMixin = {
         this.toast(data.message || 'Failed to prepare Krea 2 cache', 'error');
         return;
       }
-      const taskId = (data.data && data.data.task_id) || null;
-      if (typeof this.beginLiveMonitorTask === 'function') {
-        this.beginLiveMonitorTask(taskId);
-      }
-      this.taskId = taskId;
-      this.isTraining = true;
-      this.isIdle = false;
-      this.statusText = this.t('krea2.caching') + '...';
+      // 缓存任务也是托管任务：走同一条启动边界（清残留 + 订阅 + 轮询接管状态）。
+      this._acceptTrainingStart(data.data, 'RUNNING');
       this.toast(this.t('krea2.cacheStarted'));
     } catch (error) {
       this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
@@ -812,18 +806,14 @@ window.trainingTomlMixin = {
         const data = await response.json();
         if (!response.ok || data.status !== 'success') {
           this.toast(data.message || 'Failed', 'error');
-          this.isTraining = false;
-          this.isIdle = true;
-          this.statusText = this.t('monitor.idle');
+          this._applyTaskView('IDLE');
         } else {
           this._acceptTrainingStart(data.data);
           this.toast(this.t('common.trainingStarted'));
         }
       } catch (error) {
         this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
-        this.isTraining = false;
-        this.isIdle = true;
-        this.statusText = this.t('monitor.idle');
+        this._applyTaskView('IDLE');
       }
       this.trainingStarting = false;
       return;
@@ -916,7 +906,7 @@ window.trainingTomlMixin = {
         } else {
           this.toast(data.message || 'Failed');
         }
-        this.isTraining = false; this.isIdle = true; this.statusText = this.t('monitor.idle');
+        this._applyTaskView('IDLE');
       }
       else {
         this._acceptTrainingStart(data.data); this.toast(this.t('common.trainingStarted'));
@@ -931,7 +921,7 @@ window.trainingTomlMixin = {
           }, 500);
         }
       }
-    } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this.isTraining=false; this.isIdle=true; this.statusText='Idle'; }
+    } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this._applyTaskView('IDLE'); }
     this.trainingStarting = false;
   },
 
@@ -983,87 +973,33 @@ window.trainingTomlMixin = {
     void this.startTraining();
   },
 
-  _acceptTrainingStart(data) {
+  _acceptTrainingStart(data, status) {
     const taskId = data && data.task_id || null;
-    if (typeof this.beginLiveMonitorTask === 'function') {
-      this.beginLiveMonitorTask(taskId);
-    } else {
-      // Keep the training mixin independently testable when the monitor mixin
-      // is not present in a minimal host object.
-      this.trainingActive = true;
-      this.trainingBlocked = true;
-      this.isTraining = true;
-      this.isIdle = false;
-      this.statusText = this.t('monitor.created');
+    if (!taskId) {
+      this._applyTaskView('IDLE');
+      return false;
     }
-    this.taskId = taskId;
-    this.activeTaskId = taskId;
+    // 启动边界：清上一轮残留、认领任务并切换订阅；后续状态由轮询对账。
+    this.beginLiveMonitorTask(taskId, status || 'CREATED');
     this.realtimeTaskStateUnknown = false;
-    // 启动对账窗口：终止 → 立即重启时，针对旧任务取的快照可能在新任务
-    // 登记后才落地，内容仍是“无任务”。在启动后刷新对账完成前，这种
-    // 快照不得覆盖这里的乐观状态（见 realtime 的 _applyRealtimeSnapshot）。
-    this._startReconcilePending = true;
-
-    // The create response is authoritative enough to paint the shared training
-    // state immediately. A compact snapshot then reconciles it without waiting
-    // for the next WebSocket sample, which may be delayed by a proxy or tunnel.
-    if (typeof this.refreshRealtimeAfterTaskStart === 'function') {
-      void this.refreshRealtimeAfterTaskStart();
-    }
+    return true;
   },
 
   async stopTraining() {
-    if (!this.isTraining) return;
+    const taskId = this.liveTaskId || this.taskId;
+    if (!taskId || (!this.isTraining && !this.trainingBlocked)) return;
     try {
-      if (this.taskId) await fetch('/api/tasks/terminate/'+this.taskId);
-      this.isTraining = false; this.statusText = 'Idle';
-      this.toast(this.t('common.trainingStopped'));
+      const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
+      if (!response.ok) throw new Error('terminate failed');
+      // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
+      // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
+      void this._pollTrainingState();
     } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
-  },
-
-  applyRealtimeTrainingSnapshot(snapshot) {
-    const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
-    this._applyRealtimeTrainingTasks(managed);
-  },
-
-  handleRealtimeTrainingEvent(event) {
-    if (!event || event.type !== 'server.tasks' || !event.payload) return;
-    this._applyRealtimeTrainingTasks(event.payload.tasks || []);
-  },
-
-  _applyRealtimeTrainingTasks(tasks) {
-    const active = (tasks || []).find(task => task && ['CREATED', 'RUNNING'].includes(task.status));
-    this.trainingActive = !!active;
-    this.trainingBlocked = !!active;
-    this.activeTaskId = active ? active.id : null;
-    if (active) {
-      this.taskId = active.id;
-      this.isTraining = true;
-      this.isIdle = false;
-      this.statusText = active.status_label || (active.status === 'CREATED'
-        ? this.t('monitor.created')
-        : this.t('monitor.training'));
-      this.realtimeTaskStateUnknown = false;
-      return;
-    }
-    if (!this.realtimeTaskStateUnknown) {
-      this.isTraining = false;
-      this.isIdle = true;
-      this.taskId = null;
-      this.statusText = this.t('monitor.idle');
-    }
   },
 
   resetRealtimeTrainingState() {
     const wasRunning = !!(this.isTraining || this.taskId || this.activeTaskId || this.trainingBlocked);
-    this.taskId = null;
-    this.activeTaskId = null;
-    this.trainingBlocked = false;
-    this.trainingActive = false;
-    this.isTraining = false;
-    this.isIdle = true;
-    this._startReconcilePending = false;
-    if (wasRunning) this.statusText = this.t('monitor.taskStateUnknown');
+    this._applyTaskView(wasRunning ? 'UNKNOWN' : 'IDLE');
     return wasRunning;
   }
 };
