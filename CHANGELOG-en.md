@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.11.1 - 2026-09-03
+
+This release fixes training-state and dashboard lifecycle issues — training state now comes from a single serial polling source — and stops automatic recommendations from overwriting manual input. It also refines LoRA-Muon documentation and UI copy, and renders LyCORIS parameters without subgroup boxes.
+
+### Fixes
+
+- Fixed training task state and dashboard lifecycle: unified the completed, failed, and stopped state machines; finished tasks no longer pollute the live dashboard or emit duplicate terminal events; starting a new run clears stale monitoring data and switches the live-task subscription.
+- Training state now comes from a single serial polling source: lifecycle state is supplied solely by a 1.5-second serial HTTP poll and drawn by a single writer, with the sidebar and dashboard updating in sync; WebSocket keeps only streaming data (progress, logs, metrics, artifacts, and hardware). A successful stop request reconciles immediately, and tasks waiting to start also show the stop button; detail refresh no longer depends on WebSocket liveness, so it works over weak tunnels.
+- Fixed automatic values overwriting manual configuration: LoRA-Muon no longer rewrites `network_dim` and `network_alpha`; AdaFactor and split_attn recommendations apply only while the fields stay at their defaults.
+- Fixed the TensorBoard proxy emitting unhandled exceptions when the browser refreshes, switches pages, or the link drops; client disconnects are now marked with HTTP 499.
+- LyCORIS parameters no longer render inside a subgroup box; each parameter renders in order at its own level.
+
+### LoRA-Muon copy and recommendations
+
+- The learning-rate documentation is now layered into usage, reasoning, and theory, covering whitening, the matrix-sign mechanism, and the effect of raising or lowering values; parameter copy is de-jargoned, with a difference table against Muon and paper references.
+- The learning-rate field carries a dedicated LoRA-Muon hint in two sentences: the update scale differs from AdamW so values cannot be copied directly, and the Anima engineering starting point is 0.02; stray parentheses removed from labels and descriptions.
+- Removed the recommendation to automatically lower `inv_sqrt_steps` to 5 on Anima; it returns to the code and paper default of 7.
+
+### Tests
+
+- Removed 47 low-value test cases (one-off refactor checks, animation timing details, source-string pins); the remaining suite passes with regression coverage unchanged.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.11.0...v2.11.1)
+
 ## v2.11.0 - 2026-09-01
 
 This release adds the LoRA-Muon optimizer together with its parameter controls, UI hints, defaults, and training documentation.
