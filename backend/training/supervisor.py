@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from backend.log import log
-from backend.tasks import tm
+from backend.tasks import TaskStatus, tm
 from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
 from backend.training.core_registry import engine_pythonpaths, get_engine
@@ -257,7 +257,10 @@ def run_train(
                 task.execute(stdout_file=lf)
                 result = task.communicate()
                 exit_code = result.returncode
-                if result.returncode != 0:
+                if task.status is TaskStatus.TERMINATED:
+                    status = "terminated"
+                    error_msg = "Training terminated / 训练已终止"
+                elif result.returncode != 0:
                     status = "failed"
                     error_msg = f"exit code {result.returncode}"
                 else:

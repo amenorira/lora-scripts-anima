@@ -102,11 +102,21 @@ async def build_live_monitor_snapshot(
     dashboard explicitly asks that same snapshot endpoint for ``detail``.
     """
     tasks = tm.dump() if tasks is None else tasks
-    active = next((item for item in tasks if task_id and item.get("id") == task_id), None)
+    active_statuses = {"CREATED", "RUNNING"}
+    active = next(
+        (
+            item for item in tasks
+            if task_id
+            and item.get("id") == task_id
+            and item.get("status") in active_statuses
+        ),
+        None,
+    )
     if not active:
-        active = next((item for item in reversed(tasks) if item.get("status") == "RUNNING"), None)
-    if not active and tasks:
-        active = tasks[-1]
+        active = next(
+            (item for item in reversed(tasks) if item.get("status") in active_statuses),
+            None,
+        )
     active_task_id = active.get("id", "") if active else ""
     record = await asyncio.to_thread(find_run_record_by_task_id, active_task_id) if active_task_id else None
     run_path = Path(record["run_path"]) if record else None
@@ -145,12 +155,16 @@ async def build_live_monitor_snapshot(
         "artifact_external": bool(record and record["artifact_external"]),
         "preview_enabled": record["preview_enabled"] if record else None,
     }
+    if not active:
+        return result
+
+    active_status = active.get("status", "UNKNOWN")
+    result["active_task"] = active
+    result["state"] = active_status
+    result["state_label"] = STATE_LABELS.get(active_status, active_status)
+    result["all_tasks"] = [t for t in tasks if t.get("status") in active_statuses]
+
     if not detail:
-        if active:
-            result["active_task"] = active
-            active_status = active.get("status", "UNKNOWN")
-            result["state"] = active_status
-            result["state_label"] = STATE_LABELS.get(active_status, active_status)
         return result
 
     train_config = await asyncio.to_thread(latest_train_config, active_task_id or None)
@@ -171,16 +185,6 @@ async def build_live_monitor_snapshot(
     result["train_params"] = await asyncio.to_thread(
         _extract_train_params_for_run, run_path, train_config
     )
-    result["all_tasks"] = [t for t in tasks if t.get("status") == "RUNNING"]
-
-    if not tasks:
-        return result
-
-    result["active_task"] = active
-    active_status = active.get("status", "UNKNOWN")
-    result["state"] = active_status
-    result["state_label"] = STATE_LABELS.get(active_status, active_status)
-
     # 从内部 run 目录读取日志 + 进度。
     def _read_run_log_and_progress(run_dir_path: Path) -> tuple[list[str], dict]:
         latest_log = find_run_log_path(run_dir_path)
@@ -198,24 +202,6 @@ async def build_live_monitor_snapshot(
                 if key in progress and progress[key] is not None:
                     result[key] = progress[key]
             result["log_lines"] = log_lines
-
-    if active_status != "RUNNING":
-        if run_path:
-            run_cfg = await asyncio.to_thread(_resolve_run_config_params, run_path)
-            if run_cfg:
-                result["last_config"] = run_cfg
-            elif train_config:
-                result["last_config"] = _last_config_from_autosave(train_config)
-        elif train_config:
-            result["last_config"] = _last_config_from_autosave(train_config)
-
-        if run_path:
-            train_result = _read_train_result(run_path)
-            if train_result is not None:
-                result["train_result"] = train_result
-            log_lines, _ = await asyncio.to_thread(_read_run_log_and_progress, run_path)
-            if log_lines:
-                result["log_lines"] = log_lines
 
     return result
 
@@ -358,17 +344,14 @@ async def monitor_history():
     history = await asyncio.to_thread(scan_history)
 
     # 获取当前运行中任务
-    running = None
     tasks = tm.dump()
-    for t in reversed(tasks):
-        if t.get("status") == "RUNNING":
-            running = t
-            break
-    if not running and tasks:
-        running = tasks[-1]
+    running = next(
+        (task for task in reversed(tasks) if task.get("status") in {"CREATED", "RUNNING"}),
+        None,
+    )
 
-    # 如果运行中任务状态为 RUNNING，补充训练参数
-    if running and running.get("status") == "RUNNING":
+    # 仅为当前活跃任务补充训练参数；终态任务由 history 列表负责展示。
+    if running:
         train_config = await asyncio.to_thread(latest_train_config)
         record = await asyncio.to_thread(find_run_record_by_task_id, running.get("id", ""))
         running["name"] = train_config.get("output_name", "")

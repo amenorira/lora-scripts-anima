@@ -739,7 +739,11 @@ window.trainingTomlMixin = {
         this.toast(data.message || 'Failed to prepare Krea 2 cache', 'error');
         return;
       }
-      this.taskId = (data.data && data.data.task_id) || null;
+      const taskId = (data.data && data.data.task_id) || null;
+      if (typeof this.beginLiveMonitorTask === 'function') {
+        this.beginLiveMonitorTask(taskId);
+      }
+      this.taskId = taskId;
       this.isTraining = true;
       this.isIdle = false;
       this.statusText = this.t('krea2.caching') + '...';
@@ -981,13 +985,19 @@ window.trainingTomlMixin = {
 
   _acceptTrainingStart(data) {
     const taskId = data && data.task_id || null;
+    if (typeof this.beginLiveMonitorTask === 'function') {
+      this.beginLiveMonitorTask(taskId);
+    } else {
+      // Keep the training mixin independently testable when the monitor mixin
+      // is not present in a minimal host object.
+      this.trainingActive = true;
+      this.trainingBlocked = true;
+      this.isTraining = true;
+      this.isIdle = false;
+      this.statusText = this.t('monitor.created');
+    }
     this.taskId = taskId;
     this.activeTaskId = taskId;
-    this.trainingActive = true;
-    this.trainingBlocked = true;
-    this.isTraining = true;
-    this.isIdle = false;
-    this.statusText = this.t('monitor.created');
     this.realtimeTaskStateUnknown = false;
     // 启动对账窗口：终止 → 立即重启时，针对旧任务取的快照可能在新任务
     // 登记后才落地，内容仍是“无任务”。在启动后刷新对账完成前，这种

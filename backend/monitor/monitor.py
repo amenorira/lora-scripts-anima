@@ -296,7 +296,7 @@ class TaskMonitor:
                 })
                 
                 # 任务结束时清理
-                if current_status in ("FINISHED", "TERMINATED"):
+                if current_status in ("FINISHED", "TERMINATED", "FAILED"):
                     await realtime_hub.publish(task_topic(task_id), "task.result", {
                         "task_id": task_id,
                         "kind": "training",
@@ -504,7 +504,8 @@ class TaskMonitor:
     
     def _cleanup_task(self, task_id: str) -> None:
         """清理任务状态"""
-        self._last_status.pop(task_id, None)
+        # 保留终态，避免任务仍在 TaskManager 中保留期间，每一轮轮询都
+        # 被误判为一次新的状态变化并重复发送终态事件。
         self._last_log_pos.pop(task_id, None)
         self._last_progress.pop(task_id, None)
         self._last_preview_check.pop(task_id, None)

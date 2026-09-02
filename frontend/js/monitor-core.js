@@ -400,6 +400,33 @@ window.monitorCoreMixin = {
     return wasRunning;
   },
 
+  beginLiveMonitorTask(taskId) {
+    /** Establish a new live-task boundary before any progress event arrives. */
+    if (!taskId) return;
+    this.selectedRunDir = null;
+    this.runDetailData = null;
+    this.resetRealtimeMonitorState();
+    this.taskId = taskId;
+    this.activeTaskId = taskId;
+    this.trainingActive = true;
+    this.trainingBlocked = true;
+    this.isTraining = true;
+    this.isIdle = false;
+    this.statusText = this.t('monitor.created');
+    this.realtimeTaskStateUnknown = false;
+    this.monitorData = {
+      state: 'CREATED',
+      state_label: this.t('monitor.created'),
+      active_task: { id: taskId, status: 'CREATED' },
+      run_dir: '',
+      output_dir: '',
+      detail: false,
+    };
+    this._logFullSourceKey = 'task:' + taskId;
+    this._setMonitorRealtimeTask(taskId);
+    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+  },
+
   handleTaskCompletion(prevState, newState) {
     if (prevState !== 'RUNNING' || newState === 'RUNNING') return;
     const msg = newState === 'FINISHED'
