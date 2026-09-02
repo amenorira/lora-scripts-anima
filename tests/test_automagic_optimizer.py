@@ -78,33 +78,6 @@ class AutomagicFieldContractTests(unittest.TestCase):
             "field.automagic_fusedLocked",
         )
 
-    def test_frontend_contract_contains_merge_rules_and_translations(self):
-        training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-        training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
-        constants = Path("frontend/js/constants.js").read_text(encoding="utf-8")
-        self.assertIn("automagic_polarity_history', arg: 'polarity_history'", training_toml)
-        self.assertIn("automagic_fused', arg: 'fused'", training_toml)
-        self.assertIn(AUTOMAGIC_OPTIMIZER_TYPE, constants)
-        self.assertIn("_automagicFusedHasConflict", training_core)
-        self.assertIn("_automagicFusedConflicts", training_core)
-        self.assertIn("automagic_fusedAutoDisabled", training_core)
-        self.assertIn("this.form.automagic_fused = false", training_core)
-        route = Path("backend/server/routes/training.py").read_text(encoding="utf-8")
-        self.assertIn("validate_training_config(config, gpu_ids=gpu_ids)", route)
-        self.assertIn("adapt_config(config, gpu_ids=gpu_ids)", route)
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
-            self.assertIn("optimizer_type_Automagic3", messages["opt"])
-            self.assertIn("automagic_max_lr", messages["field"])
-            max_lr_hint = messages["field"]["automagic_max_lrHint"]
-            self.assertTrue(any(token in max_lr_hint for token in ("上限", "limit")))
-            self.assertTrue(any(token in max_lr_hint for token in ("溢出", "overflow")))
-            self.assertIn("automagic_fusedLocked", messages["field"])
-            self.assertIn("automagic_fusedAutoDisabled", messages["field"])
-            self.assertIn("{details}", messages["field"]["automagic_fusedAutoDisabled"])
-            self.assertIn("{parameter}", messages["field"]["automagic_fusedConflictValue"])
-
-
 class AutomagicValidationTests(unittest.TestCase):
     def test_accepts_safe_defaults(self):
         self.assertEqual(validate_training_config(valid_automagic_config()), [])

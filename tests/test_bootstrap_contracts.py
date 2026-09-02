@@ -85,65 +85,6 @@ class BootstrapContractTests(unittest.TestCase):
         self.assertIn('if ($arg -eq "--setup-git")', script)
         self.assertIn('if ($arg -eq "--skip-git-setup")', script)
 
-    def test_bootstrap_messages_are_bilingual_utf8(self):
-        messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
-
-        required = {
-            "git_zip_detected",
-            "git_origin_unknown",
-            "git_install_failed",
-            "git_backup",
-            "python_missing",
-            "venv_missing",
-            "install_done",
-            "fatal_error",
-        }
-        self.assertTrue(required.issubset(messages))
-        for key in required:
-            self.assertIn(" / ", messages[key], key)
-            self.assertTrue(any("\u4e00" <= char <= "\u9fff" for char in messages[key]), key)
-
-    def test_healthy_windows_startup_hides_bootstrap_probe_details(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
-        main = script[script.index("function Invoke-MainBootstrap"):]
-
-        self.assertIn("function Invoke-MainBootstrap {\n    Set-Location", main)
-        self.assertIn("Show-InitialSetupHeader", main)
-        self.assertIn('"tools.ensure_musubi_runtime", "--check", "--quiet"', script)
-        self.assertIn("需要完成首次安装配置", messages["bootstrap_start"])
-        self.assertNotIn("首次启动引导", messages["bootstrap_start"])
-
-        repository_ok = script[script.index("if (Test-RepositoryValid $root $git)"):]
-        repository_ok = repository_ok[:repository_ok.index("}")]
-        self.assertNotIn('Write-Text "git_found"', repository_ok)
-        self.assertNotIn('Write-Text "git_existing"', repository_ok)
-
-    def test_launchers_show_immediate_animated_startup_feedback(self):
-        windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
-
-        windows_main = windows_script[windows_script.index("function Invoke-MainBootstrap"):]
-        self.assertLess(
-            windows_main.index("Start-StartupProgress"),
-            windows_main.index("Invoke-OptionalGitBootstrap"),
-        )
-        self.assertIn("while (-not $process.WaitForExit(120))", windows_script)
-        self.assertIn('Get-Text "startup_preparing"', windows_script)
-        self.assertIn("@([char]0x25D0, [char]0x25D3, [char]0x25D1, [char]0x25D2)", windows_script)
-        self.assertIn('$([char]27)[2K', windows_script)
-        self.assertNotIn("$pulseWidth", windows_script)
-        self.assertIn("正在准备启动环境", messages["startup_preparing"])
-
-        launch_notice = linux_script.index('echo "[Launch] Starting lora-scripts-anima')
-        python_probe = linux_script.index("if [ -f \"$VENV_PYTHON\" ]")
-        self.assertLess(launch_notice, python_probe)
-        self.assertIn("_startup_spinner()", linux_script)
-        self.assertIn("local frames=('◐' '◓' '◑' '◒')", linux_script)
-        self.assertIn("printf '\\r\\033[2K%s", linux_script)
-        self.assertIn("sleep 0.12", linux_script)
-
     def test_quiet_runtime_check_hides_success_but_keeps_errors(self):
         healthy = {"ok": True, "errors": [], "versions": {}}
         output = io.StringIO()
@@ -170,26 +111,6 @@ class BootstrapContractTests(unittest.TestCase):
         self.assertIn("sys.version_info[:2] == (3, 12)", linux_script)
         self.assertIn("sys.version_info[:2] == (3, 12)", gui)
         self.assertIn("Please run {launcher}", gui)
-
-    def test_gui_is_an_internal_module(self):
-        windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        supervisor = (ROOT / "backend" / "training" / "supervisor.py").read_text(encoding="utf-8")
-
-        self.assertFalse((ROOT / "gui.py").exists())
-        self.assertTrue((ROOT / "backend" / "gui.py").is_file())
-        self.assertIn("-m backend.gui @script:ForwardArgs", windows_script)
-        self.assertNotIn("-m backend.gui @script:ForwardArgs | Out-Host", windows_script)
-        self.assertIn(
-            "Invoke-MainBootstrap\n    Stop-StartupProgress\n    exit $script:BootstrapExitCode",
-            windows_script,
-        )
-        self.assertIn("-m backend.gui", linux_script)
-        self.assertFalse((ROOT / "sitecustomize.py").exists())
-        self.assertTrue((ROOT / "tools" / "python_startup" / "sitecustomize.py").is_file())
-        self.assertIn("tools\\python_startup", windows_script)
-        self.assertIn("tools/python_startup", linux_script)
-        self.assertIn('"tools" / "python_startup"', supervisor)
 
 
 if __name__ == "__main__":

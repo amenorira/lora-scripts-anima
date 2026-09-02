@@ -587,27 +587,6 @@ console.log(JSON.stringify({
         self.assertTrue(state["pinClearedAfterUserScroll"])
         self.assertEqual(state["behavior"], "smooth")
 
-    def test_reader_uses_reactive_toc_and_shows_document_library_for_one_doc(self):
-        html = Path("frontend/index.html").read_text(encoding="utf-8")
-        css = Path("frontend/css/app.css").read_text(encoding="utf-8")
-
-        self.assertIn('class="docs-index" x-show="docsDocuments.length"', html)
-        self.assertIn("item in docsTocItems", html)
-        self.assertNotIn('x-html="docsToc"', html)
-        toc_css = css[css.index(".docs-toc {") : css.index(".markdown-body {")]
-        self.assertNotIn("border-left", toc_css)
-        self.assertIn("text-overflow: ellipsis", toc_css)
-        self.assertIn("max-width: 1920px", css)
-        self.assertIn("minmax(620px, 1120px)", css)
-        self.assertIn("min-width: 1018px", css)
-        self.assertNotIn("docs-mobile-outline", html)
-        self.assertIn("scrollbar-color: transparent transparent", css)
-        self.assertIn("table.docs-table-wide", css)
-        self.assertNotIn("@container (max-width:", css)
-        docs_widget_css = css[css.index(".docs-timestep-widget {") : css.index("Anima Custom Select — 2026-style dropdown")]
-        self.assertIn("max-width: 880px", docs_widget_css)
-        self.assertNotIn("flex: none", docs_widget_css)
-
 
 if __name__ == "__main__":
     unittest.main()

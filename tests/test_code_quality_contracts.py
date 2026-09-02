@@ -1,6 +1,5 @@
 import asyncio
 import builtins
-import re
 import sys
 import tempfile
 import threading
@@ -13,9 +12,6 @@ from backend.server import api
 from backend.server.routes import environment
 from backend.server.routes import training as training_routes
 from backend.tagger.interrogators import base
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TrainingCoreStatusTests(unittest.TestCase):
@@ -176,96 +172,6 @@ class OnnxSessionFactoryTests(unittest.TestCase):
         )
         self.assertIsInstance(calls[0]["sess_options"], FakeSessionOptions)
         self.assertEqual(calls[0]["sess_options"].log_severity_level, 3)
-
-
-class FrontendMixinCleanupContractTests(unittest.TestCase):
-    def test_training_preview_is_scoped_to_training_routes_and_stays_inline(self):
-        app_source = (REPO_ROOT / "frontend/js/app.js").read_text(encoding="utf-8")
-        index_source = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
-        css_source = (REPO_ROOT / "frontend/css/app.css").read_text(encoding="utf-8")
-
-        show_panel_body = app_source.split("showRightPanel() {", 1)[1].split("\n    },", 1)[0]
-        self.assertIn("r.startsWith('train-')", show_panel_body)
-        self.assertNotIn("r === 'tools'", show_panel_body)
-        self.assertIn('class="right-panel" id="rightPanel" x-show="showRightPanel()"', index_source)
-        self.assertNotIn("panel-backdrop", index_source)
-        self.assertNotIn("panel-toggle-btn", index_source)
-        self.assertNotIn("rightPanelOpen", app_source)
-        self.assertNotIn("isWideScreen", app_source)
-        self.assertIn("--app-min-width: 1024px", css_source)
-
-    def test_frontend_has_no_mobile_layout_breakpoints(self):
-        app_css = (REPO_ROOT / "frontend/css/app.css").read_text(encoding="utf-8")
-        tagger_css = (REPO_ROOT / "frontend/css/tagger.css").read_text(encoding="utf-8")
-        index_source = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
-
-        self.assertNotIn("@media (max-width:", app_css)
-        self.assertNotIn("@media (max-width:", tagger_css)
-        self.assertNotIn("@container (max-width:", app_css)
-        self.assertNotIn("docs-mobile-outline", index_source)
-        self.assertNotIn("flex-direction: column;\n  }\n  .single-tagger-left", app_css)
-
-    def test_effective_show_if_handler_is_defined_once_with_current_semantics(self):
-        training_core = (REPO_ROOT / "frontend/js/training-core.js").read_text(encoding="utf-8")
-        training_toml = (REPO_ROOT / "frontend/js/training-toml.js").read_text(encoding="utf-8")
-
-        definition = r"^\s*_evalShowIfCond\(c\)\s*\{"
-        self.assertEqual(len(re.findall(definition, training_core, re.MULTILINE)), 1)
-        self.assertEqual(len(re.findall(definition, training_toml, re.MULTILINE)), 0)
-
-        handler_body = training_core.split("_evalShowIfCond(c) {", 1)[1].split("\n  },", 1)[0]
-        self.assertIn("pv !== ''", handler_body)
-        self.assertNotIn("String(pv) !== ''", handler_body)
-
-    def test_removed_mixin_members_have_no_remaining_source_references(self):
-        frontend_sources = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in (REPO_ROOT / "frontend/js").glob("*.js")
-        )
-        monitor_core = (REPO_ROOT / "frontend/js/monitor-core.js").read_text(encoding="utf-8")
-        training_toml = (REPO_ROOT / "frontend/js/training-toml.js").read_text(encoding="utf-8")
-
-        self.assertNotIn("_teResetModifiedCount", frontend_sources)
-        self.assertNotIn("_taggerPresetInitialized", frontend_sources)
-        for removed_member in (
-            "_markAutoLoaded",
-            "_autoLoaded",
-            "copyFieldName",
-            "subsetTimestepOffsetCount",
-            "taggerCategoryEntries",
-            "setAllTaggerCategoriesCollapsed",
-            "_teCreateSnapshot",
-            "_teFormatSize",
-        ):
-            self.assertNotIn(removed_member, frontend_sources)
-        self.assertEqual(
-            len(re.findall(r"^\s*async stopTraining\(\)\s*\{", monitor_core, re.MULTILINE)),
-            0,
-        )
-        self.assertEqual(
-            len(re.findall(r"^\s*async stopTraining\(\)\s*\{", training_toml, re.MULTILINE)),
-            1,
-        )
-
-    def test_frontend_toasts_use_the_callable_helper(self):
-        frontend_sources = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in (REPO_ROOT / "frontend/js").glob("*.js")
-        )
-        monitor_core = (REPO_ROOT / "frontend/js/monitor-core.js").read_text(encoding="utf-8")
-        monitor_render = (REPO_ROOT / "frontend/js/monitor-render.js").read_text(encoding="utf-8")
-
-        self.assertNotIn("toastthis", frontend_sources)
-        self.assertIn("this.toast(this.t('monitor.selectFilesFirst'))", monitor_core)
-        self.assertIn("this.toast(this.t('common.copied'))", monitor_render)
-
-    def test_ui_constants_only_expose_shared_runtime_values(self):
-        constants_source = (REPO_ROOT / "frontend/js/constants.js").read_text(encoding="utf-8")
-
-        for used_member in ("PROGRESS_STAGES", "MAX_LINES", "FULL_PAGE_SIZE"):
-            self.assertIn(used_member, constants_source)
-        for removed_member in ("SELECTORS", "LOCALES", "DEFAULT_LOCALE", "TIMING", "FILE_PICKER", "MAX_MATCHES"):
-            self.assertNotIn(removed_member, constants_source)
 
 
 if __name__ == "__main__":

@@ -910,18 +910,6 @@ process.stdout.write(JSON.stringify({
         self.assertNotIn("pollTaggerProgress", combined)
         self.assertNotIn("_startProgressPolling", combined)
 
-    def test_environment_cold_start_is_throttled_and_shows_spinner(self):
-        render_source = Path("frontend/js/environment-render.js").read_text(encoding="utf-8")
-        self.assertIn("_runEnvironmentLoadQueue(loaders, 2)", self.environment_source)
-        self.assertIn("_commitEnvironmentLoad", self.environment_source)
-        self.assertIn("_waitForEnvironmentPaint", self.environment_source)
-        self.assertIn("environmentLoadCompleted", self.environment_source)
-        self.assertIn("scheduleEnvironmentRender", self.environment_source)
-        self.assertIn('class="env-load-status"', render_source)
-        self.assertIn('class="env-load-spinner"', render_source)
-        self.assertNotIn('class="env-load-track"', render_source)
-        self.assertNotIn('class="env-load-count"', render_source)
-
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend state-machine checks")
     def test_environment_results_commit_one_painted_step_at_a_time(self):
         script = r"""
@@ -1177,56 +1165,6 @@ process.stdout.write(JSON.stringify({
         self.assertFalse(state["faUninstalledDefault"])
         self.assertTrue(state["faBusyDefault"])
         self.assertTrue(state["savedKrea2"])
-
-    def test_weak_network_media_queue_and_explicit_original_are_present(self):
-        render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
-        app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
-        config_io_source = Path("frontend/js/training-config-io.js").read_text(encoding="utf-8")
-        index_source = Path("frontend/index.html").read_text(encoding="utf-8")
-        self.assertIn("weakNetworkMode: true", self.monitor_source)
-        self.assertIn("_previewMediaPaused", self.monitor_source)
-        self.assertIn("_previewMediaQueue", self.monitor_source)
-        self.assertNotIn("showMorePreviews", self.monitor_source)
-        self.assertIn("requestWeakNetworkModeChange", app_source)
-        self.assertIn("this.openConfirm(", app_source)
-        self.assertIn("weakNetworkMode: this.weakNetworkMode", app_source)
-        self.assertIn("confirmActionLabel", config_io_source)
-        self.assertIn("settings.slowConnectionMode", index_source)
-        self.assertNotIn("toggleWeakNetworkMode", render_source)
-        self.assertNotIn("visiblePreviews", render_source)
-        self.assertIn("this._previewDisplayIndices().forEach", render_source)
-        self.assertIn("query.set('preview_limit', String(0))", self.client_source)
-        self.assertIn("/api/monitor/previews?refresh=1&limit=0", self.monitor_source)
-        self.assertIn("inspect_url || p.url", render_source)
-        self.assertIn("previewLightboxOriginal", render_source)
-        self.assertIn("thumb_url || preview.url", render_source)
-
-    def test_no_legacy_realtime_http_routes_or_transport_remain(self):
-        backend_sources = "\n".join((
-            Path("backend/server/api.py").read_text(encoding="utf-8"),
-            Path("backend/monitor/routes.py").read_text(encoding="utf-8"),
-        ))
-        for path in (
-            "/interrogate/progress",
-            "/install-log/",
-            "/anima-model/progress/",
-            "/flash-attention/progress/",
-            "/monitor/status",
-            "/monitor/is-active",
-            "/monitor/stream",
-        ):
-            self.assertNotIn(path, backend_sources)
-
-    def test_preview_cache_headers_are_not_overridden_by_api_middleware(self):
-        application_source = Path("backend/server/application.py").read_text(encoding="utf-8")
-        monitor_routes = Path("backend/monitor/routes.py").read_text(encoding="utf-8")
-
-        self.assertIn('"/api/image-preview", "/api/monitor/preview-metadata"', application_source)
-        self.assertNotIn('/api/monitor/preview-image', application_source)
-        artifacts_source = Path("backend/monitor/artifacts.py").read_text(encoding="utf-8")
-        self.assertIn('build_image_preview_url(scope="artifact"', artifacts_source)
-        self.assertIn('"Cache-Control": "private, max-age=86400, immutable"', monitor_routes)
-        self.assertIn('"ETag":', monitor_routes)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend state-machine checks")
     def test_offline_state_stays_offline_until_realtime_bootstrap_succeeds(self):

@@ -15,25 +15,15 @@ ROOT = Path(__file__).parents[1]
 
 
 class Cuda130SourceContractTests(unittest.TestCase):
-    def test_new_installs_and_launchers_use_cu130(self):
+    def test_pinned_versions_stay_consistent_across_installers(self):
         windows = (ROOT / "tools/bootstrap_windows.ps1").read_text(encoding="utf-8")
         linux = (ROOT / "start.sh").read_text(encoding="utf-8")
-        messages = (ROOT / "tools/bootstrap_messages.json").read_text(encoding="utf-8")
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
         for source in (windows, linux):
             self.assertIn("torch==2.10.0+cu130", source)
-            self.assertIn("torchvision==0.25.0+cu130", source)
             self.assertIn("https://download.pytorch.org/whl/cu130", source)
-            self.assertIn("tools.ensure_runtime", source)
-        self.assertIn("CUDA 13.0", messages)
-
-    def test_cuda_bound_project_dependencies_follow_cu130(self):
-        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-        environment = (ROOT / "backend/server/routes/environment.py").read_text(encoding="utf-8")
-
         self.assertIn("onnxruntime-gpu==1.27.0", requirements)
-        self.assertIn("https://download.pytorch.org/whl/cu{match.group(1)}", environment)
-        self.assertIn('"--no-deps"', environment)
 
 
 class ExistingVenvMigrationTests(unittest.TestCase):

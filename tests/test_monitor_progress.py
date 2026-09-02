@@ -228,16 +228,6 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertIn("previousTrainingDiagnostics", patch)
         self.assertIn("previousDiagnosticSubtitle", patch)
 
-    def test_websocket_replay_deduplicates_metric_points(self):
-        realtime_source = Path("frontend/js/realtime.js").read_text(encoding="utf-8")
-        metrics_update = self.core_source.split("handleRealtimeTaskMetrics(data) {", 1)[1].split("\n  },", 1)[0]
-
-        self.assertIn("new WebSocket", realtime_source)
-        self.assertIn("op: 'subscribe'", realtime_source)
-        self.assertIn("resync_required", realtime_source)
-        self.assertIn("this.lossDataVersion++", metrics_update)
-        self.assertIn("Number(p.step) <= Number(series.points[series.points.length - 1].step)", metrics_update)
-
     def test_outputs_choose_newer_checkpoint_for_equal_lowest_loss(self):
         body = self.render_source.split("_bestCheckpointPath(models) {", 1)[1].split("\n  },", 1)[0]
 

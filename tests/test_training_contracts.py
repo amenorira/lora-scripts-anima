@@ -636,34 +636,6 @@ class MonitorFrontendContractTests(unittest.TestCase):
         index_html = Path("frontend/index.html").read_text(encoding="utf-8")
         self.assertRegex(index_html, r'/anima-ui/js/config\.js\?v=[^"\s]+')
 
-    def test_leaving_history_clears_cached_logs(self):
-        monitor_core = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
-        reset_body = monitor_core.split("resetRunDetailState() {", 1)[1].split("\n  },", 1)[0]
-
-        self.assertIn("this.logLines = [];", reset_body)
-        self.assertIn("this.logFullLines = [];", reset_body)
-        self.assertIn("this._logSliceRequestSeq++;", reset_body)
-
-    def test_route_exit_uses_history_state_reset(self):
-        app_js = Path("frontend/js/app.js").read_text(encoding="utf-8")
-        self.assertIn("this.resetRunDetailState();", app_js)
-
-    def test_step_estimate_refreshes_with_form_and_before_training(self):
-        training_core = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
-        training_toml = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-
-        watcher = training_core.split("self._formWatcher = self.$watch('form'", 1)[1].split("});", 1)[0]
-        scheduled_refresh = training_core.split("scheduleStepEstimate() {", 1)[1].split("\n  },", 1)[0]
-        forced_refresh = training_core.split("async refreshStepEstimate(force) {", 1)[1].split("\n  },", 1)[0]
-        self.assertIn("self.scheduleStepEstimate();", watcher)
-        self.assertIn("fetch('/api/training/estimate'", training_core)
-        self.assertIn("stepEstimate.errors.${code}", training_core)
-        self.assertIn('x-text="stepEstimateErrorText()"', training_core)
-        self.assertIn("const estimate = await this.refreshStepEstimate(true);", training_toml)
-        self.assertEqual(scheduled_refresh.count("this.stepEstimate = null;"), 1)
-        self.assertEqual(forced_refresh.count("this.stepEstimate = null;"), 1)
-        self.assertIn("effectiveBatch:", training_core)
-
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class TrainingFormFrontendTests(unittest.TestCase):

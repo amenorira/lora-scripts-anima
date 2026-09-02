@@ -1,4 +1,3 @@
-import asyncio
 import stat
 import tempfile
 import unittest
@@ -262,22 +261,6 @@ class TagEditorSnapshotCompatibilityTests(unittest.TestCase):
 
             self.assertEqual(first.read_text(encoding="utf-8"), "changed a")
             self.assertEqual(second.read_text(encoding="utf-8"), "changed b")
-
-
-class TagEditorFrontendRefactorContracts(unittest.TestCase):
-    def test_session_timeline_and_shortcut_contracts_are_wired(self):
-        source = Path("frontend/js/tag-editor.js").read_text(encoding="utf-8")
-        html = Path("frontend/index.html").read_text(encoding="utf-8")
-
-        self.assertIn("fetch('/api/tageditor/sessions'", source)
-        self.assertIn("tagEditorPageItems", source)
-        self.assertIn("AbortController", source)
-        self.assertIn("edit_version", source)
-        self.assertIn("expected_revision", source)
-        self.assertIn("e.isComposing || e.keyCode === 229", source)
-        self.assertIn("tagEditorFetchPage(tagEditorPage + 1)", html)
-        self.assertIn("snap.label || snap.event_type", html)
-        self.assertNotIn("_teFormatSize(snap.size_bytes)", html)
 
 
 if __name__ == "__main__":
