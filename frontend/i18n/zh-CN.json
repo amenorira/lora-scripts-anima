@@ -1017,7 +1017,6 @@
 		"pickerModified": "修改于",
 		"pickerCurrentTag": "当前",
 		"localPickerCancelled": "已取消",
-		"lycorisSubgroupTitle": "LyCORIS 算法参数",
 		"trainTypeHint": "每种训练类型独立保存参数；切换后恢复该类型自己的内容",
 		"fieldActions": "字段操作",
 		"sectionNav": "参数分组",

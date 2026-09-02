@@ -1275,16 +1275,6 @@ window.trainingCoreMixin = {
       sections.forEach(section => {
       const visibleFields = section.fields.filter(f => !f.hidden);
       const allFields = this._orderFieldsByDependencies(visibleFields);
-      // 拆分：常规字段（无 subGroup）与 kohya 子组字段
-      const regularFields = allFields.filter(f => !f.subGroup);
-      const subGroupFields = allFields.filter(f => f.subGroup);
-      // 子组字段按 subGroup 值分组
-      const subGroups = new Map();
-      subGroupFields.forEach(f => {
-        const sg = f.subGroup;
-        if (!subGroups.has(sg)) subGroups.set(sg, []);
-        subGroups.get(sg).push(f);
-      });
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
       html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
@@ -1294,41 +1284,10 @@ window.trainingCoreMixin = {
       html += `<div class="card-body">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
-      // 按 FIELDS 顺序渲染常规字段和条件子组。
-      const doneSubGroups = new Set();
+      // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。
       allFields.forEach(f => {
-        if (f.subGroup) {
-          if (!doneSubGroups.has(f.subGroup)) {
-            doneSubGroups.add(f.subGroup);
-            const sg = subGroups.get(f.subGroup) || [];
-            // 子组公共显隐条件：取该子组字段的 showIf/showIfAny 中 network_module 的 eq 值。
-            // kohya 子组所有字段 showIf 均含 network_module eq lycoris.kohya，整个子区块跟随它显隐。
-            const conditionalField = sg.find(field => field.showIf || field.showIfAny);
-            const sgShowIf = conditionalField && (conditionalField.showIf || conditionalField.showIfAny);
-            let sgCondMet = true;
-            let sgShowIfAttrs = '';
-            if (sgShowIf) {
-              // 提取 network_module eq 作为容器显隐条件（单条件或数组第一个含 network_module 的条件）
-              const conds = Array.isArray(sgShowIf) ? sgShowIf : [sgShowIf];
-              const nmCond = conds.find(c => c.key === 'network_module');
-              if (nmCond) {
-                sgCondMet = this._evalShowIfCond(nmCond);
-                sgShowIfAttrs = ` data-show-if-key="network_module" data-show-if-eq="${this.escapeAttr(String(nmCond.eq))}"`;
-              }
-            }
-            const sgBlockHidden = sgCondMet ? '' : ' field-hidden';
-            const sgTitleKey = (f.subGroup === 'kohya') ? 'common.lycorisSubgroupTitle' : '';
-            const sgTitle = sgTitleKey ? this.t(sgTitleKey) : f.subGroup;
-            html += `<div class="subgroup-block${sgBlockHidden}"${sgShowIfAttrs}>`;
-            html += `<div class="subgroup-header"><span class="subgroup-dot"></span><span>${this.esc(sgTitle)}</span></div>`;
-            html += `<div class="subgroup-body">`;
-            sg.forEach(field => { html += this.renderField(field); });
-            html += `</div></div>`;
-          }
-        } else {
-          html += this.renderField(f);
-          if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
-        }
+        html += this.renderField(f);
+        if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
       });
 
       html += `</div></div>`;

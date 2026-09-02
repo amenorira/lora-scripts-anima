@@ -1017,7 +1017,6 @@
 		"pickerModified": "Modified",
 		"pickerCurrentTag": "Current",
 		"localPickerCancelled": "Cancelled",
-		"lycorisSubgroupTitle": "LyCORIS algorithm parameters",
 		"trainTypeHint": "Each training type keeps separate parameters and restores its own values when selected",
 		"fieldActions": "Field actions",
 		"sectionNav": "Sections",

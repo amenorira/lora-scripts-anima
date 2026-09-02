@@ -1341,35 +1341,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   line-height: 1.45;
   color: var(--text-tertiary);
 }
-/* ── 子组区块（kohya/LyCORIS 算法参数等）──
-   仅用小标题 + 圆点作视觉区分，表明这是某个算法开关（network_module）专属的子参数集合，
-   与分组底部的"显示进阶参数"折叠区分。不加背景色/大色条，保持简洁。 */
-#trainFormContent .subgroup-block {
-  margin: 10px 0 6px;
-  max-height: none; opacity: 1;
-}
-#trainFormContent .subgroup-block.field-hidden {
-  max-height: 0 !important; opacity: 0;
-  margin: 0;
-  pointer-events: none;
-  visibility: hidden;
-  overflow: hidden;
-}
-#trainFormContent .subgroup-header {
-  display: flex; align-items: center; gap: 7px;
-  padding: 4px 2px;
-  font-size: 12px; font-weight: 700;
-  color: var(--text-secondary);
-  letter-spacing: 0.2px;
-  user-select: none;
-}
-#trainFormContent .subgroup-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent); flex-shrink: 0; opacity: 0.8;
-}
-#trainFormContent .subgroup-body {
-  padding: 0;
-}
 
 /* Field rows: subtle background on hover */
 #trainFormContent .field {
