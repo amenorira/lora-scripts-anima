@@ -316,7 +316,6 @@ console.log(JSON.stringify({
         self.assertTrue(fields["split_attn"]["autoValue"][0]["setIfDefault"])
         for key, recommended in (
             ("max_grad_norm", 0),
-            ("inv_sqrt_steps", 5),
         ):
             with self.subTest(key=key):
                 rule = next(
@@ -330,6 +329,9 @@ console.log(JSON.stringify({
                 )
                 self.assertEqual(rule["set"], recommended)
                 self.assertTrue(rule["setIfDefault"])
+        # inv_sqrt_steps 曾在 Anima 上自动降到 5，实测无收益且损失病态 Gram
+        # 精度，已移除；此处锁定不再回归
+        self.assertEqual(fields["inv_sqrt_steps"].get("autoValue", []), [])
         self.assertEqual(fields["msign_eps"]["type"], "text")
         self.assertEqual(fields["msign_eps"]["default"], "1e-20")
         self.assertEqual(fields["inv_sqrt_eps"]["type"], "text")
@@ -1627,7 +1629,7 @@ async function imported(data) {
                 "networkDim": 32,
                 "networkAlpha": 32,
                 "maxGradNorm": 0,
-                "invSqrtSteps": 5,
+                "invSqrtSteps": 7,
             },
         )
         self.assertEqual(
@@ -1636,7 +1638,7 @@ async function imported(data) {
                 "networkDim": "default",
                 "networkAlpha": "default",
                 "maxGradNorm": "auto",
-                "invSqrtSteps": "auto",
+                "invSqrtSteps": "default",
             },
         )
         self.assertEqual(
@@ -1659,7 +1661,7 @@ async function imported(data) {
         fields = fields_by_key()
         self.assertEqual(fields["network_dim"].get("autoValue", []), [])
         self.assertEqual(fields["network_alpha"].get("autoValue", []), [])
-        keys = ("max_grad_norm", "inv_sqrt_steps")
+        keys = ("max_grad_norm", "learning_rate")
         selected_fields = {key: fields[key] for key in keys}
         rules = [
             {"target": key, **rule}
@@ -1677,9 +1679,9 @@ require('./frontend/js/training-core.js');
 const core = window.trainingCoreMixin;
 const fields = __FIELDS__;
 const rules = __RULES__;
-const keys = ['max_grad_norm', 'inv_sqrt_steps'];
-const defaults = { max_grad_norm: 1, inv_sqrt_steps: 7 };
-const explicit = { max_grad_norm: 0.5, inv_sqrt_steps: 6 };
+const keys = ['max_grad_norm', 'learning_rate'];
+const defaults = { max_grad_norm: 1, learning_rate: '1e-4' };
+const explicit = { max_grad_norm: 0.5, learning_rate: '2e-4' };
 
 function apply(source, values) {
   const ctx = Object.assign({}, core, {
@@ -1723,11 +1725,11 @@ console.log(JSON.stringify({
         state = json.loads(result.stdout)
         recommended = {
             "max_grad_norm": 0,
-            "inv_sqrt_steps": 5,
+            "learning_rate": "0.02",
         }
         explicit = {
             "max_grad_norm": 0.5,
-            "inv_sqrt_steps": 6,
+            "learning_rate": "2e-4",
         }
         for source in ("defaults", "previousAuto"):
             with self.subTest(source=source):

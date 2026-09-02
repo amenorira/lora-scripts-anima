@@ -552,7 +552,7 @@
 		"lora_muon_ns_steps": "Matrix-sign iterations",
 		"lora_muon_ns_stepsHint": "Iterations used to approximate the matrix-sign direction (Polar Express / Newton-Schulz). More iterations improve the approximation but slow each step. Default: 8; usually no need to change.",
 		"lora_muon_inv_sqrt_steps": "Gram inverse-root iterations",
-		"lora_muon_inv_sqrt_stepsHint": "Iterations used to whiten the factor directions with the Gram matrix. Both the implementation and the paper default to 7; the Anima UI balanced starting point is 5. Lower values save compute but give a coarser approximation; set it back to 7 to match the paper more closely.",
+		"lora_muon_inv_sqrt_stepsHint": "Iterations used to whiten the factor directions with the Gram matrix. Both the implementation and the paper default to 7; lower values save compute but give a coarser approximation.",
 		"lora_muon_msign_eps": "Matrix-sign normalization epsilon",
 		"lora_muon_msign_epsHint": "Prevents division by near-zero values in the matrix-sign calculation; it normally has no effect on training. Keep 1e-20.",
 		"lora_muon_inv_sqrt_eps": "Gram regularization epsilon",

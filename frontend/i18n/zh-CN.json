@@ -552,7 +552,7 @@
 		"lora_muon_ns_steps": "矩阵符号迭代次数",
 		"lora_muon_ns_stepsHint": "使用 Polar Express / Newton-Schulz 近似计算矩阵符号方向的迭代次数；数值越大近似越充分，但单步更慢。默认 8，通常不需要调整。",
 		"lora_muon_inv_sqrt_steps": "Gram 逆平方根迭代次数",
-		"lora_muon_inv_sqrt_stepsHint": "白化（按 Gram 矩阵调整因子各方向尺度）的近似迭代次数；代码与论文默认 7，Anima 界面的平衡起点为 5。调小可节省计算，但近似更粗；需要严格贴近论文时可改回 7。",
+		"lora_muon_inv_sqrt_stepsHint": "白化（按 Gram 矩阵调整因子各方向尺度）的近似迭代次数；代码与论文默认 7，调小可节省计算但近似更粗。",
 		"lora_muon_msign_eps": "矩阵符号归一化 ε",
 		"lora_muon_msign_epsHint": "防止矩阵符号计算时除以过小数值；正常训练基本不影响结果，保持 1e-20。",
 		"lora_muon_inv_sqrt_eps": "Gram 正则 ε",
