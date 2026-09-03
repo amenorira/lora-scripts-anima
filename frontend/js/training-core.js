@@ -1333,14 +1333,19 @@ window.trainingCoreMixin = {
         .sort((a, b) => (a.lycorisOrder || 0) - (b.lycorisOrder || 0));
       if (!grouped.length) return;
       html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.esc(this.t(titleKey))}</div>`;
+      const groupedKeys = new Set(grouped.map(gf => gf.key));
       grouped.forEach(field => {
-        html += this.renderField({
+        // 同组内可见的布局父字段（如 dora_wd → wd_on_output）保留子项层级缩进；
+        // 布局父不在本组渲染的字段（如依赖 lycoris_algo 的跨组参数）保持平级。
+        const layoutParent = this._fieldLayoutParentKey(field, groupedKeys) || null;
+        const panelField = {
           ...field,
-          nested: false,
-          layoutParent: null,
+          layoutParent,
           lycorisPanel: true,
           hintKey: field.hintKeyPanel || field.hintKey,
-        });
+        };
+        if (!layoutParent) panelField.nested = false;
+        html += this.renderField(panelField);
       });
       html += '</section>';
     });
@@ -1370,7 +1375,8 @@ window.trainingCoreMixin = {
     const preset = this.form.lycoris_preset || 'full';
     const rank = this.form.network_dim ?? '—';
     const alpha = this.form.network_alpha ?? '—';
-    const dora = this.form.dora_wd === true ? ' · DoRA' : '';
+    // dora_wd 切换算法后可能残留 true，但实际仅 lora/loha/lokr 消费（adapter 会 pop），摘要需同门控
+    const dora = this.form.dora_wd === true && ['lora', 'loha', 'lokr'].includes(String(algo)) ? ' · DoRA' : '';
     const algoLabel = this._lycorisAlgoLabel(algo);
     return `${algoLabel} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
   },
@@ -1439,8 +1445,17 @@ window.trainingCoreMixin = {
       ['unbalanced_factorization', f.unbalanced_factorization],
       ['train_llm_adapter', f.train_llm_adapter],
     ];
+    const DORA_OK_ALGOS = ['lora', 'loha', 'lokr'];
     bools.forEach(([key, value]) => {
+      if (key === 'wd_on_output') {
+        // wd_on_output 默认即 true：仅当用户显式关闭（false）且 DoRA 生效时才写出，
+        // 避免默认值恒显噪音（与 adapter.py 对 dora_wd/wd_on_output 的过滤一致）。
+        if (value !== false || !f.dora_wd || !DORA_OK_ALGOS.includes(algo)) return;
+        lines.push('wd_on_output = false');
+        return;
+      }
       if (!value) return;
+      if (key === 'weight_decompose' && !DORA_OK_ALGOS.includes(algo)) return;
       if (['use_tucker', 'use_scalar', 'rs_lora'].includes(key) && !['lora', 'loha', 'lokr', 'glora'].includes(algo)) return;
       if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
       if (key === 'rescaled' && !['diag-oft', 'boft'].includes(algo)) return;
