@@ -817,6 +817,7 @@
 		"lycorisNoteIa3Preset": "IA³ is usually paired with the ia3 preset; otherwise the target-layer selection may differ from what you expect.",
 		"lycorisNoteFullMatrixFactor": "full_matrix takes precedence over the low-rank factor path — confirm whether factor is still needed.",
 		"lycorisNoteTrainLlmAdapter": "train_llm_adapter expands training targets to LLM adapter layers.",
+		"lycorisNoteDimFullMatrix": "LoKr compresses less as rank grows: past the threshold (typically ~16, depending on layer size) w2 is stored as a full matrix instead of being rank-compressed — the training log notes 'using full matrix mode', and raising rank further adds no parameters. This is by design. In this mode alpha does not affect strength (training applies ×1); adjust strength at load time instead. Setting alpha equal to rank remains the safe choice in every mode.",
 		"lycorisGroupBasic": "Basic configuration",
 		"lycorisGroupRegularization": "Regularization",
 		"lycorisGroupAlgorithm": "Algorithm parameters",

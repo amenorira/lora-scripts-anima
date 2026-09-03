@@ -817,6 +817,7 @@
 		"lycorisNoteIa3Preset": "IA³ 通常应配合 ia3 预设使用，否则目标层选择可能与预期不同。",
 		"lycorisNoteFullMatrixFactor": "full_matrix 会优先于低秩 factor 路径，建议确认是否仍需要 factor。",
 		"lycorisNoteTrainLlmAdapter": "train_llm_adapter 会扩大训练目标到 LLM adapter 层。",
+		"lycorisNoteDimFullMatrix": "LoKr 的 rank 越大压缩越弱：达到阈值（常见约 16 起，因层而异）后 w2 直接存完整矩阵、不再按 rank 压缩，训练日志会提示 using full matrix mode——继续加大 rank 也不会再增加参数，属正常设计。注意这个模式下 alpha 设置不参与强度（训练按 ×1 处理），想调强度请用加载时的 strength；把 alpha 填成与 rank 相同是任何模式都稳妥的选择。",
 		"lycorisGroupBasic": "基础配置",
 		"lycorisGroupRegularization": "正则化",
 		"lycorisGroupAlgorithm": "算法参数",

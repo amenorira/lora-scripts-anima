@@ -1478,6 +1478,10 @@ window.trainingCoreMixin = {
     if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push(this.t('field.lycorisNoteIa3Preset'));
     if (f.lycoris_algo === 'lokr' && f.full_matrix && f.lokr_factor !== -1) notes.push(this.t('field.lycorisNoteFullMatrixFactor'));
     if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
+    // LoKr 全矩阵阈值逐层判定（rank≥层分解维度一半，常见约 16 起），此处用
+    // network_dim/conv_dim ≥16 做静态近似；全矩阵下 alpha 训练端强制按 ×1。
+    const largeLokrRank = Number(f.network_dim || 0) >= 16 || Number(f.conv_dim || 0) >= 16;
+    if (f.lycoris_algo === 'lokr' && largeLokrRank) notes.push(this.t('field.lycorisNoteDimFullMatrix'));
     return notes.join('\n');
   },
 
