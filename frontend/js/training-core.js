@@ -1365,7 +1365,19 @@ window.trainingCoreMixin = {
     const rank = this.form.network_dim ?? '—';
     const alpha = this.form.network_alpha ?? '—';
     const dora = this.form.dora_wd === true ? ' · DoRA' : '';
-    return `${algo} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
+    const algoLabel = this._lycorisAlgoLabel(algo);
+    return `${algoLabel} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
+  },
+
+  // Algo select options carry a per-value i18n key (opt.lycoris_algo_*); the
+  // raw value ("lora") is a TOML literal and would confuse users who only see
+  // localized labels ("LoCon") in the dropdown.
+  _lycorisAlgoLabel(value) {
+    const defs = (window.getVisibleSections(this.form.model_train_type || 'anima-lora') || [])
+      .flatMap(section => section.fields || []);
+    const field = defs.find(item => item.key === 'lycoris_algo');
+    const option = (field?.options || []).find(item => item.v === value);
+    return option ? this.t(option.dk, option.l || value) : (value || '');
   },
 
   // LyCORIS preset files are root-level TOML documents (the kohya adapter
@@ -1427,9 +1439,9 @@ window.trainingCoreMixin = {
   lycorisConfigNotes() {
     const f = this.form;
     const notes = [];
-    if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push('IA³ 通常应配合 ia3 preset，否则目标层选择可能与预期不同。');
-    if (f.lycoris_algo === 'lokr' && f.full_matrix && f.lokr_factor !== -1) notes.push('full_matrix 会优先于低秩 factor 路径，建议确认是否仍需要 factor。');
-    if (f.train_llm_adapter) notes.push('train_llm_adapter 会扩大训练目标到 LLM adapter 层。');
+    if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push(this.t('field.lycorisNoteIa3Preset'));
+    if (f.lycoris_algo === 'lokr' && f.full_matrix && f.lokr_factor !== -1) notes.push(this.t('field.lycorisNoteFullMatrixFactor'));
+    if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
     return notes.join('\n');
   },
 
