@@ -247,8 +247,8 @@ FIELDS: list[dict[str, Any]] = [
     #   networks.lora 完整支持（lora.py:435 读取 / 939-957 create_modules 对 3x3 Conv2d 启用 conv_lora_dim）；
     #   networks.loha / networks.lokr 同样读取；lycoris.kohya 通用（kohya.py:42-43）。
     #   networks.lora_anima 不支持（create_network 不读 conv_dim，create_modules Linear/Conv2d 共用 lora_dim）。
-    {"key": "conv_dim", "type": "number", "section": "network", "desc_key": "field.conv_dim", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_dimHint"},
-    {"key": "conv_alpha", "type": "number", "section": "network", "desc_key": "field.conv_alpha", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_alphaHint"},
+    {"key": "conv_dim", "type": "number", "section": "network", "desc_key": "field.conv_dim", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_dimHintNative", "hint_key_panel": "field.conv_dimHint"},
+    {"key": "conv_alpha", "type": "number", "section": "network", "desc_key": "field.conv_alpha", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_alphaHintNative", "hint_key_panel": "field.conv_alphaHint"},
     # lokr_factor → sd-scripts factor：仅 LoKr 算法消费（vendor lokr.py 读 kwargs["factor"]；
     # vendor loha.py 不读；lycoris 仅 LokrModule.__init__ 有 factor 参数）。
     # 故显示条件为 OR-of-ANDs：原生 networks.lokr，或 lycoris.kohya + algo=lokr。
@@ -261,7 +261,7 @@ FIELDS: list[dict[str, Any]] = [
     # use_tucker：仅 Conv2d 3x3+ 的 Tucker 分解有效。原生 loha/lokr 模块消费；
     # lycoris 仅 LoCon/Loha/Lokr 模块消费（dylora/glora/ia3/diag-oft/boft 签名有但忽略）。
     # 故显示条件为 OR-of-ANDs：原生 loha/lokr，或 lycoris.kohya + algo∈{lora,loha,lokr}。
-    {"key": "use_tucker", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_tucker", "target": "ui", "show_if_any": [[{"key": "network_module", "eq": "networks.loha"}], [{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}]], "hint_key": "field.use_tuckerHint", "omit_default": True},
+    {"key": "use_tucker", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_tucker", "target": "ui", "show_if_any": [[{"key": "network_module", "eq": "networks.loha"}], [{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}]], "hint_key": "field.use_tuckerHintNative", "hint_key_panel": "field.use_tuckerHint", "omit_default": True},
     # lycoris.kohya 其他基础子参数。use_scalar 按算法显示（show_if 末位是 lycoris_algo → 挂其下）
     {"key": "use_scalar", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_scalar", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr", "glora"]}], "omit_default": True},
     {"key": "decompose_both", "type": "toggle", "default": False, "section": "network", "desc_key": "field.decompose_both", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "omit_default": True},
@@ -643,6 +643,7 @@ _FIELD_KEY_MAP = {
     "constraints_by_group": "constraintsByGroup",
     "layout_parent": "layoutParent",
     "keep_children_position": "keepChildrenPosition",
+    "hint_key_panel": "hintKeyPanel",
     "lycoris_group": "lycorisGroup",
     "lycoris_order": "lycorisOrder",
 }

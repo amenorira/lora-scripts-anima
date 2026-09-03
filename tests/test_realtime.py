@@ -344,6 +344,59 @@ process.stdout.write(JSON.stringify({
         self.assertIn("task:train-42", state["subscribed"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend training checks")
+    def test_lycoris_panel_fields_stay_in_main_form_for_native_modules(self):
+        """LyCORIS 弹窗字段在主表单只对原生模块（非 lycoris.kohya）可见：
+        _lycorisMainFormConditions 必须在不改变原条件语义的前提下追加
+        "network_module ≠ lycoris.kohya"，且弹窗内渲染（lycorisPanel）不受影响。"""
+        script = (
+            "global.window = {};\n"
+            "eval(require('fs').readFileSync('frontend/js/training-core.js', 'utf8'));\n"
+            "const app = Object.assign({}, window.trainingCoreMixin);\n" + r"""
+const out = {};
+// 单条件 showIf（conv_dim 形状）：转为 AND 数组并追加排除条件
+const single = app._lycorisMainFormConditions({
+  key: 'conv_dim', lycorisGroup: 'basic',
+  showIf: { key: 'network_module', eq: 'networks.lora', or: ['networks.loha', 'networks.lokr', 'lycoris.kohya'] },
+});
+out.singleIsArray = Array.isArray(single.showIf);
+out.singleKeepsOriginal = single.showIf[0].eq === 'networks.lora' && single.showIf[0].or.join(',') === 'networks.loha,networks.lokr,lycoris.kohya';
+out.singleHasExclusion = single.showIf.some(c => c.key === 'network_module' && c.neq === 'lycoris.kohya');
+// 多条件 AND showIf（dylora block_size 形状）：原条件保留 + 追加
+const and = app._lycorisMainFormConditions({
+  key: 'block_size', lycorisGroup: 'algorithm',
+  showIf: [{ key: 'network_module', eq: 'lycoris.kohya' }, { key: 'lycoris_algo', eq: 'dylora' }],
+});
+out.andLength = and.showIf.length;
+out.andHasExclusion = and.showIf[and.showIf.length - 1].neq === 'lycoris.kohya';
+// OR-of-ANDs（use_tucker 形状）：每个内层 AND 组都追加排除条件
+const any = app._lycorisMainFormConditions({
+  key: 'use_tucker', lycorisGroup: 'advanced',
+  showIfAny: [[{ key: 'network_module', eq: 'networks.loha' }], [{ key: 'network_module', eq: 'lycoris.kohya' }, { key: 'lycoris_algo', eq: 'lora' }]],
+});
+out.anyGroupCount = any.showIfAny.length;
+out.anyAllHaveExclusion = any.showIfAny.every(g => g.some(c => c.key === 'network_module' && c.neq === 'lycoris.kohya'));
+// 弹窗内渲染与普通字段：完全不受影响
+out.panelUnchanged = app._lycorisMainFormConditions({ key: 'conv_dim', lycorisGroup: 'basic', lycorisPanel: true, showIf: { key: 'network_module', eq: 'lycoris.kohya' } });
+out.plainUnchanged = app._lycorisMainFormConditions({ key: 'network_dim', showIf: { key: 'model_train_type', eq: 'anima-lora' } });
+process.stdout.write(JSON.stringify(out));
+"""
+        )
+        result = subprocess.run(
+            ["node", "-e", script], cwd=Path.cwd(), check=True,
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        state = json.loads(result.stdout)
+        self.assertTrue(state["singleIsArray"])
+        self.assertTrue(state["singleKeepsOriginal"])
+        self.assertTrue(state["singleHasExclusion"])
+        self.assertEqual(state["andLength"], 3)
+        self.assertTrue(state["andHasExclusion"])
+        self.assertEqual(state["anyGroupCount"], 2)
+        self.assertTrue(state["anyAllHaveExclusion"])
+        self.assertIsNone(state["panelUnchanged"])
+        self.assertIsNone(state["plainUnchanged"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend training checks")
     def test_training_start_without_task_id_returns_to_idle(self):
         script = self._eval_frontend_mixins() + r"""
 app.isTraining = true;

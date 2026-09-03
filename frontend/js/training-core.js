@@ -1275,7 +1275,7 @@ window.trainingCoreMixin = {
     this._initCollapseState(sections);
     let html = '';
       sections.forEach(section => {
-      const visibleFields = section.fields.filter(f => !f.hidden && !f.lycorisGroup);
+      const visibleFields = section.fields.filter(f => !f.hidden);
       const allFields = this._orderFieldsByDependencies(visibleFields);
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
@@ -1334,7 +1334,13 @@ window.trainingCoreMixin = {
       if (!grouped.length) return;
       html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.esc(this.t(titleKey))}</div>`;
       grouped.forEach(field => {
-        html += this.renderField({ ...field, nested: false, layoutParent: null });
+        html += this.renderField({
+          ...field,
+          nested: false,
+          layoutParent: null,
+          lycorisPanel: true,
+          hintKey: field.hintKeyPanel || field.hintKey,
+        });
       });
       html += '</section>';
     });
@@ -1378,6 +1384,21 @@ window.trainingCoreMixin = {
     const field = defs.find(item => item.key === 'lycoris_algo');
     const option = (field?.options || []).find(item => item.v === value);
     return option ? this.t(option.dk, option.l || value) : (value || '');
+  },
+
+  // LyCORIS 面板字段在主表单渲染时追加"非 lycoris.kohya"条件：原生
+  // networks.lora/loha/lokr 下这些字段留在主表单按各自 show_if 显示，
+  // lycoris.kohya 下收进 LyCORIS 弹窗（弹窗内字段带 lycorisPanel 标记，不受此追加影响）。
+  _lycorisMainFormConditions(field) {
+    if (!field.lycorisGroup || field.lycorisPanel) return null;
+    const mainOnly = { key: 'network_module', neq: 'lycoris.kohya' };
+    const showIf = Array.isArray(field.showIf)
+      ? field.showIf.concat(mainOnly)
+      : (field.showIf ? [field.showIf, mainOnly] : field.showIf);
+    const showIfAny = field.showIfAny
+      ? field.showIfAny.map(group => group.concat(mainOnly))
+      : field.showIfAny;
+    return { showIf, showIfAny };
   },
 
   // LyCORIS preset files are root-level TOML documents (the kohya adapter
@@ -1991,10 +2012,15 @@ window.trainingCoreMixin = {
     const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
+    // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
+    // lycoris.kohya 下它们收进 LyCORIS 弹窗（renderLycorisPanel 以 lycorisPanel 标记渲染）。
+    const condField = this._lycorisMainFormConditions(field);
+    const condShowIf = condField ? condField.showIf : field.showIf;
+    const condShowIfAny = condField ? condField.showIfAny : field.showIfAny;
     let condClass = '';
     let condAttrs = '';
-    if (field.showIf) {
-      const sf = field.showIf;
+    if (condShowIf) {
+      const sf = condShowIf;
       if (Array.isArray(sf)) {
         // Multi-condition AND: store JSON for evaluation
         condAttrs = ` data-show-if-all='${this.esc(JSON.stringify(sf))}'`;
@@ -2018,10 +2044,10 @@ window.trainingCoreMixin = {
         }
         condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
       }
-    } else if (field.showIfAny) {
+    } else if (condShowIfAny) {
       // OR-of-ANDs: list[list[dict]] — 任一内层 AND 组全成立即显示
-      condAttrs = ` data-show-if-any='${this.esc(JSON.stringify(field.showIfAny))}'`;
-      const condMet = field.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
+      condAttrs = ` data-show-if-any='${this.esc(JSON.stringify(condShowIfAny))}'`;
+      const condMet = condShowIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
       condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
