@@ -280,6 +280,7 @@ FIELDS: list[dict[str, Any]] = [
     # wd_on_output：DoRA 权重分解的作用维度（输出 vs 输入）。仅 dora_wd=True（开启 DoRA）时生效，
     # 故显示条件追加 dora_wd=True（lycoris 各模块仅在 self.wd 为真时才读 wd_on_out）。
     {"key": "wd_on_output", "type": "toggle", "default": True, "section": "network", "desc_key": "field.wd_on_output", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}, {"key": "dora_wd", "eq": True}], "hint_key": "field.wd_on_outputHint", "omit_default": True},
+    {"key": "train_llm_adapter", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_llm_adapter", "target": "ui", "group": "anima", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.train_llm_adapterHint", "omit_default": True},
     # ── 通用参数（所有 module 可见）──
     # base_weights：训练前把已有 LoRA 权重合并进 base 模型再训练（LoRA 叠加工作流）。
     # sd-scripts argparse nargs="*"，adapter 把逗号分隔字符串转 list。

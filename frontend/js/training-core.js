@@ -18,6 +18,16 @@ window.DEFAULT_DIM_KEYS = new Set([
   'train_data_dir', 'output_name', 'output_dir',
 ]);
 
+// LyCORIS-specific fields are rendered in the dedicated near-fullscreen panel
+// so the main training form stays focused on general network settings.
+window.LYCORIS_PANEL_KEYS = new Set([
+  'lycoris_algo', 'lycoris_preset', 'conv_dim', 'conv_alpha', 'lokr_factor',
+  'rank_dropout', 'module_dropout', 'use_tucker', 'use_scalar', 'decompose_both',
+  'dropout', 'full_matrix', 'train_norm', 'dora_wd', 'block_size', 'constraint',
+  'rescaled', 'bypass_mode', 'rs_lora', 'unbalanced_factorization', 'wd_on_output',
+  'train_llm_adapter',
+]);
+
 window.trainingCoreMixin = {
   // ── State ──────────────────────────────────────────────
   form: {},
@@ -63,6 +73,8 @@ window.trainingCoreMixin = {
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
+  lycorisModalOpen: false,
+  lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
 
   // Training state
@@ -1273,7 +1285,8 @@ window.trainingCoreMixin = {
     this._initCollapseState(sections);
     let html = '';
       sections.forEach(section => {
-      const visibleFields = section.fields.filter(f => !f.hidden);
+      const visibleFields = section.fields.filter(f => !f.hidden
+        && !(window.LYCORIS_PANEL_KEYS?.has(f.key)));
       const allFields = this._orderFieldsByDependencies(visibleFields);
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
@@ -1287,6 +1300,12 @@ window.trainingCoreMixin = {
       // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。
       allFields.forEach(f => {
         html += this.renderField(f);
+        if (f.key === 'network_module') {
+          html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
+            + `<button type="button" class="btn btn-ghost lycoris-config-button" @click="openLycorisConfig()">`
+            + `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a2 2 0 1 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.3a2 2 0 1 1-4 0v-.2A2 2 0 0 0 5.8 18l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 1.6 12H1.3a2 2 0 1 1 0-4h.2A2 2 0 0 0 3 4.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A2 2 0 0 0 9.2.4V.1a2 2 0 1 1 4 0v.2A2 2 0 0 0 16.6 2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A2 2 0 0 0 20.8 8h.3a2 2 0 1 1 0 4h-.2a2 2 0 0 0-1.5 3Z"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
+            + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
+        }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
       });
 
@@ -1303,6 +1322,64 @@ window.trainingCoreMixin = {
     // 整张表单刚重建时一次性同步全部条件字段。旧实现按每个条件 key
     // 重复扫描 DOM、重算计数和生成 TOML，训练类型切换时会产生明显卡顿。
     this._syncAllConditionalFields();
+    this.renderLycorisPanel();
+  },
+
+  renderLycorisPanel() {
+    const root = document.getElementById('lycorisConfigContent');
+    if (!root) return;
+    const trainType = this.form.model_train_type || 'anima-lora';
+    const sections = window.getVisibleSections(trainType) || [];
+    const fields = sections.flatMap(section => (section.fields || [])
+      .filter(f => !f.hidden && window.LYCORIS_PANEL_KEYS?.has(f.key)));
+    const ordered = this._orderFieldsByDependencies(fields);
+    let html = '<div class="lycoris-panel-section"><div class="lycoris-panel-section-title">'
+      + this.esc(this.t('field.lycorisBasic', 'LyCORIS settings')) + '</div>';
+    ordered.forEach(field => { html += this.renderField(field); });
+    html += '</div>';
+    this._replaceTrainingFormHtml(root, html);
+    this._syncAllConditionalFields();
+  },
+
+  openLycorisConfig() {
+    if (this.form.network_module !== 'lycoris.kohya') return;
+    this.lycorisModalPreviousFocus = document.activeElement;
+    this.lycorisModalOpen = true;
+    this.$nextTick(() => {
+      this.renderLycorisPanel();
+      document.querySelector('.lycoris-modal-close')?.focus();
+    });
+  },
+
+  closeLycorisConfig() {
+    this.lycorisModalOpen = false;
+    this.$nextTick(() => this.lycorisModalPreviousFocus?.focus?.());
+  },
+
+  lycorisSummary() {
+    if (this.form.network_module !== 'lycoris.kohya') return '';
+    const algo = this.form.lycoris_algo || 'lora';
+    const preset = this.form.lycoris_preset || 'full';
+    const rank = this.form.network_dim ?? '—';
+    const alpha = this.form.network_alpha ?? '—';
+    const dora = this.form.dora_wd === true ? ' · DoRA' : '';
+    return `${algo} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
+  },
+
+  lycorisEffectiveArgs() {
+    const map = { lycoris_algo: 'algo', lycoris_preset: 'preset', conv_dim: 'conv_dim', conv_alpha: 'conv_alpha', lokr_factor: 'factor', rank_dropout: 'rank_dropout', module_dropout: 'module_dropout', use_tucker: 'use_tucker', use_scalar: 'use_scalar', decompose_both: 'decompose_both', dropout: 'dropout', full_matrix: 'full_matrix', train_norm: 'train_norm', dora_wd: 'dora_wd', block_size: 'block_size', constraint: 'constraint', rescaled: 'rescaled', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora', unbalanced_factorization: 'unbalanced_factorization', wd_on_output: 'wd_on_output', train_llm_adapter: 'train_llm_adapter' };
+    const algo = String(this.form.lycoris_algo || 'lora').toLowerCase();
+    const args = [];
+    Object.entries(map).forEach(([key, arg]) => {
+      const value = this.form[key];
+      if (value === '' || value === null || value === undefined) return;
+      if (key === 'lokr_factor' && algo !== 'lokr') return;
+      if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
+      if (key === 'block_size' && algo !== 'dylora') return;
+      if (['constraint', 'rescaled'].includes(key) && !['diag-oft', 'boft'].includes(algo)) return;
+      args.push(`${arg}=${typeof value === 'boolean' ? String(value).toLowerCase() : value}`);
+    });
+    return args;
   },
 
   _replaceTrainingFormHtml(container, html) {
@@ -2683,10 +2760,10 @@ window.trainingCoreMixin = {
   // 完整渲染后的快速初始化路径：每个条件节点只解析和求值一次，不播放动画，
   // 不生成 TOML（调用方会在表单初始化完成后统一生成）。
   _syncAllConditionalFields() {
-    const container = document.getElementById('trainFormContent');
-    if (!container) return;
+    const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
+    if (!containers.length) return;
 
-    container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]').forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]'))).forEach(row => {
       let match = true;
       try {
         const allAttr = row.getAttribute('data-show-if-all');
@@ -2721,12 +2798,12 @@ window.trainingCoreMixin = {
   },
 
   showConditionalFields(parentKey) {
-    const container = document.getElementById('trainFormContent');
-    if (!container) { this.updateToml(); return; }
+    const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
+    if (!containers.length) { this.updateToml(); return; }
     const expectedVal = this.form[parentKey];
     const toAnimate = [];
     // Handle multi-condition show_if (data-show-if-all)
-    container.querySelectorAll(`[data-show-if-all]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-all]`))).forEach(row => {
       try {
         const conditions = JSON.parse(row.getAttribute('data-show-if-all'));
         // Only re-evaluate if this parentKey is relevant to these conditions
@@ -2737,7 +2814,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle OR-of-ANDs show_if (data-show-if-any)
-    container.querySelectorAll(`[data-show-if-any]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-any]`))).forEach(row => {
       try {
         const groups = JSON.parse(row.getAttribute('data-show-if-any'));
         // Only re-evaluate if this parentKey appears in any AND group
@@ -2748,7 +2825,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle single-condition show_if (data-show-if-key) — existing logic
-    container.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-key="${parentKey}"]`))).forEach(row => {
       const eqVal = row.getAttribute('data-show-if-eq');
       const neqVal = row.getAttribute('data-show-if-neq');
       const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);

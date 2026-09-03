@@ -77,6 +77,7 @@ LYCORIS_KOHYA_SPECIFIC_ARG_MAP: dict[str, str] = {
     "rs_lora": "rs_lora",
     "unbalanced_factorization": "unbalanced_factorization",
     "wd_on_output": "wd_on_output",
+    "train_llm_adapter": "train_llm_adapter",
 }
 
 # lycoris.kohya 模块下所有需从顶层 pop 掉的 UI 字段
@@ -347,6 +348,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         network_args = list(source.get("network_args") or [])
         # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
         for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
+            if ui_field == "train_llm_adapter" and source.get("model_train_type") != "anima-lora":
+                source.pop(ui_field, None)
+                continue
             if ui_field == "block_size" and algo not in _LYCORIS_ALGO_BLOCK_SIZE_OK:
                 source.pop(ui_field, None)
                 continue

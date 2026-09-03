@@ -47,13 +47,13 @@ window.trainingTomlMixin = {
       dora_wd: 'dora_wd', block_size: 'block_size', constraint: 'constraint',
       rescaled: 'rescaled', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora',
       lycoris_preset: 'preset', unbalanced_factorization: 'unbalanced_factorization',
-      wd_on_output: 'wd_on_output',
+      wd_on_output: 'wd_on_output', train_llm_adapter: 'train_llm_adapter',
     };
     // Fields only available for lycoris.kohya (not sd-scripts native LoHa/LoKr)
     const KOHYA_ONLY = new Set(['lycoris_algo', 'lycoris_preset',
       'use_scalar', 'decompose_both', 'full_matrix', 'train_norm', 'dropout',
       'dora_wd', 'block_size', 'constraint', 'rescaled', 'bypass_mode', 'rs_lora',
-      'unbalanced_factorization', 'wd_on_output']);
+      'unbalanced_factorization', 'wd_on_output', 'train_llm_adapter']);
 
     // 跳过的顶层字段：UI-only、merged 优化器字段（由 _buildOptimizerArgs 合并进 optimizer_args）
     const SKIP_TOP_LEVEL = new Set([

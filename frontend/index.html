@@ -1323,6 +1323,36 @@
 <!-- ── Hidden file inputs for importing ─────────────────── -->
 <input type="file" id="configFileInput" accept=".toml,.yaml,.yml" style="display:none" @change="handleConfigFileImport($event)">
 
+<!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
+<div class="modal-overlay lycoris-modal-overlay" x-show="lycorisModalOpen" @click.self="closeLycorisConfig()"
+     @keydown.escape.window="closeLycorisConfig()" x-cloak>
+  <div class="modal lycoris-modal" role="dialog" aria-modal="true"
+       :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')">
+    <div class="modal-header lycoris-modal-header">
+      <div>
+        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-modal-subtitle" x-text="lycorisSummary()"></div>
+      </div>
+      <button type="button" class="btn-icon lycoris-modal-close" @click="closeLycorisConfig()" :aria-label="t('common.close')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="lycoris-modal-body">
+      <div class="lycoris-form-scroll" id="lycorisConfigContent"></div>
+      <aside class="lycoris-summary-panel">
+        <div class="lycoris-summary-title" x-text="t('field.lycorisEffective', 'Effective configuration')">Effective configuration</div>
+        <div class="lycoris-summary-main" x-text="lycorisSummary()"></div>
+        <div class="lycoris-summary-label" x-text="t('field.lycorisNetworkArgs', 'network_args')">network_args</div>
+        <pre class="lycoris-effective-args" x-text="lycorisEffectiveArgs().join('\n')"></pre>
+        <div class="lycoris-summary-hint" x-text="t('field.lycorisLiveHint', 'Changes are applied immediately to the training form and TOML preview.')"></div>
+      </aside>
+    </div>
+    <div class="modal-footer lycoris-modal-footer">
+      <button type="button" class="btn btn-ghost btn-sm" @click="closeLycorisConfig()" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Confirm Modal ───────────────────────────────────── -->
 <div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()"
      @keydown.escape.window="cancelConfirm()" x-cloak>
