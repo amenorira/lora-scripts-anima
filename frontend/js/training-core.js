@@ -18,16 +18,6 @@ window.DEFAULT_DIM_KEYS = new Set([
   'train_data_dir', 'output_name', 'output_dir',
 ]);
 
-// LyCORIS-specific fields are rendered in the dedicated near-fullscreen panel
-// so the main training form stays focused on general network settings.
-window.LYCORIS_PANEL_KEYS = new Set([
-  'lycoris_algo', 'lycoris_preset', 'conv_dim', 'conv_alpha', 'lokr_factor',
-  'rank_dropout', 'module_dropout', 'use_tucker', 'use_scalar', 'decompose_both',
-  'dropout', 'full_matrix', 'train_norm', 'dora_wd', 'block_size', 'constraint',
-  'rescaled', 'bypass_mode', 'rs_lora', 'unbalanced_factorization', 'wd_on_output',
-  'train_llm_adapter',
-]);
-
 window.trainingCoreMixin = {
   // ── State ──────────────────────────────────────────────
   form: {},
@@ -1285,8 +1275,7 @@ window.trainingCoreMixin = {
     this._initCollapseState(sections);
     let html = '';
       sections.forEach(section => {
-      const visibleFields = section.fields.filter(f => !f.hidden
-        && !(window.LYCORIS_PANEL_KEYS?.has(f.key)));
+      const visibleFields = section.fields.filter(f => !f.hidden && !f.lycorisGroup);
       const allFields = this._orderFieldsByDependencies(visibleFields);
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
@@ -1302,7 +1291,7 @@ window.trainingCoreMixin = {
         html += this.renderField(f);
         if (f.key === 'network_module') {
           html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
-            + `<button type="button" class="btn btn-ghost lycoris-config-button" @click="openLycorisConfig()">`
+            + `<button type="button" class="lycoris-config-button" @click="openLycorisConfig()">`
             + `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a2 2 0 1 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.3a2 2 0 1 1-4 0v-.2A2 2 0 0 0 5.8 18l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 1.6 12H1.3a2 2 0 1 1 0-4h.2A2 2 0 0 0 3 4.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A2 2 0 0 0 9.2.4V.1a2 2 0 1 1 4 0v.2A2 2 0 0 0 16.6 2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A2 2 0 0 0 20.8 8h.3a2 2 0 1 1 0 4h-.2a2 2 0 0 0-1.5 3Z"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }
@@ -1330,12 +1319,25 @@ window.trainingCoreMixin = {
     if (!root) return;
     const trainType = this.form.model_train_type || 'anima-lora';
     const sections = window.getVisibleSections(trainType) || [];
-    const fields = sections.flatMap(section => (section.fields || [])
-      .filter(f => !f.hidden && window.LYCORIS_PANEL_KEYS?.has(f.key)));
-    const ordered = this._orderFieldsByDependencies(fields);
-    let html = '<div class="lycoris-panel-section"><div class="lycoris-panel-section-title">'
-      + this.esc(this.t('field.lycorisBasic', 'LyCORIS settings')) + '</div>';
-    ordered.forEach(field => { html += this.renderField(field); });
+    const fields = sections.flatMap(section => (section.fields || []))
+      .filter(field => !field.hidden && field.lycorisGroup);
+    const groups = [
+      ['basic', 'field.lycorisGroupBasic'],
+      ['regularization', 'field.lycorisGroupRegularization'],
+      ['algorithm', 'field.lycorisGroupAlgorithm'],
+      ['advanced', 'field.lycorisGroupAdvanced'],
+    ];
+    let html = '<div class="lycoris-panel-fields">';
+    groups.forEach(([group, titleKey]) => {
+      const grouped = fields.filter(field => field.lycorisGroup === group)
+        .sort((a, b) => (a.lycorisOrder || 0) - (b.lycorisOrder || 0));
+      if (!grouped.length) return;
+      html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.esc(this.t(titleKey))}</div>`;
+      grouped.forEach(field => {
+        html += this.renderField({ ...field, nested: false, layoutParent: null });
+      });
+      html += '</section>';
+    });
     html += '</div>';
     this._replaceTrainingFormHtml(root, html);
     this._syncAllConditionalFields();
@@ -1366,20 +1368,69 @@ window.trainingCoreMixin = {
     return `${algo} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
   },
 
-  lycorisEffectiveArgs() {
-    const map = { lycoris_algo: 'algo', lycoris_preset: 'preset', conv_dim: 'conv_dim', conv_alpha: 'conv_alpha', lokr_factor: 'factor', rank_dropout: 'rank_dropout', module_dropout: 'module_dropout', use_tucker: 'use_tucker', use_scalar: 'use_scalar', decompose_both: 'decompose_both', dropout: 'dropout', full_matrix: 'full_matrix', train_norm: 'train_norm', dora_wd: 'dora_wd', block_size: 'block_size', constraint: 'constraint', rescaled: 'rescaled', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora', unbalanced_factorization: 'unbalanced_factorization', wd_on_output: 'wd_on_output', train_llm_adapter: 'train_llm_adapter' };
-    const algo = String(this.form.lycoris_algo || 'lora').toLowerCase();
-    const args = [];
-    Object.entries(map).forEach(([key, arg]) => {
-      const value = this.form[key];
+  // LyCORIS preset files are root-level TOML documents (the kohya adapter
+  // passes the selected preset name/path separately from network_args). Keep
+  // this preview faithful to that schema while making the generated CLI
+  // arguments explicit, so users can see both layers without changing merge
+  // behavior.
+  lycorisConfigPreview() {
+    if (this.form.network_module !== 'lycoris.kohya') return '';
+    const f = this.form;
+    const algo = String(f.lycoris_algo || 'lora').toLowerCase();
+    const lines = [`algo = "${algo}"`];
+    const preset = String(f.lycoris_preset || 'full');
+    if (preset !== 'full') lines.push(`preset = "${preset}"`);
+    const fields = [
+      ['conv_dim', f.conv_dim], ['conv_alpha', f.conv_alpha],
+      ['factor', f.lokr_factor], ['dropout', f.dropout],
+      ['rank_dropout', f.rank_dropout], ['module_dropout', f.module_dropout],
+      ['block_size', f.block_size], ['constraint', f.constraint],
+    ];
+    fields.forEach(([key, value]) => {
       if (value === '' || value === null || value === undefined) return;
-      if (key === 'lokr_factor' && algo !== 'lokr') return;
-      if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
+      if (key === 'factor' && algo !== 'lokr') return;
       if (key === 'block_size' && algo !== 'dylora') return;
-      if (['constraint', 'rescaled'].includes(key) && !['diag-oft', 'boft'].includes(algo)) return;
-      args.push(`${arg}=${typeof value === 'boolean' ? String(value).toLowerCase() : value}`);
+      if (key === 'constraint' && !['diag-oft', 'boft'].includes(algo)) return;
+      const field = (window.getVisibleSections(this.form.model_train_type || 'anima-lora') || [])
+        .flatMap(section => section.fields || []).find(item => item.key === key);
+      if (field?.default !== undefined && String(value) === String(field.default)) return;
+      lines.push(`${key} = ${value}`);
     });
-    return args;
+    const bools = [
+      ['enable_conv', f.conv_dim !== '' && f.conv_dim !== null && f.conv_dim !== undefined],
+      ['use_tucker', f.use_tucker], ['use_scalar', f.use_scalar],
+      ['decompose_both', f.decompose_both], ['full_matrix', f.full_matrix],
+      ['train_norm', f.train_norm], ['weight_decompose', f.dora_wd],
+      ['wd_on_output', f.wd_on_output], ['rescaled', f.rescaled],
+      ['bypass_mode', f.bypass_mode], ['rs_lora', f.rs_lora],
+      ['unbalanced_factorization', f.unbalanced_factorization],
+      ['train_llm_adapter', f.train_llm_adapter],
+    ];
+    bools.forEach(([key, value]) => {
+      if (!value) return;
+      if (['use_tucker', 'use_scalar', 'rs_lora'].includes(key) && !['lora', 'loha', 'lokr', 'glora'].includes(algo)) return;
+      if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
+      if (key === 'rescaled' && !['diag-oft', 'boft'].includes(algo)) return;
+      lines.push(`${key} = true`);
+    });
+    return lines.join('\n');
+  },
+
+  lycorisConfigPreviewHtml() {
+    const raw = this.lycorisConfigPreview();
+    if (!raw) return '';
+    return typeof this._highlightToml === 'function'
+      ? this._highlightToml(raw.split('\n'))
+      : this.esc(raw);
+  },
+
+  lycorisConfigNotes() {
+    const f = this.form;
+    const notes = [];
+    if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push('IA³ 通常应配合 ia3 preset，否则目标层选择可能与预期不同。');
+    if (f.lycoris_algo === 'lokr' && f.full_matrix && f.lokr_factor !== -1) notes.push('full_matrix 会优先于低秩 factor 路径，建议确认是否仍需要 factor。');
+    if (f.train_llm_adapter) notes.push('train_llm_adapter 会扩大训练目标到 LLM adapter 层。');
+    return notes.join('\n');
   },
 
   _replaceTrainingFormHtml(container, html) {
@@ -3593,6 +3644,14 @@ window.trainingCoreMixin = {
       }
     }
 
+    // LyCORIS LoKr uses -1 for automatic factor selection; zero is not a
+    // meaningful factor. Normalize manual input to the documented automatic
+    // value instead of allowing a configuration that fails at train startup.
+    if (key === 'lokr_factor' && value !== '' && value !== null && value !== undefined) {
+      const factor = Number(value);
+      if (factor === 0) value = -1;
+    }
+
     if ((key === 'cache_text_encoder_outputs' || key === 'cache_text_encoder_outputs_to_disk') && value === true) {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
@@ -3719,6 +3778,7 @@ window.trainingCoreMixin = {
     const constraints = this._numberConstraints(field);
     const step = constraints.step || 1;
     let newVal = current + delta;
+    if (key === 'lokr_factor' && newVal === 0) newVal = delta > 0 ? 1 : -1;
     if (constraints.min !== undefined && newVal < constraints.min) newVal = constraints.min;
     if (constraints.max !== undefined && newVal > constraints.max) newVal = constraints.max;
     // Fix floating-point drift (e.g. 0.1 + 0.2 = 0.30000000000000004)

@@ -1722,28 +1722,33 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .lycoris-modal-header { flex-shrink: 0; }
 .lycoris-modal-title { font-size: 16px; font-weight: 700; }
 .lycoris-modal-subtitle { color: var(--text-secondary); font-size: 12px; margin-top: 3px; }
-.lycoris-modal-body { min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); gap: 18px; padding: 18px 22px; }
+.lycoris-modal-body { min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 20px; padding: 18px 22px; }
 .lycoris-form-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
-.lycoris-summary-panel { min-width: 0; overflow: auto; border-left: 1px solid var(--border-default); padding-left: 18px; }
-.lycoris-summary-title { font-weight: 700; margin-bottom: 10px; }
-.lycoris-summary-main { color: var(--text-secondary); font-size: 13px; margin-bottom: 18px; }
-.lycoris-summary-label { color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.lycoris-effective-args { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--text-primary); background: var(--bg-surface-raised); padding: 10px; border-radius: 6px; min-height: 52px; }
-.lycoris-summary-hint { color: var(--text-tertiary); font-size: 12px; line-height: 1.5; }
+.lycoris-panel-fields { max-width: 920px; margin: 0 auto; }
+.lycoris-field-group + .lycoris-field-group { margin-top: 18px; }
+.lycoris-field-group:not(:has(.field:not(.field-hidden))) { display: none; }
+.lycoris-field-group-title { display: flex; align-items: center; gap: 8px; padding: 0 0 8px; margin-bottom: 2px; color: var(--text-primary); font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border-default); }
+.lycoris-field-group-title::before { content: ''; width: 3px; height: 14px; border-radius: 1px; background: var(--accent); flex: 0 0 auto; }
+.lycoris-preview-panel { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--border-default); padding-left: 20px; }
+.lycoris-preview-title { margin-bottom: 10px; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.lycoris-config-preview { min-height: 260px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; }
+.lycoris-config-preview .toml-line { display: block; min-height: 1.6em; }
+.lycoris-preview-notes { margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); white-space: pre-line; font-size: 11px; line-height: 1.5; }
 .lycoris-modal-footer { flex-shrink: 0; justify-content: flex-end; }
-.lycoris-config-entry { display: flex; align-items: center; gap: 10px; margin: -4px 0 14px; }
-.lycoris-config-button { display: inline-flex; align-items: center; gap: 7px; }
+.lycoris-config-entry { margin: 8px 0 14px; }
+.lycoris-config-button { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-raised); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; text-align: left; transition: border-color var(--duration-fast), background-color var(--duration-fast); }
+.lycoris-config-button:hover { border-color: var(--accent); background: var(--accent-muted); }
 .lycoris-config-summary { color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .lycoris-panel-section-title { font-weight: 700; margin-bottom: 12px; }
-@media (max-width: 900px) {
-  .lycoris-modal-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
-  .lycoris-form-scroll, .lycoris-summary-panel { overflow: visible; }
-  .lycoris-summary-panel { border-left: 0; border-top: 1px solid var(--border-default); padding: 16px 0 0; }
-}
 @media (max-width: 560px) {
   .lycoris-modal-overlay { padding: 8px; }
   .lycoris-modal { width: calc(100vw - 16px); max-width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
   .lycoris-modal-body { padding: 14px; }
+}
+@media (max-width: 900px) {
+  .lycoris-modal-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .lycoris-form-scroll, .lycoris-preview-panel { overflow: visible; }
+  .lycoris-preview-panel { border-left: 0; border-top: 1px solid var(--border-default); padding: 16px 0 0; }
 }
 
 @keyframes fade-in { from{opacity:0} to{opacity:1} }

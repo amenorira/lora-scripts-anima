@@ -241,7 +241,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "layout_parent": "enable_loraplus", "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
     # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开，
     # 其余 lycoris 子参数一律按 show_if 挂到 network_module / lycoris_algo 下做层级缩进。
-    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}]},
+    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}, {"v": "full", "l": "Full fine-tuning", "dk": "opt.lycoris_algo_full"}]},
     {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}, {"v": "ia3", "l": "ia3", "dk": "opt.lycoris_preset_ia3"}]},
     # conv_dim/conv_alpha（LoCon：给 3x3 Conv2d 单独设秩）支持面：
     #   networks.lora 完整支持（lora.py:435 读取 / 939-957 create_modules 对 3x3 Conv2d 启用 conv_lora_dim）；
@@ -508,6 +508,49 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "step": 0.1, "show_if": {"key": "enable_preview", "eq": True}},
 ]
 
+# LyCORIS 弹窗布局元数据。字段定义仍是唯一配置来源；这里仅声明独立编辑器中的
+# 信息架构和稳定顺序，避免前端再维护一份字段清单或靠 show_if 关系猜测顺序。
+_LYCORIS_PANEL_LAYOUT = {
+    "lycoris_algo": ("basic", 10),
+    "lycoris_preset": ("basic", 20),
+    "conv_dim": ("basic", 30),
+    "conv_alpha": ("basic", 40),
+    "dropout": ("regularization", 10),
+    "rank_dropout": ("regularization", 20),
+    "module_dropout": ("regularization", 30),
+    "lokr_factor": ("algorithm", 10),
+    "decompose_both": ("algorithm", 20),
+    "full_matrix": ("algorithm", 30),
+    "unbalanced_factorization": ("algorithm", 40),
+    "block_size": ("algorithm", 50),
+    "constraint": ("algorithm", 60),
+    "rescaled": ("algorithm", 70),
+    "use_tucker": ("advanced", 10),
+    "use_scalar": ("advanced", 20),
+    "dora_wd": ("advanced", 30),
+    "wd_on_output": ("advanced", 40),
+    "rs_lora": ("advanced", 50),
+    "bypass_mode": ("advanced", 60),
+    "train_norm": ("advanced", 70),
+    "train_llm_adapter": ("advanced", 80),
+}
+
+for _field in FIELDS:
+    _layout = _LYCORIS_PANEL_LAYOUT.get(_field["key"])
+    if _layout:
+        _field["lycoris_group"], _field["lycoris_order"] = _layout
+
+# Constraints that depend on LyCORIS semantics rather than generic control type.
+_field_by_key = {field["key"]: field for field in FIELDS}
+_field_by_key["dropout"]["max"] = 1
+_field_by_key["constraint"]["min"] = 0
+_field_by_key["lycoris_algo"]["hint_key"] = "field.lycoris_algoHint"
+_field_by_key["lycoris_preset"]["hint_key"] = "field.lycoris_presetHint"
+_field_by_key["bypass_mode"]["show_if"] = [
+    {"key": "network_module", "eq": "lycoris.kohya"},
+    {"key": "lycoris_algo", "neq": "full"},
+]
+
 # Titles identify the control; behavior, applicability, and defaults belong in hints.
 _FIELD_HINTS_BY_KEY = {
     "pretrained_model_name_or_path": "field.pretrained_model_name_or_pathHint",
@@ -600,6 +643,8 @@ _FIELD_KEY_MAP = {
     "constraints_by_group": "constraintsByGroup",
     "layout_parent": "layoutParent",
     "keep_children_position": "keepChildrenPosition",
+    "lycoris_group": "lycorisGroup",
+    "lycoris_order": "lycorisOrder",
 }
 
 

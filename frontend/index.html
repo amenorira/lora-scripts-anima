@@ -1339,12 +1339,10 @@
     </div>
     <div class="lycoris-modal-body">
       <div class="lycoris-form-scroll" id="lycorisConfigContent"></div>
-      <aside class="lycoris-summary-panel">
-        <div class="lycoris-summary-title" x-text="t('field.lycorisEffective', 'Effective configuration')">Effective configuration</div>
-        <div class="lycoris-summary-main" x-text="lycorisSummary()"></div>
-        <div class="lycoris-summary-label" x-text="t('field.lycorisNetworkArgs', 'network_args')">network_args</div>
-        <pre class="lycoris-effective-args" x-text="lycorisEffectiveArgs().join('\n')"></pre>
-        <div class="lycoris-summary-hint" x-text="t('field.lycorisLiveHint', 'Changes are applied immediately to the training form and TOML preview.')"></div>
+      <aside class="lycoris-preview-panel">
+        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="panel-preview lycoris-config-preview" x-html="lycorisConfigPreviewHtml()"></div>
+        <div class="lycoris-preview-notes" x-show="lycorisConfigNotes()" x-text="lycorisConfigNotes()"></div>
       </aside>
     </div>
     <div class="modal-footer lycoris-modal-footer">

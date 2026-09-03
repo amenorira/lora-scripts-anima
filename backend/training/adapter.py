@@ -343,8 +343,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     _LYCORIS_ALGO_SCALAR_OK = {"lora", "loha", "lokr", "glora"}  # use_scalar
     _LYCORIS_ALGO_BLOCK_SIZE_OK = {"dylora"}  # block_size 入参仅 dylora 消费
     _LYCORIS_ALGO_RS_LORA_OK = {"lora", "loha", "lokr", "glora"}  # rs_lora
+    _LYCORIS_ALGO_DORA_OK = {"lora", "loha", "lokr"}
+    _LYCORIS_ALGO_OFT_OK = {"diag-oft", "boft"}
     if source.get("network_module") == "lycoris.kohya":
         algo = (source.get("lycoris_algo") or "lora").lower()
+        dora_enabled = source.get("dora_wd") is True
         network_args = list(source.get("network_args") or [])
         # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
         for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
@@ -355,6 +358,20 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 source.pop(ui_field, None)
                 continue
             if ui_field == "rs_lora" and algo not in _LYCORIS_ALGO_RS_LORA_OK:
+                source.pop(ui_field, None)
+                continue
+            if ui_field == "dora_wd" and algo not in _LYCORIS_ALGO_DORA_OK:
+                source.pop(ui_field, None)
+                continue
+            if ui_field == "wd_on_output" and (
+                algo not in _LYCORIS_ALGO_DORA_OK or not dora_enabled
+            ):
+                source.pop(ui_field, None)
+                continue
+            if ui_field == "unbalanced_factorization" and algo != "lokr":
+                source.pop(ui_field, None)
+                continue
+            if ui_field in {"constraint", "rescaled"} and algo not in _LYCORIS_ALGO_OFT_OK:
                 source.pop(ui_field, None)
                 continue
             value = source.pop(ui_field, None)
@@ -379,6 +396,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         # 仅 lycoris.kohya 支持的高级字段（use_cp, decompose_both 等）
         for ui_field, arg_key in LYCORIS_KOHYA_ONLY_ARG_MAP.items():
             if ui_field == "use_scalar" and algo not in _LYCORIS_ALGO_SCALAR_OK:
+                source.pop(ui_field, None)
+                continue
+            if ui_field in {"decompose_both", "full_matrix"} and algo != "lokr":
                 source.pop(ui_field, None)
                 continue
             value = source.pop(ui_field, None)
