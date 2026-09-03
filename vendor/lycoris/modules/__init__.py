@@ -16,7 +16,6 @@ from .tlora import TLoraModule
 
 from ..functional.general import factorization
 
-
 MODULE_LIST = [
     LoConModule,
     LohaModule,

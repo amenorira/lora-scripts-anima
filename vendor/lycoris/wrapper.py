@@ -18,6 +18,7 @@ from .modules.norms import NormModule
 from .modules.full import FullModule
 from .modules.diag_oft import DiagOFTModule
 from .modules.boft import ButterflyOFTModule
+from .modules.ia3 import IA3Module
 from .modules.tlora import TLoraModule
 from .modules import get_module, make_module
 from .modules.base import is_supported_linear_module, is_weight_only_fp8_linear
@@ -27,7 +28,6 @@ from .config_sdk import VALID_PRESET_KEYS
 from .utils.preset import read_preset
 from .utils import str_bool
 from .logging import logger
-
 
 network_module_dict = {
     "lora": LoConModule,
@@ -39,6 +39,7 @@ network_module_dict = {
     "full": FullModule,
     "diag-oft": DiagOFTModule,
     "boft": ButterflyOFTModule,
+    "ia3": IA3Module,
     "tlora": TLoraModule,
 }
 deprecated_arg_dict = {
@@ -50,7 +51,12 @@ deprecated_arg_dict = {
 
 
 def create_lycoris(
-    module, multiplier=1.0, linear_dim=4, linear_alpha=1, warn_on_unmatched=True, **kwargs
+    module,
+    multiplier=1.0,
+    linear_dim=4,
+    linear_alpha=1,
+    warn_on_unmatched=True,
+    **kwargs,
 ):
     for key, value in list(kwargs.items()):
         if key in deprecated_arg_dict:
@@ -318,11 +324,14 @@ class LycorisNetwork(torch.nn.Module):
                     **kwargs,
                 )
             lora = None
-            if is_supported_linear_module(
-                module,
-                algo_name,
-                weight_decompose=kwargs.get("weight_decompose", False),
-            ) and lora_dim > 0:
+            if (
+                is_supported_linear_module(
+                    module,
+                    algo_name,
+                    weight_decompose=kwargs.get("weight_decompose", False),
+                )
+                and lora_dim > 0
+            ):
                 dim = dim or lora_dim
                 alpha = alpha or self.alpha
             elif isinstance(
