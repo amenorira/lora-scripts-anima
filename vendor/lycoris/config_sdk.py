@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional
 import copy
 
-
 VALID_PRESET_KEYS: tuple[str, ...] = (
     "enable_conv",
     "target_module",

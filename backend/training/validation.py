@@ -12,6 +12,7 @@ from backend.training.field_registry import (
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
     LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
+    loraplus_applies,
 )
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
@@ -154,7 +155,9 @@ def _validate_loraplus(
 ) -> list[str]:
     if (
         config.get("enable_loraplus") is not True
-        or config.get("network_module") not in LORAPLUS_NETWORK_MODULES
+        or not loraplus_applies(
+            config.get("network_module"), config.get("lycoris_algo")
+        )
     ):
         return []
 
@@ -297,7 +300,7 @@ def _validate_automagic(
 
     if (
         config.get("enable_loraplus") is True
-        and config.get("network_module") in LORAPLUS_NETWORK_MODULES
+        and loraplus_applies(config.get("network_module"), config.get("lycoris_algo"))
         and min_lr is not None
         and max_lr is not None
     ):
@@ -484,6 +487,16 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         network_dim = config.get("network_dim")
         if isinstance(block_size, int) and block_size > 0 and isinstance(network_dim, int) and network_dim % block_size != 0:
             errors.append("block_size: must divide network_dim / 必须能整除 network_dim")
+
+    if config.get("network_module") == "lycoris.kohya" and str(config.get("lycoris_algo", "")).lower() == "lokr":
+        factor = config.get("lokr_factor", -1)
+        try:
+            factor_number = int(str(factor).strip())
+        except (TypeError, ValueError):
+            errors.append("lokr_factor: must be -1 or a positive integer / 必须为 -1 或正整数")
+        else:
+            if str(factor).strip() != str(factor_number) or factor_number == 0 or factor_number < -1:
+                errors.append("lokr_factor: must be -1 or a positive integer / 必须为 -1 或正整数")
 
     weights = config.get("base_weights")
     multipliers = config.get("base_weights_multiplier")

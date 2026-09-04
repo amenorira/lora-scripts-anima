@@ -29,7 +29,14 @@ from .logging import logger
 
 
 def create_network(
-    multiplier, network_dim, network_alpha, vae, text_encoder, unet, warn_on_unmatched=True, **kwargs
+    multiplier,
+    network_dim,
+    network_alpha,
+    vae,
+    text_encoder,
+    unet,
+    warn_on_unmatched=True,
+    **kwargs,
 ):
     for key, value in list(kwargs.items()):
         if key in deprecated_arg_dict:
@@ -404,11 +411,14 @@ class LycorisNetworkKohya(LycorisNetwork):
                     **kwargs,
                 )
             lora = None
-            if is_supported_linear_module(
-                module,
-                algo_name,
-                weight_decompose=kwargs.get("weight_decompose", False),
-            ) and lora_dim > 0:
+            if (
+                is_supported_linear_module(
+                    module,
+                    algo_name,
+                    weight_decompose=kwargs.get("weight_decompose", False),
+                )
+                and lora_dim > 0
+            ):
                 dim = dim or lora_dim
                 alpha = alpha or self.alpha
             elif isinstance(
@@ -583,8 +593,14 @@ class LycorisNetworkKohya(LycorisNetwork):
         if warn_on_unmatched:
             # Check text encoder targets
             if text_encoder:
-                te_unmatched_modules = set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_MODULE) - te_matched_modules
-                te_unmatched_names = set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_NAME) - te_matched_names
+                te_unmatched_modules = (
+                    set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_MODULE)
+                    - te_matched_modules
+                )
+                te_unmatched_names = (
+                    set(LycorisNetworkKohya.TEXT_ENCODER_TARGET_REPLACE_NAME)
+                    - te_matched_names
+                )
                 if te_unmatched_modules:
                     logger.warning(
                         f"Text Encoder: No modules matched the following target module classes: {sorted(te_unmatched_modules)}"
@@ -595,8 +611,13 @@ class LycorisNetworkKohya(LycorisNetwork):
                     )
 
             # Check unet targets
-            unet_unmatched_modules = set(LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE) - unet_matched_modules
-            unet_unmatched_names = set(LycorisNetworkKohya.UNET_TARGET_REPLACE_NAME) - unet_matched_names
+            unet_unmatched_modules = (
+                set(LycorisNetworkKohya.UNET_TARGET_REPLACE_MODULE)
+                - unet_matched_modules
+            )
+            unet_unmatched_names = (
+                set(LycorisNetworkKohya.UNET_TARGET_REPLACE_NAME) - unet_matched_names
+            )
             if unet_unmatched_modules:
                 logger.warning(
                     f"UNet: No modules matched the following target module classes: {sorted(unet_unmatched_modules)}"

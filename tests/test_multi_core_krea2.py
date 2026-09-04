@@ -116,7 +116,7 @@ class CoreRegistryTests(unittest.TestCase):
         lycoris = next(item for item in payload["adapters"] if item["id"] == "lycoris")
         self.assertTrue(lycoris["mounted"])
         self.assertEqual(lycoris["host_engine_id"], "sd_scripts")
-        self.assertEqual(lycoris["version"]["describe"], "v3.4.0-0-ga72bb1b")
+        self.assertEqual(lycoris["version"]["describe"], "v4.0.1.dev20260903073410")
 
 
 class Krea2CodecTests(unittest.TestCase):

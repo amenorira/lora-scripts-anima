@@ -6,6 +6,28 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.12.0 - 2026-09-04
+
+This release expands LyCORIS training support with selectable kernel backends, LoRA+, and IA³ configuration, while improving the adaptive parameter panel, validation, and UI interactions.
+
+### Added
+
+- Added LyCORIS kernel backend selection (auto, Triton, TileLang, compile, and Torch), with preflight detection and fallback warnings when a requested backend is unavailable.
+- Added LoRA+ support for LyCORIS, the IA³ algorithm with its dedicated preset, and a Full fine-tuning algorithm option.
+- Added an adaptive LyCORIS configuration panel with algorithm-aware fields and validation for LoHa, LoKr, DyLoRA, GLoRA, OFT, IA³, and related modes.
+
+### Improved
+
+- Refined LoRA+ argument mapping, applicability, and auto-disable rules so unsupported LyCORIS algorithms do not silently receive ineffective settings.
+- Improved LyCORIS parameter hierarchy, copy, icons, and alignment; added conditional guidance and constraints for conv, DoRA, OFT, and LoKr parameters.
+- Synchronized the LyCORIS upstream kernel implementation and updated training adapters, configuration migration, and compatibility handling.
+
+### Tests
+
+- Added LyCORIS vendor-contract, LoRA+, and realtime training-state regression coverage; the project test suite passes (449 passed, 1,790 subtests passed).
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.11.1...v2.12.0)
+
 ## v2.11.1 - 2026-09-03
 
 This release fixes training-state and dashboard lifecycle issues — training state now comes from a single serial polling source — and stops automatic recommendations from overwriting manual input. It also refines LoRA-Muon documentation and UI copy, and renders LyCORIS parameters without subgroup boxes.

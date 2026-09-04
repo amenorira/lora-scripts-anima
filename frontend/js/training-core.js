@@ -63,6 +63,8 @@ window.trainingCoreMixin = {
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
+  lycorisModalOpen: false,
+  lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
 
   // Training state
@@ -1287,6 +1289,12 @@ window.trainingCoreMixin = {
       // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。
       allFields.forEach(f => {
         html += this.renderField(f);
+        if (f.key === 'network_module') {
+          html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
+            + `<button type="button" class="lycoris-config-button" @click="openLycorisConfig()">`
+            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
+            + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
+        }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
       });
 
@@ -1303,6 +1311,178 @@ window.trainingCoreMixin = {
     // 整张表单刚重建时一次性同步全部条件字段。旧实现按每个条件 key
     // 重复扫描 DOM、重算计数和生成 TOML，训练类型切换时会产生明显卡顿。
     this._syncAllConditionalFields();
+    this.renderLycorisPanel();
+  },
+
+  renderLycorisPanel() {
+    const root = document.getElementById('lycorisConfigContent');
+    if (!root) return;
+    const trainType = this.form.model_train_type || 'anima-lora';
+    const sections = window.getVisibleSections(trainType) || [];
+    const fields = sections.flatMap(section => (section.fields || []))
+      .filter(field => !field.hidden && field.lycorisGroup);
+    const groups = [
+      ['basic', 'field.lycorisGroupBasic'],
+      ['regularization', 'field.lycorisGroupRegularization'],
+      ['algorithm', 'field.lycorisGroupAlgorithm'],
+      ['advanced', 'field.lycorisGroupAdvanced'],
+    ];
+    let html = '<div class="lycoris-panel-fields">';
+    groups.forEach(([group, titleKey]) => {
+      const grouped = fields.filter(field => field.lycorisGroup === group)
+        .sort((a, b) => (a.lycorisOrder || 0) - (b.lycorisOrder || 0));
+      if (!grouped.length) return;
+      html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.esc(this.t(titleKey))}</div>`;
+      const groupedKeys = new Set(grouped.map(gf => gf.key));
+      grouped.forEach(field => {
+        // 同组内可见的布局父字段（如 dora_wd → wd_on_output）保留子项层级缩进；
+        // 布局父不在本组渲染的字段（如依赖 lycoris_algo 的跨组参数）保持平级。
+        const layoutParent = this._fieldLayoutParentKey(field, groupedKeys) || null;
+        const panelField = {
+          ...field,
+          layoutParent,
+          lycorisPanel: true,
+          hintKey: field.hintKeyPanel || field.hintKey,
+        };
+        if (!layoutParent) panelField.nested = false;
+        html += this.renderField(panelField);
+      });
+      html += '</section>';
+    });
+    html += '</div>';
+    this._replaceTrainingFormHtml(root, html);
+    this._syncAllConditionalFields();
+  },
+
+  openLycorisConfig() {
+    if (this.form.network_module !== 'lycoris.kohya') return;
+    this.lycorisModalPreviousFocus = document.activeElement;
+    this.lycorisModalOpen = true;
+    this.$nextTick(() => {
+      this.renderLycorisPanel();
+      document.querySelector('.lycoris-modal-close')?.focus();
+    });
+  },
+
+  closeLycorisConfig() {
+    this.lycorisModalOpen = false;
+    this.$nextTick(() => this.lycorisModalPreviousFocus?.focus?.());
+  },
+
+  lycorisSummary() {
+    if (this.form.network_module !== 'lycoris.kohya') return '';
+    const algo = this.form.lycoris_algo || 'lora';
+    const preset = this.form.lycoris_preset || 'full';
+    const rank = this.form.network_dim ?? '—';
+    const alpha = this.form.network_alpha ?? '—';
+    // dora_wd 切换算法后可能残留 true，但实际仅 lora/loha/lokr 消费（adapter 会 pop），摘要需同门控
+    const dora = this.form.dora_wd === true && ['lora', 'loha', 'lokr'].includes(String(algo)) ? ' · DoRA' : '';
+    const algoLabel = this._lycorisAlgoLabel(algo);
+    return `${algoLabel} · ${preset} · Rank ${rank} · Alpha ${alpha}${dora}`;
+  },
+
+  // Algo select options carry a per-value i18n key (opt.lycoris_algo_*); the
+  // raw value ("lora") is a TOML literal and would confuse users who only see
+  // localized labels ("LoCon") in the dropdown.
+  _lycorisAlgoLabel(value) {
+    const defs = (window.getVisibleSections(this.form.model_train_type || 'anima-lora') || [])
+      .flatMap(section => section.fields || []);
+    const field = defs.find(item => item.key === 'lycoris_algo');
+    const option = (field?.options || []).find(item => item.v === value);
+    return option ? this.t(option.dk, option.l || value) : (value || '');
+  },
+
+  // LyCORIS 面板字段在主表单渲染时追加"非 lycoris.kohya"条件：原生
+  // networks.lora/loha/lokr 下这些字段留在主表单按各自 show_if 显示，
+  // lycoris.kohya 下收进 LyCORIS 弹窗（弹窗内字段带 lycorisPanel 标记，不受此追加影响）。
+  _lycorisMainFormConditions(field) {
+    if (!field.lycorisGroup || field.lycorisPanel) return null;
+    const mainOnly = { key: 'network_module', neq: 'lycoris.kohya' };
+    const showIf = Array.isArray(field.showIf)
+      ? field.showIf.concat(mainOnly)
+      : (field.showIf ? [field.showIf, mainOnly] : field.showIf);
+    const showIfAny = field.showIfAny
+      ? field.showIfAny.map(group => group.concat(mainOnly))
+      : field.showIfAny;
+    return { showIf, showIfAny };
+  },
+
+  // LyCORIS preset files are root-level TOML documents (the kohya adapter
+  // passes the selected preset name/path separately from network_args). Keep
+  // this preview faithful to that schema while making the generated CLI
+  // arguments explicit, so users can see both layers without changing merge
+  // behavior.
+  lycorisConfigPreview() {
+    if (this.form.network_module !== 'lycoris.kohya') return '';
+    const f = this.form;
+    const algo = String(f.lycoris_algo || 'lora').toLowerCase();
+    const lines = [`algo = "${algo}"`];
+    const preset = String(f.lycoris_preset || 'full');
+    if (preset !== 'full') lines.push(`preset = "${preset}"`);
+    const fields = [
+      ['conv_dim', f.conv_dim], ['conv_alpha', f.conv_alpha],
+      ['factor', f.lokr_factor], ['dropout', f.dropout],
+      ['rank_dropout', f.rank_dropout], ['module_dropout', f.module_dropout],
+      ['block_size', f.block_size], ['constraint', f.constraint],
+    ];
+    fields.forEach(([key, value]) => {
+      if (value === '' || value === null || value === undefined) return;
+      if (key === 'factor' && algo !== 'lokr') return;
+      if (key === 'block_size' && algo !== 'dylora') return;
+      if (key === 'constraint' && !['diag-oft', 'boft'].includes(algo)) return;
+      const field = (window.getVisibleSections(this.form.model_train_type || 'anima-lora') || [])
+        .flatMap(section => section.fields || []).find(item => item.key === key);
+      if (field?.default !== undefined && String(value) === String(field.default)) return;
+      lines.push(`${key} = ${value}`);
+    });
+    const bools = [
+      ['enable_conv', f.conv_dim !== '' && f.conv_dim !== null && f.conv_dim !== undefined],
+      ['use_tucker', f.use_tucker], ['use_scalar', f.use_scalar],
+      ['decompose_both', f.decompose_both], ['full_matrix', f.full_matrix],
+      ['train_norm', f.train_norm], ['weight_decompose', f.dora_wd],
+      ['wd_on_output', f.wd_on_output], ['rescaled', f.rescaled],
+      ['bypass_mode', f.bypass_mode], ['rs_lora', f.rs_lora],
+      ['unbalanced_factorization', f.unbalanced_factorization],
+      ['train_llm_adapter', f.train_llm_adapter],
+    ];
+    const DORA_OK_ALGOS = ['lora', 'loha', 'lokr'];
+    bools.forEach(([key, value]) => {
+      if (key === 'wd_on_output') {
+        // wd_on_output 默认即 true：仅当用户显式关闭（false）且 DoRA 生效时才写出，
+        // 避免默认值恒显噪音（与 adapter.py 对 dora_wd/wd_on_output 的过滤一致）。
+        if (value !== false || !f.dora_wd || !DORA_OK_ALGOS.includes(algo)) return;
+        lines.push('wd_on_output = false');
+        return;
+      }
+      if (!value) return;
+      if (key === 'weight_decompose' && !DORA_OK_ALGOS.includes(algo)) return;
+      if (['use_tucker', 'use_scalar', 'rs_lora'].includes(key) && !['lora', 'loha', 'lokr', 'glora'].includes(algo)) return;
+      if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
+      if (key === 'rescaled' && !['diag-oft', 'boft'].includes(algo)) return;
+      lines.push(`${key} = true`);
+    });
+    return lines.join('\n');
+  },
+
+  lycorisConfigPreviewHtml() {
+    const raw = this.lycorisConfigPreview();
+    if (!raw) return '';
+    return typeof this._highlightToml === 'function'
+      ? this._highlightToml(raw.split('\n'))
+      : this.esc(raw);
+  },
+
+  lycorisConfigNotes() {
+    const f = this.form;
+    const notes = [];
+    if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push(this.t('field.lycorisNoteIa3Preset'));
+    if (f.lycoris_algo === 'lokr' && f.full_matrix && f.lokr_factor !== -1) notes.push(this.t('field.lycorisNoteFullMatrixFactor'));
+    if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
+    // LoKr 全矩阵阈值逐层判定（rank≥层分解维度一半，常见约 16 起），此处用
+    // network_dim/conv_dim ≥16 做静态近似；全矩阵下 alpha 训练端强制按 ×1。
+    const largeLokrRank = Number(f.network_dim || 0) >= 16 || Number(f.conv_dim || 0) >= 16;
+    if (f.lycoris_algo === 'lokr' && largeLokrRank) notes.push(this.t('field.lycorisNoteDimFullMatrix'));
+    return notes.join('\n');
   },
 
   _replaceTrainingFormHtml(container, html) {
@@ -1851,10 +2031,15 @@ window.trainingCoreMixin = {
     const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
+    // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
+    // lycoris.kohya 下它们收进 LyCORIS 弹窗（renderLycorisPanel 以 lycorisPanel 标记渲染）。
+    const condField = this._lycorisMainFormConditions(field);
+    const condShowIf = condField ? condField.showIf : field.showIf;
+    const condShowIfAny = condField ? condField.showIfAny : field.showIfAny;
     let condClass = '';
     let condAttrs = '';
-    if (field.showIf) {
-      const sf = field.showIf;
+    if (condShowIf) {
+      const sf = condShowIf;
       if (Array.isArray(sf)) {
         // Multi-condition AND: store JSON for evaluation
         condAttrs = ` data-show-if-all='${this.esc(JSON.stringify(sf))}'`;
@@ -1878,10 +2063,10 @@ window.trainingCoreMixin = {
         }
         condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
       }
-    } else if (field.showIfAny) {
+    } else if (condShowIfAny) {
       // OR-of-ANDs: list[list[dict]] — 任一内层 AND 组全成立即显示
-      condAttrs = ` data-show-if-any='${this.esc(JSON.stringify(field.showIfAny))}'`;
-      const condMet = field.showIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
+      condAttrs = ` data-show-if-any='${this.esc(JSON.stringify(condShowIfAny))}'`;
+      const condMet = condShowIfAny.some(group => group.every(c => this._evalShowIfCond(c)));
       condClass = condMet ? ' field-conditional' : ' field-conditional field-hidden';
     }
 
@@ -2683,10 +2868,10 @@ window.trainingCoreMixin = {
   // 完整渲染后的快速初始化路径：每个条件节点只解析和求值一次，不播放动画，
   // 不生成 TOML（调用方会在表单初始化完成后统一生成）。
   _syncAllConditionalFields() {
-    const container = document.getElementById('trainFormContent');
-    if (!container) return;
+    const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
+    if (!containers.length) return;
 
-    container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]').forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]'))).forEach(row => {
       let match = true;
       try {
         const allAttr = row.getAttribute('data-show-if-all');
@@ -2721,12 +2906,12 @@ window.trainingCoreMixin = {
   },
 
   showConditionalFields(parentKey) {
-    const container = document.getElementById('trainFormContent');
-    if (!container) { this.updateToml(); return; }
+    const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
+    if (!containers.length) { this.updateToml(); return; }
     const expectedVal = this.form[parentKey];
     const toAnimate = [];
     // Handle multi-condition show_if (data-show-if-all)
-    container.querySelectorAll(`[data-show-if-all]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-all]`))).forEach(row => {
       try {
         const conditions = JSON.parse(row.getAttribute('data-show-if-all'));
         // Only re-evaluate if this parentKey is relevant to these conditions
@@ -2737,7 +2922,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle OR-of-ANDs show_if (data-show-if-any)
-    container.querySelectorAll(`[data-show-if-any]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-any]`))).forEach(row => {
       try {
         const groups = JSON.parse(row.getAttribute('data-show-if-any'));
         // Only re-evaluate if this parentKey appears in any AND group
@@ -2748,7 +2933,7 @@ window.trainingCoreMixin = {
     });
 
     // Handle single-condition show_if (data-show-if-key) — existing logic
-    container.querySelectorAll(`[data-show-if-key="${parentKey}"]`).forEach(row => {
+    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-key="${parentKey}"]`))).forEach(row => {
       const eqVal = row.getAttribute('data-show-if-eq');
       const neqVal = row.getAttribute('data-show-if-neq');
       const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
@@ -3516,6 +3701,14 @@ window.trainingCoreMixin = {
       }
     }
 
+    // LyCORIS LoKr uses -1 for automatic factor selection; zero is not a
+    // meaningful factor. Normalize manual input to the documented automatic
+    // value instead of allowing a configuration that fails at train startup.
+    if (key === 'lokr_factor' && value !== '' && value !== null && value !== undefined) {
+      const factor = Number(value);
+      if (factor === 0) value = -1;
+    }
+
     if ((key === 'cache_text_encoder_outputs' || key === 'cache_text_encoder_outputs_to_disk') && value === true) {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
@@ -3642,6 +3835,7 @@ window.trainingCoreMixin = {
     const constraints = this._numberConstraints(field);
     const step = constraints.step || 1;
     let newVal = current + delta;
+    if (key === 'lokr_factor' && newVal === 0) newVal = delta > 0 ? 1 : -1;
     if (constraints.min !== undefined && newVal < constraints.min) newVal = constraints.min;
     if (constraints.max !== undefined && newVal > constraints.max) newVal = constraints.max;
     // Fix floating-point drift (e.g. 0.1 + 0.2 = 0.30000000000000004)

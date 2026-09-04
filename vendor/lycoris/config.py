@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .config_sdk import PresetConfig, AlgoOverride
 
-
 FULL_UNET_MODULES = [
     "Transformer2DModel",
     "ResnetBlock2D",

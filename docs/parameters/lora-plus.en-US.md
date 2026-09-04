@@ -229,8 +229,9 @@ The trainer only provides the LoRA+ toggle for certain native network modules â€
 | `networks.lora_anima` | `lora_up` | Standard LoRA+ grouping for Anima |
 | `networks.loha` | `hada_w2_a` | The sd-scripts extension for LoHa |
 | `networks.lokr` | `lokr_w1` | The sd-scripts extension for LoKr |
+| `lycoris.kohya` (LoCon / algo `lora` only) | `lora_up` et al. | The LyCORIS adapter groups by the parameter name `lora_up`; the other LyCORIS algorithms (LoHa/LoKr/GLoRA, â€¦) do not match that grouping, so the ratio has no effect |
 
-The toggle is hidden for `lycoris.kohya` so the trainer never passes unverified parameters to that module. LoHa and LoKr support means sd-scripts can assign a higher rate to those parameters; the LoRA+ paper reports no experiments on these decompositions. Krea 2 (`networks.lora_krea2`, the musubi-tuner path) does not offer the LoRA+ toggle.
+With `lycoris.kohya`, the toggle appears only when the algorithm is LoCon (`lora`); other LyCORIS algorithms neither show it nor use the ratio. LoHa and LoKr support means sd-scripts can assign a higher rate to those parameters; the LoRA+ paper reports no experiments on these decompositions. Krea 2 (`networks.lora_krea2`, the musubi-tuner path) does not offer the LoRA+ toggle.
 
 <!-- doc-anchor: tensorboard -->
 ## TensorBoard

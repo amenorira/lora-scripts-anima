@@ -22,7 +22,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260903-nosubgroup">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260903-wdsub1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260831-motion1">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260831-selectfix1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260831-selectfix1">
@@ -31,7 +31,7 @@
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20260903-nosubgroup" defer></script>
+  <script src="/anima-ui/js/config.js?v=20260903-nativeparam" defer></script>
   <script src="/anima-ui/js/anima-select.js?v=20260728-tagger4" defer></script>
   <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
@@ -39,7 +39,7 @@
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260903-nosubgroup" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260903-lokrnote1" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
@@ -1322,6 +1322,34 @@
 
 <!-- ── Hidden file inputs for importing ─────────────────── -->
 <input type="file" id="configFileInput" accept=".toml,.yaml,.yml" style="display:none" @change="handleConfigFileImport($event)">
+
+<!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
+<div class="modal-overlay lycoris-modal-overlay" x-show="lycorisModalOpen" @click.self="closeLycorisConfig()"
+     @keydown.escape.window="closeLycorisConfig()" x-cloak>
+  <div class="modal lycoris-modal" role="dialog" aria-modal="true"
+       :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')">
+    <div class="modal-header lycoris-modal-header">
+      <div>
+        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-modal-subtitle" x-text="lycorisSummary()"></div>
+      </div>
+      <button type="button" class="btn-icon lycoris-modal-close" @click="closeLycorisConfig()" :aria-label="t('common.close')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="lycoris-modal-body">
+      <div class="lycoris-form-scroll" id="lycorisConfigContent"></div>
+      <aside class="lycoris-preview-panel">
+        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="panel-preview lycoris-config-preview" x-html="lycorisConfigPreviewHtml()"></div>
+        <div class="lycoris-preview-notes" x-show="lycorisConfigNotes()" x-text="lycorisConfigNotes()"></div>
+      </aside>
+    </div>
+    <div class="modal-footer lycoris-modal-footer">
+      <button type="button" class="btn btn-ghost btn-sm" @click="closeLycorisConfig()" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
 <div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()"

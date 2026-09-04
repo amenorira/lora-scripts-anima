@@ -20,6 +20,7 @@ from backend.training.core_registry import (
     profile_payload,
     resolve_training_profile,
 )
+from backend.training.supervisor import detect_lycoris_kernel_backend
 from backend.training.musubi_krea2 import (
     KREA2_CACHE_RUNNER_FILE,
     KREA2_PROFILE_ID,
@@ -696,6 +697,14 @@ async def create_toml_file(request: Request):
     # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
     # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
     _ui_config = dict(config)
+    # ── LyCORIS 融合内核后端：进程级环境变量，不进 TOML ──────────
+    # vendor 经 LYCORIS_KERNEL_BACKEND 读取（kernels/dispatch.py:58 / select.py:78）。
+    # 启动前探测可用性：不可用的命名后端回退 auto 并携带警告（与 attn_mode 降级同模式）。
+    lycoris_kernel_backend: str | None = None
+    lycoris_kernel_warning = ""
+    if str(config.get("network_module") or "") == "lycoris.kohya":
+        requested = str(config.get("lycoris_kernel_backend") or "auto")
+        lycoris_kernel_backend, lycoris_kernel_warning = detect_lycoris_kernel_backend(requested)
     try:
         from backend.training import adapt_config, detect_attention_backend, validate_training_config
     except ImportError as e:
@@ -927,6 +936,7 @@ async def create_toml_file(request: Request):
             "profile_id": profile.id,
             "adapter_id": adapter_id,
         },
+        extra_env={"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else None,
     )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）
@@ -934,6 +944,12 @@ async def create_toml_file(request: Request):
         if "data" not in result or not isinstance(result["data"], dict):
             result["data"] = {}
         result["data"]["warnings"] = adapter_warnings
+    if result.get("status") == "success" and lycoris_kernel_warning:
+        result.setdefault("data", {})
+        if not isinstance(result["data"], dict):
+            result["data"] = {}
+        result["data"].setdefault("warnings", [])
+        result["data"]["warnings"].append(lycoris_kernel_warning)
 
     return result
 

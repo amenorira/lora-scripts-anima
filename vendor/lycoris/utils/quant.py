@@ -58,7 +58,6 @@ except Exception:
 
 from ..logging import logger
 
-
 QuantLinears = (
     Linear8bitLt,
     LinearFP4,

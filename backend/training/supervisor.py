@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -49,6 +50,50 @@ def _detect_available_attn() -> list[str]:
 
     _ATTN_CACHE = available
     return available
+
+
+@lru_cache(maxsize=1)
+def _available_lycoris_backends() -> tuple[str, ...]:
+    """探测 vendor lycoris 可用的融合内核后端（结果进程内缓存）。
+
+    首次探测会 import triton/tilelang，耗时数秒；只在用户在 LyCORIS 配置里
+    手动选了非 auto 后端时才触发，结果缓存一次。
+    """
+    vendor_root = REPO_ROOT / "vendor"
+    if str(vendor_root) not in sys.path:
+        sys.path.insert(0, str(vendor_root))
+    from lycoris.kernels import available_backends  # noqa: PLC0415
+
+    return tuple(available_backends())
+
+
+def _lycoris_backend_message(requested: str, available: tuple[str, ...]) -> str:
+    return (
+        f"LyCORIS kernel backend '{requested}' is not installed in this environment "
+        f"({', '.join(available)}); falling back to auto / "
+        f"LyCORIS 内核后端 {requested} 在当前环境不可用（可用: {', '.join(available)}），已回退 auto"
+    )
+
+
+def detect_lycoris_kernel_backend(requested: str) -> tuple[str, str]:
+    """
+    探测并回退 LyCORIS 融合内核后端。
+
+    返回 (actual_backend, warning_message)。auto 恒可用，不做探测；
+    探测本身失败时按原值传递（训练进程启动后仍有明确报错）。
+    """
+    if not requested or requested == "auto":
+        return "auto", ""
+    try:
+        available = _available_lycoris_backends()
+    except Exception as e:
+        log.warning(f"[LyCORIS kernel] backend probe failed / 内核后端探测失败: {e}")
+        return requested, ""
+    if requested in available:
+        return requested, ""
+    msg = _lycoris_backend_message(requested, available)
+    log.warning(msg)
+    return "auto", msg
 
 
 def _build_train_env(
@@ -131,6 +176,7 @@ def run_train(
     use_accelerate: bool = True,
     run_metadata: Optional[dict[str, Any]] = None,
     on_complete: Optional[Callable[[str], None]] = None,
+    extra_env: Optional[dict[str, str]] = None,
 ) -> dict:
     """
     启动训练子进程。
@@ -235,6 +281,8 @@ def run_train(
         engine_id=engine_id,
     )
     env.update(env_extra)
+    if extra_env:
+        env.update(extra_env)
     task.environ = env  # 更新 task 的环境变量
 
     # 日志文件放在运行文件夹内
