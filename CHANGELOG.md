@@ -6,6 +6,16 @@
 
 ## 未发布
 
+## v2.12.1 - 2026-09-04
+
+本版本修正 LyCORIS LoKr 的参数说明与 Full Matrix 提示，避免把 factor、dim/rank 和 Full Matrix 混为一谈。
+
+### 修复
+
+- 修正 LoKr Full Matrix、factor、dim/rank 与 alpha 的中英文说明，明确 Full Matrix 仍保留 Kronecker 结构且 factor 继续生效。
+- 移除“阈值约为 16”和“alpha 与 rank 相同适用于所有模式”等容易误导的表述，改为说明自动切换条件取决于具体层尺寸和 factor。
+- 移除前端按 `network_dim >= 16` 判断 Full Matrix 的静态近似，避免对不同尺寸的 Anima 层产生错误提示。
+
 ## v2.12.0 - 2026-09-04
 
 本版本扩展 LyCORIS 训练支持，新增内核后端选择、LoRA+ 与 IA³ 配置能力，并完善自适应参数面板、配置校验和界面交互。

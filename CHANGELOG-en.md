@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.12.1 - 2026-09-04
+
+This patch release corrects the LyCORIS LoKr parameter guidance and Full Matrix notes so factor, dim/rank, and Full Matrix are no longer conflated.
+
+### Fixes
+
+- Corrected the Chinese and English guidance for LoKr Full Matrix, factor, dim/rank, and alpha, clarifying that Full Matrix keeps the Kronecker structure and factor remains active.
+- Removed misleading wording such as “the threshold is around 16” and “alpha equal to rank is suitable in every mode”; the guidance now explains that automatic switching depends on each layer's size and factor.
+- Removed the frontend's static `network_dim >= 16` Full Matrix approximation to avoid incorrect warnings for Anima layers with different dimensions.
+
 ## v2.12.0 - 2026-09-04
 
 This release expands LyCORIS training support with selectable kernel backends, LoRA+, and IA³ configuration, while improving the adaptive parameter panel, validation, and UI interactions.
