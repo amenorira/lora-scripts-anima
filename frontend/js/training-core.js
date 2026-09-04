@@ -1292,7 +1292,7 @@ window.trainingCoreMixin = {
         if (f.key === 'network_module') {
           html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
             + `<button type="button" class="lycoris-config-button" @click="openLycorisConfig()">`
-            + `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a2 2 0 1 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.3a2 2 0 1 1-4 0v-.2A2 2 0 0 0 5.8 18l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 1.6 12H1.3a2 2 0 1 1 0-4h.2A2 2 0 0 0 3 4.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A2 2 0 0 0 9.2.4V.1a2 2 0 1 1 4 0v.2A2 2 0 0 0 16.6 2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A2 2 0 0 0 20.8 8h.3a2 2 0 1 1 0 4h-.2a2 2 0 0 0-1.5 3Z"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
+            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();

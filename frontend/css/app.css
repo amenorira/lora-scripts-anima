@@ -1736,7 +1736,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .lycoris-preview-notes { margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--text-secondary); white-space: pre-line; font-size: 11px; line-height: 1.5; }
 .lycoris-modal-footer { flex-shrink: 0; justify-content: flex-end; }
 .lycoris-config-entry { margin: 8px 0 14px; }
-.lycoris-config-button { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-raised); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; text-align: left; transition: border-color var(--duration-fast), background-color var(--duration-fast); }
+.lycoris-config-button { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-raised); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; text-align: center; transition: border-color var(--duration-fast), background-color var(--duration-fast); }
 .lycoris-config-button:hover { border-color: var(--accent); background: var(--accent-muted); }
 .lycoris-config-summary { color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .lycoris-panel-section-title { font-weight: 700; margin-bottom: 12px; }
