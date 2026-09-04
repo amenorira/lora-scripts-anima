@@ -20,6 +20,7 @@ from lycoris.config_sdk import ALGO_REGISTRY  # noqa: E402
 from lycoris.kohya import create_network  # noqa: E402
 from lycoris.wrapper import deprecated_arg_dict, network_module_dict  # noqa: E402
 
+from backend.training.adapter import adapt_config  # noqa: E402
 from backend.training.field_registry import get_fields_json  # noqa: E402
 
 
@@ -127,6 +128,83 @@ class LycorisVendorContractTests(unittest.TestCase):
                 if field.get("lycorisGroup"):
                     self.assertIn(field["lycorisGroup"], valid_groups, field["key"])
                     self.assertIsInstance(field.get("lycorisOrder"), int, field["key"])
+
+    def test_kernel_backend_field_registered(self):
+        """内核后端选项进弹窗 basic 组：取值固定为上游 5 个后端。进程级环境
+        变量不落 TOML 由 test_kernel_backend_not_leaked_to_toml 端到端保证。"""
+        field = _field("lycoris_kernel_backend")
+        self.assertEqual(field["lycorisGroup"], "basic")
+        self.assertEqual(field["type"], "select")
+        self.assertEqual(
+            {option["v"] for option in field["options"]},
+            {"auto", "triton", "tilelang", "compile", "torch"},
+        )
+        self.assertEqual(field["default"], "auto")
+        self.assertEqual(field["hintKey"], "field.lycoris_kernel_backendHint")
+
+    def test_kernel_backend_not_leaked_to_toml(self):
+        """适配器必须把字段当 UI-only 吸收：不进 TOML 顶层，也不进 network_args。"""
+        config = {
+            "model_train_type": "anima-lora",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "lora",
+            "lycoris_preset": "full",
+            "lycoris_kernel_backend": "torch",
+        }
+        adapted, _warnings = adapt_config(config)
+        self.assertNotIn("lycoris_kernel_backend", adapted)
+        for item in adapted.get("network_args", []):
+            self.assertFalse(item.startswith("lycoris_kernel_backend="), item)
+
+    def test_ia3_preset_normalization(self):
+        """algo=ia3 强制 ia3 预设；preset=ia3 但算法非 ia3 时回落 full（防目标层窄化）。"""
+        adapted, warnings = adapt_config({
+            "model_train_type": "sdxl-lora",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "ia3",
+            "lycoris_preset": "full",
+        })
+        self.assertIn("preset=ia3", adapted["network_args"])
+        self.assertTrue(
+            any("IA^3 algorithm" in w or "IA³" in w for w in warnings), warnings
+        )
+
+        adapted2, warnings2 = adapt_config({
+            "model_train_type": "sdxl-lora",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "dylora",
+            "lycoris_preset": "ia3",
+        })
+        self.assertIn("preset=full", adapted2["network_args"])
+        self.assertTrue(
+            any("reset to full" in w or "回落 full" in w for w in warnings2), warnings2
+        )
+
+    def test_dead_upstream_args_not_registered(self):
+        """kohya.py create_network 不转发未知 kwargs，这些上游死参数绝不能进 UI 字段集。"""
+        keys = {
+            field["key"]
+            for section in get_fields_json()["sections"]
+            for field in section["fields"]
+        }
+        for dead in ("rank_dropout_scale", "train_on_input", "train_t5xxl"):
+            self.assertNotIn(dead, keys, dead)
+
+    def test_loraplus_conditions_restricted_to_lycoris_locon(self):
+        """LoRA+ 比率字段对 lycoris.kohya 只允许 LoCon（algo=lora）组合。"""
+        for key in ("loraplus_lr_ratio", "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"):
+            field = _field(key)
+            lycoris_groups = [
+                group for group in field["showIfAny"]
+                if any(cond.get("key") == "network_module" and cond.get("eq") == "lycoris.kohya" for cond in group)
+            ]
+            self.assertTrue(
+                all(
+                    any(cond.get("key") == "lycoris_algo" and cond.get("eq") == "lora" for cond in group)
+                    for group in lycoris_groups
+                ),
+                f"{key} 的 lycoris 条件必须限定 LoCon，实际: {lycoris_groups}",
+            )
 
 
 if __name__ == "__main__":

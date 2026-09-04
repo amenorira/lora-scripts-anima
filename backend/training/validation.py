@@ -12,6 +12,7 @@ from backend.training.field_registry import (
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
     LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
+    loraplus_applies,
 )
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
@@ -154,7 +155,9 @@ def _validate_loraplus(
 ) -> list[str]:
     if (
         config.get("enable_loraplus") is not True
-        or config.get("network_module") not in LORAPLUS_NETWORK_MODULES
+        or not loraplus_applies(
+            config.get("network_module"), config.get("lycoris_algo")
+        )
     ):
         return []
 
@@ -297,7 +300,7 @@ def _validate_automagic(
 
     if (
         config.get("enable_loraplus") is True
-        and config.get("network_module") in LORAPLUS_NETWORK_MODULES
+        and loraplus_applies(config.get("network_module"), config.get("lycoris_algo"))
         and min_lr is not None
         and max_lr is not None
     ):

@@ -89,16 +89,55 @@ class LoRAPlusAdapterTests(unittest.TestCase):
         self.assertEqual(adapted["network_args"], ["base_flag=1", "custom_flag=1"])
 
     def test_unsupported_module_drops_managed_values_but_keeps_custom_args(self):
+        # lycoris.kohya 只有 LoCon（algo=lora）命中 lora_up 分组；lokr 等其他算法不适用
         adapted, warnings = adapt_config({
             "model_train_type": "sdxl-lora",
             "network_module": "lycoris.kohya",
+            "lycoris_algo": "lokr",
             "enable_loraplus": True,
             "loraplus_lr_ratio": 2.0,
             "network_args_custom": "custom_flag=1",
         })
 
         self.assertEqual(warnings, [])
-        self.assertEqual(adapted["network_args"], ["custom_flag=1"])
+        self.assertIn("custom_flag=1", adapted["network_args"])
+        self.assertIn("algo=lokr", adapted["network_args"])
+        self.assertFalse(
+            any(item.startswith("loraplus_") for item in adapted["network_args"]),
+            adapted,
+        )
+
+    def test_lycoris_kohya_locon_emits_loraplus_ratios(self):
+        adapted, warnings = adapt_config({
+            "model_train_type": "sdxl-lora",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "lora",
+            "enable_loraplus": True,
+            "loraplus_lr_ratio": 2.0,
+            "loraplus_unet_lr_ratio": 3.0,
+        })
+
+        self.assertEqual(warnings, [])
+        self.assertIn("loraplus_lr_ratio=2.0", adapted["network_args"])
+        self.assertIn("loraplus_unet_lr_ratio=3.0", adapted["network_args"])
+        self.assertIn("algo=lora", adapted["network_args"])
+        self.assertNotIn("enable_loraplus", adapted)
+
+    def test_lycoris_kohya_other_algos_drop_loraplus(self):
+        for algo in ("lokr", "loha", "glora", "diag-oft", "boft", "dylora", "full"):
+            with self.subTest(algo=algo):
+                adapted, warnings = adapt_config({
+                    "model_train_type": "sdxl-lora",
+                    "network_module": "lycoris.kohya",
+                    "lycoris_algo": algo,
+                    "enable_loraplus": True,
+                    "loraplus_lr_ratio": 2.0,
+                })
+                self.assertEqual(warnings, [])
+                self.assertFalse(
+                    any(item.startswith("loraplus_") for item in adapted.get("network_args", [])),
+                    adapted,
+                )
 
     def test_managed_ratio_overrides_duplicate_custom_arg(self):
         adapted, warnings = adapt_config({
@@ -133,6 +172,17 @@ class LoRAPlusValidationTests(unittest.TestCase):
         config = {
             "model_train_type": "anima-lora",
             "network_module": "networks.lora_anima",
+            "enable_loraplus": True,
+            "loraplus_lr_ratio": 0.5,
+        }
+        errors = validate_training_config(config)
+        self.assertTrue(any("loraplus_lr_ratio" in error for error in errors), errors)
+
+    def test_lycoris_locon_validates_ratios(self):
+        config = {
+            "model_train_type": "sdxl-lora",
+            "network_module": "lycoris.kohya",
+            "lycoris_algo": "lora",
             "enable_loraplus": True,
             "loraplus_lr_ratio": 0.5,
         }
@@ -176,9 +226,20 @@ class LoRAPlusValidationTests(unittest.TestCase):
         toggle = fields["enable_loraplus"]
         self.assertEqual(toggle["docSlug"], "lora-plus")
         self.assertEqual(toggle["docAnchor"], "overview")
+        native_groups = [
+            group for group in toggle["showIfAny"]
+            if len(group) == 1 and group[0].get("key") == "network_module"
+        ]
         self.assertEqual(
-            {toggle["showIf"]["eq"], *toggle["showIf"]["or"]},
+            {group[0]["eq"] for group in native_groups},
             set(LORAPLUS_NETWORK_MODULES),
+        )
+        self.assertIn(
+            [
+                {"key": "network_module", "eq": "lycoris.kohya"},
+                {"key": "lycoris_algo", "eq": "lora"},
+            ],
+            toggle["showIfAny"],
         )
         auto_disabled = {
             rule.get("when")
