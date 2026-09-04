@@ -6,6 +6,28 @@
 
 ## 未发布
 
+## v2.12.0 - 2026-09-04
+
+本版本扩展 LyCORIS 训练支持，新增内核后端选择、LoRA+ 与 IA³ 配置能力，并完善自适应参数面板、配置校验和界面交互。
+
+### 新增
+
+- 新增 LyCORIS 内核后端选择（auto、Triton、TileLang、compile、Torch），启动训练前自动探测并在不可用时回退提示。
+- 新增 LyCORIS 的 LoRA+ 支持、IA³ 算法与专用预设，以及 Full fine-tuning 算法选项。
+- 新增 LyCORIS 自适应配置面板，按算法动态显示和校验参数，补齐 LoHa、LoKr、DyLoRA、GLoRA、OFT、IA³ 等配置。
+
+### 改进
+
+- 完善 LoRA+ 参数映射、适用范围和自动禁用规则，避免对不支持的 LyCORIS 算法静默生效。
+- 优化 LyCORIS 参数层级、文案、图标和对齐；补充 conv、DoRA、OFT、LoKr 等参数的条件提示与约束。
+- 同步 LyCORIS 上游内核实现，更新训练适配、配置迁移与兼容性处理。
+
+### 测试
+
+- 新增 LyCORIS vendor contract、LoRA+、实时训练状态等回归测试；项目测试集通过（449 passed，1790 subtests passed）。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.11.1...v2.12.0)
+
 ## v2.11.1 - 2026-09-03
 
 本版本修复训练状态与仪表盘的错乱和残留问题，训练状态改为串行轮询单一来源；同时阻止自动推荐值覆盖手动配置，完善 LoRA-Muon 文档与界面文案，LyCORIS 参数不再渲染子组盒。
