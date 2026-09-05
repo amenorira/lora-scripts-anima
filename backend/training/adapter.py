@@ -413,7 +413,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         scope_excludes: list[str] | None = None
         scope_preset_name: str | None = None
         # Anima 范围细化（仅 attn-mlp 预设）：sd_default 对齐 sd-scripts 原生默认，
-        # 排除 _modulation/_norm/_embedder/final_layer（lora_anima.py 默认排除集）；
+        # 排除 _modulation/_embedder/final_layer；
         # add_adaln 豁免 AdaLN 调制分支（等价主界面 train_adaln 开关的 include 语义）。
         sd_default = source.pop("lycoris_anima_sd_default", False) is True
         add_adaln = source.pop("lycoris_anima_train_adaln", False) is True
@@ -424,7 +424,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         ):
             scope_preset_name = "attn-mlp"
             excludes = (
-                [r"^x_embedder\.", r"^t_embedder\.", r"^final_layer\.", r"^blocks\.[0-9]+\.adaln_modulation_.*"]
+                [r"^x_embedder\.", r"^t_embedder\.", r"^final_layer\.", r".*_modulation.*"]
                 if not add_adaln
                 else [r"^x_embedder\.", r"^t_embedder\.", r"^final_layer\."]
             )

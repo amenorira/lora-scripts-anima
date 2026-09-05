@@ -804,7 +804,7 @@
 		"full_matrix": "全矩阵模式",
 		"full_matrixHint": "仅用于 LyCORIS LoKr；开启后，较大的第二个 block 不再做第二次 LoRA 低秩分解，而是直接保存为完整的 w2。它仍保留 Kronecker 结构，factor 仍然有效。",
 		"train_norm": "训练归一化层",
-		"train_normHint": "仅用于 LyCORIS，可训练 LayerNorm、GroupNorm 和 RMSNorm 等归一化层。",
+		"train_normHint": "仅用于 LyCORIS，可训练 LayerNorm 和 GroupNorm。",
 		"train_llm_adapter": "训练 LLM Adapter 模块",
 		"train_llm_adapterHint": "将 Anima 的 LLMAdapterTransformerBlock 纳入 LyCORIS 训练，会增加可训练参数量和显存占用。",
 		"rank_dropout": "LoRA Rank Dropout 概率",

@@ -804,7 +804,7 @@
 		"full_matrix": "Full matrix mode",
 		"full_matrixHint": "Used only by LyCORIS LoKr. It skips the second low-rank decomposition of the larger block and stores that block as w2. The Kronecker structure remains, and factor still applies.",
 		"train_norm": "Train normalization layers",
-		"train_normHint": "Used only by LyCORIS and trains normalization layers such as LayerNorm, GroupNorm, and RMSNorm.",
+		"train_normHint": "Used only by LyCORIS to train LayerNorm and GroupNorm.",
 		"train_llm_adapter": "Train LLM adapter blocks",
 		"train_llm_adapterHint": "Includes Anima LLMAdapterTransformerBlock layers in LyCORIS training. This increases trainable parameters and memory usage.",
 		"rank_dropout": "LoRA rank dropout probability",
