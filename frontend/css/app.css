@@ -1541,7 +1541,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .panel-preview .toml-eq { color: var(--text-preview-eq); }
 .panel-preview .toml-num { color: var(--text-preview-num); }
 .panel-preview .toml-str { color: var(--text-preview-str); }
-.panel-preview .toml-comment { color: var(--text-preview-comment); font-style: italic; }
+.panel-preview .toml-comment { color: var(--text-preview-comment); }
 #tomlPreview .toml-line {
   display: block;
   min-height: 1.6em;

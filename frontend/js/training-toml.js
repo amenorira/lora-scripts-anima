@@ -60,7 +60,10 @@ window.trainingTomlMixin = {
       'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
       'enable_preview','positive_prompts','negative_prompts',
       'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
-      'train_adaln',
+      'train_adaln', 'lycoris_anima_sd_default', 'lycoris_anima_train_adaln',
+      // lycoris_kernel_backend 是进程级环境变量（/run 路由转 LYCORIS_KERNEL_BACKEND），
+      // sd-scripts 不认这个键，预览/导出 TOML 中不应出现。
+      'lycoris_kernel_backend',
       'enable_reg_data',
       'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
       'prodigy_d_coef','prodigy_d0','prodigy_safeguard_warmup',
@@ -187,9 +190,20 @@ window.trainingTomlMixin = {
       const val = typeof v === 'boolean' ? String(v).toLowerCase() : String(v);
       netArgsArr.push(`${argKey}=${val}`);
     }
+    // lycoris_anima_* 是 UI-only：上游 LyCORIS 只在预设文件里消费 exclude_name
+    // （create_network 无 kwargs 支持），运行时由后端把内置预设全集 + 排除规则生成
+    // 匿名预设文件并以 preset=<文件路径> 生效。导出的 network_args 保持 preset=<名称>。
+    // 排除规则在 LyCORIS 面板预览（lycorisConfigPreview）中可见。
     if (netArgsArr.length > 0) {
       const quoted = netArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
       pushLine('network', `network_args = [${quoted}]`);
+    }
+    // 排除规则不进 network_args（上游只在预设文件里读 exclude_name，运行时由后端
+    // 生成匿名预设文件注入），在 network_args 下方以注释形式展示，便于查看。
+    if (isKohya && this.form.lycoris_preset === 'attn-mlp' && this.form.lycoris_anima_sd_default === true) {
+      pushLine('network', this.form.lycoris_anima_train_adaln === true
+        ? "# exclude_name = ['^x_embedder\\.', '^t_embedder\\.', '^final_layer\\.']"
+        : "# exclude_name = ['^x_embedder\\.', '^t_embedder\\.', '^final_layer\\.', '^blocks\\.[0-9]+\\.adaln_modulation_.*']");
     }
 
     // ── Build optimizer_args（插在 optimizer 分组末尾）──────────
