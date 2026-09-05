@@ -76,9 +76,6 @@ LYCORIS_KOHYA_SPECIFIC_ARG_MAP: dict[str, str] = {
     "lycoris_algo": "algo",
     "lycoris_preset": "preset",
     "dora_wd": "dora_wd",
-    "block_size": "block_size",
-    "constraint": "constraint",
-    "rescaled": "rescaled",
     "bypass_mode": "bypass_mode",
     "rs_lora": "rs_lora",
     "unbalanced_factorization": "unbalanced_factorization",
@@ -406,30 +403,12 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # 按 algo 过滤：避免传无效参数给忽略它的模块（与 field_registry show_if/show_if_any 对齐）。
     _LYCORIS_ALGO_FACTOR_ONLY = {"lokr"}
     _LYCORIS_ALGO_TUCKER_OK = {"lora", "loha", "lokr"}
-    _LYCORIS_ALGO_SCALAR_OK = {"lora", "loha", "lokr", "glora"}  # use_scalar
-    _LYCORIS_ALGO_BLOCK_SIZE_OK = {"dylora"}  # block_size 入参仅 dylora 消费
-    _LYCORIS_ALGO_RS_LORA_OK = {"lora", "loha", "lokr", "glora"}  # rs_lora
+    _LYCORIS_ALGO_SCALAR_OK = {"lora", "loha", "lokr"}  # use_scalar
+    _LYCORIS_ALGO_RS_LORA_OK = {"lora", "loha", "lokr"}  # rs_lora
     _LYCORIS_ALGO_DORA_OK = {"lora", "loha", "lokr"}
-    _LYCORIS_ALGO_OFT_OK = {"diag-oft", "boft"}
     if source.get("network_module") == "lycoris.kohya":
         algo = (source.get("lycoris_algo") or "lora").lower()
         dora_enabled = source.get("dora_wd") is True
-        # ia3 预设与算法强耦：algo=ia3 但预设缺失/非 ia3 时强制 ia3（否则上游打
-        # warning 且目标层不符合预期）；preset=ia3 但算法非 ia3 时回落 full，
-        # 避免训练目标层被意外窄化成 to_k/to_v/ff.net.2 等 IA³ 专属层。
-        preset_value = str(source.get("lycoris_preset") or "full")
-        if algo == "ia3" and preset_value != "ia3":
-            source["lycoris_preset"] = "ia3"
-            warnings.append(
-                "[Auto] preset forced to ia3 for IA^3 algorithm / "
-                "IA³ 算法需要 ia3 预设，已自动切换为 ia3"
-            )
-        elif algo != "ia3" and preset_value == "ia3":
-            source["lycoris_preset"] = "full"
-            warnings.append(
-                "[Auto] ia3 preset is only valid with IA^3 algorithm; reset to full / "
-                "ia3 预设仅对 IA³ 算法有效，已回落 full"
-            )
         network_args = list(source.get("network_args") or [])
         scope_excludes: list[str] | None = None
         scope_preset_name: str | None = None
@@ -454,12 +433,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 # 故用户手写与 scope 规则先并集合并为单条，再随预设文件落盘（见尾部）。
                 network_args = _merge_keyed_pattern_args(network_args, "exclude_name", excludes)
                 scope_excludes = _pop_keyed_arg_list(network_args, "exclude_name")
-        # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
+        # lycoris.kohya 专有映射（algo、dora_wd 等）
         for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
             if ui_field == "train_llm_adapter" and source.get("model_train_type") != "anima-lora":
-                source.pop(ui_field, None)
-                continue
-            if ui_field == "block_size" and algo not in _LYCORIS_ALGO_BLOCK_SIZE_OK:
                 source.pop(ui_field, None)
                 continue
             if ui_field == "rs_lora" and algo not in _LYCORIS_ALGO_RS_LORA_OK:
@@ -474,9 +450,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 source.pop(ui_field, None)
                 continue
             if ui_field == "unbalanced_factorization" and algo != "lokr":
-                source.pop(ui_field, None)
-                continue
-            if ui_field in {"constraint", "rescaled"} and algo not in _LYCORIS_ALGO_OFT_OK:
                 source.pop(ui_field, None)
                 continue
             value = source.pop(ui_field, None)

@@ -1430,13 +1430,10 @@ window.trainingCoreMixin = {
       ['conv_dim', f.conv_dim], ['conv_alpha', f.conv_alpha],
       ['factor', f.lokr_factor], ['dropout', f.dropout],
       ['rank_dropout', f.rank_dropout], ['module_dropout', f.module_dropout],
-      ['block_size', f.block_size], ['constraint', f.constraint],
     ];
     fields.forEach(([key, value]) => {
       if (value === '' || value === null || value === undefined) return;
       if (key === 'factor' && algo !== 'lokr') return;
-      if (key === 'block_size' && algo !== 'dylora') return;
-      if (key === 'constraint' && !['diag-oft', 'boft'].includes(algo)) return;
       const field = (window.getVisibleSections(this.form.model_train_type || 'anima-lora') || [])
         .flatMap(section => section.fields || []).find(item => item.key === key);
       if (field?.default !== undefined && String(value) === String(field.default)) return;
@@ -1447,7 +1444,7 @@ window.trainingCoreMixin = {
       ['use_tucker', f.use_tucker], ['use_scalar', f.use_scalar],
       ['decompose_both', f.decompose_both], ['full_matrix', f.full_matrix],
       ['train_norm', f.train_norm], ['weight_decompose', f.dora_wd],
-      ['wd_on_output', f.wd_on_output], ['rescaled', f.rescaled],
+      ['wd_on_output', f.wd_on_output],
       ['bypass_mode', f.bypass_mode], ['rs_lora', f.rs_lora],
       ['unbalanced_factorization', f.unbalanced_factorization],
       ['train_llm_adapter', f.train_llm_adapter],
@@ -1463,9 +1460,8 @@ window.trainingCoreMixin = {
       }
       if (!value) return;
       if (key === 'weight_decompose' && !DORA_OK_ALGOS.includes(algo)) return;
-      if (['use_tucker', 'use_scalar', 'rs_lora'].includes(key) && !['lora', 'loha', 'lokr', 'glora'].includes(algo)) return;
+      if (['use_tucker', 'use_scalar', 'rs_lora'].includes(key) && !['lora', 'loha', 'lokr'].includes(algo)) return;
       if (['decompose_both', 'full_matrix', 'unbalanced_factorization'].includes(key) && algo !== 'lokr') return;
-      if (key === 'rescaled' && !['diag-oft', 'boft'].includes(algo)) return;
       lines.push(`${key} = true`);
     });
     return lines.join('\n');
@@ -1482,7 +1478,6 @@ window.trainingCoreMixin = {
   lycorisConfigNotes() {
     const f = this.form;
     const notes = [];
-    if (f.lycoris_algo === 'ia3' && f.lycoris_preset !== 'ia3') notes.push(this.t('field.lycorisNoteIa3Preset'));
     if (f.lycoris_algo === 'lokr' && f.full_matrix) notes.push(this.t('field.lycorisNoteFullMatrixFactor'));
     if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
     // Full Matrix 的自动触发条件取决于每一层经过 factor 分解后的尺寸，

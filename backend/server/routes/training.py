@@ -169,7 +169,6 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
 
 available_scripts = [
     "networks/extract_lora_from_models.py",
-    "networks/extract_lora_from_dylora.py",
     "networks/merge_lora.py",
     "tools/merge_models.py",
 ]

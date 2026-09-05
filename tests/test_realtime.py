@@ -361,10 +361,10 @@ const single = app._lycorisMainFormConditions({
 out.singleIsArray = Array.isArray(single.showIf);
 out.singleKeepsOriginal = single.showIf[0].eq === 'networks.lora' && single.showIf[0].or.join(',') === 'networks.loha,networks.lokr,lycoris.kohya';
 out.singleHasExclusion = single.showIf.some(c => c.key === 'network_module' && c.neq === 'lycoris.kohya');
-// 多条件 AND showIf（dylora block_size 形状）：原条件保留 + 追加
+// 多条件 AND showIf：原条件保留 + 追加
 const and = app._lycorisMainFormConditions({
-  key: 'block_size', lycorisGroup: 'algorithm',
-  showIf: [{ key: 'network_module', eq: 'lycoris.kohya' }, { key: 'lycoris_algo', eq: 'dylora' }],
+  key: 'lokr_factor', lycorisGroup: 'algorithm',
+  showIf: [{ key: 'network_module', eq: 'lycoris.kohya' }, { key: 'lycoris_algo', eq: 'lokr' }],
 });
 out.andLength = and.showIf.length;
 out.andHasExclusion = and.showIf[and.showIf.length - 1].neq === 'lycoris.kohya';

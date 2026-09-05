@@ -124,7 +124,7 @@ class LoRAPlusAdapterTests(unittest.TestCase):
         self.assertNotIn("enable_loraplus", adapted)
 
     def test_lycoris_kohya_other_algos_drop_loraplus(self):
-        for algo in ("lokr", "loha", "glora", "diag-oft", "boft", "dylora", "full"):
+        for algo in ("lokr", "loha"):
             with self.subTest(algo=algo):
                 adapted, warnings = adapt_config({
                     "model_train_type": "sdxl-lora",
