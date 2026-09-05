@@ -1419,6 +1419,13 @@ window.trainingCoreMixin = {
     const lines = [`algo = "${algo}"`];
     const preset = String(f.lycoris_preset || 'full');
     if (preset !== 'full') lines.push(`preset = "${preset}"`);
+    if (f.lycoris_preset === 'attn-mlp' && f.lycoris_anima_sd_default === true) {
+      // TOML 单引号字面量字符串不处理转义，反斜杠才会按原样进入正则模式；
+      // 双引号基本字符串里的 \. 是非法 TOML 转义，加载预设文件会直接报错。
+      lines.push(f.lycoris_anima_train_adaln === true
+        ? "exclude_name = ['^x_embedder\\.', '^t_embedder\\.', '^final_layer\\.']"
+        : "exclude_name = ['^x_embedder\\.', '^t_embedder\\.', '^final_layer\\.', '^blocks\\.[0-9]+\\.adaln_modulation_.*']");
+    }
     const fields = [
       ['conv_dim', f.conv_dim], ['conv_alpha', f.conv_alpha],
       ['factor', f.lokr_factor], ['dropout', f.dropout],

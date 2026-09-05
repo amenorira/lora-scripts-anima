@@ -7,7 +7,11 @@ UI JSON → TOML 转换：白名单过滤 + 字段映射 + 防御性过滤。
 from __future__ import annotations
 
 import ast
+import hashlib
 import math
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
@@ -23,6 +27,7 @@ from backend.training.field_registry import (
     get_ui_only_fields,
     loraplus_applies,
 )
+from backend.training import toml_writer
 from backend.training.optimizer_contracts import (
     AUTOMAGIC_MAX_LR_DEFAULT,
     AUTOMAGIC_MERGED_ARG_MAP,
@@ -192,19 +197,21 @@ def _remove_key_value_args(values: list[str], keys: tuple[str, ...]) -> list[str
     ]
 
 
-def _merge_include_patterns(network_args: list[str], pattern: str) -> list[str]:
+def _merge_keyed_pattern_args(
+    network_args: list[str], key: str, patterns: list[str]
+) -> list[str]:
     """
-    把 pattern 并入 network_args 中唯一的 include_patterns 项（不存在则新建）。
+    把 patterns 并入 network_args 中唯一的 key 项（不存在则新建）。
 
     sd-scripts 端 network_args 解析为 net_kwargs 字典，同 key 后者覆盖前者——
-    若用户在 network_args_custom 手写过 include_patterns，各自单写会静默丢一边，
+    若用户在 network_args_custom 手写过同 key 项，各自单写会静默丢一边，
     故必须解析后取并集合成单条。
     """
     result: list[str] = []
     existing: list[str] = []
     for item in network_args:
-        key, sep, value = item.partition("=")
-        if sep and key.strip() == "include_patterns":
+        item_key, sep, value = item.partition("=")
+        if sep and item_key.strip() == key:
             try:
                 parsed = ast.literal_eval(value.strip())
             except (ValueError, SyntaxError):
@@ -219,10 +226,65 @@ def _merge_include_patterns(network_args: list[str], pattern: str) -> list[str]:
                 existing = [value.strip()]
         else:
             result.append(item)
-    if pattern not in existing:
-        existing.append(pattern)
-    result.append(f"include_patterns={existing!r}")
+    for pattern in patterns:
+        if pattern not in existing:
+            existing.append(pattern)
+    result.append(f"{key}={existing!r}")
     return result
+
+
+def _pop_keyed_arg_list(values: list[str], key: str) -> list[str]:
+    """取出并移除 values 中唯一的 key 条目，解析为字符串列表（解析失败按单条保留）。"""
+    patterns: list[str] = []
+    filtered: list[str] = []
+    for item in values:
+        item_key, sep, value = item.partition("=")
+        if sep and item_key.strip() == key:
+            try:
+                parsed = ast.literal_eval(value.strip())
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, list):
+                patterns.extend(str(p) for p in parsed)
+            elif parsed is not None:
+                patterns.append(str(parsed))
+            elif value.strip():
+                patterns.append(value.strip())
+        else:
+            filtered.append(item)
+    values[:] = filtered
+    return patterns
+
+
+def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) -> str:
+    """
+    生成含 exclude_name 的匿名预设文件（LyCORIS 预设机制唯一入口）。
+
+    上游 kohya.create_network 只在预设文件里消费 exclude_name（kwargs 不认），
+    故 scope 细化时把内置预设全集 + exclude_name 落盘为临时文件，network_args 的
+    preset 参数改指向该文件。内容相同则复用同一路径，避免累积。
+    """
+    vendor_root = Path(__file__).resolve().parents[2] / "vendor"
+    if str(vendor_root) not in sys.path:
+        sys.path.insert(0, str(vendor_root))
+    from lycoris.config import PRESET  # noqa: PLC0415
+
+    if preset_name not in PRESET:
+        raise ValueError(f"Unknown LyCORIS preset: {preset_name!r}")
+    preset = {**PRESET[preset_name], "exclude_name": list(exclude_name)}
+    content = toml_writer.dumps(preset)
+    digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:8]
+    path = (
+        Path(tempfile.gettempdir())
+        / f"anima_lycoris_preset_{preset_name}_{digest}.toml"
+    )
+    path.write_text(content, encoding="utf-8")
+    return str(path)
+
+
+def _merge_include_patterns(network_args: list[str], pattern: str) -> list[str]:
+    """把 pattern 并入 network_args 中唯一的 include_patterns 项（不存在则新建）。"""
+    return _merge_keyed_pattern_args(network_args, "include_patterns", [pattern])
 
 
 def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str, Any], list[str]]:
@@ -369,6 +431,29 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 "ia3 预设仅对 IA³ 算法有效，已回落 full"
             )
         network_args = list(source.get("network_args") or [])
+        scope_excludes: list[str] | None = None
+        scope_preset_name: str | None = None
+        # Anima 范围细化（仅 attn-mlp 预设）：sd_default 对齐 sd-scripts 原生默认，
+        # 排除 _modulation/_norm/_embedder/final_layer（lora_anima.py 默认排除集）；
+        # add_adaln 豁免 AdaLN 调制分支（等价主界面 train_adaln 开关的 include 语义）。
+        sd_default = source.pop("lycoris_anima_sd_default", False) is True
+        add_adaln = source.pop("lycoris_anima_train_adaln", False) is True
+        if (
+            sd_default
+            and source.get("model_train_type") == "anima-lora"
+            and str(source.get("lycoris_preset") or "") == "attn-mlp"
+        ):
+            scope_preset_name = "attn-mlp"
+            excludes = (
+                [r"^x_embedder\.", r"^t_embedder\.", r"^final_layer\.", r"^blocks\.[0-9]+\.adaln_modulation_.*"]
+                if not add_adaln
+                else [r"^x_embedder\.", r"^t_embedder\.", r"^final_layer\."]
+            )
+            if excludes:
+                # 上游 kohya.create_network 只从预设文件读 exclude_name（kwargs 不认），
+                # 故用户手写与 scope 规则先并集合并为单条，再随预设文件落盘（见尾部）。
+                network_args = _merge_keyed_pattern_args(network_args, "exclude_name", excludes)
+                scope_excludes = _pop_keyed_arg_list(network_args, "exclude_name")
         # lycoris.kohya 专有映射（algo, dora_wd, block_size 等）
         for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
             if ui_field == "train_llm_adapter" and source.get("model_train_type") != "anima-lora":
@@ -426,6 +511,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 if isinstance(value, bool):
                     value = str(value).lower()
                 network_args.append(f"{arg_key}={value}")
+        if scope_excludes:
+            _set_key_value_arg(
+                network_args, "preset",
+                _write_lycoris_scope_preset_file(scope_preset_name, scope_excludes),
+            )
         if network_args:
             source["network_args"] = network_args
 

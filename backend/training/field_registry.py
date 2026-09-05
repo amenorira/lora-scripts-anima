@@ -283,6 +283,12 @@ FIELDS: list[dict[str, Any]] = [
     # 其余 lycoris 子参数一律按 show_if 挂到 network_module / lycoris_algo 下做层级缩进。
     {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}, {"v": "full", "l": "Full fine-tuning", "dk": "opt.lycoris_algo_full"}]},
     {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}, {"v": "ia3", "l": "ia3", "dk": "opt.lycoris_preset_ia3"}]},
+    # lycoris_anima_sd_default / lycoris_anima_train_adaln：只在 attn-mlp 预设下生效的
+    # 范围细化（两个 Toggle，后者嵌套前者）。语义与 sd-scripts 原生 lora_anima 的
+    # 默认排除（.*(_modulation|_norm|_embedder|final_layer).*，lora_anima.py:253-254）
+    # 及 train_adaln 的 include 豁免一致，用户心智与主界面开关对齐。
+    {"key": "lycoris_anima_sd_default", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_sd_default", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}], "hint_key": "field.lycoris_anima_sd_defaultHint", "omit_default": True},
+    {"key": "lycoris_anima_train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_train_adaln", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}, {"key": "lycoris_anima_sd_default", "eq": True}], "hint_key": "field.lycoris_anima_train_adalnHint", "omit_default": True},
     # lycoris_kernel_backend：LyCORIS 融合内核后端。vendor 经 LYCORIS_KERNEL_BACKEND
     # 环境变量读取（kernels/dispatch.py:58 / select.py:78），是进程级开关而非 network_args
     # —— /run 路由把它转为训练子进程环境变量，target 保持 ui 不进 TOML。
@@ -558,6 +564,8 @@ FIELDS: list[dict[str, Any]] = [
 _LYCORIS_PANEL_LAYOUT = {
     "lycoris_algo": ("basic", 10),
     "lycoris_preset": ("basic", 20),
+    "lycoris_anima_sd_default": ("basic", 22),
+    "lycoris_anima_train_adaln": ("basic", 23),
     "lycoris_kernel_backend": ("basic", 25),
     "conv_dim": ("basic", 30),
     "conv_alpha": ("basic", 40),
