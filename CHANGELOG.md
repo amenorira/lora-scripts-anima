@@ -6,6 +6,30 @@
 
 ## 未发布
 
+## v2.13.0 - 2026-09-05
+
+本版本在 LyCORIS 面板上新增 Anima 训练范围细化开关，并同步 LyCORIS 上游 main 的修复。
+
+### 新增
+
+- 新增「对齐 sd-scripts 默认范围」与「训练 AdaLN 调制层」两个嵌套开关，仅在 LyCORIS 预设选择 attn-mlp 时显示，后者只有在前者开启后才出现。
+- 默认范围与 sd-scripts 原生一致：只训练每个 Block 的注意力与 MLP，排除 AdaLN 调制分支、嵌入层、输出层和归一化层；「训练 AdaLN 调制层」把调制分支豁免加回，语义与主界面 AdaLN 开关一致。
+- 排除规则通过上游预设文件机制生效：运行时把内置预设全集与 exclude_name 生成匿名预设文件，network_args 的 preset 指向该文件，vendor 零改动。
+
+### 修复
+
+- 同步 vendored LyCORIS 至上游 main：接通预设文件中的 exclude_name（上游 #288 修复），kohya/wrapper 两处模块遍历改用完整模块路径匹配；内核分发兼容 torch.compile（#289）；修复 DyLoRA 梯度路由、Full 算法首次前向崩溃与 LoKr 卷积旁路。
+- 修复用户手写 exclude_name 与范围开关各自写一条被后写覆盖的问题：现在解析后并集合并为单条，避免静默丢失。
+- lycoris_kernel_backend 不再写入导出 TOML（它是进程级环境变量，由启动时转发）。
+- 参数预览的注释行不再使用斜体。
+
+### 测试
+
+- LyCORIS vendor contract、训练契约、train_adaln、代码质量契约测试全部通过（61 passed，1614 subtests）；真实 Anima 结构与 vendored create_network 全链路验证范围开关排除生效（默认 280 模块、豁免 AdaLN 后 448 模块）。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.12.1...v2.13.0)
+
+
 ## v2.12.1 - 2026-09-04
 
 本版本修正 LyCORIS LoKr 的参数说明与 Full Matrix 提示，避免把 factor、dim/rank 和 Full Matrix 混为一谈。

@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.13.0 - 2026-09-05
+
+This release adds Anima training-scope switches to the LyCORIS panel and syncs the vendored LyCORIS subtree with upstream main.
+
+### Added
+
+- Added two nested switches, "Align with sd-scripts default" and "Train AdaLN modulation", shown only when the LyCORIS preset is attn-mlp; the second appears only after the first is enabled.
+- The default scope matches the sd-scripts native behavior: only the attention and MLP of each Block are trained, while AdaLN modulation branches, embeddings, the output layer, and norm layers stay excluded. "Train AdaLN modulation" exempts the modulation branches back in, with the same semantics as the main-form AdaLN switch.
+- Exclusions take effect through the upstream preset-file mechanism: the full built-in preset plus exclude_name is written to an anonymous preset file at launch, and network_args points preset at it. No vendor changes.
+
+### Fixes
+
+- Synced vendored LyCORIS with upstream main: preset-file exclude_name is now honored (upstream #288 fix) and both kohya/wrapper module walks match against full module paths; kernel dispatch is torch.compile-safe (#289); fixed DyLoRA gradient routing, the Full algorithm first-forward crash, and the LoKr conv bypass chain.
+- Fixed duplicate exclude_name entries (user-written custom value plus the switch rule) silently overriding each other: they are now parsed and merged into a single entry.
+- lycoris_kernel_backend is no longer written to exported TOML (it is a process-level environment variable forwarded at launch).
+- Comment lines in the parameter preview no longer use italic.
+
+### Tests
+
+- LyCORIS vendor-contract, training-contract, train_adaln, and code-quality contract suites all pass (61 passed, 1,614 subtests); the scope switches were also verified end-to-end against a real Anima structure with the vendored create_network (280 modules by default, 448 with AdaLN exempted).
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.12.1...v2.13.0)
+
+
 ## v2.12.1 - 2026-09-04
 
 This patch release corrects the LyCORIS LoKr parameter guidance and Full Matrix notes so factor, dim/rank, and Full Matrix are no longer conflated.
