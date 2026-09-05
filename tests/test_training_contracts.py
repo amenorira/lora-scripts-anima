@@ -217,17 +217,6 @@ class TrainingValidationTests(unittest.TestCase):
                 if expected_keep_tokens:
                     self.assertEqual(adapted["keep_tokens"], 3)
 
-    def test_dylora_block_size_must_be_a_positive_integer_divisor(self):
-        base = valid_anima_config()
-        base.update(network_module="lycoris.kohya", lycoris_algo="dylora", network_dim=30)
-        for block_size in (0, -1, 1.5, 4):
-            with self.subTest(block_size=block_size):
-                errors = validate_training_config(dict(base, block_size=block_size))
-                self.assertTrue(any("block_size" in error for error in errors), errors)
-
-        self.assertEqual(validate_training_config(dict(base, block_size=5)), [])
-
-
 class TrainingFieldSchemaTests(unittest.TestCase):
     @staticmethod
     def _lookup(messages: dict, key: str):

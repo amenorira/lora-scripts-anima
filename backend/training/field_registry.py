@@ -85,7 +85,7 @@ LORAPLUS_NETWORK_MODULES = (
 )
 # lycoris.kohya 仅 LoCon（algo=lora）真正生效：kohya.py prepare_optimizer_params
 # 按 "lora_up" in name 分 plus 组，只有 LoCon 参数名（lora_up/lora_down/lora_mid）
-# 含该子串；loha/lokr/dylora/glora/ia3/full/diag-oft/boft 全部落入普通组，比率静默无效。
+# 含该子串；loha/lokr 全部落入普通组，比率静默无效。
 LORAPLUS_LYCORIS_ALGOS = ("lora",)
 LORAPLUS_RATIO_KEYS = (
     "loraplus_lr_ratio",
@@ -281,8 +281,8 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "loraplus_text_encoder_lr_ratio", "type": "number", "default": "", "section": "network", "desc_key": "field.loraplus_text_encoder_lr_ratio", "target": "ui", "min": 1.0, "step": 0.5, "layout_parent": "enable_loraplus", "show_if_any": _loraplus_ratio_show_if(), "hint_key": "field.loraplus_text_encoder_lr_ratioHint", "doc_slug": "lora-plus", "doc_anchor": "loraplus-text-encoder-lr-ratio"},
     # lycoris.kohya 算法选择器 + 预设：作为 network_module 的第 1、2 个子参数紧随其后展开，
     # 其余 lycoris 子参数一律按 show_if 挂到 network_module / lycoris_algo 下做层级缩进。
-    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}, {"v": "dylora", "l": "DyLoRA", "dk": "opt.lycoris_algo_dylora"}, {"v": "glora", "l": "GLoRA", "dk": "opt.lycoris_algo_glora"}, {"v": "diag-oft", "l": "Diag-OFT", "dk": "opt.lycoris_algo_diagoft"}, {"v": "boft", "l": "Butterfly OFT", "dk": "opt.lycoris_algo_boft"}, {"v": "ia3", "l": "IA³", "dk": "opt.lycoris_algo_ia3"}, {"v": "full", "l": "Full fine-tuning", "dk": "opt.lycoris_algo_full"}]},
-    {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}, {"v": "ia3", "l": "ia3", "dk": "opt.lycoris_preset_ia3"}]},
+    {"key": "lycoris_algo", "type": "select", "default": "lora", "section": "network", "desc_key": "field.lycoris_algo", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "lora", "l": "LoCon", "dk": "opt.lycoris_algo_locon"}, {"v": "loha", "l": "LoHa", "dk": "opt.lycoris_algo_loha"}, {"v": "lokr", "l": "LoKr", "dk": "opt.lycoris_algo_lokr"}]},
+    {"key": "lycoris_preset", "type": "select", "default": "full", "section": "network", "desc_key": "field.lycoris_preset", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "options": [{"v": "full", "l": "full", "dk": "opt.lycoris_preset_full"}, {"v": "full-lin", "l": "full-lin", "dk": "opt.lycoris_preset_full_lin"}, {"v": "attn-mlp", "l": "attn-mlp", "dk": "opt.lycoris_preset_attn_mlp"}, {"v": "attn-only", "l": "attn-only", "dk": "opt.lycoris_preset_attn_only"}, {"v": "unet-only", "l": "unet-only", "dk": "opt.lycoris_preset_unet_only"}, {"v": "unet-transformer-only", "l": "unet-transformer-only", "dk": "opt.lycoris_preset_unet_transformer"}, {"v": "unet-convblock-only", "l": "unet-convblock-only", "dk": "opt.lycoris_preset_unet_convblock"}]},
     # lycoris_anima_sd_default / lycoris_anima_train_adaln：只在 attn-mlp 预设下生效的
     # 范围细化（两个 Toggle，后者嵌套前者）。语义与 sd-scripts 原生 lora_anima 的
     # 默认排除（.*(_modulation|_norm|_embedder|final_layer).*，lora_anima.py:253-254）
@@ -310,11 +310,11 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "rank_dropout", "type": "number", "section": "network", "desc_key": "field.rank_dropout", "target": "ui", "min": 0, "max": 0.99, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.rank_dropoutHint"},
     {"key": "module_dropout", "type": "number", "section": "network", "desc_key": "field.module_dropout", "target": "ui", "min": 0, "max": 1, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.module_dropoutHint"},
     # use_tucker：仅 Conv2d 3x3+ 的 Tucker 分解有效。原生 loha/lokr 模块消费；
-    # lycoris 仅 LoCon/Loha/Lokr 模块消费（dylora/glora/ia3/diag-oft/boft 签名有但忽略）。
+    # lycoris 仅 LoCon/Loha/Lokr 模块消费。
     # 故显示条件为 OR-of-ANDs：原生 loha/lokr，或 lycoris.kohya + algo∈{lora,loha,lokr}。
     {"key": "use_tucker", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_tucker", "target": "ui", "show_if_any": [[{"key": "network_module", "eq": "networks.loha"}], [{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}]], "hint_key": "field.use_tuckerHintNative", "hint_key_panel": "field.use_tuckerHint", "omit_default": True},
     # lycoris.kohya 其他基础子参数。use_scalar 按算法显示（show_if 末位是 lycoris_algo → 挂其下）
-    {"key": "use_scalar", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_scalar", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr", "glora"]}], "omit_default": True},
+    {"key": "use_scalar", "type": "toggle", "default": False, "section": "network", "desc_key": "field.use_scalar", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "omit_default": True},
     {"key": "decompose_both", "type": "toggle", "default": False, "section": "network", "desc_key": "field.decompose_both", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "omit_default": True},
     {"key": "dropout", "type": "number", "section": "network", "desc_key": "field.lycoris_dropout", "target": "ui", "min": 0, "max": 0.5, "step": 0.01, "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.lycoris_dropoutHint"},
     # lycoris.kohya 算法子参数：算法特定的挂 lycoris_algo 下（show_if 末位是 lycoris_algo），
@@ -322,11 +322,8 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "full_matrix", "type": "toggle", "default": False, "section": "network", "desc_key": "field.full_matrix", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "omit_default": True},
     {"key": "train_norm", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_norm", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "omit_default": True},
     {"key": "dora_wd", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dora_wd", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.dora_wdHint", "omit_default": True},
-    {"key": "block_size", "type": "number", "default": 4, "section": "network", "desc_key": "field.block_size", "hint_key": "field.block_sizeHint", "target": "ui", "min": 1, "step": 1, "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "dylora"}], "omit_default": True},
-    {"key": "constraint", "type": "number", "default": 0, "step": 0.1, "section": "network", "desc_key": "field.constraint", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "hint_key": "field.constraintHint", "omit_default": True},
-    {"key": "rescaled", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rescaled", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "diag-oft", "_or": ["boft"]}], "omit_default": True},
     {"key": "bypass_mode", "type": "toggle", "default": False, "section": "network", "desc_key": "field.bypass_mode", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "omit_default": True},
-    {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr", "glora"]}], "hint_key": "field.rs_loraHint", "omit_default": True},
+    {"key": "rs_lora", "type": "toggle", "default": False, "section": "network", "desc_key": "field.rs_lora", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lora", "_or": ["loha", "lokr"]}], "hint_key": "field.rs_loraHint", "omit_default": True},
     {"key": "unbalanced_factorization", "type": "toggle", "default": False, "section": "network", "desc_key": "field.unbalanced_factorization", "target": "ui", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}], "omit_default": True},
     # wd_on_output：DoRA 权重分解的作用维度（输出 vs 输入）。仅 dora_wd=True（开启 DoRA）时生效，
     # 故显示条件追加 dora_wd=True（lycoris 各模块仅在 self.wd 为真时才读 wd_on_out）。
@@ -576,9 +573,6 @@ _LYCORIS_PANEL_LAYOUT = {
     "decompose_both": ("algorithm", 20),
     "full_matrix": ("algorithm", 30),
     "unbalanced_factorization": ("algorithm", 40),
-    "block_size": ("algorithm", 50),
-    "constraint": ("algorithm", 60),
-    "rescaled": ("algorithm", 70),
     "use_tucker": ("advanced", 10),
     "use_scalar": ("advanced", 20),
     "dora_wd": ("advanced", 30),
@@ -597,7 +591,6 @@ for _field in FIELDS:
 # Constraints that depend on LyCORIS semantics rather than generic control type.
 _field_by_key = {field["key"]: field for field in FIELDS}
 _field_by_key["dropout"]["max"] = 1
-_field_by_key["constraint"]["min"] = 0
 _field_by_key["lycoris_algo"]["hint_key"] = "field.lycoris_algoHint"
 _field_by_key["lycoris_preset"]["hint_key"] = "field.lycoris_presetHint"
 _field_by_key["bypass_mode"]["show_if"] = [
@@ -636,7 +629,6 @@ _FIELD_HINTS_BY_KEY = {
     "decompose_both": "field.decompose_bothHint",
     "full_matrix": "field.full_matrixHint",
     "train_norm": "field.train_normHint",
-    "rescaled": "field.rescaledHint",
     "bypass_mode": "field.bypass_modeHint",
     "cache_latents": "field.cache_latentsHint",
     "lowram": "field.lowramHint",

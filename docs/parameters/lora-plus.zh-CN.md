@@ -229,7 +229,7 @@ Loss 能帮助发现训练异常和趋势，但不能单独判断人物还原度
 | `networks.lora_anima` | `lora_up` | Anima 使用的标准 LoRA+ 分组 |
 | `networks.loha` | `hada_w2_a` | sd-scripts 对 LoHa 的扩展映射 |
 | `networks.lokr` | `lokr_w1` | sd-scripts 对 LoKr 的扩展映射 |
-| `lycoris.kohya`（仅 LoCon/算法 lora） | `lora_up` 等 | LyCORIS 适配层按参数名 `lora_up` 分组；其余 LyCORIS 算法（LoHa/LoKr/GLoRA 等）参数名不命中该分组，不起作用 |
+| `lycoris.kohya`（仅 LoCon/算法 lora） | `lora_up` 等 | LyCORIS 适配层按参数名 `lora_up` 分组；其余 LyCORIS 算法（LoHa/LoKr 等）参数名不命中该分组，不起作用 |
 
 `lycoris.kohya` 下开关只在算法为 LoCon（lora）时显示；其余 LyCORIS 算法不显示也不起效。LoHa 和 LoKr 的支持只表示 sd-scripts 能为相应参数设置较高学习率；LoRA+ 论文本身并没有对这些分解方式给出相同的实验结论。Krea 2（`networks.lora_krea2`，musubi-tuner 路径）不提供 LoRA+ 开关。
 

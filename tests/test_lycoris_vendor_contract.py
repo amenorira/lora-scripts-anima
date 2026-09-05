@@ -231,30 +231,6 @@ class LycorisVendorContractTests(unittest.TestCase):
         for item in adapted.get("network_args", []):
             self.assertFalse(item.startswith("lycoris_kernel_backend="), item)
 
-    def test_ia3_preset_normalization(self):
-        """algo=ia3 强制 ia3 预设；preset=ia3 但算法非 ia3 时回落 full（防目标层窄化）。"""
-        adapted, warnings = adapt_config({
-            "model_train_type": "sdxl-lora",
-            "network_module": "lycoris.kohya",
-            "lycoris_algo": "ia3",
-            "lycoris_preset": "full",
-        })
-        self.assertIn("preset=ia3", adapted["network_args"])
-        self.assertTrue(
-            any("IA^3 algorithm" in w or "IA³" in w for w in warnings), warnings
-        )
-
-        adapted2, warnings2 = adapt_config({
-            "model_train_type": "sdxl-lora",
-            "network_module": "lycoris.kohya",
-            "lycoris_algo": "dylora",
-            "lycoris_preset": "ia3",
-        })
-        self.assertIn("preset=full", adapted2["network_args"])
-        self.assertTrue(
-            any("reset to full" in w or "回落 full" in w for w in warnings2), warnings2
-        )
-
     def test_dead_upstream_args_not_registered(self):
         """kohya.py create_network 不转发未知 kwargs，这些上游死参数绝不能进 UI 字段集。"""
         keys = {

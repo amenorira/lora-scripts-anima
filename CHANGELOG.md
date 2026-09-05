@@ -6,6 +6,22 @@
 
 ## 未发布
 
+## v2.14.0 - 2026-09-05
+
+本版本精简 LyCORIS 算法选项，并修正归一化层文案与 Anima 调制层排除规则。
+
+### 变更
+
+- LyCORIS 算法选择器仅保留 LoCon、LoHa 和 LoKr，移除当前项目不支持或不稳定的 DyLoRA、GLoRA、Diag-OFT、Butterfly OFT、IA³ 与 Full fine-tuning 选项及其无效参数透传。
+- 修正 LyCORIS `train_norm` 文案，明确当前支持 LayerNorm 与 GroupNorm。
+- Anima 默认范围排除规则统一使用 `_modulation` 匹配，覆盖全部调制层，同时保持 AdaLN 豁免开关行为不变。
+
+### 测试
+
+- LyCORIS vendor contract、训练契约、LoRA+ 与实时交互回归测试通过（99 passed，1,581 subtests passed）。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.13.0...v2.14.0)
+
 ## v2.13.0 - 2026-09-05
 
 本版本在 LyCORIS 面板上新增 Anima 训练范围细化开关，并同步 LyCORIS 上游 main 的修复。

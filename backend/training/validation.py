@@ -482,12 +482,6 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 + " / 文本编码器缓存与这些 Caption 选项不兼容"
             )
 
-    if config.get("network_module") == "lycoris.kohya" and str(config.get("lycoris_algo", "")).lower() == "dylora":
-        block_size = config.get("block_size", 4)
-        network_dim = config.get("network_dim")
-        if isinstance(block_size, int) and block_size > 0 and isinstance(network_dim, int) and network_dim % block_size != 0:
-            errors.append("block_size: must divide network_dim / 必须能整除 network_dim")
-
     if config.get("network_module") == "lycoris.kohya" and str(config.get("lycoris_algo", "")).lower() == "lokr":
         factor = config.get("lokr_factor", -1)
         try:

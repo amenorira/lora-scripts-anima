@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.14.0 - 2026-09-05
+
+This release streamlines the LyCORIS algorithm selector and corrects normalization-layer copy and Anima modulation exclusions.
+
+### Changed
+
+- The LyCORIS algorithm selector now keeps only LoCon, LoHa, and LoKr; unsupported or unstable DyLoRA, GLoRA, Diag-OFT, Butterfly OFT, IA³, and Full fine-tuning options and their ineffective argument pass-throughs were removed.
+- Corrected the LyCORIS `train_norm` copy to state that LayerNorm and GroupNorm are supported.
+- Unified the Anima default-scope exclusion rule around `_modulation`, covering all modulation layers while preserving the AdaLN exemption switch behavior.
+
+### Tests
+
+- LyCORIS vendor-contract, training-contract, LoRA+, and realtime interaction regression tests pass (99 passed, 1,581 subtests passed).
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.13.0...v2.14.0)
+
 ## v2.13.0 - 2026-09-05
 
 This release adds Anima training-scope switches to the LyCORIS panel and syncs the vendored LyCORIS subtree with upstream main.
