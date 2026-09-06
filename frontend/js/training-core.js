@@ -63,6 +63,7 @@ window.trainingCoreMixin = {
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
+  timestepPreviewPreviousFocus: null,
   lycorisModalOpen: false,
   lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
@@ -1356,17 +1357,13 @@ window.trainingCoreMixin = {
 
   openLycorisConfig() {
     if (this.form.network_module !== 'lycoris.kohya') return;
-    this.lycorisModalPreviousFocus = document.activeElement;
-    this.lycorisModalOpen = true;
-    this.$nextTick(() => {
+    this._openManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus', '.lycoris-modal-close', () => {
       this.renderLycorisPanel();
-      document.querySelector('.lycoris-modal-close')?.focus();
     });
   },
 
   closeLycorisConfig() {
-    this.lycorisModalOpen = false;
-    this.$nextTick(() => this.lycorisModalPreviousFocus?.focus?.());
+    this._closeManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus');
   },
 
   lycorisSummary() {
@@ -1390,6 +1387,24 @@ window.trainingCoreMixin = {
     const field = defs.find(item => item.key === 'lycoris_algo');
     const option = (field?.options || []).find(item => item.v === value);
     return option ? this.t(option.dk, option.l || value) : (value || '');
+  },
+
+  _openManagedModal(stateKey, focusKey, focusSelector, afterOpen) {
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    this[focusKey] = activeElement && activeElement !== document.body ? activeElement : null;
+    this[stateKey] = true;
+    this.$nextTick(() => {
+      if (typeof afterOpen === 'function') afterOpen();
+      const target = typeof focusSelector === 'function'
+        ? focusSelector()
+        : (typeof document !== 'undefined' ? document.querySelector(focusSelector) : null);
+      target?.focus?.();
+    });
+  },
+
+  _closeManagedModal(stateKey, focusKey) {
+    this[stateKey] = false;
+    this.$nextTick(() => this[focusKey]?.focus?.());
   },
 
   // LyCORIS 面板字段在主表单渲染时追加"非 lycoris.kohya"条件：原生
@@ -2840,7 +2855,11 @@ window.trainingCoreMixin = {
     const available = new Set(this.timestepPreviewOptions().map(option => option.value));
     this.timestepPreviewScope = available.has(scope) ? scope : (available.has(this.timestepPreviewScope) ? this.timestepPreviewScope : 'base');
     this.timestepPreviewData = this._buildTimestepPreview(null, this.timestepPreviewScope);
-    this.timestepPreviewOpen = true;
+    this._openManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus', '.timestep-preview-close');
+  },
+
+  closeTimestepPreview() {
+    this._closeManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus');
   },
 
   refreshTimestepPreview() {

@@ -1326,7 +1326,7 @@
 <!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
 <div class="modal-overlay lycoris-modal-overlay" x-show="lycorisModalOpen" @click.self="closeLycorisConfig()"
      @keydown.escape.window="closeLycorisConfig()" x-cloak>
-  <div class="modal lycoris-modal" role="dialog" aria-modal="true"
+  <div class="modal lycoris-modal modal-workbench modal-workbench--lycoris" role="dialog" aria-modal="true"
        :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')">
     <div class="modal-header lycoris-modal-header">
       <div>
@@ -1431,15 +1431,15 @@
 </div>
 
 <!-- ── Flow-matching Timestep Distribution Preview ─────── -->
-<div class="modal-overlay" x-show="timestepPreviewOpen" @click.self="timestepPreviewOpen = false"
-     @keydown.escape.window="timestepPreviewOpen = false" x-cloak>
-  <div class="modal timestep-preview-modal" role="dialog" aria-modal="true" :aria-label="t('timestepPreview.title')">
+<div class="modal-overlay" x-show="timestepPreviewOpen" @click.self="closeTimestepPreview()"
+     @keydown.escape.window="closeTimestepPreview()" x-cloak>
+  <div class="modal timestep-preview-modal modal-workbench modal-workbench--timestep" role="dialog" aria-modal="true" :aria-label="t('timestepPreview.title')">
     <div class="modal-header">
       <div>
         <div x-text="t('timestepPreview.title')">Timestep distribution</div>
         <div class="timestep-preview-subtitle" x-text="t('timestepPreview.subtitle')"></div>
       </div>
-      <button class="btn-icon" @click="timestepPreviewOpen = false" :aria-label="t('common.close')">
+      <button class="btn-icon timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1497,7 +1497,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="timestepPreviewOpen = false" x-text="t('common.close')">Close</button>
+      <button class="btn btn-primary btn-sm" @click="closeTimestepPreview()" x-text="t('common.close')">Close</button>
     </div>
   </div>
 </div>
