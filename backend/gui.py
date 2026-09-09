@@ -36,7 +36,8 @@ if not (sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32):
 from backend.log import log
 from backend.startup_output import show_step
 
-show_step("Loading application / 正在加载应用")
+if __name__ == "__main__":
+    show_step("Loading application / 正在加载应用")
 
 from backend.launch_utils import (
     base_dir_path,

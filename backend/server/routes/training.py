@@ -67,6 +67,20 @@ from backend.utils import train_utils
 router = APIRouter()
 
 
+@router.post("/training/shape-preview")
+async def training_shape_preview(request: Request):
+    from backend.training.shape_preview import inspect_network, preview_pool
+
+    payload, error = await _read_json_object(request)
+    if error is not None:
+        return error
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(preview_pool(), inspect_network, payload)
+        return APIResponseSuccess(data=result)
+    except Exception as exc:
+        return APIResponseFail(message=str(exc) or type(exc).__name__)
+
+
 async def _read_json_object(
     request: Request,
     *,

@@ -709,6 +709,7 @@ window.trainingCoreMixin = {
       self._formWatcher = null;
     }
     self._formWatcher = self.$watch('form', () => {
+      self.scheduleShapeEstimate();
       self.scheduleStepEstimate();
       self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
@@ -719,6 +720,7 @@ window.trainingCoreMixin = {
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
       }, 1000);
     });
+    self.scheduleShapeEstimate();
 
     if (self._trainTypeWatcher) {
       self._trainTypeWatcher();
@@ -2719,6 +2721,9 @@ window.trainingCoreMixin = {
 
     return {
       sampling,
+      samplingLabel: this._fieldOptionLabel('timestep_sampling', sampling, sampling),
+      weightingLabel: weighting === 'uniform' ? this.t('timestepPreview.uniformWeighting')
+        : this._fieldOptionLabel('weighting_scheme', weighting, weighting),
       weighting,
       scope,
       scopeLabel,
@@ -2750,12 +2755,14 @@ window.trainingCoreMixin = {
       baselineLowPercent: baselineStats.low,
       baselineMidPercent: baselineStats.mid,
       baselineHighPercent: baselineStats.high,
-      compare: scope !== 'base',
+      compare: scope !== 'base' && densities.some((density, index) => Math.abs(density - baselineDensities[index]) > 1e-10),
+      warning: (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9)
+        || (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma'),
       notes,
     };
   },
 
-  // Shared HTML renderer: used by both the modal preview (via x-html) and the docs widget.
+  // Render the training modal chart via x-html.
   _buildTimestepChartHtml(data) {
     if (!data) return '';
     const esc = value => String(value == null ? '' : value)
@@ -2815,15 +2822,15 @@ window.trainingCoreMixin = {
           ${weightLine}
         </svg>
         <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
-          <span class="timestep-median-tag">Median t=${esc(data.median)}</span>
+          <span class="timestep-median-tag">${t('timestepPreview.medianLabel', 'Median: {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
       </div>
     </div>
     <div class="timestep-preview-axis">
-      <span class="axis-left">${t('timestepPreview.noisy', 'High noise · structure t≈1000')}</span>
+      <span class="axis-left">1000</span>
       <div class="axis-mid-ticks"><span>750</span><span>500</span><span>250</span></div>
-      <span class="axis-right">${t('timestepPreview.clean', 'Low noise · detail t≈0')}</span>
+      <span class="axis-right">0</span>
     </div>
     <div class="timestep-preview-legend">
       ${baselineLegend}
@@ -2837,7 +2844,7 @@ window.trainingCoreMixin = {
     </div>`;
   },
 
-  onTimestepChartHover(event, previewData) {
+  onTimestepChartHover(event) {
     if (!event || !event.currentTarget) return;
     const holder = event.currentTarget;
     const chart = holder.querySelector ? holder.querySelector('.timestep-preview-chart') : null;
@@ -2850,7 +2857,8 @@ window.trainingCoreMixin = {
       return;
     }
     const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const data = previewData || this.timestepPreviewData;
+    holder.dataset.inspectProgress = relX;
+    const data = this.timestepPreviewData;
     if (!data) return;
     const densities = data.densities || [];
     const idx = Math.min(densities.length - 1, Math.floor(relX * densities.length));

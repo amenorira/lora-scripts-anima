@@ -113,7 +113,7 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
 
-    def test_timestep_documents_render_registered_field_anchors_and_widget(self):
+    def test_timestep_documents_render_registered_field_anchors_and_screenshot(self):
         expected_anchors = {
             field["doc_anchor"]
             for field in (*FIELDS, *KREA2_FIELDS)
@@ -126,7 +126,9 @@ class DocumentationTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 PurePosixPath(f"parameters/timesteps.{locale}.md"),
             )
-            self.assertIn('data-doc-widget="timestep-preview"', html)
+            self.assertNotIn('data-doc-widget', html)
+            self.assertIn(f'src="/api/docs/assets/images/timestep-preview.{locale}.png"', html)
+            self.assertTrue(_resolve_asset_path(f'images/timestep-preview.{locale}.png').is_file())
             for anchor in expected_anchors:
                 self.assertIn(f'id="{anchor}"', html)
                 self.assertIn(f'href="#{anchor}"', toc)
@@ -335,96 +337,6 @@ console.log(JSON.stringify({
         self.assertEqual(state["labels"], [
             "Parameter", "sigmoid", "uniform", "shift", "sigma", "logsnr",
         ])
-
-    def test_timestep_widget_reuses_the_training_preview_calculation(self):
-        script = r"""
-global.window = {};
-global.document = { getElementById() { return null; } };
-require('./frontend/js/training-core.js');
-require('./frontend/js/docs.js');
-
-let refreshHandler = null;
-const container = {
-  className: '',
-  innerHTML: '',
-  querySelector(selector) {
-    if (selector !== '.docs-timestep-refresh') return null;
-    return {
-      addEventListener(name, handler) {
-        if (name === 'click') refreshHandler = handler;
-      },
-    };
-  },
-};
-const context = Object.assign({}, window.trainingCoreMixin, window.docsMixin, {
-  form: {
-    model_train_type: 'anima-lora',
-    timestep_sampling: 'sigmoid',
-    weighting_scheme: 'sigma_sqrt',
-    sigmoid_scale: 1,
-    discrete_flow_shift: 1,
-    resolution: '1024,768',
-  },
-  t(key) { return key; },
-});
-context._renderDocsTimestepPreview(container);
-const sigmoidHtml = container.innerHTML;
-// shift mode adds the flow shift card; flux_shift shows the resolution-derived shift
-context.form.timestep_sampling = 'shift';
-context.form.discrete_flow_shift = 3;
-context._renderDocsTimestepPreview(container);
-const shiftHtml = container.innerHTML;
-context.form.timestep_sampling = 'flux_shift';
-context._renderDocsTimestepPreview(container);
-const fluxHtml = container.innerHTML;
-// sigma also consumes discrete_flow_shift (same as the form's show_if)
-context.form.timestep_sampling = 'sigma';
-context._renderDocsTimestepPreview(container);
-const sigmaHtml = container.innerHTML;
-console.log(JSON.stringify({
-  className: container.className,
-  hasSmoothCurve: sigmoidHtml.includes('timestep-curve-current'),
-  hasMiddleSummary: sigmoidHtml.includes('timestep-preview-summary') && /\d+\.\d+%/.test(sigmoidHtml),
-  hasWeightCurve: sigmoidHtml.includes('timestep-curve-weight'),
-  refreshBound: typeof refreshHandler === 'function',
-  dualLayout: sigmoidHtml.includes('timestep-preview-layout') && sigmoidHtml.includes('timestep-layout-sidebar'),
-  scopeSelect: sigmoidHtml.includes('docs-timestep-scope') && sigmoidHtml.includes('timestepPreview.previewRange'),
-  metaCards: (sigmoidHtml.match(/<span><small>/g) || []).length,
-  sigmoidCard: sigmoidHtml.includes('<small>timestepPreview.sigmoidScale</small>'),
-  noScopeCard: !sigmoidHtml.includes('<small>timestepPreview.previewRange</small>'),
-  flowShiftCard: shiftHtml.includes('<small>timestepPreview.flowShift</small>') && shiftHtml.includes('<b>3</b>'),
-  derivedShiftCard: fluxHtml.includes('<small>timestepPreview.derivedShift</small>'),
-  noFlowShiftOnFlux: !fluxHtml.includes('<small>timestepPreview.flowShift</small>'),
-  sigmaFlowShiftCard: sigmaHtml.includes('<small>timestepPreview.flowShift</small>'),
-  offsetCard: sigmoidHtml.includes('timestepPreview.offset') && sigmoidHtml.includes('timestepPreview.medianTimestep'),
-  resolution: context._buildTimestepPreview().resolution,
-}));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        )
-        state = json.loads(result.stdout)
-        self.assertEqual(state["className"], "docs-timestep-widget")
-        self.assertTrue(state["hasSmoothCurve"])
-        self.assertTrue(state["hasMiddleSummary"])
-        self.assertTrue(state["hasWeightCurve"])
-        self.assertTrue(state["refreshBound"])
-        self.assertTrue(state["dualLayout"])
-        self.assertTrue(state["scopeSelect"])
-        self.assertEqual(state["metaCards"], 6)
-        self.assertTrue(state["sigmoidCard"])
-        self.assertTrue(state["noScopeCard"])
-        self.assertTrue(state["flowShiftCard"])
-        self.assertTrue(state["derivedShiftCard"])
-        self.assertTrue(state["noFlowShiftOnFlux"])
-        self.assertTrue(state["sigmaFlowShiftCard"])
-        self.assertTrue(state["offsetCard"])
-        self.assertEqual(state["resolution"], "1024 × 768")
 
     def test_scrollspy_uses_section_at_viewport_top_and_preserves_click_target(self):
         script = r"""

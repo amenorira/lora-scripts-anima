@@ -1,19 +1,15 @@
-// Weight-decomposition preview for the Anima training network; composed into the
-// training UI by app.js. Draws the current module/algo as schematic matrices and
-// reports the trainable parameter count for one example linear layer.
-//
-// Shapes mirror the vendored implementations exactly:
-//   LoRA  — sd-scripts networks/lora_anima.py, LyCORIS modules/locon.py
-//   LoHa  — sd-scripts networks/loha.py, LyCORIS modules/loha.py
-//   LoKr  — sd-scripts networks/lokr.py, LyCORIS modules/lokr.py
-//   factor() — vendor/lycoris/functional/general.py (identical to sd-scripts)
+// The backend constructs the actual training network with fake tensors.
+// This mixin renders its per-module shapes and aggregate saved-weight estimate.
 window.trainingShapePreviewMixin = {
   shapePreviewOpen: false,
   shapePreviewPreviousFocus: null,
-
-  // 示例层固定为 2048×2048 线性层：只用于展示形状与参数量关系，
-  // 不声称对应模型中的具体层。
-  SHAPE_PREVIEW_LAYER: { in: 2048, out: 2048 },
+  shapeEstimate: null,
+  shapeEstimateError: '',
+  shapeEstimateLoading: false,
+  shapePreviewSelected: '',
+  _shapeEstimateSignature: '',
+  _shapeEstimateTimer: null,
+  _shapeEstimateBusy: false,
 
   shapePreviewSupported() {
     return String((this.form && this.form.model_train_type) || '') === 'anima-lora';
@@ -27,11 +23,70 @@ window.trainingShapePreviewMixin = {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
         <span x-text="t('shapePreview.open')">Structure preview</span>
       </button>
+      <span class="shape-estimate-summary" :title="shapeEstimateError" x-text="shapeEstimateSummary()"></span>
     </div>`;
+  },
+
+  _shapeEstimatePayload() {
+    const payload = {};
+    Object.entries(this.form || {}).forEach(([key, value]) => {
+      if (key === 'qwen3') payload[key] = value;
+      if (/^(network_|lycoris_|train_adaln$|train_llm_adapter$|model_train_type$|save_precision$|save_model_as$|full_bf16$|full_fp16$|dim_from_weights$|cache_text_encoder_outputs$|conv_|lokr_|use_|dora_|wd_|rs_lora$|decompose_both$|full_matrix$|unbalanced_factorization$|rank_dropout$|module_dropout$|optimizer_type$)/.test(key)) payload[key] = value;
+    });
+    return payload;
+  },
+
+  scheduleShapeEstimate() {
+    const signature = JSON.stringify(this._shapeEstimatePayload());
+    if (signature === this._shapeEstimateSignature) return;
+    this._shapeEstimateSignature = signature;
+    this.shapeEstimate = null;
+    this.shapeEstimateError = '';
+    this.shapeEstimateLoading = this.shapePreviewSupported();
+    clearTimeout(this._shapeEstimateTimer);
+    if (this.shapePreviewSupported()) this._shapeEstimateTimer = setTimeout(() => this.refreshShapeEstimate(), 500);
+  },
+
+  async refreshShapeEstimate() {
+    if (this._shapeEstimateBusy || !this.shapePreviewSupported()) return;
+    this._shapeEstimateBusy = true;
+    const signature = this._shapeEstimateSignature;
+    try {
+      const response = await fetch('/api/training/shape-preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: signature,
+      });
+      const result = await response.json();
+      if (signature !== this._shapeEstimateSignature) return;
+      if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('shapePreview.estimateFailed'));
+      this.shapeEstimate = result.data;
+      const groups = result.data.groups;
+      this.shapePreviewSelected = groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
+        || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
+    } catch (error) {
+      if (signature === this._shapeEstimateSignature) this.shapeEstimateError = error.message;
+    } finally {
+      this._shapeEstimateBusy = false;
+      if (signature !== this._shapeEstimateSignature) this.refreshShapeEstimate();
+      else this.shapeEstimateLoading = false;
+    }
+  },
+
+  _shapePreviewBytes(bytes) {
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(2)} KiB`;
+    return `${(bytes / 1048576).toFixed(2)} MiB`;
+  },
+
+  shapeEstimateSummary() {
+    if (this.shapeEstimateLoading) return this.t('shapePreview.estimating');
+    if (this.shapeEstimateError) return this.t('shapePreview.estimateFailed');
+    if (!this.shapeEstimate) return '';
+    return `${this.t('shapePreview.estimatedSize')} ${this._shapePreviewBytes(this.shapeEstimate.estimatedBytes)}`;
   },
 
   openShapePreview() {
     if (!this.shapePreviewSupported()) return;
+    if (this.shapeEstimateError) this._shapeEstimateSignature = '';
+    this.scheduleShapeEstimate();
     this._openManagedModal('shapePreviewOpen', 'shapePreviewPreviousFocus', '.shape-preview-close');
   },
 
@@ -39,39 +94,15 @@ window.trainingShapePreviewMixin = {
     this._closeManagedModal('shapePreviewOpen', 'shapePreviewPreviousFocus');
   },
 
+  selectShapePreview(value) {
+    this.shapePreviewSelected = value;
+    // Selecting a module replaces the x-html subtree, including its trigger.
+    this.$nextTick(() => document.querySelector('.shape-preview-selector .preview-select-trigger')?.focus());
+  },
+
   _shapePreviewNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
-  },
-
-  _shapePreviewInt(value, fallback) {
-    const parsed = Math.round(this._shapePreviewNumber(value, fallback));
-    return parsed > 0 ? parsed : fallback;
-  },
-
-  // 与 vendor/lycoris/functional/general.py factorization() 完全一致：
-  // factor > 0 且整除时直接拆；否则从 1 起找使两块之和最小的因子。
-  _shapePreviewFactorization(dimension, factor) {
-    const dim = Math.max(1, Math.floor(Number(dimension) || 0));
-    const limitFactor = Number(factor);
-    const swap = (a, b) => (a > b ? [b, a] : [a, b]);
-    if (limitFactor > 0 && dim % limitFactor === 0) {
-      return swap(limitFactor, dim / limitFactor);
-    }
-    let limit = limitFactor < 0 ? dim : limitFactor;
-    let m = 1;
-    let n = dim;
-    let length = m + n;
-    while (m < n) {
-      let newM = m + 1;
-      while (dim % newM !== 0) newM += 1;
-      const newN = dim / newM;
-      if (newM + newN > length || newM > limit) break;
-      m = newM;
-      n = newN;
-      length = m + n;
-    }
-    return swap(m, n);
   },
 
   _shapePreviewCount(value) {
@@ -92,17 +123,16 @@ window.trainingShapePreviewMixin = {
   // ── 数据：当前配置 → 形状、参数、说明 ──────────────────────
   _buildShapePreview() {
     const f = this.form || {};
-    const module = String(f.network_module || '');
-    if (!module) return null;
+    const group = this.shapeEstimate?.groups.find(g => g.id === this.shapePreviewSelected || g.name === this.shapePreviewSelected);
+    if (!group) return null;
+    const module = this.shapeEstimate.module;
     const isLycoris = module === 'lycoris.kohya';
-    const algo = isLycoris
-      ? String(f.lycoris_algo || 'lora').toLowerCase()
-      : (module === 'networks.loha' ? 'loha' : (module === 'networks.lokr' ? 'lokr' : 'lora'));
-    const rank = this._shapePreviewInt(f.network_dim, 32);
-    const alpha = this._shapePreviewInt(f.network_alpha, rank);
-    const rsLora = isLycoris && f.rs_lora === true;
-    const inDim = this.SHAPE_PREVIEW_LAYER.in;
-    const outDim = this.SHAPE_PREVIEW_LAYER.out;
+    const algo = group.algo;
+    const rank = group.rank;
+    const rsLora = group.rsLora;
+    const alpha = group.alpha;
+    const inDim = group.in;
+    const outDim = group.out;
     const fullParams = inDim * outDim;
     const notes = [];
     const t = (key, fallback) => this.t(key, fallback);
@@ -112,15 +142,15 @@ window.trainingShapePreviewMixin = {
     const algoLabel = isLycoris
       ? this._fieldOptionLabel('lycoris_algo', algo, algo)
       : (algo === 'loha' ? 'LoHa' : (algo === 'lokr' ? 'LoKr' : 'LoRA'));
-    const meta = [
-      { label: t('shapePreview.module'), value: module },
-      { label: t('shapePreview.algo'), value: algoLabel },
-      { label: t('shapePreview.rank'), value: String(rank) },
-      { label: t('shapePreview.alpha'), value: String(alpha) },
+    const settings = [
+      { label: t('shapePreview.rank'), value: String(rank), hint: t('shapePreview.rankHelp') },
+      { label: t('shapePreview.alpha'), value: String(alpha), hint: t('shapePreview.alphaHelp') },
     ];
+    const structure = [];
+    const size = [];
     const legend = [t('shapePreview.legendMatMul')];
 
-    let trainable = 0;
+    const trainable = group.params;
     let scaleText = fill(rsLora ? 'shapePreview.scaleFormulaRs' : 'shapePreview.scaleFormula', {
       alpha,
       rank,
@@ -132,33 +162,29 @@ window.trainingShapePreviewMixin = {
 
     if (algo === 'lora' || algo === 'loha') {
       if (algo === 'loha') {
-        trainable = 2 * rank * (inDim + outDim);
         caption = [t('shapePreview.lohaCaption')];
         legend.push(t('shapePreview.legendHadamard'));
         diagram = this._shapePreviewLohaSvg({ rank, inDim, outDim });
       } else {
-        trainable = rank * (inDim + outDim);
         diagram = this._shapePreviewLoraSvg({ rank, inDim, outDim });
       }
       if (isLycoris && f.conv_dim !== '' && f.conv_dim !== null && f.conv_dim !== undefined) {
         notes.push(fill('shapePreview.convNote', { dim: f.conv_dim }));
       }
-      if (isLycoris && f.use_scalar === true) notes.push(t('shapePreview.useScalarNote'));
+      if (group.useScalar) notes.push(t('shapePreview.useScalarNote'));
       if (rsLora) notes.push(t('shapePreview.rsLoraNote'));
     } else {
-      const factor = Math.round(this._shapePreviewNumber(f.lokr_factor, -1));
-      const fullMatrix = isLycoris && f.full_matrix === true;
-      const decomposeBoth = isLycoris && f.decompose_both === true;
-      const unbalanced = isLycoris && f.unbalanced_factorization === true;
-      const [inM, inN] = this._shapePreviewFactorization(inDim, factor);
-      let [outL, outK] = this._shapePreviewFactorization(outDim, factor);
-      if (unbalanced) { const swap = outL; outL = outK; outK = swap; }
-      const w1LowRank = !fullMatrix && decomposeBoth && rank < Math.max(outL, inM) / 2;
+      const factor = group.factor;
+      const fullMatrix = group.fullMatrix;
+      const shapes = group.shapes;
+      const w1LowRank = !!shapes.lokr_w1_a;
+      const decomposeBoth = group.decomposeBoth;
+      const outL = (shapes.lokr_w1 || shapes.lokr_w1_a)[0];
+      const inM = (shapes.lokr_w1 || shapes.lokr_w1_b)[1];
+      const outK = (shapes.lokr_w2 || shapes.lokr_w2_a)[0];
+      const inN = (shapes.lokr_w2 || shapes.lokr_w2_b)[1];
       // 与训练端一致：rank 未低于第二块尺寸的一半时，w2 直接存完整矩阵。
-      const w2Full = fullMatrix || !(rank < Math.max(outK, inN) / 2);
-      const w1Params = w1LowRank ? outL * rank + rank * inM : outL * inM;
-      const w2Params = w2Full ? outK * inN : outK * rank + rank * inN;
-      trainable = w1Params + w2Params;
+      const w2Full = group.w2Full;
       // 训练端实际是 ΔW = kron(w1, w2)，w2 为低秩时先乘出 w2 再参与 Kronecker 积，
       // 所以低秩对必须加括号，否则按优先级会被读成 (W1 ⊗ W2a) × W2b。
       caption = [
@@ -172,25 +198,27 @@ window.trainingShapePreviewMixin = {
       diagram = this._shapePreviewLokrSvg({
         rank, inDim, outDim, outL, outK, inM, inN, w1LowRank, w2Full,
       });
-      meta.push({
+      settings.push({
         label: t('shapePreview.factor'),
         value: factor < 0 ? `${factor} · ${t('shapePreview.factorAuto')}` : String(factor),
+        hint: t('shapePreview.factorHelp'),
       });
-      meta.push({
+      structure.push({
         label: t('shapePreview.w1'),
-        value: w1LowRank
-          ? `${t('shapePreview.lowRank')} W1a ${outL} × ${rank} · W1b ${rank} × ${inM}`
-          : `${t('shapePreview.fullMatrix')} ${outL} × ${inM}`,
+        value: t(w1LowRank ? 'shapePreview.lowRank' : 'shapePreview.fullMatrix'),
+        detail: w1LowRank
+          ? `W1a ${outL} × ${rank} · W1b ${rank} × ${inM}`
+          : `${outL} × ${inM}`,
+        hint: t('shapePreview.w1Help'),
       });
-      meta.push({
+      structure.push({
         label: t('shapePreview.w2'),
-        value: w2Full
-          ? `${t('shapePreview.fullMatrix')} ${outK} × ${inN}`
-          : `${t('shapePreview.lowRank')} W2a ${outK} × ${rank} · W2b ${rank} × ${inN}`,
+        value: t(w2Full ? 'shapePreview.fullMatrix' : 'shapePreview.lowRank'),
+        detail: w2Full
+          ? `${outK} × ${inN}`
+          : `W2a ${outK} × ${rank} · W2b ${rank} × ${inN}`,
+        hint: t('shapePreview.w2Help'),
       });
-      notes.push(fill(factor < 0 ? 'shapePreview.factorAutoNote' : 'shapePreview.factorFixedNote', {
-        factor, outL, outK, inM, inN,
-      }));
       if (w2Full && !fullMatrix) {
         notes.push(fill('shapePreview.w2AutoFullNote', { rank, outK, inN }));
       } else if (fullMatrix) {
@@ -202,41 +230,49 @@ window.trainingShapePreviewMixin = {
           { rank, threshold: Math.max(outL, inM) / 2 }
         ));
       }
-      if (unbalanced) notes.push(t('shapePreview.unbalancedNote'));
       if (rsLora) notes.push(t('shapePreview.rsLoraNote'));
-      if (isLycoris && f.use_scalar === true) notes.push(t('shapePreview.useScalarNote'));
+      if (group.unbalanced) notes.push(t('shapePreview.unbalancedNote'));
+      if (group.useScalar) notes.push(t('shapePreview.useScalarNote'));
       if (w2Full && !w1LowRank) {
         // LyCORIS 在 w1、w2 都是完整矩阵时把 alpha 固定为 rank；原生 LoKr 的 w1 恒为完整矩阵。
-        scaleText = t('shapePreview.scaleForced');
+        scaleText = String(this._shapePreviewScale(group.scale));
       }
+      structure.push({ label: t('shapePreview.w2ThresholdShort'), value: `Rank ≥ ${Math.max(outK, inN) / 2}`, hint: t('shapePreview.thresholdHelp') });
     }
 
-    if (isLycoris && f.dora_wd === true) {
-      const axis = f.wd_on_output === false ? t('shapePreview.axisIn') : t('shapePreview.axisOut');
+    if (group.shapes.dora_scale) {
+      const onOutput = group.shapes.dora_scale[0] === outDim;
+      const axis = onOutput ? t('shapePreview.axisOut') : t('shapePreview.axisIn');
       notes.push(fill('shapePreview.doraNote', {
-        count: this._shapePreviewCount(f.wd_on_output === false ? inDim : outDim),
+        count: this._shapePreviewCount(group.shapes.dora_scale.reduce((a, b) => a * b, 1)),
         axis,
       }));
     }
-    if (isLycoris && f.train_llm_adapter === true) notes.push(t('shapePreview.llmAdapterNote'));
-    if (!isLycoris && f.train_adaln === true) notes.push(t('shapePreview.adalnNote'));
 
-    meta.push({ label: t('shapePreview.scale'), value: scaleText });
-    meta.push({
+    settings.push({ label: t('shapePreview.scale'), value: scaleText, hint: t('shapePreview.scaleHelp') });
+    size.push({ label: t('shapePreview.groupLayerCount'), value: String(group.count) });
+    size.push({ label: t('shapePreview.groupSize'), value: this._shapePreviewBytes(group.weightBytes * group.count), hint: t('shapePreview.sizeHelp') });
+    structure.push({
       label: t('shapePreview.exampleLayer'),
-      value: `${this._shapePreviewCount(inDim)} × ${this._shapePreviewCount(outDim)}`,
+      value: `${this._shapePreviewCount(inDim)} → ${this._shapePreviewCount(outDim)}`,
     });
-    meta.push({
+    size.push({
       label: t('shapePreview.trainableParams'),
       value: this._shapePreviewCount(trainable)
         + fill('shapePreview.ratio', { value: this._shapePreviewPct(trainable, fullParams) }),
+      hint: t('shapePreview.paramHelp'),
     });
-    meta.push({
+    size.push({
       label: t('shapePreview.fullParams'),
       value: this._shapePreviewCount(fullParams),
     });
 
-    return { meta, notes, caption, diagram, legend };
+    const sections = [
+      { title: t('shapePreview.settingsSection'), detail: `${isLycoris ? 'LyCORIS' : 'sd-scripts'} · ${algoLabel}`, hint: module, rows: settings },
+      { title: t('shapePreview.structureSection'), rows: structure },
+      { title: t('shapePreview.sizeSection'), rows: size },
+    ];
+    return { sections, notes, caption, diagram, legend };
   },
 
   // ── SVG 示意：尺寸按 log 压缩，数字才是准确值 ───────────────
@@ -423,27 +459,76 @@ window.trainingShapePreviewMixin = {
     return this._shapePreviewSvgWrap(used, minY, maxY, parts);
   },
 
+  _shapeModuleLabel(group) {
+    const t = key => this.t(`shapePreview.${key}`);
+    let path = group.name.replace(/^blocks\.\*\./, '');
+    let family = t('otherModules');
+    const families = [
+      ['adaln_modulation_self_attn.', `${t('adalnModules')} / ${t('selfAttention')}`],
+      ['adaln_modulation_cross_attn.', `${t('adalnModules')} / ${t('crossAttention')}`],
+      ['adaln_modulation_mlp.', `${t('adalnModules')} / MLP`],
+      ['self_attn.', t('selfAttention')], ['cross_attn.', t('crossAttention')],
+      ['mlp.', 'MLP'], ['final_layer.', t('finalLayer')],
+      ['x_embedder.', t('inputProjection')], ['t_embedder.', t('timeEmbedding')],
+      ['llm_adapter.', 'LLM Adapter'], ['qwen3.', t('textEncoder')],
+    ];
+    const match = families.find(([prefix]) => path.startsWith(prefix));
+    if (match) {
+      family = match[1];
+      path = path.slice(match[0].length);
+    }
+    const labels = {
+      q_proj: t('qProjection'), k_proj: t('kProjection'), v_proj: t('vProjection'),
+      output_proj: t('outputProjection'), linear: t('outputProjection'),
+      layer1: t('mlpExpand'), layer2: t('mlpContract'),
+      '1': t('bottleneck'), '2': t('modulationOutput'),
+      'adaln_modulation.1': `AdaLN / ${t('bottleneck')}`,
+      'adaln_modulation.2': `AdaLN / ${t('modulationOutput')}`,
+      'proj.1': t('inputProjection'), '1.linear_1': t('timeProjection'),
+      '1.linear_2': t('modulationOutput'),
+    };
+    return { family, label: labels[path] || path };
+  },
+
   // ── 弹窗内容（x-html 注入，仅弹窗打开时求值）──────────────
   shapePreviewHtml() {
     const data = this._buildShapePreview();
+    const estimate = this.shapeEstimate;
+    const hasLokr = estimate?.groups.some(group => group.algo === 'lokr');
+    const summary = `<div class="shape-preview-summary" role="status"><strong>${this.esc(this.shapeEstimateSummary())}</strong>`
+      + (estimate ? `<span>${this.esc(this.t('shapePreview.totalParams'))}: ${this._shapePreviewCount(estimate.params)} · ${this.esc(this.t('shapePreview.layerCount'))}: ${estimate.moduleCount} · ${this.esc(estimate.precision.toUpperCase())}</span>`
+        + (hasLokr ? `<span>${this.esc(this.t('shapePreview.fullW2Count'))}: ${estimate.fullW2Count}</span>` : '') : '')
+      + `</div>`;
     if (!data) {
-      return `<div class="shape-preview-layout"><div class="shape-preview-sidebar">`
-        + `<div class="shape-preview-notes"><div><span aria-hidden="true">•</span><span>${this.esc(this.t('shapePreview.unknown'))}</span></div></div>`
-        + `</div><div class="shape-preview-diagram"></div></div>`;
+      const message = this.shapeEstimateError || (this.shapeEstimateLoading ? this.t('shapePreview.estimating') : this.t('shapePreview.empty'));
+      return summary + `<div class="shape-preview-empty">${this.esc(message)}</div>`;
     }
-    const metaHtml = data.meta.map(row =>
-      `<span><small>${this.esc(row.label)}</small><b>${this.esc(row.value)}</b></span>`).join('');
+    const families = new Map();
+    for (const group of estimate.groups) {
+      const { family, label } = this._shapeModuleLabel(group);
+      const variant = estimate.groups.some(other => other.id !== group.id && other.name === group.name)
+        ? ` · ${group.algo} R${group.rank} · ${group.paths[0]}` : '';
+      if (!families.has(family)) families.set(family, []);
+      families.get(family).push({ value: group.id, family, label, detail: `${group.in} → ${group.out}${variant}`,
+        selectedLabel: `${family === label ? family : `${family} / ${label}`} · ${group.in} → ${group.out}${variant}` });
+    }
+    const options = [...families.values()].flat();
+    const selector = `<div class="shape-preview-selector" @preview-select="selectShapePreview($event.detail)"><span>${this.esc(this.t('shapePreview.selectModule'))}</span>${window.previewSelectHtml(options, this.shapePreviewSelected, this.t('shapePreview.selectModule'))}</div>`;
+    const metaHtml = data.sections.map(section => `<section class="shape-preview-section"><div class="shape-preview-section-title">${this.esc(section.title)}${section.detail ? `<span title="${this.esc(section.hint)}">${this.esc(section.detail)}</span>` : ''}</div><dl class="shape-preview-meta">`
+      + section.rows.map(row => `<div ${row.hint ? `aria-label="${this.esc(`${row.label}: ${row.value}. ${row.detail || ''} ${row.hint}`)}" tabindex="0"` : ''}><dt>${this.esc(row.label)}</dt><dd>${this.esc(String(row.value))}${row.detail ? `<small class="shape-preview-dimensions">${this.esc(row.detail)}</small>` : ''}</dd>${row.hint ? `<span class="shape-preview-help" role="tooltip">${this.esc(row.hint)}</span>` : ''}</div>`).join('') + '</dl></section>').join('');
     const notesHtml = data.notes.length
       ? `<div class="shape-preview-notes">${data.notes.map(note =>
         `<div><span aria-hidden="true">•</span><span>${this.esc(note)}</span></div>`).join('')}</div>`
       : '';
     const legendHtml = data.legend.map(item => `<span>${this.esc(item)}</span>`).join('');
     const captionHtml = data.caption.map(line => `<div>${this.esc(line)}</div>`).join('');
-    return `<div class="shape-preview-layout">
+    return summary + selector + `<div class="shape-preview-layout">
       <div class="shape-preview-sidebar">
-        <div class="shape-preview-meta">${metaHtml}</div>
-        ${notesHtml}
-        <p class="shape-preview-footnote">${this.esc(this.t('shapePreview.footnote'))}</p>
+        ${metaHtml}
+        <div class="shape-preview-details">
+          ${notesHtml}
+          <p class="shape-preview-footnote">${this.esc(this.t('shapePreview.footnote'))}</p>
+        </div>
       </div>
       <div class="shape-preview-diagram">
         <div class="shape-diagram-caption">${captionHtml}</div>

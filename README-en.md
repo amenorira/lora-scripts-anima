@@ -57,19 +57,21 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 
 ### Timestep distribution
 
-Open **View timestep distribution** under the **Training timestep sampling method** field. The modal plots the analytical probability density of the active sampling method and shift formula, overlays the loss weighting the trainer actually applies, and marks the median timestep plus the high / mid / low noise shares. Change any parameter and hit **Refresh from current settings** to recompute.
+Open **View timestep distribution** under the sampling field to inspect sampling density, loss weighting, and high / mid / low noise shares. Switch between base and overall training distributions, compare median timesteps, and hover to read curve values. See the [timestep guide](docs/parameters/timesteps.en-US.md).
 
 ![Timestep distribution preview: probability density, loss weighting, and noise-zone shares](docs/images/timestep-preview.en-US.png)
 
 ### Learning-rate curve
 
-Open **View learning-rate curve** under the **Learning-rate schedule** field. The modal draws warmup, decay, and restart curves from the sd-scripts scheduler formulas; hover the chart to read the learning rate at any step. Optimizers that adjust their own learning rate (ScheduleFree, EmoSens) show an explanatory note instead of a misleading curve.
+Open **View learning-rate curve** under the schedule field to inspect warmup, decay, restarts, and rates at individual steps. The sidebar shows the effective rate and warmup steps for the selected DiT or text-encoder component. Optimizers that manage their own schedule display the relevant explanation. See the [optimizer guide](docs/parameters/optimizers.en-US.md).
 
 ![Learning-rate curve preview: warmup and cosine decay](docs/images/lr-preview.en-US.png)
 
 ### Matrix structure
 
-For Anima training, open **Structure preview** under the **Training network module** field. The modal shows how the current module and algorithm split weights into trainable matrices — low-rank factorization (LoRA / LoCon), the LoHa Hadamard product, and the LoKr Kronecker decomposition — including how DoRA, rs_lora, and Full Matrix change shapes and scaling, along with the trainable parameter count and share for one example layer.
+For Anima training, open **Structure preview** under **Training network module**. The diagram reflects actual network construction for LoRA / LoCon, LoHa, and LoKr. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+
+The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
 
 ![Matrix structure preview: LoKr Kronecker decomposition and parameter count](docs/images/shape-preview.en-US.png)
 
@@ -183,6 +185,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 - [Optimizer Selection and Parameter Guide](docs/parameters/optimizers.en-US.md): optimizer comparison, learning rate and weight decay starting points, dataset-based selection
 - [Timestep Guide](docs/parameters/timesteps.en-US.md): flow-matching timestep sampling, loss weighting, and the distribution preview
 - [AdaLN Modulation Guide](docs/parameters/adaln.en-US.md): what the modulation layers do, upstream defaults, and when enabling them helps
+- [Matrix Structure and File Size](docs/parameters/matrix-preview.en-US.md): actual module shapes, parameter counts, training scope, and saved-weight estimates
 
 ## Program Arguments
 
