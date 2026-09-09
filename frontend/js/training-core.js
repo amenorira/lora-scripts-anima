@@ -2722,7 +2722,8 @@ window.trainingCoreMixin = {
     return {
       sampling,
       samplingLabel: this._fieldOptionLabel('timestep_sampling', sampling, sampling),
-      weightingLabel: this._fieldOptionLabel('weighting_scheme', weighting, weighting),
+      weightingLabel: weighting === 'uniform' ? this.t('timestepPreview.uniformWeighting')
+        : this._fieldOptionLabel('weighting_scheme', weighting, weighting),
       weighting,
       scope,
       scopeLabel,
@@ -2821,7 +2822,7 @@ window.trainingCoreMixin = {
           ${weightLine}
         </svg>
         <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
-          <span class="timestep-median-tag">Median t=${esc(data.median)}</span>
+          <span class="timestep-median-tag">${t('timestepPreview.medianLabel', 'Median: {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
       </div>
