@@ -1,5 +1,36 @@
 // sd-scripts scheduler preview; composed into the training UI by app.js.
 window.trainingLrPreviewMixin = {
+  lrPreviewComponent: 'unet',
+
+  lrPreviewComponents(values) {
+    const source = values || this.form || {};
+    const options = [];
+    if (source.network_train_text_encoder_only !== true) options.push({ value: 'unet', label: 'DiT / U-Net' });
+    if (source.network_train_unet_only !== true) options.push({ value: 'text', label: this.t('lrPreview.textEncoderComponent') });
+    return options;
+  },
+
+  setLrPreviewComponent(value) {
+    this.lrPreviewComponent = value;
+    this.refreshLrPreview();
+  },
+
+  onPreviewChartKey(event, kind) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const holder = event.currentTarget;
+    const chart = holder.querySelector(kind === 'lr' ? '.lr-preview-chart' : '.timestep-preview-chart');
+    if (!chart) return;
+    const previous = Number(holder.dataset.inspectProgress || 0);
+    const totalSteps = kind === 'lr' ? this.lrPreviewData?.totalSteps : 0;
+    const increment = totalSteps > 0 ? Math.max(1, Math.round(totalSteps * 0.01)) / totalSteps : 0.01;
+    const progress = event.key === 'Home' ? 0 : event.key === 'End' ? 1
+      : Math.max(0, Math.min(1, previous + (event.key === 'ArrowRight' ? increment : -increment)));
+    holder.dataset.inspectProgress = progress;
+    const rect = chart.getBoundingClientRect();
+    const sample = { currentTarget: holder, clientX: rect.left + rect.width * progress, clientY: rect.top + rect.height / 2 };
+    if (kind === 'lr') this.onLrChartHover(sample); else this.onTimestepChartHover(sample);
+  },
   // Shared by SVG sampling and the exact hover readout.
   _lrPreviewMultiplier(progress, params) {
     const { scheduler, warmupFraction, cycles, power, endRatio } = params;
@@ -33,7 +64,9 @@ window.trainingLrPreviewMixin = {
       return {
         raw,
         fraction: totalSteps > 0 ? Math.floor(raw * totalSteps) / totalSteps : raw,
-        label: this._lrPreviewFormatPercent(raw),
+        label: totalSteps > 0
+          ? `${this._lrPreviewFormatPercent(raw)} · ${Math.floor(raw * totalSteps).toLocaleString()} ${stepsUnit}`
+          : this._lrPreviewFormatPercent(raw),
         visible: true,
       };
     }
@@ -78,14 +111,15 @@ window.trainingLrPreviewMixin = {
     const optimizerLabel = this._fieldOptionLabel('optimizer_type', source.optimizer_type, source.optimizer_type);
     const baseRateText = String(source.learning_rate ?? '').trim();
     const unetRateText = String(source.unet_lr ?? '').trim();
-    const baseRateDisplay = baseRateText || '—';
-    const trainUnet = source.network_train_text_encoder_only !== true;
     const trainTextEncoder = source.network_train_unet_only !== true;
     const textEncoderRateText = String(source.text_encoder_lr ?? '').trim();
-    const chartComponent = trainUnet
+    const components = this.lrPreviewComponents(source);
+    const selectedComponent = components.find(option => option.value === this.lrPreviewComponent)?.value || components[0]?.value;
+    const chartUnet = selectedComponent === 'unet';
+    const chartComponent = chartUnet
       ? this.t('lrPreview.unetComponent', 'U-Net / DiT')
       : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent', 'Text Encoder') : this.t('lrPreview.learningRate'));
-    const chartRateText = trainUnet
+    const chartRateText = chartUnet
       ? (unetRateText || baseRateText)
       : (textEncoderRateText || baseRateText);
     const chartRate = this._lrPreviewNumber(chartRateText, 0);
@@ -163,7 +197,11 @@ window.trainingLrPreviewMixin = {
       scheduler,
       schedulerLabel,
       optimizerLabel,
-      baseRateText: baseRateDisplay,
+      effectiveRateText: this._lrPreviewFormatRate(chartRate),
+      component: selectedComponent,
+      componentLabel: chartComponent,
+      components,
+      rateSource: chartUnet ? (unetRateText ? 'unet_lr' : 'learning_rate') : (textEncoderRateText ? 'text_encoder_lr' : 'learning_rate'),
       chartLabel: `${this.t('lrPreview.learningRateAxis', 'Learning rate')} · ${chartComponent}`,
       totalSteps,
       totalStepsText: totalSteps > 0 ? Number(totalSteps).toLocaleString() : '',
@@ -171,6 +209,7 @@ window.trainingLrPreviewMixin = {
       warmupLabel: warmup.label,
       warmupX,
       warmupEstimated: !!warmup.estimated,
+      warning: !!unavailable || warmup.estimated || !totalSteps,
       cycles: scheduler === 'cosine_with_restarts' ? cycles : '',
       power: scheduler === 'polynomial' ? power : '',
       notes,
@@ -271,6 +310,7 @@ window.trainingLrPreviewMixin = {
     const data = previewData || this.lrPreviewData;
     if (!data) return;
     const progress = data.totalSteps > 0 ? Math.round(relX * data.totalSteps) / data.totalSteps : relX;
+    holder.dataset.inspectProgress = progress;
     const value = this._lrPreviewMultiplier(progress, data.params);
     const hoverLine = chart.querySelector('.lr-hover-indicator');
     if (hoverLine) {

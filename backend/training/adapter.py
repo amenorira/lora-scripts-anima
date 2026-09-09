@@ -489,8 +489,14 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 network_args, "preset",
                 _write_lycoris_scope_preset_file(scope_preset_name, scope_excludes),
             )
+        # LyCORIS forwards decompose_both without parsing strings: "false" is truthy.
+        # Omit the disabled argument to use its False default, for training and preview.
+        network_args = [item for item in _normalize_network_args(network_args)
+                        if item.lower() != "decompose_both=false"]
         if network_args:
             source["network_args"] = network_args
+        else:
+            source.pop("network_args", None)
 
     # ── 5.5. 互斥字段校验 ────────────────────────────────
     # network_train_unet_only 和 network_train_text_encoder_only 互斥

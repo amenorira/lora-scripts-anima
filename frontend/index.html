@@ -22,7 +22,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260908-previewfit5">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260909-previewfix15">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260831-motion1">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260831-selectfix1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260831-selectfix1">
@@ -39,9 +39,10 @@
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260908-shapepreview7" defer></script>
-  <script src="/anima-ui/js/training-lr-preview.js?v=20260907-lrpreview8" defer></script>
-  <script src="/anima-ui/js/training-shape-preview.js?v=20260908-shapepreview7" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260909-previewpolish14" defer></script>
+  <script src="/anima-ui/js/training-lr-preview.js?v=20260909-previewfix15" defer></script>
+  <script src="/anima-ui/js/preview-select.js?v=20260909-previewselect13" defer></script>
+  <script src="/anima-ui/js/training-shape-preview.js?v=20260909-previewfix15" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
@@ -1452,16 +1453,15 @@
       <!-- ◀ Left: Controls, Parameter Matrix & Notes -->
       <div class="timestep-layout-sidebar">
         <div class="timestep-preview-toolbar">
-          <label for="timestep-preview-scope" x-text="t('timestepPreview.previewRange')"></label>
-          <select id="timestep-preview-scope" :value="timestepPreviewScope" @change="setTimestepPreviewScope($event.target.value)">
-            <template x-for="option in timestepPreviewOptions()" :key="option.value">
-              <option :value="option.value" x-text="option.label"></option>
-            </template>
-          </select>
+          <span x-text="t('timestepPreview.previewRange')"></span>
+          <div class="timestep-preview-select" @preview-select="setTimestepPreviewScope($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
+               x-html="window.previewSelectHtml(timestepPreviewOptions(), timestepPreviewScope, t('timestepPreview.previewRange'))"></div>
         </div>
 
+        <section class="preview-info-section">
+        <h3 x-text="t('timestepPreview.samplingSection')"></h3>
         <div class="timestep-preview-meta">
-          <span><small x-text="t('timestepPreview.sampling')"></small><b x-text="timestepPreviewData && timestepPreviewData.sampling"></b></span>
+          <span><small x-text="t('timestepPreview.sampling')"></small><b x-text="timestepPreviewData && timestepPreviewData.samplingLabel"></b></span>
           <template x-if="timestepPreviewData && timestepPreviewData.sigmoidScaleCard !== null">
             <span><small x-text="t('timestepPreview.sigmoidScale')"></small><b x-text="timestepPreviewData && timestepPreviewData.sigmoidScaleCard"></b></span>
           </template>
@@ -1481,12 +1481,23 @@
             <span><small x-text="t('timestepPreview.modeScale')"></small><b x-text="timestepPreviewData && timestepPreviewData.modeScaleCard"></b></span>
           </template>
           <span><small x-text="t('timestepPreview.offset')"></small><b x-text="timestepPreviewData ? timestepPreviewData.offsetText : '0'"></b></span>
-          <span><small x-text="t('timestepPreview.medianTimestep')"></small><b x-text="timestepPreviewData ? (timestepPreviewData.baselineMedian + ' → ' + timestepPreviewData.median + ' (' + ((timestepPreviewData.median - timestepPreviewData.baselineMedian) > 0 ? '+' : '') + (timestepPreviewData.median - timestepPreviewData.baselineMedian) + ')') : ''"></b></span>
-          <span><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData && timestepPreviewData.weighting"></b></span>
           <span><small x-text="t('timestepPreview.resolution')"></small><b x-text="timestepPreviewData && timestepPreviewData.resolution"></b></span>
         </div>
+        </section>
+        <section class="preview-info-section">
+          <h3 x-text="t('timestepPreview.resultSection')"></h3>
+          <div class="timestep-preview-meta">
+            <span><small x-text="t('timestepPreview.baselineMedian')"></small><b x-text="timestepPreviewData?.baselineMedian"></b></span>
+            <span><small x-text="t('timestepPreview.currentMedian')"></small><b x-text="timestepPreviewData?.median"></b></span>
+            <span><small x-text="t('timestepPreview.medianChange')"></small><b x-text="timestepPreviewData ? ((timestepPreviewData.median > timestepPreviewData.baselineMedian ? '+' : '') + (timestepPreviewData.median - timestepPreviewData.baselineMedian)) : ''"></b></span>
+          </div>
+        </section>
+        <section class="preview-info-section">
+          <h3 x-text="t('timestepPreview.weightSection')"></h3>
+          <div class="timestep-preview-meta"><span><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData?.weightingLabel"></b></span></div>
+        </section>
 
-        <div class="timestep-preview-notes" x-show="timestepPreviewData && timestepPreviewData.notes.length">
+        <div class="timestep-preview-notes" :class="{'preview-warning': timestepPreviewData?.warning}" x-show="timestepPreviewData && timestepPreviewData.notes.length">
           <template x-for="(note, index) in (timestepPreviewData ? timestepPreviewData.notes : [])" :key="index">
             <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
           </template>
@@ -1496,6 +1507,7 @@
 
       <!-- ▶ Right: Scientific Chart Workspace + Zone Summary -->
       <div class="timestep-layout-chart"
+           tabindex="0" role="group" :aria-label="t('timestepPreview.title')" @keydown="onPreviewChartKey($event, 'timestep')"
            @mousemove="onTimestepChartHover($event)"
            @mouseleave="onTimestepChartLeave($event)">
         <div x-html="_buildTimestepChartHtml(timestepPreviewData)"></div>
@@ -1522,10 +1534,24 @@
     </div>
     <div class="modal-body lr-preview-layout" x-show="lrPreviewData">
       <div class="lr-layout-sidebar">
+        <div class="lr-component-toolbar" x-show="lrPreviewData?.components.length > 1">
+          <span x-text="t('lrPreview.component')"></span>
+          <div @preview-select="setLrPreviewComponent($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
+               x-html="window.previewSelectHtml(lrPreviewData?.components || [], lrPreviewData?.component || '', t('lrPreview.component'))"></div>
+        </div>
+        <section class="preview-info-section">
+        <h3 x-text="t('lrPreview.rateSection')"></h3>
         <div class="lr-preview-meta">
           <span><small x-text="t('lrPreview.optimizer')"></small><b x-text="lrPreviewData && lrPreviewData.optimizerLabel"></b></span>
+          <span><small x-text="t('lrPreview.component')"></small><b x-text="lrPreviewData?.componentLabel"></b></span>
+          <span><small x-text="t('lrPreview.effectiveRate')"></small><b x-text="lrPreviewData?.effectiveRateText"></b></span>
+          <span><small x-text="t('lrPreview.rateSource')"></small><b x-text="lrPreviewData?.rateSource"></b></span>
+        </div>
+        </section>
+        <section class="preview-info-section">
+        <h3 x-text="t('lrPreview.scheduleSection')"></h3>
+        <div class="lr-preview-meta">
           <span><small x-text="t('lrPreview.scheduler')"></small><b x-text="lrPreviewData && lrPreviewData.schedulerLabel"></b></span>
-          <span><small x-text="t('lrPreview.baseRate')"></small><b x-text="lrPreviewData && lrPreviewData.baseRateText"></b></span>
           <template x-if="lrPreviewData && lrPreviewData.totalSteps > 0">
             <span><small x-text="t('lrPreview.totalSteps')"></small><b x-text="lrPreviewData && lrPreviewData.totalStepsText"></b></span>
           </template>
@@ -1539,7 +1565,8 @@
             <span><small x-text="t('lrPreview.power')"></small><b x-text="lrPreviewData && lrPreviewData.power"></b></span>
           </template>
         </div>
-        <div class="lr-preview-notes" x-show="lrPreviewData && lrPreviewData.notes.length">
+        </section>
+        <div class="lr-preview-notes" :class="{'preview-warning': lrPreviewData?.warning}" x-show="lrPreviewData && lrPreviewData.notes.length">
           <template x-for="(note, index) in (lrPreviewData ? lrPreviewData.notes : [])" :key="index">
             <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
           </template>
@@ -1547,6 +1574,7 @@
         <p class="lr-preview-footnote" x-text="t('lrPreview.footnote')"></p>
       </div>
       <div class="lr-layout-chart"
+           tabindex="0" role="group" :aria-label="t('lrPreview.title')" @keydown="onPreviewChartKey($event, 'lr')"
            @mousemove="onLrChartHover($event)"
            @mouseleave="onLrChartLeave($event)">
         <div x-html="_buildLrChartHtml(lrPreviewData)"></div>

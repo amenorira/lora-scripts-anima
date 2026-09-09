@@ -709,6 +709,7 @@ window.trainingCoreMixin = {
       self._formWatcher = null;
     }
     self._formWatcher = self.$watch('form', () => {
+      self.scheduleShapeEstimate();
       self.scheduleStepEstimate();
       self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
@@ -719,6 +720,7 @@ window.trainingCoreMixin = {
         try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
       }, 1000);
     });
+    self.scheduleShapeEstimate();
 
     if (self._trainTypeWatcher) {
       self._trainTypeWatcher();
@@ -2719,6 +2721,8 @@ window.trainingCoreMixin = {
 
     return {
       sampling,
+      samplingLabel: this._fieldOptionLabel('timestep_sampling', sampling, sampling),
+      weightingLabel: this._fieldOptionLabel('weighting_scheme', weighting, weighting),
       weighting,
       scope,
       scopeLabel,
@@ -2750,7 +2754,9 @@ window.trainingCoreMixin = {
       baselineLowPercent: baselineStats.low,
       baselineMidPercent: baselineStats.mid,
       baselineHighPercent: baselineStats.high,
-      compare: scope !== 'base',
+      compare: scope !== 'base' && densities.some((density, index) => Math.abs(density - baselineDensities[index]) > 1e-10),
+      warning: (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9)
+        || (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma'),
       notes,
     };
   },
@@ -2821,9 +2827,9 @@ window.trainingCoreMixin = {
       </div>
     </div>
     <div class="timestep-preview-axis">
-      <span class="axis-left">${t('timestepPreview.noisy', 'High noise · structure t≈1000')}</span>
+      <span class="axis-left">1000</span>
       <div class="axis-mid-ticks"><span>750</span><span>500</span><span>250</span></div>
-      <span class="axis-right">${t('timestepPreview.clean', 'Low noise · detail t≈0')}</span>
+      <span class="axis-right">0</span>
     </div>
     <div class="timestep-preview-legend">
       ${baselineLegend}
@@ -2850,6 +2856,7 @@ window.trainingCoreMixin = {
       return;
     }
     const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    holder.dataset.inspectProgress = relX;
     const data = previewData || this.timestepPreviewData;
     if (!data) return;
     const densities = data.densities || [];

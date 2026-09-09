@@ -111,6 +111,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        from backend.training.shape_preview import close_preview_pool
+        close_preview_pool()
         await task_monitor.stop()
         await close_proxy_client()
 
