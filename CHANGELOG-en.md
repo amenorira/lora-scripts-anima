@@ -6,6 +6,34 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.16.0 - 2026-09-09
+
+This release makes the matrix preview reflect actual network construction, adds saved-weight size estimates, and improves interaction and documentation for all three pre-training previews.
+
+### Added
+
+- The Anima matrix preview now uses training network constructors with fake tensors to inspect saved matrices, per-module parameter counts, effective rank / alpha, and scaling. Switch between attention, MLP, and other modules, with repeated layers grouped together.
+- Added whole-adapter parameter totals and weight-file estimates that update with the algorithm, training scope, and save precision. Estimates include saved tensors and the safetensors index without loading base-model weights or starting training.
+
+### Improvements and Fixes
+
+- Unified information groups and themed menus across matrix, timestep, and learning-rate previews, with clearer Chinese and English chart labels and descriptions.
+- The learning-rate preview shows the selected component's effective rate, value source, and warmup steps, with DiT / text-encoder selection. Fixed arrow-key readouts failing to advance for short training runs.
+- Fixed lost keyboard focus after switching matrix modules, ineffective disabling of `decompose_both`, and duplicate logging from preview worker processes.
+- Removed unused preview state, fields, and duplicate styles.
+
+### Documentation
+
+- Recaptured Chinese and English screenshots of all three previews in the ComfyUI theme and updated both READMEs plus timestep and optimizer guides.
+- Added a matrix structure and file-size guide covering module shapes, parameter counts, estimation methods, and limitations.
+- Replaced the embedded timestep documentation widget with a static illustration, removing its renderer, event bindings, styles, and unused translations while retaining the interactive training-page preview.
+
+### Validation
+
+- Backend tests pass (475 passed, 1,764 subtests passed); illustrated guides in both languages pass browser checks.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.15.0...v2.16.0)
+
 ## v2.15.0 - 2026-09-08
 
 This release adds learning-rate curve and matrix structure preview modals and unifies the shared modal shell, sizing, and typography of all three previews.

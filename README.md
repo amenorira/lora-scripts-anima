@@ -57,19 +57,21 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 
 ### 时间步分布预览
 
-在 **训练时间步采样方式** 字段下方点「查看时间步分布」。弹窗绘制当前采样方式与位移公式的解析概率密度曲线，叠加训练器实际使用的 Loss 权重折线，并标出中位时间步与高 / 中 / 低噪声区间的占比。改完参数后点「按当前参数刷新」即可重新计算。
+在 **训练时间步采样方式** 下点击「查看时间步分布」，检查采样密度、Loss 权重和高 / 中 / 低噪声占比。可切换基础分布与整体训练分布，对比中位时间步的变化，并通过悬浮读数检查曲线。详见[时间步指南](docs/parameters/timesteps.zh-CN.md)。
 
 ![时间步分布预览：概率密度曲线、Loss 权重与噪声区间占比](docs/images/timestep-preview.zh-CN.png)
 
 ### 学习率曲线预览
 
-在 **学习率变化方式** 字段下方点「查看学习率曲线」。弹窗按 sd-scripts 的调度公式绘制预热、衰减与重启曲线，鼠标悬浮可读取任意步数的学习率。ScheduleFree、EmoSens 这类在训练中自行调整学习率的优化器会显示说明，不再绘制可能误导的曲线。
+在 **学习率变化方式** 下点击「查看学习率曲线」，预览预热、衰减与重启，读取各训练步的学习率。侧栏显示当前组件的生效学习率和预热步数，支持切换 DiT / 文本编码器；自行管理调度的优化器会显示相应说明。详见[优化器指南](docs/parameters/optimizers.zh-CN.md)。
 
 ![学习率曲线预览：预热与余弦衰减曲线](docs/images/lr-preview.zh-CN.png)
 
 ### 矩阵结构预览
 
-Anima 训练下，**训练网络模块** 字段下方点「结构预览」。弹窗按当前网络模块和算法画出权重如何拆成可训练矩阵——低秩分解（LoRA / LoCon）、LoHa 的 Hadamard 积、LoKr 的 Kronecker 分解，以及 DoRA、rs_lora、Full Matrix 等参数对形状与缩放的影响，同时给出示例层的可训练参数量与占比。
+Anima 训练下，在 **训练网络模块** 下点击「结构预览」。按实际网络构造结果展示 LoRA / LoCon、LoHa 和 LoKr 的矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
+
+入口同时显示 **预计权重文件大小**，随算法、rank、训练范围和保存精度自动更新。估算使用虚拟张量，无需加载底模或启动训练；统计实际保存张量与 safetensors 索引开销，不代表显存需求。详见[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)。
 
 ![矩阵结构预览：LoKr 的 Kronecker 分解与参数量](docs/images/shape-preview.zh-CN.png)
 
@@ -185,6 +187,7 @@ cd lora-scripts-anima
 - [优化器选择与参数指南](docs/parameters/optimizers.zh-CN.md)：优化器对比、学习率/weight decay 等参数起点、按数据集选择
 - [时间步指南](docs/parameters/timesteps.zh-CN.md)：flow matching 时间步采样、Loss 权重与分布预览说明
 - [AdaLN 调制层指南](docs/parameters/adaln.zh-CN.md)：调制层的作用、上游默认行为，以及哪些训练适合开启
+- [矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)：实际模块结构、参数量、训练范围与保存体积估算
 
 ## 程序参数
 

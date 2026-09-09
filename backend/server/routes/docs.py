@@ -73,6 +73,19 @@ _DOCUMENTS = {
             "en-US": "parameters/lora-plus.en-US.md",
         },
     },
+    "matrix-preview": {
+        "category": "network",
+        "order": 30,
+        "titles": {"zh-CN": "矩阵结构与文件大小", "en-US": "Matrix Structure and File Size"},
+        "summaries": {
+            "zh-CN": "逐层矩阵、实际参数量、训练范围与权重文件大小估算。",
+            "en-US": "Per-module matrices, parameter counts, training scope, and saved-weight size estimates.",
+        },
+        "files": {
+            "zh-CN": "parameters/matrix-preview.zh-CN.md",
+            "en-US": "parameters/matrix-preview.en-US.md",
+        },
+    },
     "adaln": {
         "category": "network",
         "order": 20,

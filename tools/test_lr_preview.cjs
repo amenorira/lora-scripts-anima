@@ -49,7 +49,7 @@ test('hover uses the selected step instead of a 160-point lookup', () => {
   const chart = { getBoundingClientRect: () => ({ left: 0, right: 10000, top: 0, bottom: 100, width: 10000 }),
     querySelector: key => elements[key] };
   ui.onLrChartHover({ clientX: 1234, clientY: 50,
-    currentTarget: { querySelector: key => key === '.lr-preview-chart' ? chart : elements[key] } }, data);
+    currentTarget: { dataset: {}, querySelector: key => key === '.lr-preview-chart' ? chart : elements[key] } }, data);
   assert.equal(elements['.lr-hover-x'].textContent, '1,234 / 10,000');
   assert.equal(elements['.lr-hover-indicator'].style.left, '12.34%');
   assert.equal(elements['.lr-hover-value'].textContent, '8.766e-5');

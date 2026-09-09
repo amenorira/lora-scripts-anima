@@ -31,7 +31,6 @@ window.docsMixin = {
   _docsTocRevealRaf: 0,
   _docsScrollTarget: null,
   _docsPinnedAnchor: null,
-  docsTimestepScope: 'base',
 
   docsCurrentDocument() {
     return this.docsDocuments.find(doc => doc.slug === this.docsSelectedSlug) || null;
@@ -201,7 +200,8 @@ window.docsMixin = {
       const delay = anchor ? 32 : 0;
       setTimeout(() => {
         if (this.currentRoute !== 'docs' || this.docsSelectedSlug !== documentData.slug) return;
-        this._hydrateDocsWidgets();
+        const article = document.getElementById('docsArticle');
+        if (article) this._hydrateDocsTables(article);
         this._setupDocsScrollSpy();
         if (anchor) this.scrollToDocAnchor(anchor, false);
         else {
@@ -212,15 +212,6 @@ window.docsMixin = {
           }
         }
       }, delay);
-    });
-  },
-
-  _hydrateDocsWidgets() {
-    const article = document.getElementById('docsArticle');
-    if (!article) return;
-    this._hydrateDocsTables(article);
-    article.querySelectorAll('[data-doc-widget="timestep-preview"]').forEach(container => {
-      this._renderDocsTimestepPreview(container);
     });
   },
 
@@ -239,131 +230,6 @@ window.docsMixin = {
         });
       });
     });
-  },
-
-  _renderDocsTimestepPreview(container) {
-    if (!container || typeof this._buildTimestepPreview !== 'function') return;
-    const currentForm = this.form || {};
-    const currentProfile = String(currentForm.model_train_type || '');
-    const usesFlowMatching = currentProfile === 'anima-lora' || currentProfile === 'krea2-lora';
-    const previewValues = usesFlowMatching ? currentForm : {
-      model_train_type: 'anima-lora',
-      timestep_sampling: 'sigmoid',
-      weighting_scheme: 'uniform',
-      sigmoid_scale: 1.0,
-      discrete_flow_shift: 1.0,
-      logit_mean: 0.0,
-      logit_std: 1.0,
-      mode_scale: 1.29,
-      resolution: currentForm.resolution || '1024,1024',
-    };
-    // 与训练页预览共用同一套 base/overall/子集范围切换；没有 flow-matching
-    // 表单时没有真实数据集，只有基础分布基准示例。
-    const scopeOptions = usesFlowMatching
-      ? this.timestepPreviewOptions()
-      : [{ value: 'base', label: this.t ? this.t('timestepPreview.baseDistribution') : 'Base distribution' }];
-    const scopeSet = new Set(scopeOptions.map(option => option.value));
-    const scope = this.docsTimestepScope && scopeSet.has(this.docsTimestepScope) ? this.docsTimestepScope : 'base';
-    this.docsTimestepScope = scope;
-    const data = this._buildTimestepPreview(previewValues, scope);
-    const escapeHtml = value => String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-    const tr = (key, fallback) => {
-      const translated = typeof this.t === 'function' ? this.t(key) : '';
-      return escapeHtml(translated || fallback);
-    };
-    const notes = data.notes.map(note => (
-      `<div><span aria-hidden="true">&#8226;</span><span>${escapeHtml(note)}</span></div>`
-    )).join('');
-    const subtitleKey = usesFlowMatching
-      ? 'timestepPreview.subtitle'
-      : 'timestepPreview.docsFallback';
-
-    const medianDelta = data.median - data.baselineMedian;
-    const medianText = `${data.baselineMedian} → ${data.median} (${medianDelta > 0 ? '+' : ''}${medianDelta})`;
-    const metaItems = [
-      { label: tr('timestepPreview.sampling', 'Sampling'), value: data.sampling },
-    ];
-    if (data.sigmoidScaleCard !== null && data.sigmoidScaleCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.sigmoidScale', 'Sigmoid scale'), value: data.sigmoidScaleCard });
-    }
-    if (data.flowShiftCard !== null && data.flowShiftCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.flowShift', 'Flow shift'), value: data.flowShiftCard });
-    }
-    if (data.derivedShiftCard !== null && data.derivedShiftCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.derivedShift', 'Derived shift'), value: data.derivedShiftCard });
-    }
-    if (data.logitMeanCard !== null && data.logitMeanCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.logitMean', 'Logit mean'), value: data.logitMeanCard });
-    }
-    if (data.logitStdCard !== null && data.logitStdCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.logitStd', 'Logit std'), value: data.logitStdCard });
-    }
-    if (data.modeScaleCard !== null && data.modeScaleCard !== undefined) {
-      metaItems.push({ label: tr('timestepPreview.modeScale', 'Mode scale'), value: data.modeScaleCard });
-    }
-    metaItems.push(
-      { label: tr('timestepPreview.offset', 'Sampling offset'), value: data.offsetText },
-      { label: tr('timestepPreview.medianTimestep', 'Median timestep'), value: medianText },
-      { label: tr('timestepPreview.weighting', 'Loss weighting'), value: data.weighting },
-      { label: tr('timestepPreview.resolution', 'Reference resolution'), value: data.resolution },
-    );
-    const metaHtml = metaItems.map(item =>
-      `<span><small>${item.label}</small><b>${escapeHtml(item.value)}</b></span>`
-    ).join('');
-    const scopeHtml = scopeOptions.map(option =>
-      `<option value="${escapeHtml(option.value)}"${option.value === scope ? ' selected' : ''}>${escapeHtml(option.label)}</option>`
-    ).join('');
-
-    container.className = 'docs-timestep-widget';
-    container.innerHTML = `
-      <div class="docs-timestep-widget-header">
-        <div>
-          <strong>${tr('timestepPreview.title', 'Timestep distribution')}</strong>
-          <span>${tr(subtitleKey, 'Anima baseline example for the flow-matching guide')}</span>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm docs-timestep-refresh">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
-          <span>${tr('timestepPreview.refresh', 'Refresh')}</span>
-        </button>
-      </div>
-      <div class="timestep-preview-layout">
-        <div class="timestep-layout-sidebar">
-          <div class="timestep-preview-toolbar">
-            <label for="docs-timestep-scope">${tr('timestepPreview.previewRange', 'Preview range')}</label>
-            <select id="docs-timestep-scope" class="docs-timestep-scope">${scopeHtml}</select>
-          </div>
-          <div class="timestep-preview-meta">${metaHtml}</div>
-          ${notes ? `<div class="timestep-preview-notes">${notes}</div>` : ''}
-          <p class="timestep-preview-footnote">${tr('timestepPreview.footnote', 'Deterministic local preview of the current trainer formulas.')}</p>
-        </div>
-        <div class="timestep-layout-chart">
-          ${this._buildTimestepChartHtml(data)}
-        </div>
-      </div>
-    `;
-
-    const refresh = container.querySelector('.docs-timestep-refresh');
-    if (refresh) refresh.addEventListener('click', () => this._renderDocsTimestepPreview(container));
-    const scopeSelect = container.querySelector('.docs-timestep-scope');
-    if (scopeSelect) scopeSelect.addEventListener('change', event => {
-      this.docsTimestepScope = String(event.target.value || 'base');
-      this._renderDocsTimestepPreview(container);
-    });
-    const chartHolder = container.querySelector('.timestep-layout-chart');
-    const chart = chartHolder && chartHolder.querySelector('.timestep-preview-chart');
-    if (chart) {
-      chart.addEventListener('mousemove', event => this.onTimestepChartHover({
-        clientX: event.clientX,
-        clientY: event.clientY,
-        currentTarget: chartHolder,
-      }, data));
-      chart.addEventListener('mouseleave', event => this.onTimestepChartLeave({ currentTarget: chartHolder }));
-    }
   },
 
   _cancelDocsContentRequest() {

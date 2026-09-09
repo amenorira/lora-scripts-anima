@@ -39,17 +39,19 @@ For example, “training step 500” means the LoRA has received 500 optimizer u
 <!-- doc-anchor: visualizer -->
 ## Distribution preview
 
-<div data-doc-widget="timestep-preview"></div>
+![Timestep distribution preview in the ComfyUI theme](../images/timestep-preview.en-US.png)
+
+This is a static illustration of an example configuration. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
 
 The preview contains three main elements:
 
 1. **Blue continuous probability density curve (PDF):** higher points mean the corresponding noise timestep is sampled more often during training.
-2. **Weight polyline:** loss measures the error between the model's prediction and its training target. This orange-yellow polyline (the exact shade varies slightly by theme) shows any extra weight applied to that error after a timestep has been sampled.
+2. **Loss weighting:** loss measures the error between the model's prediction and its training target. With non-uniform weighting, an orange-yellow polyline shows the extra weight applied to that error after a timestep has been sampled. The example above uses uniform weighting, shown as a sidebar note without a separate weight curve.
 3. **High, mid, and low noise percentages:** these summarize whether the current setup leans toward global structure, balanced transition, or fine detail.
 
 The horizontal axis follows the physical denoising order of image generation: left is maximum noise `t≈1000` (pure noise, structure & composition stage), while right is clean `t≈0` (low noise, fine detail stage).
 
-The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the weight polyline uses a logarithmic display scale. A flat polyline means no timestep receives extra explicit weighting (equivalent to uniform weighting); it does not mean the observed loss stays constant.
+The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the weight polyline uses a logarithmic display scale. Uniform weighting applies the same loss weight to every timestep; it does not mean the observed loss stays constant.
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Approximate influence of a noise region on training">
   <div class="doc-equation-kicker">Simplified relationship, not an exact prediction</div>

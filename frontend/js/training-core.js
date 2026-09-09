@@ -2762,7 +2762,7 @@ window.trainingCoreMixin = {
     };
   },
 
-  // Shared HTML renderer: used by both the modal preview (via x-html) and the docs widget.
+  // Render the training modal chart via x-html.
   _buildTimestepChartHtml(data) {
     if (!data) return '';
     const esc = value => String(value == null ? '' : value)
@@ -2844,7 +2844,7 @@ window.trainingCoreMixin = {
     </div>`;
   },
 
-  onTimestepChartHover(event, previewData) {
+  onTimestepChartHover(event) {
     if (!event || !event.currentTarget) return;
     const holder = event.currentTarget;
     const chart = holder.querySelector ? holder.querySelector('.timestep-preview-chart') : null;
@@ -2858,7 +2858,7 @@ window.trainingCoreMixin = {
     }
     const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     holder.dataset.inspectProgress = relX;
-    const data = previewData || this.timestepPreviewData;
+    const data = this.timestepPreviewData;
     if (!data) return;
     const densities = data.densities || [];
     const idx = Math.min(densities.length - 1, Math.floor(relX * densities.length));
