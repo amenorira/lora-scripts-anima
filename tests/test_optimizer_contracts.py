@@ -1,6 +1,7 @@
 import importlib
 import inspect
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -11,21 +12,24 @@ from pathlib import Path
 import torch
 
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import get_fields_json
+from backend.training.field_registry import FIELDS, get_fields_json
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     ADAN_OPTIMIZER_TYPE,
     ADEMAMIX8BIT_OPTIMIZER_TYPE,
     ADEMAMIX_OPTIMIZER_TYPE,
+    AUTOMAGIC_MERGED_ARG_MAP,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    FORM_ARGUMENTS,
     LORA_MUON_OPTIMIZER_TYPE,
     LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
+    SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
 from backend.training.optimizer_metadata import (
@@ -119,6 +123,7 @@ class OptimizerFieldContractTests(unittest.TestCase):
                 MUON_OPTIMIZER_TYPE,
                 LORA_MUON_OPTIMIZER_TYPE,
                 LORARITE_OPTIMIZER_TYPE,
+                SOAP_OPTIMIZER_TYPE,
                 AUTOMAGIC_OPTIMIZER_TYPE,
                 EMOSENS_OPTIMIZER_TYPE,
             ],
@@ -179,6 +184,36 @@ class OptimizerFieldContractTests(unittest.TestCase):
                     self.assertEqual(hints[selector], entry.beta_hint_key)
                     self.assertTrue(entry.description_key.startswith("opt.optimizer_type_"))
 
+    def test_merged_fields_expose_the_optimizer_arg_name(self):
+        """merged 字段在界面上按真实参数名显示（argKey），表单键只作内部命名空间。"""
+        fields = {
+            field["key"]: field
+            for section in get_fields_json()["sections"]
+            for field in section["fields"]
+        }
+        expected = {
+            key: mapping.argument for key, mapping in FORM_ARGUMENTS.items()
+        }
+        expected.update(AUTOMAGIC_MERGED_ARG_MAP)
+        merged = [field["key"] for field in FIELDS if field.get("target") == "merged"]
+        self.assertTrue(merged)
+        for key in merged:
+            with self.subTest(key=key):
+                self.assertIn(key, expected, "merged 字段缺少 optimizer_args 映射")
+                self.assertEqual(fields[key].get("argKey"), expected[key])
+
+    def test_frontend_preview_skips_every_merged_field(self):
+        """预览的 SKIP_TOP_LEVEL 是硬编码表：漏登记的 merged 字段会以假顶层键
+        出现在预览里（Muon 的 muon_* 曾如此），这里守住两边的一致性。
+        """
+        source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
+        match = re.search(r"const SKIP_TOP_LEVEL = new Set\(\[(.*?)\]\);", source, re.S)
+        self.assertIsNotNone(match, "SKIP_TOP_LEVEL not found in training-toml.js")
+        skipped = set(re.findall(r"['\"]([^'\"]+)['\"]", match.group(1)))
+        merged = {field["key"] for field in FIELDS if field.get("target") == "merged"}
+        self.assertTrue(merged)
+        self.assertEqual(sorted(merged - skipped), [])
+
     def test_frontend_shows_muon_only_for_anima(self):
         optimizer_field = fields_by_key()["optimizer_type"]
         script = r"""
@@ -215,6 +250,9 @@ console.log(JSON.stringify({
         values = json.loads(result.stdout)
         self.assertIn(MUON_OPTIMIZER_TYPE, values["anima"])
         self.assertNotIn(MUON_OPTIMIZER_TYPE, values["sdxl"])
+        # SOAP 不属于 Anima 专属项，两种训练类型都提供
+        self.assertIn(SOAP_OPTIMIZER_TYPE, values["anima"])
+        self.assertIn(SOAP_OPTIMIZER_TYPE, values["sdxl"])
 
     def test_registry_displays_product_defaults_and_anima_recommendations(self):
         from pytorch_optimizer import StableAdamW
@@ -404,6 +442,11 @@ class OptimizerValidationTests(unittest.TestCase):
             (LORA_MUON_OPTIMIZER_TYPE, {"ns_steps": 0}, "ns_steps"),
             (LORA_MUON_OPTIMIZER_TYPE, {"inv_sqrt_steps": 8}, "inv_sqrt_steps"),
             (LORA_MUON_OPTIMIZER_TYPE, {"momentum": 1.0}, "momentum"),
+            (SOAP_OPTIMIZER_TYPE, {"max_precondition_dim": 0}, "max_precondition_dim"),
+            (SOAP_OPTIMIZER_TYPE, {"precondition_frequency": 0}, "precondition_frequency"),
+            (SOAP_OPTIMIZER_TYPE, {"shampoo_beta": 1.0}, "shampoo_beta"),
+            (SOAP_OPTIMIZER_TYPE, {"betas": "0.95"}, "exactly 2"),
+            (SOAP_OPTIMIZER_TYPE, {"precondition_1d": "yes"}, "true or false"),
         )
         for optimizer_type, updates, expected in cases:
             with self.subTest(optimizer_type=optimizer_type, updates=updates):
@@ -554,6 +597,77 @@ class OptimizerValidationTests(unittest.TestCase):
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
+    def test_real_sd_scripts_factory_runs_soap_step(self):
+        if not torch.cuda.is_available():
+            self.skipTest("SOAP smoke requires CUDA")
+
+        config = valid_config(SOAP_OPTIMIZER_TYPE)
+        config.update(
+            {
+                "learning_rate": "2e-5",
+                "weight_decay": 0,
+                "betas": "0.95, 0.95",
+                "eps": "1e-8",
+                "max_precondition_dim": 256,
+                "precondition_frequency": 10,
+                "normalize_gradient": False,
+                "correct_bias": True,
+                "precondition_1d": False,
+            }
+        )
+        self.assertEqual(validate_training_config(config), [])
+        adapted, warnings = adapt_config(config)
+        self.assertEqual(warnings, [])
+
+        sd_scripts = Path("vendor/sd-scripts").resolve()
+        sys.path.insert(0, str(sd_scripts))
+        try:
+            from library.optimizer import get_optimizer
+
+            args = type(
+                "Args",
+                (),
+                {
+                    "optimizer_type": SOAP_OPTIMIZER_TYPE,
+                    "use_8bit_adam": False,
+                    "use_lion_optimizer": False,
+                    "fused_backward_pass": False,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": float(adapted["learning_rate"]),
+                    "optimizer_args": adapted["optimizer_args"],
+                },
+            )()
+            parameter = torch.nn.Parameter(torch.ones((4, 8), device="cuda"))
+            _, _, optimizer = get_optimizer(args, [parameter])
+            before = parameter.detach().clone()
+
+            # SOAP 的第一步只建立预条件状态，权重保持不变
+            parameter.square().mean().backward()
+            optimizer.step()
+            self.assertTrue(torch.equal(parameter.detach(), before))
+
+            optimizer.zero_grad()
+            parameter.square().mean().backward()
+            optimizer.step()
+        finally:
+            sys.path.remove(str(sd_scripts))
+
+        from pytorch_optimizer import SOAP
+
+        self.assertIs(type(optimizer), SOAP)
+        group = optimizer.param_groups[0]
+        self.assertEqual(group["lr"], 2e-5)
+        self.assertEqual(group["weight_decay"], 0)
+        self.assertEqual(group["betas"], (0.95, 0.95))
+        self.assertEqual(group["eps"], 1e-8)
+        self.assertEqual(group["max_precondition_dim"], 256)
+        self.assertEqual(group["precondition_frequency"], 10)
+        self.assertTrue(group["correct_bias"])
+        self.assertFalse(group["normalize_gradient"])
+        self.assertFalse(group["precondition_1d"])
+        self.assertTrue(torch.isfinite(parameter).all())
+        self.assertTrue(torch.ne(parameter.detach(), before).any())
+
     def test_rejects_prodigyplus_fused_modes(self):
         config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
         config["optimizer_args"] = ["fused_back_pass=True"]
@@ -612,6 +726,50 @@ class OptimizerAdapterTests(unittest.TestCase):
         )
         self.assertIn("adjust_lr_fn='match_rms_adamw'", adapted["optimizer_args"])
         self.assertEqual(warnings, [])
+
+    def test_soap_merges_exposed_arguments_and_keeps_sdxl_support(self):
+        adapted, warnings = adapt_config(
+            {
+                "model_train_type": "anima-lora",
+                "network_module": "networks.lora_anima",
+                "optimizer_type": SOAP_OPTIMIZER_TYPE,
+                "learning_rate": "2e-5",
+                "weight_decay": 0,
+                "betas": "0.95, 0.95",
+                "eps": "1e-8",
+                "max_precondition_dim": 256,
+                "precondition_frequency": 10,
+                "shampoo_beta": 0.9,
+                "normalize_gradient": False,
+                "correct_bias": False,
+                "precondition_1d": True,
+            }
+        )
+
+        self.assertEqual(adapted["optimizer_type"], SOAP_OPTIMIZER_TYPE)
+        for expected in (
+            "weight_decay=0",
+            "betas=0.95, 0.95",
+            "eps=1e-8",
+            "max_precondition_dim=256",
+            "precondition_frequency=10",
+            "shampoo_beta=0.9",
+            "normalize_gradient=False",
+            "correct_bias=False",
+            "precondition_1d=True",
+        ):
+            self.assertIn(expected, adapted["optimizer_args"])
+        self.assertEqual(warnings, [])
+
+        # 与 Muon／LoRA-Muon／LoRA-RITE 不同，SOAP 不限定 Anima 训练类型
+        sdxl = valid_config(SOAP_OPTIMIZER_TYPE, "sdxl-lora")
+        self.assertEqual(validate_training_config(sdxl), [])
+
+    def test_soap_rejects_unexposed_library_arguments(self):
+        config = valid_config(SOAP_OPTIMIZER_TYPE)
+        config["optimizer_args"] = ["unknown_soap_option=1"]
+        errors = validate_training_config(config)
+        self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
     def test_lora_muon_merges_all_exposed_arguments(self):
         adapted, warnings = adapt_config(
@@ -985,6 +1143,166 @@ process.stdout.write(ctx.tomlRaw);
         self.assertNotIn("momentum", config)
         self.assertNotIn("ns_steps", config)
         self.assertNotIn("lora_muon_momentum", config)
+
+    def test_frontend_labels_merged_fields_with_the_optimizer_arg_name(self):
+        fields = fields_by_key()
+        picked = []
+        for key in ("came_clip_threshold", "muon_momentum", "learning_rate"):
+            field = fields[key]
+            picked.append(
+                {
+                    name: field[name]
+                    for name in (
+                        "key",
+                        "argKey",
+                        "type",
+                        "default",
+                        "descKey",
+                        "hintKey",
+                        "hintKeyBy",
+                        "omitDefault",
+                        "showIf",
+                        "showIfAny",
+                        "role",
+                        "hidden",
+                    )
+                    if name in field
+                }
+            )
+        script = r"""
+global.window = {};
+require('./frontend/js/utils.js');
+require('./frontend/js/training-core.js');
+window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
+const core = window.trainingCoreMixin;
+function render(field, form) {
+  const ctx = Object.assign({}, core, window.utilsMixin, {
+    form,
+    t(key, fallback) { return fallback || key; },
+    escJson() { return ''; },
+  });
+  return ctx.renderField(field);
+}
+const [cameField, muonField, lrField] = __FIELDS__;
+const came = render(cameField, { model_train_type: 'anima-lora', optimizer_type: 'pytorch_optimizer.CAME', came_clip_threshold: 1 });
+const muon = render(muonField, { model_train_type: 'anima-lora', optimizer_type: 'Muon', muon_momentum: 0.95 });
+const lr = render(lrField, { model_train_type: 'anima-lora', optimizer_type: 'Muon', learning_rate: '2e-5' });
+const keyOf = html => /<div class="field-key">([^<]*)/.exec(html)[1];
+console.log(JSON.stringify({
+  cameKey: keyOf(came),
+  muonKey: keyOf(muon),
+  learningRateKey: keyOf(lr),
+  cameBinding: came.includes('form.came_clip_threshold'),
+  muonBinding: muon.includes('form.muon_momentum'),
+}));
+""".replace("__FIELDS__", json.dumps(picked))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        state = json.loads(result.stdout)
+        # 显示用真实参数名，绑定仍用表单键（保存/草稿不受影响）
+        self.assertEqual(state["cameKey"], "clip_threshold")
+        self.assertEqual(state["muonKey"], "momentum")
+        self.assertEqual(state["learningRateKey"], "learning_rate")
+        self.assertTrue(state["cameBinding"])
+        self.assertTrue(state["muonBinding"])
+
+    def test_soap_preview_serializes_only_optimizer_args(self):
+        fields = fields_by_key()
+        visible_fields = []
+        for key in (
+                "optimizer_type",
+                "learning_rate",
+                "max_grad_norm",
+                "weight_decay",
+                "betas",
+                "eps",
+                "max_precondition_dim",
+                "precondition_frequency",
+                "shampoo_beta",
+                "normalize_gradient",
+                "correct_bias",
+                "precondition_1d",
+        ):
+            field = fields[key]
+            visible_fields.append(
+                {
+                    name: field[name]
+                    for name in (
+                        "key",
+                        "default",
+                        "omitDefault",
+                        "showIf",
+                        "showIfAny",
+                        "role",
+                        "hidden",
+                    )
+                    if name in field
+                }
+            )
+        script = r"""
+global.window = {};
+global.document = { getElementById() { return { innerHTML: '' }; } };
+require('./frontend/js/constants.js');
+window.getVisibleSections = () => [{ key: 'optimizer', fields: __FIELDS__ }];
+require('./frontend/js/training-toml.js');
+const fieldMap = Object.fromEntries(__FIELDS__.map(field => [field.key, field]));
+const ctx = Object.assign({}, window.trainingTomlMixin, {
+  form: {
+    model_train_type: 'anima-lora',
+    optimizer_type: 'pytorch_optimizer.SOAP',
+    learning_rate: '2e-5',
+    max_grad_norm: 1,
+    weight_decay: 0,
+    betas: '0.95, 0.95',
+    eps: '1e-8',
+    max_precondition_dim: 256,
+    precondition_frequency: 10,
+    shampoo_beta: 0.9,
+    normalize_gradient: false,
+    correct_bias: true,
+    precondition_1d: false,
+  },
+  _fieldShowIfMet() { return true; },
+  _coerceNum(value) { return value; },
+  _isPathFieldRole() { return false; },
+  findFieldDef(key) { return fieldMap[key] || null; },
+  esc(value) { return String(value); },
+  t(key, fallback) { return fallback || key; },
+});
+ctx.updateToml();
+process.stdout.write(ctx.tomlRaw);
+""".replace("__FIELDS__", json.dumps(visible_fields))
+
+        result = subprocess.run(
+            ["node", "-e", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        config = tomllib.loads(result.stdout)
+        self.assertEqual(
+            config["optimizer_args"],
+            ["weight_decay=0", "max_precondition_dim=256", "shampoo_beta=0.9"],
+        )
+        # SOAP 的专属字段是 merged 字段，不得作为顶层 TOML 键泄漏
+        for leaked in (
+            "max_precondition_dim",
+            "precondition_frequency",
+            "shampoo_beta",
+            "normalize_gradient",
+            "correct_bias",
+            "precondition_1d",
+        ):
+            self.assertNotIn(leaked, config)
 
     def test_lora_muon_frontend_keeps_native_network_pairing(self):
         script = r"""
@@ -1964,6 +2282,28 @@ const loraMuonCustom = args({
   gauge_rebalance_interval: 4,
   gauge_power_steps: 3,
 });
+const soapDefaults = args({
+  optimizer_type: 'pytorch_optimizer.SOAP',
+  weight_decay: 0,
+  betas: '0.95, 0.95',
+  eps: '1e-8',
+  max_precondition_dim: 256,
+  precondition_frequency: 10,
+  shampoo_beta: '',
+  normalize_gradient: false,
+  correct_bias: true,
+  precondition_1d: false,
+});
+const soapCustom = args({
+  optimizer_type: 'pytorch_optimizer.SOAP',
+  weight_decay: 0.02,
+  max_precondition_dim: 512,
+  precondition_frequency: 25,
+  shampoo_beta: 0.9,
+  normalize_gradient: true,
+  correct_bias: false,
+  precondition_1d: true,
+});
 const bnbDefaults = args({
   optimizer_type: 'AdamW8bit',
   bnb_percentile_clipping: 100,
@@ -2093,6 +2433,8 @@ console.log(JSON.stringify({
   muonDefaults,
   loraMuonDefaults,
   loraMuonCustom,
+  soapDefaults,
+  soapCustom,
   bnbDefaults,
   bnbCustom,
   previousAuto: previousAuto.form.lr_scheduler,
@@ -2147,6 +2489,24 @@ console.log(JSON.stringify({
         self.assertEqual(
             state["bnbCustom"],
             ["percentile_clipping=99", "min_8bit_size=16384"],
+        )
+        # SOAP 的界面默认与库默认只差 max_precondition_dim：其余各项与库一致，
+        # 不必写进 optimizer_args；weight_decay 则必须显式写 0 覆盖库的 0.01。
+        self.assertEqual(
+            state["soapDefaults"],
+            ["weight_decay=0", "max_precondition_dim=256"],
+        )
+        self.assertEqual(
+            state["soapCustom"],
+            [
+                "weight_decay=0.02",
+                "max_precondition_dim=512",
+                "precondition_frequency=25",
+                "shampoo_beta=0.9",
+                "normalize_gradient=True",
+                "correct_bias=False",
+                "precondition_1d=True",
+            ],
         )
         self.assertEqual(state["previousAuto"], "cosine")
         self.assertEqual(state["explicitCustom"], "constant")

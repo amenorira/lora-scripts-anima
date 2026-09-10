@@ -21,6 +21,7 @@ This guide distinguishes "what the papers and implementations actually say" from
 | Want less learning-rate tuning | Prodigy | Requires a base LR of `1.0`; this project does not support LoRA+ with it |
 | Want to compare matrix-orthogonalized updates | Muon | Keep the AdamW baseline LR and change only the optimizer first |
 | Want to test matrix optimization designed for LoRA factors | LoRA-Muon | Compare it with AdamW8bit under fixed conditions; calibrate the LR separately |
+| Want to compare matrix-preconditioned updates | SOAP | Keep the AdamW baseline LR first; worth more on compact LoKr than on plain LoRA |
 
 For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** is a reasonable start. Change one major variable per comparison, or you cannot attribute the result.
 
@@ -49,6 +50,7 @@ For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** 
 | AdEMAMix | Comparison for long runs or visibly noisy gradients | Benefit of the slow moving average is uncertain in short runs; alpha and ramp lengths should match the training length |
 | AdEMAMix8bit | AdEMAMix when optimizer-state memory is tight | Differs from the full-precision version mainly in state quantization |
 | LoRA-RITE | Trying an update rule designed for LoRA's structure | Anima LoRA and standard LoRA structure only; no LoRA+; uses its own clipping, `max_grad_norm` (global gradient clipping threshold) locks to 0 |
+| SOAP | Comparing a matrix-preconditioned update against AdamW | The library's default preconditioning dimension makes Anima's long axes very expensive, so this project ships a smaller default; the authors' gains are reported for larger batches, with no public comparison on few-shot small-batch runs |
 
 Memory notes above refer only to optimizer state. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
 
@@ -81,6 +83,7 @@ When training Anima DiT blocks only, start from the engineering baselines below.
 | Adan | `1e-5` | Larger effective step than AdamW at the same LR; start at `0.5`× the baseline |
 | AdEMAMix / AdEMAMix8bit | `2e-5` | The paper keeps Adam-scale learning rates; 8-bit keeps the same LR semantics |
 | LoRA-RITE | `1e-4` | Paper's best values were ~20× Adam's; in our small-sample runs `2e-4` stayed smooth and `5e-4` ran hot |
+| SOAP | `2e-5` | The update is an Adam-normalized step in a rotated basis, so the scale matches AdamW; this is not an Anima-tuned optimum |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's guidance is roughly `3`–`10`× smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
@@ -223,6 +226,22 @@ LoRA-RITE is one of the few optimizers designed specifically for LoRA's factoriz
 - **Gradient clip threshold** (`clip_unmagnified_grad`, default `1.0`): suppresses the effect of occasional gradient spikes on the update; the default is sufficient in most cases. The norm is measured after removing the scaling induced by the LoRA factors. When this optimizer is selected, the UI's `max_grad_norm` (global gradient clipping threshold) locks to `0` and this setting takes over; `0` disables clipping.
 - Limits: Anima LoRA only; standard LoRA structure only (LyCORIS LoHa, LoKr, DoRA, etc. are not applicable); incompatible with LoRA+ (grouped learning rates break the A/B pairing assumption).
 - Cold-start note: with the usual zero-initialized up matrix, the first few steps mostly update the up matrix and the down matrix joins a few steps later. This is expected behavior, not a stall.
+
+<!-- doc-anchor: soap-options -->
+### SOAP options
+
+The name comes from the paper's own definition, **ShampoO with Adam in the Preconditioner's eigenbasis**. The update has three parts: estimate a set of rotated axes from gradient statistics, project the gradient into that basis, run an Adam-style adaptive update there, then project back. This lets it express correlation between parameter directions, which AdamW's elementwise scaling cannot do. The paper and the reference implementation are mainly evaluated on whole-model training, and the authors note the gains show up more clearly at larger batch sizes; whether few-shot LoRA at small batch benefits as well needs its own comparison.
+
+- **Learning rate** (Anima default `2e-5`): start from the AdamW baseline. The library default `3e-3` is a whole-model training scale and should not be carried over.
+- **Betas** (default `0.95, 0.95`): two values. The second one also drives the preconditioner's moving average unless you set that separately. It differs from AdamW's `0.9, 0.999`, so a comparison against AdamW also changes the history length of the second-moment state.
+- **Epsilon** (default `1e-8`): added after the square root of the squared-gradient state, same semantics as AdamW.
+- **Weight decay** (default `0`): the library default is `0.01`; this project keeps its own `0` and writes it into the config explicitly. The implementation always uses decoupled, non-fixed decay, so there is no switch for it.
+- **Gradient clipping**: SOAP has no internal clipping, so the `max_grad_norm` field (global gradient clipping threshold) applies as usual. Its default of `1.0` matches sd-scripts' own default, so it is not written to the config, and nothing is locked for SOAP.
+- **Max preconditioned dimension** (`max_precondition_dim`, default `256`): only axes no longer than this value get a matrix preconditioner; longer axes fall back to elementwise scaling. This is the knob that drives memory: the statistics grow with the square of the axis length (about 2 MiB for a 512-wide axis and 8 MiB for 1024), and the library default of `10000` would build huge statistics for Anima's 2048 and 8192 axes. At the default, compact LoKr factors (`32×32`, `64×64`, `256×32`) are preconditioned on both sides while plain LoRA keeps only its rank axis.
+- **Preconditioner refresh interval** (`precondition_frequency`, default `10`): how many steps pass between recomputations of the basis; `1` recomputes every step and is the most expensive.
+- **Preconditioner moving average** (`shampoo_beta`, empty by default): decay coefficient of the preconditioner itself; when left empty it follows the second beta.
+- **Normalize update magnitude** (`normalize_gradient`, off by default), **bias correction** (`correct_bias`, on by default), and **precondition 1-D parameters** (`precondition_1d`, off by default): the matching library switches. The 1-D option only has an effect when there are 1-D trainable parameters, such as normalization weights when `train_norm` is on.
+- SOAP's first update only builds the preconditioner state and does not change any weight; effective updates start on the second step. That is normal behavior of this implementation, not a stall.
 
 <!-- doc-anchor: gradient-clipping -->
 ### Global gradient clipping (max_grad_norm)
