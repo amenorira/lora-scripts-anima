@@ -53,6 +53,7 @@ ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
 LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRA_RITE"
+SOAP_OPTIMIZER_TYPE = "pytorch_optimizer.SOAP"
 
 ADEMAMIX_OPTIMIZERS = frozenset(
     {ADEMAMIX_OPTIMIZER_TYPE, ADEMAMIX8BIT_OPTIMIZER_TYPE}
@@ -419,6 +420,22 @@ _LORARITE_ARGS = {
     "balance_param": _boolean(),
 }
 
+_SOAP_ARGS = {
+    "betas": _BETAS_2,
+    # shampoo_beta=None 时实现回退到 betas[1]，因此允许显式 None
+    "shampoo_beta": _BETA,
+    "weight_decay": _NON_NEGATIVE,
+    "precondition_frequency": _integer(1),
+    "max_precondition_dim": _integer(1),
+    "merge_dims": _boolean(),
+    "precondition_1d": _boolean(),
+    "correct_bias": _boolean(),
+    "normalize_gradient": _boolean(),
+    "eps": _NON_NEGATIVE,
+    "data_format": _choice("channels_first", "channels_last"),
+    "maximize": _boolean(),
+}
+
 
 OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
     "AdamW": OptimizerContract(_TORCH_ADAMW_ARGS, learning_rate_minimum_inclusive=True),
@@ -470,6 +487,7 @@ OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
         _LORARITE_ARGS,
         external_grad_clip="forbidden",
     ),
+    SOAP_OPTIMIZER_TYPE: OptimizerContract(_SOAP_ARGS),
 }
 
 
@@ -501,6 +519,7 @@ _BETAS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
         ADEMAMIX_OPTIMIZER_TYPE,
         ADEMAMIX8BIT_OPTIMIZER_TYPE,
         LORARITE_OPTIMIZER_TYPE,
+        SOAP_OPTIMIZER_TYPE,
     }
 )
 _EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
@@ -510,6 +529,7 @@ _EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
         ADEMAMIX_OPTIMIZER_TYPE,
         ADEMAMIX8BIT_OPTIMIZER_TYPE,
         LORARITE_OPTIMIZER_TYPE,
+        SOAP_OPTIMIZER_TYPE,
     }
 )
 
@@ -607,6 +627,21 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "ademamix_t_beta3": FormArgument("t_beta3", ADEMAMIX_OPTIMIZERS),
     "lorarite_clip_unmagnified_grad": FormArgument(
         "clip_unmagnified_grad", frozenset({LORARITE_OPTIMIZER_TYPE})
+    ),
+    # SOAP 的表单字段与 optimizer_args 同名，不加前缀（同 LoRA-Muon 的 momentum/ns_steps）
+    "max_precondition_dim": FormArgument(
+        "max_precondition_dim", frozenset({SOAP_OPTIMIZER_TYPE})
+    ),
+    "precondition_frequency": FormArgument(
+        "precondition_frequency", frozenset({SOAP_OPTIMIZER_TYPE})
+    ),
+    "shampoo_beta": FormArgument("shampoo_beta", frozenset({SOAP_OPTIMIZER_TYPE})),
+    "normalize_gradient": FormArgument(
+        "normalize_gradient", frozenset({SOAP_OPTIMIZER_TYPE})
+    ),
+    "correct_bias": FormArgument("correct_bias", frozenset({SOAP_OPTIMIZER_TYPE})),
+    "precondition_1d": FormArgument(
+        "precondition_1d", frozenset({SOAP_OPTIMIZER_TYPE})
     ),
 }
 

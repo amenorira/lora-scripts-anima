@@ -18,6 +18,7 @@ from backend.training.optimizer_contracts import (
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
+    SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
 
@@ -43,6 +44,7 @@ BETA_HINT_PRODIGY = "field.betasHint_prodigy"
 BETA_HINT_SCHEDULEFREE = "field.betasHint_schedulefree"
 BETA_HINT_ADAN = "field.betasHint_adan"
 BETA_HINT_ADEMAMIX = "field.betasHint_ademamix"
+BETA_HINT_SOAP = "field.betasHint_soap"
 
 
 @dataclass(frozen=True)
@@ -213,6 +215,15 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         BETA_HINT_ADAM,
         True,
         train_group="anima",
+    ),
+    OptimizerUIEntry(
+        SOAP_OPTIMIZER_TYPE,
+        "SOAP",
+        "opt.optimizer_type_SOAP",
+        GROUP_MATRIX,
+        2,
+        BETA_HINT_SOAP,
+        supports_eps=True,
     ),
     OptimizerUIEntry(
         AUTOMAGIC_OPTIMIZER_TYPE,
@@ -596,6 +607,21 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             "set": "1e-4",
             "set_if_default": True,
         },
+        # SOAP 在旋转坐标系里跑 Adam 归一化步，量级与 AdamW 同尺度
+        {
+            "watch": {
+                "optimizer_type": SOAP_OPTIMIZER_TYPE,
+                "model_train_type": "anima-lora",
+            },
+            "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": SOAP_OPTIMIZER_TYPE,
+            "set": "1e-4",
+            "set_if_default": True,
+        },
     ],
     "betas": [
         {
@@ -621,6 +647,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADEMAMIX_OPTIMIZER_TYPE, "0.9, 0.999, 0.9999"),
             (ADEMAMIX8BIT_OPTIMIZER_TYPE, "0.9, 0.999, 0.9999"),
             (LORARITE_OPTIMIZER_TYPE, "0.9, 0.999"),
+            (SOAP_OPTIMIZER_TYPE, "0.95, 0.95"),
         )
     ],
     "eps": [
@@ -645,6 +672,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADEMAMIX_OPTIMIZER_TYPE, "1e-8"),
             (ADEMAMIX8BIT_OPTIMIZER_TYPE, "1e-8"),
             (LORARITE_OPTIMIZER_TYPE, "1e-6"),
+            (SOAP_OPTIMIZER_TYPE, "1e-8"),
         )
     ],
     "weight_decay": [
@@ -675,6 +703,8 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (ADEMAMIX8BIT_OPTIMIZER_TYPE, 0.01),
             (LORARITE_OPTIMIZER_TYPE, 0.0),
             (LORA_MUON_OPTIMIZER_TYPE, 0.0),
+            # 库里默认 0.01，界面沿用项目的 0；差值由前端显式写出
+            (SOAP_OPTIMIZER_TYPE, 0.0),
         )
     ],
 }

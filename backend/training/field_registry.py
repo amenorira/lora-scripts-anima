@@ -17,15 +17,18 @@ from backend.training.optimizer_contracts import (
     ADAN_OPTIMIZER_TYPE,
     ADEMAMIX8BIT_OPTIMIZER_TYPE,
     ADEMAMIX_OPTIMIZER_TYPE,
+    AUTOMAGIC_MERGED_ARG_MAP,
     AUTOMAGIC_MAX_LR_DEFAULT_TEXT,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    FORM_ARGUMENTS,
     LORA_MUON_OPTIMIZER_TYPE,
     LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
+    SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
 from backend.training.optimizer_metadata import (
@@ -428,6 +431,15 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "ademamix_t_beta3", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.ademamix_t_beta3", "target": "merged", "min": 0, "show_if": {"key": "optimizer_type", "eq": ADEMAMIX_OPTIMIZER_TYPE, "_or": [ADEMAMIX8BIT_OPTIMIZER_TYPE]}, "hint_key": "field.ademamix_t_beta3Hint", "doc_slug": "optimizers", "doc_anchor": "ademamix-options"},
 # ── LoRA-RITE 专用参数 ──
 {"key": "lorarite_clip_unmagnified_grad", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.lorarite_clip_unmagnified_grad", "target": "merged", "min": 0, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": LORARITE_OPTIMIZER_TYPE}, "hint_key": "field.lorarite_clip_unmagnified_gradHint", "doc_slug": "optimizers", "doc_anchor": "lorarite-options"},
+# ── SOAP 专用参数 ──
+# 字段名与 optimizer_args 同名（不加 soap_ 前缀，与 LoRA-Muon 的 momentum/ns_steps 一致，
+# 界面 field-key 直接显示这个名字）；i18n 键仍按 field.soap_* 命名空间存放。
+{"key": "max_precondition_dim", "type": "number", "default": 256, "section": "optimizer", "desc_key": "field.soap_max_precondition_dim", "target": "merged", "min": 1, "step": 1, "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_max_precondition_dimHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
+{"key": "precondition_frequency", "type": "number", "default": 10, "section": "optimizer", "desc_key": "field.soap_precondition_frequency", "target": "merged", "min": 1, "step": 1, "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_precondition_frequencyHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
+{"key": "shampoo_beta", "type": "number", "default": "", "section": "optimizer", "desc_key": "field.soap_shampoo_beta", "target": "merged", "min": 0, "max": 0.999999, "step": 0.001, "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_shampoo_betaHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
+{"key": "normalize_gradient", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.soap_normalize_gradient", "target": "merged", "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_normalize_gradientHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
+{"key": "correct_bias", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.soap_correct_bias", "target": "merged", "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_correct_biasHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
+{"key": "precondition_1d", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.soap_precondition_1d", "target": "merged", "show_if": {"key": "optimizer_type", "eq": SOAP_OPTIMIZER_TYPE}, "hint_key": "field.soap_precondition_1dHint", "doc_slug": "optimizers", "doc_anchor": "soap-options"},
 # ── Optimizer Merged: betas / eps ──
 {"key": "betas", "type": "text", "section": "optimizer", "desc_key": "field.betas", "target": "merged", "hint_key": "field.betasHint", "hint_key_by": {"key": "optimizer_type", "values": _SD_BETA_HINTS}, "doc_slug": "optimizers", "doc_anchor": "betas", "show_if": _show_if_one_of("optimizer_type", tuple(_SD_BETA_HINTS)), "auto_value": SD_OPTIMIZER_AUTO_VALUES["betas"]},
 {"key": "eps", "type": "text", "section": "optimizer", "desc_key": "field.eps", "target": "merged", "hint_key": "field.epsHint", "hint_key_by": {"key": "optimizer_type", "values": {LORARITE_OPTIMIZER_TYPE: "field.epsHint_lorarite"}}, "doc_slug": "optimizers", "doc_anchor": "eps", "show_if": _show_if_one_of("optimizer_type", tuple(selector for selector in _SD_OPTIMIZER_SELECTORS if selector in _SD_EPS_OPTIMIZERS)), "auto_value": SD_OPTIMIZER_AUTO_VALUES["eps"]},
@@ -667,6 +679,15 @@ def get_ui_only_fields() -> set[str]:
     return _UI_ONLY_FIELDS_CACHE
 
 
+# merged 字段 → 真正写进 optimizer_args 的参数名。界面按这个名字显示字段，
+# 而表单键（如 came_clip_threshold）只作为内部命名空间，不写进配置文件。
+# 映射来源：常规优化器走 FORM_ARGUMENTS，Automagic3 的顶层字段走它自己的映射表。
+_MERGED_ARG_NAMES: dict[str, str] = {
+    **{key: mapping.argument for key, mapping in FORM_ARGUMENTS.items()},
+    **AUTOMAGIC_MERGED_ARG_MAP,
+}
+
+
 # snake_case → camelCase key mapping for frontend
 _FIELD_KEY_MAP = {
     "desc_key": "descKey",
@@ -770,6 +791,13 @@ def _to_camel(field: dict) -> dict:
             ]
         else:
             result[new_key] = v
+
+    # merged 字段（表单键只是界面用的命名空间，如 came_clip_threshold）补上真正写进
+    # optimizer_args 的参数名，供界面按参数名显示；键名本身保持不动，配置与草稿不受影响。
+    if field.get("target") == "merged":
+        arg_name = _MERGED_ARG_NAMES.get(field.get("key"))
+        if arg_name is not None:
+            result["argKey"] = arg_name
     return result
 
 

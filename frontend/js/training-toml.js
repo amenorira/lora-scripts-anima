@@ -77,6 +77,9 @@ window.trainingTomlMixin = {
       'came_ams_bound','came_eps1','came_eps2',
       'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
       'lorarite_clip_unmagnified_grad',
+      'muon_momentum','muon_nesterov','muon_ns_steps','muon_ns_coefficients','muon_adjust_lr_fn',
+      'max_precondition_dim','precondition_frequency','shampoo_beta',
+      'normalize_gradient','correct_bias','precondition_1d',
       'momentum','ns_steps','inv_sqrt_steps','msign_eps','inv_sqrt_eps','inv_sqrt_gamma',
       'gauge_rebalance','gauge_rebalance_alpha','gauge_rebalance_interval','gauge_power_steps',
     ]);
@@ -361,6 +364,12 @@ window.trainingTomlMixin = {
       gauge_rebalance_alpha: 'gauge_rebalance_alpha',
       gauge_rebalance_interval: 'gauge_rebalance_interval',
       gauge_power_steps: 'gauge_power_steps',
+      max_precondition_dim: 'max_precondition_dim',
+      precondition_frequency: 'precondition_frequency',
+      shampoo_beta: 'shampoo_beta',
+      normalize_gradient: 'normalize_gradient',
+      correct_bias: 'correct_bias',
+      precondition_1d: 'precondition_1d',
     };
     return Object.prototype.hasOwnProperty.call(optimizerArgs, key)
       ? { paramKey: 'optimizer_args', argKey: optimizerArgs[key] }
@@ -708,6 +717,12 @@ window.trainingTomlMixin = {
       { form: 'gauge_power_steps', arg: 'gauge_power_steps', defaults: DEFS.gauge_power_steps || { 'vendor.lora_muon.LoRA_Muon': 2 } },
       { form: 'came_eps1', arg: 'eps1', defaults: DEFS.came_eps1 || { 'pytorch_optimizer.CAME': '1e-30' } },
       { form: 'came_eps2', arg: 'eps2', defaults: DEFS.came_eps2 || { 'pytorch_optimizer.CAME': '1e-16' } },
+      { form: 'max_precondition_dim', arg: 'max_precondition_dim', defaults: DEFS.max_precondition_dim || { 'pytorch_optimizer.SOAP': 10000 } },
+      { form: 'precondition_frequency', arg: 'precondition_frequency', defaults: DEFS.precondition_frequency || { 'pytorch_optimizer.SOAP': 10 } },
+      { form: 'shampoo_beta', arg: 'shampoo_beta', defaults: DEFS.shampoo_beta || { 'pytorch_optimizer.SOAP': '' } },
+      { form: 'normalize_gradient', arg: 'normalize_gradient', defaults: DEFS.normalize_gradient || { 'pytorch_optimizer.SOAP': false } },
+      { form: 'correct_bias', arg: 'correct_bias', defaults: DEFS.correct_bias || { 'pytorch_optimizer.SOAP': true } },
+      { form: 'precondition_1d', arg: 'precondition_1d', defaults: DEFS.precondition_1d || { 'pytorch_optimizer.SOAP': false } },
     ];
 
     for (const rule of MERGED_RULES) {

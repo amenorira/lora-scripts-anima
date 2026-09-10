@@ -2168,15 +2168,18 @@ window.trainingCoreMixin = {
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
+    // merged 字段（优化器参数）显示真正写进 optimizer_args 的参数名，而不是内部表单键：
+    // 同一时刻只显示一个优化器的参数，重名不会歧义，且这个名字与文档、日志一致。
+    const displayKey = field.argKey || dataKey;
     let controlSection = '';
     let fullWidthRow = '';
     if (isFullWidth) {
       // Textarea / path: info on top, input full-width below (outside field-row)
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(dataKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div><div class="field-control">${controlHtml}</div>`;
+      controlSection = `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div><div class="field-control">${controlHtml}</div>`;
     }
 
     // ── Assemble ──

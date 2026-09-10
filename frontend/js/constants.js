@@ -32,6 +32,7 @@ window.OPTIMIZER_DEFAULTS = {
     'bitsandbytes.optim.AdEMAMix': '1e-4',
     'bitsandbytes.optim.AdEMAMix8bit': '1e-4',
     'vendor.lora_rite.lora_rite.LoRA_RITE': '1e-4',
+    'pytorch_optimizer.SOAP': '1e-4',
   },
   automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
   automagic_max_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e3 },
@@ -51,6 +52,7 @@ window.OPTIMIZER_DEFAULTS = {
     'bitsandbytes.optim.AdEMAMix': '0.9, 0.999, 0.9999',
     'bitsandbytes.optim.AdEMAMix8bit': '0.9, 0.999, 0.9999',
     'vendor.lora_rite.lora_rite.LoRA_RITE': '0.9, 0.999',
+    'pytorch_optimizer.SOAP': '0.95, 0.95',
   },
   eps: {
     'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
@@ -64,6 +66,7 @@ window.OPTIMIZER_DEFAULTS = {
     'bitsandbytes.optim.AdEMAMix': '1e-8',
     'bitsandbytes.optim.AdEMAMix8bit': '1e-8',
     'vendor.lora_rite.lora_rite.LoRA_RITE': '1e-6',
+    'pytorch_optimizer.SOAP': '1e-8',
   },
   weight_decay: {
     'AdamW': 0.01, 'AdamW8bit': 0.01, 'PagedAdamW8bit': 0.01,
@@ -82,6 +85,9 @@ window.OPTIMIZER_DEFAULTS = {
     'bitsandbytes.optim.AdEMAMix': 0.01,
     'bitsandbytes.optim.AdEMAMix8bit': 0.01,
     'vendor.lora_rite.lora_rite.LoRA_RITE': 0,
+    // Library default is 1e-2; the product default 0 has to be emitted so the
+    // trainer does not silently inherit that decay (same as Muon above).
+    'pytorch_optimizer.SOAP': 0.01,
   },
   adan_weight_decouple: { 'pytorch_optimizer.Adan': true },
   ademamix_alpha: {
@@ -138,4 +144,13 @@ window.OPTIMIZER_DEFAULTS = {
   came_fixed_decay: { 'pytorch_optimizer.CAME': false },
   came_clip_threshold: { 'pytorch_optimizer.CAME': 1.0 },
   came_ams_bound: { 'pytorch_optimizer.CAME': false },
+  // SOAP：默认值取库自身默认，界面值与库相同就不必写进 optimizer_args。
+  // 只有 max_precondition_dim 例外——库默认 10000 会为 8192/2048 长轴建立
+  // 巨型统计矩阵，本项目按 Anima 形状改用 256，因此该项始终显式写出。
+  max_precondition_dim: { 'pytorch_optimizer.SOAP': 10000 },
+  precondition_frequency: { 'pytorch_optimizer.SOAP': 10 },
+  shampoo_beta: { 'pytorch_optimizer.SOAP': '' },
+  normalize_gradient: { 'pytorch_optimizer.SOAP': false },
+  correct_bias: { 'pytorch_optimizer.SOAP': true },
+  precondition_1d: { 'pytorch_optimizer.SOAP': false },
 };
