@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.17.0 - 2026-09-10
+
+This release adds the SOAP optimizer and shows optimizer parameters under their real names in the training form.
+
+### Added
+
+- Added the SOAP optimizer (`pytorch_optimizer.SOAP`): it estimates a set of rotated axes from gradient statistics, then runs Adam-style adaptive updates inside that basis. Available for both Anima and SDXL training, with six controls: max preconditioned dimension, preconditioner refresh interval, preconditioner moving average, update-magnitude normalization, bias correction, and 1-D preconditioning.
+- SOAP defaults are tuned for Anima's matrix shapes: the max preconditioned dimension is `256` (the library default of `10000` would build huge statistics for the 8192 and 2048 axes; at the default, compact LoKr factors are preconditioned on both sides while plain LoRA keeps only its rank axis), and the Anima learning-rate start is `2e-5`, keeping the AdamW scale.
+
+### Improvements and Fixes
+
+- Optimizer parameters now display their real names in the form (such as `clip_threshold`, `kahan_sum`, and `momentum`), matching the documentation, training logs, and config files. Internal form keys, saved configs, and drafts are unaffected.
+- Fixed Muon's `muon_*` parameters appearing as top-level keys in the TOML preview, with a regression test asserting that every merged registry field is skipped by the preview.
+
+### Documentation
+
+- Added a SOAP section to the optimizer guide: what the name means, how the update works, the learning-rate starting point, the memory cost of the max preconditioned dimension, and how external gradient clipping applies to SOAP.
+
+### Validation
+
+- Backend tests pass (482 passed, 1,860 subtests passed); SOAP passes a real sd-scripts optimizer-factory smoke run (instantiated with two update steps, the first only building preconditioner state); form rendering and TOML export checked in the browser.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.16.0...v2.17.0)
+
 ## v2.16.0 - 2026-09-09
 
 This release makes the matrix preview reflect actual network construction, adds saved-weight size estimates, and improves interaction and documentation for all three pre-training previews.
