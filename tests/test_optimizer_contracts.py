@@ -2527,6 +2527,27 @@ console.log(JSON.stringify({
 
 
 class LorariteImportContractTests(unittest.TestCase):
+    def test_rejects_incompatible_networks_before_launch(self):
+        for network in ("networks.loha", "networks.lokr", "lycoris.kohya"):
+            with self.subTest(network=network):
+                config = valid_config(LORARITE_OPTIMIZER_TYPE)
+                config["network_module"] = network
+                errors = validate_training_config(config)
+                self.assertTrue(any("LoRA-RITE" in error for error in errors), errors)
+        self.assertEqual(validate_training_config(valid_config(LORARITE_OPTIMIZER_TYPE)), [])
+
+    def test_integer_optimizer_args_reject_float_and_string_literals(self):
+        for value in ("5.0", "'5'", "True"):
+            with self.subTest(value=value):
+                config = valid_config(MUON_OPTIMIZER_TYPE)
+                config.pop("muon_ns_steps", None)
+                config["optimizer_args_custom"] = f"ns_steps={value}"
+                errors = validate_training_config(config)
+                self.assertTrue(any("ns_steps" in error for error in errors), errors)
+        config = valid_config(MUON_OPTIMIZER_TYPE)
+        config["muon_ns_steps"] = "5"
+        self.assertEqual(validate_training_config(config), [])
+
     def test_registered_selector_resolves_to_lora_rite(self):
         # selector 即类真名；sd-scripts 按 __module__ + "." + __name__ 记录
         # ss_optimizer，查看器按词边界取短名，下划线安全、横线会被截断
