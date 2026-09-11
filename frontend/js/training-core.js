@@ -2521,6 +2521,32 @@ window.trainingCoreMixin = {
       activeShift = getShiftParam(6400);
     }
 
+    const shiftSigma = (u, shift) => u * shift / (1 + (shift - 1) * u);
+    const schedulerSigma = u => shiftSigma(1 - Math.min(999, Math.floor(u * 1000)) / 1000, flowShift);
+    let fixedSigma = null;
+    if (['sigmoid', 'shift', 'flux_shift', 'krea2_shift'].includes(sampling) && sigmoidScale === 0) {
+      fixedSigma = shiftSigma(0.5, activeShift);
+    } else if (sampling === 'sigma' && weighting === 'logit_normal' && logitStd === 0) {
+      fixedSigma = schedulerSigma(sigmoid(logitMean));
+    } else if (sampling === 'logsnr' && logitStd === 0) {
+      fixedSigma = sigmoid(-logitMean / 2);
+    }
+
+    // Integrate the trainer's mode transform with deterministic uniform samples.
+    // Binning also handles non-monotonic transforms without assuming an inverse PDF.
+    let modeDensities = null;
+    if (sampling === 'sigma' && weighting === 'mode') {
+      modeDensities = Array(pointCount).fill(0);
+      const sampleCount = 32768;
+      for (let i = 0; i < sampleCount; i++) {
+        const r = (i + 0.5) / sampleCount;
+        const u = 1 - r - modeScale * (Math.cos(Math.PI * r / 2) ** 2 - 1 + r);
+        const sigma = schedulerSigma(u);
+        const index = pointCount - 1 - Math.max(0, Math.min(pointCount - 1, Math.floor(sigma * pointCount)));
+        modeDensities[index] += pointCount / (1000 * sampleCount);
+      }
+    }
+
     // Standard Normal PDF: phi(z) = 1/sqrt(2pi) * exp(-0.5 * z^2)
     const normalPdf = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
 
@@ -2552,9 +2578,6 @@ window.trainingCoreMixin = {
         if (weighting === 'logit_normal') {
           const z = (logit(densityVal) - logitMean) / logitStd;
           pdfDensity = normalPdf(z) / (logitStd * densityVal * (1 - densityVal));
-        } else if (weighting === 'mode') {
-          // Mode weighting density approximation
-          pdfDensity = Math.max(0, 1 + modeScale * Math.sin(Math.PI * densityVal));
         } else {
           pdfDensity = 1.0; // uniform
         }
@@ -2585,6 +2608,8 @@ window.trainingCoreMixin = {
 
     // Generate 120 points from t=1000 (noisy) on the left to t=0 (clean) on the right
     const generatePdfCurve = offset => {
+      if (fixedSigma !== null) return Array(pointCount).fill(0);
+      if (modeDensities) return [...modeDensities];
       const points = [];
       for (let i = 0; i < pointCount; i += 1) {
         const t = (1 - (i + 0.5) / pointCount) * 1000;
@@ -2675,6 +2700,15 @@ window.trainingCoreMixin = {
 
     // Calculate zone integrals and continuous interpolated median (Left: Structure/High noise, Mid: Middle, Right: Detail/Low noise)
     const computeZoneIntegrals = sourceDensities => {
+      if (fixedSigma !== null) {
+        return {
+          low: fixedSigma < 1 / 3 ? 100 : 0,
+          mid: fixedSigma >= 1 / 3 && fixedSigma < 2 / 3 ? 100 : 0,
+          high: fixedSigma >= 2 / 3 ? 100 : 0,
+          median: Math.round(fixedSigma * 1000),
+          medianPercent: ((1 - fixedSigma) * 100).toFixed(1),
+        };
+      }
       const total = sourceDensities.reduce((a, b) => a + b, 0) || 1;
       const idx1 = Math.floor(pointCount / 3);
       const idx2 = Math.floor((pointCount * 2) / 3);
@@ -2742,11 +2776,12 @@ window.trainingCoreMixin = {
         ? fmtParam(logitStd) : null,
       modeScaleCard: sampling === 'sigma' && weighting === 'mode' ? fmtParam(modeScale) : null,
       resolution: `${width} × ${height}`,
+      fixedTimestep: fixedSigma === null ? null : Math.round(fixedSigma * 1000),
       densities,
       baselineDensities,
-      yTicks,
-      currentLinePath: currentSvg.linePath,
-      currentAreaPath: currentSvg.areaPath,
+      yTicks: fixedSigma === null ? yTicks : [],
+      currentLinePath: fixedSigma === null ? currentSvg.linePath : '',
+      currentAreaPath: fixedSigma === null ? currentSvg.areaPath : '',
       baselineLinePath: baselineSvg.linePath,
       weightPoints,
       median: currentStats.median,
@@ -2798,7 +2833,7 @@ window.trainingCoreMixin = {
     return `
     <div class="timestep-chart-box">
       <div class="timestep-inspect-bar">
-        <span class="timestep-inspect-title">${t('timestepPreview.relativeDensity', 'Relative PDF')}</span>
+        <span class="timestep-inspect-title">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}</span>
         <span class="timestep-inspect-value" aria-live="polite">
           <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
         </span>
@@ -2825,7 +2860,7 @@ window.trainingCoreMixin = {
           ${weightLine}
         </svg>
         <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
-          <span class="timestep-median-tag">${t('timestepPreview.medianLabel', 'Median: {value}').replace('{value}', esc(data.median))}</span>
+          <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
       </div>
@@ -2863,6 +2898,7 @@ window.trainingCoreMixin = {
     holder.dataset.inspectProgress = relX;
     const data = this.timestepPreviewData;
     if (!data) return;
+    if (data.fixedTimestep != null) return;
     const densities = data.densities || [];
     const idx = Math.min(densities.length - 1, Math.floor(relX * densities.length));
     const density = densities.length ? (densities[idx] || 0) : 0;

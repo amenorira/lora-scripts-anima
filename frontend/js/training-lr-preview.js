@@ -182,6 +182,7 @@ window.trainingLrPreviewMixin = {
     });
     const notes = [];
     if (unavailable) notes.push(unavailable);
+    if (!unavailable) notes.push(this.t('lrPreview.baseGroupNote'));
     if (!internal && (optimizer.startsWith('prodigy') || optimizer === 'adafactor')) {
       notes.push(this.t('lrPreview.adaptiveNote'));
     }

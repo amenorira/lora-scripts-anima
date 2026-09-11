@@ -967,6 +967,8 @@
 		"krea2ShiftNote": "krea2_shift 按 Krea 2 的参考分辨率公式自动计算位移；不同 AR bucket 的实际分布会不同。",
 		"densityIgnored": "logit_normal/mode 仅在 timestep_sampling=sigma 时改变采样密度。",
 		"uniformWeightNote": "各时间步使用相同的损失权重。",
+		"fixedDistribution": "固定时间步（概率 100%）",
+		"fixedLabel": "固定时间步：{value}",
 		"footnote": "分布曲线表示各时间步被采样的概率密度，损失权重曲线表示对应的加权系数。使用多种训练分辨率时，请分别查看主要分辨率下的结果。"
 	},
 	"lrPreview": {
@@ -981,6 +983,7 @@
 		"unsupportedNote": "当前调度器不支持曲线预览。",
 		"invalidNote": "当前参数无法生成有效曲线：请检查学习率、预热和调度参数。constant 不允许非零预热，polynomial 的基础学习率必须大于 1e-7。",
 		"adaptiveNote": "曲线仅表示外部调度学习率；优化器还会根据训练状态调整实际更新尺度。",
+		"baseGroupNote": "曲线仅表示所选组件的基础参数组学习率，不包含 LoRA+ 对 lora_up 参数组的倍率或逐层学习率覆盖。",
 		"open": "查看学习率曲线",
 		"title": "学习率曲线预览",
 		"subtitle": "基于当前 sd-scripts 配置绘制",

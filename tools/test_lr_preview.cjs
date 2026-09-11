@@ -21,6 +21,16 @@ test('polynomial keeps the Transformers end rate and component scaling', () => {
   assert.ok(Math.abs(rate(1) - 2e-7) < 1e-15);
   assert.ok(Math.abs(rate(0.5) - 0.0001001) < 1e-15);
 });
+test('base rate preview discloses excluded LoRA+ and per-layer rates', () => {
+  const { data, rate } = preview({ loraplus_lr_ratio: 16, network_args_custom: 'network_reg_lrs=blocks.0=0.001' });
+  assert.equal(rate(0), 1e-4);
+  assert.ok(data.notes.includes('lrPreview.baseGroupNote'));
+  for (const locale of ['en-US', 'zh-CN']) {
+    const translations = JSON.parse(fs.readFileSync(path.join(__dirname, `../frontend/i18n/${locale}.json`), 'utf8'));
+    assert.ok(translations.lrPreview.baseGroupNote.includes('LoRA+'));
+    assert.ok(translations.lrPreview.baseGroupNote.includes('lora_up'));
+  }
+});
 test('fractional warmup truncates to complete steps and long warmup stays a ramp', () => {
   assert.equal(preview({ lr_warmup_steps: 0.15 }, 11).data.params.warmupFraction, 1 / 11);
   assert.equal(preview({ lr_warmup_steps: 20000 }).rate(1), 5e-5);
