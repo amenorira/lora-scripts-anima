@@ -2484,24 +2484,13 @@ window.trainingCoreMixin = {
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
     const [width, height] = this._timestepPreviewResolution(source.resolution);
-    const pointCount = 120; // 120 points for smooth analytical PDF curves
+    const pointCount = 120;
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
     const logit = value => {
-      const clamped = Math.max(1e-7, Math.min(1 - 1e-7, value));
-      return Math.log(clamped / (1 - clamped));
+      return Math.log(value / (1 - value));
     };
 
-    // Flow shift transformation: sigma = (u * shift) / (1 + (shift - 1) * u)
-    // Inverse shift: u = sigma / (shift + (1 - shift) * sigma)
-    // Derivative du/dsigma: shift / (shift + (1 - shift) * sigma)^2
-    const flowShiftJacobian = (sigma, shift) => {
-      if (Math.abs(shift - 1.0) < 1e-9) return { u: sigma, jacobian: 1.0 };
-      const denom = shift + (1.0 - shift) * sigma;
-      if (Math.abs(denom) < 1e-12) return { u: sigma, jacobian: 1.0 };
-      const u = sigma / denom;
-      const jacobian = shift / (denom * denom);
-      return { u: Math.max(1e-7, Math.min(1 - 1e-7, u)), jacobian };
-    };
+    const inverseShift = (sigma, shift) => sigma / (shift + (1 - shift) * sigma);
 
     // Anima and Krea 2 both use VAE f8 latents with 2x2 DiT patch packing.
     const latentH = Math.floor(height / 8);
@@ -2532,115 +2521,95 @@ window.trainingCoreMixin = {
       fixedSigma = sigmoid(-logitMean / 2);
     }
 
-    // Integrate the trainer's mode transform with deterministic uniform samples.
-    // Binning also handles non-monotonic transforms without assuming an inverse PDF.
-    let modeDensities = null;
-    if (sampling === 'sigma' && weighting === 'mode') {
-      modeDensities = Array(pointCount).fill(0);
-      const sampleCount = 32768;
-      for (let i = 0; i < sampleCount; i++) {
-        const r = (i + 0.5) / sampleCount;
-        const u = 1 - r - modeScale * (Math.cos(Math.PI * r / 2) ** 2 - 1 + r);
-        const sigma = schedulerSigma(u);
-        const index = pointCount - 1 - Math.max(0, Math.min(pointCount - 1, Math.floor(sigma * pointCount)));
-        modeDensities[index] += pointCount / (1000 * sampleCount);
+    // Normal CDF approximation (absolute error < 7.5e-8).
+    const normalCdf = z => {
+      if (z === 0) return 0.5;
+      const t = 1 / (1 + 0.2316419 * Math.abs(z));
+      const tail = Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI) * t
+        * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+      return z < 0 ? tail : 1 - tail;
+    };
+    const bisect = (fn, target, lo = 0, hi = 1, increasing = true) => {
+      for (let i = 0; i < 44; i++) {
+        const mid = (lo + hi) / 2;
+        if ((fn(mid) < target) === increasing) lo = mid;
+        else hi = mid;
       }
+      return (lo + hi) / 2;
+    };
+
+    // Mode can fold back on itself. Integrate the uniform input on each monotone
+    // branch instead of sampling a histogram or assuming a single inverse.
+    const modeTransform = r => r + modeScale * (Math.cos(Math.PI * r / 2) ** 2 - 1 + r);
+    const turningSin = 2 * (1 + modeScale) / (Math.PI * modeScale);
+    const modeBounds = [0, 1];
+    if (turningSin > 0 && turningSin < 1) {
+      const turn = Math.asin(turningSin) / Math.PI;
+      modeBounds.splice(1, 0, turn, 1 - turn);
     }
-
-    // Standard Normal PDF: phi(z) = 1/sqrt(2pi) * exp(-0.5 * z^2)
-    const normalPdf = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
-
-    // Analytical PDF evaluator f(sigma) for sigma in (0, 1)
-    const evaluatePdf = (sigma, offset) => {
-      const s = Math.max(1e-6, Math.min(1 - 1e-6, sigma));
-      const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
-
-      if (sampling === 'uniform') {
-        return 1.0;
-      }
-
-      // Cases with flow shift: shift, flux_shift, krea2_shift, sigma
-      if (['shift', 'flux_shift', 'krea2_shift'].includes(sampling)) {
-        const { u, jacobian } = flowShiftJacobian(s, activeShift);
-        // u = sigmoid(sigmoidScale * (z + appliedOffset))
-        // z = logit(u) / sigmoidScale - appliedOffset
-        // du/dz = sigmoidScale * u * (1 - u) => dz/du = 1 / (sigmoidScale * u * (1 - u))
-        const z = logit(u) / sigmoidScale - appliedOffset;
-        const pdfU = normalPdf(z) / (sigmoidScale * u * (1 - u));
-        return Math.max(0, pdfU * jacobian);
-      }
-
-      if (sampling === 'sigma') {
-        const { u, jacobian } = flowShiftJacobian(s, flowShift);
-        // density in trainer is defined over (1 - u)
-        const densityVal = 1 - u;
-        let pdfDensity = 1.0;
-        if (weighting === 'logit_normal') {
-          const z = (logit(densityVal) - logitMean) / logitStd;
-          pdfDensity = normalPdf(z) / (logitStd * densityVal * (1 - densityVal));
-        } else {
-          pdfDensity = 1.0; // uniform
+    const modeCdf = s => {
+      let mass = 0;
+      for (let i = 1; i < modeBounds.length; i++) {
+        const lo = modeBounds[i - 1], hi = modeBounds[i];
+        const a = modeTransform(lo), b = modeTransform(hi);
+        if (s >= Math.max(a, b)) mass += hi - lo;
+        else if (s > Math.min(a, b)) {
+          const root = bisect(modeTransform, s, lo, hi, b > a);
+          mass += b > a ? root - lo : hi - root;
         }
-        return Math.max(0, pdfDensity * jacobian);
       }
-
-      if (sampling === 'logsnr') {
-        // sigma = sigmoid(-(logitMean + logitStd * z) / 2)
-        // -2 * logit(sigma) = logitMean + logitStd * z => z = (-2 * logit(s) - logitMean) / logitStd
-        // dz/ds = 2 / (logitStd * s * (1 - s))
-        const z = (-2 * logit(s) - logitMean) / logitStd;
-        const pdf = (normalPdf(z) * 2) / (logitStd * s * (1 - s));
-        return Math.max(0, pdf);
-      }
-
-      // Default: pure sigmoid
-      const z = logit(s) / sigmoidScale - appliedOffset;
-      const pdf = normalPdf(z) / (sigmoidScale * s * (1 - s));
-      return Math.max(0, pdf);
+      return mass;
     };
 
-    // Calculate real mathematical density over t in [0, 1000]
-    // Note: Integral f(t) dt over [0, 1000] = 1, so baseline peak at t=500 is ~0.0016
-    const evaluateTimestepDensity = (t, offset) => {
-      const sigma = Math.max(1e-6, Math.min(1 - 1e-6, t / 1000));
-      return evaluatePdf(sigma, offset) / 1000;
+    const evaluateCdf = (sigma, offset) => {
+      if (sigma <= 0) return 0;
+      if (sigma >= 1) return 1;
+      if (fixedSigma !== null) return sigma < fixedSigma ? 0 : 1;
+      if (sampling === 'uniform') return sigma;
+      if (sampling === 'sigma') {
+        const s = inverseShift(sigma, flowShift);
+        if (weighting === 'mode') return modeCdf(s);
+        if (weighting === 'logit_normal') return normalCdf((logit(s) + logitMean) / logitStd);
+        return s;
+      }
+      if (sampling === 'logsnr') return normalCdf((2 * logit(sigma) + logitMean) / logitStd);
+      const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
+      const s = inverseShift(sigma, activeShift);
+      return normalCdf((logit(s) - sigmoidScale * appliedOffset) / Math.abs(sigmoidScale));
     };
 
-    // Generate 120 points from t=1000 (noisy) on the left to t=0 (clean) on the right
-    const generatePdfCurve = offset => {
+    // Bin-average continuous density: differences of CDF values preserve all
+    // probability mass, even when a peak is much narrower than one plotting bin.
+    const generatePdfCurve = cdf => {
       if (fixedSigma !== null) return Array(pointCount).fill(0);
-      if (modeDensities) return [...modeDensities];
-      const points = [];
-      for (let i = 0; i < pointCount; i += 1) {
-        const t = (1 - (i + 0.5) / pointCount) * 1000;
-        points.push(evaluateTimestepDensity(t, offset));
-      }
-      return points;
+      const edges = Array.from({ length: pointCount + 1 }, (_, i) => cdf(i / pointCount));
+      return edges.slice(1).map((value, i) => (value - edges[i]) * pointCount / 1000).reverse();
     };
 
-    const baselineDensities = generatePdfCurve(0);
-    let densities = [...baselineDensities];
+    const baselineCdf = sigma => evaluateCdf(sigma, 0);
+    let currentCdf = baselineCdf;
     let scopeLabel = this.t('timestepPreview.baseDistribution');
     let offset = 0;
     const subsets = this.timestepOffsetSubsets();
     if (scope === 'overall' && subsets.length) {
-      const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0) || subsets.length;
-      densities = Array(pointCount).fill(0);
-      subsets.forEach(subset => {
-        const weight = totalSamples === subsets.length ? 1 / subsets.length : Number(subset.sample_count || 0) / totalSamples;
-        const subsetDensities = generatePdfCurve(Number(this.subsetTimestepOffsetValue(subset.name) || 0));
-        subsetDensities.forEach((val, index) => { densities[index] += val * weight; });
-      });
+      const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
+      const components = subsets.map(subset => ({
+        weight: totalSamples ? Number(subset.sample_count || 0) / totalSamples : 1 / subsets.length,
+        offset: Number(this.subsetTimestepOffsetValue(subset.name) || 0),
+      }));
+      currentCdf = sigma => components.reduce((sum, part) => sum + part.weight * evaluateCdf(sigma, part.offset), 0);
       scopeLabel = this.t('timestepPreview.overallDistribution');
     } else {
       const selectedSubset = subsets.find(subset => subset.name === scope);
       if (selectedSubset) {
         offset = Number(this.subsetTimestepOffsetValue(selectedSubset.name) || 0);
-        densities = generatePdfCurve(offset);
+        currentCdf = sigma => evaluateCdf(sigma, offset);
         scopeLabel = selectedSubset.name;
       }
     }
 
+    const baselineDensities = generatePdfCurve(baselineCdf);
+    const densities = generatePdfCurve(currentCdf);
     const maxDensity = Math.max(...densities, ...baselineDensities, 0.00001);
 
     // Calculate clean scientific Y-Axis upper bound (e.g. 0.00175, 0.00200, 0.00250)
@@ -2665,14 +2634,12 @@ window.trainingCoreMixin = {
     }
 
     // Compute Loss Weighting Curve (matched from t=1000 down to t=0)
-    const weights = [];
     const logWeights = [];
     for (let i = 0; i < pointCount; i += 1) {
       const sigma = 1 - (i + 0.5) / pointCount;
       let w = 1.0;
       if (weighting === 'sigma_sqrt') w = sigma ** -2;
       else if (weighting === 'cosmap') w = 2 / (Math.PI * (1 - 2 * sigma + 2 * sigma * sigma));
-      weights.push(w);
       logWeights.push(Math.log1p(w));
     }
     const maxLogWeight = Math.max(...logWeights, 1);
@@ -2680,10 +2647,13 @@ window.trainingCoreMixin = {
     // Build SVG Coordinates (x: 0~100, y: 0~100) mapped directly to 0~100%
     const buildSvgPath = values => {
       const coords = values.map((val, idx) => {
-        const x = (idx / (pointCount - 1)) * 100;
+        const x = ((idx + 0.5) / pointCount) * 100;
         const y = 100 - (val / yUpper) * 100; // 0 maps strictly to 100% (bottom axis), yUpper maps to 0% (top)
         return `${x.toFixed(2)},${Math.max(0, y).toFixed(2)}`;
       });
+      // Extend the edge bins to the bounds; interior points sit at bin centers.
+      coords.unshift(`0,${coords[0].split(',')[1]}`);
+      coords.push(`100,${coords[coords.length - 1].split(',')[1]}`);
       const linePath = 'M ' + coords.join(' L ');
       const areaPath = `M 0,100 L ${coords.join(' L ')} L 100,100 Z`;
       return { linePath, areaPath, coords };
@@ -2693,13 +2663,14 @@ window.trainingCoreMixin = {
     const baselineSvg = buildSvgPath(baselineDensities);
 
     const weightPoints = logWeights.map((lw, idx) => {
-      const x = ((idx / (pointCount - 1)) * 100).toFixed(2);
+      const x = (((idx + 0.5) / pointCount) * 100).toFixed(2);
       const y = (100 - (lw * 100 / maxLogWeight)).toFixed(2);
       return `${x},${y}`;
     }).join(' ');
 
-    // Calculate zone integrals and continuous interpolated median (Left: Structure/High noise, Mid: Middle, Right: Detail/Low noise)
-    const computeZoneIntegrals = sourceDensities => {
+    // Statistics do not depend on plotting resolution. Sigma sampling uses the
+    // trainer's 1000 scheduler entries; other samplers use the continuous CDF.
+    const computeStats = cdf => {
       if (fixedSigma !== null) {
         return {
           low: fixedSigma < 1 / 3 ? 100 : 0,
@@ -2709,34 +2680,32 @@ window.trainingCoreMixin = {
           medianPercent: ((1 - fixedSigma) * 100).toFixed(1),
         };
       }
-      const total = sourceDensities.reduce((a, b) => a + b, 0) || 1;
-      const idx1 = Math.floor(pointCount / 3);
-      const idx2 = Math.floor((pointCount * 2) / 3);
-      const high = sourceDensities.slice(0, idx1).reduce((a, b) => a + b, 0) * 100 / total;
-      const mid = sourceDensities.slice(idx1, idx2).reduce((a, b) => a + b, 0) * 100 / total;
-      const low = sourceDensities.slice(idx2).reduce((a, b) => a + b, 0) * 100 / total;
-
-      // Continuous linear interpolation for exact median (CDF = 0.5)
-      let cumulative = 0;
-      const half = total / 2;
-      let medianT = 500;
-      let medianPercent = 50;
-      for (let i = 0; i < sourceDensities.length; i += 1) {
-        const prevCumulative = cumulative;
-        cumulative += sourceDensities[i];
-        if (cumulative >= half) {
-          const frac = sourceDensities[i] > 1e-12 ? (half - prevCumulative) / sourceDensities[i] : 0.5;
-          const progress = (i + frac) / pointCount; // 0 (left, t=1000) -> 1 (right, t=0)
-          medianT = Math.round((1 - progress) * 1000);
-          medianPercent = progress * 100;
-          break;
+      let low = cdf(1 / 3), high = 1 - cdf(2 / 3);
+      let medianSigma = bisect(cdf, 0.5);
+      if (sampling === 'sigma') {
+        low = 0;
+        high = 0;
+        let previous = 0;
+        medianSigma = null;
+        for (let k = 1; k <= 1000; k++) {
+          const sigma = shiftSigma(k / 1000, flowShift);
+          const cumulative = cdf(sigma);
+          const mass = cumulative - previous;
+          if (sigma < 1 / 3) low += mass;
+          else if (sigma >= 2 / 3) high += mass;
+          // Lower median; tolerance only absorbs numerical inversion roundoff.
+          if (medianSigma === null && cumulative >= 0.5 - 1e-12) medianSigma = sigma;
+          previous = cumulative;
         }
       }
-      return { low, mid, high, median: medianT, medianPercent: medianPercent.toFixed(1) };
+      return {
+        low: low * 100, mid: (1 - low - high) * 100, high: high * 100,
+        median: Math.round(medianSigma * 1000), medianPercent: ((1 - medianSigma) * 100).toFixed(1),
+      };
     };
 
-    const currentStats = computeZoneIntegrals(densities);
-    const baselineStats = computeZoneIntegrals(baselineDensities);
+    const baselineStats = computeStats(baselineCdf);
+    const currentStats = currentCdf === baselineCdf ? baselineStats : computeStats(currentCdf);
     const notes = [];
     if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
       notes.push(this.t('timestepPreview.shiftIgnored'));

@@ -969,7 +969,7 @@
 		"uniformWeightNote": "All timesteps use the same loss weight.",
 		"fixedDistribution": "Fixed timestep (100% probability)",
 		"fixedLabel": "Fixed timestep: {value}",
-		"footnote": "The distribution curve shows the probability density of sampling each timestep; the loss-weight curve shows its weighting factor. When training at multiple resolutions, preview the main resolutions separately."
+		"footnote": "The distribution curve shows bin-average density of the continuous distribution; sigma percentages and medians use the discrete training timesteps. The loss-weight curve shows the weighting factor. When training at multiple resolutions, preview the main resolutions separately."
 	},
 	"lrPreview": {
 		"component": "Chart component",
