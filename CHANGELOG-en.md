@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.18.0 - 2026-09-12
+
+This release improves the timestep distribution preview and monitor lifecycle, and reorganizes the test and development-tool structure.
+
+### Improvements and Fixes
+
+- Fixed timestep distribution curves and sampling statistics, and clarified the learning-rate parameter-group ranges.
+- Fixed compatibility validation for integer optimizer parameters and LoRA-RITE networks, and refined realtime monitoring logic.
+- Added frontend regression coverage for monitor lifecycle behavior and improved the organization of frontend and backend test entry points.
+
+### Tools and Project Structure
+
+- Organized tests by application, environment, monitoring, tag editor, and training domains.
+- Organized development tools and added usage notes for the test and tool directories.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.17.0...v2.18.0)
+
 ## v2.17.0 - 2026-09-10
 
 This release adds the SOAP optimizer and shows optimizer parameters under their real names in the training form.
