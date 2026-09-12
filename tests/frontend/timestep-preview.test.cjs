@@ -1,11 +1,11 @@
-// Run with: node --test tools/test_timestep_preview.cjs
+// Run from the repository root: node --test tests/frontend/*.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../frontend/js/training-core.js'), 'utf8'), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/training-core.js'), 'utf8'), context);
 function preview(config, overrides = {}, scope) {
   const ui = Object.assign({}, context.window.trainingCoreMixin, {
     t: (key, fallback) => fallback || key,

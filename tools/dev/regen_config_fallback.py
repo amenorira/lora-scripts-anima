@@ -10,9 +10,9 @@ config.js 第 ~15 行有一份硬编码 FALLBACK_COMMON，作为 /api/fields 不
 用与 /api/fields 完全相同的 get_fields_json() 序列化输出，重写那一行，消除漂移源。
 
 用法:
-    python tools/regen_config_fallback.py            # 默认重写 frontend/js/config.js
-    python tools/regen_config_fallback.py --check    # 仅比对，不写入（CI/diff 检查）
-    python tools/regen_config_fallback.py --path frontend/js/config.js
+    python tools/dev/regen_config_fallback.py            # 默认重写 frontend/js/config.js
+    python tools/dev/regen_config_fallback.py --check    # 仅比对，不写入（CI/diff 检查）
+    python tools/dev/regen_config_fallback.py --path frontend/js/config.js
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ import re
 import sys
 from pathlib import Path
 
-# 让 tools/ 作为脚本直接运行时也能 import 到 backend 包
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# 直接执行开发脚本时也能 import 到仓库根目录下的 backend 包
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 DEFAULT_CONFIG_PATH = Path("frontend/js/config.js")
 

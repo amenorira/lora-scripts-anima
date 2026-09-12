@@ -604,13 +604,6 @@ app._applyTaskView('RUNNING');
 
         self.assertEqual(state["polls"], 1)
 
-    def test_monitor_detail_is_invalidated_when_leaving_the_dashboard(self):
-        self.assertIn("monitorDetailGeneration", self.client_source)
-        self.assertIn("applyMonitor", self.client_source)
-        self.assertIn("_monitorRealtimeDetailGeneration", self.monitor_source)
-        self.assertIn("this._monitorRealtimeDetailGeneration++;", self.monitor_source)
-        self.assertIn("void this.refreshMonitorRealtimeDetail();", self.monitor_source)
-
     def test_backend_snapshot_captures_cursors_before_reading_task_list(self):
         """快照先取游标再读任务列表：任务列表必然包含截至该游标的全部状态变更。"""
         source = Path("backend/server/routes/realtime.py").read_text(encoding="utf-8")

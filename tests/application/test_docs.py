@@ -61,7 +61,7 @@ class DocumentationTests(unittest.TestCase):
     def test_optimizer_category_and_i18n_keys_are_registered(self):
         document = _DOCUMENTS["optimizers"]
         self.assertEqual(document["category"], "optimizer")
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         locales = {
             locale: json.loads((root / "frontend" / "i18n" / f"{locale}.json").read_text(encoding="utf-8"))
             for locale in ("zh-CN", "en-US")

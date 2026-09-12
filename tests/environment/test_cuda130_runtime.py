@@ -11,7 +11,7 @@ from tools import ensure_runtime
 from tools import install_flash_attn
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 
 
 class Cuda130SourceContractTests(unittest.TestCase):

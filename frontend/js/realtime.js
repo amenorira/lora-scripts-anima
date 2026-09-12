@@ -300,12 +300,19 @@ window.realtimeMixin = {
         const controller = new AbortController();
         this._realtimeSnapshotAbort = controller;
         timeout = setTimeout(() => controller.abort(), 4000);
+        const taskBoundaryAt = this.liveTaskBoundaryAt;
+        const requestedTaskId = this.liveTaskId;
         const explicitDetail = options && Object.prototype.hasOwnProperty.call(options, 'monitorDetail')
           ? !!options.monitorDetail
           : this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir;
+        const monitorDetailGeneration = explicitDetail
+          ? (options && Object.prototype.hasOwnProperty.call(options, 'monitorDetailGeneration')
+            ? options.monitorDetailGeneration
+            : this._monitorRealtimeDetailGeneration)
+          : null;
         const query = new URLSearchParams();
         if (explicitDetail) {
-          query.set('detail');
+          query.set('detail', 'true');
           // Zero explicitly requests every compact preview metadata entry.
           // Weak-network mode controls image loading, not list visibility.
           query.set('preview_limit', String(0));
@@ -335,16 +342,12 @@ window.realtimeMixin = {
         // A dashboard-only detail request may finish after the user leaves
         // that page. Keep the current transport snapshot/cursors, but never
         // let that stale detail overwrite live monitor state off-page.
-        const monitorDetailGeneration = explicitDetail
-          ? (options && Object.prototype.hasOwnProperty.call(options, 'monitorDetailGeneration')
-            ? options.monitorDetailGeneration
-            : this._monitorRealtimeDetailGeneration)
-          : null;
-        const applyMonitor = !explicitDetail || (
+        const applyMonitor = requestedTaskId === this.liveTaskId
+          && taskBoundaryAt === this.liveTaskBoundaryAt && (!explicitDetail || (
           this.currentRoute === 'monitor-dashboard'
           && (monitorDetailGeneration == null
             || monitorDetailGeneration === this._monitorRealtimeDetailGeneration)
-        );
+        ));
         this._applyRealtimeSnapshot(snapshot, { applyMonitor });
         return true;
       } catch (_) {

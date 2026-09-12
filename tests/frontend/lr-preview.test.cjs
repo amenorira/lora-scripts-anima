@@ -1,11 +1,11 @@
-// Run with: node --test tools/test_lr_preview.cjs
+// Run from the repository root: node --test tests/frontend/*.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../frontend/js/training-lr-preview.js'), 'utf8'), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/training-lr-preview.js'), 'utf8'), context);
 function preview(overrides = {}, steps = 10000) {
   const ui = Object.assign({}, context.window.trainingLrPreviewMixin, {
     stepEstimate: { total_steps: steps },
@@ -26,7 +26,7 @@ test('base rate preview discloses excluded LoRA+ and per-layer rates', () => {
   assert.equal(rate(0), 1e-4);
   assert.ok(data.notes.includes('lrPreview.baseGroupNote'));
   for (const locale of ['en-US', 'zh-CN']) {
-    const translations = JSON.parse(fs.readFileSync(path.join(__dirname, `../frontend/i18n/${locale}.json`), 'utf8'));
+    const translations = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${locale}.json`), 'utf8'));
     assert.ok(translations.lrPreview.baseGroupNote.includes('LoRA+'));
     assert.ok(translations.lrPreview.baseGroupNote.includes('lora_up'));
   }
