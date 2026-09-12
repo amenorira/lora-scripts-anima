@@ -130,7 +130,7 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
 
 class SubsetTimestepFrontendTests(unittest.TestCase):
     def test_preview_applies_offset_and_editor_uses_existing_stepper(self):
-        repo = Path(__file__).resolve().parents[1]
+        repo = Path(__file__).resolve().parents[2]
         core_path = repo / "frontend" / "js" / "training-core.js"
         script = f"""
 global.window = {{ t: key => key }};

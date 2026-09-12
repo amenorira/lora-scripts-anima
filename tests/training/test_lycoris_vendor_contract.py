@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch.nn as nn
 
-VENDOR_ROOT = Path(__file__).resolve().parents[1] / "vendor"
+VENDOR_ROOT = Path(__file__).resolve().parents[2] / "vendor"
 if str(VENDOR_ROOT) not in sys.path:
     sys.path.insert(0, str(VENDOR_ROOT))
 

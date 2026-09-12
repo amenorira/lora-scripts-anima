@@ -95,7 +95,7 @@ lora-scripts-anima/
 ├── frontend/                   ← Alpine.js SPA frontend
 ├── config/                     ← Local configuration and autosaves
 ├── docs/                       ← Parameter guides and preview screenshots
-├── tools/                      ← Standalone tools (Flash Attn installer, etc.)
+├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
 ├── start.bat / start.sh        ← Launch scripts
 ├── requirements.txt            ← Additional project dependencies (sd-scripts core deps installed via vendor)
 └── requirements-musubi-krea2.txt ← Shared Krea 2 version-convergence dependencies
@@ -262,7 +262,7 @@ The GUI **Environment** tab provides:
 
 ## Development & Testing
 
-Run the backend test suite (install the test-only dependencies first; they do not affect the training runtime):
+Run the complete test suite (install the test dependencies and Node.js first; they do not affect the training runtime):
 
 ```
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
@@ -270,6 +270,8 @@ Run the backend test suite (install the test-only dependencies first; they do no
 # Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
 #        ./venv/bin/python -m pytest tests
 ```
+
+Tests are grouped by feature. The common entrypoint also runs standalone JavaScript tests. See [tests/README.md](tests/README.md) for test groups and commands, and [tools/README.md](tools/README.md) for tool responsibilities.
 
 ## Acknowledgements
 

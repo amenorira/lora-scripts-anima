@@ -90,6 +90,7 @@ window.monitorCoreMixin = {
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
   runDetailData: null,    // 历史训练详情缓存
+  _runDetailRequestSeq: 0,
 
   // ── 当前输出文件列表对应的 run 目录（live 用 monitorData.output_dir，历史用 selectedRunDir）──
   get currentOutputRunDir() {
@@ -340,9 +341,14 @@ window.monitorCoreMixin = {
     const activeId = active ? active.id : '';
     const prevId = this.liveTaskId;
 
-    if (this.selectedRunDir && activeId !== prevId) return; // 浏览历史时不打断视图；返回实时后下轮生效
-
     if (activeId && activeId !== prevId) {
+      // History owns the visible buffers, but must not freeze global training state.
+      if (this.selectedRunDir) {
+        this.claimLiveTask(activeId);
+        this._applyTaskView(active.status);
+        this.realtimeTaskStateUnknown = false;
+        return;
+      }
       // 任务边界（新启动/页面刷新恢复/他处启动）：清理上一轮残留并切换订阅。
       this.beginLiveMonitorTask(activeId, active.status);
       return;
@@ -356,12 +362,13 @@ window.monitorCoreMixin = {
       this.releaseLiveTask();
       this._applyTaskView(status);
       if (finished) this.handleTaskCompletion(prevStatus, finished.status);
-      if (this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail();
+      if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail();
       return;
     }
     if (active) {
       // 同一任务：同步状态（如 CREATED → RUNNING），进度字段由 WS 流维护。
       this._applyTaskView(active.status);
+      if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this._setMonitorRealtimeTask(active.id);
       this.realtimeTaskStateUnknown = false;
       return;
     }
@@ -409,7 +416,10 @@ window.monitorCoreMixin = {
     const taskWasLostOnRestart = this.realtimeTaskStateUnknown && !active;
     const next = Object.assign({}, monitor);
     const hasMonitorDetail = next.detail === true || taskWasLostOnRestart;
+    // Compact transport snapshots contain placeholder zeros, not progress.
+    if (!hasMonitorDetail) return;
     const snapshotTaskId = next.active_task && next.active_task.id || active && active.id || '';
+    if (this.liveTaskId && snapshotTaskId !== this.liveTaskId) return;
     const nextLogSourceKey = snapshotTaskId ? 'task:' + snapshotTaskId : '';
     const reusingFullLog = !!(
       nextLogSourceKey
@@ -445,6 +455,11 @@ window.monitorCoreMixin = {
       next.train_params = [];
     }
 
+    // HTTP detail must not overwrite lifecycle state owned by the task poll.
+    if (this.monitorData && this.monitorData.state) {
+      next.state = this.monitorData.state;
+      next.state_label = this.monitorData.state_label;
+    }
     this.monitorData = next;
     if (next.gpu) this.gpuInfo = next.gpu;
     if (next.system) this.sysInfo = next.system;
@@ -520,6 +535,7 @@ window.monitorCoreMixin = {
     const id = String(taskId || '').trim();
     if (!id) return;
     const code = String(status || 'CREATED').toUpperCase();
+    this._runDetailRequestSeq++;
     this.selectedRunDir = null;
     this.runDetailData = null;
     this.resetRealtimeMonitorState();
@@ -536,7 +552,10 @@ window.monitorCoreMixin = {
     };
     this._logFullSourceKey = 'task:' + id;
     this._setMonitorRealtimeTask(id);
-    if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+    if (this.currentRoute === 'monitor-dashboard') {
+      this.renderDashboard();
+      void this.refreshMonitorRealtimeDetail();
+    }
   },
 
   handleTaskCompletion(prevState, newState) {
@@ -750,6 +769,7 @@ window.monitorCoreMixin = {
   startMonitorRealtime() {
     this.stopMonitorRealtime();
     this.realtimeSubscribe('hardware');
+    if (!this.selectedRunDir) this._setMonitorRealtimeTask(this.liveTaskId);
     if (this.realtimeSnapshot) {
       this.applyRealtimeMonitorSnapshot(this.realtimeSnapshot);
       // Curves, progress and artifacts are refreshed from disk on entry. A
@@ -778,11 +798,10 @@ window.monitorCoreMixin = {
     if (this.currentRoute !== 'monitor-dashboard' || generation !== this._monitorRealtimeDetailGeneration) return;
     // If this call joined a compact bootstrap already in flight, issue one
     // detail request after it settles instead of leaving the dashboard empty.
-    if (socket
-      && this.currentRoute === 'monitor-dashboard'
+    if (this.currentRoute === 'monitor-dashboard'
       && generation === this._monitorRealtimeDetailGeneration
       && this.realtimeSnapshot
-      && !(this.realtimeSnapshot.monitor && this.realtimeSnapshot.monitor.detail)) {
+      && !(this.monitorData && this.monitorData.detail)) {
       await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
         monitorDetail: true,
         monitorDetailGeneration: generation,
@@ -1218,6 +1237,7 @@ window.monitorCoreMixin = {
   // ── Run Detail (查看历史训练) ─────────────────────────
   async viewRunDetail(runDir) {
     /** 查看指定历史训练的详情（图表 + 日志 + 配置） */
+    this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this.logLines = [];
     this.logTotal = 0;
@@ -1247,10 +1267,14 @@ window.monitorCoreMixin = {
   },
 
   async _fetchRunDetail(runDir) {
+    if (this.selectedRunDir !== runDir) return;
+    const requestSeq = ++this._runDetailRequestSeq;
+    const isCurrent = () => requestSeq === this._runDetailRequestSeq && this.selectedRunDir === runDir;
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
+      if (!isCurrent()) return;
       if (j.status === 'success') {
         this.runDetailData = j.data;
         this._outputFilesRunDir = runDir;
@@ -1288,14 +1312,15 @@ window.monitorCoreMixin = {
         this.toast(j.message || this.t('monitor.loadRunFailed'));
       }
     } catch (e) {
-      this.toast(this.t('monitor.runDetailError'));
+      if (isCurrent()) this.toast(this.t('monitor.runDetailError'));
     } finally {
-      this.finishProgress();
+      if (isCurrent()) this.finishProgress();
     }
   },
 
   resetRunDetailState() {
     /** 清除历史运行详情及其派生缓存，防止返回实时监控后继续显示历史数据。 */
+    this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this.selectedRunDir = null;
     this.runDetailData = null;

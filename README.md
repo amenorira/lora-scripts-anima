@@ -95,7 +95,7 @@ lora-scripts-anima/
 ├── frontend/                   ← Alpine.js SPA 前端
 ├── config/                     ← 本地配置与自动保存
 ├── docs/                       ← 参数指南与预览截图
-├── tools/                      ← 独立工具（Flash Attn 安装等）
+├── tools/                      ← 启动、安装与运行工具；开发脚本位于 tools/dev/
 ├── start.bat / start.sh        ← 启动脚本
 ├── requirements.txt            ← 项目额外依赖（sd-scripts 核心依赖由 vendor 单独安装）
 └── requirements-musubi-krea2.txt ← 主环境的 Krea 2 版本收敛依赖
@@ -264,7 +264,7 @@ GUI 的 **环境** 标签页提供：
 
 ## 开发测试
 
-运行后端测试套件（需先安装测试依赖，仅开发需要，不影响训练运行时）：
+运行完整测试套件（需安装测试依赖及 Node.js，仅开发需要，不影响训练运行时）：
 
 ```
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
@@ -272,6 +272,8 @@ GUI 的 **环境** 标签页提供：
 # Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
 #        ./venv/bin/python -m pytest tests
 ```
+
+测试按功能分类，统一入口包含独立 JavaScript 测试。分类、依赖和单独运行方法见 [tests/README.md](tests/README.md)；工具用途见 [tools/README.md](tools/README.md)。
 
 ## 致谢
 

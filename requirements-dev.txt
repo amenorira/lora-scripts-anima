@@ -2,6 +2,7 @@
 # 开发 / 测试依赖（仅开发者需要，不参与训练运行时）
 # 安装：venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 # 运行：venv\Scripts\python.exe -m pytest tests
+# 完整套件还需 PATH 中的 Node.js 和 Git，见 tests/README.md
 # ============================================================
 
 pytest>=8.0

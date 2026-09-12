@@ -1,11 +1,11 @@
-// Run with: node --test tools/test_lr_preview.cjs
+// Run from the repository root: node --test tests/frontend/*.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../frontend/js/training-lr-preview.js'), 'utf8'), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/training-lr-preview.js'), 'utf8'), context);
 function preview(overrides = {}, steps = 10000) {
   const ui = Object.assign({}, context.window.trainingLrPreviewMixin, {
     stepEstimate: { total_steps: steps },
@@ -20,6 +20,16 @@ test('polynomial keeps the Transformers end rate and component scaling', () => {
   const { rate } = preview({ lr_scheduler: 'polynomial', unet_lr: 2e-4 });
   assert.ok(Math.abs(rate(1) - 2e-7) < 1e-15);
   assert.ok(Math.abs(rate(0.5) - 0.0001001) < 1e-15);
+});
+test('base rate preview discloses excluded LoRA+ and per-layer rates', () => {
+  const { data, rate } = preview({ loraplus_lr_ratio: 16, network_args_custom: 'network_reg_lrs=blocks.0=0.001' });
+  assert.equal(rate(0), 1e-4);
+  assert.ok(data.notes.includes('lrPreview.baseGroupNote'));
+  for (const locale of ['en-US', 'zh-CN']) {
+    const translations = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${locale}.json`), 'utf8'));
+    assert.ok(translations.lrPreview.baseGroupNote.includes('LoRA+'));
+    assert.ok(translations.lrPreview.baseGroupNote.includes('lora_up'));
+  }
 });
 test('fractional warmup truncates to complete steps and long warmup stays a ramp', () => {
   assert.equal(preview({ lr_warmup_steps: 0.15 }, 11).data.params.warmupFraction, 1 / 11);

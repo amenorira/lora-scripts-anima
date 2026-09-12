@@ -703,7 +703,7 @@ def _validate_number(value: Any, spec: ArgumentSpec) -> str | None:
         return "must be a number / 必须是数字"
     if not math.isfinite(number):
         return "must be finite / 必须是有限数字"
-    if spec.kind == "integer" and not number.is_integer():
+    if spec.kind == "integer" and not isinstance(value, int):
         return "must be an integer / 必须是整数"
     if spec.minimum is not None:
         invalid = number < spec.minimum if spec.minimum_inclusive else number <= spec.minimum
@@ -833,11 +833,14 @@ def validate_optimizer_contract(
 
     if (
         optimizer_type == LORARITE_OPTIMIZER_TYPE
-        and config.get("model_train_type") != "anima-lora"
+        and (
+            config.get("model_train_type") != "anima-lora"
+            or config.get("network_module") != "networks.lora_anima"
+        )
     ):
         errors.append(
-            "LoRA-RITE: currently supported only for Anima LoRA / "
-            "当前仅支持 Anima LoRA"
+            "LoRA-RITE: currently supported only for anima-lora with networks.lora_anima / "
+            "当前仅支持 anima-lora 与 networks.lora_anima"
         )
 
     contract = OPTIMIZER_CONTRACTS.get(optimizer_type)

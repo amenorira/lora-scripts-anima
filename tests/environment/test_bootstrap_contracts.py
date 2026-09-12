@@ -9,7 +9,7 @@ from unittest.mock import patch
 from tools import ensure_musubi_runtime
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 WINDOWS_SCRIPT = ROOT / "tools" / "bootstrap_windows.ps1"
 WINDOWS_MESSAGES = ROOT / "tools" / "bootstrap_messages.json"
 

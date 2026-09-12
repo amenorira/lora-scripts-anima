@@ -20,7 +20,7 @@ from tools.python_startup.lr_logging import (
 )
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 
 
 def named_optimizer(name, **attrs):

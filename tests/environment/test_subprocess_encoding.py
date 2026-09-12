@@ -11,7 +11,7 @@ from tools.python_startup import sitecustomize  # noqa: F401
 from backend import launch_utils
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 BNB_GAUDI_PROBE = "pip list | grep habana-torch-plugin"
 
 
