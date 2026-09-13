@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import tomllib
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,16 @@ log = logging.getLogger(__name__)
 
 RUN_META_NAME = "task_meta.json"
 RUN_SCHEMA_VERSION = 2
+_task_paths: dict[str, Path] = {}
+_task_paths_lock = threading.RLock()
+
+
+def _remember_task_path(task_id: str, path: Path) -> None:
+    with _task_paths_lock:
+        _task_paths.pop(task_id, None)
+        _task_paths[task_id] = path
+        while len(_task_paths) > 200:
+            _task_paths.pop(next(iter(_task_paths)))
 
 _CONTROL_FILES = {
     "config.toml",
@@ -143,6 +154,8 @@ def write_run_record(
         "extra": extra or {},
     }
     _atomic_write_json(internal / RUN_META_NAME, record)
+    if task_id:
+        _remember_task_path(task_id, internal)
     return record
 
 
@@ -268,8 +281,17 @@ def iter_run_records(*, include_deleted: bool = False) -> list[dict[str, Any]]:
 def find_run_record_by_task_id(task_id: str) -> dict[str, Any] | None:
     if not task_id:
         return None
+    with _task_paths_lock:
+        path = _task_paths.get(task_id)
+    if path:
+        record = load_run_record(path)
+        if record and record.get("task_id") == task_id:
+            return record
+        with _task_paths_lock:
+            _task_paths.pop(task_id, None)
     for record in iter_run_records():
         if record.get("task_id") == task_id:
+            _remember_task_path(task_id, Path(record["run_path"]))
             return record
     return None
 

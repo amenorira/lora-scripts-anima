@@ -11,6 +11,7 @@
    ================================================================ */
 
 window.monitorRenderMixin = {
+  ...window.monitorLogRenderMixin,
 
   // CREATED/RUNNING 都算"活跃"：等待启动的任务也要能终止，且不显示待命文案。
   _isActiveState(stateCode) {
@@ -33,6 +34,7 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
+      if (this._shellBuilt) this.closePreviewLightbox();
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
       this._shellLocale = locale;
@@ -154,7 +156,7 @@ window.monitorRenderMixin = {
   _sysChip(sys, t) {
     const fullName = sys.cpu_name || t('cpu');
     let html = '<div class="m-res-chip" data-res="sys">';
-    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
+    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">CPU</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('cpu', t('cpu'), sys.cpu_pct, 'cpu-pct');
     html += this._resMeterHtml('ram', t('ram'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
@@ -170,7 +172,11 @@ window.monitorRenderMixin = {
     const temp = gpu.temperature_c;
     const fullName = gpu.name || 'GPU';
     let html = '<div class="m-res-chip" data-res="gpu">';
-    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
+    if (gpu.gpus && gpu.gpus.length > 1) {
+      html += '<select class="m-gpu-select" aria-label="GPU" @change="selectedGpuIndex=Number($event.target.value);renderDashboard()">';
+      for (const device of gpu.gpus) html += '<option value="' + device.index + '"' + (device.index === gpu.index ? ' selected' : '') + '>GPU ' + device.index + ' · ' + this.esc(device.name) + '</option>';
+      html += '</select>';
+    } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">GPU</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('gpu', t('gpuLoad'), loadPct, 'load-pct');
     html += this._resMeterHtml('vram', t('vramUsed'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
@@ -184,7 +190,7 @@ window.monitorRenderMixin = {
   _resMeterHtml(kind, label, pct, valueField, subText, subField) {
     const value = Math.max(0, Math.min(100, Number(pct) || 0));
     let html = '<span class="m-res-stat m-res-meter" data-meter="' + kind + '">';
-    html += '<span class="m-res-stat-line"><span class="m-res-stat-label">' + this.esc(label) + '</span><span class="m-res-stat-val m-res-' + this._resGrade(value) + '" data-field="' + valueField + '">' + Math.round(value) + '%</span>';
+    html += '<span class="m-res-stat-line"><span class="m-res-stat-label">' + this.esc(label) + '</span><span class="m-res-stat-val m-res-' + (kind === 'gpu' || kind === 'cpu' ? 'ok' : this._resGrade(value)) + '" data-field="' + valueField + '">' + Math.round(value) + '%</span>';
     if (subText) html += '<span class="m-res-stat-sub" data-field="' + subField + '">' + this.esc(subText) + '</span>';
     html += '</span><span class="m-res-mini"><i data-meter-fill="' + kind + '" style="width:' + value + '%"></i></span></span>';
     return html;
@@ -193,7 +199,11 @@ window.monitorRenderMixin = {
   _renderResourceBar(containerId, gpu, sys, t, locale) {
     const bar = document.getElementById(containerId);
     if (!bar) return;
-    const localeKey = String(locale || '');
+    if (gpu && gpu.gpus && gpu.gpus.length) {
+      const device = gpu.gpus.find(item => item.index === this.selectedGpuIndex) || gpu.gpus[0];
+      gpu = Object.assign({}, device, { gpus: gpu.gpus });
+    }
+    const localeKey = String(locale || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
     if (!bar.firstElementChild || bar.dataset.locale !== localeKey) {
       bar.dataset.locale = localeKey;
       bar.innerHTML = this._resbarHtml(gpu, sys, t);
@@ -222,7 +232,7 @@ window.monitorRenderMixin = {
       if (e) e.style.width = Math.max(0, Math.min(100, Number(val) || 0)) + '%';
     };
     if (gpu) {
-      _set('load-pct', Math.round(gpu.gpu_load_pct || 0) + '%', this._resGrade(gpu.gpu_load_pct||0));
+      _set('load-pct', Math.round(gpu.gpu_load_pct || 0) + '%', 'ok');
       _meter('gpu', gpu.gpu_load_pct || 0);
       const vramPct = gpu.vram_total_mb > 0 ? Math.round(gpu.vram_used_mb / gpu.vram_total_mb * 100) : 0;
       _set('vram-pct', vramPct + '%', this._resGrade(vramPct));
@@ -232,7 +242,7 @@ window.monitorRenderMixin = {
       if (gpu.power_w != null) _set('power-text', gpu.power_w + 'W');
     }
     if (sys) {
-      _set('cpu-pct', Math.round(sys.cpu_pct) + '%', this._resGrade(sys.cpu_pct));
+      _set('cpu-pct', Math.round(sys.cpu_pct) + '%', 'ok');
       _set('ram-pct', Math.round(sys.ram_pct) + '%', this._resGrade(sys.ram_pct));
       _meter('cpu', sys.cpu_pct);
       _meter('ram', sys.ram_pct);
@@ -274,7 +284,10 @@ window.monitorRenderMixin = {
     const actions = bar.querySelector('[data-role="actions"]');
     if (actions) actions.hidden = !isActive;
     const idleCopy = bar.querySelector('[data-role="idle-copy"]');
-    if (idleCopy) idleCopy.hidden = isActive;
+    if (idleCopy) {
+      idleCopy.hidden = isActive;
+      idleCopy.textContent = stateCode === 'IDLE' ? t('readyToTrain') : (d.train_result && d.train_result.duration_str || '');
+    }
     const errorEl = bar.querySelector('[data-role="error"]');
     if (errorEl) {
       errorEl.hidden = !d.has_error;
@@ -343,15 +356,20 @@ window.monitorRenderMixin = {
     if (!panel) return;
     const panelEmpty = !panel.firstElementChild;
 
+    if (isHistory && !this.runDetailData) {
+      panel.innerHTML = '<div class="dashboard-empty"><p>' + this.esc(this.runDetailError || t('loading')) + '</p>'
+        + (this.runDetailError ? '<button class="btn btn-sm" @click="_fetchRunDetail(selectedRunDir)">' + this.esc(t('refresh')) + '</button>' : '') + '</div>';
+      this._builtOverviewSig = null;
+      return;
+    }
+
     if (tab === 'logs') {
       this._renderLogs(panel, d, t, panelEmpty);
       return;
     }
     if (tab === 'overview') {
-      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + (this.trainParams.length) + ':' + (d.train_result ? d.train_result.status : '');
+      const sig = 'ov:' + this._shellLocale + ':' + (d.state||'') + ':' + this.trainParamsVersion + ':' + (d.train_result ? d.train_result.status : '');
       if (panelEmpty || this._builtOverviewSig !== sig) {
-        this._cancelPreviewMediaQueue();
-        this._releasePreviewMediaObjectUrls();
         this._builtOverviewSig = sig;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
@@ -362,7 +380,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'samples') {
-      const sig = 'sm:' + this._shellLocale + ':' + this._previewCollectionSignature() + ':' + (this.previewsLoading?1:0) + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
+      const sig = 'sm:' + this._shellLocale + ':' + this.previewsVersion + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (panelEmpty || this._builtSamplesSig !== sig) {
         // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
         const scrollTop = panel.scrollTop || 0;
@@ -377,8 +395,8 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'outputs') {
-      if (tabChanged && !this.outputFiles.length && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + (this.outputFiles.length) + ':' + (this.selectedOutputFiles.length) + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
+      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');
@@ -392,7 +410,16 @@ window.monitorRenderMixin = {
         } else {
           panel.classList.remove('no-enter-anim');
         }
+        const input = panel.querySelector('.m-output-search-input');
+        const focused = input && document.activeElement === input;
+        const selection = focused ? [input.selectionStart, input.selectionEnd] : null;
+        if (input) input.remove();
         panel.innerHTML = this._renderOutputsTab(t);
+        const replacement = panel.querySelector('.m-output-search-input');
+        if (input && replacement) {
+          replacement.replaceWith(input);
+          if (focused) { input.focus({ preventScroll: true }); input.setSelectionRange(...selection); }
+        }
         const newScrollEl = panel.querySelector('.m-outputs-scroll');
         if (newScrollEl) newScrollEl.scrollTop = scrollTop;
       }
@@ -482,11 +509,11 @@ window.monitorRenderMixin = {
       ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
     const values = {
       step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)',
-      loss: d.loss != null ? d.loss : this._seriesLatest('loss/average'),
+      loss: this._seriesLatest('loss/average', d.loss != null ? d.loss : '—'),
       lr: d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet'),
       epoch: d.epoch != null ? d.epoch : '--',
       elapsed: d.elapsed || (isHistory && d.train_result && d.train_result.duration_str) || '--',
-      eta: isHistory ? '—' : (d.eta || '--'),
+      eta: isHistory || ['FINISHED', 'FAILED', 'TERMINATED'].includes(d.state) ? '—' : (d.eta || '--'),
       speed: d.speed || '--',
     };
     Object.keys(values).forEach(key => {
@@ -519,17 +546,20 @@ window.monitorRenderMixin = {
 
   _overviewMetricsHtml(d, t, isHistory, isRunning) {
     const tr = d.train_result || {};
-    const completed = isHistory && tr.status === 'completed';
+    const completed = tr.status === 'completed' || d.state === 'FINISHED';
     const historyStatus = tr.status === 'completed' ? t('statusCompleted')
       : (tr.status === 'failed' ? t('statusFailed')
         : (tr.status === 'terminated' ? t('statusTerminated')
           : (tr.status === 'running' ? t('statusRunning') : (tr.status || t('finished')))));
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const loss = d.loss != null ? d.loss : this._seriesLatest('loss/average');
+    const loss = this._seriesLatest('loss/average', d.loss != null ? d.loss : '—');
     const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet');
     let html = '<section class="m-console-card m-overview-metrics">';
-    html += '<div class="m-card-heading"><span>' + this.esc(isHistory ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory ? historyStatus : (isRunning ? t('live') : t('standby'))) + '</span></div>';
-    if (!isRunning && !isHistory) {
+    html += '<div class="m-card-heading"><span>' + this.esc(isHistory || tr.status ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory || tr.status ? historyStatus : (isRunning ? t('live') : d.state === 'CREATED' ? t('created') : t('standby'))) + '</span></div>';
+    if (d.state === 'CREATED' && !isHistory) {
+      return html + '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('created')) + '</p></div></section>';
+    }
+    if (!isRunning && !isHistory && !['FINISHED', 'FAILED', 'TERMINATED'].includes(d.state)) {
       html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain')) + '</strong><span>' + this.esc(t('readyToTrainHint')) + '</span></div></div>';
       html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';
       if (d.last_config && d.last_config.name) {
@@ -539,8 +569,7 @@ window.monitorRenderMixin = {
       html += '</section>';
       return html;
     }
-    html += '<div class="m-overview-progress-head"><div><span>' + this.esc(t('overallProgress')) + '</span><strong data-live-field="step">' + this.esc((d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)') + '</strong></div><b data-overview-percent>' + percent + '%</b></div>';
-    html += '<div class="m-overview-progress"><i data-overview-progress style="width:' + percent + '%"></i></div>';
+    if (isHistory || !isRunning) html += '<div class="m-overview-progress-head"><span>' + this.esc(t('overallProgress')) + '</span><strong data-live-field="step"></strong></div>';
     const metrics = [
       ['loss', t('loss'), loss], ['lr', t('lr'), lr],
       ['epoch', t('epoch'), d.epoch != null ? d.epoch : '--'], ['speed', t('speed'), d.speed || '--'],
@@ -554,7 +583,7 @@ window.monitorRenderMixin = {
     return html;
   },
 
-  _seriesLatest(tag, fallback) {
+  _seriesLatest(tag, fallback = '—') {
     const series = (this.lossSeries || []).find(item => item.tag === tag);
     if (!series) return fallback;
     const value = series.latest != null ? series.latest : (series.points && series.points.length ? series.points[series.points.length - 1].value : null);
@@ -570,14 +599,14 @@ window.monitorRenderMixin = {
     const parts = number.toExponential(4).split('e');
     const exponent = Number(parts[1]);
     const sign = exponent < 0 ? '-' : '+';
-    return parts[0] + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
+    return Number(parts[0]) + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
   },
 
   _trainingDiagnosticPoints() {
     const series = (this.lossSeries || []).find(item => item.tag === 'loss/average')
       || (this.lossSeries || []).find(item => item.tag === 'loss/current');
     const byStep = new Map();
-    ((series && series.points) || []).forEach(point => {
+    ((series && (series.diagnostic_points || series.points)) || []).forEach(point => {
       const rawStep = point && point.step;
       const rawValue = point && point.value;
       const step = Number(rawStep);
@@ -595,8 +624,6 @@ window.monitorRenderMixin = {
   _trainingDiagnosticRules() {
     return {
       minimumPoints: 6,
-      windowRatio: 0.15,
-      windowMin: 12,
       windowMax: 60,
       reboundChange: 3,
       volatileCv: 12,
@@ -644,7 +671,7 @@ window.monitorRenderMixin = {
     base.gapFromBestPct = (clean[clean.length - 1].value - best.value) / Math.max(Math.abs(best.value), 1e-12) * 100;
     if (clean.length < rules.minimumPoints) return base;
 
-    const desiredWindow = Math.max(rules.windowMin, Math.min(rules.windowMax, Math.round(clean.length * rules.windowRatio)));
+    const desiredWindow = rules.windowMax;
     const windowSize = Math.min(desiredWindow, Math.floor(clean.length / 2));
     const recent = clean.slice(-windowSize);
     const previous = clean.slice(-windowSize * 2, -windowSize);
@@ -671,6 +698,7 @@ window.monitorRenderMixin = {
   },
 
   _formatDiagnosticValue(value) {
+    if (value == null || value === '') return '—';
     const number = Number(value);
     if (!Number.isFinite(number)) return '--';
     if (Math.abs(number) > 0 && Math.abs(number) < 0.001) return number.toExponential(3);
@@ -678,6 +706,7 @@ window.monitorRenderMixin = {
   },
 
   _formatDiagnosticPercent(value, signed) {
+    if (value == null || value === '') return '—';
     const number = Number(value);
     if (!Number.isFinite(number)) return '--';
     const normalized = Math.abs(number) < 0.05 ? 0 : number;
@@ -776,7 +805,7 @@ window.monitorRenderMixin = {
     html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
     html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
-    html += '<div class="m-diagnostic-metrics">';
+    html += '</div><details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary><div class="m-diagnostic-metrics">';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
       ['volatility', t('lossVolatility'), t('lowerIsMoreStable')],
@@ -786,10 +815,10 @@ window.monitorRenderMixin = {
     metrics.forEach(metric => {
       html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
     });
-    html += '</div></div>';
+    html += '</div>';
     html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
     html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
-    html += '<details class="m-diagnostic-method"><summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01"/></svg>' + this.esc(t('diagnosticMethodTitle')) + '</span><small>' + this.esc(t('diagnosticMethodMeta')) + '</small><svg class="m-diagnostic-method-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary>';
+    html += '<div class="m-diagnostic-method">';
     html += '<div class="m-diagnostic-method-content">';
     html += '<p class="m-diagnostic-boundary"><strong>' + this.esc(t('diagnosticScopeTitle')) + '</strong><span>' + this.esc(t('diagnosticScopeText')) + '</span></p>';
     const methodItems = [
@@ -808,18 +837,18 @@ window.monitorRenderMixin = {
       [t('diagnosticRuleSteady'), t('diagnosticRuleOtherwise')],
     ];
     ruleItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><code>' + this.esc(item[1]) + '</code></div>'; });
-    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote')) + '</p></div></details>';
-    html += '</section>';
+    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote')) + '</p></div></div>';
+    html += '</details></section>';
     return html;
   },
 
   _patchTrainingDiagnostics(root, t, d, isHistory) {
-    const diagnostic = this._trainingDiagnostics();
-    const isPreviousRun = !isHistory && (!d || d.state !== 'RUNNING') && diagnostic.count > 0;
+    const isPreviousRun = !isHistory && ['FINISHED', 'FAILED', 'TERMINATED'].includes(d && d.state);
     const context = isHistory ? 'history' : (isPreviousRun ? 'previous' : 'live');
     const version = String(this.lossDataVersion) + ':' + String(this._shellLocale || '') + ':' + context;
     if (root.dataset.diagnosticVersion === version) return;
     root.dataset.diagnosticVersion = version;
+    const diagnostic = this._trainingDiagnostics();
     const setText = (field, value) => {
       const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
       if (element) element.textContent = value;
@@ -859,12 +888,6 @@ window.monitorRenderMixin = {
       return '<img data-preview-url="' + this.esc(imageUrl) + '"' + common + '/>';
     }
     return '<img src="' + this.esc(imageUrl) + '"' + common + '/>';
-  },
-
-  _previewCollectionSignature() {
-    return (this.previews || []).map(preview => {
-      return String(preview.path || preview.name || '') + ':' + String(preview.version || preview.thumb_url || '');
-    }).join('|');
   },
 
   _parametersConsoleHtml(t) {
@@ -932,649 +955,6 @@ window.monitorRenderMixin = {
     root.querySelectorAll('.m-param-group:not([hidden])').forEach(group => { group.open = !!open; });
   },
 
-  // ═══════════════════════════════════════════════════════════
-  //  日志标签（增量追加 + 保留滚动位置）
-  // ═══════════════════════════════════════════════════════════
-  _logsTabShellHtml(t) {
-    let html = '<div class="m-section m-logs-section">';
-    const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
-    html += '<div class="m-view-actions m-logs-tools">';
-    if (this.logMode === 'full') {
-      html += this._logFullToolbarHtml(t);
-    } else {
-      html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode')) + '</button><button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll')) + ': ON\':\'' + this.esc(t('logAutoScroll')) + ': OFF\'"></span></button></div>';
-      html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch')) + '" @input.debounce.300ms="renderDashboard()">';
-      const levels = ['all','info','warn','error'];
-      const levelLabels = {all:t('logLevelAll'),info:t('logLevelInfo'),warn:t('logLevelWarn'),error:t('logLevelError')};
-      levels.forEach(l => {
-        html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
-      });
-      html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="requestClearLogs()">' + this.esc(t('logClear')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload')) + '</button></div>';
-    }
-    html += '</div></div>';
-    html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
-    return html;
-  },
-
-  // 完整日志工具栏：一层操作，直接覆盖浏览、搜索、复制和下载。
-  _logFullToolbarHtml(t) {
-    let html = '';
-    const tailLabel = this.selectedRunDir ? t('logBottom') : t('logLiveTail');
-    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-primary log-follow-btn" @click="logFullLastPage()">↓ ' + this.esc(tailLabel) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage')) + '</button>';
-    html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button></div>';
-    html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
-    html += '<span class="m-logs-match-nav" x-show="logFullMatches.length>0">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
-    html += '<span class="m-logs-match" x-text="logFullMatchText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
-    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
-    return html;
-  },
-
-  _logLineMatches(line, search, level) {
-    const lower = line.toLowerCase();
-    if (search && lower.indexOf(search) === -1) return false;
-    if (level === 'error') {
-      return lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || /\bcuda\b.*\berror\b/i.test(line) || /\bfail\b/i.test(line);
-    } else if (level === 'warn') {
-      return lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1 || /\bdeprecated\b/i.test(line);
-    } else if (level === 'info') {
-      return !(lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1);
-    }
-    return true;
-  },
-
-  _renderLogs(contentEl, d, t, tabChanged) {
-    const shellInDom = !!contentEl.querySelector('#monitorDashboardLogs');
-    const shellStale = this._builtLogMode !== this.logMode || this._builtLogLocale !== this._shellLocale;
-
-    // ── 首次 / 标签切换 / 模式切换：重建外壳 + 全量填充 ──
-    if (tabChanged || !shellInDom || shellStale) {
-      this._builtLogMode = this.logMode;
-      this._builtLogLocale = this._shellLocale;
-      contentEl.innerHTML = this._logsTabShellHtml(t);
-      this._renderedLogFilterKey = '';
-      this._renderedLogCount = 0;
-      this._logTrimK = 0;
-      this._forceLogRebuild = false;
-      this._logChunking = false;
-      this._populateLogs(contentEl, true);
-      // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
-      if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
-        // 无日志源（无训练且非历史模式）→ 不触发拉取，避免 toast 误报；保持空态文案。
-        // 不标记 _logFullLoaded，以便后续训练启动/实时重连时自动重新拉取。
-        if (!this._hasLogSource()) {
-          this._logFullNeedsResync = false;
-        } else {
-          this._logFullNeedsResync = false;
-          this._logFullLoaded = true;
-          this.fetchLogSlice({ tail: true, silent: true });
-        }
-      }
-      this._bindLogScroll(contentEl);
-      // tail 全量是分帧的，末帧自会滚底；此处仅在非分帧（full/空）时按需滚动
-      this._afterLogsRender(contentEl, this.logMode === 'tail' && !this._logChunking);
-      return;
-    }
-
-    // ── full 模式：末页 WebSocket 增量 + 翻页静态；首屏/重连自动拉取末页 ──
-    if (this.logMode === 'full') {
-      // 首屏未加载或实时重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
-      if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
-        if (!this._hasLogSource()) {
-          this._logFullNeedsResync = false;  // 留待有源时再拉
-        } else {
-          this._logFullNeedsResync = false;
-          this._logFullLoaded = true;
-          this.fetchLogSlice({ tail: true, silent: true });
-        }
-      }
-      if (this._logFullSlide) {
-        this._logFullSlide = false;
-        this._populateFullSlide(contentEl);
-      } else if (this._forceLogRebuild) {
-        this._forceLogRebuild = false;
-        this._populateLogs(contentEl, true);
-      }
-      this._updateLogCount(contentEl);
-      return;
-    }
-
-    // ── tail 模式 ──
-    const search = (this.logSearch || '').toLowerCase();
-    const level = this.logLevel || 'all';
-    const filterKey = search + '|' + level;
-    const filterChanged = this._renderedLogFilterKey !== filterKey;
-    const trimmed = this.logLines.length < this._renderedLogCount;
-    const wasDirty = this._logDirty;
-
-    // Fix3：非脏且无过滤/裁剪/强制重建 → 跳过日志重排（progress/hardware/loss 不再触碰日志 DOM）
-    if (!wasDirty && !filterChanged && !trimmed && !this._forceLogRebuild) {
-      this._updateLogCount(contentEl);
-      return;
-    }
-
-    if (filterChanged || trimmed || this._forceLogRebuild) {
-      this._renderedLogFilterKey = filterKey;
-      this._renderedLogCount = 0;
-      this._logTrimK = 0;
-      this._forceLogRebuild = false;
-      this._populateLogs(contentEl, true);          // 分帧全量重建
-      this._logDirty = false;
-      this._updateLogCount(contentEl);
-      this._afterLogsRender(contentEl, !this._logChunking); // 末帧自滚底
-      return;
-    }
-
-    // Fix1：分帧进行中 → 跳过增量（循环实时读 logLines 会吸收新行；裁剪已取消分帧并置 forceRebuild）
-    if (this._logChunking) {
-      this._logDirty = false;
-      this._updateLogCount(contentEl);
-      return;
-    }
-
-    // 增量 / 滑窗（Fix2）
-    if (wasDirty && (this.logLines.length > this._renderedLogCount || this._logTrimK > 0)) {
-      this._populateLogs(contentEl, false);
-    }
-    this._logDirty = false;
-    this._updateLogCount(contentEl);
-    this._afterLogsRender(contentEl, wasDirty);
-  },
-
-  _populateLogs(contentEl, isFullRebuild) {
-    if (this.logMode === 'full') { this._populateFullLogs(contentEl); return; }
-    const search = (this.logSearch || '').toLowerCase();
-    const level = this.logLevel || 'all';
-    if (isFullRebuild) this._populateTailFull(contentEl, search, level);
-    else this._populateTailIncremental(contentEl, search, level);
-  },
-
-  // 行号由 CSS counter（.log-line::before）按 DOM 位置自动生成；full 模式由
-  // counter-reset=offset 给出绝对行号。故此处不再创建 num span。
-  _buildLogLineDom(line, search, extraClass, lineNo) {
-    const div = document.createElement('div');
-    div.className = 'log-line' + (extraClass ? ' ' + extraClass : '');
-    if (lineNo != null) div.dataset.lineNo = String(lineNo);
-    const span = document.createElement('span');
-    span.className = 'log-line-text';
-    const richSource = this._splitRichLogSource(line);
-    if (richSource) {
-      span.className += ' log-line-text-split';
-      const main = document.createElement('span');
-      main.className = 'log-line-main';
-      const source = document.createElement('span');
-      source.className = 'log-line-source';
-      this._highlightLogLine(main, richSource.main, search);
-      this._highlightLogLine(source, richSource.source, search);
-      span.appendChild(main);
-      span.appendChild(source);
-    } else {
-      this._highlightLogLine(span, line, search);
-    }
-    div.appendChild(span);
-    return div;
-  },
-
-  _splitRichLogSource(lineText) {
-    const text = String(lineText || '');
-    const pathTail = '((?:[A-Za-z]:[\\\\/])?(?:[\\w.@()-]+[\\\\/\\\\]){0,10}(?:[\\w@()-]+\\.){0,12}[\\w@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp)(?::\\d+)?)';
-    let m;
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    if (normalized.indexOf('\n') >= 0) {
-      m = normalized.match(new RegExp('^(.*)\\n[ \\t]*' + pathTail + '\\s*$', 's'));
-    } else {
-      // Rich console pads the source column with a long run of spaces. In narrow
-      // containers that padding wraps visually; split it into a real right column.
-      m = normalized.match(new RegExp('^(.*?)[ \\t]{3,}' + pathTail + '\\s*$'));
-    }
-    if (!m) return null;
-    const main = m[1].replace(/\n[ \t]*$/g, '').trimEnd();
-    const source = m[2].trim();
-    if (!main || !source) return null;
-    return { main, source };
-  },
-
-  _isRichContinuationLine(lineText) {
-    const text = String(lineText || '');
-    if (!text.trim()) return false;
-    if (!/^[ \t]{20,}\S/.test(text)) return false;
-    if (this._splitRichLogSource(text)) return false;
-    return true;
-  },
-
-  _coalesceRichLogLines(lines, baseOffset) {
-    const src = lines || [];
-    const out = [];
-    for (let i = 0; i < src.length; i++) {
-      const startIdx = i;
-      let text = String(src[i] || '');
-      const richSource = this._splitRichLogSource(text);
-      if (richSource) {
-        let main = richSource.main;
-        let j = i + 1;
-        while (j < src.length && this._isRichContinuationLine(src[j])) {
-          main += ' ' + String(src[j] || '').trim();
-          j++;
-        }
-        if (j > i + 1) {
-          text = main + '        ' + richSource.source;
-          i = j - 1;
-        }
-      }
-      out.push({ text, lineNo: (baseOffset || 0) + startIdx + 1 });
-    }
-    return out;
-  },
-
-  // ── tail：分帧全量重建（Fix1 _logChunking 防竞态；末帧自滚底）──
-  _populateTailFull(contentEl, search, level) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
-    container.style.counterReset = 'logline 0';   // tail：缓冲内相对行号 1..n
-    const lines = this.logLines;
-    const entries = this._coalesceRichLogLines(lines, 0);
-    const CHUNK = 400;
-    const self = this;
-    this._logChunking = true;
-    let i = 0;
-    let firstChunk = true;
-
-    function renderChunk() {
-      if (!self._logChunking) return;             // 已被取消（裁剪打断 → forceRebuild）
-      const frag = document.createDocumentFragment();
-      let count = 0;
-      while (i < entries.length && count < CHUNK) {
-        const item = entries[i];
-        if (self._logLineMatches(item.text, search, level)) {
-          frag.appendChild(self._buildLogLineDom(item.text, search, '', item.lineNo));
-        }
-        i++; count++;
-      }
-      if (firstChunk) {
-        if (entries.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self._logEmptyMessage(false)) + '</p>';
-          container.appendChild(empty);
-          self._renderedLogCount = lines.length;
-          self._logChunking = false;
-          self._afterLogsRender(contentEl, false);
-          return;
-        }
-        firstChunk = false;
-      }
-      container.appendChild(frag);
-      self._renderedLogCount = Math.min(i, entries.length);
-      if (i < entries.length) {
-        requestAnimationFrame(renderChunk);
-      } else {
-        self._logChunking = false;
-        if (!container.querySelector('.log-line') && entries.length > 0) {
-          const empty = document.createElement('div');
-          empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults')) + '</p>';
-          container.appendChild(empty);
-        }
-        self._renderedLogCount = lines.length;
-        self._afterLogsRender(contentEl, true);   // 末帧：按需滚底
-      }
-    }
-    requestAnimationFrame(renderChunk);
-  },
-
-  // ── tail：增量 + 滑窗（Fix2 删顶补底，O(新增) 而非 O(缓冲)）──
-  _populateTailIncremental(contentEl, search, level) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const lines = this.logLines;
-
-    // 滑窗删顶：环形缓冲裁掉头部 K 行 → 同步删除 DOM 前 K 个 .log-line。
-    // CSS counter 自动重编 surviving 行号，无需 JS 重编。仅在 DOM 已同步时执行。
-    if (this._logTrimK > 0) {
-      const k = Math.min(this._logTrimK, this._renderedLogCount);
-      let remove = k;
-      while (remove-- > 0) {
-        const first = container.querySelector('.log-line');
-        if (!first) break;
-        first.remove();
-      }
-      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
-      this._logTrimK = 0;
-      const emp = container.querySelector('.log-empty');
-      if (emp) emp.remove();
-    }
-
-    // 补底：追加新行
-    const start = this._renderedLogCount;
-    if (start < lines.length) {
-      const frag = document.createDocumentFragment();
-      let appended = 0;
-      for (let i = start; i < lines.length; i++) {
-        if (!this._logLineMatches(lines[i], search, level)) continue;
-        frag.appendChild(this._buildLogLineDom(lines[i], search, '', i + 1));
-        appended++;
-      }
-      container.appendChild(frag);
-      const emp = container.querySelector('.log-empty');
-      if (emp && appended > 0) emp.remove();
-      this._renderedLogCount = lines.length;
-    }
-  },
-
-  // ── full：完整日志分页渲染（≤ 一页，静态，绝对行号）──
-  _populateFullLogs(contentEl) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
-    const offset = this.logFullOffset || 0;
-    container.style.counterReset = 'logline ' + offset;  // 首行显示 offset+1
-    const lines = this.logFullLines || [];
-    const entries = this._coalesceRichLogLines(lines, offset);
-    if (this.logFullLoading || !entries.length) {
-      const empty = document.createElement('div');
-      empty.className = 'log-empty dashboard-empty';
-      const msg = this._logEmptyMessage(!!this.logFullLoading);
-      empty.innerHTML = '<p>' + this.esc(msg) + '</p>';
-      container.appendChild(empty);
-      this._renderedLogCount = 0;
-      return;
-    }
-    const search = this.logFullQuery || '';
-    const matchSet = search ? new Set(this.logFullMatches) : null;
-    const frag = document.createDocumentFragment();
-    for (const item of entries) {
-      const cls = (matchSet && matchSet.has(item.lineNo - 1)) ? 'log-line-match' : '';
-      frag.appendChild(this._buildLogLineDom(item.text, search, cls, item.lineNo));
-    }
-    container.appendChild(frag);
-    this._renderedLogCount = lines.length;
-    // 跟随（实时末页 / 历史停在末尾）滚底；浏览历史页时停在顶部
-    container.scrollTop = (this.logAutoScroll || this._logAtBottom) ? container.scrollHeight : 0;
-  },
-
-  // ── full：实时增量 slide（O(新行) 删除顶部 evicted + 追加底部新行，零 HTTP）──
-  _populateFullSlide(contentEl) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const lines = this.logFullLines;
-
-    // 删顶：实时日志处理已 splice + bump offset；同步删除 DOM 前 K 个 .log-line
-    if (this._logFullEvictK > 0) {
-      const k = Math.min(this._logFullEvictK, this._renderedLogCount);
-      let remove = k;
-      while (remove-- > 0) {
-        const first = container.querySelector('.log-line');
-        if (!first) break;
-        first.remove();
-      }
-      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
-      this._logFullEvictK = 0;
-      const emp = container.querySelector('.log-empty');
-      if (emp) emp.remove();
-    }
-    // 更新 counter-reset 使 surviving 节点绝对行号与新的 logFullOffset 一致
-    container.style.counterReset = 'logline ' + (this.logFullOffset || 0);
-
-    // 补底：追加新行（词内搜索高亮，不加行级 match 背景——match_indices 来自后端快照不覆盖增量行）
-    const start = this._renderedLogCount;
-    if (start < lines.length) {
-      const search = this.logFullQuery || '';
-      const frag = document.createDocumentFragment();
-      let appended = 0;
-      for (let i = start; i < lines.length; i++) {
-        frag.appendChild(this._buildLogLineDom(lines[i], search, '', (this.logFullOffset || 0) + i + 1));
-        appended++;
-      }
-      container.appendChild(frag);
-      const emp = container.querySelector('.log-empty');
-      if (emp && appended > 0) emp.remove();
-      this._renderedLogCount = lines.length;
-    }
-    // 跟随则滚底
-    if (this.logAutoScroll || this._logAtBottom) {
-      container.scrollTop = container.scrollHeight;
-    }
-  },
-
-  _updateLogCount(contentEl) {
-    const countEl = contentEl.querySelector('[data-field="log-count"]');
-    if (countEl) countEl.textContent = this._logDisplayCount();
-  },
-  _logDisplayCount() {
-    return this.logMode === 'full' ? (this.logFullTotal || 0) : this.logLines.length;
-  },
-  /** 日志空态文案：按场景区分（实时无训练 / 实时训练中等待输出 / 历史无日志 / 加载中） */
-  _logEmptyMessage(isLoading) {
-    if (isLoading) return this.t('monitor.loading');
-    if (this.selectedRunDir) {
-      return this.t('monitor.noLogsHistoryHint');
-    }
-    const state = (this.monitorData && this.monitorData.state) || 'IDLE';
-    if (state === 'RUNNING') {
-      return this.t('monitor.noLogsRunningHint');
-    }
-    return this.t('monitor.noLogsIdleHint');
-  },
-  // 完整日志工具栏文本（reactive：x-text 调用）
-  logFullRangeText() {
-    const total = this.logFullTotal || 0;
-    if (!total) return '0 / 0';
-    const off = this.logFullOffset || 0;
-    const end = Math.min(off + (this.logFullLines ? this.logFullLines.length : 0), total);
-    return (off + 1) + '–' + end + ' / ' + total;
-  },
-  logFullMatchText() {
-    const n = this.logFullMatches ? this.logFullMatches.length : 0;
-    return (this.logFullMatchIdx >= 0 ? (this.logFullMatchIdx + 1) : 0) + '/' + n;
-  },
-
-  _bindLogScroll(contentEl) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    if (!this.selectedRunDir) this._logAtBottom = true;
-    container.onscroll = () => {
-      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
-      this._logAtBottom = atBottom;
-      if (this.logAutoScroll && !atBottom) this.logAutoScroll = false;
-      else if (!this.logAutoScroll && atBottom) this.logAutoScroll = true;
-      this._updateLogNavButtons(contentEl);
-    };
-  },
-
-  _scrollLogsToTop() {
-    const container = document.querySelector('#monitorDashboardLogs');
-    if (container) { container.scrollTop = 0; this._logAtBottom = false; this.logAutoScroll = false; }
-    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
-  },
-
-  _scrollLogsToBottom() {
-    const container = document.querySelector('#monitorDashboardLogs');
-    if (container) { container.scrollTop = container.scrollHeight; this._logAtBottom = true; }
-    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
-  },
-
-  _updateLogNavButtons(contentEl) {
-    if (!contentEl) return;
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const atTop = container.scrollTop < 30;
-    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
-    const topBtn = contentEl.querySelector('.log-nav-btn-top');
-    const bottomBtn = contentEl.querySelector('.log-nav-btn-bottom');
-    if (topBtn) topBtn.style.display = atTop ? 'none' : '';
-    if (bottomBtn) bottomBtn.style.display = atBottom ? 'none' : '';
-  },
-
-  _afterLogsRender(contentEl, doScroll) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    // Fix3：仅在有新日志（doScroll）时才设 scrollTop，避免大 DOM 上每帧强制 reflow
-    if (doScroll && (this.logAutoScroll || this._logAtBottom)) {
-      container.scrollTop = container.scrollHeight;
-      this._logAtBottom = true;
-    }
-    this._updateLogNavButtons(contentEl);
-  },
-
-  // ═══════════════════════════════════════════════════════════
-  //  VSCode-style log tokenizer — single regex, one pass per line
-  //  Groups: 1=str 2=url 3=domain 4=hex 5=ts 6=lvl 7=path 8=mod 9=exc
-  //         10=const 11=num 12=unit 13=kw 14=empty 15=stack
-  // ═══════════════════════════════════════════════════════════
-  _LOG_TOKEN_RE: (() => {
-    // ts 用非捕获括号：(外层 wrapper 已是捕获组 g5，若 ts 再用捕获括号会吞掉 g6，
-    // 把 lvl 挤到 g7 → 级别被误染为 log-path 绿色、g===6 重映射失效。)
-    const ts   = '(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?|\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b)';
-    const lvl  = '(?:ALERT|CRITICAL|EMERGENCY|FATAL|ERROR|FAILURE|FAIL|Fatal|HINT|INFORMATION|NOTICE|Info|WARNING|Warn|DEBUG|Debug|TRACE|Trace|INFO|WARN)\\b';
-    // Fix5：dir 段允许点（后接分隔符，无歧义）；文件名 stem 拆为「无点段+.」序列，
-    //   消除与 \\.(ext) 边界的互相回溯；重复次数有界，杜绝病态 O(n²)。
-    const path = '(?:[\\w.@()-]+[\\/\\\\]){0,10}(?:[\\w@()-]+\\.){0,12}[\\w@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|safetensors|pt|pth|ckpt|bin|csv|tsv|pb|h5|onnx|java|kt|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp|cs|rb|php|swift)(?::\\d+)?';
-    const mod  = '\\b[a-zA-Z_]\\w*(?:\\.\\w+){1,20}\\b';
-    const exc  = '\\b[A-Z]\\w*(?:Error|Exception|Warning|Fault)\\b';
-    const cnst = '\\b(?:true|false|null|undefined|none|NaN|Inf(?:inity)?|N\\/A)\\b';
-    const num  = '(?<![\\w.])(?:[+-]?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)';
-    const unit = '(?<=\\d)(?:it\\/s|s\\/it|[sm]s|us|ns|GiB|MiB|KiB|GB|MB|KB|TB|B|%)';
-    const kw   = '\\b(?:Traceback|raise|assert|failed|failure|abort|killed|OOM|CUDA out of memory|memory)\\b';
-    return new RegExp(
-      '(`[^`]*`|"[^"]*"|\'(?:\\\\.|[^\'\\\\])*\')' +  // group 1: quoted strings
-      '|(https?:\\/\\/[^\\s,;)\\]}>]+)' +               // group 2: URLs
-      // Fix5：domain 段有界重复 + TLD 后置 (?![\\w]) 边界，固化匹配
-      '|(\\b(?:[\\w-]+\\.){1,10}(?:com|org|net|io|dev|co|ai|app|gg|xyz|me|info|biz|tv|cc)(?![\\w])(?:\\/[^\\s,;)\\]}>]*)?)' + // group 3: domains
-      '|(\\b[0-9a-f]{40}\\b|\\b[0-9a-f]{10}\\b|\\b[0-9a-f]{7}\\b|\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b|\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b|\\b0x[0-9a-f]+\\b)' + // group 4: hex
-      '|(' + ts + ')' +                                  // group 5: timestamp
-      '|(' + lvl + ')' +                                 // group 6: log level
-      '|(' + path + ')' +                                // group 7: file path
-      '|(' + mod + ')' +                                 // group 8: module path
-      '|(' + exc + ')' +                                 // group 9: exception
-      '|(' + cnst + ')' +                                // group 10: constant
-      '|(' + num + ')' +                                 // group 11: number
-      '|(' + unit + ')' +                                // group 12: unit
-      '|(' + kw + ')' +                                  // group 13: keyword
-      '|(\\{\\s*\\}|\\[\\s*\\])' +                       // group 14: empty object/array
-      '|(^\\s*at\\s+)',                                  // group 15: stack trace
-      'gi'
-    );
-  })(),
-
-  _highlightLogLine(rootEl, lineText, search) {
-    const classes = [
-      null,           // 0: (unused)
-      'log-str',      // 1: quoted string
-      'log-url',      // 2: URL
-      'log-url',      // 3: domain
-      'log-hex',      // 4: hex/UUID/MAC
-      'log-ts',       // 5: timestamp
-      'log-lvl-fix',  // 6: log level (class set below from match)
-      'log-path',     // 7: file path
-      'log-module',   // 8: module path
-      'log-exc',      // 9: exception
-      'log-const',    // 10: constant
-      'log-num',      // 11: number
-      'log-unit',     // 12: unit
-      'log-kw',       // 13: keyword
-      'log-punct',    // 14: empty obj/arr
-      'log-exc',      // 15: stack trace "at "
-    ];
-    const re = this._LOG_TOKEN_RE;
-    const lower = search ? search.toLowerCase() : '';
-    // Fix4：把 search 高亮并入分词 pass —— 对任意文本段（纯文本或 token 内）按
-    //   search 切分并包 <mark>，省掉原先每行一次 TreeWalker 二次遍历。
-    const appendText = (parent, text) => {
-      if (!lower) { parent.appendChild(document.createTextNode(text)); return; }
-      this._appendHighlighted(parent, text, search, lower);
-    };
-    let lastIdx = 0;
-    let m;
-    const frag = document.createDocumentFragment();
-    while ((m = re.exec(lineText)) !== null) {
-      if (m.index > lastIdx) appendText(frag, lineText.slice(lastIdx, m.index));
-      // Find which group matched
-      let cls = '';
-      for (let g = 1; g < m.length; g++) {
-        if (m[g] !== undefined) {
-          cls = classes[g];
-          if (g === 6) { // log level — map to specific VSCode class
-            const lv = m[g].toUpperCase();
-            if (/^(ERROR|CRITICAL|FATAL|ALERT|EMERGENCY|FAILURE|FAIL)$/.test(lv)) cls = 'log-lvl log-lvl-ERROR';
-            else if (/^(WARNING|WARN)$/.test(lv)) cls = 'log-lvl log-lvl-WARN';
-            else if (/^(INFO|INFORMATION|NOTICE|HINT)$/.test(lv)) cls = 'log-lvl log-lvl-INFO';
-            else if (/^(DEBUG|TRACE)$/.test(lv)) cls = 'log-lvl log-lvl-DEBUG';
-          }
-          break;
-        }
-      }
-      if (cls) {
-        const span = document.createElement('span');
-        span.className = cls;
-        appendText(span, m[0]);   // token 内命中 search 也高亮（mark 仅加背景，保留 token 颜色）
-        frag.appendChild(span);
-      } else {
-        appendText(frag, m[0]);
-      }
-      lastIdx = re.lastIndex;
-    }
-    if (lastIdx < lineText.length) appendText(frag, lineText.slice(lastIdx));
-    rootEl.appendChild(frag);
-  },
-
-  // 把 text 追加到 parent，其中命中 search 的片段包 <mark>（一次线性扫描）
-  _appendHighlighted(parent, text, search, lower) {
-    if (!lower) { parent.appendChild(document.createTextNode(text)); return; }
-    const lowerText = text.toLowerCase();
-    let from = 0, idx = lowerText.indexOf(lower, from);
-    if (idx === -1) { parent.appendChild(document.createTextNode(text)); return; }
-    while (idx !== -1) {
-      if (idx > from) parent.appendChild(document.createTextNode(text.slice(from, idx)));
-      const mark = document.createElement('mark');
-      mark.textContent = text.slice(idx, idx + search.length);
-      parent.appendChild(mark);
-      from = idx + search.length;
-      idx = lowerText.indexOf(lower, from);
-    }
-    if (from < text.length) parent.appendChild(document.createTextNode(text.slice(from)));
-  },
-
-  downloadLogs() {
-    if (this.logMode === 'full') {
-      const runDir = this._logSliceRunDir ? this._logSliceRunDir() : null;
-      const taskId = this._logSliceTaskId ? this._logSliceTaskId() : null;
-      if (runDir || taskId) {
-        const params = new URLSearchParams();
-        if (runDir) params.set('run_dir', runDir);
-        else params.set('task_id', taskId);
-        this._triggerDownload('/api/monitor/log-download?' + params.toString());
-        this.toast(this.t('monitor.logDownloadStarted'));
-        return;
-      }
-    }
-
-    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
-    const content = lines.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'training-logs-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    this.toast(this.t('common.downloaded'));
-  },
-
   _formatFileSize(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -1607,17 +987,25 @@ window.monitorRenderMixin = {
     html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
     html += '<button type="button" data-preview-sort="asc" aria-pressed="' + (this.previewSortDir === 'asc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
     html += '<button type="button" data-preview-sort="desc" aria-pressed="' + (this.previewSortDir === 'desc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir">' + (this.previewsLoading ? (this.esc(t('loading'))+'…') : this.esc(t('refresh'))) + '</button></div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir" x-text="previewsLoading ? t(\'monitor.loading\') : t(\'monitor.refresh\')"></button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
       html += '<div class="preview-grid">';
+      const groups = new Set();
+      const counts = new Map();
+      this.previews.forEach(preview => { const stage = this._sampleMetadata(preview.name).stage; counts.set(stage, (counts.get(stage) || 0) + 1); });
       this._previewDisplayIndices().forEach(i => {
         const pv = this.previews[i];
+        const info = this._sampleMetadata(pv.name);
+        if (info.stage && counts.get(info.stage) > 1 && !groups.has(info.stage)) {
+          groups.add(info.stage);
+          html += '<div class="m-preview-group-heading" data-preview-group="' + this.esc(info.stage) + '">' + this.esc(info.stage) + '</div>';
+        }
         html += '<button type="button" class="preview-grid-item" data-preview-index="' + i + '" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
         html += this._previewThumbImageHtml(pv);
-        html += '<span class="preview-grid-item-label"><strong>' + this.esc(this._parseSampleInfo(pv.name)) + '</strong><small title="' + this.esc(pv.name) + '">' + this.esc(pv.name) + '</small></span>';
+        html += '<span class="preview-grid-item-label" title="' + this.esc(pv.name) + '"><strong>' + this.esc(counts.get(info.stage) > 1 ? info.prompt : this._parseSampleInfo(pv.name)) + '</strong></span>';
         html += '</button>';
       });
       html += '</div>';
@@ -1655,17 +1043,19 @@ window.monitorRenderMixin = {
       + '<button type="button" class="preview-lightbox-close" @click.stop="closePreviewLightbox()" aria-label="' + this.esc(t('close')) + '">×</button>'
       + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev')) + '">‹</button>'
       + '<div class="preview-lightbox-inner" @click.stop>'
-      + '<img class="preview-lightbox-img" id="previewLightboxImg" alt=""/>'
+      + '<div class="preview-lightbox-images"><img class="preview-lightbox-img" id="previewLightboxImg" alt=""/><img class="preview-lightbox-img" id="previewReferenceImg" hidden alt=""/></div>'
        + '<div class="preview-lightbox-bar">'
        + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
        + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
+       + '<span class="preview-lightbox-label" id="previewReferenceLabel" hidden></span>'
        + '<div class="preview-lightbox-actions">'
+       + '<button type="button" class="btn btn-sm btn-secondary" @click="togglePreviewReference()" x-text="previewReference ? t(\'monitor.clearReference\') : t(\'monitor.pinReference\')"></button>'
        + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata')) + '</button>'
        + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal')) + '</a>'
        + '</div>'
        + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate')) + ' · Esc ' + this.esc(t('close')) + '</span>'
        + '</div>'
-       + '<pre class="preview-lightbox-metadata" id="previewLightboxMetadata" hidden></pre>'
+       + '<div class="preview-lightbox-metadata" id="previewLightboxMetadata" hidden></div>'
        + '</div>'
       + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next')) + '">›</button>'
       + '</div>';
@@ -1677,16 +1067,27 @@ window.monitorRenderMixin = {
     const box = document.getElementById('previewLightbox');
     if (!box) return;
     box.classList.add('open');
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', this.t('monitor.previewSamples'));
+    this._previewReturnFocus = document.activeElement;
     document.body.style.overflow = 'hidden';
     this._updatePreviewLightbox();
     if (!this._lightboxKeyHandler) {
       this._lightboxKeyHandler = (e) => {
-        if (e.key === 'ArrowLeft') { this.previewLightboxNav(-1); }
-        else if (e.key === 'ArrowRight') { this.previewLightboxNav(1); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); this.previewLightboxNav(-1); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); this.previewLightboxNav(1); }
         else if (e.key === 'Escape') { this.closePreviewLightbox(); }
+        else if (e.key === 'Tab') {
+          const items = Array.from(box.querySelectorAll('button:not([disabled]), a[href], summary')).filter(el => el.getClientRects().length);
+          const first = items[0], last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
       };
     }
     document.addEventListener('keydown', this._lightboxKeyHandler);
+    box.querySelector('.preview-lightbox-close').focus();
   },
 
   closePreviewLightbox() {
@@ -1694,9 +1095,20 @@ window.monitorRenderMixin = {
     if (box) box.classList.remove('open');
     const image = document.getElementById('previewLightboxImg');
     if (image) image.removeAttribute('src');
+    const reference = document.getElementById('previewReferenceImg');
+    if (reference) { reference.removeAttribute('src'); reference.hidden = true; }
+    this.previewReference = null;
     if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     document.body.style.overflow = '';
     if (this._lightboxKeyHandler) document.removeEventListener('keydown', this._lightboxKeyHandler);
+    this._lightboxKeyHandler = null;
+    if (this._previewReturnFocus && this._previewReturnFocus.isConnected) this._previewReturnFocus.focus({ preventScroll: true });
+    this._previewReturnFocus = null;
+  },
+
+  togglePreviewReference() {
+    this.previewReference = this.previewReference ? null : this.previews[this.previewStep];
+    this._updatePreviewLightbox();
   },
 
   previewLightboxNav(dir) {
@@ -1717,6 +1129,20 @@ window.monitorRenderMixin = {
     if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     const img = document.getElementById('previewLightboxImg');
     if (img) { img.src = p.inspect_url || p.url; img.alt = p.name; }
+    const reference = document.getElementById('previewReferenceImg');
+    if (reference) {
+      reference.hidden = !this.previewReference;
+      if (this.previewReference) {
+        reference.src = this.previewReference.inspect_url || this.previewReference.url;
+        reference.alt = this.t('monitor.pinReference') + ': ' + this.previewReference.name;
+        reference.title = reference.alt;
+      } else reference.removeAttribute('src');
+    }
+    const referenceLabel = document.getElementById('previewReferenceLabel');
+    if (referenceLabel) {
+      referenceLabel.hidden = !this.previewReference;
+      referenceLabel.textContent = this.previewReference ? this.t('monitor.reference') + ': ' + this._parseSampleInfo(this.previewReference.name) : '';
+    }
     const original = document.getElementById('previewLightboxOriginal');
     if (original) {
       original.hidden = !p.url;
@@ -1739,34 +1165,10 @@ window.monitorRenderMixin = {
   },
 
   _parseSampleInfo(filename) {
-    // Parse epoch from filename like "nanahira_e000004_00_..."
-    const em = filename.match(/[eE](\d{6})/);
-    const epoch = em ? parseInt(em[1], 10) : null;
-    if (epoch == null) return filename;
-
-    // Try to get loss for this epoch from TensorBoard data
-    let lossStr = '';
-    if (this.lossSeries) {
-      const epochAvg = this.lossSeries.find(s => s.tag === 'loss/epoch_average');
-      if (epochAvg && epochAvg.points && epoch >= 1 && epoch <= epochAvg.points.length) {
-        const loss = epochAvg.points[epoch - 1].value;
-        lossStr = '  loss ' + loss.toFixed(4);
-      }
-    }
-
-    // Try to get step count from train params
-    let stepStr = '';
-    if (this.trainParams && this.trainParams.length) {
-      const epochsParam = this.trainParams.find(p => p.label && p.label.toLowerCase().includes('epoch'));
-      const epochTotal = epochsParam ? parseInt(epochsParam.value, 10) : 0;
-      if (epochTotal > 0 && this.monitorData && this.monitorData.total_steps) {
-        const stepsPerEpoch = Math.round(this.monitorData.total_steps / epochTotal);
-        stepStr = '  ~' + (epoch * stepsPerEpoch) + ' steps';
-      }
-    }
-
-    return 'Epoch ' + epoch + stepStr + lossStr;
+    const info = this._sampleMetadata(filename);
+    return [info.stage, info.prompt].filter(Boolean).join(' · ') || filename;
   },
+
 
   // ═══════════════════════════════════════════════════════════
   //  输出标签
@@ -1788,7 +1190,7 @@ window.monitorRenderMixin = {
     });
     html += '</div>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('deselectAll')) + '</button>';
+    if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
     html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll')) + '</button>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
@@ -1835,11 +1237,11 @@ window.monitorRenderMixin = {
     html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
 
     if (models.length) {
-      const bestPath = this._bestCheckpointPath(models);
+      const bestPath = this._bestCheckpointPath(this.outputFiles.filter(file => file.category === 'model'));
       html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName')) + '<span>' + this.esc(t('checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       models.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
-        const fpJs = this.escapeJsString(f.path);
+        const fpJs = this.esc(this.escapeJsString(f.path));
         const isBest = f.path === bestPath;
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
@@ -1851,8 +1253,8 @@ window.monitorRenderMixin = {
         else html += '<span class="m-ckpt-badge m-muted">—</span>';
         const numericLoss = Number(f.ckpt_loss);
         const hasLoss = f.ckpt_loss != null && Number.isFinite(numericLoss);
-        const lossTxt = hasLoss ? numericLoss.toFixed(4) : '--';
-        html += '<span class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
+        const lossTxt = hasLoss ? (f.loss_approximate ? '≈ ' : '') + numericLoss.toFixed(4) : '--';
+        html += '<span title="' + this.esc((f.loss_source || '') + (f.loss_step != null ? ' · step ' + f.loss_step : '')) + '" class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
         html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
@@ -1872,7 +1274,7 @@ window.monitorRenderMixin = {
       html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName')) + this._outputSortHeadHtml('others', 'type', t('fileType')) + this._outputSortHeadHtml('others', 'size', t('sortSize')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
-        const fpJs = this.escapeJsString(f.path);
+        const fpJs = this.esc(this.escapeJsString(f.path));
         const extension = (f.name || '').includes('.') ? (f.name || '').split('.').pop().toUpperCase() : '';
         const fileType = f.is_lora ? 'LoRA' : (f.category || extension || '—');
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
@@ -1904,6 +1306,8 @@ window.monitorRenderMixin = {
   },
 
   _bestCheckpointPath(models) {
+    const sources = new Set((models || []).filter(f => f.ckpt_loss != null).map(f => f.loss_source || 'unknown'));
+    if (sources.size > 1) return null;
     let bestPath = null;
     let bestLoss = Infinity;
     let bestTime = -Infinity;
@@ -1975,7 +1379,7 @@ window.monitorRenderMixin = {
     const el = document.getElementById('historyList');
     try {
     const t = (k, fb) => this.tMonitor(k, fb);
-    const hasRunning = this.runningTask && this.runningTask.status === 'RUNNING';
+    const hasRunning = this.runningTask && this._isActiveState(this.runningTask.status);
     const items = this.filteredHistoryItems;
     const hasHistory = items && items.length;
 
@@ -2015,7 +1419,7 @@ window.monitorRenderMixin = {
       if (hasRunning) html += '<div class="hist-section-label">' + this.esc(t('pastRuns')) + '</div>';
       html += '<div class="history-grid">';
       items.forEach(h => {
-        const runDirJs = this.escapeJsString(h.run_dir || '');
+        const runDirJs = this.esc(this.escapeJsString(h.run_dir || ''));
         const artifactOffline = h.artifact_available === false;
         html += '<div class="card history-card' + (artifactOffline ? ' history-artifact-offline' : '') + '">';
         html += '<div class="hist-card-head">';
@@ -2051,7 +1455,13 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
+    const search = el.querySelector('.hist-search');
+    const focused = search && document.activeElement === search;
+    const selection = focused ? [search.selectionStart, search.selectionEnd] : null;
+    if (search) search.remove();
     el.innerHTML = html;
+    const replacement = el.querySelector('.hist-search');
+    if (search && replacement) { replacement.replaceWith(search); if (focused) { search.focus({ preventScroll: true }); search.setSelectionRange(...selection); } }
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }
@@ -2130,7 +1540,7 @@ window.monitorRenderMixin = {
       html += '<pre class="m-config-pre">' + this.esc(snapshot.content) + '</pre></details>';
     }
     html += '<div class="m-modal-footer"><button class="btn btn-sm btn-secondary" @click="copyConfigContent()">' + this.esc(t('copyConfig')) + '</button>';
-    html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.escapeJsString(snapshot.run_dir || '') + '\')">' + this.esc(t('reuseConfig')) + '</button></div>';
+    html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.esc(this.escapeJsString(snapshot.run_dir || '')) + '\')">' + this.esc(t('reuseConfig')) + '</button></div>';
 
     content.innerHTML = html;
     this._currentSnapshot = snapshot;

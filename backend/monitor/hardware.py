@@ -116,10 +116,9 @@ def gpu_info(force: bool = False) -> dict | None:
     _start_sampler()
     if force:
         sample = _gpu_info_raw()
-        if sample is not None:
-            with _gpu_sample_lock:
-                _gpu_sample = sample
-            return sample
+        with _gpu_sample_lock:
+            _gpu_sample = sample
+        return sample
     with _gpu_sample_lock:
         if _gpu_sample is not None:
             return _gpu_sample
@@ -156,7 +155,7 @@ def _get_cpu_name() -> str:
     return _cpu_name_cache
 
 
-def _sys_info_raw() -> dict:
+def _sys_info_raw() -> dict | None:
     """CPU / RAM 使用率"""
     try:
         import psutil
@@ -171,11 +170,10 @@ def _sys_info_raw() -> dict:
             "ram_pct": mem.percent,
         }
     except Exception:
-        return {"cpu_name": "", "cpu_pct": 0, "ram_used_gb": 0,
-                "ram_total_gb": 0, "ram_pct": 0}
+        return None
 
 
-def system_info(force: bool = False) -> dict:
+def system_info(force: bool = False) -> dict | None:
     """Return system telemetry; see :func:`gpu_info` for ``force`` semantics."""
     global _sys_sample
     _start_sampler()

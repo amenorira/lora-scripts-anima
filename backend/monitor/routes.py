@@ -20,7 +20,7 @@ from backend.monitor.training import (
 )
 from backend.monitor.artifacts import (
     newest_previews, scan_history, read_train_log, _parse_toml_config,
-    list_output_files, enrich_model_files_with_loss, read_clean_log_lines,
+    list_output_files, enrich_model_files_with_loss,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
 from backend.monitor.monitor import _PROGRESS_FIELDS
@@ -386,7 +386,7 @@ async def delete_history_run(request: Request):
     if not record:
         return {"status": "error", "message": "Run directory not found / 目录不存在"}
     tid = record.get("task_id")
-    if tid and any(t.get("id") == tid and t.get("status") == "RUNNING" for t in tm.dump()):
+    if tid and any(t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"} for t in tm.dump()):
         return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
     if not await asyncio.to_thread(mark_run_deleted, run_dir):
         return {"status": "error", "message": "Failed to delete history / 删除历史失败"}
@@ -459,7 +459,9 @@ async def monitor_run_detail(run_dir: str = Query("")):
         latest_log = find_run_log_path(run_dir_path)
         if latest_log:
             try:
-                log_lines = read_clean_log_lines(latest_log)
+                page = read_log_slice(latest_log, limit=_LOG_DETAIL_TAIL_LINES, tail=True)
+                result["log_total"] = page["total"]
+                log_lines = page["lines"]
                 if log_lines:
                     progress = parse_log_progress(log_lines)
                     return log_lines, progress
@@ -469,7 +471,6 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     log_lines, progress = await asyncio.to_thread(_read_log_and_progress, abs_run_dir)
     if log_lines:
-        result["log_total"] = len(log_lines)
         result["log_lines"] = log_lines[-_LOG_DETAIL_TAIL_LINES:]
         for key in _PROGRESS_FIELDS:
             if key in progress and progress[key] is not None:
@@ -515,7 +516,7 @@ async def monitor_log_slice(
     if not run_dir and not task_id:
         return {"status": "error", "message": "run_dir or task_id is required"}
 
-    log_path = _resolve_monitor_log_path(run_dir, task_id)
+    log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
     if not log_path:
         return {"status": "error", "message": "Log file not found / 日志文件未找到"}
 
@@ -624,9 +625,9 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     # 并发读取文件列表 + TensorBoard loss series，再合并给模型文件注入 ckpt_loss
     files, tb_series = await asyncio.gather(
         asyncio.to_thread(list_output_files, str(artifact_dir)),
-        asyncio.to_thread(read_tensorboard_loss, run_dir=str(internal_dir)),
+        asyncio.to_thread(read_tensorboard_loss, downsample_to=0, run_dir=str(internal_dir)),
     )
-    enrich_model_files_with_loss(files, tb_series, str(internal_dir))
+    await asyncio.to_thread(enrich_model_files_with_loss, files, tb_series, str(internal_dir))
     return {
         "status": "success",
         "data": files,

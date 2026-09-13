@@ -215,7 +215,7 @@ class RealtimeFrontendContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client_source = Path("frontend/js/realtime.js").read_text(encoding="utf-8")
-        cls.monitor_source = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
+        cls.monitor_source = (Path("frontend/js/monitor-core.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
         cls.training_source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
         cls.tagger_source = Path("frontend/js/tagger.js").read_text(encoding="utf-8")
         cls.environment_source = Path("frontend/js/environment-core.js").read_text(encoding="utf-8")
@@ -225,6 +225,7 @@ class RealtimeFrontendContractTests(unittest.TestCase):
         script = r"""
 global.window = {};
 global.requestAnimationFrame = callback => callback();
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 const app = Object.assign(Object.create(mixin), {
@@ -617,6 +618,7 @@ app._applyTaskView('RUNNING');
         """等待启动（CREATED）也要显示终止按钮且不显示待命文案。"""
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
 const app = Object.assign({}, window.monitorRenderMixin, {
   esc: value => String(value),
@@ -682,6 +684,7 @@ process.stdout.write(JSON.stringify(app._realtimeCursors));
     def test_same_task_reuses_log_page_but_transport_resync_forces_reload(self):
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 const app = Object.assign(Object.create(mixin), {
@@ -742,6 +745,7 @@ process.stdout.write(JSON.stringify({reused, afterResync: app._logFullNeedsResyn
     def test_new_task_discards_previous_full_log_buffer(self):
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 const app = Object.assign(Object.create(mixin), {
@@ -808,6 +812,7 @@ process.stdout.write(JSON.stringify({
     def test_realtime_log_source_change_releases_stale_loading_state(self):
         script = r"""
 global.window = {};
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 const app = Object.assign(Object.create(mixin), {
@@ -857,6 +862,7 @@ global.fetch = async url => {
   requestedUrl = String(url);
   return {json: async () => ({status:'success', data:{offset:0, total:0, lines:[], match_indices:[]}})};
 };
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 const app = Object.assign(Object.create(mixin), {
@@ -905,6 +911,7 @@ const content = {
   querySelectorAll(selector) { return selector === '[data-preview-sort]' ? buttons : []; },
 };
 global.document = {getElementById(id) { return id === 'monitorTabContent' ? content : null; }};
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-core.js', 'utf8'));
 const mixin = window.monitorCoreMixin;
 let renders = 0;

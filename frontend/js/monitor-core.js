@@ -4,22 +4,27 @@
    ================================================================ */
 
 window.monitorCoreMixin = {
+  ...window.monitorLogCoreMixin,
   // ── State ──────────────────────────────────────────────
   monitorData: null,
+  selectedGpuIndex: 0,
+  previewsVersion: 0, trainParamsVersion: 0,
+  runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
-  previews: [], previewStep: 0, previewSortDir: 'asc', previewsLoading: false, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewSortDir: 'desc', previewsLoading: false, historyItems: [], runningTask: null,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
   configSnapshotOpen: false,
+  previewReference: null,
   logAutoScroll: true, logLines: [],
   logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
-  outputFiles: [], outputFilesLoading: false, outputFilesSelected: {},
+  outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {},
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
   _outputFilesKnownCount: 0,  // run-detail 首屏带回的输出文件计数（文件列表未加载时供 tab 徽标显示）
   outputSearch: '', outputFilter: 'all',
-  outputModelSortKey: 'loss', outputModelSortDir: 'asc',
+  outputModelSortKey: 'time', outputModelSortDir: 'desc',
   outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
@@ -116,12 +121,18 @@ window.monitorCoreMixin = {
       this._cancelPreviewMediaQueue();
       return;
     }
+    if (this.currentRoute !== 'monitor-dashboard' || this.monitorTab !== 'samples') return;
     const content = document.getElementById('monitorTabContent');
     if (content) this.schedulePreviewMediaLoads(content);
   },
 
   _cancelPreviewMediaQueue() {
     this._previewMediaGeneration++;
+    for (const item of this._previewMediaQueue) delete item.image.dataset.previewQueued;
+    if (this._previewMediaActive) delete this._previewMediaActive.dataset.previewQueued;
+    this._previewMediaActive = null;
+    if (this._previewMediaObserver) this._previewMediaObserver.disconnect();
+    this._previewMediaObserver = null;
     this._previewMediaQueue = [];
     if (this._previewMediaAbort) this._previewMediaAbort.abort();
     this._previewMediaAbort = null;
@@ -130,12 +141,23 @@ window.monitorCoreMixin = {
 
   schedulePreviewMediaLoads(root) {
     if (!this.weakNetworkMode || this._previewMediaPaused || !root) return;
-    const images = Array.from(root.querySelectorAll('img[data-preview-url]'));
-    for (const image of images) {
+    const enqueue = image => {
       const url = image.dataset.previewUrl;
-      if (!url || image.dataset.previewLoaded === '1' || image.dataset.previewQueued === '1') continue;
+      if (!url || image.dataset.previewLoaded === '1' || image.dataset.previewQueued === '1') return;
       image.dataset.previewQueued = '1';
       this._previewMediaQueue.push({ image, url });
+    };
+    if (!this._previewMediaObserver && typeof IntersectionObserver !== 'undefined') {
+      this._previewMediaObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) if (entry.isIntersecting) enqueue(entry.target);
+        this._drainPreviewMediaQueue();
+      }, { rootMargin: '320px' });
+    }
+    const images = Array.from(root.querySelectorAll('img[data-preview-url]'));
+    for (const image of images) {
+      if (image.dataset.previewLoaded === '1') continue;
+      if (this._previewMediaObserver) this._previewMediaObserver.observe(image);
+      else enqueue(image);
     }
     this._drainPreviewMediaQueue();
   },
@@ -146,6 +168,7 @@ window.monitorCoreMixin = {
     if (!next) return;
     const generation = this._previewMediaGeneration;
     this._previewMediaLoading = true;
+    this._previewMediaActive = next.image;
     const controller = new AbortController();
     this._previewMediaAbort = controller;
     try {
@@ -159,6 +182,7 @@ window.monitorCoreMixin = {
         this._previewMediaObjectUrls.push(objectUrl);
         next.image.src = objectUrl;
         next.image.dataset.previewLoaded = '1';
+        if (this._previewMediaObserver) this._previewMediaObserver.unobserve(next.image);
       }
     } catch (_) {
       // Cancellation and transient slow-link failures remain retryable on the
@@ -167,6 +191,7 @@ window.monitorCoreMixin = {
     } finally {
       if (generation !== this._previewMediaGeneration || this._previewMediaAbort !== controller) return;
       this._previewMediaAbort = null;
+      this._previewMediaActive = null;
       this._previewMediaLoading = false;
       if (!this._previewMediaPaused) this._drainPreviewMediaQueue();
     }
@@ -216,7 +241,12 @@ window.monitorCoreMixin = {
     if (!this.previewMetadataOpen) return;
     if (this.previewMetadataLoading) panel.textContent = this.t('monitor.loading');
     else if (this.previewMetadataError) panel.textContent = this.previewMetadataError;
-    else panel.textContent = this.previewMetadata ? JSON.stringify(this.previewMetadata, null, 2) : '';
+    else if (this.previewMetadata) {
+      const meta = this.previewMetadata;
+      let html = '<p>' + this.esc([meta.format, meta.width + ' × ' + meta.height].filter(Boolean).join(' · ')) + '</p><dl>';
+      for (const [key, value] of Object.entries(meta.png_text || {}).slice(0, 6)) html += '<dt>' + this.esc(key) + '</dt><dd>' + this.esc(String(value)) + '</dd>';
+      panel.innerHTML = html + '</dl><details><summary>' + this.esc(this.t('monitor.rawMetadata')) + '</summary><pre>' + this.esc(JSON.stringify(meta, null, 2)) + '</pre></details>';
+    } else panel.textContent = '';
   },
 
   _resetPreviewMetadata() {
@@ -234,6 +264,7 @@ window.monitorCoreMixin = {
     this._outputFilesRequestSeq++;
     this._outputFilesRunDir = runDir || '';
     this.outputFiles = [];
+    this.outputFilesVersion++;
     this.outputFilesSelected = {};
     this.outputFilesError = '';
     this.outputFilesLoading = false;
@@ -293,23 +324,27 @@ window.monitorCoreMixin = {
     this.monitorData.state = code;
     this.monitorData.state_label = this.statusText;
     this._prevState = code;
+    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   startTrainingStatePoll() {
     if (this._statePollTimer) return;
-    this._statePollTimer = setInterval(() => { void this._pollTrainingState(); }, 1500);
-    void this._pollTrainingState();
+    const poll = async () => {
+      await this._pollTrainingState();
+      this._statePollTimer = setTimeout(poll, document.hidden ? 10000 : this.liveTaskId ? 1500 : 5000);
+    };
+    this._statePollTimer = setTimeout(poll, 0);
   },
 
   async _pollTrainingState() {
     if (this._statePollInFlight) return;
     this._statePollInFlight = true;
     const requestedAt = Date.now();
+    let timeout;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
+      timeout = setTimeout(() => controller.abort(), 4000);
       const response = await fetch('/api/realtime/snapshot', { cache: 'no-store', signal: controller.signal });
-      clearTimeout(timeout);
       if (!response.ok) return;
       const body = await response.json();
       if (body.status !== 'success' || !body.data) return;
@@ -327,6 +362,7 @@ window.monitorCoreMixin = {
     } catch (_) {
       // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
     } finally {
+      clearTimeout(timeout);
       this._statePollInFlight = false;
     }
   },
@@ -360,6 +396,7 @@ window.monitorCoreMixin = {
       const status = finished ? finished.status : 'IDLE';
       const prevStatus = this._prevState;
       this.releaseLiveTask();
+      this._setMonitorRealtimeTask(null);
       this._applyTaskView(status);
       if (finished) this.handleTaskCompletion(prevStatus, finished.status);
       if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail();
@@ -419,6 +456,8 @@ window.monitorCoreMixin = {
     // Compact transport snapshots contain placeholder zeros, not progress.
     if (!hasMonitorDetail) return;
     const snapshotTaskId = next.active_task && next.active_task.id || active && active.id || '';
+    // Transport idle does not erase the run the user is still inspecting.
+    if (!snapshotTaskId && this.currentOutputRunDir && ['FINISHED', 'FAILED', 'TERMINATED'].includes(this.monitorData && this.monitorData.state)) return;
     if (this.liveTaskId && snapshotTaskId !== this.liveTaskId) return;
     const nextLogSourceKey = snapshotTaskId ? 'task:' + snapshotTaskId : '';
     const reusingFullLog = !!(
@@ -467,12 +506,14 @@ window.monitorCoreMixin = {
       this.lossSeries = Array.isArray(next.tensorboard_loss) ? next.tensorboard_loss : [];
       this.lossDataVersion++;
       this.trainParams = Array.isArray(next.train_params) ? next.train_params : [];
+      this.trainParamsVersion++;
       this.logLines = Array.isArray(next.log_lines) ? next.log_lines.slice(-this._logCap()) : [];
       this._logContentVersion++;
       this._logDirty = true;
       this._logFullNeedsResync = this._logFullNeedsResync || !reusingFullLog;
       const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
       this.previews = Array.isArray(next.previews) ? next.previews : [];
+      this.previewsVersion++;
       this._followLatestPreview(wasAtEnd);
     }
     const liveOutputRunDir = this.currentOutputRunDir;
@@ -489,6 +530,7 @@ window.monitorCoreMixin = {
   },
 
   resetRealtimeMonitorState() {
+    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
     const wasRunning = !!(
       (this.monitorData && this.monitorData.state === 'RUNNING')
       || this._monitorRealtimeTopic
@@ -516,10 +558,13 @@ window.monitorCoreMixin = {
     this.logFullLines = [];
     this.logFullOffset = 0;
     this.logFullTotal = 0;
+    this.logTotal = 0;
     this.logFullMatches = [];
     this._logFullSourceKey = '';
     this.trainParams = [];
+    this.trainParamsVersion++;
     this.previews = [];
+    this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
     this._cancelPreviewMediaQueue();
@@ -559,20 +604,16 @@ window.monitorCoreMixin = {
   },
 
   handleTaskCompletion(prevState, newState) {
-    if (prevState !== 'RUNNING' || newState === 'RUNNING') return;
-    const msg = newState === 'FINISHED'
-      ? this.t('monitor.trainCompleted')
-      : this.t('monitor.trainTerminated');
+    if (!['RUNNING', 'CREATED'].includes(prevState) || !['FINISHED', 'FAILED', 'TERMINATED'].includes(newState)) return;
+    const msg = this.t(newState === 'FINISHED' ? 'monitor.trainCompleted' : newState === 'FAILED' ? 'monitor.statusFailed' : 'monitor.trainTerminated');
     this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });
-    } else if ('Notification' in window && Notification.permission !== 'denied') {
-      Notification.requestPermission();
     }
     const origTitle = document.title;
     let flashCount = 0;
     const flashTimer = setInterval(() => {
-      document.title = flashCount % 2 === 0 ? '✅ ' + msg : origTitle;
+      document.title = flashCount % 2 === 0 ? (newState === 'FINISHED' ? '✅ ' : '⚠ ') + msg : origTitle;
       flashCount++;
       if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
     }, 800);
@@ -596,6 +637,7 @@ window.monitorCoreMixin = {
 
   handleRealtimeTaskLog(data) {
     if (!data || !data.data || this.selectedRunDir) return;
+    this._logEventVersion = (this._logEventVersion || 0) + 1;
     const logData = data.data;
     const newLines = logData.lines || [];
     const eventSourceKey = this._monitorRealtimeTopic || '';
@@ -642,9 +684,9 @@ window.monitorCoreMixin = {
         const k = this.logFullLines.length - cap;
         this.logFullLines.splice(0, k);
         this.logFullOffset += k;
-        this._logFullEvictK = k;
+        this._logFullEvictK += k;
       }
-      this._logFullSlide = !merged.replaced;
+      this._logFullSlide = !this._forceLogRebuild;
       if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'logs') {
         this.scheduleRender();
       }
@@ -661,8 +703,9 @@ window.monitorCoreMixin = {
     if (merged.replaced) this._forceLogRebuild = true;
     const cap = this._logCap();
     if (this.logLines.length > cap) {
-      this._logTrimK = this.logLines.length - cap;
-      this.logLines.splice(0, this._logTrimK);
+      const trimmed = this.logLines.length - cap;
+      this._logTrimK += trimmed;
+      this.logLines.splice(0, trimmed);
     }
     this._logContentVersion++;
     this._logDirty = true;
@@ -677,8 +720,8 @@ window.monitorCoreMixin = {
     if (!data) return;
     const hw = data;
 
-    if (hw.gpu) this.gpuInfo = hw.gpu;
-    if (hw.system) this.sysInfo = hw.system;
+    this.gpuInfo = hw.gpu || null;
+    this.sysInfo = hw.system || null;
 
     if (this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
@@ -720,33 +763,31 @@ window.monitorCoreMixin = {
         // 去重：重连后服务端若重放旧点，不把曲线追加成乱序或重复数据。
         if (series.points.length > 0 && Number(p.step) <= Number(series.points[series.points.length - 1].step)) continue;
         series.points.push(p);
+        if (!series.diagnostic_points) series.diagnostic_points = [];
+        series.diagnostic_points.push(p);
+        if (series.diagnostic_points.length > 120) series.diagnostic_points.shift();
         changed = true;
-        if (series.latest === null || p.value < series.min) series.min = p.value;
+        if (series.latest === null || p.value < series.min) { series.min = p.value; series.min_step = p.step; }
         if (series.latest === null || p.value > series.max) series.max = p.value;
         series.latest = p.value;
       }
 
       if (series.points.length > 5000) {
         series.points.splice(0, series.points.length - 5000);
-        series.min = Infinity;
-        series.max = -Infinity;
-        for (const p of series.points) {
-          if (p.value < series.min) series.min = p.value;
-          if (p.value > series.max) series.max = p.value;
-        }
         series.latest = series.points[series.points.length - 1].value;
       }
 
       if (this.monitorData) {
-        if (tag === 'loss/current' || tag === 'loss/average') {
-          const lastPt = newPoints[newPoints.length - 1];
-          this.monitorData.loss = lastPt.value.toFixed(6);
-        }
         if (tag === 'lr/unet') {
           const lastPt = newPoints[newPoints.length - 1];
           this.monitorData.lr = lastPt.value.toExponential ? lastPt.value.toExponential(4) : String(lastPt.value);
         }
       }
+    }
+
+    if (this.monitorData) {
+      const loss = this.lossSeries.find(s => s.tag === 'loss/average') || this.lossSeries.find(s => s.tag === 'loss/current');
+      if (loss && Number.isFinite(loss.latest)) this.monitorData.loss = loss.latest.toFixed(6);
     }
 
     if (changed) this.lossDataVersion++;
@@ -763,6 +804,8 @@ window.monitorCoreMixin = {
     if (now - this._lastRealtimePreviewRefreshAt < 500) return;
     this._lastRealtimePreviewRefreshAt = now;
     this.refreshPreviews();
+    if (this.monitorTab === 'outputs') void this.loadOutputFiles();
+    else this._outputFilesNeedsRefresh = true;
   },
 
   // ── Dashboard bootstrap + realtime subscriptions ───────
@@ -784,6 +827,24 @@ window.monitorCoreMixin = {
   },
   async refreshMonitorRealtimeDetail() {
     if (this.currentRoute !== 'monitor-dashboard') return;
+    const runDir = this.currentOutputRunDir;
+    if (!this.selectedRunDir && !this.liveTaskId && runDir) {
+      const generation = ++this._monitorRealtimeDetailGeneration;
+      try {
+        const response = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
+        const body = await response.json();
+        if (generation !== this._monitorRealtimeDetailGeneration || this.selectedRunDir || this.liveTaskId || this.currentOutputRunDir !== runDir) return;
+        if (body.status === 'success') {
+          this.applyRealtimeMonitorSnapshot({ monitor: Object.assign({}, body.data, {
+            detail: true, active_task: this.monitorData.active_task,
+          }) });
+          this._logFullNeedsResync = true;
+          this._outputFilesNeedsRefresh = true;
+          this.renderDashboard();
+        }
+      } catch (_) { this.toast(this.t('monitor.loadRunFailed'), 'error'); }
+      return;
+    }
     // 详情是 HTTP 读取，不要求 WS 存活：隧道弱网下 WS 可能长期不可用，
     // 而状态轮询仍在工作。socket 在线时传入它作为过期判据，离线时传 null。
     const socket = this.realtimeSocket && this.realtimeSocket.readyState === WebSocket.OPEN
@@ -835,269 +896,7 @@ window.monitorCoreMixin = {
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
     this._resetPreviewMetadata();
-  },
-
-  // ── Log helpers ────────────────────────────────────────
-  copyLogs() {
-    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
-    navigator.clipboard.writeText(lines.join('\n')).then(() => this.toast(this.t('common.copied')));
-  },
-  requestClearLogs() {
-    this.openConfirm(this.t('monitor.confirmClearLogsTitle'), this.t('monitor.confirmClearLogs'), () => this.clearLogs(), this.t('common.confirm'), { danger: true });
-  },
-  clearLogs() {
-    this.logLines = []; this._logContentVersion = 0;
-    this._renderedLogCount = 0; this._renderedLogFilterKey = '';
-    this._logDirty = true; this._logTrimK = 0; this._forceLogRebuild = true;
-    this.renderDashboard();
-  },
-
-  // 内存缓冲上限 / 分页大小（取自 constants.js LOG）
-  _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
-  _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
-
-  _tqdmProgressSignature(line) {
-    const match = String(line || '').match(/^\s*steps:\s+\d+%\|.*\|\s*(\d+)\s*\/\s*(\d+)(?=\s*\[)/i);
-    return match ? match[1] + '/' + match[2] : '';
-  },
-
-  _mergeRealtimeLogLines(target, incoming) {
-    const lines = Array.isArray(incoming) ? incoming : [];
-    let overlap = 0;
-    const maxOverlap = Math.min(target.length, lines.length);
-    for (let size = maxOverlap; size > 0; size--) {
-      let matches = true;
-      for (let index = 0; index < size; index++) {
-        if (target[target.length - size + index] !== lines[index]) { matches = false; break; }
-      }
-      if (matches) { overlap = size; break; }
-    }
-
-    let appended = 0;
-    let replaced = 0;
-    for (const line of lines.slice(overlap)) {
-      const signature = this._tqdmProgressSignature(line);
-      const lastIndex = target.length - 1;
-      if (signature && lastIndex >= 0 && signature === this._tqdmProgressSignature(target[lastIndex])) {
-        if (target[lastIndex] !== line) {
-          target[lastIndex] = line;
-          replaced++;
-        }
-        continue;
-      }
-      target.push(line);
-      appended++;
-    }
-    return { appended, replaced, overlap, changed: appended > 0 || replaced > 0 };
-  },
-
-  // ── 完整日志模式（后端分页）──────────────────────────────
-  /** 当前完整日志模式定位日志的 run_dir（历史）或 task_id（实时） */
-  _logSliceRunDir() { return this.selectedRunDir || null; },
-  _logSliceTaskId() {
-    if (this.selectedRunDir) return null;
-    if (this.monitorData && this.monitorData.active_task) return this.monitorData.active_task.id || null;
-    if (this.runningTask) return this.runningTask.id || null;
-    return this.taskId || null;
-  },
-  _currentLogSourceKey() {
-    const runDir = this._logSliceRunDir();
-    if (runDir) return 'run:' + runDir;
-    const taskId = this._logSliceTaskId();
-    return taskId ? 'task:' + taskId : '';
-  },
-  /** 是否存在可拉取的实时/历史日志源（无训练且非历史模式时为 false） */
-  _hasLogSource() { return !!this._currentLogSourceKey(); },
-
-  /** 切换 tail/full 模式 */
-  async setLogMode(mode) {
-    if (mode === this.logMode) return;
-    this.logMode = mode;
-    this._renderedLogCount = 0;
-    this._renderedLogFilterKey = '';
-    this._forceLogRebuild = true;
-    this._logFullSlide = false;
-    this._logFullEvictK = 0;
-    if (mode === 'full') {
-      // 进入完整日志：末页 + 跟随（实时训练随 WebSocket 增量滚动；历史停在末尾）
-      this.logAutoScroll = true;
-      this._logAtBottom = true;
-      this._logFullLoaded = true;       // setLogMode 自行拉取，标记已加载避免首屏重复拉
-      this._logFullNeedsResync = false;
-      this.logFullLoading = true;
-      this.logFullLines = [];
-      this.renderDashboard();           // 先渲染外壳 + Loading
-      await this.fetchLogSlice({ tail: true });
-      return;
-    }
-    // 切回 tail：恢复实时尾部缓冲视图
-    this.logAutoScroll = true;
-    this._logAtBottom = true;
-    this._logDirty = true;
-    this.renderDashboard();
-  },
-
-  /** 回到完整日志末尾并恢复跟随（实时增量刷新）。浏览历史页后用它回到 live 末尾。 */
-  followFullTail(opts) {
-    opts = opts || {};
-    if (!this._hasLogSource()) {
-      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource'), 'error');
-      return;
-    }
-    this.logAutoScroll = true;
-    this._logAtBottom = true;
-    this._logFullNeedsResync = true;    // 触发 resync：重拉末页（补回浏览期间的新行）
-    if (opts.fetchNow) {
-      this._logFullNeedsResync = false;
-      this._logFullLoaded = true;
-      this.fetchLogSlice({ tail: true, silent: !!opts.silent });
-      return;
-    }
-    this.renderDashboard();
-  },
-
-  /** 拉取完整日志分页：offset/tail/q 三选一驱动。
-   *  opts.silent=true 时若无可拉取日志源则静默返回（不弹错误提示），
-   *  用于进入日志标签时的自动末页拉取。用户主动点击工具栏按钮
-   *  不传 silent，仍会在无源时给出 toast 反馈。 */
-  async fetchLogSlice(opts) {
-    opts = opts || {};
-    const limit = this._logPageSize();
-    const runDir = this._logSliceRunDir();
-    const taskId = this._logSliceTaskId();
-    if (!runDir && !taskId) {
-      this.logFullLoading = false;
-      if (!opts.silent) this.toast(this.t('monitor.logSliceNoSource'), 'error');
-      return;
-    }
-    const requestSeq = ++this._logSliceRequestSeq;
-    const sourceKey = runDir ? ('run:' + runDir) : ('task:' + taskId);
-    const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
-    let offset = this.logFullOffset;
-    if (opts.offset !== undefined) offset = opts.offset;
-    else if (opts.matchIdx !== undefined && this.logFullMatches.length && q === this.logFullQuery) {
-      // 跳到指定匹配行所在页
-      const m = this.logFullMatches[opts.matchIdx];
-      offset = Math.floor(m / limit) * limit;
-      this.logFullMatchIdx = opts.matchIdx;
-    } else if (opts.tail) {
-      offset = 0; // tail 由后端计算
-    }
-    this.logFullLoading = true;
-    this.renderDashboard();
-    const params = new URLSearchParams();
-    if (runDir) params.set('run_dir', runDir);
-    else params.set('task_id', taskId);
-    params.set('offset', String(offset));
-    params.set('limit', String(limit));
-    params.set('q', q);
-    if (opts.tail) params.set('tail', 'true');
-    try {
-      const r = await fetch('/api/monitor/log-slice?' + params.toString());
-      const j = await r.json();
-      const currentRunDir = this._logSliceRunDir();
-      const currentTaskId = this._logSliceTaskId();
-      const currentSourceKey = currentRunDir ? ('run:' + currentRunDir) : (currentTaskId ? ('task:' + currentTaskId) : '');
-      if (requestSeq !== this._logSliceRequestSeq || sourceKey !== currentSourceKey) return;
-      if (j.status === 'success' && j.data) {
-        const d = j.data;
-        const nextLines = d.lines || [];
-        const nextMatches = d.match_indices || [];
-        if (opts.matchIdx !== undefined && nextMatches.length && !opts._matchJumpResolved) {
-          const idx = Math.max(0, Math.min(opts.matchIdx, nextMatches.length - 1));
-          const target = nextMatches[idx];
-          const pageEnd = d.offset + nextLines.length;
-          if (target < d.offset || target >= pageEnd) {
-            this.logFullMatches = nextMatches;
-            this.logFullMatchIdx = idx;
-            await this.fetchLogSlice({
-              offset: Math.floor(target / limit) * limit,
-              q,
-              _matchIdx: idx,
-              _matchJumpResolved: true,
-            });
-            return;
-          }
-        }
-        this.logFullOffset = d.offset;
-        this.logFullTotal = d.total;
-        this.logFullLines = nextLines;
-        this.logFullMatches = nextMatches;
-        this.logFullQuery = q;
-        this._logFullSourceKey = sourceKey;
-        // 更新 logTotal（live 模式首次探得）
-        if (!this.selectedRunDir) this.logTotal = d.total;
-        if (opts._matchIdx !== undefined) {
-          this.logFullMatchIdx = opts._matchIdx;
-        } else if (opts.matchIdx === undefined) {
-          // 非「跳匹配」操作：若当前 offset 落在某匹配所在页，定位到该页首个匹配
-          const cur = this.logFullMatches.findIndex(mi => mi >= d.offset && mi < d.offset + this.logFullLines.length);
-          this.logFullMatchIdx = cur;
-        } else {
-          this.logFullMatchIdx = Math.max(0, Math.min(opts.matchIdx, this.logFullMatches.length - 1));
-        }
-        this._forceLogRebuild = true;
-      } else {
-        if (!opts.silent) this.toast(j.message || this.t('monitor.logSliceError'), 'error');
-      }
-    } catch (e) {
-      if (requestSeq !== this._logSliceRequestSeq) return;
-      if (!opts.silent) this.toast(this.t('monitor.logSliceError'), 'error');
-    } finally {
-      if (requestSeq === this._logSliceRequestSeq) {
-        this.logFullLoading = false;
-        this.renderDashboard();
-      }
-    }
-  },
-
-  /** 完整日志搜索（全文件） */
-  searchFullLog(q) {
-    const query = (q !== undefined ? String(q) : '').trim();
-    this.logAutoScroll = false;
-    this._logAtBottom = false;
-    if (!query) {
-      this.logFullQuery = '';
-      this.logFullMatches = [];
-      this.logFullMatchIdx = -1;
-      this.fetchLogSlice({ q: '' });
-      return;
-    }
-    this.fetchLogSlice({ q: query, matchIdx: 0 });
-  },
-
-  /** 完整日志翻页 */
-  async logFullFirstPage() {
-    if (this.logFullLoading || this.logFullTotal <= 0) return;
-    this.logAutoScroll = false;
-    this._logAtBottom = false;
-    if (this.logFullOffset > 0) await this.fetchLogSlice({ offset: 0 });
-    requestAnimationFrame(() => this._scrollLogsToTop());
-  },
-  logFullLastPage() { this.followFullTail({ fetchNow: true }); },
-  logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
-  logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
-  /** 上一/下一匹配行 */
-  logFullPrevMatch() {
-    if (!this.logFullMatches.length) return;
-    let idx = this.logFullMatchIdx;
-    // 在当前页之前的最近匹配
-    if (idx < 0) idx = this.logFullMatches.length;
-    idx = idx - 1;
-    if (idx < 0) idx = this.logFullMatches.length - 1;
-    this.logAutoScroll = false; this._logAtBottom = false;
-    this.fetchLogSlice({ matchIdx: idx });
-  },
-  logFullNextMatch() {
-    if (!this.logFullMatches.length) return;
-    let idx = this.logFullMatchIdx + 1;
-    if (idx >= this.logFullMatches.length) idx = 0;
-    this.logAutoScroll = false; this._logAtBottom = false;
-    this.fetchLogSlice({ matchIdx: idx });
-  },
-  refreshFullLog() {
-    // 保持当前 offset 重新拉取（文件可能已增长；offset 会被后端 clamp 到 total）
-    this.fetchLogSlice({});
+    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
   },
 
   // ── 预览样本刷新 ────────────────────────────────────────
@@ -1122,6 +921,7 @@ window.monitorCoreMixin = {
       if (sourceRunDir !== this.currentOutputRunDir) return;
       if (j.status === 'success') {
         this.previews = j.data || [];
+        this.previewsVersion++;
         if (j.meta) {
           const target = this.currentArtifactData();
           target.artifact_available = j.meta.artifact_available;
@@ -1143,12 +943,14 @@ window.monitorCoreMixin = {
   //   - 否则保持当前选中（clamp 防越界）
   _followLatestPreview(wasAtEnd) {
     const n = this.previews.length;
-    if (n === 0) { this.previewStep = 0; return; }
+    if (n === 0) { this.previewStep = 0; if (this.closePreviewLightbox) this.closePreviewLightbox(); return; }
     if (wasAtEnd) {
       this.previewStep = n - 1;
     } else if (this.previewStep > n - 1) {
       this.previewStep = n - 1;
     }
+    const box = document.getElementById('previewLightbox');
+    if (box && box.classList.contains('open')) this._updatePreviewLightbox();
   },
 
   _previewDisplayIndices() {
@@ -1162,7 +964,11 @@ window.monitorCoreMixin = {
     const grid = content.querySelector('.m-samples-section .preview-grid');
     if (!grid) return false;
     const items = new Map(Array.from(grid.querySelectorAll('.preview-grid-item')).map(item => [Number(item.dataset.previewIndex), item]));
+    const headings = new Map(Array.from(grid.querySelectorAll('[data-preview-group]')).map(item => [item.dataset.previewGroup, item]));
+    const seen = new Set();
     for (const index of this._previewDisplayIndices()) {
+      const group = this._sampleMetadata(this.previews[index].name).stage;
+      if (!seen.has(group) && headings.has(group)) { grid.appendChild(headings.get(group)); seen.add(group); }
       const item = items.get(index);
       if (item) grid.appendChild(item);
     }
@@ -1172,6 +978,11 @@ window.monitorCoreMixin = {
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     return true;
+  },
+
+  _sampleMetadata(filename) {
+    const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
+    return match ? { stage: (match[1] ? 'Epoch ' : 'Step ') + Number(match[2]), prompt: 'Prompt ' + (Number(match[3]) + 1) } : { stage: '', prompt: '' };
   },
 
   setPreviewSort(dir) {
@@ -1253,6 +1064,14 @@ window.monitorCoreMixin = {
     this._logDirty = true;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
+    this.lossSeries = [];
+    this.lossDataVersion++;
+    this.trainParams = [];
+    this.trainParamsVersion++;
+    this.previews = [];
+    this.previewsVersion++;
+    this.runDetailLoading = true;
+    this.runDetailError = '';
     this._resetOutputFilesForRun(runDir);
     this.monitorTab = 'overview';
     this.monitorParamQuery = '';
@@ -1276,12 +1095,15 @@ window.monitorCoreMixin = {
       const j = await r.json();
       if (!isCurrent()) return;
       if (j.status === 'success') {
+        this.runDetailLoading = false;
         this.runDetailData = j.data;
         this._outputFilesRunDir = runDir;
         this.lossSeries = j.data.tensorboard_loss || [];
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
+        this.trainParamsVersion++;
         this.previews = j.data.previews || [];
+        this.previewsVersion++;
         this._outputFilesKnownCount = Number(j.data.output_count) || 0;
         // 历史记录进入时定位到最新样本（末尾）
         this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
@@ -1309,12 +1131,13 @@ window.monitorCoreMixin = {
         this._logAtBottom = true;
         this.renderDashboard();
       } else {
+        this.runDetailError = j.message || this.t('monitor.loadRunFailed');
         this.toast(j.message || this.t('monitor.loadRunFailed'));
       }
     } catch (e) {
-      if (isCurrent()) this.toast(this.t('monitor.runDetailError'));
+      if (isCurrent()) this.runDetailError = this.t('monitor.runDetailError');
     } finally {
-      if (isCurrent()) this.finishProgress();
+      if (isCurrent()) { this.runDetailLoading = false; this.renderDashboard(); this.finishProgress(); }
     }
   },
 
@@ -1327,8 +1150,10 @@ window.monitorCoreMixin = {
     this.lossSeries = [];
     this.lossDataVersion++;
     this.trainParams = [];
+    this.trainParamsVersion++;
     this.monitorParamQuery = '';
     this.previews = [];
+    this.previewsVersion++;
     this.previewStep = 0;
     this.outputFiles = [];
     this.outputFilesSelected = {};
@@ -1372,6 +1197,11 @@ window.monitorCoreMixin = {
 
   // ── Output Files ──────────────────────────────────────
   async loadOutputFiles() {
+    if (this.outputFilesLoading) {
+      this._outputFilesNeedsRefresh = true;
+      return;
+    }
+    this._outputFilesNeedsRefresh = false;
     const runDir = this.currentOutputRunDir;
     if (!runDir) {
       this._outputFilesRequestSeq++;
@@ -1390,7 +1220,9 @@ window.monitorCoreMixin = {
       if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
       if (j.status === 'success') {
         this.outputFiles = j.data || [];
-        this.outputFilesSelected = {};
+        const paths = new Set(this.outputFiles.map(file => file.path));
+        this.outputFilesSelected = Object.fromEntries(this.selectedOutputFiles.filter(path => paths.has(path)).map(path => [path, true]));
+        this._outputFilesKnownCount = this.outputFiles.length;
         this.outputFilesError = '';
         const target = this.currentArtifactData();
         target.artifact_available = true;
@@ -1413,7 +1245,7 @@ window.monitorCoreMixin = {
     } finally {
       if (requestSeq === this._outputFilesRequestSeq && runDir === this.currentOutputRunDir) {
         this.outputFilesLoading = false;
-        this._outputsDirty = true;
+        this.outputFilesVersion++;
         this.renderDashboard();
       }
     }
@@ -1425,19 +1257,16 @@ window.monitorCoreMixin = {
     } else {
       this.outputFilesSelected[path] = true;
     }
-    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
   selectAllOutputFiles() {
     this._visibleOutputFiles().forEach(f => { this.outputFilesSelected[f.path] = true; });
-    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
   deselectAllOutputFiles() {
     this.outputFilesSelected = {};
-    this._outputsListDirty = true;
     this.renderDashboard();
   },
 
@@ -1447,7 +1276,7 @@ window.monitorCoreMixin = {
 
   // tab 徽标计数：文件列表已加载用真实长度，否则用 run-detail 首屏带回的计数
   get outputTabCount() {
-    return this.outputFiles.length || this._outputFilesKnownCount || 0;
+    return this.outputFilesError ? 0 : (this.outputFiles.length || this._outputFilesKnownCount || 0);
   },
 
   _visibleOutputFiles() {
@@ -1469,6 +1298,7 @@ window.monitorCoreMixin = {
       const dir = direction === 'desc' ? -1 : 1;
       let va, vb;
       if (key === 'loss') {
+        if (a.ckpt_loss == null || b.ckpt_loss == null) return (a.ckpt_loss == null ? 1 : 0) - (b.ckpt_loss == null ? 1 : 0);
         va = (a.ckpt_loss == null) ? Infinity : a.ckpt_loss;
         vb = (b.ckpt_loss == null) ? Infinity : b.ckpt_loss;
       } else if (key === 'time') {
@@ -1517,12 +1347,6 @@ window.monitorCoreMixin = {
   setOutputSearch(value) {
     this.outputSearch = String(value || '');
     this.renderDashboard();
-    requestAnimationFrame(() => {
-      const input = document.querySelector('.m-output-search-input');
-      if (!input) return;
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
   },
 
   // 用隐藏 <a download> 触发下载，避免 window.open 被拦截 / 返回 JSON 错误页
@@ -1539,17 +1363,20 @@ window.monitorCoreMixin = {
     const runDir = this.currentOutputRunDir;
     if (!runDir) return;
     const selected = this.selectedOutputFiles;
+    if (selected.length === 1) { this.downloadSingleOutput(selected[0]); return; }
     if (!selected.length) {
       this.toast(this.t('monitor.selectFilesFirst'));
       return;
     }
     const filesParam = selected.map(f => encodeURIComponent(f)).join(',');
+    this.toast(this.t('monitor.preparingDownload'));
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir) + '&files=' + filesParam);
   },
 
   async downloadAllOutputs() {
     const runDir = this.currentOutputRunDir;
     if (!runDir) return;
+    this.toast(this.t('monitor.preparingDownload'));
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));
   },
 

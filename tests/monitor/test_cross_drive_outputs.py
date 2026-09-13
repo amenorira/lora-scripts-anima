@@ -423,8 +423,8 @@ class CrossDriveFrontendContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.training_source = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
         cls.training_toml_source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-        cls.monitor_source = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
-        cls.render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
+        cls.monitor_source = (Path("frontend/js/monitor-core.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
+        cls.render_source = (Path("frontend/js/monitor-render.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
         cls.css_source = Path("frontend/css/app.css").read_text(encoding="utf-8")
         cls.zh = json.loads(Path("frontend/i18n/zh-CN.json").read_text(encoding="utf-8"))
         cls.en = json.loads(Path("frontend/i18n/en-US.json").read_text(encoding="utf-8"))
