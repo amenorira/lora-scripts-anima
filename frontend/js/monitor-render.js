@@ -156,7 +156,7 @@ window.monitorRenderMixin = {
   _sysChip(sys, t) {
     const fullName = sys.cpu_name || t('cpu');
     let html = '<div class="m-res-chip" data-res="sys">';
-    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">CPU</span>';
+    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('cpu', t('cpu'), sys.cpu_pct, 'cpu-pct');
     html += this._resMeterHtml('ram', t('ram'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
@@ -176,7 +176,7 @@ window.monitorRenderMixin = {
       html += '<select class="m-gpu-select" aria-label="GPU" @change="selectedGpuIndex=Number($event.target.value);renderDashboard()">';
       for (const device of gpu.gpus) html += '<option value="' + device.index + '"' + (device.index === gpu.index ? ' selected' : '') + '>GPU ' + device.index + ' · ' + this.esc(device.name) + '</option>';
       html += '</select>';
-    } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">GPU</span>';
+    } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('gpu', t('gpuLoad'), loadPct, 'load-pct');
     html += this._resMeterHtml('vram', t('vramUsed'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
@@ -203,7 +203,7 @@ window.monitorRenderMixin = {
       const device = gpu.gpus.find(item => item.index === this.selectedGpuIndex) || gpu.gpus[0];
       gpu = Object.assign({}, device, { gpus: gpu.gpus });
     }
-    const localeKey = String(locale || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
+    const localeKey = String(locale || '') + ':' + String(sys && sys.cpu_name || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
     if (!bar.firstElementChild || bar.dataset.locale !== localeKey) {
       bar.dataset.locale = localeKey;
       bar.innerHTML = this._resbarHtml(gpu, sys, t);
