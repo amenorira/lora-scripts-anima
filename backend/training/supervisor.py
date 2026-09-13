@@ -121,21 +121,22 @@ def _build_train_env(
     env["ANIMA_OUTPUT_DIR"] = artifact_dir
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TASK_ID"] = task_id
+    env["ANIMA_TENSORBOARD_DIR"] = str((Path(run_dir or artifact_dir) / "log").resolve())
     repo_root = str(REPO_ROOT)
     vendor_root = str(REPO_ROOT / "vendor")
     existing_pypath = env.get("PYTHONPATH", "")
+    startup_hooks = str(REPO_ROOT / "tools" / "python_startup")
 
     if engine.uses_sd_scripts_hooks:
         env["LORA_SCRIPTS_TRUE_LR_LOGGING"] = "1"
         # sd-scripts needs the startup hook and vendored LyCORIS package.
-        startup_hooks = str(REPO_ROOT / "tools" / "python_startup")
         new_paths = [startup_hooks, vendor_root, repo_root]
     else:
         # Musubi imports a package from vendor/musubi-tuner/src. Do not place
         # vendor/ as a whole before it: sd-scripts also owns a top-level
         # library package and can shadow musubi imports.
         env.pop("LORA_SCRIPTS_TRUE_LR_LOGGING", None)
-        new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [repo_root]
+        new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [startup_hooks, repo_root]
 
     for p in existing_pypath.split(os.pathsep):
         if not p or p == vendor_root or p in new_paths:

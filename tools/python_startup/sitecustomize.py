@@ -51,6 +51,12 @@ def _install_bitsandbytes_windows_compat() -> None:
 _install_bitsandbytes_windows_compat()
 
 
+if os.environ.get("ANIMA_TENSORBOARD_DIR"):
+    from tools.python_startup.tensorboard_layout import install_import_hook as install_tb_layout
+
+    install_tb_layout()
+
+
 if os.environ.get("LORA_SCRIPTS_TRUE_LR_LOGGING") == "1":
     from tools.python_startup.lr_logging import install_import_hook
 

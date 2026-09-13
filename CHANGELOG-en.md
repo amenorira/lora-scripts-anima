@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.18.3 - 2026-09-13
+
+This release fixes disconnect errors caused by the server cache policy and standardizes the TensorBoard log directory layout.
+
+### Improvements and Fixes
+
+- Moved cache-policy handling directly onto ASGI response headers so normal client disconnects are no longer misreported as missing-response errors.
+- Explicitly configured the TensorBoard log directory for managed training and added a startup hook that keeps event-file paths consistent, allowing the training monitor to discover logs reliably.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.2...v2.18.3)
+
 ## v2.18.2 - 2026-09-13
 
 This release improves hardware and diagnostic information in the training monitor and expands the LoRA-Muon optimizer documentation.
