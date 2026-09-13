@@ -8,8 +8,10 @@ import fastapi.middleware.cors as fastapi_cors
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders, URL
 from starlette.exceptions import HTTPException
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
@@ -137,8 +139,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
 
-@app.middleware("http")
-async def apply_cache_policy(request, call_next):
+def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     """按资源类型分级缓存策略：
 
     - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
@@ -147,22 +148,44 @@ async def apply_cache_policy(request, call_next):
       不版本化、保持 revalidate，由它引用新的版本化 URL
     - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
     """
-    response = await call_next(request)
-    path = request.url.path
+    path = url.path
     if path in _IMMUTABLE_PREVIEW_PATHS:
-        return response
+        return
     if path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-cache, max-age=0"
+        headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.startswith("/anima-ui/"):
-        if request.url.query:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        if url.query:
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
         else:
-            response.headers["Cache-Control"] = "no-cache, max-age=0"
+            headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.endswith((".png", ".ico", ".svg", ".woff2")):
-        response.headers["Cache-Control"] = "public, max-age=3600"
+        headers["Cache-Control"] = "public, max-age=3600"
     elif path.endswith((".js", ".css")):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    return response
+        headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+
+
+class CachePolicyMiddleware:
+    """直接修改响应头，避免 BaseHTTPMiddleware 将正常断连报为无响应异常。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        url = URL(scope=scope)
+
+        async def send_with_cache_policy(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                apply_cache_policy(url, MutableHeaders(scope=message))
+            await send(message)
+
+        await self.app(scope, receive, send_with_cache_policy)
+
+
+app.add_middleware(CachePolicyMiddleware)
 
 
 app.include_router(api_router, prefix="/api")
