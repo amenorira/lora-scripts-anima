@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.18.1 - 2026-09-13
+
+This release fixes training-monitor state and log synchronization issues and improves monitor interactions.
+
+### Improvements and Fixes
+
+- Added an incremental log index to improve pagination, search, and tail reads for large training logs, while fixing realtime log synchronization and progress-line normalization.
+- Fixed monitor state updates after reconnects, training completion, and missing telemetry so stale or invalid values are not retained.
+- Corrected checkpoint-loss matching and fallback behavior, with explicit loss-source and approximate-match metadata.
+- Improved log, artifact, and interaction rendering in the monitor, split out the log module, and added frontend and backend regression coverage.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.0...v2.18.1)
+
 ## v2.18.0 - 2026-09-12
 
 This release improves the timestep distribution preview and monitor lifecycle, and reorganizes the test and development-tool structure.
