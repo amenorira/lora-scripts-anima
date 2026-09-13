@@ -805,7 +805,7 @@ window.monitorRenderMixin = {
     html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
     html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
-    html += '</div><details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary><div class="m-diagnostic-metrics">';
+    html += '</div><div class="m-diagnostic-metrics">';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
       ['volatility', t('lossVolatility'), t('lowerIsMoreStable')],
@@ -816,6 +816,7 @@ window.monitorRenderMixin = {
       html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
     });
     html += '</div>';
+    html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
     html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
     html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
     html += '<div class="m-diagnostic-method">';
@@ -878,7 +879,7 @@ window.monitorRenderMixin = {
     const rules = this._trainingDiagnosticRules();
     if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
     if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
-    if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : (diagnostic.gapFromBestPct >= 10 ? 'danger' : (diagnostic.gapFromBestPct <= 2 ? 'ok' : 'neutral'));
+    if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : 'neutral';
   },
 
   _previewThumbImageHtml(preview) {
