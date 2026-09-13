@@ -16,7 +16,7 @@
 </main>
 <script>
 (async () => {
-  const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/zh-CN.json').then(r=>r.json())]);
+  const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/zh-CN.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
   document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
   const response = data => ({json:async()=>({status:'success',data}),ok:true});

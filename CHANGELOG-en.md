@@ -6,6 +6,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.18.2 - 2026-09-13
+
+This release improves hardware and diagnostic information in the training monitor and expands the LoRA-Muon optimizer documentation.
+
+### Improvements and Fixes
+
+- The resource bar now shows complete CPU and GPU names and refreshes correctly when hardware information changes.
+- Refined training-diagnostic wording and metric descriptions to present window statistics as trend references rather than conclusions about generated-image quality.
+
+### Documentation
+
+- Reworked the bilingual LoRA-Muon guide with its differences from Muon, update mechanics, parameter ranges, learning-rate calibration, network settings, and compatibility limits.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.1...v2.18.2)
+
 ## v2.18.1 - 2026-09-13
 
 This release fixes training-monitor state and log synchronization issues and improves monitor interactions.

@@ -156,7 +156,7 @@ window.monitorRenderMixin = {
   _sysChip(sys, t) {
     const fullName = sys.cpu_name || t('cpu');
     let html = '<div class="m-res-chip" data-res="sys">';
-    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">CPU</span>';
+    html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('cpu', t('cpu'), sys.cpu_pct, 'cpu-pct');
     html += this._resMeterHtml('ram', t('ram'), sys.ram_pct, 'ram-pct', sys.ram_used_gb.toFixed(1) + '/' + sys.ram_total_gb.toFixed(1) + 'G', 'ram-text');
@@ -176,7 +176,7 @@ window.monitorRenderMixin = {
       html += '<select class="m-gpu-select" aria-label="GPU" @change="selectedGpuIndex=Number($event.target.value);renderDashboard()">';
       for (const device of gpu.gpus) html += '<option value="' + device.index + '"' + (device.index === gpu.index ? ' selected' : '') + '>GPU ' + device.index + ' · ' + this.esc(device.name) + '</option>';
       html += '</select>';
-    } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">GPU</span>';
+    } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
     html += '<div class="m-res-stats">';
     html += this._resMeterHtml('gpu', t('gpuLoad'), loadPct, 'load-pct');
     html += this._resMeterHtml('vram', t('vramUsed'), vramPct, 'vram-pct', (gpu.vram_used_mb / 1024).toFixed(1) + '/' + (gpu.vram_total_mb / 1024).toFixed(1) + 'G', 'vram-text');
@@ -203,7 +203,7 @@ window.monitorRenderMixin = {
       const device = gpu.gpus.find(item => item.index === this.selectedGpuIndex) || gpu.gpus[0];
       gpu = Object.assign({}, device, { gpus: gpu.gpus });
     }
-    const localeKey = String(locale || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
+    const localeKey = String(locale || '') + ':' + String(sys && sys.cpu_name || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
     if (!bar.firstElementChild || bar.dataset.locale !== localeKey) {
       bar.dataset.locale = localeKey;
       bar.innerHTML = this._resbarHtml(gpu, sys, t);
@@ -805,7 +805,7 @@ window.monitorRenderMixin = {
     html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
     html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
-    html += '</div><details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary><div class="m-diagnostic-metrics">';
+    html += '</div><div class="m-diagnostic-metrics">';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
       ['volatility', t('lossVolatility'), t('lowerIsMoreStable')],
@@ -816,6 +816,7 @@ window.monitorRenderMixin = {
       html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
     });
     html += '</div>';
+    html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
     html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
     html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
     html += '<div class="m-diagnostic-method">';
@@ -878,7 +879,7 @@ window.monitorRenderMixin = {
     const rules = this._trainingDiagnosticRules();
     if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
     if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
-    if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : (diagnostic.gapFromBestPct >= 10 ? 'danger' : (diagnostic.gapFromBestPct <= 2 ? 'ok' : 'neutral'));
+    if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : 'neutral';
   },
 
   _previewThumbImageHtml(preview) {

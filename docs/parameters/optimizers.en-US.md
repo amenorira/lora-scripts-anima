@@ -45,7 +45,7 @@ For few-shot character training, comparing **AdamW8bit, CAME, and StableAdamW** 
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Supports internal warmup, but this project leaves `warmup_steps=0`; not a first choice for short runs |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
 | Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Anima LoRA only; uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
-| LoRA-Muon | Joint updates for the two LoRA factor matrices | Anima LoRA only; uses a different LR scale from AdamW and needs separate calibration |
+| LoRA-Muon | Spectral low-rank optimization designed for standard LoRA factor pairs | Supports only `anima-lora` with `networks.lora_anima`; incompatible with LoRA+ and LyCORIS networks such as LoKr and LoHa; requires separate learning-rate calibration |
 | Adan | Comparison when you want features to form in fewer steps | Converges more aggressively; set the LR below the AdamW baseline; uses three betas |
 | AdEMAMix | Comparison for long runs or visibly noisy gradients | Benefit of the slow moving average is uncertain in short runs; alpha and ramp lengths should match the training length |
 | AdEMAMix8bit | AdEMAMix when optimizer-state memory is tight | Differs from the full-precision version mainly in state quantization |
@@ -78,7 +78,7 @@ When training Anima DiT blocks only, start from the engineering baselines below.
 | AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Official Anima rank-32 baseline; 8-bit and paged builds keep the same LR semantics |
 | StableAdamW | `2e-5` | Same scale as AdamW first; isolate the stabilized updates |
 | Muon (`match_rms_adamw`) | `2e-5` | Matches AdamW update RMS by matrix size; this is not an Anima-tuned optimum |
-| LoRA-Muon | `0.02` | Different LR scale; the paper's `0.1` was tested on a small Transformer, so this project uses `0.02` as a conservative engineering starting point |
+| LoRA-Muon | `0.02` | An experimental Anima starting point chosen by this project. The paper reports `0.1` as the best tested value in a TinyShakespeare Transformer sweep; that result is not an Anima recommendation |
 | CAME | `1.5e-5` | CAME's own guidance is roughly `0.5`–`0.9`× AdamW; this is a ported start, not an Anima-tuned optimum |
 | Adan | `1e-5` | Larger effective step than AdamW at the same LR; start at `0.5`× the baseline |
 | AdEMAMix / AdEMAMix8bit | `2e-5` | The paper keeps Adam-scale learning rates; 8-bit keeps the same LR semantics |
@@ -98,7 +98,7 @@ SDXL keeps its own generic baselines: `1e-4` for AdamW/StableAdamW, `1e-4` for C
 
 When a character locks in, colors bleed, or prompt adherence drops too early, lower the learning rate or reduce training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
 
-Do not calibrate LoRA-Muon from a single LR. For Anima, keep the data, seed, `network_dim/network_alpha`, scheduler, and total step count fixed, then run a coarse sweep from low to high: `2e-5`, `5e-5`, `1e-4`, `2e-4`, `5e-4`, `1e-3`, `2e-3`, `5e-3`, `1e-2`, and `2e-2`. If neighboring runs are close, refine around the best interval. `5e-2` and `0.1` are optional aggressive or paper-scale reproduction points, not defaults. Short runs are only useful for rejecting ranges that are clearly too small or too large; choose the final value using previews, the loss curve, and overfitting behavior.
+LoRA-Muon requires its own learning-rate calibration. This project uses `0.02` as an experimental Anima starting point, not as a known optimum. For the first comparison, keep the dataset, seed, rank, alpha, scheduler, and step count fixed, and test values below and above `0.02` by multiplicative steps. Use short previews to reject ranges that clearly underfit, run hot, or become unstable, then refine around the better interval. The paper's `0.1` result comes from a TinyShakespeare language-model experiment and should not be used as the Anima default.
 
 <!-- doc-anchor: scheduler-warmup -->
 ### LR scheduler and warmup
@@ -130,7 +130,7 @@ Higher betas smooth updates but respond slower to new gradients. In practice tun
 <!-- doc-anchor: weight-decay -->
 ### Weight decay
 
-For the optimizers covered here, this trainer defaults `weight_decay` to `0.01` for AdamW/AdamW8bit/PagedAdamW8bit and to `0` for CAME, StableAdamW, and Muon. PyTorch Muon itself defaults to `0.1`; this trainer explicitly overrides it to `0` as a LoRA starting point, and the field remains editable.
+For the optimizers covered here, this trainer starts AdamW, AdamW8bit, and PagedAdamW8bit at `weight_decay=0.01`, and CAME, StableAdamW, Muon, and LoRA-Muon at `weight_decay=0`. PyTorch Muon itself defaults to `0.1`; this trainer explicitly overrides it to `0` as a LoRA starting point, and the field remains editable.
 
 Character LoRA capacity is limited; avoid aggressive weight decay without side-by-side evidence. Testing `weight_decay=0` on AdamW8bit is a single-variable experiment: keep data, steps, and everything else unchanged.
 
@@ -165,34 +165,85 @@ For a first comparison, swap AdamW8bit for Muon and keep data, rank, alpha, sche
 <!-- doc-anchor: lora-muon-options -->
 ### LoRA-Muon options
 
-LoRA-Muon is a separate optimizer designed specifically for LoRA factor matrices, not a special configuration of Muon. Muon generally optimizes a two-dimensional parameter matrix as a whole; in LoRA training, `lora_down` and `lora_up` are the two low-rank factors that jointly form the update, while native Muon processes them separately.
+#### How it differs from Muon
 
-LoRA-Muon treats the two factors as a pair. It uses the opposite factor's Gram matrix to precondition the current factor update, then applies a matrix-sign calculation. This makes the update computation use the relationship between the two factors, but does not guarantee better results on every dataset or training setup.
+A LoRA module contains two factors, `lora_down` and `lora_up`. The model sees their composed weight update:
 
-| | Muon | LoRA-Muon |
+\[
+\Delta W = \text{lora\_up}\times\text{lora\_down}
+\]
+
+Many different factor values can represent the same `ΔW`. For example, multiplying one factor by two and dividing the other by two leaves the composed update unchanged.
+
+Standard Muon treats `lora_down` and `lora_up` as separate parameter matrices and independently computes momentum and orthogonalized updates for each one. As a result, changing how the same `ΔW` is distributed between the two factors can change the update applied to the composed weight.
+
+LoRA-Muon instead starts from the geometry of the composed low-rank weight update and maps that update back to the two factors. It is not a Muon configuration option; it is a separate optimizer derived for LoRA's factorized structure. For factors satisfying the paper's full-column-rank assumption, its ideal weight-space update is gauge-invariant: invertibly transformed factor pairs representing the same `ΔW` induce the same composed update. The implementation approximates that theoretical update with Gram regularization, finite matrix iterations, and numerical safeguards.
+
+| Comparison | Muon | LoRA-Muon |
 | --- | --- | --- |
-| Update target | Two-dimensional parameter matrices | The two LoRA factor matrices |
-| `lora_down` / `lora_up` | Processed separately | Considered jointly |
-| Main matrix operations | Momentum and orthogonalization | Factor coupling, Gram whitening, and matrix sign |
-| Learning-rate scale | Can use `match_rms_adamw` to match AdamW update RMS | Different from AdamW; calibrate separately |
+| Optimization target | Each LoRA factor independently | The low-rank weight update formed by the factor pair |
+| `lora_down` / `lora_up` | Updated separately | Used as a matched pair |
+| Equivalent factor transformations | Can change the induced weight-space update | Under the theoretical assumptions, the ideal update is invariant to equivalent factor representations |
+| Main matrix operations | Momentum and matrix orthogonalization | Gram inverse roots, whitening, matrix sign, and factor coupling |
+| Learning-rate scale | `match_rms_adamw` can approximately match AdamW update RMS | Requires separate calibration; AdamW values do not transfer directly |
+| Optimizer state | One first-moment state per parameter | One first-moment state per LoRA factor; no second-moment state |
 
-For most users, `learning_rate` is the main parameter to tune. Keep `momentum`, `ns_steps`, and `inv_sqrt_steps` at their defaults. Enable `gauge_rebalance` only when you are testing factor rebalancing. These UI fields are passed through `optimizer_args`, not emitted as top-level TOML keys.
+This structure does not guarantee that LoRA-Muon will outperform AdamW8bit or Muon on every dataset. The paper evaluates TinyShakespeare Transformer language models and does not provide direct Anima or diffusion-LoRA results.
 
-- **Learning rate** (`learning_rate`, paper setting `0.1`; Anima engineering starting point `0.02`): controls how far the LoRA update moves per step, not a per-parameter change limit for `lora_up` or `lora_down`. Larger values learn faster but overfit or destabilize more easily; smaller values are steadier but train more slowly. Start around `0.02` for Anima and tune it with the multi-point sweep above; the paper's `0.1` was tested only on a small Transformer and should not be treated as the Anima default.
-- **Why AdamW's value does not carry over**: AdamW multiplies the learning rate elementwise, so it means "how far each parameter moves". LoRA-Muon first computes an update direction and then steps along it, so the learning rate means "how far the whole update moves". The two are not the same unit: `2e-5` and `1e-4` usually produce almost no visible update in LoRA-Muon, while `1e-3` to `2e-2` is the range where changes become visible — not a fixed rule, so check it against your dataset and rank.
-- **Mechanics** (optional reading): momentum is first rescaled by the opposite factor's Gram inverse root (whitening), the matrix-sign step then gives the update direction, and `η` scales it. The paper calls `η` the trust-region radius: the update budget of the composed weight along the spectral steepest-descent direction, split in half between the two factor paths — so the actual factor changes do not equal `η` directly.
-- **Momentum** (`momentum`, default `0.9`): first-moment gradient EMA; the update draws on recent gradient directions, not only the current step's gradient. Higher values produce smoother updates but react more slowly to new gradients.
-- **Matrix-sign iterations** (`ns_steps`, default `8`): Polar Express / Newton-Schulz steps used to approximate the matrix-sign direction. More steps usually improve the approximation but increase compute.
-- **Gram inverse-root iterations** (`inv_sqrt_steps`, constructor and paper default `7`): controls LoRA-factor whitening accuracy; whitening rescales the factor's directions by its Gram matrix.
-- **Numerical guards** (`msign_eps=1e-20`, `inv_sqrt_eps=1e-5`, `inv_sqrt_gamma=1.001`): control matrix-sign normalization, Gram regularization, and inverse-root damping. Keep them at their defaults unless a reproducible numerical issue justifies a change.
-- **Factor rebalance** (`gauge_rebalance`, off by default): the same LoRA update can be represented by many different down/up scale pairs, and the two scales can drift far apart during training. When enabled, the optimizer periodically rebalances them without changing the update the pair produces, and rescales the momentum state in the opposite direction.
-- **Rebalance controls** (`gauge_rebalance_alpha=1`, `gauge_rebalance_interval=1`, `gauge_power_steps=2`): control rebalance strength, frequency, and spectral-norm estimation steps; they are shown and applied only when `gauge_rebalance` is enabled.
-- **Weight decay** (`weight_decay`, default `0`): uses split decoupled decay and requires `learning_rate * weight_decay < 1`.
-- **Global gradient clipping** (`max_grad_norm`, Anima UI starting point `0`): this is an external trainer-side global L2 clip applied before `optimizer.step`, not a LoRA-Muon constructor argument, and it is absent from the paper algorithm. `0` disables it; you can still enter a positive value if a run shows abnormal gradient spikes.
+#### How an update is computed
 
-`network_dim` and `network_alpha` **do not need to be equal**. `network_dim` sets the rank, while `network_alpha / network_dim` sets the forward LoRA branch scale; `alpha=dim` only makes that scale `1`. The optimizer only requires the paired `lora_down` and `lora_up` rank dimensions to match. When LoRA-Muon is selected, the Anima UI recommends `dim=16, alpha=16` for untouched fields. Compared with `32/32`, LoRA parameters and first-moment state are roughly halved, while Gram-related compute grows quadratically with rank, making rank 16 a better speed/resource starting point. This is not the global default for every Anima LoRA, and explicit manual, imported, or saved values are preserved.
+Each optimizer step roughly follows this sequence:
 
-The implementation supports Linear LoRA and the Conv LoRA shapes used by Anima, performs matrix operations in FP32 for FP16/BF16 parameters, and batches Gram inverse-root work by compatible device, dtype, and rank. For a first experiment, start from the UI recommendations and compare learning rate separately; `gauge_rebalance` is off by default, so test it separately when needed.
+1. Compute an exponential moving average of the gradient for each LoRA factor.
+2. Compute an inverse square root of the opposite factor's Gram matrix and use it to rescale the current factor's directions. This rescaling is referred to as whitening.
+3. Apply the matrix-sign operation to the whitened momentum, followed by the second Gram inverse-root factor required by the update.
+4. Use the learning rate `η` as the overall first-order weight-space update budget and split that budget evenly between the two factor directions.
+
+The paper calls `η` the trust-region radius. It bounds the spectral norm of the first-order composed weight update; it is not a maximum elementwise change for either `lora_down` or `lora_up`.
+
+#### Parameter reference
+
+| Parameter | Passed as | Default | Accepted values | Effect and recommendation |
+| --- | --- | ---: | --- | --- |
+| `learning_rate` | Top-level training field; passed to the constructor as `lr` | Anima automatic recommendation: `0.02`; constructor: `0.1` | Finite number `≥ 0` | Controls the overall update scale. Tune this first; do not copy an AdamW learning rate directly |
+| `weight_decay` | Common UI field; ultimately passed as an optimizer argument | `0` | Finite number `≥ 0`; also requires `learning_rate * weight_decay < 1` | Uses the paper's split decoupled decay rule. Keep it at `0` unless a controlled comparison supports changing it |
+| `momentum` | `optimizer_args` | `0.9` | `0 ≤ momentum < 1` | Exponential moving average of gradients. Higher values are smoother but react more slowly |
+| `ns_steps` | `optimizer_args` | `8` | Integer `1–8` | Number of Polar Express / Newton–Schulz matrix-sign iterations. Lower values reduce compute but give a coarser approximation |
+| `inv_sqrt_steps` | `optimizer_args` | `7` | Integer `1–7` | Number of Gram inverse-root iterations. Normally leave it at the default |
+| `msign_eps` | `optimizer_args` | `1e-20` | Finite number `≥ 0` | Division-by-zero guard used during matrix-sign normalization |
+| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | Finite number `≥ 0` | Regularizes Gram matrices when they are singular or nearly singular |
+| `inv_sqrt_gamma` | `optimizer_args` | `1.001` | Finite number `> 0` | Damping used by the inverse-root iteration. Leave it unchanged unless investigating a numerical problem |
+| `gauge_rebalance` | `optimizer_args` | `false` | `true` / `false` | Periodically balances the scales of the two factors. This is a conditioning operation, not an overfitting regularizer |
+| `gauge_rebalance_alpha` | `optimizer_args` | `1.0` | `0 < alpha ≤ 1` | Damping exponent for rebalancing. Values closer to `1` apply a more complete adjustment. Relevant only when rebalancing is enabled |
+| `gauge_rebalance_interval` | `optimizer_args` | `1` | Integer `≥ 1` | Number of optimizer steps between rebalancing operations |
+| `gauge_power_steps` | `optimizer_args` | `2` | Integer `≥ 1` | Number of power iterations used to estimate factor spectral norms |
+| `max_grad_norm` | Top-level trainer field; not a LoRA-Muon constructor argument | Anima automatic recommendation: `0` | `≥ 0` | Global L2 gradient clipping before `optimizer.step`; `0` disables it. This step is not part of the paper's algorithm |
+
+For most users, `learning_rate` is the only parameter that needs initial tuning. Keep `momentum=0.9`, `ns_steps=8`, `inv_sqrt_steps=7`, and the numerical safeguards at their defaults. Leave `gauge_rebalance` disabled unless you specifically want to test factor-scale conditioning.
+
+AdamW and LoRA-Muon both multiply a completed update by a learning rate, but they construct that update differently. AdamW uses elementwise second-moment scaling; LoRA-Muon uses Gram whitening and matrix-sign normalization. Their numerical learning-rate scales are therefore not directly comparable.
+
+This project automatically recommends `0.02` under the Anima configuration as an experimental starting point, not as a known optimum or a result established by the paper. The paper reports `0.1` as the best tested value in its TinyShakespeare Transformer sweep and does not evaluate downstream fine-tuning. It should not be treated as the default for Anima.
+
+#### Related network settings and compatibility
+
+`network_dim` and `network_alpha` are network settings, not LoRA-Muon constructor arguments, and they do not need to be equal:
+
+- `network_dim` sets the LoRA rank.
+- `network_alpha / network_dim` sets the forward scale of the LoRA branch.
+- `alpha=dim` only makes the forward scale equal to `1`; LoRA-Muon does not require it.
+- Each module must provide a complete `lora_down` and `lora_up` pair with matching rank dimensions.
+
+When LoRA-Muon is selected, the Anima UI recommends `dim=16, alpha=16` for fields that the user has not edited. This is a resource-oriented project default that reduces parameter count, momentum state, and Gram-matrix compute. It does not establish that rank 16 produces better final results than rank 32, and it does not overwrite manual, imported, or saved values.
+
+The current implementation has the following compatibility limits:
+
+- It supports only `model_train_type=anima-lora` with `network_module=networks.lora_anima`.
+- It is incompatible with LoRA+ because split parameter groups break complete `lora_down → lora_up` pairing.
+- It does not support LyCORIS structures such as LoKr, LoHa, or DoRA.
+- It supports Linear LoRA and the Conv LoRA shapes used by Anima.
+- Matrix operations for FP16/BF16 parameters are performed in FP32 and written back to the original parameter dtype; no separate `dtype` option is required.
+- Standard sd-scripts learning-rate schedulers remain supported. LoRA-Muon does not take ownership of the scheduler or warmup.
 
 <!-- doc-anchor: adan-options -->
 ### Adan options
