@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<meta charset="utf-8"><title>Monitor UI regression fixture</title>
+<link rel="stylesheet" href="/frontend/css/app.css">
+<link rel="stylesheet" href="/frontend/css/themes/light.css">
+<link rel="stylesheet" href="/frontend/css/themes/dark.css">
+<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:900px; } .route-monitor-dashboard { height:calc(100vh - 120px); } </style>
+<script src="/frontend/js/utils.js"></script>
+<script src="/frontend/js/monitor-logs.js"></script>
+<script src="/frontend/js/training-core.js"></script>
+<script src="/frontend/js/monitor-core.js"></script>
+<script src="/frontend/js/monitor-render.js"></script>
+<main id="fixture" x-data="monitorFixture">
+  <div class="fixture-controls"><button class="btn btn-sm" @click="$el.closest('main').classList.toggle('narrow')">切换桌面窄窗口</button><button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.train_result={status:'completed',duration_str:'12m 30s'};renderDashboard()">模拟训练完成</button></div>
+  <div id="fixtureRoute"></div>
+</main>
+<script>
+(async () => {
+  const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/zh-CN.json').then(r=>r.json())]);
+  const parsed = new DOMParser().parseFromString(html,'text/html');
+  document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
+  const response = data => ({json:async()=>({status:'success',data}),ok:true});
+  const samples = Array.from({length:16},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_sample.svg`,path:`sample/${i}.svg`,url:'/tests/frontend/monitor-sample.svg',thumb_url:'/tests/frontend/monitor-sample.svg',inspect_url:'/tests/frontend/monitor-sample.svg'}));
+  const files = Array.from({length:12},(_,i)=>({name:`test-${String(i+1).padStart(6,'0')}.safetensors`,path:`test-${i}.safetensors`,category:'model',size:128000000,mtime:1700000000+i*60,ckpt_loss:.1-i*.003,ckpt_type:'epoch',ckpt_epoch:i+1}));
+  const realFetch=window.fetch;
+  window.fetch=(url,opts)=> String(url).startsWith('/api/') ? Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('log-slice')?{total:30,offset:0,lines:Array.from({length:30},(_,i)=>`INFO step ${i+1}: loss=0.123 learning_rate=1e-7`),match_indices:[]}:[])) : realFetch(url,opts);
+  document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
+    const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
+    return Object.assign(a,{
+      escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:'zh-CN',realtimeState:'online',liveTaskId:'fixture',
+      t(key,fb){return key.split('.').reduce((v,k)=>v&&v[k],translations)||fb||key;},
+      toast(message){console.log(message);},finishProgress(){},navigate(){},
+      monitorData:{state:'RUNNING',step:450,total_steps:1000,percent:45,loss:.082,lr:1e-7,epoch:'5/10',elapsed:'12m 30s',eta:'15m',speed:'1.8it/s',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
+      previews:samples,previewsVersion:1,weakNetworkMode:true,
+      gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
+      sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
+      lossSeries:[{tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:.12-i*.0003}))}],
+      trainParams:[{key:'learning_rate',value:'1e-7',section:'training'},{key:'network_dim',value:32,section:'network'},{key:'max_train_epochs',value:10,section:'training'}],
+      init(){this.$nextTick(()=>this.renderDashboard());}
+    });
+  }));
+  const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);
+})();
+</script>
+</html>

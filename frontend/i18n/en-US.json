@@ -43,7 +43,15 @@
 			"other": "Other"
 		}
 	},
-	"monitor": {
+		"monitor": {
+			"moreActions": "More",
+			"followPaused": "Following paused · Go to latest",
+			"copyOutputPath": "Copy output path",
+			"preparingDownload": "Preparing download. Multiple files need to be packaged first.",
+			"pinReference": "Pin as reference",
+			"clearReference": "Clear reference",
+			"reference": "Reference",
+			"rawMetadata": "Full metadata",
 		"status": "Training Status",
 		"consoleSubtitle": "Professional training console",
 		"dashboardTabs": "Training monitor views",
@@ -163,7 +171,7 @@
 		"gapFromBest": "Gap from lowest",
 		"comparedPreviousWindow": "Compared with previous period",
 		"lowerIsMoreStable": "Lower is more stable",
-		"bestObservedValue": "Lowest observed value",
+		"bestObservedValue": "Lowest of the last 120 records",
 		"latestVsBest": "Latest compared with lowest",
 		"averageLossSource": "Source: average Loss",
 		"currentLossSource": "Source: raw Loss",
@@ -188,7 +196,7 @@
 		"diagnosticMethodSource": "Data source",
 		"diagnosticMethodSourceText": "Prefers TensorBoard loss/average (the trainer moving average, typically covering about one epoch); falls back to noisier loss/current when unavailable.",
 		"diagnosticMethodWindow": "Windows",
-		"diagnosticMethodWindowText": "Compares averages from two adjacent equal windows. Target size is 15% of points, clamped to 12–60; short series use half the available points per window.",
+		"diagnosticMethodWindowText": "Compares two adjacent windows of up to 60 raw valid records each. Shorter histories use half the available records per window.",
 		"diagnosticMethodVolatility": "Volatility",
 		"diagnosticMethodVolatilityText": "Recent-window standard deviation divided by the absolute recent mean. It measures relative noise, not output quality.",
 		"diagnosticRuleOrder": "First matching rule wins",
@@ -202,7 +210,7 @@
 		"diagnosticRulePlateauCondition": "Change magnitude < {change}% · volatility < {volatility}%",
 		"diagnosticRuleSteady": "No clear trend",
 		"diagnosticRuleOtherwise": "Otherwise",
-		"diagnosticMethodNote": "Long histories may be display-downsampled. Open TensorBoard for the complete curve, zooming, and point-level inspection.",
+		"diagnosticMethodNote": "Diagnostics use the last 120 raw records, independently of chart downsampling. Open TensorBoard for full curves and point-level inspection.",
 		"smooth": "Smooth",
 		"goToTraining": "Go to Training",
 		"stopTraining": "Stop Training",

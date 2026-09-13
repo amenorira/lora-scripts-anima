@@ -150,8 +150,8 @@ class ConsoleLoggingTests(unittest.TestCase):
 class MonitorFrontendContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.render_source = Path("frontend/js/monitor-render.js").read_text(encoding="utf-8")
-        cls.core_source = Path("frontend/js/monitor-core.js").read_text(encoding="utf-8")
+        cls.render_source = (Path("frontend/js/monitor-render.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
+        cls.core_source = (Path("frontend/js/monitor-core.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
         cls.index_source = Path("frontend/index.html").read_text(encoding="utf-8")
         cls.css_source = Path("frontend/css/app.css").read_text(encoding="utf-8")
         cls.app_source = Path("frontend/js/app.js").read_text(encoding="utf-8")
@@ -223,8 +223,7 @@ class MonitorFrontendContractTests(unittest.TestCase):
     def test_idle_diagnostics_are_labeled_as_previous_run_data(self):
         patch = self.render_source.split("_patchTrainingDiagnostics(root, t, d, isHistory) {", 1)[1].split("\n  },", 1)[0]
 
-        self.assertIn("d.state !== 'RUNNING'", patch)
-        self.assertIn("diagnostic.count > 0", patch)
+        self.assertIn("['FINISHED', 'FAILED', 'TERMINATED']", patch)
         self.assertIn("previousTrainingDiagnostics", patch)
         self.assertIn("previousDiagnosticSubtitle", patch)
 
@@ -241,6 +240,7 @@ class MonitorFrontendContractTests(unittest.TestCase):
         script = r"""
 global.window = {};
 eval(require('fs').readFileSync('frontend/js/utils.js', 'utf8'));
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
 const mixin = window.monitorRenderMixin;
 const points = values => values.map((value, step) => ({step: step + 1, value}));
@@ -298,15 +298,16 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(data["cleaned"]["bestStep"], 2)
         self.assertAlmostEqual(data["cleaned"]["bestValue"], 0.15)
         self.assertEqual(data["best"], "newer")
-        self.assertIn("15.3%", data["decliningEvidence"])
+        self.assertIn("22.1%", data["decliningEvidence"])
         self.assertIn("decrease threshold 2%", data["decliningEvidence"])
-        self.assertIn("window 12", data["decliningWindow"])
+        self.assertIn("window 20", data["decliningWindow"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend snapshot checks")
     def test_config_snapshot_requests_share_encoded_fetch_helper(self):
         script = r"""
 global.window = {};
 eval(require('fs').readFileSync('frontend/js/utils.js', 'utf8'));
+eval(require('fs').readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(require('fs').readFileSync('frontend/js/monitor-render.js', 'utf8'));
 const mixin = window.monitorRenderMixin;
 const urls = [];

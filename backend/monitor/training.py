@@ -199,12 +199,14 @@ def read_tensorboard_loss(
             except Exception:
                 continue
             points = [
-                {"step": int(e.step), "value": round(float(e.value), 6)}
+                {"step": int(e.step), "value": float(e.value)}
                 for e in events
             ]
             if not points:
                 continue
-            if len(points) > downsample_to:
+            raw_points = points
+            best = min(raw_points, key=lambda p: p["value"])
+            if len(points) > downsample_to and tag not in {"loss/epoch", "loss/epoch_average"}:
                 points = _lttb_downsample(points, downsample_to)
             values = [p["value"] for p in points]
             series_list.append({
@@ -212,8 +214,10 @@ def read_tensorboard_loss(
                 "name": tag.replace("/", " ").replace("_", " "),
                 "points": points,
                 "latest": values[-1],
-                "min": min(values),
-                "max": max(values),
+                "min": best["value"],
+                "min_step": best["step"],
+                "max": max(p["value"] for p in raw_points),
+                "diagnostic_points": raw_points[-120:] if tag in {"loss/average", "loss/current"} else [],
             })
 
         if series_list:
@@ -267,7 +271,7 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
             with _last_seen_step_lock:
                 last_step = _last_seen_step.get((log_dir_str, tag), -1)
             new_points = [
-                {"step": int(e.step), "value": round(float(e.value), 6)}
+                {"step": int(e.step), "value": float(e.value)}
                 for e in events
                 if int(e.step) > last_step
             ]

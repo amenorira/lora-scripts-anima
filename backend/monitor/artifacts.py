@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
 import tomllib
-from collections import deque
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -32,12 +32,12 @@ def _is_hidden(name: str) -> bool:
 
 
 def _iter_dir(root: Path):
-    """安全遍历目录树：rglob 替代，跳过隐藏/缓存子目录与文件。"""
-    for p in root.rglob("*"):
-        # 检查路径中任一成分是否为隐藏目录
-        if any(_is_hidden(part) for part in p.relative_to(root).parts):
-            continue
-        yield p
+    """Prune hidden directories before walking them; never follow directory links."""
+    for directory, directories, files in os.walk(root, followlinks=False):
+        directories[:] = [name for name in directories if not _is_hidden(name)]
+        for name in files:
+            if not _is_hidden(name):
+                yield Path(directory) / name
 
 
 def _preview_sort_key(path: Path, stat) -> tuple[int, int, int, int, str]:
@@ -339,12 +339,10 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict], run_d
                 epoch_avg = s.get("points") or []
             if tag == "loss/average":
                 avg_latest = s.get("latest")
-            if tag == "loss/current":
+            if tag == "loss/average":
                 step_series = s.get("points") or []
-            elif step_series is None and tag == "loss/average":
+            elif step_series is None and tag == "loss/current":
                 step_series = s.get("points") or []
-
-    has_tb_loss = bool(epoch_avg or step_series or avg_latest)
 
     for f in files:
         if f.get("category") != "model":
@@ -353,26 +351,39 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict], run_d
         loss = None
         try:
             if ckpt_type == "epoch" and f.get("ckpt_epoch") is not None and epoch_avg:
-                idx = f["ckpt_epoch"] - 1
-                if 0 <= idx < len(epoch_avg):
-                    loss = epoch_avg[idx].get("value")
+                point = next((p for p in epoch_avg if p["step"] == f["ckpt_epoch"]), None)
+                if point:
+                    loss = point["value"]
+                    f["loss_source"] = _LOSS_EPOCH_AVG
+                    f["loss_step"] = point["step"]
             elif ckpt_type == "step" and f.get("ckpt_step") is not None:
-                loss = _find_nearest_point(step_series or [], f["ckpt_step"])
+                from bisect import bisect_right
+                points = step_series or []
+                idx = bisect_right(points, f["ckpt_step"], key=lambda p: p["step"]) - 1
+                if idx >= 0:
+                    point = points[idx]
+                    loss = point["value"]
+                    f["loss_step"] = point["step"]
+                    f["loss_approximate"] = point["step"] != f["ckpt_step"]
+                    f["loss_source"] = "loss/average" if avg_latest is not None else "loss/current"
             elif ckpt_type == "final":
                 loss = avg_latest
+                f["loss_source"] = "loss/average"
         except (KeyError, IndexError, TypeError):
             loss = None
         f["ckpt_loss"] = loss
 
     # 回退：TensorBoard 无数据时从训练日志提取
-    if not has_tb_loss and run_dir:
+    if run_dir and any(f.get("category") == "model" and f.get("ckpt_loss") is None for f in files):
         log_losses = _parse_log_checkpoint_losses(run_dir)
         for f in files:
             if f.get("category") != "model" or f.get("ckpt_loss") is not None:
                 continue
             name = f.get("name", "")
             if name in log_losses:
-                f["ckpt_loss"] = log_losses[name]
+                    f["ckpt_loss"] = log_losses[name]
+                    f["loss_source"] = "log"
+                    f["loss_approximate"] = True
 
     return files
 
@@ -732,35 +743,7 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
             return empty
-        # Progress updates may be written as adjacent newline records for the
-        # same step. Stream normalized rows so large logs remain bounded.
-        ql = query.lower()
-        match_indices: list[int] = []
-        page: list[str] = []
-        tail_rows = deque(maxlen=max(1, limit)) if tail else None
-        total = 0
-        requested_end = offset + max(1, limit)
-        for line in _normalized_log_lines(log_path):
-            if ql and len(match_indices) < _LOG_SLICE_MAX_MATCHES and ql in line.lower():
-                match_indices.append(total)
-            if tail_rows is not None:
-                tail_rows.append(line)
-            elif offset <= total < requested_end:
-                page.append(line)
-            total += 1
-
-        if tail:
-            offset = max(0, total - max(1, limit))
-        offset = max(0, min(offset, total))
-        end = min(offset + max(1, limit), total)
-        lines = list(tail_rows) if tail_rows is not None else page[:max(0, end - offset)]
-        return {
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "lines": lines,
-            "query": query,
-            "match_indices": match_indices,
-        }
-    except Exception:
+        from backend.monitor.log_index import indexed_slice
+        return indexed_slice(log_path, offset, limit, query, tail)
+    except FileNotFoundError:
         return empty

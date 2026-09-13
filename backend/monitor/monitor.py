@@ -171,6 +171,7 @@ class TaskMonitor:
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
         self._last_preview_check: dict[str, float] = {}
         self._last_preview_signature: dict[str, str] = {}
+        self._pending_artifact_signature: dict[str, str] = {}
         # 控制台进度条状态
         self._console_progress = None
         self._progress_task_id = None
@@ -297,6 +298,7 @@ class TaskMonitor:
                 
                 # 任务结束时清理
                 if current_status in ("FINISHED", "TERMINATED", "FAILED"):
+                    await self._collect_task_data(task_id)
                     await realtime_hub.publish(task_topic(task_id), "task.result", {
                         "task_id": task_id,
                         "kind": "training",
@@ -320,8 +322,8 @@ class TaskMonitor:
     async def _collect_task_data(self, task_id: str) -> None:
         """收集任务进度和日志增量"""
         try:
-            train_config = latest_train_config(task_id)
-            record = find_run_record_by_task_id(task_id)
+            train_config = await asyncio.to_thread(latest_train_config, task_id)
+            record = await asyncio.to_thread(find_run_record_by_task_id, task_id)
             run_dir = str(record["run_path"]) if record else None
             run_dir_path = Path(run_dir) if run_dir else None
 
@@ -393,9 +395,19 @@ class TaskMonitor:
             record.get("run_dir", ""),
         )
         latest = previews[-1] if previews else None
-        if not latest:
+        def model_signature():
+            items = []
+            for path in Path(record["artifact_path"]).iterdir():
+                if path.suffix.lower() in {".safetensors", ".pt", ".pth"} and path.is_file():
+                    stat = path.stat()
+                    items.append((path.name, stat.st_size, stat.st_mtime_ns))
+            return repr(sorted(items))
+        models = await asyncio.to_thread(model_signature)
+        signature = (f"{latest.get('path', '')}:{latest.get('version', '')}" if latest else "") + models
+        previous = self._pending_artifact_signature.get(task_id)
+        self._pending_artifact_signature[task_id] = signature
+        if previous != signature:
             return
-        signature = f"{latest.get('path', '')}:{latest.get('version', '')}"
         if signature == self._last_preview_signature.get(task_id):
             return
         self._last_preview_signature[task_id] = signature
@@ -510,6 +522,7 @@ class TaskMonitor:
         self._last_progress.pop(task_id, None)
         self._last_preview_check.pop(task_id, None)
         self._last_preview_signature.pop(task_id, None)
+        self._pending_artifact_signature.pop(task_id, None)
         logger.debug(f"清理任务状态: {task_id}")
 
 

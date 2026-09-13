@@ -4,6 +4,7 @@ const fs = require('node:fs');
 global.window = {};
 global.document = { getElementById: () => null };
 global.WebSocket = { OPEN: 1 };
+eval(fs.readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-core.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/realtime.js', 'utf8'));
 
