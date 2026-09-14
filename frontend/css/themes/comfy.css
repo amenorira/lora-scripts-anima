@@ -2,7 +2,7 @@
    ComfyUI Theme
    复刻 ComfyUI 默认 Dark 主题（v1.49.6 构建产物实测值）：
    近黑炭灰面板、azure 主色、6/10px 圆角、Inter 字体、
-   100-200ms Material 动效（无回弹）。与本应用不搭处做微调。
+   动效统一使用 motion.css。与本应用不搭处做微调。
    ================================================================ */
 
 /* Inter 可变字体（拉丁子集，随主题加载；中文回落系统字体，与 ComfyUI 一致）。
@@ -85,12 +85,6 @@
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  /* ComfyUI/PrimeVue 动效：0.1s-0.2s，Material ease-out，无回弹 */
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0, 0, 0.2, 1);
-  --duration-fast: 100ms;
-  --duration-normal: 150ms;
-  --duration-slow: 200ms;
 
   /* 状态色：jade/gold/coral */
   --success: #00cd72;
@@ -168,20 +162,11 @@
 
 /* Sidebar: 对齐 ComfyUI 侧栏——hover #313235、选中静态 #3c3d42（无滑动 pill）、
    按压不回弹、图标不单独着主题色 */
-[data-theme="comfy"] .sidebar-item {
-  transition: background-color var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out),
-              padding var(--duration-slow) var(--ease-out),
-              margin var(--duration-slow) var(--ease-out),
-              gap var(--duration-slow) var(--ease-out);
-}
-[data-theme="comfy"] .sidebar-item:active { transform: none; }
 [data-theme="comfy"] .sidebar-item:hover { background: #313235; }
 [data-theme="comfy"] .sidebar-item.active:hover { background: transparent; }
 [data-theme="comfy"] .sidebar-item.active .nav-icon { color: var(--text-sidebar-active); }
 [data-theme="comfy"] .sidebar-nav-indicator {
   background: #3c3d42;
-  transition: opacity var(--duration-fast) var(--ease-out);
 }
 [data-theme="comfy"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="comfy"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
@@ -221,48 +206,3 @@
 [data-theme="comfy"] .env-candidate-item:hover { background: var(--hover-overlay); }
 [data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
 [data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-
-/* ── 动效：ComfyUI 无展示型动效，页面/面板切换只有快速淡入 ──
-   本节为完整定义，不依赖默认主题的动画声明；
-   属性选择器特异性高于 light.css 的裸选择器，稳定覆盖。 */
-
-/* 下拉菜单：120ms 淡入 */
-[data-theme="comfy"] .anima-select-menu-positioned {
-  animation: fade-in 120ms var(--ease-out) both;
-}
-/* 模态框：遮罩 150ms 淡入，面板 150ms 缩放浮现（modal-in 关键帧沿用默认主题） */
-[data-theme="comfy"] .modal-overlay { animation: fade-in 150ms var(--ease-out); }
-[data-theme="comfy"] .modal { animation: modal-in 150ms var(--ease-out); }
-/* 路由切换：整页 150ms 纯淡入，无错峰位移 */
-[data-theme="comfy"] .main-content.route-enter > div > * {
-  animation: fade-in 150ms var(--ease-out) backwards;
-}
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(2),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(3),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(4),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(5),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(6),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(7),
-[data-theme="comfy"] .main-content.route-enter > div > *:nth-child(n+8) { animation-delay: 0ms; }
-/* Tab 面板内容：150ms 纯淡入，无分层位移 */
-[data-theme="comfy"] .m-tab-panel.active > * {
-  animation: fade-in 150ms var(--ease-out) backwards;
-}
-[data-theme="comfy"] .m-tab-panel.active > *:nth-child(2),
-[data-theme="comfy"] .m-tab-panel.active > *:nth-child(3),
-[data-theme="comfy"] .m-tab-panel.active > *:nth-child(n+4) { animation-delay: 0ms; }
-/* 打标器布局与环境管理面板：同样 150ms 纯淡入 */
-[data-theme="comfy"] .tagger-batch-layout > *,
-[data-theme="comfy"] .tagger-single-layout > * {
-  animation: fade-in 150ms var(--ease-out) backwards;
-}
-[data-theme="comfy"] .tagger-batch-layout > *:nth-child(2),
-[data-theme="comfy"] .tagger-single-layout > *:nth-child(2),
-[data-theme="comfy"] .tagger-batch-layout > *:nth-child(n+3),
-[data-theme="comfy"] .tagger-single-layout > *:nth-child(n+3) { animation-delay: 0ms; }
-[data-theme="comfy"] .env-panel-in { animation: fade-in 150ms var(--ease-out); }
-/* 监控/环境 Tab 滑动指示条 300ms → 200ms（侧栏选中态已在上方改为静态） */
-[data-theme="comfy"] .monitor-tab-indicator,
-[data-theme="comfy"] .env-tab-indicator {
-  transition-duration: 200ms, 200ms, var(--duration-fast);
-}

@@ -4,7 +4,7 @@
    ================================================================ */
 
 /* ── CSS Custom Properties（主题无关部分）──────────────────
-   颜色/圆角/阴影/动效/字体等随主题变化的 token 见 css/themes/*.css */
+   外观 token 见 css/themes/*.css，统一动效见 motion.css */
 :root {
   --radius-pill: 999px;
 
@@ -458,11 +458,7 @@ a:focus-visible {
   padding: 24px 28px;
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
 }
-/* 路由切换：旧页快速淡出（routeTransitioning 由 app.js 路由状态机驱动）。
-   新页的进入动画（route-enter，app.js _playRouteEnter）属于展示型动效，
-   由各主题文件定义（默认见 themes/light.css）。 */
-.main-content > div { transition: opacity 90ms var(--ease-out); }
-.main-content.route-transitioning > div { opacity: 0; }
+/* 挂载前保留旧页可见，避免先淡空再显示新页；入场统一见 motion.css。 */
 
 /* Fullscreen routes: remove padding so iframe fills edge-to-edge */
 .main-fullscreen {
@@ -2431,11 +2427,6 @@ input[type="range"]::-webkit-slider-thumb {
    出现/消失引起内容宽度跳动（与 .main-content 的处理一致） */
 .m-tab-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; scrollbar-gutter: stable; }
 .m-tab-panel[hidden] { display: none; }
-/* 面板进入动画（.active 重新挂载触发）是展示型动效，由各主题文件定义（默认见 themes/light.css）。
-   内容原地重建（排序/筛选/追加样本等）不应重播进入动画，否则整面板看起来像闪烁；
-   JS 在非 tab 切换的 innerHTML 重建前给面板加 .no-enter-anim，切换激活时移除。
-   必须 !important：主题文件的进入动画规则加载更晚且比特度不低，需要明确压过。 */
-.m-tab-panel.no-enter-anim > * { animation: none !important; }
 .m-tab-panel::-webkit-scrollbar { width: 7px; }
 .m-tab-panel::-webkit-scrollbar-track { background: transparent; }
 .m-tab-panel::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-tertiary) 36%, transparent); border-radius: var(--radius-pill); }
@@ -3989,8 +3980,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 
 /* ── Wrapper ─────────────────────────────────────────────── */
 .anima-select {
-  --select-origin-x: 50%;
-  --select-origin-y: 0%;
   position: relative;
   width: 100%;
   font-size: 13px;
@@ -4072,7 +4061,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   visibility: hidden;
 }
 
-/* 菜单浮现动画是展示型动效，由各主题文件定义（默认见 themes/light.css） */
+/* 菜单动效统一定义于 motion.css。 */
 .anima-select-menu-positioned { visibility: visible; }
 
 .anima-select-menu-described {
@@ -4290,8 +4279,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-tabs.indicator-ready > .env-tab-indicator { opacity: 1; }
 .env-tabs.no-anim > .env-tab-indicator { transition: none; }
 .env-tab-panel[hidden] { display: none; }
-/* Tab 面板切换的进入动画（env-panel-in，只对"切换后可见的面板"播放一次）
-   是展示型动效，由各主题文件定义（默认见 themes/light.css）。 */
 
 /* ── Hero 状态工具行（控制面板：无边框、一行文字 + 右侧刷新）── */
 .env-hero {

@@ -261,12 +261,11 @@ document.addEventListener('alpine:init', () => {
       this._syncSidebarIndicator(route);
 
       // The training form mounts hundreds of controls. Leave a short paint
-      // window so the active nav state, content fade and progress bar become
+      // window so the active nav state and progress bar become
       // visible before that work starts. A timer also keeps routing reliable
       // in background tabs, where requestAnimationFrame may be paused.
-      // 动画开启时延时让旧页淡出与点击反馈先被看到，再提交重量级挂载。
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const mountDelay = reduceMotion ? 16 : 70;
+      // 保持旧页可见，仅留一帧绘制点击反馈，再提交重量级挂载。
+      const mountDelay = 16;
       setTimeout(() => {
         if (transitionSeq !== this._routeTransitionSeq) return;
         this._commitRoute(route, prev, transitionSeq);
@@ -287,6 +286,7 @@ document.addEventListener('alpine:init', () => {
         if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
         else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
       }
+      if (mainContent) this._playRouteEnter(mainContent);
       this.currentRoute = route;
 
       const cfg = ROUTE_CONFIG[route];
@@ -303,7 +303,6 @@ document.addEventListener('alpine:init', () => {
         const scroller = document.getElementById('mainContent');
         if (scroller) {
           scroller.scrollTop = restoreScrollTop;
-          this._playRouteEnter(scroller);
         }
         this._syncSidebarIndicator();
         this.routeTransitioning = false;
@@ -311,15 +310,14 @@ document.addEventListener('alpine:init', () => {
       }, 16));
     },
 
-    // 新页面内容自上而下错峰浮现（CSS: route-cascade，非线性缓出）
+    // 在新页挂载前启用短淡入，避免先显示一帧再重启动画。
     _playRouteEnter(mainContent) {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       mainContent.classList.remove('route-enter', 'scroll-entering');
       void mainContent.offsetWidth; // 强制 reflow，让连续切换能重启动画
-      // scroll-entering：入场动画期间隐藏滚动条 thumb，避免向下位移撑大滚动区导致闪现
-      mainContent.classList.add('route-enter', 'scroll-entering');
+      mainContent.classList.add('route-enter');
       clearTimeout(this._routeEnterTimer);
-      this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter', 'scroll-entering'), 900);
+      this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter'), 180);
     },
 
     // 侧栏滑动高亮：跟随激活导航项的位置与高度（首次定位不播放动画）。
