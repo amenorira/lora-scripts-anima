@@ -9,6 +9,7 @@ document.addEventListener('alpine:init', () => {
       const above = rect.top - 12;
       const upward = below < 200 && above > below;
       this.position = `left:${rect.left}px;width:${rect.width}px;max-height:${Math.min(360, upward ? above : below)}px;`
+        + `transform-origin:left ${upward ? 'bottom' : 'top'};`
         + (upward ? `bottom:${window.innerHeight - rect.top + 4}px` : `top:${rect.bottom + 4}px`);
       this.active = Math.max(0, this.options.findIndex(option => option.value === this.value));
       this.open = true;
@@ -52,7 +53,7 @@ window.previewSelectHtml = function(options, value, label) {
     <button type="button" class="preview-select-trigger" x-ref="trigger" role="combobox" aria-haspopup="listbox" aria-label="${esc(label)}" :aria-expanded="open" :aria-controls="$id('preview-list')" :aria-activedescendant="open ? $id('preview-option', active) : null" @click="open ? open = false : show()">
       <span x-text="selected?.selectedLabel || selected?.label || ''"></span><span class="preview-select-chevron" aria-hidden="true"></span>
     </button>
-    <div class="preview-select-menu" role="listbox" x-ref="menu" :id="$id('preview-list')" aria-label="${esc(label)}" x-show="open" x-cloak :style="position">
+    <div class="preview-select-menu" role="listbox" x-ref="menu" :id="$id('preview-list')" aria-label="${esc(label)}" x-show="open" x-cloak :style="position" :inert="!open">
       <template x-for="(option, index) in options" :key="option.value">
         <div>
           <div class="preview-select-group" x-show="option.family && (index === 0 || options[index - 1].family !== option.family)" x-text="option.family"></div>

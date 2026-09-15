@@ -36,7 +36,7 @@ document.addEventListener('alpine:init', () => {
     value: initialValue,
     _escHandler: null,
     _positionFrame: null,
-    _revealPoint: null,
+    _closeAnimation: null,
 
     get displayGroups() {
       if (!fieldConfigFactory) return staticDisplayGroups;
@@ -63,7 +63,7 @@ document.addEventListener('alpine:init', () => {
         if (isOpen) this.$nextTick(() => this.positionMenu());
       });
       this._escHandler = (e) => {
-        if (e.key === 'Escape' && this.open) { this.open = false; }
+        if (e.key === 'Escape' && this.open) { this.close(); }
       };
       this.$el.addEventListener('keydown', this._escHandler);
 
@@ -103,6 +103,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     destroy() {
+      if (this._closeAnimation) this._closeAnimation.cancel();
       if (this._escHandler) {
         this.$el.removeEventListener('keydown', this._escHandler);
       }
@@ -118,12 +119,31 @@ document.addEventListener('alpine:init', () => {
     },
 
     closeOnOutside() {
-      this.open = false;
+      this.close();
+    },
+
+    close() {
+      if (!this.open || this._closeAnimation) return;
+      const menu = this.$el.querySelector('.anima-select-menu');
+      const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!motion || !menu || !menu.animate) { this.open = false; return; }
+      // Keep x-if mounted until exit finishes. Inert prevents duplicate selections.
+      const style = getComputedStyle(menu);
+      menu.inert = true;
+      const animation = menu.animate([
+        { opacity: style.opacity, transform: style.transform },
+        { opacity: 0, transform: 'scale(0.99)' }
+      ], { duration: 150, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+      this._closeAnimation = animation;
+      animation.onfinish = () => {
+        this.open = false;
+        this._closeAnimation = null;
+      };
     },
 
     select(v) {
       this.value = v;
-      this.open = false;
+      this.close();
       this.syncToModel();
       this.$dispatch('anima-select-change', { value: v });
     },
@@ -137,10 +157,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     toggle(event) {
+      if (this.open) {
+        this.close();
+        return;
+      }
       this.open = !this.open;
       if (this.open) {
         this.positioned = false;
-        this.setRevealOrigin(event);
         // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
         // （如分组的 .card-body）裁剪。
         this.$nextTick(() => this.positionMenu());
@@ -153,15 +176,6 @@ document.addEventListener('alpine:init', () => {
         this._positionFrame = null;
         if (this.open) this.positionMenu();
       });
-    },
-
-    setRevealOrigin(event) {
-      const trigger = this.$el.querySelector('.anima-select-trigger');
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      const clientX = event && Number.isFinite(event.clientX) ? event.clientX : rect.left + rect.width / 2;
-      const clientY = event && Number.isFinite(event.clientY) ? event.clientY : rect.bottom;
-      this._revealPoint = { x: clientX, y: clientY };
     },
 
     // 把菜单定位到触发器正下方（fixed，相对视口），并约束在视口内。
@@ -190,11 +204,9 @@ document.addEventListener('alpine:init', () => {
       if (openUp) {
         top = Math.max(8, r.top - renderedHeight - 4);
         menu.classList.add('anima-select-menu-up');
-        this.$el.style.setProperty('--select-origin-y', '100%');
       } else {
         top = r.bottom + 4;
         menu.classList.remove('anima-select-menu-up');
-        this.$el.style.setProperty('--select-origin-y', '0%');
       }
       // 带说明的宽菜单向左展开，避免侵入右侧预览栏；紧凑菜单保持左对齐。
       let left = this.hasDescriptions ? r.right - width : r.left;
@@ -205,12 +217,7 @@ document.addEventListener('alpine:init', () => {
       menu.style.left = Math.round(left) + 'px';
       menu.style.width = Math.round(width) + 'px';
       menu.style.right = 'auto';
-      // 使用真实点击位置作为扩散中心；菜单上下翻转时仍保持指针位置自然衔接。
-      const revealPoint = this._revealPoint || { x: r.left + r.width / 2, y: openUp ? r.top : r.bottom };
-      const originX = Math.max(0, Math.min(width, revealPoint.x - left));
-      const originY = Math.max(0, Math.min(renderedHeight, revealPoint.y - top));
-      this.$el.style.setProperty('--select-origin-x', `${Math.round(originX)}px`);
-      this.$el.style.setProperty('--select-origin-y', `${Math.round(originY)}px`);
+      menu.style.transformOrigin = `${left < r.left ? 'right' : 'left'} ${openUp ? 'bottom' : 'top'}`;
       if (firstPosition && menuScroll) {
         const activeOption = menuScroll.querySelector('.anima-select-option.active');
         if (activeOption) {

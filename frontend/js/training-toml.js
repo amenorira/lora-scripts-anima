@@ -70,7 +70,7 @@ window.trainingTomlMixin = {
       'bnb_percentile_clipping','bnb_min_8bit_size',
       'stableadamw_kahan_sum','stableadamw_weight_decouple',
       'adafactor_relative_step','adafactor_scale_parameter','adafactor_warmup_init',
-      'adafactor_clip_threshold','adafactor_eps','weight_decay','stopcoef',
+      'adafactor_clip_threshold','adafactor_eps','weight_decay','stopcoef','notify','use_shadow',
       'automagic_min_lr','automagic_max_lr','automagic_beta2',
       'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
       'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
@@ -321,6 +321,8 @@ window.trainingTomlMixin = {
     const optimizerArgs = {
       weight_decay: 'weight_decay',
       stopcoef: 'stopcoef',
+      notify: 'notify',
+      use_shadow: 'use_shadow',
       prodigy_d_coef: 'd_coef',
       prodigy_d0: 'd0',
       prodigy_safeguard_warmup: 'safeguard_warmup',
@@ -666,6 +668,8 @@ window.trainingTomlMixin = {
       { form: 'automagic_polarity_history', arg: 'polarity_history', defaults: DEFS.automagic_polarity_history || { 'vendor.automagic_optimizer.integration.Automagic3': 8 } },
       { form: 'automagic_fused', arg: 'fused', defaults: DEFS.automagic_fused || { 'vendor.automagic_optimizer.integration.Automagic3': false } },
       { form: 'stopcoef', arg: 'stopcoef', defaults: DEFS.stopcoef || { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
+      { form: 'notify', arg: 'notify', defaults: DEFS.notify || { 'vendor.emo_optimizer.emosens.EmoSens': true } },
+      { form: 'use_shadow', arg: 'use_shadow', defaults: DEFS.use_shadow || { 'vendor.emo_optimizer.emosens.EmoSens': false } },
       { form: 'prodigy_d_coef', arg: 'd_coef', defaults: DEFS.prodigy_d_coef || { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
       { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '1e-6', 'prodigyplus.ProdigyPlusScheduleFree': '1e-6' } },
       { form: 'prodigy_safeguard_warmup', arg: 'safeguard_warmup', defaults: DEFS.prodigy_safeguard_warmup || { 'Prodigy': false } },
@@ -897,7 +901,7 @@ window.trainingTomlMixin = {
     // ── Build optimizer_args via shared function ──────────
     const optArgs = this._buildOptimizerArgs(payload);
     // Remove merged fields from top-level payload (they are now in optimizer_args)
-    for (const key of ['optimizer_args_custom','weight_decay','stopcoef','prodigy_d_coef','prodigy_d0',
+    for (const key of ['optimizer_args_custom','weight_decay','stopcoef','notify','use_shadow','prodigy_d_coef','prodigy_d0',
                         'prodigy_safeguard_warmup','prodigyplus_use_stableadamw',
                         'schedulefree_warmup_steps','adafactor_relative_step',
                         'bnb_percentile_clipping','bnb_min_8bit_size',

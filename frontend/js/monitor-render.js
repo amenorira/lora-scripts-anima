@@ -343,10 +343,6 @@ window.monitorRenderMixin = {
         if (isActive) {
           // tab 切换激活：允许进入动画播放（移除内容重建时可能加过的抑制类）
           panel.classList.remove('no-enter-anim');
-          // 入场动画期间隐藏滚动条 thumb（动画的向下位移会临时撑大滚动区，导致 thumb 闪现）
-          panel.classList.add('scroll-entering');
-          clearTimeout(panel._scrollEnteringTimer);
-          panel._scrollEnteringTimer = setTimeout(() => panel.classList.remove('scroll-entering'), 520);
         }
       });
       requestAnimationFrame(() => this._syncMonitorTabIndicator());

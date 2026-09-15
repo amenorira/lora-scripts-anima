@@ -342,6 +342,30 @@ AdamWScheduleFree uses its internal `warmup_steps`, so the external `lr_warmup_s
 Stochastic rounding reduces the drift from low-precision updates that consistently round in the same direction. ProdigyPlus carries the library default; this trainer adds no separate switch. It is a numerical detail, not data augmentation.
 
 <!-- doc-anchor: loraplus -->
+### EmoSens v3.9.3
+
+EmoSens adjusts the learning rate automatically as loss changes. Enter a multiplier in `learning_rate`: start with `0.1` for Anima LoRA or `1.0` for SDXL LoRA. The actual rate changes during training and is shown in the training logs.
+
+**Common settings**
+
+- **Stop-signal threshold** `stopcoef`: defaults to `0.04`. Suggests considering a stop when training has settled and recent average loss is at or below this value. Higher values make the hint easier to trigger. Values above `1` are allowed; `0` disables triggering.
+- **Show convergence hints** `notify`: on by default. The log message `[READY TO STOP]` suggests considering a stop; it does not end training. Compare nearby saved models before deciding whether to stop. Turning this switch off only hides the message and does not affect training.
+- **Enable shadow weights** `use_shadow`: off by default and usually unnecessary for ordinary training. Keeps an extra copy of the weights and blends it with the current weights when loss changes suddenly, using more GPU memory.
+
+Other defaults match upstream: `betas=(0.9, 0.995)`, `eps=1e-8`, and `weight_decay=0.01`.
+
+**Limitations**
+
+Currently, use one GPU, gradient accumulation of `1`, and mixed precision set to `bf16` or `no`. Accumulation and fp16 change the loss value EmoSens reads, while multiple GPUs may calculate different learning rates. These combinations are therefore unsupported.
+
+The form locks the scheduler and warmup settings; you do not need to configure them. Global gradient clipping is still available. EmoSens uses one learning rate for all trained parameters, so LoRA+ is unsupported and separate U-Net / DiT or text encoder rates do not change their actual rates. To train just one component, use the corresponding training switch.
+
+**Version changes and resuming training**
+
+The [v3.9.3 upstream code](https://github.com/muooon/EmoSens/blob/e2c7bb3293baeb339a2d4a21f21ccbdc0260d3be/optimizer/emosens.py) is copied unchanged. Compared with the previous v3.9.1 copy, there are no new parameters. The main change is the automatic learning-rate ceiling. Common multipliers `0.1` and `1.0` still have ceilings of `3e-4` and `3e-3`, respectively. Multipliers above `1` no longer raise the ceiling.
+
+When resuming, keep the original learning-rate multiplier, convergence-hint setting, and shadow-weight setting. The saved state does not fully restore these settings. Resuming a state from an older version also uses the new ceiling rule.
+
 ### LoRA+
 
 LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon (LoRA+'s grouped learning rates are incompatible with LoRA-RITE's A/B pairing and LoRA-Muon's joint update path); AdaFactor requires relative step to be turned off first.

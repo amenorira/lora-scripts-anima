@@ -342,7 +342,7 @@ _EMOSENS_ARGS = {
     "betas": _BETAS_2,
     "eps": _POSITIVE,
     "weight_decay": _NON_NEGATIVE,
-    "stopcoef": _POSITIVE,
+    "stopcoef": _NON_NEGATIVE,
     "use_shadow": _boolean(),
     "notify": _boolean(),
 }
@@ -585,6 +585,8 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
         "weight_decouple", frozenset({STABLE_ADAMW_OPTIMIZER_TYPE})
     ),
     "stopcoef": FormArgument("stopcoef", frozenset({EMOSENS_OPTIMIZER_TYPE})),
+    "use_shadow": FormArgument("use_shadow", frozenset({EMOSENS_OPTIMIZER_TYPE})),
+    "notify": FormArgument("notify", frozenset({EMOSENS_OPTIMIZER_TYPE})),
     "prodigy_d_coef": FormArgument("d_coef", PRODIGY_OPTIMIZERS),
     "prodigy_d0": FormArgument("d0", PRODIGY_OPTIMIZERS),
     "prodigy_safeguard_warmup": FormArgument(

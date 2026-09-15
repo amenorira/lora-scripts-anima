@@ -529,16 +529,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         source["lr_scheduler"] = "constant"
         source["lr_warmup_steps"] = 0
         # 上游推荐 Anima/DiT LoRA 使用 0.1，SDXL LoRA 使用 1.0。
-        # 仅替换缺失值和界面通用默认值，保留用户明确设置的学习率。
+        # 推荐值由前端按字段来源设置；后端不能把显式 1e-4 当作未填写。
         model_type = source.get("model_train_type", "sdxl-lora")
         emo_target = 0.1 if model_type == "anima-lora" else 1.0
         lr = source.get("learning_rate")
         should_set_recommended = _is_empty_value(lr)
-        if not should_set_recommended:
-            try:
-                should_set_recommended = math.isclose(float(lr), 1e-4)
-            except (ValueError, TypeError):
-                should_set_recommended = False
         if should_set_recommended:
             source["learning_rate"] = emo_target
             warnings.append(

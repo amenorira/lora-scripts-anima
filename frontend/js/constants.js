@@ -117,6 +117,8 @@ window.OPTIMIZER_DEFAULTS = {
   gauge_rebalance_interval: { 'vendor.lora_muon.LoRA_Muon': 1 },
   gauge_power_steps: { 'vendor.lora_muon.LoRA_Muon': 2 },
   stopcoef: { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 },
+  notify: { 'vendor.emo_optimizer.emosens.EmoSens': true },
+  use_shadow: { 'vendor.emo_optimizer.emosens.EmoSens': false },
   came_eps1: { 'pytorch_optimizer.CAME': '1e-30' },
   came_eps2: { 'pytorch_optimizer.CAME': '1e-16' },
   // NOTE: 以下字段仅用于 TOML 生成，无 placeholder 效果

@@ -10,6 +10,7 @@
     (function(){
       var t = localStorage.getItem('anima-theme') || 'auto';
       // 具名主题直通；auto 跟随系统
+      if (t === 'vscode') { t = 'dark'; localStorage.setItem('anima-theme', t); }
       var resolved = (t === 'light' || t === 'dark' || t === 'comfy') ? t
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.setAttribute('data-theme', resolved);
@@ -22,33 +23,34 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260909-docscreens17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260831-motion1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260914-motion4">
+  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260914-motion2">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260831-selectfix1">
-  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260831-selectfix1">
+  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260914-motion2">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260831-motion1">
+  <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
   <script src="/anima-ui/js/config.js?v=20260910-argkey1" defer></script>
-  <script src="/anima-ui/js/anima-select.js?v=20260728-tagger4" defer></script>
+  <script src="/anima-ui/js/anima-select.js?v=20260914-motion2" defer></script>
   <script src="/anima-ui/js/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor-logs.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
-  <script src="/anima-ui/js/monitor-render.js?v=20260902-statusbar1" defer></script>
+  <script src="/anima-ui/js/monitor-render.js?v=20260914-motion4" defer></script>
   <script src="/anima-ui/js/environment-core.js" defer></script>
   <script src="/anima-ui/js/environment-render.js" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
   <script src="/anima-ui/js/training-core.js?v=20260909-docscreens17" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20260909-previewfix15" defer></script>
-  <script src="/anima-ui/js/preview-select.js?v=20260909-previewselect13" defer></script>
+  <script src="/anima-ui/js/preview-select.js?v=20260914-motion2" defer></script>
   <script src="/anima-ui/js/training-shape-preview.js?v=20260909-previewfix15" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260830-copy1" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260908-shapepreview7" defer></script>
+  <script src="/anima-ui/js/app.js?v=20260914-motion5" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-init="init()" x-cloak>
@@ -1328,7 +1330,7 @@
 <input type="file" id="configFileInput" accept=".toml,.yaml,.yml" style="display:none" @change="handleConfigFileImport($event)">
 
 <!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
-<div class="modal-overlay lycoris-modal-overlay" x-show="lycorisModalOpen" @click.self="closeLycorisConfig()"
+<div class="modal-overlay lycoris-modal-overlay" x-show="lycorisModalOpen" :inert="!lycorisModalOpen" @click.self="closeLycorisConfig()"
      @keydown.escape.window="closeLycorisConfig()" x-cloak>
   <div class="modal lycoris-modal modal-workbench modal-workbench--lycoris" role="dialog" aria-modal="true"
        :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')">
@@ -1359,7 +1361,7 @@
 </div>
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
-<div class="modal-overlay" x-show="showConfirmModal" @click.self="cancelConfirm()"
+<div class="modal-overlay" x-show="showConfirmModal" :inert="!showConfirmModal" @click.self="cancelConfirm()"
      @keydown.escape.window="cancelConfirm()" x-cloak>
   <div class="modal modal-confirm" role="dialog" aria-modal="true" :aria-label="confirmTitle"
        x-effect="if (showConfirmModal) $nextTick(() => $refs.confirmPrimary?.focus())">
@@ -1383,7 +1385,7 @@
 <!-- ── Built-in File Picker Modal ─────────────────────── -->
 <!-- 内置文件浏览器：builtinFilePicker() 拉取 /api/get_files 列表后置 showFilePickerModalFlag=true 弹出。
      标题显示目标字段与扫描目录，当前值高亮，支持 ↑↓/Enter/Esc 键盘操作。 -->
-<div class="modal-overlay" x-show="showFilePickerModalFlag" @click.self="showFilePickerModalFlag = false"
+<div class="modal-overlay" x-show="showFilePickerModalFlag" :inert="!showFilePickerModalFlag" @click.self="showFilePickerModalFlag = false"
      @keydown.escape.window="showFilePickerModalFlag = false" x-cloak>
   <div class="modal picker-modal">
     <div class="modal-header picker-header">
@@ -1438,7 +1440,7 @@
 </div>
 
 <!-- ── Flow-matching Timestep Distribution Preview ─────── -->
-<div class="modal-overlay" x-show="timestepPreviewOpen" @click.self="closeTimestepPreview()"
+<div class="modal-overlay" x-show="timestepPreviewOpen" :inert="!timestepPreviewOpen" @click.self="closeTimestepPreview()"
      @keydown.escape.window="closeTimestepPreview()" x-cloak>
   <div class="modal timestep-preview-modal modal-workbench modal-workbench--timestep" role="dialog" aria-modal="true" :aria-label="t('timestepPreview.title')">
     <div class="modal-header">
@@ -1521,7 +1523,7 @@
 </div>
 
 <!-- ── sd-scripts Learning-Rate Curve Preview ──────────── -->
-<div class="modal-overlay" x-show="lrPreviewOpen" @click.self="closeLrPreview()"
+<div class="modal-overlay" x-show="lrPreviewOpen" :inert="!lrPreviewOpen" @click.self="closeLrPreview()"
      @keydown.escape.window="closeLrPreview()" x-cloak>
   <div class="modal lr-preview-modal modal-workbench modal-workbench--lr" role="dialog" aria-modal="true" :aria-label="t('lrPreview.title')">
     <div class="modal-header">
@@ -1588,7 +1590,7 @@
 </div>
 
 <!-- ── Anima weight-decomposition (matrix shape) preview ── -->
-<div class="modal-overlay" x-show="shapePreviewOpen" @click.self="closeShapePreview()"
+<div class="modal-overlay" x-show="shapePreviewOpen" :inert="!shapePreviewOpen" @click.self="closeShapePreview()"
      @keydown.escape.window="shapePreviewOpen && closeShapePreview()" x-cloak>
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape" role="dialog" aria-modal="true" :aria-label="t('shapePreview.title')">
     <div class="modal-header">
@@ -1612,7 +1614,7 @@
 </div>
 
 <!-- ── Config Snapshot Modal ───────────────────────────── -->
-<div class="modal-overlay" x-show="configSnapshotOpen" @click.self="configSnapshotOpen = false" @keydown.escape.window="configSnapshotOpen = false" x-cloak>
+<div class="modal-overlay" x-show="configSnapshotOpen" :inert="!configSnapshotOpen" @click.self="configSnapshotOpen = false" @keydown.escape.window="configSnapshotOpen = false" x-cloak>
   <div class="modal" style="max-width:700px" role="dialog" aria-modal="true" :aria-label="t('monitor.configSnapshot')">
     <div class="modal-header">
       <span x-text="t('monitor.configSnapshot')">Config Snapshot</span>

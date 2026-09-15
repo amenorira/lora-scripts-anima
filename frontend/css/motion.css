@@ -1,0 +1,79 @@
+/* Shared motion, independent of theme appearance.
+   Menu parameters match VS Code's modern contextview.ts:
+   250ms scale(.97) entrance / 150ms scale(.99) exit. */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: var(--ease-out);
+  --duration-fast: 80ms;
+  --duration-normal: 120ms;
+  --duration-slow: 150ms;
+}
+@keyframes menu-open {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+.anima-select-menu-positioned {
+  animation: menu-open 250ms var(--ease-out) backwards;
+}
+/* x-show menus retain display until exit ends; @starting-style handles entrance.
+   x-if selects use anima-select.js to defer DOM removal for their exit. */
+.sidebar-dropdown-menu, .preview-select-menu {
+  opacity: 0; transform: scale(0.99);
+  transform-origin: bottom left;
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out),
+    display 150ms allow-discrete;
+}
+.sidebar-dropdown.open .sidebar-dropdown-menu,
+.preview-select-menu:not([style*="display: none"]) {
+  opacity: 1; transform: scale(1); transition-duration: 250ms;
+}
+.sidebar-dropdown:not(.open) .sidebar-dropdown-menu,
+.preview-select-menu[style*="display: none"] { pointer-events: none; }
+@starting-style {
+  .sidebar-dropdown.open .sidebar-dropdown-menu,
+  .preview-select-menu:not([style*="display: none"]) { opacity: 0; transform: scale(0.97); }
+}
+/* Restore ComfyUI's short fade for content, without movement or scaling.
+   The outgoing page stays visible until replacement; no separate fade-out. */
+.main-content.route-enter > div,
+.m-tab-panel.active,
+.tagger-batch-layout, .tagger-single-layout,
+.env-panel-in { animation: fade-in 150ms cubic-bezier(0, 0, 0.2, 1) backwards; }
+/* Animate only the outer page on navigation. Persistent tab panels animate on
+   activation, never when their child content is refreshed. */
+.route-enter :is(.m-tab-panel, .tagger-batch-layout, .tagger-single-layout, .env-panel-in) {
+  animation-duration: 0s;
+}
+/* Dialogs use the menu's gentle scale, with a slightly quicker entrance.
+   The resting transform is none so fixed descendants retain viewport anchoring. */
+.modal-overlay {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out), display 150ms allow-discrete;
+}
+.modal-overlay > .modal {
+  opacity: 0; transform: scale(0.99);
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.modal-overlay:not([style*="display: none"]) { opacity: 1; }
+.modal-overlay:not([style*="display: none"]) > .modal {
+  opacity: 1; transform: none; transition-duration: 180ms;
+}
+.modal-overlay[style*="display: none"] { pointer-events: none; }
+@starting-style {
+  .modal-overlay:not([style*="display: none"]) { opacity: 0; }
+  .modal-overlay:not([style*="display: none"]) > .modal { opacity: 0; transform: scale(0.97); }
+}
+/* Keep feedback short and consistent; functional spinners remain independent. */
+.sidebar-item:active { transform: none; }
+.sidebar-nav-indicator { transition: opacity var(--duration-fast); }
+.monitor-tab-indicator, .env-tab-indicator { transition-duration: 180ms, 180ms, var(--duration-fast); }
+.anima-select-chevron { transition: none; }
+.toggle:active input:not(:disabled) + .toggle-track .toggle-thumb { width: 16px; }
+.toggle:active input:checked:not(:disabled) + .toggle-track .toggle-thumb { transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
