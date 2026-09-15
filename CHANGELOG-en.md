@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.18.4 - 2026-09-15
+
+This release updates EmoSens from upstream, improves its settings, and refines interface animations and dialog interactions.
+
+### Improvements and Fixes
+
+- Copied EmoSens v3.9.3 unchanged from upstream, including its revised automatic learning-rate ceiling.
+- Added switches to show convergence hints and enable shadow weights. The stop-signal threshold now accepts values above 1, or 0 to disable triggering.
+- Fixed an explicitly entered EmoSens learning rate of `1e-4` being replaced with a recommended value.
+- Unified interface animation styles and improved dialog accessibility.
+
+### Documentation
+
+- Expanded the bilingual EmoSens guide to explain settings, limitations, and how to resume training, with clearer form hints.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.3...v2.18.4)
+
 ## v2.18.3 - 2026-09-13
 
 This release fixes disconnect errors caused by the server cache policy and standardizes the TensorBoard log directory layout.

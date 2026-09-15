@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -124,10 +123,23 @@ class EmoSensValidationTests(unittest.TestCase):
 
 
 class EmoSensAdapterTests(unittest.TestCase):
-    def test_sets_recommended_lr_only_for_generic_default_or_missing_value(self):
+    def test_threshold_and_switches_reach_optimizer(self):
+        for threshold in (0, 0.0001, 2.0):
+            config = valid_emosens_config()
+            config.update(stopcoef=threshold, notify=False, use_shadow=True)
+            self.assertEqual(validate_training_config(config, gpu_ids=[0]), [])
+            adapted, _ = adapt_config(config)
+            args = dict(item.split("=", 1) for item in adapted["optimizer_args"])
+            self.assertEqual(float(args["stopcoef"]), threshold)
+            self.assertIn("notify=False", adapted["optimizer_args"])
+            self.assertIn("use_shadow=True", adapted["optimizer_args"])
+            self.assertNotIn("notify", adapted)
+            self.assertNotIn("use_shadow", adapted)
+
+    def test_sets_recommended_lr_only_for_missing_value(self):
         cases = (
-            ("anima-lora", "1e-4", 0.1),
-            ("sdxl-lora", "1e-4", 1.0),
+            ("anima-lora", "1e-4", "1e-4"),
+            ("sdxl-lora", "1e-4", "1e-4"),
             ("anima-lora", None, 0.1),
             ("sdxl-lora", None, 1.0),
         )
@@ -163,6 +175,26 @@ class EmoSensAdapterTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
 class EmoSensFrontendTests(unittest.TestCase):
+    def test_switches_serialize_as_python_booleans(self):
+        script = r"""
+global.window = {};
+require('./frontend/js/constants.js');
+require('./frontend/js/training-toml.js');
+const mixin = window.trainingTomlMixin;
+mixin.findFieldDef = () => null;
+const args = mixin._buildOptimizerArgs.call(mixin, {
+  optimizer_type: 'vendor.emo_optimizer.emosens.EmoSens',
+  stopcoef: 0, notify: false, use_shadow: true,
+});
+console.log(JSON.stringify(args));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True,
+                                text=True, check=True, cwd=Path.cwd())
+        args = json.loads(result.stdout)
+        self.assertIn("notify=False", args)
+        self.assertIn("use_shadow=True", args)
+        self.assertIn("stopcoef=0", args)
+
     def test_recommendation_order_custom_value_and_constraint_notifications(self):
         script = r"""
 global.window = {};
@@ -282,10 +314,42 @@ console.log(JSON.stringify({
 
 
 class EmoSensWindowsTests(unittest.TestCase):
-    def test_import_succeeds_with_gbk_stdout(self):
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "cp936:strict"
-        env["PYTHONUTF8"] = "0"
+    def test_real_steps_and_state_resume(self):
+        # Isolate upstream's global Tensor.backward hook from the test process.
+        script = r"""
+import copy
+import torch
+from vendor.emo_optimizer.emosens import EmoSens
+for lr, ceiling in [(0.1, 3e-4), (1.0, 3e-3), (10.0, 3e-3), (1e-5, 3e-7)]:
+    p = torch.nn.Parameter(torch.tensor([1.0, 2.0], dtype=torch.float64))
+    opt = EmoSens([p], lr=lr, notify=False)
+    assert abs(opt.max_lim - ceiling) < 1e-12
+    loss = p.square().mean()
+    loss.backward()
+    assert opt._manual_loss == loss.item()
+    opt.step()
+    assert 1e-8 <= opt.param_groups[0]['lr'] <= ceiling
+    assert torch.isfinite(p).all() and not torch.equal(p, torch.tensor([1.0, 2.0]))
+    saved = copy.deepcopy(opt.state_dict())
+    q = torch.nn.Parameter(p.detach().clone())
+    resumed = EmoSens([q], lr=lr, notify=False)
+    resumed.load_state_dict(copy.deepcopy(saved))
+    for param, optimizer in [(p, opt), (q, resumed)]:
+        optimizer.zero_grad()
+        param.square().mean().backward()
+        optimizer.step()
+    torch.testing.assert_close(p, q, rtol=0, atol=0)
+    assert opt.param_groups[0]['lr'] == resumed.param_groups[0]['lr']
+print('verified')
+"""
+        result = subprocess.run([sys.executable, "-c", script], cwd=Path.cwd(),
+                                env=_build_train_env("artifacts", "task-id"),
+                                capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
+        self.assertIn(b"verified", result.stdout)
+
+    def test_unmodified_upstream_import_uses_training_utf8_environment(self):
+        env = _build_train_env("artifacts", "task-id")
         result = subprocess.run(
             [sys.executable, "-c", "import vendor.emo_optimizer.emosens; print('ok')"],
             cwd=Path.cwd(),

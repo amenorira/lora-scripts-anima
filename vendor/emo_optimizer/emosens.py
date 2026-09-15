@@ -2,10 +2,8 @@ import torch
 from torch.optim import Optimizer
 import math
 
-from ._console import safe_print
-
 """
-EmoSens v3.9.1 (260530) Standard Edition ECC版(CPU-GPUデータ転送対応含む)
+EmoSens v3.9.3 (260830) Standard Edition ECC版(CPU-GPUデータ転送対応含む)
 shadow-system v3.1 -moment v3.1 emoPulse v3.9 FFT-Swap-Aware dNR-converge
 これまでの emo系 v3.7～3.8 継承、早期停止関連の効率化やコード修正やコメント最適化等を実施
 Early Stop 判定通知の動的最適化、dNR活用で収束点をユーザー任意で明確化できる(stopcoef)
@@ -35,7 +33,7 @@ if not hasattr(torch.optim.Optimizer, "_manual_loss"):
                 pass
         return _old_backward(self, *args, **kwargs)
     torch.Tensor.backward = _new_backward
-    safe_print("🚩 emo-optim success ecc system ...")
+    print("🚩 emo-optim success ecc system ...")
 
 class EmoSens(Optimizer):    # クラス定義＆初期化
     def __init__(self, params,
@@ -60,7 +58,11 @@ class EmoSens(Optimizer):    # クラス定義＆初期化
         # notify 収束通知の切替え：通常 True (通知不要な場合は False にできる)
         # stopcoef 収束目標Loss：通常 0.04[予兆] (ユーザーの好みで仕上げる)
 
-        self.base_scale, self.max_lim, self.min_lim = 1e-4, 3e-3, 1e-8
+        # 基準値と最低値
+        self.base_scale, self.min_lim = 1e-4, 1e-8
+        # 上限値スライド／ユーザー指定値：大(例：1.0以上)小(1e-5以下)でも上限適正化
+        self.max_lim = min(max(min(lr, 1.0) * 3e-3, 3e-7), 3e-3)
+        # 履歴初期化
         self.dNR_hist, self.noise_est, self.d_est, self.c_est = 1.0, 1.0, 0.02, 0.0
             
     # 学習の引き継ぎ可能(状態保存対応)／収束を深めたい場合に役立つ
@@ -169,7 +171,7 @@ class EmoSens(Optimizer):    # クラス定義＆初期化
         emoChain = self.emoScope * max((100.0 ** self.c_est), 1e-3)
         # emoPulse 最終決定： emoScorp によるユーザー意思の反映と安全値による制限
         emoPulse = float(max(min(self.dNR_hist * (emoChain * self.base_scale),
-                                 self.emoScope * self.max_lim), self.min_lim))
+                                 self.max_lim), self.min_lim))
         # --- End emoPulse (完全自動LR生成) ---
 
         for group in self.param_groups:
@@ -233,7 +235,7 @@ class EmoSens(Optimizer):    # クラス定義＆初期化
         if self.stop_base >= 0.3 and scale_base_m <= self.stopcoef:
             self.should_stop = True       # 💡 外部からこれを見て判断可
             if self.notify:               # 💡 収束・安定の「お知らせ」
-                safe_print("✨[READY TO STOP]✨")
+                print(f"✨[READY TO STOP]✨")
         else:
             self.should_stop = False      # 💡 誤判定などの取り消し
 
