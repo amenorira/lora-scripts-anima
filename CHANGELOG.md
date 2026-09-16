@@ -6,6 +6,28 @@
 
 ## 未发布
 
+## v2.19.0 - 2026-09-16
+
+本版本新增数据集重复次数编辑与目录重命名，接入 Prodigy Plus Schedule-Free 2.0.1 的新参数，并把依赖清单收敛为单文件。
+
+### 新增
+
+- 训练集支持按子集调整重复次数（repeat），并同步重命名磁盘目录：编辑先存为草稿，确认后统一应用，可一键撤销；重命名前自动迁移按目录名记录的时间步偏移，训练进行中锁定编辑。步数估算依赖改为启动时后台预热，首次估算从秒级降到毫秒级。
+- Prodigy Plus Schedule-Free 升级 2.0.1，界面接入 12 个参数：`d_limiter`、`schedulefree_c`、`prodigy_steps`、`use_bias_correction`、`use_speed`、`use_cautious`、`use_orthograd`、`factored`、`factored_fp32`、`split_groups`、`split_groups_mean`、`weight_decay_by_lr`；`split_groups_mean` 仅在开启 `split_groups` 后显示。界面值与库默认一致时不写入 optimizer_args；关闭 `use_schedulefree` 时的警告补充上游 cosine 调度建议。注意 `split_groups_mean` 的库默认值在 2.0 中从 True 翻转为 False：升级后多参数组训练改为各组各用各的 D（此前共享各组均值），需要旧行为可在界面重新开启。
+
+### 改进与修复
+
+- requirements.txt 成为全项目唯一依赖清单，删除 dev 与 musubi-krea2 两个附属清单；启动器改为两步安装（先装 CUDA torch，再单遍安装主清单），不再读取 vendor 内的 requirements 文件，消除 transformers 重复下载。测试套件可纯标准库运行。
+- LoRA-RITE 改用 pytorch_optimizer 3.10.1 的官方实现（该版本正式收录 LoRARite），删除 vendor/lora_rite 整包；参数与默认值逐项一致，同种子同梯度对拍逐位一致。
+- 修复 Lion 优化器参数白名单：删除按 lion-pytorch API 误写的 `use_triton`、`decoupled_weight_decay` 两个无效键，换成 pytorch_optimizer.Lion 实际生效的 `weight_decouple`、`fixed_decay`；手填旧键保存时明确报错，不再被静默忽略。
+- 移除 EmoSens 的 weight_decay 兜底警告：兜底值与界面及上游默认一致，正常流程不改变训练行为。
+
+### 文档
+
+- 重写 Prodigy Plus Schedule-Free 双语章节，覆盖 D 估计与权重平均机制、`lr/d*lr` 曲线的读法，以及 `use_grams`、`use_adopt`、`use_focus`、`beta3`、`stochastic_rounding` 等实验与进阶选项；完善 Prodigy 系列参数提示，并为 ProdigyPlus 的 eps 字段补充专用说明。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.4...v2.19.0)
+
 ## v2.18.4 - 2026-09-15
 
 本版本同步 EmoSens 上游实现，完善参数设置，并改善界面动效与弹窗操作。
