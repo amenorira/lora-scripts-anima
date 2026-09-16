@@ -785,21 +785,30 @@ class MusubiRuntimeContractTests(unittest.TestCase):
     def test_shared_requirements_match_the_runtime_contract(self):
         from packaging.requirements import Requirement
 
-        requirement_lines = Path("requirements-musubi-krea2.txt").read_text(encoding="utf-8").splitlines()
-        requirements = {
-            requirement.name.lower(): str(requirement.specifier)
-            for raw_line in requirement_lines
-            for line in (raw_line.split("#", 1)[0].strip(),)
-            if line
-            for requirement in (Requirement(line),)
-        }
+        requirement_lines = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
+        requirements: dict[str, str] = {}
+        duplicates: list[str] = []
+        for raw_line in requirement_lines:
+            line = raw_line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            requirement = Requirement(line)
+            name = requirement.name.lower()
+            if name in requirements:
+                duplicates.append(name)
+            requirements[name] = str(requirement.specifier)
+
+        self.assertEqual(duplicates, [])
         expected = {
             name: "" if version is None else version if version.startswith(">=") else f"=={version}"
             for name, version in MUSUBI_RUNTIME_PACKAGES.items()
             if name not in {"torch", "torchvision"}
         }
 
-        self.assertEqual(requirements, expected)
+        self.assertEqual(
+            {name: requirements.get(name) for name in expected},
+            expected,
+        )
 
     def test_cuda_local_version_satisfies_musubi_minimum(self):
         self.assertIsNone(version_error("torch", ">=2.9.1", "2.10.0+cu130"))

@@ -1,4 +1,5 @@
 import importlib
+import importlib.metadata
 import inspect
 import json
 import re
@@ -10,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import torch
+from packaging.version import Version
 
 from backend.training.adapter import adapt_config
 from backend.training.field_registry import FIELDS, get_fields_json
@@ -31,6 +33,8 @@ from backend.training.optimizer_contracts import (
     PRODIGYPLUS_OPTIMIZER_TYPE,
     SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
+    collect_optimizer_args,
+    parse_optimizer_args,
 )
 from backend.training.optimizer_metadata import (
     KREA2_PROFILE,
@@ -682,6 +686,69 @@ class OptimizerValidationTests(unittest.TestCase):
         config["fused_backward_pass"] = True
         errors = validate_training_config(config)
         self.assertTrue(any("fused_backward_pass" in error for error in errors), errors)
+
+    def test_prodigyplus_arguments_cover_the_installed_optimizer(self):
+        """契约必须与实装的 ProdigyPlus 版本对齐：2.0 起新增
+        d_limiter / schedulefree_c / use_schedulefree，并移除了 use_muon_pp。
+        """
+        installed = Version(importlib.metadata.version("prodigy-plus-schedule-free"))
+        self.assertGreaterEqual(
+            installed,
+            Version("2.0.0"),
+            "契约按 ProdigyPlus 2.0 编写，请同步 requirements.txt 与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES",
+        )
+
+        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
+        config["optimizer_args_custom"] = (
+            "d_limiter=False\nschedulefree_c=8\nuse_schedulefree=True"
+        )
+        self.assertEqual(validate_training_config(config), [])
+
+        config["optimizer_args_custom"] = "use_muon_pp=True"
+        errors = validate_training_config(config)
+        self.assertTrue(any("use_muon_pp" in error for error in errors), errors)
+
+        # 同名表单字段优先于 optimizer_args_custom，边界值走表单字段校验
+        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
+        config["schedulefree_c"] = -1
+        errors = validate_training_config(config)
+        self.assertTrue(any("schedulefree_c" in error for error in errors), errors)
+
+    def test_prodigyplus_merged_arguments_instantiate_installed_optimizer(self):
+        """表单字段合并出的 optimizer_args 必须能直接实例化实装版本，
+        并带有 lr 日志依赖的 effective_lr。"""
+        from prodigyplus.prodigy_plus_schedulefree import ProdigyPlusScheduleFree
+
+        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
+        config.update({"schedulefree_c": 8, "d_limiter": False, "split_groups_mean": True})
+        merged = collect_optimizer_args(config, parse_optimizer_args(config)[0])
+
+        parameter = torch.nn.Parameter(torch.randn(4, 4))
+        optimizer = ProdigyPlusScheduleFree([parameter], lr=1.0, **merged)
+        group = optimizer.param_groups[0]
+        self.assertEqual(group["schedulefree_c"], 8)
+        self.assertFalse(group["d_limiter"])
+        self.assertTrue(group["split_groups_mean"])
+        self.assertIn("effective_lr", group)
+
+        optimizer.train()
+        parameter.grad = torch.randn_like(parameter)
+        optimizer.step()
+        self.assertTrue(torch.isfinite(parameter).all())
+
+    def test_prodigyplus_schedulefree_off_warns_about_locked_scheduler(self):
+        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
+        config["optimizer_args_custom"] = "use_schedulefree=False"
+        _, warnings = adapt_config(config)
+        self.assertTrue(
+            any("use_schedulefree=False" in warning for warning in warnings), warnings
+        )
+
+        config["optimizer_args_custom"] = "use_schedulefree=True"
+        _, warnings = adapt_config(config)
+        self.assertFalse(
+            any("use_schedulefree=False" in warning for warning in warnings), warnings
+        )
 
     def test_prodigyplus_upstream_fused_flag_skips_regular_step(self):
         from prodigyplus import ProdigyPlusScheduleFree
@@ -2304,6 +2371,45 @@ const soapCustom = args({
   correct_bias: false,
   precondition_1d: true,
 });
+const prodigyPlusDefaults = args({
+  optimizer_type: 'prodigyplus.ProdigyPlusScheduleFree',
+  weight_decay: 0,
+  betas: '0.9, 0.99',
+  eps: '1e-8',
+  prodigy_d_coef: '1.0',
+  prodigy_d0: '1e-6',
+  prodigyplus_use_stableadamw: true,
+  d_limiter: true,
+  schedulefree_c: 0,
+  prodigy_steps: 0,
+  use_bias_correction: false,
+  use_speed: false,
+  use_cautious: false,
+  use_orthograd: false,
+  factored: true,
+  factored_fp32: true,
+  split_groups: true,
+  split_groups_mean: false,
+  weight_decay_by_lr: true,
+});
+const prodigyPlusCustom = args({
+  optimizer_type: 'prodigyplus.ProdigyPlusScheduleFree',
+  weight_decay: 0.02,
+  prodigy_d_coef: '1.5',
+  prodigy_d0: '1e-5',
+  d_limiter: false,
+  schedulefree_c: 8,
+  prodigy_steps: 200,
+  use_bias_correction: true,
+  use_speed: true,
+  use_cautious: true,
+  use_orthograd: true,
+  factored: false,
+  factored_fp32: false,
+  split_groups: false,
+  split_groups_mean: true,
+  weight_decay_by_lr: false,
+});
 const bnbDefaults = args({
   optimizer_type: 'AdamW8bit',
   bnb_percentile_clipping: 100,
@@ -2435,6 +2541,8 @@ console.log(JSON.stringify({
   loraMuonCustom,
   soapDefaults,
   soapCustom,
+  prodigyPlusDefaults,
+  prodigyPlusCustom,
   bnbDefaults,
   bnbCustom,
   previousAuto: previousAuto.form.lr_scheduler,
@@ -2508,6 +2616,29 @@ console.log(JSON.stringify({
                 "precondition_1d=True",
             ],
         )
+        # ProdigyPlus 的界面默认与 2.0 库默认一致，全部保持默认时不写任何
+        # optimizer_args；只有改动过的项才写出。
+        self.assertEqual(state["prodigyPlusDefaults"], [])
+        self.assertEqual(
+            state["prodigyPlusCustom"],
+            [
+                "weight_decay=0.02",
+                "d_coef=1.5",
+                "d0=1e-5",
+                "d_limiter=False",
+                "schedulefree_c=8",
+                "prodigy_steps=200",
+                "use_bias_correction=True",
+                "use_speed=True",
+                "use_cautious=True",
+                "use_orthograd=True",
+                "factored=False",
+                "factored_fp32=False",
+                "split_groups=False",
+                "split_groups_mean=True",
+                "weight_decay_by_lr=False",
+            ],
+        )
         self.assertEqual(state["previousAuto"], "cosine")
         self.assertEqual(state["explicitCustom"], "constant")
         self.assertEqual(state["explicitAlternateDefault"], 0)
@@ -2549,15 +2680,15 @@ class LorariteImportContractTests(unittest.TestCase):
         self.assertEqual(validate_training_config(config), [])
 
     def test_registered_selector_resolves_to_lora_rite(self):
-        # selector 即类真名；sd-scripts 按 __module__ + "." + __name__ 记录
-        # ss_optimizer，查看器按词边界取短名，下划线安全、横线会被截断
-        # （见 lora_rite.py 末尾注释）。
+        # selector 走包级导出，与 CAME/SOAP 等一致；ss_optimizer 则由类自身的
+        # __module__ + __name__ 推导（library/optimizer.py:427），两者不必相同。
+        # 查看器按词边界取短名，"LoRARite" 是纯字母，不会被截断。
         module_path, _, attr = LORARITE_OPTIMIZER_TYPE.rpartition(".")
         resolved = getattr(importlib.import_module(module_path), attr)
-        self.assertEqual(resolved.__name__, "LoRA_RITE")
+        self.assertEqual(resolved.__name__, "LoRARite")
         self.assertEqual(
             resolved.__module__ + "." + resolved.__name__,
-            "vendor.lora_rite.lora_rite.LoRA_RITE",
+            "pytorch_optimizer.optimizer.lora_rite.LoRARite",
         )
 
 

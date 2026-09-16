@@ -52,7 +52,7 @@ _LORA_MUON_CANONICAL_TO_LEGACY = {
 ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
-LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRA_RITE"
+LORARITE_OPTIMIZER_TYPE = "pytorch_optimizer.LoRARite"
 SOAP_OPTIMIZER_TYPE = "pytorch_optimizer.SOAP"
 
 ADEMAMIX_OPTIMIZERS = frozenset(
@@ -231,8 +231,9 @@ _BNB_ADAMW_ARGS = {
 _LION_ARGS = {
     "betas": _BETAS_2,
     "weight_decay": _NON_NEGATIVE,
-    "use_triton": _boolean(),
-    "decoupled_weight_decay": _boolean(),
+    # pytorch_optimizer.Lion 的真实参数名；weight_decouple 默认已为 True（论文解耦形式）
+    "weight_decouple": _boolean(),
+    "fixed_decay": _boolean(),
 }
 
 _BNB_LION_ARGS = {
@@ -266,16 +267,18 @@ _PRODIGYPLUS_ARGS = {
     "use_bias_correction": _boolean(),
     "d0": _POSITIVE,
     "d_coef": _POSITIVE,
+    "d_limiter": _boolean(),
     "prodigy_steps": _integer(0),
+    "schedulefree_c": _NON_NEGATIVE,
     "use_speed": _boolean(),
     "eps": _number(0.0, minimum_inclusive=False, allow_none=True),
     "split_groups": _boolean(),
     "split_groups_mean": _boolean(),
     "factored": _boolean(),
     "factored_fp32": _boolean(),
+    "use_schedulefree": _boolean(),
     "fused_back_pass": _boolean(),
     "use_stableadamw": _boolean(),
-    "use_muon_pp": _boolean(),
     "use_cautious": _boolean(),
     "use_grams": _boolean(),
     "use_adopt": _boolean(),
@@ -594,6 +597,38 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     ),
     "prodigyplus_use_stableadamw": FormArgument(
         "use_stableadamw", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    # ProdigyPlus 2.0 参数：表单字段与 optimizer_args 同名，沿用裸名约定
+    # （同 SOAP 的 max_precondition_dim / LoRA-Muon 的 momentum）
+    "d_limiter": FormArgument("d_limiter", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})),
+    "schedulefree_c": FormArgument(
+        "schedulefree_c", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "prodigy_steps": FormArgument(
+        "prodigy_steps", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "use_speed": FormArgument("use_speed", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})),
+    "use_bias_correction": FormArgument(
+        "use_bias_correction", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "use_cautious": FormArgument(
+        "use_cautious", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "use_orthograd": FormArgument(
+        "use_orthograd", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "factored": FormArgument("factored", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})),
+    "factored_fp32": FormArgument(
+        "factored_fp32", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "split_groups": FormArgument(
+        "split_groups", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "split_groups_mean": FormArgument(
+        "split_groups_mean", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
+    ),
+    "weight_decay_by_lr": FormArgument(
+        "weight_decay_by_lr", frozenset({PRODIGYPLUS_OPTIMIZER_TYPE})
     ),
     "schedulefree_warmup_steps": FormArgument(
         "warmup_steps", frozenset({ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE})
@@ -1063,6 +1098,13 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
             warnings.append(
                 "ProdigyPlus: max_grad_norm forced to 0 while internal update scaling is active / "
                 "内部更新缩放启用时已关闭外部梯度裁剪"
+            )
+        if args.get("use_schedulefree") is False:
+            warnings.append(
+                "ProdigyPlus: use_schedulefree=False reverts to plain Prodigy, which upstream pairs "
+                "with a decaying LR schedule (cosine recommended); this trainer keeps the external "
+                "scheduler at constant / 关闭 Schedule-Free 后退化为普通 Prodigy，上游建议搭配衰减调度"
+                "（推荐 cosine），本训练器仍将外部调度器固定为 constant"
             )
 
     if optimizer_type == PRODIGY_OPTIMIZER_TYPE:

@@ -6,6 +6,28 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.19.0 - 2026-09-16
+
+This release adds per-subset repeat editing with folder renaming, brings the Prodigy Plus Schedule-Free 2.0.1 parameters into the UI, and consolidates the dependency manifests into a single file.
+
+### Added
+
+- Datasets support editing the repeat count per subset and renaming the underlying folders to match. Edits are kept as a draft, applied in one go, and can be reverted; timestep offsets recorded by folder name are migrated automatically before renaming, and editing is locked while training is running. Step-estimation dependencies are warmed up in the background at startup, cutting the first estimate from seconds to milliseconds.
+- Prodigy Plus Schedule-Free is updated to 2.0.1, with twelve new parameters in the UI: `d_limiter`, `schedulefree_c`, `prodigy_steps`, `use_bias_correction`, `use_speed`, `use_cautious`, `use_orthograd`, `factored`, `factored_fp32`, `split_groups`, `split_groups_mean`, and `weight_decay_by_lr`. `split_groups_mean` only shows when `split_groups` is on. Values equal to the library defaults are no longer written into optimizer_args, and the warning shown when `use_schedulefree` is off now mentions the upstream cosine-schedule suggestion. Note that the library default of `split_groups_mean` flipped from True to False in 2.0: after upgrading, multi-parameter-group training gives each group its own D (previously groups shared the mean); re-enable it in the UI to restore the old behavior.
+
+### Improvements and Fixes
+
+- requirements.txt is now the single dependency manifest for the whole project; the dev and musubi-krea2 side manifests are removed. The launcher installs in two steps (CUDA torch first, then the main manifest in one pass) and no longer reads requirements files from vendor, eliminating a duplicate transformers download. The test suite runs on the standard library alone.
+- LoRA-RITE now uses the official implementation from pytorch_optimizer 3.10.1, which added LoRARite in that release; the vendored lora_rite package is removed. Parameters and defaults match item for item, and same-seed same-gradient comparisons agree bit for bit.
+- Fixed the Lion optimizer parameter whitelist: removed `use_triton` and `decoupled_weight_decay`, which were written against the lion-pytorch API but never actually read, and replaced them with `weight_decouple` and `fixed_decay`, which pytorch_optimizer.Lion does use. Hand-typed legacy keys now fail with an explicit unsupported-argument error instead of being silently ignored.
+- Removed the EmoSens weight_decay fallback warning: the fallback value matches the UI and upstream defaults and does not change training behavior.
+
+### Documentation
+
+- Rewrote the bilingual Prodigy Plus Schedule-Free chapter covering D estimation and weight averaging, how to read the `lr/d*lr` curve, and the experimental and advanced options (`use_grams`, `use_adopt`, `use_focus`, `beta3`, `stochastic_rounding`). Refined Prodigy parameter hints and added a dedicated hint for the ProdigyPlus eps field.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.18.4...v2.19.0)
+
 ## v2.18.4 - 2026-09-15
 
 This release updates EmoSens from upstream, improves its settings, and refines interface animations and dialog interactions.

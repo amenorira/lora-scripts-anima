@@ -23,6 +23,7 @@ from backend.utils.devices import check_torch_gpu
 from backend.monitor.monitor import task_monitor
 from backend.monitor.run_registry import import_legacy_external_runs
 from backend.server.routes.realtime import router as realtime_router
+from backend.training.step_estimator import warm_up as warm_step_estimator
 from backend.constants import REPO_ROOT
 from backend.startup_output import show_environment, show_ready
 
@@ -109,6 +110,9 @@ async def report_runtime_banner() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await task_monitor.start()
+    # sd-scripts 的 dataset 模块首次导入要 5～8 秒（torch / bitsandbytes / transformers），
+    # 而数据集扫描本身只有毫秒级。后台预热，省掉用户第一次打开训练页时的干等。
+    asyncio.create_task(asyncio.to_thread(warm_step_estimator))
     await report_runtime_banner()
     try:
         yield

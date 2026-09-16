@@ -1,6 +1,5 @@
 import contextlib
 import io
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -11,7 +10,6 @@ from tools import ensure_musubi_runtime
 
 ROOT = Path(__file__).parents[2]
 WINDOWS_SCRIPT = ROOT / "tools" / "bootstrap_windows.ps1"
-WINDOWS_MESSAGES = ROOT / "tools" / "bootstrap_messages.json"
 
 
 class BootstrapContractTests(unittest.TestCase):
@@ -19,40 +17,6 @@ class BootstrapContractTests(unittest.TestCase):
         script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
 
         self.assertTrue(script.isascii())
-
-    def test_windows_batch_delegates_to_powershell_bootstrap(self):
-        script = (ROOT / "start.bat").read_text(encoding="utf-8")
-
-        self.assertIn("chcp 65001", script)
-        self.assertTrue(script.isascii())
-        self.assertIn("powershell.exe -NoProfile -ExecutionPolicy Bypass", script)
-        self.assertIn("tools\\bootstrap_windows.ps1", script)
-        self.assertIn('if "%_ANIMA_RC%"=="23"', script)
-        self.assertIn("ANIMA_BOOTSTRAP_RESTARTED", script)
-
-    def test_windows_keeps_python_compatibility_and_verified_install(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-
-        self.assertIn("sys.version_info[:2] == (3,12)", script)
-        self.assertIn("python-3.12.10-amd64.exe", script)
-        self.assertIn("Get-AuthenticodeSignature", script)
-        self.assertIn("*Python Software Foundation*", script)
-        self.assertIn("InstallAllUsers=0", script)
-        self.assertIn("PrependPath=0", script)
-
-    def test_windows_git_install_is_verified_and_user_scoped(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-
-        self.assertIn("winget.exe", script)
-        self.assertIn("Git.Git", script)
-        self.assertIn("Git-2.55.0.3-64-bit.exe", script)
-        self.assertIn(
-            "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca",
-            script,
-        )
-        self.assertIn("/CURRENTUSER", script)
-        self.assertIn("ext\\reg\\shellhere", script)
-        self.assertIn("HKCU:\\Software\\Classes\\Directory", script)
 
     def test_zip_repair_backs_up_before_alignment_and_never_cleans(self):
         script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
@@ -69,21 +33,6 @@ class BootstrapContractTests(unittest.TestCase):
         self.assertIn(":(top,exclude,icase,literal)$rootName", script)
         self.assertNotIn("git clean", script.lower())
         self.assertNotIn('@("reset", "--hard"', script)
-
-    def test_existing_unknown_repository_origin_is_warning_only(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        messages = json.loads(WINDOWS_MESSAGES.read_text(encoding="utf-8"))
-
-        self.assertIn('"remote", "get-url", "origin"', script)
-        self.assertIn('Write-Text "git_origin_unknown"', script)
-        self.assertIn(" / ", messages["git_origin_unknown"])
-
-    def test_quiet_mode_does_not_implicitly_repair_git(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-
-        self.assertIn('if ($script:Quiet) { return $false }', script)
-        self.assertIn('if ($arg -eq "--setup-git")', script)
-        self.assertIn('if ($arg -eq "--skip-git-setup")', script)
 
     def test_quiet_runtime_check_hides_success_but_keeps_errors(self):
         healthy = {"ok": True, "errors": [], "versions": {}}

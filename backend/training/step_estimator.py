@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.constants import SD_SCRIPTS_DIR
+from backend.log import log
 
 
 class StepEstimateError(ValueError):
@@ -29,6 +30,20 @@ def _sd_dataset_helpers():
     from library.dataset import BaseDataset, BucketManager, glob_images
 
     return BucketManager, glob_images, BaseDataset.get_image_size
+
+
+def warm_up() -> None:
+    """预热 sd-scripts 的 dataset 模块。
+
+    该模块首次导入会连带引入 torch / bitsandbytes / transformers / diffusers，实测约
+    5～8 秒，而真正的数据集扫描只要 10 毫秒量级（59 张图 9.7 ms，单张读尺寸 0.05 ms）。
+    放在启动阶段后台预热，用户第一次打开训练页就不必干等这笔一次性开销。
+    """
+    try:
+        _sd_dataset_helpers()
+    except Exception:
+        # 预热失败不影响主流程：首次估算时会重新走这条路径并正常报错。
+        log.warning("Step estimator warm-up failed / 步数估算预热失败", exc_info=True)
 
 
 def _positive_int(config: dict[str, Any], key: str, default: int) -> int:

@@ -20,6 +20,7 @@ from backend.training.core_registry import (
     profile_payload,
     resolve_training_profile,
 )
+from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
 from backend.training.supervisor import detect_lycoris_kernel_backend
 from backend.training.musubi_krea2 import (
     KREA2_CACHE_RUNNER_FILE,
@@ -61,6 +62,7 @@ from backend.server.models import (
     TeCacheDeleteRequest,
     TrainingTomlParseRequest,
 )
+from backend.tasks import tm
 from backend.log import log
 from backend.utils import train_utils
 
@@ -305,6 +307,60 @@ async def estimate_steps(request: Request):
             data={"errorCode": "failed", "errorParams": {}},
         )
     return APIResponseSuccess(data=estimate)
+
+
+_TRAINING_ACTIVE_STATUSES = {"CREATED", "RUNNING"}
+
+
+def _training_is_active() -> bool:
+    """训练任务已创建或运行中：此时改数据集目录名会让训练读到不存在的路径。"""
+    return any(task.get("status") in _TRAINING_ACTIVE_STATUSES for task in tm.dump())
+
+
+@router.post("/training/dataset-repeat")
+async def update_dataset_repeat(request: Request):
+    """按批次改训练集子目录的数字前缀（= sd-scripts 的 repeat），磁盘目录同步改名。"""
+    payload, error = await _read_json_object(request, with_error_code=True)
+    if error:
+        return error
+
+    raw_dir = str(payload.get("dir") or "").strip()
+    if not raw_dir:
+        return APIResponseFail(
+            message="Select a training dataset directory / 请选择训练数据集目录",
+            data={"errorCode": "datasetMissing", "errorParams": {"path": ""}},
+        )
+
+    if _training_is_active():
+        return APIResponseFail(
+            message="Cannot rename dataset folders while training / 训练进行中，无法重命名数据集目录",
+            data={"errorCode": "trainingActive", "errorParams": {}},
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            apply_subset_repeats,
+            resolve_user_path(raw_dir),
+            payload.get("changes"),
+        )
+    except DatasetRepeatError as exc:
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code, "errorParams": exc.params},
+        )
+    except Exception as exc:
+        log.exception("Failed to rename dataset subset / 数据集子集改名失败")
+        return APIResponseFail(
+            message=f"Failed to rename dataset subset / 数据集子集改名失败: {exc}",
+            data={"errorCode": "failed", "errorParams": {}},
+        )
+
+    if result.get("applied"):
+        # 目录名变了，选择器缓存的还是旧名字（TTL 60s）。
+        from backend.server.routes.system import invalidate_files_cache
+
+        invalidate_files_cache()
+    return APIResponseSuccess(data=result)
 
 
 def get_sample_prompts(config: dict):

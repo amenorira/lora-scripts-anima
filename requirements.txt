@@ -1,8 +1,10 @@
 # ============================================================
-# 项目额外依赖
-# sd-scripts 核心依赖由 vendor/sd-scripts/requirements.txt 安装，
-# 此处仅列出项目 GUI / 后端 / 扩展所需的额外包。
-# 安装顺序：先 sd-scripts，再本文件。
+# 项目依赖（唯一权威清单）
+# 应用后端、监控、打标器与 sd-scripts / musubi-tuner 训练核心共用
+# 这一套钉版。安装器不再读取 vendor 内的 requirements.txt，也不修改
+# 任何上游仓库文件；vendor/sd-scripts 上游若增删依赖，需人工同步到此。
+# 安装顺序：启动器先单独安装 CUDA 版 PyTorch，再整体安装本文件。
+# torch / torchvision 不在此列，原因同上（避免解析时拉到非 CUDA 版）。
 # ============================================================
 
 # ── 后端（FastAPI）──
@@ -19,14 +21,43 @@ nvidia-ml-py==13.595.45
 
 # ── 数据处理 ──
 pandas>=2.0
-pillow>=10.0
+pillow>=11.3.0
 Markdown>=3.5,<4
 PyYAML>=6.0,<7
 
 # ── 构建工具（TensorBoard 依赖 pkg_resources，setuptools>=82 已移除该模块）──
 setuptools>=68,<82
 
-# ── 训练扩展（已由 vendor/lycoris/ vendored，无需 pip 安装）──
+# ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
+accelerate==1.6.0
+av==14.0.1
+bitsandbytes
+diffusers==0.32.1
+easydict==1.13
+einops==0.7.0
+ftfy==6.3.1
+huggingface-hub==0.34.3
+numpy
+opencv-python==4.10.0.84
+safetensors==0.4.5
+sentencepiece==0.2.1
+tokenizers==0.22.2
+toml==0.10.2
+tqdm==4.67.1
+transformers==4.57.6
+voluptuous==0.15.2
+
+# ── 优化器后端（sd-scripts 优化器工厂按需导入）──
+lion-pytorch==0.2.3
+prodigy-plus-schedule-free==2.0.1
+prodigyopt==1.1.2
+pytorch_optimizer==3.10.1
+schedulefree==1.4
+
+# ── 训练日志与数据集工具 ──
+imagesize==1.4.1
+rich==14.1.0
+tensorboard
 
 # ── ONNX 推理（WD14 tagger 需要，GPU 版包含 CPU 支持）──
 # 固定 1.27.0 匹配当前 torch+cu130（CUDA 13.x + cuDNN 9）。

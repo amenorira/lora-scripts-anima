@@ -31,7 +31,7 @@ window.OPTIMIZER_DEFAULTS = {
     'pytorch_optimizer.Adan': '5e-5',
     'bitsandbytes.optim.AdEMAMix': '1e-4',
     'bitsandbytes.optim.AdEMAMix8bit': '1e-4',
-    'vendor.lora_rite.lora_rite.LoRA_RITE': '1e-4',
+    'pytorch_optimizer.LoRARite': '1e-4',
     'pytorch_optimizer.SOAP': '1e-4',
   },
   automagic_min_lr: { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 },
@@ -51,7 +51,7 @@ window.OPTIMIZER_DEFAULTS = {
     'pytorch_optimizer.Adan': '0.98, 0.92, 0.99',
     'bitsandbytes.optim.AdEMAMix': '0.9, 0.999, 0.9999',
     'bitsandbytes.optim.AdEMAMix8bit': '0.9, 0.999, 0.9999',
-    'vendor.lora_rite.lora_rite.LoRA_RITE': '0.9, 0.999',
+    'pytorch_optimizer.LoRARite': '0.9, 0.999',
     'pytorch_optimizer.SOAP': '0.95, 0.95',
   },
   eps: {
@@ -65,7 +65,7 @@ window.OPTIMIZER_DEFAULTS = {
     'pytorch_optimizer.Adan': '1e-8',
     'bitsandbytes.optim.AdEMAMix': '1e-8',
     'bitsandbytes.optim.AdEMAMix8bit': '1e-8',
-    'vendor.lora_rite.lora_rite.LoRA_RITE': '1e-6',
+    'pytorch_optimizer.LoRARite': '1e-6',
     'pytorch_optimizer.SOAP': '1e-8',
   },
   weight_decay: {
@@ -84,7 +84,7 @@ window.OPTIMIZER_DEFAULTS = {
     'pytorch_optimizer.Adan': 0.01,
     'bitsandbytes.optim.AdEMAMix': 0.01,
     'bitsandbytes.optim.AdEMAMix8bit': 0.01,
-    'vendor.lora_rite.lora_rite.LoRA_RITE': 0,
+    'pytorch_optimizer.LoRARite': 0,
     // Library default is 1e-2; the product default 0 has to be emitted so the
     // trainer does not silently inherit that decay (same as Muon above).
     'pytorch_optimizer.SOAP': 0.01,
@@ -100,7 +100,7 @@ window.OPTIMIZER_DEFAULTS = {
   ademamix_t_beta3: {
     'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '',
   },
-  lorarite_clip_unmagnified_grad: { 'vendor.lora_rite.lora_rite.LoRA_RITE': 1.0 },
+  lorarite_clip_unmagnified_grad: { 'pytorch_optimizer.LoRARite': 1.0 },
   muon_adjust_lr_fn: { 'Muon': 'match_rms_adamw' },
   muon_momentum: { 'Muon': 0.95 },
   muon_nesterov: { 'Muon': true },
@@ -126,6 +126,19 @@ window.OPTIMIZER_DEFAULTS = {
   prodigy_d0: { 'Prodigy': '1e-6', 'prodigyplus.ProdigyPlusScheduleFree': '1e-6' },
   prodigy_safeguard_warmup: { 'Prodigy': false },
   prodigyplus_use_stableadamw: { 'prodigyplus.ProdigyPlusScheduleFree': true },
+  // ProdigyPlus 2.0 参数：默认值取库自身默认，界面值与库相同就不写进 optimizer_args
+  d_limiter: { 'prodigyplus.ProdigyPlusScheduleFree': true },
+  schedulefree_c: { 'prodigyplus.ProdigyPlusScheduleFree': 0 },
+  prodigy_steps: { 'prodigyplus.ProdigyPlusScheduleFree': 0 },
+  use_speed: { 'prodigyplus.ProdigyPlusScheduleFree': false },
+  use_bias_correction: { 'prodigyplus.ProdigyPlusScheduleFree': false },
+  use_cautious: { 'prodigyplus.ProdigyPlusScheduleFree': false },
+  use_orthograd: { 'prodigyplus.ProdigyPlusScheduleFree': false },
+  factored: { 'prodigyplus.ProdigyPlusScheduleFree': true },
+  factored_fp32: { 'prodigyplus.ProdigyPlusScheduleFree': true },
+  split_groups: { 'prodigyplus.ProdigyPlusScheduleFree': true },
+  split_groups_mean: { 'prodigyplus.ProdigyPlusScheduleFree': false },
+  weight_decay_by_lr: { 'prodigyplus.ProdigyPlusScheduleFree': true },
   schedulefree_warmup_steps: { 'AdamWScheduleFree': 0 },
   bnb_percentile_clipping: {
     'AdamW8bit': 100, 'PagedAdamW8bit': 100,
