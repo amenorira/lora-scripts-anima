@@ -52,7 +52,7 @@ _LORA_MUON_CANONICAL_TO_LEGACY = {
 ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
-LORARITE_OPTIMIZER_TYPE = "vendor.lora_rite.lora_rite.LoRA_RITE"
+LORARITE_OPTIMIZER_TYPE = "pytorch_optimizer.LoRARite"
 SOAP_OPTIMIZER_TYPE = "pytorch_optimizer.SOAP"
 
 ADEMAMIX_OPTIMIZERS = frozenset(

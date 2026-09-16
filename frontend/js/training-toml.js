@@ -736,7 +736,7 @@ window.trainingTomlMixin = {
       { form: 'ademamix_alpha', arg: 'alpha', defaults: DEFS.ademamix_alpha || { 'bitsandbytes.optim.AdEMAMix': 5.0, 'bitsandbytes.optim.AdEMAMix8bit': 5.0 } },
       { form: 'ademamix_t_alpha', arg: 't_alpha', defaults: DEFS.ademamix_t_alpha || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
       { form: 'ademamix_t_beta3', arg: 't_beta3', defaults: DEFS.ademamix_t_beta3 || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
-      { form: 'lorarite_clip_unmagnified_grad', arg: 'clip_unmagnified_grad', defaults: DEFS.lorarite_clip_unmagnified_grad || { 'vendor.lora_rite.lora_rite.LoRA_RITE': 1.0 } },
+      { form: 'lorarite_clip_unmagnified_grad', arg: 'clip_unmagnified_grad', defaults: DEFS.lorarite_clip_unmagnified_grad || { 'pytorch_optimizer.LoRARite': 1.0 } },
       { form: 'momentum', arg: 'momentum', defaults: DEFS.momentum || { 'vendor.lora_muon.LoRA_Muon': 0.9 } },
       { form: 'ns_steps', arg: 'ns_steps', defaults: DEFS.ns_steps || { 'vendor.lora_muon.LoRA_Muon': 8 } },
       { form: 'inv_sqrt_steps', arg: 'inv_sqrt_steps', defaults: DEFS.inv_sqrt_steps || { 'vendor.lora_muon.LoRA_Muon': 7 } },

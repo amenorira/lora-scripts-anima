@@ -83,7 +83,6 @@ lora-scripts-anima/
 ├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
 ├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
-├── vendor/lora_rite/           ← LoRA-RITE optimizer
 ├── vendor/lora_muon/           ← LoRA-Muon experimental optimizer
 ├── backend/                    ← FastAPI backend
 │   ├── server/                 ← API core (routes, state, proxy)

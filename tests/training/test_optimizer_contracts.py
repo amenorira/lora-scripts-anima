@@ -2680,15 +2680,15 @@ class LorariteImportContractTests(unittest.TestCase):
         self.assertEqual(validate_training_config(config), [])
 
     def test_registered_selector_resolves_to_lora_rite(self):
-        # selector 即类真名；sd-scripts 按 __module__ + "." + __name__ 记录
-        # ss_optimizer，查看器按词边界取短名，下划线安全、横线会被截断
-        # （见 lora_rite.py 末尾注释）。
+        # selector 走包级导出，与 CAME/SOAP 等一致；ss_optimizer 则由类自身的
+        # __module__ + __name__ 推导（library/optimizer.py:427），两者不必相同。
+        # 查看器按词边界取短名，"LoRARite" 是纯字母，不会被截断。
         module_path, _, attr = LORARITE_OPTIMIZER_TYPE.rpartition(".")
         resolved = getattr(importlib.import_module(module_path), attr)
-        self.assertEqual(resolved.__name__, "LoRA_RITE")
+        self.assertEqual(resolved.__name__, "LoRARite")
         self.assertEqual(
             resolved.__module__ + "." + resolved.__name__,
-            "vendor.lora_rite.lora_rite.LoRA_RITE",
+            "pytorch_optimizer.optimizer.lora_rite.LoRARite",
         )
 
 

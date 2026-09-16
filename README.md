@@ -83,7 +83,6 @@ lora-scripts-anima/
 ├── vendor/musubi-tuner/        ← Krea 2 训练核心（固定上游快照）
 ├── vendor/lycoris/             ← LyCORIS 适配器后端（固定上游快照）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
-├── vendor/lora_rite/           ← LoRA-RITE 优化器
 ├── vendor/lora_muon/           ← LoRA-Muon 测试优化器
 ├── backend/                    ← FastAPI 后端
 │   ├── server/                 ← API 核心（路由、状态、代理）

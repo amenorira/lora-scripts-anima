@@ -51,7 +51,7 @@ voluptuous==0.15.2
 lion-pytorch==0.2.3
 prodigy-plus-schedule-free==2.0.1
 prodigyopt==1.1.2
-pytorch_optimizer==3.10.0
+pytorch_optimizer==3.10.1
 schedulefree==1.4
 
 # ── 训练日志与数据集工具 ──
