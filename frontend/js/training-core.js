@@ -70,6 +70,9 @@ window.trainingCoreMixin = {
   lycorisModalOpen: false,
   lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
+  datasetRepeatDrafts: {},
+  datasetRepeatApplying: false,
+  datasetRepeatLastApplied: null,
 
   // Training state
   trainingBlocked: false,
@@ -1307,6 +1310,8 @@ window.trainingCoreMixin = {
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
+        // 子集重复次数挂在数据集目录字段下：repeat 就是目录名的数字前缀。
+        if (f.key === 'train_data_dir') html += this.renderDatasetSubsets();
       });
 
       html += `</div></div>`;

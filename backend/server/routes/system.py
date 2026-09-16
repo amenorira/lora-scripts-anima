@@ -166,6 +166,13 @@ _files_cache: dict[str, tuple[float, list[dict]]] = {}
 _files_cache_lock = threading.Lock()
 _FILES_CACHE_TTL = 60
 
+
+def invalidate_files_cache() -> None:
+    """数据集目录被改名/增删后清缓存，避免选择器在 TTL 内继续列出旧名字。"""
+    with _files_cache_lock:
+        _files_cache.clear()
+
+
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif"}
 
 

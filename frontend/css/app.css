@@ -2347,17 +2347,55 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .subset-timestep-editor.is-disabled .subset-timestep-list { opacity: .48; }
 .subset-timestep-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .subset-timestep-header .field-hint { margin-top: 3px; }
-.subset-timestep-title { display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 12px; font-weight: 600; }
-.subset-timestep-empty { padding: 10px 0 1px; }
+.subset-timestep-title { display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 12.5px; font-weight: 600; }
+.subset-timestep-empty { padding: 8px 0 1px; }
 .subset-timestep-list { margin-top: 10px; border-top: 1px solid var(--border-default); }
-.subset-timestep-row { position: relative; display: grid; grid-template-columns: minmax(150px, 1fr) 120px 150px 30px 30px; align-items: center; gap: 10px; min-height: 42px; border-bottom: 1px solid var(--border-subtle); }
-.subset-timestep-row--head { min-height: 30px; color: var(--text-tertiary); font-size: 10.5px; }
-.subset-timestep-name { overflow: hidden; color: var(--text-primary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
-.subset-timestep-meta { color: var(--text-tertiary); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.subset-timestep-row { position: relative; display: grid; grid-template-columns: minmax(150px, 1fr) 120px 150px 30px 30px; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--border-subtle); }
+.subset-timestep-row--head { min-height: 30px; color: var(--text-tertiary); font-size: 11px; }
+/* 控件列的列头居中压在步进器上；左对齐会落到最左边的"−"按钮上方。 */
+.subset-timestep-row--head span:nth-child(3) { text-align: center; }
+.subset-timestep-name { overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.subset-timestep-meta { color: var(--text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .subset-timestep-stepper { width: 150px; }
 .subset-timestep-stepper input { min-width: 0; font-variant-numeric: tabular-nums; }
 .subset-timestep-menu { justify-self: end; }
 .subset-timestep-menu .btn-menu { opacity: .7; }
+
+/* ── 数据集子集重复次数（= 目录名数字前缀） ──────────────── */
+/* 字号沿用选择器行那一档（名称 13 / 数字 12 / 次要 11），不另起一套更小的。 */
+.dataset-subset-panel { margin: 2px 0 14px; padding: 12px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+.dataset-subset-panel.is-locked .dataset-subset-list { opacity: .48; }
+.dataset-subset-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dataset-subset-header .field-hint { margin-top: 3px; }
+.dataset-subset-title { color: var(--text-primary); font-size: 12.5px; font-weight: 600; }
+.dataset-subset-total { flex: none; color: var(--text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dataset-subset-locked { color: var(--warning); }
+.dataset-subset-empty { padding: 8px 0 1px; }
+.dataset-subset-list { margin-top: 10px; border-top: 1px solid var(--border-default); }
+/* 数值列等宽（84px）+ 统一 36px 间距：列宽随内容变化时，各列视觉空隙会参差；
+   等宽后每列几何完全一致，加上数值居中，表头自然正对数值且间距处处相同。
+   等宽固定列还能让各行天然对齐，不必依赖 subgrid。 */
+.dataset-subset-list { margin-top: 10px; border-top: 1px solid var(--border-default); }
+.dataset-subset-row { position: relative; display: grid; grid-template-columns: minmax(150px, 1fr) 84px 116px 84px 84px; align-items: center; gap: 36px; min-height: 44px; border-bottom: 1px solid var(--border-subtle); }
+/* 首列左内边距：行底色铺满整行，子集名不贴着高亮边缘（末列靠居中自带留白，无需内边距）。 */
+.dataset-subset-row > :first-child { padding-left: 12px; }
+.dataset-subset-row--head { min-height: 30px; color: var(--text-tertiary); font-size: 11px; }
+/* 数值列整体居中：表头与它下面的数值中心线重合。控件列（步进器）同理，左对齐会落到最左边的"−"上方。 */
+.dataset-subset-row--head span:nth-child(n + 2) { text-align: center; }
+.dataset-subset-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; }
+.dataset-subset-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dataset-subset-preview { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.dataset-subset-preview:empty { display: none; }
+.dataset-subset-meta { color: var(--text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
+.dataset-subset-stepper { width: 116px; justify-self: center; }
+.dataset-subset-stepper input { min-width: 0; font-variant-numeric: tabular-nums; }
+.dataset-subset-row.is-dirty { background: var(--accent-soft); }
+.dataset-subset-row.is-dirty .dataset-subset-meta { color: var(--accent); }
+.dataset-subset-row.is-invalid .dataset-subset-stepper { border-color: var(--danger); }
+.dataset-subset-invalid { color: var(--danger); }
+.dataset-subset-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.dataset-subset-footer .field-hint { margin: 0 auto 0 0; }
+.dataset-subset-applied { color: var(--text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 /* ── Iframe full-height (TensorBoard / TagEditor) ────────── */
 .iframe-full {
   position: absolute; inset: 0;

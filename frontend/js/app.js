@@ -629,6 +629,7 @@ document.addEventListener('alpine:init', () => {
     window.environmentRenderMixin,
     window.docsMixin,
     window.trainingCoreMixin,
+    window.datasetRepeatMixin,
     window.trainingLrPreviewMixin,
     window.trainingShapePreviewMixin,
     window.trainingTomlMixin,
