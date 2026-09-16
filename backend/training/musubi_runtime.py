@@ -29,7 +29,7 @@ MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
     "huggingface-hub": "0.34.3",
     "opencv-python": "4.10.0.84",
     "pillow": ">=11.3.0",
-    "prodigy-plus-schedule-free": "1.9.2",
+    "prodigy-plus-schedule-free": "2.0.1",
     "safetensors": "0.4.5",
     "toml": "0.10.2",
     "tqdm": "4.67.1",
