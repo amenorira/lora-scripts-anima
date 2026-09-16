@@ -231,8 +231,9 @@ _BNB_ADAMW_ARGS = {
 _LION_ARGS = {
     "betas": _BETAS_2,
     "weight_decay": _NON_NEGATIVE,
-    "use_triton": _boolean(),
-    "decoupled_weight_decay": _boolean(),
+    # pytorch_optimizer.Lion 的真实参数名；weight_decouple 默认已为 True（论文解耦形式）
+    "weight_decouple": _boolean(),
+    "fixed_decay": _boolean(),
 }
 
 _BNB_LION_ARGS = {
