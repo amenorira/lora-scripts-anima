@@ -553,7 +553,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                     f"EmoSens 仅以 learning_rate 作唯一样本生成动态 LR，分量 LR 不会生效，建议清空"
                 )
                 break  # 提一次即可
-        # weight_decay 安全网：EmoSens 官方默认 0.01
+        # weight_decay 兜底：EmoSens 官方默认 0.01，把产品默认值钉进 optimizer_args，
+        # 避免上游改默认值时实际训练值与界面显示的值悄悄不一致（写不进警告：
+        # 补的值同时等于界面默认和上游默认，正常流程下不改变任何训练行为）。
         # 注意：前端已把 weight_decay 合并进 optimizer_args 并从顶层删除（merged 字段），
         # 因此这里检查的是 optimizer_args 中是否已有 weight_decay= 项，而非顶层 weight_decay。
         # 否则用户自定义值（如 0.02）会被追加的 0.01 覆盖（sd-scripts 顺序解析，后者生效）。
@@ -567,7 +569,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         if not has_wd:
             opt_args.append("weight_decay=0.01")
             source["optimizer_args"] = opt_args
-            warnings.append("EmoSens: weight_decay auto-set to 0.01 / weight_decay 已自动设为 0.01")
 
     # ── 5.6b. Automagic3：兼容模式 + 优化器内部 LR ─────────
     if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
