@@ -97,8 +97,7 @@ lora-scripts-anima/
 ├── docs/                       ← Parameter guides and preview screenshots
 ├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
 ├── start.bat / start.sh        ← Launch scripts
-├── requirements.txt            ← Additional project dependencies (sd-scripts core deps installed via vendor)
-└── requirements-musubi-krea2.txt ← Shared Krea 2 version-convergence dependencies
+└── requirements.txt            ← Single authoritative dependency list (backend and training cores share it; torch is installed by the launcher)
 ```
 
 ## Usage
@@ -128,7 +127,7 @@ Existing cu128 `venv` installations upgrade on the next launch. Installed xforme
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
-> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The launcher installs the upstream sd-scripts requirements first, then uses this project's `requirements-musubi-krea2.txt` to align the shared dependencies to `transformers 4.57.6` / `tokenizers 0.22.2`.
+> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The root `requirements.txt` is the single authoritative dependency list and pins the shared stack to `transformers 4.57.6` / `tokenizers 0.22.2`; installation never reads requirement files inside `vendor/`.
 >
 > Normal startup performs only a fast metadata check. When the versions match, it does not rerun pip, uninstall or reinstall packages, or import the full Krea 2 runtime. A complete import check runs after dependency synchronization and during Krea 2 preflight. No upstream dependency file under `vendor/` is modified.
 
@@ -262,13 +261,11 @@ The GUI **Environment** tab provides:
 
 ## Development & Testing
 
-Run the complete test suite (install the test dependencies and Node.js first; they do not affect the training runtime):
+Run the complete test suite (the tests use the standard-library unittest and need no extra installation; Node.js and Git must be on PATH; they do not affect the training runtime):
 
 ```
-.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\venv\Scripts\python.exe -m pytest tests
-# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
-#        ./venv/bin/python -m pytest tests
+.\venv\Scripts\python.exe -m unittest discover -s tests -t .
+# Linux: ./venv/bin/python -m unittest discover -s tests -t .
 ```
 
 Tests are grouped by feature. The common entrypoint also runs standalone JavaScript tests. See [tests/README.md](tests/README.md) for test groups and commands, and [tools/README.md](tools/README.md) for tool responsibilities.

@@ -4,18 +4,16 @@
 
 ## 统一入口
 
-Windows：
+测试基于标准库 unittest，无需安装任何额外依赖。Windows：
 
 ```powershell
-.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\venv\Scripts\python.exe -m pytest tests -q
+.\venv\Scripts\python.exe -m unittest discover -s tests -t .
 ```
 
 Linux：
 
 ```bash
-./venv/bin/python -m pip install -r requirements-dev.txt
-./venv/bin/python -m pytest tests -q
+./venv/bin/python -m unittest discover -s tests -t .
 ```
 
 完整套件还需要 PATH 中的 Node.js（支持 `node:test`）和 Git。Windows 启动集成测试使用 PowerShell，在其他平台跳过。部分测试需要项目训练依赖，如 PyTorch；无需启动实际训练。

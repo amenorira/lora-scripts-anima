@@ -161,15 +161,15 @@ ensure_musubi_shared_runtime() {
         exit 1
     fi
 
-    # vendor/sd-scripts is installed before this project-owned requirement
-    # file. The hot path only reads metadata, so normal GUI launches do not
-    # download/rewrite packages or import Qwen3-VL.
+    # The root requirements.txt is the single authority for the shared
+    # training stack. The hot path only reads metadata, so normal GUI
+    # launches do not download/rewrite packages or import Qwen3-VL.
     if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
         return
     fi
 
-    echo "[4/4] Synchronizing shared musubi-tuner Krea 2 dependencies... / 正在同步主环境的 musubi-tuner Krea 2 依赖……"
-    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements-musubi-krea2.txt" || { echo "[ERROR] musubi-tuner dependencies install failed. / musubi-tuner 依赖安装失败。"; exit 1; }
+    echo "[Sync] Synchronizing shared training dependencies... / 正在同步共享训练依赖……"
+    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements.txt" || { echo "[ERROR] shared training dependencies install failed. / 共享训练依赖安装失败。"; exit 1; }
     "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { echo "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
 }
 
@@ -188,16 +188,13 @@ do_install() {
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/4] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
-    # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [3/4] 降级
+    echo "[1/2] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
+    # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [2/2] 降级
     "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
     "$VENV_PYTHON" -m pip install torch==2.10.0+cu130 torchvision==0.25.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
-    echo "[2/4] Installing sd-scripts dependencies... / 正在安装 sd-scripts 依赖……"
-    (cd "$SCRIPT_DIR/vendor/sd-scripts" && "$VENV_PYTHON" -m pip install -r requirements.txt) || { echo "[ERROR] sd-scripts dependencies install failed. / sd-scripts 依赖安装失败。"; exit 1; }
-
-    echo "[3/4] Installing project dependencies... / 正在安装项目依赖……"
+    echo "[2/2] Installing project dependencies... / 正在安装项目依赖……"
     "$VENV_PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
 

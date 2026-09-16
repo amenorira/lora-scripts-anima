@@ -97,8 +97,7 @@ lora-scripts-anima/
 ├── docs/                       ← 参数指南与预览截图
 ├── tools/                      ← 启动、安装与运行工具；开发脚本位于 tools/dev/
 ├── start.bat / start.sh        ← 启动脚本
-├── requirements.txt            ← 项目额外依赖（sd-scripts 核心依赖由 vendor 单独安装）
-└── requirements-musubi-krea2.txt ← 主环境的 Krea 2 版本收敛依赖
+└── requirements.txt            ← 全项目唯一依赖清单（后端与训练核心共用，torch 由启动器单独安装）
 ```
 
 ## 使用方法
@@ -128,7 +127,7 @@ lora-scripts-anima/
 
 无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
 
-> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和同一套 CUDA 版 PyTorch。启动器先安装上游 sd-scripts 依赖，再通过本项目的 `requirements-musubi-krea2.txt` 将共享依赖统一到 `transformers 4.57.6` / `tokenizers 0.22.2`。
+> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和同一套 CUDA 版 PyTorch。根目录的 `requirements.txt` 是全项目唯一依赖清单，将共享依赖统一钉在 `transformers 4.57.6` / `tokenizers 0.22.2`；安装时不再读取 `vendor/` 内的依赖文件。
 >
 > 日常启动只进行快速元数据检查。版本匹配时，不会重复运行 pip、卸载或重装软件包，也不会导入完整的 Krea 2 运行栈。依赖同步完成后，以及执行 Krea 2 预检时，启动器会运行完整的导入验证。此过程不会修改 `vendor/` 中的上游依赖文件。
 
@@ -264,13 +263,11 @@ GUI 的 **环境** 标签页提供：
 
 ## 开发测试
 
-运行完整测试套件（需安装测试依赖及 Node.js，仅开发需要，不影响训练运行时）：
+运行完整测试套件（测试基于标准库 unittest，无需安装额外依赖；需 PATH 中的 Node.js 与 Git，仅开发需要，不影响训练运行时）：
 
 ```
-.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\venv\Scripts\python.exe -m pytest tests
-# Linux: ./venv/bin/python -m pip install -r requirements-dev.txt
-#        ./venv/bin/python -m pytest tests
+.\venv\Scripts\python.exe -m unittest discover -s tests -t .
+# Linux: ./venv/bin/python -m unittest discover -s tests -t .
 ```
 
 测试按功能分类，统一入口包含独立 JavaScript 测试。分类、依赖和单独运行方法见 [tests/README.md](tests/README.md)；工具用途见 [tools/README.md](tools/README.md)。

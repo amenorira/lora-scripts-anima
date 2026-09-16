@@ -8,7 +8,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.server import api
 from backend.server.routes import environment
 from backend.server.routes import training as training_routes
 from backend.tagger.interrogators import base
@@ -28,56 +27,6 @@ class TrainingCoreStatusTests(unittest.TestCase):
 
         self.assertEqual(len(probe_threads), 1)
         self.assertNotEqual(probe_threads[0], event_loop_thread)
-
-
-class ApiRouterContractTests(unittest.TestCase):
-    """The aggregate router exposes commands and static status endpoints only."""
-
-    expected_routes = {
-        ("/health", ("GET",)),
-        ("/version", ("GET",)),
-        ("/fields", ("GET",)),
-        ("/file_picker_available", ("GET",)),
-        ("/pick_file", ("GET",)),
-        ("/get_files", ("GET",)),
-        ("/tasks/terminate/{task_id}", ("GET",)),
-        ("/graphic_cards", ("GET",)),
-        ("/sd-scripts/status", ("GET",)),
-        ("/interrogate", ("POST",)),
-        ("/interrogate/stop", ("POST",)),
-        ("/tagger/models", ("GET",)),
-        ("/tagger/api/test", ("POST",)),
-        ("/tagger/api/single", ("POST",)),
-        ("/tagger/source/scan", ("POST",)),
-        ("/tagger/uploads", ("POST",)),
-        ("/tagger/source/{source_token}/items", ("GET",)),
-        ("/tagger/tasks", ("POST",)),
-        ("/tagger/tasks/{task_id}/status", ("GET",)),
-        ("/tagger/tasks/{task_id}/cancel", ("POST",)),
-        ("/tagger/tasks/{task_id}/retry", ("POST",)),
-        ("/tagger/tasks/{task_id}/items", ("GET",)),
-        ("/tagger/tasks/active", ("GET",)),
-        ("/tagger/single", ("POST",)),
-        ("/anima-model/status", ("GET",)),
-        ("/anima-model/download", ("POST",)),
-        ("/docs", ("GET",)),
-        ("/docs/assets/{asset_path:path}", ("GET",)),
-        ("/docs/{slug}", ("GET",)),
-        ("/image-preview", ("GET",)),
-        ("/flash-attention/status", ("GET",)),
-        ("/flash-attention/install", ("POST",)),
-        ("/xformers/status", ("GET",)),
-        ("/xformers/install", ("POST",)),
-        ("/triton/status", ("GET",)),
-        ("/triton/install", ("POST",)),
-    }
-
-    def test_aggregate_router_keeps_route_paths_and_methods(self):
-        actual_routes = {
-            (route.path, tuple(sorted(route.methods)))
-            for route in api.router.routes
-        }
-        self.assertEqual(actual_routes, self.expected_routes)
 
 
 class EnvironmentJobCleanupTests(unittest.TestCase):

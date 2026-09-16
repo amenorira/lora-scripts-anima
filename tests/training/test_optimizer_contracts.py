@@ -695,7 +695,7 @@ class OptimizerValidationTests(unittest.TestCase):
         self.assertGreaterEqual(
             installed,
             Version("2.0.0"),
-            "契约按 ProdigyPlus 2.0 编写，请同步 requirements-musubi-krea2.txt 与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES",
+            "契约按 ProdigyPlus 2.0 编写，请同步 requirements.txt 与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES",
         )
 
         config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)

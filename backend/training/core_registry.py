@@ -105,7 +105,7 @@ ENGINES: dict[str, TrainingEngine] = {
         uses_sd_scripts_hooks=False,
         description=(
             "musubi-tuner Krea 2 runtime using the shared main CUDA/PyTorch environment; "
-            "application-owned requirements are reconciled after sd-scripts without modifying upstream files."
+            "the root requirements.txt pins the shared stack without reading vendor requirement files."
         ),
     ),
 }

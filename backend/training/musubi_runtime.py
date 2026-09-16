@@ -1,9 +1,9 @@
 """Shared main-venv runtime contract for musubi-tuner Krea 2.
 
 sd-scripts and musubi-tuner deliberately use one CUDA/PyTorch installation.
-The application-owned requirement file is installed *after* the vendored
-sd-scripts requirements, making the Krea 2 Transformers stack deterministic
-without editing either upstream repository.
+The root requirements.txt is the single authoritative pin set for both
+training cores: launchers install it directly without reading vendor
+requirement files and without modifying either upstream repository.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from packaging.version import InvalidVersion, Version
 
 
 # These are the musubi-tuner 0.3.4 direct runtime requirements plus the
-# application-owned, curated ProdigyPlus optimizer. Torch and torchvision are
+# curated ProdigyPlus optimizer. Torch and torchvision are
 # shared from the main CUDA 13 environment, but are validated explicitly below
 # because accelerate/bitsandbytes depend on torch indirectly.
 MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {

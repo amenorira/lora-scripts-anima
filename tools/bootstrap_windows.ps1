@@ -991,8 +991,6 @@ function Install-ProjectEnvironment {
     Write-Text "install_torch" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "setuptools>=68,<82")
     Invoke-PipInstall $venvPython @("install", "torch==2.10.0+cu130", "torchvision==0.25.0+cu130", "--extra-index-url", "https://download.pytorch.org/whl/cu130")
-    Write-Text "install_sd" -Color Cyan
-    Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") (Join-Path $script:RepositoryRoot "vendor\sd-scripts")
     Write-Text "install_project" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") $script:RepositoryRoot
     Ensure-MusubiSharedRuntime $venvPython
@@ -1002,9 +1000,9 @@ function Install-ProjectEnvironment {
 function Ensure-MusubiSharedRuntime {
     param([string]$HostPython)
 
-    # vendor/sd-scripts is intentionally installed first. This project-owned
-    # requirement file is the final authority for the shared Krea 2 runtime.
-    # The hot-path check is local/idempotent metadata only: healthy GUI
+    # The root requirements.txt is the single authority for the shared
+    # Krea 2 runtime; vendor requirement files are never read. The
+    # hot-path check is local/idempotent metadata only: healthy GUI
     # launches do not invoke pip or import Qwen3-VL.
     $checkOutput = @(Invoke-NativeCapture -FilePath $HostPython -Arguments @(
         "-X", "utf8", "-m", "tools.ensure_musubi_runtime", "--check", "--quiet"
@@ -1015,7 +1013,7 @@ function Ensure-MusubiSharedRuntime {
     $checkOutput | Out-Host
 
     Write-Text "install_musubi" -Color Cyan
-    Invoke-PipInstall $HostPython @("install", "--upgrade-strategy", "only-if-needed", "-r", "requirements-musubi-krea2.txt") $script:RepositoryRoot
+    Invoke-PipInstall $HostPython @("install", "--upgrade-strategy", "only-if-needed", "-r", "requirements.txt") $script:RepositoryRoot
     & $HostPython -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports
     if ($LASTEXITCODE -ne 0) { throw "musubi shared runtime verification failed" }
 }
