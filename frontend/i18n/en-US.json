@@ -1176,6 +1176,7 @@
 		"lohaCaption": "ΔW = (B₁ × A₁) ⊙ (B₂ × A₂), then multiplied by the scaling factor",
 		"kronCaption": "The weight is split by factor into two Kronecker blocks: out = {outL} × {outK}, in = {inM} × {inN}",
 		"kronFormula": "ΔW = {w1} ⊗ {w2}, then multiplied by the scaling factor",
+		"kronFormulaScale1": "ΔW = {w1} ⊗ {w2}, with the scaling factor fixed at 1",
 		"legendMatMul": "× matrix product",
 		"legendHadamard": "⊙ element-wise product",
 		"legendKron": "⊗ Kronecker product",

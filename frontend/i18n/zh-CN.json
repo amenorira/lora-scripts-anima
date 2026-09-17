@@ -1176,6 +1176,7 @@
 		"lohaCaption": "ΔW = (B₁ × A₁) ⊙ (B₂ × A₂)，再乘缩放系数",
 		"kronCaption": "权重按 factor 拆成两个 Kronecker 块：out = {outL} × {outK}、in = {inM} × {inN}",
 		"kronFormula": "ΔW = {w1} ⊗ {w2}，再乘缩放系数",
+		"kronFormulaScale1": "ΔW = {w1} ⊗ {w2}，缩放恒为 1",
 		"legendMatMul": "× 矩阵相乘",
 		"legendHadamard": "⊙ 逐元素相乘",
 		"legendKron": "⊗ Kronecker 积",

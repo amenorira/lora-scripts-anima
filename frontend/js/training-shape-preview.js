@@ -189,7 +189,8 @@ window.trainingShapePreviewMixin = {
       // 所以低秩对必须加括号，否则按优先级会被读成 (W1 ⊗ W2a) × W2b。
       caption = [
         fill('shapePreview.kronCaption', { outL, outK, inM, inN }),
-        fill('shapePreview.kronFormula', {
+        // W1、W2 都是完整矩阵时 LyCORIS 把 alpha 固定为 rank、缩放恒为 1；rs_lora 分母为 √rank，缩放仍有实义。
+        fill(w2Full && !w1LowRank && !rsLora ? 'shapePreview.kronFormulaScale1' : 'shapePreview.kronFormula', {
           w1: w1LowRank ? '(W1a × W1b)' : 'W1',
           w2: w2Full ? 'W2' : '(W2a × W2b)',
         }),
