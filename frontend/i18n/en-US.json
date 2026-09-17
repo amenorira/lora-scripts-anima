@@ -44,7 +44,6 @@
 		}
 	},
 		"monitor": {
-			"moreActions": "More",
 			"followPaused": "Following paused · Go to latest",
 			"copyOutputPath": "Copy output path",
 			"preparingDownload": "Preparing download. Multiple files need to be packaged first.",

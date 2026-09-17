@@ -44,7 +44,6 @@
 		}
 	},
 		"monitor": {
-			"moreActions": "更多",
 			"followPaused": "已暂停跟随 · 回到最新",
 			"copyOutputPath": "复制产物路径",
 			"preparingDownload": "正在准备下载；多个文件需要先打包，请稍候。",

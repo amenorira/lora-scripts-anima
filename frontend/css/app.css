@@ -2552,9 +2552,6 @@ input[type="range"]::-webkit-slider-thumb {
 .m-diagnostic-body { display: block; flex: 1; }
 .m-diagnostic-verdict { display: flex; flex-direction: column; min-width: 0; padding: 16px 14px 12px; }
 .m-diagnostic-details > summary { cursor: pointer; padding: 12px 14px; color: var(--text-secondary); border-top: 1px solid var(--monitor-card-border); font-size: 12px; }
-.m-monitor-more { position: relative; }
-.m-monitor-more > summary { list-style: none; cursor: pointer; }
-.m-monitor-more > div { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: grid; padding: 6px; min-width: 130px; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: var(--radius-control); box-shadow: 0 8px 24px #0002; }
 .m-gpu-select { max-width: 170px; padding: 3px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-control); font-size: 11px; }
 .m-diagnostic-eyebrow { color: var(--text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .4px; text-transform: uppercase; }
 .m-diagnostic-state { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
