@@ -88,12 +88,15 @@ def _auth_headers() -> dict[str, str]:
 
 
 def _resolve_url(repo_id: str, hf_path: str, revision: str = "main",
-                 endpoint: Optional[str] = None) -> str:
-    """构造 HF resolve 下载地址。endpoint 为空时用 HF_ENDPOINT/默认。"""
+                 endpoint: Optional[str] = None, repo_type: str = "model") -> str:
+    """构造 HF resolve 下载地址。endpoint 为空时用 HF_ENDPOINT/默认。
+
+    repo_type 决定地址里是否有 /datasets/ 前缀：模型仓库用 "model"（默认），
+    数据集仓库必须传 "dataset"，否则会 404。"""
     from huggingface_hub import hf_hub_url
     return hf_hub_url(
         repo_id=repo_id, filename=hf_path,
-        repo_type="model", revision=revision,
+        repo_type=repo_type, revision=revision,
         endpoint=endpoint or _hf_endpoint(),
     )
 
@@ -423,7 +426,8 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
                      on_log: Optional[Callable[[str], None]] = None,
                      on_progress: Optional[Callable[[str], None]] = None,
                      revision: str = "main",
-                     file_index: int = 0, file_total: int = 1) -> Path:
+                     file_index: int = 0, file_total: int = 1,
+                     repo_type: str = "model") -> Path:
     """下载单个 HF 文件（多分块并发 + 续传 + 进度上报 + 端点回退）。
 
     主端点（HF_ENDPOINT/huggingface.co）连不上/超时时自动切 hf-mirror.com 重试。
@@ -443,12 +447,13 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
         on_progress: 单行进度回调（百分比+速度），供控制台 \\r 或 rich Progress
         revision: HF revision，默认 main
         file_index/file_total: 批量下载时的序号/总数，写入 progress 供前端显示
+        repo_type: "model"（默认）或 "dataset"，决定地址里是否有 /datasets/ 前缀
 
     返回最终落盘 Path；失败抛异常。
     """
     # HF 端点列表 → resolve URL 列表，交给通用下载入口（端点回退语义不变）
     urls = [
-        _resolve_url(repo_id, hf_path, revision=revision, endpoint=endpoint)
+        _resolve_url(repo_id, hf_path, revision=revision, endpoint=endpoint, repo_type=repo_type)
         for endpoint in _endpoints_for_download()
     ]
     return download_url_with_fallback(
