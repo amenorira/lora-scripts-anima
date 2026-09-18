@@ -16,6 +16,9 @@ function _teParseTags(s, lower) {
   return out;
 }
 
+// 补全下拉的总条数上限（本地标签 + 词典结果），与 tag-dictionary.js 的 TD_SUGGEST_LIMIT 一致
+var SUGGEST_LIMIT = 20;
+
 function _teSuggestFromFreq(freq, query, limit, onResult) {
   var q = (query || '').toLowerCase();
   if (!q) { onResult([]); return; }
@@ -32,10 +35,11 @@ function _teGetSuggestCoords(inputEl) {
   var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
   var margin = 8;
   var gap = 4;
-  var width = Math.min(Math.max(rect.width, 180), Math.max(0, viewportWidth - margin * 2));
+  // 词典条目是"名称 + 中文 + 别名"的多行块，比纯标签列表高，宽度也要给够
+  var width = Math.min(Math.max(rect.width, 240), Math.max(0, viewportWidth - margin * 2));
   var maxLeft = Math.max(margin, viewportWidth - width - margin);
   var left = Math.min(Math.max(rect.left, margin), maxLeft);
-  var maxHeight = Math.max(0, Math.min(180, rect.top - gap - margin));
+  var maxHeight = Math.max(0, Math.min(300, rect.top - gap - margin));
   var bottom = Math.max(margin, viewportHeight - rect.top + gap);
   return {
     left: Math.round(left),
@@ -150,6 +154,8 @@ window.tagEditorMixin = {
   tagEditorSuggestIdx: -1,
   _teSuggestTimer: null,
   _teBlurTimer: null,
+  _teSuggestSeq: 0,
+  _teLocalSuggestTags: [],
   tagEditorDetailDragOverIdx: -1,
   tagEditorDetailDragSrcIdx: -1,
   tagEditorDetailDragOverPos: '',
@@ -378,6 +384,8 @@ window.tagEditorMixin = {
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
     if (this._teTagSearchDebounce) { clearTimeout(this._teTagSearchDebounce); this._teTagSearchDebounce = null; }
     this._teDiscardPendingTextEdits();
+    // Worker 留着复用（换回本页不用再下词典），只清掉悬停卡与待发请求
+    this.tagDictionaryCleanup();
   },
 
   // ===== Data Loading =====
@@ -519,6 +527,8 @@ window.tagEditorMixin = {
   async tagEditorLoad(dir) {
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
     var self = this;
+    // 词典只在真正进入 Tag Editor 时开始加载，且整个页面只建一个 Worker
+    this.tagDictionaryInit();
     if (!dir && !this.tagEditorDir) {
       var cached = null;
       try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}
@@ -1421,6 +1431,7 @@ window.tagEditorMixin = {
         this.tagEditorDetailText = img.tags || '';
       }
     }
+    this.tagDictionarySyncChips();
   },
 
   tagEditorGetSelectedImg() {
@@ -1453,7 +1464,7 @@ window.tagEditorMixin = {
       this._tePushHistory({ type: 'add', desc: '+ ' + added.join(', ') + ' · ' + this._teImageLabel(img), affected: 1 });
     }
     this.tagEditorAddInput = '';
-    this.tagEditorSuggestions = [];
+    this._teCloseSuggestions();
   },
 
   tagEditorRemoveTagFromSelected(tag) {
@@ -1703,24 +1714,41 @@ window.tagEditorMixin = {
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
     if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
     var v = (val || this.tagEditorAddInput || '').trim();
-    if (!v) { this.tagEditorSuggestions = []; this._teSuggestCoords = null; return; }
+    if (!v) { this._teCloseSuggestions(); return; }
     var self = this;
     var el = inputEl || document.querySelector('.te-editor-add input');
     var pos = el ? el.selectionStart : v.length;
     this._teSuggestTimer = setTimeout(function() {
       var token = _teGetCurrentToken(v, pos);
-      if (!token) { self.tagEditorSuggestions = []; self._teSuggestCoords = null; return; }
+      if (!token) { self._teCloseSuggestions(); return; }
       self.tagEditorSuggestIdx = -1;
-      _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(items) {
-        self.tagEditorSuggestions = items;
-        if (items.length > 0 && el) {
-          self._teSuggestCoords = _teGetSuggestCoords(el);
-          self._teSuggestInputEl = el;
-        } else {
-          self._teSuggestCoords = null;
-        }
+      var seq = ++self._teSuggestSeq;
+      // 本地标签（当前数据集里出现过的）先出，词典结果随后补满
+      // 20 = 词典补全上限，与 tag-dictionary.js 的 TD_SUGGEST_LIMIT 一致
+      _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(localTags) {
+        if (seq !== self._teSuggestSeq) return;
+        self._teLocalSuggestTags = localTags;
+        self._teSetSuggestions(_teSuggestMerge(localTags, null, SUGGEST_LIMIT), el);
       });
+      self.tagDictionarySuggest(token, seq, el);
     }, 50);
+  },
+
+  /* 词典结果比本地标签晚回来，只有 seq 仍是最新时才允许替换下拉内容。 */
+  _teApplyDictSuggestions(token, seq, results, inputEl) {
+    if (seq !== this._teSuggestSeq) return;
+    this._teSetSuggestions(_teSuggestMerge(this._teLocalSuggestTags, results, SUGGEST_LIMIT), inputEl || this._teSuggestInputEl);
+  },
+
+  _teSetSuggestions(items, el) {
+    this.tagEditorSuggestions = items;
+    if (this.tagEditorSuggestIdx >= items.length) this.tagEditorSuggestIdx = -1;
+    if (items.length > 0 && el) {
+      this._teSuggestCoords = _teGetSuggestCoords(el);
+      this._teSuggestInputEl = el;
+    } else {
+      this._teSuggestCoords = null;
+    }
   },
 
   tagEditorRefreshSuggestPosition() {
@@ -1733,23 +1761,32 @@ window.tagEditorMixin = {
     });
   },
 
+  /* 关掉下拉时必须让在途的词典搜索作废（seq 自增），
+     否则几百毫秒后返回的结果会把刚关掉的下拉重新弹出来。 */
+  _teCloseSuggestions() {
+    this._teSuggestSeq++;
+    this.tagEditorSuggestions = [];
+    this._teSuggestCoords = null;
+  },
+
   tagEditorBlurSuggest() {
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
     var self = this;
     this._teBlurTimer = setTimeout(function() {
-      self.tagEditorSuggestions = [];
-      self._teSuggestCoords = null;
+      self._teCloseSuggestions();
     }, 200);
   },
 
   tagEditorSelectSuggestion(s) {
+    // 下拉条目可能是词典结果对象：插入的是 Anima 格式的 insert，不是别名也不是下划线原形
+    var insert = (s && typeof s === 'object') ? (s.insert || '') : s;
+    if (!insert) return;
     var el = this._teSuggestInputEl || document.querySelector('.te-editor-add input');
     var val = this.tagEditorAddInput || '';
     var pos = el ? el.selectionStart : val.length;
-    var result = _teReplaceToken(val, pos, s);
+    var result = _teReplaceToken(val, pos, insert);
     this.tagEditorAddInput = result.text;
-    this.tagEditorSuggestions = [];
-    this._teSuggestCoords = null;
+    this._teCloseSuggestions();
     if (el) {
       var self = this;
       setTimeout(function() { el.focus(); el.setSelectionRange(result.caretPos, result.caretPos); }, 10);
@@ -2358,6 +2395,7 @@ window.tagEditorMixin = {
       this.tagEditorDetailText = newTagsStr;
     }
     this._teUpdateFreq(oldTags, newTagsStr);
+    this.tagDictionarySyncChips();
   },
 
   tagEditorModifiedCount() {
@@ -2741,6 +2779,10 @@ window.tagEditorMixin = {
     if (e.key === 'Escape') {
       if (this.tagEditorShortcutsOpen) {
         this.tagEditorShortcutsOpen = false;
+        return;
+      }
+      if (this.tagDictionaryHover) {
+        this.tagDictionaryCloseHover();
         return;
       }
       if (this.tagEditorContextMenu) {

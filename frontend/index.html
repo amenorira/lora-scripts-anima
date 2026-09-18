@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260914-motion2">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260831-motion1">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
+  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260918-dictserve4">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
@@ -50,7 +51,11 @@
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260830-copy1" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260918-tagdict2" defer></script>
+  <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
+  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260918-dictserve1" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20260918-dictserve1" defer></script>
+  <script src="/anima-ui/js/tag-hover-card.js?v=20260918-dictserve1" defer></script>
   <script src="/anima-ui/js/app.js?v=20260916-repeat16" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -540,6 +545,47 @@
           </button>
         </div>
 
+        <!-- 标签说明卡：全局唯一实例，位置与内容由 tag-dictionary.js 提供 -->
+        <div id="teDictHover" class="te-dict-hover" x-show="tagDictionaryHover" x-cloak
+          :style="tagDictionaryHover ? tagDictionaryHover.style : ''"
+          :class="tagDictionaryCategoryClass(tagDictionaryHover && tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
+          @mouseenter="tagDictionaryHoverKeep()" @mouseleave="tagDictionaryHoverLeave()">
+          <template x-if="tagDictionaryHover">
+            <div class="te-dict-hover-body">
+              <div class="te-dict-hover-head">
+                <span class="te-dict-hover-name" x-text="tagDictionaryHover.tag"></span>
+                <span class="te-dict-hover-cat"
+                  :class="tagDictionaryCategoryClass(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
+                  x-text="tagDictionaryCategoryLabel(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"></span>
+              </div>
+              <div class="te-dict-hover-zh"
+                x-text="tagDictionaryHover.meta && tagDictionaryHover.meta.translation !== tagDictionaryHover.tag ? tagDictionaryHover.meta.translation : ''"></div>
+              <div class="te-dict-hover-row" x-show="tagDictionaryHover.meta && tagDictionaryHover.meta.canonical !== tagDictionaryHover.tag">
+                <span class="te-dict-hover-key" x-text="t('tagEditor.dictCanonical')"></span>
+                <span class="te-dict-hover-val te-dict-mono" x-text="tagDictionaryHover.meta ? tagDictionaryHover.meta.canonical : ''"></span>
+              </div>
+              <div class="te-dict-hover-row" x-show="tagDictionaryHover.description">
+                <span class="te-dict-hover-key" x-text="t('tagEditor.dictDescription')"></span>
+                <span class="te-dict-hover-val te-dict-hover-desc"
+                  :class="{ clamped: !tagDictionaryHover.expanded }"
+                  x-text="tagDictionaryHover.description"></span>
+                <button class="te-dict-hover-more" x-show="tagDictionaryHoverExpandable()"
+                  @click="tagDictionaryToggleHoverExpand()"
+                  x-text="tagDictionaryHover.expanded ? t('tagEditor.dictCollapse') : t('tagEditor.dictExpand')"></button>
+              </div>
+              <div class="te-dict-hover-row" x-show="tagDictionaryHoverAliases()">
+                <span class="te-dict-hover-key" x-text="t('tagEditor.dictAliases')"></span>
+                <span class="te-dict-hover-val" x-text="tagDictionaryHoverAliases()"></span>
+              </div>
+              <div class="te-dict-hover-actions">
+                <button @click="tagDictionaryFindTag(tagDictionaryHover.tag)" x-text="t('tagEditor.dictFindTag')"></button>
+                <button @click="tagDictionaryCopy(tagDictionaryHover.tag)" x-text="t('common.copy')"></button>
+                <span class="te-dict-hover-count" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+
         <!-- Empty State -->
         <div x-show="!tagEditorSessionId && !tagEditorLoading" class="te-empty">
           <div class="te-empty-icon">
@@ -559,6 +605,18 @@
               :title="t('tagEditor.recursiveHint')"
               x-text="t('tagEditor.recursive')"></button>
           </div>
+          <!-- 还没加载数据集时顶栏不存在，词典的下载入口放这里，装好后自动收起。
+               用 x-if 而不是 x-show：Alpine 的 x-show 变更走 requestAnimationFrame，
+               在后台标签页/内嵌视图里可能不触发；x-if 是同步插入，状态一变就到位。 -->
+          <template x-if="tagDictionaryStatus() !== 'ready'">
+            <div class="te-empty-dict">
+              <template x-if="tagDictionaryStatus() !== 'checking'">
+                <button class="btn btn-ghost btn-sm" @click="tagDictionaryPrimaryAction()"
+                  x-text="tagDictionaryActionLabel()"></button>
+              </template>
+              <span class="te-dict-status" x-text="tagDictionaryStatus() === 'absent' ? t('tagEditor.dictHint') : tagDictionaryStatusText()"></span>
+            </div>
+          </template>
         </div>
 
         <!-- Loading -->
@@ -654,6 +712,56 @@
                   <polyline points="18 15 12 9 6 15"/>
                 </svg>
               </button>
+            </div>
+            <span class="te-topbar-sep"></span>
+            <div class="te-dict-controls">
+              <button class="te-topbar-btn te-dict-btn"
+                :class="{ active: tagDictionaryReady && tagDictionaryShowTranslation, busy: tagDictionaryStatus() === 'installing' || tagDictionaryStatus() === 'loading' }"
+                @click="tagDictionaryPanelOpen = !tagDictionaryPanelOpen"
+                :title="t('tagEditor.dictTitle')" :aria-label="t('tagEditor.dictTitle')"
+                :aria-expanded="tagDictionaryPanelOpen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 5h9M7.5 3v2c0 4.2-1.9 7.4-4.5 9.5"/>
+                  <path d="M5.5 9.5c1 2.6 2.7 4.6 4.5 5.8"/>
+                  <path d="M12.5 21l4-9.5 4 9.5M14 18h5"/>
+                </svg>
+              </button>
+              <span class="te-dict-status" x-show="tagDictionaryStatusText()" x-text="tagDictionaryStatusText()"></span>
+              <template x-if="tagDictionaryPanelOpen">
+                <div class="te-dict-panel" @click.outside="tagDictionaryPanelOpen = false">
+                  <div class="te-dict-panel-head">
+                    <span class="te-dict-panel-title" x-text="t('tagEditor.dictTitle')"></span>
+                    <span class="te-dict-panel-state" x-text="tagDictionaryStateLabel()"></span>
+                  </div>
+                  <template x-if="tagDictionaryStatus() === 'ready'">
+                    <div class="te-dict-panel-info">
+                      <span x-text="tagDictionaryVersionText()"></span>
+                      <span x-text="tagDictionaryTagCountText()"></span>
+                      <span x-text="tagDictionarySizeText()"></span>
+                    </div>
+                  </template>
+                  <template x-if="tagDictionaryStatus() === 'absent' || tagDictionaryStatus() === 'installing'">
+                    <div class="te-dict-panel-hint" x-text="t('tagEditor.dictHint')"></div>
+                  </template>
+                  <template x-if="tagDictionaryStatus() === 'installing'">
+                    <div class="te-dict-panel-progress" x-text="tagDictionaryInstallText()"></div>
+                  </template>
+                  <template x-if="tagDictionaryInstallError">
+                    <div class="te-dict-panel-error" x-text="tagDictionaryInstallError"></div>
+                  </template>
+                  <template x-if="tagDictionaryActionVisible()">
+                    <button class="te-dict-panel-action" @click="tagDictionaryPrimaryAction()"
+                      x-text="tagDictionaryActionLabel()"></button>
+                  </template>
+                  <template x-if="tagDictionaryStatus() === 'ready'">
+                    <button class="te-dict-panel-toggle" :class="{ active: tagDictionaryShowTranslation }"
+                      @click="tagDictionaryToggleTranslation()" :aria-pressed="tagDictionaryShowTranslation">
+                      <span class="te-dict-panel-check" x-text="tagDictionaryShowTranslation ? '✓' : ''"></span>
+                      <span x-text="t('tagEditor.dictShowTranslation')"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
             </div>
             <span class="te-topbar-sep"></span>
             <button class="te-topbar-btn" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectPage')"></button>
@@ -1018,16 +1126,19 @@
                   <div class="te-editor-body">
                     <div class="te-editor-tags" x-show="tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
-                        <span class="te-editor-tag" draggable="true" :data-ti="ti"
-                          :class="{ 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }"
+                        <span class="te-editor-tag" draggable="true" :data-ti="ti" :data-tag="tag" tabindex="0"
+                          :class="Object.assign({ 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }, tagDictionaryChipState(tag))"
                           @dragstart="tagEditorDetailDragStart($event, ti)"
                           @dragover="tagEditorDetailTagDragOver($event, ti)"
                           @dragenter="tagEditorDetailDragEnter($event, ti)"
                           @dragleave="tagEditorDetailDragLeave($event)"
                           @dragend="tagEditorDetailDragEnd($event)"
                           @dblclick="tagEditorDetailEditTag(ti)">
-                          <span x-text="tag"></span>
-                          <span class="te-editor-tag-x" @click.stop="tagEditorRemoveTagFromSelected(tag)" @dblclick.stop>&times;</span>
+                          <span class="te-editor-tag-main">
+                            <span class="te-editor-tag-name" x-text="tag"></span>
+                            <span class="te-editor-tag-x" @click.stop="tagEditorRemoveTagFromSelected(tag)" @dblclick.stop>&times;</span>
+                          </span>
+                          <span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span>
                         </span>
                       </template>
                     </div>
@@ -1045,9 +1156,19 @@
                     <div class="te-suggest" x-show="tagEditorSuggestions.length > 0"
                       :class="{ floating: _teSuggestCoords != null }"
                       :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;bottom:'+_teSuggestCoords.bottom+'px;width:'+_teSuggestCoords.width+'px;max-height:'+_teSuggestCoords.maxHeight+'px') : ''">
-                      <template x-for="(s, sIdx) in tagEditorSuggestions" :key="s">
-                        <div class="te-suggest-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
-                          @mousedown.prevent="tagEditorSelectSuggestion(s)" x-text="s"></div>
+                      <template x-for="(s, sIdx) in tagEditorSuggestions" :key="sIdx">
+                        <div class="te-suggest-item te-dict-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
+                          @mousedown.prevent="tagEditorSelectSuggestion(s)">
+                          <span class="te-dict-item-accent" :class="tagDictionaryCategoryClass(s.cat)"></span>
+                          <span class="te-dict-item-body">
+                            <span class="te-dict-item-line">
+                              <span class="te-dict-item-name" x-text="s.label"></span>
+                              <span class="te-dict-item-count" x-text="tagDictionaryFormatCount(s.count)"></span>
+                            </span>
+                            <span class="te-dict-item-zh" x-text="s.sub"></span>
+                            <span class="te-dict-item-alias" x-text="s.alias ? t('tagEditor.dictAliasHit').replace('{alias}', s.alias) : ''"></span>
+                          </span>
+                        </div>
                       </template>
                     </div>
                   </div>
