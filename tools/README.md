@@ -11,6 +11,7 @@
 | `install_flash_attn.py` | Flash Attention 安装 CLI；后端环境管理也调用 |
 | `python_startup/` | 运行时启动钩子、编码和学习率日志适配；启动器和后端依赖 |
 | `dev/regen_config_fallback.py` | 开发工具：从字段注册表生成前端默认配置 |
+| `dev/build_tag_dictionary.py` | 开发工具：把 Danbooru 中文词典 CSV 构建成 Tag Editor 用的静态资源 |
 
 开发工具与回归测试分离：自动测试统一放在 `tests/`，临时实验不要加入工具目录。新增开发脚本放 `dev/`，并在此说明用途和运行方法。
 
@@ -19,5 +20,14 @@
 ```powershell
 .\venv\Scripts\python.exe tools/dev/regen_config_fallback.py --check
 ```
+
+Tag Editor 的中文词典由后端下载并构建：界面上点「下载词典」会走 [`backend/tageditor/dictionary.py`](../backend/tageditor/dictionary.py)，产物落在 `cache/tag_dictionary/`，不进仓库。下面是开发用的离线重建（数据源已缓存在 `cache/tag_dict_src/` 时不需要联网）：
+
+```powershell
+.\venv\Scripts\python.exe tools/dev/build_tag_dictionary.py             # 用缓存里的 CSV 重建
+.\venv\Scripts\python.exe tools/dev/build_tag_dictionary.py --download  # 先下载数据源再重建
+```
+
+输出文件名带内容 hash：数据一变，浏览器就按新地址重新下载，旧缓存自然失效。
 
 Linux 使用 `./venv/bin/python`。去掉 `--check` 会更新 `frontend/js/config.js`。安装器用法见仓库主 README；测试入口见 [tests/README.md](../tests/README.md)。
