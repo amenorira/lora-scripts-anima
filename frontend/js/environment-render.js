@@ -48,6 +48,7 @@ window.environmentRenderMixin = {
       animaModel: this._renderModelGroup(T, 'Anima'),
       krea2: this._renderModelGroup(T, 'Krea 2'),
       trainUse: this._renderModelGroup(T, 'Train Use'),
+      dictionary: this._renderDictionaryRow(T),
     };
     if (!this._envSlotHtml) this._envSlotHtml = {};
     for (const slot of Object.keys(slots)) {
@@ -71,6 +72,7 @@ window.environmentRenderMixin = {
       + '<div class="env-tabs" role="tablist" data-env-tabs>'
       +   `<button type="button" role="tab" class="env-tab" data-env-tab="env">${this.esc(T('envTabEnv','Environment'))}</button>`
       +   `<button type="button" role="tab" class="env-tab" data-env-tab="models">${this.esc(T('envTabModels','Models'))}</button>`
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="data">${this.esc(T('envTabData','Downloads'))}</button>`
       +   '<span class="env-tab-indicator" aria-hidden="true"></span>'
       + '</div>'
       + '<div class="env-tab-panel" data-env-tab-panel="env">'
@@ -89,6 +91,12 @@ window.environmentRenderMixin = {
       +     '</div>'
       +   '</div>'
       + '</div>'
+      + '<div class="env-tab-panel" data-env-tab-panel="data">'
+      +   '<div class="env-models-wrap" data-env-anchor-target="data">'
+      +     '<div class="env-section-title"><span data-env-title="data"></span><span class="env-section-note" data-env-note="data"></span></div>'
+      +     '<div data-env-slot="dictionary"></div>'
+      +   '</div>'
+      + '</div>'
       + '<div class="env-tab-panel" data-env-tab-panel="models">'
       +   '<div class="env-models-wrap" data-env-anchor-target="models">'
       +     '<div class="env-section-title"><span data-env-title="models"></span><span class="env-section-note" data-env-note="models"></span></div>'
@@ -103,7 +111,7 @@ window.environmentRenderMixin = {
 
   // Tab 状态同步到 DOM（隐藏面板 + active 按钮 + 面板淡入动画）
   _syncEnvTabDom(el) {
-    const tab = this.environmentTab === 'models' ? 'models' : 'env';
+    const tab = ['models', 'data'].includes(this.environmentTab) ? this.environmentTab : 'env';
     el.querySelectorAll('[data-env-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.envTab === tab);
     });
@@ -174,6 +182,10 @@ window.environmentRenderMixin = {
     set('accel', T('sectionAccel', 'Performance acceleration'));
     set('core', T('sectionCore', 'Training Core'));
     set('models', T('sectionModels', 'Models'));
+    set('data', T('sectionData', 'Downloads'));
+    const dataNote = el.querySelector('[data-env-note="data"]');
+    const dataNoteText = T('sectionDataNote', 'Stored under cache/, not in the repository');
+    if (dataNote && dataNote.textContent !== dataNoteText) dataNote.textContent = dataNoteText;
     // 「下载到哪」的极短说明只在区标题行出现一次（文件行已逐行显示目标路径）
     const note = el.querySelector('[data-env-note="models"]');
     const noteText = T('animaModel.destShort', 'Downloads to models/');
@@ -348,7 +360,7 @@ window.environmentRenderMixin = {
       meta = `<span class="env-progress-stage">${T('connecting','Connecting')} ${idx}/${tt}</span>`;
     } else {
       // installing / working
-      const stageLabel = stage === 'installing' ? T('faStageInstalling','Installing…') : T('installingHint','Working…');
+      const stageLabel = opts.stageLabel || (stage === 'installing' ? T('faStageInstalling','Installing…') : T('installingHint','Working…'));
       bar = `<div class="env-progress-spinner-wrap"><div class="env-install-spinner"></div><span class="env-progress-stage">${stageLabel}</span></div>`;
       meta = `<span class="env-progress-time">${elapsed}</span>`;
     }
@@ -588,6 +600,64 @@ window.environmentRenderMixin = {
     ].filter(Boolean);
     return this._renderDetailGroup(T('verLabel','Ver'), verItems.join(' &middot; '))
       + `<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div>`;
+  },
+
+  /* 数据下载：Danbooru 中文词典。数据不进仓库，这里负责下载/更新与进度；
+     标签编辑器里那份译文由同一个状态驱动。 */
+  _renderDictionaryRow(T) {
+    const server = this.tagDictionaryServer;
+    const dataState = this.tagDictionaryDataState();
+    const open = this._envCardOpen('dictionary');
+    const pct = server && server.percent ? server.percent : 0;
+
+    const badgeClass = {
+      installing: 'env-badge-loading', installed: 'env-badge-ok', checking: 'env-badge-loading',
+      failed: 'env-badge-err', error: 'env-badge-err', absent: '',
+    }[dataState] || '';
+    const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText() : this.tagDictionaryDataLabel();
+    const badge = `<span class="env-badge ${badgeClass}">${this.esc(badgeText)}</span>`;
+
+    const parts = [];
+    if (dataState === 'installed') {
+      parts.push(this.tagDictionaryVersionText(), this.tagDictionaryTagCountText(), this.tagDictionarySizeText());
+    }
+    const version = parts.filter(Boolean).length
+      ? `<span class="env-mgroup-count">${parts.filter(Boolean).map(item => this.esc(item)).join(' · ')}</span>`
+      : '';
+
+    const action = this.tagDictionaryDataActionVisible()
+      ? `<button class="btn btn-sm btn-secondary" data-env-action="dictionary"${dataState === 'installing' ? ' disabled' : ''}>`
+        + `${this.esc(this.tagDictionaryDataActionLabel())}</button>`
+      : '';
+
+    const head = this._renderRowHead('dictionary', open, {
+      name: T('dictRowName', 'Danbooru Chinese dictionary'),
+      desc: T('dictRowDesc', 'Tag translations, colors and notes for the Tag Editor'),
+      version, badge, action,
+      detailKey: 'dictionary', detailLabel: T('details', 'Details'),
+    });
+
+    return this._renderRow('dictionary', dataState === 'installing' ? 'loading' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
+      this._renderDictionaryBody(T, dataState, pct));
+  },
+
+  _renderDictionaryBody(T, dataState, pct) {
+    const server = this.tagDictionaryServer || {};
+    let body = `<div class="env-msg env-msg-info">${this.esc(this.t('tagEditor.dictHint'))}</div>`;
+    if (dataState === 'installing') {
+      // 下载中走通用下载面板；构建阶段没有字节进度，用不定式条 + 自己的阶段文案
+      body += server.status === 'building'
+        ? this._renderProgressPanel({ stage: 'installing', stageLabel: this.t('tagEditor.dictBuilding') })
+        : this._renderProgressPanel({
+            stage: 'downloading', pct,
+            speedMB: server.speed_mb || 0,
+            downloadedBytes: server.downloaded_bytes || 0,
+            totalBytes: server.total_bytes || 0,
+          });
+    }
+    const log = this.tagDictionaryLogText();
+    if (log) body += this._renderLog(log);
+    return body;
   },
 
   _renderSdRow(T) {
@@ -910,6 +980,7 @@ window.environmentRenderMixin = {
         if (act === 'fa') a.faInstall(null);
         else if (act === 'xf') a.xfInstall();
         else if (act === 'triton') a.tritonInstall();
+        else if (act === 'dictionary') a.tagDictionaryDataAction();
       });
     });
   },

@@ -111,6 +111,12 @@ def status() -> dict:
     }
     if state["status"] == _DOWNLOADING:
         payload["percent"] = _download_percent()
+        with _lock:
+            progress = dict(_progress)
+        payload["current_file"] = str(progress.get("filename") or "")
+        payload["downloaded_bytes"] = int(progress.get("downloaded") or 0)
+        payload["total_bytes"] = int(progress.get("total") or 0)
+        payload["speed_mb"] = float(progress.get("speed") or 0.0)
     elif state["status"] == _BUILDING:
         payload["percent"] = 100
     else:

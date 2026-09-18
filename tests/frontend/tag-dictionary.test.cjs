@@ -218,6 +218,7 @@ function makeClient(options) {
   ctx._teLocalSuggestTags = [];
 
   context.TD_POLL_INTERVAL = 10;   // 轮询间隔直接写进 vm 上下文，测试不必真等 700ms
+  ctx.currentRoute = opts.route || 'tagEditor';
 
   return {
     ctx, posted, requests,
@@ -386,6 +387,47 @@ test('下载词典：POST 安装后轮询到就绪再拉起 Worker', async () =>
   assert.equal(ctx.tagDictionaryInstalling, false);
   assert.equal(workers().length, 1);
   assert.equal(ctx.tagDictionaryStatus(), 'loading');
+});
+
+test('环境管理页只查数据状态，不建 Worker（9MB 词典不该为了一行状态拉下来）', async () => {
+  const { ctx, workers } = makeClient({ status: [INSTALLED], route: 'environment' });
+  await initReady(ctx);
+  assert.equal(workers().length, 0);
+  assert.equal(ctx.tagDictionaryDataState(), 'installed');
+  assert.equal(ctx.tagDictionaryDataLabel(), 'tagEditor.dictStateReady');
+  assert.equal(ctx.tagDictionaryDataActionLabel(), 'tagEditor.dictUpdate');
+  assert.equal(ctx.tagDictionarySizeText(), '8.9 MB');
+  // 进标签编辑器时才建 Worker
+  ctx.currentRoute = 'tagEditor';
+  ctx.tagDictionaryEnsureWorker();
+  assert.equal(workers().length, 1);
+});
+
+test('数据动作在未装/已装/失败三种状态下给出对应按钮', () => {
+  const withServer = payload => {
+    const ctx = makeClient().ctx;
+    ctx.tagDictionaryServer = payload;
+    return ctx;
+  };
+  const absent = withServer(ABSENT);
+  assert.equal(absent.tagDictionaryDataActionLabel(), 'tagEditor.dictInstall');
+  assert.equal(absent.tagDictionaryDataActionVisible(), true);
+
+  const installed = withServer(INSTALLED);
+  assert.equal(installed.tagDictionaryDataActionLabel(), 'tagEditor.dictUpdate');
+  assert.equal(installed.tagDictionaryDataState(), 'installed');
+
+  const failed = withServer({ ...INSTALLED, status: 'failed', installed: false });
+  assert.equal(failed.tagDictionaryDataActionLabel(), 'tagEditor.dictRetry');
+
+  const busy = withServer(INSTALLED);
+  busy.tagDictionaryInstalling = true;
+  assert.equal(busy.tagDictionaryDataActionVisible(), false);
+  assert.equal(busy.tagDictionaryDataState(), 'installing');
+
+  const broken = withServer(null);
+  broken.tagDictionaryFailed = true;
+  assert.equal(broken.tagDictionaryDataState(), 'failed');
 });
 
 test('后端状态问不到时按词典不可用处理', async () => {

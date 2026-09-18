@@ -1684,6 +1684,11 @@
 		"disableSlowConnectionConfirm": "仍然关闭"
 	},
 	"environment": {
+		"envTabData": "数据下载",
+		"sectionData": "词典与数据",
+		"sectionDataNote": "保存在 cache/ 目录，不进仓库",
+		"dictRowName": "Danbooru 中文词典",
+		"dictRowDesc": "标签的中文释义、分类色与说明，供标签编辑器使用",
 		"title": "环境管理",
 		"subtitle": "管理训练环境、加速库与模型文件",
 		"confirmYes": "确认",

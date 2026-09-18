@@ -1684,6 +1684,11 @@
 		"disableSlowConnectionConfirm": "Turn off anyway"
 	},
 	"environment": {
+		"envTabData": "Downloads",
+		"sectionData": "Dictionaries & data",
+		"sectionDataNote": "Stored under cache/, not in the repository",
+		"dictRowName": "Danbooru Chinese dictionary",
+		"dictRowDesc": "Chinese meanings, category colors and notes for the Tag Editor",
 		"title": "Environment",
 		"subtitle": "Manage training dependencies, acceleration libraries, and model files",
 		"confirmYes": "Confirm",

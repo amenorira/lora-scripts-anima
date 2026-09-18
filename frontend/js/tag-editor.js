@@ -527,8 +527,9 @@ window.tagEditorMixin = {
   async tagEditorLoad(dir) {
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
     var self = this;
-    // 词典只在真正进入 Tag Editor 时开始加载，且整个页面只建一个 Worker
+    // 词典只在真正进入 Tag Editor 时才加载：问状态，数据已装就拉起唯一那个 Worker
     this.tagDictionaryInit();
+    this.tagDictionaryEnsureWorker();
     if (!dir && !this.tagEditorDir) {
       var cached = null;
       try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}

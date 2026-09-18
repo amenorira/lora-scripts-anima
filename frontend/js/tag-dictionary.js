@@ -190,18 +190,65 @@ window.tagDictionaryMixin = {
   tagDictionaryVersion: 0,
   tagDictionaryHover: null,
 
-  /* 界面状态：未装、下载中、加载中、可用、坏掉各走各的路。
+  /* 数据状态：词典文件装没装、在不在下载。环境管理页只看这个——
+     那边不建 Worker，所以不能用"加载中/可用"来描述它。
 
      先读一次 tagDictionaryVersion：这组状态（服务器状态、安装中、错误）都靠它
      统一触发重绘，和标签元数据用的是同一个版本号。 */
-  tagDictionaryStatus() {
+  tagDictionaryDataState() {
     void this.tagDictionaryVersion;
-    if (this.tagDictionaryReady) return 'ready';
-    if (this.tagDictionaryFailed) return 'failed';
     if (this.tagDictionaryInstalling) return 'installing';
-    if (this.tagDictionaryServer === null) return 'checking';
-    if (!this.tagDictionaryServer.installed) return 'absent';
+    if (this.tagDictionaryInstallError) return 'error';
+    var server = this.tagDictionaryServer;
+    // 状态都问不到（后端不通）时别再显示"读取中"：那会一直转下去
+    if (server === null) return this.tagDictionaryFailed ? 'failed' : 'checking';
+    if (server.status === 'failed') return 'failed';
+    return server.installed ? 'installed' : 'absent';
+  },
+
+  /* 标签编辑器里的界面状态：还要看当前页面有没有把 Worker 拉起来。
+     未装、下载中、加载中、可用、坏掉各走各的路。 */
+  tagDictionaryStatus() {
+    var data = this.tagDictionaryDataState();
+    if (data === 'installing' || data === 'error') return data;
+    if (this.tagDictionaryFailed) return 'failed';
+    if (data === 'checking' || data === 'absent' || data === 'failed') return data;
+    if (this.tagDictionaryReady) return 'ready';
     return 'loading';
+  },
+
+  /* 数据状态的中文标签（环境管理页与顶栏面板共用） */
+  tagDictionaryDataLabel() {
+    var keys = {
+      checking: 'dictStateChecking', absent: 'dictStateAbsent', installing: 'dictStateInstalling',
+      installed: 'dictStateReady', failed: 'dictStateFailed', error: 'dictStateFailed'
+    };
+    return this.t('tagEditor.' + keys[this.tagDictionaryDataState()]);
+  },
+
+  /* 环境管理页的主按钮：只管数据，下载/更新/重试 */
+  tagDictionaryDataActionLabel() {
+    var kind = this.tagDictionaryDataState();
+    if (kind === 'installed') return this.t('tagEditor.dictUpdate');
+    if (kind === 'failed' || kind === 'error') return this.t('tagEditor.dictRetry');
+    return this.t('tagEditor.dictInstall');
+  },
+
+  tagDictionaryDataActionVisible() {
+    var kind = this.tagDictionaryDataState();
+    return kind === 'installed' || kind === 'absent' || kind === 'failed' || kind === 'error';
+  },
+
+  tagDictionaryDataAction() {
+    this.tagDictionaryInstallError = '';
+    // 更新才重新拉数据源；只是缺构建产物时先用本地 CSV 重建，省一次 8MB 下载
+    this.tagDictionaryInstall(this.tagDictionaryDataState() === 'installed');
+  },
+
+  /* 进度与最近几条日志：环境管理页的行内详情用 */
+  tagDictionaryLogText() {
+    var log = (this.tagDictionaryServer && this.tagDictionaryServer.log) || [];
+    return log.join('\n');
   },
 
   tagDictionaryStatusText() {
@@ -229,12 +276,9 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryStateLabel() {
-    var keys = {
-      checking: 'dictStateChecking', absent: 'dictStateAbsent',
-      installing: 'dictStateInstalling', loading: 'dictStateLoading',
-      ready: 'dictStateReady', failed: 'dictStateFailed'
-    };
-    return this.t('tagEditor.' + keys[this.tagDictionaryStatus()]);
+    var kind = this.tagDictionaryStatus();
+    if (kind === 'loading') return this.t('tagEditor.dictStateLoading');
+    return this.tagDictionaryDataLabel();
   },
 
   /* 面板只有一个主按钮：状态不同含义不同，避免摆一排按钮让人挑 */
@@ -266,8 +310,8 @@ window.tagDictionaryMixin = {
     return count ? this.t('tagEditor.dictTagCount').replace('{n}', count) : '';
   },
 
-  /* 第一次真正打开 Tag Editor 时才问状态、才建 Worker：用户可能根本不看这个页面，
-     词典不该拖累启动。重复调用无副作用。 */
+  /* 查一次安装状态（环境管理页与标签编辑器都会调，重复调用无副作用）。
+     只查状态不建 Worker：Worker 要 9MB 词典，只该在真正用它的时候拉。 */
   tagDictionaryInit() {
     var state = _td();
     if (state.initStarted) return;
@@ -281,8 +325,14 @@ window.tagDictionaryMixin = {
         return;
       }
       if (status.status === 'downloading' || status.status === 'building') self._tdPollInstall();
-      else if (status.installed) self._tdStartWorker();
+      else if (status.installed) self._tdStartWorkerForRoute();
     });
+  },
+
+  /* 标签编辑器专用：数据已装就拉起 Worker（没装就什么都不做） */
+  tagDictionaryEnsureWorker() {
+    var server = this.tagDictionaryServer;
+    if (server && server.installed) this._tdStartWorker();
   },
 
   tagDictionaryRefreshStatus() {
@@ -296,6 +346,7 @@ window.tagDictionaryMixin = {
           self.tagDictionaryInstalling = true;
         }
         self.tagDictionaryVersion++;
+        self._tdRefreshPanelRow();
         return payload.data;
       })
       .catch(function () { return null; });
@@ -324,6 +375,7 @@ window.tagDictionaryMixin = {
         self.tagDictionaryInstalling = false;
         self.tagDictionaryInstallError = String((error && error.message) || error);
         self.tagDictionaryVersion++;
+        self._tdRefreshPanelRow();
       });
   },
 
@@ -340,6 +392,7 @@ window.tagDictionaryMixin = {
         self._tdStopPollInstall();
         self.tagDictionaryInstalling = false;
         self.tagDictionaryVersion++;
+        self._tdRefreshPanelRow();
         if (status.installed) {
           self._tdRestartWorker();
           if (self.tagDictionaryPanelOpen) self.tagDictionaryPanelOpen = false;
@@ -350,11 +403,24 @@ window.tagDictionaryMixin = {
     }, TD_POLL_INTERVAL);
   },
 
+  /* 环境管理页的行由 environment-render 渲染成字符串：状态一变就让它重画一次。
+     同步调用 renderEnvironment（不用 scheduleEnvironmentRender——那里走 rAF，
+     后台标签页里可能不触发）。 */
+  _tdRefreshPanelRow() {
+    if (this.currentRoute !== 'environment') return;
+    if (typeof this.renderEnvironment === 'function') this.renderEnvironment();
+  },
+
   _tdStopPollInstall() {
     var state = _td();
     if (!state.pollTimer) return;
     clearInterval(state.pollTimer);
     state.pollTimer = null;
+  },
+
+  /* 只有真的要看译文时才建 Worker：在环境管理页装完词典不该顺手拉 9MB 数据 */
+  _tdStartWorkerForRoute() {
+    if (this.currentRoute === 'tagEditor') this._tdStartWorker();
   },
 
   /* 更新完词典或上次加载失败时重新拉起 Worker */
@@ -370,7 +436,7 @@ window.tagDictionaryMixin = {
     this.tagDictionaryFailed = false;
     this.tagDictionaryDetailReady = false;
     this.tagDictionaryVersion++;
-    this._tdStartWorker();
+    this._tdStartWorkerForRoute();
   },
 
   _tdStartWorker() {
