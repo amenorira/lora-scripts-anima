@@ -147,7 +147,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260823-picker1');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260919-paste1');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -892,6 +892,26 @@ window.taggerMixin = {
     const file = event.target.files && event.target.files[0];
     if (file) await this.uploadTaggerFile(file);
     event.target.value = '';
+  },
+
+  async handleTaggerPaste(event) {
+    if (event.defaultPrevented || this.currentRoute !== 'tagger' || !this.taggerSourceMode.endsWith('single')) return;
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.taggerApiSingleRunning) return;
+    const target = event.target;
+    if (target?.isContentEditable || target?.closest?.('input, textarea, select')) return;
+
+    const clipboard = event.clipboardData;
+    let file = Array.from(clipboard?.files || []).find(file => file.type.startsWith('image/'));
+    if (!file) {
+      for (const item of Array.from(clipboard?.items || [])) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+        file = item.getAsFile();
+        if (file) break;
+      }
+    }
+    if (!file) return;
+    event.preventDefault();
+    await this.uploadTaggerFile(file);
   },
 
   async handleTaggerDrop(event) {
