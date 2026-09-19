@@ -4,7 +4,8 @@
 数据源：ame-la/danbooru-tags-data-zh（MIT），按分类分文件的 CSV：
     tag,category,aliases,zh,count,notes
 
-输出（默认 cache/tag_dictionary/，即后端对外提供静态资源的目录）：
+输出（默认 $HF_HOME/tag_dictionary/asset/，即后端对外提供静态资源的目录；
+数据源默认放在同一层级的 source/）：
     manifest.json              版本指针（浏览器每次 revalidate）
     tags-core.<hash>.json      canonical / 中文 / 分类 / 图片数 / 别名
     tags-detail.<hash>.json    与 core 同序的说明文本（notes），空串表示无
@@ -19,7 +20,7 @@ core/detail 都是"记录数组"，字段用固定下标，避免几十万条重
 按 id 升序返回，contains 回退也能顺序扫描并提前收尾。
 
 用法：
-    python tools/dev/build_tag_dictionary.py              # 用 cache/tag_dict_src 里的 CSV 重建
+    python tools/dev/build_tag_dictionary.py              # 用 HF_HOME 下的 CSV 重建，兼容旧缓存
     python tools/dev/build_tag_dictionary.py --download   # 先下载数据源再重建
 """
 
@@ -29,16 +30,40 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
+LEGACY_SOURCE_DIR = ROOT / "cache" / "tag_dict_src"
+LEGACY_ASSET_DIR = ROOT / "cache" / "tag_dictionary"
 
-DEFAULT_INPUT = ROOT / "cache" / "tag_dict_src"
-DEFAULT_OUTPUT = ROOT / "cache" / "tag_dictionary"
+
+def hf_home() -> Path:
+    """HF_HOME 目录（start.sh 里设为 huggingface/）：下载来的数据与产物都放这里。"""
+    return Path(os.environ.get("HF_HOME") or "huggingface")
+
+
+def dictionary_dir() -> Path:
+    """词典目录：source/ 是下载的数据源，asset/ 是浏览器加载的构建产物。"""
+    return hf_home() / "tag_dictionary"
+
+
+def default_source_dir() -> Path:
+    return dictionary_dir() / "source"
+
+
+def default_asset_dir() -> Path:
+    return dictionary_dir() / "asset"
+
+
+DEFAULT_INPUT = default_source_dir()
+DEFAULT_OUTPUT = default_asset_dir()
 SOURCE_REPO = "ame-la/danbooru-tags-data-zh"
 SOURCE_URL = f"https://huggingface.co/datasets/{SOURCE_REPO}/resolve/main/tags"
 
@@ -48,6 +73,25 @@ CATEGORY_FILES = ["general", "artist", "copyright", "character", "meta"]
 
 SCHEMA_VERSION = 1
 REQUIRED_FIELDS = {"tag", "category", "aliases", "zh", "count", "notes"}
+
+
+def reuse_legacy_sources(input_dir: Path) -> None:
+    """只补齐缺失或空的 CSV；原子替换防止中断后误用半份文件，保留旧缓存。"""
+    for name in CATEGORY_FILES:
+        target = input_dir / f"{name}.csv"
+        legacy = LEGACY_SOURCE_DIR / target.name
+        if target.is_file() and target.stat().st_size > 0:
+            continue
+        if not legacy.is_file() or legacy.stat().st_size == 0:
+            continue
+        input_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=input_dir, delete=False) as handle:
+            temporary = Path(handle.name)
+        try:
+            shutil.copy2(legacy, temporary)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 # caption 用逗号分隔、换行分隔文本行，词典值一旦带这些字符会破坏结构
 _FORBIDDEN_IN_TAG = (",", "\n", "\r")
@@ -350,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.download:
         download_sources(args.input, args.source_url)
+    elif args.input == DEFAULT_INPUT:
+        reuse_legacy_sources(args.input)
     data_version = args.data_version or default_data_version(args.input)
     build(args.input, args.output, data_version, args.source_url)
     return 0

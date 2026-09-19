@@ -236,6 +236,50 @@ const ABSENT = { status: 'idle', installed: false, data_version: '', tag_count: 
 
 const tick = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+test('environment retry refreshes failed updates and invalid source data', () => {
+  const { ctx } = makeClient({ status: [INSTALLED] });
+  const forces = [];
+  ctx.tagDictionaryInstall = force => forces.push(force);
+  ctx.tagDictionaryServer = { ...INSTALLED, status: 'failed' };
+  ctx.tagDictionaryReady = true;
+  assert.equal(ctx.tagDictionaryStatus(), 'ready');
+  ctx.tagDictionaryDataAction();
+  ctx.tagDictionaryServer = { ...ABSENT, status: 'failed', error_kind: 'build' };
+  ctx.tagDictionaryDataAction();
+  ctx.tagDictionaryServer = { ...ABSENT, status: 'failed', error_kind: 'download' };
+  ctx.tagDictionaryDataAction();
+  assert.deepEqual(forces, [true, true, false]);
+});
+
+test('dictionary details show useful state without a permanent info box or log', () => {
+  const context = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/environment-render.js'), 'utf8'), context);
+  const translations = JSON.parse(fs.readFileSync(path.join(__dirname, '../../frontend/i18n/zh-CN.json'), 'utf8')).environment;
+  const T = key => translations[key] || key;
+  const ctx = {
+    ...context.window.environmentRenderMixin,
+    tagDictionaryServer: { ...INSTALLED, status: 'failed', error_kind: 'integrity' },
+    esc: text => String(text).replaceAll('<', '&lt;'),
+    tagDictionaryLogText: () => 'Size mismatch <unsafe>',
+  };
+  const failed = ctx._renderDictionaryBody(T, 'failed', 0);
+  assert.ok(failed.includes('已安装的词典仍可使用'));
+  assert.ok(failed.includes('完整性校验'));
+  assert.ok(failed.includes('<details>'));
+  assert.ok(failed.includes('&lt;unsafe>'));
+  assert.ok(!failed.includes('env-msg-info'));
+  const installed = ctx._renderDictionaryBody(T, 'installed', 0);
+  assert.ok(!installed.includes('env-log'));
+  assert.ok(installed.includes('部分标签暂无翻译'));
+  ctx.tagDictionaryServer = { status: 'downloading', current_file: 'meta.csv', file_index: 4,
+    file_total: 5, total_bytes: 100, downloaded_bytes: 50, speed_mb: 1, download_source: 'huggingface.co' };
+  ctx._renderProgressPanel = options => JSON.stringify(options);
+  const downloading = ctx._renderDictionaryBody(T, 'installing', 90);
+  assert.ok(downloading.includes('元标签 · 5/5'));
+  assert.ok(downloading.includes('huggingface.co'));
+  assert.ok(downloading.includes('"pct":50'));
+});
+
 /* init 现在先问后端状态，再决定要不要建 Worker */
 async function initReady(ctx) {
   const done = ctx.tagDictionaryInit();

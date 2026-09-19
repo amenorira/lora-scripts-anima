@@ -608,17 +608,18 @@ window.environmentRenderMixin = {
     const server = this.tagDictionaryServer;
     const dataState = this.tagDictionaryDataState();
     const open = this._envCardOpen('dictionary');
-    const pct = server && server.percent ? server.percent : 0;
 
     const badgeClass = {
       installing: 'env-badge-loading', installed: 'env-badge-ok', checking: 'env-badge-loading',
       failed: 'env-badge-err', error: 'env-badge-err', absent: '',
     }[dataState] || '';
-    const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText() : this.tagDictionaryDataLabel();
+    const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText()
+      : server?.status === 'failed' ? T(server.installed ? 'dictUpdateFailed' : 'dictDownloadFailed')
+      : this.tagDictionaryDataLabel();
     const badge = `<span class="env-badge ${badgeClass}">${this.esc(badgeText)}</span>`;
 
     const parts = [];
-    if (dataState === 'installed') {
+    if (server?.installed) {
       parts.push(this.tagDictionaryVersionText(), this.tagDictionaryTagCountText(), this.tagDictionarySizeText());
     }
     const version = parts.filter(Boolean).length
@@ -638,25 +639,44 @@ window.environmentRenderMixin = {
     });
 
     return this._renderRow('dictionary', dataState === 'installing' ? 'loading' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
-      this._renderDictionaryBody(T, dataState, pct));
+      this._renderDictionaryBody(T, dataState));
   },
 
-  _renderDictionaryBody(T, dataState, pct) {
+  _renderDictionaryBody(T, dataState) {
     const server = this.tagDictionaryServer || {};
-    let body = `<div class="env-msg env-msg-info">${this.esc(this.t('tagEditor.dictHint'))}</div>`;
+    let body = '';
+    const category = String(server.current_file || '').replace(/\.csv$/, '');
+    const categoryNames = { general: 'dictGeneral', artist: 'dictArtist', copyright: 'dictCopyright',
+      character: 'dictCharacter', meta: 'dictMeta' };
+    const current = categoryNames[category] ? T(categoryNames[category]) : server.current_file || '';
     if (dataState === 'installing') {
-      // 下载中走通用下载面板；构建阶段没有字节进度，用不定式条 + 自己的阶段文案
+      if (server.status !== 'building' && current) {
+        const source = server.download_source ? ` · ${this.esc(server.download_source)}` : '';
+        body += `<div class="env-text-dim">${this.esc(current)} · ${Number(server.file_index || 0) + 1}/${Number(server.file_total || 5)}${source}</div>`;
+      }
       body += server.status === 'building'
         ? this._renderProgressPanel({ stage: 'installing', stageLabel: this.t('tagEditor.dictBuilding') })
         : this._renderProgressPanel({
-            stage: 'downloading', pct,
+            stage: server.phase === 'connecting' ? 'connecting' : 'downloading',
+            fileIndex: Number(server.file_index || 0) + 1, fileTotal: server.file_total || 5,
+            pct: server.total_bytes > 0 ? Math.min(100, Math.floor(100 * server.downloaded_bytes / server.total_bytes)) : 0,
             speedMB: server.speed_mb || 0,
             downloadedBytes: server.downloaded_bytes || 0,
             totalBytes: server.total_bytes || 0,
           });
     }
-    const log = this.tagDictionaryLogText();
-    if (log) body += this._renderLog(log);
+    if (dataState === 'failed' || dataState === 'error') {
+      const reason = T(server.error_kind === 'integrity' ? 'dictErrorIntegrity'
+        : server.error_kind === 'build' ? 'dictErrorBuild' : 'dictErrorDownload');
+      body += `<div class="env-msg env-msg-err">${current ? this.esc(current) + '：' : ''}${this.esc(reason)} ${this.esc(T(server.installed ? 'dictOldAvailable'
+        : server.error_kind === 'build' ? 'dictRetryFresh' : 'dictRetryResume'))}</div>`;
+    }
+    body += this._renderDetailGroup(T('dictIncludes'), this.esc(T('dictCoverage')));
+    body += this._renderDetailGroup(T('dictSource'), '<a href="https://huggingface.co/datasets/ame-la/danbooru-tags-data-zh" target="_blank" rel="noopener" class="env-link">ame-la/danbooru-tags-data-zh ↗</a>');
+    const log = this.tagDictionaryLogText() || this.tagDictionaryInstallError || server.message;
+    if (log && (dataState === 'failed' || dataState === 'error')) {
+      body += `<details><summary class="env-text-dim">${this.esc(T('dictErrorDetails'))}</summary>${this._renderLog(log)}</details>`;
+    }
     return body;
   },
 

@@ -212,7 +212,8 @@ window.tagDictionaryMixin = {
     var data = this.tagDictionaryDataState();
     if (data === 'installing' || data === 'error') return data;
     if (this.tagDictionaryFailed) return 'failed';
-    if (data === 'checking' || data === 'absent' || data === 'failed') return data;
+    if (data === 'checking' || data === 'absent'
+      || (data === 'failed' && !(this.tagDictionaryServer && this.tagDictionaryServer.installed))) return data;
     if (this.tagDictionaryReady) return 'ready';
     return 'loading';
   },
@@ -242,7 +243,8 @@ window.tagDictionaryMixin = {
   tagDictionaryDataAction() {
     this.tagDictionaryInstallError = '';
     // 更新才重新拉数据源；只是缺构建产物时先用本地 CSV 重建，省一次 8MB 下载
-    this.tagDictionaryInstall(this.tagDictionaryDataState() === 'installed');
+    this.tagDictionaryInstall(!!(this.tagDictionaryServer && this.tagDictionaryServer.installed)
+      || !!(this.tagDictionaryServer && this.tagDictionaryServer.error_kind === 'build'));
   },
 
   /* 进度与最近几条日志：环境管理页的行内详情用 */

@@ -3,11 +3,15 @@
 词典数据约 9MB，不进仓库，也不做运行时查询接口：
     下载（backend/utils/hf_download，带镜像回退与续传）
     → 构建（tools/dev/build_tag_dictionary.py 的校验与 core/detail 拆分）
-    → cache/tag_dictionary/ 落盘
+    → $HF_HOME/tag_dictionary/asset/ 落盘
     → 浏览器按同源静态文件加载，查询全在 Web Worker 里完成
 
-下载下来的 CSV 留在 cache/tag_dict_src/：只改构建脚本时不必再下一次。
+目录跟随 HF_HOME（start.sh 里是 huggingface/），和其他 Hugging Face 数据在一起：
+    $HF_HOME/tag_dictionary/source/   下载下来的 CSV，只改构建脚本时不必再下一次
+    $HF_HOME/tag_dictionary/asset/    浏览器加载的 manifest / core / detail
 源目录交给 tools/dev/build_tag_dictionary.py 也能离线重建。
+升级兼容：新资源不可用时读取 cache/tag_dictionary；安装时从 cache/tag_dict_src
+补齐缺失的 CSV，保留旧缓存，强制更新仍重新下载。
 """
 from __future__ import annotations
 
@@ -16,11 +20,21 @@ import json
 import threading
 from pathlib import Path
 
-from backend.utils.hf_download import download_hf_file
-from tools.dev.build_tag_dictionary import CATEGORY_FILES, SOURCE_REPO, build
+from backend.utils.hf_download import IntegrityError, download_hf_file
+from tools.dev.build_tag_dictionary import (
+    CATEGORY_FILES,
+    LEGACY_ASSET_DIR,
+    SOURCE_REPO,
+    SOURCE_URL,
+    build,
+    default_asset_dir,
+    default_source_dir,
+    reuse_legacy_sources,
+)
 
-CACHE_DIR = Path("cache") / "tag_dictionary"
-SOURCE_DIR = Path("cache") / "tag_dict_src"
+# 下载来的 CSV 与构建产物都放 HF_HOME（huggingface/）下，与其他 HF 数据一致
+SOURCE_DIR = default_source_dir()
+ASSET_DIR = default_asset_dir()
 MANIFEST_NAME = "manifest.json"
 
 # HF 仓库里 CSV 放在 tags/ 下，本地平铺保存
@@ -42,15 +56,29 @@ _thread: threading.Thread | None = None
 
 def read_manifest() -> dict | None:
     """读取已安装词典的 manifest；文件缺失或损坏时视为未安装。"""
+    return _installed_assets()[1]
+
+
+def _installed_assets() -> tuple[Path, dict | None]:
+    """新目录优先，旧版完整资源直接读取；所有静态文件使用同一份 manifest。"""
+    for directory in (ASSET_DIR, LEGACY_ASSET_DIR):
+        manifest = _read_manifest(directory)
+        if manifest is not None:
+            return directory, manifest
+    return ASSET_DIR, None
+
+
+def _read_manifest(directory: Path) -> dict | None:
     try:
-        manifest = json.loads((CACHE_DIR / MANIFEST_NAME).read_text(encoding="utf-8"))
+        manifest = json.loads((directory / MANIFEST_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(manifest, dict):
         return None
     for key in ("core", "detail"):
         name = manifest.get(key)
-        if not isinstance(name, str) or not (CACHE_DIR / name).is_file():
+        if (not isinstance(name, str) or not name or name.startswith(".")
+                or "/" in name or "\\" in name or not (directory / name).is_file()):
             return None
     return manifest
 
@@ -59,20 +87,20 @@ def asset_path(name: str) -> Path | None:
     """把请求的文件名限定在已安装词典的文件里，避免路径穿越。"""
     if not name or "/" in name or "\\" in name or name.startswith("."):
         return None
-    manifest = read_manifest()
+    directory, manifest = _installed_assets()
     if manifest is None:
         return None
     allowed = {MANIFEST_NAME, manifest["core"], manifest["detail"]}
     if name not in allowed:
         return None
-    path = CACHE_DIR / name
+    path = directory / name
     return path if path.is_file() else None
 
 
-def _installed_size(manifest: dict) -> int:
+def _installed_size(directory: Path, manifest: dict) -> int:
     total = 0
     for key in ("core", "detail"):
-        path = CACHE_DIR / manifest[key]
+        path = directory / manifest[key]
         try:
             total += path.stat().st_size
         except OSError:
@@ -96,8 +124,9 @@ def status() -> dict:
     """给前端的完整状态：是否已安装、数据版本、体积，以及正在进行的安装进度。"""
     with _lock:
         state = dict(_state)
-        log = list(_state["log"])[-4:]
-    manifest = read_manifest()
+        log = list(_state["log"])
+        progress = dict(_progress)
+    directory, manifest = _installed_assets()
     payload = {
         "status": state["status"],
         "message": state["message"],
@@ -105,9 +134,15 @@ def status() -> dict:
         "installed": manifest is not None,
         "data_version": (manifest or {}).get("data_version", ""),
         "tag_count": int((manifest or {}).get("tag_count") or 0),
-        "size_bytes": _installed_size(manifest) if manifest else 0,
+        "size_bytes": _installed_size(directory, manifest) if manifest else 0,
         "source": SOURCE_REPO,
         "finished_at": state["finished_at"],
+        "error_kind": state.get("error_kind", ""),
+        "current_file": str(progress.get("filename") or ""),
+        "file_index": int(progress.get("file_index") or 0),
+        "file_total": len(HF_FILES),
+        "phase": str(progress.get("phase") or ""),
+        "download_source": str(progress.get("source") or ""),
     }
     if state["status"] == _DOWNLOADING:
         payload["percent"] = _download_percent()
@@ -151,6 +186,8 @@ def start_install(force: bool = False) -> dict:
         installed = read_manifest() is not None
         start = not busy and (force or not installed)
         if start:
+            _progress.clear()
+            _state["error_kind"] = ""
             _state["log"] = []
             _state["status"] = _DOWNLOADING
             _state["message"] = ""
@@ -166,10 +203,14 @@ def _install(force: bool) -> None:
         _download_sources(force)
         _set_state(_BUILDING, "")
         _log("构建词典资源")
-        manifest = build(SOURCE_DIR, CACHE_DIR, datetime.date.today().isoformat(), _report_sink)
+        manifest = build(SOURCE_DIR, ASSET_DIR, datetime.date.today().isoformat(),
+                         SOURCE_URL, on_report=_report_sink)
         _log(f"完成：{manifest['tag_count']} 个标签")
         _set_state(_READY, "")
-    except Exception as error:  # noqa: BLE001 - 任何失败都要变成可见状态，不能让线程静默死掉
+    except (Exception, SystemExit) as error:  # 构建器的 CSV 校验通过 SystemExit 报错
+        with _lock:
+            _state["error_kind"] = ("integrity" if isinstance(error, IntegrityError)
+                                    else "build" if _state["status"] == _BUILDING else "download")
         _log(f"失败：{error}")
         _set_state(_FAILED, str(error))
 
@@ -180,6 +221,8 @@ def _report_sink(report: str) -> None:
 
 
 def _download_sources(force: bool) -> None:
+    if not force:
+        reuse_legacy_sources(SOURCE_DIR)
     SOURCE_DIR.mkdir(parents=True, exist_ok=True)
     total = len(HF_FILES)
     for index, (hf_path, local_name) in enumerate(HF_FILES):
@@ -188,9 +231,14 @@ def _download_sources(force: bool) -> None:
             _log(f"复用本地 {local_name}")
         else:
             _log(f"下载 {hf_path}")
+            with _lock:
+                _progress.update({"filename": local_name, "file_index": index,
+                                  "file_total": total, "downloaded": 0, "total": 0,
+                                  "speed": 0.0, "phase": "connecting"})
             download_hf_file(
                 SOURCE_REPO, hf_path, target,
                 progress=_progress, lock=_lock,
                 file_index=index, file_total=total,
+                on_log=_log,
                 repo_type="dataset",   # 数据源是数据集仓库，地址要带 /datasets/
             )
