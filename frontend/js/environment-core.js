@@ -338,7 +338,6 @@ window.environmentCoreMixin = {
     this._envInitCardState();
     // 词典状态：第一次进来查一次，之后每次进来刷新（数据可能是在别处装的）
     this.tagDictionaryInit();
-    this.tagDictionaryRefreshStatus();
     // Tab 记忆（用户上次看哪个分区）
     try {
       const savedTab = localStorage.getItem('anima_env_tab');

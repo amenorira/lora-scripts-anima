@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,6 +172,38 @@ class BuildTagDictionaryTests(unittest.TestCase):
             source2 = write_source(root / "second", rows)
             third = build(source2, output, "2026-08", "https://example.invalid/tags")
             self.assertNotEqual(third["core"], first["core"])
+            self.assertTrue((output / first["detail"]).is_file())
+
+    def test_failed_manifest_publish_preserves_installed_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first, _, _, output = read_build(root)
+            previous = (output / "manifest.json").read_bytes()
+            rows = dict(ROWS)
+            rows["general"] = [["new_tag", 0, "", "新标签", 1, ""]]
+            source = write_source(root, rows)
+            replace = Path.replace
+
+            def fail_manifest(path, target):
+                if target.name == "manifest.json":
+                    raise OSError("publish failed")
+                return replace(path, target)
+
+            with patch.object(Path, "replace", fail_manifest):
+                with self.assertRaisesRegex(OSError, "publish failed"):
+                    build(source, output, "new", "https://example.invalid/tags")
+            self.assertEqual((output / "manifest.json").read_bytes(), previous)
+            self.assertTrue((output / first["core"]).is_file())
+            self.assertFalse(any(p.name.startswith("tmp") for p in output.iterdir()))
+
+    def test_empty_dictionary_cannot_replace_installed_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _, _, _, output = read_build(root)
+            previous = (output / "manifest.json").read_bytes()
+            with self.assertRaisesRegex(ValueError, "没有有效标签"):
+                build(write_source(root, {}), output, "new", "https://example.invalid/tags")
+            self.assertEqual((output / "manifest.json").read_bytes(), previous)
 
     def test_canonical_only_keeps_caption_safe_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:

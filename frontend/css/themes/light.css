@@ -24,8 +24,8 @@
   --tag-general: #1f6fd0;
   --tag-artist: #c33d3d;
   --tag-copyright: #8a4bc8;
-  --tag-character: #2b8a4b;
-  --tag-meta: #b8741a;
+  --tag-character: #267840;
+  --tag-meta: #966013;
 
   /* 资源监控状态色（柔和，独立于全局 --danger/--warning） */
   --res-ok: #10b981;      /* 正常：绿 */

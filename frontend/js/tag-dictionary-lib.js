@@ -176,23 +176,31 @@
     };
   }
 
-  /* 精确匹配：canonical → 中文 → 别名，收录顺序即展示顺序。 */
+  /* 精确匹配：标准标签优先；译名与别名有歧义时，通用标签优先，再按使用量排序。 */
   function exactMatches(index, keys, out, ids) {
     var i, k, list, id;
     for (i = 0; i < keys.length; i++) {
       id = index.canonicalMap.get(keys[i]);
       if (id != null) pushHit(out, ids, id, 'canonical');
     }
+    var fallback = [];
+    var fallbackIds = new Set();
     for (i = 0; i < keys.length; i++) {
       list = index.translationMap.get(keys[i]);
       if (!list) continue;
-      for (k = 0; k < list.length; k++) pushHit(out, ids, list[k], 'translation');
+      for (k = 0; k < list.length; k++) pushHit(fallback, fallbackIds, list[k], 'translation');
     }
     for (i = 0; i < keys.length; i++) {
       list = index.aliasMap.get(keys[i]);
       if (!list) continue;
-      for (k = 0; k < list.length; k++) pushAliasHit(index, out, ids, list[k], 'alias');
+      for (k = 0; k < list.length; k++) pushAliasHit(index, fallback, fallbackIds, list[k], 'alias');
     }
+    fallback.sort(function (a, b) {
+      var ra = index.records[a.id], rb = index.records[b.id];
+      return Number(rb[F_CATEGORY] === 0) - Number(ra[F_CATEGORY] === 0) ||
+        rb[F_POST_COUNT] - ra[F_POST_COUNT] || a.id - b.id;
+    });
+    fallback.forEach(function (hit) { pushHit(out, ids, hit.id, hit.match, hit.alias); });
   }
 
   /* 前缀匹配：canonical → 中文 → 别名。
@@ -241,18 +249,13 @@
   /* 子串回退：records 与别名表都按热门度排列，扫够 limit 即可停。 */
   function containsMatches(index, keys, out, ids, cap) {
     var i, query, id, entry;
-    var bucket;
     for (i = 0; i < keys.length; i++) {
       query = keys[i];
-      bucket = [];
-      for (id = 0; id < index.records.length && bucket.length < cap; id++) {
+      for (id = 0; id < index.records.length && out.length < cap; id++) {
         if (index.canonicalKeys[id].indexOf(query) !== -1 ||
             (index.translationKeys[id] && index.translationKeys[id].indexOf(query) !== -1)) {
-          bucket.push(id);
+          pushHit(out, ids, id, 'contains');
         }
-      }
-      for (var at = 0; at < bucket.length && out.length < cap; at++) {
-        pushHit(out, ids, bucket[at], 'contains');
       }
       for (entry = 0; entry < index.aliasKeys.length && out.length < cap; entry++) {
         if (index.aliasKeys[entry].indexOf(query) !== -1) pushAliasHit(index, out, ids, entry, 'contains');
@@ -272,7 +275,9 @@
     var out = [];
     var ids = new Set();
     exactMatches(index, keys, out, ids);
-    if (out.length < max) prefixMatchesAll(index, keys, out, ids, max);
+    // 中文没有英文式的单词前缀：查“长发”时，“超长发”比冷门的“长发公主”更常用。
+    // 精确命中仍优先，其余中文命中按使用频率排列。
+    if (out.length < max && !/[\u3400-\u9fff]/.test(query)) prefixMatchesAll(index, keys, out, ids, max);
     if (out.length < max) containsMatches(index, keys, out, ids, max);
 
     var results = [];
@@ -290,28 +295,28 @@
      不会改写已有标注。 */
   function lookup(index, value) {
     var keys = lookupKeys(value);
-    var i, hit, id;
-    for (i = 0; i < keys.length; i++) {
-      id = index.canonicalMap.get(keys[i]);
-      if (id != null) return { id: id, result: toResult(index, id, 'canonical', '') };
-    }
-    for (i = 0; i < keys.length; i++) {
-      var translations = index.translationMap.get(keys[i]);
-      if (translations && translations.length) return { id: translations[0], result: toResult(index, translations[0], 'translation', '') };
-    }
-    for (i = 0; i < keys.length; i++) {
-      hit = index.aliasMap.get(keys[i]);
-      if (hit && hit.length) {
-        var entry = hit[0];
-        return { id: index.aliasIds[entry], result: toResult(index, index.aliasIds[entry], 'alias', index.aliasTexts[entry]) };
-      }
-    }
-    return null;
+    var hits = [];
+    exactMatches(index, keys, hits, new Set());
+    var hit = hits[0];
+    return hit ? { id: hit.id, result: toResult(index, hit.id, hit.match, hit.alias) } : null;
   }
 
   function describe(index, id) {
     if (!index.details || id == null || id < 0 || id >= index.details.length) return '';
     return index.details[id] || '';
+  }
+
+  // 只在当前数据集的标签中搜索，不把词典里未使用的标签混入筛选列表。
+  function filterTags(index, tags, query) {
+    var key = normalizeKey(query);
+    return tags.filter(function(tag) {
+      if (normalizeKey(tag).includes(key)) return true;
+      var hit = lookup(index, tag);
+      if (!hit) return false;
+      return normalizeKey(hit.result.translation).includes(key) ||
+        normalizeKey(hit.result.canonical).includes(key) ||
+        aliasesOf(index, hit.id).some(function(alias) { return normalizeKey(alias).includes(key); });
+    });
   }
 
   /* 别名列表只在说明卡里用，批量查询不返回，免得每张图都传一堆没人看的字符串。 */
@@ -360,6 +365,7 @@
     splitAliases: splitAliases,
     createIndex: createIndex,
     search: search,
+    filterTags: filterTags,
     lookup: lookup,
     describe: describe,
     aliasesOf: aliasesOf,

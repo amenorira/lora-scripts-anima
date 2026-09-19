@@ -184,7 +184,7 @@ window.environmentRenderMixin = {
     set('models', T('sectionModels', 'Models'));
     set('data', T('sectionData', 'Downloads'));
     const dataNote = el.querySelector('[data-env-note="data"]');
-    const dataNoteText = T('sectionDataNote', 'Stored under cache/, not in the repository');
+    const dataNoteText = T('sectionDataNote', 'Available offline after download');
     if (dataNote && dataNote.textContent !== dataNoteText) dataNote.textContent = dataNoteText;
     // 「下载到哪」的极短说明只在区标题行出现一次（文件行已逐行显示目标路径）
     const note = el.querySelector('[data-env-note="models"]');

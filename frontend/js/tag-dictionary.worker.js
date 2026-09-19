@@ -8,13 +8,13 @@
    协议（主线程 → Worker）：
      INIT        {base}                      加载 manifest + core，随后空闲加载 detail
      LOAD_DETAIL {}                          立即加载 detail（首次悬停时触发）
-     LOOKUP_BATCH{id, revision, tags[]}      当前图片全部标签一次查完
+     LOOKUP_BATCH{id, tags[]}                当前图片全部标签一次查完
      SEARCH      {id, query, limit}          补全/搜索
      DETAIL      {id, tag}                   悬停说明
    回复（Worker → 主线程）：
      READY_CORE / READY_DETAIL / FAILED / LOOKUP_RESULT / SEARCH_RESULT / DETAIL_RESULT
    ================================================================ */
-importScripts('tag-dictionary-lib.js');
+importScripts('tag-dictionary-lib.js' + self.location.search);
 
 var TD = self.TagDictionary;
 var index = null;
@@ -30,6 +30,7 @@ self.onmessage = function (event) {
   if (msg.type === 'LOAD_DETAIL') return loadDetail();
   if (msg.type === 'LOOKUP_BATCH') return lookupBatch(msg);
   if (msg.type === 'SEARCH') return search(msg);
+  if (msg.type === 'FILTER_TAGS') return post({ type: 'SEARCH_RESULT', id: msg.id, results: TD.filterTags(index, msg.tags || [], msg.query || '') });
   if (msg.type === 'DETAIL') return detail(msg);
 };
 
@@ -41,7 +42,7 @@ function init(base) {
   if (index) return;
   var root = String(base || '').replace(/\/?$/, '/');
   baseUrl = root;
-  fetch(root + 'manifest.json', { cache: 'no-cache' })
+  fetch(root + 'manifest.json', { cache: 'no-cache', signal: AbortSignal.timeout(30000) })
     .then(function (response) {
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return response.json();
@@ -52,7 +53,7 @@ function init(base) {
       }
       manifest = data;
       // 内容文件带 hash，用查询串换取一年 immutable 缓存；manifest 本身保持 revalidate
-      return fetch(root + data.core + '?v=' + encodeURIComponent(data.core));
+      return fetch(root + data.core + '?v=' + encodeURIComponent(data.core), { signal: AbortSignal.timeout(30000) });
     })
     .then(function (response) {
       if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -85,7 +86,7 @@ function loadDetail() {
   if (!index || detailState === 'loading' || detailState === 'ready') return;
   if (detailTimer) { clearTimeout(detailTimer); detailTimer = null; }
   detailState = 'loading';
-  fetch(baseUrl + manifest.detail + '?v=' + encodeURIComponent(manifest.detail))
+  fetch(baseUrl + manifest.detail + '?v=' + encodeURIComponent(manifest.detail), { signal: AbortSignal.timeout(30000) })
     .then(function (response) {
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return response.json();
@@ -106,16 +107,15 @@ function lookupBatch(msg) {
   var results = new Array(tags.length);
   for (var i = 0; i < tags.length; i++) {
     var hit = TD.lookup(index, tags[i]);
-    results[i] = hit ? TD.toResult(index, hit.id, 'canonical') : null;
+    results[i] = hit ? hit.result : null;
   }
-  post({ type: 'LOOKUP_RESULT', id: msg.id, revision: msg.revision, results: results });
+  post({ type: 'LOOKUP_RESULT', id: msg.id, results: results });
 }
 
 function search(msg) {
   post({
     type: 'SEARCH_RESULT',
     id: msg.id,
-    revision: msg.revision,
     results: TD.search(index, msg.query, msg.limit)
   });
 }
@@ -123,12 +123,12 @@ function search(msg) {
 function detail(msg) {
   var hit = TD.lookup(index, msg.tag);
   if (!hit) {
-    post({ type: 'DETAIL_RESULT', id: msg.id, revision: msg.revision, result: null });
+    post({ type: 'DETAIL_RESULT', id: msg.id, result: null });
     return;
   }
   // 说明还没加载完就先返回空说明：主线程照常显示卡片，detail 到位后自己补上
-  var result = TD.toResult(index, hit.id, 'canonical');
+  var result = hit.result;
   result.description = TD.describe(index, hit.id);
   result.aliases = TD.aliasesOf(index, hit.id);
-  post({ type: 'DETAIL_RESULT', id: msg.id, revision: msg.revision, result: result });
+  post({ type: 'DETAIL_RESULT', id: msg.id, result: result });
 }

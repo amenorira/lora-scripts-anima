@@ -2,10 +2,10 @@
    tag-dictionary.js — 词典主线程客户端
 
    职责：向后端确认词典是否已安装（未装就引导下载）、Worker 生命周期、
-   请求/结果对应、图片级 revision 防串图、小型 LRU 缓存、失败降级、
+   请求/结果对应、小型 LRU 缓存、失败降级、
    补全下拉的词典数据源。
 
-   词典数据不进仓库：后端下载数据源并构建到 cache/tag_dictionary/，
+   词典数据不进仓库：后端构建到 HF_HOME/tag_dictionary/asset/，
    浏览器从 /api/tageditor/dictionary/asset/ 按静态文件加载。
 
    完整词典与索引只在 Worker 里；这里最多缓存"最近看过的标签"
@@ -19,7 +19,7 @@
 
 // Worker 脚本的版本号：Worker 地址带 ?v= 才会命中一年 immutable 缓存，
 // 所以改了 tag-dictionary.worker.js 必须同时改这里（其余三个文件在 index.html 里带 ?v=）。
-var TD_ASSET_VERSION = '20260918-tagdict1';
+var TD_ASSET_VERSION = '20260919-dict17';
 var TD_BASE = '/api/tageditor/dictionary/asset/';
 var TD_STATUS_URL = '/api/tageditor/dictionary';
 var TD_INSTALL_URL = '/api/tageditor/dictionary/install';
@@ -28,9 +28,7 @@ var TD_POLL_INTERVAL = 700;
 var TD_SUGGEST_LIMIT = 20;
 var TD_LOOKUP_CACHE_MAX = 2000;
 var TD_DETAIL_CACHE_MAX = 100;
-var TD_SYNC_DEBOUNCE = 100;
-var TD_HOVER_SHOW_DELAY = 250;
-var TD_HOVER_HIDE_DELAY = 120;
+var TD_HOVER_HIDE_DELAY = 250;
 var TD_REQUEST_TIMEOUT = 6000;
 // 说明超过这个长度才给"展开"：卡片宽 320px，短说明本来就不会被截断
 var TD_HOVER_CLAMP_CHARS = 72;
@@ -73,6 +71,12 @@ function _teSuggestMerge(localTags, dictResults, limit) {
     byName[result.animaTag.toLowerCase()] = result;
     byName[result.canonical.toLowerCase()] = result;
   }
+  // 同名本地别名也带上分类；歧义别名沿用词典排序，不能被后面的冷门条目覆盖。
+  for (i = 0; i < (dictResults || []).length; i++) {
+    result = dictResults[i];
+    key = result.alias && result.alias.toLowerCase();
+    if (key && !byName[key]) byName[key] = result;
+  }
   for (i = 0; i < (localTags || []).length && out.length < max; i++) {
     key = String(localTags[i]).toLowerCase();
     if (!key || seen[key]) continue;
@@ -105,17 +109,16 @@ function _td() {
       detailReady: false,
       initStarted: false,
       pollTimer: null,
-      revision: 0,
+      statusRequest: null,
+      startupTimer: null,
+      generation: 0,
       requestId: 0,
       pending: {},
-      lookupRequests: {},
       lookups: new Map(),        // 标签原文 → 词典条目 | null
       inflight: Object.create(null),
       details: new Map(),        // canonical → 条目 + description
-      syncTimer: null,
       suggestTimer: null,
       hoverSeq: 0,
-      hoverShowTimer: null,
       hoverHideTimer: null
     };
   }
@@ -143,13 +146,10 @@ function _tdSend(payload, timeout) {
   return new Promise(function (resolve) {
     var id = ++state.requestId;
     payload.id = id;
-    state.pending[id] = resolve;
-    state.worker.postMessage(payload);
-    setTimeout(function () {
-      if (!state.pending[id]) return;
-      delete state.pending[id];
-      resolve(null);
-    }, timeout || TD_REQUEST_TIMEOUT);
+    var timer = setTimeout(function () { _tdResolve(id, null); }, timeout || TD_REQUEST_TIMEOUT);
+    state.pending[id] = function (result) { clearTimeout(timer); resolve(result); };
+    try { state.worker.postMessage(payload); }
+    catch (error) { _tdResolve(id, null); }
   });
 }
 
@@ -166,14 +166,27 @@ function _tdFail(ctx, scope, message) {
   var state = _td();
   if (scope === 'detail') {
     // 说明只是卡片里的一段文字，拿不到就少显示一块，词典本身照常工作
-    state.detailReady = true;
+    state.detailReady = false;
     if (window.console && console.warn) console.warn('[tag-dictionary] detail', message);
     return;
   }
   state.status = 'failed';
+  ctx.tagDictionaryReady = false;
   ctx.tagDictionaryFailed = true;
-  if (state.worker) { state.worker.terminate(); state.worker = null; }
+  _tdDisposeWorker();
+  ctx.tagDictionaryCloseHover();
   if (window.console && console.warn) console.warn('[tag-dictionary]', scope, message);
+}
+
+function _tdDisposeWorker() {
+  var state = _td();
+  state.generation++;
+  if (state.worker) state.worker.terminate();
+  state.worker = null;
+  clearTimeout(state.startupTimer);
+  state.startupTimer = null;
+  Object.keys(state.pending).forEach(function (id) { _tdResolve(id, null); });
+  state.inflight = Object.create(null);
 }
 
 window.tagDictionaryMixin = {
@@ -185,18 +198,12 @@ window.tagDictionaryMixin = {
   tagDictionaryInstallError: '',
   tagDictionaryServer: null,      // 后端返回的安装状态：数据版本、标签数、体积、进度
   tagDictionaryPanelOpen: false,
-  tagDictionaryDetailReady: false,
   tagDictionaryShowTranslation: true,
   tagDictionaryVersion: 0,
   tagDictionaryHover: null,
 
-  /* 数据状态：词典文件装没装、在不在下载。环境管理页只看这个——
-     那边不建 Worker，所以不能用"加载中/可用"来描述它。
-
-     先读一次 tagDictionaryVersion：这组状态（服务器状态、安装中、错误）都靠它
-     统一触发重绘，和标签元数据用的是同一个版本号。 */
+  /* 安装状态与 Worker 状态分开：环境页不用加载整个词典。 */
   tagDictionaryDataState() {
-    void this.tagDictionaryVersion;
     if (this.tagDictionaryInstalling) return 'installing';
     if (this.tagDictionaryInstallError) return 'error';
     var server = this.tagDictionaryServer;
@@ -280,19 +287,20 @@ window.tagDictionaryMixin = {
   tagDictionaryStateLabel() {
     var kind = this.tagDictionaryStatus();
     if (kind === 'loading') return this.t('tagEditor.dictStateLoading');
+    if (this.tagDictionaryReady && (kind === 'error' || kind === 'failed')) return this.t('environment.dictUpdateFailed');
     return this.tagDictionaryDataLabel();
   },
 
   /* 面板只有一个主按钮：状态不同含义不同，避免摆一排按钮让人挑 */
   tagDictionaryActionVisible() {
     var kind = this.tagDictionaryStatus();
-    return kind === 'ready' || kind === 'absent' || kind === 'failed';
+    return kind === 'ready' || kind === 'absent' || kind === 'failed' || kind === 'error';
   },
 
   tagDictionaryActionLabel() {
     var kind = this.tagDictionaryStatus();
     if (kind === 'ready') return this.t('tagEditor.dictUpdate');
-    if (kind === 'failed') return this.t('tagEditor.dictRetry');
+    if (kind === 'failed' || kind === 'error') return this.t('tagEditor.dictRetry');
     return this.t('tagEditor.dictInstall');
   },
 
@@ -304,7 +312,7 @@ window.tagDictionaryMixin = {
       this._tdRestartWorker();
       return;
     }
-    this.tagDictionaryInstall(true);
+    this.tagDictionaryDataAction();
   },
 
   tagDictionaryTagCountText() {
@@ -316,9 +324,8 @@ window.tagDictionaryMixin = {
      只查状态不建 Worker：Worker 要 9MB 词典，只该在真正用它的时候拉。 */
   tagDictionaryInit() {
     var state = _td();
-    if (state.initStarted) return;
+    if (!state.initStarted) this.tagDictionaryShowTranslation = this._tdReadTranslationPref();
     state.initStarted = true;
-    this.tagDictionaryShowTranslation = this._tdReadTranslationPref();
     var self = this;
     this.tagDictionaryRefreshStatus().then(function (status) {
       if (!status) {
@@ -326,8 +333,9 @@ window.tagDictionaryMixin = {
         self.tagDictionaryFailed = true;
         return;
       }
+      self.tagDictionaryFailed = state.status === 'failed';
       if (status.status === 'downloading' || status.status === 'building') self._tdPollInstall();
-      else if (status.installed) self._tdStartWorkerForRoute();
+      else if (status.installed && state.status !== 'failed') self._tdStartWorkerForRoute();
     });
   },
 
@@ -339,7 +347,9 @@ window.tagDictionaryMixin = {
 
   tagDictionaryRefreshStatus() {
     var self = this;
-    return fetch(TD_STATUS_URL)
+    var state = _td();
+    if (state.statusRequest) return state.statusRequest;
+    state.statusRequest = fetch(TD_STATUS_URL, { signal: AbortSignal.timeout(10000) })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (payload) {
         if (!payload || payload.status !== 'success') return null;
@@ -347,11 +357,12 @@ window.tagDictionaryMixin = {
         if (payload.data.status === 'downloading' || payload.data.status === 'building') {
           self.tagDictionaryInstalling = true;
         }
-        self.tagDictionaryVersion++;
         self._tdRefreshPanelRow();
         return payload.data;
       })
-      .catch(function () { return null; });
+      .catch(function () { return null; })
+      .finally(function () { state.statusRequest = null; });
+    return state.statusRequest;
   },
 
   // ===== 下载与更新 =====
@@ -360,10 +371,12 @@ window.tagDictionaryMixin = {
     var self = this;
     this.tagDictionaryInstallError = '';
     this.tagDictionaryInstalling = true;
+    this._tdRefreshPanelRow();
     fetch(TD_INSTALL_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: !!force })
+      body: JSON.stringify({ force: !!force }),
+      signal: AbortSignal.timeout(10000)
     })
       .then(function (response) { return response.json(); })
       .then(function (payload) {
@@ -376,7 +389,6 @@ window.tagDictionaryMixin = {
       .catch(function (error) {
         self.tagDictionaryInstalling = false;
         self.tagDictionaryInstallError = String((error && error.message) || error);
-        self.tagDictionaryVersion++;
         self._tdRefreshPanelRow();
       });
   },
@@ -387,20 +399,22 @@ window.tagDictionaryMixin = {
     var state = _td();
     if (state.pollTimer) return;
     var self = this;
-    state.pollTimer = setInterval(function () {
+    state.pollTimer = setTimeout(function () {
       self.tagDictionaryRefreshStatus().then(function (status) {
-        if (!status) return;
-        if (status.status === 'downloading' || status.status === 'building') return;
-        self._tdStopPollInstall();
+        state.pollTimer = null;
+        if (status && (status.status === 'downloading' || status.status === 'building')) {
+          self._tdPollInstall();
+          return;
+        }
         self.tagDictionaryInstalling = false;
-        self.tagDictionaryVersion++;
-        self._tdRefreshPanelRow();
-        if (status.installed) {
+        if (!status || status.status === 'failed') {
+          self.tagDictionaryInstallError = (status && status.message) || self.t('tagEditor.dictStatusUnavailable');
+        } else if (status.installed) {
           self._tdRestartWorker();
-          if (self.tagDictionaryPanelOpen) self.tagDictionaryPanelOpen = false;
         } else {
           self.tagDictionaryInstallError = status.message || self.t('tagEditor.dictInstallFailed');
         }
+        self._tdRefreshPanelRow();
       });
     }, TD_POLL_INTERVAL);
   },
@@ -416,7 +430,7 @@ window.tagDictionaryMixin = {
   _tdStopPollInstall() {
     var state = _td();
     if (!state.pollTimer) return;
-    clearInterval(state.pollTimer);
+    clearTimeout(state.pollTimer);
     state.pollTimer = null;
   },
 
@@ -429,14 +443,14 @@ window.tagDictionaryMixin = {
   _tdRestartWorker() {
     var state = _td();
     this._tdStopPollInstall();
-    if (state.worker) { state.worker.terminate(); state.worker = null; }
+    _tdDisposeWorker();
+    this.tagDictionaryCloseHover();
     state.status = 'idle';
     state.detailReady = false;
     state.lookups.clear();
     state.details.clear();
     this.tagDictionaryReady = false;
     this.tagDictionaryFailed = false;
-    this.tagDictionaryDetailReady = false;
     this.tagDictionaryVersion++;
     this._tdStartWorkerForRoute();
   },
@@ -459,8 +473,16 @@ window.tagDictionaryMixin = {
       state.status = 'failed';
       return;
     }
-    state.worker.onmessage = function (event) { self._tdHandleMessage(event.data); };
-    state.worker.onerror = function (event) { _tdFail(self, 'worker', event && event.message); };
+    var worker = state.worker;
+    state.worker.onmessage = function (event) {
+      if (state.worker === worker) self._tdHandleMessage(event.data);
+    };
+    state.worker.onerror = function (event) {
+      if (state.worker === worker) _tdFail(self, 'worker', event && event.message);
+    };
+    state.startupTimer = setTimeout(function () {
+      if (state.worker === worker && state.status === 'loading') _tdFail(self, 'core', 'Load timed out');
+    }, 30000);
     state.worker.postMessage({ type: 'INIT', base: TD_BASE });
     if (window.tagHoverCard) window.tagHoverCard.attach(this);
   },
@@ -476,6 +498,8 @@ window.tagDictionaryMixin = {
     if (!msg) return;
     var state = _td();
     if (msg.type === 'READY_CORE') {
+      clearTimeout(state.startupTimer);
+      state.startupTimer = null;
       state.status = 'ready';
       this.tagDictionaryReady = true;
       this.tagDictionaryVersion++;
@@ -484,7 +508,6 @@ window.tagDictionaryMixin = {
     }
     if (msg.type === 'READY_DETAIL') {
       state.detailReady = true;
-      this.tagDictionaryDetailReady = true;
       state.details.clear();
       this._tdRefreshHover();
       return;
@@ -494,19 +517,7 @@ window.tagDictionaryMixin = {
       return;
     }
     if (msg.type === 'LOOKUP_RESULT') {
-      var request = state.lookupRequests[msg.id];
-      delete state.lookupRequests[msg.id];
-      if (!request) return;
-      var tags = request.tags || [];
-      for (var i = 0; i < tags.length; i++) delete state.inflight[tags[i]];
-      // 旧一轮图片的结果直接丢弃，避免覆盖当前图片的元数据
-      if (msg.revision !== state.revision) return;
-      var results = msg.results || [];
-      for (var j = 0; j < tags.length; j++) {
-        _tdLruSet(state.lookups, tags[j], results[j] || null, TD_LOOKUP_CACHE_MAX);
-      }
-      this.tagDictionaryVersion++;
-      this.tagDictionarySyncChips();
+      _tdResolve(msg.id, msg.results);
       return;
     }
     if (msg.type === 'SEARCH_RESULT') {
@@ -548,8 +559,16 @@ window.tagDictionaryMixin = {
   },
 
   /* 中文副标题：关掉开关就返回空串，chip 上那一行由 CSS :empty 收起。 */
+  tagDictionaryIsChinese() {
+    return /^zh(?:-|$)/i.test(this.locale || '');
+  },
+
+  tagDictionaryTranslationVisible() {
+    return this.tagDictionaryIsChinese() && this.tagDictionaryShowTranslation;
+  },
+
   tagDictionaryTranslationFor(tag) {
-    if (!this.tagDictionaryShowTranslation) return '';
+    if (!this.tagDictionaryTranslationVisible()) return '';
     var meta = this.tagDictionaryMetaFor(tag);
     var translation = (meta && meta.translation) || '';
     // 跟标签本身一样就不重复显示（中文标注的数据集里会撞上）
@@ -559,7 +578,9 @@ window.tagDictionaryMixin = {
   tagDictionaryHoverAliases() {
     var hover = this.tagDictionaryHover;
     var aliases = hover && hover.meta && hover.meta.aliases;
-    return aliases && aliases.length ? aliases.join(' · ') : '';
+    return aliases && aliases.length ? aliases.filter(function (alias) {
+      return this.tagDictionaryIsChinese() || !/[\u3400-\u9fff]/.test(alias);
+    }, this).join(' · ') : '';
   },
 
   tagDictionaryHoverExpandable() {
@@ -571,33 +592,52 @@ window.tagDictionaryMixin = {
     return TagDictionary.formatCount(value);
   },
 
-  /* 当前图片的全部标签一次查完。切图/改标签都会走这里：
-     先把 revision 推进（在途结果立刻作废），再攒一小段时间合并连续编辑。 */
+  /* 元数据以标签为键，与图片无关；切图时仍可复用在途查询。 */
   tagDictionarySyncChips() {
+    this.tagDictionaryCloseHover();
     if (!this.tagDictionaryReady) return;
-    var state = _td();
-    state.revision++;
-    var self = this;
-    if (state.syncTimer) clearTimeout(state.syncTimer);
-    state.syncTimer = setTimeout(function () {
-      state.syncTimer = null;
-      self._tdRequestChips();
-    }, TD_SYNC_DEBOUNCE);
+    this._tdRequestChips();
   },
 
   _tdRequestChips() {
     if (!this.tagDictionaryReady) return;
     var state = _td();
-    var tags = typeof this.tagEditorGetSelectedTags === 'function' ? this.tagEditorGetSelectedTags() : [];
+    var selected = typeof this.tagEditorGetSelectedTags === 'function' ? this.tagEditorGetSelectedTags() : [];
+    if (this.tagEditorSelected && this.tagEditorSelected.length > 1) {
+      selected = this.tagEditorGetSelectedStats().map(function(item) { return item.tag; });
+    }
+    var tags = new Set(selected);
+    if (typeof this.tagEditorGetDisplayFreq === 'function') {
+      this.tagEditorGetDisplayFreq().forEach(function(item) {
+        if (tags.size < TD_LOOKUP_CACHE_MAX) tags.add(item.tag);
+      });
+    }
+    // 当前页提前查询，切换图片时直接使用缓存，不再等选中后补上译文。
+    (this.tagEditorPageItems || []).forEach(function (img) {
+      String(img.tags || '').split(',').forEach(function (tag) {
+        tag = tag.trim();
+        if (tag && tags.size < TD_LOOKUP_CACHE_MAX) tags.add(tag);
+      });
+    });
+    // 选中图片最后写入 LRU，避免较大页面预取时先淘汰当前正在看的标签。
+    selected.forEach(function (tag) { tags.delete(tag); });
+    tags = Array.from(tags).concat(selected);
     var missing = [];
     for (var i = 0; i < tags.length; i++) {
       if (!state.lookups.has(tags[i]) && !state.inflight[tags[i]]) missing.push(tags[i]);
     }
     if (!missing.length) return;
     for (var j = 0; j < missing.length; j++) state.inflight[missing[j]] = true;
-    var id = ++state.requestId;
-    state.lookupRequests[id] = { tags: missing };
-    state.worker.postMessage({ type: 'LOOKUP_BATCH', id: id, revision: state.revision, tags: missing });
+    var generation = state.generation;
+    var self = this;
+    _tdSend({ type: 'LOOKUP_BATCH', tags: missing }).then(function (results) {
+      if (generation !== state.generation) return;
+      missing.forEach(function (tag, i) {
+        delete state.inflight[tag];
+        if (results) _tdLruSet(state.lookups, tag, results[i] || null, TD_LOOKUP_CACHE_MAX);
+      });
+      if (results) self.tagDictionaryVersion++;
+    });
   },
 
   /* 补全下拉的词典部分。本地标签由 tag-editor.js 先给出，这里异步补词典结果，
@@ -618,7 +658,20 @@ window.tagDictionaryMixin = {
 
   tagDictionarySearch(query, limit) {
     if (!this.tagDictionaryReady) return Promise.resolve(null);
-    return _tdSend({ type: 'SEARCH', query: query, limit: limit || TD_SUGGEST_LIMIT }, 4000);
+    var state = _td();
+    var generation = state.generation;
+    return _tdSend({ type: 'SEARCH', query: query, limit: limit || TD_SUGGEST_LIMIT }, 4000).then(function (results) {
+      if (generation !== state.generation) return null;
+      (results || []).forEach(function (result) {
+        _tdLruSet(state.lookups, result.animaTag, result, TD_LOOKUP_CACHE_MAX);
+      });
+      return results;
+    });
+  },
+
+  tagDictionaryFilterTags(tags, query) {
+    if (!this.tagDictionaryReady) return Promise.resolve(null);
+    return _tdSend({ type: 'FILTER_TAGS', tags: tags, query: query });
   },
 
   /* 悬停说明：先给出缓存里的部分，再补 detail。 */
@@ -628,7 +681,9 @@ window.tagDictionaryMixin = {
     var key = hit && hit.canonical;
     if (key && state.details.has(key)) return Promise.resolve(_tdLruGet(state.details, key));
     if (!this.tagDictionaryReady) return Promise.resolve(null);
+    var generation = state.generation;
     return _tdSend({ type: 'DETAIL', tag: tag }, 4000).then(function (result) {
+      if (generation !== state.generation) return null;
       if (result && result.canonical) _tdLruSet(state.details, result.canonical, result, TD_DETAIL_CACHE_MAX);
       return result;
     });
@@ -637,18 +692,12 @@ window.tagDictionaryMixin = {
   // ===== 悬停卡 =====
   tagDictionaryHoverEnter(tag, el) {
     if (!this.tagDictionaryReady || !tag) return;
-    var state = _td();
     this.tagDictionaryCancelHoverTimers();
-    var self = this;
-    state.hoverShowTimer = setTimeout(function () {
-      state.hoverShowTimer = null;
-      self._tdShowHover(tag, el);
-    }, TD_HOVER_SHOW_DELAY);
+    this._tdShowHover(tag, el);
   },
 
   tagDictionaryHoverLeave() {
     var state = _td();
-    if (state.hoverShowTimer) { clearTimeout(state.hoverShowTimer); state.hoverShowTimer = null; }
     if (!this.tagDictionaryHover) return;
     var self = this;
     if (state.hoverHideTimer) clearTimeout(state.hoverHideTimer);
@@ -666,40 +715,39 @@ window.tagDictionaryMixin = {
 
   tagDictionaryCancelHoverTimers() {
     var state = _td();
-    if (state.hoverShowTimer) { clearTimeout(state.hoverShowTimer); state.hoverShowTimer = null; }
     if (state.hoverHideTimer) { clearTimeout(state.hoverHideTimer); state.hoverHideTimer = null; }
   },
 
   _tdShowHover(tag, el) {
+    if (this.tagEditorQuickRemove && el?.closest('.te-editor')) return;
+    this.tagDictionaryCancelHoverTimers();
     var state = _td();
     if (!this.tagDictionaryReady) return;
     // 说明还没加载就现在拉一把，别让用户盯着没有说明的卡片等后台计时
     if (!state.detailReady && state.worker) state.worker.postMessage({ type: 'LOAD_DETAIL' });
     // 已知词典里没有这个标签（自定义 trigger / 自然语言）：不弹空卡片
     var meta = _tdLruGet(state.lookups, tag);
-    if (state.lookups.has(tag) && !meta) return;
+    if (state.lookups.has(tag) && !meta) { this.tagDictionaryCloseHover(); return; }
+    var detail = meta && _tdLruGet(state.details, meta.canonical);
     var self = this;
     var seq = ++state.hoverSeq;
+    state.hoverAnchor = el;
     this.tagDictionaryHover = {
       tag: tag,
-      meta: meta || null,
-      description: '',
+      meta: detail || meta || null,
+      description: (detail && detail.description) || '',
       expanded: false,
-      loading: true,
       style: this._tdHoverStyle(el)
     };
     this.tagDictionaryDetail(tag).then(function (result) {
       if (seq !== state.hoverSeq || !self.tagDictionaryHover) return;
       var current = self.tagDictionaryHover;
       if (current.tag !== tag) return;
-      self.tagDictionaryHover = {
-        tag: tag,
+      if (!result && !current.meta) { self.tagDictionaryCloseHover(); return; }
+      self.tagDictionaryHover = Object.assign({}, current, {
         meta: (result && result.canonical) ? result : current.meta,
-        description: (result && result.description) || '',
-        expanded: current.expanded,
-        loading: false,
-        style: current.style
-      };
+        description: (result && result.description) || ''
+      });
     });
   },
 
@@ -715,70 +763,68 @@ window.tagDictionaryMixin = {
       if (!result || !result.description) return;
       var current = self.tagDictionaryHover;
       if (current.tag !== hover.tag) return;
-      self.tagDictionaryHover = {
-        tag: current.tag,
+      self.tagDictionaryHover = Object.assign({}, current, {
         meta: result,
-        description: result.description,
-        expanded: current.expanded,
-        loading: false,
-        style: current.style
-      };
+        description: result.description
+      });
     });
   },
 
   tagDictionaryCloseHover() {
     var state = _td();
+    var returnFocus = typeof document !== 'undefined' && document.activeElement &&
+      document.activeElement.closest('#teDictHover');
     state.hoverSeq++;
-    this.tagDictionaryCancelHoverTimers();
     this.tagDictionaryHover = null;
+    if (returnFocus && state.hoverAnchor && state.hoverAnchor.isConnected) state.hoverAnchor.focus();
+    this.tagDictionaryCancelHoverTimers();
   },
 
   tagDictionaryToggleHoverExpand() {
     var hover = this.tagDictionaryHover;
     if (!hover) return;
-    this.tagDictionaryHover = {
-      tag: hover.tag,
-      meta: hover.meta,
-      description: hover.description,
-      expanded: !hover.expanded,
-      loading: hover.loading,
-      style: hover.style
-    };
+    hover.expanded = !hover.expanded;
   },
 
-  /* 悬停卡定位：优先贴在标签左侧（右侧面板本来就贴着窗口右边），
-     放不下就翻到右侧，最后按视口夹住。 */
+  /* 统一锚定编辑区左外侧，避免遮住标签或搜索结果。 */
   _tdHoverStyle(el) {
     var margin = 8;
     var gap = 10;
-    var width = Math.min(320, Math.max(240, window.innerWidth - margin * 2));
     var maxHeight = Math.min(380, window.innerHeight - margin * 2);
     var rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 80, bottom: 100, left: 0, right: 0 };
-    var left = rect.left - width - gap;
-    if (left < margin) left = Math.min(rect.right + gap, window.innerWidth - width - margin);
-    left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+    var editor = el && el.closest && el.closest('.te-editor');
+    var sidebar = el && el.closest && el.closest('.te-sidebar');
+    var edge = editor ? editor.getBoundingClientRect().left : rect.left;
+    if (sidebar) {
+      var sideRight = sidebar.getBoundingClientRect().right + gap;
+      return 'left:' + sideRight + 'px;top:' + Math.max(margin, Math.min(rect.top, window.innerHeight - maxHeight - margin)) + 'px;width:320px;max-height:' + maxHeight + 'px';
+    }
+    var width = Math.min(320, Math.max(0, edge - gap - margin));
+    var left = Math.max(margin, edge - width - gap);
     var top = Math.max(margin, Math.min(rect.top, window.innerHeight - maxHeight - margin));
     return 'left:' + Math.round(left) + 'px;top:' + Math.round(top) + 'px;width:' + Math.round(width) +
       'px;max-height:' + Math.round(maxHeight) + 'px';
   },
 
   /* 悬停卡/卡片操作：复制的是当前 caption 里的真实值，不是 canonical。 */
-  tagDictionaryCopy(tag) {
+  async tagDictionaryCopy(tag) {
     if (!tag) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(tag).catch(function () {});
+    try {
+      await navigator.clipboard.writeText(tag);
+      this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
+      this.tagDictionaryCloseHover();
+    } catch (error) {
+      this.toast(this.t('tagEditor.dictCopyFailed'), 'error');
     }
-    this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
-    this.tagDictionaryCloseHover();
   },
 
   /* 查找此标签：复用标签云的精确 token 过滤，不做字符串包含匹配。 */
   tagDictionaryFindTag(tag) {
     if (!tag) return;
     this.tagDictionaryCloseHover();
-    if (this.tagEditorTagSelection.indexOf(tag) === -1) this.tagEditorTagSelection.push(tag);
-    var excluded = this.tagEditorExcludedTags.filter(function (item) { return item !== tag; });
-    this.tagEditorExcludedTags = excluded;
+    this.tagEditorTagSelection = [tag];
+    this.tagEditorExcludedTags = [];
+    this.tagEditorQuickFilter = 'all';
     this.tagEditorSidebarTab = 'tags';
     this.tagEditorSearchQuery = '';
     this._teInvalidateFilter();
@@ -794,10 +840,9 @@ window.tagDictionaryMixin = {
 
   tagDictionaryCleanup() {
     var state = _td();
-    this._tdStopPollInstall();
     this.tagDictionaryPanelOpen = false;
     this.tagDictionaryCloseHover();
-    if (state.syncTimer) { clearTimeout(state.syncTimer); state.syncTimer = null; }
+    if (typeof this._teCloseSuggestions === 'function') this._teCloseSuggestions();
     if (state.suggestTimer) { clearTimeout(state.suggestTimer); state.suggestTimer = null; }
   }
 };

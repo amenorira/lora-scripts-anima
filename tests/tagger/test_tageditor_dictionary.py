@@ -158,10 +158,13 @@ class DictionaryInstallTests(unittest.TestCase):
         self.assertFalse(self.asset.exists())
 
     def test_new_assets_take_priority_and_incomplete_assets_fall_back(self):
-        self.build_legacy()
+        legacy = self.build_legacy()
+        source = self.source / 'general.csv'
+        source.write_text(source.read_text(encoding='utf-8').replace('长发', '新长发'), encoding='utf-8')
         manifest = builder.build(self.source, self.asset, "new", builder.SOURCE_URL,
                                  on_report=lambda _: None)
         self.assertEqual(dictionary.status()["data_version"], "new")
+        self.assertEqual(dictionary.asset_path(legacy['detail']), self.legacy_asset / legacy['detail'])
         (self.asset / manifest["core"]).unlink()
         self.assertEqual(dictionary.status()["data_version"], "legacy")
         (self.asset / "manifest.json").write_text("{", encoding="utf-8")
@@ -304,6 +307,9 @@ class DictionaryRouteTests(unittest.TestCase):
         self.assertIn("no-cache", plain.headers["cache-control"])
 
         self.assertEqual(self.client.get("/api/tageditor/dictionary/asset/tags-core.0.json").status_code, 404)
+        missing = self.client.get("/api/tageditor/dictionary/asset/tags-core.00000000.json?v=1")
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.headers["cache-control"], "no-store")
         # 路径穿越：HTTP 客户端与服务端都会先归一化 ..，真正的防线是路由遇到带分隔符
         # 的名字直接拒绝（见 test_asset_path_is_limited_to_installed_files），
         # 这里确认这类请求拿不到词典内容。

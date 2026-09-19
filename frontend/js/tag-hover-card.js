@@ -5,13 +5,13 @@
    所有事件用委托挂在 document 上：标签 chip 由 x-for 反复重建，
    逐个绑监听会随渲染泄漏。
 
-   鼠标 250ms 后显示、离开 120ms 后关闭，并且允许鼠标从 chip 移进卡片
+   鼠标移入立即显示，离开后短暂保留，允许鼠标从标签移进卡片
    ——否则卡片里的"复制/查找"根本点不到。
    ================================================================ */
 (function (global) {
   'use strict';
 
-  var CHIP_SELECTOR = '.te-editor-tag[data-tag]';
+  var CHIP_SELECTOR = '.te-editor-tag[data-tag], .te-dict-item[data-tag], .te-selected-tag[data-tag], .te-tag-row[data-tag]';
   var attached = false;
 
   function chipOf(node) {
@@ -63,10 +63,13 @@
       }
     });
 
-    // 滚动时标签已经不在原位，直接收起
-    window.addEventListener('scroll', function () {
+    // 卡片自身允许滚动；页面滚动或窗口改变后锚点才会失效。
+    window.addEventListener('scroll', function (event) {
+      if (event.target.closest && event.target.closest('#teDictHover')) return;
       if (ctx.tagDictionaryHover) ctx.tagDictionaryCloseHover();
     }, true);
+    window.addEventListener('resize', function () { ctx.tagDictionaryCloseHover(); });
+    document.addEventListener('dragstart', function () { ctx.tagDictionaryCloseHover(); });
   }
 
   global.tagHoverCard = { attach: attach };

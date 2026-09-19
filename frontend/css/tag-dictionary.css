@@ -6,7 +6,7 @@
    主题 token 见 themes/light.css、dark.css、comfy.css。
    ================================================================ */
 
-/* ===== 分类色：一处定义，三处引用（chip 竖条 / 下拉条目竖条 / 卡片徽标） ===== */
+/* 分类用文字颜色表达，具体类别在说明卡中标明。 */
 .te-dict-cat-general   { --tag-cat: var(--tag-general); }
 .te-dict-cat-artist    { --tag-cat: var(--tag-artist); }
 .te-dict-cat-copyright { --tag-cat: var(--tag-copyright); }
@@ -14,23 +14,26 @@
 .te-dict-cat-meta      { --tag-cat: var(--tag-meta); }
 
 /* ===== 当前标签 chip ===== */
-/* 竖条始终占位（未知标签透明），否则同一行里有无词典的 chip 会差 3px */
 .te-editor-tag {
   flex-direction: column;
   align-items: flex-start;
-  border-left: 3px solid transparent;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
-.te-editor-tag[class*="te-dict-cat-"] { border-left-color: var(--tag-cat); }
+.te-editor-tag[class*="te-dict-cat-"] .te-editor-tag-name { color: var(--tag-cat); }
 .te-editor-tag:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
-.te-editor-tag-main { display: inline-flex; align-items: center; }
+.te-editor-tag-main { display: flex; align-items: center; width: 100%; min-width: 0; }
+.te-editor-tag-name { min-width: 0; overflow-wrap: anywhere; }
+.te-editor-tag { max-width: 100%; }
+.te-editor-tag-x { flex-shrink: 0; min-width: 28px; min-height: 28px; border: 0; border-radius: var(--radius-control); background: transparent; font-size: 18px; line-height: 1; padding: 2px 4px; margin-left: 4px; }
 
 /* 中文只是辅助信息：更小、更淡，训练真正保存的仍是主文字 */
 .te-editor-tag-zh {
   margin-top: 1px;
-  font-size: 10px;
-  line-height: 1.25;
-  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
   max-width: 100%;
   overflow-wrap: anywhere;
 }
@@ -45,19 +48,16 @@
   font-size: 11px;
   cursor: pointer;
 }
-.te-dict-item-accent {
-  flex: 0 0 3px;
-  border-radius: 1px;
-  background: var(--tag-cat, transparent);
-}
 .te-dict-item-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.te-suggest-item.te-dict-item:hover { background: var(--accent-soft); }
+.te-editor-tag:hover { background: var(--accent-soft); }
 .te-dict-item-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .te-dict-item-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-primary);
+  color: var(--tag-cat, var(--text-primary));
 }
 .te-suggest-item.active .te-dict-item-name { color: var(--accent); }
 .te-dict-item-count {
@@ -67,7 +67,7 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.te-dict-item-zh { font-size: 10px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.te-dict-item-zh { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .te-dict-item-alias { font-size: 10px; color: var(--text-tertiary); overflow-wrap: anywhere; }
 .te-dict-item-zh:empty,
 .te-dict-item-alias:empty,
@@ -80,7 +80,6 @@
   overflow: hidden;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-left: 3px solid var(--tag-cat, var(--border-default));
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-lg);
 }

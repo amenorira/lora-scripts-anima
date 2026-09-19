@@ -192,7 +192,10 @@ class CachePolicyMiddleware:
 
         async def send_with_cache_policy(message: Message) -> None:
             if message["type"] == "http.response.start":
-                apply_cache_policy(url, MutableHeaders(scope=message))
+                headers = MutableHeaders(scope=message)
+                apply_cache_policy(url, headers)
+                if url.path.startswith(_DICTIONARY_ASSET_PREFIX) and message["status"] >= 400:
+                    headers["Cache-Control"] = "no-store"
             await send(message)
 
         await self.app(scope, receive, send_with_cache_policy)

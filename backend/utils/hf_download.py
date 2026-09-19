@@ -167,7 +167,7 @@ def _range_response(response, start: int, end: int | None = None) -> int:
 
 def _download_part(url: str, part_file: Path, range_start: int, range_end: int,
                    part_index: int, part_size: int, part_bytes: list[int],
-                   stop: threading.Event | None = None) -> None:
+                   stop: threading.Event | None = None, expected_total: int | None = None) -> None:
     """每块仅尝试一次；失败由端点层续传，其他线程收到停止信号即退出。"""
     import requests
     if stop is not None and stop.is_set():
@@ -188,7 +188,9 @@ def _download_part(url: str, part_file: Path, range_start: int, range_end: int,
         r.raise_for_status()
         if r.status_code == 200:
             raise _RangeUnsupported()
-        _range_response(r, start, range_end)
+        actual_total = _range_response(r, start, range_end)
+        if expected_total is not None and actual_total != expected_total:
+            raise IntegrityError("Download size changed between HEAD and GET / 下载文件大小已变化")
         with open(part_file, "ab" if done else "wb") as f:
             for chunk in r.iter_content(chunk_size=_CHUNK):
                 if stop is not None and stop.is_set():
@@ -480,7 +482,7 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
     try:
         with ThreadPoolExecutor(max_workers=n_parts) as ex:
             futs = [ex.submit(_download_part, url, part_files[i], rs, re_,
-                              i, part_sizes[i], part_bytes, stop)
+                              i, part_sizes[i], part_bytes, stop, total)
                     for i, (rs, re_) in enumerate(ranges)]
             try:
                 for f in as_completed(futs):

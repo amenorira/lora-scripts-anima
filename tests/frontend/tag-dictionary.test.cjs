@@ -44,6 +44,19 @@ function names(results) {
   return plain(results).map(item => item.canonical);
 }
 
+test('ambiguous translated titles do not steal general aliases', () => {
+  const TD = loadLib();
+  const index = TD.createIndex([
+    ['flower', '花朵', 0, 875695, 'flowers'],
+    ['flowers_(innocent_grey)', 'FLOWERS', 3, 232, 'flowers'],
+    ['some_series', 'flower', 3, 100, ''],
+  ]);
+  assert.equal(TD.lookup(index, 'flowers').result.canonical, 'flower');
+  assert.equal(TD.search(index, 'flowers', 20)[0].canonical, 'flower');
+  assert.equal(TD.lookup(index, 'flowers (innocent grey)').result.category, 3);
+  assert.equal(TD.lookup(index, 'flower').result.canonical, 'flower');
+});
+
 test('formatter follows Anima rules without escaping', () => {
   const TD = loadLib();
   const tag = (canonical, category) => TD.danbooruToAnimaTag(canonical, category);
@@ -157,7 +170,7 @@ test('builder output shape stays readable by the index', () => {
   assert.deepEqual(plain(TD.aliasesOf(index, hit.id)), ['longhair', '长髪']);
 });
 
-/* ===== 客户端：单例 Worker、revision 守卫、失败降级 ===== */
+/* ===== 客户端：单例 Worker、缓存复用、失败降级 ===== */
 
 function makeClient(options) {
   const posted = [];
@@ -166,11 +179,12 @@ function makeClient(options) {
   const context = { window: {} };
   context.window = context;
   context.console = { warn() {} };
-  context.setTimeout = setTimeout;
+  context.setTimeout = (...args) => { const timer = setTimeout(...args); timer.unref(); return timer; };
   context.clearTimeout = clearTimeout;
   context.setInterval = setInterval;
   context.clearInterval = clearInterval;
   context.Promise = Promise;
+  context.AbortSignal = AbortSignal;
   // 后端状态队列：每次 GET 取一条，取完停在最后一条（模拟轮询）
   const statusQueue = (opts.status || []).slice();
   context.fetch = (url, init) => {
@@ -202,8 +216,10 @@ function makeClient(options) {
 
   vm.runInNewContext(fs.readFileSync(LIB, 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(CLIENT, 'utf8'), context);
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/tag-editor.js'), 'utf8'), context);
 
-  const ctx = Object.assign({}, context.window.tagDictionaryMixin);
+  const ctx = Object.assign({}, context.window.tagEditorMixin, context.window.tagDictionaryMixin);
+  ctx.locale = 'zh-CN';
   ctx.toast = () => {};
   ctx.t = key => key;
   ctx.tagEditorGetSelectedTags = () => [];
@@ -222,11 +238,253 @@ function makeClient(options) {
 
   return {
     ctx, posted, requests,
+    context,
     merge: context.window._teSuggestMerge,
     workers: () => instances,
     reply(payload) { ctx._tdHandleMessage(payload); }
   };
 }
+
+test('translations follow locale and the saved display preference', () => {
+  const { ctx } = makeClient();
+  ctx.tagDictionaryMetaFor = () => ({ translation: '花朵', category: 0 });
+  assert.equal(ctx.tagDictionaryTranslationFor('flowers'), '花朵');
+  for (const locale of ['en-US', 'ja-JP', 'fr-FR']) {
+    ctx.locale = locale;
+    assert.equal(ctx.tagDictionaryTranslationFor('flowers'), '');
+    assert.equal(ctx.tagDictionaryChipState('flowers')['te-dict-cat-general'], true);
+  }
+  ctx.locale = 'zh-CN';
+  ctx.tagDictionaryShowTranslation = false;
+  assert.equal(ctx.tagDictionaryTranslationFor('flowers'), '');
+});
+
+test('local alias keeps its spelling and the best dictionary category', () => {
+  const { merge } = makeClient();
+  const results = [
+    { canonical:'flower', animaTag:'flower', translation:'花朵', category:0, postCount:875695, alias:'flowers' },
+    { canonical:'flowers_(innocent_grey)', animaTag:'flowers (innocent grey)', translation:'FLOWERS', category:3, postCount:232, alias:'flowers' },
+  ];
+  const local = merge(['flowers'], results, 20)[0];
+  assert.equal(local.insert, 'flowers');
+  assert.equal(local.cat, 0);
+  assert.equal(local.sub, '花朵');
+});
+
+test('hover switches immediately and remains outside the editor', () => {
+  const { ctx, context } = makeClient();
+  ctx.tagDictionaryReady = true;
+  const shown = [];
+  ctx._tdShowHover = tag => shown.push(tag);
+  ctx.tagDictionaryHoverEnter('flower', {});
+  ctx.tagDictionaryHoverEnter('solo', {});
+  assert.deepEqual(shown, ['flower', 'solo']);
+  context.innerWidth = 1440;
+  context.innerHeight = 900;
+  const editor = { getBoundingClientRect: () => ({ left: 1100 }) };
+  const anchor = left => ({
+    closest: selector => selector === '.te-editor' ? editor : null,
+    getBoundingClientRect: () => ({ left, right: left + 80, top: 300, bottom: 330 }),
+  });
+  const first = ctx._tdHoverStyle(anchor(1110));
+  assert.equal(first, ctx._tdHoverStyle(anchor(1310)));
+  assert.match(first, /left:770px/);
+  assert.match(first, /width:320px/);
+});
+
+test('dataset translation search returns only existing caption spellings', () => {
+  const TD = loadLib();
+  const index = fixtureIndex(TD);
+  assert.deepEqual(plain(TD.filterTags(index, ['long hair', 'solo', 'custom_trigger'], '长发')), ['long hair']);
+  assert.deepEqual(plain(TD.filterTags(index, ['long hair', 'solo', 'custom_trigger'], 'custom')), ['custom_trigger']);
+});
+
+test('batch targets stay selected and shared counts count images, not duplicate tags', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorImages = [{path:'a',tags:'solo, solo, long hair'}, {path:'b',tags:'solo'}, {path:'c',tags:'long hair'}];
+  ctx.tagEditorSelected = ['a','b'];
+  assert.deepEqual(plain(ctx.tagEditorGetBatchTargets()).map(img => img.path), ['a','b']);
+  const stats = ctx.tagEditorGetSelectedStats();
+  assert.equal(stats.find(item => item.tag === 'solo').count, 2);
+  ctx.tagEditorBatchTagFilter = 'shared';
+  assert.deepEqual(plain(ctx.tagEditorGetVisibleSelectedStats()).map(item => item.tag), ['solo']);
+  ctx.tagEditorPrepareRemove('solo');
+  assert.equal(ctx.tagEditorBatchMode, 'remove');
+  assert.equal(ctx.batchRemoveInput, 'solo');
+  assert.equal(ctx.tagEditorImages[0].tags, 'solo, solo, long hair');
+});
+
+test('no-op history updates preserve redo and edits after undo start a new step', () => {
+  const { ctx } = makeClient();
+  ctx._teInvalidateDiff = () => {};
+  ctx.tagEditorOriginal = { a: 'solo' };
+  ctx._teHistoryState = { a: 'solo, flower' };
+  ctx._teGetModified = () => [{ path: 'a', tags: 'solo, flower' }];
+  ctx.tagEditorHistory = [
+    { meta: { type: 'add' }, changes: { a: { before: null, after: 'solo, flower' } }, _ts: Date.now() },
+    { meta: { type: 'add' }, changes: { a: { before: 'solo, flower', after: 'solo, flower, hat' } }, _ts: Date.now() },
+  ];
+  ctx.tagEditorHistoryIdx = 0;
+  ctx._tePushHistory({ type: 'add' });
+  assert.equal(ctx.tagEditorHistory.length, 2);
+  ctx._teGetModified = () => [{ path: 'a', tags: 'solo, flower, shoes' }];
+  ctx._tePushHistory({ type: 'add' });
+  assert.equal(ctx.tagEditorHistory.length, 2);
+  assert.equal(ctx.tagEditorHistory[0].changes.a.after, 'solo, flower');
+  assert.equal(ctx.tagEditorHistoryIdx, 1);
+});
+
+test('history jumps apply final file states once in either direction', () => {
+  const { ctx } = makeClient();
+  ctx._teFlushAllPendingTextEdits = () => {};
+  const applied = [];
+  ctx._teApplyHistoryChanges = (changes, direction) => applied.push({changes, direction});
+  ctx.tagEditorHistory = [
+    { changes: { a: { before: null, after: 'a' } } },
+    { changes: { a: { before: 'a', after: 'b' } } },
+    { changes: { a: { before: 'b', after: 'c' }, b: { before: null, after: 'x' } } },
+  ];
+  ctx.tagEditorHistoryIdx = 2;
+  ctx.tagEditorJumpToHistory(0);
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0].direction, 'before');
+  assert.equal(applied[0].changes.a.before, 'a');
+  assert.equal(applied[0].changes.b.before, null);
+  ctx.tagEditorJumpToHistory(2);
+  assert.equal(applied.length, 2);
+  assert.equal(applied[1].changes.a.after, 'c');
+});
+
+test('timeline restore refuses unsaved edits and stale dataset confirmations', () => {
+  const { ctx } = makeClient();
+  ctx._teFlushAllPendingTextEdits = () => {};
+  let confirm;
+  ctx.openConfirm = (title, text, action) => { confirm = action; };
+  ctx.tagEditorModified = true;
+  ctx.tagEditorRestoreSnapshot('event');
+  assert.equal(confirm, undefined);
+  ctx.tagEditorModified = false;
+  ctx.tagEditorRestoreSnapshot('event');
+  assert.equal(typeof confirm, 'function');
+  ctx._teLoadEpoch++;
+  confirm();
+  assert.equal(ctx.tagEditorSnapshotBusy, false);
+});
+
+test('batch autocomplete replaces the last token without applying changes', () => {
+  const { ctx } = makeClient();
+  ctx.batchAddInput = 'solo, 长';
+  ctx.batchSuggestOpen = 'add';
+  ctx.tagEditorBatchSelectSuggestion({insert:'long hair'});
+  assert.equal(ctx.batchAddInput, 'solo, long hair, ');
+  ctx.batchSuggestItems = [{insert:'flower'}];
+  ctx.batchSuggestIdx = 0;
+  ctx.batchSuggestOpen = 'new';
+  ctx.tagEditorBatchKeydown({key:'Enter',isComposing:true});
+  assert.equal(ctx.batchNewTag, '');
+});
+
+test('quick removal stages tags, applies only to selected images and records one undo step', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorImages = [{path:'a',tags:'solo, flower, flower'}, {path:'b',tags:'solo, hat'}, {path:'c',tags:'solo, flower'}];
+  ctx.tagEditorSelected = ['a', 'b'];
+  ctx._teFlushAllPendingTextEdits = () => {};
+  ctx._updateEditorPanel = () => {};
+  ctx._teUpdateImageTags = (img, tags) => { img.tags = tags; };
+  const history = [];
+  ctx._tePushHistory = meta => history.push(meta);
+  ctx.tagEditorStartQuickRemove();
+  ctx.tagEditorToggleRemoval('flower');
+  ctx.tagEditorToggleRemoval('hat');
+  ctx.tagEditorToggleRemoval('hat');
+  assert.equal(ctx.tagEditorImages[0].tags, 'solo, flower, flower');
+  assert.equal(history.length, 0);
+  ctx.tagEditorApplyQuickRemove();
+  assert.deepEqual(ctx.tagEditorImages.map(img => img.tags), ['solo', 'solo, hat', 'solo, flower']);
+  assert.equal(history.length, 1);
+  assert.deepEqual(plain(history[0].paths), ['a']);
+  assert.equal(ctx.tagEditorQuickRemove, false);
+  assert.equal(ctx.tagEditorRemovalTags.length, 0);
+  ctx.tagEditorStartQuickRemove();
+  ctx.tagEditorToggleRemoval('solo');
+  ctx.tagEditorCancelQuickRemove();
+  ctx.tagEditorApplyQuickRemove();
+  assert.equal(history.length, 1);
+});
+
+test('clear tag filters clears include, exclude and search in one refresh', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorTagSelection = ['solo'];
+  ctx.tagEditorExcludedTags = ['flower'];
+  ctx.tagEditorTagSearch = 'hair';
+  ctx.tagEditorSetTagSearch = value => { ctx.tagEditorTagSearch = value; };
+  ctx._teInvalidateFilter = () => {};
+  let requests = 0;
+  ctx.tagEditorSchedulePageFetch = () => { requests++; };
+  ctx.tagEditorClearTagFilters();
+  assert.equal(ctx.tagEditorTagSelection.length, 0);
+  assert.equal(ctx.tagEditorExcludedTags.length, 0);
+  assert.equal(ctx.tagEditorTagSearch, '');
+  assert.equal(requests, 1);
+});
+
+test('batch mutation leaves unselected images intact and skips no-op confirmation', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorImages = [{path:'a',tags:'solo, long hair'}, {path:'b',tags:'solo'}, {path:'c',tags:'solo'}];
+  ctx.tagEditorSelected = ['a','b'];
+  let confirmations = 0;
+  ctx._teConfirmBatch = (message, apply) => { confirmations++; apply(); };
+  ctx._teUpdateImageTags = (img, tags) => { img.tags = tags; };
+  ctx._tePushHistory = () => {};
+  ctx.batchRemoveInput = 'solo';
+  ctx.tagEditorBatchRemove();
+  assert.deepEqual(ctx.tagEditorImages.map(img => img.tags), ['long hair', '', 'solo']);
+  assert.equal(confirmations, 1);
+  ctx.batchRemoveInput = 'solo';
+  ctx.tagEditorBatchRemove();
+  assert.equal(confirmations, 1);
+});
+
+test('clearing translated sidebar search immediately releases its previous matches', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorTagFreq = [{tag:'long hair',count:2},{tag:'solo',count:1}];
+  ctx.tagEditorTagSearch = '长发';
+  ctx._teTagSearchMatches = new Set(['long hair']);
+  ctx.tagEditorSetTagSearch('');
+  assert.equal(ctx.tagEditorTagSearch, '');
+  assert.deepEqual(plain(ctx.tagEditorGetFilteredTagFreq()).map(item => item.tag), ['long hair','solo']);
+});
+
+test('sidebar rename waits for confirmation and deduplicates the destination tag', async () => {
+  const { ctx } = makeClient();
+  const images = [{path:'a',tags:'solo, solo, flower'}, {path:'b',tags:'sky'}];
+  ctx.tagEditorInlineEdit = {oldTag:'solo',newTag:'flower'};
+  ctx._teEnsureAllImagesLoaded = async () => images;
+  let apply;
+  ctx._teConfirmBatch = (message, action) => { apply = action; };
+  ctx._teUpdateImageTags = (img, tags) => { img.tags = tags; };
+  ctx._tePushHistory = () => {};
+  await ctx.tagEditorFinishInlineEdit();
+  assert.equal(images[0].tags, 'solo, solo, flower');
+  apply();
+  assert.equal(images[0].tags, 'flower');
+  assert.equal(images[1].tags, 'sky');
+});
+
+test('page tags are prefetched once before selecting another image', async () => {
+  const { ctx, posted, reply } = makeClient();
+  ctx._tdStartWorker();
+  ctx.tagEditorPageItems = [{ tags: 'flowers, solo' }, { tags: 'flowers, long hair' }];
+  reply({ type: 'READY_CORE' });
+  const request = posted.find(item => item.type === 'LOOKUP_BATCH');
+  assert.deepEqual(plain(request.tags), ['flowers', 'solo', 'long hair']);
+  reply({ type: 'LOOKUP_RESULT', id: request.id, results: [null, null, {translation:'长发', category:0}] });
+  await Promise.resolve();
+  ctx.tagEditorGetSelectedTags = () => ['long hair'];
+  ctx.tagDictionarySyncChips();
+  assert.equal(ctx.tagDictionaryTranslationFor('long hair'), '长发');
+  assert.equal(posted.filter(item => item.type === 'LOOKUP_BATCH').length, 1);
+});
 
 const INSTALLED = {
   status: 'ready', installed: true, data_version: '2026-09-18',
@@ -298,7 +556,7 @@ test('worker is created once and reused', async () => {
   assert.equal(ctx.tagDictionarySizeText(), '8.9 MB');
 });
 
-test('stale lookup results never reach the cache', async () => {
+test('tag metadata remains reusable when the image changes during lookup', async () => {
   const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
   await initReady(ctx);
   reply({ type: 'READY_CORE', tagCount: 10 });
@@ -311,15 +569,15 @@ test('stale lookup results never reach the cache', async () => {
   const batch = posted.find(message => message.type === 'LOOKUP_BATCH');
   assert.ok(batch, '没有发出批量查询');
   assert.deepEqual(plain(batch.tags), tags);
-  assert.ok(batch.revision >= 1);
 
-  // 图片切换后再返回旧结果：整批丢弃
+  // 标签元数据不属于某张图片，不必切图就废弃。
   ctx.tagDictionarySyncChips();
   reply({
     type: 'LOOKUP_RESULT', id: batch.id, revision: batch.revision,
     results: [{ canonical: 'long_hair', animaTag: 'long hair', translation: '长发', category: 0, postCount: 10 }, null]
   });
-  assert.equal(ctx.tagDictionaryMetaFor('long_hair'), null);
+  await tick(0);
+  assert.equal(ctx.tagDictionaryMetaFor('long_hair').translation, '长发');
   assert.equal(ctx.tagDictionaryMetaFor('custom_trigger'), null);
 });
 
@@ -336,6 +594,7 @@ test('fresh lookup results populate cache and version', async () => {
     type: 'LOOKUP_RESULT', id: batch.id, revision: batch.revision,
     results: [{ canonical: 'long_hair', animaTag: 'long hair', translation: '长发', category: 0, postCount: 6134076 }, null]
   });
+  await tick(0);
   assert.equal(ctx.tagDictionaryVersion, version + 1);
   assert.equal(ctx.tagDictionaryMetaFor('long_hair').translation, '长发');
   assert.equal(ctx.tagDictionaryMetaFor('custom_trigger'), null);
@@ -511,4 +770,109 @@ test('autocomplete merges local dataset tags with dictionary results', () => {
   assert.equal(items[2].cat, 0);
   assert.equal(merge(['a', 'b', 'c'], results, 2).length, 2);
   assert.deepEqual(plain(merge([], results, 20)).map(item => item.insert), ['long hair']);
+});
+
+test('failed update keeps the active dictionary and offers retry', async () => {
+  const failure = { ...INSTALLED, status: 'failed', message: 'network down' };
+  const { ctx, workers } = makeClient({ status: [INSTALLED, failure] });
+  await initReady(ctx);
+  ctx._tdHandleMessage({ type: 'READY_CORE' });
+  ctx.tagDictionaryInstall(true);
+  await tick(50);
+  assert.equal(ctx.tagDictionaryReady, true);
+  assert.equal(workers().length, 1);
+  assert.equal(ctx.tagDictionaryInstallError, 'network down');
+  assert.equal(ctx.tagDictionaryActionVisible(), true);
+  assert.equal(ctx.tagDictionaryActionLabel(), 'tagEditor.dictRetry');
+});
+
+test('leaving the editor does not stop installation tracking', async () => {
+  const { ctx, workers } = makeClient({ status: [ABSENT, INSTALLED] });
+  await initReady(ctx);
+  ctx.tagDictionaryInstall(false);
+  ctx.tagDictionaryCleanup();
+  ctx.currentRoute = 'environment';
+  await tick(50);
+  assert.equal(ctx.tagDictionaryInstalling, false);
+  assert.equal(ctx.tagDictionaryDataState(), 'installed');
+  assert.equal(workers().length, 0);
+});
+
+test('worker restart releases pending tags and ignores old replies', async () => {
+  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
+  await initReady(ctx);
+  reply({ type: 'READY_CORE' });
+  ctx.tagEditorGetSelectedTags = () => ['solo'];
+  ctx._tdRequestChips();
+  const old = posted.at(-1);
+  ctx._tdRestartWorker();
+  reply({ type: 'READY_CORE' });
+  ctx._tdRequestChips();
+  const fresh = posted.at(-1);
+  assert.notEqual(old.id, fresh.id);
+  reply({ type: 'LOOKUP_RESULT', id: old.id, results: [{ translation: '旧' }] });
+  reply({ type: 'LOOKUP_RESULT', id: fresh.id, results: [{ translation: '单人' }] });
+  await tick(0);
+  assert.equal(ctx.tagDictionaryTranslationFor('solo'), '单人');
+  reply({ type: 'FAILED', scope: 'worker', message: 'crash' });
+  assert.equal(ctx.tagDictionaryReady, false);
+  assert.doesNotThrow(() => ctx._tdRequestChips());
+});
+
+test('new input invalidates old completion before the debounce fires', async () => {
+  const { ctx } = makeClient();
+  const el = { selectionStart: 8, getBoundingClientRect: () => ({ top: 400, left: 0, width: 300 }) };
+  const previous = ctx._teSuggestSeq;
+  ctx.tagEditorGetSuggestions('  长发, 黑', el);
+  assert.ok(ctx._teSuggestSeq > previous);
+  ctx._teApplyDictSuggestions('old', previous, [{ animaTag: 'wrong', canonical: 'wrong' }], el);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+  ctx._teCloseSuggestions();
+  await tick(80);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+});
+
+test('contains search fills the limit after skipping earlier exact hits', () => {
+  const TD = loadLib();
+  const index = TD.createIndex([
+    ['hair', '', 0, 30, ''], ['long_hair', '', 0, 20, ''], ['blue_hair', '', 0, 10, '']
+  ]);
+  assert.deepEqual(names(TD.search(index, 'hair', 3)), ['hair', 'long_hair', 'blue_hair']);
+});
+
+test('clipboard failure does not announce a successful copy', async () => {
+  const { ctx, context } = makeClient();
+  const notices = [];
+  ctx.toast = message => notices.push(message);
+  context.navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));
+  await ctx.tagDictionaryCopy('solo');
+  assert.deepEqual(notices, ['tagEditor.dictCopyFailed']);
+});
+
+test('completion in the middle preserves following tags and a sensible caret', () => {
+  const { context } = makeClient();
+  const result = context._teReplaceToken('solo, 长发, blue eyes', 8, 'long hair');
+  assert.equal(result.text, 'solo, long hair, blue eyes');
+  assert.equal(result.caretPos, 'solo, long hair'.length);
+});
+
+test('choosing a completion closes the list until the user types again', async () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorAddInput = '长发';
+  ctx._teSuggestInputEl = { selectionStart: 2, focus() {}, setSelectionRange() {} };
+  ctx.tagEditorGetSuggestions = () => assert.fail('must not query with the old caret');
+  ctx.tagEditorSelectSuggestion({ insert: 'long hair' });
+  await tick(30);
+  assert.equal(ctx.tagEditorAddInput, 'long hair, ');
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+});
+
+test('Chinese search ranks common related tags before rare prefix matches', () => {
+  const TD = loadLib();
+  const index = TD.createIndex([
+    ['long_hair', '长发', 0, 1000, ''],
+    ['very_long_hair', '超长发', 0, 500, ''],
+    ['rapunzel', '长发公主', 4, 10, '']
+  ]);
+  assert.deepEqual(names(TD.search(index, '长发', 3)), ['long_hair', 'very_long_hair', 'rapunzel']);
 });

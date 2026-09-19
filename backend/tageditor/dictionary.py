@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from tools.dev.build_tag_dictionary import (
     LEGACY_ASSET_DIR,
     SOURCE_REPO,
     SOURCE_URL,
+    SCHEMA_VERSION,
     build,
     default_asset_dir,
     default_source_dir,
@@ -75,6 +77,9 @@ def _read_manifest(directory: Path) -> dict | None:
         return None
     if not isinstance(manifest, dict):
         return None
+    if (manifest.get("schema_version") != SCHEMA_VERSION
+            or not isinstance(manifest.get("tag_count"), int) or manifest["tag_count"] <= 0):
+        return None
     for key in ("core", "detail"):
         name = manifest.get(key)
         if (not isinstance(name, str) or not name or name.startswith(".")
@@ -90,11 +95,15 @@ def asset_path(name: str) -> Path | None:
     directory, manifest = _installed_assets()
     if manifest is None:
         return None
-    allowed = {MANIFEST_NAME, manifest["core"], manifest["detail"]}
-    if name not in allowed:
+    # 构建器只保留当前和上一版；允许旧页面继续加载同一版的说明文件。
+    if name != MANIFEST_NAME and not re.fullmatch(r"tags-(?:core|detail)\.[0-9a-f]{8}\.json", name):
         return None
-    path = directory / name
-    return path if path.is_file() else None
+    directories = (directory,) if name == MANIFEST_NAME else (ASSET_DIR, LEGACY_ASSET_DIR)
+    for root in directories:
+        path = root / name
+        if path.is_file():
+            return path
+    return None
 
 
 def _installed_size(directory: Path, manifest: dict) -> int:

@@ -306,6 +306,19 @@ def prune_old_assets(output_dir: Path, keep: set[str]) -> list[str]:
     return removed
 
 
+def atomic_write(path: Path, text: str) -> None:
+    """完整写入后替换，正在读取的浏览器始终拿到完整 JSON。"""
+    handle = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                         dir=path.parent, delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            handle.write(text)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
           on_report: Callable[[str], None] | None = None) -> dict:
     """构建 core/detail/manifest。
@@ -315,6 +328,8 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
     report = BuildReport()
     rows = load_rows(input_dir, report)
     entries = build_entries(rows, report)
+    if not entries:
+        raise ValueError("词典没有有效标签，保留已安装版本")
 
     core_text = pack_core(entries)
     detail_text = pack_detail(entries)
@@ -323,8 +338,15 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
     detail_name = f"tags-detail.{digest}.json"
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / core_name).write_text(core_text, encoding="utf-8", newline="\n")
-    (output_dir / detail_name).write_text(detail_text, encoding="utf-8", newline="\n")
+    # 保留上一版供已打开的页面延迟加载说明；更早版本下次构建时清理。
+    keep = {core_name, detail_name}
+    try:
+        previous = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+        keep.update(previous[key] for key in ("core", "detail") if isinstance(previous.get(key), str))
+    except (OSError, ValueError, AttributeError):
+        pass
+    atomic_write(output_dir / core_name, core_text)
+    atomic_write(output_dir / detail_name, detail_text)
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -338,10 +360,8 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
             "license": "MIT",
         },
     }
-    (output_dir / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
-    )
-    removed = prune_old_assets(output_dir, {core_name, detail_name})
+    atomic_write(output_dir / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    removed = prune_old_assets(output_dir, keep)
 
     with_description = sum(1 for entry in entries if entry["description"])
     with_translation = sum(1 for entry in entries if entry["translation"])

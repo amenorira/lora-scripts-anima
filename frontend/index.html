@@ -23,13 +23,13 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260917-logtoolbar1">
-  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260914-motion2">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260831-selectfix1">
-  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260914-motion2">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260919-dict21">
+  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
+  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260919-dict17">
+  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260831-motion1">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
-  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260918-dictserve4">
+  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict21">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
@@ -40,8 +40,8 @@
   <script src="/anima-ui/js/monitor-logs.js" defer></script>
   <script src="/anima-ui/js/monitor-core.js" defer></script>
   <script src="/anima-ui/js/monitor-render.js?v=20260914-motion4" defer></script>
-  <script src="/anima-ui/js/environment-core.js?v=20260918-dict1" defer></script>
-  <script src="/anima-ui/js/environment-render.js?v=20260918-dict1" defer></script>
+  <script src="/anima-ui/js/environment-core.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/environment-render.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
   <script src="/anima-ui/js/training-core.js?v=20260916-repeat16" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
@@ -51,12 +51,12 @@
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260918-tagdict2" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260919-dict21" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
-  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260918-dictserve1" defer></script>
-  <script src="/anima-ui/js/tag-dictionary.js?v=20260918-dict1" defer></script>
-  <script src="/anima-ui/js/tag-hover-card.js?v=20260918-dictserve1" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260916-repeat16" defer></script>
+  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20260919-dict21" defer></script>
+  <script src="/anima-ui/js/tag-hover-card.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/app.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-init="init()" x-cloak>
@@ -452,7 +452,7 @@
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
         @keydown.window="tagEditorHandleKeydown($event)"
-        @click="tagEditorContextMenu = null; tagEditorImageContextMenu = null">
+        @click="tagEditorContextMenu = null; tagEditorImageContextMenu = null; tagEditorPanelMenu = null">
 
         <!-- Saving overlay -->
         <div x-show="tagEditorSaving" class="te-saving-overlay" x-transition>
@@ -523,6 +523,19 @@
         </div>
 
         <!-- Context menu -->
+        <div id="tePanelMenu" x-show="tagEditorPanelMenu" class="te-ctx te-panel-menu" role="menu"
+          :style="'left:' + (tagEditorPanelMenu?.x || 0) + 'px; top:' + (tagEditorPanelMenu?.y || 0) + 'px'"
+          @keydown="tagEditorPanelMenuKeydown($event)" @click.outside="tagEditorPanelMenu = null" @keydown.escape.prevent.stop="tagEditorPanelMenu = null">
+          <button role="menuitem" @click="tagEditorPanelAction('copy')" x-text="t(tagEditorPanelMenu?.tag ? 'tagEditor.contextCopy' : 'tagEditor.copyTags')"></button>
+          <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('filter')" x-text="t('tagEditor.contextInclude')"></button>
+          <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('remove')" x-text="t(tagEditorQuickRemove ? 'tagEditor.toggleRemoval' : 'bulkAction.removeTag')"></button>
+          <button role="menuitem" x-show="tagEditorPanelMenu?.preview" @click="tagEditorPanelAction('view')" x-text="t('tagEditor.viewOriginal')"></button>
+          <div class="te-ctx-divider"></div>
+          <button role="menuitem" :disabled="tagEditorQuickRemove" @click="tagEditorPanelAction('quick')" x-text="t('tagEditor.quickRemove')"></button>
+          <button role="menuitem" :disabled="tagEditorHistoryIdx < 0" @click="tagEditorPanelAction('undo')" x-text="t('tagEditor.undoHint')"></button>
+          <button role="menuitem" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" @click="tagEditorPanelAction('redo')" x-text="t('tagEditor.redoHint')"></button>
+          <button role="menuitem" x-show="tagEditorSelected.length === 1 && !tagEditorPanelMenu?.tag" :disabled="!tagEditorCanRevertSelectedImage()" @click="tagEditorPanelAction('revert')" x-text="t('tagEditor.revertImage')"></button>
+        </div>
         <div x-show="tagEditorContextMenu" class="te-ctx"
           :style="'left:' + (tagEditorContextMenu?.x || 0) + 'px; top:' + (tagEditorContextMenu?.y || 0) + 'px'"
           @click.away="tagEditorContextMenu = null">
@@ -546,11 +559,13 @@
         </div>
 
         <!-- 标签说明卡：全局唯一实例，位置与内容由 tag-dictionary.js 提供 -->
-        <div id="teDictHover" class="te-dict-hover" x-show="tagDictionaryHover" x-cloak
+        <template x-if="tagDictionaryHover">
+        <div id="teDictHover" class="te-dict-hover"
           :style="tagDictionaryHover ? tagDictionaryHover.style : ''"
           :class="tagDictionaryCategoryClass(tagDictionaryHover && tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
-          @mouseenter="tagDictionaryHoverKeep()" @mouseleave="tagDictionaryHoverLeave()">
-          <template x-if="tagDictionaryHover">
+          role="dialog" :aria-label="t('tagEditor.dictTitle')"
+          @focusin="tagDictionaryHoverKeep()" @focusout="if (!$el.contains($event.relatedTarget)) tagDictionaryHoverLeave()"
+          @mouseenter="tagDictionaryHoverKeep()" @mouseleave="if (!$el.contains(document.activeElement)) tagDictionaryHoverLeave()">
             <div class="te-dict-hover-body">
               <div class="te-dict-hover-head">
                 <span class="te-dict-hover-name" x-text="tagDictionaryHover.tag"></span>
@@ -559,15 +574,15 @@
                   x-text="tagDictionaryCategoryLabel(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"></span>
               </div>
               <div class="te-dict-hover-zh"
-                x-text="tagDictionaryHover.meta && tagDictionaryHover.meta.translation !== tagDictionaryHover.tag ? tagDictionaryHover.meta.translation : ''"></div>
+                x-text="tagDictionaryTranslationVisible() && tagDictionaryHover.meta && tagDictionaryHover.meta.translation !== tagDictionaryHover.tag ? tagDictionaryHover.meta.translation : ''"></div>
               <div class="te-dict-hover-row" x-show="tagDictionaryHover.meta && tagDictionaryHover.meta.canonical !== tagDictionaryHover.tag">
                 <span class="te-dict-hover-key" x-text="t('tagEditor.dictCanonical')"></span>
                 <span class="te-dict-hover-val te-dict-mono" x-text="tagDictionaryHover.meta ? tagDictionaryHover.meta.canonical : ''"></span>
               </div>
-              <div class="te-dict-hover-row" x-show="tagDictionaryHover.description">
+              <div class="te-dict-hover-row" x-show="tagDictionaryIsChinese() && tagDictionaryHover.description">
                 <span class="te-dict-hover-key" x-text="t('tagEditor.dictDescription')"></span>
                 <span class="te-dict-hover-val te-dict-hover-desc"
-                  :class="{ clamped: !tagDictionaryHover.expanded }"
+                  :class="{ clamped: !tagDictionaryHover.expanded && tagDictionaryHoverExpandable() }"
                   x-text="tagDictionaryHover.description"></span>
                 <button class="te-dict-hover-more" x-show="tagDictionaryHoverExpandable()"
                   @click="tagDictionaryToggleHoverExpand()"
@@ -580,11 +595,11 @@
               <div class="te-dict-hover-actions">
                 <button @click="tagDictionaryFindTag(tagDictionaryHover.tag)" x-text="t('tagEditor.dictFindTag')"></button>
                 <button @click="tagDictionaryCopy(tagDictionaryHover.tag)" x-text="t('common.copy')"></button>
-                <span class="te-dict-hover-count" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
+                <span class="te-dict-hover-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
               </div>
             </div>
-          </template>
         </div>
+        </template>
 
         <!-- Empty State -->
         <div x-show="!tagEditorSessionId && !tagEditorLoading" class="te-empty">
@@ -610,11 +625,12 @@
                在后台标签页/内嵌视图里可能不触发；x-if 是同步插入，状态一变就到位。 -->
           <template x-if="tagDictionaryStatus() !== 'ready'">
             <div class="te-empty-dict">
-              <template x-if="tagDictionaryStatus() !== 'checking'">
+              <template x-if="tagDictionaryActionVisible()">
                 <button class="btn btn-ghost btn-sm" @click="tagDictionaryPrimaryAction()"
                   x-text="tagDictionaryActionLabel()"></button>
               </template>
               <span class="te-dict-status" x-text="tagDictionaryStatus() === 'absent' ? t('tagEditor.dictHint') : tagDictionaryStatusText()"></span>
+              <span class="te-dict-panel-error" x-show="tagDictionaryInstallError" x-text="tagDictionaryInstallError"></span>
             </div>
           </template>
         </div>
@@ -632,7 +648,7 @@
         </div>
 
         <!-- Main -->
-        <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell">
+        <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell" :inert="tagEditorSnapshotBusy" :aria-busy="tagEditorSnapshotBusy">
           <div class="te-topbar">
             <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -669,7 +685,7 @@
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
                 @click="tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)">
                 <span x-text="t('tagEditor.selection')"></span>
-                <span class="te-badge" x-text="tagEditorFilteredCount()"></span>
+                <span class="te-badge" x-text="tagEditorDatasetCount"></span>
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'notag' }"
                 @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'notag' ? 'all' : 'notag'); tagEditorSchedulePageFetch(true)">
@@ -697,43 +713,23 @@
                 </svg>
               </button>
             </div>
-            <div class="te-sort-wrap" style="margin-left:2px;">
-              <select x-model="tagEditorSortBy2" @change="tagEditorSchedulePageFetch(true)">
-                <option value="">—</option>
-                <option value="name" x-text="t('tagEditor.sortName')"></option>
-                <option value="tagCount" x-text="t('tagEditor.sortTagCount')"></option>
-                <option value="modified" x-text="t('tagEditor.modified')"></option>
-              </select>
-              <button class="te-topbar-btn te-sort-dir" x-show="tagEditorSortBy2"
-                @click="tagEditorSortAsc2 = !tagEditorSortAsc2; tagEditorSchedulePageFetch(true)"
-                :title="tagEditorSortAsc2 ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  :style="tagEditorSortAsc2 ? '' : 'transform:rotate(180deg)'">
-                  <polyline points="18 15 12 9 6 15"/>
-                </svg>
-              </button>
-            </div>
             <span class="te-topbar-sep"></span>
-            <div class="te-dict-controls">
+            <div class="te-dict-controls" @click.outside="tagDictionaryPanelOpen = false">
               <button class="te-topbar-btn te-dict-btn"
-                :class="{ active: tagDictionaryReady && tagDictionaryShowTranslation, busy: tagDictionaryStatus() === 'installing' || tagDictionaryStatus() === 'loading' }"
-                @click="tagDictionaryPanelOpen = !tagDictionaryPanelOpen"
+                :class="{ active: tagDictionaryPanelOpen, busy: tagDictionaryStatus() === 'installing' || tagDictionaryStatus() === 'loading' }"
+                @click.stop="tagDictionaryPanelOpen = !tagDictionaryPanelOpen"
                 :title="t('tagEditor.dictTitle')" :aria-label="t('tagEditor.dictTitle')"
                 :aria-expanded="tagDictionaryPanelOpen">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 5h9M7.5 3v2c0 4.2-1.9 7.4-4.5 9.5"/>
-                  <path d="M5.5 9.5c1 2.6 2.7 4.6 4.5 5.8"/>
-                  <path d="M12.5 21l4-9.5 4 9.5M14 18h5"/>
-                </svg>
+                <span x-text="t('tagEditor.dictButton')"></span>
               </button>
               <span class="te-dict-status" x-show="tagDictionaryStatusText()" x-text="tagDictionaryStatusText()"></span>
               <template x-if="tagDictionaryPanelOpen">
-                <div class="te-dict-panel" @click.outside="tagDictionaryPanelOpen = false">
+                <div class="te-dict-panel">
                   <div class="te-dict-panel-head">
                     <span class="te-dict-panel-title" x-text="t('tagEditor.dictTitle')"></span>
                     <span class="te-dict-panel-state" x-text="tagDictionaryStateLabel()"></span>
                   </div>
-                  <template x-if="tagDictionaryStatus() === 'ready'">
+                  <template x-if="tagDictionaryReady">
                     <div class="te-dict-panel-info">
                       <span x-text="tagDictionaryVersionText()"></span>
                       <span x-text="tagDictionaryTagCountText()"></span>
@@ -753,7 +749,7 @@
                     <button class="te-dict-panel-action" @click="tagDictionaryPrimaryAction()"
                       x-text="tagDictionaryActionLabel()"></button>
                   </template>
-                  <template x-if="tagDictionaryStatus() === 'ready'">
+                  <template x-if="tagDictionaryReady && tagDictionaryIsChinese()">
                     <button class="te-dict-panel-toggle" :class="{ active: tagDictionaryShowTranslation }"
                       @click="tagDictionaryToggleTranslation()" :aria-pressed="tagDictionaryShowTranslation">
                       <span class="te-dict-panel-check" x-text="tagDictionaryShowTranslation ? '✓' : ''"></span>
@@ -763,13 +759,15 @@
                 </div>
               </template>
             </div>
-            <span class="te-topbar-sep"></span>
+            <details class="te-menu" @click.outside="$el.open = false" @keydown.escape.stop="$el.open = false">
+            <summary class="te-topbar-btn"><span x-text="t('tagEditor.selectMenu')"></span><span x-show="tagEditorSelected.length" x-text="tagEditorSelected.length"></span></summary>
+            <div class="te-menu-items te-menu-end" @click="$el.parentElement.open = false">
             <button class="te-topbar-btn" @click="tagEditorSelectAll()" x-text="t('tagEditor.selectPage')"></button>
             <button class="te-topbar-btn" @click="tagEditorSelectFiltered()" x-show="tagEditorFilteredCount() > tagEditorPageSize"
               x-text="t('tagEditor.selectFiltered')"></button>
             <button class="te-topbar-btn" @click="tagEditorSelectInvert()" x-text="t('tagEditor.selectInvert')"></button>
             <button class="te-topbar-btn" @click="_teFlushAllPendingTextEdits(); tagEditorSelected = []" x-text="t('tagEditor.selectNone')"></button>
-            <span class="te-topbar-sep"></span>
+            </div></details>
             <button class="te-save-btn" :class="{ dirty: tagEditorModifiedCount() > 0 }" @click="tagEditorSaveAll()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
@@ -780,13 +778,16 @@
                 <span x-text="'(' + tagEditorModifiedCount() + ')'"></span>
               </template>
             </button>
-            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" :title="t('tagEditor.downloadZip')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-            </button>
-            <button class="te-topbar-btn te-shortcuts-btn" @click="tagEditorShortcutsOpen = true"
-              :title="t('tagEditor.shortcutHelpTitle')" :aria-label="t('tagEditor.shortcutHelpTitle')">?</button>
+            <details class="te-menu" @click.outside="$el.open = false" @keydown.escape.stop="$el.open = false">
+            <summary class="te-topbar-btn" x-text="t('tagEditor.moreMenu')"></summary>
+            <div class="te-menu-items te-menu-end" @click="$el.parentElement.open = false">
+            <button class="te-topbar-btn" @click="tagEditorReloadDir()" x-text="t('tagEditor.rescanDataset')"></button>
+            <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
+            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
+            <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
+            <button class="te-topbar-btn" @click="tagEditorShortcutsOpen = true"
+              x-text="t('tagEditor.shortcutHelpTitle')"></button>
+            </div></details>
           </div>
           <div class="te-main" data-te-main="active"
             :style="'--te-right-w:' + tagEditorRightWidth + 'px'"
@@ -818,36 +819,19 @@
                   <span x-text="t('tagEditor.historyTabSnapshots')"></span>
                 </button>
               </div>
-              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'tags'" x-transition:enter.duration.150ms x-transition:leave.duration.0ms>
-                <div class="te-sidebar-dir">
-                  <span x-text="tagEditorDir || '...'" :title="tagEditorDir"></span>
-                  <button @click="tagEditorToggleRecursive()" :title="t('tagEditor.recursiveHint')"
-                    :class="{ active: tagEditorRecursive }" style="opacity:0.7">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 6h18M3 12h12M3 18h18"/>
-                    </svg>
-                  </button>
-                  <button @click="tagEditorReloadDir()" :title="t('tagEditor.loadImages')">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
-                    </svg>
-                  </button>
-                </div>
+              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'tags'">
                 <div class="te-sidebar-undo">
                   <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
                     </svg>
+                    <span x-text="t('tagEditor.undoHint')"></span>
                   </button>
                   <button @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" :title="t('tagEditor.redoHint')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
                     </svg>
-                  </button>
-                  <button @click="tagEditorRestoreBackup()" :title="t('tagEditor.restoreBackupHint')" style="margin-left:auto">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/>
-                    </svg>
+                    <span x-text="t('tagEditor.redoHint')"></span>
                   </button>
                 </div>
                 <div class="te-sidebar-search">
@@ -859,18 +843,17 @@
                 </div>
                 <div class="te-logic-btns">
                   <button :class="{ active: tagEditorTagLogic === 'AND' }" @click="tagEditorTagLogic = 'AND'; tagEditorSchedulePageFetch(true)"
-                    :title="t('tagEditor.logicAndHint')">AND</button>
+                    :title="t('tagEditor.logicAndHint')" x-text="t('tagEditor.matchAll')"></button>
                   <button :class="{ active: tagEditorTagLogic === 'OR' }" @click="tagEditorTagLogic = 'OR'; tagEditorSchedulePageFetch(true)"
-                    :title="t('tagEditor.logicOrHint')">OR</button>
+                    :title="t('tagEditor.logicOrHint')" x-text="t('tagEditor.matchAny')"></button>
                   <span class="te-logic-sep" aria-hidden="true"></span>
                   <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'freq' }" @click="tagEditorSetTagSort('freq')"
                     :title="t('tagEditor.sort')" x-text="t('tagEditor.sortFreq')"></button>
                   <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'alpha' }" @click="tagEditorSetTagSort('alpha')"
                     :title="t('tagEditor.sort')" x-text="t('tagEditor.sortAlpha')"></button>
-                  <button class="te-sort-btn" :class="{ active: tagEditorTagSortBy === 'length' }" @click="tagEditorSetTagSort('length')"
-                    :title="t('tagEditor.sort')" x-text="t('tagEditor.sortLength')"></button>
                 </div>
-                <div class="te-filter-chips" x-show="tagEditorTagSelection.length > 0 || tagEditorExcludedTags.length > 0">
+                <div class="te-filter-chips" x-show="tagEditorTagSelection.length > 0 || tagEditorExcludedTags.length > 0 || tagEditorTagSearch">
+                  <button class="te-clear-filters" @click="tagEditorClearTagFilters()" x-text="t('tagEditor.clearTagFilters')"></button>
                   <template x-for="tag in tagEditorTagSelection" :key="'inc-' + tag">
                     <span class="te-chip include"><span x-text="tag"></span>
                       <span class="te-chip-x" @click="tagEditorTagSelection = tagEditorTagSelection.filter(function(t) { return t !== tag }); _teInvalidateFilter(); tagEditorSchedulePageFetch(true)">&times;</span>
@@ -895,10 +878,9 @@
                     </div>
                   </template>
                 <template x-for="item in tagEditorGetDisplayFreq()" :key="item.tag">
-                  <div class="te-tag-row"
+                  <div class="te-tag-row" :data-tag="item.tag"
                     :class="{ selected: tagEditorTagSelection.includes(item.tag), excluded: tagEditorExcludedTags.includes(item.tag) }"
                     @contextmenu.prevent="tagEditorTagCtx($event, item.tag)">
-                    <div class="te-tag-bar" :style="'width:' + (tagEditorMaxFreq > 0 ? (item.count / tagEditorMaxFreq * 100) : 0) + '%'"></div>
                     <template x-if="tagEditorInlineEdit && tagEditorInlineEdit.oldTag === item.tag">
                       <input id="te-inline-edit-input" type="text" class="te-inline-edit-input"
                         x-model="tagEditorInlineEdit.newTag"
@@ -907,8 +889,9 @@
                         @blur="tagEditorFinishInlineEdit()"
                         @click.stop>
                       </template>
-                    <span class="te-tag-name" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
-                      @click="tagEditorSelectTag(item.tag)" x-text="item.tag"></span>
+                    <button class="te-tag-name te-tag-label" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
+                      :aria-pressed="tagEditorTagSelection.includes(item.tag)" :class="tagDictionaryChipState(item.tag)"
+                      @click="tagEditorSelectTag(item.tag)"><span class="te-editor-tag-name" x-text="item.tag"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></button>
                     <span class="te-tag-count" x-text="item.count"></span>
                     <button class="te-tag-edit-btn" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
                       @click="tagEditorStartInlineEdit(item.tag, $event)" :title="t('tagEditor.inlineEditHint')">
@@ -917,7 +900,7 @@
                         <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                       </svg>
                     </button>
-                    <span class="te-tag-excl" @click.stop="tagEditorExcludeTag(item.tag)">&times;</span>
+                    <button class="te-tag-excl" @click.stop="tagEditorExcludeTag(item.tag)" :title="t('tagEditor.excludeTagHint')" :aria-label="t('tagEditor.excludeTagHint')">−</button>
                   </div>
                 </template>
                 </div>
@@ -926,26 +909,29 @@
                     x-text="t('tagEditor.showMore') + ' (' + tagEditorGetFilteredTagFreq().length + ')'"></button>
                 </div>
               </div>
-              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'history'" x-transition:enter.duration.150ms x-transition:leave.duration.0ms>
-                <div class="te-history-hint" style="font-size:11px;color:var(--text-muted);padding:2px 8px 6px" x-text="t('tagEditor.historyHintUnsaved')"></div>
+              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'history'">
+                <p class="te-history-hint" x-text="t('tagEditor.historyHintUnsaved')"></p>
+                <div class="te-history-controls">
+                  <button class="te-topbar-btn" @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" x-text="t('tagEditor.undoHint')"></button>
+                  <button class="te-topbar-btn" @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" x-text="t('tagEditor.redoHint')"></button>
+                </div>
                 <div class="te-history-list">
                   <div x-show="tagEditorHistory.length === 0" class="te-history-empty" x-text="t('tagEditor.historyUndefined')"></div>
                   <template x-for="(item, idx) in tagEditorHistory.slice().reverse()" :key="idx">
-                    <div class="te-history-step"
+                    <button class="te-history-step" :aria-expanded="(tagEditorHistory.length - 1 - idx) === tagEditorHistoryDetailIdx"
                       :class="{
                         current: (tagEditorHistory.length - 1 - idx) === tagEditorHistoryIdx,
                         future: (tagEditorHistory.length - 1 - idx) > tagEditorHistoryIdx,
                         active: (tagEditorHistory.length - 1 - idx) === tagEditorHistoryDetailIdx
                       }"
-                      @click="tagEditorSelectHistoryDetail(tagEditorHistory.length - 1 - idx)"
-                      @dblclick="tagEditorJumpToHistory(tagEditorHistory.length - 1 - idx)">
+                      @click="tagEditorSelectHistoryDetail(tagEditorHistory.length - 1 - idx)">
                       <span class="te-history-step-num">#<span x-text="tagEditorHistory.length - idx"></span></span>
                       <span class="te-history-step-info">
                         <span x-text="(item.meta && item.meta.desc) || (Object.keys(item.snapshot || item).length + ' ' + t('tagEditor.imageCount'))"></span>
                       </span>
                       <span class="te-history-step-cur" x-show="(tagEditorHistory.length - 1 - idx) === tagEditorHistoryIdx" x-text="t('tagEditor.currentHint')"></span>
                       <span class="te-history-step-future" x-show="(tagEditorHistory.length - 1 - idx) > tagEditorHistoryIdx" x-text="'· ' + t('tagEditor.historyFuture')"></span>
-                    </div>
+                    </button>
                   </template>
                 </div>
                 <div class="te-history-detail" x-show="tagEditorHistoryDetailIdx >= 0">
@@ -956,8 +942,8 @@
                     </span>
                     <span style="display:flex;gap:4px;align-items:center">
                       <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px"
-                        @click="tagEditorJumpToHistory(tagEditorHistoryDetailIdx)" x-text="t('tagEditor.historyJumpStep')"></button>
-                      <button @click="tagEditorHistoryDetailIdx = -1" :title="t('common.close')">&times;</button>
+                        :disabled="tagEditorHistoryDetailIdx === tagEditorHistoryIdx" @click="tagEditorJumpToHistory(tagEditorHistoryDetailIdx)" x-text="t('tagEditor.historyJumpStep')"></button>
+                      <button @click="tagEditorHistoryDetailIdx = -1" :title="t('common.close')" :aria-label="t('common.close')">&times;</button>
                     </span>
                   </div>
                   <div class="te-history-diff-list">
@@ -1001,30 +987,31 @@
                   </div>
                 </div>
               </div>
-              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'snapshots'" x-transition:enter.duration.150ms x-transition:leave.duration.0ms>
-                <div class="te-history-hint" style="font-size:11px;color:var(--text-muted);padding:2px 8px 6px" x-text="t('tagEditor.historyHintSaved')"></div>
+              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'snapshots'">
+                <p class="te-history-hint" x-text="t('tagEditor.historyHintSaved')"></p>
+                <div class="te-history-controls">
+                  <button class="te-topbar-btn" @click="tagEditorLoadSnapshots()" :disabled="tagEditorSnapshotLoading || tagEditorSnapshotBusy" x-text="t('tagEditor.timelineRefresh')"></button>
+                </div>
+                <p class="te-history-hint" role="status" x-show="tagEditorSnapshotLoading" x-text="t('common.loading')"></p>
+                <p class="te-history-hint" role="alert" x-show="tagEditorSnapshotError" x-text="t('tagEditor.timelineLoadError')"></p>
                 <div class="te-snapshot-list">
-                  <div x-show="tagEditorSnapshots.length === 0" style="padding:8px;font-size:12px;color:var(--text-muted)" x-text="t('tagEditor.snapshotsHint')"></div>
+                  <div x-show="!tagEditorSnapshotLoading && !tagEditorSnapshotError && tagEditorSnapshots.length === 0" class="te-history-empty" x-text="t('tagEditor.snapshotsHint')"></div>
                   <template x-for="snap in tagEditorSnapshots" :key="snap.id">
                     <div class="te-snapshot-item">
                       <span class="te-snapshot-time" x-text="_teFormatSnapshotTime(snap.timestamp)"></span>
                       <span class="te-snapshot-meta">
-                        <span x-text="snap.label || snap.event_type"></span>
-                        <span x-text="snap.file_count + ' files'"></span>
+                        <span x-text="_teTimelineLabel(snap)"></span>
+                        <span x-text="t('tagEditor.historyStepImages').replace('{n}', snap.file_count)"></span>
                       </span>
                       <div class="te-snapshot-actions">
-                        <button @click="tagEditorRestoreSnapshot(snap.id)" :title="t('tagEditor.snapshotRestore')">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
-                          </svg>
-                        </button>
-                        <button @click="tagEditorDeleteSnapshot(snap.id)" :title="t('tagEditor.snapshotDelete')">&times;</button>
+                        <button @click="tagEditorRestoreSnapshot(snap.id)" :disabled="tagEditorSnapshotBusy || _teIsSaving" x-text="t('tagEditor.snapshotRestore')"></button>
+                        <button @click="tagEditorDeleteSnapshot(snap.id)" :disabled="tagEditorSnapshotBusy" x-text="t('tagEditor.snapshotDelete')"></button>
                       </div>
                     </div>
                   </template>
                 </div>
                 <div style="padding:8px" x-show="tagEditorSnapshots.length > 0">
-                  <button class="btn btn-ghost btn-sm" style="font-size:11px" @click="tagEditorClearAllSnapshots()" x-text="t('tagEditor.snapshotClearAll')"></button>
+                  <button class="btn btn-ghost btn-sm" style="font-size:11px" :disabled="tagEditorSnapshotBusy" @click="tagEditorClearAllSnapshots()" x-text="t('tagEditor.snapshotClearAll')"></button>
                 </div>
               </div>
             </div>
@@ -1084,7 +1071,13 @@
               @keydown.left.prevent="tagEditorAdjustRightWidth(8)"
               @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"
               @dblclick="tagEditorRightWidth = 340; tagEditorAdjustRightWidth(0)"></div>
-            <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0 }">
+            <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove }" @contextmenu="tagEditorPanelContext($event)">
+              <div class="te-quick-remove-bar" x-show="tagEditorQuickRemove && tagEditorSelected.length">
+                <span role="status" x-text="t('tagEditor.removalMarked').replace('{n}', tagEditorRemovalTags.length)"></span>
+                <button class="te-topbar-btn" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval')"></button>
+                <button class="te-topbar-btn" @click="tagEditorCancelQuickRemove()" x-text="t('common.cancel')"></button>
+                <small x-text="t('tagEditor.quickRemoveHint')"></small>
+              </div>
               <div class="te-editor-empty" x-show="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <span x-text="t('tagEditor.noImageSelected')"></span>
               </div>
@@ -1111,32 +1104,33 @@
                     <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail"
                       :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name" draggable="false">
                   </div>
-                  <div class="te-editor-toolbar">
-                    <div class="te-editor-view">
+                  <div class="te-editor-toolbar" x-show="!tagEditorQuickRemove">
+                    <div class="te-editor-view" x-show="!tagEditorQuickRemove">
                       <button :class="{ active: tagEditorDetailView === 'chip' }" @click="tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')"></button>
                       <button :class="{ active: tagEditorDetailView === 'text' }" @click="tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')"></button>
                     </div>
-                    <div class="te-editor-actions">
-                      <button @click="tagEditorCopySelectedTags()" x-text="t('tagEditor.copyTags')"></button>
-                      <button @click="tagEditorPasteTagsToSelected()" x-text="t('tagEditor.pasteTags')" :disabled="tagEditorCopiedTags.length === 0"></button>
-                      <button @click="tagEditorSortSelectedTags()" :title="t('tagEditor.sort')" x-text="t('tagEditor.sort')"></button>
-                      <button @click="tagEditorRevertSelectedImage()" :title="t('tagEditor.revertImage')" x-text="t('tagEditor.revertImage')"></button>
-                    </div>
+                    <button class="te-topbar-btn" x-show="!tagEditorQuickRemove" @click="tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-editor-revert" @click="tagEditorRevertSelectedImage()"
+                      :disabled="!tagEditorCanRevertSelectedImage()" x-text="t('tagEditor.revertImage')"></button>
                   </div>
                   <div class="te-editor-body">
                     <div class="te-editor-tags" x-show="tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
-                        <span class="te-editor-tag" draggable="true" :data-ti="ti" :data-tag="tag" tabindex="0"
-                          :class="Object.assign({ 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }, tagDictionaryChipState(tag))"
+                        <span class="te-editor-tag" :draggable="!tagEditorQuickRemove" :data-ti="ti" :data-tag="tag" tabindex="0"
+                          :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(tag) : null"
+                          :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(tag), 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }, tagDictionaryChipState(tag))"
+                          @click="tagEditorToggleRemoval(tag)"
                           @dragstart="tagEditorDetailDragStart($event, ti)"
                           @dragover="tagEditorDetailTagDragOver($event, ti)"
                           @dragenter="tagEditorDetailDragEnter($event, ti)"
                           @dragleave="tagEditorDetailDragLeave($event)"
                           @dragend="tagEditorDetailDragEnd($event)"
-                          @dblclick="tagEditorDetailEditTag(ti)">
+                          @keydown.enter.prevent.stop="tagEditorQuickRemove ? tagEditorToggleRemoval(tag) : tagEditorDetailEditTag(ti)"
+                          @keydown.space.prevent.stop="if (tagEditorQuickRemove) tagEditorToggleRemoval(tag); else { _tdShowHover(tag, $el); $nextTick(() => document.querySelector('#teDictHover .te-dict-hover-actions button')?.focus()); }"
+                          @dblclick="if (!tagEditorQuickRemove) tagEditorDetailEditTag(ti)">
                           <span class="te-editor-tag-main">
                             <span class="te-editor-tag-name" x-text="tag"></span>
-                            <span class="te-editor-tag-x" @click.stop="tagEditorRemoveTagFromSelected(tag)" @dblclick.stop>&times;</span>
+                            <button type="button" class="te-editor-tag-x" x-show="!tagEditorQuickRemove" :aria-label="t('tagEditor.dictRemoveTag').replace('{tag}', tag)" @click.stop="tagEditorRemoveTagFromSelected(tag)" @keydown.stop @dblclick.stop>&times;</button>
                           </span>
                           <span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span>
                         </span>
@@ -1145,28 +1139,34 @@
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange()"></textarea>
                   </div>
-                  <div class="te-editor-add" x-show="tagEditorDetailView === 'chip'"
+                  <div class="te-editor-add" x-show="!tagEditorQuickRemove && tagEditorDetailView === 'chip'"
                     @resize.window="tagEditorRefreshSuggestPosition()">
-                    <input type="text" x-model="tagEditorAddInput" :placeholder="t('tagEditor.addTagPlaceholder')"
-                      @keydown.enter="tagEditorAddTagToSelected()"
-                      @input="tagEditorGetSuggestions(tagEditorAddInput, $event.target)"
+                    <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"
+                      role="combobox" aria-autocomplete="list" aria-controls="te-tag-suggestions"
+                      :aria-expanded="tagEditorSuggestions.length > 0"
+                      :aria-activedescendant="tagEditorSuggestIdx >= 0 ? 'te-tag-suggestion-' + tagEditorSuggestIdx : null"
+                      @keydown.enter="if (!$event.isComposing && $event.keyCode !== 229 && tagEditorSuggestIdx < 0) tagEditorAddTagToSelected()"
+                      @input="if (!$event.isComposing) tagEditorGetSuggestions($event.target.value, $event.target)"
+                      @compositionstart="_teCloseSuggestions()"
+                      @compositionend="tagEditorGetSuggestions($event.target.value, $event.target)"
                       @focus="tagEditorGetSuggestions(tagEditorAddInput, $event.target)"
                       @blur="tagEditorBlurSuggest()">
                     <button @click="tagEditorAddTagToSelected()">+</button>
-                    <div class="te-suggest" x-show="tagEditorSuggestions.length > 0"
+                    <div id="te-tag-suggestions" role="listbox" class="te-suggest" x-show="tagEditorSuggestions.length > 0"
                       :class="{ floating: _teSuggestCoords != null }"
                       :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;bottom:'+_teSuggestCoords.bottom+'px;width:'+_teSuggestCoords.width+'px;max-height:'+_teSuggestCoords.maxHeight+'px') : ''">
                       <template x-for="(s, sIdx) in tagEditorSuggestions" :key="sIdx">
                         <div class="te-suggest-item te-dict-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
+                          :data-tag="s.insert"
+                          role="option" :id="'te-tag-suggestion-' + sIdx" :aria-selected="sIdx === tagEditorSuggestIdx"
                           @mousedown.prevent="tagEditorSelectSuggestion(s)">
-                          <span class="te-dict-item-accent" :class="tagDictionaryCategoryClass(s.cat)"></span>
                           <span class="te-dict-item-body">
                             <span class="te-dict-item-line">
-                              <span class="te-dict-item-name" x-text="s.label"></span>
-                              <span class="te-dict-item-count" x-text="tagDictionaryFormatCount(s.count)"></span>
+                              <span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span>
+                              <span class="te-dict-item-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(s.count)"></span>
                             </span>
-                            <span class="te-dict-item-zh" x-text="s.sub"></span>
-                            <span class="te-dict-item-alias" x-text="s.alias ? t('tagEditor.dictAliasHit').replace('{alias}', s.alias) : ''"></span>
+                            <span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span>
+                            <span class="te-dict-item-alias" x-text="s.alias && (tagDictionaryIsChinese() || !/[\u3400-\u9fff]/.test(s.alias)) ? t('tagEditor.dictAliasHit').replace('{alias}', s.alias) : ''"></span>
                           </span>
                         </div>
                       </template>
@@ -1178,103 +1178,99 @@
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                    <button class="te-topbar-btn" x-show="!tagEditorQuickRemove" @click="tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
                   </div>
                   <div class="te-editor-body">
-                  <div class="te-batch-section">
-                    <span class="te-batch-section-title" x-text="t('tagEditor.batchScope')"></span>
-                    <div class="te-batch-scope">
-                      <button :class="{ active: tagEditorBatchScope === 'selected' }" @click="tagEditorBatchScope = 'selected'">
-                        <span x-text="t('tagEditor.scopeSelected')"></span>
-                        <span class="te-badge" x-text="tagEditorSelected.length"></span>
-                      </button>
-                      <button :class="{ active: tagEditorBatchScope === 'filtered' }" @click="tagEditorBatchScope = 'filtered'">
-                        <span x-text="t('tagEditor.scopeFiltered')"></span>
-                        <span class="te-badge" x-text="tagEditorFilteredCount()"></span>
-                      </button>
-                      <button :class="{ active: tagEditorBatchScope === 'all' }" @click="tagEditorBatchScope = 'all'">
-                        <span x-text="t('tagEditor.scopeAll')"></span>
-                        <span class="te-badge" x-text="tagEditorDatasetCount"></span>
-                      </button>
-                    </div>
+                  <p class="te-batch-hint" x-text="t('tagEditor.selectedOnlyHint')"></p>
+                  <div class="te-batch-mode" x-show="!tagEditorQuickRemove" role="group" :aria-label="t('tagEditor.batchOperation')">
+                    <button :class="{ active: tagEditorBatchMode === 'add' }" @click="tagEditorSetBatchMode('add')" x-text="t('bulkAction.add')"></button>
+                    <button :class="{ active: tagEditorBatchMode === 'remove' }" @click="tagEditorSetBatchMode('remove')" x-text="t('bulkAction.removeTag')"></button>
+                    <button :class="{ active: tagEditorBatchMode === 'replace' }" @click="tagEditorSetBatchMode('replace')" x-text="t('bulkAction.replace')"></button>
                   </div>
-                  <div class="te-batch-section">
-                    <span class="te-batch-section-title" x-text="t('bulkAction.add')"></span>
+                  <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'add'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchAddInput" :placeholder="t('tagEditor.batchAddPlaceholder')"
-                        @input="tagEditorBatchSuggest('add')" @focus="tagEditorBatchSuggest('add')"
-                        @blur="tagEditorBatchBlur()" @keydown.enter="tagEditorBatchAdd()">
+                        @input="if (!$event.isComposing) tagEditorBatchSuggest('add')" @compositionend="tagEditorBatchSuggest('add')" @focus="tagEditorBatchSuggest('add')"
+                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
                       <div class="te-batch-pos">
                         <button :class="{ active: tagEditorBatchPos === 'front' }" @click="tagEditorBatchPos = 'front'" x-text="t('bulkAction.posFront')"></button>
                         <button :class="{ active: tagEditorBatchPos === 'back' }" @click="tagEditorBatchPos = 'back'" x-text="t('bulkAction.posBack')"></button>
                       </div>
-                      <button @click="tagEditorBatchAdd()" x-text="t('common.apply')"></button>
+                      <button @click="tagEditorBatchAdd()" :disabled="!batchAddInput.trim()" x-text="t('bulkAction.add')"></button>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'add'">
-                        <template x-for="s in batchSuggestItems" :key="s">
-                          <div class="te-suggest-item" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)" x-text="s"></div>
+                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
+                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                          </div>
                         </template>
                       </div>
                     </div>
                   </div>
-                  <div class="te-batch-section">
-                    <span class="te-batch-section-title" x-text="t('bulkAction.removeTag')"></span>
+                  <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'remove'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchRemoveInput" :placeholder="t('tagEditor.batchRemovePlaceholder')"
-                        @input="tagEditorBatchSuggest('remove')" @focus="tagEditorBatchSuggest('remove')"
-                        @blur="tagEditorBatchBlur()" @keydown.enter="tagEditorBatchRemove()">
-                      <button @click="tagEditorBatchRemove()" x-text="t('common.apply')"></button>
+                        @input="if (!$event.isComposing) tagEditorBatchSuggest('remove')" @compositionend="tagEditorBatchSuggest('remove')" @focus="tagEditorBatchSuggest('remove')"
+                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
+                      <button @click="tagEditorBatchRemove()" :disabled="!batchRemoveInput.trim()" x-text="t('bulkAction.removeTag')"></button>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'remove'">
-                        <template x-for="s in batchSuggestItems" :key="s">
-                          <div class="te-suggest-item" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)" x-text="s"></div>
+                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
+                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                          </div>
                         </template>
                       </div>
                     </div>
                   </div>
-                  <div class="te-batch-section">
-                    <span class="te-batch-section-title" x-text="t('bulkAction.replace')"></span>
+                  <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'replace'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchOldTag" :placeholder="t('tagEditor.batchOldPlaceholder')"
-                        @input="tagEditorBatchSuggest('old')" @focus="tagEditorBatchSuggest('old')"
-                        @blur="tagEditorBatchBlur()">
+                        @input="if (!$event.isComposing) tagEditorBatchSuggest('old')" @compositionend="tagEditorBatchSuggest('old')" @focus="tagEditorBatchSuggest('old')"
+                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
                       <span class="te-batch-arrow">&rarr;</span>
                       <input type="text" x-model="batchNewTag" :placeholder="t('tagEditor.batchPlaceholder2')"
-                        @input="tagEditorBatchSuggest('new')" @focus="tagEditorBatchSuggest('new')"
+                        @input="if (!$event.isComposing) tagEditorBatchSuggest('new')" @compositionend="tagEditorBatchSuggest('new')" @focus="tagEditorBatchSuggest('new')"
                         @blur="tagEditorBatchBlur()"
-                        @keydown.enter="tagEditorBatchReplace()">
-                      <button @click="tagEditorBatchReplace()" x-text="t('common.apply')"></button>
+                        @keydown="tagEditorBatchKeydown($event)">
+                      <button @click="tagEditorBatchReplace()" :disabled="!batchOldTag.trim() || !batchNewTag.trim()" x-text="t('bulkAction.replace')"></button>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'old'">
-                        <template x-for="s in batchSuggestItems" :key="s">
-                          <div class="te-suggest-item" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)" x-text="s"></div>
+                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
+                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                          </div>
                         </template>
                       </div>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'new'">
-                        <template x-for="s in batchSuggestItems" :key="s">
-                          <div class="te-suggest-item" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)" x-text="s"></div>
+                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
+                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                          </div>
                         </template>
                       </div>
                     </div>
                   </div>
-                  <div class="te-batch-quick">
-                    <button @click="tagEditorBatchDedup()" x-text="t('bulkAction.dedupe')"></button>
-                    <button @click="tagEditorBatchSort()" x-text="t('tagEditor.sort')"></button>
-                  </div>
-                  <div class="te-batch-section">
-                    <span class="te-batch-section-title" x-text="t('tagEditor.injectTriggerHint')"></span>
-                    <div class="te-batch-row">
-                      <input type="text" x-model="batchTriggerInput" :placeholder="t('tagEditor.batchTriggerPlaceholder')"
-                        @keydown.enter="tagEditorBatchInjectTrigger()">
-                      <button @click="tagEditorBatchInjectTrigger()" x-text="t('tagEditor.batchApplyTrigger')"></button>
-                    </div>
-                  </div>
+                  <p class="te-batch-hint" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'add'" x-text="t('tagEditor.batchAddHint')"></p>
                   <template x-if="tagEditorGetSelectedStats().length > 0">
                     <div class="te-batch-stats">
-                      <span class="te-batch-stats-title" x-text="t('tagEditor.tagCloud')"></span>
-                      <template x-for="item in tagEditorGetSelectedStats()" :key="item.tag">
-                        <span class="te-batch-stag" :class="item.state" @click="tagEditorBatchRemoveTag(item.tag)" :title="t('tagEditor.batchRemoveDirect')">
-                          <span x-text="item.tag"></span>
-                          <span class="te-batch-stag-cnt" x-text="item.count"></span>
-                          <span class="te-batch-stag-x" @click.stop="tagEditorBatchRemoveTag(item.tag)">&times;</span>
-                        </span>
+                      <div class="te-batch-stats-head">
+                        <span x-text="t('tagEditor.selectedTags')"></span>
+                        <select x-model="tagEditorBatchTagFilter" :aria-label="t('tagEditor.selectedTags')">
+                          <option value="all" x-text="t('tagEditor.allSelectedTags')"></option>
+                          <option value="shared" x-text="t('tagEditor.sharedTags')"></option>
+                          <option value="partial" x-text="t('tagEditor.partialTags')"></option>
+                        </select>
+                      </div>
+                      <div class="te-selected-tags">
+                      <div class="te-tagcloud-empty" x-show="tagEditorGetVisibleSelectedStats().length === 0" x-text="t('common.noResults')"></div>
+                      <template x-for="item in tagEditorGetVisibleSelectedStats()" :key="item.tag">
+                        <div class="te-selected-tag" :data-tag="item.tag" :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(item.tag) }, tagDictionaryChipState(item.tag))" tabindex="0"
+                          :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(item.tag) : null"
+                          @click="tagEditorToggleRemoval(item.tag)" @keydown.space.prevent.stop="tagEditorToggleRemoval(item.tag)" @keydown.enter.prevent.stop="tagEditorToggleRemoval(item.tag)">
+                          <span class="te-tag-label"><span class="te-editor-tag-name" x-text="item.tag"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></span>
+                          <span class="te-tag-count" :title="t('tagEditor.selectedTagCount')" x-text="item.count + '/' + tagEditorSelected.length"></span>
+                          <button class="te-tag-remove" x-show="!tagEditorQuickRemove" @click.stop="tagEditorPrepareRemove(item.tag)" :aria-label="t('tagEditor.dictRemoveTag').replace('{tag}', item.tag)">&times;</button>
+                        </div>
                       </template>
+                      </div>
                     </div>
                   </template>
                   </div>

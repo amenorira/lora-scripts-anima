@@ -92,7 +92,7 @@ class HFDownloadTests(unittest.TestCase):
     def test_failed_part_signals_peer_before_waiting_for_executor(self):
         started = threading.Barrier(2)
         stopped = threading.Event()
-        def download_part(url, path, start, end, index, size, progress, stop):
+        def download_part(url, path, start, end, index, size, progress, stop, expected_total):
             started.wait(timeout=2)
             if index == 0:
                 raise requests.ConnectionError("connection failed")
@@ -105,6 +105,15 @@ class HFDownloadTests(unittest.TestCase):
             with self.assertRaises(requests.ConnectionError):
                 hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
         self.assertTrue(stopped.is_set())
+
+    def test_changed_remote_total_does_not_publish_partial_file(self):
+        self.dest.write_bytes(b"original")
+        response = reply(b"ab", 206, {"content-range": "bytes 0-1/8"})
+        with patch("requests.get", return_value=response):
+            with self.assertRaises(hf.IntegrityError):
+                hf._download_part("https://example.invalid/file", self.dest.with_suffix(".part0"),
+                                  0, 1, 0, 2, [0], expected_total=6)
+        self.assertEqual(self.dest.read_bytes(), b"original")
 
 
 class HTTPDownloadTests(unittest.TestCase):
@@ -190,4 +199,3 @@ class HTTPDownloadTests(unittest.TestCase):
         self.assertLess(elapsed, 4.5)
         self.assertEqual(self.dest.read_bytes(), self.data)
         self.assertEqual([c for c in self.calls if c[1] == "/slow"], [("HEAD", "/slow")])
-
