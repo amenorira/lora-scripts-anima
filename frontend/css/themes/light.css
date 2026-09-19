@@ -20,6 +20,13 @@
   --warning: #ea580c;
   --info: #3b82f6;
 
+  /* Danbooru 标签分类色（Tag Editor 词典）：文字对比度按浅色底调过 */
+  --tag-general: #1f6fd0;
+  --tag-artist: #c33d3d;
+  --tag-copyright: #8a4bc8;
+  --tag-character: #267840;
+  --tag-meta: #966013;
+
   /* 资源监控状态色（柔和，独立于全局 --danger/--warning） */
   --res-ok: #10b981;      /* 正常：绿 */
   --res-warn: #d97706;    /* 偏高：暖橙 */

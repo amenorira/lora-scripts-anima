@@ -306,27 +306,28 @@ window.monitorLogRenderMixin = {
     return html;
   },
 
-  // 完整日志工具栏：一层操作，直接覆盖浏览、搜索、复制和下载。
+  // 完整日志工具栏：一层操作，按「翻页 → 全文件查找 → 当前页/整文件操作」从左到右排列。
+  // 翻页组按位置顺序 顶部 → 上一页 → 范围 → 下一页 → 底部，与分页控件的常规排列一致。
   _logFullToolbarHtml(t) {
     let html = '';
     const tailLabel = this.selectedRunDir ? t('logBottom') : t('logLiveTail');
-    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll ? \'btn-primary\' : \'btn-secondary\'" @click="logFullLastPage()" x-text="selectedRunDir ? t(\'monitor.logBottom\') : (logAutoScroll ? t(\'monitor.logLiveTail\') : t(\'monitor.followPaused\'))">' + this.esc(tailLabel) + '</button>';
+    // 顶部：在有日志且非加载中时始终可用——offset 已为 0 时它仍负责把当前页滚回开头。
+    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button></div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll ? \'btn-primary\' : \'btn-secondary\'" @click="logFullLastPage()" x-text="selectedRunDir ? t(\'monitor.logBottom\') : (logAutoScroll ? t(\'monitor.logLiveTail\') : t(\'monitor.followPaused\'))">' + this.esc(tailLabel) + '</button></div>';
     html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
     html += '<span class="m-logs-match-nav" x-show="logFullQuery && !logFullLoading">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
     html += '<span class="m-logs-match" x-text="logFullMatches.length ? logFullMatchText() : t(\'monitor.noResults\')"></span>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
-    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button>';
-    html += '<details class="m-monitor-more"><summary class="btn btn-sm btn-secondary">' + this.esc(t('moreActions')) + '</summary><div>';
-    [['logFullFirstPage()', 'firstPage'], ['copyLogs()', 'copyPage'], ['refreshFullLog()', 'refresh']].forEach(([action, label]) => {
-      const disabled = label === 'refresh' ? 'logFullLoading' : 'logFullTotal<=0 || logFullLoading';
-      html += '<button type="button" class="btn btn-sm" :disabled="' + disabled + '" @click="' + action + ';$el.closest(\'details\').open=false">' + this.esc(t(label)) + '</button>';
-    });
-    html += '</div></details></div>';
+    html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions">';
+    // 当前页操作（复制、刷新）在前，整文件下载收尾：范围由小到大，下载保持最右的位置不变。
+    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullLoading" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
     return html;
   },
 

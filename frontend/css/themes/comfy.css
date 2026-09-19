@@ -90,6 +90,13 @@
   --success: #00cd72;
   --warning: #fd9903;
   --info: #31b9f4;
+
+  /* Danbooru 标签分类色（Tag Editor 词典）：跟随 ComfyUI 深色调 */
+  --tag-general: #6b9fe8;
+  --tag-artist: #e08080;
+  --tag-copyright: #a98ae8;
+  --tag-character: #6cc08a;
+  --tag-meta: #d9a05a;
   --danger: #f75951;
   --danger-hover: #e04e48;
   --danger-soft: rgba(247, 89, 81, 0.12);

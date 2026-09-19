@@ -142,11 +142,15 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
+# 下载安装的词典资源：与 /anima-ui 同一套规则，内容文件带查询串换 immutable
+_DICTIONARY_ASSET_PREFIX = "/api/tageditor/dictionary/asset/"
+
 
 def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     """按资源类型分级缓存策略：
 
     - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
+    - 词典内容文件与 /anima-ui 版本化资源同规则；manifest 保持 revalidate
     - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
     - /anima-ui 带 ?v= 内容版本号的资源 immutable 缓存一年；index.html 本身
       不版本化、保持 revalidate，由它引用新的版本化 URL
@@ -155,7 +159,12 @@ def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     path = url.path
     if path in _IMMUTABLE_PREVIEW_PATHS:
         return
-    if path.startswith("/api/"):
+    if path.startswith(_DICTIONARY_ASSET_PREFIX):
+        if url.query and not path.endswith("/manifest.json"):
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            headers["Cache-Control"] = "no-cache, max-age=0"
+    elif path.startswith("/api/"):
         headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.startswith("/anima-ui/"):
         if url.query:
@@ -183,7 +192,10 @@ class CachePolicyMiddleware:
 
         async def send_with_cache_policy(message: Message) -> None:
             if message["type"] == "http.response.start":
-                apply_cache_policy(url, MutableHeaders(scope=message))
+                headers = MutableHeaders(scope=message)
+                apply_cache_policy(url, headers)
+                if url.path.startswith(_DICTIONARY_ASSET_PREFIX) and message["status"] >= 400:
+                    headers["Cache-Control"] = "no-store"
             await send(message)
 
         await self.app(scope, receive, send_with_cache_policy)

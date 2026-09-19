@@ -15,6 +15,9 @@ Tag Editor API 路由
   GET  /api/tageditor/snapshots              — 列出所有快照
   POST /api/tageditor/snapshots/{sid}/restore — 还原指定快照
   DELETE /api/tageditor/snapshots/{sid}       — 删除指定快照
+  GET  /api/tageditor/dictionary             — 词典安装状态与进度
+  POST /api/tageditor/dictionary/install     — 下载并构建词典（后台线程）
+  GET  /api/tageditor/dictionary/asset/{name} — 词典静态资源
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, write_tags,
@@ -32,6 +35,7 @@ from backend.tageditor.core import (
     _invalidate_cache,
     get_cached_scan_images, get_cached_scan_dataset, tag_list,
 )
+from backend.tageditor import dictionary
 from backend.tageditor.operations import apply_operation
 from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event
 from backend.tageditor.sessions import dataset_sessions
@@ -601,3 +605,29 @@ async def api_clear_all_snapshots(dataset_dir: str = Query(...)):
         return {"status": "success", "message": f"Cleared {n} snapshots", "data": {"cleared": n}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ── 词典（Danbooru 中文）─────────────────────────────────────────
+# 数据不进仓库：这里负责下载与构建，浏览器按静态文件加载，查询在 Worker 里完成。
+
+@router.get("/tageditor/dictionary")
+async def dictionary_status():
+    """词典是否已安装、数据版本、体积，以及正在进行的安装进度。"""
+    return {"status": "success", "data": await asyncio.to_thread(dictionary.status)}
+
+
+@router.post("/tageditor/dictionary/install")
+async def dictionary_install(data: dict | None = None):
+    """下载并构建词典。force=true 时重新下载数据源（更新用）。"""
+    force = bool((data or {}).get("force"))
+    result = await asyncio.to_thread(dictionary.start_install, force)
+    return {"status": "success", "data": result}
+
+
+@router.get("/tageditor/dictionary/asset/{name}")
+async def dictionary_asset(name: str):
+    """词典静态资源；文件名限定在已安装词典的清单里，避免路径穿越。"""
+    path = await asyncio.to_thread(dictionary.asset_path, name)
+    if path is None:
+        return JSONResponse({"status": "error", "message": "Dictionary asset not found"}, status_code=404)
+    return FileResponse(path, media_type="application/json")

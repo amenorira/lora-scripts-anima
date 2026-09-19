@@ -6,6 +6,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.0 - 2026-09-19
+
+v2.20.0 focuses on finding and organizing tags in the tag editor. You can install the Danbooru Chinese dictionary from the new Downloads tab in Environment Management. Once installed, the editor shows Chinese translations, tag categories, and completion suggestions, with descriptions available on hover. The dictionary is not bundled with the project and loads only when needed; existing captions stay as they are. This release also reorganizes multi-image batch actions, history, and timeline controls, and lets you resize the image preview and tag area. It includes smaller improvements to the training monitor and numeric settings. See Behavior Change below for the new scope of batch actions.
+
+### Added
+
+- Once the dictionary is installed, the tag editor shows Chinese translations beneath tags and uses colors to distinguish categories. Completion accepts English names, Chinese names, and aliases; hovering over a tag shows its description. Searching by Chinese name or alias in the sidebar returns only tags already used in the current dataset. The dictionary loads when needed and never rewrites existing captions automatically.
+- A new Downloads tab in Environment Management shows the dictionary's installation state, download speed, and progress, with actions to download, update, or retry. A rebuild can reuse downloaded source data instead of fetching it again.
+- Quick removal lets you mark several tags on selected images and remove them together. A context menu provides common actions such as copy, filter, and remove. You can drag the divider between the image preview and tag area; its position is saved.
+
+### Improvements and Fixes
+
+- Improved completion and search ranking, state changes when switching images, and undo, redo, and history navigation. Restoring or deleting a timeline snapshot now has confirmation and clearer error feedback.
+- Fixed Enter in the batch add, remove, and replace inputs: it inserts the selected completion when one is active, or runs the current action otherwise. Enter does not trigger an action during input method composition.
+- Moved dictionary files into the Hugging Face cache while retaining support for older cached files. Interrupted downloads can resume or switch to another source, and a failed update leaves the previous usable dictionary in place.
+- The training monitor's full-log toolbar now shows Top, Copy Current Page, and Refresh directly instead of hiding them in More. Paging and action buttons follow their use order; Top can still scroll to the start of the current page when already on page one.
+- Adjusted the increment buttons for numeric fields: timestep and Flow Shift fields now step by 0.05, weight decay by 0.01, sample CFG by 0.5, and Min SNR Gamma by 1. Values can still be typed directly as before.
+- Corrected the full-matrix LoKr structure preview to show its effective scale as a constant 1, rather than suggesting that the scale can still be adjusted.
+
+### Behavior Change
+
+- Batch add, remove, and replace now affect selected images only. The former filtered/all-image scopes and the batch deduplicate, sort, and trigger-insertion controls have been removed. Select the target images before applying a batch action.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.19.0...v2.20.0)
+
 ## v2.19.0 - 2026-09-16
 
 This release adds per-subset repeat editing with folder renaming, brings the Prodigy Plus Schedule-Free 2.0.1 parameters into the UI, and consolidates the dependency manifests into a single file.

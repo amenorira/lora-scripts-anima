@@ -58,6 +58,13 @@
   --success: #34d399;
   --warning: #f59e0b;
   --info: #60a5fa;
+
+  /* Danbooru 标签分类色（Tag Editor 词典）：深色底提高明度 */
+  --tag-general: #6ba7f0;
+  --tag-artist: #ef7c7c;
+  --tag-copyright: #b98bf0;
+  --tag-character: #63c98c;
+  --tag-meta: #e2a55c;
   --danger: #ff6b6b;
   --danger-hover: #f05555;
   --danger-soft: rgba(255, 107, 107, 0.12);

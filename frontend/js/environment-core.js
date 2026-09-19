@@ -336,10 +336,12 @@ window.environmentCoreMixin = {
     const el = document.getElementById('environmentPage');
     if (!el) { this.finishProgress(); return; }
     this._envInitCardState();
+    // 词典状态：第一次进来查一次，之后每次进来刷新（数据可能是在别处装的）
+    this.tagDictionaryInit();
     // Tab 记忆（用户上次看哪个分区）
     try {
       const savedTab = localStorage.getItem('anima_env_tab');
-      if (savedTab === 'models' || savedTab === 'env') this.environmentTab = savedTab;
+      if (['models', 'env', 'data'].includes(savedTab)) this.environmentTab = savedTab;
     } catch (_) {}
     if (this._environmentLoadPromise) {
       this.renderEnvironment();
@@ -536,7 +538,7 @@ window.environmentCoreMixin = {
 
   // 环境页 Tab 切换（内存 + localStorage，重渲染走现有分槽机制）
   envSetTab(tab) {
-    const next = tab === 'models' ? 'models' : 'env';
+    const next = ['models', 'data'].includes(tab) ? tab : 'env';
     if (this.environmentTab === next) return;
     this.environmentTab = next;
     try { localStorage.setItem('anima_env_tab', next); } catch (_) {}

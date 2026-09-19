@@ -636,6 +636,7 @@ document.addEventListener('alpine:init', () => {
     window.trainingConfigIoMixin,
     window.taggerMixin,
     window.tagEditorMixin,
+    window.tagDictionaryMixin,
   ];
   for (const _src of _mixinSources) {
     if (_src) {
