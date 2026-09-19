@@ -1636,6 +1636,7 @@
 		"timelineSave": "Saved tags",
 		"timelineRestore": "Reverted saved changes",
 		"timelineBackup": "Restored legacy backups",
+		"resizePreview": "Drag to resize the image and tags; double-click to reset",
 		"quickRemove": "Quick remove",
 		"toggleRemoval": "Toggle removal mark",
 		"removalMarked": "{n} tags marked",

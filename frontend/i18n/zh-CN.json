@@ -1636,6 +1636,7 @@
 		"timelineSave": "保存标签",
 		"timelineRestore": "撤销已保存的更改",
 		"timelineBackup": "还原旧备份",
+		"resizePreview": "上下拖动调整图片与标签区域，双击恢复默认",
 		"quickRemove": "快速删除",
 		"toggleRemoval": "标记 / 取消删除",
 		"removalMarked": "已标记 {n} 个标签",

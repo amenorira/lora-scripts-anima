@@ -93,6 +93,8 @@ window.tagEditorMixin = {
   tagEditorSwitchOpen: false,
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
+  tagEditorPreviewRatio: 0.5,
+  _tePreviewDrag: null,
   tagEditorResizing: false,
   _teGridResizeObserver: null,
   tagEditorSessionId: '',
@@ -386,6 +388,7 @@ window.tagEditorMixin = {
     this._teCloseSession(this.tagEditorSessionId);
     this.tagEditorSessionId = '';
     this.tagEditorStopResize();
+    this.tagEditorStopPreviewResize();
     this.tagEditorCloseLightbox();
     this._teStopAutoSave();
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
@@ -733,6 +736,48 @@ window.tagEditorMixin = {
     var saved = 0;
     try { saved = parseInt(localStorage.getItem('tagEditor_rightWidth'), 10); } catch (e) {}
     this.tagEditorRightWidth = saved >= 280 && saved <= 520 ? saved : 340;
+    try {
+      var ratio = Number(localStorage.getItem('tagEditor_previewRatio'));
+      this.tagEditorPreviewRatio = ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
+    } catch (_) {}
+  },
+
+  tagEditorSetPreviewRatio(ratio, persist) {
+    if (!Number.isFinite(ratio)) return;
+    this.tagEditorPreviewRatio = Math.max(0.15, Math.min(0.85, ratio));
+    if (persist) {
+      try { localStorage.setItem('tagEditor_previewRatio', String(this.tagEditorPreviewRatio)); } catch (_) {}
+    }
+  },
+
+  tagEditorStartPreviewResize(event) {
+    if (event.button !== 0) return;
+    var panel = event.currentTarget.closest('.te-editor-inner');
+    var preview = panel.querySelector('.te-editor-preview');
+    var body = panel.querySelector('.te-editor-lower');
+    var height = preview.clientHeight + body.clientHeight;
+    if (!height) return;
+    event.preventDefault();
+    this.tagDictionaryCloseHover();
+    this._tePreviewDrag = { y: event.clientY, height: height, preview: preview.clientHeight };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.classList.add('te-preview-resizing');
+  },
+
+  tagEditorMovePreviewResize(event) {
+    var drag = this._tePreviewDrag;
+    if (!drag) return;
+    var minimum = Math.min(96 / drag.height, 0.5);
+    var ratio = (drag.preview + event.clientY - drag.y) / drag.height;
+    this.tagEditorSetPreviewRatio(Math.max(minimum, Math.min(1 - minimum, ratio)), false);
+  },
+
+  tagEditorStopPreviewResize() {
+    if (!this._tePreviewDrag) return;
+    this._tePreviewDrag = null;
+    document.body.classList.remove('te-preview-resizing');
+    this.tagEditorSetPreviewRatio(this.tagEditorPreviewRatio, true);
+    this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorInitLayout() {
@@ -2018,7 +2063,13 @@ window.tagEditorMixin = {
     }
     if (event.key === 'Enter') {
       event.preventDefault(); event.stopPropagation();
-      if (this.batchSuggestItems[this.batchSuggestIdx]) this.tagEditorBatchSelectSuggestion(this.batchSuggestItems[this.batchSuggestIdx]);
+      if (this.batchSuggestOpen && this.batchSuggestItems[this.batchSuggestIdx]) {
+        this.tagEditorBatchSelectSuggestion(this.batchSuggestItems[this.batchSuggestIdx]);
+        return;
+      }
+      if (this.tagEditorBatchMode === 'add') this.tagEditorBatchAdd();
+      else if (this.tagEditorBatchMode === 'remove') this.tagEditorBatchRemove();
+      else if (this.tagEditorBatchMode === 'replace') this.tagEditorBatchReplace();
     }
   },
 

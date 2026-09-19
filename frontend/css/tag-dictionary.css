@@ -23,10 +23,8 @@
 .te-editor-tag[class*="te-dict-cat-"] .te-editor-tag-name { color: var(--tag-cat); }
 .te-editor-tag:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
-.te-editor-tag-main { display: flex; align-items: center; width: 100%; min-width: 0; }
 .te-editor-tag-name { min-width: 0; overflow-wrap: anywhere; }
 .te-editor-tag { max-width: 100%; }
-.te-editor-tag-x { flex-shrink: 0; min-width: 28px; min-height: 28px; border: 0; border-radius: var(--radius-control); background: transparent; font-size: 18px; line-height: 1; padding: 2px 4px; margin-left: 4px; }
 
 /* 中文只是辅助信息：更小、更淡，训练真正保存的仍是主文字 */
 .te-editor-tag-zh {

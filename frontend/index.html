@@ -23,13 +23,13 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260919-dict21">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260919-dict28">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260831-motion1">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
-  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict21">
+  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
@@ -51,10 +51,10 @@
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260919-dict21" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260919-dict27" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260919-dict17" defer></script>
-  <script src="/anima-ui/js/tag-dictionary.js?v=20260919-dict21" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20260919-dict24" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/app.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -1072,16 +1072,10 @@
               @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"
               @dblclick="tagEditorRightWidth = 340; tagEditorAdjustRightWidth(0)"></div>
             <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove }" @contextmenu="tagEditorPanelContext($event)">
-              <div class="te-quick-remove-bar" x-show="tagEditorQuickRemove && tagEditorSelected.length">
-                <span role="status" x-text="t('tagEditor.removalMarked').replace('{n}', tagEditorRemovalTags.length)"></span>
-                <button class="te-topbar-btn" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval')"></button>
-                <button class="te-topbar-btn" @click="tagEditorCancelQuickRemove()" x-text="t('common.cancel')"></button>
-                <small x-text="t('tagEditor.quickRemoveHint')"></small>
-              </div>
               <div class="te-editor-empty" x-show="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <span x-text="t('tagEditor.noImageSelected')"></span>
               </div>
-              <div x-show="tagEditorSelected.length === 1" class="te-editor-state">
+              <div x-show="tagEditorSelected.length === 1" class="te-editor-state te-editor-single" :style="'--te-preview-ratio:' + tagEditorPreviewRatio">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span class="te-editor-name"
@@ -1104,15 +1098,25 @@
                     <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail"
                       :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name" draggable="false">
                   </div>
-                  <div class="te-editor-toolbar" x-show="!tagEditorQuickRemove">
-                    <div class="te-editor-view" x-show="!tagEditorQuickRemove">
-                      <button :class="{ active: tagEditorDetailView === 'chip' }" @click="tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')"></button>
-                      <button :class="{ active: tagEditorDetailView === 'text' }" @click="tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')"></button>
+                  <div class="te-editor-toolbar">
+                    <div class="te-editor-view">
+                      <button :class="{ active: tagEditorDetailView === 'chip' && !tagEditorQuickRemove }" @click="tagEditorCancelQuickRemove(); tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')"></button>
+                      <button :class="{ active: tagEditorDetailView === 'text' && !tagEditorQuickRemove }" @click="tagEditorCancelQuickRemove(); tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')"></button>
                     </div>
-                    <button class="te-topbar-btn" x-show="!tagEditorQuickRemove" @click="tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
-                    <button class="te-editor-revert" @click="tagEditorRevertSelectedImage()"
+                    <button class="te-topbar-btn" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-topbar-btn" x-show="tagEditorQuickRemove" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval') + ' (' + tagEditorRemovalTags.length + ')'"></button>
+                    <button class="te-editor-revert" x-show="!tagEditorQuickRemove" @click="tagEditorRevertSelectedImage()"
                       :disabled="!tagEditorCanRevertSelectedImage()" x-text="t('tagEditor.revertImage')"></button>
                   </div>
+                  <div class="te-preview-divider" role="separator" tabindex="0" aria-orientation="horizontal"
+                    :aria-label="t('tagEditor.resizePreview')" :title="t('tagEditor.resizePreview')"
+                    aria-valuemin="15" aria-valuemax="85" :aria-valuenow="Math.round(tagEditorPreviewRatio * 100)"
+                    @pointerdown="tagEditorStartPreviewResize($event)" @pointermove="tagEditorMovePreviewResize($event)"
+                    @pointerup="tagEditorStopPreviewResize()" @pointercancel="tagEditorStopPreviewResize()" @lostpointercapture="tagEditorStopPreviewResize()"
+                    @keydown.up.prevent.stop="tagEditorSetPreviewRatio(tagEditorPreviewRatio - 0.05, true)"
+                    @keydown.down.prevent.stop="tagEditorSetPreviewRatio(tagEditorPreviewRatio + 0.05, true)"
+                    @dblclick="tagEditorSetPreviewRatio(0.5, true)"></div>
+                  <div class="te-editor-lower">
                   <div class="te-editor-body">
                     <div class="te-editor-tags" x-show="tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
@@ -1128,10 +1132,7 @@
                           @keydown.enter.prevent.stop="tagEditorQuickRemove ? tagEditorToggleRemoval(tag) : tagEditorDetailEditTag(ti)"
                           @keydown.space.prevent.stop="if (tagEditorQuickRemove) tagEditorToggleRemoval(tag); else { _tdShowHover(tag, $el); $nextTick(() => document.querySelector('#teDictHover .te-dict-hover-actions button')?.focus()); }"
                           @dblclick="if (!tagEditorQuickRemove) tagEditorDetailEditTag(ti)">
-                          <span class="te-editor-tag-main">
-                            <span class="te-editor-tag-name" x-text="tag"></span>
-                            <button type="button" class="te-editor-tag-x" x-show="!tagEditorQuickRemove" :aria-label="t('tagEditor.dictRemoveTag').replace('{tag}', tag)" @click.stop="tagEditorRemoveTagFromSelected(tag)" @keydown.stop @dblclick.stop>&times;</button>
-                          </span>
+                          <span class="te-editor-tag-name" x-text="tag"></span>
                           <span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span>
                         </span>
                       </template>
@@ -1174,11 +1175,13 @@
                   </div>
                 </div>
               </div>
+              </div>
               <div x-show="tagEditorSelected.length >= 2" class="te-editor-state">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
-                    <button class="te-topbar-btn" x-show="!tagEditorQuickRemove" @click="tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-topbar-btn" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-topbar-btn" x-show="tagEditorQuickRemove" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval') + ' (' + tagEditorRemovalTags.length + ')'"></button>
                   </div>
                   <div class="te-editor-body">
                   <p class="te-batch-hint" x-text="t('tagEditor.selectedOnlyHint')"></p>
@@ -1267,7 +1270,6 @@
                           @click="tagEditorToggleRemoval(item.tag)" @keydown.space.prevent.stop="tagEditorToggleRemoval(item.tag)" @keydown.enter.prevent.stop="tagEditorToggleRemoval(item.tag)">
                           <span class="te-tag-label"><span class="te-editor-tag-name" x-text="item.tag"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></span>
                           <span class="te-tag-count" :title="t('tagEditor.selectedTagCount')" x-text="item.count + '/' + tagEditorSelected.length"></span>
-                          <button class="te-tag-remove" x-show="!tagEditorQuickRemove" @click.stop="tagEditorPrepareRemove(item.tag)" :aria-label="t('tagEditor.dictRemoveTag').replace('{tag}', item.tag)">&times;</button>
                         </div>
                       </template>
                       </div>

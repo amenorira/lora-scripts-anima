@@ -384,6 +384,48 @@ test('batch autocomplete replaces the last token without applying changes', () =
   assert.equal(ctx.batchNewTag, '');
 });
 
+test('batch Enter applies the active operation unless selecting a visible suggestion or composing', () => {
+  const { ctx } = makeClient();
+  const actions = [];
+  ctx.tagEditorBatchAdd = () => actions.push('add');
+  ctx.tagEditorBatchRemove = () => actions.push('remove');
+  ctx.tagEditorBatchReplace = () => actions.push('replace');
+  ctx.tagEditorBatchSelectSuggestion = () => actions.push('suggestion');
+  const enter = {key:'Enter',preventDefault() {},stopPropagation() {}};
+  for (const mode of ['add', 'remove', 'replace']) {
+    ctx.tagEditorBatchMode = mode;
+    ctx.tagEditorBatchKeydown(enter);
+  }
+  assert.deepEqual(actions, ['add','remove','replace']);
+  ctx.batchSuggestOpen = 'new';
+  ctx.batchSuggestItems = [{insert:'flower'}];
+  ctx.batchSuggestIdx = 0;
+  ctx.tagEditorBatchKeydown(enter);
+  assert.equal(actions.at(-1), 'suggestion');
+  ctx.batchSuggestIdx = -1;
+  ctx.tagEditorBatchKeydown(enter);
+  assert.equal(actions.at(-1), 'replace');
+  const count = actions.length;
+  ctx.tagEditorBatchKeydown({...enter, isComposing:true});
+  assert.equal(actions.length, count);
+  ctx.batchSuggestOpen = null;
+  ctx.batchSuggestIdx = 0;
+  ctx.tagEditorBatchKeydown(enter);
+  assert.equal(actions.at(-1), 'replace');
+});
+
+test('preview split ratio stays bounded and ignores invalid values', () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorSetPreviewRatio(0.65, false);
+  assert.equal(ctx.tagEditorPreviewRatio, 0.65);
+  ctx.tagEditorSetPreviewRatio(2, false);
+  assert.equal(ctx.tagEditorPreviewRatio, 0.85);
+  ctx.tagEditorSetPreviewRatio(-1, false);
+  assert.equal(ctx.tagEditorPreviewRatio, 0.15);
+  ctx.tagEditorSetPreviewRatio(NaN, false);
+  assert.equal(ctx.tagEditorPreviewRatio, 0.15);
+});
+
 test('quick removal stages tags, applies only to selected images and records one undo step', () => {
   const { ctx } = makeClient();
   ctx.tagEditorImages = [{path:'a',tags:'solo, flower, flower'}, {path:'b',tags:'solo, hat'}, {path:'c',tags:'solo, flower'}];
