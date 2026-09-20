@@ -2,6 +2,7 @@ import logging
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -146,6 +147,25 @@ class ConsoleLoggingTests(unittest.TestCase):
         env = _build_train_env("output/test", "task")
         self.assertIn("ignore:invalid escape sequence:SyntaxWarning", env["PYTHONWARNINGS"])
 
+    def test_redirected_rich_log_keeps_message_and_source_columns(self):
+        result = subprocess.run(
+            [sys.executable, "-c", '''
+import logging
+from rich.console import Console
+from rich.logging import RichHandler
+handler = RichHandler(console=Console(stderr=True))
+record = logging.LogRecord("test", logging.INFO, "qwen_image_autoencoder_kl.py", 1631,
+                           "Loading VAE from ./models/qwen_image_vae.safetensors", (), None)
+handler.emit(record)
+'''],
+            env=_build_train_env("output/test", "task"),
+            capture_output=True, text=True, encoding="utf-8", check=True,
+        )
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Loading VAE from ./models/qwen_image_vae.safetensors", lines[0])
+        self.assertIn("qwen_image_autoencoder_kl.py:1631", lines[0])
+
 
 class MonitorFrontendContractTests(unittest.TestCase):
     @classmethod
@@ -233,7 +253,7 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertIn("Number.isFinite(loss)", body)
         self.assertIn("loss === bestLoss && time > bestTime", body)
         self.assertIn("m-ckpt-best", self.render_source)
-        self.assertIn("m-output-selection-bar", self.render_source)
+        self.assertIn("m-output-selection-tools", self.render_source)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend pure-function checks")
     def test_diagnostic_and_checkpoint_helpers_execute_edge_cases(self):

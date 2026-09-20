@@ -51,6 +51,12 @@ def _install_bitsandbytes_windows_compat() -> None:
 _install_bitsandbytes_windows_compat()
 
 
+if os.environ.get("ANIMA_TRAIN_LOG_LOCK"):
+    from tools.python_startup.training_logging import install as install_training_logging
+
+    install_training_logging(os.environ["ANIMA_TRAIN_LOG_LOCK"])
+
+
 if os.environ.get("ANIMA_TENSORBOARD_DIR"):
     from tools.python_startup.tensorboard_layout import install_import_hook as install_tb_layout
 

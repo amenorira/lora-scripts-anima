@@ -111,6 +111,8 @@ def _build_train_env(
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    # Training output is a file, even when the launcher forces terminal colors.
+    env["TTY_COMPATIBLE"] = "0"
     env["PYTHONWARNINGS"] = (
         "ignore::FutureWarning,ignore::UserWarning,"
         "ignore:invalid escape sequence:SyntaxWarning"
@@ -120,6 +122,7 @@ def _build_train_env(
     # 训练输出目录
     env["ANIMA_OUTPUT_DIR"] = artifact_dir
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
+    env["ANIMA_TRAIN_LOG_LOCK"] = str((Path(run_dir or artifact_dir) / ".train-log.lock").resolve())
     env["ANIMA_TASK_ID"] = task_id
     env["ANIMA_TENSORBOARD_DIR"] = str((Path(run_dir or artifact_dir) / "log").resolve())
     repo_root = str(REPO_ROOT)

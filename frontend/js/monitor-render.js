@@ -1188,7 +1188,10 @@ window.monitorRenderMixin = {
     html += '</div>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
     if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
-    html += '<button type="button" class="btn btn-sm" @click="downloadAllOutputs()"' + (!canUseFiles ? ' disabled' : '') + '>' + this.esc(t('downloadAll')) + '</button>';
+    const selectedCount = this.selectedOutputFiles.length;
+    html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
+    html += '<button type="button" class="btn btn-sm' + (selectedCount ? ' btn-primary' : '') + ' m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '"' + (!canUseFiles ? ' disabled' : '') + '><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
 
@@ -1215,9 +1218,6 @@ window.monitorRenderMixin = {
       html += '</div>';
       return html;
     }
-
-    const selectedCount = this.selectedOutputFiles.length;
-    html += '<div class="m-output-selection-bar' + (selectedCount > 0 ? ' visible' : '') + '"><span>' + this.esc(t('selected')) + ': <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span><div><button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection')) + '</button><button type="button" class="btn btn-sm btn-primary" @click="downloadSelectedOutputs()">' + this.esc(t('downloadSelected')) + '</button></div></div>';
 
     // Scrollable content
     html += '<div class="m-outputs-scroll">';

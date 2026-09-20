@@ -16,6 +16,20 @@ function app(overrides = {}) {
   }, overrides);
 }
 
+test('Rich source columns accept single-space separators and preserve message indentation', () => {
+  const a = app();
+  for (const [text, main, source] of [
+    ['2026-09-19 12:47:16 INFO     Loading settings from                 args.py:1177', '2026-09-19 12:47:16 INFO     Loading settings from', 'args.py:1177'],
+    ['                    INFO     Initializing VAE qwen_image_autoencoder_kl.py:1609', '                    INFO     Initializing VAE', 'qwen_image_autoencoder_kl.py:1609'],
+    ['                    INFO     loading image sizes.                dataset.py:464   ', '                    INFO     loading image sizes.', 'dataset.py:464'],
+  ]) {
+    assert.deepEqual(a._splitRichLogSource(text), { main, source });
+  }
+  for (const text of ['                             dataset.py:464', '  File "dataset.py", line 464', 'steps: 10%|##| 1/10 [00:01]', '                    INFO     caption_extension: .txt']) {
+    assert.equal(a._splitRichLogSource(text), null);
+  }
+});
+
 test('idle transport preserves the completed run; final detail remains readable', () => {
   const a = app({ monitorData: { state: 'FINISHED', step: 100, run_dir: 'output/A', active_task: { id: 'A' } } });
   a.applyRealtimeMonitorSnapshot({ monitor: { detail: true, state: 'IDLE', step: 0 } });

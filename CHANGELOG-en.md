@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.2 - 2026-09-20
+
+This release fixes two issues in the training monitor. Training log records are no longer hard-wrapped to a terminal width or interleaved when multiple training processes write at once. Selecting output files no longer inserts a new action bar that pushes the file list downward. The log viewer preserves indentation and long lines, with horizontal scrolling for paths, tracebacks, and source locations.
+
+### Training Logs
+
+- Rich log records from training processes are written as plain text without terminal-width wrapping. Long model paths and configuration values stay on their original lines; multiline messages, tracebacks, and continuation indentation are preserved.
+- Rich records belonging to the same training run are written to the shared log under an interprocess lock, preventing parallel workers from interleaving fragments of individual records. Regular `print`, progress bars, and Rich logs sent to custom streams retain their existing behavior.
+- The monitor's log viewer preserves long lines and allows horizontal scrolling. Log levels, search highlights, and source locations remain visible. Source locations are extracted only from lines that match log-record headers, so file names in configuration text or tracebacks are not mistaken for the source column.
+
+### Output Files
+
+- The selected-file count, Clear Selection, and download button now stay in the output-file toolbar. Selecting files no longer inserts a separate bar or moves the list down.
+- With no selection, the button downloads all outputs. With files selected, it switches to Download Selected and shows the selected count alongside the total file count.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.1...v2.20.2)
+
 ## v2.20.1 - 2026-09-20
 
 This release continues to refine the tag editor and Tagger. The Danbooru Chinese dictionary now shows tag counts by category, checks whether its source data has changed, and downloads its five source files concurrently. Tagger's single-image modes accept pasted clipboard images and make better use of dictionary translations. The single-image result remains selectable, comma-separated text, while the category panel shows confidence scores and translations. Note the change to the default for bracket escaping below.
