@@ -2743,17 +2743,12 @@ input[type="range"]::-webkit-slider-thumb {
   border-color: color-mix(in srgb, var(--danger) 28%, var(--monitor-card-border));
   background: color-mix(in srgb, var(--danger) 5%, var(--monitor-card-bg));
 }
-.m-output-selection-bar {
-  display: none; position: sticky; top: 0; z-index: 5; align-items: center; justify-content: space-between; gap: 12px;
-  min-height: 40px; margin-bottom: 0; padding: 6px 9px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--monitor-card-border)); border-radius: 0;
-  /* 不透明实色：原 accent-soft 本身是半透明的，吸顶时行内容会透过来形成"缝隙"；
-     底部间距用 padding 而非 margin，使吸顶后下方 8px 也是实心背景，不透出滚动内容 */
-  background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface)); color: var(--text-secondary); font-size: 12px;
-}
-.m-output-selection-bar.visible { display: flex; }
-.m-output-selection-bar > div { display: flex; align-items: center; gap: 6px; }
-.m-output-selection-bar strong { color: var(--accent); font: 700 12px var(--font-mono); }
+.m-output-selection-tools { display: flex; align-items: center; gap: 6px; }
+.m-output-selection-count { min-width: 13ch; white-space: nowrap; color: var(--text-secondary); font: 12px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; }
+.m-output-selection-count strong { color: var(--text-primary); font: inherit; font-weight: 600; }
+.m-output-download { display: grid; }
+.m-output-download > span { grid-area: 1 / 1; }
+.m-output-download > .is-hidden { visibility: hidden; }
 .m-outputs-scroll { overflow: auto; padding: 1px 2px 14px 0; }
 .m-output-search { position: relative; display: flex; align-items: center; flex: 0 0 220px; }
 .m-output-search svg { position: absolute; left: 9px; width: 14px; height: 14px; fill: none; stroke: var(--text-tertiary); stroke-width: 1.8; pointer-events: none; }

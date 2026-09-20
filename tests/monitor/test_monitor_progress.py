@@ -253,7 +253,7 @@ class MonitorFrontendContractTests(unittest.TestCase):
         self.assertIn("Number.isFinite(loss)", body)
         self.assertIn("loss === bestLoss && time > bestTime", body)
         self.assertIn("m-ckpt-best", self.render_source)
-        self.assertIn("m-output-selection-bar", self.render_source)
+        self.assertIn("m-output-selection-tools", self.render_source)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend pure-function checks")
     def test_diagnostic_and_checkpoint_helpers_execute_edge_cases(self):
