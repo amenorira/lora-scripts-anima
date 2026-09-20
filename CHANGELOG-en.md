@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.1 - 2026-09-20
+
+This release continues to refine the tag editor and Tagger. The Danbooru Chinese dictionary now shows tag counts by category, checks whether its source data has changed, and downloads its five source files concurrently. Tagger's single-image modes accept pasted clipboard images and make better use of dictionary translations. The single-image result remains selectable, comma-separated text, while the category panel shows confidence scores and translations. Note the change to the default for bracket escaping below.
+
+### Dictionary Downloads and Updates
+
+- Environment Management shows per-category tag counts and the total. Existing dictionaries can read these counts from their installed data without another download.
+- Installation and updates download the five CSV source files concurrently and show each file's state alongside overall progress and speed; existing downloaded files can still be reused. You can check for updates manually after installation, and opening Environment Management also checks automatically. Automatic results are cached for one hour. A failed check does not prevent use of an installed dictionary.
+- Newly built dictionaries record source-file fingerprints so the app can compare their contents with upstream and indicate when an update is available.
+
+### Tagger and Tag Editing
+
+- In Tagger's ONNX and API single-image modes, Ctrl+V can upload an image from the clipboard through the existing image-upload path. Pasting text into an input continues to work normally.
+- Single-image results refresh promptly when tagging completes, even if a recent progress request was throttled. Responses from an earlier task or mode cannot overwrite the current result.
+- The single-image result displays the full comma-separated text for direct selection and copying. ONNX output keeps all candidate tags when calculating the result, while each category panel displays at most the first 200. The global threshold and category visibility update the result text, and the duplicate per-category threshold controls have been removed.
+- With the Chinese dictionary installed, ONNX category tags and API single-image tags can show translations and hover descriptions. Dictionary lookup and display recognize bracket-escaped tag names without changing the underlying caption text.
+- The tag editor adds a confirmed, undoable batch action to remove bracket escaping from the selected images. It checks that the captions have not changed before applying the action.
+
+### Behavior Change
+
+- New Tagger settings now default to bracket escaping off, and the backend request default matches. Previously saved settings retain their saved value. If your training workflow needs escaped brackets, turn the option back on under Output Options; the page shows a notice when it is enabled.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.0...v2.20.1)
+
 ## v2.20.0 - 2026-09-19
 
 v2.20.0 focuses on finding and organizing tags in the tag editor. You can install the Danbooru Chinese dictionary from the new Downloads tab in Environment Management. Once installed, the editor shows Chinese translations, tag categories, and completion suggestions, with descriptions available on hover. The dictionary is not bundled with the project and loads only when needed; existing captions stay as they are. This release also reorganizes multi-image batch actions, history, and timeline controls, and lets you resize the image preview and tag area. It includes smaller improvements to the training monitor and numeric settings. See Behavior Change below for the new scope of batch actions.
