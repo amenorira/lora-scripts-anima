@@ -232,16 +232,16 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
         }
 
 
-def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[str], dict]:
+def _onnx_tags(model_id: str, image: Image.Image, options: dict, *, full_categories: bool = False) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
         raw = interrogator.interrogate(image)
     categories = {
         key: {
             "label": CATEGORY_LABELS.get(key, key),
-            "tags": [[name, round(float(score), 4)] for name, score in values[:200]],
+            "tags": [[name, float(score)] for name, score in (values if full_categories else values[:200])],
             "total": len(values),
-            "truncated": len(values) > 200,
+            "truncated": not full_categories and len(values) > 200,
         }
         for key, values in raw.items() if values
     }
@@ -270,7 +270,7 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict) -> tuple[list[s
         False,
         bool(options.get("replace_underscore", True)),
         split_str(str(options.get("replace_underscore_excludes", ""))),
-        bool(options.get("escape_tag", True)),
+        bool(options.get("escape_tag", False)),
     )
     return list(tags), categories
 
@@ -306,7 +306,7 @@ def _finalize_api_tags(tags: list[str], options: dict) -> list[str]:
     """Apply additional/exclude/dedupe/underscore/escape to API-parsed tags."""
     excludes = {tag.strip().lower() for tag in split_str(str(options.get("exclude_tags", "")))}
     replace_underscore = bool(options.get("replace_underscore", True))
-    escape = bool(options.get("escape_tag", True))
+    escape = bool(options.get("escape_tag", False))
     dedupe = bool(options.get("remove_duplicated", True))
     result: list[str] = []
     seen: set[str] = set()
@@ -571,7 +571,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     raise decode_error
                 if not model_ready:
                     _task_log(task, f"Loading model / 正在加载模型: {spec.name}")
-                tags, categories = _onnx_tags(spec.id, image, options)
+                tags, categories = _onnx_tags(spec.id, image, options, full_categories=not write_captions)
                 if not model_ready:
                     model_ready = True
                     _task_log(task, f"Model ready / 模型就绪: {spec.name}")

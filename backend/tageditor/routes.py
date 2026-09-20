@@ -616,6 +616,11 @@ async def dictionary_status():
     return {"status": "success", "data": await asyncio.to_thread(dictionary.status)}
 
 
+@router.get("/tageditor/dictionary/update")
+async def dictionary_update(force: bool = False):
+    return {"status": "success", "data": await asyncio.to_thread(dictionary.check_update, force)}
+
+
 @router.post("/tageditor/dictionary/install")
 async def dictionary_install(data: dict | None = None):
     """下载并构建词典。force=true 时重新下载数据源（更新用）。"""

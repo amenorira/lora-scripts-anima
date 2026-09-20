@@ -4454,6 +4454,12 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
 .env-badge-muted { --env-badge-tone: var(--text-tertiary); }
 
 /* ── 模型组 ─────────────────────────────────────────── */
+.env-dict-table { overflow-x: auto; margin: 12px 0; }
+.env-dict-table table { width: 100%; max-width: 420px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.env-dict-table th, .env-dict-table td { padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.env-dict-table th:first-child { text-align: left; }
+.env-dict-table thead th { color: var(--text-secondary); font-weight: 500; }
+
 .env-mgroup-count {
   font-family: var(--font-mono); font-size: 11.5px; color: var(--text-tertiary);
   white-space: nowrap; flex-shrink: 0;

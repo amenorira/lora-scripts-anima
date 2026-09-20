@@ -37,7 +37,7 @@ import sys
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 LEGACY_SOURCE_DIR = ROOT / "cache" / "tag_dict_src"
@@ -288,6 +288,25 @@ def pack_detail(entries: list[dict]) -> str:
     return json.dumps([entry["description"] for entry in entries], ensure_ascii=False, separators=(",", ":"))
 
 
+def category_stats(categories: Iterable[int]) -> list[dict]:
+    stats = {key: {"id": key, "name": name, "tag_count": 0}
+             for key, name in CATEGORIES.items()}
+    for category in categories:
+        stats[category]["tag_count"] += 1
+    return list(stats.values())
+
+
+def source_hashes(input_dir: Path) -> dict:
+    result = {}
+    for name in CATEGORY_FILES:
+        data = (input_dir / f"{name}.csv").read_bytes()
+        result[f"tags/{name}.csv"] = {
+            "blob": hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest(),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+    return result
+
+
 def content_hash(*payloads: str) -> str:
     digest = hashlib.sha256()
     for payload in payloads:
@@ -352,6 +371,8 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
         "schema_version": SCHEMA_VERSION,
         "data_version": data_version,
         "tag_count": len(entries),
+        "categories": category_stats(entry["category"] for entry in entries),
+        "source_hashes": source_hashes(input_dir),
         "core": core_name,
         "detail": detail_name,
         "source": {

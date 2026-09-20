@@ -56,11 +56,11 @@
 .tagger-option-grid > label > span:first-child { min-width: 0; }
 .tagger-option-grid b { display: block; color: var(--text-primary); font-size: 13px; font-weight: 600; }
 .tagger-option-grid small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 11.5px; line-height: 1.4; }
-.tagger-category-settings { margin: 0 0 4px 14px; padding-left: 12px; border-left: 2px dashed var(--border-default); }
+.tagger-category-settings { margin: 0 0 4px; }
 .tagger-category-settings > .tagger-category-field { display: flex; grid-template-columns: none; align-items: center; gap: 20px; min-width: 0; min-height: 46px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--border-subtle); transition: background-color var(--duration-fast) ease, opacity var(--duration-fast) ease; }
 .tagger-category-field:hover { background: var(--hover-overlay); }
 .tagger-category-toggle { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 550; cursor: pointer; }
-.tagger-category-toggle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagger-category-toggle > span { overflow-wrap: anywhere; }
 .tagger-category-controls { display: flex; flex: 0 0 140px; align-items: center; justify-content: flex-end; min-width: 0; }
 .tagger-category-controls .tagger-field-stepper { margin-left: 0; }
 .tagger-category-settings .tagger-field-stepper input[type="number"] { width: 0; height: auto; padding: 7px 4px; border: 0; border-radius: 0; background: var(--bg-input); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; box-shadow: none; }
@@ -128,13 +128,14 @@
    由各主题文件定义（默认见 themes/light.css，与监控台 tab 面板共用关键帧）。 */
 .tagger-single-main, .tagger-single-sidebar { display: grid; align-content: start; gap: 14px; min-width: 0; }
 .tagger-single-main { grid-template-rows: max-content max-content max-content; padding-right: 12px; }
-.tagger-single-sidebar { padding-left: 12px; }
+.tagger-single-sidebar { padding-left: 12px; container-type: inline-size; }
 .tagger-single-divider { position: relative; min-height: 100%; cursor: col-resize; touch-action: none; }
 .tagger-single-divider::before { position: absolute; inset: 0 3px; background: var(--border-default); content: ""; transition: background-color var(--duration-fast) ease; }
 .tagger-single-divider:hover::before, .tagger-single-divider.dragging::before { background: var(--accent); }
 .tagger-single-divider:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize !important; user-select: none !important; }
 .tagger-single-preview { display: grid; grid-template-rows: 36px clamp(300px, 46vh, 520px); min-width: 0; overflow: hidden; border: 1px solid var(--border-default); background: var(--bg-surface); }
+.tagger-single-preview.empty { grid-template-rows: 36px clamp(220px, 30vh, 320px); }
 .tagger-single-preview.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tagger-preview-toolbar { display: flex; align-items: center; gap: 3px; padding: 3px 5px 3px 10px; border-bottom: 1px solid var(--border-default); }
 .tagger-preview-toolbar > span { flex: 1; min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -154,9 +155,7 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-single-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .tagger-single-actions .tagger-clear-button { width: auto; min-width: 84px; }
 .tagger-single-result { display: flex; min-height: 0; overflow: hidden; flex-direction: column; }
-.tagger-result-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px 6px; width: 100%; min-height: 94px; margin: 10px 0 0; padding: 10px 11px; color: var(--text-primary); font-size: 13px; line-height: 1.55; }
-.tagger-result-tag { display: inline-flex; align-items: baseline; white-space: nowrap; }
-.tagger-result-tag i { margin-left: 1px; color: var(--text-tertiary); font-style: normal; }
+.tagger-result-tags { width: 100%; min-height: 94px; margin: 10px 0 0; padding: 10px 11px; color: var(--text-primary); font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
 .tagger-result-empty { min-height: 94px; margin-top: 10px; border: 1px dashed var(--border-default); }
 .tagger-single-result .tagger-result-actions { padding: 0; flex: 0 0 auto; }
 .tagger-result-actions { display: flex; justify-content: flex-end; gap: 5px; padding: 7px 14px 10px; }
@@ -170,10 +169,10 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-collapse.closed { grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.26s var(--ease-out), visibility 0s 0.26s; }
 .tagger-collapse-inner { min-height: 0; overflow: hidden; transition: opacity 0.2s ease; }
 .tagger-collapse.closed .tagger-collapse-inner { opacity: 0; }
-.tagger-output-header { cursor: pointer; user-select: none; }
+.tagger-form-card > h2 .tagger-output-header { display: flex; align-items: center; gap: 8px; flex: 1; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .tagger-output-header svg { width: 12px; height: 12px; color: var(--text-tertiary); transform: rotate(-90deg); transition: transform var(--duration-fast) ease; }
 .tagger-output-header svg.open { transform: rotate(0); }
-.tagger-single-settings .tagger-category-settings { display: grid; grid-template-columns: 1fr 1fr; }
+.tagger-single-settings .tagger-category-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .tagger-category-browser { margin: 0; border-top: 0; }
 .tagger-single-categories .tagger-category-browser { overflow: visible; }
 .tagger-category-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 42px; margin-bottom: 8px; padding: 5px 0 8px; border-bottom: 1px solid var(--border-default); }
@@ -198,16 +197,24 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-category-copy { width: var(--control-height); padding: 0; }
 .tagger-category-copy svg { width: 13px; height: 13px; }
 .tagger-category-section:not(.collapsed) .tagger-category-body { border-top: 1px solid var(--border-subtle); }
-.tagger-confidence-controls { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; }
-.tagger-confidence-controls > label { flex: 0 0 auto; }
-.tagger-category-range { flex: 1 1 auto; min-width: 80px; height: 5px; padding: 0; border: 0; background: transparent; accent-color: var(--accent); box-shadow: none !important; }
-.tagger-category-number { flex: 0 0 64px; width: 64px; height: var(--control-height); padding: 0 var(--control-padding-y); border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
 .tagger-category-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 9px 10px 10px; }
-.tagger-confidence-item { display: inline-flex; align-items: baseline; gap: 4px; max-width: 100%; min-height: 24px; padding: 2px 7px; border-radius: 2px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
-.tagger-confidence-item code { overflow: hidden; color: inherit; font-family: inherit; font-size: 12px; font-weight: 550; text-overflow: ellipsis; }
-.tagger-confidence-item i { color: var(--text-tertiary); font-style: normal; }
+.tagger-confidence-item { display: inline-flex; align-items: baseline; gap: 10px; max-width: 100%; min-height: 28px; padding: 4px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--tag-cat, var(--text-primary)); }
+.tagger-confidence-label { display: flex; flex-direction: column; min-width: 0; }
+.tagger-confidence-item code { color: inherit; font-family: inherit; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.tagger-confidence-item .tagger-tag-translation { color: var(--text-secondary); font-size: 11px; }
+.tagger-tag-translation:empty { display: none; }
+.tagger-confidence-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tagger-dictionary-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 12px; color: var(--text-secondary); }
+.tagger-dictionary-tools label { display: inline-flex; align-items: center; gap: 6px; }
+.tagger-dictionary-tools button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+@container (max-width: 560px) {
+  .tagger-single-settings .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .tagger-single-settings .tagger-field-control { align-items: stretch; }
+  .tagger-single-settings .tagger-field-control > .anima-select { width: 100%; }
+  .tagger-single-option-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .tagger-confidence-item b { color: var(--text-secondary); font-family: inherit; font-size: 10.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.tagger-category-tags p, .tagger-category-tags small { flex: 1 0 100%; color: var(--text-tertiary); font-size: 11.5px; }
+.tagger-category-tags > p, .tagger-category-tags > small { flex: 1 0 100%; color: var(--text-tertiary); font-size: 11.5px; }
 
 /* AI API tabs */
 .tagger-key-control input { font-family: var(--font-mono); font-size: 12.5px; }
@@ -247,6 +254,9 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-api-sidebar .tagger-field-control .tagger-field-stepper { margin-left: auto; }
 
 @media (min-width: 1024px) and (max-width: 1250px) {
+  .tagger-page-header { flex-wrap: wrap; gap: 8px; }
+  .tagger-page-header .monitor-page-heading { width: 100%; }
+  .tagger-page-resbar { width: 100%; }
   .tagger-route { min-width: 0; }
   .tagger-page-shell { min-width: 0; padding-inline: 16px; }
   .tagger-batch-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }

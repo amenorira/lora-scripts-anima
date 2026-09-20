@@ -19,7 +19,7 @@
 
 // Worker 脚本的版本号：Worker 地址带 ?v= 才会命中一年 immutable 缓存，
 // 所以改了 tag-dictionary.worker.js 必须同时改这里（其余三个文件在 index.html 里带 ?v=）。
-var TD_ASSET_VERSION = '20260919-dict17';
+var TD_ASSET_VERSION = '20260920-escaped-tags1';
 var TD_BASE = '/api/tageditor/dictionary/asset/';
 var TD_STATUS_URL = '/api/tageditor/dictionary';
 var TD_INSTALL_URL = '/api/tageditor/dictionary/install';
@@ -195,6 +195,7 @@ window.tagDictionaryMixin = {
   tagDictionaryReady: false,
   tagDictionaryFailed: false,
   tagDictionaryInstalling: false,
+  tagDictionaryCheckingUpdate: false,
   tagDictionaryInstallError: '',
   tagDictionaryServer: null,      // 后端返回的安装状态：数据版本、标签数、体积、进度
   tagDictionaryPanelOpen: false,
@@ -336,6 +337,9 @@ window.tagDictionaryMixin = {
       self.tagDictionaryFailed = state.status === 'failed';
       if (status.status === 'downloading' || status.status === 'building') self._tdPollInstall();
       else if (status.installed && state.status !== 'failed') self._tdStartWorkerForRoute();
+      if (self.currentRoute === 'environment' && status.installed && !self.tagDictionaryInstalling) {
+        self.tagDictionaryCheckUpdate();
+      }
     });
   },
 
@@ -363,6 +367,22 @@ window.tagDictionaryMixin = {
       .catch(function () { return null; })
       .finally(function () { state.statusRequest = null; });
     return state.statusRequest;
+  },
+
+  tagDictionaryCheckUpdate(force) {
+    if (this.tagDictionaryCheckingUpdate) return;
+    this.tagDictionaryCheckingUpdate = true;
+    this._tdRefreshPanelRow();
+    var self = this;
+    return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { signal: AbortSignal.timeout(45000) })
+      .then(function (response) { if (!response.ok) throw new Error('check failed'); return response.json(); })
+      .then(function (payload) {
+        if (self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;
+      })
+      .catch(function () {
+        if (self.tagDictionaryServer) self.tagDictionaryServer.update = { state: 'error' };
+      })
+      .finally(function () { self.tagDictionaryCheckingUpdate = false; self._tdRefreshPanelRow(); });
   },
 
   // ===== 下载与更新 =====
@@ -411,6 +431,7 @@ window.tagDictionaryMixin = {
           self.tagDictionaryInstallError = (status && status.message) || self.t('tagEditor.dictStatusUnavailable');
         } else if (status.installed) {
           self._tdRestartWorker();
+          self.tagDictionaryCheckUpdate(true);
         } else {
           self.tagDictionaryInstallError = status.message || self.t('tagEditor.dictInstallFailed');
         }
@@ -436,7 +457,7 @@ window.tagDictionaryMixin = {
 
   /* 只有真的要看译文时才建 Worker：在环境管理页装完词典不该顺手拉 9MB 数据 */
   _tdStartWorkerForRoute() {
-    if (this.currentRoute === 'tagEditor') this._tdStartWorker();
+    if (['tagEditor', 'tagger'].includes(this.currentRoute)) this._tdStartWorker();
   },
 
   /* 更新完词典或上次加载失败时重新拉起 Worker */
@@ -538,6 +559,10 @@ window.tagDictionaryMixin = {
   },
 
   // ===== 展示辅助（模板只拿 class 与字符串，不碰词典结构）=====
+  tagDictionaryDisplayName(tag) {
+    return TagDictionary.displayTag(tag);
+  },
+
   tagDictionaryCategoryClass(category) {
     if (category == null || category < 0) return '';
     return 'te-dict-cat-' + TagDictionary.categoryName(category);
@@ -596,12 +621,15 @@ window.tagDictionaryMixin = {
   tagDictionarySyncChips() {
     this.tagDictionaryCloseHover();
     if (!this.tagDictionaryReady) return;
+    if (this.currentRoute === 'tagger') {
+      this.syncTaggerDictionary();
+      return;
+    }
     this._tdRequestChips();
   },
 
   _tdRequestChips() {
     if (!this.tagDictionaryReady) return;
-    var state = _td();
     var selected = typeof this.tagEditorGetSelectedTags === 'function' ? this.tagEditorGetSelectedTags() : [];
     if (this.tagEditorSelected && this.tagEditorSelected.length > 1) {
       selected = this.tagEditorGetSelectedStats().map(function(item) { return item.tag; });
@@ -622,6 +650,14 @@ window.tagDictionaryMixin = {
     // 选中图片最后写入 LRU，避免较大页面预取时先淘汰当前正在看的标签。
     selected.forEach(function (tag) { tags.delete(tag); });
     tags = Array.from(tags).concat(selected);
+    this.tagDictionaryLookupTags(tags);
+  },
+
+  /* Shared by the editor and Tagger; lookups never alter output spelling. */
+  tagDictionaryLookupTags(tags) {
+    if (!this.tagDictionaryReady) return;
+    var state = _td();
+    tags = Array.from(new Set(tags));
     var missing = [];
     for (var i = 0; i < tags.length; i++) {
       if (!state.lookups.has(tags[i]) && !state.inflight[tags[i]]) missing.push(tags[i]);

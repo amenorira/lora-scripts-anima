@@ -81,6 +81,27 @@ test('artist tags get a single @ prefix', () => {
   assert.equal(TD.danbooruToAnimaTag('some_artist', 0), 'some artist');
 });
 
+test('escaped caption tags display and resolve without rewriting source strings', () => {
+  const TD = loadLib();
+  const index = TD.createIndex([['star_(symbol)', '星形符号', 0, 100, '']]);
+  const raw = String.raw`star \(symbol\)`;
+  assert.equal(TD.displayTag(raw), 'star (symbol)');
+  assert.equal(TD.lookup(index, raw).result.translation, '星形符号');
+  assert.equal(TD.lookup(index, String.raw`star_\(symbol\)`).result.canonical, 'star_(symbol)');
+  assert.equal(TD.search(index, raw, 10)[0].canonical, 'star_(symbol)');
+  assert.deepEqual(plain(TD.filterTags(index, [raw], '星形符号')), [raw]);
+  assert.deepEqual(plain(TD.filterTags(index, [raw], 'star (symbol)')), [raw]);
+  assert.equal(raw, String.raw`star \(symbol\)`);
+});
+
+test('display decoding preserves unknown escapes and decodes just one layer', () => {
+  const TD = loadLib();
+  assert.equal(TD.displayTag(String.raw`custom\name`), String.raw`custom\name`);
+  assert.equal(TD.displayTag(String.raw`star \\(symbol\\)`), String.raw`star \(symbol\)`);
+  assert.equal(TD.displayTag('(tag:1.2)'), '(tag:1.2)');
+  assert.equal(TD.displayTag(null), '');
+});
+
 test('reverse lookup recognizes canonical, anima, translated and alias forms', () => {
   const TD = loadLib();
   assert.deepEqual(plain(TD.lookupKeys('long_hair')), ['long_hair']);
@@ -487,6 +508,55 @@ test('batch mutation leaves unselected images intact and skips no-op confirmatio
   assert.equal(confirmations, 1);
 });
 
+test('removing bracket escapes changes only selected captions and supports undo and redo', () => {
+  const { ctx } = makeClient();
+  const raw = String.raw`star \(symbol\),  custom\name, foo \\(bar\\)`;
+  ctx.tagEditorImages = [{ path: 'a', tags: raw }, { path: 'b', tags: raw }, { path: 'c', tags: 'solo' }];
+  ctx.tagEditorOriginal = { a: raw, b: raw, c: 'solo' };
+  ctx.tagEditorSelected = ['a', 'c'];
+  ctx.tagEditorHistory = [];
+  ctx.tagEditorHistoryIdx = -1;
+  ctx._teHistoryState = {};
+  ctx._teModifiedCount = 0;
+  ctx._teInvalidateFilter = () => {};
+  ctx._teInvalidateDiff = () => {};
+  ctx._teUpdateFreq = () => {};
+  ctx._updateEditorPanel = () => {};
+  let apply;
+  ctx._teConfirmBatch = (message, callback) => { apply = callback; };
+  ctx.tagEditorRemoveBracketEscapes();
+  assert.equal(ctx.tagEditorImages[0].tags, raw);
+  apply();
+  assert.equal(ctx.tagEditorImages[0].tags, String.raw`star (symbol),  custom\name, foo (bar)`);
+  assert.equal(ctx.tagEditorImages[1].tags, raw);
+  assert.equal(ctx.tagEditorHistory.length, 1);
+  assert.equal(ctx.tagEditorHistory[0].meta.affected, 1);
+  assert.equal(ctx.tagEditorModifiedCount(), 1);
+  ctx.tagEditorUndo();
+  assert.equal(ctx.tagEditorImages[0].tags, raw);
+  assert.equal(ctx.tagEditorModifiedCount(), 0);
+  ctx.tagEditorRedo();
+  assert.equal(ctx.tagEditorImages[0].tags, String.raw`star (symbol),  custom\name, foo (bar)`);
+  apply = null;
+  ctx.tagEditorRemoveBracketEscapes();
+  assert.equal(apply, null);
+});
+
+test('bracket cleanup refuses a confirmation after captions or dataset change', () => {
+  for (const changed of ['caption', 'dataset']) {
+    const { ctx } = makeClient();
+    ctx.tagEditorImages = [{ path: 'a', tags: String.raw`star \(symbol\)` }];
+    ctx.tagEditorSelected = ['a'];
+    let apply;
+    ctx._teConfirmBatch = (message, callback) => { apply = callback; };
+    ctx._teUpdateImageTags = () => assert.fail('stale confirmation must not modify captions');
+    ctx.tagEditorRemoveBracketEscapes();
+    if (changed === 'caption') ctx.tagEditorImages[0].tags = 'new caption';
+    else ctx._teLoadEpoch++;
+    apply();
+  }
+});
+
 test('clearing translated sidebar search immediately releases its previous matches', () => {
   const { ctx } = makeClient();
   ctx.tagEditorTagFreq = [{tag:'long hair',count:2},{tag:'solo',count:1}];
@@ -578,6 +648,23 @@ test('dictionary details show useful state without a permanent info box or log',
   assert.ok(downloading.includes('元标签 · 5/5'));
   assert.ok(downloading.includes('huggingface.co'));
   assert.ok(downloading.includes('"pct":50'));
+  ctx.tagDictionaryServer = { installed: true, tag_count: 100, update: { state: 'available' }, categories: [
+    { name: 'general', tag_count: 100 },
+  ] };
+  const categories = ctx._renderDictionaryBody(T, 'installed');
+  assert.ok(categories.includes('词典有更新'));
+  assert.ok(categories.includes('<th>通用标签</th><td>100</td>'));
+  assert.ok(categories.includes('<th>总计</th><td>100</td>'));
+  ctx.tagDictionaryServer = { status: 'downloading', percent: 40, files: [
+    { filename: 'general.csv', done: true },
+    { filename: 'artist.csv', downloaded: 50, total: 100 },
+    { filename: 'meta.csv', phase: 'queued' },
+  ] };
+  const concurrent = ctx._renderDictionaryBody(T, 'installing');
+  assert.ok(concurrent.includes('已完成'));
+  assert.ok(concurrent.includes('50%'));
+  assert.ok(concurrent.includes('等待下载'));
+  assert.ok(concurrent.includes('"pct":40'));
 });
 
 /* init 现在先问后端状态，再决定要不要建 Worker */
@@ -596,6 +683,24 @@ test('worker is created once and reused', async () => {
   assert.equal(ctx.tagDictionaryStatus(), 'loading');
   assert.equal(ctx.tagDictionaryServer.tag_count, 97154);
   assert.equal(ctx.tagDictionarySizeText(), '8.9 MB');
+});
+
+test('Tagger starts the shared worker and deduplicates raw tag lookups', async () => {
+  const { ctx, workers, posted, reply } = makeClient({ status: [INSTALLED] });
+  ctx.currentRoute = 'tagger';
+  ctx.syncTaggerDictionary = () => ctx.tagDictionaryLookupTags(['long_hair', 'long_hair', 'custom_trigger']);
+  await initReady(ctx);
+  assert.equal(workers().length, 1);
+  reply({ type: 'READY_CORE', tagCount: 10 });
+  ctx.tagDictionarySyncChips();
+  const batches = posted.filter(message => message.type === 'LOOKUP_BATCH');
+  assert.equal(batches.length, 1);
+  assert.deepEqual(plain(batches[0].tags), ['long_hair', 'custom_trigger']);
+  reply({ type: 'LOOKUP_RESULT', id: batches[0].id, results: [{ translation: '长发', category: 0 }, null] });
+  await tick(0);
+  ctx.tagDictionarySyncChips();
+  assert.equal(posted.filter(message => message.type === 'LOOKUP_BATCH').length, 1);
+  assert.equal(ctx.tagDictionaryTranslationFor('long_hair'), '长发');
 });
 
 test('tag metadata remains reusable when the image changes during lookup', async () => {

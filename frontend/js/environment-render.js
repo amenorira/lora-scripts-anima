@@ -615,7 +615,7 @@ window.environmentRenderMixin = {
     }[dataState] || '';
     const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText()
       : server?.status === 'failed' ? T(server.installed ? 'dictUpdateFailed' : 'dictDownloadFailed')
-      : this.tagDictionaryDataLabel();
+      : server?.update?.state === 'available' ? T('dictUpdateAvailable') : this.tagDictionaryDataLabel();
     const badge = `<span class="env-badge ${badgeClass}">${this.esc(badgeText)}</span>`;
 
     const parts = [];
@@ -626,10 +626,13 @@ window.environmentRenderMixin = {
       ? `<span class="env-mgroup-count">${parts.filter(Boolean).map(item => this.esc(item)).join(' · ')}</span>`
       : '';
 
-    const action = this.tagDictionaryDataActionVisible()
+    let action = this.tagDictionaryDataActionVisible()
       ? `<button class="btn btn-sm btn-secondary" data-env-action="dictionary"${dataState === 'installing' ? ' disabled' : ''}>`
         + `${this.esc(this.tagDictionaryDataActionLabel())}</button>`
       : '';
+    if (server?.installed && dataState !== 'installing') {
+      action += `<button class="btn btn-sm btn-secondary" data-env-action="dictionary-check"${this.tagDictionaryCheckingUpdate ? ' disabled' : ''}>${this.esc(T(this.tagDictionaryCheckingUpdate ? 'dictCheckingUpdate' : 'dictCheckUpdate'))}</button>`;
+    }
 
     const head = this._renderRowHead('dictionary', open, {
       name: T('dictRowName', 'Danbooru Chinese dictionary'),
@@ -650,7 +653,7 @@ window.environmentRenderMixin = {
       character: 'dictCharacter', meta: 'dictMeta' };
     const current = categoryNames[category] ? T(categoryNames[category]) : server.current_file || '';
     if (dataState === 'installing') {
-      if (server.status !== 'building' && current) {
+      if (server.status !== 'building' && current && !server.files?.length) {
         const source = server.download_source ? ` · ${this.esc(server.download_source)}` : '';
         body += `<div class="env-text-dim">${this.esc(current)} · ${Number(server.file_index || 0) + 1}/${Number(server.file_total || 5)}${source}</div>`;
       }
@@ -658,12 +661,21 @@ window.environmentRenderMixin = {
         ? this._renderProgressPanel({ stage: 'installing', stageLabel: this.t('tagEditor.dictBuilding') })
         : this._renderProgressPanel({
             stage: server.phase === 'connecting' ? 'connecting' : 'downloading',
-            fileIndex: Number(server.file_index || 0) + 1, fileTotal: server.file_total || 5,
-            pct: server.total_bytes > 0 ? Math.min(100, Math.floor(100 * server.downloaded_bytes / server.total_bytes)) : 0,
+            fileIndex: Math.min(Number(server.file_index || 0) + 1, server.file_total || 5), fileTotal: server.file_total || 5,
+            pct: server.percent ?? (server.total_bytes > 0 ? Math.min(100, Math.floor(100 * server.downloaded_bytes / server.total_bytes)) : 0),
             speedMB: server.speed_mb || 0,
             downloadedBytes: server.downloaded_bytes || 0,
             totalBytes: server.total_bytes || 0,
           });
+      if (server.status !== 'building') {
+        for (const file of server.files || []) {
+          const name = String(file.filename || '').replace(/\.csv$/, '');
+          const label = categoryNames[name] ? T(categoryNames[name]) : file.filename;
+          const progress = file.done ? T('dictFileDone') : file.phase === 'queued' ? T('dictFileQueued')
+            : file.total > 0 ? `${Math.min(100, Math.floor(100 * (file.downloaded || 0) / file.total))}%` : T('dictFileConnecting');
+          body += this._renderDetailGroup(this.esc(label), this.esc(progress));
+        }
+      }
     }
     if (dataState === 'failed' || dataState === 'error') {
       const reason = T(server.error_kind === 'integrity' ? 'dictErrorIntegrity'
@@ -672,6 +684,22 @@ window.environmentRenderMixin = {
         : server.error_kind === 'build' ? 'dictRetryFresh' : 'dictRetryResume'))}</div>`;
     }
     body += this._renderDetailGroup(T('dictIncludes'), this.esc(T('dictCoverage')));
+    if (server.installed && dataState !== 'installing') {
+      const updateKey = { available: 'dictUpdateAvailable', current: 'dictUpToDate',
+        unknown: 'dictUpdateUnknown', error: 'dictCheckFailed' }[server.update?.state];
+      if (updateKey) body += `<div class="env-text-dim">${this.esc(T(updateKey))}</div>`;
+    }
+    if (server.categories?.length) {
+      const number = value => Number(value || 0).toLocaleString();
+      body += '<div class="env-dict-table"><table><thead><tr>'
+        + ['dictCategory', 'dictTags'].map(key => `<th>${this.esc(T(key))}</th>`).join('')
+        + '</tr></thead><tbody>';
+      for (const item of server.categories) {
+        body += `<tr><th>${this.esc(T(categoryNames[item.name] || 'dictCategory'))}</th>`
+          + `<td>${number(item.tag_count)}</td></tr>`;
+      }
+      body += `<tr><th>${this.esc(T('dictTotal'))}</th><td>${number(server.tag_count)}</td></tr></tbody></table></div>`;
+    }
     body += this._renderDetailGroup(T('dictSource'), '<a href="https://huggingface.co/datasets/ame-la/danbooru-tags-data-zh" target="_blank" rel="noopener" class="env-link">ame-la/danbooru-tags-data-zh ↗</a>');
     const log = this.tagDictionaryLogText() || this.tagDictionaryInstallError || server.message;
     if (log && (dataState === 'failed' || dataState === 'error')) {
@@ -1001,6 +1029,7 @@ window.environmentRenderMixin = {
         else if (act === 'xf') a.xfInstall();
         else if (act === 'triton') a.tritonInstall();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
+        else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);
       });
     });
   },

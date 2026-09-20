@@ -11,7 +11,7 @@
 (function (global) {
   'use strict';
 
-  var CHIP_SELECTOR = '.te-editor-tag[data-tag], .te-dict-item[data-tag], .te-selected-tag[data-tag], .te-tag-row[data-tag]';
+  var CHIP_SELECTOR = '.te-editor-tag[data-tag], .te-dict-item[data-tag], .te-selected-tag[data-tag], .te-tag-row[data-tag], .tagger-confidence-item[data-tag]';
   var attached = false;
 
   function chipOf(node) {

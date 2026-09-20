@@ -15,7 +15,7 @@
   <symbol id="ti-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
 </svg>
 
-<section class="tagger-page-shell">
+<section class="tagger-page-shell" @paste.window="handleTaggerPaste($event)">
   <header class="page-header tagger-page-header">
     <div class="monitor-page-heading">
       <h1 class="page-title" x-text="t('tagger.title', 'Tagger')"></h1>
@@ -31,6 +31,8 @@
     <button type="button" :class="{ active: taggerSourceMode === 'api-single' }" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('api-single')" x-text="t('tagger.apiSingleMode', 'AI single')"></button>
     <span class="monitor-tab-indicator" aria-hidden="true"></span>
   </nav>
+
+  <div class="tagger-api-note" x-show="taggerModeIsApi() ? taggerApiSettings.escapeTag : taggerSettings.escapeTag" x-text="t('tagger.escapeTrainingNotice')"></div>
 
   <div class="tagger-training-notice" x-show="trainingActive && !taggerModeIsApi()">
     <span x-text="t('tagger.trainingBlocked', 'Training is using the GPU. Tagger is unavailable.')"></span>
@@ -162,13 +164,13 @@
       @pointercancel.window="stopTaggerSingleResize()"
     >
       <div class="tagger-single-main">
-        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
+        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver, empty: !taggerSource }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
           <div class="tagger-preview-toolbar"><span x-text="taggerSource?.display_name || taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button></div>
           <button class="tagger-drop-zone" x-show="!taggerSource" @click="pickTaggerSource()"><svg><use href="#ti-image"></use></svg><strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span></button>
           <div class="tagger-preview-image" :class="{ zoomed: taggerPreviewScale > 1, panning: taggerPreviewPanning }" x-show="taggerSource" @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)" @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)" @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" draggable="false"></div>
         </main>
 
-        <div class="tagger-single-actions" x-show="taggerSource">
+        <div class="tagger-single-actions">
           <button class="tagger-start-button" x-show="!taggerRunning" @click="startTagger()" :disabled="!taggerCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
           <button class="tagger-stop-button" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>
           <button type="button" class="tagger-secondary-button tagger-clear-button" x-show="!taggerRunning" :disabled="taggerStarting || taggerScanning" @click="clearTaggerSource()" x-text="t('common.clear')"></button>
@@ -176,11 +178,7 @@
 
         <section class="tagger-form-card tagger-single-result">
           <h2><span x-text="t('tagger.totalTags')"></span><small x-text="taggerResultTags().length"></small></h2>
-          <div class="tagger-result-tags" x-show="taggerResultText">
-            <template x-for="(tag, index) in taggerResultTags()" :key="index + ':' + tag">
-              <span class="tagger-result-tag"><span x-text="tag"></span><i x-show="index < taggerResultTags().length - 1">,</i></span>
-            </template>
-          </div>
+          <div class="tagger-result-tags" x-show="taggerResultText" x-text="taggerResultText" tabindex="0" :aria-label="t('tagger.totalTags')"></div>
           <div class="tagger-single-empty tagger-result-empty" x-show="!taggerResultText" x-text="t('tagger.noResult')"></div>
           <div class="tagger-result-actions" x-show="taggerResultText"><button type="button" @click="copyTaggerResult()"><svg><use href="#ti-copy"></use></svg><span x-text="t('tagger.copyTags')"></span></button></div>
         </section>
@@ -203,7 +201,7 @@
 
       <aside class="tagger-single-sidebar">
         <section class="tagger-form-card tagger-single-settings">
-          <h2 class="tagger-output-header" @click="taggerSingleModelCollapsed = !taggerSingleModelCollapsed" :aria-expanded="String(!taggerSingleModelCollapsed)"><svg aria-hidden="true" :class="{ open: !taggerSingleModelCollapsed }"><use href="#ti-chevron"></use></svg><span x-text="t('tagger.modelSettings')"></span></h2>
+          <h2><button type="button" class="tagger-output-header" @click="taggerSingleModelCollapsed = !taggerSingleModelCollapsed" :aria-expanded="String(!taggerSingleModelCollapsed)"><svg aria-hidden="true" :class="{ open: !taggerSingleModelCollapsed }"><use href="#ti-chevron"></use></svg><span x-text="t('tagger.modelSettings')"></span></button></h2>
           <div class="tagger-collapse" :class="{ closed: taggerSingleModelCollapsed }"><div class="tagger-collapse-inner">
           <div class="tagger-form-field"><div class="tagger-field-info"><label x-text="t('tagger.model')"></label><p x-text="t('tagger.modelDesc')"></p></div><div class="tagger-field-control">
               <div class="anima-select tagger-model-select" x-data="animaSelect(() => taggerModelSelectConfig(), taggerSelectedModel)" x-effect="value = taggerSelectedModel" @click.outside="closeOnOutside()" @anima-select-change="changeTaggerModel($event.detail.value)"><input type="hidden" x-ref="modelInput" :value="taggerSelectedModel"><button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="taggerModel()?.name || t('tagger.model')"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open"><div class="anima-select-menu anima-select-menu-described" :class="{ 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())"><div class="anima-select-menu-scroll"><template x-for="group in displayGroups" :key="group.label"><div class="anima-select-group"><div class="anima-select-group-label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l"></span><span class="anima-select-option-desc" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value"><use href="#ti-check"></use></svg></div></template></div></template></div></div></template></div>
@@ -222,7 +220,7 @@
         </section>
 
         <section class="tagger-form-card tagger-single-output-settings">
-          <h2 class="tagger-output-header" @click="taggerSingleOutputCollapsed = !taggerSingleOutputCollapsed" :aria-expanded="String(!taggerSingleOutputCollapsed)"><svg aria-hidden="true" :class="{ open: !taggerSingleOutputCollapsed }"><use href="#ti-chevron"></use></svg><span x-text="t('tagger.outputOptions')"></span></h2>
+          <h2><button type="button" class="tagger-output-header" @click="taggerSingleOutputCollapsed = !taggerSingleOutputCollapsed" :aria-expanded="String(!taggerSingleOutputCollapsed)"><svg aria-hidden="true" :class="{ open: !taggerSingleOutputCollapsed }"><use href="#ti-chevron"></use></svg><span x-text="t('tagger.outputOptions')"></span></button></h2>
           <div class="tagger-collapse" :class="{ closed: taggerSingleOutputCollapsed }"><div class="tagger-collapse-inner tagger-option-grid tagger-single-option-grid">
             <label><span><b x-text="t('tagger.replaceUnderscore')"></b><small x-text="t('tagger.replaceUnderscoreDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.replaceUnderscore" @change="updateTaggerOutputSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
             <label><span><b x-text="t('tagger.escapeTag')"></b><small x-text="t('tagger.escapeTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.escapeTag" @change="updateTaggerOutputSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
@@ -233,13 +231,16 @@
 
         <section class="tagger-form-card tagger-single-categories">
           <h2><span x-text="t('tagger.confidenceBrowser')"></span><small x-text="Object.keys(taggerCategoryState).length"></small></h2>
-          <div class="tagger-single-empty" x-show="!Object.keys(taggerCategoryState).length" x-text="t('tagger.noResult')"></div>
+          <div class="tagger-dictionary-tools" x-show="Object.keys(taggerCategoryState).length">
+            <label x-show="tagDictionaryIsChinese()"><input type="checkbox" :checked="tagDictionaryShowTranslation" @change="tagDictionaryToggleTranslation()"><span x-text="t('tagger.showTranslation')"></span></label>
+            <button type="button" x-show="!tagDictionaryReady" @click="navigate('environment')" x-text="t('tagger.dictionaryUnavailable')"></button>
+          </div>
           <div class="tagger-category-toolbar" x-show="Object.keys(taggerCategoryState).length"><label><span x-text="t('tagger.globalThreshold')"></span><input type="number" min="0" max="1" step="0.01" x-model.number="taggerCategoryGlobalThreshold" @change="applyTaggerGlobalThreshold()"></label><span class="tagger-category-total"><b x-text="taggerVisibleCategoryCount()"></b><span x-text="t('tagger.totalTags')"></span></span><button @click="setAllTaggerCategoriesVisible(true)" x-text="t('tagger.showAll')"></button><button @click="setAllTaggerCategoriesVisible(false)" x-text="t('tagger.hideAll')"></button></div>
           <div class="tagger-category-browser" x-show="Object.keys(taggerCategoryState).length">
             <template x-for="(category, key) in taggerCategoryState" :key="key">
               <section class="tagger-category-section" :class="{ collapsed: category.collapsed }">
                 <div class="tagger-category-heading">
-                  <button type="button" class="tagger-category-heading-toggle" @click="category.collapsed = !category.collapsed" :title="category.collapsed ? t('common.expand') : t('common.collapse')" :aria-expanded="String(!category.collapsed)">
+                  <button type="button" class="tagger-category-heading-toggle" @click="category.collapsed = !category.collapsed; syncTaggerDictionary()" :title="category.collapsed ? t('common.expand') : t('common.collapse')" :aria-expanded="String(!category.collapsed)">
                     <svg aria-hidden="true" :class="{ open: !category.collapsed }"><use href="#ti-chevron"></use></svg>
                     <strong x-text="category.label"></strong>
                     <span x-text="category.visibleTags.length + ' / ' + category.total"></span>
@@ -248,17 +249,12 @@
                   <button class="tagger-category-copy" @click="copyTaggerCategory(key)" :disabled="!category.visibleTags.length" :title="t('tagger.copyCategoryTags')" :aria-label="t('tagger.copyCategoryTags')"><svg><use href="#ti-copy"></use></svg></button>
                 </div>
                 <div class="tagger-category-body tagger-collapse" :class="{ closed: category.collapsed }"><div class="tagger-collapse-inner">
-                  <div class="tagger-confidence-controls">
-                    <label x-text="t('tagger.threshold')"></label>
-                    <input class="tagger-category-range" type="range" min="0" max="1" step="0.01" x-model.number="category.threshold" @input="recalculateTaggerCategory(key)" @change="updateTaggerResultCategory(key)">
-                    <input class="tagger-category-number" type="number" min="0" max="1" step="0.01" x-model.number="category.threshold" @change="updateTaggerResultCategory(key)">
-                  </div>
                   <div class="tagger-category-tags">
-                    <template x-for="tag in category.visibleTags" :key="tag[0]">
-                      <span class="tagger-confidence-item"><code x-text="taggerDisplayName(tag[0])"></code><i>:</i><b x-text="Number(tag[1]).toFixed(3)"></b></span>
+                    <template x-for="tag in taggerCategoryPreview(category)" :key="tag[0]">
+                      <span class="tagger-confidence-item" :data-tag="tag[0]" tabindex="0" :class="tagDictionaryChipState(tag[0])"><span class="tagger-confidence-label"><code x-text="taggerDisplayName(tag[0])"></code><small class="tagger-tag-translation" x-text="tagDictionaryTranslationFor(tag[0])"></small></span><b x-text="Number(tag[1]).toFixed(3)"></b></span>
                     </template>
                     <p x-show="category.visible && !category.visibleTags.length" x-text="t('tagger.noTags')"></p>
-                    <small x-show="category.truncated" x-text="t('tagger.tagTruncated').replace('{total}', category.total)"></small>
+                    <small x-show="category.visibleTags.length > 200" x-text="t('tagger.tagTruncated').replace('{total}', category.visibleTags.length)"></small>
                   </div>
                 </div></div>
               </section>
@@ -434,7 +430,7 @@
       @pointercancel.window="stopTaggerSingleResize()"
     >
       <div class="tagger-single-main">
-        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
+        <main class="tagger-single-preview" :class="{ 'drag-over': taggerDragOver, empty: !taggerSource }" @dragover.prevent="taggerDragOver = true" @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)">
           <div class="tagger-preview-toolbar"><span x-text="taggerSource?.display_name || taggerSource?.path || t('tagger.noImage')"></span><button x-show="taggerSource" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg><use href="#ti-fit"></use></svg></button></div>
           <button class="tagger-drop-zone" x-show="!taggerSource" @click="pickTaggerSource()"><svg><use href="#ti-image"></use></svg><strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span></button>
           <div class="tagger-preview-image" :class="{ zoomed: taggerPreviewScale > 1, panning: taggerPreviewPanning }" x-show="taggerSource" @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)" @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)" @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()"><img :src="taggerPreviewUrl(taggerSelectedIndex)" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" draggable="false"></div>
@@ -449,13 +445,15 @@
 
         <section class="tagger-form-card tagger-single-result">
           <h2><span x-text="t('tagger.totalTags')"></span><small x-text="taggerResultTags().length"></small></h2>
-          <div class="tagger-result-tags" x-show="taggerResultText">
-            <template x-for="(tag, index) in taggerResultTags()" :key="index + ':' + tag">
-              <span class="tagger-result-tag"><span x-text="tag"></span><i x-show="index < taggerResultTags().length - 1">,</i></span>
-            </template>
-          </div>
+          <div class="tagger-result-tags" x-show="taggerResultText" x-text="taggerResultText" tabindex="0" :aria-label="t('tagger.totalTags')"></div>
           <div class="tagger-single-empty tagger-result-empty" x-show="!taggerResultText" x-text="t('tagger.noResult')"></div>
           <div class="tagger-result-actions" x-show="taggerResultText"><button type="button" @click="copyTaggerResult()"><svg><use href="#ti-copy"></use></svg><span x-text="t('tagger.copyTags')"></span></button></div>
+        </section>
+
+        <section class="tagger-form-card" x-show="taggerResultText && taggerApiResultTags.length">
+          <div class="tagger-dictionary-tools"><label x-show="tagDictionaryIsChinese()"><input type="checkbox" :checked="tagDictionaryShowTranslation" @change="tagDictionaryToggleTranslation()"><span x-text="t('tagger.showTranslation')"></span></label><button type="button" x-show="!tagDictionaryReady" @click="navigate('environment')" x-text="t('tagger.dictionaryUnavailable')"></button></div>
+          <div class="tagger-category-tags"><template x-for="(tag, index) in taggerApiResultTags.slice(0, 200)" :key="index + ':' + tag"><span class="tagger-confidence-item" :data-tag="tag" tabindex="0" :class="tagDictionaryChipState(tag)"><span class="tagger-confidence-label"><code x-text="tag"></code><small class="tagger-tag-translation" x-text="tagDictionaryTranslationFor(tag)"></small></span></span></template></div>
+          <small x-show="taggerApiResultTags.length > 200" x-text="t('tagger.tagTruncated').replace('{total}', taggerApiResultTags.length)"></small>
         </section>
 
         <section class="tagger-form-card tagger-api-raw-card" x-show="taggerApiRaw">

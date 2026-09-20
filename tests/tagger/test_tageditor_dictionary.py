@@ -8,6 +8,8 @@ import json
 import sys
 import tempfile
 import time
+import threading
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -71,6 +73,7 @@ class DictionaryInstallTests(unittest.TestCase):
             patch.object(dictionary, "SOURCE_DIR", self.source),
             patch.object(dictionary, "_state", {"status": "idle", "message": "", "finished_at": "", "log": []}),
             patch.object(dictionary, "_progress", {}),
+            patch.object(dictionary, "_update_check", {}),
         ]
         for item in self._patches:
             item.start()
@@ -115,6 +118,71 @@ class DictionaryInstallTests(unittest.TestCase):
         again = dictionary.start_install()
         self.assertFalse(again["started"])
         self.assertEqual(again["reason"], "installed")
+
+    def test_categories_report_counts_and_support_legacy_assets(self):
+        dictionary.start_install()
+        state = wait_for_install()
+        general = next(c for c in state["categories"] if c["name"] == "general")
+        self.assertEqual(general, dict(id=0, name="general", tag_count=2))
+        self.assertEqual(sum(item["tag_count"] for item in state["categories"]), state["tag_count"])
+        manifest = dictionary.read_manifest()
+        manifest["categories"][0]["translated"] = 2
+        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        self.assertEqual(dictionary.status()["categories"], state["categories"])
+        manifest.pop("categories")
+        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        self.assertEqual(dictionary.status()["categories"], state["categories"])
+
+    def test_update_check_compares_content_and_caches_result(self):
+        dictionary.start_install()
+        wait_for_install()
+        hashes = dictionary.read_manifest()["source_hashes"]
+        remote = SimpleNamespace(sha="revision", siblings=[
+            SimpleNamespace(rfilename=path, blob_id=value["blob"], lfs=None)
+            for path, value in hashes.items()])
+        with patch.object(dictionary, "_remote_info", return_value=remote) as query:
+            self.assertEqual(dictionary.check_update()["state"], "current")
+            dictionary.check_update()
+            self.assertEqual(query.call_count, 1)
+            remote.siblings[0].blob_id = "new-content"
+            result = dictionary.check_update(force=True)
+            self.assertEqual(result["state"], "available")
+            self.assertEqual(result["changed_files"], [remote.siblings[0].rfilename])
+        with patch.object(dictionary, "_remote_info", side_effect=OSError("offline")):
+            self.assertEqual(dictionary.check_update(force=True)["state"], "error")
+            self.assertTrue(dictionary.status()["installed"])
+
+    def test_legacy_dictionary_does_not_claim_up_to_date(self):
+        dictionary.start_install()
+        wait_for_install()
+        manifest = dictionary.read_manifest()
+        manifest.pop("source_hashes")
+        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        remote = SimpleNamespace(sha="revision", siblings=[
+            SimpleNamespace(rfilename=path, blob_id="hash", lfs=None) for path, _ in dictionary.HF_FILES])
+        with patch.object(dictionary, "_remote_info", return_value=remote):
+            self.assertEqual(dictionary.check_update()["state"], "unknown")
+
+    def test_all_five_category_files_download_concurrently(self):
+        barrier = threading.Barrier(5)
+        guard = threading.Lock()
+        active = peak = started = 0
+        def download(*args, **kwargs):
+            nonlocal active, peak, started
+            with guard:
+                active += 1
+                started += 1
+                peak = max(peak, active)
+            barrier.wait(timeout=3)
+            time.sleep(0.01)
+            with guard:
+                active -= 1
+        with patch.object(dictionary, "download_hf_file", side_effect=download):
+            dictionary._download_sources(True)
+        self.assertEqual(peak, 5)
+        self.assertEqual(started, 5)
+        self.assertEqual(dictionary._download_percent(), 100)
+        self.assertTrue(all(f["done"] for f in dictionary.status()["files"]))
 
     def test_force_install_downloads_again(self):
         dictionary.start_install()

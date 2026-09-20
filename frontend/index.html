@@ -23,11 +23,11 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260919-dict28">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260920-dict-counts1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260831-motion1">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260920-dictionary3">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
   <script src="/anima-ui/js/i18n.js" defer></script>
@@ -41,7 +41,7 @@
   <script src="/anima-ui/js/monitor-core.js" defer></script>
   <script src="/anima-ui/js/monitor-render.js?v=20260914-motion4" defer></script>
   <script src="/anima-ui/js/environment-core.js?v=20260919-dict17" defer></script>
-  <script src="/anima-ui/js/environment-render.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/environment-render.js?v=20260920-dict-counts1" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
   <script src="/anima-ui/js/training-core.js?v=20260916-repeat16" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
@@ -50,12 +50,12 @@
   <script src="/anima-ui/js/training-shape-preview.js?v=20260917-kronscale1" defer></script>
   <script src="/anima-ui/js/training-toml.js" defer></script>
   <script src="/anima-ui/js/training-config-io.js" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260827-aurora1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260919-dict27" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260920-caption-escape1" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260920-caption-escape1" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
-  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260919-dict17" defer></script>
-  <script src="/anima-ui/js/tag-dictionary.js?v=20260919-dict24" defer></script>
-  <script src="/anima-ui/js/tag-hover-card.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20260920-escaped-tags1" defer></script>
+  <script src="/anima-ui/js/tag-hover-card.js?v=20260920-dictionary3" defer></script>
   <script src="/anima-ui/js/app.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -559,7 +559,7 @@
         </div>
 
         <!-- 标签说明卡：全局唯一实例，位置与内容由 tag-dictionary.js 提供 -->
-        <template x-if="tagDictionaryHover">
+        <template x-teleport="body"><template x-if="tagDictionaryHover">
         <div id="teDictHover" class="te-dict-hover"
           :style="tagDictionaryHover ? tagDictionaryHover.style : ''"
           :class="tagDictionaryCategoryClass(tagDictionaryHover && tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
@@ -568,7 +568,7 @@
           @mouseenter="tagDictionaryHoverKeep()" @mouseleave="if (!$el.contains(document.activeElement)) tagDictionaryHoverLeave()">
             <div class="te-dict-hover-body">
               <div class="te-dict-hover-head">
-                <span class="te-dict-hover-name" x-text="tagDictionaryHover.tag"></span>
+                <span class="te-dict-hover-name" x-text="tagDictionaryDisplayName(tagDictionaryHover.tag)"></span>
                 <span class="te-dict-hover-cat"
                   :class="tagDictionaryCategoryClass(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
                   x-text="tagDictionaryCategoryLabel(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"></span>
@@ -593,13 +593,13 @@
                 <span class="te-dict-hover-val" x-text="tagDictionaryHoverAliases()"></span>
               </div>
               <div class="te-dict-hover-actions">
-                <button @click="tagDictionaryFindTag(tagDictionaryHover.tag)" x-text="t('tagEditor.dictFindTag')"></button>
+                <button x-show="currentRoute === 'tagEditor'" @click="tagDictionaryFindTag(tagDictionaryHover.tag)" x-text="t('tagEditor.dictFindTag')"></button>
                 <button @click="tagDictionaryCopy(tagDictionaryHover.tag)" x-text="t('common.copy')"></button>
                 <span class="te-dict-hover-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
               </div>
             </div>
         </div>
-        </template>
+        </template></template>
 
         <!-- Empty State -->
         <div x-show="!tagEditorSessionId && !tagEditorLoading" class="te-empty">
@@ -785,6 +785,7 @@
             <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
             <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
             <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
+            <button class="te-topbar-btn" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
             <button class="te-topbar-btn" @click="tagEditorShortcutsOpen = true"
               x-text="t('tagEditor.shortcutHelpTitle')"></button>
             </div></details>
@@ -891,7 +892,7 @@
                       </template>
                     <button class="te-tag-name te-tag-label" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
                       :aria-pressed="tagEditorTagSelection.includes(item.tag)" :class="tagDictionaryChipState(item.tag)"
-                      @click="tagEditorSelectTag(item.tag)"><span class="te-editor-tag-name" x-text="item.tag"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></button>
+                      @click="tagEditorSelectTag(item.tag)"><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(item.tag)"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></button>
                     <span class="te-tag-count" x-text="item.count"></span>
                     <button class="te-tag-edit-btn" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
                       @click="tagEditorStartInlineEdit(item.tag, $event)" :title="t('tagEditor.inlineEditHint')">
@@ -1132,7 +1133,7 @@
                           @keydown.enter.prevent.stop="tagEditorQuickRemove ? tagEditorToggleRemoval(tag) : tagEditorDetailEditTag(ti)"
                           @keydown.space.prevent.stop="if (tagEditorQuickRemove) tagEditorToggleRemoval(tag); else { _tdShowHover(tag, $el); $nextTick(() => document.querySelector('#teDictHover .te-dict-hover-actions button')?.focus()); }"
                           @dblclick="if (!tagEditorQuickRemove) tagEditorDetailEditTag(ti)">
-                          <span class="te-editor-tag-name" x-text="tag"></span>
+                          <span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(tag)"></span>
                           <span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span>
                         </span>
                       </template>
@@ -1163,7 +1164,7 @@
                           @mousedown.prevent="tagEditorSelectSuggestion(s)">
                           <span class="te-dict-item-body">
                             <span class="te-dict-item-line">
-                              <span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span>
+                              <span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span>
                               <span class="te-dict-item-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(s.count)"></span>
                             </span>
                             <span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span>
@@ -1203,7 +1204,7 @@
                       <div class="te-suggest" x-show="batchSuggestOpen === 'add'">
                         <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
                           <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
                           </div>
                         </template>
                       </div>
@@ -1218,7 +1219,7 @@
                       <div class="te-suggest" x-show="batchSuggestOpen === 'remove'">
                         <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
                           <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
                           </div>
                         </template>
                       </div>
@@ -1238,14 +1239,14 @@
                       <div class="te-suggest" x-show="batchSuggestOpen === 'old'">
                         <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
                           <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
                           </div>
                         </template>
                       </div>
                       <div class="te-suggest" x-show="batchSuggestOpen === 'new'">
                         <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
                           <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="s.label"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
+                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
                           </div>
                         </template>
                       </div>
@@ -1268,7 +1269,7 @@
                         <div class="te-selected-tag" :data-tag="item.tag" :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(item.tag) }, tagDictionaryChipState(item.tag))" tabindex="0"
                           :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(item.tag) : null"
                           @click="tagEditorToggleRemoval(item.tag)" @keydown.space.prevent.stop="tagEditorToggleRemoval(item.tag)" @keydown.enter.prevent.stop="tagEditorToggleRemoval(item.tag)">
-                          <span class="te-tag-label"><span class="te-editor-tag-name" x-text="item.tag"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></span>
+                          <span class="te-tag-label"><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(item.tag)"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></span>
                           <span class="te-tag-count" :title="t('tagEditor.selectedTagCount')" x-text="item.count + '/' + tagEditorSelected.length"></span>
                         </div>
                       </template>

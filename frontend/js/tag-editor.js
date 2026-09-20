@@ -2143,6 +2143,26 @@ window.tagEditorMixin = {
     });
   },
 
+  tagEditorRemoveBracketEscapes() {
+    this._teFlushAllPendingTextEdits();
+    var changes = this.tagEditorGetBatchTargets().map(function(img) {
+      var before = String(img.tags || '');
+      return { img: img, before: before, after: before.replace(/\\+([()])/g, '$1') };
+    }).filter(function(change) { return change.before !== change.after; });
+    if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
+    var epoch = this._teLoadEpoch;
+    var self = this;
+    this._teConfirmBatch(this.t('tagEditor.unescapeConfirm').replace('{n}', changes.length), function() {
+      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+        self.toast(self.t('tagEditor.unescapeStale'), 'warning');
+        return;
+      }
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      self._tePushHistory({ type: 'unescape', desc: self.t('tagEditor.unescapeBrackets'), affected: changes.length });
+      self.toast(self.t('tagEditor.batchDone'));
+    });
+  },
+
   tagEditorBatchAdd() {
     var val = this.batchAddInput.trim();
     if (!val) return;
