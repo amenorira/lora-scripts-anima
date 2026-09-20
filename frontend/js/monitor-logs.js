@@ -467,32 +467,22 @@ window.monitorLogRenderMixin = {
       source.className = 'log-line-source';
       this._highlightLogLine(main, richSource.main, search);
       this._highlightLogLine(source, richSource.source, search);
-      span.appendChild(main);
-      span.appendChild(source);
+      span.append(main, source);
     } else {
-      this._highlightLogLine(span, line, search);
+      // Strip terminal right-padding only; keep continuation indentation intact.
+      this._highlightLogLine(span, String(line).trimEnd(), search);
     }
     div.appendChild(span);
     return div;
   },
 
-  _splitRichLogSource(lineText) {
-    const text = String(lineText || '');
-    const pathTail = '((?:[A-Za-z]:[\\\\/])?(?:[\\w.@()-]+[\\\\/\\\\]){0,10}(?:[\\w@()-]+\\.){0,12}[\\w@()-]+\\.(?:py|toml|json|yaml|yml|txt|log|js|ts|jsx|tsx|go|rs|cpp|c|h|hpp)(?::\\d+)?)';
-    let m;
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    if (normalized.indexOf('\n') >= 0) {
-      m = normalized.match(new RegExp('^(.*)\\n[ \\t]*' + pathTail + '\\s*$', 's'));
-    } else {
-      // Rich console pads the source column with a long run of spaces. In narrow
-      // containers that padding wraps visually; split it into a real right column.
-      m = normalized.match(new RegExp('^(.*?)[ \\t]{3,}' + pathTail + '\\s*$'));
-    }
-    if (!m) return null;
-    const main = m[1].replace(/\n[ \t]*$/g, '').trimEnd();
-    const source = m[2].trim();
-    if (!main || !source) return null;
-    return { main, source };
+  _splitRichLogSource(line) {
+    const text = String(line || '');
+    // Only Rich record headers have a source column. A path in a traceback,
+    // dataset configuration or continuation must remain part of the message.
+    if (!/^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}|\[\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\]|\s+)\s+(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+/.test(text)) return null;
+    const match = text.match(/^(.*\S)[ \t]+([\w.-]+\.py:\d+)[ \t]*$/);
+    return match ? { main: match[1].trimEnd(), source: match[2] } : null;
   },
 
   _coalesceRichLogLines(lines, baseOffset) {

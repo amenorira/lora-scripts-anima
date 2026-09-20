@@ -2884,8 +2884,8 @@ input[type="range"]::-webkit-slider-thumb {
 .monitor-logs-container {
   font-family: 'Consolas', 'Cascadia Code', 'Menlo', 'Courier New', monospace;
   font-size: 13px; line-height: 1.6;
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
+  flex: 1; min-height: 0; overflow: auto;
+  white-space: pre; overflow-wrap: normal; word-break: normal;
   background: var(--log-bg, var(--surface-default));
   color: var(--log-fg, var(--text-primary));
   border-top: 1px solid var(--border-default);
@@ -2895,8 +2895,8 @@ input[type="range"]::-webkit-slider-thumb {
 .log-line {
   padding: 0 8px 0 0; border-radius: 0; transition: none;
   display: flex; align-items: flex-start;
-  min-width: 0; width: 100%;
-  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
+  flex-shrink: 0; min-width: 100%; width: max-content;
+  white-space: pre; overflow-wrap: normal; word-break: normal;
   line-height: 1.6;
   counter-increment: logline;          /* 行号由 CSS counter 按 DOM 位置生成 */
 }
@@ -2913,28 +2913,10 @@ input[type="range"]::-webkit-slider-thumb {
   text-align: right; color: #858889; user-select: none;
   font-size: 12px; flex-shrink: 0; line-height: 1.6;
 }
-.log-line-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
-.log-line-text-split {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  width: 100%;
-}
-.log-line-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: normal;
-}
-.log-line-source {
-  flex: 0 0 auto;
-  max-width: min(34%, 280px);
-  margin-left: auto;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.log-line-text { flex: 1; white-space: pre; overflow-wrap: normal; word-break: normal; }
+.log-line-text-split { display: flex; align-items: baseline; gap: 16px; }
+.log-line-main { flex: 1 0 auto; }
+.log-line-source { flex: 0 0 auto; margin-left: auto; }
 /* ═══════ Inline syntax tokens — VSCode 2026 Dark (2026-dark.json) ═══════ */
 /* Log levels: VSCode colors log severity via the token.*-token scopes.
    Plain colored text — no badge, no background (matches VSCode log view). */
@@ -2971,9 +2953,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .log-line mark {
   background: rgba(230, 180, 80, 0.35);
-  color: inherit; border-radius: 2px; padding: 0 1px;
+  color: inherit; border-radius: 2px; padding: 0;
 }
-.log-line-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
 .log-empty { padding: 32px; }
 .log-empty.dashboard-empty p { margin: 0; }
 .m-logs-count { margin-left: 4px; color: var(--text-tertiary); font-size: 11.5px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
