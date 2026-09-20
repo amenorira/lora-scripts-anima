@@ -160,7 +160,26 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(categories["character"]["total"], 1)
         self.assertFalse(categories["character"]["truncated"])
         self.assertEqual(postprocess.call_args.args[3], thresholds)
+        self.assertFalse(postprocess.call_args.args[12])
         self.assertEqual(set(raw), {"general", "character", "rating", "model"})
+
+    def test_api_tags_keep_literal_parentheses_unless_escaping_is_requested(self):
+        self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {}), ["star (symbol)"])
+        self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {"escape_tag": True}), [r"star \(symbol\)"])
+
+    def test_single_image_candidates_keep_every_score_without_rounding(self):
+        fake = MagicMock()
+        fake.interrogate.return_value = {"general": [(f"tag_{i}", 0.49999) for i in range(250)]}
+        with patch.dict(workspace.available_interrogators, {"camie-tagger-v2": fake}), patch.object(
+            interrogator.Interrogator, "postprocess_tags", return_value={},
+        ):
+            _, full = workspace._onnx_tags("camie-tagger-v2", Image.new("RGB", (16, 16)), {}, full_categories=True)
+            _, preview = workspace._onnx_tags("camie-tagger-v2", Image.new("RGB", (16, 16)), {})
+        self.assertEqual(len(full["general"]["tags"]), 250)
+        self.assertEqual(full["general"]["tags"][0][1], 0.49999)
+        self.assertFalse(full["general"]["truncated"])
+        self.assertEqual(len(preview["general"]["tags"]), 200)
+        self.assertTrue(preview["general"]["truncated"])
 
     def test_onnx_result_can_disable_character_tags_without_hiding_raw_category(self):
         fake = MagicMock()

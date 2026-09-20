@@ -34,7 +34,7 @@ class TaggerInterrogateRequest(BaseModel):
     add_model_tag: bool = False
     additional_tags: str = ""
     exclude_tags: str = ""
-    escape_tag: bool = True
+    escape_tag: bool = False
     batch_input_recursive: bool = False
     batch_output_dir: str = Field(
         default="",

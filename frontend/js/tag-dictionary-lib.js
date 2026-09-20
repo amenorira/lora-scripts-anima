@@ -28,8 +28,14 @@
   // 单次前缀扫描的安全上限：命中再多也只保留这个数量，避免极端短前缀拖慢查询
   var PREFIX_SCAN_LIMIT = 20000;
 
+  // Decode one layer of caption escaping for display/lookup only. Keep unknown
+  // escapes intact; this is not a general-purpose string or prompt parser.
+  function displayTag(value) {
+    return String(value == null ? '' : value).replace(/\\([\\()])/g, '$1');
+  }
+
   function normalizeKey(value) {
-    return String(value == null ? '' : value).trim().toLowerCase().replace(WHITESPACE, '_');
+    return displayTag(value).trim().toLowerCase().replace(WHITESPACE, '_');
   }
 
   function categoryName(category) {
@@ -359,6 +365,7 @@
       ALIASES: F_ALIASES
     },
     normalizeKey: normalizeKey,
+    displayTag: displayTag,
     categoryName: categoryName,
     danbooruToAnimaTag: danbooruToAnimaTag,
     lookupKeys: lookupKeys,

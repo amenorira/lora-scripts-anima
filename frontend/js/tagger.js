@@ -40,7 +40,7 @@ window.taggerMixin = {
     characterThreshold: 0.6,
     recursive: true,
     replaceUnderscore: true,
-    escapeTag: true,
+    escapeTag: false,
     addRatingTag: false,
     addModelTag: false,
     unloadModel: false,
@@ -70,7 +70,7 @@ window.taggerMixin = {
     conflict: 'ignore',
     recursive: true,
     replaceUnderscore: true,
-    escapeTag: true,
+    escapeTag: false,
     removeDuplicated: true,
     additionalTags: '',
     excludeTags: '',
@@ -84,6 +84,7 @@ window.taggerMixin = {
   taggerApiPresetNamingMode: 'save',
   taggerApiPresetNameInput: '',
   taggerApiRaw: '',
+  taggerApiResultTags: [],
   taggerApiElapsed: 0,
   taggerApiError: '',
   taggerApiSingleRunning: false,
@@ -116,6 +117,7 @@ window.taggerMixin = {
 
   async buildTaggerForm() {
     await this._mountTaggerWorkspace();
+    this.tagDictionaryInit();
     this._loadTaggerSettings();
     this._loadTaggerApiSettings();
     const savedMode = localStorage.getItem('anima-tagger-mode') || '';
@@ -135,6 +137,7 @@ window.taggerMixin = {
     } catch (_) {}
     taskId = taskId || stored || '';
     if (taskId) await this.restoreTaggerTask(taskId);
+    this.syncTaggerDictionary();
   },
 
   renderTaggerResourceBar() {
@@ -147,7 +150,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260919-paste1');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260920-caption-escape1');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -159,6 +162,7 @@ window.taggerMixin = {
   },
 
   stopTaggerWorkspace() {
+    this.tagDictionaryCleanup();
     this.realtimeUnsubscribe('hardware');
     this._setTaggerRealtimeTask(null);
     this.stopTaggerSingleResize();
@@ -411,6 +415,7 @@ window.taggerMixin = {
     if (!this.taggerApiCanStart()) return;
     this._clearTaggerResultState(true);
     this.taggerApiRaw = '';
+    this.taggerApiResultTags = [];
     this.taggerApiElapsed = 0;
     this.taggerStarting = true;
     this.saveTaggerApiSettings();
@@ -437,12 +442,13 @@ window.taggerMixin = {
     this.taggerApiError = '';
     this.saveTaggerApiSettings();
     try {
+      const api = this.taggerApiPayload();
       const response = await fetch('/api/tagger/api/single', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           source_token: this.taggerSource.source_token,
           index: 0,
-          api: this.taggerApiPayload(),
+          api,
           options: this.taggerApiOptions(),
         }),
       });
@@ -451,6 +457,8 @@ window.taggerMixin = {
       this.taggerResultText = body.data?.text || '';
       this.taggerResultCategories = {};
       this.taggerCategoryState = {};
+      this.taggerApiResultTags = api.parse_mode === 'tags' ? this.taggerResultTags() : [];
+      this.syncTaggerDictionary();
       this.taggerApiRaw = body.data?.raw || '';
       this.taggerApiElapsed = Number(body.data?.elapsed || 0);
     } catch (error) {
@@ -458,6 +466,7 @@ window.taggerMixin = {
       this.taggerResultText = '';
       this.taggerResultCategories = {};
       this.taggerApiRaw = '';
+      this.taggerApiResultTags = [];
       this.taggerApiElapsed = 0;
       this.toast(this.taggerApiError, 'error');
     }
@@ -603,9 +612,9 @@ window.taggerMixin = {
     }
   },
 
-  taggerCategoryLabel(key) {
+  taggerCategoryLabel(key, fallback = key) {
     const suffix = key.charAt(0).toUpperCase() + key.slice(1);
-    return this.t('tagger.cat' + suffix, key);
+    return this.t('tagger.cat' + suffix, fallback);
   },
 
   handleTaggerModelChange(resetPreset = true) {
@@ -777,6 +786,7 @@ window.taggerMixin = {
       loadedResultKey: this._taggerLoadedResultKey,
       previewObjectUrl: this._taggerPreviewObjectUrl,
       apiRaw: this.taggerApiRaw,
+      apiResultTags: this.taggerApiResultTags,
       apiElapsed: this.taggerApiElapsed,
       apiError: this.taggerApiError,
       failedOnly: this.taggerFailedOnly,
@@ -798,6 +808,8 @@ window.taggerMixin = {
     this._taggerLoadedResultKey = state?.loadedResultKey || '';
     this._taggerPreviewObjectUrl = state?.previewObjectUrl || null;
     this.taggerApiRaw = state?.apiRaw || '';
+    this.taggerApiResultTags = state?.apiResultTags || [];
+    this.syncTaggerDictionary();
     this.taggerApiElapsed = Number(state?.apiElapsed || 0);
     this.taggerApiError = state?.apiError || '';
     this.taggerFailedOnly = !!state?.failedOnly;
@@ -833,6 +845,8 @@ window.taggerMixin = {
   },
 
   _clearTaggerResultState(clearTask = false) {
+    this.tagDictionaryCloseHover?.();
+    this.taggerApiResultTags = [];
     this.taggerResultText = '';
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
@@ -980,6 +994,7 @@ window.taggerMixin = {
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
     this.taggerApiRaw = '';
+    this.taggerApiResultTags = [];
     this.taggerApiElapsed = 0;
     this.taggerApiError = '';
     this._taggerLoadedResultKey = '';
@@ -1099,7 +1114,7 @@ window.taggerMixin = {
         if (!rawTags.length) return;
         const defaultThreshold = key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold;
         state[key] = {
-          label: category.label || labels[key] || this.taggerCategoryLabel(key),
+          label: this.taggerCategoryLabel(key, category.label || labels[key] || key),
           tags: rawTags,
           threshold: Number(this.taggerSettings.categoryThresholds[key] ?? defaultThreshold ?? 0.5),
           visible: this.taggerUsesCategoryThresholds()
@@ -1133,28 +1148,22 @@ window.taggerMixin = {
     const threshold = Math.max(0, Math.min(1, Number(category.threshold) || 0));
     category.threshold = threshold;
     category.visibleTags = category.visible
-      ? category.tags.filter(tag => Number(tag[1]) >= threshold).slice(0, 200)
+      ? category.tags.filter(tag => Number(tag[1]) >= threshold)
       : [];
     if (updateResult) this.refreshTaggerResultFromCategories();
-  },
-
-  updateTaggerResultCategory(key) {
-    const category = this.taggerCategoryState[key];
-    if (!category) return;
-    category.threshold = Math.max(0, Math.min(1, Number(category.threshold) || 0));
-    if (this.taggerUsesCategoryThresholds()) {
-      this.taggerSettings.preset = 'custom';
-      this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, {
-        [key]: category.threshold,
-      });
-    }
-    this.saveTaggerSettings();
-    this.recalculateTaggerCategory(key);
   },
 
   toggleTaggerResultCategory(key) {
     const category = this.taggerCategoryState[key];
     if (!category) return;
+    if (this.taggerUsesCategoryThresholds()) {
+      this.setTaggerCategoryEnabled(key, category.visible);
+      return;
+    }
+    if (key === 'character' && this.taggerSupportsCharacterToggle()) {
+      this.setTaggerCharacterEnabled(category.visible);
+      return;
+    }
     this.recalculateTaggerCategory(key);
   },
 
@@ -1180,6 +1189,19 @@ window.taggerMixin = {
 
   setAllTaggerCategoriesVisible(visible) {
     Object.values(this.taggerCategoryState).forEach(category => { category.visible = visible; });
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.categoryEnabledByModel = {
+        ...this.taggerSettings.categoryEnabledByModel,
+        [this.taggerSelectedModel]: {
+          ...this.taggerSettings.categoryEnabledByModel[this.taggerSelectedModel],
+          ...Object.fromEntries(Object.keys(this.taggerCategoryState).map(key => [key, visible])),
+        },
+      };
+      this.saveTaggerSettings();
+    }
+    if (this.taggerSupportsCharacterToggle() && this.taggerCategoryState.character) {
+      this.setTaggerCharacterEnabled(visible);
+    }
     this.recalculateAllTaggerCategories(true);
   },
 
@@ -1221,6 +1243,20 @@ window.taggerMixin = {
   refreshTaggerResultFromCategories() {
     if (this.taggerSourceMode !== 'single' || !Object.keys(this.taggerCategoryState).length) return;
     this.taggerResultText = this.taggerVisibleCategoryTags().join(', ');
+    this.syncTaggerDictionary();
+  },
+
+  taggerCategoryPreview(category) {
+    return category.visibleTags.slice(0, 200);
+  },
+
+  syncTaggerDictionary() {
+    if (typeof this.tagDictionaryLookupTags !== 'function') return;
+    const tags = this.taggerSourceMode === 'api-single' ? this.taggerApiResultTags.slice(0, 200)
+      : Object.values(this.taggerCategoryState)
+        .filter(category => !category.collapsed)
+        .flatMap(category => this.taggerCategoryPreview(category).map(tag => tag[0]));
+    this.tagDictionaryLookupTags(tags);
   },
 
   taggerVisibleCategoryCount() {
@@ -1349,7 +1385,9 @@ window.taggerMixin = {
       this.setTaggerResult(data.current_result, false);
     }
     const now = Date.now();
-    if (now - this._taggerLastItemsFetch > 800) {
+    // Completion must fetch results even when a recent progress event was throttled.
+    // Large candidate lists are deliberately omitted from realtime frames.
+    if (terminal || now - this._taggerLastItemsFetch > 800) {
       this._taggerLastItemsFetch = now;
       void this.refreshTaggerItems(false);
     }
@@ -1361,15 +1399,23 @@ window.taggerMixin = {
 
   async refreshTaggerItems(reset) {
     if (!this.taggerTaskId) return;
+    const taskId = this.taggerTaskId;
+    const sourceMode = this.taggerSourceMode;
+    const request = this._taggerItemsRequest = (this._taggerItemsRequest || 0) + 1;
     try {
       const offset = reset || this.taggerFailedOnly ? 0 : Math.max(0, Number(this.taggerTask?.current || 0) - 80);
       const limit = this.taggerFailedOnly ? 500 : 160;
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/items?offset=${offset}&limit=${limit}&failed_only=${this.taggerFailedOnly}`);
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/items?offset=${offset}&limit=${limit}&failed_only=${this.taggerFailedOnly}`);
       const body = await response.json();
+      if (taskId !== this.taggerTaskId || sourceMode !== this.taggerSourceMode || request !== this._taggerItemsRequest) return;
       if (body.status !== 'success') return;
       this.taggerItemsTotal = Number(body.data.total || 0);
       this._mergeTaggerItems(body.data.items || [], reset || this.taggerFailedOnly);
       if (reset && this.taggerItems.length) this.selectTaggerItem(this.taggerItems[0]);
+      else {
+        const selected = this.taggerItems.find(item => item.index === this.taggerSelectedIndex);
+        if (selected?.result) this.setTaggerResult(selected.result);
+      }
     } catch (_) {}
   },
 
