@@ -195,6 +195,7 @@ window.tagDictionaryMixin = {
   tagDictionaryReady: false,
   tagDictionaryFailed: false,
   tagDictionaryInstalling: false,
+  tagDictionaryCheckingUpdate: false,
   tagDictionaryInstallError: '',
   tagDictionaryServer: null,      // 后端返回的安装状态：数据版本、标签数、体积、进度
   tagDictionaryPanelOpen: false,
@@ -336,6 +337,9 @@ window.tagDictionaryMixin = {
       self.tagDictionaryFailed = state.status === 'failed';
       if (status.status === 'downloading' || status.status === 'building') self._tdPollInstall();
       else if (status.installed && state.status !== 'failed') self._tdStartWorkerForRoute();
+      if (self.currentRoute === 'environment' && status.installed && !self.tagDictionaryInstalling) {
+        self.tagDictionaryCheckUpdate();
+      }
     });
   },
 
@@ -363,6 +367,22 @@ window.tagDictionaryMixin = {
       .catch(function () { return null; })
       .finally(function () { state.statusRequest = null; });
     return state.statusRequest;
+  },
+
+  tagDictionaryCheckUpdate(force) {
+    if (this.tagDictionaryCheckingUpdate) return;
+    this.tagDictionaryCheckingUpdate = true;
+    this._tdRefreshPanelRow();
+    var self = this;
+    return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { signal: AbortSignal.timeout(45000) })
+      .then(function (response) { if (!response.ok) throw new Error('check failed'); return response.json(); })
+      .then(function (payload) {
+        if (self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;
+      })
+      .catch(function () {
+        if (self.tagDictionaryServer) self.tagDictionaryServer.update = { state: 'error' };
+      })
+      .finally(function () { self.tagDictionaryCheckingUpdate = false; self._tdRefreshPanelRow(); });
   },
 
   // ===== 下载与更新 =====
@@ -411,6 +431,7 @@ window.tagDictionaryMixin = {
           self.tagDictionaryInstallError = (status && status.message) || self.t('tagEditor.dictStatusUnavailable');
         } else if (status.installed) {
           self._tdRestartWorker();
+          self.tagDictionaryCheckUpdate(true);
         } else {
           self.tagDictionaryInstallError = status.message || self.t('tagEditor.dictInstallFailed');
         }

@@ -578,6 +578,23 @@ test('dictionary details show useful state without a permanent info box or log',
   assert.ok(downloading.includes('元标签 · 5/5'));
   assert.ok(downloading.includes('huggingface.co'));
   assert.ok(downloading.includes('"pct":50'));
+  ctx.tagDictionaryServer = { installed: true, tag_count: 100, update: { state: 'available' }, categories: [
+    { name: 'general', tag_count: 100 },
+  ] };
+  const categories = ctx._renderDictionaryBody(T, 'installed');
+  assert.ok(categories.includes('词典有更新'));
+  assert.ok(categories.includes('<th>通用标签</th><td>100</td>'));
+  assert.ok(categories.includes('<th>总计</th><td>100</td>'));
+  ctx.tagDictionaryServer = { status: 'downloading', percent: 40, files: [
+    { filename: 'general.csv', done: true },
+    { filename: 'artist.csv', downloaded: 50, total: 100 },
+    { filename: 'meta.csv', phase: 'queued' },
+  ] };
+  const concurrent = ctx._renderDictionaryBody(T, 'installing');
+  assert.ok(concurrent.includes('已完成'));
+  assert.ok(concurrent.includes('50%'));
+  assert.ok(concurrent.includes('等待下载'));
+  assert.ok(concurrent.includes('"pct":40'));
 });
 
 /* init 现在先问后端状态，再决定要不要建 Worker */
