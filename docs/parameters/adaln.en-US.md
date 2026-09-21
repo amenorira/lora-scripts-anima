@@ -1,15 +1,16 @@
 # AdaLN Modulation Layers
 
-> Each Anima DiT block holds, besides self-attention, cross-attention and an MLP, one set of AdaLN modulation layers that adjust the features' overall tone according to the noise level. sd-scripts does not train them by default; the "Train AdaLN modulation layers" toggle on the parameter page adds them to the training targets. Worth trying for style LoRAs; character and concept LoRAs usually don't need it.
-
 <!-- doc-anchor: overview -->
 ## What the modulation layers are
 
-Before each denoising step, Anima adjusts the features according to how noisy the current step is: every channel is multiplied by a coefficient and shifted by an offset, and the output of each branch (self-attention, cross-attention, MLP) is gated per channel. These coefficients are not fixed parameters of the model; three small networks per block compute them on the fly from the timestep. AdaLN (adaptive normalization) is this mechanism, and the modules computing the coefficients are the modulation layers.
+AdaLN adjusts feature processing according to the current noise level. It can be viewed as a set of controls for the model’s processing branches: global reconstruction at high noise and local refinement at low noise need different feature scales, offsets, and branch strengths.
 
-Each block has three modulation modules, one per branch: `adaln_modulation_self_attn`, `adaln_modulation_cross_attn`, `adaln_modulation_mlp`. The three sublayers consume them as `x + gate × sublayer(norm(x) × (1 + scale) + shift)`. Each module is two bias-free linears, SiLU → 2048→256 → 256→6144, where 6144 = 3 × 2048 covers the three output groups: scale, shift, and gate. The modulation modules read only the timestep embedding, not text.
+Enabling AdaLN training lets the LoRA modify these controls as well as attention and MLP layers. It changes internal features, not image brightness or contrast directly, and its effects are not limited to color.
 
-The modulation layers change the per-channel tone of whole feature maps — overall brightness, contrast — rather than what content is generated where. That different axis of effect is why they get a toggle of their own.
+| Setting | Training scope | Effect |
+| --- | --- | --- |
+| Off | The attention, MLP, and other modules already selected | AdaLN parameters retain their base-model values |
+| On | Adds AdaLN modulation modules to that scope | More pathways can change, increasing parameters and file size |
 
 <!-- doc-anchor: default-behavior -->
 ## Upstream default behavior
@@ -29,12 +30,9 @@ The cost is file size: about 50% larger at rank 32. For comparison, diffusion-pi
 <!-- doc-anchor: effects -->
 ## What training them changes
 
-Without them, LoRA modifies only the attention and MLP weights; feature scale, shift, and gate stay as in the base model. Training them lets LoRA also modify the timestep → (scale/shift/gate) mapping, i.e. the overall tone of features at each denoising step.
+For style training, this is a way to compare a wider training scope. Inspect shape, linework, color, and prompt response. Character training is not theoretically excluded either; use the reference run to decide whether the extra scope is useful.
 
-Two limitations:
-
-1. **Stability.** One modulation update affects every channel in a block — a wider sweep than attention/MLP — so training is more easily destabilized (typically as color drift).
-2. **Evidence.** SVD analysis of the official turbo↔base weight delta shows the modulation up-projections among the largest changes (see the [anima_lora AdaLN write-up](https://github.com/sorryhyun/anima_lora/blob/v1.14.3/docs/methods/adaln.md), checked 2026-08), so official distillation did modify this pathway significantly. As of that date, no public side-by-side render comparison supported the claim that training modulation layers improves style LoRAs.
+Channel-wise modulation does not imply a color-only role, nor does it by itself establish that AdaLN is less stable than attention or MLP training.
 
 <!-- doc-anchor: usage -->
 ## Recommendations
@@ -45,8 +43,11 @@ Two limitations:
 <!-- doc-anchor: settings -->
 ## Relation to other settings
 
-- **rank and alpha**: same as the main network, not separately configurable. Upstream has no per-module alpha (modules matched by rank regexes are forced to the global `network_alpha` in `lora_anima.py`); lowering the modulation rank without changing alpha makes that branch's scale coefficient alpha/rank larger than the main network's.
-- **Separate learning rate**: write `network_reg_lrs=.*adaln_modulation.*=5e-5` in the custom network arguments.
-- **Trainable modules outside the blocks**: the DiT also contains an adapter that translates Qwen3 output into cross-attention context (6 layers, 60 linears in total), controlled solely by the custom network argument `train_llm_adapter=true`; off by default and unrelated to this toggle. The text encoder (Qwen3) is likewise not trained by default.
-- **ComfyUI**: the output loads directly. ComfyUI builds a `lora_unet_` key mapping for every model weight, which the modulation keys match ([comfy/lora.py](https://github.com/comfyanonymous/ComfyUI/blob/2a610155821d670a2d8047e654e5fce96b790eb5/comfy/lora.py), commit 2a61015, checked 2026-08). The bundled `convert_anima_lora_to_comfy.py` is needed only for external distribution or for mixing with diffusion-pipe outputs.
-- **Scope**: `networks.lora_anima`, `networks.loha`, `networks.lokr`. `lycoris.kohya`'s Anima training path is unverified and unaffected by this toggle.
+Each network path has its own AdaLN control.
+
+| Network | Control | Conditions |
+| --- | --- | --- |
+| Native Anima networks | Train AdaLN layers in the main form | Subject to the selected native network’s supported scope |
+| LyCORIS | The AdaLN option in LyCORIS settings | Uses the `attn-mlp` preset aligned with the sd-scripts default scope |
+
+File-size growth depends on the algorithm, rank, and training scope. Use the structure preview for the current configuration rather than applying one standard-LoRA percentage to every network.

@@ -9,12 +9,15 @@ For Anima training, open **Structure preview** under **Training network module**
 
 The preview uses the training network constructors with fake tensors. It does not load base-model weights or start training. It currently supports native Anima LoRA / LoHa / LoKr and LyCORIS LoCon / LoHa / LoKr.
 
-- **Module selection:** inspect included input projections, self-attention, cross-attention, MLP, and other modules. Repeated layers with matching structures are grouped with their counts.
-- **Matrix structure:** inspect the original weight dimensions, saved tensor shapes, and how LoRA low-rank products, LoHa Hadamard products, or LoKr Kronecker products combine.
-- **Effective settings:** inspect the selected module's actual rank, alpha, scaling, and the effects of Full Matrix, both-side decomposition, and rs_lora. Constructors may change the decomposition based on layer dimensions; the diagram reflects the resulting structure.
-- **Parameter counts:** distinguish the selected module's count from network totals. Training scope, AdaLN, LLM adapter, and text-encoder settings affect which modules are included.
+Use the structure preview to check which matrices a configuration actually creates, which settings take effect, and the estimated saved file size.
 
-Estimates update automatically when form settings change. Reopen the preview to inspect the latest result. The screenshot uses LyCORIS LoKr, rank/alpha 128, factor 4, and the `attn-mlp` scope for illustration, not as a recommended recipe.
+| Preview item | Meaning |
+| --- | --- |
+| Input and output dimensions | Feature counts of the original layer; they need not match |
+| Saved matrix shapes | Tensors trained and saved by the adapter, not the full base-model weights |
+| Rank, Alpha, and scale | Values actually used by the selected module, not merely entered in the form |
+| Parameter count | Adapter size; similar counts do not imply equivalent parameterizations |
+| File size | An estimate based on saved tensors, precision, and packaging, not training memory |
 
 <!-- doc-anchor: file-size -->
 ## How file size is estimated
@@ -24,3 +27,7 @@ The estimate counts the tensors actually saved by the adapter at the selected sa
 This is an estimate of the **LoRA weight file**, excluding the base model, optimizer state, training caches, and sample images. It is not a VRAM estimate. Training metadata adds more bytes, and other save formats can have different container overhead. The final file is authoritative.
 
 To compare settings, hold the algorithm and scope fixed while changing rank, or hold rank fixed while comparing scopes. Algorithms such as LoKr can switch between full matrices and low-rank factors, so file size does not always grow linearly with rank. Unsupported or failed constructions display an estimation error instead of falling back to a generic formula.
+
+For LoKr, watch for transitions from low-rank factors to full matrices. File size need not vary linearly across that transition. After changing a setting, checking the resulting matrices is more reliable than inferring behavior from the parameter name alone.
+
+The safetensors estimate includes saved tensors and their index header. Training metadata and other save formats add overhead, so the saved file is the final reference.

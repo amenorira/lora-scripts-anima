@@ -27,8 +27,10 @@ test('base rate preview discloses excluded LoRA+ and per-layer rates', () => {
   assert.ok(data.notes.includes('lrPreview.baseGroupNote'));
   for (const locale of ['en-US', 'zh-CN']) {
     const translations = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${locale}.json`), 'utf8'));
-    assert.ok(translations.lrPreview.baseGroupNote.includes('LoRA+'));
-    assert.ok(translations.lrPreview.baseGroupNote.includes('lora_up'));
+    const note = translations.lrPreview.baseGroupNote;
+    assert.ok(note.includes('LoRA+'));
+    assert.ok(note.includes(locale === 'en-US' ? 'per-layer' : '逐层'));
+    assert.ok(!note.includes('lora_up'));
   }
 });
 test('fractional warmup truncates to complete steps and long warmup stays a ramp', () => {
