@@ -1903,10 +1903,26 @@ window.trainingCoreMixin = {
 
   _resolveFieldHintOverrideKey(field, values) {
     if (!field) return '';
+    if (field.key === 'network_alpha' && this._hasFullLokrFactors(values)) {
+      return 'field.network_alphaHint_lokr_full';
+    }
     const hintBy = field.hintKeyBy;
     if (!hintBy || !hintBy.key || !hintBy.values) return '';
+    if (hintBy.key === 'lycoris_algo' && values?.network_module !== 'lycoris.kohya') return '';
     const selected = values ? values[hintBy.key] : undefined;
     return hintBy.values[String(selected)] || '';
+  },
+
+  _hasFullLokrFactors(values) {
+    if (!values || values.network_module !== 'lycoris.kohya' || values.lycoris_algo !== 'lokr') {
+      return false;
+    }
+    const groups = Array.isArray(this.shapeEstimate?.groups) ? this.shapeEstimate.groups : [];
+    const lokrGroups = groups.filter(group => group && group.algo === 'lokr');
+    return lokrGroups.length > 0 && lokrGroups.every(group => {
+      const shapes = group.shapes || {};
+      return group.w2Full === true && !Object.prototype.hasOwnProperty.call(shapes, 'lokr_w1_a');
+    });
   },
 
   _resolveFieldHintKey(field, values, trainType) {

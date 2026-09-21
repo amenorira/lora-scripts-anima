@@ -73,6 +73,19 @@ _DOCUMENTS = {
             "en-US": "parameters/lora-plus.en-US.md",
         },
     },
+    "network-parameters": {
+        "category": "network",
+        "order": 15,
+        "titles": {"zh-CN": "网络参数", "en-US": "Network parameters"},
+        "summaries": {
+            "zh-CN": "说明网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout 与结构预览。",
+            "en-US": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, and structure preview.",
+        },
+        "files": {
+            "zh-CN": "parameters/network-parameters.zh-CN.md",
+            "en-US": "parameters/network-parameters.en-US.md",
+        },
+    },
     "matrix-preview": {
         "category": "network",
         "order": 30,

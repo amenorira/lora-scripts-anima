@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -20,6 +21,22 @@ from backend.training.musubi_krea2 import KREA2_FIELDS
 
 
 class DocumentationTests(unittest.TestCase):
+    def test_registered_documents_have_unique_heading_ids(self):
+        root = Path(__file__).resolve().parents[2] / "docs"
+        for slug in _DOCUMENTS:
+            for locale in ("zh-CN", "en-US"):
+                path = _document_path(slug, locale)
+                html, _ = _render_markdown(
+                    path.read_text(encoding="utf-8"),
+                    PurePosixPath(path.relative_to(root).as_posix()),
+                )
+                heading_ids = re.findall(r'<h[1-6] id="([^"]+)"', html)
+                self.assertEqual(
+                    len(heading_ids),
+                    len(set(heading_ids)),
+                    f"duplicate heading id in {slug} {locale}",
+                )
+
     def test_optimizer_documents_render_registered_field_anchors(self):
         expected_anchors = {
             field["doc_anchor"]

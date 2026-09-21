@@ -1,15 +1,16 @@
 # AdaLN 调制层
 
-> Anima 的每个 DiT 块里，除了自注意力、交叉注意力和 MLP，还有一组 AdaLN 调制层，负责按噪声程度调整特征的整体基调。sd-scripts 默认不训练这组层；参数页的"训练 AdaLN 调制层"开关可以把它们加进训练目标。画风类 LoRA 可以尝试开启，人物/概念类一般无需开启。
-
 <!-- doc-anchor: overview -->
 ## 调制层是什么
 
-去噪的每一步开始前，Anima 会按当前的噪声程度调整特征：每个通道乘一个系数、加一个偏移，自注意力、交叉注意力、MLP 三条分支的输出再各自按通道乘一个门控系数。这组系数不是写死在模型里的参数，而是由每个块里的三个小网络根据时间步即时算出来的。AdaLN（自适应归一化）说的就是这套机制，负责算系数的模块就是调制层。
+AdaLN 根据当前噪声强度调整模型处理特征的方式。可以把它理解为各处理分支的调节器：模型在高噪声下建立整体形象、在低噪声下修正细节时，需要不同的特征缩放、偏移和分支强度。
 
-每个块有三个调制模块，分别服务三条分支：`adaln_modulation_self_attn`、`adaln_modulation_cross_attn`、`adaln_modulation_mlp`。三个子层各自按 `x + gate × sublayer(norm(x) × (1 + scale) + shift)` 使用这些输出。每个模块是 SiLU → 2048→256 → 256→6144 的两段线性层（无偏置），6144 = 3 × 2048，对应缩放、平移、门控三组输出。调制模块只读时间步，不读文本。
+开启 AdaLN 训练后，LoRA 不仅能修改注意力和 MLP，还能修改这些调节器。它改变的是模型内部特征，不是直接给图像调亮度或对比度，也不只影响配色。
 
-调制层改变的是整张特征图的通道基调——整体变亮或变暗、对比变强或变弱——而不是"在哪个位置画什么"。它和注意力、MLP 起作用的面不同，所以单独设一个开关。
+| 设置 | 训练范围 | 影响 |
+| --- | --- | --- |
+| 关闭 | 原有选定的注意力、MLP 等模块 | AdaLN 的参数保持底模原样 |
+| 开启 | 在原范围上加入 AdaLN 调制模块 | 可修改的通路增多，参数量与文件大小增加 |
 
 <!-- doc-anchor: default-behavior -->
 ## 上游默认行为
@@ -29,12 +30,9 @@ include_patterns=['.*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_mod
 <!-- doc-anchor: effects -->
 ## 训练调制层的影响
 
-不训练时，LoRA 只改注意力与 MLP 的权重，特征的缩放、平移、门控与底模一致。训练后，LoRA 还能修改"时间步 → 缩放/平移/门控"这条映射，也就是每个去噪阶段特征的整体基调。
+对于画风训练，加入 AdaLN 可以作为扩大训练范围的对照实验，观察形体、线条、配色和提示词响应是否变化。人物训练也没有理论上的禁止条件；是否有必要，应根据基准结果判断。
 
-两点限制：
-
-1. **稳定性**。调制层的一次更新影响整个块所有通道，作用面比注意力/MLP 大，训练更容易不稳（典型表现是色调漂移）。
-2. **证据**。对官方 turbo 与 base 的权重差做 SVD 分析，调制层的上投影是整个差值里变化最大的部分之一（见 [anima_lora 的 AdaLN 文档](https://github.com/sorryhyun/anima_lora/blob/v1.14.3/docs/methods/adaln.md)，核查于 2026-08），说明官方蒸馏确实明显改动了这条通路。但"训练调制层能改善画风 LoRA"目前没有公开的对照出图实验支撑。
+不能仅凭“作用于通道”推断它只控制色调，也不能由此断言它比注意力或 MLP 更不稳定。
 
 <!-- doc-anchor: usage -->
 ## 使用建议
@@ -45,8 +43,11 @@ include_patterns=['.*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_mod
 <!-- doc-anchor: settings -->
 ## 与其他参数的关系
 
-- **rank 与 alpha**：与主网络相同，不可单独设置。上游不支持按模块设置 alpha（lora_anima.py 中命中 rank 正则的模块强制使用全局 network_alpha）；单独调低调制层 rank 而不改 alpha，会让该分支的缩放系数 alpha/rank 相对主网络偏大。
-- **单独学习率**：在自定义网络参数中写 `network_reg_lrs=.*adaln_modulation.*=5e-5`。
-- **块外的可训练模块**：DiT 里还有一组把 Qwen3 输出翻译成交叉注意力上下文的适配器（6 层、共 60 个线性层），由自定义网络参数 `train_llm_adapter=true` 单独控制，默认不训，与本开关无关。文本编码器（Qwen3）默认同样不训。
-- **ComfyUI**：产物直接加载。ComfyUI 为每个模型权重建立 `lora_unet_` 键映射，调制层键可正常命中（[comfy/lora.py](https://github.com/comfyanonymous/ComfyUI/blob/2a610155821d670a2d8047e654e5fce96b790eb5/comfy/lora.py)，commit 2a61015，核查于 2026-08）。仓库自带的 `convert_anima_lora_to_comfy.py` 只在对外分发或与 diffusion-pipe 产物混用时需要。
-- **适用范围**：`networks.lora_anima`、`networks.loha`、`networks.lokr`。`lycoris.kohya` 的 Anima 训练路径未验证，不受本开关影响。
+不同网络使用各自的 AdaLN 入口。
+
+| 网络 | 使用入口 | 条件 |
+| --- | --- | --- |
+| 原生 Anima 网络 | 主表单中的“训练 AdaLN 调制层” | 以当前原生网络的支持范围为准 |
+| LyCORIS | LyCORIS 配置中的 AdaLN 选项 | 使用 `attn-mlp` 预设，并启用对齐 sd-scripts 默认范围 |
+
+文件增量取决于算法、维度与训练范围，使用结构预览查看当前配置，不把某次标准 LoRA 的增幅套用到所有网络。

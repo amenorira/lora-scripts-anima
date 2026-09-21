@@ -6,6 +6,32 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.3 - 2026-09-21
+
+This release improves how training parameters are explained, how field hints are chosen, and how documentation is reached from the UI. The bilingual guides for timesteps, optimizers, LoRA+, AdaLN, and structure preview were reviewed and expanded, and a new network-parameters guide was added. Training defaults, parameter ranges, and training algorithms are unchanged.
+
+### Documentation and Navigation
+
+- Fixed a duplicate heading anchor at the top of the optimizer guide that prevented the right-side “On this page” outline from rendering.
+- Reworked the bilingual timestep, optimizer, LoRA+, AdaLN, and structure-preview chapters with formulas, activation relationships, limitations, experiment guidance, and explicit boundaries on what a single parameter can—and cannot—tell you about image quality or generalization.
+- Added a bilingual network-parameters guide covering network dimension, Alpha, LoRA/LoHa/LoKr representations, the LoKr factor, full matrices, unbalanced factorization, dropout, and how to verify actual shapes, parameter counts, and scales in the structure preview.
+- Added a training-parameter index and linked network fields to the relevant sections and anchors, so each entry points to its actual scope and implementation limits.
+
+### Conditional Hints and Preview
+
+- The epoch hint now explains that one epoch includes the configured dataset repeats and warns that training too long can overfit.
+- LoKr feature-dropout and rank-dropout hints follow the actual forward paths: the former applies to bypass outputs, while the latter masks output channels during weight reconstruction.
+- The LoRA+ global-ratio hint uses `lora_down`/`lora_up` wording only for standard LoRA parameter groups, avoiding the incorrect standard-LoRA labels for LoHa and LoKr groups.
+- When the structure preview confirms that both LoKr factors W1 and W2 are full matrices, the Alpha hint explains the effective scale. If the structure cannot be confirmed, the UI keeps the generic hint instead of inferring from form switches.
+- The timestep-distribution preview now explains the relationship between higher or lower noise and broad structure or local detail, while making clear that the chart is not an image-quality ratio.
+
+### Compatibility and Verification
+
+- Regenerated the field-configuration fallback while preserving existing config serialization, defaults, ranges, and visibility behavior.
+- Added regression coverage for conditional field hints and the learning-rate preview; the full Python suite, frontend suite, and configuration-sync check pass.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.2...v2.20.3)
+
 ## v2.20.2 - 2026-09-20
 
 This release fixes two issues in the training monitor. Training log records are no longer hard-wrapped to a terminal width or interleaved when multiple training processes write at once. Selecting output files no longer inserts a new action bar that pushes the file list downward. The log viewer preserves indentation and long lines, with horizontal scrolling for paths, tracebacks, and source locations.
