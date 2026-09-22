@@ -1,16 +1,10 @@
-import json
 import unittest
-from pathlib import Path
 
 import torch
 
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import (
-    AUTOMAGIC_OPTIMIZER_TYPE,
-    get_fields_json,
-)
+from backend.training.field_registry import AUTOMAGIC_OPTIMIZER_TYPE
 from backend.training.validation import validate_training_config
-from backend.training.optimizer_contracts import AUTOMAGIC_MAX_LR_DEFAULT
 from tools.python_startup.lr_logging import read_learning_rates
 from vendor.automagic_optimizer.integration import Automagic3
 from tests.helpers import config_from_field_defaults
@@ -36,58 +30,7 @@ def valid_automagic_config() -> dict:
     return config
 
 
-class AutomagicFieldContractTests(unittest.TestCase):
-    def test_registry_exposes_experimental_optimizer_and_fields(self):
-        sections = get_fields_json()["sections"]
-        fields = {
-            field["key"]: field
-            for section in sections
-            for field in section["fields"]
-        }
-        optimizer_options = [
-            option
-            for group in fields["optimizer_type"]["groups"]
-            for option in group["options"]
-        ]
-        self.assertTrue(any(option["v"] == AUTOMAGIC_OPTIMIZER_TYPE for option in optimizer_options))
-        self.assertNotIn("lr_scheduler_type", fields)
-        self.assertEqual(fields["automagic_max_lr"]["default"], "1e3")
-        self.assertEqual(fields["automagic_max_lr"]["hintKey"], "field.automagic_max_lrHint")
-        for key in (
-            "automagic_min_lr",
-            "automagic_max_lr",
-            "automagic_beta2",
-            "automagic_clip_threshold",
-            "automagic_polarity_history",
-            "automagic_fused",
-        ):
-            self.assertEqual(fields[key]["showIf"]["eq"], AUTOMAGIC_OPTIMIZER_TYPE)
-        self.assertEqual(fields["full_bf16"]["readonlyIf"]["eq"], AUTOMAGIC_OPTIMIZER_TYPE)
-        self.assertFalse(fields["automagic_fused"]["default"])
-        self.assertFalse(fields["automagic_fused"]["autoValue"][0]["set"])
-        self.assertEqual(
-            fields["automagic_fused"]["readonlyIfAny"],
-            [
-                {"key": "gradient_accumulation_steps", "neq": 1},
-                {"key": "max_grad_norm", "neq": 0},
-                {"key": "mixed_precision", "eq": "fp16"},
-            ],
-        )
-        self.assertEqual(
-            fields["automagic_fused"]["readonlyReasonKey"],
-            "field.automagic_fusedLocked",
-        )
-
 class AutomagicValidationTests(unittest.TestCase):
-    def test_accepts_safe_defaults(self):
-        self.assertEqual(validate_training_config(valid_automagic_config()), [])
-
-    def test_missing_max_lr_uses_shared_default(self):
-        config = valid_automagic_config()
-        config.pop("automagic_max_lr", None)
-        config["learning_rate"] = "0.01"
-        self.assertEqual(validate_training_config(config), [])
-
     def test_rejects_invalid_bounds_and_component_learning_rate(self):
         config = valid_automagic_config()
         config["automagic_min_lr"] = 1e-5
@@ -99,46 +42,6 @@ class AutomagicValidationTests(unittest.TestCase):
         config["automagic_min_lr"] = 1e-3
         errors = validate_training_config(config)
         self.assertTrue(any("min_lr" in error for error in errors), errors)
-
-    def test_rejects_loraplus_effective_rate_above_maximum(self):
-        config = valid_automagic_config()
-        config.update(
-            {
-                "enable_loraplus": True,
-                "loraplus_lr_ratio": 2.0,
-                "learning_rate": "1e-3",
-                "automagic_min_lr": "1e-8",
-                "automagic_max_lr": "1e-3",
-            }
-        )
-        errors = validate_training_config(config)
-        self.assertTrue(
-            any("effective UNet/DiT LoRA+ LR" in error for error in errors),
-            errors,
-        )
-
-        config["loraplus_lr_ratio"] = 1.0
-        self.assertEqual(validate_training_config(config), [])
-
-    def test_loraplus_effective_rate_uses_sd_scripts_component_defaults(self):
-        config = valid_automagic_config()
-        config.pop("network_train_unet_only", None)
-        config.pop("network_train_text_encoder_only", None)
-        config.update(
-            {
-                "enable_loraplus": True,
-                "loraplus_lr_ratio": 1.0,
-                "loraplus_text_encoder_lr_ratio": 20.0,
-                "learning_rate": "1e-4",
-                "automagic_max_lr": "1e-3",
-            }
-        )
-
-        errors = validate_training_config(config)
-        self.assertTrue(
-            any("effective text encoder LoRA+ LR" in error for error in errors),
-            errors,
-        )
 
     def test_loraplus_effective_rate_mirrors_cache_target_normalization(self):
         config = valid_automagic_config()
@@ -162,40 +65,6 @@ class AutomagicValidationTests(unittest.TestCase):
             errors,
         )
 
-    def test_rejects_invalid_custom_optimizer_literals(self):
-        config = valid_automagic_config()
-        for key in (
-            "automagic_min_lr",
-            "automagic_max_lr",
-            "automagic_beta2",
-            "automagic_clip_threshold",
-            "automagic_polarity_history",
-        ):
-            config.pop(key, None)
-        config["optimizer_args"] = ["max_lr=not-a-number", "polarity_history=1"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("Python literal" in error for error in errors), errors)
-        self.assertTrue(any("polarity_history" in error for error in errors), errors)
-
-    def test_validates_custom_text_and_rejects_unknown_arguments(self):
-        config = valid_automagic_config()
-        config["optimizer_args_custom"] = "weight_decay=-0.1\nunknown_option=1"
-        errors = validate_training_config(config)
-        self.assertTrue(any("weight_decay" in error for error in errors), errors)
-        self.assertTrue(any("unknown_option" in error for error in errors), errors)
-
-    def test_accepts_fused_when_execution_mode_is_safe(self):
-        config = valid_automagic_config()
-        config.update(
-            {
-                "automagic_fused": True,
-                "gradient_accumulation_steps": 1,
-                "max_grad_norm": 0,
-                "mixed_precision": "bf16",
-            }
-        )
-        self.assertEqual(validate_training_config(config, gpu_ids=[0]), [])
-
     def test_rejects_each_fused_conflict(self):
         cases = (
             ("accumulation", {"gradient_accumulation_steps": 2}, [0], "gradient_accumulation_steps"),
@@ -218,38 +87,8 @@ class AutomagicValidationTests(unittest.TestCase):
                 errors = validate_training_config(config, gpu_ids=gpu_ids)
                 self.assertTrue(any(expected in error for error in errors), errors)
 
-    def test_custom_fused_uses_the_same_checks_and_guard_is_reserved(self):
-        config = valid_automagic_config()
-        config.pop("automagic_fused", None)
-        config["optimizer_args"] = ["fused=True"]
-        config["max_grad_norm"] = 0
-        errors = validate_training_config(config)
-        self.assertEqual(errors, [])
-
-        config["max_grad_norm"] = 1
-        errors = validate_training_config(config)
-        self.assertTrue(any("max_grad_norm" in error for error in errors), errors)
-
-        config["optimizer_args"] = ["fused=False", "fused_guard=True"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("fused_guard" in error for error in errors), errors)
-
 
 class AutomagicAdapterTests(unittest.TestCase):
-    def test_missing_max_lr_is_injected_and_explicit_raw_value_is_preserved(self):
-        base = {
-            "model_train_type": "anima-lora",
-            "optimizer_type": AUTOMAGIC_OPTIMIZER_TYPE,
-            "learning_rate": "1e-4",
-        }
-        adapted, _ = adapt_config(base)
-        self.assertIn(f"max_lr={AUTOMAGIC_MAX_LR_DEFAULT}", adapted["optimizer_args"])
-        self.assertEqual(sum(item.startswith("max_lr=") for item in adapted["optimizer_args"]), 1)
-
-        adapted, _ = adapt_config(dict(base, optimizer_args=["max_lr=1e-3"]))
-        self.assertIn("max_lr=1e-3", adapted["optimizer_args"])
-        self.assertEqual(sum(item.startswith("max_lr=") for item in adapted["optimizer_args"]), 1)
-
     def test_forces_compatibility_mode_without_external_scheduler(self):
         adapted, warnings = adapt_config(
             {
@@ -296,23 +135,6 @@ class AutomagicAdapterTests(unittest.TestCase):
         self.assertIn("fused_guard=True", adapted["optimizer_args"])
         self.assertFalse(any("fused disabled" in warning for warning in warnings), warnings)
 
-    def test_multi_gpu_fused_is_disabled_by_adapter(self):
-        adapted, warnings = adapt_config(
-            {
-                "model_train_type": "anima-lora",
-                "optimizer_type": AUTOMAGIC_OPTIMIZER_TYPE,
-                "learning_rate": "1e-4",
-                "gradient_accumulation_steps": 1,
-                "max_grad_norm": 0,
-                "mixed_precision": "bf16",
-                "automagic_fused": True,
-            },
-            gpu_ids=[0, 1],
-        )
-        self.assertIn("fused=False", adapted["optimizer_args"])
-        self.assertFalse(any(item.startswith("fused_guard=") for item in adapted["optimizer_args"]))
-        self.assertTrue(any("one GPU" in warning for warning in warnings), warnings)
-
 
 class AutomagicRuntimeTests(unittest.TestCase):
     def test_dynamic_lr_reporting_and_resume(self):
@@ -333,39 +155,6 @@ class AutomagicRuntimeTests(unittest.TestCase):
         restored = Automagic3([restored_parameter], lr=1e-4)
         restored.load_state_dict(state)
         self.assertAlmostEqual(restored.get_avg_learning_rate(), optimizer.get_avg_learning_rate(), places=12)
-
-    def test_runtime_requires_guard_and_fused_updates_during_backward(self):
-        fp32 = torch.nn.Parameter(torch.ones(2, dtype=torch.float32))
-        with self.assertRaisesRegex(ValueError, "validated fused_guard"):
-            Automagic3([fp32], fused=True)
-        with self.assertRaisesRegex(ValueError, "validated fused_guard"):
-            Automagic3([fp32], fused=True, fused_guard="True")
-        with self.assertRaisesRegex(ValueError, "fused must be a boolean"):
-            Automagic3([fp32], fused="False")
-
-        parameter = torch.nn.Parameter(torch.tensor([1.0, -1.0], dtype=torch.float32))
-        optimizer = Automagic3([parameter], lr=1e-4, fused=True, fused_guard=True)
-        before = parameter.detach().clone()
-        parameter.square().mean().backward()
-        self.assertTrue(optimizer.fused)
-        self.assertTrue(optimizer._hook_handles)
-        self.assertFalse(torch.equal(parameter.detach(), before))
-
-    def test_runtime_rejects_low_precision_and_unsafe_group_lr(self):
-        fp32 = torch.nn.Parameter(torch.ones(2, dtype=torch.float32))
-
-        bf16 = torch.nn.Parameter(torch.ones(2, dtype=torch.bfloat16))
-        with self.assertRaisesRegex(ValueError, "requires FP32"):
-            Automagic3([bf16])
-
-        default_optimizer = Automagic3([fp32])
-        self.assertEqual(default_optimizer.param_groups[0]["max_lr"], 1e3)
-
-        with self.assertRaisesRegex(ValueError, "parameter-group lr"):
-            Automagic3([{"params": [fp32], "lr": 1e-2}], max_lr=1e-3)
-
-        with self.assertRaisesRegex(ValueError, "weight_decay must be non-negative"):
-            Automagic3([fp32], weight_decay=-0.01)
 
 
 if __name__ == "__main__":

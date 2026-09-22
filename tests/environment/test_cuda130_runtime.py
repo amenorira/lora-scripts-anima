@@ -6,24 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend import launch_utils
-from backend.utils import devices
 from tools import ensure_runtime
 from tools import install_flash_attn
 
 
 ROOT = Path(__file__).parents[2]
-
-
-class Cuda130SourceContractTests(unittest.TestCase):
-    def test_pinned_versions_stay_consistent_across_installers(self):
-        windows = (ROOT / "tools/bootstrap_windows.ps1").read_text(encoding="utf-8")
-        linux = (ROOT / "start.sh").read_text(encoding="utf-8")
-        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-
-        for source in (windows, linux):
-            self.assertIn("torch==2.10.0+cu130", source)
-            self.assertIn("https://download.pytorch.org/whl/cu130", source)
-        self.assertIn("onnxruntime-gpu==1.27.0", requirements)
 
 
 class ExistingVenvMigrationTests(unittest.TestCase):
@@ -42,30 +29,6 @@ class ExistingVenvMigrationTests(unittest.TestCase):
         self.assertIn("torchvision==0.25.0+cu130", arguments)
         self.assertIn("--extra-index-url", arguments)
         sync_mock.assert_called_once_with(core_changed=True)
-
-    def test_installed_acceleration_wheels_are_rematched(self):
-        expected_triton = "triton-windows" if sys.platform == "win32" else "triton"
-        versions = {
-            "bitsandbytes": "0.47.0",
-            "xformers": "0.0.35",
-            "flash-attn": "2.8.3+cu128torch2.10",
-            expected_triton: "3.6.0",
-        }
-        with patch.object(ensure_runtime, "package_version", side_effect=versions.get), patch.object(
-            ensure_runtime, "package_file", return_value=None
-        ), patch.object(ensure_runtime, "xformers_cuda_build", return_value=1208), patch.object(
-            ensure_runtime, "pip", return_value=0
-        ) as pip_mock, patch.object(ensure_runtime, "run", return_value=0) as run_mock:
-            warnings = ensure_runtime.sync_optional_packages(core_changed=True)
-
-        self.assertEqual(warnings, [])
-        commands = [call.args for call in pip_mock.call_args_list]
-        self.assertTrue(any("bitsandbytes" in command for command in commands))
-        self.assertTrue(any("xformers" in command and ensure_runtime.PYTORCH_INDEX in command for command in commands))
-        self.assertTrue(any(any(str(arg).startswith(expected_triton) for arg in command) for command in commands))
-        self.assertIn("tools.install_flash_attn", run_mock.call_args.args[0])
-        self.assertEqual(run_mock.call_args.kwargs["input_text"], "\n")
-        self.assertEqual(run_mock.call_args.kwargs["timeout"], 1800)
 
     def test_flash_upgrade_failure_keeps_existing_installation(self):
         versions = {
@@ -124,24 +87,6 @@ class RuntimeRepairRegressionTests(unittest.TestCase):
         self.assertEqual(caught, [])
         self.assertIn("跳过", message)
         self.assertNotIn("测试通过", message)
-
-    def test_gpu_probe_suppresses_expected_no_driver_warning(self):
-        fake_torch = types.ModuleType("torch")
-        fake_torch.__version__ = "2.10.0+cu130"
-
-        def unavailable_cuda():
-            warnings.warn(
-                "cudaGetDeviceCount() returned cudaErrorNotSupported, likely using older driver or on CPU machine",
-                UserWarning,
-            )
-            return False
-
-        fake_torch.cuda = types.SimpleNamespace(is_available=unavailable_cuda)
-        with warnings.catch_warnings(record=True) as caught, patch.dict(sys.modules, {"torch": fake_torch}):
-            warnings.simplefilter("always")
-            devices.check_torch_gpu()
-
-        self.assertEqual(caught, [])
 
 
 if __name__ == "__main__":

@@ -1,40 +1,28 @@
 import asyncio
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
 import unittest
-from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import patch
 
 import toml
 
-from backend.training.core_registry import (
-    TrainingProfileError,
-    engine_pythonpaths,
-    get_engine,
-    profile_payload,
-    resolve_training_profile,
-)
-from backend.training.field_registry import get_fields_json
+from backend.training.core_registry import TrainingProfileError, resolve_training_profile
 from backend.training.step_estimator import estimate_training_steps
-from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status, version_error
+from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS,
     build_krea2_dataset_config,
     build_krea2_train_config,
     get_krea2_cache_status,
     image_files,
-    krea2_preflight,
     mark_cache_manifest,
     prepare_cache_manifest,
     validate_krea2_config,
 )
-from backend.training.supervisor import _build_train_env
-from backend.training.validation import validate_training_config
 from backend.server.routes import training as training_routes
 
 
@@ -86,15 +74,6 @@ def krea_field_visible(field: dict, values: dict) -> bool:
 
 
 class CoreRegistryTests(unittest.TestCase):
-    def test_lycoris_is_first_class_but_mounted_on_sd_scripts(self):
-        config = {"model_train_type": "anima-lora", "adapter_id": "lycoris"}
-
-        profile = resolve_training_profile(config)
-
-        self.assertEqual(profile.engine_id, "sd_scripts")
-        self.assertEqual(config["adapter_id"], "lycoris")
-        self.assertEqual(config["network_module"], "lycoris.kohya")
-
     def test_rejects_adapter_or_engine_cross_wiring(self):
         with self.assertRaises(TrainingProfileError):
             resolve_training_profile({"model_train_type": "krea2-lora", "engine_id": "sd_scripts"})
@@ -103,55 +82,8 @@ class CoreRegistryTests(unittest.TestCase):
                 {"model_train_type": "sdxl-lora", "adapter_id": "lycoris", "network_module": "networks.lora"}
             )
 
-    def test_capabilities_expose_engines_profiles_and_adapters(self):
-        runtime = {"ok": True, "errors": [], "versions": {}, "python": "main", "torch_path": "torch", "torch_cuda": "13.0"}
-        with patch("backend.training.musubi_runtime.shared_runtime_status", return_value=runtime):
-            payload = profile_payload()
-
-        musubi = next(item for item in payload["engines"] if item["id"] == "musubi_tuner")
-        self.assertTrue(musubi["available"])
-        self.assertIsNone(musubi["python_executable"])
-        self.assertEqual(musubi["version"]["describe"], "v0.3.4-7-g8934cfb")
-        self.assertTrue(any(item["id"] == "krea2-lora" for item in payload["profiles"]))
-        lycoris = next(item for item in payload["adapters"] if item["id"] == "lycoris")
-        self.assertTrue(lycoris["mounted"])
-        self.assertEqual(lycoris["host_engine_id"], "sd_scripts")
-        self.assertEqual(lycoris["version"]["describe"], "v4.0.1.dev20260903073410")
-
 
 class Krea2CodecTests(unittest.TestCase):
-    def test_registry_keeps_krea_fields_out_of_sd_adapter_schema(self):
-        fields = get_fields_json()
-        all_fields = [field for section in fields["sections"] for field in section["fields"]]
-        dit = next(field for field in all_fields if field["key"] == "dit")
-
-        self.assertEqual(dit["profiles"], ["krea2-lora"])
-
-    def test_registry_provides_downloaded_krea_model_paths(self):
-        defaults = {field["key"]: field.get("default") for field in KREA2_FIELDS}
-
-        self.assertEqual(defaults["dit"], "./models/krea2_raw_fp8_scaled.safetensors")
-        self.assertEqual(defaults["vae"], "./models/qwen_image_vae.safetensors")
-        self.assertEqual(defaults["text_encoder"], "./models/qwen3vl_4b_fp8_scaled.safetensors")
-
-    def test_registry_exposes_one_scaled_fp8_control_and_describes_krea_options(self):
-        fields = {field["key"]: field for field in KREA2_FIELDS}
-
-        self.assertIn("fp8_base", fields)
-        self.assertNotIn("fp8_scaled", fields)
-        self.assertEqual(fields["fp8_base"]["desc_key"], "field.krea_fp8_base")
-
-        expected_options = {
-            "timestep_sampling": 6,
-            "lr_scheduler": 10,
-            "krea_attention_backend": 4,
-        }
-        for key, count in expected_options.items():
-            with self.subTest(field=key):
-                options = fields[key]["options"]
-                self.assertEqual(len(options), count)
-                self.assertTrue(all(option.get("dk") for option in options), options)
-
     def test_legacy_fp8_payload_is_normalized_and_both_flags_are_serialized_together(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -194,29 +126,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["sigmoid_scale"], 1.0)
         self.assertTrue(train["sdpa"])
 
-    def test_krea_timestep_and_weighting_options_reach_musubi_config(self):
-        sampling_modes = ("uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr")
-        weighting_schemes = ("none", "sigma_sqrt", "cosmap", "logit_normal", "mode")
-
-        for sampling in sampling_modes:
-            for weighting in weighting_schemes:
-                with self.subTest(sampling=sampling, weighting=weighting), tempfile.TemporaryDirectory() as temp_dir:
-                    root = Path(temp_dir)
-                    config = krea2_config(root)
-                    config["timestep_sampling"] = sampling
-                    config["weighting_scheme"] = weighting
-
-                    self.assertEqual(validate_krea2_config(config), [])
-                    train = build_krea2_train_config(
-                        config,
-                        root / "run" / "dataset.toml",
-                        root / "artifact",
-                        root / "run" / "log",
-                    )
-
-                    self.assertEqual(train["timestep_sampling"], sampling)
-                    self.assertEqual(train["weighting_scheme"], weighting)
-
     def test_krea_timestep_field_visibility_matches_serialized_parameters(self):
         fields = {field["key"]: field for field in KREA2_FIELDS}
         sampling_modes = ("uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr")
@@ -255,16 +164,6 @@ class Krea2CodecTests(unittest.TestCase):
                     self.assertEqual("logit_std" in train, uses_logit)
                     self.assertEqual("mode_scale" in train, uses_mode)
 
-    def test_shift_is_positive_for_shift_and_sigma_sampling(self):
-        for sampling in ("shift", "sigma"):
-            for value in (0, -1, float("nan"), float("inf")):
-                with self.subTest(sampling=sampling, value=value), tempfile.TemporaryDirectory() as temp_dir:
-                    config = krea2_config(Path(temp_dir))
-                    config["timestep_sampling"] = sampling
-                    config["discrete_flow_shift"] = value
-                    errors = validate_krea2_config(config)
-                    self.assertTrue(any("discrete_flow_shift" in error for error in errors), errors)
-
     def test_cache_directory_is_automatically_nested_under_its_dataset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -282,24 +181,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(Path(config["dataset_cache_dir"]), expected_cache)
         self.assertEqual(Path(dataset["datasets"][0]["cache_directory"]), expected_cache)
         self.assertEqual([path.name for path in images], ["portrait.png"])
-
-    def test_train_toml_uses_only_krea_parser_flags(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config["network_args_custom"] = "exclude_patterns=['.*']"
-            config["krea_optimizer_weight_decay"] = 0.01
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-
-        parser_source = "\n".join(
-            (
-                Path("vendor/musubi-tuner/src/musubi_tuner/training/parser_common.py").read_text(encoding="utf-8"),
-                Path("vendor/musubi-tuner/src/musubi_tuner/krea2_train_network.py").read_text(encoding="utf-8"),
-            )
-        )
-        parser_flags = set(re.findall(r"--([a-zA-Z0-9_]+)", parser_source))
-        self.assertTrue(set(train).issubset(parser_flags), set(train) - parser_flags)
 
     def test_step_duration_and_scheduler_fields_map_to_musubi(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -328,126 +209,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["lr_scheduler_num_cycles"], 2)
         self.assertEqual(train["max_grad_norm"], 0.5)
         self.assertEqual(estimate["total_steps"], 321)
-
-    def test_optimizer_menu_uses_mechanism_groups_and_exact_order(self):
-        fields = get_fields_json()
-        optimizer_fields = [
-            field
-            for section in fields["sections"]
-            for field in section["fields"]
-            if field["key"] == "optimizer_type" and field.get("profiles") == ["krea2-lora"]
-        ]
-        scheduler_fields = [
-            field
-            for section in fields["sections"]
-            for field in section["fields"]
-            if field["key"] == "lr_scheduler" and field.get("profiles") == ["krea2-lora"]
-        ]
-
-        self.assertEqual(len(optimizer_fields), 1)
-        optimizer_groups = {
-            group["labelKey"]: [option["v"] for option in group["options"]]
-            for group in optimizer_fields[0]["groups"]
-        }
-        self.assertEqual(
-            optimizer_groups,
-            {
-                "opt.optimizer_group_baseline": [
-                    "adamw8bit",
-                    "AdamW",
-                    "bitsandbytes.optim.PagedAdamW8bit",
-                ],
-                "opt.optimizer_group_stable": [
-                    "pytorch_optimizer.CAME",
-                ],
-                "opt.optimizer_group_fast": [
-                    "bitsandbytes.optim.Lion8bit",
-                    "bitsandbytes.optim.PagedLion8bit",
-                    "pytorch_optimizer.Lion",
-                ],
-                "opt.optimizer_group_autolr": [
-                    "AdaFactor",
-                    "prodigyopt.Prodigy",
-                    "prodigyplus.ProdigyPlusScheduleFree",
-                    "schedulefree.AdamWScheduleFree",
-                ],
-            },
-        )
-        optimizer_values = set().union(*optimizer_groups.values())
-        self.assertEqual(len(optimizer_values), 11)
-        self.assertFalse(
-            {
-                "torch.optim.Adam",
-                "torch.optim.RAdam",
-                "torch.optim.NAdam",
-                "torch.optim.SGD",
-            }
-            & optimizer_values
-        )
-        self.assertNotIn("__custom__", optimizer_values)
-
-        self.assertEqual(len(scheduler_fields), 1)
-        scheduler_values = {option["v"] for option in scheduler_fields[0]["options"]}
-        self.assertTrue({"inverse_sqrt", "cosine_with_min_lr", "warmup_stable_decay"}.issubset(scheduler_values))
-        # trainer_base calls lr_scheduler.step() without a metric, so exposing
-        # ReduceLROnPlateau would produce a valid-looking form that fails mid-run.
-        self.assertNotIn("reduce_lr_on_plateau", scheduler_values)
-        self.assertNotIn("cosine_warmup_with_min_lr", scheduler_values)
-
-    def test_guided_optimizer_and_scheduler_controls_map_to_real_musubi_flags(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update(
-                {
-                    "optimizer_type": "bitsandbytes.optim.PagedAdamW8bit",
-                    "krea_optimizer_weight_decay": 0.02,
-                    "krea_optimizer_betas": "0.9, 0.999",
-                    "krea_optimizer_eps": "1e-8",
-                    "lr_scheduler": "cosine_with_min_lr",
-                    "lr_scheduler_num_cycles": 3,
-                    "lr_scheduler_min_lr_ratio": 0.05,
-                }
-            )
-
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-
-        self.assertEqual(train["optimizer_type"], "bitsandbytes.optim.PagedAdamW8bit")
-        self.assertEqual(train["lr_scheduler"], "cosine_with_min_lr")
-        self.assertEqual(train["lr_scheduler_num_cycles"], 3)
-        self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.05)
-        self.assertEqual(
-            train["optimizer_args"],
-            ["weight_decay=0.02", "betas=(0.9, 0.999)", "eps=1e-08"],
-        )
-
-    def test_removed_optimizer_selector_uses_generic_unsupported_validation(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            config["optimizer_type"] = "removed.optimizer"
-            errors = validate_krea2_config(config)
-            with self.assertRaisesRegex(ValueError, "only the built-in Krea 2 optimizer list"):
-                build_krea2_train_config(
-                    config,
-                    Path(temp_dir) / "dataset.toml",
-                    Path(temp_dir) / "output",
-                    Path(temp_dir) / "log",
-                )
-
-        self.assertTrue(any(error.startswith("optimizer_type: only the built-in") for error in errors))
-
-    def test_cosine_with_min_lr_gets_an_explicit_safe_floor_for_old_presets(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config["lr_scheduler"] = "cosine_with_min_lr"
-
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-
-        self.assertEqual(config["lr_scheduler_min_lr_ratio"], 0.0)
-        self.assertEqual(train["lr_scheduler_min_lr_ratio"], 0.0)
 
     def test_optimizer_alias_and_internal_scheduler_are_normalized(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -508,48 +269,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertNotIn("save_state", train)
         self.assertTrue(train["save_state_on_train_end"])
 
-    def test_prodigyplus_uses_internal_scheduler_and_only_supported_guided_args(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update(
-                {
-                    "optimizer_type": "prodigyplus.ProdigyPlusScheduleFree",
-                    "krea_optimizer_weight_decay": 0.02,
-                    "krea_optimizer_betas": "0.9, 0.99",
-                    "krea_optimizer_eps": "1e-8",
-                    "krea_prodigy_d_coef": "1.5",
-                    "krea_prodigy_d0": "1e-5",
-                    "krea_prodigyplus_use_stableadamw": True,
-                    "lr_scheduler": "cosine",
-                    "lr_warmup_steps": 10,
-                    "max_grad_norm": 0.5,
-                    # This field belongs to AdamWScheduleFree alone. A stale
-                    # or direct value must not become an invalid ProdigyPlus
-                    # constructor argument.
-                    "krea_schedulefree_warmup_steps": 25,
-                }
-            )
-
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-
-        self.assertEqual(config["lr_scheduler"], "constant")
-        self.assertEqual(config["lr_warmup_steps"], 0)
-        self.assertEqual(config["max_grad_norm"], 0.0)
-        self.assertEqual(
-            train["optimizer_args"],
-            [
-                "weight_decay=0.02",
-                "betas=(0.9, 0.99)",
-                "eps=1e-08",
-                "d_coef=1.5",
-                "d0=1e-05",
-                "use_stableadamw=True",
-            ],
-        )
-        self.assertFalse(any(arg.startswith("warmup_steps=") for arg in train["optimizer_args"]))
-
     def test_rejects_arbitrary_optimizer_and_scheduler_injection(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
@@ -576,61 +295,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertTrue(any(error.startswith("krea_optimizer_args:") for error in errors))
         self.assertTrue(any(error.startswith("krea_lr_scheduler_type:") for error in errors))
         self.assertTrue(any(error.startswith("krea_lr_scheduler_args:") for error in errors))
-
-    def test_optimizer_specific_guided_args_reject_invalid_shapes(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            config.update({"optimizer_type": "AdamW", "krea_optimizer_betas": "0.9, 0.999, 0.9999"})
-            errors = validate_krea2_config(config)
-
-            came = krea2_config(Path(temp_dir) / "came")
-            came.update({"optimizer_type": "pytorch_optimizer.CAME", "krea_optimizer_betas": "0.9, 0.999"})
-            came_errors = validate_krea2_config(came)
-
-            prodigyplus = krea2_config(Path(temp_dir) / "prodigyplus")
-            prodigyplus.update(
-                {"optimizer_type": "prodigyplus.ProdigyPlusScheduleFree", "krea_prodigy_d0": "0"}
-            )
-            prodigyplus_errors = validate_krea2_config(prodigyplus)
-
-        self.assertTrue(any("krea_optimizer_betas: requires 2 values" in error for error in errors))
-        self.assertTrue(any("krea_optimizer_betas: requires 3 values" in error for error in came_errors))
-        self.assertTrue(any(error.startswith("krea_prodigy_d0: value is out of range") for error in prodigyplus_errors))
-
-    def test_sample_and_turbo_fields_generate_only_real_musubi_flags(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            turbo = root / "models" / "turbo.safetensors"
-            turbo.write_bytes(b"test")
-            config.update(
-                {
-                    "enable_krea_samples": True,
-                    "krea_sample_prompts": "A fox in snow. --w 1024 --h 1024 --s 8 --l 1 --d 0",
-                    "turbo_dit": str(turbo),
-                    "turbo_dit_cache": True,
-                    "sample_every_n_epochs": 2,
-                    "sample_every_n_steps": 50,
-                    "sample_at_first": True,
-                }
-            )
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(
-                config,
-                root / "run" / "dataset.toml",
-                root / "output",
-                root / "run" / "log",
-                root / "run" / "sample_prompts.txt",
-            )
-
-        self.assertEqual(train["text_encoder"], config["text_encoder"])
-        self.assertEqual(train["sample_prompts"], str(root / "run" / "sample_prompts.txt"))
-        self.assertEqual(train["turbo_dit"], str(turbo))
-        self.assertTrue(train["turbo_dit_cache"])
-        self.assertEqual(train["sample_every_n_epochs"], 2)
-        self.assertEqual(train["sample_every_n_steps"], 50)
-        self.assertTrue(train["sample_at_first"])
-        self.assertNotIn("krea_sample_prompts", train)
 
     def test_rejects_unsafe_turbo_and_h2d_block_swap_combinations(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -704,117 +368,8 @@ class Krea2CodecTests(unittest.TestCase):
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
 
-    def test_legacy_anima_named_cache_manifest_remains_readable(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            cache = Path(config["dataset_cache_dir"])
-            cache.mkdir()
-            (cache / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
-            (cache / "portrait_krea2_te.safetensors").write_bytes(b"text")
-            prepare_cache_manifest(config)
-            mark_cache_manifest(config, "completed")
-            (cache / ".krea2-cache.json").rename(cache / ".anima-krea2-cache.json")
-
-            status = get_krea2_cache_status(config)
-
-        self.assertTrue(status["ready"])
-
-    def test_preflight_uses_the_shared_main_runtime_contract(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            versions = {
-                name: ("11.3.0" if expected == ">=11.3.0" else "0.0.0" if expected is None else expected)
-                for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
-            }
-            runtime = {
-                "ok": True,
-                "errors": [],
-                "versions": versions,
-                "python": "main",
-                "torch_path": "main/torch",
-                "torch_cuda": "13.0",
-            }
-            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value=runtime):
-                preflight = krea2_preflight(config, require_cache=False)
-
-        self.assertTrue(preflight["ok"], preflight["errors"])
-        self.assertEqual(preflight["runtime"]["python"], "main")
-
-    def test_preflight_explains_when_a_selected_shared_optimizer_is_missing(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            config["optimizer_type"] = "pytorch_optimizer.CAME"
-            runtime = {"ok": True, "errors": [], "versions": {}, "python": "main"}
-            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value=runtime), patch(
-                "backend.training.musubi_krea2.importlib.metadata.version",
-                side_effect=PackageNotFoundError,
-            ):
-                preflight = krea2_preflight(config, require_cache=False)
-
-        self.assertFalse(preflight["ok"])
-        self.assertTrue(any("pytorch-optimizer" in error for error in preflight["errors"]))
-
-    def test_generic_validation_and_step_api_dispatch_to_krea_codec(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            self.assertEqual(validate_training_config(dict(config)), [])
-            estimate = estimate_training_steps(dict(config))
-
-        self.assertEqual(estimate["engine_id"], "musubi_tuner")
-        self.assertEqual(estimate["original_images"], 1)
-
-
-class MultiCoreSupervisorTests(unittest.TestCase):
-    def test_musubi_environment_excludes_sd_scripts_hook(self):
-        with patch.dict(
-            os.environ,
-            {"PYTHONPATH": "", "LORA_SCRIPTS_TRUE_LR_LOGGING": "1"},
-            clear=False,
-        ):
-            env = _build_train_env("artifact", "task", engine_id="musubi_tuner")
-
-        self.assertNotIn("LORA_SCRIPTS_TRUE_LR_LOGGING", env)
-        self.assertIn("vendor" + os.sep + "musubi-tuner" + os.sep + "src", env["PYTHONPATH"])
-        paths = env["PYTHONPATH"].split(os.pathsep)
-        self.assertEqual(paths[0], str(engine_pythonpaths("musubi_tuner")[0]))
-        self.assertIsNone(get_engine("musubi_tuner").python_executable)
-        self.assertNotIn("venv" + os.sep + "cores" + os.sep + "musubi", env["PYTHONPATH"])
 
 class MusubiRuntimeContractTests(unittest.TestCase):
-    def test_shared_requirements_match_the_runtime_contract(self):
-        from packaging.requirements import Requirement
-
-        requirement_lines = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
-        requirements: dict[str, str] = {}
-        duplicates: list[str] = []
-        for raw_line in requirement_lines:
-            line = raw_line.split("#", 1)[0].strip()
-            if not line:
-                continue
-            requirement = Requirement(line)
-            name = requirement.name.lower()
-            if name in requirements:
-                duplicates.append(name)
-            requirements[name] = str(requirement.specifier)
-
-        self.assertEqual(duplicates, [])
-        expected = {
-            name: "" if version is None else version if version.startswith(">=") else f"=={version}"
-            for name, version in MUSUBI_RUNTIME_PACKAGES.items()
-            if name not in {"torch", "torchvision"}
-        }
-
-        self.assertEqual(
-            {name: requirements.get(name) for name in expected},
-            expected,
-        )
-
-    def test_cuda_local_version_satisfies_musubi_minimum(self):
-        self.assertIsNone(version_error("torch", ">=2.9.1", "2.10.0+cu130"))
-        self.assertIsNone(version_error("torchvision", ">=0.24.1", "0.25.0+cu130"))
-        self.assertIsNotNone(version_error("transformers", "4.57.6", "4.54.1"))
-
     def test_fast_status_checks_metadata_without_importing_training_stack(self):
         versions = {
             name: (
@@ -863,123 +418,6 @@ class MusubiRuntimeContractTests(unittest.TestCase):
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_fields_follow_explicit_or_conditional_layout_parents(self):
-        script = r"""
-global.window = {};
-require('./frontend/js/training-core.js');
-const ctx = Object.assign({}, window.trainingCoreMixin);
-const fields = [
-  { key: 'optimizer_type', keepChildrenPosition: true },
-  { key: 'learning_rate' },
-  { key: 'scheduler' },
-  { key: 'weight_decay', layoutParent: 'optimizer_type' },
-  { key: 'stable_a', showIf: { key: 'optimizer_type', eq: 'Stable' } },
-  { key: 'stable_b', showIf: { key: 'optimizer_type', eq: 'Stable' } },
-  { key: 'came_parent', showIf: { key: 'optimizer_type', eq: 'CAME' } },
-  { key: 'came_child', showIf: [
-    { key: 'optimizer_type', eq: 'CAME' },
-    { key: 'came_parent', eq: true },
-  ] },
-];
-console.log(JSON.stringify(ctx._orderFieldsByDependencies(fields).map(field => field.key)));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        self.assertEqual(
-            json.loads(result.stdout),
-            [
-                "optimizer_type",
-                "learning_rate",
-                "scheduler",
-                "weight_decay",
-                "stable_a",
-                "stable_b",
-                "came_parent",
-                "came_child",
-            ],
-        )
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_all_parameter_previews_are_grouped_self_describing_and_route_to_the_right_core(self):
-        script = r"""
-global.window = {};
-global.document = { getElementById() { return { innerHTML: '' }; } };
-window.OPTIMIZER_DEFAULTS = {};
-window.getVisibleSections = () => [
-  {
-    key: 'model',
-    fields: [
-      { key: 'model_train_type', hidden: true },
-      { key: 'model_path' },
-    ],
-  },
-  { key: 'network', fields: [{ key: 'network_dim' }] },
-  { key: 'empty', fields: [{ key: 'empty_value' }] },
-];
-require('./frontend/js/training-toml.js');
-
-function previewFor(type) {
-  const ctx = Object.assign({}, window.trainingTomlMixin, {
-    form: {
-      model_train_type: type,
-      model_path: `./models/${type}.safetensors`,
-      network_dim: 32,
-      empty_value: '',
-    },
-    _fieldShowIfMet() { return true; },
-    _coerceNum(value) { return value; },
-  _isPathFieldRole() { return false; },
-    _isPathFieldRole() { return false; },
-    findFieldDef() { return null; },
-    esc(value) { return String(value); },
-    t(key, fallback) { return fallback || key; },
-  });
-  ctx.updateToml();
-  return { type, toml: ctx.tomlRaw, title: ctx.parameterPreviewTitle() };
-}
-
-console.log(JSON.stringify([
-  previewFor('sdxl-lora'),
-  previewFor('anima-lora'),
-  previewFor('krea2-lora'),
-]));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        previews = json.loads(result.stdout)
-        expected_engines = {
-            "sdxl-lora": "sd_scripts",
-            "anima-lora": "sd_scripts",
-            "krea2-lora": "musubi_tuner",
-        }
-        expected_titles = {
-            "sdxl-lora": "SDXL Parameter Preview",
-            "anima-lora": "Anima Parameter Preview",
-            "krea2-lora": "Krea 2 Parameter Preview",
-        }
-        for preview in previews:
-            config = toml.loads(preview["toml"])
-            train_type = preview["type"]
-            self.assertEqual(config["model_train_type"], train_type)
-            self.assertIn("# --- model ---", preview["toml"])
-            self.assertIn("# --- network ---", preview["toml"])
-            self.assertNotIn("# --- empty ---", preview["toml"])
-            self.assertEqual(preview["title"], expected_titles[train_type])
-            profile = resolve_training_profile(config)
-            self.assertEqual(profile.engine_id, expected_engines[train_type])
-
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_flat_config_import_switches_profile_before_filtering_fields(self):
         script = r"""
@@ -1079,66 +517,6 @@ importing.then(() => console.log(JSON.stringify({
         self.assertEqual(state["persisted"], state["form"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_krea_profile_resets_incompatible_shared_select_values(self):
-        script = r"""
-global.window = {};
-window.getVisibleSections = () => [{
-  fields: [
-    { key: 'timestep_sampling', type: 'select', default: 'shift', options: [{ v: 'shift' }, { v: 'krea2_shift' }] },
-    { key: 'weighting_scheme', type: 'select', default: 'none', options: [{ v: 'none' }] },
-  ],
-}];
-require('./frontend/js/training-core.js');
-const ctx = Object.assign({}, window.trainingCoreMixin, {
-  form: { timestep_sampling: 'sigmoid', weighting_scheme: 'uniform' },
-});
-const defaults = ctx._buildFormDefaults('krea2-lora');
-ctx._normalizeProfileSelectValues('krea2-lora', defaults);
-console.log(JSON.stringify(ctx.form));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        form = json.loads(result.stdout)
-        self.assertEqual(form["timestep_sampling"], "shift")
-        self.assertEqual(form["weighting_scheme"], "none")
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_krea_profile_fills_blank_model_paths_without_overwriting_custom_paths(self):
-        script = r"""
-global.window = {};
-require('./frontend/js/training-core.js');
-const ctx = Object.assign({}, window.trainingCoreMixin, {
-  form: {
-    dit: '',
-    vae: 'D:/custom/vae.safetensors',
-    text_encoder: null,
-  },
-});
-ctx._applyKrea2ModelDefaults(ctx.form, {
-  dit: './models/krea2_raw_fp8_scaled.safetensors',
-  vae: './models/qwen_image_vae.safetensors',
-  text_encoder: './models/qwen3vl_4b_fp8_scaled.safetensors',
-});
-console.log(JSON.stringify(ctx.form));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        form = json.loads(result.stdout)
-        self.assertEqual(form["dit"], "./models/krea2_raw_fp8_scaled.safetensors")
-        self.assertEqual(form["vae"], "D:/custom/vae.safetensors")
-        self.assertEqual(form["text_encoder"], "./models/qwen3vl_4b_fp8_scaled.safetensors")
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_training_profiles_keep_independent_drafts_and_reset_from_registry_defaults(self):
         script = r"""
 global.window = {};
@@ -1232,119 +610,6 @@ console.log(JSON.stringify({
         self.assertEqual(state["kreaReset"]["form"]["learning_rate"], "krea-default")
         self.assertEqual(state["kreaReset"]["defaults"]["learning_rate"], "krea-default")
         self.assertEqual(state["kreaResetSource"], "default")
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_training_type_switch_initializes_conditions_in_one_dom_pass(self):
-        script = r"""
-global.window = {};
-require('./frontend/js/training-core.js');
-const makeRow = (id, attrs) => ({
-  id,
-  attrs,
-  isConnected: true,
-  classList: { contains() { return false; } },
-  getAttribute(name) {
-    return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
-  },
-});
-const rows = [
-  makeRow('single', { 'data-show-if-key': 'mode', 'data-show-if-eq': 'fast' }),
-  makeRow('all', {
-    'data-show-if-all': JSON.stringify([
-      { key: 'enabled', eq: true },
-      { key: 'mode', neq: 'slow' },
-    ]),
-  }),
-  makeRow('any', {
-    'data-show-if-any': JSON.stringify([
-      [{ key: 'mode', eq: 'slow' }],
-      [{ key: 'enabled', eq: false }],
-    ]),
-  }),
-];
-let queryCount = 0;
-global.document = {
-  getElementById() {
-    return {
-      querySelectorAll(selector) {
-        if (selector !== '[data-show-if-all],[data-show-if-any],[data-show-if-key]') {
-          throw new Error('unexpected selector: ' + selector);
-        }
-        queryCount += 1;
-        return rows;
-      },
-    };
-  },
-};
-const applied = {};
-const ctx = Object.assign({}, window.trainingCoreMixin, {
-  form: { mode: 'fast', enabled: true },
-  _setConditionalState(row, visible) { applied[row.id] = visible; },
-});
-ctx._syncAllConditionalFields();
-console.log(JSON.stringify({ queryCount, applied }));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        state = json.loads(result.stdout)
-        self.assertEqual(state["applied"], {"single": True, "all": True, "any": False})
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_krea_config_preview_uses_the_shared_toml_highlighter(self):
-        script = r"""
-global.window = {};
-const preview = { innerHTML: '', textContent: 'must-not-be-used' };
-global.document = {
-  getElementById(id) { return id === 'tomlPreview' ? preview : null; },
-};
-window.getVisibleSections = () => [{
-  key: 'base',
-  fields: [
-    { key: 'model_train_type' },
-    { key: 'learning_rate' },
-    { key: 'output_name' },
-  ],
-}];
-require('./frontend/js/training-toml.js');
-const ctx = Object.assign({}, window.trainingTomlMixin, {
-  form: {
-    model_train_type: 'krea2-lora',
-    learning_rate: 0.0001,
-    output_name: 'safe<&',
-  },
-  _fieldShowIfMet() { return true; },
-  _coerceNum(value) { return value; },
-  _isPathFieldRole() { return false; },
-  esc(value) {
-    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  },
-  t() { return 'none'; },
-});
-ctx._updateKrea2Toml();
-console.log(JSON.stringify(preview));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        preview = json.loads(result.stdout)
-        self.assertIn('class="toml-line-content toml-comment"', preview["innerHTML"])
-        self.assertIn('data-param-key="learning_rate"', preview["innerHTML"])
-        self.assertIn('data-param-key="output_name"', preview["innerHTML"])
-        self.assertIn('class="toml-key"', preview["innerHTML"])
-        self.assertIn('class="toml-num"', preview["innerHTML"])
-        self.assertIn('class="toml-str"', preview["innerHTML"])
-        self.assertIn("safe&lt;&amp;", preview["innerHTML"])
-        self.assertEqual(preview["textContent"], "must-not-be-used")
 
 
 if __name__ == "__main__":

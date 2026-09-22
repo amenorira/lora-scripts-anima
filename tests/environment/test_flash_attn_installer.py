@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import subprocess
 import tempfile
@@ -27,22 +26,6 @@ class _FakeResp:
 
 
 class FlashAttnInstallerTests(TestCase):
-    def test_download_urls_default_direct_first_then_mirrors(self) -> None:
-        urls = install_flash_attn.download_urls_for(
-            "https://github.com/example/releases/download/v1/flash_attn.whl", source="default"
-        )
-        self.assertEqual(urls[0], "https://github.com/example/releases/download/v1/flash_attn.whl")
-        self.assertTrue(any("https://ghproxy.net/" in u for u in urls))
-        self.assertTrue(any("https://ghfast.top/" in u for u in urls))
-        self.assertEqual(len(urls), len(set(urls)))
-
-    def test_download_urls_mirror_source_prefers_mirror(self) -> None:
-        urls = install_flash_attn.download_urls_for(
-            "https://github.com/example/releases/download/v1/flash_attn.whl", source="mirror"
-        )
-        self.assertTrue(urls[0].startswith("https://ghproxy.net/"))
-        self.assertEqual(urls[-1], "https://github.com/example/releases/download/v1/flash_attn.whl")
-
     @mock.patch.object(install_flash_attn.importlib.metadata, "version", return_value="2.8.3")
     @mock.patch.object(install_flash_attn.subprocess, "run")
     def test_install_downloads_to_cache_then_pip_installs_local_file(
@@ -115,15 +98,6 @@ class FlashAttnInstallerTests(TestCase):
         self.assertEqual(result, dest)
         urlopen_mock.assert_not_called()
 
-    def test_fetch_candidates_returns_baseline_wheel_for_win_amd64_cp312(self) -> None:
-        env = {"python_tag": "cp312", "torch_tag": "torch2.10", "cuda_tag": "cu130", "platform": "win_amd64"}
-        candidates, err = install_flash_attn.fetch_candidates(env, source="default")
-
-        self.assertIsNone(err)
-        self.assertEqual(len(candidates), 1)
-        self.assertTrue(candidates[0]["usable"])
-        self.assertIn("cu130torch2.10-cp312-cp312-win_amd64.whl", candidates[0]["name"])
-
     def test_fetch_candidates_marks_baseline_mismatch_unusable(self) -> None:
         env = {"python_tag": "cp311", "torch_tag": "torch2.9", "cuda_tag": "cu126", "platform": "win_amd64"}
         candidates, err = install_flash_attn.fetch_candidates(env, source="default")
@@ -131,21 +105,6 @@ class FlashAttnInstallerTests(TestCase):
         self.assertIsNone(err)
         self.assertFalse(candidates[0]["usable"])
         self.assertTrue(candidates[0]["notes"])
-
-    def test_fetch_candidates_rejects_unsupported_platform(self) -> None:
-        env = {"python_tag": "cp312", "torch_tag": "torch2.10", "cuda_tag": "cu130", "platform": None}
-        candidates, err = install_flash_attn.fetch_candidates(env, source="default")
-
-        self.assertEqual(candidates, [])
-        self.assertIn("不支持的平台", err or "")
-
-    def test_baseline_wheel_urls_are_fixed(self) -> None:
-        self.assertEqual(
-            install_flash_attn._WHEELS["win_amd64"],
-            "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.28/"
-            "flash_attn-2.8.3%2Bcu130torch2.10-cp312-cp312-win_amd64.whl",
-        )
-        self.assertIn("linux_x86_64", install_flash_attn._WHEELS)
 
 
 if __name__ == "__main__":

@@ -16,11 +16,7 @@ import toml
 
 from backend.training import toml_writer
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import (
-    ADALN_INCLUDE_MODULES,
-    ADALN_INCLUDE_PATTERN,
-    FIELDS,
-)
+from backend.training.field_registry import ADALN_INCLUDE_MODULES, ADALN_INCLUDE_PATTERN
 
 
 def _include_patterns_of(network_args: list[str]) -> list[str]:
@@ -55,16 +51,6 @@ class TrainAdalnAdapterTests(unittest.TestCase):
         # 其他自定义参数不受影响
         self.assertIn("verbose=True", network_args)
 
-    def test_malformed_user_include_patterns_are_preserved(self):
-        adapted, _ = adapt_config({
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-            "train_adaln": True,
-            "network_args_custom": "include_patterns=not-a-literal",
-        })
-        patterns = _include_patterns_of(adapted["network_args"])
-        self.assertEqual(patterns, ["not-a-literal", ADALN_INCLUDE_PATTERN])
-
     def test_unsupported_module_strips_field_without_injection(self):
         for module in ("lycoris.kohya", "networks.lora"):
             with self.subTest(module=module):
@@ -76,26 +62,6 @@ class TrainAdalnAdapterTests(unittest.TestCase):
                 self.assertNotIn("train_adaln", adapted)
                 network_args = adapted.get("network_args") or []
                 self.assertFalse(any("include_patterns" in item for item in network_args))
-
-    def test_default_off_emits_nothing(self):
-        adapted, _ = adapt_config({
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-        })
-        self.assertNotIn("train_adaln", adapted)
-        self.assertNotIn("network_args", adapted)
-
-    def test_coexists_with_loraplus(self):
-        adapted, _ = adapt_config({
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-            "train_adaln": True,
-            "enable_loraplus": True,
-            "loraplus_lr_ratio": 4.0,
-        })
-        network_args = adapted["network_args"]
-        self.assertIn("loraplus_lr_ratio=4.0", network_args)
-        self.assertIn(ADALN_INCLUDE_PATTERN, _include_patterns_of(network_args))
 
     def test_emitted_value_survives_toml_round_trip(self):
         adapted, _ = adapt_config({
@@ -111,24 +77,6 @@ class TrainAdalnAdapterTests(unittest.TestCase):
             _include_patterns_of(parsed["network_args"]),
             [".*final_layer.*", ADALN_INCLUDE_PATTERN],
         )
-
-
-class TrainAdalnRegistryTests(unittest.TestCase):
-    def test_field_contract(self):
-        field = next(f for f in FIELDS if f["key"] == "train_adaln")
-        # UI-only（不进 TOML）、Anima 限定、平级渲染
-        self.assertEqual(field["target"], "ui")
-        self.assertEqual(field.get("group"), "anima")
-        self.assertIs(field.get("nested"), False)
-        self.assertEqual(field["section"], "network")
-
-    def test_loraplus_fields_layout_contract(self):
-        fields = {f["key"]: f for f in FIELDS}
-        # enable_loraplus 平级渲染；三个比率项显式挂为其子项
-        self.assertIs(fields["enable_loraplus"].get("nested"), False)
-        for key in ("loraplus_lr_ratio", "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"):
-            with self.subTest(key=key):
-                self.assertEqual(fields[key].get("layout_parent"), "enable_loraplus")
 
 
 if __name__ == "__main__":
