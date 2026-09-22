@@ -232,13 +232,13 @@ window.tagEditorMixin = {
   _teLoadAbort: null,
   _tePageAbort: null,
   _tePageEpoch: 0,
+  _teAllAbort: null,
   _tePageCache: null,
   _tePageFetchTimer: null,
   _teTimelineAbort: null,
   _teSaveEpoch: 0,
   _teEditVersions: null,
   _teCaptionRevisions: null,
-  _teActiveBatchTargets: null,
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -382,9 +382,9 @@ window.tagEditorMixin = {
   tagEditorCleanup() {
     this._teLoadEpoch++;
     if (this._teLoadAbort) { this._teLoadAbort.abort(); this._teLoadAbort = null; }
-    if (this._tePageAbort) { this._tePageAbort.abort(); this._tePageAbort = null; }
+    this._teCancelPageFetch();
+    if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
     if (this._teTimelineAbort) { this._teTimelineAbort.abort(); this._teTimelineAbort = null; }
-    if (this._tePageFetchTimer) { clearTimeout(this._tePageFetchTimer); this._tePageFetchTimer = null; }
     this._teCloseSession(this.tagEditorSessionId);
     this.tagEditorSessionId = '';
     this.tagEditorStopResize();
@@ -408,25 +408,35 @@ window.tagEditorMixin = {
     fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE', keepalive: true }).catch(function() {});
   },
 
-  _teSessionQuery(page) {
+  _teSessionQuery(page, useFilters = true) {
+    var filters = useFilters ? this : {};
     var params = new URLSearchParams();
     params.set('page', String(page || this.tagEditorPage || 1));
     params.set('page_size', String(Number(this.tagEditorPageSize) || 60));
-    params.set('search', this.tagEditorSearchQuery || '');
-    params.set('use_regex', this.tagEditorUseRegex ? 'true' : 'false');
-    params.set('quick_filter', this.tagEditorQuickFilter || 'all');
-    params.set('include_tags', (this.tagEditorTagSelection || []).join('\x1f'));
-    params.set('exclude_tags', (this.tagEditorExcludedTags || []).join('\x1f'));
-    params.set('tag_logic', this.tagEditorTagLogic || 'AND');
-    params.set('sort_by', this.tagEditorSortBy || 'name');
-    params.set('sort_asc', this.tagEditorSortAsc ? 'true' : 'false');
-    params.set('sort_by2', this.tagEditorSortBy2 || '');
-    params.set('sort_asc2', this.tagEditorSortAsc2 ? 'true' : 'false');
+    params.set('search', filters.tagEditorSearchQuery || '');
+    params.set('use_regex', filters.tagEditorUseRegex ? 'true' : 'false');
+    params.set('quick_filter', filters.tagEditorQuickFilter || 'all');
+    params.set('include_tags', (filters.tagEditorTagSelection || []).join('\x1f'));
+    params.set('exclude_tags', (filters.tagEditorExcludedTags || []).join('\x1f'));
+    params.set('tag_logic', filters.tagEditorTagLogic || 'AND');
+    params.set('sort_by', filters.tagEditorSortBy || 'name');
+    params.set('sort_asc', filters.tagEditorSortAsc === false ? 'false' : 'true');
+    params.set('sort_by2', filters.tagEditorSortBy2 || '');
+    params.set('sort_asc2', filters.tagEditorSortAsc2 === false ? 'false' : 'true');
     return params;
   },
 
-  _teSessionQueryKey(page) {
-    return String(page || this.tagEditorPage || 1) + '|' + this._teSessionQuery(page).toString();
+  _teSessionQueryKey(page, useFilters = true) {
+    return this._teSessionQuery(page, useFilters).toString();
+  },
+
+  _teCancelPageFetch() {
+    this._tePageEpoch++;
+    if (this._tePageAbort) this._tePageAbort.abort();
+    this._tePageAbort = null;
+    if (this._tePageFetchTimer) clearTimeout(this._tePageFetchTimer);
+    this._tePageFetchTimer = null;
+    this._teSearchLoading = false;
   },
 
   _teMergeSessionItems(items, reset) {
@@ -463,11 +473,16 @@ window.tagEditorMixin = {
     this.tagEditorSessionRevision = data.revision || this.tagEditorSessionRevision || '';
     this._teMergeSessionItems(data.items || [], !!reset);
     this._tdRequestChips();
-    if (this._tePageCache) this._tePageCache[this._teSessionQueryKey(this.tagEditorPage)] = this.tagEditorPageItems.slice();
+    if (this._tePageCache) {
+      this._tePageCache[this._teSessionQueryKey(this.tagEditorPage, !reset)] = { ...data, items: this.tagEditorPageItems.slice() };
+      var keys = Object.keys(this._tePageCache);
+      if (keys.length > 24) delete this._tePageCache[keys[0]];
+    }
     this._teInvalidateFilter();
   },
 
   async tagEditorFetchPage(page, options) {
+    this._teCancelPageFetch();
     if (!this.tagEditorSessionId) return;
     var targetPage = Math.max(1, Number(page || this.tagEditorPage || 1));
     if (this.tagEditorQuickFilter === 'modified') {
@@ -477,12 +492,10 @@ window.tagEditorMixin = {
     }
     var cacheKey = this._teSessionQueryKey(targetPage);
     if (!(options && options.force) && this._tePageCache && this._tePageCache[cacheKey]) {
-      this.tagEditorPage = targetPage;
-      this.tagEditorPageItems = this._tePageCache[cacheKey];
+      this._teApplySessionPage(this._tePageCache[cacheKey], false);
       return;
     }
-    var epoch = ++this._tePageEpoch;
-    if (this._tePageAbort) this._tePageAbort.abort();
+    var epoch = this._tePageEpoch;
     var controller = new AbortController();
     this._tePageAbort = controller;
     this._teSearchLoading = true;
@@ -497,7 +510,7 @@ window.tagEditorMixin = {
       }
       this._teApplySessionPage(payload.data || {}, false);
     } catch (e) {
-      if (!e || e.name !== 'AbortError') this.toast(this.t('common.networkError'), 'error');
+      if (epoch === this._tePageEpoch && !controller.signal.aborted && (!e || e.name !== 'AbortError')) this.toast(this.t('common.networkError'), 'error');
     } finally {
       if (epoch === this._tePageEpoch) {
         this._teSearchLoading = false;
@@ -507,6 +520,8 @@ window.tagEditorMixin = {
   },
 
   tagEditorSchedulePageFetch(resetPage) {
+    this._teCancelPageFetch();
+    if (this._teAllAbort) this._teAllAbort.abort();
     if (resetPage) this.tagEditorPage = 1;
     if (this.tagEditorQuickFilter === 'modified') {
       var modified = this._teGetModified();
@@ -517,7 +532,6 @@ window.tagEditorMixin = {
       this.tagEditorPageItems = modified.slice(start, start + size);
       return;
     }
-    if (this._tePageFetchTimer) clearTimeout(this._tePageFetchTimer);
     var self = this;
     this._tePageFetchTimer = setTimeout(function() {
       self._tePageFetchTimer = null;
@@ -559,7 +573,8 @@ window.tagEditorMixin = {
     }
     var epoch = ++this._teLoadEpoch;
     if (this._teLoadAbort) this._teLoadAbort.abort();
-    if (this._tePageAbort) { this._tePageAbort.abort(); this._tePageAbort = null; }
+    this._teCancelPageFetch();
+    if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
     this._teCloseSession(this.tagEditorSessionId);
     this.tagEditorSessionId = '';
     var controller = new AbortController();
@@ -632,7 +647,10 @@ window.tagEditorMixin = {
         });
         this._teRecountModified();
         this.tagEditorModified = this._teModifiedCount > 0;
-        if (this.tagEditorPage !== Number(j.data.page || 1)) await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
+        if (this._teSessionQueryKey(this.tagEditorPage) !== this._teSessionQueryKey(Number(j.data.page || 1), false)) {
+          await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
+        }
+        if (epoch !== this._teLoadEpoch || controller.signal.aborted) return;
         this.tagEditorLoadSnapshots(epoch);
         this._teCheckDraft();
         this._teStartAutoSave();
@@ -1160,7 +1178,7 @@ window.tagEditorMixin = {
         var affected = 0;
         var images;
         try { images = await self._teEnsureAllImagesLoaded(); }
-        catch (e) { self.toast(e.message || self.t('common.networkError'), 'error'); return; }
+        catch (e) { if (e.name !== 'AbortError') self.toast(e.message || self.t('common.networkError'), 'error'); return; }
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
           if (tags.indexOf(tag) === -1) {
@@ -1184,7 +1202,7 @@ window.tagEditorMixin = {
         var affected = 0;
         var images;
         try { images = await self._teEnsureAllImagesLoaded(); }
-        catch (e) { self.toast(e.message || self.t('common.networkError'), 'error'); return; }
+        catch (e) { if (e.name !== 'AbortError') self.toast(e.message || self.t('common.networkError'), 'error'); return; }
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
           var idx = tags.indexOf(tag);
@@ -1352,37 +1370,61 @@ window.tagEditorMixin = {
   },
 
   async _teFetchAllSessionItems(useCurrentFilters) {
+    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teGetModified().slice();
     if (!this.tagEditorSessionId) return this.tagEditorGetFiltered().slice();
-    var base = useCurrentFilters ? this._teSessionQuery(1) : new URLSearchParams({
-      page: '1', page_size: '240', search: '', use_regex: 'false', quick_filter: 'all',
-      include_tags: '', exclude_tags: '', tag_logic: 'AND', sort_by: 'name', sort_asc: 'true',
-      sort_by2: '', sort_asc2: 'true'
-    });
+    if (this._teAllAbort) this._teAllAbort.abort();
+    var controller = new AbortController();
+    this._teAllAbort = controller;
+    var sessionId = this.tagEditorSessionId;
+    var epoch = this._teLoadEpoch;
+    var queryKey = this._teSessionQueryKey(1);
+    var assertCurrent = () => {
+      if (controller.signal.aborted || epoch !== this._teLoadEpoch || sessionId !== this.tagEditorSessionId ||
+          (useCurrentFilters && queryKey !== this._teSessionQueryKey(1))) {
+        var error = new Error('Dataset request cancelled');
+        error.name = 'AbortError';
+        throw error;
+      }
+    };
+    var base = this._teSessionQuery(1, useCurrentFilters);
     base.set('page_size', '240');
     var all = [];
     var totalPages = 1;
-    for (var page = 1; page <= totalPages; page++) {
-      base.set('page', String(page));
-      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + base.toString());
-      var payload = await response.json();
-      if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));
-      var data = payload.data || {};
-      totalPages = Number(data.total_pages || 1);
-      all = all.concat(data.items || []);
+    var generation;
+    try {
+      for (var page = 1; page <= totalPages; page++) {
+        assertCurrent();
+        base.set('page', String(page));
+        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), { signal: controller.signal });
+        var payload = await response.json();
+        assertCurrent();
+        if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));
+        var data = payload.data || {};
+        if (page === 1) generation = data.generation;
+        else if (generation !== data.generation) throw new Error(this.t('common.error'));
+        totalPages = Number(data.total_pages || 1);
+        for (var item of data.items || []) all.push(item);
+      }
+      var currentItems = this.tagEditorPageItems.slice();
+      this._teMergeSessionItems(all, false);
+      this.tagEditorPageItems = currentItems;
+      return all.map(function(item) { return this._teFindByPath(item.path); }, this).filter(Boolean);
+    } catch (error) {
+      assertCurrent();
+      throw error;
+    } finally {
+      if (this._teAllAbort === controller) this._teAllAbort = null;
     }
-    var currentItems = this.tagEditorPageItems.slice();
-    this._teMergeSessionItems(all, false);
-    this.tagEditorPageItems = currentItems;
-    return all.map(function(item) { return this._teFindByPath(item.path); }, this).filter(Boolean);
   },
 
   async _teEnsureAllImagesLoaded() {
+    var epoch = this._teLoadEpoch;
     if (this.tagEditorSessionId && this.tagEditorImages.length < this.tagEditorDatasetCount) {
       this._teSearchLoading = true;
       try {
         await this._teFetchAllSessionItems(false);
       } finally {
-        this._teSearchLoading = false;
+        if (epoch === this._teLoadEpoch && !this._teAllAbort && !this._tePageAbort) this._teSearchLoading = false;
       }
     }
     return this.tagEditorImages;
@@ -1472,6 +1514,7 @@ window.tagEditorMixin = {
 
   async tagEditorSelectFiltered() {
     this._teFlushAllPendingTextEdits();
+    var epoch = this._teLoadEpoch;
     try {
       this._teSearchLoading = true;
       var filtered = await this._teFetchAllSessionItems(true);
@@ -1480,9 +1523,9 @@ window.tagEditorMixin = {
       this._teCachedSelectedStats = null;
       this._updateEditorPanel();
     } catch (e) {
-      this.toast(e.message || this.t('common.networkError'), 'error');
+      if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error');
     } finally {
-      this._teSearchLoading = false;
+      if (epoch === this._teLoadEpoch && !this._teAllAbort && !this._tePageAbort) this._teSearchLoading = false;
     }
   },
 
@@ -2074,7 +2117,6 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetBatchTargets() {
-    if (this._teActiveBatchTargets) return this._teActiveBatchTargets;
     var selected = new Set(this.tagEditorSelected);
     return this.tagEditorImages.filter(function(img) { return selected.has(img.path); });
   },
@@ -2083,7 +2125,6 @@ window.tagEditorMixin = {
   tagEditorStartInlineEdit(tag, event) {
     event.stopPropagation();
     this.tagEditorInlineEdit = { oldTag: tag, newTag: tag };
-    var self = this;
     this.$nextTick(function() {
       var input = document.getElementById('te-inline-edit-input');
       if (input) { input.focus(); input.select(); }
@@ -2101,7 +2142,7 @@ window.tagEditorMixin = {
     var self = this;
     var images;
     try { images = await this._teEnsureAllImagesLoaded(); }
-    catch (e) { this.toast(e.message || this.t('common.networkError'), 'error'); return; }
+    catch (e) { if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error'); return; }
     var targets = images.filter(function(img) { return _teParseTags(img.tags).includes(oldTag); });
     if (!targets.length) { this.toast(this.t('tagEditor.inlineRenameNone'), 'warning'); return; }
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
@@ -2120,7 +2161,8 @@ window.tagEditorMixin = {
     this.tagEditorInlineEdit = null;
   },
 
-  _teConfirmBatchScope(action, cb, previewFn) {
+  _teConfirmBatchScope(action, transform, type, description, onDone) {
+    this._teFlushAllPendingTextEdits();
     var targets = this.tagEditorGetBatchTargets();
     var count = targets.length;
     if (count === 0) { this.toast(this.t('tagEditor.batchNoChanges'), 'warning'); return; }
@@ -2129,17 +2171,23 @@ window.tagEditorMixin = {
     var msg = this.t('tagEditor.confirmBatchDesc')
       .replace('{count}', count).replace('{operation}', actionLabel)
       .replace('{total}', totalCount);
-    // C1: 批量预览 —— 调用方提供 previewFn(targets) 返回影响摘要，附加到确认文案
-    if (previewFn) {
-      var preview = previewFn(targets);
-      if (!preview) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
-      msg += '\n' + preview;
-    }
+    // 预览与提交共享同一份结果，确认期间标注变化则拒绝过期操作。
+    var changes = targets.map(function(img) {
+      return { img: img, before: img.tags, after: transform(img.tags) };
+    }).filter(function(change) { return change.before !== change.after; });
+    if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
+    msg += '\n' + this.t('tagEditor.batchPreviewDiff').replace('{n}', changes.length) + ' · ' + description;
+    var epoch = this._teLoadEpoch;
     var self = this;
     this._teConfirmBatch(msg, function() {
-      self._teActiveBatchTargets = targets;
-      try { return cb(targets); }
-      finally { self._teActiveBatchTargets = null; }
+      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+        self.toast(self.t('tagEditor.batchStale'), 'warning');
+        return;
+      }
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      self._tePushHistory({ type: type, desc: description + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', changes.length), affected: changes.length });
+      onDone();
+      self.toast(self.t('tagEditor.batchDone'));
     });
   },
 
@@ -2170,34 +2218,21 @@ window.tagEditorMixin = {
     if (newTags.length === 0) return;
     var self = this;
     var pos = this.tagEditorBatchPos;
-    // C1: 预览 —— 计算真正会被修改的图数
-    var previewFn = function(targets) {
-      var affected = 0;
-      targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags);
-        var willChange = newTags.some(function(t) { return tags.indexOf(t) === -1; });
-        if (willChange) affected++;
+    this._teConfirmBatchScope('add', function(before) {
+      var tags = _teParseTags(before);
+      var existing = new Set(tags);
+      var changed = false;
+      newTags.forEach(function(t) {
+        if (existing.has(t)) return;
+        existing.add(t);
+        if (pos === 'front') tags.unshift(t);
+        else tags.push(t);
+        changed = true;
       });
-      return affected > 0 ? self.t('tagEditor.batchPreviewDiff').replace('{n}', affected) + ' · +' + newTags.join(', ') : null;
-    };
-    this._teConfirmBatchScope('add', function() {
-      var targets = self.tagEditorGetBatchTargets();
-      targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags);
-        var changed = false;
-        newTags.forEach(function(t) {
-          if (tags.indexOf(t) === -1) {
-            if (pos === 'front') tags.unshift(t);
-            else tags.push(t);
-            changed = true;
-          }
-        });
-        if (changed) self._teUpdateImageTags(img, tags.join(', '));
-      });
-      self._tePushHistory({ type: 'batchAdd', desc: '+ ' + newTags.join(', ') + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', targets.length), affected: targets.length });
+      return changed ? tags.join(', ') : before;
+    }, 'batchAdd', '+ ' + newTags.join(', '), function() {
       self.batchAddInput = '';
-      self.toast(self.t('tagEditor.batchDone'));
-    }, previewFn);
+    });
   },
 
   tagEditorBatchRemove() {
@@ -2206,55 +2241,30 @@ window.tagEditorMixin = {
     var rmTags = _teParseTags(val);
     if (rmTags.length === 0) return;
     var self = this;
-    var previewFn = function(targets) {
-      var affected = 0;
-      targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags);
-        var willChange = tags.some(function(t) { return rmTags.indexOf(t) !== -1; });
-        if (willChange) affected++;
-      });
-      return affected > 0 ? self.t('tagEditor.batchPreviewDiff').replace('{n}', affected) + ' · −' + rmTags.join(', ') : null;
-    };
-    this._teConfirmBatchScope('removeTag', function() {
-      var targets = self.tagEditorGetBatchTargets();
-      targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags);
-        var before = tags.length;
-        tags = tags.filter(function(t) { return rmTags.indexOf(t) === -1; });
-        if (tags.length !== before) self._teUpdateImageTags(img, tags.join(', '));
-      });
-      self._tePushHistory({ type: 'batchRemove', desc: '− ' + rmTags.join(', ') + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', targets.length), affected: targets.length });
+    var removed = new Set(rmTags);
+    this._teConfirmBatchScope('removeTag', function(before) {
+      var tags = _teParseTags(before);
+      var after = tags.filter(function(t) { return !removed.has(t); });
+      return tags.length !== after.length ? after.join(', ') : before;
+    }, 'batchRemove', '− ' + rmTags.join(', '), function() {
       self.batchRemoveInput = '';
-      self.toast(self.t('tagEditor.batchDone'));
-    }, previewFn);
+    });
   },
 
   tagEditorBatchReplace() {
     var oldTag = this.batchOldTag.trim();
     var newTag = this.batchNewTag.trim();
-    if (!oldTag || !newTag) return;
+    if (!oldTag || !newTag || oldTag === newTag) return;
     var self = this;
-    var previewFn = function(targets) {
-      var affected = 0;
-      targets.forEach(function(img) {
-        if (_teParseTags(img.tags).indexOf(oldTag) !== -1) affected++;
-      });
-      return affected > 0 ? self.t('tagEditor.batchPreviewDiff').replace('{n}', affected) + ' · ' + oldTag + ' → ' + newTag : null;
-    };
-    this._teConfirmBatchScope('replace', function() {
-      var targets = self.tagEditorGetBatchTargets();
-      targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags);
-        var idx = tags.indexOf(oldTag);
-        if (idx !== -1) {
-          tags[idx] = newTag;
-          self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
-        }
-      });
-      self._tePushHistory({ type: 'replace', desc: oldTag + ' → ' + newTag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', targets.length), affected: targets.length });
+    this._teConfirmBatchScope('replace', function(before) {
+      var tags = _teParseTags(before);
+      var idx = tags.indexOf(oldTag);
+      if (idx === -1) return before;
+      tags[idx] = newTag;
+      return self._teDedupTags(tags).join(', ');
+    }, 'replace', oldTag + ' → ' + newTag, function() {
       self.batchOldTag = ''; self.batchNewTag = '';
-      self.toast(self.t('tagEditor.batchDone'));
-    }, previewFn);
+    });
   },
 
   tagEditorGetSelectedStats() {
@@ -2290,11 +2300,11 @@ window.tagEditorMixin = {
   },
 
   _teDedupTags(tags) {
-    var seen = {};
+    var seen = new Set();
     return tags.filter(function(t) {
       var lower = t.trim().toLowerCase();
-      if (seen[lower]) return false;
-      seen[lower] = true;
+      if (seen.has(lower)) return false;
+      seen.add(lower);
       return true;
     });
   },

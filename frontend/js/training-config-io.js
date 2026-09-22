@@ -9,10 +9,6 @@ window.trainingConfigIoMixin = {
   confirmNotice: false,
   confirmSecondaryLabel: '',
   confirmSecondaryCallback: null,
-  confirmTitle: '',
-  confirmMessage: '',
-  confirmCallback: null,
-  confirmActionLabel: '',
   _trainingDocumentId: null,
 
   async downloadConfig() {

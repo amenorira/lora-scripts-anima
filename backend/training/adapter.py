@@ -23,6 +23,10 @@ from backend.training.field_registry import (
     FIELDS,
     LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
+    LYCORIS_COMMON_ARG_MAP,
+    LYCORIS_KOHYA_ONLY_ARG_MAP,
+    LYCORIS_KOHYA_SPECIFIC_ARG_MAP,
+    NATIVE_NETWORK_ARG_MAP,
     get_supported_fields,
     get_ui_only_fields,
     loraplus_applies,
@@ -50,38 +54,6 @@ _TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
-
-# ── LyCORIS 通用字段映射（conv_dim/conv_alpha/rank_dropout/module_dropout 三模块均支持；
-#    lokr_factor→factor 仅 LoKr 消费；use_tucker 仅 lora/loha/lokr 消费。按模块/algo 过滤见下方分支）───
-LYCORIS_COMMON_ARG_MAP: dict[str, str] = {
-    "conv_dim": "conv_dim",
-    "conv_alpha": "conv_alpha",
-    "lokr_factor": "factor",
-    "rank_dropout": "rank_dropout",
-    "module_dropout": "module_dropout",
-    "use_tucker": "use_tucker",
-}
-
-# ── 仅 lycoris.kohya 支持的字段 ──────────────────────────────
-LYCORIS_KOHYA_ONLY_ARG_MAP: dict[str, str] = {
-    "use_scalar": "use_scalar",
-    "decompose_both": "decompose_both",
-    "full_matrix": "full_matrix",
-    "train_norm": "train_norm",
-    "dropout": "dropout",
-}
-
-# ── lycoris.kohya 专有字段映射（算法选择器、子折叠高级参数等）──
-LYCORIS_KOHYA_SPECIFIC_ARG_MAP: dict[str, str] = {
-    "lycoris_algo": "algo",
-    "lycoris_preset": "preset",
-    "dora_wd": "dora_wd",
-    "bypass_mode": "bypass_mode",
-    "rs_lora": "rs_lora",
-    "unbalanced_factorization": "unbalanced_factorization",
-    "wd_on_output": "wd_on_output",
-    "train_llm_adapter": "train_llm_adapter",
-}
 
 # lycoris.kohya 模块下所有需从顶层 pop 掉的 UI 字段
 LYCORIS_KOHYA_UI_FIELDS = (
@@ -152,6 +124,17 @@ def _normalize_path(value: str) -> str:
     if isinstance(value, str) and "\\" in value:
         return value.replace("\\", "/")
     return value
+
+
+def _merge_network_fields(source: dict, network_args: list[str], arg_map: dict,
+                          excluded: set[str] | frozenset[str] = frozenset()) -> None:
+    """消费 UI 字段；不适用的字段也移除，避免泄漏到顶层 TOML。"""
+    for ui_field, arg_key in arg_map.items():
+        value = source.pop(ui_field, None)
+        if ui_field not in excluded and not _is_empty_value(value):
+            if isinstance(value, bool):
+                value = str(value).lower()
+            network_args.append(f"{arg_key}={value}")
 
 
 def _merge_custom_args(source: dict, custom_key: str, target_key: str) -> None:
@@ -290,7 +273,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
 
     返回 (adapted_config, warnings)
     """
-    source = {k: v for k, v in config.items()}  # 扁平结构，dict comprehension 浅拷贝即可
+    source = config.copy()
     # lr_scheduler_type 已从产品配置移除；旧预设残留也不再透传给 sd-scripts。
     source.pop("lr_scheduler_type", None)
     try:
@@ -368,44 +351,14 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     #   - networks.lora_anima：仅 rank_dropout/module_dropout（lora_anima.py:40-46）。
     #     不读 conv_dim/conv_alpha（create_modules 无 conv_lora_dim 分支，Linear 与 Conv2d 共用 lora_dim）。
     #   - networks.loha / networks.lokr：全支持（含 use_tucker；lokr 额外 factor）。
-    _NATIVE_LORA_ARG_MAP = {
-        "conv_dim": "conv_dim", "conv_alpha": "conv_alpha",
-        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
-    }
-    _NATIVE_LORA_ANIMA_ARG_MAP = {
-        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
-    }
-    _NATIVE_LOHA_ARG_MAP = {
-        "conv_dim": "conv_dim", "conv_alpha": "conv_alpha",
-        "rank_dropout": "rank_dropout", "module_dropout": "module_dropout",
-        "use_tucker": "use_tucker",
-    }
-    _NATIVE_LOKR_ARG_MAP = dict(LYCORIS_COMMON_ARG_MAP)  # 含 lokr_factor→factor
-    _NATIVE_MODULE_ARG_MAP = {
-        "networks.lora": _NATIVE_LORA_ARG_MAP,
-        "networks.lora_anima": _NATIVE_LORA_ANIMA_ARG_MAP,
-        "networks.loha": _NATIVE_LOHA_ARG_MAP,
-        "networks.lokr": _NATIVE_LOKR_ARG_MAP,
-    }
-    if source.get("network_module") in _NATIVE_MODULE_ARG_MAP:
-        arg_map = _NATIVE_MODULE_ARG_MAP[source["network_module"]]
+    if source.get("network_module") in NATIVE_NETWORK_ARG_MAP:
         network_args = list(source.get("network_args") or [])
-        for ui_field, arg_key in arg_map.items():
-            value = source.pop(ui_field, None)
-            if not _is_empty_value(value):
-                if isinstance(value, bool):
-                    value = str(value).lower()
-                network_args.append(f"{arg_key}={value}")
+        _merge_network_fields(source, network_args, NATIVE_NETWORK_ARG_MAP[source["network_module"]])
         if network_args:
             source["network_args"] = network_args
 
     # ── 4.5. lycoris.kohya 字段 → network_args（通用 + kohya特有 + kohya专有）───
     # 按 algo 过滤：避免传无效参数给忽略它的模块（与 field_registry show_if/show_if_any 对齐）。
-    _LYCORIS_ALGO_FACTOR_ONLY = {"lokr"}
-    _LYCORIS_ALGO_TUCKER_OK = {"lora", "loha", "lokr"}
-    _LYCORIS_ALGO_SCALAR_OK = {"lora", "loha", "lokr"}  # use_scalar
-    _LYCORIS_ALGO_RS_LORA_OK = {"lora", "loha", "lokr"}  # rs_lora
-    _LYCORIS_ALGO_DORA_OK = {"lora", "loha", "lokr"}
     if source.get("network_module") == "lycoris.kohya":
         algo = (source.get("lycoris_algo") or "lora").lower()
         dora_enabled = source.get("dora_wd") is True
@@ -433,57 +386,17 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 # 故用户手写与 scope 规则先并集合并为单条，再随预设文件落盘（见尾部）。
                 network_args = _merge_keyed_pattern_args(network_args, "exclude_name", excludes)
                 scope_excludes = _pop_keyed_arg_list(network_args, "exclude_name")
-        # lycoris.kohya 专有映射（algo、dora_wd 等）
-        for ui_field, arg_key in LYCORIS_KOHYA_SPECIFIC_ARG_MAP.items():
-            if ui_field == "train_llm_adapter" and source.get("model_train_type") != "anima-lora":
-                source.pop(ui_field, None)
-                continue
-            if ui_field == "rs_lora" and algo not in _LYCORIS_ALGO_RS_LORA_OK:
-                source.pop(ui_field, None)
-                continue
-            if ui_field == "dora_wd" and algo not in _LYCORIS_ALGO_DORA_OK:
-                source.pop(ui_field, None)
-                continue
-            if ui_field == "wd_on_output" and (
-                algo not in _LYCORIS_ALGO_DORA_OK or not dora_enabled
-            ):
-                source.pop(ui_field, None)
-                continue
-            if ui_field == "unbalanced_factorization" and algo != "lokr":
-                source.pop(ui_field, None)
-                continue
-            value = source.pop(ui_field, None)
-            if not _is_empty_value(value):
-                if isinstance(value, bool):
-                    value = str(value).lower()
-                network_args.append(f"{arg_key}={value}")
-        # 通用 LyCORIS 字段（conv_dim, rank_dropout 等，sd-scripts 原生也支持）
-        for ui_field, arg_key in LYCORIS_COMMON_ARG_MAP.items():
-            # algo 过滤：lokr_factor 仅 lokr；use_tucker 仅 lora/loha/lokr
-            if ui_field == "lokr_factor" and algo not in _LYCORIS_ALGO_FACTOR_ONLY:
-                source.pop(ui_field, None)  # 仍需 pop，避免泄漏到白名单透传
-                continue
-            if ui_field == "use_tucker" and algo not in _LYCORIS_ALGO_TUCKER_OK:
-                source.pop(ui_field, None)
-                continue
-            value = source.pop(ui_field, None)
-            if not _is_empty_value(value):
-                if isinstance(value, bool):
-                    value = str(value).lower()
-                network_args.append(f"{arg_key}={value}")
-        # 仅 lycoris.kohya 支持的高级字段（use_cp, decompose_both 等）
-        for ui_field, arg_key in LYCORIS_KOHYA_ONLY_ARG_MAP.items():
-            if ui_field == "use_scalar" and algo not in _LYCORIS_ALGO_SCALAR_OK:
-                source.pop(ui_field, None)
-                continue
-            if ui_field in {"decompose_both", "full_matrix"} and algo != "lokr":
-                source.pop(ui_field, None)
-                continue
-            value = source.pop(ui_field, None)
-            if not _is_empty_value(value):
-                if isinstance(value, bool):
-                    value = str(value).lower()
-                network_args.append(f"{arg_key}={value}")
+        excluded = set()
+        if algo != "lokr":
+            excluded.update({"lokr_factor", "unbalanced_factorization", "decompose_both", "full_matrix"})
+        if algo not in {"lora", "loha", "lokr"}:
+            excluded.update({"use_tucker", "use_scalar", "rs_lora", "dora_wd", "wd_on_output"})
+        if not dora_enabled:
+            excluded.add("wd_on_output")
+        if source.get("model_train_type") != "anima-lora":
+            excluded.add("train_llm_adapter")
+        for arg_map in (LYCORIS_KOHYA_SPECIFIC_ARG_MAP, LYCORIS_COMMON_ARG_MAP, LYCORIS_KOHYA_ONLY_ARG_MAP):
+            _merge_network_fields(source, network_args, arg_map, excluded)
         if scope_excludes:
             _set_key_value_arg(
                 network_args, "preset",

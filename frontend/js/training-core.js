@@ -2954,93 +2954,56 @@ window.trainingCoreMixin = {
     return h.join('');
   },
 
-  // 完整渲染后的快速初始化路径：每个条件节点只解析和求值一次，不播放动画，
-  // 不生成 TOML（调用方会在表单初始化完成后统一生成）。
-  _syncAllConditionalFields() {
+  // 初始化与字段变化共用条件解析，避免两条路径的显示规则漂移。
+  _visitConditionalRows(parentKey, visit) {
     const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
-    if (!containers.length) return;
-
     containers.flatMap(container => Array.from(container.querySelectorAll('[data-show-if-all],[data-show-if-any],[data-show-if-key]'))).forEach(row => {
-      let match = true;
+      let match;
       try {
+        let groups;
         const allAttr = row.getAttribute('data-show-if-all');
         const anyAttr = row.getAttribute('data-show-if-any');
         if (allAttr !== null) {
-          const conditions = JSON.parse(allAttr);
-          match = conditions.every(c => this._evalShowIfCond(c));
+          groups = [JSON.parse(allAttr)];
         } else if (anyAttr !== null) {
-          const groups = JSON.parse(anyAttr);
-          match = groups.some(group => group.every(c => this._evalShowIfCond(c)));
+          groups = JSON.parse(anyAttr);
         } else {
-          const parentKey = row.getAttribute('data-show-if-key');
-          const expectedVal = this.form[parentKey];
+          const condition = { key: row.getAttribute('data-show-if-key') };
           const eqVal = row.getAttribute('data-show-if-eq');
           const neqVal = row.getAttribute('data-show-if-neq');
-          const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
           if (eqVal !== null) {
-            match = String(expectedVal) === eqVal || orVals.includes(String(expectedVal));
+            condition.eq = eqVal;
+            condition.or = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
           } else if (neqVal !== null) {
-            match = String(expectedVal) !== neqVal
-              && expectedVal !== null && expectedVal !== undefined && expectedVal !== '';
+            condition.neq = neqVal;
           }
+          groups = [[condition]];
         }
+        if (parentKey !== null && !groups.some(group => group.some(c => c.key === parentKey))) return;
+        match = groups.some(group => group.every(c => this._evalShowIfCond(c)));
       } catch (e) {
-        // 保留渲染阶段已经计算出的状态，避免坏条件导致字段被错误隐藏。
+        if (parentKey !== null) return;
+        // 无效条件保留渲染阶段的状态。
         match = !row.classList.contains('field-hidden');
       }
+      visit(row, match);
+    });
+  },
+
+  // 初始化只同步状态；动画与 TOML 生成由调用方控制。
+  _syncAllConditionalFields() {
+    this._visitConditionalRows(null, (row, match) => {
       row._conditionalTargetVisible = match;
       this._setConditionalState(row, match);
     });
-
   },
 
   showConditionalFields(parentKey) {
-    const containers = [document.getElementById('trainFormContent'), document.getElementById('lycorisConfigContent')].filter(Boolean);
-    if (!containers.length) { this.updateToml(); return; }
-    const expectedVal = this.form[parentKey];
     const toAnimate = [];
-    // Handle multi-condition show_if (data-show-if-all)
-    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-all]`))).forEach(row => {
-      try {
-        const conditions = JSON.parse(row.getAttribute('data-show-if-all'));
-        // Only re-evaluate if this parentKey is relevant to these conditions
-        if (!conditions.some(c => c.key === parentKey)) return;
-        const match = conditions.every(c => this._evalShowIfCond(c));
-        this._toggleFieldRow(row, match, toAnimate);
-      } catch (e) { /* ignore parse errors */ }
-    });
-
-    // Handle OR-of-ANDs show_if (data-show-if-any)
-    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-any]`))).forEach(row => {
-      try {
-        const groups = JSON.parse(row.getAttribute('data-show-if-any'));
-        // Only re-evaluate if this parentKey appears in any AND group
-        if (!groups.some(group => group.some(c => c.key === parentKey))) return;
-        const match = groups.some(group => group.every(c => this._evalShowIfCond(c)));
-        this._toggleFieldRow(row, match, toAnimate);
-      } catch (e) { /* ignore parse errors */ }
-    });
-
-    // Handle single-condition show_if (data-show-if-key) — existing logic
-    containers.flatMap(container => Array.from(container.querySelectorAll(`[data-show-if-key="${parentKey}"]`))).forEach(row => {
-      const eqVal = row.getAttribute('data-show-if-eq');
-      const neqVal = row.getAttribute('data-show-if-neq');
-      const orVals = (row.getAttribute('data-show-if-or') || '').split(',').filter(Boolean);
-      let match = false;
-      if (eqVal !== null) {
-        match = String(expectedVal) === eqVal;
-        if (!match && orVals.length > 0) {
-          match = orVals.indexOf(String(expectedVal)) !== -1;
-        }
-      } else if (neqVal !== null) {
-        match = String(expectedVal) !== neqVal && String(expectedVal) !== 'null' && String(expectedVal) !== 'undefined' && String(expectedVal) !== '';
-      }
-
+    this._visitConditionalRows(parentKey, (row, match) => {
       this._toggleFieldRow(row, match, toAnimate);
     });
-
-    if (toAnimate.length === 0) { this.updateToml(); return; }
-    this._queueConditionalMotion(toAnimate);
+    if (toAnimate.length) this._queueConditionalMotion(toAnimate);
     this.updateToml();
   },
 

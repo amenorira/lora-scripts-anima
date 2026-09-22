@@ -6,7 +6,8 @@ import re
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from backend.tageditor.core import get_cached_scan_dataset, resolve_dir, tag_list
@@ -24,6 +25,7 @@ class DatasetSession:
     tags: tuple[dict, ...]
     created_at: float
     accessed_at: float
+    queries: OrderedDict = field(default_factory=OrderedDict, compare=False, repr=False)
 
 
 def _dataset_revision(images: tuple[dict, ...]) -> str:
@@ -69,9 +71,10 @@ class DatasetSessionService:
     def get(self, session_id: str) -> DatasetSession:
         with self._lock:
             session = self._sessions.get(session_id)
-            if session is None:
+            if session is None or time.time() - session.accessed_at > self.ttl_seconds:
+                self._sessions.pop(session_id, None)
                 raise KeyError(session_id)
-            refreshed = DatasetSession(**{**session.__dict__, "accessed_at": time.time()})
+            refreshed = replace(session, accessed_at=time.time())
             self._sessions[session_id] = refreshed
             return refreshed
 
@@ -95,6 +98,11 @@ class DatasetSessionService:
             accessed_at=now,
         )
         with self._lock:
+            current = self._sessions.get(session_id)
+            if current is None:
+                raise KeyError(session_id)
+            if current.generation != old.generation:
+                return current
             self._sessions[session_id] = refreshed
         return refreshed
 
@@ -115,6 +123,51 @@ class DatasetSessionService:
              tag_logic: str = "AND", sort_by: str = "name", sort_asc: bool = True,
              sort_by2: str = "", sort_asc2: bool = True) -> dict:
         session = self.get(session_id)
+        query = (search, use_regex, quick_filter, tuple(include_tags), tuple(exclude_tags),
+                 tag_logic, sort_by, sort_asc, sort_by2, sort_asc2)
+        with self._lock:
+            items = session.queries.get(query)
+            if items is not None:
+                session.queries.move_to_end(query)
+        if items is None:
+            items = self._filter_images(session, *query)
+            with self._lock:
+                session.queries[query] = items
+                session.queries.move_to_end(query)
+                while len(session.queries) > 4:
+                    session.queries.popitem(last=False)
+        total = len(items)
+        page_size = max(30, min(page_size, 240))
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * page_size
+        page_items = []
+        for item in items[start:start + page_size]:
+            payload = dict(item)
+            rel_path = str(payload.get("rel_path", payload.get("name", ""))).replace("\\", "/")
+            version = str(payload.get("modified_ns", ""))
+            payload["thumbnail"] = build_image_preview_url(
+                scope="dataset", session_id=session_id, path=rel_path,
+                variant="thumb", size=320, version=version,
+            )
+            payload["preview"] = build_image_preview_url(
+                scope="dataset", session_id=session_id, path=rel_path,
+                variant="preview", size=960, version=version,
+            )
+            page_items.append(payload)
+        return {
+            "items": page_items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "generation": session.generation,
+            "revision": session.revision,
+        }
+
+    @staticmethod
+    def _filter_images(session, search, use_regex, quick_filter, include_tags,
+                       exclude_tags, tag_logic, sort_by, sort_asc, sort_by2, sort_asc2):
         items = list(session.images)
         if quick_filter == "notag":
             items = [item for item in items if not str(item.get("tags", "")).strip()]
@@ -147,37 +200,12 @@ class DatasetSessionService:
                 return int(item.get("modified_ns", 0))
             return str(item.get("rel_path", item.get("name", ""))).lower()
 
+        # 稳定排序：唯一路径只作为最后的平局规则，不能覆盖二级排序。
+        items.sort(key=lambda item: str(item.get("path", "")))
         if sort_by2:
-            items.sort(key=lambda item: (sort_value(item, sort_by2), str(item.get("path", ""))), reverse=not sort_asc2)
-        items.sort(key=lambda item: (sort_value(item, sort_by), str(item.get("path", ""))), reverse=not sort_asc)
-        total = len(items)
-        page_size = max(30, min(page_size, 240))
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        page = max(1, min(page, total_pages))
-        start = (page - 1) * page_size
-        page_items = []
-        for item in items[start:start + page_size]:
-            payload = dict(item)
-            rel_path = str(payload.get("rel_path", payload.get("name", ""))).replace("\\", "/")
-            version = str(payload.get("modified_ns", ""))
-            payload["thumbnail"] = build_image_preview_url(
-                scope="dataset", session_id=session_id, path=rel_path,
-                variant="thumb", size=320, version=version,
-            )
-            payload["preview"] = build_image_preview_url(
-                scope="dataset", session_id=session_id, path=rel_path,
-                variant="preview", size=960, version=version,
-            )
-            page_items.append(payload)
-        return {
-            "items": page_items,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "generation": session.generation,
-            "revision": session.revision,
-        }
+            items.sort(key=lambda item: sort_value(item, sort_by2), reverse=not sort_asc2)
+        items.sort(key=lambda item: sort_value(item, sort_by), reverse=not sort_asc)
+        return tuple(items)
 
     def _prune_locked(self, now: float) -> None:
         expired = [sid for sid, session in self._sessions.items() if now - session.accessed_at > self.ttl_seconds]

@@ -206,17 +206,31 @@ class OptimizerFieldContractTests(unittest.TestCase):
                 self.assertIn(key, expected, "merged 字段缺少 optimizer_args 映射")
                 self.assertEqual(fields[key].get("argKey"), expected[key])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
     def test_frontend_preview_skips_every_merged_field(self):
-        """预览的 SKIP_TOP_LEVEL 是硬编码表：漏登记的 merged 字段会以假顶层键
-        出现在预览里（Muon 的 muon_* 曾如此），这里守住两边的一致性。
-        """
-        source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-        match = re.search(r"const SKIP_TOP_LEVEL = new Set\(\[(.*?)\]\);", source, re.S)
-        self.assertIsNotNone(match, "SKIP_TOP_LEVEL not found in training-toml.js")
-        skipped = set(re.findall(r"['\"]([^'\"]+)['\"]", match.group(1)))
+        """执行真实预览，确保注册表中的 merged 字段不会泄漏为顶层参数。"""
+        script = r"""
+const fields = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+global.window = { getVisibleSections: () => [{ key: 'model', fields }] };
+require('./frontend/js/training-toml.js');
+const app = Object.assign({}, window.trainingTomlMixin, {
+  form: Object.fromEntries(fields.map(f => [f.key, 123])),
+  _fieldShowIfMet: () => true, _buildOptimizerArgs: () => [],
+  _isPathFieldRole: () => false, _coerceNum: v => v,
+  _renderTomlPreview() {}, t: k => k,
+});
+app.form.model_train_type = 'anima-lora';
+app.form.network_module = 'networks.lora_anima';
+app.updateToml();
+console.log(app.tomlRaw);
+"""
+        fields = [f for f in fields_by_key().values() if f.get("target") == "merged" or f["key"] == "learning_rate"]
+        result = subprocess.run(["node", "-e", script], input=json.dumps(fields), text=True, capture_output=True, check=True)
+        preview = tomllib.loads(result.stdout)
         merged = {field["key"] for field in FIELDS if field.get("target") == "merged"}
         self.assertTrue(merged)
-        self.assertEqual(sorted(merged - skipped), [])
+        self.assertFalse(merged.intersection(preview))
+        self.assertEqual(preview["learning_rate"], 123)
 
     def test_frontend_shows_muon_only_for_anima(self):
         optimizer_field = fields_by_key()["optimizer_type"]
@@ -1138,21 +1152,10 @@ class OptimizerFrontendTests(unittest.TestCase):
                 "gauge_power_steps",
         ):
             field = fields[key]
-            visible_fields.append(
-                {
-                    name: field[name]
-                    for name in (
-                        "key",
-                        "default",
-                        "omitDefault",
-                        "showIf",
-                        "showIfAny",
-                        "role",
-                        "hidden",
-                    )
-                    if name in field
-                }
-            )
+            visible_fields.append({
+                name: value for name, value in field.items()
+                if name in {"key", "default", "omitDefault", "showIf", "showIfAny", "role", "hidden", "target"}
+            })
         script = r"""
 global.window = {};
 global.document = { getElementById() { return { innerHTML: '' }; } };
@@ -1298,21 +1301,10 @@ console.log(JSON.stringify({
                 "precondition_1d",
         ):
             field = fields[key]
-            visible_fields.append(
-                {
-                    name: field[name]
-                    for name in (
-                        "key",
-                        "default",
-                        "omitDefault",
-                        "showIf",
-                        "showIfAny",
-                        "role",
-                        "hidden",
-                    )
-                    if name in field
-                }
-            )
+            visible_fields.append({
+                name: value for name, value in field.items()
+                if name in {"key", "default", "omitDefault", "showIf", "showIfAny", "role", "hidden", "target"}
+            })
         script = r"""
 global.window = {};
 global.document = { getElementById() { return { innerHTML: '' }; } };

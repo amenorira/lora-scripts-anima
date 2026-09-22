@@ -32,27 +32,27 @@ class TaskStatus(Enum):
 _TERMINAL_STATUSES = frozenset({TaskStatus.FINISHED, TaskStatus.TERMINATED, TaskStatus.FAILED})
 
 
-def kill_proc_tree(pid: int, including_parent: bool = True) -> None:
-    """终止整棵进程树：先杀子进程再等其退出，最后按需杀父进程，确保显存释放。"""
+def kill_proc_tree(pid: int, *, processes: list | None = None) -> None:
+    """终止进程树并确认退出；超时不能当作已释放资源。"""
+    if processes is None:
+        processes = []
     try:
-        root = psutil.Process(pid)
+        if not processes:
+            processes.append(psutil.Process(pid))
+        # 保留已发现的句柄：父进程退出后重试，仍能清理此前未退出的子进程。
+        for process in processes[0].children(recursive=True):
+            if process not in processes:
+                processes.append(process)
     except psutil.NoSuchProcess:
-        return
-
-    descendants = root.children(recursive=True)
-    for child in descendants:
+        pass
+    for child in processes:
         try:
             child.kill()
         except psutil.NoSuchProcess:
             pass
-    psutil.wait_procs(descendants, timeout=5)
-
-    if including_parent:
-        try:
-            root.kill()
-            root.wait(5)
-        except psutil.NoSuchProcess:
-            pass
+    _, alive = psutil.wait_procs(processes, timeout=5)
+    if alive:
+        raise psutil.TimeoutExpired(5, pid=alive[0].pid)
 
 
 class Task:
@@ -68,21 +68,20 @@ class Task:
         self.created_at = time.time()
         self.finished_at: Optional[float] = None
         self._terminate_requested = False
+        self._termination_lock = threading.Lock()
+        self._process_tree: list = []
 
-    def _settle(self, status: TaskStatus) -> bool:
-        """Settle once; the first terminal decision owns the task outcome."""
-        with self.lock:
-            if self.status in _TERMINAL_STATUSES:
-                return False
-            self.status = status
-            self.finished_at = time.time()
-            return True
-
-    def _status_after_process_exit(self) -> TaskStatus:
-        with self.lock:
-            if self.status is TaskStatus.TERMINATED or self._terminate_requested:
-                return TaskStatus.TERMINATED
-        return TaskStatus.FINISHED if self.process.returncode == 0 else TaskStatus.FAILED
+    def _settle_after_process_exit(self) -> None:
+        # 父进程可能先于子进程退出；等待停止流程发布终态，再交给监控线程结算。
+        with self._termination_lock:
+            with self.lock:
+                if self.status in _TERMINAL_STATUSES:
+                    return
+                if self._terminate_requested:
+                    # 清理失败仍保留并发名额，不能把父进程退出当作任务完成。
+                    raise RuntimeError("Process tree termination incomplete / 进程树终止未完成，请重试停止")
+                self.status = TaskStatus.FINISHED if self.process.returncode == 0 else TaskStatus.FAILED
+                self.finished_at = time.time()
 
     def communicate(self, input=None, timeout=None) -> subprocess.CompletedProcess:
         """等待子进程结束并收集输出。超时时先短等二次确认，仍不死则强杀。"""
@@ -92,60 +91,51 @@ class Task:
             try:
                 stdout, stderr = self.process.communicate(timeout=1)
             except subprocess.TimeoutExpired:
-                self.process.kill()
+                self.terminate()
                 stdout, stderr = self.process.communicate()
-                self._settle(TaskStatus.TERMINATED)
                 raise
         except Exception:
-            self.process.kill()
-            self._settle(TaskStatus.TERMINATED)
+            self.terminate()
             raise
-        self._settle(self._status_after_process_exit())
+        self._settle_after_process_exit()
         return subprocess.CompletedProcess(self.process.args, self.process.returncode, stdout, stderr)
 
     def wait(self) -> None:
         self.process.wait()
-        self._settle(self._status_after_process_exit())
+        self._settle_after_process_exit()
 
     def execute(self, stdout_file=None) -> None:
-        with self.lock:
-            if self.status is not TaskStatus.CREATED or self._terminate_requested:
-                raise RuntimeError("Task is no longer startable")
-            self.status = TaskStatus.RUNNING
         popen_kwargs: dict = {"env": self.environ}
         if stdout_file is not None:
             popen_kwargs["stdout"] = stdout_file
             popen_kwargs["stderr"] = subprocess.STDOUT
-        try:
-            process = subprocess.Popen(self.command, **popen_kwargs)
-            with self.lock:
-                self.process = process
-                terminate_requested = self._terminate_requested or self.status in _TERMINAL_STATUSES
-            if terminate_requested:
-                kill_proc_tree(process.pid, including_parent=False)
-                self._settle(TaskStatus.TERMINATED)
-                raise RuntimeError("Task was terminated before process startup completed")
-        except Exception as e:
-            log.error(f"Failed to start process / 启动进程失败: {e}")
-            self._settle(TaskStatus.FAILED)
-            raise
+        with self.lock:
+            if self.status is not TaskStatus.CREATED or self._terminate_requested:
+                raise RuntimeError("Task is no longer startable")
+            self.status = TaskStatus.RUNNING
+            try:
+                # 发布进程句柄与启动互斥，停止请求不会在 Popen 期间提前释放名额。
+                self.process = subprocess.Popen(self.command, **popen_kwargs)
+            except Exception as e:
+                log.error(f"Failed to start process / 启动进程失败: {e}")
+                self.status = TaskStatus.FAILED
+                self.finished_at = time.time()
+                raise
 
     def terminate(self) -> None:
-        with self.lock:
-            self._terminate_requested = True
-            already_terminal = self.status in _TERMINAL_STATUSES
-            process = self.process
-        if already_terminal:
-            return
-        try:
-            if process and process.pid:
-                # 只杀子进程树：直接启动的父进程（如 accelerate）会在子进程
-                # 死后自行退出，强行杀父进程反而可能丢掉收尾日志
-                kill_proc_tree(process.pid, including_parent=False)
-        except Exception as e:
-            log.error(f"Error when killing process / 终止进程时出错: {e}")
-        finally:
-            self._settle(TaskStatus.TERMINATED)
+        with self._termination_lock:
+            with self.lock:
+                if self.status in _TERMINAL_STATUSES:
+                    return
+                self._terminate_requested = True
+                process = self.process
+            if process is not None:
+                kill_proc_tree(process.pid, processes=self._process_tree)
+                process.wait(timeout=5)
+            # 终止失败时保留名额并将异常交给调用方，允许重试。
+            with self.lock:
+                self.status = TaskStatus.TERMINATED
+                self.finished_at = time.time()
 
     def snapshot(self) -> dict:
         with self.lock:

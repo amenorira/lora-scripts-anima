@@ -78,6 +78,65 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
+    def test_secondary_sort_preserves_primary_groups_in_both_directions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            images = [
+                {"path": name, "rel_path": name, "modified_ns": modified, "tags": tags}
+                for name, modified, tags in [("a", 1, "cat"), ("b", 2, "cat"), ("c", 3, "cat, dog"), ("d", 4, "cat, dog")]
+            ]
+            service = DatasetSessionService()
+            with patch("backend.tageditor.sessions.get_cached_scan_dataset", return_value=(images, [])):
+                session = service.create(temp_dir)
+            for primary, secondary, expected in [
+                (True, False, ["b", "a", "d", "c"]),
+                (False, True, ["c", "d", "a", "b"]),
+            ]:
+                page = service.page(session.id, sort_by="tagCount", sort_asc=primary, sort_by2="modified", sort_asc2=secondary)
+                self.assertEqual([item["path"] for item in page["items"]], expected)
+
+    def test_page_cache_reuses_query_and_refresh_discards_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            images = [{"path": str(i), "rel_path": str(i), "tags": "cat"} for i in range(65)]
+            service = DatasetSessionService()
+            with patch("backend.tageditor.sessions.get_cached_scan_dataset", return_value=(images, [])):
+                session = service.create(temp_dir)
+                with patch.object(service, "_filter_images", wraps=service._filter_images) as query:
+                    service.page(session.id, page=1, page_size=30, include_tags=("cat",))
+                    second = service.page(session.id, page=2, page_size=30, include_tags=("cat",))
+                    self.assertEqual(len(second["items"]), 30)
+                    self.assertEqual(query.call_count, 1)
+                    service.page(session.id, include_tags=("dog",))
+                    self.assertEqual(query.call_count, 2)
+                    service.refresh(session.id)
+                    service.page(session.id, include_tags=("cat",))
+                    self.assertEqual(query.call_count, 3)
+            for index in range(10):
+                service.page(session.id, search=str(index))
+            self.assertLessEqual(len(service.get(session.id).queries), 4)
+
+    def test_refresh_cannot_resurrect_deleted_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DatasetSessionService()
+            session = service.create(temp_dir)
+
+            def scan(*args):
+                service.delete(session.id)
+                return [], []
+
+            with patch("backend.tageditor.sessions.get_cached_scan_dataset", side_effect=scan):
+                with self.assertRaises(KeyError):
+                    service.refresh(session.id)
+            with self.assertRaises(KeyError):
+                service.get(session.id)
+
+    def test_idle_session_expires_without_needing_another_creation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DatasetSessionService(ttl_seconds=60)
+            session = service.create(temp_dir)
+            with patch("backend.tageditor.sessions.time.time", return_value=session.accessed_at + 61):
+                with self.assertRaises(KeyError):
+                    service.get(session.id)
+
     def test_session_pages_filters_and_lifecycle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
