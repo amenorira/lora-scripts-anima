@@ -127,7 +127,6 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.buildRouteContent();
-      this.$nextTick(() => this._syncSidebarIndicator());
 
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
@@ -140,7 +139,6 @@ document.addEventListener('alpine:init', () => {
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
-        this.$nextTick(() => this._syncSidebarIndicator());
         // tagger 模式 tab 文本随语言变化，指示条需重算位置
         if (r === 'tagger' && typeof this._syncTaggerTabIndicator === 'function') {
           requestAnimationFrame(() => this._syncTaggerTabIndicator());
@@ -237,8 +235,6 @@ document.addEventListener('alpine:init', () => {
       if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
         return;
       }
-      // 点击即时反馈：侧栏高亮立即滑向目标项，不等路由提交
-      this._syncSidebarIndicator(route);
       this.routeTransitioning = true;
       this.startProgress();
       window.location.hash = route;
@@ -257,12 +253,9 @@ document.addEventListener('alpine:init', () => {
         this.routeTransitioning = true;
         this.startProgress();
       }
-      // 浏览器前进/后退等 hash 直改场景：同样立即滑动侧栏高亮
-      this._syncSidebarIndicator(route);
-
       // The training form mounts hundreds of controls. Leave a short paint
-      // window so the active nav state and progress bar become
-      // visible before that work starts. A timer also keeps routing reliable
+      // window so the progress bar becomes visible before that work starts.
+      // A timer also keeps routing reliable
       // in background tabs, where requestAnimationFrame may be paused.
       // 保持旧页可见，仅留一帧绘制点击反馈，再提交重量级挂载。
       const mountDelay = 16;
@@ -304,7 +297,6 @@ document.addEventListener('alpine:init', () => {
         if (scroller) {
           scroller.scrollTop = restoreScrollTop;
         }
-        this._syncSidebarIndicator();
         this.routeTransitioning = false;
         if (!progressManagedByRoute) this.finishProgress();
       }, 16));
@@ -318,38 +310,6 @@ document.addEventListener('alpine:init', () => {
       mainContent.classList.add('route-enter');
       clearTimeout(this._routeEnterTimer);
       this._routeEnterTimer = setTimeout(() => mainContent.classList.remove('route-enter'), 180);
-    },
-
-    // 侧栏滑动高亮：跟随激活导航项的位置与高度（首次定位不播放动画）。
-    // 可传入目标 route 在路由提交前提前滑动（点击即时反馈），否则按当前路由定位。
-    _syncSidebarIndicator(route) {
-      const nav = document.getElementById('sidebarNav');
-      if (!nav) return;
-      const indicator = nav.querySelector('.sidebar-nav-indicator');
-      if (!indicator) return;
-      const r = route || this.currentRoute;
-      let active = null;
-      if (r) {
-        active = nav.querySelector('.sidebar-item[data-route="' + r + '"]')
-          || (r.startsWith('train-') ? nav.querySelector('.sidebar-item[data-route="train-*"]') : null);
-      }
-      if (!active) active = nav.querySelector('.sidebar-item.active');
-      if (!active || !active.offsetHeight) {
-        // 无激活项（如首页）或布局不可用时隐藏高亮
-        nav.classList.remove('indicator-ready');
-        return;
-      }
-      if (!nav.classList.contains('indicator-ready')) {
-        nav.classList.add('no-anim');
-        indicator.style.height = active.offsetHeight + 'px';
-        indicator.style.transform = 'translateY(' + active.offsetTop + 'px)';
-        void indicator.offsetWidth; // 强制 reflow，确保无动画落位先生效
-        nav.classList.remove('no-anim');
-        nav.classList.add('indicator-ready');
-        return;
-      }
-      indicator.style.height = active.offsetHeight + 'px';
-      indicator.style.transform = 'translateY(' + active.offsetTop + 'px)';
     },
 
     showRightPanel() {

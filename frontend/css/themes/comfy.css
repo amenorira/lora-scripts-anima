@@ -167,14 +167,11 @@
   background: var(--accent); color: #ffffff; border-color: var(--accent);
 }
 
-/* Sidebar: 对齐 ComfyUI 侧栏——hover #313235、选中静态 #3c3d42（无滑动 pill）、
+/* Sidebar: 对齐 ComfyUI 侧栏——hover #313235、选中静态 #3c3d42、
    按压不回弹、图标不单独着主题色 */
 [data-theme="comfy"] .sidebar-item:hover { background: #313235; }
-[data-theme="comfy"] .sidebar-item.active:hover { background: transparent; }
+[data-theme="comfy"] .sidebar-item.active { background: #3c3d42; }
 [data-theme="comfy"] .sidebar-item.active .nav-icon { color: var(--text-sidebar-active); }
-[data-theme="comfy"] .sidebar-nav-indicator {
-  background: #3c3d42;
-}
 [data-theme="comfy"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="comfy"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
 [data-theme="comfy"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }

@@ -23,12 +23,12 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260920-output-selection1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260919-dict17">
+  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260923-sidebar1">
+  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260920-dictionary3">
-  <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260914-motion5">
+  <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
   <script src="/anima-ui/js/i18n.js" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
@@ -56,7 +56,7 @@
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20260920-escaped-tags1" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260920-dictionary3" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260919-dict17" defer></script>
+  <script src="/anima-ui/js/app.js?v=20260923-sidebar1" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-init="init()" x-cloak>
@@ -83,8 +83,7 @@
       </div>
     </div>
 
-    <div class="sidebar-nav" id="sidebarNav">
-      <span class="sidebar-nav-indicator" aria-hidden="true"></span>
+    <div class="sidebar-nav">
       <!-- Monitor -->
       <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
       <a class="sidebar-item" data-route="monitor-dashboard" data-group="monitor" :class="{ active: currentRoute === 'monitor-dashboard' }"

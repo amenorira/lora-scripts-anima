@@ -122,7 +122,7 @@
 
 /* Sidebar: hover 在暗色下补底色；激活项 hover 不再叠加 */
 [data-theme="dark"] .sidebar-item:hover { background: var(--hover-overlay); }
-[data-theme="dark"] .sidebar-item.active:hover { background: transparent; }
+[data-theme="dark"] .sidebar-item.active:hover { background: var(--active-overlay); }
 [data-theme="dark"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="dark"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }

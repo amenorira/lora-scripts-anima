@@ -163,20 +163,7 @@ a:focus-visible {
   max-height: 0;
 }
 
-.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; position: relative; }
-
-/* 滑动高亮：跟随激活导航项（位置/高度由 app.js _syncSidebarIndicator 写入） */
-.sidebar-nav-indicator {
-  position: absolute; left: 6px; right: 6px; top: 0; height: 0;
-  border-radius: var(--radius-sm);
-  background: var(--active-overlay);
-  opacity: 0; pointer-events: none;
-  transition: transform 300ms var(--ease-out),
-              height 300ms var(--ease-out),
-              opacity var(--duration-fast) var(--ease-out);
-}
-.sidebar-nav.indicator-ready .sidebar-nav-indicator { opacity: 1; }
-.sidebar-nav.no-anim .sidebar-nav-indicator { transition: none; }
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; }
 
 .sidebar-section-label {
   padding: 12px 16px 5px;
@@ -218,8 +205,7 @@ a:focus-visible {
   user-select: none;
 }
 
-/* hover 不画背景（背景只有滑动 pill 一个，快速来回点击不会叠出两块高亮），
-   只做文字/图标提亮；按下时轻微内缩回弹，模拟物理按压 */
+/* Hover 只提亮文字和图标；选中项自身绘制背景，随侧栏布局变化。 */
 .sidebar-item:hover {
   color: var(--text-sidebar-active);
   text-decoration: none;
@@ -229,8 +215,7 @@ a:focus-visible {
 .sidebar-item:active { transform: scale(0.96); }
 
 .sidebar-item.active {
-  /* 背景高亮由 .sidebar-nav-indicator 滑动提供，这里只保留文字态；
-     激活不加粗字重，避免文字宽度跳动 */
+  background: var(--active-overlay);
   color: var(--text-sidebar-active);
 }
 
