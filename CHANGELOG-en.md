@@ -6,6 +6,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.4 - 2026-09-23
+
+This release fixes process cleanup and concurrency accounting when stopping training tasks. It also prevents stale tag-editor requests from overwriting the current dataset, filter, or page. The tag editor has clearer selection and filtering controls, adjustable panel widths, and a smoother original-image preview. The sidebar selection background now stays aligned with its navigation item after layout changes.
+
+### Task Stopping and Tag Data
+
+- Stopping a training task confirms that the entire process tree has exited before settling the task and freeing its concurrency slot. If cleanup times out or fails, the slot remains occupied, the error reaches the caller, and stopping can be retried. An early parent-process exit no longer marks a task complete while children remain.
+- Switching datasets or filters cancels and discards obsolete page and bulk requests, so older results cannot mix into the current page, replace image counts, or enter a bulk selection. Bulk loading also checks the session and dataset generation.
+- Fixed primary and secondary image sorting: the primary sort's path tie-breaker no longer overrides the secondary sort. Matching filtered-page results can be reused to avoid repeated work.
+- Batch changes recheck the dataset and captions before confirmation. Shared implementations now handle form conditions, network-argument mapping, and TOML serialization while preserving the existing parameter meanings and output format.
+
+### Tag Editor and Navigation
+
+- Moved image-selection actions above the grid, alongside the selection count and undo/redo controls. Reorganized tag filters, added a clear-filters action and explanatory tag counts, and made tag renaming available from the context menu.
+- The left tag panel can be resized by dragging or keyboard, reset by double-clicking its divider, and retains its width. Image detail shows a preview while the original decodes, then swaps in the original; navigating or closing cannot display a stale decoded image.
+- Draws the sidebar selection background on the active navigation item to prevent the old sliding background from drifting after layout changes, and removes the associated positioning script.
+
+### Tests and Verification
+
+- Reduced test-code size by more than half, moving field-order and optimizer-state checks into direct frontend tests while retaining key regressions for task-stop races, tag sessions and batch edits, and configuration conversion. Some fixed-text, default-value snapshot, and secondary presentation cases are no longer covered; see `tests/README.md`.
+- The project Python suite, frontend suite, and generated field-config sync check pass. Real GPU training was not run.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.3...v2.20.4)
+
 ## v2.20.3 - 2026-09-21
 
 This release improves how training parameters are explained, how field hints are chosen, and how documentation is reached from the UI. The bilingual guides for timesteps, optimizers, LoRA+, AdaLN, and structure preview were reviewed and expanded, and a new network-parameters guide was added. Training defaults, parameter ranges, and training algorithms are unchanged.
