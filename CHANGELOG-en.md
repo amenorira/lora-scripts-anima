@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v2.20.5 - 2026-09-24
+
+This release fixes a mismatch between tag-completion entries and their hover details. A tag already used in the dataset now shows its category color, Chinese translation, and post count in both single-image and batch completion, even when it falls outside the dictionary search's first 20 results. Existing captions and the spelling inserted from a local tag remain unchanged.
+
+### Tag Completion
+
+- Local tags keep their priority and order while their dictionary metadata is resolved by exact name. For example, searching for `back` no longer leaves `gradient background` white merely because it is outside the capped search results.
+- Single-image and batch completion use one Worker request for search and exact local-tag lookup. Batch tag filtering, Chinese search in the left tag list, and stale-response protection remain in place.
+- Updated frontend asset versions so browsers load the new completion logic, and added regression coverage for single-image completion, batch completion, and tag-list search.
+
+### Verification
+
+- The project Python suite passed 246 tests and 1,825 subtests; the frontend suite passed 89 tests. A desktop browser check with the installed dictionary and a temporary dataset confirmed the category color, Chinese translation, and post count in single-image completion with no script errors. Batch completion was covered by regression tests. Real GPU training was not run.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.4...v2.20.5)
+
 ## v2.20.4 - 2026-09-23
 
 This release fixes process cleanup and concurrency accounting when stopping training tasks. It also prevents stale tag-editor requests from overwriting the current dataset, filter, or page. The tag editor has clearer selection and filtering controls, adjustable panel widths, and a smoother original-image preview. The sidebar selection background now stays aligned with its navigation item after layout changes.
