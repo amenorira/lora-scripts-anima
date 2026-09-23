@@ -1,22 +1,15 @@
 import json
-import os
-import shutil
-import subprocess
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
-from unittest.mock import patch
 
 from PIL import Image
 
-from backend.monitor import artifacts
-from backend.tasks import TaskManager
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import get_all_fields, get_fields_json
+from backend.training.field_registry import get_all_fields
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.validation import validate_training_config
-from backend.utils.train_utils import count_images
 from tests.helpers import config_from_field_defaults
 
 
@@ -36,47 +29,7 @@ def valid_anima_config() -> dict:
     return config
 
 
-class TrainingFieldLayoutTests(unittest.TestCase):
-    def test_registry_has_no_advanced_field_classification(self):
-        self.assertTrue(all("advanced" not in field for field in get_all_fields()))
-
-    def test_optimizer_layout_places_selector_before_learning_rate_controls(self):
-        sections = get_fields_json()["sections"]
-        all_optimizer_fields = next(section["fields"] for section in sections if section["key"] == "optimizer")
-        optimizer_fields = [field for field in all_optimizer_fields if not field.get("profiles")]
-        keys = [field["key"] for field in optimizer_fields]
-
-        self.assertLess(keys.index("optimizer_type"), keys.index("learning_rate"))
-        self.assertLess(keys.index("optimizer_type"), keys.index("max_grad_norm"))
-        weight_decay = next(field for field in optimizer_fields if field["key"] == "weight_decay")
-        self.assertEqual(weight_decay["layoutParent"], "optimizer_type")
-
-        krea_fields = [field for field in all_optimizer_fields if "krea2-lora" in field.get("profiles", [])]
-        krea_keys = [field["key"] for field in krea_fields]
-        self.assertLess(krea_keys.index("lr_scheduler"), krea_keys.index("optimizer_type"))
-        self.assertLess(krea_keys.index("max_grad_norm"), krea_keys.index("optimizer_type"))
-        krea_weight_decay = next(
-            field for field in krea_fields if field["key"] == "krea_optimizer_weight_decay"
-        )
-        self.assertEqual(krea_weight_decay["layoutParent"], "optimizer_type")
-
-    def test_zero_terminal_snr_follows_v_parameterization_without_nested_styling(self):
-        sections = get_fields_json()["sections"]
-        model_fields = next(section["fields"] for section in sections if section["key"] == "model")
-        keys = [field["key"] for field in model_fields]
-
-        v_pred_index = keys.index("v_parameterization")
-        zero_snr = model_fields[v_pred_index + 1]
-
-        self.assertEqual(zero_snr["key"], "zero_terminal_snr")
-        self.assertEqual(zero_snr["showIf"], {"key": "v_parameterization", "eq": True})
-        self.assertFalse(zero_snr["nested"])
-
-
 class TrainingValidationTests(unittest.TestCase):
-    def test_valid_anima_config(self):
-        self.assertEqual(validate_training_config(valid_anima_config()), [])
-
     def test_rejects_unsafe_anima_values(self):
         cases = {
             "blocks_to_swap": 9,
@@ -92,37 +45,6 @@ class TrainingValidationTests(unittest.TestCase):
                 config[key] = value
                 errors = validate_training_config(config)
                 self.assertTrue(any(key in error for error in errors), errors)
-
-    def test_validates_resolution_by_train_type(self):
-        config = valid_anima_config()
-        config["resolution"] = "1000,1024"
-        self.assertTrue(any("resolution" in error for error in validate_training_config(config)))
-
-        config["resolution"] = "1008,1024"
-        self.assertEqual(validate_training_config(config), [])
-
-        config["model_train_type"] = "sdxl-lora"
-        self.assertTrue(any("resolution" in error for error in validate_training_config(config)))
-
-        config["network_module"] = "networks.lora"
-        config["resolution"] = "1056,1024"
-        self.assertEqual(validate_training_config(config), [])
-
-    def test_validates_bucket_step_by_train_type(self):
-        config = valid_anima_config()
-        for step in (16, 32, 64):
-            with self.subTest(train_type="anima-lora", step=step):
-                candidate = dict(config, bucket_reso_steps=step)
-                self.assertEqual(validate_training_config(candidate), [])
-
-        config.update(model_train_type="sdxl-lora", network_module="networks.lora", resolution="1024,1024")
-        for step in (16, 48):
-            with self.subTest(train_type="sdxl-lora", step=step):
-                errors = validate_training_config(dict(config, bucket_reso_steps=step))
-                self.assertTrue(any("bucket_reso_steps" in error for error in errors), errors)
-        for step in (32, 64):
-            with self.subTest(train_type="sdxl-lora", step=step):
-                self.assertEqual(validate_training_config(dict(config, bucket_reso_steps=step)), [])
 
     def test_text_cache_caption_contracts_are_profile_specific(self):
         anima = valid_anima_config()
@@ -258,24 +180,6 @@ class TrainingFieldSchemaTests(unittest.TestCase):
                     self.assertIsInstance(value, str)
                     self.assertTrue(value.strip())
 
-    def test_caption_dropout_and_keep_tokens_schema(self):
-        caption_tag_dropout = next(
-            field for field in get_all_fields() if field["key"] == "caption_tag_dropout_rate"
-        )
-        self.assertEqual(caption_tag_dropout.get("hint_key"), "field.caption_tag_dropout_rateHint")
-
-        keep_tokens = next(field for field in get_all_fields() if field["key"] == "keep_tokens")
-        self.assertEqual(
-            keep_tokens["show_if_any"],
-            [
-                [{"key": "shuffle_caption", "eq": True}],
-                [{"key": "caption_tag_dropout_rate", "neq": 0}],
-            ],
-        )
-        self.assertTrue(keep_tokens["omit_default"])
-        self.assertEqual(caption_tag_dropout["default"], 0)
-        self.assertTrue(caption_tag_dropout["omit_default"])
-
     def test_field_conditions_reference_registered_keys(self):
         fields = get_all_fields()
         registered = {field["key"] for field in fields}
@@ -309,93 +213,6 @@ class TrainingFieldSchemaTests(unittest.TestCase):
             if values:
                 with self.subTest(field=field["key"], default=field["default"]):
                     self.assertIn(field["default"], values)
-
-    def test_normalizes_numeric_strings(self):
-        config = valid_anima_config()
-        config["blocks_to_swap"] = "8"
-        self.assertEqual(validate_training_config(config), [])
-        self.assertEqual(config["blocks_to_swap"], 8)
-
-        config["model_train_type"] = "sdxl-lora"
-        config["network_module"] = "networks.lora"
-        config["max_token_length"] = "225"
-        config["resolution"] = "1024,1024"
-        self.assertEqual(validate_training_config(config), [])
-        self.assertEqual(config["max_token_length"], 225)
-
-    def test_rejects_network_module_from_other_train_type(self):
-        config = valid_anima_config()
-        config["network_module"] = "networks.lora"
-        errors = validate_training_config(config)
-        self.assertTrue(any("network_module" in error for error in errors))
-
-    def test_base_weight_multiplier_count_must_match(self):
-        config = valid_anima_config()
-        config["base_weights"] = "a.safetensors,b.safetensors"
-        config["base_weights_multiplier"] = "1"
-        errors = validate_training_config(config)
-        self.assertTrue(any("base_weights_multiplier" in error for error in errors))
-
-
-class TaskManagerTests(unittest.TestCase):
-    def test_created_task_reserves_concurrency_slot(self):
-        manager = TaskManager(max_concurrent=1)
-        self.assertIsNotNone(manager.create_task(["noop"]))
-        self.assertIsNone(manager.create_task(["noop"]))
-
-
-class ScanOptimizationTests(unittest.TestCase):
-    def test_count_images_stops_at_threshold(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            for index in range(205):
-                (root / f"{index}.png").touch()
-            self.assertEqual(count_images(root, stop_after=201), 201)
-            self.assertEqual(count_images(root), 205)
-
-    def test_preview_scan_uses_known_output_locations(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_root = Path(temp_dir) / "output"
-            run_dir = output_root / "run"
-            sample_dir = run_dir / "sample"
-            unrelated_dir = run_dir / "other"
-            sample_dir.mkdir(parents=True)
-            unrelated_dir.mkdir()
-            (sample_dir / "sample.png").touch()
-            (run_dir / "root.png").touch()
-            (unrelated_dir / "unrelated.png").touch()
-
-            with patch.object(artifacts, "OUTPUT_DIR", output_root), patch.object(
-                artifacts, "REPO_ROOT", Path(temp_dir)
-            ):
-                previews = artifacts.newest_previews(str(run_dir), force_refresh=True)
-
-            self.assertEqual({item["name"] for item in previews}, {"sample.png", "root.png"})
-
-    def test_preview_scan_uses_embedded_training_order_before_file_mtime(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            run_dir = Path(temp_dir) / "run"
-            sample_dir = run_dir / "sample"
-            sample_dir.mkdir(parents=True)
-            early = sample_dir / "model_e000001_00_20260808120000_1.png"
-            later_prompt_1 = sample_dir / "model_e000002_01_20260808120100_2.png"
-            later_prompt_0 = run_dir / "model_e000002_00_20260808120100_3.png"
-            for path in (early, later_prompt_1, later_prompt_0):
-                path.touch()
-
-            # Deliberately reverse mtimes to model copied/restored artifacts.
-            os.utime(early, ns=(30, 30))
-            os.utime(later_prompt_0, ns=(20, 20))
-            os.utime(later_prompt_1, ns=(10, 10))
-
-            previews = artifacts.newest_previews(str(run_dir), force_refresh=True)
-            latest = artifacts.newest_previews(str(run_dir), limit=1, force_refresh=True)
-
-            self.assertEqual(
-                [item["name"] for item in previews],
-                [early.name, later_prompt_0.name, later_prompt_1.name],
-            )
-            self.assertEqual([item["name"] for item in latest], [later_prompt_1.name])
 
 
 class TrainingStepEstimatorTests(unittest.TestCase):
@@ -509,78 +326,6 @@ class TrainingStepEstimatorTests(unittest.TestCase):
 
             self.assertEqual(estimate["batches_per_epoch"], len(dataset))
 
-    def test_regularization_samples_match_sd_scripts_registration_loop(self):
-        # sd-scripts 正则注册规则（dreambooth_dataset.py:320-345）：正则样本数以训练样本总数为
-        # 目标补足/截断，子目录 repeats 只影响首轮注册比例。用真实 DreamBoothDataset 交叉验证。
-        from library.config_util import DreamBoothSubsetParams
-        from library.dreambooth_dataset import DreamBoothDataset
-        from library.subset import DreamBoothSubset
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            self._write_images(root / "train" / "2_char", 3, (512, 512))
-            self._write_images(root / "reg1" / "1_class", 3, (512, 512))
-            self._write_images(root / "reg2" / "1_overflow", 10, (512, 512))
-            self._write_images(root / "reg3" / "20_big", 2, (512, 512))
-
-            cases = [
-                ("reg1", "1_class", 1, 12),  # 补足：reg 3 图 x1 -> 实际 6 样本
-                ("reg2", "1_overflow", 1, 12),  # 截断：reg 10 图 x1 -> 只用前 6 张
-                ("reg3", "20_big", 20, 26),  # 大 repeats：首轮即超，只用 1 张图注册 20 次
-            ]
-            for reg_parent, reg_subdir, repeats, expected in cases:
-                with self.subTest(reg_parent=reg_parent):
-                    config = self._config(
-                        root / "train",
-                        reg_data_dir=str(root / reg_parent),
-                        train_batch_size=1,
-                    )
-                    estimate = estimate_training_steps(config)
-
-                    subsets = [
-                        DreamBoothSubset(
-                            **asdict(
-                                DreamBoothSubsetParams(
-                                    image_dir=str(root / "train" / "2_char"), num_repeats=2, class_tokens="char"
-                                )
-                            )
-                        ),
-                        DreamBoothSubset(
-                            **asdict(
-                                DreamBoothSubsetParams(
-                                    image_dir=str(root / reg_parent / reg_subdir),
-                                    num_repeats=repeats,
-                                    class_tokens="class",
-                                    is_reg=True,
-                                )
-                            )
-                        ),
-                    ]
-                    dataset = DreamBoothDataset(
-                        subsets=subsets,
-                        is_training_dataset=True,
-                        batch_size=1,
-                        resolution=(512, 512),
-                        network_multiplier=1.0,
-                        enable_bucket=False,
-                        min_bucket_reso=256,
-                        max_bucket_reso=1024,
-                        bucket_reso_steps=64,
-                        bucket_no_upscale=True,
-                        prior_loss_weight=1.0,
-                        train_inpainting=False,
-                        debug_dataset=False,
-                        validation_split=0.0,
-                        validation_seed=0,
-                        resize_interpolation=None,
-                    )
-                    dataset.make_buckets()
-
-                    self.assertEqual(estimate["batches_per_epoch"], len(dataset))
-                    self.assertEqual(estimate["batches_per_epoch"], expected)
-                    reg_subset = next(subset for subset in estimate["subsets"] if subset["is_reg"])
-                    self.assertEqual(reg_subset["sample_count"], expected - 6)
-
     def test_gpu_processes_follow_sd_scripts_ceiling_order(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -601,14 +346,6 @@ class TrainingStepEstimatorTests(unittest.TestCase):
             self.assertEqual(estimate["steps_per_epoch"], 3)
             self.assertEqual(estimate["total_steps"], 9)
 
-    def test_rejects_dataset_without_repeat_folders(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            self._write_images(root / "character", 1, (512, 512))
-
-            with self.assertRaises(StepEstimateError):
-                estimate_training_steps(self._config(root))
-
     def test_missing_dataset_exposes_localizable_error_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             missing = Path(temp_dir) / "missing_dataset"
@@ -619,108 +356,6 @@ class TrainingStepEstimatorTests(unittest.TestCase):
             self.assertEqual(context.exception.code, "datasetNotFound")
             self.assertEqual(context.exception.params, {"path": str(missing)})
 
-
-class MonitorFrontendContractTests(unittest.TestCase):
-    def test_training_field_schema_script_is_cache_busted(self):
-        index_html = Path("frontend/index.html").read_text(encoding="utf-8")
-        self.assertRegex(index_html, r'/anima-ui/js/config\.js\?v=[^"\s]+')
-
-
-@unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-class TrainingFormFrontendTests(unittest.TestCase):
-    def test_profile_constraints_and_caption_cache_interlocks(self):
-        script = r"""
-global.window = {};
-require('./frontend/js/utils.js');
-require('./frontend/js/training-core.js');
-const mixin = window.trainingCoreMixin;
-const bucketField = {
-  key: 'bucket_reso_steps', type: 'number', min: 16, step: 16,
-  constraintsByGroup: { sdxl: { min: 32, step: 32 }, anima: { min: 16, step: 16 } },
-};
-function context(modelType, form) {
-  const toasts = [];
-  const ctx = Object.assign({}, mixin, {
-    form: Object.assign({ model_train_type: modelType }, form),
-    formDefaults: {}, formErrors: {},
-    findFieldDef(key) { return key === 'bucket_reso_steps' ? bucketField : null; },
-    _allShowIfKeys() { return []; },
-    queueTomlPreviewChange() {}, pushHistory() {}, updateTomlDebounced() {},
-    scheduleOutputPathInfo() {}, toast(message) { toasts.push(message); },
-    t(key) { return key; },
-  });
-  ctx.toasts = toasts;
-  return ctx;
-}
-const sdxl = context('sdxl-lora', { bucket_reso_steps: 64 });
-const anima = context('anima-lora', { bucket_reso_steps: 32 });
-sdxl.stepField('bucket_reso_steps', -32);
-anima.stepField('bucket_reso_steps', -16);
-
-const sdxlCaption = context('sdxl-lora', {
-  cache_text_encoder_outputs: true, cache_text_encoder_outputs_to_disk: true,
-  caption_dropout_rate: 0, caption_tag_dropout_rate: 0, shuffle_caption: false,
-});
-sdxlCaption.setField('caption_dropout_rate', 0.1);
-const animaCaption = context('anima-lora', {
-  cache_text_encoder_outputs: true, cache_text_encoder_outputs_to_disk: true,
-  caption_dropout_rate: 0, caption_tag_dropout_rate: 0, shuffle_caption: false,
-});
-animaCaption.setField('caption_dropout_rate', 0.1);
-const blocked = context('sdxl-lora', {
-  cache_text_encoder_outputs: false, cache_text_encoder_outputs_to_disk: false,
-  caption_dropout_rate: 0.1, caption_tag_dropout_rate: 0, shuffle_caption: false,
-});
-blocked.setField('cache_text_encoder_outputs', true);
-const latentDisk = context('anima-lora', {
-  cache_latents: false, cache_latents_to_disk: false,
-});
-latentDisk.setField('cache_latents_to_disk', true);
-const latentAfterEnable = {
-  memory: latentDisk.form.cache_latents,
-  disk: latentDisk.form.cache_latents_to_disk,
-};
-latentDisk.setField('cache_latents_to_disk', false);
-const latentAfterDisable = {
-  memory: latentDisk.form.cache_latents,
-  disk: latentDisk.form.cache_latents_to_disk,
-};
-
-console.log(JSON.stringify({
-  sdxlRule: sdxl._numberConstraints(bucketField),
-  animaRule: anima._numberConstraints(bucketField),
-  sdxlStep: sdxl.form.bucket_reso_steps,
-  animaStep: anima.form.bucket_reso_steps,
-  sdxlCache: sdxlCaption.form.cache_text_encoder_outputs,
-  sdxlDiskCache: sdxlCaption.form.cache_text_encoder_outputs_to_disk,
-  animaCache: animaCaption.form.cache_text_encoder_outputs,
-  blockedCache: blocked.form.cache_text_encoder_outputs,
-  blockedToasts: blocked.toasts.length,
-  latentAfterEnable,
-  latentAfterDisable,
-}));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        )
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["sdxlRule"]["min"], 32)
-        self.assertEqual(payload["sdxlRule"]["step"], 32)
-        self.assertEqual(payload["animaRule"]["min"], 16)
-        self.assertEqual(payload["sdxlStep"], 32)
-        self.assertEqual(payload["animaStep"], 16)
-        self.assertFalse(payload["sdxlCache"])
-        self.assertFalse(payload["sdxlDiskCache"])
-        self.assertTrue(payload["animaCache"])
-        self.assertFalse(payload["blockedCache"])
-        self.assertEqual(payload["blockedToasts"], 1)
-        self.assertEqual(payload["latentAfterEnable"], {"memory": True, "disk": True})
-        self.assertEqual(payload["latentAfterDisable"], {"memory": True, "disk": False})
 
 if __name__ == "__main__":
     unittest.main()

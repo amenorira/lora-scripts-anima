@@ -78,6 +78,37 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
+    def test_secondary_sort_preserves_primary_groups_in_both_directions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            images = [
+                {"path": name, "rel_path": name, "modified_ns": modified, "tags": tags}
+                for name, modified, tags in [("a", 1, "cat"), ("b", 2, "cat"), ("c", 3, "cat, dog"), ("d", 4, "cat, dog")]
+            ]
+            service = DatasetSessionService()
+            with patch("backend.tageditor.sessions.get_cached_scan_dataset", return_value=(images, [])):
+                session = service.create(temp_dir)
+            for primary, secondary, expected in [
+                (True, False, ["b", "a", "d", "c"]),
+                (False, True, ["c", "d", "a", "b"]),
+            ]:
+                page = service.page(session.id, sort_by="tagCount", sort_asc=primary, sort_by2="modified", sort_asc2=secondary)
+                self.assertEqual([item["path"] for item in page["items"]], expected)
+
+    def test_refresh_cannot_resurrect_deleted_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DatasetSessionService()
+            session = service.create(temp_dir)
+
+            def scan(*args):
+                service.delete(session.id)
+                return [], []
+
+            with patch("backend.tageditor.sessions.get_cached_scan_dataset", side_effect=scan):
+                with self.assertRaises(KeyError):
+                    service.refresh(session.id)
+            with self.assertRaises(KeyError):
+                service.get(session.id)
+
     def test_session_pages_filters_and_lifecycle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -104,23 +135,6 @@ class TagEditorSessionTests(unittest.TestCase):
             self.assertTrue(service.delete(session.id))
             with self.assertRaises(KeyError):
                 service.get(session.id)
-
-    def test_session_sorts_by_filesystem_modified_time(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            images = [
-                {"path": str(root / "new.png"), "rel_path": "new.png", "modified_ns": 30, "tags": ""},
-                {"path": str(root / "old.png"), "rel_path": "old.png", "modified_ns": 10, "tags": ""},
-                {"path": str(root / "mid.png"), "rel_path": "mid.png", "modified_ns": 20, "tags": ""},
-            ]
-            service = DatasetSessionService()
-            with patch("backend.tageditor.sessions.get_cached_scan_dataset", return_value=(images, [])):
-                session = service.create(str(root), True)
-
-            ascending = service.page(session.id, sort_by="modified", sort_asc=True)
-            descending = service.page(session.id, sort_by="modified", sort_asc=False)
-            self.assertEqual([item["rel_path"] for item in ascending["items"]], ["old.png", "mid.png", "new.png"])
-            self.assertEqual([item["rel_path"] for item in descending["items"]], ["new.png", "mid.png", "old.png"])
 
     def test_session_http_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:

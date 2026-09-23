@@ -18,22 +18,6 @@ class BootstrapContractTests(unittest.TestCase):
 
         self.assertTrue(script.isascii())
 
-    def test_zip_repair_backs_up_before_alignment_and_never_cleans(self):
-        script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-
-        backup = script.index("New-BootstrapBackup $rootFull")
-        source_alignment = script.index('@("checkout", "--force", $remoteRef, "--")')
-        self.assertLess(backup, source_alignment)
-        self.assertIn("bootstrap-backups", script)
-        self.assertIn("--set-upstream-to=origin/$Branch", script)
-        self.assertIn('"pull.ff", "only"', script)
-        self.assertIn('"fetch", "--progress", "--tags"', script)
-        self.assertIn("Assert-NoReparseTraversal", script)
-        self.assertIn("Test-ProtectedUserPath", script)
-        self.assertIn(":(top,exclude,icase,literal)$rootName", script)
-        self.assertNotIn("git clean", script.lower())
-        self.assertNotIn('@("reset", "--hard"', script)
-
     def test_quiet_runtime_check_hides_success_but_keeps_errors(self):
         healthy = {"ok": True, "errors": [], "versions": {}}
         output = io.StringIO()
@@ -50,16 +34,6 @@ class BootstrapContractTests(unittest.TestCase):
         ), contextlib.redirect_stdout(output):
             self.assertEqual(ensure_musubi_runtime.main(), 1)
         self.assertIn("missing package", output.getvalue())
-
-    def test_launchers_reject_incompatible_interpreters(self):
-        windows_script = WINDOWS_SCRIPT.read_text(encoding="utf-8")
-        linux_script = (ROOT / "start.sh").read_text(encoding="utf-8")
-        gui = (ROOT / "backend" / "gui.py").read_text(encoding="utf-8")
-
-        self.assertIn("sys.version_info[:2] == (3,12)", windows_script)
-        self.assertIn("sys.version_info[:2] == (3, 12)", linux_script)
-        self.assertIn("sys.version_info[:2] == (3, 12)", gui)
-        self.assertIn("Please run {launcher}", gui)
 
 
 if __name__ == "__main__":

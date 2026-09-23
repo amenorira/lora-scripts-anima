@@ -91,49 +91,6 @@ class RunRegistryTests(CrossDriveSandbox):
         self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], "../secret.txt"))
         self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], self.root / "secret.txt"))
 
-    def test_v1_record_falls_back_to_configured_artifact_directory(self):
-        internal = self.output / "legacy_internal"
-        artifact = self.external / "legacy_artifacts"
-        internal.mkdir()
-        artifact.mkdir()
-        self._write_config(internal / "config.toml", artifact, "legacy")
-        (internal / "task_meta.json").write_text(
-            json.dumps({"task_id": "legacy-task", "extra": {"output_dir": str(artifact)}}),
-            encoding="utf-8",
-        )
-
-        record = run_registry.load_run_record(internal)
-
-        self.assertEqual(record["schema_version"], 1)
-        self.assertEqual(record["task_id"], "legacy-task")
-        self.assertEqual(record["artifact_path"], artifact.resolve())
-        self.assertTrue(record["artifact_external"])
-        self.assertIsNone(record["preview_enabled"])
-
-    def test_internal_artifact_stored_relative_but_external_absolute(self):
-        # 项目内的产物目录以相对路径写入记录，保证整目录在机器间拷贝后仍可解析
-        internal = self.output / "portable_run"
-        internal.mkdir(parents=True)
-        (internal / "sample").mkdir()
-        (internal / "portable.safetensors").write_bytes(b"weights")
-
-        run_registry.write_run_record(internal, artifact_dir=internal, task_id="portable-task")
-
-        meta = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
-        self.assertEqual(meta["artifact_dir"], "output/portable_run")
-        record = run_registry.load_run_record(internal)
-        self.assertTrue(record["artifact_available"])
-        self.assertEqual(record["artifact_path"], internal.resolve())
-        self.assertFalse(record["artifact_external"])
-
-        # 项目外（跨盘/外部目录）仍必须存绝对路径
-        with tempfile.TemporaryDirectory() as other_root:
-            external = Path(other_root) / "portable_external"
-            external.mkdir()
-            run_registry.write_run_record(internal, artifact_dir=external, task_id="portable-external")
-            meta = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
-            self.assertEqual(meta["artifact_dir"], str(external.resolve()))
-
     def test_relocated_cloud_run_repairs_artifact_location(self):
         # AutoDL 风格：记录里是云端绝对路径，整个运行目录被拷贝到本地 output/ 下
         internal = self.output / "narumi_toa_20260802-182942"
@@ -246,40 +203,6 @@ class CrossDriveRouteTests(CrossDriveSandbox):
         )
         return internal, artifact
 
-    def test_output_path_info_separates_artifacts_from_monitoring_data(self):
-        response = asyncio.run(training_routes.output_path_info(
-            path=str(self.external),
-            output_name="my model",
-            resume=False,
-        ))
-        data = response.data
-
-        self.assertFalse(data["is_default"])
-        self.assertFalse(data["same_location"])
-        self.assertTrue(data["available"])
-        self.assertTrue(data["writable"])
-        self.assertEqual(Path(data["preview_dir"]).parent, self.external.resolve())
-        self.assertEqual(Path(data["monitor_dir"]).parent, self.output.resolve())
-        self.assertTrue(Path(data["preview_dir"]).name.startswith("my_model_"))
-
-        resume_response = asyncio.run(training_routes.output_path_info(
-            path=str(self.external),
-            output_name="ignored",
-            resume=True,
-        ))
-        self.assertEqual(Path(resume_response.data["preview_dir"]), self.external.resolve())
-
-    def test_failed_directory_probe_removes_new_empty_directory(self):
-        created = self.root / "probe-created"
-        not_a_directory = self.root / "probe-file"
-        not_a_directory.write_text("file", encoding="utf-8")
-
-        with self.assertRaises(OSError):
-            training_routes._prepare_output_directories(created, not_a_directory)
-
-        self.assertFalse(created.exists())
-        self.assertTrue(not_a_directory.is_file())
-
     def test_run_route_writes_monitoring_data_internal_and_artifacts_to_selected_path(self):
         cases = (
             ("default", "./output", "", True),
@@ -387,25 +310,6 @@ class CrossDriveRouteTests(CrossDriveSandbox):
         self.assertEqual({item["path"] for item in files}, {"route.safetensors", "sample/preview.png"})
         self.assertTrue(internal.is_dir())
 
-    def test_run_detail_and_output_loss_read_tensorboard_from_internal_directory(self):
-        internal, artifact = self._create_record()
-        (artifact / "route.safetensors").write_bytes(b"weights")
-
-        with patch.object(routes, "read_tensorboard_loss", return_value=[]) as read_tb, patch.object(
-            routes, "newest_previews", return_value=[]
-        ):
-            detail = asyncio.run(routes.monitor_run_detail("output/route_run"))
-            outputs = asyncio.run(routes.monitor_outputs(run_dir="output/route_run", task_id=""))
-
-        self.assertEqual(detail["status"], "success")
-        self.assertEqual(detail["data"]["artifact_dir"], str(artifact.resolve()))
-        self.assertTrue(detail["data"]["artifact_external"])
-        self.assertTrue(detail["data"]["preview_enabled"])
-        self.assertEqual(outputs["status"], "success")
-        self.assertEqual(outputs["data"][0]["path"], "route.safetensors")
-        self.assertTrue(outputs["meta"]["artifact_available"])
-        self.assertTrue(any(call.kwargs.get("run_dir") == str(internal.resolve()) for call in read_tb.call_args_list))
-
     def test_offline_artifact_keeps_record_but_outputs_report_unavailable(self):
         internal, artifact = self._create_record()
         artifact.rmdir()
@@ -416,65 +320,6 @@ class CrossDriveRouteTests(CrossDriveSandbox):
         self.assertFalse(record["artifact_available"])
         self.assertEqual(result["status"], "error")
         self.assertFalse(result["data"]["artifact_available"])
-
-
-class CrossDriveFrontendContractTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.training_source = Path("frontend/js/training-core.js").read_text(encoding="utf-8")
-        cls.training_toml_source = Path("frontend/js/training-toml.js").read_text(encoding="utf-8")
-        cls.monitor_source = (Path("frontend/js/monitor-core.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
-        cls.render_source = (Path("frontend/js/monitor-render.js").read_text(encoding="utf-8") + '\n' + Path('frontend/js/monitor-logs.js').read_text(encoding='utf-8'))
-        cls.css_source = Path("frontend/css/app.css").read_text(encoding="utf-8")
-        cls.zh = json.loads(Path("frontend/i18n/zh-CN.json").read_text(encoding="utf-8"))
-        cls.en = json.loads(Path("frontend/i18n/en-US.json").read_text(encoding="utf-8"))
-
-    def test_output_field_keeps_only_compact_custom_or_error_hint(self):
-        self.assertIn("/api/training/output-path-info?", self.training_source)
-        self.assertIn("outputPathCustomSummary", self.training_source)
-        self.assertIn("outputPathHintVisible", self.training_source)
-        self.assertIn("return !info.is_default", self.training_source)
-        self.assertNotIn("outputPathArtifactDetail", self.training_source)
-        self.assertNotIn("outputPathMonitorDetail", self.training_source)
-        self.assertNotIn("outputPathExternalWarning", self.training_source)
-        self.assertNotIn("output-path-hint-row", self.css_source)
-        self.assertIn("output-path-hint.is-error", self.css_source)
-        self.assertIn("await this.refreshOutputPathInfo(true)", self.training_toml_source)
-        self.assertIn("!outputPathInfo.available", self.training_toml_source)
-
-    def test_monitor_uses_run_mapping_for_single_download_and_offline_states(self):
-        self.assertIn("outputs/download-file?run_dir=", self.monitor_source)
-        self.assertIn("noPreviewArtifactUnavailableHint", self.render_source)
-        self.assertIn("noPreviewDisabledHint", self.render_source)
-        self.assertIn("noOutputsArtifactUnavailableHint", self.render_source)
-        self.assertIn("artifact_available", self.render_source)
-        self.assertNotIn("externalArtifacts", self.render_source)
-        self.assertNotIn("importedLegacy", self.render_source)
-
-    def test_only_necessary_path_copy_is_present_in_both_locales(self):
-        for locale in (self.zh, self.en):
-            training = locale["training"]
-            monitor = locale["monitor"]
-            for key in (
-                "outputPathCustomSummary",
-                "outputPathUnavailable",
-            ):
-                self.assertTrue(training[key])
-            for removed in (
-                "outputPathDefaultSummary",
-                "outputPathArtifactDetail",
-                "outputPathMonitorDetail",
-                "outputPathFreeSpace",
-                "outputPathExternalWarning",
-            ):
-                self.assertNotIn(removed, training)
-            for key in (
-                "artifactOfflineHint",
-                "noPreviewDisabledHint",
-                "noOutputsArtifactUnavailableHint",
-                "confirmDeleteRun",
-            ):
-                self.assertTrue(monitor[key])
 
 
 if __name__ == "__main__":

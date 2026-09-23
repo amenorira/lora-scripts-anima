@@ -80,6 +80,31 @@ from backend.training.optimizer_metadata import (
 #                  有意差异字段（learning_rate/mixed_precision/cache_* 等）禁止标记，
 #                  否则不传会让 sd-scripts 用它自己的默认值，训练行为改变。
 
+LYCORIS_COMMON_ARG_MAP = {
+    "conv_dim": "conv_dim", "conv_alpha": "conv_alpha", "lokr_factor": "factor",
+    "rank_dropout": "rank_dropout", "module_dropout": "module_dropout", "use_tucker": "use_tucker",
+}
+LYCORIS_KOHYA_ONLY_ARG_MAP = {
+    "use_scalar": "use_scalar", "decompose_both": "decompose_both",
+    "full_matrix": "full_matrix", "train_norm": "train_norm", "dropout": "dropout",
+}
+LYCORIS_KOHYA_SPECIFIC_ARG_MAP = {
+    "lycoris_algo": "algo", "lycoris_preset": "preset", "dora_wd": "dora_wd",
+    "bypass_mode": "bypass_mode", "rs_lora": "rs_lora",
+    "unbalanced_factorization": "unbalanced_factorization",
+    "wd_on_output": "wd_on_output", "train_llm_adapter": "train_llm_adapter",
+}
+_NETWORK_ARG_MAP = {**LYCORIS_COMMON_ARG_MAP, **LYCORIS_KOHYA_ONLY_ARG_MAP, **LYCORIS_KOHYA_SPECIFIC_ARG_MAP}
+NATIVE_NETWORK_ARG_MAP = {
+    module: {key: LYCORIS_COMMON_ARG_MAP[key] for key in keys}
+    for module, keys in {
+        "networks.lora": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout"),
+        "networks.lora_anima": ("rank_dropout", "module_dropout"),
+        "networks.loha": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout", "use_tucker"),
+        "networks.lokr": tuple(LYCORIS_COMMON_ARG_MAP),
+    }.items()
+}
+
 LORAPLUS_NETWORK_MODULES = (
     "networks.lora",
     "networks.lora_anima",
@@ -734,8 +759,6 @@ def _to_camel(field: dict) -> dict:
     """Convert field dict keys from snake_case to camelCase for frontend consumption."""
     result = {}
     for k, v in field.items():
-        if k == "target":
-            continue  # 仅后端需要
         if k == "_or":
             continue  # internal to show_if, handled during show_if conversion
         new_key = _FIELD_KEY_MAP.get(k, k)
@@ -812,6 +835,12 @@ def _to_camel(field: dict) -> dict:
         arg_name = _MERGED_ARG_NAMES.get(field.get("key"))
         if arg_name is not None:
             result["argKey"] = arg_name
+    key = field.get("key")
+    if key in _NETWORK_ARG_MAP:
+        result["networkArg"] = _NETWORK_ARG_MAP[key]
+        result["networkModules"] = ["lycoris.kohya", *(
+            module for module, mapping in NATIVE_NETWORK_ARG_MAP.items() if key in mapping
+        )]
     return result
 
 

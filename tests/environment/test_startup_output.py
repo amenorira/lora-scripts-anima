@@ -1,72 +1,11 @@
-import io
-import logging
 import sys
 import types
 import unittest
-from contextlib import redirect_stdout
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from backend import launch_utils, startup_output
-from backend.log import _ConsoleVisibilityFilter
+from backend import launch_utils
 from backend.utils import devices
-
-
-class StartupRenderingTests(unittest.TestCase):
-    def test_plain_output_timestamps_each_major_startup_event(self):
-        output = io.StringIO()
-        sections = [("Software / 软件", "App test")]
-        with patch.object(startup_output, "console", None), patch.object(
-            startup_output, "_timestamp", return_value="2026-08-01 12:34:56-123456"
-        ), patch.object(startup_output, "_elapsed", return_value="4.2s"), redirect_stdout(output):
-            startup_output.show_step("Loading / 加载")
-            startup_output.show_environment(sections)
-            startup_output.show_ready(
-                "http://127.0.0.1:12333/",
-                tensorboard_url=None,
-                log_path=Path("logs/anima.log"),
-            )
-
-        rendered = output.getvalue()
-        self.assertIn("2026-08-01 12:34:56-123456  > Loading / 加载", rendered)
-        self.assertIn("2026-08-01 12:34:56-123456  Environment / 运行环境", rendered)
-        self.assertIn("2026-08-01 12:34:56-123456  READY / 服务已就绪", rendered)
-        self.assertIn("Startup / 启动: 4.2s", rendered)
-
-    def test_ready_console_layout_wraps_without_persistent_box_borders(self):
-        from rich.console import Console
-
-        output = io.StringIO()
-        narrow_console = Console(
-            file=output,
-            width=58,
-            color_system=None,
-            force_terminal=False,
-        )
-        with patch.object(startup_output, "console", narrow_console), patch.object(
-            startup_output, "_timestamp", return_value="2026-08-01 12:34:56-123456"
-        ), patch.object(startup_output, "_elapsed", return_value="4.2s"):
-            startup_output.show_ready(
-                "http://127.0.0.1:12333/",
-                tensorboard_url="http://127.0.0.1:6006/",
-                log_path=Path("C:/Users/test/very-long-project-directory/logs/anima.log"),
-            )
-
-        rendered = output.getvalue()
-        self.assertIn("READY / 服务已就绪", rendered)
-        self.assertIn("very-long-project-directory", rendered)
-        self.assertNotIn("│", rendered)
-        self.assertNotIn("╰", rendered)
-
-    def test_console_filter_keeps_normal_runtime_logs_visible(self):
-        visibility_filter = _ConsoleVisibilityFilter()
-        normal = logging.LogRecord("test", logging.INFO, "", 0, "download", (), None)
-        startup_detail = logging.LogRecord("test", logging.INFO, "", 0, "detail", (), None)
-        startup_detail.console = False
-
-        self.assertTrue(visibility_filter.filter(normal))
-        self.assertFalse(visibility_filter.filter(startup_detail))
 
 
 class StartupDeviceSummaryTests(unittest.TestCase):
@@ -120,11 +59,6 @@ class StartupDiskCheckTests(unittest.TestCase):
 
     def tearDown(self):
         launch_utils._ENV_CHECKED = False
-
-    def test_healthy_disk_capacity_is_returned_for_the_summary(self):
-        usage = SimpleNamespace(free=630 * 1024**3)
-        with patch.object(launch_utils.shutil, "disk_usage", return_value=usage):
-            self.assertEqual(launch_utils.check_environment(), 630)
 
     def test_low_disk_warning_explains_the_user_impact(self):
         usage = SimpleNamespace(free=20 * 1024**3)

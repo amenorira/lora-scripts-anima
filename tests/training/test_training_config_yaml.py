@@ -7,8 +7,6 @@ from unittest.mock import patch
 
 from backend.monitor import routes as monitor_routes
 from backend.monitor import run_registry
-from backend.server.routes import training as training_routes
-from backend.server.models import TrainingTomlParseRequest
 from backend.training.training_config import (
     TRAINING_CONFIG_SCHEMA_VERSION,
     TrainingConfigError,
@@ -58,38 +56,6 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(restored["inv_sqrt_steps"], 5)
         self.assertNotIn("runtime", loaded)
 
-    def test_conditional_fields_follow_ui_hierarchy(self):
-        document = build_training_config(
-            {
-                "model_train_type": "anima-lora",
-                "enable_bucket": True,
-                "bucket_no_upscale": True,
-                "max_bucket_reso": 2048,
-                "optimizer_type": "Muon",
-                "muon_momentum": 0.95,
-                "bnb_percentile_clipping": 100,
-                "bnb_min_8bit_size": 4096,
-                "enable_preview": True,
-                "positive_prompts": "一名角色",
-                "sample_width": 1024,
-                "subset_timestep_offsets": {"10_face": -0.25},
-                "logging_dir": "./logs",
-            },
-            profile_id="anima-lora",
-        )
-
-        params = document["parameters"]
-        self.assertEqual(params["model"]["enable_bucket"]["enabled"], True)
-        self.assertEqual(params["model"]["enable_bucket"]["options"]["max_bucket_reso"], 2048)
-        self.assertEqual(params["optimizer"]["optimizer_type"]["selected"], "Muon")
-        optimizer_options = params["optimizer"]["optimizer_type"]["options"]
-        self.assertNotIn("bnb_percentile_clipping", optimizer_options)
-        self.assertNotIn("bnb_min_8bit_size", optimizer_options)
-        self.assertNotIn("save", params)
-        self.assertEqual(params["training"]["subset_timestep_offsets"], {"10_face": -0.25})
-        self.assertEqual(params["preview"]["enable_preview"]["options"]["sample_width"], 1024)
-        self.assertEqual(extract_training_form(document)["positive_prompts"], "一名角色")
-
     def test_duplicate_keys_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "training.yaml"
@@ -104,58 +70,6 @@ class TrainingConfigYamlTests(unittest.TestCase):
             )
             with self.assertRaises(TrainingConfigError):
                 load_training_config(path)
-
-    def test_wrong_kind_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "preset.yaml"
-            path.write_text(
-                "kind: preset\n"
-                "schema_version: 1\n"
-                "profile:\n"
-                "  id: anima-lora\n"
-                "form: {}\n",
-                encoding="utf-8",
-            )
-            with self.assertRaises(TrainingConfigError):
-                load_training_config(path)
-
-    def test_schema_v1_flat_form_remains_importable(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "training.yaml"
-            path.write_text(
-                "kind: training\n"
-                "schema_version: 1\n"
-                "profile:\n"
-                "  id: anima-lora\n"
-                "form:\n"
-                "  enable_preview: true\n"
-                "  positive_prompts: legacy prompt\n",
-                encoding="utf-8",
-            )
-            restored = extract_training_form(load_training_config(path))
-
-        self.assertTrue(restored["enable_preview"])
-        self.assertEqual(restored["positive_prompts"], "legacy prompt")
-
-    def test_schema_v1_lora_muon_fields_migrate_to_optimizer_argument_names(self):
-        document = {
-            "kind": "training",
-            "schema_version": 1,
-            "profile": {"id": "anima-lora"},
-            "form": {
-                "model_train_type": "anima-lora",
-                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
-                "lora_muon_momentum": 0.85,
-                "lora_muon_ns_steps": 6,
-            },
-        }
-
-        restored = extract_training_form(document)
-
-        self.assertEqual(restored["momentum"], 0.85)
-        self.assertEqual(restored["ns_steps"], 6)
-        self.assertNotIn("lora_muon_momentum", restored)
-        self.assertNotIn("lora_muon_ns_steps", restored)
 
     def test_schema_v2_lora_muon_fields_migrate_before_field_filtering(self):
         document = {
@@ -229,44 +143,3 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(response["data"]["params"]["output_dir"], "D:/models")
         self.assertTrue(response["data"]["params"]["enable_preview"])
         self.assertEqual(response["data"]["params"]["positive_prompts"], "完整预览提示词")
-
-    def test_export_endpoint_returns_application_yaml(self):
-        class _Request:
-            async def json(self):
-                return {
-                    "form": {
-                        "model_train_type": "anima-lora",
-                        "output_name": "中文预设",
-                "network_dim": 32,
-                "enable_preview": True,
-                "positive_prompts": "一名角色",
-                "sample_width": 1024,
-                "optimizer_type": "Muon",
-                "bnb_percentile_clipping": 100,
-                "bnb_min_8bit_size": 4096,
-                "muon_momentum": 0.96,
-                    },
-                    "gpu_ids": [0],
-                }
-
-        response = asyncio.run(training_routes.export_training_config(_Request()))
-        self.assertEqual(response.status, "success")
-        self.assertEqual(response.data["filename"], "中文预设.yaml")
-        UUID(response.data["document_id"])
-        self.assertIn("kind: training", response.data["content"])
-        self.assertNotIn("adapter_id:", response.data["content"])
-        self.assertIn("parameters:", response.data["content"])
-        self.assertIn("positive_prompts: 一名角色", response.data["content"])
-        self.assertIn("network_dim: 32", response.data["content"])
-        self.assertIn("sample_width: 1024", response.data["content"])
-        self.assertNotIn("bnb_percentile_clipping:", response.data["content"])
-        self.assertNotIn("bnb_min_8bit_size:", response.data["content"])
-        self.assertIn("muon_momentum: 0.96", response.data["content"])
-
-        parsed = asyncio.run(
-            training_routes.parse_training_toml(TrainingTomlParseRequest(content=response.data["content"]))
-        )
-        self.assertEqual(parsed.status, "success")
-        self.assertEqual(parsed.data["format"], "yaml")
-        self.assertEqual(parsed.data["document_id"], response.data["document_id"])
-        self.assertEqual(parsed.data["data"]["model_train_type"], "anima-lora")

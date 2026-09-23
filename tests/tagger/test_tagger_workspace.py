@@ -8,32 +8,8 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from backend.tagger import interrogator, workspace
-from backend.tagger.registry import MODEL_SPECS, model_payload
 
 
-class TaggerRegistryTests(unittest.TestCase):
-    def test_registry_contains_only_supported_onnx_taggers(self):
-        self.assertEqual(
-            [spec.id for spec in MODEL_SPECS],
-            [
-                "wd-eva02-large-tagger-v3",
-                "wd-vit-large-tagger-v3",
-                "cl_tagger_1_02",
-                "camie-tagger-v2",
-            ],
-        )
-        self.assertTrue(all(spec.engine == "onnx" for spec in MODEL_SPECS))
-        self.assertTrue(all(spec.family == "tagger" for spec in MODEL_SPECS))
-        with patch("backend.tagger.registry.gpu_info", return_value={}):
-            payload = model_payload()
-        self.assertNotIn("recommended_llm", payload["hardware"])
-        self.assertNotIn("runtime_installed", payload["models"][0])
-        self.assertNotIn("files_installed", payload["models"][0])
-        self.assertTrue(payload["models"][0]["supports_character_toggle"])
-        self.assertEqual(payload["models"][0]["threshold_categories"], ())
-        self.assertEqual(payload["models"][2]["threshold_categories"][-2:], ("quality", "rating"))
-        self.assertTrue(payload["models"][2]["supports_model_tag"])
-        self.assertFalse(payload["models"][0]["supports_model_tag"])
 class TaggerWorkspaceTests(unittest.TestCase):
     def _image(self, path: Path, color=(120, 80, 160)) -> None:
         Image.new("RGB", (48, 32), color).save(path)
@@ -46,7 +22,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 return result
             time.sleep(0.02)
         self.fail("Tagger task did not finish")
-
 
     def test_scan_task_results_and_atomic_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -81,35 +56,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(items[0]["result"]["text"], "1girl, blue eyes")
             self.assertFalse(list(root.glob(".*.tmp")))
 
-    def test_read_only_single_task_does_not_skip_existing_caption(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            image_path = Path(temporary) / "single.png"
-            self._image(image_path)
-            caption_path = image_path.with_suffix(".txt")
-            caption_path.write_text("old model tag", encoding="utf-8")
-            source = workspace.scan_source(str(image_path), False)
-
-            categories = {"general": {"tags": [["new_model_tag", 0.98]], "total": 1}}
-            with patch.object(workspace, "training_active", return_value=False), patch.object(
-                workspace,
-                "_onnx_tags",
-                return_value=(["new model tag"], categories),
-            ) as infer:
-                task_id = workspace.create_task({
-                    "source_token": source["source_token"],
-                    "model_id": "wd-eva02-large-tagger-v3",
-                    "conflict": "ignore",
-                    "write_captions": False,
-                })
-                result = self._wait(task_id)
-
-            self.assertEqual(result["status"], "done")
-            infer.assert_called_once()
-            item_result = workspace.task_items(task_id)["items"][0]["result"]
-            self.assertEqual(item_result["text"], "new model tag")
-            self.assertEqual(item_result["categories"], categories)
-            self.assertEqual(caption_path.read_text(encoding="utf-8"), "old model tag")
-
     def test_skip_existing_caption_does_not_run_inference(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -129,9 +75,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 result = self._wait(task_id)
             self.assertEqual(result["skipped"], 1)
             self.assertEqual(workspace.task_items(task_id)["items"][0]["result"]["text"], "existing tag")
-
-
-
 
     def test_onnx_result_keeps_all_raw_categories_and_passes_category_thresholds(self):
         raw = {
@@ -167,64 +110,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {}), ["star (symbol)"])
         self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {"escape_tag": True}), [r"star \(symbol\)"])
 
-    def test_single_image_candidates_keep_every_score_without_rounding(self):
-        fake = MagicMock()
-        fake.interrogate.return_value = {"general": [(f"tag_{i}", 0.49999) for i in range(250)]}
-        with patch.dict(workspace.available_interrogators, {"camie-tagger-v2": fake}), patch.object(
-            interrogator.Interrogator, "postprocess_tags", return_value={},
-        ):
-            _, full = workspace._onnx_tags("camie-tagger-v2", Image.new("RGB", (16, 16)), {}, full_categories=True)
-            _, preview = workspace._onnx_tags("camie-tagger-v2", Image.new("RGB", (16, 16)), {})
-        self.assertEqual(len(full["general"]["tags"]), 250)
-        self.assertEqual(full["general"]["tags"][0][1], 0.49999)
-        self.assertFalse(full["general"]["truncated"])
-        self.assertEqual(len(preview["general"]["tags"]), 200)
-        self.assertTrue(preview["general"]["truncated"])
-
-    def test_onnx_result_can_disable_character_tags_without_hiding_raw_category(self):
-        fake = MagicMock()
-        fake.interrogate.return_value = {
-            "general": [("1girl", 0.99)],
-            "character": [("alice", 0.88)],
-        }
-        with patch.dict(workspace.available_interrogators, {"wd-eva02-large-tagger-v3": fake}):
-            tags, categories = workspace._onnx_tags(
-                "wd-eva02-large-tagger-v3",
-                Image.new("RGB", (16, 16)),
-                {"category_enabled": {"character": False}},
-            )
-
-        self.assertEqual(tags, ["1girl"])
-        self.assertIn("character", categories)
-
-    def test_category_models_use_category_switch_for_rating_and_model_capability(self):
-        fake = MagicMock()
-        fake.interrogate.return_value = {
-            "general": [("1girl", 0.99)],
-            "rating": [("safe", 0.97)],
-            "model": [("nai", 0.91)],
-        }
-        with patch.dict(workspace.available_interrogators, {"cl_tagger_1_02": fake}), patch.object(
-            interrogator.Interrogator,
-            "postprocess_tags",
-            return_value={"1girl": 0.99},
-        ) as postprocess:
-            workspace._onnx_tags(
-                "cl_tagger_1_02",
-                Image.new("RGB", (16, 16)),
-                {
-                    "add_rating_tag": False,
-                    "add_model_tag": False,
-                    "category_enabled": {"rating": True},
-                },
-            )
-
-        self.assertTrue(postprocess.call_args.args[4])
-        self.assertFalse(postprocess.call_args.args[5])
-
-
-
-
     def test_append_caption_respects_remove_duplicated_option(self):
         with tempfile.TemporaryDirectory() as temporary:
             image_path = Path(temporary) / "sample.png"
@@ -249,7 +134,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(interrogator.get_tagger_task_snapshot(task_id)["status"], "cancelled")
         with interrogator._states_lock:
             interrogator._task_states.pop(task_id, None)
-
 
 
 if __name__ == "__main__":

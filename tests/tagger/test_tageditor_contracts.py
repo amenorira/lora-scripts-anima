@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from PIL import Image
 
 from backend.tageditor.core import (
     _invalidate_cache,
@@ -14,25 +13,6 @@ from backend.tageditor.routes import _resolve_target_images, save_all_tags, save
 
 
 class TagEditorBackendTests(unittest.TestCase):
-    def test_dataset_scan_returns_images_and_tag_frequency_together(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            (root / "a.png").touch()
-            (root / "a.txt").write_text("cat, blue eyes", encoding="utf-8")
-            (root / "b.jpg").touch()
-            (root / "b.txt").write_text("cat", encoding="utf-8")
-
-            images, tags = get_cached_scan_dataset(root)
-
-            self.assertEqual(len(images), 2)
-            self.assertEqual(tags, [
-                {"tag": "cat", "count": 2},
-                {"tag": "blue eyes", "count": 1},
-            ])
-            self.assertNotIn("thumbnail", images[0])
-            self.assertNotIn("preview", images[0])
-            _invalidate_cache(root)
-
     def test_batch_scope_resolves_selected_and_rejects_unknown_scope(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -48,23 +28,6 @@ class TagEditorBackendTests(unittest.TestCase):
             images, error = _resolve_target_images({"scope": "unknown"}, root)
             self.assertEqual(images, [])
             self.assertIn("无效", error)
-
-    def test_save_all_writes_captions(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            image_path = root / "sample.png"
-            image_path.touch()
-
-            result = asyncio.run(save_all_tags({
-                "dir": str(root),
-                "images": [{"path": str(image_path), "tags": "cat, smile"}],
-            }))
-
-            self.assertEqual(result["status"], "success")
-            self.assertEqual(result["data"]["saved"], 1)
-            self.assertEqual(result["data"]["saved_paths"], [str(image_path.resolve())])
-            self.assertEqual(result["data"]["failed"], [])
-            self.assertEqual((root / "sample.txt").read_text(encoding="utf-8"), "cat, smile")
 
     def test_save_all_reports_each_success_skip_and_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:

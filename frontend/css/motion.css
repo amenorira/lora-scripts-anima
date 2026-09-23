@@ -65,7 +65,6 @@
 }
 /* Keep feedback short and consistent; functional spinners remain independent. */
 .sidebar-item:active { transform: none; }
-.sidebar-nav-indicator { transition: opacity var(--duration-fast); }
 .monitor-tab-indicator, .env-tab-indicator { transition-duration: 180ms, 180ms, var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 .toggle:active input:not(:disabled) + .toggle-track .toggle-thumb { width: 16px; }

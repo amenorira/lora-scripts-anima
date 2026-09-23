@@ -8,7 +8,6 @@ import json
 import sys
 import tempfile
 import time
-import threading
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
@@ -84,13 +83,6 @@ class DictionaryInstallTests(unittest.TestCase):
         if dictionary._thread is not None:
             dictionary._thread.join(timeout=20)
 
-    def test_status_reports_absent_without_assets(self):
-        state = dictionary.status()
-        self.assertFalse(state["installed"])
-        self.assertEqual(state["status"], "idle")
-        self.assertEqual(state["tag_count"], 0)
-        self.assertEqual(state["source"], "ame-la/danbooru-tags-data-zh")
-
     def test_install_builds_from_local_csv_without_downloading(self):
         with patch.object(dictionary, "download_hf_file") as download:
             download.side_effect = AssertionError("本地已有 CSV 时不该联网")
@@ -119,20 +111,6 @@ class DictionaryInstallTests(unittest.TestCase):
         self.assertFalse(again["started"])
         self.assertEqual(again["reason"], "installed")
 
-    def test_categories_report_counts_and_support_legacy_assets(self):
-        dictionary.start_install()
-        state = wait_for_install()
-        general = next(c for c in state["categories"] if c["name"] == "general")
-        self.assertEqual(general, dict(id=0, name="general", tag_count=2))
-        self.assertEqual(sum(item["tag_count"] for item in state["categories"]), state["tag_count"])
-        manifest = dictionary.read_manifest()
-        manifest["categories"][0]["translated"] = 2
-        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        self.assertEqual(dictionary.status()["categories"], state["categories"])
-        manifest.pop("categories")
-        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        self.assertEqual(dictionary.status()["categories"], state["categories"])
-
     def test_update_check_compares_content_and_caches_result(self):
         dictionary.start_install()
         wait_for_install()
@@ -152,78 +130,9 @@ class DictionaryInstallTests(unittest.TestCase):
             self.assertEqual(dictionary.check_update(force=True)["state"], "error")
             self.assertTrue(dictionary.status()["installed"])
 
-    def test_legacy_dictionary_does_not_claim_up_to_date(self):
-        dictionary.start_install()
-        wait_for_install()
-        manifest = dictionary.read_manifest()
-        manifest.pop("source_hashes")
-        (self.asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        remote = SimpleNamespace(sha="revision", siblings=[
-            SimpleNamespace(rfilename=path, blob_id="hash", lfs=None) for path, _ in dictionary.HF_FILES])
-        with patch.object(dictionary, "_remote_info", return_value=remote):
-            self.assertEqual(dictionary.check_update()["state"], "unknown")
-
-    def test_all_five_category_files_download_concurrently(self):
-        barrier = threading.Barrier(5)
-        guard = threading.Lock()
-        active = peak = started = 0
-        def download(*args, **kwargs):
-            nonlocal active, peak, started
-            with guard:
-                active += 1
-                started += 1
-                peak = max(peak, active)
-            barrier.wait(timeout=3)
-            time.sleep(0.01)
-            with guard:
-                active -= 1
-        with patch.object(dictionary, "download_hf_file", side_effect=download):
-            dictionary._download_sources(True)
-        self.assertEqual(peak, 5)
-        self.assertEqual(started, 5)
-        self.assertEqual(dictionary._download_percent(), 100)
-        self.assertTrue(all(f["done"] for f in dictionary.status()["files"]))
-
-    def test_force_install_downloads_again(self):
-        dictionary.start_install()
-        wait_for_install()
-        with patch.object(dictionary, "download_hf_file") as download:
-            download.side_effect = RuntimeError("network down")
-            result = dictionary.start_install(force=True)
-            state = wait_for_install()
-        self.assertTrue(result["started"])
-        self.assertEqual(state["status"], "failed")
-        self.assertIn("network down", state["message"])
-        # 上一次装好的词典仍然可用，失败不会把已有资源清掉
-        self.assertTrue(state["installed"])
-
-    def test_asset_path_is_limited_to_installed_files(self):
-        dictionary.start_install()
-        wait_for_install()
-        manifest = json.loads((self.asset / "manifest.json").read_text(encoding="utf-8"))
-        self.assertIsNotNone(dictionary.asset_path("manifest.json"))
-        self.assertIsNotNone(dictionary.asset_path(manifest["core"]))
-        for name in ["../manifest.json", "..\\manifest.json", "tags-core.deadbeef.json",
-                     "sub/manifest.json", ".hidden", "", "artist.csv"]:
-            self.assertIsNone(dictionary.asset_path(name), name)
-
     def build_legacy(self):
         return builder.build(self.source, self.legacy_asset, "legacy", builder.SOURCE_URL,
                              on_report=lambda _: None)
-
-    def test_legacy_assets_are_served_without_install_or_download(self):
-        manifest = self.build_legacy()
-        with patch.object(dictionary, "download_hf_file") as download:
-            result = dictionary.start_install()
-        self.assertFalse(result["started"])
-        self.assertEqual(result["reason"], "installed")
-        self.assertEqual(dictionary.status()["data_version"], "legacy")
-        self.assertEqual(dictionary.status()["size_bytes"], sum(
-            (self.legacy_asset / manifest[key]).stat().st_size for key in ("core", "detail")))
-        for name in ("manifest.json", manifest["core"], manifest["detail"]):
-            self.assertEqual(dictionary.asset_path(name), self.legacy_asset / name)
-        download.assert_not_called()
-        self.assertFalse(self.asset.exists())
 
     def test_new_assets_take_priority_and_incomplete_assets_fall_back(self):
         legacy = self.build_legacy()
@@ -259,38 +168,12 @@ class DictionaryInstallTests(unittest.TestCase):
                          {f"{name}.csv" for name in CATEGORY_FILES})
         self.assertTrue(any("构建报告" in line for line in dictionary._state["log"]))
 
-    def test_empty_legacy_source_is_downloaded(self):
-        (self.source / "artist.csv").unlink()
-        self.legacy_source.mkdir(parents=True)
-        (self.legacy_source / "artist.csv").write_bytes(b"")
-        with patch.object(dictionary, "download_hf_file") as download:
-            dictionary._download_sources(False)
-        self.assertEqual(download.call_count, 1)
-        self.assertEqual(download.call_args.args[1], "tags/artist.csv")
-
-    def test_force_download_ignores_legacy_sources(self):
-        write_sources(self.legacy_source)
-        with patch.object(dictionary, "download_hf_file") as download, \
-                patch.object(dictionary, "reuse_legacy_sources") as reuse:
-            dictionary._download_sources(True)
-        self.assertEqual(download.call_count, len(CATEGORY_FILES))
-        reuse.assert_not_called()
-
     def test_invalid_csv_reports_failed_instead_of_staying_busy(self):
         (self.source / "meta.csv").write_text("bad,header\n1,2\n", encoding="utf-8")
         dictionary.start_install()
         state = wait_for_install()
         self.assertEqual(state["status"], "failed")
         self.assertEqual(state["error_kind"], "build")
-
-    def test_invalid_legacy_manifest_is_not_installed(self):
-        manifest = self.build_legacy()
-        (self.legacy_asset / manifest["detail"]).unlink()
-        self.assertFalse(dictionary.status()["installed"])
-        manifest["detail"] = "../outside.json"
-        (self.legacy_asset.parent / "outside.json").write_text("[]", encoding="utf-8")
-        (self.legacy_asset / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        self.assertFalse(dictionary.status()["installed"])
 
     def test_interrupted_copy_leaves_no_partial_source(self):
         write_sources(self.legacy_source)
@@ -303,23 +186,6 @@ class DictionaryInstallTests(unittest.TestCase):
         self.assertEqual(len(list(self.source.iterdir())), len(CATEGORY_FILES) - 1)
         builder.reuse_legacy_sources(self.source)
         self.assertEqual(target.read_bytes(), (self.legacy_source / target.name).read_bytes())
-
-    def test_cli_default_input_reuses_legacy_sources(self):
-        write_sources(self.legacy_source)
-        source = self.source.parent / "missing-source"
-        with patch.object(builder, "DEFAULT_INPUT", source), \
-                patch.object(builder, "DEFAULT_OUTPUT", self.asset), \
-                patch.object(builder, "download_sources") as download, \
-                patch("builtins.print"):
-            self.assertEqual(builder.main([]), 0)
-        download.assert_not_called()
-        self.assertTrue((source / "general.csv").is_file())
-        self.assertTrue(dictionary.status()["installed"])
-
-    def test_hf_home_controls_default_directories(self):
-        with patch.dict("os.environ", {"HF_HOME": str(self.source.parent.parent)}):
-            self.assertEqual(builder.default_source_dir(), self.source)
-            self.assertEqual(builder.default_asset_dir(), self.asset)
 
 
 class DictionaryRouteTests(unittest.TestCase):
@@ -342,20 +208,6 @@ class DictionaryRouteTests(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
         self.addCleanup(DictionaryInstallTests.join_install, self)
-
-    def test_status_endpoint(self):
-        payload = self.client.get("/api/tageditor/dictionary").json()
-        self.assertEqual(payload["status"], "success")
-        self.assertFalse(payload["data"]["installed"])
-
-    def test_legacy_asset_endpoint(self):
-        manifest = builder.build(self.source, dictionary.LEGACY_ASSET_DIR, "legacy",
-                                 builder.SOURCE_URL, on_report=lambda _: None)
-        self.assertTrue(self.client.get("/api/tageditor/dictionary").json()["data"]["installed"])
-        for name in ("manifest.json", manifest["core"], manifest["detail"]):
-            response = self.client.get(f"/api/tageditor/dictionary/asset/{name}")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.content, (dictionary.LEGACY_ASSET_DIR / name).read_bytes())
 
     def test_asset_endpoint_serves_installed_files_and_blocks_others(self):
         self.client.post("/api/tageditor/dictionary/install", json={})

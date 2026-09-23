@@ -36,56 +36,8 @@ window.trainingTomlMixin = {
     const activeLycorisKeys = new Set();
     const networkModule = this.form.network_module || '';
     const isKohya = networkModule === 'lycoris.kohya';
-    const isLycorisNative = networkModule === 'networks.loha' || networkModule === 'networks.lokr';
 
-    // Map UI field key → network_args key (matching adapter.py mappings)
-    const NET_ARG_MAP = {
-      lycoris_algo: 'algo', conv_dim: 'conv_dim', conv_alpha: 'conv_alpha',
-      lokr_factor: 'factor', use_tucker: 'use_tucker', use_scalar: 'use_scalar',
-      decompose_both: 'decompose_both', full_matrix: 'full_matrix', train_norm: 'train_norm',
-      rank_dropout: 'rank_dropout', module_dropout: 'module_dropout', dropout: 'dropout',
-      dora_wd: 'dora_wd', bypass_mode: 'bypass_mode', rs_lora: 'rs_lora',
-      lycoris_preset: 'preset', unbalanced_factorization: 'unbalanced_factorization',
-      wd_on_output: 'wd_on_output', train_llm_adapter: 'train_llm_adapter',
-    };
-    // Fields only available for lycoris.kohya (not sd-scripts native LoHa/LoKr)
-    const KOHYA_ONLY = new Set(['lycoris_algo', 'lycoris_preset',
-      'use_scalar', 'decompose_both', 'full_matrix', 'train_norm', 'dropout',
-      'dora_wd', 'bypass_mode', 'rs_lora',
-      'unbalanced_factorization', 'wd_on_output', 'train_llm_adapter']);
-
-    // 跳过的顶层字段：UI-only、merged 优化器字段（由 _buildOptimizerArgs 合并进 optimizer_args）
-    const SKIP_TOP_LEVEL = new Set([
-      'model_train_type','sample_prompts','optimizer_args_custom','network_args_custom',
-      'enable_preview','positive_prompts','negative_prompts',
-      'enable_loraplus','loraplus_lr_ratio','loraplus_unet_lr_ratio','loraplus_text_encoder_lr_ratio',
-      'train_adaln', 'lycoris_anima_sd_default', 'lycoris_anima_train_adaln',
-      // lycoris_kernel_backend 是进程级环境变量（/run 路由转 LYCORIS_KERNEL_BACKEND），
-      // sd-scripts 不认这个键，预览/导出 TOML 中不应出现。
-      'lycoris_kernel_backend',
-      'enable_reg_data',
-      'sample_cfg','sample_width','sample_height','sample_seed','sample_steps','sample_flow_shift',
-      'prodigy_d_coef','prodigy_d0','prodigy_safeguard_warmup',
-      'prodigyplus_use_stableadamw','schedulefree_warmup_steps',
-      'd_limiter','schedulefree_c','prodigy_steps','use_speed',
-      'use_bias_correction','use_cautious','use_orthograd',
-      'factored','factored_fp32','split_groups','split_groups_mean','weight_decay_by_lr',
-      'bnb_percentile_clipping','bnb_min_8bit_size',
-      'stableadamw_kahan_sum','stableadamw_weight_decouple',
-      'adafactor_relative_step','adafactor_scale_parameter','adafactor_warmup_init',
-      'adafactor_clip_threshold','adafactor_eps','weight_decay','stopcoef','notify','use_shadow',
-      'automagic_min_lr','automagic_max_lr','automagic_beta2',
-      'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
-      'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
-      'came_ams_bound','came_eps1','came_eps2',
-      'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
-      'lorarite_clip_unmagnified_grad',
-      'muon_momentum','muon_nesterov','muon_ns_steps','muon_ns_coefficients','muon_adjust_lr_fn',
-      'max_precondition_dim','precondition_frequency','shampoo_beta',
-      'normalize_gradient','correct_bias','precondition_1d',
-      'momentum','ns_steps','inv_sqrt_steps','msign_eps','inv_sqrt_eps','inv_sqrt_gamma',
-      'gauge_rebalance','gauge_rebalance_alpha','gauge_rebalance_interval','gauge_power_steps',
-    ]);
+    // 参数映射和字段目标由后端注册表提供，预览与训练共用同一份定义。
 
     // 分组桶：key=sectionKey → value=行数组。按 allSections 顺序填充再拼接，保证预览==表单顺序。
     const sectionLines = {};
@@ -105,7 +57,7 @@ window.trainingTomlMixin = {
         const k = f.key;
         if (f.hidden) continue;
         if (!this._fieldShowIfMet(f)) continue;
-        if (SKIP_TOP_LEVEL.has(k) || k.startsWith('_')) continue;
+        if (k === 'sample_prompts' || k.startsWith('_')) continue;
 
         const v = this.form[k];
         if (v === '' || v === null || v === undefined) continue;
@@ -114,10 +66,12 @@ window.trainingTomlMixin = {
         if (f.omitDefault && f.default !== undefined && String(v) === String(f.default)) continue;
 
         // Collect LyCORIS UI fields for network_args formatting
-        if (NET_ARG_MAP[k] && (isKohya || (isLycorisNative && !KOHYA_ONLY.has(k)))) {
+        if (f.networkArg && f.networkModules.includes(networkModule)) {
           activeLycorisKeys.add(k);
           continue; // not added as top-level line
         }
+
+        if (f.target && f.target !== 'toml') continue;
 
         if (typeof v === 'boolean') { pushLine(section.key, `${k} = ${v}`); }
         else if (typeof v === 'number') { pushLine(section.key, `${k} = ${v}`); }
@@ -191,7 +145,7 @@ window.trainingTomlMixin = {
       // 默认值已在收集阶段（omitDefault）过滤，此处剩下的都是用户显式设置的非默认值。
       if (v === null || v === undefined || v === '') continue;
       if (typeof v === 'number' && isNaN(v)) continue;
-      const argKey = NET_ARG_MAP[k];
+      const argKey = fieldByKey.get(k).networkArg;
       const val = typeof v === 'boolean' ? String(v).toLowerCase() : String(v);
       netArgsArr.push(`${argKey}=${val}`);
     }
