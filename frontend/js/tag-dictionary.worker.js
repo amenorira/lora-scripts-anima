@@ -9,10 +9,11 @@
      INIT        {base}                      加载 manifest + core，随后空闲加载 detail
      LOAD_DETAIL {}                          立即加载 detail（首次悬停时触发）
      LOOKUP_BATCH{id, tags[]}                当前图片全部标签一次查完
-     SEARCH      {id, query, limit}          补全/搜索
+     SUGGEST     {id, query, limit, localTags[] | sourceTags[]} 补全搜索及本地标签精确匹配
+     FILTER_TAGS {id, tags[], query}          标签列表筛选
      DETAIL      {id, tag}                   悬停说明
    回复（Worker → 主线程）：
-     READY_CORE / READY_DETAIL / FAILED / LOOKUP_RESULT / SEARCH_RESULT / DETAIL_RESULT
+     READY_CORE / READY_DETAIL / FAILED / LOOKUP_RESULT / SUGGEST_RESULT / SEARCH_RESULT / DETAIL_RESULT
    ================================================================ */
 importScripts('tag-dictionary-lib.js' + self.location.search);
 
@@ -29,7 +30,7 @@ self.onmessage = function (event) {
   if (!index) return; // core 未就绪：静默丢弃，主线程会用 ready 状态自己降级
   if (msg.type === 'LOAD_DETAIL') return loadDetail();
   if (msg.type === 'LOOKUP_BATCH') return lookupBatch(msg);
-  if (msg.type === 'SEARCH') return search(msg);
+  if (msg.type === 'SUGGEST') return suggest(msg);
   if (msg.type === 'FILTER_TAGS') return post({ type: 'SEARCH_RESULT', id: msg.id, results: TD.filterTags(index, msg.tags || [], msg.query || '') });
   if (msg.type === 'DETAIL') return detail(msg);
 };
@@ -102,22 +103,25 @@ function loadDetail() {
     });
 }
 
-function lookupBatch(msg) {
-  var tags = msg.tags || [];
+function lookupTags(tags) {
   var results = new Array(tags.length);
   for (var i = 0; i < tags.length; i++) {
     var hit = TD.lookup(index, tags[i]);
     results[i] = hit ? hit.result : null;
   }
-  post({ type: 'LOOKUP_RESULT', id: msg.id, results: results });
+  return results;
 }
 
-function search(msg) {
-  post({
-    type: 'SEARCH_RESULT',
-    id: msg.id,
-    results: TD.search(index, msg.query, msg.limit)
-  });
+function lookupBatch(msg) {
+  post({ type: 'LOOKUP_RESULT', id: msg.id, results: lookupTags(msg.tags || []) });
+}
+
+function suggest(msg) {
+  var localTags = msg.sourceTags
+    ? TD.filterTags(index, msg.sourceTags, msg.query).slice(0, msg.limit || 20)
+    : (msg.localTags || []);
+  post({ type: 'SUGGEST_RESULT', id: msg.id, results: TD.search(index, msg.query, msg.limit),
+    localTags: localTags, localResults: lookupTags(localTags) });
 }
 
 function detail(msg) {
