@@ -93,6 +93,8 @@ window.tagEditorMixin = {
   tagEditorSwitchOpen: false,
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
+  tagEditorLeftWidth: 260,
+  _teResizeSide: 'right',
   tagEditorPreviewRatio: 0.5,
   _tePreviewDrag: null,
   tagEditorResizing: false,
@@ -142,6 +144,8 @@ window.tagEditorMixin = {
   tagEditorLightboxOpen: false,
   tagEditorLightboxImage: null,
   tagEditorLightboxLoading: false,
+  tagEditorLightboxSrc: '',
+  _teLightboxRequest: 0,
   tagEditorLightboxScale: 1,
   tagEditorLightboxX: 0,
   tagEditorLightboxY: 0,
@@ -720,8 +724,9 @@ window.tagEditorMixin = {
     } else closeNow();
   },
 
-  tagEditorStartResize(e) {
+  tagEditorStartResize(e, side) {
     if (e.button !== undefined && e.button !== 0) return;
+    this._teResizeSide = side || 'right';
     this.tagEditorResizing = true;
     document.body.classList.add('te-resizing');
   },
@@ -731,9 +736,18 @@ window.tagEditorMixin = {
     var main = document.querySelector('.te-main[data-te-main="active"]');
     if (!main) return;
     var rect = main.getBoundingClientRect();
-    var leftWidth = this.tagEditorLeftCollapsed ? 0 : 220;
-    var maxWidth = Math.max(280, rect.width - leftWidth - 428);
-    this.tagEditorRightWidth = Math.max(280, Math.min(maxWidth, rect.right - e.clientX));
+    var side = this._teResizeSide;
+    this.tagEditorSetPanelWidth(side, side === 'left' ? e.clientX - rect.left : rect.right - e.clientX);
+  },
+
+  tagEditorSetPanelWidth(side, width) {
+    var left = side === 'left';
+    var main = document.querySelector('.te-main[data-te-main="active"]');
+    var other = left ? this.tagEditorRightWidth : (this.tagEditorLeftCollapsed ? 0 : this.tagEditorLeftWidth);
+    var min = left ? 180 : 280;
+    var max = left ? 420 : 520;
+    if (main && main.clientWidth) max = Math.min(max, Math.max(min, main.clientWidth - other - 196));
+    this[left ? 'tagEditorLeftWidth' : 'tagEditorRightWidth'] = Math.max(min, Math.min(max, width));
   },
 
   tagEditorStopResize() {
@@ -741,19 +755,27 @@ window.tagEditorMixin = {
     this.tagEditorResizing = false;
     document.body.classList.remove('te-resizing');
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
+    try { localStorage.setItem('tagEditor_leftWidth', String(Math.round(this.tagEditorLeftWidth))); } catch (e) {}
     this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorAdjustRightWidth(delta) {
-    this.tagEditorRightWidth = Math.max(280, Math.min(520, this.tagEditorRightWidth + delta));
+    this.tagEditorSetPanelWidth('right', this.tagEditorRightWidth + delta);
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
     this.tagEditorRefreshSuggestPosition();
+  },
+
+  tagEditorAdjustLeftWidth(delta) {
+    this.tagEditorSetPanelWidth('left', this.tagEditorLeftWidth + delta);
+    try { localStorage.setItem('tagEditor_leftWidth', String(Math.round(this.tagEditorLeftWidth))); } catch (e) {}
   },
 
   tagEditorRestorePanelWidth() {
     var saved = 0;
     try { saved = parseInt(localStorage.getItem('tagEditor_rightWidth'), 10); } catch (e) {}
     this.tagEditorRightWidth = saved >= 280 && saved <= 520 ? saved : 340;
+    try { saved = parseInt(localStorage.getItem('tagEditor_leftWidth'), 10); } catch (e) { saved = 0; }
+    this.tagEditorLeftWidth = saved >= 180 && saved <= 420 ? saved : 260;
     try {
       var ratio = Number(localStorage.getItem('tagEditor_previewRatio'));
       this.tagEditorPreviewRatio = ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
@@ -1131,12 +1153,14 @@ window.tagEditorMixin = {
   },
 
   tagEditorTagCtx(e, tag) {
-    // A9: 防止右键菜单溢出视口（菜单预估 ~180 宽 / ~150 高）
-    var menuW = 180, menuH = 150;
+    // Reserve space for the shared menu sizing and rename action.
+    var menuW = 220, menuH = 230;
     var x = Math.min(e.clientX, window.innerWidth - menuW - 4);
     var y = Math.min(e.clientY, window.innerHeight - menuH - 4);
     this.tagEditorImageContextMenu = null;
+    this.tagEditorPanelMenu = null;
     this.tagEditorContextMenu = { x: x, y: y, tag: tag };
+    this.tagDictionaryCloseHover();
   },
 
   tagEditorCtxInclude() {
@@ -1249,7 +1273,9 @@ window.tagEditorMixin = {
     var x = Math.max(margin, Math.min(e.clientX, window.innerWidth - menuW - margin));
     var y = Math.max(margin, Math.min(e.clientY, window.innerHeight - menuH - margin));
     this.tagEditorContextMenu = null;
+    this.tagEditorPanelMenu = null;
     this.tagEditorImageContextMenu = { x: x, y: y, image: img };
+    this.tagDictionaryCloseHover();
   },
 
   tagEditorCtxViewImage() {
@@ -1260,6 +1286,12 @@ window.tagEditorMixin = {
 
   tagEditorOriginalUrl(img) {
     if (!img || !this.tagEditorSessionId) return '';
+    if (img.preview) {
+      var url = new URL(img.preview, window.location.href);
+      url.searchParams.set('variant', 'original');
+      url.searchParams.delete('size');
+      return url.pathname + url.search;
+    }
     var params = new URLSearchParams();
     params.set('scope', 'dataset');
     params.set('session_id', this.tagEditorSessionId);
@@ -1274,21 +1306,34 @@ window.tagEditorMixin = {
     this.tagEditorSelected = [img.path];
     this._updateEditorPanel();
     this.tagEditorLightboxImage = img;
+    this.tagEditorLightboxSrc = img.preview || img.thumbnail || '';
     this.tagEditorLightboxLoading = true;
     this.tagEditorLightboxOpen = true;
     this.tagEditorImageContextMenu = null;
     this.tagEditorResetLightbox();
     document.body.classList.add('te-lightbox-open');
     var self = this;
+    var request = ++this._teLightboxRequest;
+    var original = new Image();
+    original.src = this.tagEditorOriginalUrl(img);
+    original.decode().then(function() {
+      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      self.tagEditorLightboxSrc = original.src;
+      self.tagEditorLightboxLoading = false;
+    }).catch(function() {
+      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      self.tagEditorLightboxLoading = false;
+      self.toast(self.t('common.networkError'), 'error');
+    });
     this.$nextTick(function() {
       var closeButton = document.querySelector('.te-lightbox-close');
       if (closeButton) closeButton.focus();
-      var image = document.querySelector('.te-lightbox-image');
-      if (image && image.complete) self.tagEditorLightboxLoading = false;
     });
   },
 
   tagEditorCloseLightbox() {
+    ++this._teLightboxRequest;
+    this.tagEditorLightboxSrc = '';
     this.tagEditorLightboxOpen = false;
     this.tagEditorLightboxLoading = false;
     this.tagEditorLightboxImage = null;
