@@ -19,7 +19,7 @@
 
 // Worker 脚本的版本号：Worker 地址带 ?v= 才会命中一年 immutable 缓存，
 // 所以改了 tag-dictionary.worker.js 必须同时改这里（其余三个文件在 index.html 里带 ?v=）。
-var TD_ASSET_VERSION = '20260920-escaped-tags1';
+var TD_ASSET_VERSION = '20260924-suggest-batch1';
 var TD_BASE = '/api/tageditor/dictionary/asset/';
 var TD_STATUS_URL = '/api/tageditor/dictionary';
 var TD_INSTALL_URL = '/api/tageditor/dictionary/install';
@@ -59,7 +59,7 @@ function _teSuggestItem(insert, label, sub, category, count, alias) {
    两边同名时只留一条：本地写法保留（不悄悄改写数据集的写法），用词典信息把
    翻译和分类补上。本地用的是 Danbooru 下划线写法时，词典的 Anima 写法仍然保留
    一条——用户可能正想把它换成 Anima 格式。 */
-function _teSuggestMerge(localTags, dictResults, limit) {
+function _teSuggestMerge(localTags, dictResults, limit, lookupLocal) {
   var max = limit || TD_SUGGEST_LIMIT;
   var out = [];
   var seen = Object.create(null);
@@ -81,7 +81,7 @@ function _teSuggestMerge(localTags, dictResults, limit) {
     key = String(localTags[i]).toLowerCase();
     if (!key || seen[key]) continue;
     seen[key] = 1;
-    result = byName[key];
+    result = (lookupLocal && lookupLocal(localTags[i])) || byName[key];
     out.push(result
       ? _teSuggestItem(localTags[i], localTags[i], result.translation, result.category, result.postCount, '')
       : _teSuggestItem(localTags[i]));
@@ -541,6 +541,10 @@ window.tagDictionaryMixin = {
       _tdResolve(msg.id, msg.results);
       return;
     }
+    if (msg.type === 'SUGGEST_RESULT') {
+      _tdResolve(msg.id, msg);
+      return;
+    }
     if (msg.type === 'SEARCH_RESULT') {
       _tdResolve(msg.id, msg.results);
       return;
@@ -685,23 +689,30 @@ window.tagDictionaryMixin = {
     var self = this;
     state.suggestTimer = setTimeout(function () {
       state.suggestTimer = null;
-      self.tagDictionarySearch(token, TD_SUGGEST_LIMIT).then(function (results) {
-        if (seq !== self._teSuggestSeq || !results) return;
-        self._teApplyDictSuggestions(token, seq, results, inputEl);
+      self.tagDictionaryComplete(token, { localTags: self._teLocalSuggestTags.slice() }).then(function (reply) {
+        if (reply && seq === self._teSuggestSeq) self._teApplyDictSuggestions(token, seq, reply.results, inputEl);
       });
     }, 140);
   },
 
-  tagDictionarySearch(query, limit) {
+  tagDictionaryComplete(query, options) {
     if (!this.tagDictionaryReady) return Promise.resolve(null);
     var state = _td();
     var generation = state.generation;
-    return _tdSend({ type: 'SEARCH', query: query, limit: limit || TD_SUGGEST_LIMIT }, 4000).then(function (results) {
-      if (generation !== state.generation) return null;
-      (results || []).forEach(function (result) {
+    var self = this;
+    return _tdSend(Object.assign({ type: 'SUGGEST', query: query, limit: TD_SUGGEST_LIMIT }, options), 4000).then(function (reply) {
+      if (generation !== state.generation || !reply) return null;
+      var localTags = reply.localTags || [];
+      var localResults = reply.localResults || [];
+      var newLocal = localTags.some(function (tag) { return !state.lookups.has(tag); });
+      (reply.results || []).forEach(function (result) {
         _tdLruSet(state.lookups, result.animaTag, result, TD_LOOKUP_CACHE_MAX);
       });
-      return results;
+      localTags.forEach(function (tag, i) {
+        _tdLruSet(state.lookups, tag, localResults[i] || null, TD_LOOKUP_CACHE_MAX);
+      });
+      if (newLocal) self.tagDictionaryVersion++;
+      return reply;
     });
   },
 

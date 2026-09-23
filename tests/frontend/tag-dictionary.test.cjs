@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const LIB = path.join(__dirname, '../../frontend/js/tag-dictionary-lib.js');
 const CLIENT = path.join(__dirname, '../../frontend/js/tag-dictionary.js');
+const WORKER = path.join(__dirname, '../../frontend/js/tag-dictionary.worker.js');
 
 function loadLib() {
   const context = { window: {} };
@@ -347,7 +348,7 @@ test('dictionary failure degrades instead of breaking the editor', async () => {
   assert.equal(posted.filter(message => message.type === 'LOOKUP_BATCH').length, 0);
 });
 
-test('stale search results are dropped by sequence', async () => {
+test('stale suggestion results are dropped by sequence', async () => {
   const { ctx, posted } = makeClient({ status: [INSTALLED] });
   await initReady(ctx);
   ctx._tdHandleMessage({ type: 'READY_CORE', tagCount: 10 });
@@ -355,18 +356,101 @@ test('stale search results are dropped by sequence', async () => {
   ctx._teApplyDictSuggestions = (token, seq, results) => applied.push([token, seq, results.length]);
   ctx.tagDictionarySuggest('长', 1, null);
   await tick(160);
-  const search = posted.filter(message => message.type === 'SEARCH').at(-1);
+  const search = posted.filter(message => message.type === 'SUGGEST').at(-1);
   assert.equal(search.query, '长');
   ctx._teSuggestSeq = 2; // 用户又敲了一个字
-  ctx._tdHandleMessage({ type: 'SEARCH_RESULT', id: search.id, results: [{ canonical: 'long_hair' }] });
+  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: search.id, results: [{ canonical: 'long_hair' }], localTags: [], localResults: [] });
   await tick(10);
   assert.deepEqual(applied, []);
   ctx.tagDictionarySuggest('长发', 2, null);
   await tick(160);
-  const current = posted.filter(message => message.type === 'SEARCH').at(-1);
-  ctx._tdHandleMessage({ type: 'SEARCH_RESULT', id: current.id, results: [{ canonical: 'long_hair' }] });
+  const current = posted.filter(message => message.type === 'SUGGEST').at(-1);
+  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: current.id, results: [{ canonical: 'long_hair' }], localTags: [], localResults: [] });
   await tick(10);
   assert.deepEqual(applied, [['长发', 2, 1]]);
+});
+
+test('local suggestions use exact dictionary metadata outside the search limit', async () => {
+  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
+  await initReady(ctx);
+  reply({ type: 'READY_CORE' });
+  ctx._teSuggestSeq = 1;
+  ctx._teLocalSuggestTags = ['gradient background'];
+  ctx.tagDictionaryLookupTags(['gradient background']); // 页面预取尚未返回
+  ctx.tagDictionarySuggest('back', 1, null);
+  await tick(160);
+  const suggest = posted.find(message => message.type === 'SUGGEST');
+  assert.deepEqual(plain(suggest.localTags), ['gradient background']);
+  assert.equal(posted.filter(message => message.type === 'LOOKUP_BATCH').length, 1);
+  reply({ type: 'SUGGEST_RESULT', id: suggest.id,
+    results: [{ animaTag: 'back bow', canonical: 'back_bow', translation: '背后的蝴蝶结', category: 0, postCount: 43700 }],
+    localTags: ['gradient background'],
+    localResults: [{ animaTag: 'gradient background', canonical: 'gradient_background', translation: '渐变背景', category: 0, postCount: 187000 }]
+  });
+  await tick(0);
+  assert.equal(ctx.tagEditorSuggestions[0].insert, 'gradient background');
+  assert.equal(ctx.tagEditorSuggestions[0].cat, 0);
+  assert.equal(ctx.tagEditorSuggestions[0].count, 187000);
+  assert.equal(ctx.tagEditorSuggestions[1].insert, 'back bow');
+});
+
+test('batch suggestions use exact metadata for local tags outside search results', async () => {
+  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
+  await initReady(ctx);
+  reply({ type: 'READY_CORE' });
+  ctx.tagEditorTagFreq = [{ tag: 'gradient background' }];
+  ctx.batchAddInput = 'back';
+  ctx.tagEditorBatchSuggest('add');
+  await tick(110);
+  const suggest = posted.find(message => message.type === 'SUGGEST');
+  assert.deepEqual(plain(suggest.sourceTags), ['gradient background']);
+  reply({ type: 'SUGGEST_RESULT', id: suggest.id,
+    results: [{ animaTag: 'back bow', canonical: 'back_bow', translation: '背后的蝴蝶结', category: 0, postCount: 43700 }],
+    localTags: ['gradient background'],
+    localResults: [{ animaTag: 'gradient background', canonical: 'gradient_background', translation: '渐变背景', category: 0, postCount: 187000 }]
+  });
+  await tick(0);
+  assert.equal(ctx.batchSuggestItems[0].cat, 0);
+  assert.equal(ctx.batchSuggestItems[0].count, 187000);
+  assert.equal(ctx.batchSuggestItems[1].insert, 'back bow');
+});
+
+test('tag list search keeps its dictionary translation filter', async () => {
+  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
+  await initReady(ctx);
+  reply({ type: 'READY_CORE' });
+  ctx.tagEditorTagFreq = [{ tag: 'gradient background' }];
+  ctx._teInvalidateFreq = () => {};
+  ctx._tdRequestChips = () => {};
+  ctx.tagEditorSetTagSearch('渐变');
+  await tick(160);
+  const filter = posted.find(message => message.type === 'FILTER_TAGS');
+  assert.equal(filter.query, '渐变');
+  reply({ type: 'SEARCH_RESULT', id: filter.id, results: ['gradient background'] });
+  await tick(0);
+  assert.equal(ctx._teTagSearchMatches.has('gradient background'), true);
+});
+
+test('worker returns capped search and exact local metadata in one suggestion response', () => {
+  const TD = loadLib();
+  const posted = [];
+  const self = { TagDictionary: TD, location: { search: '' }, postMessage: message => posted.push(message) };
+  const context = { self, importScripts() {} };
+  vm.runInNewContext(fs.readFileSync(WORKER, 'utf8'), context);
+  context.index = TD.createIndex([
+    ['back_bow', '背后的蝴蝶结', 0, 43700, ''],
+    ['gradient_background', '渐变背景', 0, 18700, '']
+  ]);
+  self.onmessage({ data: { type: 'SUGGEST', id: 7, query: 'back', limit: 1, localTags: ['gradient background'] } });
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].type, 'SUGGEST_RESULT');
+  assert.deepEqual(plain(posted[0].results).map(item => item.canonical), ['back_bow']);
+  assert.deepEqual(plain(posted[0].localTags), ['gradient background']);
+  assert.equal(posted[0].localResults[0].canonical, 'gradient_background');
+  self.onmessage({ data: { type: 'SUGGEST', id: 8, query: 'back', limit: 1,
+    sourceTags: ['gradient background', 'blue eyes'] } });
+  assert.deepEqual(plain(posted[1].localTags), ['gradient background']);
+  assert.equal(posted[1].localResults[0].canonical, 'gradient_background');
 });
 
 test('failed update keeps the active dictionary and offers retry', async () => {

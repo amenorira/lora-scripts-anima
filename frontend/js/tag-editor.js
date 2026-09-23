@@ -16,9 +16,6 @@ function _teParseTags(s, lower) {
   return out;
 }
 
-// 补全下拉的总条数上限（本地标签 + 词典结果），与 tag-dictionary.js 的 TD_SUGGEST_LIMIT 一致
-var SUGGEST_LIMIT = 20;
-
 function _teSuggestFromFreq(freq, query, limit, onResult) {
   var q = (query || '').toLowerCase();
   if (!q) { onResult([]); return; }
@@ -1970,6 +1967,10 @@ window.tagEditorMixin = {
   },
 
   // ===== Autocomplete =====
+  _teMergeSuggestions(local, dictionary) {
+    return _teSuggestMerge(local, dictionary, TD_SUGGEST_LIMIT, tag => this.tagDictionaryMetaFor(tag));
+  },
+
   tagEditorGetSuggestions(val, inputEl) {
     var seq = ++this._teSuggestSeq;
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
@@ -1987,11 +1988,10 @@ window.tagEditorMixin = {
       if (!token) { self._teCloseSuggestions(); return; }
       self.tagEditorSuggestIdx = -1;
       // 本地标签（当前数据集里出现过的）先出，词典结果随后补满
-      // 20 = 词典补全上限，与 tag-dictionary.js 的 TD_SUGGEST_LIMIT 一致
       _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(localTags) {
         if (seq !== self._teSuggestSeq) return;
         self._teLocalSuggestTags = localTags;
-        self._teSetSuggestions(_teSuggestMerge(localTags, null, SUGGEST_LIMIT), el);
+        self._teSetSuggestions(self._teMergeSuggestions(localTags, null), el);
       });
       self.tagDictionarySuggest(token, seq, el);
     }, 50);
@@ -2000,7 +2000,7 @@ window.tagEditorMixin = {
   /* 词典结果比本地标签晚回来，只有 seq 仍是最新时才允许替换下拉内容。 */
   _teApplyDictSuggestions(token, seq, results, inputEl) {
     if (seq !== this._teSuggestSeq) return;
-    this._teSetSuggestions(_teSuggestMerge(this._teLocalSuggestTags, results, SUGGEST_LIMIT), inputEl || this._teSuggestInputEl);
+    this._teSetSuggestions(this._teMergeSuggestions(this._teLocalSuggestTags, results), inputEl || this._teSuggestInputEl);
   },
 
   _teSetSuggestions(items, el) {
@@ -2105,9 +2105,9 @@ window.tagEditorMixin = {
       var existingOnly = field === 'remove' || field === 'old';
       var tags = (existingOnly ? self.tagEditorGetSelectedStats() : self.tagEditorTagFreq).map(function(item) { return item.tag; });
       var local = tags.filter(function(tag) { return tag.toLowerCase().includes(v); });
-      var results = await Promise.all([self.tagDictionarySearch(v, 20), self.tagDictionaryFilterTags(tags, v)]);
+      var result = await self.tagDictionaryComplete(v, { sourceTags: tags });
       if (seq !== self._teBatchSuggestSeq) return;
-      var items = _teSuggestMerge(results[1] || local, results[0] || [], 20);
+      var items = self._teMergeSuggestions(result ? result.localTags : local, result ? result.results : []);
       if (existingOnly) {
         var allowed = new Set(tags);
         items = items.filter(function(item) { return allowed.has(item.insert); });
