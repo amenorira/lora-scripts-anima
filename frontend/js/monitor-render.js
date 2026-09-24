@@ -616,16 +616,16 @@ window.monitorRenderMixin = {
     return (this._summaryTelemetryCache = { version, samples });
   },
 
+  // 进度趋势曲线：横轴按真实训练步数定位（与按下标等距的 Loss 曲线共用同一几何实现）。
   _summaryTelemetryPath(samples, field) {
-    const points = samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0);
-    if (points.length < 2 || points[0].step === points[points.length - 1].step) return '';
-    const values = points.map(point => point[field]);
-    const low = Math.min(...values), high = Math.max(...values);
-    const range = high - low || Math.max(Math.abs(high) * 0.02, 1e-9);
+    const points = samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0).slice(-40);
+    if (points.length < 2) return '';
     const first = points[0].step, span = points[points.length - 1].step - first;
-    return points.map((point, index) => (index ? 'L' : 'M')
-      + (4 + (point.step - first) / span * 112).toFixed(1) + ' '
-      + (30 - (point[field] - low) / range * 26).toFixed(1)).join(' ');
+    if (!span) return '';
+    return this._sparklineGeometry(
+      points.map(point => point[field]),
+      index => 4 + (points[index].step - first) / span * 112,
+    ).path;
   },
 
   _patchSummaryTelemetry(root, t, isHistory) {
@@ -696,13 +696,14 @@ window.monitorRenderMixin = {
     return this._sparklineGeometry(points).path;
   },
 
-  _sparklineGeometry(values) {
+  // 迷你折线几何唯一实现。xAt 可选：按下标等距（默认）或按调用方给出的横轴映射。
+  _sparklineGeometry(values, xAt) {
     const points = values.slice(-40).filter(Number.isFinite);
     if (points.length < 2) return { path: '', endY: null, coords: [] };
     const low = Math.min(...points), high = Math.max(...points);
     const range = high - low || Math.max(Math.abs(high) * 0.02, 1e-9);
-    const y = value => 30 - (value - low) / range * 26;
-    const coords = points.map((value, index) => ({ x: (4 + index * 112 / (points.length - 1)).toFixed(1), y: y(value).toFixed(1) }));
+    const x = typeof xAt === 'function' ? xAt : index => 4 + index * 112 / (points.length - 1);
+    const coords = points.map((value, index) => ({ x: x(index, points.length).toFixed(1), y: (30 - (value - low) / range * 26).toFixed(1) }));
     return {
       path: coords.map((point, index) => (index ? 'L' : 'M') + point.x + ' ' + point.y).join(' '),
       endY: coords[coords.length - 1].y,
@@ -711,7 +712,7 @@ window.monitorRenderMixin = {
   },
 
   _diagnosticLossTrend(bestStep) {
-    const points = this._trainingDiagnosticPoints().points;
+    const points = this._trainingDiagnosticPoints();
     if (points.length < 2) return { values: [], bestIndex: -1 };
     const best = points.findIndex(point => point.step === bestStep);
     const indices = new Set([0, points.length - 1]);
@@ -723,7 +724,7 @@ window.monitorRenderMixin = {
   },
 
   _diagnosticMetricTrends() {
-    const points = this._trainingDiagnosticPoints().points;
+    const points = this._trainingDiagnosticPoints();
     const trends = { change: [], volatility: [] };
     if (points.length < 6) return trends;
     const sampleCount = Math.min(24, points.length - 5);
@@ -799,23 +800,16 @@ window.monitorRenderMixin = {
       + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
   },
 
-  _monitorOptimizerLabel(value, trainType) {
-    if (typeof window.getVisibleSections !== 'function') return value;
-    const sections = window.getVisibleSections(trainType || 'anima-lora') || [];
-    const field = sections.flatMap(section => section.fields || []).find(item => item.key === 'optimizer_type');
-    if (!field) return value;
-    const options = [...(field.options || []), ...(field.groups || []).flatMap(group => group.options || [])];
-    const option = options.find(item => String(item.v) === String(value))
-      || options.find(item => String(item.v).toLowerCase() === String(value).toLowerCase());
-    if (!option) return value;
-    return option.dk ? this.t(option.dk, option.l || value) : (option.l || value);
-  },
-
   _trainingDiagnosticPoints() {
     const series = (this.lossSeries || []).find(item => item.tag === 'loss/average')
       || (this.lossSeries || []).find(item => item.tag === 'loss/current');
+    return this._cleanLossPoints(series && (series.diagnostic_points || series.points));
+  },
+
+  // Loss 点清洗唯一入口：按 step 去重（保留同 step 的最后一个值）后升序。
+  _cleanLossPoints(rawPoints) {
     const byStep = new Map();
-    ((series && (series.diagnostic_points || series.points)) || []).forEach(point => {
+    (rawPoints || []).forEach(point => {
       const rawStep = point && point.step;
       const rawValue = point && point.value;
       const step = Number(rawStep);
@@ -824,10 +818,7 @@ window.monitorRenderMixin = {
         byStep.set(step, { step, value });
       }
     });
-    return {
-      tag: series ? series.tag : 'loss/average',
-      points: Array.from(byStep.values()).sort((left, right) => left.step - right.step),
-    };
+    return Array.from(byStep.values()).sort((left, right) => left.step - right.step);
   },
 
   _trainingDiagnosticRules() {
@@ -844,28 +835,10 @@ window.monitorRenderMixin = {
 
   _trainingDiagnostics(points) {
     const rules = this._trainingDiagnosticRules();
-    let sourceTag = 'loss/average';
-    let clean;
-    if (Array.isArray(points)) {
-      const byStep = new Map();
-      points.forEach(point => {
-        const rawStep = point && point.step;
-        const rawValue = point && point.value;
-        const step = Number(rawStep);
-        const value = Number(rawValue);
-        if (rawStep !== null && rawStep !== '' && rawStep !== undefined && rawValue !== null && rawValue !== '' && rawValue !== undefined && Number.isFinite(step) && Number.isFinite(value)) {
-          byStep.set(step, { step, value });
-        }
-      });
-      clean = Array.from(byStep.values()).sort((left, right) => left.step - right.step);
-    } else {
-      const source = this._trainingDiagnosticPoints();
-      sourceTag = source.tag;
-      clean = source.points;
-    }
+    const clean = this._cleanLossPoints(points || this._trainingDiagnosticPoints());
 
     const base = {
-      code: 'insufficient', tone: 'muted', sourceTag, count: clean.length,
+      code: 'insufficient', tone: 'muted', count: clean.length,
       windowSize: 0, latestStep: clean.length ? clean[clean.length - 1].step : null,
       recentMean: null, previousMean: null, changePct: null, volatilityPct: null,
       bestValue: null, bestStep: null, gapFromBestPct: null,
@@ -1145,11 +1118,8 @@ window.monitorRenderMixin = {
       let value = String(param.value);
       if (definition.basename) { const parts = value.replace(/\\/g, '/').split('/'); value = parts[parts.length - 1] || value; }
       if (definition.key === 'learning_rate' && Number.isFinite(Number(value))) value = this._formatLearningRate(value, value);
-      if (definition.key === 'optimizer_type') {
-        const trainType = byKey.model_train_type?.value || this.runDetailData?.config?.model_train_type
-          || this.monitorData?.model_train_type || this.form?.model_train_type || 'anima-lora';
-        value = this._monitorOptimizerLabel(value, trainType);
-      }
+      // optimizer_type 用训练表单同款选项标签，避免历史 TOML 值（大小写不一致）直接露在摘要里
+      if (definition.key === 'optimizer_type') value = this._fieldOptionLabel('optimizer_type', value, value);
       html += '<div class="param-key-item"><span class="param-key-icon">' + this._monitorIconHtml(definition.key) + '</span><span class="param-key-copy"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value" title="' + this.esc(value) + '">' + this._paramValueHtml({ value, type: param.type }) + '</span></span></div>';
     });
     html += '</div>';

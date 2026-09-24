@@ -1408,6 +1408,8 @@ window.trainingCoreMixin = {
     return option ? this.t(option.dk, option.l || value) : (value || '');
   },
 
+  // 选项标签解析入口：表单预览、监控参数摘要共用。
+  // 值可能来自历史 TOML（大小写与下拉选项不完全一致），故精确匹配失败后按小写兜底。
   _fieldOptionLabel(fieldKey, value, fallback = '') {
     const field = this._fieldDefinition(fieldKey, this.form.model_train_type || 'anima-lora');
     if (!field) return String(value ?? fallback ?? '');
@@ -1418,9 +1420,11 @@ window.trainingCoreMixin = {
         if (Array.isArray(group.options)) options.push(...group.options);
       });
     }
-    const option = options.find(item => String(item.v) === String(value));
-    if (!option) return String(value ?? fallback ?? '');
-    return this.t(option.dk, option.l || String(value ?? fallback ?? ''));
+    const text = String(value ?? fallback ?? '');
+    const option = options.find(item => String(item.v) === String(value))
+      || options.find(item => String(item.v).toLowerCase() === text.toLowerCase());
+    if (!option) return text;
+    return this.t(option.dk, option.l || text);
   },
 
   _openManagedModal(stateKey, focusKey, focusSelector, afterOpen) {

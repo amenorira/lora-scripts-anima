@@ -7,8 +7,14 @@ eval(fs.readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-core.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-render.js', 'utf8'));
+// 监控页与训练页共用一个 Alpine 组件：参数摘要复用训练表单的选项标签解析。
+eval(fs.readFileSync('frontend/js/training-core.js', 'utf8'));
 function app(overrides = {}) {
-  const value = Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(window.monitorCoreMixin), ...Object.getOwnPropertyDescriptors(window.monitorRenderMixin) });
+  const value = Object.defineProperties({}, {
+    ...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),
+    ...Object.getOwnPropertyDescriptors(window.monitorRenderMixin),
+    ...Object.getOwnPropertyDescriptors(window.trainingCoreMixin),
+  });
   return Object.assign(value, {
     renderDashboard() {}, scheduleRender() {}, finishProgress() {}, t: k => k,
     closePreviewLightbox() {}, esc: value => String(value),
@@ -148,12 +154,16 @@ test('live progress events build real trend samples and clearing them removes th
 
 test('key parameters use the optimizer dropdown label and Dim caption', () => {
   const getVisibleSections = window.getVisibleSections;
-  window.getVisibleSections = () => [{ fields: [{ key: 'optimizer_type', groups: [{ options: [{ v: 'pytorch_optimizer.CAME', l: 'CAME' }] }] }] }];
+  // 选项带 dk（真实注册表形态）；标签经 i18n 取词，所以本例的 t 认这个 key。
+  window.getVisibleSections = () => [{ fields: [{ key: 'optimizer_type', groups: [{ options: [{ v: 'pytorch_optimizer.CAME', l: 'CAME', dk: 'opt.optimizer_type_came' }] }] }] }];
   try {
-    const a = app({ trainParams: [
-      { key: 'optimizer_type', value: 'pytorch_optimizer.Came', section: 'optimizer' },
-      { key: 'network_dim', value: 32, section: 'network' },
-    ] });
+    const a = app({
+      t: (key, fallback) => (key === 'opt.optimizer_type_came' ? 'CAME' : key),
+      trainParams: [
+        { key: 'optimizer_type', value: 'pytorch_optimizer.Came', section: 'optimizer' },
+        { key: 'network_dim', value: 32, section: 'network' },
+      ],
+    });
     const html = a._parametersConsoleHtml(key => key);
     assert.match(html, /param-key-label">historyOptimizer<\/span><span class="param-key-value" title="CAME">CAME/);
     assert.match(html, /param-key-label">paramDim<\/span><span class="param-key-value" title="32">32/);
