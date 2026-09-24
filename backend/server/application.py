@@ -219,10 +219,10 @@ async def serve_index():
 
 
 async def serve_favicon():
-    return FileResponse("frontend/assets/favicon.ico")
+    return FileResponse("frontend/assets/favicon.png")
 
 
-app.add_api_route("/favicon.ico", serve_favicon, methods=["GET"], response_class=FileResponse)
+app.add_api_route("/favicon.png", serve_favicon, methods=["GET"], response_class=FileResponse)
 
 
 app.mount("/", SPAStaticFiles(directory="frontend", html=True), name="static")
