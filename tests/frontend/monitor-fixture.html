@@ -4,19 +4,30 @@
 <link rel="stylesheet" href="/frontend/css/app.css">
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
-<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:900px; } .route-monitor-dashboard { height:calc(100vh - 120px); } </style>
+<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:900px; } .route-monitor-dashboard { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/utils.js"></script>
+<script src="/frontend/js/config.js"></script>
 <script src="/frontend/js/monitor-logs.js"></script>
 <script src="/frontend/js/training-core.js"></script>
 <script src="/frontend/js/monitor-core.js"></script>
 <script src="/frontend/js/monitor-render.js"></script>
 <main id="fixture" x-data="monitorFixture">
-  <div class="fixture-controls"><button class="btn btn-sm" @click="$el.closest('main').classList.toggle('narrow')">切换桌面窄窗口</button><button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.train_result={status:'completed',duration_str:'12m 30s'};renderDashboard()">模拟训练完成</button></div>
+  <div class="fixture-controls">
+    <button class="btn btn-sm" @click="$el.closest('main').classList.toggle('narrow')">切换桌面窄窗口</button>
+    <button class="btn btn-sm" @click="monitorData.state='CREATED';renderDashboard()">等待启动</button>
+    <button class="btn btn-sm" @click="monitorData.state='RUNNING';monitorData.train_result=null;renderDashboard()">训练中</button>
+    <button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.step=740;monitorData.percent=100;monitorData.epoch='20/20';monitorData.elapsed='1:04:50';monitorData.lr=0;monitorData.train_result={status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'};lossSeries[1].points.push({step:740,value:0});lossSeries[1].latest=0;lossDataVersion++;renderDashboard()">训练完成</button>
+    <button class="btn btn-sm" @click="monitorData.state='FAILED';monitorData.train_result={status:'failed',duration_str:'43:21'};monitorData.has_error=true;monitorData.error_msg='Sample failure';renderDashboard()">训练失败</button>
+    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
+    <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
+  </div>
   <div id="fixtureRoute"></div>
 </main>
 <script>
 (async () => {
-  const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/zh-CN.json', {cache:'no-store'}).then(r=>r.json())]);
+  const language = new URLSearchParams(location.search).get('lang') === 'en-US' ? 'en-US' : 'zh-CN';
+  document.documentElement.lang = language;
+  const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/'+language+'.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
   document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
   const response = data => ({json:async()=>({status:'success',data}),ok:true});
@@ -33,7 +44,16 @@
     '                               resolution: (1024, 1024)',
     '2026-09-20 12:47:25 INFO     Loading VAE from ./models/qwen_image_vae.safetensors'.padEnd(129) + 'qwen_image_autoencoder_kl.py:1631',
     '                    WARNING  <script>alert("plain text")<\/script>',
-    ...Array.from({length:30},(_,i)=>`steps: ${i+1}%|###-------| ${i+1}/100 [00:01<00:30, avr_loss=0.123]`),
+    ...Array.from({length:40},(_,i)=>{
+      const step=479+i;
+      const seconds=Math.round(2601-(39-i)*5.26+Math.sin(i*.7)-Math.sin(39*.7));
+      const elapsed=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+      const speed=(5.26+.22*Math.sin(i*.45)+.08*Math.sin(i*1.2)).toFixed(2);
+      const estimate=3715+Math.round(42*(Math.sin(i*.4)-Math.sin(39*.4))+12*(Math.sin(i*1.15)-Math.sin(39*1.15)));
+      const remaining=estimate-seconds;
+      const eta=`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`;
+      return `steps: ${Math.round(step/740*100)}%|#######---| ${step}/740 [${elapsed}<${eta}, ${speed}s/it, avr_loss=0.123]`;
+    }),
   ];
   window.fetch=(url,opts)=> {
     if (!String(url).startsWith('/api/')) return realFetch(url,opts);
@@ -43,16 +63,30 @@
   document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
     return Object.assign(a,{
-      escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:'zh-CN',realtimeState:'online',liveTaskId:'fixture',
+      escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:language,realtimeState:'online',liveTaskId:'fixture',
       t(key,fb){return key.split('.').reduce((v,k)=>v&&v[k],translations)||fb||key;},
-      toast(message){console.log(message);},finishProgress(){},navigate(){},
-      monitorData:{state:'RUNNING',step:450,total_steps:1000,percent:45,loss:.082,lr:1e-7,epoch:'5/10',elapsed:'12m 30s',eta:'15m',speed:'1.8it/s',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
+      toast(message){console.log(message);},finishProgress(){},navigate(){},stopMonitorRealtime(){},startMonitorRealtime(){},
+      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:'14/20',elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
       previews:samples,previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
-      lossSeries:[{tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:.12-i*.0003}))}],
-      trainParams:[{key:'learning_rate',value:'1e-7',section:'training'},{key:'network_dim',value:32,section:'network'},{key:'max_train_epochs',value:10,section:'training'}],
+      lossSeries:[
+        {tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:i<60?.027+Math.sin(i)*.0003:i<90?.039+Math.sin(i)*.001:.034-(i-90)*.00001+Math.sin(i)*.0002}))},
+        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:i+1,value:.00006-i*(.0000174/119)}))}
+      ],
+      trainParams:[
+        {key:'pretrained_model_name_or_path',value:'C:/models/anima-base-v1.0.safetensors',section:'model'},
+        {key:'learning_rate',value:'6e-5',section:'training'},
+        {key:'network_dim',value:32,section:'network'},
+        {key:'network_alpha',value:32,section:'network'},
+        {key:'max_train_epochs',value:20,section:'training'},
+        {key:'optimizer_type',value:'pytorch_optimizer.Came',section:'optimizer'},
+        {key:'train_batch_size',value:2,section:'training'},
+        {key:'resolution',value:'1024, 1024',section:'model'},
+        {key:'seed',value:1337,section:'training'},
+        ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
+      ],
       init(){this.$nextTick(()=>this.renderDashboard());}
     });
   }));

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -445,12 +446,17 @@ def _write_result_json(
 ) -> None:
     """写入结构化训练结果文件"""
     try:
+        total_seconds = max(0, int(duration_sec))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
         result = {
             "task_id": task_id,
             "status": status,
             "exit_code": exit_code,
             "duration_sec": round(duration_sec, 1),
-            "duration_str": f"{int(duration_sec // 60)}m {int(duration_sec % 60)}s",
+            "duration_str": duration_str,
+            "ended_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "error": error_msg if error_msg else None,
         }
         result_path = run_dir / "result.json"

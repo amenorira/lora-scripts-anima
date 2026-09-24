@@ -11,10 +11,221 @@ function app(overrides = {}) {
   const value = Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(window.monitorCoreMixin), ...Object.getOwnPropertyDescriptors(window.monitorRenderMixin) });
   return Object.assign(value, {
     renderDashboard() {}, scheduleRender() {}, finishProgress() {}, t: k => k,
-    closePreviewLightbox() {},
+    closePreviewLightbox() {}, esc: value => String(value),
     lossSeries: [], previews: [], logLines: [], logFullLines: [], outputFiles: [], outputFilesSelected: {},
   }, overrides);
 }
+
+function summaryRoot() {
+  const nodes = new Map();
+  const querySelector = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      dataset: {}, style: {}, textContent: '', hidden: false,
+      parentElement: {
+        setAttribute(name, value) { this[name] = value; },
+        removeAttribute(name) { delete this[name]; },
+      },
+      setAttribute(name, value) { this[name] = value; },
+      querySelector,
+    });
+    return nodes.get(selector);
+  };
+  return {
+    dataset: {},
+    node(selector) { return nodes.get(selector); },
+    querySelector,
+  };
+}
+
+test('live summary owns progress and stop; history keeps navigation without a stop action', () => {
+  const a = app();
+  const t = key => key;
+  for (const state of ['CREATED', 'RUNNING']) {
+    const html = a._overviewMetricsHtml({ state }, t, false, state === 'RUNNING');
+    assert.match(html, /data-summary-stop/);
+    assert.match(html, /data-overview-progress/);
+    assert.equal((html.match(/class="m-live-metric /g) || []).length, 4);
+    assert.doesNotMatch(html, /m-statusbar|m-sb-/);
+  }
+  const history = a._historyBannerHtml({ train_result: { status: 'completed', duration_str: '1h' } }, t);
+  assert.match(history, /clearRunDetail\(\)/);
+  assert.doesNotMatch(history, /1h|stopTraining/);
+  assert.doesNotMatch(a._overviewMetricsHtml({ train_result: { status: 'completed' } }, t, true, false), /data-summary-stop/);
+  assert.doesNotMatch(a._overviewMetricsHtml({ state: 'UNKNOWN' }, t, false, false), /readyToTrain|data-overview-progress/);
+  assert.doesNotMatch(fs.readFileSync('frontend/index.html', 'utf8'), /monitorControlbar/);
+});
+
+test('summary patches live state, actual terminal progress, degraded connection and errors', () => {
+  const a = app({ realtimeState: 'degraded', realtimeTaskStateUnknown: true });
+  const root = summaryRoot();
+  const t = key => key;
+  a._patchOverviewStatus(root, { state: 'RUNNING', step: 518, total_steps: 740, percent: 70, elapsed: '43:21', eta: '18:34', has_error: true, error_msg: 'Disk error' }, t, false);
+  assert.equal(root.node('[data-summary-field="step"]').textContent, '518 / 740 stepsUnit');
+  assert.equal(root.node('[data-summary-field="percent"]').textContent, '70%');
+  assert.equal(root.node('[data-overview-progress]').style.width, '70%');
+  assert.equal(root.node('[data-summary-stop]').hidden, false);
+  assert.equal(root.node('[data-summary-connection]').textContent, 'realtimeDelayed');
+  assert.match(root.node('[data-summary-notice]').textContent, /Disk error.*taskStateUnknown/);
+  a._patchOverviewStatus(root, { state: 'FAILED', step: 520, total_steps: 740, percent: 70.27, elapsed: '43:30' }, t, false);
+  assert.equal(root.node('[data-summary-field="percent"]').textContent, '70.3%');
+  assert.equal(root.node('[data-summary-stop]').hidden, true);
+});
+
+test('remaining time leads the live tile and a recorded end time appears in history', () => {
+  const a = app();
+  const root = summaryRoot();
+  const t = key => key;
+  a._patchOverviewStatus(root, { state: 'RUNNING', elapsed: '43:21', eta: '18:34' }, t, false);
+  assert.equal(root.node('[data-summary-field="time-label"]').textContent, 'estimatedRemaining');
+  assert.equal(root.node('[data-summary-field="time"]').textContent, '18:34');
+  assert.equal(root.node('[data-summary-field="time-meta"]').textContent, 'elapsed 43:21');
+  assert.match(root.node('[data-summary-field="progress-time"]').textContent, /estimatedRemaining 18:34/);
+
+  const endedAt = '2025-09-24T08:42:31+00:00';
+  a._patchOverviewStatus(root, { train_result: { status: 'completed', duration_str: '1:04:50', ended_at: endedAt } }, t, true);
+  assert.equal(root.node('[data-summary-field="time"]').textContent, '1:04:50');
+  assert.equal(root.node('[data-summary-field="time-meta"]').textContent, 'endedAt ' + a._formatRunEndTime(endedAt));
+  a._patchOverviewStatus(root, { train_result: { status: 'completed', duration_str: '1:04:50' } }, t, true);
+  assert.equal(root.node('[data-summary-field="time-meta"]').textContent, '');
+});
+
+test('duration from current and older results is displayed in base 60', () => {
+  const a = app();
+  assert.equal(a._formatMonitorDuration('65m 50s'), '1:05:50');
+  assert.equal(a._formatMonitorDuration('1h 5m 50s'), '1:05:50');
+  assert.equal(a._formatMonitorDuration('65:50'), '1:05:50');
+  assert.equal(a._formatMonitorDuration('43:21'), '43:21');
+  assert.equal(a._formatMonitorDuration('—'), '—');
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { train_result: { status: 'completed', duration_str: '65m 50s' } }, key => key, true);
+  assert.equal(root.node('[data-summary-field="time"]').textContent, '1:05:50');
+});
+
+test('speed and forecast duration trends come from recorded progress rows, never one current reading', () => {
+  const a = app({ logLines: [
+    'steps: 69%|########--| 516/740 [43:10<18:40, 5.00s/it]',
+    'steps: 70%|########--| 517/740 [43:15<19:00, 5.20s/it]',
+    'steps: 70%|########--| 518/740 [43:21<18:34, 5.26s/it]',
+  ], _logContentVersion: 1 });
+  const root = summaryRoot();
+  const t = key => key;
+  assert.deepEqual(a._summaryTelemetrySamples(false).samples.map(sample => sample.estimatedTotalSec), [3710, 3735, 3715]);
+  a._patchOverviewStatus(root, { state: 'RUNNING', step: 518, total_steps: 740, speed: '5.26 s/it', elapsed: '43:21', eta: '18:34' }, t, false);
+  assert.match(root.node('[data-summary-spark="speed"]').d, /^M4\.0 .*L116\.0 /);
+  assert.match(root.node('[data-summary-spark="time"]').d, /^M4\.0 .*L116\.0 /);
+  assert.equal(root.node('[data-summary-spark="time"]').parentElement.title, 'estimatedTotalTrendLabel');
+  assert.equal(root.node('[data-summary-field="speed-meta"]').textContent, 'currentSpeed');
+  assert.doesNotMatch(a._overviewMetricsHtml({ state: 'RUNNING' }, t, false), /m-metric-bars|m-time-strip/);
+  assert.equal(a._monitorSpeedSeconds('2 it/s'), 0.5);
+  a.selectedRunDir = 'output/older';
+  a._patchOverviewStatus(root, { train_result: { status: 'completed', duration_str: '65m 50s' } }, t, true);
+  assert.equal(root.node('[data-summary-field="speed-meta"]').textContent, 'lastSpeed');
+  assert.match(root.node('[data-summary-spark="speed"]').d, /^M/);
+  a.logLines = [];
+  a._logContentVersion++;
+  a._patchOverviewStatus(root, { train_result: { status: 'completed' }, speed: '5.26 s/it' }, t, true);
+  assert.equal(root.node('[data-summary-spark="speed"]').d, '');
+  assert.equal(root.node('[data-summary-spark="time"]').d, '');
+  assert.equal(root.node('[data-summary-spark="speed"]').parentElement.hidden, '');
+});
+
+test('live progress events build real trend samples and clearing them removes the curves', () => {
+  const a = app({ currentRoute: 'monitor-dashboard', monitorData: { state: 'RUNNING', step: 0 } });
+  for (const [step, elapsed, eta, speed] of [[1, '0:05', '0:20', '5.0s/it'], [2, '0:11', '0:18', '6.0s/it'], [3, '0:16', '0:09', '5.0s/it']]) {
+    a.handleRealtimeTaskProgress({ data: { step, elapsed, eta, speed } });
+  }
+  assert.equal(a.monitorPerfSamples.length, 3);
+  assert.deepEqual(a._summaryTelemetrySamples(false).samples.map(sample => sample.estimatedTotalSec), [25, 29, 25]);
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, a.monitorData, key => key, false);
+  assert.match(root.node('[data-summary-spark="speed"]').d, /^M/);
+  assert.match(root.node('[data-summary-spark="time"]').d, /^M/);
+  a.monitorPerfSamples = [];
+  a._monitorPerfVersion++;
+  a._patchOverviewStatus(root, a.monitorData, key => key, false);
+  assert.equal(root.node('[data-summary-spark="speed"]').d, '');
+});
+
+test('key parameters use the optimizer dropdown label and Dim caption', () => {
+  const getVisibleSections = window.getVisibleSections;
+  window.getVisibleSections = () => [{ fields: [{ key: 'optimizer_type', groups: [{ options: [{ v: 'pytorch_optimizer.CAME', l: 'CAME' }] }] }] }];
+  try {
+    const a = app({ trainParams: [
+      { key: 'optimizer_type', value: 'pytorch_optimizer.Came', section: 'optimizer' },
+      { key: 'network_dim', value: 32, section: 'network' },
+    ] });
+    const html = a._parametersConsoleHtml(key => key);
+    assert.match(html, /param-key-label">historyOptimizer<\/span><span class="param-key-value" title="CAME">CAME/);
+    assert.match(html, /param-key-label">paramDim<\/span><span class="param-key-value" title="32">32/);
+  } finally {
+    window.getVisibleSections = getVisibleSections;
+  }
+});
+
+test('completed LR uses series maximum and final value; missing series falls back to task data', () => {
+  const a = app({ lossSeries: [{ tag: 'lr/unet', points: [{ step: 1, value: 1e-5 }, { step: 2, value: 6e-5 }, { step: 3, value: 0 }], max: 6e-5, latest: 0 }] });
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'FINISHED', step: 90, total_steps: 100, lr: 0 }, key => key, false);
+  assert.equal(root.node('[data-summary-field="lr"]').textContent, '0');
+  assert.equal(root.node('[data-summary-field="lr-range"]').textContent, '6.00e-05 → 0');
+  assert.equal(root.node('[data-summary-field="lr-meta"]').textContent, 'schedulerFinished');
+  assert.equal(root.node('[data-summary-field="percent"]').textContent, '100%');
+  a.lossSeries = [];
+  a.lossDataVersion = 1;
+  a._patchOverviewStatus(root, { state: 'RUNNING', loss: 0.123, lr: 4e-5 }, key => key, false);
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.123');
+  assert.equal(root.node('[data-summary-field="lr"]').textContent, '4.00e-05');
+  assert.equal(root.node('[data-summary-spark="loss"]').d, '');
+});
+
+test('incremental task metrics update real Loss and LR paths without rebuilding summary', () => {
+  const a = app({ currentRoute: 'monitor-dashboard', monitorData: { state: 'RUNNING' } });
+  const root = summaryRoot();
+  const t = key => key;
+  a._patchOverviewStatus(root, a.monitorData, t, false);
+  const path = root.node('[data-summary-spark="loss"]');
+  a.handleRealtimeTaskMetrics({ points: {
+    'loss/average': [{ step: 1, value: 0.2 }, { step: 2, value: 0.1 }],
+    'lr/unet': [{ step: 1, value: 0.00006 }, { step: 2, value: 0.00004 }],
+  } });
+  a._patchOverviewStatus(root, a.monitorData, t, false);
+  assert.strictEqual(root.node('[data-summary-spark="loss"]'), path);
+  assert.match(path.d, /^M/);
+  assert.match(root.node('[data-summary-spark="lr"]').d, /^M/);
+  assert.match(root.node('[data-diagnostic-trend]').d, /^M/);
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.1000');
+  assert.equal(root.dataset.sparklineVersion, String(a.lossDataVersion));
+});
+
+test('Loss tile shows a measured recent change only when enough points exist', () => {
+  const falling = Array.from({ length: 60 }, (_, index) => ({ step: index + 1, value: index < 30 ? 0.04 : 0.03 }));
+  const a = app({ lossSeries: [{ tag: 'loss/current', points: falling }], lossDataVersion: 1 });
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  assert.equal(root.node('[data-summary-loss-change]').textContent, '▼ −25.0%');
+  assert.equal(root.node('[data-summary-field="loss-meta"]').textContent, 'recentSamples');
+  assert.equal(root.node('[data-summary-loss-change]').hidden, false);
+});
+
+test('diagnostic mini charts use measured changes and mark the real best Loss', () => {
+  const points = Array.from({ length: 120 }, (_, index) => ({ step: index + 1, value: 0.03 + index * 0.0001 + Math.sin(index) * 0.0002 }));
+  const a = app({ lossSeries: [{ tag: 'loss/average', points, diagnostic_points: points }], lossDataVersion: 1 });
+  const trends = a._diagnosticMetricTrends();
+  const diagnostic = a._trainingDiagnostics();
+  assert.equal(trends.change.at(-1), diagnostic.changePct);
+  assert.equal(trends.volatility.at(-1), diagnostic.volatilityPct);
+  const lossTrend = a._diagnosticLossTrend(diagnostic.bestStep);
+  assert.equal(lossTrend.values[lossTrend.bestIndex], diagnostic.bestValue);
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  for (const key of ['change', 'volatility', 'best', 'gap']) {
+    assert.match(root.node('[data-diagnostic-spark="' + key + '"]').d, /^M/);
+    assert.equal(root.node('[data-diagnostic-point="' + key + '"]').r, key === 'best' ? '0' : '2.5');
+    assert.equal(root.node('[data-diagnostic-low="' + key + '"]').r, key === 'best' || key === 'gap' ? '2.5' : '0');
+    assert.equal(root.node('[data-diagnostic-point="' + key + '"]').cx, '116.0');
+  }
+  assert.equal(a._sparklineGeometry([1, 2]).coords[0].x, '4.0');
+});
 
 test('Rich source columns accept single-space separators and preserve message indentation', () => {
   const a = app();

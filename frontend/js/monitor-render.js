@@ -1,10 +1,9 @@
 /* ================================================================
-   monitor-render.js — Dashboard rendering (compact statusbar + rings + outputs)
+   monitor-render.js — Dashboard rendering (summary + diagnostics + outputs)
    Mixin merged into animaApp Alpine component
 
    更新策略（消除闪烁）：
-     1. 外壳层（单行信息条 + 资源圆环 或 历史横幅）：仅在首次/历史模式切换时构建，
-        之后每 tick 原地打补丁（_patchStatusbar）。
+     1. 外壳层仅在首次/历史模式切换时构建；摘要每 tick 原地更新。
      2. 标签页内容：每个标签独立脏判断，仅自身数据变化时重建。
      3. 日志：增量 DOM 追加 + 保留滚动位置。
    无 Chart.js 依赖。
@@ -51,19 +50,16 @@ window.monitorRenderMixin = {
       el.innerHTML = shell;
     }
 
-    // ── 2. 粘性控制台：挂在 Dashboard 滚动区之外，每 tick 只做局部补丁 ──
-    const controlEl = document.getElementById('monitorControlbar');
-    if (controlEl) {
-      const controlMode = isHistory ? 'history' : 'live';
-      const controlSignature = isHistory
-        ? [controlMode, locale, this.selectedRunDir || '', d.config && d.config.output_name || '', d.train_result && d.train_result.status || '', d.train_result && d.train_result.duration_str || ''].join(':')
-        : [controlMode, locale].join(':');
-      if (this._controlbarSignature !== controlSignature || !controlEl.firstElementChild) {
-        this._controlbarMode = controlMode;
-        this._controlbarSignature = controlSignature;
-        controlEl.innerHTML = isHistory ? this._historyBannerHtml(d, t) : this._statusbarHtml(d, t);
+    // ── 2. 历史上下文只承担导航；实时状态全部位于摘要 ──
+    const historyEl = document.getElementById('monitorHistoryContext');
+    if (historyEl) {
+      const signature = isHistory
+        ? [locale, this.selectedRunDir || '', d.config && d.config.output_name || '', d.train_result && d.train_result.status || '', d.artifact_available].join(':')
+        : '';
+      if (this._historyContextSignature !== signature) {
+        this._historyContextSignature = signature;
+        historyEl.innerHTML = isHistory ? this._historyBannerHtml(d, t) : '';
       }
-      if (!isHistory) this._patchStatusbar(d, t);
     }
 
     // 页头右侧资源监控（仅实时模式；历史模式由 x-show 隐藏）
@@ -83,44 +79,11 @@ window.monitorRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════════
-  //  外壳：任务控制条
+  //  实时连接状态仅在异常时显示
   // ═══════════════════════════════════════════════════════════
-  _statusbarHtml(d, t) {
-    const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
-    const state = stateLabels[stateCode] || stateCode;
-    const isTraining = stateCode === 'RUNNING';
-    const isActive = this._isActiveState(stateCode);
-    const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const stepText = (d.step != null ? d.step : 0) + ' / ' + (d.total_steps != null ? d.total_steps : 0);
-    const connection = this._monitorConnectionMeta(t, stateCode);
-
-    let html = '<div class="m-statusbar" data-state="' + this.esc(stateCode.toLowerCase()) + '">';
-    html += '<div class="m-sb-identity">';
-    html += '<span class="m-sb-state-icon" aria-hidden="true"></span>';
-    html += '<div class="m-sb-state-copy"><strong class="m-sb-state" data-field="state">' + this.esc(state) + '</strong><span class="m-sb-connection" data-role="connection" data-tone="' + connection.tone + '" role="status" aria-live="polite"><i aria-hidden="true"></i><span data-field="connection">' + this.esc(connection.label) + '</span></span></div>';
-    html += '</div>';
-    html += '<div class="m-sb-progress-block" data-role="progress"' + (isTraining ? '' : ' hidden') + '>';
-    html += '<div class="m-sb-progress-meta"><span data-field="step">' + this.esc(stepText) + '</span><strong data-field="pct">' + percent + '%</strong></div>';
-    html += '<div class="m-sb-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '"><div class="m-sb-bar" data-bar="progress" style="width:' + percent + '%"></div></div>';
-    html += '</div>';
-    html += '<span class="m-sb-error" data-role="error"' + (d.has_error ? '' : ' hidden') + '>' + this.esc(d.error_msg || t('error')) + '</span>';
-    html += '<span class="m-sb-error" data-role="restart"' + (this.realtimeTaskStateUnknown ? '' : ' hidden') + '>' + this.esc(t('taskStateUnknown')) + '</span>';
-    html += '<div class="m-sb-idle-copy" data-role="idle-copy"' + (isActive ? ' hidden' : '') + '>' + this.esc(t('readyToTrain')) + '</div>';
-    html += '<div class="m-sb-right" data-role="actions"' + (isActive ? '' : ' hidden') + '><button class="btn btn-sm m-sb-stop" @click="stopTraining()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>' + this.esc(t('stopTraining')) + '</button></div>';
-    html += '</div>';
-    return html;
-  },
-
-  _monitorConnectionMeta(t, stateCode) {
-    if (this.realtimeState === 'online') {
-      return this._isActiveState(stateCode)
-        ? { label: t('liveConnected'), tone: 'ok' }
-        : { label: t('standby'), tone: 'muted' };
-    }
-    if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') {
-      return { label: t('realtimeDelayed'), tone: 'warn' };
-    }
+  _monitorConnectionMeta(t) {
+    if (!this.realtimeState || this.realtimeState === 'online') return null;
+    if (this.realtimeState === 'degraded') return { label: t('realtimeDelayed'), tone: 'warn' };
     return { label: t('reconnecting'), tone: 'warn' };
   },
 
@@ -250,53 +213,6 @@ window.monitorRenderMixin = {
     }
   },
 
-  // ── 外壳原地打补丁 ──
-  _patchStatusbar(d, t) {
-    const bar = document.querySelector('.m-statusbar');
-    if (!bar) return;
-    const stateCode = d.state || 'IDLE';
-    const stateLabels = {'RUNNING':t('training'),'FINISHED':t('finished'),'TERMINATED':t('terminated'),'FAILED':t('error'),'CREATED':t('created'),'UNKNOWN':t('taskStateUnknown'),'IDLE':t('idle')};
-    const state = stateLabels[stateCode] || stateCode;
-    const isTraining = stateCode === 'RUNNING';
-    const isActive = this._isActiveState(stateCode);
-    bar.dataset.state = stateCode.toLowerCase();
-    const stateEl = bar.querySelector('[data-field="state"]');
-    if (stateEl) stateEl.textContent = state;
-    // 进度条 + 百分比
-    const progressBlock = bar.querySelector('[data-role="progress"]');
-    const progressWrap = bar.querySelector('.m-sb-progress');
-    const progressBar = bar.querySelector('[data-bar="progress"]');
-    const percent = Math.max(0, Math.min(100, Number(d.percent) || 0));
-    if (progressWrap) {
-      progressWrap.setAttribute('aria-valuenow', String(percent));
-    }
-    if (progressBlock) progressBlock.hidden = !isTraining;
-    if (progressBar) progressBar.style.width = percent + '%';
-    const pctEl = bar.querySelector('[data-field="pct"]');
-    if (pctEl) pctEl.textContent = percent + '%';
-    const stepEl = bar.querySelector('[data-field="step"]');
-    if (stepEl) stepEl.textContent = (d.step != null ? d.step : 0) + ' / ' + (d.total_steps != null ? d.total_steps : 0);
-    const connection = this._monitorConnectionMeta(t, stateCode);
-    const connectionWrap = bar.querySelector('[data-role="connection"]');
-    const connectionEl = bar.querySelector('[data-field="connection"]');
-    if (connectionWrap) connectionWrap.dataset.tone = connection.tone;
-    if (connectionEl) connectionEl.textContent = connection.label;
-    const actions = bar.querySelector('[data-role="actions"]');
-    if (actions) actions.hidden = !isActive;
-    const idleCopy = bar.querySelector('[data-role="idle-copy"]');
-    if (idleCopy) {
-      idleCopy.hidden = isActive;
-      idleCopy.textContent = stateCode === 'IDLE' ? t('readyToTrain') : (d.train_result && d.train_result.duration_str || '');
-    }
-    const errorEl = bar.querySelector('[data-role="error"]');
-    if (errorEl) {
-      errorEl.hidden = !d.has_error;
-      errorEl.textContent = d.error_msg || t('error');
-    }
-    const restartEl = bar.querySelector('[data-role="restart"]');
-    if (restartEl) restartEl.hidden = !this.realtimeTaskStateUnknown;
-  },
-
   // ═══════════════════════════════════════════════════════════
   //  外壳：历史横幅（轻量信息条风格）
   // ═══════════════════════════════════════════════════════════
@@ -308,11 +224,9 @@ window.monitorRenderMixin = {
     html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
     if (d.train_result) {
       const st = d.train_result.status || '';
-      const dur = d.train_result.duration_str || '';
       const stClass = st === 'completed' ? 'ok' : (st === 'failed' ? 'danger' : 'muted');
       const stLabel = st === 'completed' ? t('statusCompleted') : (st === 'failed' ? t('statusFailed') : (st === 'terminated' ? t('statusTerminated') : (st === 'running' ? t('statusRunning') : st)));
       html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
-      if (dur) html += '<span class="m-history-dur">' + this.esc(dur) + '</span>';
     }
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
@@ -501,25 +415,89 @@ window.monitorRenderMixin = {
 
   _patchOverviewStatus(root, d, t, isHistory) {
     if (!d || !root) return;
-    const percent = isHistory && d.train_result && d.train_result.status === 'completed'
-      ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const values = {
-      step: (d.step != null ? d.step : '?') + ' / ' + (d.total_steps != null ? d.total_steps : '?') + ' (' + percent + '%)',
-      loss: this._seriesLatest('loss/average', d.loss != null ? d.loss : '—'),
-      lr: d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet'),
-      epoch: d.epoch != null ? d.epoch : '--',
-      elapsed: d.elapsed || (isHistory && d.train_result && d.train_result.duration_str) || '--',
-      eta: isHistory || ['FINISHED', 'FAILED', 'TERMINATED'].includes(d.state) ? '—' : (d.eta || '--'),
-      speed: d.speed || '--',
+    const state = this._summaryState(d, isHistory);
+    const completed = state === 'FINISHED';
+    const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(state);
+    const total = Number(d.total_steps) || 0;
+    const step = completed && total ? total : (Number(d.step) || 0);
+    const rawPercent = d.percent != null ? Number(d.percent) : (total ? step / total * 100 : 0);
+    const percent = completed ? 100 : Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0));
+    const lossSeries = this._summaryLossSeries();
+    const lrSeries = (this.lossSeries || []).find(item => item.tag === 'lr/unet');
+    const lrPoints = lrSeries && Array.isArray(lrSeries.points) ? lrSeries.points : [];
+    const lrLatest = lrSeries && (lrSeries.latest != null ? Number(lrSeries.latest) : (lrPoints.length ? Number(lrPoints[lrPoints.length - 1].value) : null));
+    const lrMax = lrSeries && (lrSeries.max != null ? Number(lrSeries.max) : (lrPoints.length ? Math.max(...lrPoints.map(point => Number(point.value)).filter(Number.isFinite)) : null));
+    const lrRange = terminal && lrPoints.length >= 2 && Number.isFinite(lrMax) && Number.isFinite(lrLatest);
+    const connection = isHistory ? null : this._monitorConnectionMeta(t);
+    const stateLabels = { RUNNING: t('trainingInProgress'), CREATED: t('created'), FINISHED: t('finished'), FAILED: t('statusFailed'), TERMINATED: t('terminated'), UNKNOWN: t('statusUnknown'), IDLE: t('standby') };
+    const set = (key, value) => {
+      const el = root.querySelector('[data-summary-field="' + key + '"]');
+      if (el) el.textContent = String(value);
     };
-    Object.keys(values).forEach(key => {
-      const el = root.querySelector('[data-live-field="' + key + '"]');
-      if (el) el.textContent = String(values[key]);
-    });
+    const status = root.querySelector('[data-summary-state]');
+    if (status) {
+      status.dataset.tone = state === 'FAILED' ? 'danger' : (state === 'TERMINATED' ? 'muted' : (state === 'RUNNING' || completed ? 'ok' : 'muted'));
+      status.textContent = stateLabels[state] || state;
+    }
+    const connectionEl = root.querySelector('[data-summary-connection]');
+    if (connectionEl) {
+      connectionEl.hidden = !connection;
+      if (connection) connectionEl.textContent = connection.label;
+    }
+    const stop = root.querySelector('[data-summary-stop]');
+    if (stop) stop.hidden = isHistory || !this._isActiveState(state);
+    const notice = root.querySelector('[data-summary-notice]');
+    if (notice) {
+      const messages = [];
+      if (!isHistory && d.has_error) messages.push(d.error_msg || t('error'));
+      if (!isHistory && (this.realtimeTaskStateUnknown || state === 'UNKNOWN')) messages.push(t('taskStateUnknown'));
+      notice.hidden = !messages.length;
+      notice.textContent = messages.join(' · ');
+    }
+    set('step', step + ' / ' + (total || '—') + ' ' + t('stepsUnit'));
+    set('percent', Number.isInteger(percent) ? percent + '%' : percent.toFixed(1) + '%');
+    set('epoch', t('epochProgress') + ' ' + (d.epoch != null ? d.epoch : '—'));
+    const trainResult = terminal && d.train_result;
+    const duration = this._formatMonitorDuration((trainResult && trainResult.duration_str) || d.elapsed || '—', trainResult ? trainResult.duration_sec : null);
+    const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
+    set('progress-time', state === 'RUNNING' ? t('elapsed') + ' ' + duration + (eta ? ' · ' + t('estimatedRemaining') + ' ' + eta : '') : t('totalDuration') + ' ' + duration);
+    set('loss', lossSeries ? this._seriesLatest(lossSeries.tag, d.loss != null ? d.loss : '—') : (d.loss != null ? d.loss : '—'));
+    set('lr', lrRange ? this._formatLearningRate(lrLatest, '—') : (lrSeries ? this._seriesLatest('lr/unet', d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—') : (d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—')));
+    const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
+    if (lrRangeEl) {
+      lrRangeEl.hidden = !lrRange;
+      if (lrRange) lrRangeEl.textContent = this._formatLearningRate(lrMax, '—') + ' → ' + this._formatLearningRate(lrLatest, '—');
+    }
+    set('lr-meta', lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : (lrRange ? t('peakToFinal') : ''));
+    set('speed', d.speed || '—');
+    set('speed-meta', t(isHistory ? 'lastSpeed' : 'currentSpeed'));
+    set('time-label', state === 'RUNNING' && eta ? t('estimatedRemaining') : (state === 'RUNNING' ? t('elapsed') : t('totalDuration')));
+    set('time', state === 'RUNNING' && eta ? eta : duration);
+    const endedAt = isHistory && d.train_result && d.train_result.ended_at ? this._formatRunEndTime(d.train_result.ended_at) : '';
+    set('time-meta', state === 'RUNNING' && eta ? t('elapsed') + ' ' + duration : (endedAt ? t('endedAt') + ' ' + endedAt : ''));
     const progress = root.querySelector('[data-overview-progress]');
-    const progressValue = root.querySelector('[data-overview-percent]');
-    if (progress) progress.style.width = percent + '%';
-    if (progressValue) progressValue.textContent = percent + '%';
+    if (progress) {
+      progress.style.width = percent + '%';
+      progress.parentElement.setAttribute('aria-valuenow', String(percent));
+    }
+    if (root.dataset.sparklineVersion !== String(this.lossDataVersion)) {
+      root.dataset.sparklineVersion = String(this.lossDataVersion);
+      const lossPath = root.querySelector('[data-summary-spark="loss"]');
+      const lrPath = root.querySelector('[data-summary-spark="lr"]');
+      if (lossPath) lossPath.setAttribute('d', this._metricSparklinePath(lossSeries));
+      if (lrPath) lrPath.setAttribute('d', this._metricSparklinePath(lrSeries));
+      const lossTrend = this._summaryLossChange(lossSeries);
+      const lossChange = root.querySelector('[data-summary-loss-change]');
+      if (lossChange) {
+        lossChange.hidden = !lossTrend;
+        if (lossTrend) {
+          lossChange.dataset.tone = lossTrend.percent > 0 ? 'danger' : 'ok';
+          lossChange.textContent = (lossTrend.percent > 0 ? '▲ +' : '▼ −') + Math.abs(lossTrend.percent).toFixed(1) + '%';
+        }
+      }
+      set('loss-meta', lossTrend ? t('recentSamples').replace('{n}', lossTrend.count) : t('recentLoss'));
+    }
+    this._patchSummaryTelemetry(root, t, isHistory);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
     const paramQuery = String(this.monitorParamQuery || '').trim().toLowerCase();
     if (paramQuery && root.dataset.paramQuery !== paramQuery) {
@@ -541,21 +519,15 @@ window.monitorRenderMixin = {
   },
 
   _overviewMetricsHtml(d, t, isHistory, isRunning) {
-    const tr = d.train_result || {};
-    const completed = tr.status === 'completed' || d.state === 'FINISHED';
-    const historyStatus = tr.status === 'completed' ? t('statusCompleted')
-      : (tr.status === 'failed' ? t('statusFailed')
-        : (tr.status === 'terminated' ? t('statusTerminated')
-          : (tr.status === 'running' ? t('statusRunning') : (tr.status || t('finished')))));
-    const percent = completed ? 100 : Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const loss = this._seriesLatest('loss/average', d.loss != null ? d.loss : '—');
-    const lr = d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : this._seriesLatest('lr/unet');
+    const state = this._summaryState(d, isHistory);
     let html = '<section class="m-console-card m-overview-metrics">';
-    html += '<div class="m-card-heading"><span>' + this.esc(isHistory || tr.status ? t('runSummary') : t('liveMetrics')) + '</span><span class="m-card-status">' + this.esc(isHistory || tr.status ? historyStatus : (isRunning ? t('live') : d.state === 'CREATED' ? t('created') : t('standby'))) + '</span></div>';
-    if (d.state === 'CREATED' && !isHistory) {
-      return html + '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('created')) + '</p></div></section>';
-    }
-    if (!isRunning && !isHistory && !['FINISHED', 'FAILED', 'TERMINATED'].includes(d.state)) {
+    html += '<div class="m-card-heading"><div><span>' + this.esc(t('runSummary')) + '</span></div>';
+    html += '<div class="m-summary-actions"><span class="m-summary-state" data-summary-state></span><span class="m-summary-connection" data-summary-connection hidden role="status" aria-live="polite"></span>';
+    if (!isHistory) html += '<button type="button" class="btn btn-sm m-summary-stop" data-summary-stop hidden @click="stopTraining()">' + this.esc(t('stopTraining')) + '</button>';
+    html += '</div></div>';
+    if (!isHistory) html += '<div class="m-summary-notice" data-summary-notice hidden role="alert"></div>';
+    if (!isHistory && state === 'UNKNOWN') return html + '</section>';
+    if (!isHistory && state === 'IDLE') {
       html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain')) + '</strong><span>' + this.esc(t('readyToTrainHint')) + '</span></div></div>';
       html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';
       if (d.last_config && d.last_config.name) {
@@ -565,18 +537,209 @@ window.monitorRenderMixin = {
       html += '</section>';
       return html;
     }
-    if (isHistory || !isRunning) html += '<div class="m-overview-progress-head"><span>' + this.esc(t('overallProgress')) + '</span><strong data-live-field="step"></strong></div>';
-    const metrics = [
-      ['loss', t('loss'), loss], ['lr', t('lr'), lr],
-      ['epoch', t('epoch'), d.epoch != null ? d.epoch : '--'], ['speed', t('speed'), d.speed || '--'],
-      ['elapsed', t('elapsed'), d.elapsed || tr.duration_str || '--'], ['eta', t('remaining'), isHistory ? '—' : (d.eta || '--')],
-    ];
+    html += '<div class="m-summary-progress"><div class="m-summary-progress-top"><span>' + this.esc(t('overallProgress')) + '</span><div class="m-summary-progress-figures"><strong data-summary-field="step"></strong><b data-summary-field="percent"></b></div></div>';
+    html += '<div class="m-overview-progress" role="progressbar" aria-label="' + this.esc(t('overallProgress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-overview-progress></i></div>';
+    html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span><span data-summary-field="progress-time"></span></div></div>';
     html += '<div class="m-live-metrics">';
-    metrics.forEach((item, idx) => {
-      html += '<div class="m-live-metric' + (idx < 2 ? ' primary' : '') + '"><span>' + this.esc(item[1]) + '</span><strong data-live-field="' + item[0] + '">' + this.esc(String(item[2])) + '</strong></div>';
-    });
+    html += this._summaryTileHtml('loss', t('loss'), t('recentLoss'));
+    html += this._summaryTileHtml('lr', t('lr'), '');
+    html += this._summaryTileHtml('speed', t('speed'), t('currentSpeed'));
+    html += this._summaryTileHtml('time', t('elapsed'), '');
     html += '</div></section>';
     return html;
+  },
+
+  _summaryState(d, isHistory) {
+    if (isHistory && d.train_result && d.train_result.status) {
+      const status = String(d.train_result.status).toUpperCase();
+      return status === 'COMPLETED' ? 'FINISHED' : status;
+    }
+    return d.state || 'IDLE';
+  },
+
+  _summaryTileHtml(key, label, meta) {
+    let html = '<div class="m-live-metric m-live-metric-' + key + '"><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span>';
+    html += '<strong data-summary-field="' + key + '">—</strong>';
+    if (key === 'loss') html += '<span class="m-metric-change" data-summary-loss-change hidden></span>';
+    if (key === 'lr') html += '<span class="m-metric-range" data-summary-field="lr-range" hidden></span>';
+    html += '<small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
+    html += '<svg class="m-metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" ' + (key === 'speed' || key === 'time' ? 'role="img" hidden' : 'aria-hidden="true"') + '><path data-summary-spark="' + key + '"></path></svg>';
+    return html + '</div>';
+  },
+
+  _monitorSpeedSeconds(value) {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(s\/it|it\/s)\s*$/i.exec(String(value || ''));
+    if (!match) return null;
+    const amount = Number(match[1]);
+    return amount > 0 ? (match[2].toLowerCase() === 'it/s' ? 1 / amount : amount) : null;
+  },
+
+  _parseMonitorPerfLogLine(line) {
+    const text = String(line || '');
+    const match = /steps:\s*\d{1,3}%\|[^\n]*?\|\s*(\d+)\s*\/\s*\d+\s*\[([^<,\]]+)(?:<([^,\]]+))?/i.exec(text);
+    if (!match) return null;
+    const step = Number(match[1]);
+    const elapsedSec = this._monitorDurationSeconds(match[2]);
+    const etaSec = this._monitorDurationSeconds(match[3]);
+    const speedMatch = /(\d+(?:\.\d+)?)\s*(s\/it|it\/s)(?!\w)/i.exec(text.slice(match.index));
+    const speedSec = speedMatch ? this._monitorSpeedSeconds(speedMatch[0]) : null;
+    return step > 0 && (elapsedSec !== null || speedSec !== null)
+      ? { step, speedSec, estimatedTotalSec: elapsedSec !== null && etaSec !== null ? elapsedSec + etaSec : null }
+      : null;
+  },
+
+  _summaryTelemetrySamples(isHistory) {
+    const source = isHistory ? this.selectedRunDir : (this.liveTaskId || this.monitorData?.active_task?.id || 'live');
+    const version = [source, isHistory, this._logContentVersion || 0, isHistory ? 0 : (this._monitorPerfVersion || 0)].join('|');
+    if (this._summaryTelemetryCache?.version === version) return this._summaryTelemetryCache;
+    const byStep = new Map();
+    const lines = this.logLines || [];
+    for (let index = lines.length - 1; index >= 0 && byStep.size < 80; index--) {
+      if (!String(lines[index] || '').toLowerCase().includes('steps:')) continue;
+      const sample = this._parseMonitorPerfLogLine(lines[index]);
+      if (sample && !byStep.has(sample.step)) byStep.set(sample.step, sample);
+    }
+    if (!isHistory) for (const sample of this.monitorPerfSamples || []) {
+      const step = Number(sample.step);
+      if (!Number.isFinite(step) || step <= 0) continue;
+      const previous = byStep.get(step) || {};
+      const elapsedSec = this._monitorDurationSeconds(sample.elapsed);
+      const etaSec = this._monitorDurationSeconds(sample.eta);
+      byStep.set(step, {
+        step,
+        speedSec: this._monitorSpeedSeconds(sample.speed) ?? previous.speedSec ?? null,
+        estimatedTotalSec: elapsedSec !== null && etaSec !== null
+          ? elapsedSec + etaSec : previous.estimatedTotalSec ?? null,
+      });
+    }
+    const samples = [...byStep.values()].sort((left, right) => left.step - right.step).slice(-40);
+    return (this._summaryTelemetryCache = { version, samples });
+  },
+
+  _summaryTelemetryPath(samples, field) {
+    const points = samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0);
+    if (points.length < 2 || points[0].step === points[points.length - 1].step) return '';
+    const values = points.map(point => point[field]);
+    const low = Math.min(...values), high = Math.max(...values);
+    const range = high - low || Math.max(Math.abs(high) * 0.02, 1e-9);
+    const first = points[0].step, span = points[points.length - 1].step - first;
+    return points.map((point, index) => (index ? 'L' : 'M')
+      + (4 + (point.step - first) / span * 112).toFixed(1) + ' '
+      + (30 - (point[field] - low) / range * 26).toFixed(1)).join(' ');
+  },
+
+  _patchSummaryTelemetry(root, t, isHistory) {
+    const telemetry = this._summaryTelemetrySamples(isHistory);
+    if (root.dataset.telemetryVersion === telemetry.version) return;
+    root.dataset.telemetryVersion = telemetry.version;
+    for (const [key, field, label] of [
+      ['speed', 'speedSec', 'speedTrendLabel'], ['time', 'estimatedTotalSec', 'estimatedTotalTrendLabel'],
+    ]) {
+      const path = root.querySelector('[data-summary-spark="' + key + '"]');
+      if (!path) continue;
+      const curve = this._summaryTelemetryPath(telemetry.samples, field);
+      path.setAttribute('d', curve);
+      const svg = path.parentElement;
+      if (svg) {
+        if (curve) svg.removeAttribute('hidden');
+        else svg.setAttribute('hidden', '');
+        if (curve) {
+          svg.setAttribute('aria-label', t(label));
+          svg.setAttribute('title', t(label));
+        }
+      }
+    }
+  },
+
+  _monitorIconHtml(kind) {
+    const paths = {
+      loss: '<path d="M2 13c3-9 6-9 9 0s6 9 11 0"/>',
+      lr: '<path d="M4 19V11m5 8V5m5 14v-9m5 9V7"/>',
+      speed: '<path d="M4 17a9 9 0 1 1 16 0m-8-2 4-6"/><circle cx="12" cy="15" r="1"/>',
+      time: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+      pretrained_model_name_or_path: '<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5m-9 5v10"/>',
+      learning_rate: '<path d="M3 19h18M3 19V5m3 9 4-5 4 3 6-7"/>',
+      network_dim: '<path d="M4 4v16m16-16v16M7 12h10m-7-3-3 3 3 3m4-6 3 3-3 3"/>',
+      network_alpha: '<text x="12" y="17" text-anchor="middle" fill="currentColor" stroke="none" font-family="Georgia,serif" font-size="19">α</text>',
+      max_train_epochs: '<path d="M19 8a8 8 0 1 0 1 5M19 3v5h-5"/>',
+      optimizer_type: '<path d="M10 2h4l.5 2.2 1.5.7 1.9-1.2 2.8 2.8-1.2 1.9.7 1.5L22 10v4l-2.2.5-.7 1.5 1.2 1.9-2.8 2.8-1.9-1.2-1.5.7L14 22h-4l-.5-2.2-1.5-.7-1.9 1.2-2.8-2.8 1.2-1.9-.7-1.5L2 14v-4l2.2-.5.7-1.5-1.2-1.9 2.8-2.8 1.9 1.2 1.5-.7z"/><circle cx="12" cy="12" r="3"/>',
+      train_batch_size: '<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/>',
+      resolution: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M7 17 17 7m-5 0h5v5M7 12v5h5"/>',
+      seed: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="16" r="1"/>',
+    };
+    return '<svg class="m-monitor-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[kind] || '') + '</svg>';
+  },
+
+  _summaryLossSeries() {
+    const series = this.lossSeries || [];
+    return series.find(item => item.tag === 'loss/average' && item.points && item.points.length)
+      || series.find(item => item.tag === 'loss/current' && item.points && item.points.length)
+      || series.find(item => item.tag === 'loss/average')
+      || series.find(item => item.tag === 'loss/current');
+  },
+
+  _summaryLossChange(series) {
+    const points = (series && (series.diagnostic_points || series.points)) || [];
+    const values = points.filter(point => point && point.value != null && point.value !== '').map(point => Number(point.value)).filter(Number.isFinite);
+    const count = Math.min(30, Math.floor(values.length / 2));
+    if (count < 6) return null;
+    const mean = items => items.reduce((sum, value) => sum + value, 0) / items.length;
+    const previous = mean(values.slice(-count * 2, -count));
+    const recent = mean(values.slice(-count));
+    return { count, percent: (recent - previous) / Math.max(Math.abs(previous), 1e-12) * 100 };
+  },
+
+  _metricSparklinePath(series) {
+    const points = ((series && series.points) || []).slice(-40)
+      .filter(point => point && point.value != null && point.value !== '')
+      .map(point => Number(point.value)).filter(Number.isFinite);
+    return this._sparklineGeometry(points).path;
+  },
+
+  _sparklineGeometry(values) {
+    const points = values.slice(-40).filter(Number.isFinite);
+    if (points.length < 2) return { path: '', endY: null, coords: [] };
+    const low = Math.min(...points), high = Math.max(...points);
+    const range = high - low || Math.max(Math.abs(high) * 0.02, 1e-9);
+    const y = value => 30 - (value - low) / range * 26;
+    const coords = points.map((value, index) => ({ x: (4 + index * 112 / (points.length - 1)).toFixed(1), y: y(value).toFixed(1) }));
+    return {
+      path: coords.map((point, index) => (index ? 'L' : 'M') + point.x + ' ' + point.y).join(' '),
+      endY: coords[coords.length - 1].y,
+      coords,
+    };
+  },
+
+  _diagnosticLossTrend(bestStep) {
+    const points = this._trainingDiagnosticPoints().points;
+    if (points.length < 2) return { values: [], bestIndex: -1 };
+    const best = points.findIndex(point => point.step === bestStep);
+    const indices = new Set([0, points.length - 1]);
+    if (best >= 0) indices.add(best);
+    if (points.length <= 40) points.forEach((_, index) => indices.add(index));
+    else for (let index = 0; index < 37; index++) indices.add(Math.round(index * (points.length - 1) / 36));
+    const sampled = Array.from(indices).sort((left, right) => left - right);
+    return { values: sampled.map(index => points[index].value), bestIndex: sampled.indexOf(best) };
+  },
+
+  _diagnosticMetricTrends() {
+    const points = this._trainingDiagnosticPoints().points;
+    const trends = { change: [], volatility: [] };
+    if (points.length < 6) return trends;
+    const sampleCount = Math.min(24, points.length - 5);
+    const indices = new Set();
+    for (let index = 0; index < sampleCount; index++) {
+      indices.add(5 + Math.round(index * (points.length - 6) / Math.max(1, sampleCount - 1)));
+    }
+    indices.forEach(index => {
+      const diagnostic = this._trainingDiagnostics(points.slice(0, index + 1));
+      for (const [key, value] of [
+        ['change', diagnostic.changePct], ['volatility', diagnostic.volatilityPct],
+      ]) {
+        if (Number.isFinite(value)) trends[key].push(value);
+      }
+    });
+    return trends;
   },
 
   _seriesLatest(tag, fallback = '—') {
@@ -595,7 +758,57 @@ window.monitorRenderMixin = {
     const parts = number.toExponential(4).split('e');
     const exponent = Number(parts[1]);
     const sign = exponent < 0 ? '-' : '+';
-    return Number(parts[0]) + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
+    return parts[0].replace(/(\.\d{2}\d*?)0+$/, '$1') + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
+  },
+
+  _monitorDurationSeconds(value) {
+    const raw = String(value == null ? '' : value).trim();
+    let seconds = null;
+    if (/^\d+(?::\d+){1,2}$/.test(raw)) {
+      const parts = raw.split(':').map(Number);
+      seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+    }
+    if (seconds === null) {
+      const compact = raw.toLowerCase().replace(/\s+/g, '');
+      const units = [...compact.matchAll(/(\d+)([hms])/g)];
+      if (units.length && units.map(match => match[0]).join('') === compact) {
+        seconds = units.reduce((total, match) => total + Number(match[1]) * ({ h: 3600, m: 60, s: 1 })[match[2]], 0);
+      }
+    }
+    return seconds;
+  },
+
+  _formatMonitorDuration(value, durationSeconds = null) {
+    const raw = String(value == null ? '' : value).trim();
+    const seconds = durationSeconds !== null && durationSeconds !== '' && Number.isFinite(Number(durationSeconds))
+      ? Number(durationSeconds) : this._monitorDurationSeconds(raw);
+    if (seconds === null) return raw || '—';
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor(total % 3600 / 60);
+    const remainder = total % 60;
+    const pad = part => String(part).padStart(2, '0');
+    return hours ? hours + ':' + pad(minutes) + ':' + pad(remainder) : minutes + ':' + pad(remainder);
+  },
+
+  _formatRunEndTime(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const pad = number => String(number).padStart(2, '0');
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
+      + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+  },
+
+  _monitorOptimizerLabel(value, trainType) {
+    if (typeof window.getVisibleSections !== 'function') return value;
+    const sections = window.getVisibleSections(trainType || 'anima-lora') || [];
+    const field = sections.flatMap(section => section.fields || []).find(item => item.key === 'optimizer_type');
+    if (!field) return value;
+    const options = [...(field.options || []), ...(field.groups || []).flatMap(group => group.options || [])];
+    const option = options.find(item => String(item.v) === String(value))
+      || options.find(item => String(item.v).toLowerCase() === String(value).toLowerCase());
+    if (!option) return value;
+    return option.dk ? this.t(option.dk, option.l || value) : (option.l || value);
   },
 
   _trainingDiagnosticPoints() {
@@ -798,9 +1011,9 @@ window.monitorRenderMixin = {
   _trainingDiagnosticsHtml(t) {
     const rules = this._trainingDiagnosticRules();
     let html = '<section class="m-console-card m-training-diagnostics">';
-    html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span><small data-diagnostic-field="subtitle">' + this.esc(t('diagnosticSubtitle')) + '</small></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
+    html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
-    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><span class="m-diagnostic-eyebrow">' + this.esc(t('convergenceSignal')) + '</span><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><div class="m-diagnostic-source"><span data-diagnostic-field="source">--</span><span data-diagnostic-field="through-step">--</span></div></div>';
+    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><svg class="m-diagnostic-trend" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-trend></path></svg></div>';
     html += '</div><div class="m-diagnostic-metrics">';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
@@ -809,7 +1022,7 @@ window.monitorRenderMixin = {
       ['gap', t('gapFromBest'), t('latestVsBest')],
     ];
     metrics.forEach(metric => {
-      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small></div>';
+      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small><svg class="m-diagnostic-mini" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-spark="' + metric[0] + '"></path><circle data-diagnostic-low="' + metric[0] + '" cx="0" cy="17" r="0"></circle><circle data-diagnostic-point="' + metric[0] + '" cx="120" cy="17" r="0"></circle></svg></div>';
     });
     html += '</div>';
     html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
@@ -851,16 +1064,19 @@ window.monitorRenderMixin = {
       if (element) element.textContent = value;
     };
     setText('title', isPreviousRun ? t('previousTrainingDiagnostics') : t('trainingDiagnostics'));
-    setText('subtitle', isPreviousRun ? t('previousDiagnosticSubtitle') : t('diagnosticSubtitle'));
     const verdict = root.querySelector('.m-diagnostic-verdict');
-    if (verdict) verdict.dataset.diagnosticTone = diagnostic.tone;
+    const trendPath = this._metricSparklinePath(this._summaryLossSeries());
+    if (verdict) {
+      verdict.dataset.diagnosticTone = diagnostic.tone;
+      verdict.dataset.hasTrend = trendPath ? 'true' : 'false';
+    }
+    const trend = root.querySelector('[data-diagnostic-trend]');
+    if (trend) trend.setAttribute('d', trendPath);
     setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
     setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
     setText('advice', this._diagnosticText(t, diagnostic.code, 'advice'));
     setText('evidence', this._diagnosticEvidence(t, diagnostic));
     setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
-    setText('source', diagnostic.sourceTag === 'loss/current' ? t('currentLossSource') : t('averageLossSource'));
-    setText('through-step', diagnostic.latestStep == null ? t('waitingData') : t('throughStep').replace('{n}', Math.round(diagnostic.latestStep)));
     setText('change', this._formatDiagnosticPercent(diagnostic.changePct, true));
     setText('volatility', this._formatDiagnosticPercent(diagnostic.volatilityPct, false));
     setText('best', this._formatDiagnosticValue(diagnostic.bestValue));
@@ -876,6 +1092,31 @@ window.monitorRenderMixin = {
     if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
     if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
     if (gapMetric) gapMetric.dataset.tone = diagnostic.gapFromBestPct == null ? 'muted' : 'neutral';
+    const trends = this._diagnosticMetricTrends();
+    const lossTrend = this._diagnosticLossTrend(diagnostic.bestStep);
+    for (const key of ['change', 'volatility', 'best', 'gap']) {
+      const isLossTrace = key === 'best' || key === 'gap';
+      const geometry = this._sparklineGeometry(isLossTrace ? lossTrend.values : trends[key]);
+      const path = root.querySelector('[data-diagnostic-spark="' + key + '"]');
+      const point = root.querySelector('[data-diagnostic-point="' + key + '"]');
+      const low = root.querySelector('[data-diagnostic-low="' + key + '"]');
+      if (path) path.setAttribute('d', geometry.path);
+      if (point) {
+        point.setAttribute('r', geometry.endY == null || key === 'best' ? '0' : '2.5');
+        if (geometry.endY != null) {
+          point.setAttribute('cx', geometry.coords[geometry.coords.length - 1].x);
+          point.setAttribute('cy', geometry.endY);
+        }
+      }
+      const bestPoint = isLossTrace ? geometry.coords[lossTrend.bestIndex] : null;
+      if (low) {
+        low.setAttribute('r', bestPoint ? '2.5' : '0');
+        if (bestPoint) {
+          low.setAttribute('cx', bestPoint.x);
+          low.setAttribute('cy', bestPoint.y);
+        }
+      }
+    }
   },
 
   _previewThumbImageHtml(preview) {
@@ -892,7 +1133,7 @@ window.monitorRenderMixin = {
     this.trainParams.forEach(param => { if (param.key) byKey[param.key] = param; });
     const keyDefs = [
       { key: 'pretrained_model_name_or_path', short: 'historyModel', basename: true }, { key: 'learning_rate', short: 'historyLR' },
-      { key: 'network_dim', short: 'historyDim' }, { key: 'network_alpha', short: 'historyAlpha' },
+      { key: 'network_dim', short: 'paramDim' }, { key: 'network_alpha', short: 'historyAlpha' },
       { key: 'max_train_epochs', short: 'historyEpochs' }, { key: 'optimizer_type', short: 'historyOptimizer' },
       { key: 'train_batch_size', short: 'historyBatch' }, { key: 'resolution', short: 'historyResolution' }, { key: 'seed', short: 'historySeed' },
     ];
@@ -903,7 +1144,13 @@ window.monitorRenderMixin = {
       if (!param || param.value == null || param.value === '') return;
       let value = String(param.value);
       if (definition.basename) { const parts = value.replace(/\\/g, '/').split('/'); value = parts[parts.length - 1] || value; }
-      html += '<div class="param-key-item"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value">' + this._paramValueHtml({ value, type: param.type }) + '</span></div>';
+      if (definition.key === 'learning_rate' && Number.isFinite(Number(value))) value = this._formatLearningRate(value, value);
+      if (definition.key === 'optimizer_type') {
+        const trainType = byKey.model_train_type?.value || this.runDetailData?.config?.model_train_type
+          || this.monitorData?.model_train_type || this.form?.model_train_type || 'anima-lora';
+        value = this._monitorOptimizerLabel(value, trainType);
+      }
+      html += '<div class="param-key-item"><span class="param-key-icon">' + this._monitorIconHtml(definition.key) + '</span><span class="param-key-copy"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value" title="' + this.esc(value) + '">' + this._paramValueHtml({ value, type: param.type }) + '</span></span></div>';
     });
     html += '</div>';
     html += '<div class="m-param-toolbar"><label class="m-param-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch')) + '" aria-label="' + this.esc(t('parameterSearch')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"/></label><span class="m-param-match" data-param-match></span><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(true)">' + this.esc(t('expandAll')) + '</button><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(false)">' + this.esc(t('collapseAll')) + '</button></div>';
@@ -1426,7 +1673,7 @@ window.monitorRenderMixin = {
           const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), error: t('statusError'), terminated: t('statusTerminated') };
           html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || h.status) + '</span>';
         }
-        if (h.duration) html += '<span class="hist-duration">' + this.esc(h.duration) + '</span>';
+        if (h.duration) html += '<span class="hist-duration">' + this.esc(this._formatMonitorDuration(h.duration)) + '</span>';
         if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
         html += '</div>';
         html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';

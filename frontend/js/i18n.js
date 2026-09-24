@@ -13,6 +13,7 @@
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
   const LOCALES = ['zh-CN', 'en-US'];
+  const MESSAGES_VERSION = '20260924-eta-trend7';
 
   let _locale = 'en-US';
   let _messages = null;
@@ -56,13 +57,13 @@ const I18N = (() => {
   function _bootstrap() {
     const active = _activeLocale();
     try {
-      _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json');
+      _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json?v=' + MESSAGES_VERSION);
     } catch (e) {
       console.warn('[i18n] Failed to preload locale: ' + active, e);
     }
     const other = _otherLocale(active);
     if (other) {
-      _loadingOther = _loadJSONAsync('/anima-ui/i18n/' + other + '.json')
+      _loadingOther = _loadJSONAsync('/anima-ui/i18n/' + other + '.json?v=' + MESSAGES_VERSION)
         .then(function(messages) {
           if (messages) _cache[other] = messages;
           _loadingOther = null;
@@ -132,7 +133,7 @@ const I18N = (() => {
     if (loc === _locale) return;
     if (!_cache[loc]) {
       try {
-        _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json');
+        _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json?v=' + MESSAGES_VERSION);
       } catch (e) {
         console.warn('[i18n] Failed to load locale: ' + loc, e);
       }

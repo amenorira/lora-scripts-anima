@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
@@ -52,13 +53,24 @@ STATE_LABELS = {
 }
 
 
-def _read_train_result(run_dir_path: Path) -> dict | None:
+def _read_train_result(run_dir_path: Path, *, allow_mtime_fallback: bool = True) -> dict | None:
     """读取 run 目录的 result.json；缺失或损坏时返回 None。"""
     result_file = run_dir_path / "result.json"
     if not result_file.exists():
         return None
     try:
-        return json.loads(result_file.read_text(encoding="utf-8"))
+        result = json.loads(result_file.read_text(encoding="utf-8"))
+        if not isinstance(result, dict):
+            return None
+        if (
+            allow_mtime_fallback
+            and not result.get("ended_at")
+            and str(result.get("status", "")).lower() in {"completed", "finished", "failed", "terminated"}
+        ):
+            result["ended_at"] = datetime.fromtimestamp(
+                result_file.stat().st_mtime, timezone.utc
+            ).isoformat(timespec="seconds")
+        return result
     except Exception:
         return None
 
@@ -475,7 +487,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     # ── result.json（训练结果）──
     def _read_meta_files(run_dir_path: Path) -> tuple[dict | None, str | None]:
-        train_result = _read_train_result(run_dir_path)
+        train_result = _read_train_result(run_dir_path, allow_mtime_fallback=not record["imported"])
         run_info = None
         info_file = run_dir_path / "run_info.txt"
         if info_file.exists():

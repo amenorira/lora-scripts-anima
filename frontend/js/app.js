@@ -15,7 +15,6 @@ document.addEventListener('alpine:init', () => {
     resolvedTheme: 'light',
     currentRoute: 'home',
     pageTitle: 'lora-scripts-anima',
-    pageSubtitle: '',
     locale: 'en-US',
     i18nReady: true,
     showThemeDropdown: false,
@@ -71,7 +70,6 @@ document.addEventListener('alpine:init', () => {
       }
       const cfg = ROUTE_CONFIG[route];
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
-      this.pageSubtitle = cfg.subtitleKey ? (this.t(cfg.subtitleKey) || cfg.subtitle || '') : (cfg.subtitle || '');
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
       try {
@@ -142,8 +140,6 @@ document.addEventListener('alpine:init', () => {
         const cfg = ROUTE_CONFIG[r] || {};
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
         else this.pageTitle = cfg.title || r;
-        if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
-        else this.pageSubtitle = cfg.subtitle || '';
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
@@ -352,8 +348,6 @@ document.addEventListener('alpine:init', () => {
       const cfg = ROUTE_CONFIG[route];
       if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || route;
       else this.pageTitle = cfg.title || route;
-      if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
-      else this.pageSubtitle = cfg.subtitle || '';
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
       const progressManagedByRoute = this.buildRouteContent({ routeTransition: true });

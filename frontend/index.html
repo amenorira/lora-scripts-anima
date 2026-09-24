@@ -23,23 +23,23 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260924-review5">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260924-eta-trend7">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260923-sidebar1">
+  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260920-dictionary3">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
-  <script src="/anima-ui/js/i18n.js" defer></script>
+  <script src="/anima-ui/js/i18n.js?v=20260924-eta-trend7" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20260922-lifecycle2" defer></script>
+  <script src="/anima-ui/js/config.js?v=20260924-page-headings5" defer></script>
   <script src="/anima-ui/js/anima-select.js?v=20260924-review5" defer></script>
-  <script src="/anima-ui/js/realtime.js" defer></script>
+  <script src="/anima-ui/js/realtime.js?v=20260924-monitor-time1" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20260920-rich-logs2" defer></script>
-  <script src="/anima-ui/js/monitor-core.js" defer></script>
-  <script src="/anima-ui/js/monitor-render.js?v=20260920-output-selection1" defer></script>
+  <script src="/anima-ui/js/monitor-core.js?v=20260924-eta-trend7" defer></script>
+  <script src="/anima-ui/js/monitor-render.js?v=20260924-eta-trend7" defer></script>
   <script src="/anima-ui/js/environment-core.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20260920-dict-counts1" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
@@ -50,13 +50,13 @@
   <script src="/anima-ui/js/training-shape-preview.js?v=20260917-kronscale1" defer></script>
   <script src="/anima-ui/js/training-toml.js?v=20260924-review5" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260920-caption-escape1" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260924-page-headings5" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20260924-suggest-batch1" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260920-dictionary3" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260924-review5" defer></script>
+  <script src="/anima-ui/js/app.js?v=20260924-page-headings5" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-cloak>
@@ -254,12 +254,11 @@
           <div class="page-header">
             <div class="monitor-page-heading">
               <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
-              <span class="monitor-page-kicker" x-text="t('monitor.consoleSubtitle','Training control center')">Training control center</span>
             </div>
             <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
             <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
           </div>
-          <div id="monitorControlbar"></div>
+          <div id="monitorHistoryContext"></div>
           <!-- Monitor Tabs -->
           <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs','Dashboard views')">
             <button id="monitor-tab-overview" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'overview' }"
@@ -1352,7 +1351,6 @@
       <div x-show="currentRoute === 'environment'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('environment.title')">Environment</h1>
-          <p class="page-subtitle" x-text="t('environment.subtitle')">Manage Flash Attention & acceleration libraries</p>
         </div>
         <div id="environmentPage"></div>
       </div>
@@ -1361,7 +1359,6 @@
       <div x-show="currentRoute === 'settings'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
-          <p class="page-subtitle" x-text="t('settings.subtitle')">Customize your training UI experience</p>
         </div>
         <div class="env-section">
           <div class="settings-row">

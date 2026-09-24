@@ -135,6 +135,15 @@ test('offline detail refresh retries after joining compact bootstrap', async () 
   assert.equal(calls, 2);
 });
 
+test('realtime connection changes schedule a summary patch once per state change', () => {
+  let renders = 0;
+  const a = app({ realtimeState: 'online', scheduleRender() { renders++; } });
+  a._setRealtimeState('degraded');
+  a._setRealtimeState('degraded');
+  a._setRealtimeState('online');
+  assert.equal(renders, 2);
+});
+
 test('historical run does not request live detail and reuses its log tail as the last page', async () => {
   const a = app({ selectedRunDir: 'output/history', liveTaskId: null });
   let calls = 0;

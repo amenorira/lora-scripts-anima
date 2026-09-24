@@ -79,16 +79,16 @@ window.getVisibleSections = function(trainType) {
 };
 
 window.ROUTE_CONFIG = {
-  'home': { title: 'lora-scripts-anima', subtitle: '' },
-  'monitor-dashboard': { titleKey: 'nav.monitorDashboard', subtitle: '' },
-  'history': { titleKey: 'nav.history', subtitle: '' },
+  'home': { title: 'lora-scripts-anima' },
+  'monitor-dashboard': { titleKey: 'nav.monitorDashboard' },
+  'history': { titleKey: 'nav.history' },
   'train-basic': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'train-master': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
-  'tagger': { titleKey: 'tagger.title', subtitleKey: 'tagger.subtitle' },
-  'tagEditor': { titleKey: 'tagEditor.title', subtitleKey: 'tagEditor.subtitle' },
-  'environment': { titleKey: 'environment.title', subtitleKey: 'environment.subtitle' },
-  'settings': { titleKey: 'settings.title', subtitleKey: 'settings.subtitle' },
+  'tagger': { titleKey: 'tagger.title' },
+  'tagEditor': { titleKey: 'tagEditor.title' },
+  'environment': { titleKey: 'environment.title' },
+  'settings': { titleKey: 'settings.title' },
   'docs': { titleKey: 'docs.title' },
-  'tensorboard': { title: 'TensorBoard', subtitle: '' },
+  'tensorboard': { title: 'TensorBoard' },
 };

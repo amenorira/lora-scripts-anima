@@ -100,6 +100,12 @@
   --monitor-card-shadow: none;
 }
 
+[data-theme="dark"] .route-monitor-dashboard {
+  --monitor-page-bg: var(--bg-sidebar);
+  --monitor-card-bg: color-mix(in srgb, var(--bg-sunken) 82%, var(--bg-surface));
+  --monitor-tile-bg: color-mix(in srgb, var(--monitor-card-bg) 82%, var(--bg-surface-raised));
+}
+
 /* ── 本主题专属组件规则 ───────────────────────────────────── */
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(178, 178, 184, 0.24); }
