@@ -365,9 +365,6 @@ async def monitor_history():
         running["artifact_external"] = bool(record and record["artifact_external"])
         running["preview_enabled"] = record["preview_enabled"] if record else None
         running["dataset"] = train_config.get("train_data_dir", "")
-    elif running and running.get("status") != "RUNNING":
-        running = None  # 已完成/终止的任务不算运行中
-
     return {"status": "success", "data": {"running": running, "history": history}}
 
 

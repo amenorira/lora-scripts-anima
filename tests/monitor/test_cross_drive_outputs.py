@@ -1,6 +1,8 @@
 import asyncio
 import json
+import threading
 import tempfile
+import time
 import tomllib
 import unittest
 from contextlib import ExitStack
@@ -9,6 +11,16 @@ from unittest.mock import patch
 
 from backend.monitor import artifacts, routes, run_registry
 from backend.server.routes import training as training_routes
+from backend.tasks import TaskManager, TaskStatus
+
+
+def _completed_launch(*_args, **kwargs):
+    """A successful launcher stub must settle its reserved task like a worker."""
+    task = kwargs["reserved_task"]
+    with task.lock:
+        task.status = TaskStatus.FINISHED
+        task.finished_at = time.time()
+    return {"status": "success", "data": {"task_id": task.task_id}}
 
 
 class _BodyRequest:
@@ -37,6 +49,7 @@ class CrossDriveSandbox(unittest.TestCase):
         self._patches.enter_context(patch.object(artifacts, "REPO_ROOT", self.root))
         self._patches.enter_context(patch.object(artifacts, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.output))
+        self._patches.enter_context(patch.object(training_routes, "tm", TaskManager()))
         artifacts.invalidate_history_cache()
 
     def tearDown(self):
@@ -59,6 +72,128 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
+    def test_run_route_stop_during_file_preparation_returns_cancelled_and_releases_slot(self):
+        entered, release = threading.Event(), threading.Event()
+        payload = {
+            "model_train_type": "sdxl-lora",
+            "train_data_dir": str(self.root / "train"),
+            "pretrained_model_name_or_path": str(self.root / "model.safetensors"),
+            "output_name": "cancelled_run",
+            "output_dir": str(self.external),
+        }
+
+        def write_config(*_args, **_kwargs):
+            entered.set()
+            self.assertTrue(release.wait(5))
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
+            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value: (dict(value), [])))
+            stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
+            stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
+            stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
+            stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
+            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={}))
+            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+            stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
+            stack.enter_context(patch.object(training_routes, "write_training_config", side_effect=write_config))
+            launch = stack.enter_context(patch.object(training_routes, "run_train"))
+
+            async def exercise():
+                request = asyncio.create_task(training_routes.create_toml_file(_BodyRequest(dict(payload))))
+                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                task_id = next(iter(training_routes.tm.tasks))
+                training_routes.tm.terminate_task(task_id)
+                self.assertIsNone(training_routes.tm.reserve_task())
+                release.set()
+                return await request
+
+            try:
+                response = asyncio.run(exercise())
+            finally:
+                release.set()
+
+        self.assertEqual(response.status, "fail")
+        self.assertEqual(response.message, "Training preparation cancelled / 训练准备已取消")
+        launch.assert_not_called()
+        self.assertIsNotNone(training_routes.tm.reserve_task())
+        self.assertEqual(list(self.autosave.glob("*.toml")), [])
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_preview_cache_reuses_full_list_across_limits_and_runs(self):
+        first = self.output / "preview-first"
+        second = self.output / "preview-second"
+        for directory in (first, second):
+            sample = directory / "sample"
+            sample.mkdir(parents=True)
+            (sample / "000001_00_20260924120000.png").touch()
+            (sample / "000002_00_20260924120001.png").touch()
+        original_iter = artifacts._iter_dir
+        with patch.object(artifacts, "_iter_dir", wraps=original_iter) as walk:
+            newest = artifacts.newest_previews(str(first), limit=1, run_dir="first", force_refresh=True)
+            full = artifacts.newest_previews(str(first), limit=0, run_dir="first")
+            other = artifacts.newest_previews(str(second), limit=1, run_dir="second", force_refresh=True)
+            again = artifacts.newest_previews(str(first), limit=0, run_dir="first")
+            self.assertEqual(walk.call_count, 2)
+        self.assertEqual(len(newest), 1)
+        self.assertEqual(len(full), 2)
+        self.assertEqual(len(other), 1)
+        self.assertEqual(again, full)
+        self.assertEqual(newest[0], full[-1])
+
+    def test_same_second_launch_reserves_before_preflight_and_keeps_configs_distinct(self):
+        entered = threading.Event()
+        release = threading.Event()
+        payload = {
+            "model_train_type": "sdxl-lora",
+            "train_data_dir": str(self.root / "train"),
+            "pretrained_model_name_or_path": str(self.root / "model.safetensors"),
+            "output_name": "same_name",
+            "output_dir": str(self.external),
+        }
+
+        def estimate(_config):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return {}
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
+            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value: (dict(value), [])))
+            stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
+            stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
+            stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
+            stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
+            stack.enter_context(patch.object(training_routes, "estimate_training_steps", side_effect=estimate))
+            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+            stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
+            stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
+            clock = stack.enter_context(patch.object(training_routes, "datetime"))
+            clock.now.return_value.strftime.return_value = "20260924-120000"
+            launch = stack.enter_context(patch.object(
+                training_routes, "run_train", side_effect=_completed_launch,
+            ))
+
+            async def exercise():
+                first = asyncio.create_task(training_routes.create_toml_file(_BodyRequest(dict(payload))))
+                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                blocked = await training_routes.create_toml_file(_BodyRequest({**payload, "output_name": "other"}))
+                release.set()
+                first_result = await first
+                second_result = await training_routes.create_toml_file(_BodyRequest(dict(payload)))
+                return first_result, blocked, second_result
+
+            first_result, blocked, second_result = asyncio.run(exercise())
+
+        self.assertEqual(first_result["status"], "success")
+        self.assertEqual(blocked.status, "fail")
+        self.assertEqual(second_result["status"], "success")
+        self.assertEqual(launch.call_count, 2)
+        run_dirs = [Path(call.kwargs["run_dir"]) for call in launch.call_args_list]
+        self.assertNotEqual(run_dirs[0], run_dirs[1])
+        self.assertEqual(len(list(self.autosave.glob("20260924-120000_*.toml"))), 2)
+        self.assertTrue(all((path / "config.toml").is_file() for path in run_dirs))
+
     def test_v2_record_maps_external_artifacts_and_rejects_traversal(self):
         internal = self.output / "demo_20260716-120000"
         artifact = self.external / internal.name
@@ -252,7 +387,7 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                         patch.object(
                             training_routes,
                             "run_train",
-                            return_value={"status": "success", "data": {"task_id": "mock-task"}},
+                            side_effect=_completed_launch,
                         )
                     )
                     result = asyncio.run(training_routes.create_toml_file(_BodyRequest(payload)))

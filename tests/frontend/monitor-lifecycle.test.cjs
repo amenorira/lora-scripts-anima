@@ -134,3 +134,21 @@ test('offline detail refresh retries after joining compact bootstrap', async () 
   await a.refreshMonitorRealtimeDetail();
   assert.equal(calls, 2);
 });
+
+test('historical run does not request live detail and reuses its log tail as the last page', async () => {
+  const a = app({ selectedRunDir: 'output/history', liveTaskId: null });
+  let calls = 0;
+  a._refreshRealtimeSnapshot = async () => { calls++; };
+  await a.refreshMonitorRealtimeDetail();
+  assert.equal(calls, 0);
+
+  global.fetch = async () => response({
+    tensorboard_loss: [], train_params: [], previews: [], output_count: 0,
+    log_lines: ['line 98', 'line 99'], log_total: 100,
+  });
+  a._logPageSize = () => 1;
+  await a._fetchRunDetail('output/history');
+  assert.deepEqual(a.logFullLines, ['line 99']);
+  assert.equal(a.logFullOffset, 99);
+  assert.equal(a._logFullLoaded, true);
+});

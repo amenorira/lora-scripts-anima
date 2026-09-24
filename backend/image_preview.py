@@ -20,8 +20,8 @@ _CACHE_MAX_FILES = 14000
 _CACHE_RETAIN_FILES = 12000
 _PRUNE_INTERVAL = 128
 _writes_since_prune = _PRUNE_INTERVAL - 1
-_render_locks: dict[str, threading.Lock] = {}
-_render_locks_guard = threading.Lock()
+# A fixed set of locks bounds memory while still deduplicating same-key renders.
+_render_locks = tuple(threading.Lock() for _ in range(256))
 
 _VARIANT_DEFAULTS = {
     "thumb": {"size": 320, "quality": 90},
@@ -144,8 +144,7 @@ def get_cached_preview_path(
     if target.exists():
         return target
 
-    with _render_locks_guard:
-        render_lock = _render_locks.setdefault(key, threading.Lock())
+    render_lock = _render_locks[int(key[:8], 16) % len(_render_locks)]
     with render_lock:
         if target.exists():
             return target

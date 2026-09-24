@@ -151,15 +151,82 @@ class DatasetRepeatRouteTests(unittest.TestCase):
         self.assertEqual(system_routes._files_cache, {})
 
     def test_route_blocked_while_training(self):
-        with patch.object(training_routes.tm, "dump", return_value=[{"status": "RUNNING"}]):
+        from backend.tasks import TaskManager
+        manager = TaskManager()
+        reservation = manager.reserve_task()
+        with patch.object(training_routes, "tm", manager):
             result = asyncio.run(training_routes.update_dataset_repeat(_BodyRequest({
                 "dir": str(self.train),
                 "changes": [{"name": "5_cat", "repeats": 8}],
             })))
+        manager.release_reserved(reservation)
 
         self.assertEqual(result.status, "fail")
         self.assertEqual(result.data["errorCode"], "trainingActive")
         self.assertTrue((self.train / "5_cat").is_dir())
+
+    def test_stopping_preparation_does_not_allow_dataset_rename(self):
+        import threading
+        from backend.tasks import TaskManager, TaskStatus
+
+        entered = threading.Event()
+        release = threading.Event()
+        manager = TaskManager()
+
+        def slow_disk_work():
+            entered.set()
+            release.wait(5)
+
+        async def prepare(preparation):
+            await training_routes._settled_to_thread(slow_disk_work)
+            return {"status": "success"}
+
+        async def scenario():
+            with patch.object(training_routes, "tm", manager):
+                pending = asyncio.create_task(training_routes._prepare_training(prepare))
+                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                task_id = manager.dump()[0]["id"]
+                manager.terminate_task(task_id)
+                self.assertIs(manager.tasks[task_id].status, TaskStatus.CREATED)
+                blocked = await training_routes.update_dataset_repeat(_BodyRequest({
+                    "dir": str(self.train), "changes": [{"name": "5_cat", "repeats": 8}],
+                }))
+                self.assertEqual(blocked.data["errorCode"], "trainingActive")
+                release.set()
+                result = await pending
+                self.assertEqual(result.status, "fail")
+                self.assertEqual(manager.dump(), [])
+
+        asyncio.run(scenario())
+
+    def test_cancelled_request_keeps_mutation_slot_until_rename_finishes(self):
+        import threading
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_rename(*_args):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return {"applied": []}
+
+        async def exercise():
+            task = asyncio.create_task(training_routes.update_dataset_repeat(_BodyRequest({
+                "dir": str(self.train), "changes": [{"name": "5_cat", "repeats": 8}],
+            })))
+            self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+            task.cancel()
+            await asyncio.sleep(0)
+            self.assertIsNone(training_routes.tm.reserve_task())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            reservation = training_routes.tm.reserve_task()
+            self.assertIsNotNone(reservation)
+            training_routes.tm.release_reserved(reservation)
+
+        with patch.object(training_routes, "apply_subset_repeats", side_effect=slow_rename):
+            asyncio.run(exercise())
 
 
 if __name__ == "__main__":

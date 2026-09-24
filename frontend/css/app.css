@@ -2429,6 +2429,9 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 24px 28px 0;
   background: var(--bg-root);
 }
+@media (min-width: 1024px) and (max-width: 1200px) {
+  .main-fullscreen .route-monitor-dashboard { min-width: 0; padding-inline: 16px; }
+}
 .monitor-sticky-stack {
   position: sticky; top: 0; z-index: 12; flex-shrink: 0;
   background: var(--bg-root);
@@ -3624,6 +3627,12 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   margin: 0 auto;
 }
 
+/* Keep the form inside the available work area when the TOML panel is open. */
+@media (max-width: 1350px) {
+  .train-tab-card,
+  #trainForm { min-width: 0; }
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 /* Wide screens: let the TOML preview panel grow */
 @media (min-width: 1600px) {
@@ -4185,10 +4194,16 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   white-space: normal;
 }
 
-.anima-select-option:hover {
+.anima-select-option:hover,
+.anima-select-option.kb-active {
   background: var(--hover-overlay);
   border-color: var(--border-subtle);
   color: var(--text-primary);
+}
+
+.anima-select-option[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .anima-select-option.active {

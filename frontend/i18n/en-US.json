@@ -1256,6 +1256,8 @@
 		"searchBuiltin": "Search built-in models",
 		"pickerSearchPlaceholder": "Filter by name",
 		"pickerEmpty": "No files found",
+		"pickerLoading": "Scanning files…",
+		"pickerRetry": "Retry",
 		"pickerSelect": "Select",
 		"pickerFileUnit": "files",
 		"pickerFolderUnit": "folders",

@@ -1256,6 +1256,8 @@
 		"searchBuiltin": "搜索内置模型",
 		"pickerSearchPlaceholder": "按名称筛选",
 		"pickerEmpty": "未找到文件",
+		"pickerLoading": "正在扫描文件…",
+		"pickerRetry": "重试",
 		"pickerSelect": "选择",
 		"pickerFileUnit": "个文件",
 		"pickerFolderUnit": "个文件夹",

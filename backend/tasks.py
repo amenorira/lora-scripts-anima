@@ -70,21 +70,58 @@ class Task:
         self._terminate_requested = False
         self._termination_lock = threading.Lock()
         self._process_tree: list = []
+        self._termination_complete = False
+        self._exit_collected = False
+        self._work_complete = False
 
-    def _settle_after_process_exit(self) -> None:
-        # 父进程可能先于子进程退出；等待停止流程发布终态，再交给监控线程结算。
+    def configure_reserved(self, command: List[str]) -> None:
+        """Hand a reserved slot to the launcher without opening a second slot."""
+        with self.lock:
+            if self.status is not TaskStatus.CREATED or self._terminate_requested:
+                raise RuntimeError("Reserved task is no longer startable")
+            self.command = command
+
+    @property
+    def stop_requested(self) -> bool:
+        with self.lock:
+            return self._terminate_requested
+
+    def complete_work(self) -> None:
+        """Signal that preparation or worker callbacks are done, then try to release the slot."""
         with self._termination_lock:
             with self.lock:
-                if self.status in _TERMINAL_STATUSES:
+                self._work_complete = True
+            self._publish_terminal_if_ready_locked()
+
+    def _publish_terminal_if_ready_locked(self) -> None:
+        """The only terminal transition; caller holds _termination_lock."""
+        with self.lock:
+            if self.status in _TERMINAL_STATUSES or not self._work_complete:
+                return
+            if self._terminate_requested:
+                if self.process is not None and not self._termination_complete:
+                    # The parent may exit first; a later successful stop retry settles it.
                     return
-                if self._terminate_requested:
-                    # 清理失败仍保留并发名额，不能把父进程退出当作任务完成。
-                    raise RuntimeError("Process tree termination incomplete / 进程树终止未完成，请重试停止")
+                self.status = TaskStatus.TERMINATED
+            elif self.process is None:
+                self.status = TaskStatus.FAILED
+            elif self._exit_collected:
                 self.status = TaskStatus.FINISHED if self.process.returncode == 0 else TaskStatus.FAILED
-                self.finished_at = time.time()
+            else:
+                return
+            self.finished_at = time.time()
+
+    def _confirm_process_exit(self) -> None:
+        # Wait for any in-progress tree cleanup before returning process output.
+        with self._termination_lock:
+            with self.lock:
+                self._exit_collected = True
+                if self._terminate_requested and not self._termination_complete:
+                    raise RuntimeError("Process tree termination incomplete / 进程树终止未完成，请重试停止")
+            self._publish_terminal_if_ready_locked()
 
     def communicate(self, input=None, timeout=None) -> subprocess.CompletedProcess:
-        """等待子进程结束并收集输出。超时时先短等二次确认，仍不死则强杀。"""
+        """等待子进程并收集输出；业务所有者完成结果与回调后调用 complete_work。"""
         try:
             stdout, stderr = self.process.communicate(input=input, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -97,12 +134,12 @@ class Task:
         except Exception:
             self.terminate()
             raise
-        self._settle_after_process_exit()
+        self._confirm_process_exit()
         return subprocess.CompletedProcess(self.process.args, self.process.returncode, stdout, stderr)
 
     def wait(self) -> None:
         self.process.wait()
-        self._settle_after_process_exit()
+        self._confirm_process_exit()
 
     def execute(self, stdout_file=None) -> None:
         popen_kwargs: dict = {"env": self.environ}
@@ -118,8 +155,6 @@ class Task:
                 self.process = subprocess.Popen(self.command, **popen_kwargs)
             except Exception as e:
                 log.error(f"Failed to start process / 启动进程失败: {e}")
-                self.status = TaskStatus.FAILED
-                self.finished_at = time.time()
                 raise
 
     def terminate(self) -> None:
@@ -127,15 +162,21 @@ class Task:
             with self.lock:
                 if self.status in _TERMINAL_STATUSES:
                     return
+                if self._exit_collected and not self._terminate_requested:
+                    # The process has finished; its owner is completing result/callback work.
+                    return
                 self._terminate_requested = True
                 process = self.process
+                cleanup_done = self._termination_complete
+            if process is None or cleanup_done:
+                self._publish_terminal_if_ready_locked()
+                return
             if process is not None:
                 kill_proc_tree(process.pid, processes=self._process_tree)
                 process.wait(timeout=5)
-            # 终止失败时保留名额并将异常交给调用方，允许重试。
             with self.lock:
-                self.status = TaskStatus.TERMINATED
-                self.finished_at = time.time()
+                self._termination_complete = True
+            self._publish_terminal_if_ready_locked()
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -149,6 +190,9 @@ class TaskManager:
         self.max_concurrent = max_concurrent
         self.tasks: Dict[str, Task] = {}
         self._lock = threading.Lock()
+        self._external_claims: set[str] = set()
+        self._dataset_readers: set[str] = set()
+        self._dataset_mutation = False
 
     def _cleanup_finished(self) -> None:
         now = time.time()
@@ -177,10 +221,10 @@ class TaskManager:
                 1 for task in self.tasks.values()
                 if task.status in (TaskStatus.CREATED, TaskStatus.RUNNING)
             )
-            if active >= self.max_concurrent:
-                log.error(
-                    f"Unable to create task: {active} tasks active, max {self.max_concurrent}. "
-                    f"/ 无法创建任务：已有 {active} 个任务占用槽位，最大并发 {self.max_concurrent}。"
+            if active >= self.max_concurrent or self._external_claims or self._dataset_mutation:
+                log.warning(
+                    "Unable to create task / 无法创建任务：active=%s, max=%s, tagger_claims=%s, dataset_mutation=%s",
+                    active, self.max_concurrent, len(self._external_claims), self._dataset_mutation,
                 )
                 return None
 
@@ -190,6 +234,58 @@ class TaskManager:
             self._cleanup_finished()
             log.info(f"Task {task_id[:8]} created / 任务已创建")
             return task
+
+    def reserve_task(self) -> Optional[Task]:
+        """Reserve the existing task slot before dataset preflight or run-file writes."""
+        return self.create_task([])
+
+    def release_reserved(self, task: Task) -> None:
+        """Release a preparation only after its owner has finished disk work."""
+        with task.lock:
+            if task.process is not None:
+                raise RuntimeError("Cannot release a task after its worker started")
+        task.complete_work()
+        with self._lock:
+            if self.tasks.get(task.task_id) is task:
+                self.tasks.pop(task.task_id)
+
+    def claim_external(self, owner: str) -> bool:
+        """Atomically exclude a Tagger job from training and other GPU claims."""
+        with self._lock:
+            active = any(task.status in (TaskStatus.CREATED, TaskStatus.RUNNING) for task in self.tasks.values())
+            if active or self._external_claims or self._dataset_mutation:
+                return False
+            self._external_claims.add(owner)
+            return True
+
+    def release_external(self, owner: str) -> None:
+        with self._lock:
+            self._external_claims.discard(owner)
+
+    def claim_dataset_reader(self, owner: str) -> bool:
+        """Keep a read-only remote Tagger scan stable during folder renames."""
+        with self._lock:
+            if self._dataset_mutation:
+                return False
+            self._dataset_readers.add(owner)
+            return True
+
+    def release_dataset_reader(self, owner: str) -> None:
+        with self._lock:
+            self._dataset_readers.discard(owner)
+
+    def begin_dataset_mutation(self) -> bool:
+        """Keep folder renames outside training preparation and execution."""
+        with self._lock:
+            active = any(task.status in (TaskStatus.CREATED, TaskStatus.RUNNING) for task in self.tasks.values())
+            if active or self._external_claims or self._dataset_readers or self._dataset_mutation:
+                return False
+            self._dataset_mutation = True
+            return True
+
+    def end_dataset_mutation(self) -> None:
+        with self._lock:
+            self._dataset_mutation = False
 
     def add_task(self, task_id: str, task: Task) -> None:
         with self._lock:

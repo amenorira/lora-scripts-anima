@@ -772,18 +772,6 @@ window.trainingTomlMixin = {
 
     const trainType = this.form.model_train_type || 'anima-lora';
 
-    // Validation: Check required fields based on train type
-    if (trainType === 'anima-lora') {
-      if (!this.form.vae || this.form.vae.trim() === '') {
-        this.toast(this.t('common.vaeRequired'), 'error');
-        return;
-      }
-      if (!this.form.qwen3 || this.form.qwen3.trim() === '') {
-        this.toast(this.t('common.qwen3Required'), 'error');
-        return;
-      }
-    }
-
     this.trainingStarting = true;
     const outputPathInfo = await this.refreshOutputPathInfo(true);
     if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
@@ -911,11 +899,11 @@ window.trainingTomlMixin = {
     try {
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
-      if (data.status !== 'success') {
+      if (!resp.ok || data.status !== 'success') {
         if (data.data && data.data.errorCode === 'teCacheStale') {
           this._showTeCacheStaleDialog(data.data.warnings || []);
         } else {
-          this.toast(data.message || 'Failed');
+          this.toast(data.message || 'Failed', 'error');
         }
         this._applyTaskView('IDLE');
       }
@@ -932,7 +920,7 @@ window.trainingTomlMixin = {
           }, 500);
         }
       }
-    } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message); this._applyTaskView('IDLE'); }
+    } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message, 'error'); this._applyTaskView('IDLE'); }
     this.trainingStarting = false;
   },
 

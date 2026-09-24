@@ -22,10 +22,18 @@ class DatasetSession:
     generation: int
     revision: str
     images: tuple[dict, ...]
+    image_by_rel_path: dict[str, dict]
     tags: tuple[dict, ...]
     created_at: float
     accessed_at: float
     queries: OrderedDict = field(default_factory=OrderedDict, compare=False, repr=False)
+
+
+def _image_index(images: tuple[dict, ...]) -> dict[str, dict]:
+    return {
+        str(item.get("rel_path", "")).replace("\\", "/"): item
+        for item in images
+    }
 
 
 def _dataset_revision(images: tuple[dict, ...]) -> str:
@@ -59,6 +67,7 @@ class DatasetSessionService:
             generation=1,
             revision=_dataset_revision(image_snapshot),
             images=image_snapshot,
+            image_by_rel_path=_image_index(image_snapshot),
             tags=tuple(dict(item) for item in tags),
             created_at=now,
             accessed_at=now,
@@ -93,6 +102,7 @@ class DatasetSessionService:
             generation=old.generation + 1,
             revision=_dataset_revision(image_snapshot),
             images=image_snapshot,
+            image_by_rel_path=_image_index(image_snapshot),
             tags=tuple(dict(item) for item in tags),
             created_at=old.created_at,
             accessed_at=now,

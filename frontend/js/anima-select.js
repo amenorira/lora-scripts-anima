@@ -4,6 +4,7 @@
    ================================================================ */
 
 document.addEventListener('alpine:init', () => {
+  let nextListboxId = 0;
   Alpine.data('animaSelect', (fieldConfigJson, initialValue) => {
     // Most field configs are static. A function may be supplied by workspaces
     // whose options arrive asynchronously (for example the Tagger registry).
@@ -34,7 +35,9 @@ document.addEventListener('alpine:init', () => {
     open: false,
     positioned: false,
     value: initialValue,
-    _escHandler: null,
+    activeIndex: -1,
+    _lastScrolledActiveIndex: -1,
+    _listboxId: `anima-select-listbox-${++nextListboxId}`,
     _positionFrame: null,
     _closeAnimation: null,
 
@@ -60,12 +63,24 @@ document.addEventListener('alpine:init', () => {
 
     init() {
       this.$watch('open', (isOpen) => {
-        if (isOpen) this.$nextTick(() => this.positionMenu());
+        const trigger = this.$el.querySelector('.anima-select-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', String(isOpen));
+        if (isOpen) {
+          window.addEventListener('scroll', this._scrollHandler, true);
+          window.addEventListener('resize', this._resizeHandler);
+          this.$nextTick(() => this.positionMenu());
+        } else {
+          window.removeEventListener('scroll', this._scrollHandler, true);
+          window.removeEventListener('resize', this._resizeHandler);
+        }
       });
-      this._escHandler = (e) => {
-        if (e.key === 'Escape' && this.open) { this.close(); }
-      };
-      this.$el.addEventListener('keydown', this._escHandler);
+      const trigger = this.$el.querySelector('.anima-select-trigger');
+      if (trigger) {
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+      this._keyHandler = e => this.onKeydown(e);
+      this.$el.addEventListener('keydown', this._keyHandler);
 
       // fixed 菜单在页面或面板滚动时按帧重定位；菜单自身滚动无需重算。
       this._scrollHandler = (e) => {
@@ -74,9 +89,7 @@ document.addEventListener('alpine:init', () => {
         if (target && typeof target.closest === 'function' && target.closest('.anima-select-menu')) return;
         this.schedulePositionMenu();
       };
-      window.addEventListener('scroll', this._scrollHandler, true);
       this._resizeHandler = () => { if (this.open) this.schedulePositionMenu(); };
-      window.addEventListener('resize', this._resizeHandler);
 
       // Sync display when the hidden input value is changed externally
       // (e.g. by autoValue, config import, undo, reset, or any programmatic form update).
@@ -104,8 +117,8 @@ document.addEventListener('alpine:init', () => {
 
     destroy() {
       if (this._closeAnimation) this._closeAnimation.cancel();
-      if (this._escHandler) {
-        this.$el.removeEventListener('keydown', this._escHandler);
+      if (this._keyHandler) {
+        this.$el.removeEventListener('keydown', this._keyHandler);
       }
       if (this._scrollHandler) {
         window.removeEventListener('scroll', this._scrollHandler, true);
@@ -141,8 +154,98 @@ document.addEventListener('alpine:init', () => {
       };
     },
 
+    _enabledIndices() {
+      return this.flatOptions.map((option, index) =>
+        option.disabled || option.enabled === false ? -1 : index).filter(index => index >= 0);
+    },
+
+    _syncOptionA11y() {
+      const trigger = this.$el.querySelector('.anima-select-trigger');
+      const menu = this.$el.querySelector('.anima-select-menu');
+      if (!trigger || !menu) return;
+      menu.id = this._listboxId;
+      menu.setAttribute('role', 'listbox');
+      trigger.setAttribute('aria-controls', this._listboxId);
+      const options = menu.querySelectorAll('.anima-select-option');
+      const flatOptions = this.flatOptions;
+      options.forEach((element, index) => {
+        const option = flatOptions[index];
+        element.id = `${this._listboxId}-option-${index}`;
+        element.setAttribute('role', 'option');
+        element.setAttribute('aria-selected', String(!!option && String(option.v) === String(this.value)));
+        element.setAttribute('aria-disabled', String(!!option && (option.disabled || option.enabled === false)));
+        element.classList.toggle('kb-active', index === this.activeIndex);
+      });
+      if (this.activeIndex >= 0 && options[this.activeIndex]) {
+        trigger.setAttribute('aria-activedescendant', options[this.activeIndex].id);
+        if (this._lastScrolledActiveIndex !== this.activeIndex) {
+          options[this.activeIndex].scrollIntoView({ block: 'nearest' });
+          this._lastScrolledActiveIndex = this.activeIndex;
+        }
+      } else {
+        trigger.removeAttribute('aria-activedescendant');
+        this._lastScrolledActiveIndex = -1;
+      }
+    },
+
+    _openForKeyboard(key) {
+      const enabled = this._enabledIndices();
+      if (!enabled.length) return;
+      const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
+      if (key === 'Home') this.activeIndex = enabled[0];
+      else if (key === 'End') this.activeIndex = enabled[enabled.length - 1];
+      else this.activeIndex = selected === undefined
+        ? (key === 'ArrowUp' ? enabled[enabled.length - 1] : enabled[0]) : selected;
+      this.open = true;
+      this.positioned = false;
+      this._lastScrolledActiveIndex = -1;
+      this.$nextTick(() => this.positionMenu());
+    },
+
+    onKeydown(event) {
+      if (!event.target.closest('.anima-select-trigger') || event.target.disabled) return;
+      if (this._closeAnimation) return;
+      const key = event.key;
+      if (key === 'Escape') {
+        if (this.open) {
+          event.preventDefault();
+          this.close();
+          event.target.focus();
+        }
+        return;
+      }
+      if (key === 'Tab') {
+        if (this.open) this.close();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(key)) return;
+      event.preventDefault();
+      if (!this.open) {
+        this._openForKeyboard(key);
+        return;
+      }
+      const enabled = this._enabledIndices();
+      if (!enabled.length) return;
+      if (key === 'Enter' || key === ' ') {
+        const option = this.flatOptions[this.activeIndex];
+        if (option && !option.disabled && option.enabled !== false) this.select(option.v);
+        return;
+      }
+      if (key === 'Home') this.activeIndex = enabled[0];
+      else if (key === 'End') this.activeIndex = enabled[enabled.length - 1];
+      else {
+        const current = enabled.indexOf(this.activeIndex);
+        const direction = key === 'ArrowDown' ? 1 : -1;
+        this.activeIndex = enabled[(current + direction + enabled.length) % enabled.length];
+      }
+      this._syncOptionA11y();
+    },
+
     select(v) {
+      const selectedOption = this.flatOptions.find(option => String(option.v) === String(v));
+      if (selectedOption && (selectedOption.disabled || selectedOption.enabled === false)) return;
       this.value = v;
+      this.activeIndex = this.flatOptions.findIndex(option => String(option.v) === String(v));
       this.close();
       this.syncToModel();
       this.$dispatch('anima-select-change', { value: v });
@@ -163,7 +266,11 @@ document.addEventListener('alpine:init', () => {
       }
       this.open = !this.open;
       if (this.open) {
+        const enabled = this._enabledIndices();
+        const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
+        this.activeIndex = selected === undefined ? (enabled[0] ?? -1) : selected;
         this.positioned = false;
+        this._lastScrolledActiveIndex = -1;
         // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
         // （如分组的 .card-body）裁剪。
         this.$nextTick(() => this.positionMenu());
@@ -228,6 +335,7 @@ document.addEventListener('alpine:init', () => {
           }
         }
       }
+      this._syncOptionA11y();
       this.positioned = true;
     },
 

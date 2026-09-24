@@ -70,6 +70,32 @@ def _cleanup_install_jobs() -> None:
     _prune_finished_jobs(_install_jobs, _install_jobs_lock, _remove_install_job)
 
 
+def _read_install_log_tail(path: str, tail: int) -> str:
+    if tail <= 0:
+        # Preserve the existing readlines()[-tail:] behavior for explicit
+        # non-positive requests (zero means the whole log).
+        with open(path, "r", encoding="utf-8", errors="replace") as file:
+            return "".join(file.readlines()[-tail:])
+    chunks = []
+    with open(path, "rb") as file:
+        file.seek(0, os.SEEK_END)
+        position = file.tell()
+        remaining = 512 * 1024
+        newlines = 0
+        while position > 0 and remaining > 0 and newlines <= tail:
+            size = min(position, 8192, remaining)
+            position -= size
+            file.seek(position)
+            chunk = file.read(size)
+            chunks.append(chunk)
+            newlines += chunk.count(b"\n")
+            remaining -= size
+    raw = b"".join(reversed(chunks))
+    if position > 0 and newlines <= tail:
+        return "[... earlier log truncated / 前面的日志已截断 ...]\n" + raw.decode("utf-8", errors="replace")
+    return b"".join(raw.splitlines(keepends=True)[-tail:]).decode("utf-8", errors="replace")
+
+
 def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
     """Read the existing install-job state for the realtime bridge."""
     _cleanup_install_jobs()
@@ -79,8 +105,7 @@ def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
     if not job:
         return {"status": "error", "done": True, "error": "Job not found / 任务不存在"}
     try:
-        with open(job["log_path"], "r", encoding="utf-8", errors="replace") as file:
-            lines = "".join(file.readlines()[-tail:])
+        lines = _read_install_log_tail(job["log_path"], tail)
     except Exception:
         lines = ""
     done = bool(job.get("done", False))

@@ -2921,18 +2921,10 @@ window.tagEditorMixin = {
     this.openConfirm(this.t('tagEditor.batchEditConfirmTitle'), msg, cb, this.t('common.confirm'));
   },
 
-  _teConfirmNav(route) {
-    if (this.currentRoute !== 'tagEditor') return true;
+  _teHasUnsavedEdits() {
+    if (this.currentRoute !== 'tagEditor') return false;
     this._teFlushAllPendingTextEdits();
-    if (!this.tagEditorModified) return true;
-    // 统一确认弹窗（与监控台等页面共用），按下继续时仍会再走一次本守卫
-    if (this._teNavConfirmed) { this._teNavConfirmed = false; return true; }
-    var self = this;
-    this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), function() {
-      self._teNavConfirmed = true;
-      self.navigate(route);
-    });
-    return false;
+    return !!this.tagEditorModified;
   },
 
   // ===== Keyboard Shortcuts =====

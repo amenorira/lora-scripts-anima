@@ -599,7 +599,7 @@ window.monitorCoreMixin = {
     this._setMonitorRealtimeTask(id);
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
-      void this.refreshMonitorRealtimeDetail();
+      if (!this.selectedRunDir) void this.refreshMonitorRealtimeDetail();
     }
   },
 
@@ -826,7 +826,7 @@ window.monitorCoreMixin = {
     }
   },
   async refreshMonitorRealtimeDetail() {
-    if (this.currentRoute !== 'monitor-dashboard') return;
+    if (this.currentRoute !== 'monitor-dashboard' || this.selectedRunDir) return;
     const runDir = this.currentOutputRunDir;
     if (!this.selectedRunDir && !this.liveTaskId && runDir) {
       const generation = ++this._monitorRealtimeDetailGeneration;
@@ -1118,11 +1118,14 @@ window.monitorCoreMixin = {
         this._forceLogRebuild = true;
         // 默认完整日志：末页 + 跟随（历史停在末尾；工具栏可翻页浏览全部）
         this.logMode = 'full';
-        this._logFullLoaded = false;    // 新 run 首次渲染时自动拉取末页
+        // run-detail already includes the normalized tail. Reuse its last
+        // page instead of requesting the same log lines again on tab entry.
+        this._logFullLoaded = true;
         this._logFullNeedsResync = false;
         this._logFullSlide = false;
         this._logFullEvictK = 0;
-        this.logFullLines = [];
+        this.logFullLines = this.logLines.slice(-this._logPageSize());
+        this.logFullOffset = Math.max(0, this.logTotal - this.logFullLines.length);
         this.logFullLoading = false;
         // run-detail and log-slice share one normalized row definition, so the
         // count stays stable while the first full-log page is loading.

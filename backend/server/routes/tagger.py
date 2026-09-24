@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from backend.async_utils import settled_to_thread
 from backend.constants import TAGGER_CACHE_DIR
 from backend.core.realtime import realtime_tasks
 from backend.log import log
@@ -38,6 +39,7 @@ from backend.tagger.workspace import (
     training_active,
     _finalize_api_tags,
 )
+from backend.tasks import tm
 
 router = APIRouter()
 
@@ -66,9 +68,10 @@ _MODEL_DISPLAY_NAMES = {
 
 @router.post("/interrogate")
 async def run_interrogate(req: TaggerInterrogateRequest):
-    if training_active():
-        return APIResponseFail(message="Training is using the GPU / 训练任务正在使用 GPU")
     task_id = str(uuid.uuid4())[:8]
+    owner = f"legacy-tagger:{task_id}"
+    if not tm.claim_external(owner):
+        return APIResponseFail(message="Training or tagging task is active / 训练或反推任务正在运行")
     interrogator = available_interrogators.get(
         req.interrogator_model,
         available_interrogators["wd-eva02-large-tagger-v3"],
@@ -96,15 +99,25 @@ async def run_interrogate(req: TaggerInterrogateRequest):
         "escape_tag": req.escape_tag,
         "unload_model_after_running": True,
     }
-    asyncio.create_task(asyncio.to_thread(
-        on_interrogate,
-        task_id=task_id,
-        image=None,
-        batch_input_glob=req.path,
-        interrogator=interrogator,
-        **batch_options,
-        **postprocess_options,
-    ))
+    async def _run_claimed():
+        try:
+            await settled_to_thread(
+                on_interrogate,
+                task_id=task_id,
+                image=None,
+                batch_input_glob=req.path,
+                interrogator=interrogator,
+                **batch_options,
+                **postprocess_options,
+            )
+        finally:
+            tm.release_external(owner)
+
+    try:
+        asyncio.create_task(_run_claimed())
+    except Exception:
+        tm.release_external(owner)
+        raise
     await realtime_tasks.register(
         task_id,
         "tagger",
@@ -234,8 +247,6 @@ async def tagger_single_image(
     interrogator_model: str = Form(...),
 ):
     """Single-image tag inference. Returns all categories with raw confidence scores."""
-    if training_active():
-        return APIResponseFail(message="Training is using the GPU / 训练任务正在使用 GPU")
     if not file.content_type or not file.content_type.startswith("image/"):
         return APIResponseFail(message="File is not an image / 文件不是图片")
 
@@ -249,17 +260,26 @@ async def tagger_single_image(
 
     interrogator = available_interrogators.get(interrogator_model)
     if interrogator is None:
+        image.close()
         return APIResponseFail(message=f"Unknown model: {interrogator_model} / 未知模型: {interrogator_model}")
+
+    owner = f"single-tagger:{uuid.uuid4().hex}"
+    if not tm.claim_external(owner):
+        image.close()
+        return APIResponseFail(message="Training or tagging task is active / 训练或反推任务正在运行")
 
     try:
         def _infer():
             with gpu_inference_lock:
                 return interrogator.interrogate(image)
 
-        tags = await asyncio.to_thread(_infer)
+        tags = await settled_to_thread(_infer)
     except Exception as exc:
         log.exception("Single-image inference failed / 单张推理失败")
         return APIResponseFail(message=f"Inference failed / 推理失败: {str(exc)[:200]}")
+    finally:
+        tm.release_external(owner)
+        image.close()
 
     categories = {
         category: [[tag_name, round(confidence, 4)] for tag_name, confidence in tag_list if confidence >= 0.01]
