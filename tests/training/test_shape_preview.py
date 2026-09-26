@@ -39,10 +39,12 @@ class ShapePreviewTests(unittest.TestCase):
         from safetensors.torch import save_file
 
         cases = (("networks.lora_anima", "LoRAModule"), ("networks.loha", "LoHaModule"), ("networks.lokr", "LoKrModule"))
+        original_trunc_normal = torch.nn.init.trunc_normal_
         for module_name, class_name in cases:
             with self.subTest(module=module_name), tempfile.TemporaryDirectory() as temp_dir:
                 tmp_path = Path(temp_dir)
                 result = estimate(network_module=module_name, network_args=["exclude_patterns=['.*']", "include_patterns=['x_embedder.*']"])
+                self.assertIs(torch.nn.init.trunc_normal_, original_trunc_normal)
                 self.assertEqual(result["moduleCount"], 1)
                 cls = getattr(importlib.import_module(module_name), class_name)
                 adapter = cls("lora_unet_x_embedder_proj_1", torch.nn.Linear(68, 2048, bias=False), lora_dim=32, alpha=16)

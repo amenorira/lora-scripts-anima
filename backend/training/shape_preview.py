@@ -111,7 +111,9 @@ def _inspect_network(form):
     bytes_per = {"fp16": 2, "bf16": 2, "float": 4, "fp32": 4}.get(precision)
     if bytes_per is None:
         raise ValueError("Unknown save precision / 无法识别保存精度")
-    with FakeTensorMode():
+    # PyTorch 2.12 trunc_normal_ checks sampled values, which fake tensors lack.
+    # This isolated shape-only worker needs no random weight values.
+    with FakeTensorMode(), patch.object(torch.nn.init, "trunc_normal_", lambda tensor, *args, **kwargs: tensor):
         model = Anima(**_anima_config())
         originals = {id(m): (name, m) for name, m in model.named_modules()}
         text_encoders = []
