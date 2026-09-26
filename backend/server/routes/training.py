@@ -832,11 +832,15 @@ async def create_toml_file(request: Request):
 
 
 async def _create_toml_file_reserved(config: dict, reserved_task):
+    from backend.training.attention_config import normalize_attention_config
+
+    normalize_attention_config(config)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     form_snapshot = config.pop("_form_state", None)
     if not isinstance(form_snapshot, dict):
         form_snapshot = {key: value for key, value in config.items() if not key.startswith("_")}
+    normalize_attention_config(form_snapshot)
     gpu_ids = config.pop("gpu_ids", None)
 
     try:
@@ -940,11 +944,6 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         if attn_warning:
             log.warning(f"[Attn] {attn_warning}")
             config["attn_mode"] = attn_actual
-    if config.get("krea_attention_backend") == "flash_attn":
-        attn_actual, attn_warning = detect_attention_backend("flash")
-        if attn_warning:
-            log.warning(f"[Attn] {attn_warning}")
-            config["krea_attention_backend"] = "sdpa"
     # ──────────────────────────────────────────────────────────
 
     # ── Per-run folder: internal control data + user-selected artifacts ──

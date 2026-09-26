@@ -121,7 +121,7 @@ lora-scripts-anima/
 | RTX 40 (Ada) | 2.12.1 | 13.0 |
 | RTX 50 (Blackwell) | 2.12.1 | 13.0 |
 
-After updating the project, existing older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. Optional packages are not added if absent.
+After updating the project, existing older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. Existing external FlashAttention packages are left installed but are no longer loaded by the trainer. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. Optional packages are not added if absent.
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
@@ -202,11 +202,11 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 | `--setup-git` | bool | false | Windows: non-interactively perform the recommended Git install/ZIP repair |
 | `--skip-git-setup` | bool | false | Windows: suppress Git installation or repository-repair prompts for this launch |
 
-## Flash Attention Acceleration
+## Attention Acceleration
 
-For Anima training, start with `attn_mode=torch`: native PyTorch SDPA selects available kernels, including built-in FlashAttention, without external `flash-attn`. `sdpa` is a compatibility alias for `torch`. `flash` calls the external extension and requires a wheel matching PyTorch/CUDA. Compare speed and VRAM usage using the same training configuration before choosing a backend.
+Anima defaults to `torch` and Krea2 to `sdpa`. Native PyTorch SDPA selects suitable accelerated kernels, including built-in FlashAttention, without external `flash-attn`.
 
-External FlashAttention is user-managed: this project no longer downloads wheels, installs, or upgrades it. Install a build compatible with Python, PyTorch, CUDA, and your GPU in the project `venv`, restart, then select Anima's `flash` or Krea2's `flash_attn`. Missing or unimportable extensions produce a warning and fall back to native SDPA. Existing packages are not automatically uninstalled.
+Legacy `flash` / `flash_attn` configurations automatically migrate to native SDPA. Project processes no longer load external FlashAttention. Existing packages remain in the venv without automatic upgrades or uninstallation, and incompatible old wheels no longer trigger repeated import warnings. PyTorch's built-in acceleration is unaffected.
 
 ## EmoSens Adaptive Optimizer
 

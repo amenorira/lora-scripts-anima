@@ -121,7 +121,7 @@ lora-scripts-anima/
 | RTX 40 系 (Ada) | 2.12.1 | 13.0 |
 | RTX 50 系 (Blackwell) | 2.12.1 | 13.0 |
 
-更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，外部 FlashAttention 由用户自行管理，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。未安装的可选库不会自动新增。
+更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，旧的外部 FlashAttention 保留但不再加载，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。未安装的可选库不会自动新增。
 
 无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
 
@@ -204,11 +204,11 @@ cd lora-scripts-anima
 | `--setup-git` | bool | false | Windows：非交互执行推荐的 Git 安装/ZIP 仓库修复 |
 | `--skip-git-setup` | bool | false | Windows：本次启动不提示 Git 安装或仓库修复 |
 
-## Flash Attention 加速
+## 注意力加速
 
-Anima 训练默认推荐 `attn_mode=torch`：PyTorch SDPA 会根据输入与硬件选择可用加速内核，包括内置 FlashAttention，无需安装外部 `flash-attn`。`sdpa` 是 `torch` 的兼容别名。`flash` 调用外部扩展，需安装匹配 PyTorch/CUDA 的 wheel；是否比原生 SDPA 更快、更省显存需在相同训练配置下实测。
+Anima 默认使用 `torch`，Krea2 默认使用 `sdpa`。PyTorch 原生 SDPA 自动选择适用的加速内核，包括内置 FlashAttention，无需外部 `flash-attn`。
 
-外部 FlashAttention 由用户自行管理，项目不再提供一键安装、wheel 下载或自动升级。请在项目 `venv` 中安装与 Python、PyTorch、CUDA 和 GPU 兼容的 wheel，重启后选择 Anima 的 `flash` 或 Krea2 的 `flash_attn`。未安装或无法导入时会记录警告并回退原生 SDPA；已有扩展不会被自动卸载。
+旧配置中的 `flash` / `flash_attn` 会自动转为原生 SDPA。项目运行进程不再加载外部 FlashAttention；以前安装的包保留在 venv 中，不会自动升级或卸载，也不会因旧包无法加载而反复提示。此行为不影响 PyTorch 内置加速。
 
 ## EmoSens 自适应优化器
 

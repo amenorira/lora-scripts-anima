@@ -129,12 +129,12 @@ def start_tensorboard(host: str, port: int):
 
 
 def _report_optional_accelerators() -> None:
-    """把 flash_attn / xformers 的安装状态写进日志（仅文件，不刷屏）。"""
+    """把 xformers 的安装状态写进日志（仅文件，不刷屏）。"""
     try:
         from importlib.metadata import version as pkg_version
     except ImportError:
         return
-    for dist_name in ("flash_attn", "xformers"):
+    for dist_name in ("xformers",):
         try:
             installed = pkg_version(dist_name)
         except Exception:
