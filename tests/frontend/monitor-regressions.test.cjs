@@ -174,17 +174,20 @@ test('key parameters use the optimizer dropdown label and Dim caption', () => {
 
 test('completed LR uses series maximum and final value; missing series falls back to task data', () => {
   const a = app({ lossSeries: [{ tag: 'lr/unet', points: [{ step: 1, value: 1e-5 }, { step: 2, value: 6e-5 }, { step: 3, value: 0 }], max: 6e-5, latest: 0 }] });
+  for (const [value, expected] of [[4.26349e-5, '4.263e-5'], [4.26351e-5, '4.264e-5'], [6e-5, '6e-5'], [9.9999e-5, '1e-4'], [0, '0'], [null, '—'], ['invalid', '—']]) {
+    assert.equal(a._formatLearningRate(value, '—'), expected);
+  }
   const root = summaryRoot();
   a._patchOverviewStatus(root, { state: 'FINISHED', step: 90, total_steps: 100, lr: 0 }, key => key, false);
   assert.equal(root.node('[data-summary-field="lr"]').textContent, '0');
-  assert.equal(root.node('[data-summary-field="lr-range"]').textContent, '6.00e-05 → 0');
+  assert.equal(root.node('[data-summary-field="lr-range"]').textContent, 'lrPeak 6e-5');
   assert.equal(root.node('[data-summary-field="lr-meta"]').textContent, 'schedulerFinished');
   assert.equal(root.node('[data-summary-field="percent"]').textContent, '100%');
   a.lossSeries = [];
   a.lossDataVersion = 1;
   a._patchOverviewStatus(root, { state: 'RUNNING', loss: 0.123, lr: 4e-5 }, key => key, false);
   assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.123');
-  assert.equal(root.node('[data-summary-field="lr"]').textContent, '4.00e-05');
+  assert.equal(root.node('[data-summary-field="lr"]').textContent, '4e-5');
   assert.equal(root.node('[data-summary-spark="loss"]').d, '');
 });
 
@@ -196,6 +199,7 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   const path = root.node('[data-summary-spark="loss"]');
   a.handleRealtimeTaskMetrics({ points: {
     'loss/average': [{ step: 1, value: 0.2 }, { step: 2, value: 0.1 }],
+    'loss/current': [{ step: 1, value: 0.3 }, { step: 2, value: 0.12 }],
     'lr/unet': [{ step: 1, value: 0.00006 }, { step: 2, value: 0.00004 }],
   } });
   a._patchOverviewStatus(root, a.monitorData, t, false);
@@ -203,18 +207,88 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   assert.match(path.d, /^M/);
   assert.match(root.node('[data-summary-spark="lr"]').d, /^M/);
   assert.match(root.node('[data-diagnostic-trend]').d, /^M/);
-  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.1000');
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.1200');
   assert.equal(root.dataset.sparklineVersion, String(a.lossDataVersion));
 });
 
-test('Loss tile shows a measured recent change only when enough points exist', () => {
-  const falling = Array.from({ length: 60 }, (_, index) => ({ step: index + 1, value: index < 30 ? 0.04 : 0.03 }));
+test('Loss tile compares the latest two distinct steps independently of the diagnostic mean', () => {
+  const falling = [{ step: 60, value: .03 }, { step: 59, value: .04 }, { step: 60, value: .02 }];
   const a = app({ lossSeries: [{ tag: 'loss/current', points: falling }], lossDataVersion: 1 });
   const root = summaryRoot();
   a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
-  assert.equal(root.node('[data-summary-loss-change]').textContent, '▼ −25.0%');
-  assert.equal(root.node('[data-summary-field="loss-meta"]').textContent, 'recentSamples');
+  assert.equal(root.node('[data-loss-delta]').textContent, '50.0%');
+  assert.equal(root.node('[data-summary-loss-change]').dataset.direction, 'down');
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.0200');
+  assert.equal(root.node('[data-summary-field="loss-meta"]').textContent, 'lossUpdatedAt');
   assert.equal(root.node('[data-summary-loss-change]').hidden, false);
+  assert.equal(a._summaryLossChange({ points: [{ step: 1, value: 0 }, { step: 2, value: .02 }] }), null);
+  assert.equal(a._summaryLossChange({ points: [{ step: 1, value: .02 }] }), null);
+  a.lossSeries = [{ tag: 'loss/average', points: falling }];
+  assert.equal(a._summaryLossSeries(), undefined);
+});
+
+test('scheduler summary reads recorded parameters, including fractional warmup, without guessing missing settings', () => {
+  const a = app({ trainParams: [{ key: 'lr_scheduler', value: 'cosine' }, { key: 'lr_warmup_steps', value: '0.1' }] });
+  const t = key => ({ lrScheduleCosine: 'cosine', lrWarmupSteps: '预热 {n} 步', lrWarmupPercent: '预热 {n}%', lrNoWarmup: '无预热' }[key] || key);
+  assert.equal(a._summarySchedulerMeta(t, 740), 'cosine · 预热 74 步');
+  assert.equal(a._summarySchedulerMeta(t, 0), 'cosine · 预热 10%');
+  a.trainParams[1].value = 0;
+  assert.equal(a._summarySchedulerMeta(t, 740), 'cosine · 无预热');
+  a.trainParams.pop();
+  assert.equal(a._summarySchedulerMeta(t, 740), 'cosine');
+  a.trainParams = [];
+  assert.equal(a._summarySchedulerMeta(t, 740), '');
+});
+
+test('number motion skips initial and unchanged values, cancels stale transitions, and respects reduced motion', () => {
+  const originalDocument = global.document;
+  const originalMatchMedia = window.matchMedia;
+  const animations = [];
+  class Element {
+    constructor() { this.dataset = {}; this.children = []; this.textContent = ''; }
+    setAttribute() {}
+    append(...children) { this.children.push(...children); }
+    appendChild(child) { this.append(child); }
+    replaceChildren(...children) { this.children = children; }
+    remove() { this.removed = true; }
+    getAnimations() { return animations.filter(animation => !animation.cancelled); }
+    animate(frames, options) {
+      const animation = { frames, options, cancel() { this.cancelled = true; this.oncancel?.(); } };
+      animations.push(animation);
+      return animation;
+    }
+  }
+  try {
+    global.document = { hidden: false, createElement: () => new Element(), createTextNode: text => ({ textContent: text }) };
+    window.matchMedia = () => ({ matches: false });
+    const a = app();
+    const node = new Element();
+    a._patchMonitorNumber(node, '0.0337', true);
+    assert.equal(animations.length, 0);
+    a._patchMonitorNumber(node, '0.0338', true);
+    assert.equal(animations.length, 2); // 只滚动发生变化的一位。
+    assert.equal(node.children[0].textContent, '0.0338'); // 辅助技术立即读到最终值。
+    a._patchMonitorNumber(node, '0.0338', true);
+    assert.equal(animations.length, 2);
+    a._patchMonitorNumber(node, '0.0336', true);
+    assert.ok(animations.slice(0, 2).every(animation => animation.cancelled));
+    assert.equal(animations.length, 4);
+    window.matchMedia = () => ({ matches: true });
+    a._patchMonitorNumber(node, '0.0335', true);
+    assert.equal(node.textContent, '0.0335');
+    assert.equal(animations.length, 4);
+    assert.ok(animations.every(animation => animation.cancelled));
+    window.matchMedia = () => ({ matches: false });
+    document.hidden = true;
+    a._patchMonitorNumber(node, '0.0334', true);
+    assert.equal(animations.length, 4);
+    document.hidden = false;
+    a._patchMonitorNumber(node, '0.0333', false); // 历史或切换任务。
+    assert.equal(animations.length, 4);
+  } finally {
+    global.document = originalDocument;
+    window.matchMedia = originalMatchMedia;
+  }
 });
 
 test('diagnostic mini charts use measured changes and mark the real best Loss', () => {
@@ -230,9 +304,12 @@ test('diagnostic mini charts use measured changes and mark the real best Loss', 
   a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
   for (const key of ['change', 'volatility', 'best', 'gap']) {
     assert.match(root.node('[data-diagnostic-spark="' + key + '"]').d, /^M/);
-    assert.equal(root.node('[data-diagnostic-point="' + key + '"]').r, key === 'best' ? '0' : '2.5');
-    assert.equal(root.node('[data-diagnostic-low="' + key + '"]').r, key === 'best' || key === 'gap' ? '2.5' : '0');
-    assert.equal(root.node('[data-diagnostic-point="' + key + '"]').cx, '116.0');
+    const marker = root.node('[data-diagnostic-point="' + key + '"]');
+    assert.equal(marker.visibility, key === 'best' ? 'hidden' : 'visible');
+    assert.equal(root.node('[data-diagnostic-low="' + key + '"]').visibility, key === 'best' || key === 'gap' ? 'visible' : 'hidden');
+    assert.equal(marker.x1, '116.0');
+    assert.equal(marker.x2, marker.x1);
+    assert.equal(marker.y2, marker.y1);
   }
   assert.equal(a._sparklineGeometry([1, 2]).coords[0].x, '4.0');
 });

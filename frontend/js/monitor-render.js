@@ -415,6 +415,10 @@ window.monitorRenderMixin = {
 
   _patchOverviewStatus(root, d, t, isHistory) {
     if (!d || !root) return;
+    const motionContext = [isHistory ? this.selectedRunDir : (this.liveTaskId || d.active_task?.id || 'live'), isHistory, this._shellLocale || ''].join('|');
+    const animate = !isHistory && root.dataset.motionContext === motionContext;
+    root.dataset.motionContext = motionContext;
+    root._metricMotion = animate;
     const state = this._summaryState(d, isHistory);
     const completed = state === 'FINISHED';
     const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(state);
@@ -432,7 +436,10 @@ window.monitorRenderMixin = {
     const stateLabels = { RUNNING: t('trainingInProgress'), CREATED: t('created'), FINISHED: t('finished'), FAILED: t('statusFailed'), TERMINATED: t('terminated'), UNKNOWN: t('statusUnknown'), IDLE: t('standby') };
     const set = (key, value) => {
       const el = root.querySelector('[data-summary-field="' + key + '"]');
-      if (el) el.textContent = String(value);
+      if (el) {
+        if (['step', 'percent', 'epoch', 'progress-time', 'loss', 'loss-meta', 'lr', 'speed', 'time', 'time-meta'].includes(key)) this._patchMonitorNumber(el, value, animate);
+        else if (el.textContent !== String(value)) el.textContent = String(value);
+      }
     };
     const status = root.querySelector('[data-summary-state]');
     if (status) {
@@ -461,14 +468,16 @@ window.monitorRenderMixin = {
     const duration = this._formatMonitorDuration((trainResult && trainResult.duration_str) || d.elapsed || '—', trainResult ? trainResult.duration_sec : null);
     const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
     set('progress-time', state === 'RUNNING' ? t('elapsed') + ' ' + duration + (eta ? ' · ' + t('estimatedRemaining') + ' ' + eta : '') : t('totalDuration') + ' ' + duration);
-    set('loss', lossSeries ? this._seriesLatest(lossSeries.tag, d.loss != null ? d.loss : '—') : (d.loss != null ? d.loss : '—'));
+    const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
+    const latestLoss = lossPoints[lossPoints.length - 1];
+    set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
     set('lr', lrRange ? this._formatLearningRate(lrLatest, '—') : (lrSeries ? this._seriesLatest('lr/unet', d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—') : (d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—')));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
     if (lrRangeEl) {
       lrRangeEl.hidden = !lrRange;
-      if (lrRange) lrRangeEl.textContent = this._formatLearningRate(lrMax, '—') + ' → ' + this._formatLearningRate(lrLatest, '—');
+      if (lrRange) lrRangeEl.textContent = t('lrPeak') + ' ' + this._formatLearningRate(lrMax, '—');
     }
-    set('lr-meta', lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : (lrRange ? t('peakToFinal') : ''));
+    set('lr-meta', this._summarySchedulerMeta(t, total) || (lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : ''));
     set('speed', d.speed || '—');
     set('speed-meta', t(isHistory ? 'lastSpeed' : 'currentSpeed'));
     set('time-label', state === 'RUNNING' && eta ? t('estimatedRemaining') : (state === 'RUNNING' ? t('elapsed') : t('totalDuration')));
@@ -491,11 +500,10 @@ window.monitorRenderMixin = {
       if (lossChange) {
         lossChange.hidden = !lossTrend;
         if (lossTrend) {
-          lossChange.dataset.tone = lossTrend.percent > 0 ? 'danger' : 'ok';
-          lossChange.textContent = (lossTrend.percent > 0 ? '▲ +' : '▼ −') + Math.abs(lossTrend.percent).toFixed(1) + '%';
+          this._patchLossChange(lossChange, lossTrend.percent, t, animate);
         }
       }
-      set('loss-meta', lossTrend ? t('recentSamples').replace('{n}', lossTrend.count) : t('recentLoss'));
+      set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
     }
     this._patchSummaryTelemetry(root, t, isHistory);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
@@ -559,10 +567,10 @@ window.monitorRenderMixin = {
 
   _summaryTileHtml(key, label, meta) {
     let html = '<div class="m-live-metric m-live-metric-' + key + '"><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span>';
-    html += '<strong data-summary-field="' + key + '">—</strong>';
+    html += '<div class="m-metric-reading"><strong data-summary-field="' + key + '">—</strong>';
     if (key === 'loss') html += '<span class="m-metric-change" data-summary-loss-change hidden></span>';
     if (key === 'lr') html += '<span class="m-metric-range" data-summary-field="lr-range" hidden></span>';
-    html += '<small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
+    html += '</div><small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
     html += '<svg class="m-metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" ' + (key === 'speed' || key === 'time' ? 'role="img" hidden' : 'aria-hidden="true"') + '><path data-summary-spark="' + key + '"></path></svg>';
     return html + '</div>';
   },
@@ -670,23 +678,117 @@ window.monitorRenderMixin = {
     return '<svg class="m-monitor-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[kind] || '') + '</svg>';
   },
 
+  // 仅用于摘要：逐次 Loss 与诊断区的平均趋势各司其职。
   _summaryLossSeries() {
-    const series = this.lossSeries || [];
-    return series.find(item => item.tag === 'loss/average' && item.points && item.points.length)
-      || series.find(item => item.tag === 'loss/current' && item.points && item.points.length)
-      || series.find(item => item.tag === 'loss/average')
-      || series.find(item => item.tag === 'loss/current');
+    return (this.lossSeries || []).find(item => item.tag === 'loss/current');
   },
 
   _summaryLossChange(series) {
-    const points = (series && (series.diagnostic_points || series.points)) || [];
-    const values = points.filter(point => point && point.value != null && point.value !== '').map(point => Number(point.value)).filter(Number.isFinite);
-    const count = Math.min(30, Math.floor(values.length / 2));
-    if (count < 6) return null;
-    const mean = items => items.reduce((sum, value) => sum + value, 0) / items.length;
-    const previous = mean(values.slice(-count * 2, -count));
-    const recent = mean(values.slice(-count));
-    return { count, percent: (recent - previous) / Math.max(Math.abs(previous), 1e-12) * 100 };
+    const points = this._cleanLossPoints(series && (series.diagnostic_points || series.points));
+    if (points.length < 2) return null;
+    const previous = points[points.length - 2].value;
+    if (Math.abs(previous) < 1e-12) return null;
+    const percent = (points[points.length - 1].value - previous) / Math.abs(previous) * 100;
+    return Number.isFinite(percent) ? { percent } : null;
+  },
+
+  _summarySchedulerMeta(t, totalSteps) {
+    const params = new Map((this.trainParams || []).map(item => [item.key, item.value]));
+    const scheduler = params.get('lr_scheduler');
+    if (!scheduler) return '';
+    const labels = { constant: 'lrScheduleConstant', constant_with_warmup: 'lrScheduleWarmup', linear: 'lrScheduleLinear', cosine: 'lrScheduleCosine', cosine_with_restarts: 'lrScheduleRestarts', polynomial: 'lrSchedulePolynomial', inverse_sqrt: 'lrScheduleInverseSqrt' };
+    const label = labels[scheduler] ? t(labels[scheduler]) : String(scheduler);
+    const raw = params.get('lr_warmup_steps');
+    if (raw == null || raw === '' || !Number.isFinite(Number(raw))) return label;
+    const warmup = Number(raw);
+    const detail = warmup > 0
+      ? (warmup < 1 && !totalSteps ? t('lrWarmupPercent').replace('{n}', +(warmup * 100).toFixed(2)) : t('lrWarmupSteps').replace('{n}', warmup < 1 ? Math.floor(warmup * totalSteps) : Math.floor(warmup)))
+      : t('lrNoWarmup');
+    return label + ' · ' + detail;
+  },
+
+  _monitorMotionAllowed() {
+    return !document.hidden && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  },
+
+  // 最终文本始终立即生效；动画仅覆盖数字外观，不插值业务数据、不排队。
+  _patchMonitorNumber(element, value, animate) {
+    const text = String(value);
+    const previous = element.dataset.metricValue;
+    const allowed = animate && this._monitorMotionAllowed();
+    if (!allowed) {
+      for (const animation of element.getAnimations?.({ subtree: true }) || []) animation.cancel();
+    }
+    if (previous === text) return;
+    element.dataset.metricValue = text;
+    for (const animation of element.getAnimations?.({ subtree: true }) || []) animation.cancel();
+    if (!allowed || previous == null || !element.animate || previous.replace(/\d/g, '#') !== text.replace(/\d/g, '#')) {
+      element.textContent = text;
+      return;
+    }
+    const accessible = document.createElement('span');
+    accessible.className = 'm-number-accessible';
+    accessible.textContent = text;
+    const visual = document.createElement('span');
+    visual.setAttribute('aria-hidden', 'true');
+    visual.className = 'm-number-visual';
+    const tracks = [];
+    // 按每个数字组的整体方向滚动，进位时保持一致。
+    let direction = -1;
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      if (/\d/.test(char) && (index === 0 || !/[\d.]/.test(text[index - 1]))) {
+        const nextNumber = parseFloat(text.slice(index));
+        const oldNumber = parseFloat(previous.slice(index));
+        const sign = index > 0 && /[-−]/.test(text[index - 1]) ? -1 : 1;
+        direction = nextNumber * sign >= oldNumber * sign ? -1 : 1;
+      }
+      if (!/\d/.test(char) || char === previous[index]) {
+        visual.appendChild(document.createTextNode(char));
+        continue;
+      }
+      const slot = document.createElement('span');
+      slot.className = 'm-number-slot';
+      const incoming = document.createElement('span');
+      incoming.className = 'm-number-incoming';
+      incoming.textContent = char;
+      const outgoing = document.createElement('span');
+      outgoing.className = 'm-number-outgoing';
+      outgoing.textContent = previous[index];
+      slot.append(incoming, outgoing);
+      visual.appendChild(slot);
+      tracks.push({ incoming, outgoing, direction });
+    }
+    element.replaceChildren(accessible, visual);
+    const options = { duration: 320, easing: 'cubic-bezier(.2,.75,.25,1)' };
+    for (const { incoming, outgoing, direction: travel } of tracks) {
+      incoming.animate([{ transform: `translateY(${-travel * 100}%)`, opacity: .25 }, { transform: 'translateY(0)', opacity: 1 }], options);
+      const exit = outgoing.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: `translateY(${travel * 100}%)`, opacity: 0 }], options);
+      exit.onfinish = exit.oncancel = () => outgoing.remove();
+    }
+  },
+
+  _patchLossChange(element, percent, t, animate) {
+    const rounded = Number(percent.toFixed(1));
+    const direction = rounded > 0 ? 'up' : rounded < 0 ? 'down' : 'flat';
+    if (!element.querySelector('[data-loss-delta]')) {
+      element.innerHTML = '<svg class="m-change-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg><span data-loss-delta></span><span class="m-change-caption"></span>';
+    }
+    const arrow = element.querySelector('.m-change-arrow');
+    const angle = { up: -45, down: 45, flat: 0 };
+    const previous = element.dataset.direction;
+    element.dataset.direction = direction;
+    if (arrow) {
+      for (const animation of arrow.getAnimations?.() || []) animation.cancel();
+      arrow.style.transform = `rotate(${angle[direction]}deg)`;
+      if (animate && previous && previous !== direction && this._monitorMotionAllowed() && arrow.animate) {
+        arrow.animate([{ transform: `rotate(${angle[previous]}deg)` }, { transform: `rotate(${angle[direction]}deg)` }], { duration: 220, easing: 'cubic-bezier(.2,.75,.25,1)' });
+      }
+    }
+    const number = element.querySelector('[data-loss-delta]');
+    this._patchMonitorNumber(number, Math.abs(rounded).toFixed(1) + '%', animate);
+    element.querySelector('.m-change-caption').textContent = t('lossVsPrevious');
+    element.setAttribute('aria-label', t('lossVsPrevious') + ' ' + (rounded > 0 ? '+' : rounded < 0 ? '−' : '') + Math.abs(rounded).toFixed(1) + '%');
   },
 
   _metricSparklinePath(series) {
@@ -753,13 +855,12 @@ window.monitorRenderMixin = {
   },
 
   _formatLearningRate(value, fallback) {
+    if (value == null || value === '') return fallback;
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
-    if (!(Math.abs(number) > 0 && Math.abs(number) < 0.001)) return Number(number.toPrecision(6)).toString();
-    const parts = number.toExponential(4).split('e');
-    const exponent = Number(parts[1]);
-    const sign = exponent < 0 ? '-' : '+';
-    return parts[0].replace(/(\.\d{2}\d*?)0+$/, '$1') + 'e' + sign + String(Math.abs(exponent)).padStart(2, '0');
+    if (number === 0) return '0';
+    const [mantissa, exponent] = number.toExponential(3).split('e');
+    return Number(mantissa) + 'e' + Number(exponent);
   },
 
   _monitorDurationSeconds(value) {
@@ -995,7 +1096,7 @@ window.monitorRenderMixin = {
       ['gap', t('gapFromBest'), t('latestVsBest')],
     ];
     metrics.forEach(metric => {
-      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small><svg class="m-diagnostic-mini" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-spark="' + metric[0] + '"></path><circle data-diagnostic-low="' + metric[0] + '" cx="0" cy="17" r="0"></circle><circle data-diagnostic-point="' + metric[0] + '" cx="120" cy="17" r="0"></circle></svg></div>';
+      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small><svg class="m-diagnostic-mini" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-spark="' + metric[0] + '"></path><line data-diagnostic-low="' + metric[0] + '" visibility="hidden"></line><line data-diagnostic-point="' + metric[0] + '" visibility="hidden"></line></svg></div>';
     });
     html += '</div>';
     html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
@@ -1034,11 +1135,14 @@ window.monitorRenderMixin = {
     const diagnostic = this._trainingDiagnostics();
     const setText = (field, value) => {
       const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
-      if (element) element.textContent = value;
+      if (element) {
+        if (['change', 'volatility', 'best', 'best-meta', 'gap'].includes(field)) this._patchMonitorNumber(element, value, root._metricMotion);
+        else if (element.textContent !== String(value)) element.textContent = value;
+      }
     };
     setText('title', isPreviousRun ? t('previousTrainingDiagnostics') : t('trainingDiagnostics'));
     const verdict = root.querySelector('.m-diagnostic-verdict');
-    const trendPath = this._metricSparklinePath(this._summaryLossSeries());
+    const trendPath = this._sparklineGeometry(this._trainingDiagnosticPoints().slice(-40).map(point => point.value)).path;
     if (verdict) {
       verdict.dataset.diagnosticTone = diagnostic.tone;
       verdict.dataset.hasTrend = trendPath ? 'true' : 'false';
@@ -1054,7 +1158,7 @@ window.monitorRenderMixin = {
     setText('volatility', this._formatDiagnosticPercent(diagnostic.volatilityPct, false));
     setText('best', this._formatDiagnosticValue(diagnostic.bestValue));
     setText('gap', this._formatDiagnosticPercent(diagnostic.gapFromBestPct, true));
-    setText('change-meta', diagnostic.windowSize ? t('windowComparison').replace('{n}', diagnostic.windowSize) : t('needsMorePoints'));
+    setText('change-meta', diagnostic.windowSize ? t('windowComparison').replaceAll('{n}', diagnostic.windowSize) : t('needsMorePoints'));
     setText('volatility-meta', diagnostic.windowSize ? t('recentWindowPoints').replace('{n}', diagnostic.windowSize) : t('lowerIsMoreStable'));
     setText('best-meta', diagnostic.bestStep == null ? t('bestObservedValue') : t('atStep').replace('{n}', Math.round(diagnostic.bestStep)));
     setText('gap-meta', t('latestVsBest'));
@@ -1075,18 +1179,22 @@ window.monitorRenderMixin = {
       const low = root.querySelector('[data-diagnostic-low="' + key + '"]');
       if (path) path.setAttribute('d', geometry.path);
       if (point) {
-        point.setAttribute('r', geometry.endY == null || key === 'best' ? '0' : '2.5');
+        point.setAttribute('visibility', geometry.endY == null || key === 'best' ? 'hidden' : 'visible');
         if (geometry.endY != null) {
-          point.setAttribute('cx', geometry.coords[geometry.coords.length - 1].x);
-          point.setAttribute('cy', geometry.endY);
+          point.setAttribute('x1', geometry.coords[geometry.coords.length - 1].x);
+          point.setAttribute('x2', geometry.coords[geometry.coords.length - 1].x);
+          point.setAttribute('y1', geometry.endY);
+          point.setAttribute('y2', geometry.endY);
         }
       }
       const bestPoint = isLossTrace ? geometry.coords[lossTrend.bestIndex] : null;
       if (low) {
-        low.setAttribute('r', bestPoint ? '2.5' : '0');
+        low.setAttribute('visibility', bestPoint ? 'visible' : 'hidden');
         if (bestPoint) {
-          low.setAttribute('cx', bestPoint.x);
-          low.setAttribute('cy', bestPoint.y);
+          low.setAttribute('x1', bestPoint.x);
+          low.setAttribute('x2', bestPoint.x);
+          low.setAttribute('y1', bestPoint.y);
+          low.setAttribute('y2', bestPoint.y);
         }
       }
     }

@@ -20,6 +20,8 @@
     <button class="btn btn-sm" @click="monitorData.state='FAILED';monitorData.train_result={status:'failed',duration_str:'43:21'};monitorData.has_error=true;monitorData.error_msg='Sample failure';renderDashboard()">训练失败</button>
     <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
     <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
+    <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
+    <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
   </div>
   <div id="fixtureRoute"></div>
 </main>
@@ -64,8 +66,26 @@
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
     return Object.assign(a,{
       escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:language,realtimeState:'online',liveTaskId:'fixture',
-      t(key,fb){return key.split('.').reduce((v,k)=>v&&v[k],translations)||fb||key;},
+      t(key,fb){return String(key||'').split('.').reduce((v,k)=>v&&v[k],translations)||fb||key;},
       toast(message){console.log(message);},finishProgress(){},navigate(){},stopMonitorRealtime(){},startMonitorRealtime(){},
+      _fieldOptionLabel: window.trainingCoreMixin._fieldOptionLabel,
+      _fieldDefinition: window.trainingCoreMixin._fieldDefinition,
+      form: { model_train_type: 'anima-lora' },
+      advanceMetrics(){
+        if(this.selectedRunDir) { this.selectedRunDir=null; this.runDetailData=null; }
+        const d=this.monitorData;
+        d.state='RUNNING';d.train_result=null;d.step++;d.percent=d.step/d.total_steps*100;
+        d.speed=(5.1+(d.step%7)*.07).toFixed(2)+' s/it';
+        d.elapsed=this._formatMonitorDuration('',2601+(d.step-518)*5);
+        d.eta=this._formatMonitorDuration('',1114-(d.step-518)*5);
+        const current=this.lossSeries.find(s=>s.tag==='loss/current');
+        const previous=current.points.at(-1).value;
+        current.points.push({step:d.step,value:previous*(d.step%2?1.038:.962)});
+        this.lossSeries[0].points.push({step:d.step,value:.035+(d.step%5)*.0002});
+        this.lossSeries[1].latest=Math.max(0,.0000426-(d.step-518)*.0000001);
+        this.lossSeries[1].points.push({step:d.step,value:this.lossSeries[1].latest});
+        this.lossDataVersion++;this.renderDashboard();
+      },
       monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:'14/20',elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
       previews:samples,previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
@@ -73,11 +93,14 @@
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
       lossSeries:[
         {tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:i<60?.027+Math.sin(i)*.0003:i<90?.039+Math.sin(i)*.001:.034-(i-90)*.00001+Math.sin(i)*.0002}))},
-        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:i+1,value:.00006-i*(.0000174/119)}))}
+        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:i+1,value:.00006-i*(.0000174/119)}))},
+        {tag:'loss/current',points:Array.from({length:120},(_,i)=>({step:399+i,value:.034+Math.sin(i*.7)*.004}))}
       ],
       trainParams:[
         {key:'pretrained_model_name_or_path',value:'C:/models/anima-base-v1.0.safetensors',section:'model'},
         {key:'learning_rate',value:'6e-5',section:'training'},
+        {key:'lr_scheduler',value:'cosine',section:'optimizer'},
+        {key:'lr_warmup_steps',value:'0.1',section:'optimizer'},
         {key:'network_dim',value:32,section:'network'},
         {key:'network_alpha',value:32,section:'network'},
         {key:'max_train_epochs',value:20,section:'training'},
