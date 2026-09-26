@@ -40,11 +40,11 @@ if __name__ == "__main__":
     show_step("Loading application / 正在加载应用")
 
 from backend.launch_utils import (
+    app_version,
     base_dir_path,
     check_environment,
     check_port_available,
     find_available_ports,
-    git_tag,
     prepare_environment,
 )
 
@@ -170,7 +170,7 @@ def launch(args: argparse.Namespace) -> None:
             requested_port, args.port, requested_port, args.port,
         )
 
-    version = git_tag(base_dir_path())
+    version = app_version(base_dir_path())
     log.info("lora-scripts-anima version: %s", version, extra={"console": False})
     _report_optional_accelerators()
 

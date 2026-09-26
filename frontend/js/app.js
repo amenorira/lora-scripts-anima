@@ -567,11 +567,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Home hero "Release" badge: use the real version from /api/version
-    // (e.g. "v2.3.6-4-g3dc39b4f" → "v2.3.6"). Falls back to the static text
-    // until the version fetch resolves or when the backend is unreachable.
+    // (e.g. "v26.925.80307-4-g3dc39b4f" → "v26.925.80307").
+    // Keep loading/unknown states explicit instead of showing an old release.
     displayVersion() {
       const v = String(this.version || '');
-      if (!v || v === '...' || v === 'dev') return 'v1.3.3';
+      if (!v || v === '...') return '...';
+      if (v === 'dev') return 'dev';
       const m = v.match(/^v?\d+\.\d+\.\d+/);
       return m ? m[0] : v;
     },

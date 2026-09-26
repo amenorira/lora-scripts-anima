@@ -8,6 +8,28 @@ function readScript(name, context) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js', name), 'utf8'), context);
 }
 
+test('release badge accepts CalVer and legacy builds without inventing an unknown version', () => {
+  let register;
+  const context = {
+    document: { addEventListener(_, callback) { register = callback; } },
+    window: {},
+    Alpine: { data(_, factory) { context.factory = factory; } },
+  };
+  readScript('app.js', context);
+  register();
+  const app = context.factory();
+  for (const [version, expected] of [
+    ['v2.20.5-4-gabc1234', 'v2.20.5'],
+    ['v26.925.80307-4-gabc1234', 'v26.925.80307'],
+    ['v27.101.0', 'v27.101.0'],
+    ['26.1001.100000', '26.1001.100000'],
+    ['dev', 'dev'], ['...', '...'], ['', '...'],
+  ]) {
+    app.version = version;
+    assert.equal(app.displayVersion(), expected);
+  }
+});
+
 test('dirty editor preserves Back and Forward entries when navigation is cancelled or accepted', () => {
   let register;
   const timers = [];
