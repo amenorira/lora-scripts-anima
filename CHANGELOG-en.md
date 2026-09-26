@@ -6,6 +6,32 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.927.1418 - 2026-09-27
+
+Starting with this release, versions use the fixed UTC+8 calendar format `YY.MDD.HMMSS`, without zero-padding. This version represents September 27, 2026 at 00:14:18 UTC+8. Historical versions and tags are preserved. This release reorganizes training monitoring, fixes races in task startup and stopping, and upgrades the training runtime.
+
+### Training Monitor and Desktop Interaction
+
+- Live and historical training details share a new summary layout covering status, progress, connection issues, errors, and stopping. Loss, learning-rate, iteration-speed, and time cards plot actual progress data, with improved diagnostic curves and key-point markers.
+- Loss shows the latest value, change from the previous training step, and update time. Learning rates use compact scientific notation with peak, scheduler, and warmup details. Metric and training-step numbers animate while respecting reduced-motion preferences.
+- Historical results record end times with compatibility for older results. Duration formatting uses base-60 time units, and live training emphasizes remaining time. Parameter summaries, dark-theme styling, narrow desktop layouts, and the favicon are updated.
+- Fixed unsaved-caption confirmation during browser history and page navigation, and prevented live monitor details from replacing a selected historical run. Invalid parameters receive inline feedback and focus, file pickers show loading and retry states, and custom selects support improved keyboard interaction.
+
+### Tasks and Runtime
+
+- Reserve a task slot before training preparation to prevent concurrent duplicate starts, and release it after the worker settles results, callbacks, and logs. Improved process-exit confirmation and stop retries prevent terminal states from being published before cleanup finishes.
+- Run directories and auto-saved configurations include task identifiers, so failed or cancelled preparation cleans up only files created for that task. Improved resource coordination between Tagger, training, and dataset access, cancellation settlement, and event-loop responsiveness during training preflight and file writes.
+- Upgraded the PyTorch baseline to `2.12.1+cu130`, aligned torchvision, xformers, and Triton, and added startup migration for older environments.
+- Fixed fake-tensor initialization errors in structure previews after the PyTorch upgrade. Shape estimation skips random weight assignment and restores the initialization function afterward.
+- Removed external FlashAttention installation management and disabled the extension within project processes. Existing installations are retained; legacy Anima and Krea2 attention configurations migrate to native SDPA.
+- Startup logs and the version API fall back to `VERSION` without reading an unrelated parent repository version. The frontend no longer uses a hard-coded old version placeholder and supports calendar-version display.
+
+### Verification
+
+- All 289 tests in the project suite passed, including the frontend test entry point. The generated field-config sync check also passed. Real GPU training was not run.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v2.20.5...v26.927.1418)
+
 ## v2.20.5 - 2026-09-24
 
 This release fixes a mismatch between tag-completion entries and their hover details. A tag already used in the dataset now shows its category color, Chinese translation, and post count in both single-image and batch completion, even when it falls outside the dictionary search's first 20 results. Existing captions and the spelling inserted from a local tag remain unchanged.

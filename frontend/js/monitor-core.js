@@ -91,6 +91,8 @@ window.monitorCoreMixin = {
   // ── Realtime subscription state ────────────────────────
   _monitorRealtimeTopic: null,
   _monitorRealtimeDetailGeneration: 0,
+  monitorPerfSamples: null,
+  _monitorPerfVersion: 0,
 
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
@@ -500,6 +502,7 @@ window.monitorCoreMixin = {
       next.state_label = this.monitorData.state_label;
     }
     this.monitorData = next;
+    this._recordMonitorPerfSample(next);
     if (next.gpu) this.gpuInfo = next.gpu;
     if (next.system) this.sysInfo = next.system;
     if (hasMonitorDetail) {
@@ -545,6 +548,8 @@ window.monitorCoreMixin = {
     this.sysInfo = null;
     this.runningTask = null;
     this.taskId = null;
+    this.monitorPerfSamples = [];
+    this._monitorPerfVersion++;
     if (this.selectedRunDir) {
       // Historical data is disk-backed and must remain readable across a
       // backend restart. Only the hidden live state above belongs to the old
@@ -599,7 +604,7 @@ window.monitorCoreMixin = {
     this._setMonitorRealtimeTask(id);
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
-      void this.refreshMonitorRealtimeDetail();
+      if (!this.selectedRunDir) void this.refreshMonitorRealtimeDetail();
     }
   },
 
@@ -631,8 +636,26 @@ window.monitorCoreMixin = {
           this.monitorData[key] = progress[key];
         }
       });
+      this._recordMonitorPerfSample(this.monitorData);
     }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+  },
+
+  _recordMonitorPerfSample(progress) {
+    const step = Number(progress && progress.step);
+    if (!Number.isFinite(step) || step <= 0 || (!progress.speed && !progress.elapsed)) return;
+    const samples = this.monitorPerfSamples || (this.monitorPerfSamples = []);
+    const sample = { step, speed: progress.speed || '', elapsed: progress.elapsed || '', eta: progress.eta || '' };
+    const last = samples[samples.length - 1];
+    if (last && step < last.step) return;
+    if (last && step === last.step) {
+      if (last.speed === sample.speed && last.elapsed === sample.elapsed && last.eta === sample.eta) return;
+      samples[samples.length - 1] = sample;
+    } else {
+      samples.push(sample);
+      if (samples.length > 80) samples.splice(0, samples.length - 80);
+    }
+    this._monitorPerfVersion++;
   },
 
   handleRealtimeTaskLog(data) {
@@ -826,7 +849,7 @@ window.monitorCoreMixin = {
     }
   },
   async refreshMonitorRealtimeDetail() {
-    if (this.currentRoute !== 'monitor-dashboard') return;
+    if (this.currentRoute !== 'monitor-dashboard' || this.selectedRunDir) return;
     const runDir = this.currentOutputRunDir;
     if (!this.selectedRunDir && !this.liveTaskId && runDir) {
       const generation = ++this._monitorRealtimeDetailGeneration;
@@ -1118,11 +1141,14 @@ window.monitorCoreMixin = {
         this._forceLogRebuild = true;
         // 默认完整日志：末页 + 跟随（历史停在末尾；工具栏可翻页浏览全部）
         this.logMode = 'full';
-        this._logFullLoaded = false;    // 新 run 首次渲染时自动拉取末页
+        // run-detail already includes the normalized tail. Reuse its last
+        // page instead of requesting the same log lines again on tab entry.
+        this._logFullLoaded = true;
         this._logFullNeedsResync = false;
         this._logFullSlide = false;
         this._logFullEvictK = 0;
-        this.logFullLines = [];
+        this.logFullLines = this.logLines.slice(-this._logPageSize());
+        this.logFullOffset = Math.max(0, this.logTotal - this.logFullLines.length);
         this.logFullLoading = false;
         // run-detail and log-slice share one normalized row definition, so the
         // count stays stable while the first full-log page is loading.

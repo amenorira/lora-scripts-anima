@@ -203,10 +203,8 @@
 [data-theme="comfy"] .home-badge-v-release { background: #7a3fc4; }
 
 /* 环境管理 */
-[data-theme="comfy"] .env-source-btn:hover { background: var(--hover-overlay); }
 [data-theme="comfy"] .env-log { background: var(--bg-input-action); color: var(--text-secondary); }
 [data-theme="comfy"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
 [data-theme="comfy"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
-[data-theme="comfy"] .env-candidate-item:hover { background: var(--hover-overlay); }
 [data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
 [data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

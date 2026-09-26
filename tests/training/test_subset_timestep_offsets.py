@@ -2,6 +2,7 @@ import asyncio
 import json
 import subprocess
 import tempfile
+import time
 import tomllib
 import unittest
 from contextlib import ExitStack
@@ -9,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.server.routes import training as training_routes
+from backend.tasks import TaskManager, TaskStatus
 from backend.training.sd_dataset_config import (
     build_sd_scripts_dataset_config,
     normalize_subset_timestep_offsets,
@@ -91,6 +93,7 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
             return dict(value), []
 
         with ExitStack() as stack:
+            stack.enter_context(patch.object(training_routes, "tm", TaskManager()))
             stack.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.root / "runs"))
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
             stack.enter_context(patch("backend.training.adapt_config", side_effect=_adapt_config))
@@ -102,11 +105,18 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
             stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
             stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
             stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.root / "config" / "autosave"))
+            def completed_launch(*_args, **kwargs):
+                task = kwargs["reserved_task"]
+                with task.lock:
+                    task.status = TaskStatus.FINISHED
+                    task.finished_at = time.time()
+                return {"status": "success", "data": {"task_id": task.task_id}}
+
             run_train = stack.enter_context(
                 patch.object(
                     training_routes,
                     "run_train",
-                    return_value={"status": "success", "data": {"task_id": "test-task"}},
+                    side_effect=completed_launch,
                 )
             )
             result = asyncio.run(training_routes.create_toml_file(_BodyRequest(payload)))

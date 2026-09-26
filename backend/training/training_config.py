@@ -10,6 +10,8 @@ from uuid import UUID, uuid4
 
 import yaml
 
+from backend.training.attention_config import normalize_attention_config
+
 from backend.training.field_registry import get_all_fields, get_fields_json
 from backend.training.optimizer_contracts import (
     LORA_MUON_LEGACY_FIELD_ALIASES,
@@ -319,6 +321,7 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
     """Return the flat form expected by the frontend from any supported schema."""
     if document.get("schema_version") == 1:
         flat = dict(document.get("form") or {})
+        normalize_attention_config(flat)
         normalize_lora_muon_form_fields(flat)
         return flat
 
@@ -351,6 +354,7 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
     normalize_lora_muon_form_fields(flat)
     for legacy in LORA_MUON_LEGACY_FIELD_ALIASES:
         flat.pop(legacy, None)
+    normalize_attention_config(flat)
     return flat
 
 
@@ -364,6 +368,8 @@ def build_training_config(
     """Build the user-facing configuration saved beside each training run."""
     if not isinstance(form, dict):
         raise TrainingConfigError("Training form snapshot must be an object")
+    form = dict(form)
+    normalize_attention_config(form)
     resolved_document_id = str(document_id or uuid4())
     try:
         UUID(resolved_document_id)

@@ -39,7 +39,6 @@ window.environmentRenderMixin = {
 
     const slots = {
       overview: this._renderOverview(T),
-      fa: this._renderFaRow(T),
       xf: this._renderXfRow(T),
       triton: this._renderTritonRow(T),
       sd: this._renderSdRow(T),
@@ -79,7 +78,6 @@ window.environmentRenderMixin = {
       +   '<div class="env-env-grid">'
       +     '<div class="env-col" data-env-anchor-target="accel">'
       +       '<div class="env-section-title" data-env-title="accel"></div>'
-      +       '<div data-env-slot="fa"></div>'
       +       '<div data-env-slot="xf"></div>'
       +       '<div data-env-slot="triton"></div>'
       +     '</div>'
@@ -209,11 +207,10 @@ window.environmentRenderMixin = {
   //  Hero 总览面板
   // ═══════════════════════════════════════════════════════
   _renderOverview(T) {
-    const faOk = !!(this.faStatus && this.faStatus.installed);
     const xfOk = !!(this.xfStatus && this.xfStatus.installed);
     const trOk = !!(this.tritonStatus && this.tritonStatus.installed);
-    const accelReady = !!(this.faStatus && this.xfStatus && this.tritonStatus);
-    const accelDone = [faOk, xfOk, trOk].filter(Boolean).length;
+    const accelReady = !!(this.xfStatus && this.tritonStatus);
+    const accelDone = [xfOk, trOk].filter(Boolean).length;
 
     const sdOk = !!(this.sdStatus && this.sdStatus.local);
     const lyAdapter = this.trainingCores && (this.trainingCores.adapters || []).find(i => i.id === 'lycoris');
@@ -228,7 +225,7 @@ window.environmentRenderMixin = {
     const modelDone = files.filter(f => f.exists).length;
     const modelTotal = files.length;
 
-    const hasError = !!(this.faError || this.xfError || this.tritonError || this.trainingCoresError || this.animaModelError);
+    const hasError = !!(this.xfError || this.tritonError || this.trainingCoresError || this.animaModelError);
     const allLoaded = accelReady && coreReady && modelsReady;
 
     // 三态 Hero：加载中 / 有真实错误（红）/ 运行正常（绿）。
@@ -254,7 +251,7 @@ window.environmentRenderMixin = {
       return `<span>${label} ${num}</span>`;
     };
     const summaryHtml = `<div class="env-hero-summary">`
-      + summary(accelDone, 3, accelReady, T('overview.accel', 'Acceleration'))
+      + summary(accelDone, 2, accelReady, T('overview.accel', 'Acceleration'))
       + `<span class="env-summary-sep">·</span>`
       + summary(coreDone, 3, coreReady, T('overview.core', 'Training core'))
       + `<span class="env-summary-sep">·</span>`
@@ -331,7 +328,7 @@ window.environmentRenderMixin = {
     return `<div class="env-detail-group"><span class="env-detail-label">${label||''}</span><div class="env-detail-content">${contentHtml}</div></div>`;
   },
 
-  // 刷新图标按钮（FA/xf/triton/模型 共用）。
+  // 刷新图标按钮（xf/triton/模型 共用）。
   _renderRefreshBtn(id, disabled, cls) {
     return `<button id="${id}" class="btn-icon ${cls || ''}" ${disabled?'disabled':''} title="${this.t('environment.refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
   },
@@ -360,7 +357,7 @@ window.environmentRenderMixin = {
       meta = `<span class="env-progress-stage">${T('connecting','Connecting')} ${idx}/${tt}</span>`;
     } else {
       // installing / working
-      const stageLabel = opts.stageLabel || (stage === 'installing' ? T('faStageInstalling','Installing…') : T('installingHint','Working…'));
+      const stageLabel = opts.stageLabel || (stage === 'installing' ? T('stageInstalling','Installing…') : T('installingHint','Working…'));
       bar = `<div class="env-progress-spinner-wrap"><div class="env-install-spinner"></div><span class="env-progress-stage">${stageLabel}</span></div>`;
       meta = `<span class="env-progress-time">${elapsed}</span>`;
     }
@@ -383,117 +380,6 @@ window.environmentRenderMixin = {
       html += `<span class="env-log-line${cls?' '+cls:''}">${this.esc(raw)}</span>\n`;
     }
     return `<pre class="env-log">${html}</pre>`;
-  },
-
-  // ═══════════════════════════════════════════════════════
-  //  Flash Attention 行
-  // ═══════════════════════════════════════════════════════
-  _renderFaRow(T) {
-    const s = this.faStatus;
-    const env = s?.env || {};
-    const candidates = s?.candidates || [];
-    const usable = candidates.filter(c => c.usable);
-    const best = usable[0] || null;
-    const canAuto = !!env.torch_tag && !!env.platform && usable.length > 0;
-    const faInstalled = s?.installed;
-    const open = this._envCardOpen('fa');
-
-    const state = this.faBusy ? 'loading' : this.faError ? 'err' : !s ? 'loading' : faInstalled ? 'ok' : 'muted';
-    const badge = this.faBusy
-      ? `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`
-      : this.faError
-        ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
-        : !s
-          ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
-          : faInstalled
-            ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
-            : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
-    const version = faInstalled && s.version ? `<span class="env-row-version">v${this.esc(s.version)}</span>` : '';
-    const headBtn = this.faBusy
-      ? `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`
-      : `<button type="button" class="btn btn-sm ${faInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="fa" ${!faInstalled && !canAuto ? '' : ''}>${faInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
-    const head = this._renderRowHead('fa', open, {
-      name: 'Flash Attention',
-      desc: T('trainingAccel','Training acceleration (optional)'),
-      version, badge, action: headBtn,
-      detailKey: 'fa', detailLabel: T('details','Details'),
-    });
-
-    // Busy: 下载/安装进度面板 + 日志
-    if (this.faBusy) {
-      const p = this.faProgress || {};
-      const stage = p.stage || 'downloading';
-      let body = '';
-      if (stage === 'downloading' && p.total > 0) {
-        const pct = Math.max(0, Math.min(100, Math.round((p.downloaded||0) * 100 / p.total)));
-        body += this._renderProgressPanel({
-          stage: 'downloading', pct,
-          speedMB: p.speed || 0,
-          downloadedBytes: p.downloaded||0,
-          totalBytes: p.total||0,
-          elapsed: this.faInstallElapsed,
-        });
-      } else if (stage === 'downloading') {
-        body += this._renderProgressPanel({ stage: 'connecting', elapsed: this.faInstallElapsed });
-      } else {
-        body += this._renderProgressPanel({ stage: stage === 'done' ? 'done' : 'installing', elapsed: this.faInstallElapsed });
-      }
-      body += this._renderLog(this.faLog);
-      return this._renderRow('fa', state, open, head, body);
-    }
-
-    let body = '';
-    if (this.faError) body += this._renderErrorBar(T, this.faError, 'faLog');
-
-    if (s) {
-      // Environment info
-      const envItems = [];
-      if (faInstalled) envItems.push(`<span class="env-env-item">flash_attn <em>v${s.version||'?'}</em></span>`);
-      if (env.python_tag) envItems.push(`<span class="env-env-item"><em>${env.python_tag}</em></span>`);
-      if (env.cuda_tag) envItems.push(`<span class="env-env-item">CUDA <em>${env.cuda_tag}</em> <span class="env-text-dim">(${env.cuda_ver||'?'})</span></span>`);
-      if (env.torch_tag) envItems.push(`<span class="env-env-item">PyTorch <em>${env.torch_tag}</em></span>`);
-      if (env.platform) envItems.push(`<span class="env-env-item"><em>${env.platform}</em></span>`);
-      body += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
-
-      // Error / info messages
-      if (s.fetch_error) {
-        if (s.from_disk_cache) body +=`<div class="env-msg env-msg-info">${T('usingCachedData','Using cached data.')} ${T('cachedDataHint','Auto-updates on next success.')}</div>`;
-        else if (/rate limit|限流/i.test(s.fetch_error)) body +=`<div class="env-msg env-msg-info">${T('githubApiFail','GitHub API unavailable')}<br>${T('rateLimitHint','Will retry. Paste URL manually.')}</div>`;
-        else body +=`<div class="env-msg env-msg-info">${T('githubApiFail','GitHub API unavailable')}: ${this.esc(s.fetch_error)}<br>${T('manualUrlHint','Paste wheel URL manually.')}</div>`;
-      }
-      if (!canAuto && !s.fetch_error && env.platform && env.torch_tag) body +=`<div class="env-msg env-msg-info">${T('noWheel','No matching wheel. Paste URL manually.')}</div>`;
-
-      // Confirm dialog
-      if (this.faConfirmMsg) {
-        body +=`<div class="env-confirm"><span class="env-confirm-msg">${this.faConfirmMsg}</span><button id="fa-confirm-yes" class="btn btn-sm btn-primary">${T('confirmYes','Confirm')}</button><button id="fa-confirm-no" class="btn btn-sm btn-ghost">${T('confirmNo','Cancel')}</button></div>`;
-      } else {
-        // 主操作行：source 三选一 + 安装此版本 + 自动/重装 + 刷新
-        let ops = `<div class="env-actions">`;
-        ops += `<span class="env-source-group"><button id="fa-src-default" class="env-source-btn ${this.faSource==='default'?'active':''}" title="${T('sourceDefaultHint','Direct to GitHub, auto-fallback to mirrors')}">${T('sourceDefault','Official')}</button><button id="fa-src-mirror" class="env-source-btn ${this.faSource==='mirror'?'active':''}" title="${T('sourceMirrorHint','Use mirrors directly')}">${T('sourceMirror','Mirror')}</button><button id="fa-src-fallback" class="env-source-btn ${this.faSource==='fallback'?'active':''}" title="${T('sourceFallbackHint','Alternate wheel repository')}">${T('sourceFallback','Alt')}</button></span>`;
-        if (best) {
-          ops += `<button id="fa-best-install-btn" class="btn btn-sm btn-secondary" ${this.faBusy?'disabled':''} data-url="${this.escapeAttr(best.url)}" title="${this.escapeAttr(best.name)}">${T('installThis','Install this')}</button>`;
-        }
-        ops += `<button id="fa-auto-btn" class="btn btn-sm btn-secondary" ${this.faBusy||!canAuto?'disabled':''} title="${best?this.escapeAttr(best.name):''}">${faInstalled?T('reinstall','Reinstall'):T('autoInstall','Auto Install')}</button>`;
-        ops += this._renderRefreshBtn('fa-refresh-btn', this.faBusy);
-        ops += `</div>`;
-        body += ops;
-
-        // 高级选项子折叠：候选 wheel 列表 + 手动 URL
-        let adv = `<button id="fa-toggle-btn" class="btn btn-ghost btn-sm env-toggle-candidates">${this.faCandidatesOpen ? T('hideAllCandidates','Hide all') : T('showAllCandidates','Show all') + ' (' + candidates.length + ')'}</button>`;
-        if (this.faCandidatesOpen && candidates.length) {
-          adv += `<ul class="env-candidate-list">`;
-          candidates.forEach(c => {
-            const mark = c.usable?'ok':'warn';
-            adv += `<li class="env-candidate-item"><span class="env-candidate-mark env-candidate-${mark}">${c.usable?'&#10003;':'&#10007;'}</span><code class="env-candidate-name" title="${this.escapeAttr(c.name)}">${this.esc(c.name)}</code>${c.notes.length?`<span class="env-candidate-notes">${this.esc(c.notes.map(n=>typeof n==='string'?n:(T('faNote.'+n.key)||n.text||n.key)).join('; '))}</span>`:''}<button class="fa-candidate-btn btn btn-sm ${c.usable?'btn-secondary':'btn-ghost'}" data-url="${this.escapeAttr(c.url)}">${c.usable?T('install','Install'):T('forceInstall','Force')}</button></li>`;
-          });
-          adv += `</ul>`;
-        }
-        adv += `<div class="env-manual-url"><input type="text" class="env-url-input" placeholder="https://github.com/.../flash_attn-...whl" id="fa-manual-input"><button id="fa-url-btn" class="btn btn-sm btn-secondary">${T('installUrl','URL Install')}</button></div>`;
-        body += this._renderSubCollapse('faAdvanced', T('advancedOptions','Advanced options'), this.faAdvancedOpen, adv);
-      }
-    }
-
-    return this._renderRow('fa', state, open, head, body);
   },
 
   // 子折叠面板（高级选项 / 下载日志共用）。open 为当前展开状态。
@@ -995,7 +881,6 @@ window.environmentRenderMixin = {
       });
     });
     if (slot === 'overview') this._bindOverviewEvents(host);
-    else if (slot === 'fa') this._bindFaEvents(host, T);
     else if (slot === 'xf') this._bindXfEvents(host);
     else if (slot === 'triton') this._bindTritonEvents(host);
     else if (slot === 'animaModel' || slot === 'krea2' || slot === 'trainUse') this._bindModelGroupEvents(host);
@@ -1019,14 +904,13 @@ window.environmentRenderMixin = {
     });
   },
 
-  // 行尾主按钮（安装/重装）：FA 走自动匹配+确认，xf/triton 直接安装
+  // 行尾主按钮（安装/重装）：xf/triton 直接安装
   _bindHeadActionEvents(host) {
     const a = window.__anima || this;
     host.querySelectorAll('[data-env-action]').forEach(btn => {
       btn.addEventListener('click', () => {
         const act = btn.dataset.envAction;
-        if (act === 'fa') a.faInstall(null);
-        else if (act === 'xf') a.xfInstall();
+        if (act === 'xf') a.xfInstall();
         else if (act === 'triton') a.tritonInstall();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
         else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);
@@ -1073,8 +957,7 @@ window.environmentRenderMixin = {
         const open = !wrap.classList.contains('env-open');
         wrap.classList.toggle('env-open', open);
         head.setAttribute('aria-expanded', open ? 'true' : 'false');
-        if (key === 'faAdvanced') a.faAdvancedOpen = open;
-        else if (key === 'animaModelLog') a._envSetCardOpen('animaModelLog', open);
+        if (key === 'animaModelLog') a._envSetCardOpen('animaModelLog', open);
         if (body) a._animateCollapse(body, !open);
         if (open && key === 'animaModelLog') {
           const pre = wrap.querySelector('.env-log');
@@ -1153,28 +1036,6 @@ window.environmentRenderMixin = {
     host.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
       btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file, btn.dataset.group));
     });
-  },
-
-  _bindFaEvents(el, T) {
-    const a = window.__anima || this;
-    const autoBtn = el.querySelector('#fa-auto-btn');
-    const faRefreshBtn = el.querySelector('#fa-refresh-btn');
-    if (autoBtn) autoBtn.addEventListener('click', () => a.faInstall(null));
-    if (faRefreshBtn) faRefreshBtn.addEventListener('click', () => a.faRefresh());
-    const toggleBtn = el.querySelector('#fa-toggle-btn');
-    if (toggleBtn) toggleBtn.addEventListener('click', () => { a.faCandidatesOpen = !a.faCandidatesOpen; a.renderEnvironment(); });
-    const bestInstallBtn = el.querySelector('#fa-best-install-btn');
-    if (bestInstallBtn) bestInstallBtn.addEventListener('click', () => a.faInstall(bestInstallBtn.dataset.url));
-    el.querySelectorAll('.env-source-btn').forEach(btn => { btn.addEventListener('click', () => {
-      if (btn.id === 'fa-src-mirror') a.faSource = 'mirror'; else if (btn.id === 'fa-src-fallback') a.faSource = 'fallback'; else a.faSource = 'default';
-      a.faRefresh();
-    });});
-    const faConfirmYes = el.querySelector('#fa-confirm-yes'), faConfirmNo = el.querySelector('#fa-confirm-no');
-    if (faConfirmYes) faConfirmYes.addEventListener('click', () => { const cb = a.faConfirmCallback; a.faDismissConfirm(); if (cb) cb(); });
-    if (faConfirmNo) faConfirmNo.addEventListener('click', () => a.faDismissConfirm());
-    el.querySelectorAll('.fa-candidate-btn').forEach(btn => { btn.addEventListener('click', () => a.faInstall(btn.dataset.url)); });
-    const urlInput = el.querySelector('#fa-manual-input'), urlBtn = el.querySelector('#fa-url-btn');
-    if (urlInput && urlBtn) { urlInput.value = a.faManualUrl || ''; urlInput.addEventListener('input', () => { a.faManualUrl = urlInput.value; }); urlBtn.addEventListener('click', () => { if (a.faManualUrl && a.faManualUrl.trim()) a.faInstall(a.faManualUrl.trim()); }); }
   },
 
   _bindXfEvents(el) {

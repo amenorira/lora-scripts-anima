@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import tomllib
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -73,8 +74,17 @@ def invalidate_history_cache() -> None:
 # ── 预览样本 ──────────────────────────────────────────────
 
 _previews_cache_lock = threading.Lock()
-_previews_cache: tuple[float, str, list[dict]] | None = None
+_previews_cache: OrderedDict[str, tuple[float, list[dict]]] = OrderedDict()
 _PREVIEWS_CACHE_TTL = 5.0
+_PREVIEWS_CACHE_MAX_RUNS = 8
+
+
+def _store_previews(cache_key: str, result: list[dict]) -> None:
+    with _previews_cache_lock:
+        _previews_cache[cache_key] = (time.time(), result)
+        _previews_cache.move_to_end(cache_key)
+        while len(_previews_cache) > _PREVIEWS_CACHE_MAX_RUNS:
+            _previews_cache.popitem(last=False)
 
 
 def newest_previews(
@@ -88,30 +98,28 @@ def newest_previews(
     limit: 返回的最新样本数量上限；0 表示返回全部（按训练生成顺序升序，最新在末尾）。
     force_refresh: True 时跳过 5s 缓存，立即重新扫描磁盘并覆盖缓存。
     """
-    global _previews_cache
     now = time.time()
-    cache_key = f"{run_dir}|{output_dir or ''}|{int(limit or 0)}"
+    cache_key = f"{run_dir}|{output_dir or ''}"
     if not force_refresh:
         with _previews_cache_lock:
-            if _previews_cache and _previews_cache[1] == cache_key and now - _previews_cache[0] < _PREVIEWS_CACHE_TTL:
-                return _previews_cache[2]
+            cached = _previews_cache.get(cache_key)
+            if cached and now - cached[0] < _PREVIEWS_CACHE_TTL:
+                _previews_cache.move_to_end(cache_key)
+                return cached[1][-limit:] if limit else cached[1]
 
     recursive_roots: list[Path] = []
     flat_roots: list[Path] = []
     if not output_dir:
-        with _previews_cache_lock:
-            _previews_cache = (now, cache_key, [])
+        _store_previews(cache_key, [])
         return []
     if output_dir:
         try:
             od = Path(output_dir).resolve()
         except OSError:
-            with _previews_cache_lock:
-                _previews_cache = (now, cache_key, [])
+            _store_previews(cache_key, [])
             return []
         if not od.is_dir():
-            with _previews_cache_lock:
-                _previews_cache = (now, cache_key, [])
+            _store_previews(cache_key, [])
             return []
         recursive_roots.extend([od / "sample", od / "outputs" / "sample"])
         flat_roots.extend([od, od / "outputs"])
@@ -146,10 +154,8 @@ def newest_previews(
         except OSError:
             continue
     ordered.sort(key=lambda item: _preview_sort_key(item[0], item[1]))
-    selected = ordered[-limit:] if limit else ordered
-
     result = []
-    for p, stat in selected:
+    for p, stat in ordered:
         try:
             rel = str(p.relative_to(od)).replace("\\", "/")
         except ValueError:
@@ -165,9 +171,8 @@ def newest_previews(
             "size": stat.st_size,
             "version": version,
         })
-    with _previews_cache_lock:
-        _previews_cache = (now, cache_key, result)
-    return result
+    _store_previews(cache_key, result)
+    return result[-limit:] if limit else result
 
 
 # ── 历史记录 ──────────────────────────────────────────────

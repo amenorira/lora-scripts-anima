@@ -459,7 +459,9 @@ window.realtimeMixin = {
     // an offline -> delayed -> offline loop and duplicate disconnect toasts.
     if (this.realtimeState === 'offline' && state !== 'online') return;
     const wasOffline = this.realtimeState === 'offline';
+    const changed = this.realtimeState !== state;
     this.realtimeState = state;
+    if (changed && this.currentRoute === 'monitor-dashboard' && typeof this.scheduleRender === 'function') this.scheduleRender();
     if (state === 'online') {
       this.backendConnected = true;
       this.backendDisconnectedAt = null;

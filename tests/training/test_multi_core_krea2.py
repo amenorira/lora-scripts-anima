@@ -4,9 +4,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import toml
 
@@ -17,6 +18,7 @@ from backend.training.musubi_krea2 import (
     KREA2_FIELDS,
     build_krea2_dataset_config,
     build_krea2_train_config,
+    cache_manifest_path,
     get_krea2_cache_status,
     image_files,
     mark_cache_manifest,
@@ -24,6 +26,16 @@ from backend.training.musubi_krea2 import (
     validate_krea2_config,
 )
 from backend.server.routes import training as training_routes
+from backend.training import supervisor
+from backend.tasks import TaskManager
+
+
+class _BodyRequest:
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def body(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 def krea2_config(root: Path) -> dict:
@@ -81,6 +93,143 @@ class CoreRegistryTests(unittest.TestCase):
             resolve_training_profile(
                 {"model_train_type": "sdxl-lora", "adapter_id": "lycoris", "network_module": "networks.lora"}
             )
+
+
+class Krea2PreparationLifecycleTests(unittest.TestCase):
+    def test_real_launcher_rejection_keeps_slot_through_manifest_rollback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            manager = TaskManager()
+            settling, release = threading.Event(), threading.Event()
+
+            def settle_manifest(config, status):
+                settling.set()
+                if not release.wait(5):
+                    raise TimeoutError("manifest settlement was not released")
+                mark_cache_manifest(config, status)
+
+            async def exercise():
+                loop = asyncio.get_running_loop()
+                real_submit = loop.run_in_executor
+
+                def submit(executor, func, *args):
+                    if getattr(func, "__name__", "") == "_run":
+                        raise RuntimeError("executor shutdown")
+                    return real_submit(executor, func, *args)
+
+                with patch.object(loop, "run_in_executor", side_effect=submit):
+                    request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                    self.assertTrue(await asyncio.to_thread(settling.wait, 5))
+                    self.assertIsNone(manager.reserve_task())
+                    self.assertFalse(manager.begin_dataset_mutation())
+                    release.set()
+                    return await request
+
+            with patch.object(training_routes, "tm", manager), \
+                 patch.object(supervisor, "tm", manager), \
+                 patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
+                 patch.object(training_routes, "mark_cache_manifest", side_effect=settle_manifest), \
+                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
+                 patch.object(supervisor, "save_config_snapshot"), \
+                 patch.object(supervisor, "_build_train_env", return_value={}), \
+                 patch.object(supervisor, "_read_run_meta", return_value={}), \
+                 patch.object(supervisor, "_log_run_start"):
+                try:
+                    response = asyncio.run(exercise())
+                finally:
+                    release.set()
+
+            self.assertEqual(response.status, "fail")
+            self.assertIn("executor shutdown", response.message)
+            manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["stages"], {"latents": "failed", "text_encoder": "failed"})
+            self.assertIsNotNone(manager.reserve_task())
+
+    def test_cache_stop_or_http_cancel_after_manifest_settles_failed(self):
+        for cancellation in ("stop", "http"):
+            with self.subTest(cancellation=cancellation), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                config = krea2_config(root)
+                entered, release = threading.Event(), threading.Event()
+                manager = TaskManager()
+
+                def write_run_info(*_args, **_kwargs):
+                    entered.set()
+                    if not release.wait(5):
+                        raise TimeoutError("cache preparation was not released")
+
+                async def exercise():
+                    request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                    task_id = next(iter(manager.tasks))
+                    if cancellation == "stop":
+                        manager.terminate_task(task_id)
+                    else:
+                        request.cancel()
+                    self.assertIsNone(manager.reserve_task())
+                    release.set()
+                    if cancellation == "http":
+                        with self.assertRaises(asyncio.CancelledError):
+                            await request
+                        return None
+                    return await request
+
+                with patch.object(training_routes, "tm", manager), \
+                     patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
+                     patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
+                     patch.object(training_routes, "_write_run_info", side_effect=write_run_info), \
+                     patch.object(training_routes, "run_train") as launch:
+                    try:
+                        response = asyncio.run(exercise())
+                    finally:
+                        release.set()
+
+                if cancellation == "stop":
+                    self.assertEqual(response.status, "fail")
+                    self.assertEqual(response.message, "Training preparation cancelled / 训练准备已取消")
+                launch.assert_not_called()
+                self.assertIsNotNone(manager.reserve_task())
+                manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
+                self.assertEqual(manifest["stages"], {"latents": "failed", "text_encoder": "failed"})
+
+    def test_cache_launcher_failure_marks_manifest_before_releasing_slot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = krea2_config(root)
+            manager = TaskManager()
+            entered, release = threading.Event(), threading.Event()
+
+            def settle_manifest(config, status):
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("manifest settlement was not released")
+                mark_cache_manifest(config, status)
+
+            async def exercise():
+                request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                self.assertIsNone(manager.reserve_task())
+                release.set()
+                return await request
+
+            with patch.object(training_routes, "tm", manager), \
+                 patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
+                 patch.object(training_routes, "mark_cache_manifest", side_effect=settle_manifest), \
+                 patch.object(training_routes, "run_train", return_value={"status": "error", "message": "launcher failed"}):
+                try:
+                    response = asyncio.run(exercise())
+                finally:
+                    release.set()
+
+            self.assertEqual(response.status, "fail")
+            self.assertEqual(response.message, "launcher failed")
+            self.assertIsNotNone(manager.reserve_task())
+            manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["stages"], {"latents": "failed", "text_encoder": "failed"})
 
 
 class Krea2CodecTests(unittest.TestCase):
@@ -335,10 +484,16 @@ class Krea2CodecTests(unittest.TestCase):
                 "backend.server.routes.training.run_train", return_value={"status": "success"}
             ), patch.object(training_routes, "OUTPUT_DIR", root / "runs"), patch(
                 "backend.server.routes.training.os.getcwd", return_value=str(root)
-            ), patch.object(training_routes, "AUTOSAVE_DIR", root / "config" / "autosave"):
-                result = asyncio.run(training_routes._create_krea2_run(config, None, timestamp))
+            ), patch.object(training_routes, "AUTOSAVE_DIR", root / "config" / "autosave"), patch.object(
+                training_routes, "tm", TaskManager()
+            ):
+                result = asyncio.run(training_routes._prepare_training(
+                    training_routes._create_krea2_run, config, None, timestamp, None,
+                ))
 
-            run_dir = root / "runs" / f"krea2_test_{timestamp}"
+            run_dirs = list((root / "runs").glob(f"krea2_test_{timestamp}_*"))
+            self.assertEqual(len(run_dirs), 1)
+            run_dir = run_dirs[0]
             prompt_file = run_dir / "sample_prompts.txt"
             train_config = toml.loads((run_dir / "config.toml").read_text(encoding="utf-8"))
             prompt_text = prompt_file.read_text(encoding="utf-8")

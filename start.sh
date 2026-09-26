@@ -188,10 +188,10 @@ do_install() {
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/2] Installing PyTorch 2.10.0+cu130... / 正在安装 PyTorch 2.10.0+cu130……"
+    echo "[1/2] Installing PyTorch 2.12.1+cu130... / 正在安装 PyTorch 2.12.1+cu130……"
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [2/2] 降级
     "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
-    "$VENV_PYTHON" -m pip install torch==2.10.0+cu130 torchvision==0.25.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
+    "$VENV_PYTHON" -m pip install torch==2.12.1+cu130 torchvision==0.27.1+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
     if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
     echo "[2/2] Installing project dependencies... / 正在安装项目依赖……"

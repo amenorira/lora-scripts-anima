@@ -28,10 +28,7 @@ def _resolve_dataset_image(session_id: str, relative_path: str) -> Path | None:
     except KeyError:
         return None
     normalized = relative_path.replace("\\", "/")
-    item = next(
-        (entry for entry in session.images if str(entry.get("rel_path", "")).replace("\\", "/") == normalized),
-        None,
-    )
+    item = session.image_by_rel_path.get(normalized)
     if not item:
         return None
     candidate = Path(str(item.get("path", ""))).resolve()

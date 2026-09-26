@@ -86,6 +86,21 @@ def git_tag(path: str) -> str:
     return result
 
 
+def app_version(path: str | Path) -> str:
+    """保留 Git 构建描述；ZIP 安装或 Git 不可用时读取发行 VERSION。"""
+    root = Path(path)
+    # 避免 ZIP 解压在其他 Git 仓库内时误读父仓库的版本。
+    if (root / ".git").exists():
+        version = git_tag(str(root))
+        if version != "<none>":
+            return version
+    try:
+        version = (root / "VERSION").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        version = ""
+    return f"v{version}" if version else "dev"
+
+
 def check_dirs(dirs: List) -> None:
     for d in dirs:
         os.makedirs(d, exist_ok=True)

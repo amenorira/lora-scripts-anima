@@ -3,7 +3,6 @@
 import asyncio
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,6 +69,32 @@ def _cleanup_install_jobs() -> None:
     _prune_finished_jobs(_install_jobs, _install_jobs_lock, _remove_install_job)
 
 
+def _read_install_log_tail(path: str, tail: int) -> str:
+    if tail <= 0:
+        # Preserve the existing readlines()[-tail:] behavior for explicit
+        # non-positive requests (zero means the whole log).
+        with open(path, "r", encoding="utf-8", errors="replace") as file:
+            return "".join(file.readlines()[-tail:])
+    chunks = []
+    with open(path, "rb") as file:
+        file.seek(0, os.SEEK_END)
+        position = file.tell()
+        remaining = 512 * 1024
+        newlines = 0
+        while position > 0 and remaining > 0 and newlines <= tail:
+            size = min(position, 8192, remaining)
+            position -= size
+            file.seek(position)
+            chunk = file.read(size)
+            chunks.append(chunk)
+            newlines += chunk.count(b"\n")
+            remaining -= size
+    raw = b"".join(reversed(chunks))
+    if position > 0 and newlines <= tail:
+        return "[... earlier log truncated / 前面的日志已截断 ...]\n" + raw.decode("utf-8", errors="replace")
+    return b"".join(raw.splitlines(keepends=True)[-tail:]).decode("utf-8", errors="replace")
+
+
 def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
     """Read the existing install-job state for the realtime bridge."""
     _cleanup_install_jobs()
@@ -79,8 +104,7 @@ def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
     if not job:
         return {"status": "error", "done": True, "error": "Job not found / 任务不存在"}
     try:
-        with open(job["log_path"], "r", encoding="utf-8", errors="replace") as file:
-            lines = "".join(file.readlines()[-tail:])
+        lines = _read_install_log_tail(job["log_path"], tail)
     except Exception:
         lines = ""
     done = bool(job.get("done", False))
@@ -315,312 +339,6 @@ async def anima_model_download(request: Request) -> dict:
     return {"success": True, "job_id": job_id}
 
 
-# ── Flash Attention ───────────────────────────────────────────
-
-_fa_cache: dict[str, dict] = {}
-_fa_cache_lock = threading.Lock()
-_FA_CACHE_TTL = 300
-_fa_env_cache: dict | None = None
-_fa_env_cache_ts: float = 0.0
-_FA_ENV_CACHE_TTL = 600.0
-_fa_tool_funcs: tuple | None = None
-_fa_tool_lock = threading.Lock()
-
-
-def _import_flash_attn_tool():
-    """延迟导入 tools/install_flash_attn.py，避免启动时拖慢 import。"""
-    global _fa_tool_funcs
-    with _fa_tool_lock:
-        if _fa_tool_funcs is not None:
-            return _fa_tool_funcs
-        import importlib.util
-
-        tool_path = REPO_ROOT / "tools" / "install_flash_attn.py"
-        if not tool_path.exists():
-            raise ImportError(f"install_flash_attn.py not found at {tool_path}")
-        spec = importlib.util.spec_from_file_location("install_flash_attn", tool_path)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["install_flash_attn"] = module
-        spec.loader.exec_module(module)
-        _fa_tool_funcs = (
-            module.detect_env,
-            module.current_status,
-            module.fetch_candidates,
-            module.install_wheel,
-            module.proxy_download_url,
-            module.download_urls_for,
-        )
-        return _fa_tool_funcs
-
-
-_fa_jobs: dict[str, dict] = {}
-_fa_jobs_lock = threading.Lock()
-
-
-def _cleanup_fa_jobs() -> None:
-    _prune_finished_jobs(_fa_jobs, _fa_jobs_lock)
-
-
-def _fa_job_snapshot(job_id: str) -> dict:
-    _cleanup_fa_jobs()
-    with _fa_jobs_lock:
-        job = _fa_jobs.get(job_id)
-        if job:
-            done = bool(job.get("done", False))
-            success = job.get("success")
-            return {
-                "status": "finished" if done and success is not False else ("error" if done else "running"),
-                "progress": dict(job.get("progress", {})),
-                "log": list(job.get("log", [])),
-                "done": done,
-                "success": success,
-                "elapsed": time.time() - job.get("start", 0),
-            }
-    return {"status": "error", "done": True, "progress": {"stage": "error", "error": "Job not found / 任务不存在"}, "log": []}
-
-
-def _start_fa_job(download_urls: list[str], wheel_name: str, source: str) -> str:
-    """启动 FA 安装后台线程：预下载 wheel → pip install 本地文件。"""
-    from backend.utils.hf_download import download_url_with_fallback
-
-    job_id = uuid4().hex[:12]
-    shared_progress: dict = {"stage": "downloading", "filename": wheel_name}
-    log_lines: list[str] = []
-    with _fa_jobs_lock:
-        _fa_jobs[job_id] = {
-            "start": time.time(),
-            "done": False,
-            "progress": shared_progress,
-            "log": log_lines,
-            "source": source,
-            "wheel_name": wheel_name,
-        }
-
-    def _run():
-        tmp_dir: str | None = None
-        progress_bar = None
-        try:
-            log_lines.append(f"[DOWNLOAD] {wheel_name}  ({len(download_urls)} 源候选 / source(s))")
-            tmp_dir = tempfile.mkdtemp(prefix="anima_fa_")
-            destination = Path(tmp_dir) / wheel_name
-
-            from backend.utils.hf_download import make_progress_bar
-
-            try:
-                from backend.log import console as rich_console
-            except Exception:
-                rich_console = None
-            progress_bar = make_progress_bar(console=rich_console)
-            state = {"task_id": None}
-
-            def _on_log(message: str):
-                log_lines.append(message)
-                try:
-                    log.info(f"[fa-install] {message}")
-                except Exception:
-                    pass
-
-            def _on_progress(_line: str):
-                try:
-                    with _fa_jobs_lock:
-                        progress = dict(shared_progress)
-                    filename = progress.get("filename") or wheel_name
-                    total = int(progress.get("total") or 0)
-                    downloaded = int(progress.get("downloaded") or 0)
-                    speed = float(progress.get("speed") or 0.0)
-                    if state["task_id"] is None:
-                        state["task_id"] = progress_bar.add_task(filename, total=total or None, completed=downloaded)
-                    else:
-                        progress_bar.update(state["task_id"], description=filename, total=total or None, completed=downloaded)
-                        if speed:
-                            progress_bar.tasks[state["task_id"]].speed = speed
-                except Exception:
-                    pass
-
-            progress_bar.start()
-            download_url_with_fallback(
-                download_urls,
-                destination,
-                progress=shared_progress,
-                lock=_fa_jobs_lock,
-                on_log=_on_log,
-                on_progress=_on_progress,
-                file_index=0,
-                file_total=1,
-                label=wheel_name,
-            )
-            downloaded_size = destination.stat().st_size
-            log_lines.append(f"[DOWNLOAD] 完成 / Done ({downloaded_size / (1024**2):.1f} MB)")
-
-            with _fa_jobs_lock:
-                shared_progress.update({
-                    "stage": "installing",
-                    "filename": wheel_name,
-                    "downloaded": downloaded_size,
-                    "total": downloaded_size,
-                    "speed": 0.0,
-                })
-            log_lines.append(f"[INSTALL] pip install {destination.name}  (本地文件，约 10-30s)")
-            process = subprocess.Popen(
-                [sys.executable, "-m", "pip", "install", "--retries", "3", "--timeout", "60", str(destination)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            for line in process.stdout:
-                line = line.rstrip()
-                if line:
-                    log_lines.append(line)
-            process.wait()
-
-            if process.returncode == 0:
-                with _fa_jobs_lock:
-                    shared_progress.update({
-                        "stage": "done",
-                        "filename": wheel_name,
-                        "downloaded": downloaded_size,
-                        "total": downloaded_size,
-                        "speed": 0.0,
-                    })
-                    _fa_jobs[job_id]["success"] = True
-                log_lines.append("[INSTALL] 安装成功 / Successfully installed")
-            else:
-                with _fa_jobs_lock:
-                    shared_progress.update({
-                        "stage": "error",
-                        "filename": wheel_name,
-                        "error": f"pip exit code {process.returncode}",
-                    })
-                    _fa_jobs[job_id]["success"] = False
-                log_lines.append(f"[ERROR] pip 安装失败，退出码 {process.returncode} / install failed")
-        except Exception as exc:
-            log_lines.append(f"[ERROR] {type(exc).__name__}: {exc}")
-            with _fa_jobs_lock:
-                shared_progress.update({"stage": "error", "error": str(exc)})
-                _fa_jobs[job_id]["success"] = False
-        finally:
-            if progress_bar is not None:
-                try:
-                    progress_bar.stop()
-                except Exception:
-                    pass
-            try:
-                sys.stderr.write("\n")
-                sys.stderr.flush()
-            except Exception:
-                pass
-            if tmp_dir:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            with _fa_jobs_lock:
-                _fa_jobs[job_id]["done"] = True
-
-    threading.Thread(target=_run, daemon=True).start()
-    return job_id
-
-
-def _flash_attn_status_sync(cache_key: str) -> dict:
-    """Synchronous implementation of Flash Attention status detection."""
-    detect_env, current_status, fetch_candidates, _, _, _ = _import_flash_attn_tool()
-    global _fa_env_cache, _fa_env_cache_ts
-    now = time.time()
-    env = _fa_env_cache
-    if env is None or now - _fa_env_cache_ts > _FA_ENV_CACHE_TTL:
-        env = detect_env()
-        _fa_env_cache = env
-        _fa_env_cache_ts = now
-
-    status = current_status()
-    with _fa_cache_lock:
-        cached = _fa_cache.get(cache_key)
-        cache_expired = cached is None or now - cached.get("ts", 0) > _FA_CACHE_TTL
-    if cache_expired:
-        candidates, fetch_error = fetch_candidates(env, source=cache_key)
-        from_disk = bool(fetch_error and "回退磁盘缓存" in str(fetch_error))
-        slim = [
-            {
-                "url": candidate["url"],
-                "name": candidate["name"],
-                "notes": candidate.get("notes", candidate["notes"]) if isinstance(candidate, dict) else [],
-                "usable": candidate["usable"],
-            }
-            for candidate in candidates[:20]
-        ]
-        with _fa_cache_lock:
-            _fa_cache[cache_key] = {
-                "candidates": slim,
-                "fetch_error": fetch_error,
-                "from_disk": from_disk,
-                "ts": now,
-            }
-
-    with _fa_cache_lock:
-        cache = _fa_cache[cache_key].copy()
-    return {
-        "installed": status["installed"],
-        "version": status["version"],
-        "env": env,
-        "candidates": cache["candidates"],
-        "fetch_error": cache["fetch_error"],
-        "from_disk_cache": cache.get("from_disk", False),
-        "token_set": bool(os.environ.get("FA_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")),
-        "source": cache_key,
-    }
-
-
-@router.get("/flash-attention/status")
-async def flash_attn_status(source: str = "") -> dict:
-    """返回 flash_attn 安装状态 + 环境检测 + GitHub 候选 wheel 列表。"""
-    try:
-        return await asyncio.to_thread(_flash_attn_status_sync, source or "default")
-    except Exception as exc:
-        log.error(f"flash_attn status error / flash_attn 状态检查失败: {exc}")
-        return {"installed": False, "version": None, "env": {}, "candidates": [], "fetch_error": str(exc)}
-
-
-@router.post("/flash-attention/install")
-async def flash_attn_install(request: Request) -> dict:
-    """Install a Flash Attention wheel in a background job."""
-    try:
-        body = await request.json()
-        manual_url = body.get("url", None)
-        source = body.get("source", "default")
-    except Exception:
-        manual_url = None
-        source = "default"
-
-    source = source or "default"
-    if manual_url is None:
-        def _resolve():
-            detect_env, _, fetch_candidates, _, _, _ = _import_flash_attn_tool()
-            env = detect_env()
-            candidates, _ = fetch_candidates(env, source=source)
-            for candidate in candidates:
-                if candidate["usable"]:
-                    return candidate["url"], candidate.get("name", "")
-            return None, None
-
-        wheel_url, wheel_name = await asyncio.to_thread(_resolve)
-        if wheel_url is None:
-            return {"success": False, "error": "No usable wheel found. Please specify a URL manually."}
-        _, _, _, _, _, download_urls_for = _import_flash_attn_tool()
-        download_urls = download_urls_for(wheel_url, source)
-    else:
-        from urllib.parse import unquote
-
-        wheel_name = unquote(manual_url.rsplit("/", 1)[-1]) or "flash_attn.whl"
-        download_urls = [manual_url]
-
-    job_id = _start_fa_job(download_urls, wheel_name, source)
-    await realtime_tasks.register(
-        job_id,
-        "flash-attention-install",
-        lambda job_id=job_id: _fa_job_snapshot(job_id),
-    )
-    return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
-
-
 # ── xformers and Triton ───────────────────────────────────────
 
 def _xformers_status_sync() -> dict:
@@ -660,6 +378,8 @@ async def xformers_status() -> dict:
 
 @router.post("/xformers/install")
 async def xformers_install() -> dict:
+    from tools.ensure_runtime import XFORMERS
+
     command = [
         sys.executable,
         "-m",
@@ -670,7 +390,7 @@ async def xformers_install() -> dict:
         "--no-deps",
         "--progress-bar",
         "on",
-        "xformers",
+        f"xformers=={XFORMERS}",
     ]
     try:
         import torch
@@ -703,6 +423,8 @@ def _matching_triton_spec(torch_version: str | None = None) -> str:
         version = Version(str(torch_version).split("+")[0])
     except Exception:
         return ""
+    if version >= Version("2.12.1"):
+        return ">=3.7.1,<3.8"
     if version >= Version("2.12"):
         return ">=3.7,<3.8"
     if version >= Version("2.10"):

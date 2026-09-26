@@ -12,12 +12,13 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from backend.log import log
-from backend.tasks import TaskStatus, tm
+from backend.tasks import Task, tm
 from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
 from backend.training.core_registry import engine_pythonpaths, get_engine
@@ -38,14 +39,7 @@ def _detect_available_attn() -> list[str]:
     try:
         import xformers  # noqa: F401
         available.append("xformers")
-    except ImportError:
-        pass
-
-    # 检测 flash_attn
-    try:
-        import flash_attn  # noqa: F401
-        available.append("flash")
-    except ImportError:
+    except Exception:
         pass
 
     _ATTN_CACHE = available
@@ -181,6 +175,8 @@ def run_train(
     run_metadata: Optional[dict[str, Any]] = None,
     on_complete: Optional[Callable[[str], None]] = None,
     extra_env: Optional[dict[str, str]] = None,
+    *,
+    reserved_task: Task,
 ) -> dict:
     """
     启动训练子进程。
@@ -243,10 +239,12 @@ def run_train(
     if extra_args:
         args.extend(extra_args)
 
-    # ── 3. 创建任务（此时所有校验已通过）─────────────────
-    task = tm.create_task(args, None)
-    if not task:
-        return {"status": "error", "message": "Failed to create task / 创建任务失败: max concurrency limit reached / 已达最大并发"}
+    # The route owns the reservation until the worker is successfully scheduled.
+    try:
+        reserved_task.configure_reserved(args)
+    except RuntimeError as exc:
+        return {"status": "error", "message": str(exc)}
+    task = reserved_task
 
     task_id = task.task_id
     task_id_short = task_id[:8]
@@ -271,31 +269,32 @@ def run_train(
             extra_info=metadata,
         )
     except Exception as e:
-        tm.terminate_task(task_id)
         log.error(f"Failed to save task metadata / 保存任务元数据失败: {e}")
         return {
             "status": "error",
             "message": f"Failed to initialize training monitoring / 初始化训练监控失败: {e}",
         }
 
-    env = _build_train_env(
-        artifact_dir=artifacts_dir,
-        task_id=task_id,
-        run_dir=control_dir,
-        engine_id=engine_id,
-    )
-    env.update(env_extra)
-    if extra_env:
-        env.update(extra_env)
-    task.environ = env  # 更新 task 的环境变量
+    try:
+        env = _build_train_env(
+            artifact_dir=artifacts_dir,
+            task_id=task_id,
+            run_dir=control_dir,
+            engine_id=engine_id,
+        )
+        env.update(env_extra)
+        if extra_env:
+            env.update(extra_env)
+        task.environ = env  # 更新 task 的环境变量
 
-    # 日志文件放在运行文件夹内
-    run_path = Path(control_dir)
-    run_path.mkdir(parents=True, exist_ok=True)
-    log_file = run_path / f"train_{task_id_short}.log"
-
-    # ── 读取 run 元信息（用于控制台启动/结束简短信息）──
-    run_meta = _read_run_meta(run_path, trainer_file)
+        # 日志文件放在运行文件夹内
+        run_path = Path(control_dir)
+        run_path.mkdir(parents=True, exist_ok=True)
+        log_file = run_path / f"train_{task_id_short}.log"
+        run_meta = _read_run_meta(run_path, trainer_file)
+    except Exception as exc:
+        log.exception("Failed to prepare training launcher / 训练启动器准备失败")
+        return {"status": "error", "message": f"Failed to prepare training launcher / 训练启动器准备失败: {exc}"}
 
     def _run():
         start_time = time.time()
@@ -309,7 +308,7 @@ def run_train(
                 task.execute(stdout_file=lf)
                 result = task.communicate()
                 exit_code = result.returncode
-                if task.status is TaskStatus.TERMINATED:
+                if task.stop_requested:
                     status = "terminated"
                     error_msg = "Training terminated / 训练已终止"
                 elif result.returncode != 0:
@@ -327,30 +326,48 @@ def run_train(
                 "Training exception / 训练异常 (task=%s): %s",
                 task_id_short, e, exc_info=True,
             )
-
         duration = time.time() - start_time
-
-        # ── B: 写入结构化训练结果 ────────────────────────
-        _write_result_json(run_path, task_id, status, exit_code, error_msg, duration)
-        # ── C: 失败时提取尾部错误日志 ─────────────────────
-        if status != "completed":
-            _write_error_tail(log_file, run_path, task_id_short)
-        if on_complete:
+        try:
+            # ── B: 写入结构化训练结果 ────────────────────────
             try:
-                on_complete(status)
-            except Exception as exc:
-                log.warning("Training completion callback failed / 训练完成回调失败: %s", exc)
+                _write_result_json(run_path, task_id, status, exit_code, error_msg, duration)
+            except Exception:
+                log.exception("Failed to record training result / 无法记录训练结果")
+            # ── C: 失败时提取尾部错误日志 ─────────────────────
+            if status != "completed":
+                try:
+                    _write_error_tail(log_file, run_path, task_id_short)
+                except Exception:
+                    log.exception("Failed to record training error tail / 无法记录训练错误日志")
+            if on_complete:
+                try:
+                    on_complete(status)
+                except Exception as exc:
+                    log.warning("Training completion callback failed / 训练完成回调失败: %s", exc)
 
-        # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
-        _log_run_end(status, run_meta, duration, exit_code, task_id_short)
+            # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
+            _log_run_end(status, run_meta, duration, exit_code, task_id_short)
+        finally:
+            # The worker owns the slot through results, callbacks, and log settlement.
+            task.complete_work()
 
-    coro = asyncio.to_thread(_run)
-    task_handle = asyncio.create_task(coro)
-    task_handle.add_done_callback(
-        lambda t: log.error(f"Training background task crashed / 后台训练任务异常: {t.exception()}") if t.exception() else None
-    )
+    try:
+        task_handle = asyncio.get_running_loop().run_in_executor(None, _run)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to schedule training / 无法调度训练: {exc}"}
+    def _report_launcher_failure(future):
+        if future.cancelled():
+            return  # The worker thread may still be running and owns settlement.
+        error = future.exception()
+        if error is not None:
+            log.error("Training background task crashed / 后台训练任务异常: %s", error)
 
-    _log_run_start(run_meta, task_id_short, Path(artifacts_dir))
+    try:
+        task_handle.add_done_callback(_report_launcher_failure)
+        _log_run_start(run_meta, task_id_short, Path(artifacts_dir))
+    except Exception:
+        # Scheduling succeeded: the worker now owns settlement even if reporting fails.
+        log.exception("Failed to report training start / 无法记录训练启动")
 
     return {
         "status": "success",
@@ -389,6 +406,8 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
 
     返回: (actual_backend, warning_message)
     """
+    if requested in ("torch", "sdpa", "flash"):
+        return "torch", ""
     available = _detect_available_attn()
 
     if requested in available:
@@ -396,16 +415,6 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
 
     if requested == "xformers" and "torch" in available:
         msg = "xformers not available / xformers 不可用; falling back to torch SDPA / 降级为 torch SDPA"
-        log.warning(msg)
-        return "torch", msg
-
-    if requested == "flash" and "xformers" in available:
-        msg = "flash_attn not available / flash_attn 不可用; falling back to xformers / 降级为 xformers"
-        log.warning(msg)
-        return "xformers", msg
-
-    if requested == "flash" and "torch" in available:
-        msg = "flash_attn and xformers both unavailable / 均不可用; falling back to torch SDPA / 降级为 torch SDPA"
         log.warning(msg)
         return "torch", msg
 
@@ -422,12 +431,17 @@ def _write_result_json(
 ) -> None:
     """写入结构化训练结果文件"""
     try:
+        total_seconds = max(0, int(duration_sec))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
         result = {
             "task_id": task_id,
             "status": status,
             "exit_code": exit_code,
             "duration_sec": round(duration_sec, 1),
-            "duration_str": f"{int(duration_sec // 60)}m {int(duration_sec % 60)}s",
+            "duration_str": duration_str,
+            "ended_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "error": error_msg if error_msg else None,
         }
         result_path = run_dir / "result.json"

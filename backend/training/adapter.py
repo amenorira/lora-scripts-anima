@@ -274,6 +274,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
+    from backend.training.attention_config import normalize_attention_config
+
+    normalize_attention_config(source)
     # lr_scheduler_type 已从产品配置移除；旧预设残留也不再透传给 sd-scripts。
     source.pop("lr_scheduler_type", None)
     try:

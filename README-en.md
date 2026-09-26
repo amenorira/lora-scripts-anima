@@ -44,7 +44,6 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
-- **Flash Attention Smart Install** — Provides prebuilt wheels for the fixed Python 3.12 + PyTorch 2.10+cu130 baseline; multi-mirror fallback downloads with resume and local caching; one-click installation
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
 - **Internationalization (i18n)** — Chinese and English UI with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
@@ -105,7 +104,7 @@ lora-scripts-anima/
 
 - **Python**: 64-bit Python 3.12 (the project baseline; prebuilt dependencies and the setup flow target this version)
 - **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
-- **PyTorch 2.10.0 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
+- **PyTorch 2.12.1 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
 - **NVIDIA driver R580 or newer**: the minimum driver version for CUDA 13.0
 
 > **Windows users do not need to preinstall Python.** On the first run, `start.bat` searches for 64-bit Python 3.12 and skips Microsoft Store placeholders.
@@ -118,11 +117,11 @@ lora-scripts-anima/
 
 | GPU Series | Automatically Installed PyTorch | CUDA |
 |------------|:-------------------------------:|:----:|
-| RTX 30 (Ampere) | 2.10.0 | 13.0 |
-| RTX 40 (Ada) | 2.10.0 | 13.0 |
-| RTX 50 (Blackwell) | 2.10.0 | 13.0 |
+| RTX 30 (Ampere) | 2.12.1 | 13.0 |
+| RTX 40 (Ada) | 2.12.1 | 13.0 |
+| RTX 50 (Blackwell) | 2.12.1 | 13.0 |
 
-Existing cu128 `venv` installations upgrade on the next launch. Installed xformers, FlashAttention, Triton, and bitsandbytes packages are aligned with cu130, while ONNX Runtime GPU moves to its CUDA 13-compatible version. Optional packages that were not installed remain unchanged.
+After updating the project, existing older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. Existing external FlashAttention packages are left installed but are no longer loaded by the trainer. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. Optional packages are not added if absent.
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
@@ -203,33 +202,11 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 | `--setup-git` | bool | false | Windows: non-interactively perform the recommended Git install/ZIP repair |
 | `--skip-git-setup` | bool | false | Windows: suppress Git installation or repository-repair prompts for this launch |
 
-## Flash Attention Acceleration
+## Attention Acceleration
 
-Recommended for RTX 40/50 series GPUs for optimal training performance. The startup script checks the installation status automatically.
+Anima defaults to `torch` and Krea2 to `sdpa`. Native PyTorch SDPA selects suitable accelerated kernels, including built-in FlashAttention, without external `flash-attn`.
 
-### GUI Install
-
-Launch the GUI and install from the **Environment** tab; installing from a local `.whl` offline is also supported.
-
-### Manual Install
-
-Windows:
-
-```powershell
-.\venv\Scripts\python.exe tools/install_flash_attn.py           # Interactive install
-.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # Specify a wheel URL or local .whl path
-.\venv\Scripts\python.exe tools/install_flash_attn.py --yes     # Non-interactive install
-.\venv\Scripts\python.exe tools/install_flash_attn.py --force   # Force reinstall even if installed
-```
-
-Linux:
-
-```sh
-./venv/bin/python tools/install_flash_attn.py           # Interactive install
-./venv/bin/python tools/install_flash_attn.py --url URL # Specify a wheel URL or local .whl path
-./venv/bin/python tools/install_flash_attn.py --yes     # Non-interactive install
-./venv/bin/python tools/install_flash_attn.py --force   # Force reinstall even if installed
-```
+Legacy `flash` / `flash_attn` configurations automatically migrate to native SDPA. Project processes no longer load external FlashAttention. Existing packages remain in the venv without automatic upgrades or uninstallation, and incompatible old wheels no longer trigger repeated import warnings. PyTorch's built-in acceleration is unaffected.
 
 ## EmoSens Adaptive Optimizer
 
@@ -274,7 +251,6 @@ Tests are grouped by feature. The common entrypoint also runs standalone JavaScr
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Early design reference
-- [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel source
 
 ## License
 

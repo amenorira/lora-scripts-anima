@@ -35,15 +35,8 @@ def _git_version() -> str:
     global _git_version_cache
     if _git_version_cache is not None:
         return _git_version_cache
-    try:
-        result = launch_utils.run_capture_text(
-            ["git", "describe", "--tags", "--always"],
-            cwd=str(REPO_ROOT),
-        )
-        _git_version_cache = result.stdout.strip() or "dev"
-        return _git_version_cache
-    except Exception:
-        return "dev"
+    _git_version_cache = launch_utils.app_version(REPO_ROOT)
+    return _git_version_cache
 
 
 @router.get("/health")

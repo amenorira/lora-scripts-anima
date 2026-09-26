@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lora-scripts-anima</title>
-  <link rel="icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" href="/favicon.png">
   <!-- Blocking script: set theme BEFORE any rendering to avoid flash -->
   <script>
     (function(){
@@ -23,43 +23,43 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260923-sidebar1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260924-reviewfix1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260923-sidebar1">
+  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260920-dictionary3">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
-  <script src="/anima-ui/js/i18n.js" defer></script>
+  <script src="/anima-ui/js/i18n.js?v=20260924-eta-trend7" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/anima-select.js?v=20260914-motion2" defer></script>
-  <script src="/anima-ui/js/realtime.js" defer></script>
+  <script src="/anima-ui/js/config.js?v=20260924-page-headings5" defer></script>
+  <script src="/anima-ui/js/anima-select.js?v=20260924-review5" defer></script>
+  <script src="/anima-ui/js/realtime.js?v=20260924-monitor-time1" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20260920-rich-logs2" defer></script>
-  <script src="/anima-ui/js/monitor-core.js" defer></script>
-  <script src="/anima-ui/js/monitor-render.js?v=20260920-output-selection1" defer></script>
+  <script src="/anima-ui/js/monitor-core.js?v=20260924-eta-trend7" defer></script>
+  <script src="/anima-ui/js/monitor-render.js?v=20260924-reviewfix1" defer></script>
   <script src="/anima-ui/js/environment-core.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20260920-dict-counts1" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260922-simplify1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260924-optlabel1" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20260909-previewfix15" defer></script>
   <script src="/anima-ui/js/preview-select.js?v=20260914-motion2" defer></script>
   <script src="/anima-ui/js/training-shape-preview.js?v=20260917-kronscale1" defer></script>
-  <script src="/anima-ui/js/training-toml.js?v=20260922-lifecycle2" defer></script>
+  <script src="/anima-ui/js/training-toml.js?v=20260924-review5" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260920-caption-escape1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260924-suggest-merge1" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260924-page-headings5" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20260924-suggest-batch1" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260920-dictionary3" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260923-sidebar1" defer></script>
+  <script src="/anima-ui/js/app.js?v=20260926-version-fallback" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
-<body x-data="animaApp()" x-init="init()" x-cloak>
+<body x-data="animaApp()" x-cloak>
 
 <a href="#mainContent" class="skip-link">Skip to main content</a>
 
@@ -241,7 +241,7 @@
               <span class="home-badge-l">License</span><span class="home-badge-v home-badge-v-license">MIT</span>
             </a>
             <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/releases" target="_blank" rel="noopener">
-              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release" x-text="displayVersion()">v1.3.3</span>
+              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release" x-text="displayVersion()">...</span>
             </a>
           </div>
 
@@ -254,12 +254,11 @@
           <div class="page-header">
             <div class="monitor-page-heading">
               <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
-              <span class="monitor-page-kicker" x-text="t('monitor.consoleSubtitle','Training control center')">Training control center</span>
             </div>
             <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
             <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
           </div>
-          <div id="monitorControlbar"></div>
+          <div id="monitorHistoryContext"></div>
           <!-- Monitor Tabs -->
           <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs','Dashboard views')">
             <button id="monitor-tab-overview" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'overview' }"
@@ -1352,7 +1351,6 @@
       <div x-show="currentRoute === 'environment'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('environment.title')">Environment</h1>
-          <p class="page-subtitle" x-text="t('environment.subtitle')">Manage Flash Attention & acceleration libraries</p>
         </div>
         <div id="environmentPage"></div>
       </div>
@@ -1361,7 +1359,6 @@
       <div x-show="currentRoute === 'settings'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
-          <p class="page-subtitle" x-text="t('settings.subtitle')">Customize your training UI experience</p>
         </div>
         <div class="env-section">
           <div class="settings-row">
@@ -1514,32 +1511,38 @@
 </div>
 
 <!-- ── Built-in File Picker Modal ─────────────────────── -->
-<!-- 内置文件浏览器：builtinFilePicker() 拉取 /api/get_files 列表后置 showFilePickerModalFlag=true 弹出。
+<!-- 内置文件浏览器：builtinFilePicker() 先打开弹窗，再拉取 /api/get_files 列表。
      标题显示目标字段与扫描目录，当前值高亮，支持 ↑↓/Enter/Esc 键盘操作。 -->
-<div class="modal-overlay" x-show="showFilePickerModalFlag" :inert="!showFilePickerModalFlag" @click.self="showFilePickerModalFlag = false"
-     @keydown.escape.window="showFilePickerModalFlag = false" x-cloak>
+<div class="modal-overlay" x-show="showFilePickerModalFlag" :inert="!showFilePickerModalFlag" @click.self="closeFilePickerModal()"
+     @keydown.escape.window="closeFilePickerModal()" x-cloak>
   <div class="modal picker-modal">
     <div class="modal-header picker-header">
       <div class="picker-title-wrap">
         <span x-text="pickerTitle()"></span>
         <span class="picker-context" x-text="pickerContextText()"></span>
       </div>
-      <button class="btn-icon" @click="showFilePickerModalFlag = false" :aria-label="t('common.close')">
+      <button class="btn-icon" @click="closeFilePickerModal()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="picker-filter-row">
       <input type="text" class="input" id="pickerFilterInput" x-model="_pickerFilter" @input="_pickerIndex = -1"
+             :disabled="_pickerLoading || !!_pickerError"
              @keydown.arrow-down.prevent="pickerMove(1, $event)"
              @keydown.arrow-up.prevent="pickerMove(-1, $event)"
              @keydown.enter.prevent="pickerConfirm($event)"
-             @keydown.escape.prevent="showFilePickerModalFlag = false"
+             @keydown.escape.prevent="closeFilePickerModal()"
              :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
       <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint','↑↓ select · Enter confirm')"></span>
     </div>
     <div class="picker-list">
-      <p class="picker-empty" x-show="filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
-      <template x-for="group in pickerGroups" :key="group.dir || '__root'">
+      <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading','Scanning files…')" role="status"></p>
+      <div class="picker-empty" x-show="!_pickerLoading && _pickerError" role="alert">
+        <span x-text="_pickerError"></span>
+        <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry','Retry')"></button>
+      </div>
+      <p class="picker-empty" x-show="!_pickerLoading && !_pickerError && filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
+      <template x-for="group in (!_pickerLoading && !_pickerError ? pickerGroups : [])" :key="group.dir || '__root'">
         <div class="picker-group">
           <div class="picker-group-header" x-show="group.dir" x-text="group.dir + '/'"></div>
           <template x-for="f in group.files" :key="f.path">
@@ -1565,7 +1568,7 @@
     </div>
     <div class="modal-footer picker-footer">
       <span class="picker-count" x-show="pickerCountText()" x-text="pickerCountText()"></span>
-      <button class="btn btn-ghost btn-sm" @click="showFilePickerModalFlag = false" x-text="t('common.cancel')">Cancel</button>
+      <button class="btn btn-ghost btn-sm" @click="closeFilePickerModal()" x-text="t('common.cancel')">Cancel</button>
     </div>
   </div>
 </div>

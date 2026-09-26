@@ -43,7 +43,6 @@ _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
-    "flash_attn": "flash_attn",
     "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
@@ -832,7 +831,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_attention_backend",
         "options": [
             {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
-            {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
             {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
             {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
@@ -1644,6 +1642,9 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
 
 def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     """Validate and normalize the strict Krea 2 UI payload."""
+    from backend.training.attention_config import normalize_attention_config
+
+    normalize_attention_config(config)
 
     # Keep old saved Krea presets and direct API callers compatible with newer
     # optional controls.  The browser normally supplies these defaults, but a
@@ -1955,6 +1956,10 @@ def build_krea2_train_config(
     sample_prompts_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Encode only musubi Krea 2 flags into the flat training TOML."""
+    from backend.training.attention_config import normalize_attention_config
+
+    config = dict(config)
+    normalize_attention_config(config)
 
     optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this

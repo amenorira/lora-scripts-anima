@@ -15,7 +15,6 @@ document.addEventListener('alpine:init', () => {
     resolvedTheme: 'light',
     currentRoute: 'home',
     pageTitle: 'lora-scripts-anima',
-    pageSubtitle: '',
     locale: 'en-US',
     i18nReady: true,
     showThemeDropdown: false,
@@ -24,6 +23,9 @@ document.addEventListener('alpine:init', () => {
     _routeScrollPositions: {},
     routeTransitioning: false,
     _routeTransitionSeq: 0,
+    _pendingRoute: '',
+    _historyIndex: 0,
+    _blockedRoute: null,
 
     // Progress bar (determinate 0→100%)
     progressPercent: 0,
@@ -61,9 +63,13 @@ document.addEventListener('alpine:init', () => {
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
       this.currentRoute = route;
+      const historyState = window.history.state || {};
+      this._historyIndex = Number.isInteger(historyState.animaIndex) ? historyState.animaIndex : 0;
+      if (historyState.animaRoute !== route) {
+        window.history.replaceState({ ...historyState, animaRoute: route, animaIndex: this._historyIndex }, '', window.location.href);
+      }
       const cfg = ROUTE_CONFIG[route];
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
-      this.pageSubtitle = cfg.subtitleKey ? (this.t(cfg.subtitleKey) || cfg.subtitle || '') : (cfg.subtitle || '');
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
       try {
@@ -134,8 +140,6 @@ document.addEventListener('alpine:init', () => {
         const cfg = ROUTE_CONFIG[r] || {};
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
         else this.pageTitle = cfg.title || r;
-        if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
-        else this.pageSubtitle = cfg.subtitle || '';
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
@@ -231,24 +235,82 @@ document.addEventListener('alpine:init', () => {
 
     // ── Routing ─────────────────────────────────────────────
     navigate(route) {
-      if (!this._teConfirmNav(route)) return;
       if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
         return;
       }
-      this.routeTransitioning = true;
-      this.startProgress();
-      window.location.hash = route;
+      const commit = () => {
+        const nextIndex = this._historyIndex + 1;
+        window.history.pushState({ ...(window.history.state || {}), animaRoute: route, animaIndex: nextIndex }, '', '#' + route);
+        this._historyIndex = nextIndex;
+        this._scheduleRoute(route);
+      };
+      if (this._routeNeedsConfirmation()) {
+        if (!this.showConfirmModal) this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), commit);
+        return;
+      }
+      commit();
     },
 
     handleRoute() {
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
-
-      const prev = this.currentRoute;
-      if (route === prev) {
+      if (route === this.currentRoute) {
+        const currentState = window.history.state || {};
+        if (currentState.animaRoute === route && Number.isInteger(currentState.animaIndex)) {
+          this._historyIndex = currentState.animaIndex;
+        }
+        if (this._blockedRoute && !this._blockedRoute.reverted) {
+          this._blockedRoute.reverted = true;
+          if (this._blockedRoute.accepted) this._retryBlockedRoute();
+        }
+        if (this._pendingRoute) {
+          ++this._routeTransitionSeq;
+          this._pendingRoute = '';
+          this.routeTransitioning = false;
+          this.finishProgress();
+        }
         return;
       }
+      const state = window.history.state || {};
+      const targetIndex = state.animaRoute === route && Number.isInteger(state.animaIndex)
+        ? state.animaIndex : null;
+      const accepted = this._blockedRoute && this._blockedRoute.accepted && this._blockedRoute.route === route;
+      if (!accepted && this._routeNeedsConfirmation()) {
+        const delta = targetIndex === null ? -1 : this._historyIndex - targetIndex;
+        this._blockedRoute = { route, delta, accepted: false, reverted: false };
+        // Traverse back to the committed entry. Replacing the target URL here
+        // destroys the browser's Back/Forward entry.
+        window.history.go(delta || -1);
+        if (!this.showConfirmModal) {
+          this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), () => {
+            if (!this._blockedRoute) return;
+            this._blockedRoute.accepted = true;
+            if (this._blockedRoute.reverted) this._retryBlockedRoute();
+          });
+        }
+        return;
+      }
+      this._blockedRoute = null;
+      this._historyIndex = targetIndex === null ? this._historyIndex + 1 : targetIndex;
+      if (targetIndex === null) {
+        window.history.replaceState({ ...state, animaRoute: route, animaIndex: this._historyIndex }, '', window.location.href);
+      }
+      this._scheduleRoute(route);
+    },
+
+    _routeNeedsConfirmation() {
+      return this.currentRoute === 'tagEditor' && this._teHasUnsavedEdits();
+    },
+
+    _retryBlockedRoute() {
+      const blocked = this._blockedRoute;
+      if (blocked) window.history.go(-(blocked.delta || -1));
+    },
+
+    _scheduleRoute(route) {
+      const prev = this.currentRoute;
       const transitionSeq = ++this._routeTransitionSeq;
+      this._pendingRoute = route;
       if (!this.routeTransitioning) {
         this.routeTransitioning = true;
         this.startProgress();
@@ -261,6 +323,7 @@ document.addEventListener('alpine:init', () => {
       const mountDelay = 16;
       setTimeout(() => {
         if (transitionSeq !== this._routeTransitionSeq) return;
+        this._pendingRoute = '';
         this._commitRoute(route, prev, transitionSeq);
       }, mountDelay);
     },
@@ -285,8 +348,6 @@ document.addEventListener('alpine:init', () => {
       const cfg = ROUTE_CONFIG[route];
       if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || route;
       else this.pageTitle = cfg.title || route;
-      if (cfg.subtitleKey) this.pageSubtitle = this.t(cfg.subtitleKey) || cfg.subtitle || '';
-      else this.pageSubtitle = cfg.subtitle || '';
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
       const progressManagedByRoute = this.buildRouteContent({ routeTransition: true });
@@ -506,11 +567,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Home hero "Release" badge: use the real version from /api/version
-    // (e.g. "v2.3.6-4-g3dc39b4f" → "v2.3.6"). Falls back to the static text
-    // until the version fetch resolves or when the backend is unreachable.
+    // (e.g. "v26.925.80307-4-g3dc39b4f" → "v26.925.80307").
+    // Keep loading/unknown states explicit instead of showing an old release.
     displayVersion() {
       const v = String(this.version || '');
-      if (!v || v === '...' || v === 'dev') return 'v1.3.3';
+      if (!v || v === '...') return '...';
+      if (v === 'dev') return 'dev';
       const m = v.match(/^v?\d+\.\d+\.\d+/);
       return m ? m[0] : v;
     },

@@ -60,6 +60,10 @@ window.trainingCoreMixin = {
   _pickerKey: '',
   _pickerFiles: [],
   _pickerFilter: '',
+  _pickerLoading: false,
+  _pickerError: '',
+  _pickerRequestSeq: 0,
+  _pickerRole: '',
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
@@ -785,9 +789,8 @@ window.trainingCoreMixin = {
     this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
 
-    // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
+    // 非阻塞静默刷新可管理扩展的环境状态，
     // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
-    this.faRefresh(true).catch(() => {});
     this.xfRefresh(true).catch(() => {});
     if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
@@ -1404,6 +1407,8 @@ window.trainingCoreMixin = {
     return option ? this.t(option.dk, option.l || value) : (value || '');
   },
 
+  // 选项标签解析入口：表单预览、监控参数摘要共用。
+  // 值可能来自历史 TOML（大小写与下拉选项不完全一致），故精确匹配失败后按小写兜底。
   _fieldOptionLabel(fieldKey, value, fallback = '') {
     const field = this._fieldDefinition(fieldKey, this.form.model_train_type || 'anima-lora');
     if (!field) return String(value ?? fallback ?? '');
@@ -1414,9 +1419,11 @@ window.trainingCoreMixin = {
         if (Array.isArray(group.options)) options.push(...group.options);
       });
     }
-    const option = options.find(item => String(item.v) === String(value));
-    if (!option) return String(value ?? fallback ?? '');
-    return this.t(option.dk, option.l || String(value ?? fallback ?? ''));
+    const text = String(value ?? fallback ?? '');
+    const option = options.find(item => String(item.v) === String(value))
+      || options.find(item => String(item.v).toLowerCase() === text.toLowerCase());
+    if (!option) return text;
+    return this.t(option.dk, option.l || text);
   },
 
   _openManagedModal(stateKey, focusKey, focusSelector, afterOpen) {
@@ -2229,7 +2236,7 @@ window.trainingCoreMixin = {
       </div>
       ${fullWidthRow}
       ${hintHtml}
-      ${(this.formErrors && this.formErrors[dataKey]) ? `<div class="field-error">${this.formErrors[dataKey]}</div>` : ''}
+      <div class="field-error" x-show="formErrors && formErrors.${dataKey}" x-text="formErrors.${dataKey} || ''" x-cloak></div>
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
       ${readonlyWarnHtml}
@@ -2237,7 +2244,7 @@ window.trainingCoreMixin = {
   },
 
   // ── 环境联动提示：检查当前字段值依赖的后端是否已安装（Alpine 响应式）──
-  // x-show 与 faStatus/xfStatus/tritonStatus 及 form 值联动，环境数据异步到达后自动显示。
+  // x-show 与扩展状态及 form 值联动。
   _getEnvHint(dataKey) {
     switch (dataKey) {
       case 'timestep_sampling':
@@ -2258,8 +2265,7 @@ window.trainingCoreMixin = {
       case 'network_module':
         return this._shapePreviewEntry();
       case 'attn_mode':
-        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
-             + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
@@ -3884,11 +3890,10 @@ window.trainingCoreMixin = {
       }
     }
 
-    // Clear error for this field on change and re-render to update UI
+    // The error node is reactive; rebuilding the form here would replace the
+    // focused input after its first corrected keystroke.
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null, true);
-      return;
     }
     this.updateTomlDebounced();
   },
@@ -4111,17 +4116,29 @@ window.trainingCoreMixin = {
     // Anima mode: vae and qwen3 are required
     if (String(this.form.model_train_type) === 'anima-lora') {
       if (!this.form.vae || String(this.form.vae).trim() === '') {
-        errors['vae'] = window.t('common.vaeRequired');
+        errors['vae'] = this.t('common.vaeRequired');
       }
       if (!this.form.qwen3 || String(this.form.qwen3).trim() === '') {
-        errors['qwen3'] = window.t('common.qwen3Required');
+        errors['qwen3'] = this.t('common.qwen3Required');
       }
     }
 
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;
     if (hasErrors) {
-      this.renderTrainingForm(this.form.model_train_type || 'anima-lora', null, true);
+      this.$nextTick(() => {
+        const firstKey = Object.keys(errors)[0];
+        const row = Array.from(document.querySelectorAll('#trainFormContent [data-field-row]'))
+          .find(item => item.getAttribute('data-field-row') === firstKey);
+        if (!row) return;
+        const card = row.closest('.card[data-section]');
+        if (card && this._sectionCollapsed[card.dataset.section]) {
+          this.toggleSection(card.dataset.section);
+        }
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const input = row.querySelector('input:not([type="hidden"]), textarea, .anima-select-trigger');
+        if (input) input.focus({ preventScroll: true });
+      });
     }
     return !hasErrors;
   },
@@ -4153,12 +4170,46 @@ window.trainingCoreMixin = {
     if (role==='file-folder') pickType='train-dir';
     if (role==='file-model') pickType='model-file';
     if (role==='file-model-saved') pickType='model-saved-file';
+    const requestSeq = ++this._pickerRequestSeq;
+    this._pickerRole = role;
+    this.showFilePickerModal(key, [], pickType);
+    this._pickerLoading = true;
+    this._pickerError = '';
     try {
       const r = await fetch('/api/get_files?pick_type='+pickType);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
-      const files = (d.status==='success'&&d.data) ? (d.data.files||d.data) : [];
-      this.showFilePickerModal(key, Array.isArray(files)?files:[], pickType);
-    } catch(e) { this.toast(this.t('common.fileBrowserFailed')); }
+      if (requestSeq !== this._pickerRequestSeq || !this.showFilePickerModalFlag) return;
+      if (d.status !== 'success') throw new Error(d.message || this.t('common.fileBrowserFailed'));
+      const files = d.data ? (d.data.files || d.data) : [];
+      this._pickerFiles = Array.isArray(files) ? files : [];
+      this._pickerCurrent = this._normalizePickerPath(this.form[key]);
+      this._pickerIndex = this._pickerCurrent
+        ? this.filteredPickerFiles.findIndex(f => this._normalizePickerPath(f.path) === this._pickerCurrent)
+        : -1;
+      this.$nextTick(() => {
+        if (requestSeq !== this._pickerRequestSeq) return;
+        const input = document.getElementById('pickerFilterInput');
+        if (input) input.focus();
+        const active = document.querySelector('.picker-row.is-current');
+        if (active) active.scrollIntoView({ block: 'center' });
+      });
+    } catch(e) {
+      if (requestSeq !== this._pickerRequestSeq || !this.showFilePickerModalFlag) return;
+      this._pickerError = e.message || this.t('common.fileBrowserFailed');
+    } finally {
+      if (requestSeq === this._pickerRequestSeq) this._pickerLoading = false;
+    }
+  },
+
+  closeFilePickerModal() {
+    this._pickerRequestSeq++;
+    this._pickerLoading = false;
+    this.showFilePickerModalFlag = false;
+  },
+
+  retryFilePicker() {
+    if (this._pickerKey && this._pickerRole) this.builtinFilePicker(this._pickerKey, this._pickerRole);
   },
 
   // 与后端 get_files 的扫描根目录保持一致，用于弹窗上下文显示与子目录分组
@@ -4168,6 +4219,7 @@ window.trainingCoreMixin = {
     this._pickerKey = key;
     this._pickerFiles = files || [];
     this._pickerFilter = '';
+    this._pickerError = '';
     this._pickerKind = pickType || '';
     this._pickerRoot = this.PICKER_ROOTS[pickType] || '';
     this._pickerCurrent = this._normalizePickerPath(this.form[key]);
@@ -4290,7 +4342,7 @@ window.trainingCoreMixin = {
   },
 
   pickerMove(delta, e) {
-    if (!this.showFilePickerModalFlag) return;
+    if (!this.showFilePickerModalFlag || this._pickerLoading || this._pickerError) return;
     const n = this.filteredPickerFiles.length;
     if (!n) return;
     if (e) e.preventDefault();
@@ -4305,7 +4357,7 @@ window.trainingCoreMixin = {
   },
 
   pickerConfirm(e) {
-    if (!this.showFilePickerModalFlag) return;
+    if (!this.showFilePickerModalFlag || this._pickerLoading || this._pickerError) return;
     // 焦点在取消/关闭按钮上时，让按钮自身的点击行为生效
     if (e && e.target && e.target.tagName === 'BUTTON') return;
     if (e) e.preventDefault();
@@ -4319,7 +4371,7 @@ window.trainingCoreMixin = {
   pickFileFromModal(file) {
     if (!file) return;
     this.setField(this._pickerKey, file.path || file.name || '');
-    this.showFilePickerModalFlag = false;
+    this.closeFilePickerModal();
   },
 
   // ── Training status from the shared realtime snapshot ─────

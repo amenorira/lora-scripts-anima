@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from backend.image_preview import get_cached_preview_path
+from backend.server.routes.image_preview import _resolve_dataset_image
 from backend.server.application import app
 from backend.tageditor.sessions import dataset_sessions
 from backend.tagger.workspace import scan_source
@@ -106,6 +108,53 @@ class SharedImagePreviewTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers["content-type"], "image/webp")
             self.assertEqual(denied.status_code, 404)
+
+    def test_dataset_preview_index_refreshes_with_session(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = root / "first.png"
+            second = root / "second.png"
+            Image.new("RGB", (8, 8)).save(first)
+            session = dataset_sessions.create(str(root), True)
+            self.assertEqual(_resolve_dataset_image(session.id, "first.png"), first.resolve())
+            Image.new("RGB", (8, 8)).save(second)
+            first.unlink()
+            dataset_sessions.refresh(session.id)
+            self.assertIsNone(_resolve_dataset_image(session.id, "first.png"))
+            self.assertEqual(_resolve_dataset_image(session.id, "second.png"), second.resolve())
+            self.assertIsNone(_resolve_dataset_image(session.id, "../second.png"))
+            dataset_sessions.delete(session.id)
+
+    def test_same_preview_key_renders_once_with_concurrent_requests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.png"
+            Image.new("RGB", (40, 30), (12, 34, 56)).save(source)
+            cache = root / "cache"
+            entered = threading.Event()
+            release = threading.Event()
+            calls = []
+            original_save = Image.Image.save
+
+            def slow_save(image, target, **kwargs):
+                calls.append(target)
+                entered.set()
+                self.assertTrue(release.wait(5))
+                return original_save(image, target, **kwargs)
+
+            results = []
+            with patch.object(Image.Image, "save", slow_save):
+                first = threading.Thread(target=lambda: results.append(get_cached_preview_path(source, "thumb", cache_dir=cache)))
+                second = threading.Thread(target=lambda: results.append(get_cached_preview_path(source, "thumb", cache_dir=cache)))
+                first.start()
+                self.assertTrue(entered.wait(5))
+                second.start()
+                release.set()
+                first.join(5)
+                second.join(5)
+            self.assertFalse(first.is_alive() or second.is_alive())
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(results[0], results[1])
 
 
 if __name__ == "__main__":

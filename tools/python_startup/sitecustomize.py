@@ -6,6 +6,10 @@ import os
 import subprocess
 import sys
 
+# Leave installed files untouched. Vendor optional imports must not load the
+# retired external extension, even when an old wheel remains in this venv.
+sys.modules["flash_attn"] = None
+
 
 _BNB_GAUDI_PROBE = "pip list | grep habana-torch-plugin"
 _PATCH_FLAG = "_anima_bitsandbytes_windows_compat"

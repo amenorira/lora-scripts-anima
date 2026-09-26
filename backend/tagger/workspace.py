@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict, deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from queue import Full, Queue
 from typing import Any
@@ -32,8 +32,10 @@ _IMAGE_EXTENSIONS = {
 }
 _SOURCE_TTL = 3600
 _TASK_TTL = 3600
+_TASK_KEEP_MAX = 8
 _MAX_LOGS = 200
 _MAX_RECENT_ITEMS = 120
+_ACTIVE_TASK_STATUSES = frozenset({"created", "running", "cancelling"})
 
 _sources: dict[str, dict[str, Any]] = {}
 _sources_lock = threading.Lock()
@@ -48,15 +50,21 @@ def _is_image(path: Path) -> bool:
 def _cleanup() -> None:
     now = time.time()
     with _tasks_lock:
+        for task_id, task in list(_tasks.items()):
+            if task.get("status") in {"done", "cancelled", "error"} and now - task.get("updated_at", now) > _TASK_TTL:
+                _tasks.pop(task_id, None)
+        terminal = sorted(
+            ((task_id, task) for task_id, task in _tasks.items()
+             if task.get("status") in {"done", "cancelled", "error"}),
+            key=lambda entry: entry[1].get("updated_at", 0),
+        )
+        for task_id, _ in terminal[:-_TASK_KEEP_MAX]:
+            _tasks.pop(task_id, None)
         retained_tokens = {task["source_token"] for task in _tasks.values()}
     with _sources_lock:
         for token, source in list(_sources.items()):
             if token not in retained_tokens and now - source.get("created_at", now) > _SOURCE_TTL:
                 _sources.pop(token, None)
-    with _tasks_lock:
-        for task_id, task in list(_tasks.items()):
-            if task.get("status") in {"done", "cancelled", "error"} and now - task.get("updated_at", now) > _TASK_TTL:
-                _tasks.pop(task_id, None)
 
 
 def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
@@ -163,7 +171,7 @@ def training_active() -> bool:
 
 def has_active_tagger_task() -> bool:
     with _tasks_lock:
-        active = any(task.get("status") in {"created", "running"} for task in _tasks.values())
+        active = any(task.get("status") in _ACTIVE_TASK_STATUSES for task in _tasks.values())
     return active or has_active_legacy_tagger_task()
 
 
@@ -217,14 +225,18 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
         raise KeyError("Task not found / 任务不存在")
     with task["lock"]:
         items = task["items"]
+        start = max(0, offset)
+        page_size = max(1, min(limit, 500))
         if failed_only:
             indexed = [(idx, item) for idx, item in enumerate(items) if item.get("status") == "failed"]
+            total = len(indexed)
+            page = indexed[start:start + page_size]
         else:
-            indexed = list(enumerate(items))
-        page = indexed[max(0, offset):max(0, offset) + max(1, min(limit, 500))]
+            total = len(items)
+            page = enumerate(items[start:start + page_size], start=start)
         return {
-            "total": len(indexed),
-            "offset": max(0, offset),
+            "total": total,
+            "offset": start,
             "items": [
                 dict(item, index=index, result=task["results"].get(index))
                 for index, item in page
@@ -389,96 +401,114 @@ def _run_api_task(
     write_captions: bool,
     config: api_engine.ApiConfig,
 ) -> None:
-    task["started_at"] = time.time()
-    task["status"] = "running"
-    task["phase"] = "api_request"
+    with task["lock"]:
+        task["started_at"] = time.time()
+        task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
+        task["phase"] = "api_request"
     _task_log(
         task,
         f"API task started / API 任务已启动: {len(paths)} images / 共 {len(paths)} 张图片; "
         f"model: {config.model}; endpoint: {config.base_url}; concurrency: {config.concurrency}",
     )
-    client = api_engine.create_client(config)
-    pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
+    client = None
+    pool = None
+    auth_error = None
+    task_error = None
     try:
-        futures = {
-            pool.submit(
-                _api_tag_one,
-                task["cancel_event"], config, client, index, path, options, conflict, write_captions,
-            ): (index, path)
-            for index, path in enumerate(paths)
-        }
-        for future in as_completed(futures):
-            index, path = futures[future]
-            try:
-                outcome = future.result()
-            except api_engine.ApiAuthError as exc:
-                task["cancel_event"].set()
-                with task["lock"]:
-                    task["status"] = "error"
-                    task["phase"] = "error"
-                    task["error_detail"] = f"API authentication failed / API 鉴权失败: {str(exc)[:240]}"
-                _task_log(task, f"Task aborted / 任务中止: {task['error_detail']}")
-                break
-            except Exception as exc:
-                outcome = {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
-            status = outcome["status"]
-            if status == "aborted":
-                if task["cancel_event"].is_set():
-                    break
-                continue
-            with task["lock"]:
-                task["current"] += 1
-                task["current_file"] = path.name
-                if status == "success":
-                    task["success"] += 1
-                    task["items"][index].update({"status": "success", "tag_count": outcome["tag_count"]})
-                    task["current_result"] = outcome["result"]
-                    task["results"][index] = outcome["result"]
-                elif status == "skipped":
-                    task["skipped"] += 1
-                    task["items"][index].update({"status": "skipped", "tag_count": outcome["tag_count"]})
-                    task["current_result"] = outcome["result"]
-                    task["results"][index] = outcome["result"]
-                else:
-                    task["failed"] += 1
-                    task["items"][index].update({"status": "failed", "error": outcome.get("error", "")})
-                task["updated_at"] = time.time()
-                current = task["current"]
-            if status == "skipped":
-                _task_log(task, f"[{current}/{len(paths)}] {path.name}: existing caption skipped / 已有标注，跳过")
-            elif status == "failed":
-                _task_log(task, f"[{current}/{len(paths)}] Failed {path.name} / 失败: {outcome.get('error', '')}")
-            else:
-                _task_log(task, f"[{current}/{len(paths)}] {path.name}: {outcome['tag_count']} tags ({status}) / {outcome['tag_count']} 个标签（{status}）")
-            if task["cancel_event"].is_set():
-                break
-        if task["status"] == "running":
-            if task["cancel_event"].is_set():
+        if not task["cancel_event"].is_set():
+            client = api_engine.create_client(config)
+            pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
+            pending = {}
+            source = iter(enumerate(paths))
+
+            def fill_pending():
+                while len(pending) < config.concurrency and not task["cancel_event"].is_set():
+                    try:
+                        index, path = next(source)
+                    except StopIteration:
+                        break
+                    future = pool.submit(
+                        _api_tag_one, task["cancel_event"], config, client, index, path,
+                        options, conflict, write_captions,
+                    )
+                    pending[future] = (index, path)
+
+            fill_pending()
+            while pending:
+                completed, _ = wait(tuple(pending), timeout=0.1, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    index, path = pending.pop(future)
+                    try:
+                        outcome = future.result()
+                    except api_engine.ApiAuthError as exc:
+                        auth_error = f"API authentication failed / API 鉴权失败: {str(exc)[:240]}"
+                        task["cancel_event"].set()
+                        continue
+                    except Exception as exc:
+                        outcome = {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+                    status = outcome["status"]
+                    if status == "aborted":
+                        continue
+                    with task["lock"]:
+                        task["current"] += 1
+                        task["current_file"] = path.name
+                        if status in {"success", "skipped"}:
+                            task[status] += 1
+                            task["items"][index].update({"status": status, "tag_count": outcome["tag_count"]})
+                            task["current_result"] = outcome["result"]
+                            task["results"][index] = outcome["result"]
+                        else:
+                            task["failed"] += 1
+                            task["items"][index].update({"status": "failed", "error": outcome.get("error", "")})
+                        task["updated_at"] = time.time()
+                        current = task["current"]
+                    if status == "skipped":
+                        _task_log(task, f"[{current}/{len(paths)}] {path.name}: existing caption skipped / 已有标注，跳过")
+                    elif status == "failed":
+                        _task_log(task, f"[{current}/{len(paths)}] Failed {path.name} / 失败: {outcome.get('error', '')}")
+                    else:
+                        _task_log(task, f"[{current}/{len(paths)}] {path.name}: {outcome['tag_count']} tags ({status}) / {outcome['tag_count']} 个标签（{status}）")
+                fill_pending()
+    except Exception as exc:
+        log.exception("Tagger API task failed / 打标 API 任务失败")
+        task_error = str(exc)[:500]
+    finally:
+        task["cancel_event"].set()
+        settle_error = None
+        try:
+            if pool is not None:
+                pool.shutdown(wait=True, cancel_futures=True)
+        except Exception as exc:
+            settle_error = str(exc)[:500]
+        try:
+            if client is not None:
+                client.close()
+        except Exception as exc:
+            settle_error = settle_error or str(exc)[:500]
+        if task.get("resource_claim"):
+            tm.release_external(task["resource_claim"])
+        if task.get("dataset_claim"):
+            tm.release_dataset_reader(task["dataset_claim"])
+        with task["lock"]:
+            if auth_error or task_error or settle_error:
+                task["status"] = "error"
+                task["phase"] = "error"
+                task["error_detail"] = auth_error or task_error or settle_error
+            elif task["status"] == "cancelling" or task["cancel_event"].is_set() and task["current"] < task["total"]:
                 task["status"] = "cancelled"
                 task["phase"] = "cancelled"
-                _task_log(task, "Task cancelled by user / 任务已被用户取消")
             else:
                 task["status"] = "done"
                 task["phase"] = "completed"
-                elapsed = max(0.0, time.time() - task["started_at"])
-                _task_log(
-                    task,
-                    f"Task completed in {elapsed:.1f}s / 任务完成，用时 {elapsed:.1f}s: "
-                    f"{task['success']} succeeded, {task['skipped']} skipped, {task['failed']} failed / "
-                    f"成功 {task['success']}，跳过 {task['skipped']}，失败 {task['failed']}",
-                )
-    except Exception as exc:
-        log.exception("Tagger API task failed / 打标 API 任务失败")
-        with task["lock"]:
-            task["status"] = "error"
-            task["phase"] = "error"
-            task["error_detail"] = str(exc)[:500]
-        _task_log(task, f"Task failed / 任务失败: {str(exc)[:500]}")
-    finally:
-        task["cancel_event"].set()
-        pool.shutdown(wait=False, cancel_futures=True)
-        client.close()
-        task["updated_at"] = time.time()
+            task["updated_at"] = time.time()
+            final_status = task["status"]
+        if final_status == "done":
+            elapsed = max(0.0, time.time() - task["started_at"])
+            _task_log(task, f"Task completed in {elapsed:.1f}s / 任务完成，用时 {elapsed:.1f}s")
+        elif final_status == "cancelled":
+            _task_log(task, "Task cancelled by user / 任务已被用户取消")
+        else:
+            _task_log(task, f"Task failed / 任务失败: {task['error_detail']}")
 
 
 def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: threading.Event) -> tuple[Queue, threading.Thread]:
@@ -521,15 +551,20 @@ def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: th
 
 
 def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write_captions: bool) -> None:
-    task["started_at"] = time.time()
-    task["status"] = "running"
-    task["phase"] = "created"
-    spec = MODEL_SPEC_BY_ID[task["model_id"]]
-    _task_log(task, f"Task started / 任务已启动: {len(paths)} images / 共 {len(paths)} 张图片; model: {spec.name}")
+    with task["lock"]:
+        task["started_at"] = time.time()
+        task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
+        task["phase"] = "created"
+    spec = None
     prefetch_stop = threading.Event()
-    pending, producer = _start_image_prefetch(paths, write_captions and conflict == "ignore", prefetch_stop)
+    producer = None
     model_ready = False
+    final_status = "done"
+    final_error = ""
     try:
+        spec = MODEL_SPEC_BY_ID[task["model_id"]]
+        _task_log(task, f"Task started / 任务已启动: {len(paths)} images / 共 {len(paths)} 张图片; model: {spec.name}")
+        pending, producer = _start_image_prefetch(paths, write_captions and conflict == "ignore", prefetch_stop)
         while True:
             prefetched = pending.get()
             if prefetched is None:
@@ -538,9 +573,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             if task["cancel_event"].is_set():
                 if image is not None:
                     image.close()
-                task["status"] = "cancelled"
-                task["phase"] = "cancelled"
-                _task_log(task, "Task cancelled by user / 任务已被用户取消")
+                final_status = "cancelled"
                 break
             if existing_text:
                 tags = [part.strip() for part in existing_text.split(",") if part.strip()]
@@ -622,9 +655,32 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 with task["lock"]:
                     task["current"] = index + 1
                     task["updated_at"] = time.time()
-        if task["status"] == "running":
-            task["status"] = "done"
-            task["phase"] = "completed"
+        if task["cancel_event"].is_set():
+            final_status = "cancelled"
+    except Exception as exc:
+        log.exception("Tagger workspace task failed / 打标工作区任务失败")
+        final_status = "error"
+        final_error = str(exc)[:500]
+    finally:
+        prefetch_stop.set()
+        if producer is not None:
+            producer.join()
+        if spec is not None and options.get("unload_model_after"):
+            try:
+                with gpu_inference_lock:
+                    if available_interrogators[task["model_id"]].unload():
+                        _task_log(task, f"Model unloaded / 模型已卸载: {spec.name}")
+            except Exception:
+                log.exception("Failed to unload tagger model / 打标模型卸载失败")
+        if task.get("resource_claim"):
+            tm.release_external(task["resource_claim"])
+        with task["lock"]:
+            task["status"] = final_status
+            task["phase"] = {"done": "completed", "cancelled": "cancelled", "error": "error"}[final_status]
+            if final_error:
+                task["error_detail"] = final_error
+            task["updated_at"] = time.time()
+        if final_status == "done":
             elapsed = max(0.0, time.time() - task["started_at"])
             _task_log(
                 task,
@@ -632,24 +688,10 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 f"{task['success']} succeeded, {task['skipped']} skipped, {task['failed']} failed / "
                 f"成功 {task['success']}，跳过 {task['skipped']}，失败 {task['failed']}",
             )
-    except Exception as exc:
-        log.exception("Tagger workspace task failed / 打标工作区任务失败")
-        with task["lock"]:
-            task["status"] = "error"
-            task["phase"] = "error"
-            task["error_detail"] = str(exc)[:500]
-        _task_log(task, f"Task failed / 任务失败: {str(exc)[:500]}")
-    finally:
-        prefetch_stop.set()
-        producer.join(timeout=1)
-        if options.get("unload_model_after"):
-            try:
-                with gpu_inference_lock:
-                    if available_interrogators[task["model_id"]].unload():
-                        _task_log(task, f"Model unloaded / 模型已卸载: {spec.name}")
-            except Exception:
-                log.exception("Failed to unload tagger model / 打标模型卸载失败")
-        task["updated_at"] = time.time()
+        elif final_status == "cancelled":
+            _task_log(task, "Task cancelled by user / 任务已被用户取消")
+        else:
+            _task_log(task, f"Task failed / 任务失败: {final_error}")
 
 
 def create_task(payload: dict) -> str:
@@ -713,23 +755,48 @@ def create_task(payload: dict) -> str:
         "options": options,
         "conflict": conflict,
         "write_captions": write_captions,
+        "resource_claim": None,
+        "dataset_claim": None,
     }
     with _tasks_lock:
+        if any(item.get("status") in _ACTIVE_TASK_STATUSES for item in _tasks.values()):
+            raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+        if has_active_legacy_tagger_task():
+            raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+        if engine == "onnx" or write_captions:
+            owner = f"tagger:{task_id}"
+            if not tm.claim_external(owner):
+                raise RuntimeError("Training or tagging task is active / 训练或反推任务正在运行")
+            task["resource_claim"] = owner
+        else:
+            owner = f"tagger-reader:{task_id}"
+            if not tm.claim_dataset_reader(owner):
+                raise RuntimeError("Dataset folders are being renamed / 数据集目录正在重命名")
+            task["dataset_claim"] = owner
         _tasks[task_id] = task
-    if engine == "api":
-        threading.Thread(
-            target=_run_api_task,
-            args=(task, paths, options, conflict, write_captions, config),
-            daemon=True,
-            name=f"tagger-{task_id}",
-        ).start()
-    else:
-        threading.Thread(
-            target=_run_task,
-            args=(task, paths, options, conflict, write_captions),
-            daemon=True,
-            name=f"tagger-{task_id}",
-        ).start()
+    try:
+        if engine == "api":
+            threading.Thread(
+                target=_run_api_task,
+                args=(task, paths, options, conflict, write_captions, config),
+                daemon=True,
+                name=f"tagger-{task_id}",
+            ).start()
+        else:
+            threading.Thread(
+                target=_run_task,
+                args=(task, paths, options, conflict, write_captions),
+                daemon=True,
+                name=f"tagger-{task_id}",
+            ).start()
+    except Exception:
+        with _tasks_lock:
+            _tasks.pop(task_id, None)
+        if task["resource_claim"]:
+            tm.release_external(task["resource_claim"])
+        if task["dataset_claim"]:
+            tm.release_dataset_reader(task["dataset_claim"])
+        raise
     return task_id
 
 
@@ -750,14 +817,16 @@ def retry_failed_task(task_id: str) -> str:
         conflict = previous.get("conflict", "ignore")
         write_captions = bool(previous.get("write_captions", True))
         api_payload = dict(previous.get("api_payload") or {}) if engine == "api" else None
+        source_root = previous["source_root"]
+        source_kind = previous["source_kind"]
     if not failed_paths:
         raise ValueError("No failed items to retry / 没有可重试的失败项")
     token = uuid.uuid4().hex[:16]
     with _sources_lock:
         _sources[token] = {
             "token": token,
-            "root": str(failed_paths[0].parent),
-            "kind": "folder",
+            "root": source_root,
+            "kind": source_kind,
             "recursive": True,
             "paths": failed_paths,
             "created_at": time.time(),
@@ -781,13 +850,18 @@ def cancel_task(task_id: str) -> bool:
         task = _tasks.get(task_id)
     if not task:
         return False
+    with task["lock"]:
+        if task["status"] in {"created", "running"}:
+            task["status"] = "cancelling"
+            task["phase"] = "cancelling"
+            task["updated_at"] = time.time()
     task["cancel_event"].set()
     return True
 
 
 def latest_active_task_id() -> str | None:
     with _tasks_lock:
-        active = [task for task in _tasks.values() if task["status"] in {"created", "running"}]
+        active = [task for task in _tasks.values() if task["status"] in _ACTIVE_TASK_STATUSES]
     if not active:
         return None
     return max(active, key=lambda task: task["updated_at"])["id"]
