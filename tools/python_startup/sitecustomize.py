@@ -50,6 +50,10 @@ def _install_bitsandbytes_windows_compat() -> None:
 
 _install_bitsandbytes_windows_compat()
 
+from tools.python_startup.optional_flash import install as install_optional_flash
+
+install_optional_flash()
+
 
 if os.environ.get("ANIMA_TRAIN_LOG_LOCK"):
     from tools.python_startup.training_logging import install as install_training_logging

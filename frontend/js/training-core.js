@@ -789,9 +789,8 @@ window.trainingCoreMixin = {
     this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
 
-    // 非阻塞静默刷新环境状态（faStatus/xfStatus/tritonStatus），
+    // 非阻塞静默刷新可管理扩展的环境状态，
     // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
-    this.faRefresh(true).catch(() => {});
     this.xfRefresh(true).catch(() => {});
     if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
@@ -2245,7 +2244,7 @@ window.trainingCoreMixin = {
   },
 
   // ── 环境联动提示：检查当前字段值依赖的后端是否已安装（Alpine 响应式）──
-  // x-show 与 faStatus/xfStatus/tritonStatus 及 form 值联动，环境数据异步到达后自动显示。
+  // x-show 与扩展状态及 form 值联动，外部 flash-attn 仅显示自行安装说明。
   _getEnvHint(dataKey) {
     switch (dataKey) {
       case 'timestep_sampling':
@@ -2266,8 +2265,10 @@ window.trainingCoreMixin = {
       case 'network_module':
         return this._shapePreviewEntry();
       case 'attn_mode':
-        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+        return `<div x-show="form.attn_mode==='flash'" class="field-hint">${this.t('environment.flashManualHint')}</div>`
              + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+      case 'krea_attention_backend':
+        return `<div x-show="form.krea_attention_backend==='flash_attn'" class="field-hint">${this.t('environment.flashManualHint')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':

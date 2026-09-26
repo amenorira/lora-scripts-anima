@@ -34,6 +34,7 @@ class EnvironmentJobCleanupTests(unittest.TestCase):
         self.assertEqual(environment._matching_triton_spec("2.9.1+cu128"), ">=3.5,<3.6")
         self.assertEqual(environment._matching_triton_spec("2.10.0+cu130"), ">=3.6,<3.7")
         self.assertEqual(environment._matching_triton_spec("2.12.0"), ">=3.7,<3.8")
+        self.assertEqual(environment._matching_triton_spec("2.12.1+cu130"), ">=3.7.1,<3.8")
 
     def test_prune_finished_jobs_keeps_active_and_unexpired_jobs(self):
         jobs = {

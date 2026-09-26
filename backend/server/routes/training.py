@@ -940,6 +940,11 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         if attn_warning:
             log.warning(f"[Attn] {attn_warning}")
             config["attn_mode"] = attn_actual
+    if config.get("krea_attention_backend") == "flash_attn":
+        attn_actual, attn_warning = detect_attention_backend("flash")
+        if attn_warning:
+            log.warning(f"[Attn] {attn_warning}")
+            config["krea_attention_backend"] = "sdpa"
     # ──────────────────────────────────────────────────────────
 
     # ── Per-run folder: internal control data + user-selected artifacts ──

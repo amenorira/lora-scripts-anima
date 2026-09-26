@@ -330,16 +330,16 @@ const app = Object.assign({}, mixin, {
   renderEnvironment() {},
   realtimeSubscribe() {}, realtimeUnsubscribe() {},
 });
-app._setEnvironmentRealtimeTask('fa', 'job-1');
+app._setEnvironmentRealtimeTask('xf', 'job-1');
 app._setEnvironmentRealtimeTask('triton', 'job-2');
 (async () => {
   await app._finalizeEnvironmentRealtimeTask(
-    'fa', {progress: {error: 'wheel 404'}, log: ['line1', 'wheel 404']}, true);
+    'xf', {error: 'wheel 404'}, true);
   await app._finalizeEnvironmentRealtimeTask(
     'triton', {lines: 'pip exit code 1'}, true);
   process.stdout.write(JSON.stringify({
-    faError: app.faError, tritonError: app.tritonError,
-    faBusy: app.faBusy, tritonBusy: app.tritonBusy,
+    xfError: app.xfError, tritonError: app.tritonError,
+    xfBusy: app.xfBusy, tritonBusy: app.tritonBusy,
     renders: renders.length,
   }));
 })().catch(error => { console.error(error); process.exit(1); });
@@ -351,9 +351,9 @@ app._setEnvironmentRealtimeTask('triton', 'job-2');
         state = json.loads(result.stdout)
 
         # silent refresh 会清掉 error 字段；finalize 必须在 refresh 之后写回失败原因
-        self.assertEqual(state["faError"], "wheel 404")
+        self.assertEqual(state["xfError"], "wheel 404")
         self.assertEqual(state["tritonError"], "pip exit code 1")
-        self.assertFalse(state["faBusy"])
+        self.assertFalse(state["xfBusy"])
         self.assertFalse(state["tritonBusy"])
         self.assertGreaterEqual(state["renders"], 2)
 

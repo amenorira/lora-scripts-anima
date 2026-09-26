@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Upgrade an existing project venv from cu128 to the cu130 baseline."""
+"""Synchronize existing project venvs with the managed PyTorch/CUDA baseline."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ import subprocess
 import sys
 
 
-TORCH = "2.10.0+cu130"
-TORCHVISION = "0.25.0+cu130"
+TORCH = "2.12.1+cu130"
+TORCHVISION = "0.27.1+cu130"
 PYTORCH_INDEX = "https://download.pytorch.org/whl/cu130"
+XFORMERS = "0.0.35"
 
 
 def package_version(name: str) -> str | None:
@@ -84,13 +85,15 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
         ) != 0:
             warnings.append("bitsandbytes CUDA 13 upgrade failed / bitsandbytes CUDA 13 升级失败")
 
-    if package_version("xformers") and (core_changed or xformers_cuda_build() != 1300):
+    if package_version("xformers") and (
+        core_changed or package_version("xformers") != XFORMERS or xformers_cuda_build() != 1300
+    ):
         if pip(
             "install",
             "--upgrade",
             "--force-reinstall",
             "--no-deps",
-            "xformers",
+            f"xformers=={XFORMERS}",
             "--index-url",
             PYTORCH_INDEX,
             check=False,
@@ -98,41 +101,13 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
             pip("uninstall", "-y", "xformers", check=False)
             warnings.append("xformers upgrade failed; removed the incompatible old wheel / xformers 升级失败，已移除不兼容的旧包")
 
-    flash_version = package_version("flash-attn")
-    if flash_version and (core_changed or "cu130torch2.10" not in flash_version.lower()):
-        try:
-            result = run(
-                [
-                    sys.executable,
-                    "-X",
-                    "utf8",
-                    "-m",
-                    "tools.install_flash_attn",
-                    "--yes",
-                    "--force",
-                ],
-                input_text="\n",
-                check=False,
-                # 整体上限 30 分钟：被墙网络下镜像 ~0.5MB/s（240MB 约 8 分钟），
-                # 慢但有效不应打断；此上限只兜住极端异常（完全卡死/龟速）。
-                timeout=1800,
-            )
-        except RuntimeError as exc:
-            result = -1
-            print(f"[Runtime][ERROR] flash-attn upgrade timed out / flash-attn 升级超时: {exc}", file=sys.stderr)
-        if result != 0:
-            # 升级失败时保留现有安装 —— 已可用的旧 wheel 远好于"卸载后没有"
-            # （老逻辑直接卸载，被墙环境下会把用户原本可用的 flash-attn 静默移除）
-            warnings.append(
-                "FlashAttention upgrade failed; keeping the existing installation. "
-                "Retry later or use the Environment page / "
-                "FlashAttention 升级失败，保留现有安装；可稍后重试或到环境页手动重装"
-            )
-
     expected_triton = "triton-windows" if sys.platform == "win32" else "triton"
     triton_version = package_version(expected_triton)
-    if triton_version and (core_changed or minor_version(triton_version) != (3, 6)):
-        if pip("install", "--upgrade", f"{expected_triton}>=3.6,<3.7", check=False) != 0:
+    triton_spec = ">=3.7.1,<3.8" if sys.platform == "win32" else "==3.7.1"
+    from packaging.specifiers import SpecifierSet
+
+    if triton_version and (core_changed or triton_version not in SpecifierSet(triton_spec)):
+        if pip("install", "--upgrade", f"{expected_triton}{triton_spec}", check=False) != 0:
             warnings.append(f"{expected_triton} upgrade failed; retry from the Environment page / {expected_triton} 升级失败，可到环境页重试")
 
     return warnings

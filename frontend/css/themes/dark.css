@@ -169,10 +169,8 @@
 [data-theme="dark"] .home-badge-v-release { background: #7a3fc4; }
 
 /* 环境管理 */
-[data-theme="dark"] .env-source-btn:hover { background: var(--hover-overlay); }
 [data-theme="dark"] .env-log { background: var(--bg-input); color: var(--text-secondary); }
 [data-theme="dark"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
 [data-theme="dark"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
-[data-theme="dark"] .env-candidate-item:hover { background: var(--hover-overlay); }
 [data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
 [data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

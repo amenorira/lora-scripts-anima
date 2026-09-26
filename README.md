@@ -44,7 +44,6 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger 与 Camie Tagger，支持单图检查、分类阈值控制和批量标签写入；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
-- **Flash Attention 智能安装** — 面向 Python 3.12 + PyTorch 2.10+cu130 固定基线提供预编译 wheel，多镜像回退下载（断点续传 + 本地缓存），支持一键安装
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
 - **国际化（i18n）** — 中英双语界面，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
@@ -105,7 +104,7 @@ lora-scripts-anima/
 
 - **Python**：需要 64 位 Python 3.12（项目基线版本，预编译依赖与安装流程均以此为准）
 - **Git**：用于下载和更新项目；Windows ZIP 下载版可在首次启动时自动安装
-- **PyTorch 2.10.0 + CUDA 13.0**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
+- **PyTorch 2.12.1 + CUDA 13.0**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
 - **NVIDIA 驱动 R580 或更高版本**：CUDA 13.0 的最低驱动要求
 
 > **Windows 用户无需提前安装 Python。** 首次运行 `start.bat` 时，启动器会寻找 64 位 Python 3.12，并跳过 Microsoft Store 的 Python 占位符。
@@ -118,11 +117,11 @@ lora-scripts-anima/
 
 | GPU 系列 | 自动安装的 PyTorch | CUDA |
 |----------|:------------------:|:----:|
-| RTX 30 系 (Ampere) | 2.10.0 | 13.0 |
-| RTX 40 系 (Ada) | 2.10.0 | 13.0 |
-| RTX 50 系 (Blackwell) | 2.10.0 | 13.0 |
+| RTX 30 系 (Ampere) | 2.12.1 | 13.0 |
+| RTX 40 系 (Ada) | 2.12.1 | 13.0 |
+| RTX 50 系 (Blackwell) | 2.12.1 | 13.0 |
 
-已有 cu128 `venv` 会在下次启动时自动升级。已经安装的 xformers、FlashAttention、Triton 和 bitsandbytes 会同步匹配 cu130，ONNX Runtime GPU 会切换到 CUDA 13 对应版本；未安装的可选库保持不变。
+更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，外部 FlashAttention 由用户自行管理，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。未安装的可选库不会自动新增。
 
 无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
 
@@ -207,31 +206,9 @@ cd lora-scripts-anima
 
 ## Flash Attention 加速
 
-RTX 40/50 系显卡推荐安装 flash_attn 以获得最佳训练性能。启动脚本会自动检测安装状态。
+Anima 训练默认推荐 `attn_mode=torch`：PyTorch SDPA 会根据输入与硬件选择可用加速内核，包括内置 FlashAttention，无需安装外部 `flash-attn`。`sdpa` 是 `torch` 的兼容别名。`flash` 调用外部扩展，需安装匹配 PyTorch/CUDA 的 wheel；是否比原生 SDPA 更快、更省显存需在相同训练配置下实测。
 
-### GUI 安装
-
-启动 GUI 后，在 **环境** 标签页中点击安装即可，也支持离线安装本地 `.whl`。
-
-### 手动安装
-
-Windows：
-
-```powershell
-.\venv\Scripts\python.exe tools/install_flash_attn.py           # 交互式安装
-.\venv\Scripts\python.exe tools/install_flash_attn.py --url URL # 指定 wheel URL 或本地 .whl 路径
-.\venv\Scripts\python.exe tools/install_flash_attn.py --yes     # 非交互自动安装
-.\venv\Scripts\python.exe tools/install_flash_attn.py --force   # 已安装也强制重装
-```
-
-Linux：
-
-```sh
-./venv/bin/python tools/install_flash_attn.py           # 交互式安装
-./venv/bin/python tools/install_flash_attn.py --url URL # 指定 wheel URL 或本地 .whl 路径
-./venv/bin/python tools/install_flash_attn.py --yes     # 非交互自动安装
-./venv/bin/python tools/install_flash_attn.py --force   # 已安装也强制重装
-```
+外部 FlashAttention 由用户自行管理，项目不再提供一键安装、wheel 下载或自动升级。请在项目 `venv` 中安装与 Python、PyTorch、CUDA 和 GPU 兼容的 wheel，重启后选择 Anima 的 `flash` 或 Krea2 的 `flash_attn`。未安装或无法导入时会记录警告并回退原生 SDPA；已有扩展不会被自动卸载。
 
 ## EmoSens 自适应优化器
 
@@ -276,7 +253,6 @@ GUI 的 **环境** 标签页提供：
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 训练引擎
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 训练核心
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 早期设计参考
-- [mjun0812/flash-attention-prebuild-wheels](https://github.com/mjun0812/flash-attention-prebuild-wheels) — flash_attn prebuilt wheel 源
 
 ## 许可证
 

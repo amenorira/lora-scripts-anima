@@ -8,7 +8,6 @@
 | `ensure_runtime.py` | 启动器使用的基础运行环境校验与升级 |
 | `ensure_musubi_runtime.py` | 启动器使用的 musubi 共享运行环境校验 |
 | `download_anima_model.py` | 模型下载 CLI；后端环境管理也导入其接口 |
-| `install_flash_attn.py` | Flash Attention 安装 CLI；后端环境管理也调用 |
 | `python_startup/` | 运行时启动钩子、编码和学习率日志适配；启动器和后端依赖 |
 | `dev/regen_config_fallback.py` | 开发工具：从字段注册表生成前端默认配置 |
 | `dev/build_tag_dictionary.py` | 开发工具：把 Danbooru 中文词典 CSV 构建成 Tag Editor 用的静态资源 |

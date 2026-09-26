@@ -990,7 +990,7 @@ function Install-ProjectEnvironment {
     $env:PIP_PREFER_BINARY = "1"
     Write-Text "install_torch" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "setuptools>=68,<82")
-    Invoke-PipInstall $venvPython @("install", "torch==2.10.0+cu130", "torchvision==0.25.0+cu130", "--extra-index-url", "https://download.pytorch.org/whl/cu130")
+    Invoke-PipInstall $venvPython @("install", "torch==2.12.1+cu130", "torchvision==0.27.1+cu130", "--extra-index-url", "https://download.pytorch.org/whl/cu130")
     Write-Text "install_project" -Color Cyan
     Invoke-PipInstall $venvPython @("install", "-r", "requirements.txt") $script:RepositoryRoot
     Ensure-MusubiSharedRuntime $venvPython

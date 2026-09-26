@@ -39,14 +39,17 @@ def _detect_available_attn() -> list[str]:
     try:
         import xformers  # noqa: F401
         available.append("xformers")
-    except ImportError:
+    except Exception:
         pass
 
     # 检测 flash_attn
     try:
+        from tools.python_startup.optional_flash import install
+
+        install()
         import flash_attn  # noqa: F401
         available.append("flash")
-    except ImportError:
+    except Exception:
         pass
 
     _ATTN_CACHE = available
@@ -423,13 +426,8 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
         log.warning(msg)
         return "torch", msg
 
-    if requested == "flash" and "xformers" in available:
-        msg = "flash_attn not available / flash_attn 不可用; falling back to xformers / 降级为 xformers"
-        log.warning(msg)
-        return "xformers", msg
-
     if requested == "flash" and "torch" in available:
-        msg = "flash_attn and xformers both unavailable / 均不可用; falling back to torch SDPA / 降级为 torch SDPA"
+        msg = "External flash-attn unavailable; falling back to native SDPA. Manually install a compatible build in the project venv to use flash. / 外部 flash-attn 不可用，已回退原生 SDPA；如需 flash，请在项目 venv 中自行安装兼容版本。"
         log.warning(msg)
         return "torch", msg
 
