@@ -1348,6 +1348,8 @@
 		"catArtist": "Artist",
 		"catMeta": "Meta",
 		"catYear": "Year",
+		"catStyle": "Style",
+		"modelPurposePixai": "Developed by PixAI Labs, the team at anime AI art platform PixAI. Covers about 31,000 tags, including characters, franchises and art styles. Outperforms Camie v2 on general and character tags in the author's shared-vocabulary benchmark.",
 		"catRating": "Rating",
 		"catQuality": "Quality",
 		"catModel": "Model",

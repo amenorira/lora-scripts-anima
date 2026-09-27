@@ -24,7 +24,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tagger import api_engine
-from backend.tagger.registry import model_payload
+from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
     create_task as create_workspace_task,
@@ -58,12 +58,7 @@ def _verify_image(path: Path) -> None:
     with Image.open(path) as image:
         image.verify()
 
-_MODEL_DISPLAY_NAMES = {
-    "wd-eva02-large-tagger-v3": "WD EVA02 Large v3",
-    "wd-vit-large-tagger-v3": "WD ViT Large v3",
-    "cl_tagger_1_02": "CL Tagger v1.02",
-    "camie-tagger-v2": "Camie Tagger v2",
-}
+_MODEL_DISPLAY_NAMES = {key: spec.name for key, spec in MODEL_SPEC_BY_ID.items()}
 
 
 @router.post("/interrogate")
@@ -74,8 +69,12 @@ async def run_interrogate(req: TaggerInterrogateRequest):
         return APIResponseFail(message="Training or tagging task is active / 训练或反推任务正在运行")
     interrogator = available_interrogators.get(
         req.interrogator_model,
-        available_interrogators["wd-eva02-large-tagger-v3"],
+        available_interrogators[DEFAULT_MODEL_ID],
     )
+    spec = MODEL_SPEC_BY_ID[interrogator.name]
+    explicit_threshold = {"threshold", "character_threshold"} & req.model_fields_set
+    category_thresholds = {} if explicit_threshold else dict(spec.threshold_presets.get("macro", {}))
+    category_thresholds.update(req.category_thresholds or {})
     batch_options = {
         "batch_input_recursive": req.batch_input_recursive,
         "batch_output_dir": req.batch_output_dir,
@@ -87,7 +86,7 @@ async def run_interrogate(req: TaggerInterrogateRequest):
     postprocess_options = {
         "threshold": req.threshold,
         "character_threshold": req.character_threshold,
-        "category_thresholds": req.category_thresholds,
+        "category_thresholds": category_thresholds,
         "add_rating_tag": req.add_rating_tag,
         "add_model_tag": req.add_model_tag,
         "additional_tags": req.additional_tags,
@@ -136,7 +135,7 @@ async def stop_interrogate(task_id: str):
 
 @router.get("/tagger/models")
 async def list_tagger_models():
-    """List ONNX model capabilities and installation state."""
+    """List local model capabilities and installation state."""
     return APIResponseSuccess(data=await asyncio.to_thread(model_payload))
 
 

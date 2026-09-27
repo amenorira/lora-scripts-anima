@@ -64,6 +64,9 @@ tensorboard
 # setup_onnxruntime() 会按 torch 实际 CUDA 版本动态升降级，此处为静态兜底。
 onnxruntime-gpu==1.27.0
 
+# ── PixAI Tagger 自定义 PyTorch 模型 ──
+timm==1.0.22
+
 # ── Anima 模型下载（环境管理页一键下载基础模型到 models/）──
 # hf-xet 独立包：启用 HF Xet 多线程分块下载，未装时 huggingface_hub 自动回退普通 HTTP。
 # 不用 huggingface-hub[xet] 是因为 is_installed 会去掉 [xet]，导致本体已装时永远不触发安装。

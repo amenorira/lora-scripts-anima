@@ -20,6 +20,45 @@ function fixture() {
   return { app, requested };
 }
 
+test('registry default is used for new or stale selections while saved choices are preserved', async () => {
+  const models = [
+    { id: 'old', name: 'Old', family: 'tagger' },
+    { id: 'pixai', name: 'PixAI', family: 'tagger' },
+  ];
+  context.fetch = async () => ({ json: async () => ({ status: 'success', data: {
+    models, default_model_id: 'pixai',
+  } }) });
+  for (const [saved, expected] of [['', 'pixai'], ['removed', 'pixai'], ['old', 'old']]) {
+    const { app } = fixture();
+    app.taggerSelectedModel = '';
+    app.handleTaggerModelChange = () => {};
+    app.t = key => key;
+    app.toast = message => assert.fail(message);
+    context.localStorage = { getItem: () => saved };
+    await app.loadTaggerModels();
+    assert.equal(app.taggerSelectedModel, expected);
+    assert.equal(app.taggerModelSelectConfig().groups[0].options[1].l, 'PixAI');
+  }
+});
+
+test('category presets come from the selected model and clear previous model values', () => {
+  const { app } = fixture();
+  app.taggerModels = [
+    { id: 'camie-tagger-v2', threshold_presets: { macro: { general: 0.492, year: 0.492 } } },
+    { id: 'pixai-tagger-v1.0', threshold_presets: { macro: { general: 0.17, style: 0.15 }, micro: { general: 0.34, style: 0.19 } } },
+  ];
+  app.applyTaggerPreset('macro');
+  assert.equal(app.taggerSettings.categoryThresholds.year, 0.492);
+  app.taggerSelectedModel = 'pixai-tagger-v1.0';
+  app.applyTaggerPreset('macro');
+  assert.equal(app.taggerSettings.categoryThresholds.general, 0.17);
+  assert.equal(app.taggerSettings.categoryThresholds.style, 0.15);
+  assert.equal(app.taggerSettings.categoryThresholds.year, undefined);
+  app.applyTaggerPreset('micro');
+  assert.equal(app.taggerSettings.categoryThresholds.style, 0.19);
+  assert.equal(app.taggerModels[1].threshold_presets.macro.style, 0.15);
+});
+
 test('Tagger defaults to literal parentheses and preserves saved escape preferences', () => {
   const mixin = context.window.taggerMixin;
   assert.equal(mixin.taggerSettings.escapeTag, false);

@@ -23,7 +23,7 @@ from backend.utils.hf_download import download_hf_file, make_progress_bar
 
 
 def _snapshot_path(repo_id: str, filename: str, cache_dir: Optional[str],
-                   repo_type: str) -> Path:
+                   repo_type: str, revision: str = "main") -> Path:
     """构造 HF 缓存的 snapshot 文件路径（与 hf_hub_download 返回路径一致）。
 
     布局：<cache_dir>/models--<org>--<repo>/snapshots/<rev>/<filename>
@@ -32,8 +32,7 @@ def _snapshot_path(repo_id: str, filename: str, cache_dir: Optional[str],
     from huggingface_hub import constants
     cache = cache_dir or constants.HF_HUB_CACHE
     folder = repo_folder_name(repo_id=repo_id, repo_type=repo_type)
-    rev = "main"  # 默认 revision
-    return Path(cache) / folder / "snapshots" / rev / filename
+    return Path(cache) / folder / "snapshots" / revision / filename
 
 
 def tagger_hub_download(
@@ -41,6 +40,7 @@ def tagger_hub_download(
     filename: str,
     cache_dir: Optional[str] = None,
     repo_type: str = "model",
+    revision: str = "main",
 ) -> Path:
     """下载单个 HF 文件到缓存 snapshots 布局，带 rich 进度条。
 
@@ -48,7 +48,7 @@ def tagger_hub_download(
     但下载过程在控制台显示 Anima 同款朴素进度条（多分块 + 续传 + 端点回退）。
     文件已存在则直接返回（跳过下载）。
     """
-    dest = _snapshot_path(repo_id, filename, cache_dir, repo_type)
+    dest = _snapshot_path(repo_id, filename, cache_dir, repo_type, revision)
     if dest.exists() and dest.is_file() and dest.stat().st_size > 0:
         log.info(f"[tagger-dl] {filename} already exists, skipping / 已存在，跳过下载")
         return dest
@@ -94,6 +94,7 @@ def tagger_hub_download(
     try:
         download_hf_file(
             repo_id, filename, dest,
+            revision=revision, repo_type=repo_type,
             progress=shared, lock=lock,
             on_log=_on_log, on_progress=_on_progress,
             file_index=0, file_total=1,

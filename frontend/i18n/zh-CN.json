@@ -1348,6 +1348,8 @@
 		"catArtist": "画师",
 		"catMeta": "元数据",
 		"catYear": "年份",
+		"catStyle": "风格",
+		"modelPurposePixai": "由二次元 AI 绘画平台 PixAI 的 PixAI Labs 开发。覆盖约 3.1 万标签，支持角色、作品与画风识别；在作者的共同标签评测中，特征与角色识别均优于 Camie v2。",
 		"catRating": "分级",
 		"catQuality": "质量",
 		"catModel": "模型",

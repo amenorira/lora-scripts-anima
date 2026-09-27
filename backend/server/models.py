@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
+from backend.tagger.registry import DEFAULT_MODEL_ID
 
 # 含下划线的颜文字标签：下划线转空格时要豁免的名单
 KAOMOJI_KEEP_UNDERSCORE = (
@@ -14,7 +15,7 @@ KAOMOJI_KEEP_UNDERSCORE = (
 class TaggerInterrogateRequest(BaseModel):
     path: str
     interrogator_model: str = Field(
-        default="wd-eva02-large-tagger-v3"
+        default=DEFAULT_MODEL_ID
     )
     threshold: float = Field(
         default=0.35,

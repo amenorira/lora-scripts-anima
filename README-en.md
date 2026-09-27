@@ -43,7 +43,7 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
-- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
+- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
 - **Internationalization (i18n)** — Chinese and English UI with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
@@ -88,7 +88,7 @@ lora-scripts-anima/
 │   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
 │   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
 │   ├── tageditor/              ← Native tag editor
-│   ├── tagger/                 ← Tagging module (WD / CL / Camie / AI endpoints)
+│   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
 │   └── gui.py                  ← Internal GUI entry (called by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
 ├── config/                     ← Local configuration and autosaves
