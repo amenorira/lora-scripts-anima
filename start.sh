@@ -2,34 +2,40 @@
 # start.sh - One-stop: environment check -> install -> launch
 # Run: bash start.sh
 
+export ANIMA_STARTUP_STARTED_AT="$(date +%s.%N)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
 
-echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
-
 STARTUP_SPINNER_PID=""
+STARTUP_SPINNER_STARTED=""
+STARTUP_SPINNER_TIMESTAMP=""
 _startup_spinner() {
-    local frames=('◐' '◓' '◑' '◒')
+    # Match Rich's default "dots" spinner before Python is available.
+    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local frame=0
-    local started=$SECONDS
     while true; do
         local spinner="${frames[frame % ${#frames[@]}]}"
-        local elapsed=$((SECONDS - started))
-        printf '\r\033[2K%s  Preparing startup environment... / 正在准备启动环境……  %02d:%02d' \
-            "$spinner" $((elapsed / 60)) $((elapsed % 60))
+        local elapsed=$(( ($(date +%s%N) - STARTUP_SPINNER_STARTED) / 100000000 ))
+        printf '\r\033[2K\033[2;36m%s\033[0m  \033[36m%s\033[0m Preparing startup environment / 正在准备启动环境  %d.%ds' \
+            "$STARTUP_SPINNER_TIMESTAMP" "$spinner" $((elapsed / 10)) $((elapsed % 10))
         frame=$((frame + 1))
-        sleep 0.12
+        sleep 0.08
     done
 }
 
 _start_startup_spinner() {
+    STARTUP_SPINNER_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     if [ -t 1 ]; then
+        printf '\033[36mlora-scripts-anima\033[0m\n'
+        STARTUP_SPINNER_STARTED=$(date +%s%N)
         _startup_spinner &
         STARTUP_SPINNER_PID=$!
         trap '_stop_startup_spinner' EXIT
         trap '_stop_startup_spinner; exit 130' INT TERM
+    else
+        printf 'lora-scripts-anima\n%s  > Preparing startup environment / 正在准备启动环境\n' "$STARTUP_SPINNER_TIMESTAMP"
     fi
 }
 
@@ -38,7 +44,8 @@ _stop_startup_spinner() {
         kill "$STARTUP_SPINNER_PID" >/dev/null 2>&1 || true
         wait "$STARTUP_SPINNER_PID" 2>/dev/null || true
         STARTUP_SPINNER_PID=""
-        printf '\r\033[2K'
+        printf '\r\033[2K\033[2;36m%s\033[0m  \033[36m>\033[0m Preparing startup environment / 正在准备启动环境\n' \
+            "$STARTUP_SPINNER_TIMESTAMP"
     fi
     trap - EXIT INT TERM
 }
@@ -110,7 +117,7 @@ fi
 # 压过宿主 pip.conf，且被 PEP 517 构建子进程（vendor/sd-scripts sdist）与 backend.gui
 # 运行时 pip 继承，一次接管全程。脚本结束即失效，不留痕。
 #
-# 逻辑：用 pip config get 只读探测当前生效的 index-url / extra-index-url——
+# 逻辑：用 pip 自身的配置加载器一次读取 index-url / extra-index-url——
 #   http://  → export https:// 等价物 + 登记 PIP_TRUSTED_HOST（升级，避免被忽略）
 #   https:// → 不动（已安全）
 #   无/默认  → 不动（走官方 PyPI）
@@ -121,9 +128,8 @@ _fix_pip_mirror() {
     local py="$VENV_PYTHON"
     [ -f "$py" ] || py="$PYTHON_BIN"
     # 探测 pip 配置中的 index-url 与 extra-index-url（涵盖 pip.conf 与环境变量合并后的生效值）
-    for key in global.index-url global.extra-index-url; do
-        local val
-        val="$("$py" -m pip config get "$key" 2>/dev/null)" || continue
+    local key val
+    while IFS=$'\t' read -r key val; do
         [ -n "$val" ] || continue
         if [[ "$val" == http://* ]]; then
             local rest="${val#http://}"
@@ -133,7 +139,7 @@ _fix_pip_mirror() {
             export "$var=https://$rest"
             hosts="$hosts ${rest%%/*}"
         fi
-    done
+    done < <("$py" -m tools.pip_index_config 2>/dev/null)
     # 同时处理已有的 PIP_* 环境变量（兜底：源仅来自 env 而非 config 的情况）
     for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
         local val="${!var}"

@@ -158,6 +158,10 @@ First launch automatically creates a virtual environment and installs all depend
 
 ### Realtime and Slow Remote Connections
 
+TensorBoard shares the GUI's public entry point: by default, visit `http://127.0.0.1:12333/tensorboard/`, or choose “Open in new window” on the TensorBoard page. Browser links use the current origin, so SSH only needs to forward the GUI port; the local port may differ from the server port. Terminal output shows the server address and cannot discover your SSH local forwarding port.
+
+The TensorBoard child process only listens on server loopback and selects its internal port automatically. `--listen` does not expose it separately. The old `--tensorboard-host` argument is deprecated and ignored; `--tensorboard-port` only selects the internal port. Startup shows a waiting status and prints the access URLs together once TensorBoard is ready. If it fails, the GUI still starts with an explicit warning. Details are recorded in `logs/tensorboard.log`.
+
 All HTTP requests and realtime connections are same-origin with the current page. The trainer does not configure SSH, port forwarding, proxies, cloud-specific logic, or an extra realtime port.
 
 - `/ws/realtime` carries only compact JSON state, progress, log increments, and hardware data. Commands, images, files, and metadata remain HTTP requests.
@@ -194,8 +198,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 | `--skip-prepare-environment` | bool | false | Do not check or repair dependencies at startup |
 | `--skip-prepare-onnxruntime` | bool | false | Skip the onnxruntime-gpu install check only |
 | `--disable-tensorboard` | bool | false | Do not launch the bundled TensorBoard with the GUI |
-| `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
-| `--tensorboard-port` | int | 6006 | TensorBoard port |
+| `--tensorboard-port` | int | 0 | Internal TensorBoard port; 0 selects an available port automatically |
 | `--localization` | str | | Interface language and localization setting |
 | `--dev` | bool | false | Developer mode |
 | `--quiet` / `-q` | bool | false | Automatically install Python/venv dependencies; optional Git repair remains disabled |

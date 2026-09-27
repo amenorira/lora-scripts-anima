@@ -160,6 +160,10 @@ cd lora-scripts-anima
 
 ### 实时连接与慢速远程连接
 
+TensorBoard 与 GUI 共用对外入口：默认访问 `http://127.0.0.1:12333/tensorboard/`，也可从 TensorBoard 页面点击“在新窗口打开”。浏览器链接沿用当前页面的域名、协议和端口；SSH 只需映射 GUI 端口，本地端口可以与服务器不同。远端终端显示服务器地址，无法自动得知 SSH 本地映射端口。
+
+TensorBoard 子进程仅监听服务器回环地址，内部端口默认自动分配，`--listen` 不会将其单独暴露。旧的 `--tensorboard-host` 参数已弃用并忽略；`--tensorboard-port` 仅用于指定内部端口。启动期间显示等待提示，TensorBoard 就绪后统一打印访问地址；失败时提示异常并继续启动 GUI。详细日志位于 `logs/tensorboard.log`。
+
 网页的 HTTP 请求和实时连接始终与当前页面同源（same-origin）。训练器不会自动配置 SSH、端口映射、代理、云平台专用逻辑或额外的实时端口。
 
 - `/ws/realtime` 仅传递小型 JSON 状态、进度、日志增量和硬件数据；命令、图片、文件和元数据仍使用 HTTP。
@@ -196,8 +200,7 @@ cd lora-scripts-anima
 | `--skip-prepare-environment` | bool | false | 启动时不再自动检查和修复依赖环境 |
 | `--skip-prepare-onnxruntime` | bool | false | 只跳过 onnxruntime-gpu 的安装检查 |
 | `--disable-tensorboard` | bool | false | 不随 GUI 启动内置的 TensorBoard |
-| `--tensorboard-host` | str | "127.0.0.1" | TensorBoard 主机 |
-| `--tensorboard-port` | int | 6006 | TensorBoard 端口 |
+| `--tensorboard-port` | int | 0 | 内部 TensorBoard 端口，0 表示自动分配；通常无需设置 |
 | `--localization` | str | | 界面语言与本地化设置 |
 | `--dev` | bool | false | 开发者模式 |
 | `--quiet` / `-q` | bool | false | 自动安装 Python/venv 依赖；默认不执行可选的 Git 仓库修复 |

@@ -499,7 +499,7 @@ document.addEventListener('alpine:init', () => {
     renderTensorBoardPage() {
       const el = document.getElementById('tensorboardFrame');
       if (!el || el.querySelector('iframe')) return;
-      el.innerHTML = `<iframe src="/proxy/tensorboard/" class="iframe-full"
+      el.innerHTML = `<iframe src="/tensorboard/" title="TensorBoard" class="iframe-full"
         onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s"></iframe>`;
     },
 

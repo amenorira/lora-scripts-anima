@@ -15,17 +15,17 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
-from backend.server.proxy import close_client as close_proxy_client
+from backend.tensorboard_service import PREFIX, service as tensorboard
 from backend.server.proxy import router as proxy_router
 from backend.monitor import router as monitor_router
 from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
 from backend.monitor.monitor import task_monitor
-from backend.monitor.run_registry import import_legacy_external_runs
+from backend.monitor.artifacts import scan_history
 from backend.server.routes.realtime import router as realtime_router
 from backend.training.step_estimator import warm_up as warm_step_estimator
 from backend.constants import REPO_ROOT
-from backend.startup_output import show_environment, show_ready
+from backend.startup_output import show_environment, show_ready, show_step
 
 # Windows 注册表常把 .js 映射成 text/plain，导致浏览器拒执行模块脚本
 mimetypes.add_type(ext=".js", type="application/javascript")
@@ -46,26 +46,12 @@ class SPAStaticFiles(StaticFiles):
 
 
 async def report_runtime_banner() -> None:
-    from backend.log import log as _log
-    try:
-        migration = await asyncio.to_thread(import_legacy_external_runs)
-    except Exception as exc:
-        migration = {}
-        _log.warning(
-            "Legacy external run import skipped: %s / 旧跨盘训练记录导入已跳过: %s",
-            exc, exc,
-        )
     runtime = await asyncio.to_thread(check_torch_gpu) or {}
 
     host = os.environ.get("ANIMA_HOST", "127.0.0.1")
     port = os.environ.get("ANIMA_PORT", "12333")
     browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     url = f"http://{browser_host}:{port}/"
-    if migration.get("imported"):
-        _log.info(
-            "Imported %s legacy external run(s) / 已恢复 %s 条旧跨盘训练记录",
-            migration["imported"], migration["imported"],
-        )
 
     software = [
         f"App {os.environ.get('ANIMA_VERSION', 'unknown')}",
@@ -92,35 +78,56 @@ async def report_runtime_banner() -> None:
         environment.append(("Network / 网络", f"LAN access enabled on port {port} / 已开放局域网访问"))
     show_environment(environment)
 
-    tensorboard_url = os.environ.get("ANIMA_TENSORBOARD_URL") or None
-    if tensorboard_url:
-        tensorboard_host = os.environ.get("ANIMA_TENSORBOARD_HOST", "127.0.0.1")
-        tensorboard_port = os.environ.get("ANIMA_TENSORBOARD_PORT", "6006")
-        tensorboard_browser_host = (
-            "127.0.0.1" if tensorboard_host in {"0.0.0.0", "::"} else tensorboard_host
-        )
-        tensorboard_url = f"http://{tensorboard_browser_host}:{tensorboard_port}/"
+    if tensorboard.status() == "starting":
+        show_step("Starting TensorBoard / 正在启动 TensorBoard")
+        await tensorboard.wait_started()
+    state = tensorboard.status()
+    tensorboard_url = url.rstrip("/") + PREFIX + "/" if state != "disabled" else None
     show_ready(
         url,
         tensorboard_url=tensorboard_url,
+        tensorboard_state=state,
         log_path=REPO_ROOT / "logs" / "anima.log",
     )
 
 
+async def warm_startup_caches() -> None:
+    """Optional disk scans and training imports run after the ready banner."""
+    from backend.log import log
+    results = await asyncio.gather(
+        asyncio.to_thread(scan_history),  # Includes idempotent legacy migration.
+        asyncio.to_thread(warm_step_estimator),
+        return_exceptions=True,
+    )
+    for name, result in zip(("history", "step estimator"), results):
+        if isinstance(result, Exception):
+            log.warning("Startup cache warm-up failed / 启动缓存预热失败 (%s): %s", name, result)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await task_monitor.start()
-    # sd-scripts 的 dataset 模块首次导入要 5～8 秒（torch / bitsandbytes / transformers），
-    # 而数据集扫描本身只有毫秒级。后台预热，省掉用户第一次打开训练页时的干等。
-    asyncio.create_task(asyncio.to_thread(warm_step_estimator))
-    await report_runtime_banner()
+    cache_task = None
+    tensorboard.start(
+        enabled=os.environ.get("ANIMA_DISABLE_TENSORBOARD") != "1",
+        port=int(os.environ.get("ANIMA_TENSORBOARD_PORT", "0")),
+    )
     try:
+        await task_monitor.start()
+        await report_runtime_banner()
+        cache_task = asyncio.create_task(warm_startup_caches())
         yield
     finally:
-        from backend.training.shape_preview import close_preview_pool
-        close_preview_pool()
-        await task_monitor.stop()
-        await close_proxy_client()
+        try:
+            from backend.training.shape_preview import close_preview_pool
+            close_preview_pool()
+            await task_monitor.stop()
+        finally:
+            try:
+                await tensorboard.stop()
+            finally:
+                if cache_task is not None:
+                    # Do not leave disk writes running after the app has shut down.
+                    await cache_task
 
 
 app = FastAPI(lifespan=lifespan)
