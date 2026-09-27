@@ -34,12 +34,18 @@ document.addEventListener('alpine:init', () => {
     return ({
     open: false,
     positioned: false,
+    _openUp: false,
     value: initialValue,
     activeIndex: -1,
     _lastScrolledActiveIndex: -1,
     _listboxId: `anima-select-listbox-${++nextListboxId}`,
     _positionFrame: null,
     _closeAnimation: null,
+    // Declare instance-owned handlers: Alpine otherwise assigns new keys to
+    // the outer scope, letting sibling selects overwrite each other's handlers.
+    _scrollHandler: null,
+    _resizeHandler: null,
+    _keyHandler: null,
 
     get displayGroups() {
       if (!fieldConfigFactory) return staticDisplayGroups;
@@ -66,9 +72,11 @@ document.addEventListener('alpine:init', () => {
         const trigger = this.$el.querySelector('.anima-select-trigger');
         if (trigger) trigger.setAttribute('aria-expanded', String(isOpen));
         if (isOpen) {
+          this.positioned = false;
+          this._lastScrolledActiveIndex = -1;
           window.addEventListener('scroll', this._scrollHandler, true);
           window.addEventListener('resize', this._resizeHandler);
-          this.$nextTick(() => this.positionMenu());
+          this.$nextTick(() => { if (this.open) this.positionMenu(); });
         } else {
           window.removeEventListener('scroll', this._scrollHandler, true);
           window.removeEventListener('resize', this._resizeHandler);
@@ -131,10 +139,6 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    closeOnOutside() {
-      this.close();
-    },
-
     close() {
       if (!this.open || this._closeAnimation) return;
       const menu = this.$el.querySelector('.anima-select-menu');
@@ -179,7 +183,12 @@ document.addEventListener('alpine:init', () => {
       if (this.activeIndex >= 0 && options[this.activeIndex]) {
         trigger.setAttribute('aria-activedescendant', options[this.activeIndex].id);
         if (this._lastScrolledActiveIndex !== this.activeIndex) {
-          options[this.activeIndex].scrollIntoView({ block: 'nearest' });
+          const scroller = menu.querySelector('.anima-select-menu-scroll');
+          const optionRect = options[this.activeIndex].getBoundingClientRect();
+          const scrollRect = scroller.getBoundingClientRect();
+          // Only scroll the options, never the page or the containing panel.
+          if (optionRect.top < scrollRect.top) scroller.scrollTop += optionRect.top - scrollRect.top;
+          else if (optionRect.bottom > scrollRect.bottom) scroller.scrollTop += optionRect.bottom - scrollRect.bottom;
           this._lastScrolledActiveIndex = this.activeIndex;
         }
       } else {
@@ -188,7 +197,7 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    _openForKeyboard(key) {
+    show(key) {
       const enabled = this._enabledIndices();
       if (!enabled.length) return;
       const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
@@ -197,9 +206,6 @@ document.addEventListener('alpine:init', () => {
       else this.activeIndex = selected === undefined
         ? (key === 'ArrowUp' ? enabled[enabled.length - 1] : enabled[0]) : selected;
       this.open = true;
-      this.positioned = false;
-      this._lastScrolledActiveIndex = -1;
-      this.$nextTick(() => this.positionMenu());
     },
 
     onKeydown(event) {
@@ -221,7 +227,7 @@ document.addEventListener('alpine:init', () => {
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(key)) return;
       event.preventDefault();
       if (!this.open) {
-        this._openForKeyboard(key);
+        this.show(key);
         return;
       }
       const enabled = this._enabledIndices();
@@ -259,22 +265,9 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    toggle(event) {
-      if (this.open) {
-        this.close();
-        return;
-      }
-      this.open = !this.open;
-      if (this.open) {
-        const enabled = this._enabledIndices();
-        const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
-        this.activeIndex = selected === undefined ? (enabled[0] ?? -1) : selected;
-        this.positioned = false;
-        this._lastScrolledActiveIndex = -1;
-        // 下拉菜单使用 fixed 定位锚定到触发器，避免被祖先 overflow:hidden
-        // （如分组的 .card-body）裁剪。
-        this.$nextTick(() => this.positionMenu());
-      }
+    toggle() {
+      if (this.open) this.close();
+      else this.show();
     },
 
     schedulePositionMenu() {
@@ -285,7 +278,7 @@ document.addEventListener('alpine:init', () => {
       });
     },
 
-    // 把菜单定位到触发器正下方（fixed，相对视口），并约束在视口内。
+    // 打开时确定方向和高度；之后只更新锚点，不挤压菜单或改变内部滚动范围。
     positionMenu() {
       const root = this.$el;
       const trigger = root.querySelector('.anima-select-trigger');
@@ -297,45 +290,30 @@ document.addEventListener('alpine:init', () => {
       const vh = window.innerHeight;
       // 带说明的选项需要更宽的阅读区域；窄屏下仍由视口宽度兜底。
       const width = Math.min(Math.max(r.width, this.hasDescriptions ? 320 : 200), vw - 16);
+      menu.style.width = Math.round(width) + 'px';
       const menuScroll = menu.querySelector('.anima-select-menu-scroll');
       const maxScrollHeight = 520;
-      if (menuScroll) menuScroll.style.maxHeight = `${maxScrollHeight}px`;
-      const desiredHeight = Math.min(menu.scrollHeight, maxScrollHeight + 2);
-      const spaceBelow = Math.max(0, vh - r.bottom - 8);
-      const spaceAbove = Math.max(0, r.top - 8);
-      const openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
-      const availableHeight = openUp ? spaceAbove : spaceBelow;
-      if (menuScroll) menuScroll.style.maxHeight = `${Math.max(120, Math.min(maxScrollHeight, availableHeight - 2))}px`;
-      const renderedHeight = Math.min(menu.scrollHeight, availableHeight);
-      let top;
-      if (openUp) {
-        top = Math.max(8, r.top - renderedHeight - 4);
-        menu.classList.add('anima-select-menu-up');
-      } else {
-        top = r.bottom + 4;
-        menu.classList.remove('anima-select-menu-up');
+      if (firstPosition) {
+        if (menuScroll) menuScroll.style.maxHeight = `${maxScrollHeight}px`;
+        const desiredHeight = Math.min(menu.scrollHeight, maxScrollHeight + 2);
+        const spaceBelow = Math.max(0, vh - r.bottom - 8);
+        const spaceAbove = Math.max(0, r.top - 8);
+        this._openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+        const availableHeight = this._openUp ? spaceAbove : spaceBelow;
+        if (menuScroll) menuScroll.style.maxHeight = `${Math.max(0, Math.min(maxScrollHeight, availableHeight - 2))}px`;
       }
+      const openUp = this._openUp;
       // 带说明的宽菜单向左展开，避免侵入右侧预览栏；紧凑菜单保持左对齐。
       let left = this.hasDescriptions ? r.right - width : r.left;
       if (left + width > vw - 8) left = vw - width - 8;
       if (left < 8) left = 8;
       menu.style.position = 'fixed';
-      menu.style.top = Math.round(top) + 'px';
+      menu.style.top = openUp ? 'auto' : Math.round(r.bottom + 4) + 'px';
+      menu.style.bottom = openUp ? Math.round(vh - r.top + 4) + 'px' : 'auto';
       menu.style.left = Math.round(left) + 'px';
-      menu.style.width = Math.round(width) + 'px';
       menu.style.right = 'auto';
       menu.style.transformOrigin = `${left < r.left ? 'right' : 'left'} ${openUp ? 'bottom' : 'top'}`;
-      if (firstPosition && menuScroll) {
-        const activeOption = menuScroll.querySelector('.anima-select-option.active');
-        if (activeOption) {
-          const optionTop = activeOption.offsetTop;
-          const optionBottom = optionTop + activeOption.offsetHeight;
-          if (optionTop < menuScroll.scrollTop || optionBottom > menuScroll.scrollTop + menuScroll.clientHeight) {
-            menuScroll.scrollTop = Math.max(0, optionTop - (menuScroll.clientHeight - activeOption.offsetHeight) / 2);
-          }
-        }
-      }
-      this._syncOptionA11y();
+      if (firstPosition) this._syncOptionA11y();
       this.positioned = true;
     },
 

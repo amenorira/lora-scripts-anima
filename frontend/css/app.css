@@ -4145,18 +4145,13 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   z-index: 10001;
   min-width: 0;
 }
-.anima-select-menu-up .anima-select-menu-scroll {
-  /* 向上展开时仍允许滚动；max-height 由视口约束 */
-  max-height: 40vh;
-}
-
 /* Scrollable options area */
 .anima-select-menu-scroll {
   max-height: min(520px, calc(100vh - 24px));
   overflow-y: auto;
   overflow-x: hidden;
   padding: 6px;
-  /* 阻止滚动传播：菜单内滚到边界不连带滚动页面，避免触发 scroll 监听关闭菜单 */
+  /* 菜单内滚到边界时不连带滚动页面。 */
   overscroll-behavior: contain;
 }
 

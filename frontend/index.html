@@ -23,7 +23,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260924-reviewfix1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260928-select-cleanup">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
@@ -35,7 +35,7 @@
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
   <script src="/anima-ui/js/config.js?v=20260924-page-headings5" defer></script>
-  <script src="/anima-ui/js/anima-select.js?v=20260924-review5" defer></script>
+  <script src="/anima-ui/js/anima-select.js?v=20260928-select-cleanup" defer></script>
   <script src="/anima-ui/js/realtime.js?v=20260924-monitor-time1" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20260920-rich-logs2" defer></script>
   <script src="/anima-ui/js/monitor-core.js?v=20260924-eta-trend7" defer></script>
@@ -43,14 +43,14 @@
   <script src="/anima-ui/js/environment-core.js?v=20260919-dict17" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20260920-dict-counts1" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20260924-optlabel1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20260928-select-lifecycle" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20260909-previewfix15" defer></script>
-  <script src="/anima-ui/js/preview-select.js?v=20260914-motion2" defer></script>
+  <script src="/anima-ui/js/preview-select.js?v=20260928-select-scroll-persist" defer></script>
   <script src="/anima-ui/js/training-shape-preview.js?v=20260917-kronscale1" defer></script>
   <script src="/anima-ui/js/training-toml.js?v=20260924-review5" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260927-pixai-info" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260928-select-lifecycle" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
@@ -386,7 +386,7 @@
             <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
             <div class="anima-select" style="min-width:200px"
                  x-data="animaSelect({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}, form.model_train_type)"
-                 @click.outside="closeOnOutside()"
+                 @click.outside="close()"
                  @anima-select-change="setField('model_train_type', $event.detail.value)">
               <input type="hidden" x-ref="modelInput" :value="form.model_train_type">
               <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)">
@@ -396,7 +396,7 @@
                 </svg>
               </button>
               <template x-if="open">
-                <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }" x-init="$nextTick(() => positionMenu())">
+                <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }">
                   <div class="anima-select-menu-scroll">
                     <template x-for="opt in flatOptions" :key="opt.v">
                       <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">

@@ -2,20 +2,54 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('previewSelect', (options, value) => ({
     options, value, open: false, active: 0, position: '', search: '', searchTime: 0,
+    _scrollHandler: null, _positionFrame: null, _openUp: false, _maxHeight: 0,
+    init() {
+      this._scrollHandler = event => {
+        if (!this.open || this.$refs.menu.contains(event.target) || this._positionFrame !== null) return;
+        this._positionFrame = requestAnimationFrame(() => {
+          this._positionFrame = null;
+          if (this.open) this.positionMenu();
+        });
+      };
+      this.$watch('open', open => {
+        if (open) window.addEventListener('scroll', this._scrollHandler, true);
+        else window.removeEventListener('scroll', this._scrollHandler, true);
+      });
+    },
+    destroy() {
+      window.removeEventListener('scroll', this._scrollHandler, true);
+      if (this._positionFrame !== null) cancelAnimationFrame(this._positionFrame);
+    },
     get selected() { return this.options.find(option => option.value === this.value) || this.options[0]; },
     show() {
-      const rect = this.$refs.trigger.getBoundingClientRect();
-      const below = window.innerHeight - rect.bottom - 12;
-      const above = rect.top - 12;
-      const upward = below < 200 && above > below;
-      this.position = `left:${rect.left}px;width:${rect.width}px;max-height:${Math.min(360, upward ? above : below)}px;`
-        + `transform-origin:left ${upward ? 'bottom' : 'top'};`
-        + (upward ? `bottom:${window.innerHeight - rect.top + 4}px` : `top:${rect.bottom + 4}px`);
+      this.positionMenu(true);
       this.active = Math.max(0, this.options.findIndex(option => option.value === this.value));
       this.open = true;
       this.reveal();
     },
-    reveal() { this.$nextTick(() => this.$refs.menu.querySelector(`[data-index="${this.active}"]`)?.scrollIntoView({ block: 'nearest' })); },
+    positionMenu(firstPosition = false) {
+      const rect = this.$refs.trigger.getBoundingClientRect();
+      const below = window.innerHeight - rect.bottom - 12;
+      const above = rect.top - 12;
+      if (firstPosition) {
+        this._openUp = below < 200 && above > below;
+        this._maxHeight = Math.max(0, Math.min(360, this._openUp ? above : below));
+      }
+      const upward = this._openUp;
+      this.position = `left:${rect.left}px;width:${rect.width}px;max-height:${this._maxHeight}px;`
+        + `transform-origin:left ${upward ? 'bottom' : 'top'};`
+        + (upward ? `bottom:${window.innerHeight - rect.top + 4}px` : `top:${rect.bottom + 4}px`);
+    },
+    reveal() {
+      this.$nextTick(() => {
+        const menu = this.$refs.menu;
+        const option = menu.querySelector(`[data-index="${this.active}"]`);
+        if (!this.open || !option) return;
+        const optionRect = option.getBoundingClientRect(), menuRect = menu.getBoundingClientRect();
+        if (optionRect.top < menuRect.top) menu.scrollTop += optionRect.top - menuRect.top;
+        else if (optionRect.bottom > menuRect.bottom) menu.scrollTop += optionRect.bottom - menuRect.bottom;
+      });
+    },
     choose(index) {
       this.value = this.options[index].value;
       this.open = false;
