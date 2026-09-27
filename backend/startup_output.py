@@ -56,7 +56,7 @@ def _render_step(spinner):
     from rich.table import Table
     from rich.text import Text
     row = Table.grid(padding=0)
-    row.add_row(Text(_step_started + "  ", style=COLORS["muted"]), spinner,
+    row.add_row(Text(_step_started + "  ", style=COLORS["timestamp"]), spinner,
                 Text(f" {_step}  {_elapsed()}"))
     return row
 
@@ -64,7 +64,7 @@ def _render_step(spinner):
 def _print_step() -> None:
     from rich.text import Text
     line = Text()
-    line.append(_step_started, style=COLORS["muted"])
+    line.append(_step_started, style=COLORS["timestamp"])
     line.append("  > ", style=COLORS["accent"])
     line.append(_step, style=COLORS["text"])
     console.print(line)
@@ -90,7 +90,7 @@ def _print_summary(title, rows, *, style=COLORS["accent"], expand=False) -> None
         return
     from rich.table import Table
     from rich.text import Text
-    console.print(Text.assemble((_timestamp(), COLORS["muted"]), ("  " + title, style)))
+    console.print(Text.assemble((_timestamp(), COLORS["timestamp"]), ("  " + title, style)))
     table = Table.grid(expand=expand, padding=(0, 1))
     table.add_column(style=COLORS["muted"], no_wrap=True)
     table.add_column(ratio=1 if expand else None, overflow="fold")

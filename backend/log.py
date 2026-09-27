@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 
 COLORS = dict(text="#E0E6ED", muted="#AAB4C0", accent="#4DE0CE",
               secondary="#62ADFF", success="#72DB83", warning="#FFD166",
-              error="#FF7878", border="#7D8793")
+              error="#FF7878", border="#7D8793", timestamp="dim cyan")
 
 
 class _ConsoleVisibilityFilter(logging.Filter):
@@ -41,9 +41,9 @@ try:
         log_time_format='%Y-%m-%d %H:%M:%S-%f',
         theme=Theme(
             {
-                'log.time': COLORS['muted'],
+                'log.time': COLORS['timestamp'],
                 'logging.level.debug': COLORS['muted'],
-                'logging.level.info': COLORS['accent'],
+                'logging.level.info': COLORS['text'],
                 'logging.level.warning': COLORS['warning'],
                 'logging.level.error': COLORS['error'],
                 'logging.level.critical': COLORS['error'],

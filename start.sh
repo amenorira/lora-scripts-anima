@@ -9,9 +9,9 @@ cd "$SCRIPT_DIR"
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
 
 # Match backend.log.COLORS without requiring Python during bootstrap.
-_C_TEXT='' _C_MUTED='' _C_ACCENT='' _C_SUCCESS='' _C_WARNING='' _C_ERROR='' _C_RESET=''
+_C_TEXT='' _C_TIME='' _C_ACCENT='' _C_SUCCESS='' _C_WARNING='' _C_ERROR='' _C_RESET=''
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-    _C_TEXT=$'\033[38;2;224;230;237m' _C_MUTED=$'\033[38;2;170;180;192m'
+    _C_TEXT=$'\033[38;2;224;230;237m' _C_TIME=$'\033[2;36m'
     _C_ACCENT=$'\033[38;2;77;224;206m' _C_SUCCESS=$'\033[38;2;114;219;131m'
     _C_WARNING=$'\033[38;2;255;209;102m' _C_ERROR=$'\033[38;2;255;120;120m' _C_RESET=$'\033[0m'
 fi
@@ -30,7 +30,7 @@ _console_message() {
 }
 _startup_row() {
     printf '\r\033[2K%s%s  %s%s %sPreparing startup environment / 正在准备启动环境%s%s' \
-        "$_C_MUTED" "$STARTUP_SPINNER_TIMESTAMP" "$_C_ACCENT" "$1" "$_C_TEXT" "${2:-}" "$_C_RESET"
+        "$_C_TIME" "$STARTUP_SPINNER_TIMESTAMP" "$_C_RESET$_C_ACCENT" "$1" "$_C_TEXT" "${2:-}" "$_C_RESET"
 }
 
 STARTUP_SPINNER_PID=""
