@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic, time
 
-from backend.log import console, log
+from backend.log import COLORS, console, log
 
 
 try:
@@ -44,7 +44,7 @@ def show_step(message: str) -> None:
     if _live is None:
         from rich.live import Live
         from rich.spinner import Spinner
-        spinner = Spinner("dots", style="cyan")
+        spinner = Spinner("dots", style=COLORS["accent"])
         _live = Live(get_renderable=lambda: _render_step(spinner), console=console,
                      transient=True, refresh_per_second=12.5)
         _live.start()
@@ -56,7 +56,7 @@ def _render_step(spinner):
     from rich.table import Table
     from rich.text import Text
     row = Table.grid(padding=0)
-    row.add_row(Text(_step_started + "  ", style="dim cyan"), spinner,
+    row.add_row(Text(_step_started + "  ", style=COLORS["muted"]), spinner,
                 Text(f" {_step}  {_elapsed()}"))
     return row
 
@@ -64,9 +64,9 @@ def _render_step(spinner):
 def _print_step() -> None:
     from rich.text import Text
     line = Text()
-    line.append(_step_started, style="dim cyan")
-    line.append("  > ", style="cyan")
-    line.append(_step, style="default")
+    line.append(_step_started, style=COLORS["muted"])
+    line.append("  > ", style=COLORS["accent"])
+    line.append(_step, style=COLORS["text"])
     console.print(line)
 
 
@@ -81,7 +81,7 @@ def finish_step() -> None:
 atexit.register(finish_step)
 
 
-def _print_summary(title, rows, *, style="bold", expand=False) -> None:
+def _print_summary(title, rows, *, style=COLORS["accent"], expand=False) -> None:
     """Render the same labeled values with or without Rich."""
     if console is None:
         print(f"{_timestamp()}  {title}", flush=True)
@@ -90,12 +90,12 @@ def _print_summary(title, rows, *, style="bold", expand=False) -> None:
         return
     from rich.table import Table
     from rich.text import Text
-    console.print(Text.assemble((_timestamp(), "dim cyan"), ("  " + title, style)))
+    console.print(Text.assemble((_timestamp(), COLORS["muted"]), ("  " + title, style)))
     table = Table.grid(expand=expand, padding=(0, 1))
-    table.add_column(style="bold", no_wrap=True)
+    table.add_column(style=COLORS["muted"], no_wrap=True)
     table.add_column(ratio=1 if expand else None, overflow="fold")
     for label, value, value_style in rows:
-        table.add_row(label, Text(value, style=value_style))
+        table.add_row(label, value if isinstance(value, Text) else Text(value, style=value_style))
     console.print(table)
 
 
@@ -103,7 +103,18 @@ def show_environment(sections: list[tuple[str, str]]) -> None:
     finish_step()
     details = " | ".join(f"{label}: {value}" for label, value in sections)
     _record(f"Runtime environment / 运行环境: {details}")
-    _print_summary("Environment / 运行环境", [(label, value, "") for label, value in sections])
+    rows = []
+    for label, value in sections:
+        if console is not None:
+            from rich.text import Text
+            text = Text(value, style=COLORS["text"])
+            if label.startswith("Compute") and "  |  " in value:
+                text.stylize(COLORS["secondary"], value.index("  |  ") + 5)
+            text.highlight_regex(r"\|", COLORS["border"])
+            text.highlight_regex(r"\b\d+(?:\.\d+)?\s+(?:[KMGT]i?B)\b", COLORS["accent"])
+            value = text
+        rows.append((label, value, ""))
+    _print_summary("Environment / 运行环境", rows)
 
 
 def show_ready(
@@ -128,11 +139,12 @@ def show_ready(
     write = console.print if console is not None else print
     write()
     _print_summary("READY / 服务已就绪", [
-        ("GUI", gui_url, "bold cyan"),
-        ("TensorBoard", tensorboard, "cyan" if tensorboard_url else "dim"),
+        ("GUI", gui_url, COLORS["accent"]),
+        ("TensorBoard", tensorboard, COLORS["warning"] if tensorboard_state == "failed" else
+         COLORS["secondary"] if tensorboard_url else COLORS["muted"]),
         ("Startup / 启动", elapsed, ""),
-        ("Log / 日志", str(log_path), "dim"),
-    ], style="bold green", expand=True)
+        ("Log / 日志", str(log_path), COLORS["muted"]),
+    ], style=COLORS["success"], expand=True)
     write("Keep this window open / 使用期间请保持此窗口开启",
-          **({"style": "dim yellow"} if console is not None else {}))
+          **({"style": COLORS["muted"], "highlight": False} if console is not None else {}))
     write()

@@ -108,6 +108,15 @@ function Get-Text {
     return [string]$template
 }
 
+function Format-ConsoleText {
+    param([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray)
+    if ([Console]::IsOutputRedirected -or $env:NO_COLOR) { return $Text }
+    # Match backend.log.COLORS; keep early startup independent of Python.
+    $colors = @{ Gray = "224;230;237"; DarkGray = "170;180;192"; Cyan = "77;224;206";
+                 Blue = "98;173;255"; Green = "114;219;131"; Yellow = "255;209;102"; Red = "255;120;120" }
+    return "$([char]27)[38;2;$($colors[$Color.ToString()])m$Text$([char]27)[0m"
+}
+
 function Write-Text {
     param(
         [Parameter(Mandatory = $true)][string]$Key,
@@ -115,7 +124,7 @@ function Write-Text {
         [ConsoleColor]$Color = [ConsoleColor]::Gray
     )
     Complete-InlineProgress
-    Write-Host (Get-Text $Key $FormatArgs) -ForegroundColor $Color
+    Write-Host (Format-ConsoleText (Get-Text $Key $FormatArgs) $Color)
 }
 
 function Show-InitialSetupHeader {
@@ -159,7 +168,8 @@ function Update-StartupProgress {
                 [char]0x2834, [char]0x2826, [char]0x2827, [char]0x2807, [char]0x280F)
     $spinner = $frames[$script:StartupProgressFrame % $frames.Count]
     $elapsed = $script:StartupProgressStopwatch.Elapsed.TotalSeconds.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) + "s"
-    Write-InlineProgress ("{0}[2;36m{1}{0}[0m  {0}[36m{2}{0}[0m {3}  {4}" -f [char]27, $script:StartupProgressTimestamp, $spinner, (Get-Text "startup_preparing"), $elapsed)
+    Write-InlineProgress ((Format-ConsoleText $script:StartupProgressTimestamp DarkGray) + "  " +
+        (Format-ConsoleText $spinner Cyan) + " " + (Format-ConsoleText ((Get-Text "startup_preparing") + "  " + $elapsed)))
     $script:StartupProgressFrame++
 }
 
@@ -181,7 +191,8 @@ function Stop-StartupProgress {
     $script:StartupProgressActive = $false
     if ($null -ne $script:StartupProgressStopwatch) {
         $script:StartupProgressStopwatch.Stop()
-        Write-InlineProgress ("{0}[2;36m{1}{0}[0m  {0}[36m>{0}[0m {2}" -f [char]27, $script:StartupProgressTimestamp, (Get-Text "startup_preparing"))
+        Write-InlineProgress ((Format-ConsoleText $script:StartupProgressTimestamp DarkGray) + "  " +
+            (Format-ConsoleText ">" Cyan) + " " + (Format-ConsoleText (Get-Text "startup_preparing")))
         if (-not [Console]::IsOutputRedirected) { [Console]::WriteLine() }
         $script:StartupProgressStopwatch = $null
     }
@@ -232,7 +243,7 @@ function Invoke-ProcessWithSpinner {
         [string]$WorkingDirectory = $script:RepositoryRoot
     )
 
-    Write-Host $Label -ForegroundColor Cyan
+    Write-Host (Format-ConsoleText $Label Cyan)
     $start = [Diagnostics.Stopwatch]::StartNew()
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $FilePath

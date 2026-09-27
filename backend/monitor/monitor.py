@@ -91,15 +91,16 @@ def _build_console_progress():
     """
     from rich.progress import (BarColumn, Progress, ProgressColumn)
     from rich.text import Text
+    from backend.log import COLORS
 
     class _PlainBarColumn(BarColumn):
         """纯 ASCII 进度条：# 已完成 / . 待完成。"""
         def render(self, task):
             if task.total is None or task.total == 0:
-                return Text("." * 20, style="dim")
+                return Text("." * 20, style=COLORS["muted"])
             pct = max(0.0, min(1.0, task.completed / task.total))
             filled = int(round(20 * pct))
-            return Text("#" * filled + "." * (20 - filled), style="dim")
+            return Text("#" * filled + "." * (20 - filled), style=COLORS["muted"])
 
     class _StepColumn(ProgressColumn):
         """步数列：450/1000"""
@@ -107,21 +108,21 @@ def _build_console_progress():
             completed = int(task.completed)
             total = int(task.total) if task.total else 0
             if total:
-                return Text(f"{completed}/{total}", style="cyan")
-            return Text(f"{completed}", style="cyan")
+                return Text(f"{completed}/{total}", style=COLORS["accent"])
+            return Text(f"{completed}", style=COLORS["accent"])
 
     class _DescColumn(ProgressColumn):
-        """描述列：Training <output_name>（加粗）。"""
+        """描述列：Training <output_name>。"""
         def render(self, task):
-            return Text(task.description or "Training", style="bold")
+            return Text(task.description or "Training", style=COLORS["text"])
 
     class _PctColumn(ProgressColumn):
         """百分比列：右对齐 3 位。"""
         def render(self, task):
             if task.total:
                 pct = max(0.0, min(100.0, task.completed / task.total * 100))
-                return Text(f"{pct:>3.0f}%", style="bold cyan")
-            return Text("--%", style="dim")
+                return Text(f"{pct:>3.0f}%", style=COLORS["accent"])
+            return Text("--%", style=COLORS["muted"])
 
     class _MetaColumn(ProgressColumn):
         """附加元数据列：从 task.fields 取 loss/lr/epoch/elapsed/eta/speed 渲染。
@@ -137,7 +138,7 @@ def _build_console_progress():
             parts = [f"{elapsed}<{eta}", f"loss={loss}", f"lr={lr}", f"ep={ep}"]
             if speed:
                 parts.append(speed)
-            return Text("  ".join(parts), style="dim")
+            return Text("  ".join(parts), style=COLORS["text"])
 
     try:
         from backend.log import console as _console

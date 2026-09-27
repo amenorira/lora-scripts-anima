@@ -27,9 +27,6 @@
 		"tensorboard": "TensorBoard",
 		"home": "首页"
 	},
-	"tensorboard": {
-		"openWindow": "在新窗口打开"
-	},
 	"docs": {
 		"title": "参数说明",
 		"catalog": "参数文档",

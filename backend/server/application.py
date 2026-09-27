@@ -63,7 +63,7 @@ async def report_runtime_banner() -> None:
     gpus = runtime.get("gpus", [])
     if gpus:
         first_gpu = gpus[0]
-        gpu_text = f"{first_gpu['name']} ({first_gpu['memory_gb']} GB)"
+        gpu_text = f"{first_gpu['name']} {first_gpu['memory_gb']} GB"
         if len(gpus) > 1:
             gpu_text += f" +{len(gpus) - 1}"
         compute.append(gpu_text)

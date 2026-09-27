@@ -304,12 +304,7 @@
 
       <!-- Route: TensorBoard -->
       <div x-show="currentRoute === 'tensorboard'" x-cloak style="height:100%">
-        <div style="height:100%;display:flex;flex-direction:column">
-          <div style="display:flex;justify-content:flex-end;padding:8px 12px">
-            <a class="btn btn-sm btn-secondary" href="/tensorboard/" target="_blank" rel="noopener" x-text="t('tensorboard.openWindow')">Open in new window</a>
-          </div>
-          <div id="tensorboardFrame" style="flex:1;min-height:0;position:relative"></div>
-        </div>
+        <div id="tensorboardFrame" style="height:100%;position:relative"></div>
       </div>
 
       <!-- Route: Parameter documentation -->

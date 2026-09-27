@@ -561,6 +561,7 @@ def make_progress_bar(console=None):
     total 未知时百分比留空、已下/总量只显示已下（避免 /? 占位）。
     api.py 和 tagger_download.py 共用此工厂，消除重复的列类定义。
     """
+    from backend.log import COLORS, console as app_console
     from rich.progress import (BarColumn, Progress, ProgressColumn,
                                TextColumn, TransferSpeedColumn)
     from rich.text import Text
@@ -570,10 +571,10 @@ def make_progress_bar(console=None):
         """纯 ASCII 进度条：# 已完成 / . 待下载，无彩色填充。"""
         def render(self, task):
             if task.total is None or task.total == 0:
-                return Text("." * 24, style="dim")
+                return Text("." * 24, style=COLORS["muted"])
             pct = max(0.0, min(1.0, task.completed / task.total))
             filled = int(round(24 * pct))
-            return Text("#" * filled + "." * (24 - filled), style="dim")
+            return Text("#" * filled + "." * (24 - filled), style=COLORS["muted"])
 
     class _PlainDownloadColumn(ProgressColumn):
         """已下载/总大小；total 未知时只显示已下载，避免 437.3/? 的丑占位。"""
@@ -603,7 +604,7 @@ def make_progress_bar(console=None):
         _PlainPctColumn(),
         _PlainDownloadColumn(),
         TransferSpeedColumn(),
-        console=console,
+        console=console or app_console,
         transient=True,    # 完成后自动清除进度条，由日志行承接最终状态
         expand=False,
     )

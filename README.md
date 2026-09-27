@@ -160,7 +160,7 @@ cd lora-scripts-anima
 
 ### 实时连接与慢速远程连接
 
-TensorBoard 与 GUI 共用对外入口：默认访问 `http://127.0.0.1:12333/tensorboard/`，也可从 TensorBoard 页面点击“在新窗口打开”。浏览器链接沿用当前页面的域名、协议和端口；SSH 只需映射 GUI 端口，本地端口可以与服务器不同。远端终端显示服务器地址，无法自动得知 SSH 本地映射端口。
+TensorBoard 与 GUI 共用对外入口：默认访问 `http://127.0.0.1:12333/tensorboard/`，可直接在独立窗口打开该地址。内嵌页面沿用当前页面的域名、协议和端口；SSH 只需映射 GUI 端口，本地端口可以与服务器不同。远端终端显示服务器地址，无法自动得知 SSH 本地映射端口。
 
 TensorBoard 子进程仅监听服务器回环地址，内部端口默认自动分配，`--listen` 不会将其单独暴露。旧的 `--tensorboard-host` 参数已弃用并忽略；`--tensorboard-port` 仅用于指定内部端口。启动期间显示等待提示，TensorBoard 就绪后统一打印访问地址；失败时提示异常并继续启动 GUI。详细日志位于 `logs/tensorboard.log`。
 

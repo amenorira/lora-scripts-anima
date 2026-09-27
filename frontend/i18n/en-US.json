@@ -27,9 +27,6 @@
 		"tensorboard": "TensorBoard",
 		"home": "Home"
 	},
-	"tensorboard": {
-		"openWindow": "Open in new window"
-	},
 	"docs": {
 		"title": "Parameter Guide",
 		"catalog": "Parameter docs",

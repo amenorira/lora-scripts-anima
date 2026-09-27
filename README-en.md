@@ -158,7 +158,7 @@ First launch automatically creates a virtual environment and installs all depend
 
 ### Realtime and Slow Remote Connections
 
-TensorBoard shares the GUI's public entry point: by default, visit `http://127.0.0.1:12333/tensorboard/`, or choose “Open in new window” on the TensorBoard page. Browser links use the current origin, so SSH only needs to forward the GUI port; the local port may differ from the server port. Terminal output shows the server address and cannot discover your SSH local forwarding port.
+TensorBoard shares the GUI's public entry point: by default, visit `http://127.0.0.1:12333/tensorboard/`, which can also be opened directly in a separate window. The embedded page uses the current origin, so SSH only needs to forward the GUI port; the local port may differ from the server port. Terminal output shows the server address and cannot discover your SSH local forwarding port.
 
 The TensorBoard child process only listens on server loopback and selects its internal port automatically. `--listen` does not expose it separately. The old `--tensorboard-host` argument is deprecated and ignored; `--tensorboard-port` only selects the internal port. Startup shows a waiting status and prints the access URLs together once TensorBoard is ready. If it fails, the GUI still starts with an explicit warning. Details are recorded in `logs/tensorboard.log`.
 
