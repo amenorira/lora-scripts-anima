@@ -59,7 +59,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(page["items"][0]["index"], 0)
 
             with patch.object(workspace, "training_active", return_value=False), patch.object(
-                workspace, "_onnx_tags", return_value=(
+                workspace, "_local_tags", return_value=(
                     ["1girl", "blue eyes"],
                     {"general": {"tags": [["1girl", 0.99]]}},
                 )
@@ -87,7 +87,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
             image_path.with_suffix(".txt").write_text("existing tag", encoding="utf-8")
             source = workspace.scan_source(str(root), True)
             with patch.object(workspace, "training_active", return_value=False), patch.object(
-                workspace, "_onnx_tags", side_effect=AssertionError("inference should be skipped")
+                workspace, "_local_tags", side_effect=AssertionError("inference should be skipped")
             ):
                 task_id = workspace.create_task({
                     "source_token": source["source_token"],
@@ -163,7 +163,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
             "postprocess_tags",
             return_value={"1girl": 0.99, "alice": 0.88},
         ) as postprocess:
-            tags, categories = workspace._onnx_tags(
+            tags, categories = workspace._local_tags(
                 "camie-tagger-v2",
                 Image.new("RGB", (16, 16)),
                 {"category_thresholds": thresholds},
@@ -174,7 +174,9 @@ class TaggerWorkspaceTests(unittest.TestCase):
         self.assertEqual(categories["character"]["tags"], [["alice", 0.88]])
         self.assertEqual(categories["character"]["total"], 1)
         self.assertFalse(categories["character"]["truncated"])
-        self.assertEqual(postprocess.call_args.args[3], thresholds)
+        applied = postprocess.call_args.args[3]
+        self.assertEqual({key: applied[key] for key in thresholds}, thresholds)
+        self.assertEqual(applied["copyright"], 0.492)
         self.assertFalse(postprocess.call_args.args[12])
         self.assertEqual(set(raw), {"general", "character", "rating", "model"})
 
@@ -329,7 +331,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 "source_token": source["source_token"], "model_id": "camie-tagger-v2",
                 "write_captions": False,
             }
-            with patch.object(workspace, "_onnx_tags", side_effect=slow_inference):
+            with patch.object(workspace, "_local_tags", side_effect=slow_inference):
                 task_id = workspace.create_task(payload)
                 self.assertTrue(entered.wait(5))
                 self.assertIsNone(tm.reserve_task())

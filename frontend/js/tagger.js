@@ -106,15 +106,6 @@ window.taggerMixin = {
   },
   TAGGER_API_BUILTIN_PROMPT_MODES: { booru: 'tags', caption: 'caption', detailed: 'caption' },
 
-  TAGGER_CAMIE_PRESETS: {
-    macro: { general: 0.492, character: 0.492, copyright: 0.492, artist: 0.492, meta: 0.492, year: 0.492, rating: 0.492 },
-    micro: { general: 0.614, character: 0.614, copyright: 0.614, artist: 0.614, meta: 0.614, year: 0.614, rating: 0.614 },
-  },
-  TAGGER_CL_PRESETS: {
-    macro: { general: 0.35, character: 0.6, copyright: 0.35, artist: 0.35, meta: 0.35, quality: 0.35, rating: 0.35 },
-    micro: { general: 0.45, character: 0.7, copyright: 0.45, artist: 0.45, meta: 0.45, quality: 0.45, rating: 0.45 },
-  },
-
   async buildTaggerForm() {
     await this._mountTaggerWorkspace();
     this.tagDictionaryInit();
@@ -150,7 +141,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260924-page-headings5');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260927-pixai-runtime');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -485,7 +476,8 @@ window.taggerMixin = {
         this.taggerSelectedModel = savedModel;
       }
       if (!this.taggerModels.some(model => model.id === this.taggerSelectedModel)) {
-        this.taggerSelectedModel = this.taggerModels[0] ? this.taggerModels[0].id : '';
+        this.taggerSelectedModel = this.taggerModels.find(model => model.id === body.data.default_model_id)?.id
+          || this.taggerModels[0]?.id || '';
       }
       this.handleTaggerModelChange(false);
     } catch (error) {
@@ -495,6 +487,10 @@ window.taggerMixin = {
 
   taggerModel() {
     return this.taggerModels.find(model => model.id === this.taggerSelectedModel) || null;
+  },
+
+  taggerRuntimeLabel() {
+    return { onnx: 'ONNX Runtime', pytorch: 'PyTorch' }[this.taggerModel()?.engine] || '';
   },
 
   taggerModelSelectConfig() {
@@ -541,6 +537,7 @@ window.taggerMixin = {
   taggerModelPurpose(modelId) {
     const key = {
       'camie-tagger-v2': 'modelPurposeCamie',
+      'pixai-tagger-v1.0': 'modelPurposePixai',
       'wd-eva02-large-tagger-v3': 'modelPurposeEva',
       'wd-vit-large-tagger-v3': 'modelPurposeVit',
       'cl_tagger_1_02': 'modelPurposeCl',
@@ -654,9 +651,9 @@ window.taggerMixin = {
       return;
     }
     if (this.taggerUsesCategoryThresholds()) {
-      const presets = this.taggerSelectedModel === 'camie-tagger-v2' ? this.TAGGER_CAMIE_PRESETS : this.TAGGER_CL_PRESETS;
+      const presets = this.taggerModel()?.threshold_presets || {};
       if (preset !== 'custom' && presets[preset]) {
-        this.taggerSettings.categoryThresholds = Object.assign({}, this.taggerSettings.categoryThresholds, presets[preset]);
+        this.taggerSettings.categoryThresholds = Object.assign({}, presets[preset]);
       }
     } else {
       const values = {
@@ -1129,7 +1126,7 @@ window.taggerMixin = {
     }
     // 固定分类顺序：特征在前、模型等辅助分类在后，避免后端原始顺序把噪声分类顶到最前
     const ordered = {};
-    ['general', 'character', 'copyright', 'artist', 'meta', 'quality', 'rating'].forEach(key => {
+    ['general', 'character', 'copyright', 'style', 'artist', 'meta', 'quality', 'rating'].forEach(key => {
       if (state[key]) ordered[key] = state[key];
     });
     Object.keys(state).forEach(key => {

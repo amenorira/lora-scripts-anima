@@ -6,6 +6,35 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.927.213042 - 2026-09-27
+
+This release adds PixAI Tagger v1.0, unifies TensorBoard access with the trainer, and improves startup and console output.
+
+### PixAI Tagger v1.0
+
+[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) is developed by PixAI Labs, the team at anime AI creation platform PixAI.
+
+Designed for tagging anime illustrations, the model uses a fine-tuned SAM3 vision backbone. Images are resized and padded while preserving their aspect ratio, and the model returns tags and confidence scores grouped by category. It recognizes clothing, poses, objects, composition, characters, source works, styles, metadata, and content ratings, supporting image organization, training dataset preparation, and caption writing.
+
+In the author's shared-vocabulary benchmark, it ranked first across all reported general-tag metrics among the evaluated models and outperformed Camie v2 on both general and character tags.
+
+- Supports single-image inspection, batch tagging, and caption-file writing.
+- Provides independent confidence thresholds for six categories and official Macro/Micro threshold presets.
+- Retains full tag confidence scores so thresholds can be adjusted and candidate tags inspected after single-image inference.
+- Runs locally with PyTorch and supports GPU acceleration. Approximately 1.95 GB of model files are downloaded automatically on first use.
+
+### TensorBoard Access
+
+- TensorBoard shares the trainer's external port and is available at `/tensorboard/`, both embedded and in a separate window.
+- Remote access over SSH requires forwarding only the trainer port, including when local and server ports differ.
+- Improved readiness detection, error reporting, and shutdown cleanup. The trainer continues to start if TensorBoard fails to launch.
+
+### Startup and Logging
+
+- Combined duplicate configuration reads, reduced unnecessary module imports, and made GPU initialization and TensorBoard startup run concurrently.
+- Moved historical record scanning, migration, and training-parameter warmup until after service readiness to reduce startup delays.
+- Unified Windows and Linux startup messages, animations, timing, and console colors to make logs, access URLs, and errors easier to distinguish.
+
 ## v26.927.1418 - 2026-09-27
 
 Starting with this release, versions use the fixed UTC+8 calendar format `YY.MDD.HMMSS`, without zero-padding. This version represents September 27, 2026 at 00:14:18 UTC+8. Historical versions and tags are preserved. This release reorganizes training monitoring, fixes races in task startup and stopping, and upgrades the training runtime.

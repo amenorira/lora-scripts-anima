@@ -244,7 +244,7 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
         }
 
 
-def _onnx_tags(model_id: str, image: Image.Image, options: dict, *, full_categories: bool = False) -> tuple[list[str], dict]:
+def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_categories: bool = False) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
         raw = interrogator.interrogate(image)
@@ -257,7 +257,12 @@ def _onnx_tags(model_id: str, image: Image.Image, options: dict, *, full_categor
         }
         for key, values in raw.items() if values
     }
-    category_thresholds = dict(options.get("category_thresholds") or {})
+    spec = MODEL_SPEC_BY_ID[model_id]
+    # Explicit global thresholds retain the legacy API semantics. Otherwise
+    # clients omitting UI presets still receive the model's recommended defaults.
+    explicit_threshold = "threshold" in options or "character_threshold" in options
+    category_thresholds = {} if explicit_threshold else dict(spec.threshold_presets.get("macro", {}))
+    category_thresholds.update(options.get("category_thresholds") or {})
     category_enabled = dict(options.get("category_enabled") or {})
     for category, enabled in category_enabled.items():
         if enabled is False:
@@ -535,7 +540,7 @@ def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: th
                     with Image.open(path) as opened:
                         alpha = opened.getchannel("A") if "A" in opened.getbands() else None
                         source_has_transparency = bool(alpha and alpha.getextrema()[0] < 128)
-                        image = opened.convert("RGB")
+                        image = opened.copy()
                         image.info["source_has_transparency"] = source_has_transparency
                         image.load()
                 if not _put((index, path, image, None, existing)):
@@ -604,7 +609,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                     raise decode_error
                 if not model_ready:
                     _task_log(task, f"Loading model / 正在加载模型: {spec.name}")
-                tags, categories = _onnx_tags(spec.id, image, options, full_categories=not write_captions)
+                tags, categories = _local_tags(spec.id, image, options, full_categories=not write_captions)
                 if not model_ready:
                     model_ready = True
                     _task_log(task, f"Model ready / 模型就绪: {spec.name}")
@@ -697,7 +702,7 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
 def create_task(payload: dict) -> str:
     _cleanup()
     engine = str(payload.get("engine") or "onnx")
-    if engine not in {"onnx", "api"}:
+    if engine not in {"onnx", "pytorch", "api"}:
         raise ValueError("Unknown engine / 未知引擎")
     config: api_engine.ApiConfig | None = None
     if engine == "api":
@@ -709,6 +714,7 @@ def create_task(payload: dict) -> str:
         model_id = str(payload.get("model_id") or "")
         if model_id not in MODEL_SPEC_BY_ID:
             raise ValueError("Unknown model / 未知模型")
+        engine = MODEL_SPEC_BY_ID[model_id].engine
     if has_active_tagger_task():
         raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
     source_token = str(payload.get("source_token") or "")
@@ -763,7 +769,7 @@ def create_task(payload: dict) -> str:
             raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
         if has_active_legacy_tagger_task():
             raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
-        if engine == "onnx" or write_captions:
+        if engine != "api" or write_captions:
             owner = f"tagger:{task_id}"
             if not tm.claim_external(owner):
                 raise RuntimeError("Training or tagging task is active / 训练或反推任务正在运行")

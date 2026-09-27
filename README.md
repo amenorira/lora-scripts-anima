@@ -43,7 +43,7 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 - **多种优化器** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon 等常用优化器，外加内置的 LoRA-RITE 与测试中的 LoRA-Muon，各自带默认值与约束提示
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
-- **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger 与 Camie Tagger，支持单图检查、分类阈值控制和批量标签写入；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
+- **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger 与 [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0)，支持单图检查、分类阈值控制和批量标签写入；PixAI 使用本地 PyTorch 推理，支持风格分类，首次下载约 1.95 GB；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
 - **国际化（i18n）** — 中英双语界面，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
@@ -88,7 +88,7 @@ lora-scripts-anima/
 │   ├── training/               ← 训练引擎封装（参数适配、字段注册表、进程管理）
 │   ├── monitor/                ← 训练监控（GPU/系统/日志/预览/历史）
 │   ├── tageditor/              ← 原生标签编辑器
-│   ├── tagger/                 ← 打标模块（WD / CL / Camie / AI 接口）
+│   ├── tagger/                 ← 打标模块（WD / CL / Camie / PixAI / AI 接口）
 │   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
 ├── frontend/                   ← Alpine.js SPA 前端
 ├── config/                     ← 本地配置与自动保存
@@ -160,6 +160,10 @@ cd lora-scripts-anima
 
 ### 实时连接与慢速远程连接
 
+TensorBoard 与 GUI 共用对外入口：默认访问 `http://127.0.0.1:12333/tensorboard/`，可直接在独立窗口打开该地址。内嵌页面沿用当前页面的域名、协议和端口；SSH 只需映射 GUI 端口，本地端口可以与服务器不同。远端终端显示服务器地址，无法自动得知 SSH 本地映射端口。
+
+TensorBoard 子进程仅监听服务器回环地址，内部端口默认自动分配，`--listen` 不会将其单独暴露。旧的 `--tensorboard-host` 参数已弃用并忽略；`--tensorboard-port` 仅用于指定内部端口。启动期间显示等待提示，TensorBoard 就绪后统一打印访问地址；失败时提示异常并继续启动 GUI。详细日志位于 `logs/tensorboard.log`。
+
 网页的 HTTP 请求和实时连接始终与当前页面同源（same-origin）。训练器不会自动配置 SSH、端口映射、代理、云平台专用逻辑或额外的实时端口。
 
 - `/ws/realtime` 仅传递小型 JSON 状态、进度、日志增量和硬件数据；命令、图片、文件和元数据仍使用 HTTP。
@@ -196,8 +200,7 @@ cd lora-scripts-anima
 | `--skip-prepare-environment` | bool | false | 启动时不再自动检查和修复依赖环境 |
 | `--skip-prepare-onnxruntime` | bool | false | 只跳过 onnxruntime-gpu 的安装检查 |
 | `--disable-tensorboard` | bool | false | 不随 GUI 启动内置的 TensorBoard |
-| `--tensorboard-host` | str | "127.0.0.1" | TensorBoard 主机 |
-| `--tensorboard-port` | int | 6006 | TensorBoard 端口 |
+| `--tensorboard-port` | int | 0 | 内部 TensorBoard 端口，0 表示自动分配；通常无需设置 |
 | `--localization` | str | | 界面语言与本地化设置 |
 | `--dev` | bool | false | 开发者模式 |
 | `--quiet` / `-q` | bool | false | 自动安装 Python/venv 依赖；默认不执行可选的 Git 仓库修复 |

@@ -60,15 +60,18 @@ def _preview_sort_key(path: Path, stat) -> tuple[int, int, int, int, str]:
 
 # ── 缓存 + 线程安全锁 ────────────────────────────────────
 _history_cache_lock = threading.Lock()
+_history_scan_lock = threading.Lock()
 _history_cache: tuple[float, list[dict]] | None = None
+_history_cache_generation = 0
 _HISTORY_CACHE_TTL = 30  # 秒
 
 
 def invalidate_history_cache() -> None:
     """失效历史记录缓存（删除/新增记录后调用）。"""
-    global _history_cache
+    global _history_cache, _history_cache_generation
     with _history_cache_lock:
         _history_cache = None
+        _history_cache_generation += 1
 
 
 # ── 预览样本 ──────────────────────────────────────────────
@@ -202,11 +205,18 @@ def _parse_toml_config(path: Path) -> dict | None:
 
 def scan_history() -> list[dict]:
     """扫描内部运行记录；旧跨盘记录会先由 autosave 幂等导入。"""
+    # Background warm-up and the first page request share one scan/migration.
+    with _history_scan_lock:
+        return _scan_history()
+
+
+def _scan_history() -> list[dict]:
     global _history_cache
     now = time.time()
     with _history_cache_lock:
         if _history_cache and now - _history_cache[0] < _HISTORY_CACHE_TTL:
             return _history_cache[1]
+        generation = _history_cache_generation
 
     try:
         import_legacy_external_runs()
@@ -263,7 +273,8 @@ def scan_history() -> list[dict]:
     history.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
 
     with _history_cache_lock:
-        _history_cache = (time.time(), history)
+        if generation == _history_cache_generation:
+            _history_cache = (time.time(), history)
     return history
 
 

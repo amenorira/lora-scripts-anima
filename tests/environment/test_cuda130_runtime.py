@@ -1,5 +1,6 @@
 import sys
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -65,6 +66,23 @@ class ExistingVenvMigrationTests(unittest.TestCase):
 
 
 class RuntimeRepairRegressionTests(unittest.TestCase):
+    def test_cuda_wheel_checks_do_not_import_torch(self):
+        for version, cuda, ort in (("2.12.1+cu130", "13.0", "1.27.0"),
+                                   ("2.5.0+cu121", "12.1", "1.20.1"),
+                                   ("2.5.0+cpu", None, None)):
+            with self.subTest(version=version), \
+                 patch.object(launch_utils.importlib_metadata, "version", return_value=version), \
+                 patch.dict(sys.modules, {"torch": None}):
+                self.assertEqual(launch_utils._torch_cuda_version(), cuda)
+                self.assertEqual(launch_utils._resolve_ort_version_for_torch(), ort)
+
+    def test_untagged_torch_build_keeps_runtime_probe(self):
+        torch = SimpleNamespace(version=SimpleNamespace(cuda="12.8"))
+        with patch.object(launch_utils.importlib_metadata, "version", return_value="2.7.0"), \
+             patch.dict(sys.modules, {"torch": torch}):
+            self.assertEqual(launch_utils._torch_cuda_version(), "12.8")
+            self.assertEqual(launch_utils._resolve_ort_version_for_torch(), "1.20.1")
+
     def test_pip_mutation_invalidates_package_version_cache(self):
         launch_utils._PKG_VERSION_CACHE = {"onnxruntime-gpu": "1.20.1"}
         try:

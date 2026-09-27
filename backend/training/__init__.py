@@ -1,29 +1,21 @@
 """
 Training — 训练引擎封装（参数适配 + 进程管理）
 """
-from backend.training.adapter import adapt_config, SUPPORTED_FIELDS, UI_ONLY_FIELDS, MERGED_FIELDS
-from backend.training.validation import (
-    get_automagic_fused_conflicts,
-    get_emosens_conflicts,
-    validate_training_config,
-)
-from backend.training.supervisor import (
-    run_train,
-    terminate_train,
-    get_train_status,
-    detect_attention_backend,
-)
+from importlib import import_module
 
-__all__ = [
-    "adapt_config",
-    "validate_training_config",
-    "get_automagic_fused_conflicts",
-    "get_emosens_conflicts",
-    "SUPPORTED_FIELDS",
-    "UI_ONLY_FIELDS",
-    "MERGED_FIELDS",
-    "run_train",
-    "terminate_train",
-    "get_train_status",
-    "detect_attention_backend",
-]
+# Metadata-only startup checks must not load the training supervisor or API stack.
+_EXPORTS = {
+    **dict.fromkeys(("adapt_config", "SUPPORTED_FIELDS", "UI_ONLY_FIELDS", "MERGED_FIELDS"), "adapter"),
+    **dict.fromkeys(("get_automagic_fused_conflicts", "get_emosens_conflicts", "validate_training_config"), "validation"),
+    **dict.fromkeys(("run_train", "terminate_train", "get_train_status", "detect_attention_backend"), "supervisor"),
+}
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f"{__name__}.{module}"), name)
+    globals()[name] = value
+    return value

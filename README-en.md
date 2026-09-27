@@ -43,7 +43,7 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
-- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, and Camie Tagger with single-image inspection, category thresholds, and batch caption output; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
+- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
 - **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
 - **Internationalization (i18n)** — Chinese and English UI with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
@@ -88,7 +88,7 @@ lora-scripts-anima/
 │   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
 │   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
 │   ├── tageditor/              ← Native tag editor
-│   ├── tagger/                 ← Tagging module (WD / CL / Camie / AI endpoints)
+│   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
 │   └── gui.py                  ← Internal GUI entry (called by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
 ├── config/                     ← Local configuration and autosaves
@@ -158,6 +158,10 @@ First launch automatically creates a virtual environment and installs all depend
 
 ### Realtime and Slow Remote Connections
 
+TensorBoard shares the GUI's public entry point: by default, visit `http://127.0.0.1:12333/tensorboard/`, which can also be opened directly in a separate window. The embedded page uses the current origin, so SSH only needs to forward the GUI port; the local port may differ from the server port. Terminal output shows the server address and cannot discover your SSH local forwarding port.
+
+The TensorBoard child process only listens on server loopback and selects its internal port automatically. `--listen` does not expose it separately. The old `--tensorboard-host` argument is deprecated and ignored; `--tensorboard-port` only selects the internal port. Startup shows a waiting status and prints the access URLs together once TensorBoard is ready. If it fails, the GUI still starts with an explicit warning. Details are recorded in `logs/tensorboard.log`.
+
 All HTTP requests and realtime connections are same-origin with the current page. The trainer does not configure SSH, port forwarding, proxies, cloud-specific logic, or an extra realtime port.
 
 - `/ws/realtime` carries only compact JSON state, progress, log increments, and hardware data. Commands, images, files, and metadata remain HTTP requests.
@@ -194,8 +198,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 | `--skip-prepare-environment` | bool | false | Do not check or repair dependencies at startup |
 | `--skip-prepare-onnxruntime` | bool | false | Skip the onnxruntime-gpu install check only |
 | `--disable-tensorboard` | bool | false | Do not launch the bundled TensorBoard with the GUI |
-| `--tensorboard-host` | str | "127.0.0.1" | TensorBoard host |
-| `--tensorboard-port` | int | 6006 | TensorBoard port |
+| `--tensorboard-port` | int | 0 | Internal TensorBoard port; 0 selects an available port automatically |
 | `--localization` | str | | Interface language and localization setting |
 | `--dev` | bool | false | Developer mode |
 | `--quiet` / `-q` | bool | false | Automatically install Python/venv dependencies; optional Git repair remains disabled |

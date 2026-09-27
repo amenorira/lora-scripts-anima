@@ -4,6 +4,7 @@
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+$env:ANIMA_STARTUP_STARTED_AT = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0).ToString([Globalization.CultureInfo]::InvariantCulture)
 
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [Console]::InputEncoding = $script:Utf8NoBom
@@ -107,6 +108,16 @@ function Get-Text {
     return [string]$template
 }
 
+function Format-ConsoleText {
+    param([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray)
+    if ([Console]::IsOutputRedirected -or $env:NO_COLOR) { return $Text }
+    if ($Color -eq [ConsoleColor]::DarkCyan) { return "$([char]27)[2;36m$Text$([char]27)[0m" }
+    # Match backend.log.COLORS; keep early startup independent of Python.
+    $colors = @{ Gray = "224;230;237"; DarkGray = "170;180;192"; Cyan = "77;224;206";
+                 Blue = "98;173;255"; Green = "114;219;131"; Yellow = "255;209;102"; Red = "255;120;120" }
+    return "$([char]27)[38;2;$($colors[$Color.ToString()])m$Text$([char]27)[0m"
+}
+
 function Write-Text {
     param(
         [Parameter(Mandatory = $true)][string]$Key,
@@ -114,7 +125,7 @@ function Write-Text {
         [ConsoleColor]$Color = [ConsoleColor]::Gray
     )
     Complete-InlineProgress
-    Write-Host (Get-Text $Key $FormatArgs) -ForegroundColor $Color
+    Write-Host (Format-ConsoleText (Get-Text $Key $FormatArgs) $Color)
 }
 
 function Show-InitialSetupHeader {
@@ -153,16 +164,23 @@ function Complete-InlineProgress {
 function Update-StartupProgress {
     if (-not $script:StartupProgressActive -or [Console]::IsOutputRedirected) { return }
 
-    $frames = @([char]0x25D0, [char]0x25D3, [char]0x25D1, [char]0x25D2)
+    # Match Rich's default "dots" spinner before Python is available.
+    $frames = @([char]0x280B, [char]0x2819, [char]0x2839, [char]0x2838, [char]0x283C,
+                [char]0x2834, [char]0x2826, [char]0x2827, [char]0x2807, [char]0x280F)
     $spinner = $frames[$script:StartupProgressFrame % $frames.Count]
-    $elapsed = Format-Duration $script:StartupProgressStopwatch.Elapsed
-    Write-InlineProgress ("{0}  {1}  {2}" -f $spinner, (Get-Text "startup_preparing"), $elapsed)
+    $elapsed = $script:StartupProgressStopwatch.Elapsed.TotalSeconds.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) + "s"
+    Write-InlineProgress ((Format-ConsoleText $script:StartupProgressTimestamp DarkCyan) + "  " +
+        (Format-ConsoleText $spinner Cyan) + " " + (Format-ConsoleText ((Get-Text "startup_preparing") + "  " + $elapsed)))
     $script:StartupProgressFrame++
 }
 
 function Start-StartupProgress {
-    Write-Text "launching" -Color Cyan
-    if ([Console]::IsOutputRedirected) { return }
+    Write-Text "startup_title" -Color Cyan
+    $script:StartupProgressTimestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    if ([Console]::IsOutputRedirected) {
+        Write-Host ("{0}  > {1}" -f $script:StartupProgressTimestamp, (Get-Text "startup_preparing"))
+        return
+    }
     $script:StartupProgressActive = $true
     $script:StartupProgressFrame = 0
     $script:StartupProgressStopwatch = [Diagnostics.Stopwatch]::StartNew()
@@ -170,10 +188,13 @@ function Start-StartupProgress {
 }
 
 function Stop-StartupProgress {
+    if (-not $script:StartupProgressActive) { return }
     $script:StartupProgressActive = $false
-    Complete-InlineProgress
     if ($null -ne $script:StartupProgressStopwatch) {
         $script:StartupProgressStopwatch.Stop()
+        Write-InlineProgress ((Format-ConsoleText $script:StartupProgressTimestamp DarkCyan) + "  " +
+            (Format-ConsoleText ">" Cyan) + " " + (Format-ConsoleText (Get-Text "startup_preparing")))
+        if (-not [Console]::IsOutputRedirected) { [Console]::WriteLine() }
         $script:StartupProgressStopwatch = $null
     }
 }
@@ -223,7 +244,7 @@ function Invoke-ProcessWithSpinner {
         [string]$WorkingDirectory = $script:RepositoryRoot
     )
 
-    Write-Host $Label -ForegroundColor Cyan
+    Write-Host (Format-ConsoleText $Label Cyan)
     $start = [Diagnostics.Stopwatch]::StartNew()
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $FilePath
@@ -295,7 +316,7 @@ function Invoke-NativeCapture {
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
     if ($script:StartupProgressActive -and -not [Console]::IsOutputRedirected) {
-        while (-not $process.WaitForExit(120)) {
+        while (-not $process.WaitForExit(80)) {
             Update-StartupProgress
         }
     } else {
@@ -943,10 +964,11 @@ function Install-Python312 {
 function Repair-PipMirrorForProcess {
     param([string]$PythonExecutable)
     $hosts = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($key in @("global.index-url", "global.extra-index-url")) {
-        $value = @(Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @("-m", "pip", "config", "get", $key) -WorkingDirectory $script:RepositoryRoot -AllowFailure)
-        if ($value.Count -eq 0) { continue }
-        $url = [string]$value[0]
+    $indexes = @(Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @("-m", "tools.pip_index_config") -WorkingDirectory $script:RepositoryRoot -AllowFailure)
+    foreach ($entry in $indexes) {
+        $parts = ([string]$entry) -split "`t", 2
+        if ($parts.Count -ne 2) { continue }
+        $key, $url = $parts
         if ($url.StartsWith("http://", [StringComparison]::OrdinalIgnoreCase)) {
             $secure = "https://" + $url.Substring(7)
             if ($key -eq "global.extra-index-url") { $env:PIP_EXTRA_INDEX_URL = $secure } else { $env:PIP_INDEX_URL = $secure }

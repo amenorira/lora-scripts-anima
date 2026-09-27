@@ -129,6 +129,10 @@ def run(command,
     """
     if shell is None:
         shell = False
+    if live:
+        # Native installers write directly to the terminal, outside Rich's console.
+        from backend.startup_output import finish_step
+        finish_step()
     if desc is not None:
         print(desc)
 
@@ -240,17 +244,33 @@ def pip_install(package: str, version: Optional[str] = None,
 
 # ── 特定依赖的装机/修复逻辑 ───────────────────────────────
 
+def _torch_cuda_version() -> Optional[str]:
+    """Read standard wheel tags without loading torch; probe custom builds only."""
+    try:
+        version = importlib_metadata.version("torch")
+        match = re.search(r"\+cu(\d+)", version)
+        if match:
+            digits = match.group(1)
+            return f"{digits[:-1]}.{digits[-1]}" if len(digits) > 1 else digits
+        if "+cpu" in version or "+rocm" in version:
+            return None
+    except importlib_metadata.PackageNotFoundError:
+        return None
+    # Locally built / untagged wheels still need the original runtime probe.
+    try:
+        import torch
+        return torch.version.cuda
+    except Exception:
+        return None
+
+
 def setup_windows_bitsandbytes() -> None:
     """Windows 下校验 bitsandbytes 的 CUDA dll 与 torch 构建匹配，不匹配则重装。"""
     if sys.platform != "win32":
         return
 
-    try:
-        import torch
-        cuda = torch.version.cuda
-        expected_dll = f"libbitsandbytes_cuda{cuda.replace('.', '')}.dll" if cuda else None
-    except Exception:
-        expected_dll = None
+    cuda = _torch_cuda_version()
+    expected_dll = f"libbitsandbytes_cuda{cuda.replace('.', '')}.dll" if cuda else None
 
     bnb_dir = Path(sysconfig.get_paths()["purelib"]) / "bitsandbytes"
     dlls = [p.name for p in bnb_dir.glob("libbitsandbytes_cuda*.dll")] if bnb_dir.is_dir() else []
@@ -277,16 +297,8 @@ def _resolve_ort_version_for_torch() -> Optional[str]:
     torch 未装好（首次启动还在装）或读不到 CUDA 后缀时返回 None，
     由调用方走不约束版本的路径。
     """
-    try:
-        import torch
-        match = re.search(r"\+cu(\d+)", torch.__version__)
-        if not match:
-            return None
-        digits = match.group(1)
-        cuda_major = digits[:-1] if len(digits) > 1 else digits
-        return _ORT_VERSION_BY_CUDA_MAJOR.get(cuda_major)
-    except Exception:
-        return None
+    cuda = _torch_cuda_version()
+    return _ORT_VERSION_BY_CUDA_MAJOR.get(cuda.split(".")[0]) if cuda else None
 
 
 def setup_onnxruntime(onnx_version: Optional[str] = None,

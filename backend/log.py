@@ -2,6 +2,10 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+COLORS = dict(text="#E0E6ED", muted="#AAB4C0", accent="#4DE0CE",
+              secondary="#62ADFF", success="#72DB83", warning="#FFD166",
+              error="#FF7878", border="#7D8793", timestamp="dim cyan")
+
 
 class _ConsoleVisibilityFilter(logging.Filter):
     """Allow selected records to be kept in the file log without console noise."""
@@ -29,15 +33,31 @@ try:
     from rich.logging import RichHandler
     from rich.pretty import install as pretty_install
     from rich.theme import Theme
+    from rich.highlighter import NullHighlighter
 
     console = Console(
+        style=COLORS["text"], highlight=False,
         log_time=True,
         log_time_format='%Y-%m-%d %H:%M:%S-%f',
         theme=Theme(
             {
-                'traceback.border': 'black',
-                'traceback.border.syntax_error': 'black',
-                'inspect.value.border': 'black',
+                'log.time': COLORS['timestamp'],
+                'logging.level.debug': COLORS['muted'],
+                'logging.level.info': COLORS['text'],
+                'logging.level.warning': COLORS['warning'],
+                'logging.level.error': COLORS['error'],
+                'logging.level.critical': COLORS['error'],
+                'progress.description': COLORS['text'],
+                'progress.percentage': COLORS['accent'],
+                'progress.download': COLORS['text'],
+                'progress.data.speed': COLORS['muted'],
+                'progress.elapsed': COLORS['muted'],
+                'progress.remaining': COLORS['muted'],
+                'bar.back': COLORS['border'],
+                'bar.complete': COLORS['accent'],
+                'bar.finished': COLORS['success'],
+                'bar.pulse': COLORS['accent'],
+                'inspect.value.border': COLORS['border'],
             }
         ),
     )
@@ -48,8 +68,10 @@ try:
         show_level=True,
         show_path=False,
         markup=False,
-        rich_tracebacks=True,
-        log_time_format='%Y-%m-%d %H:%M:%S-%f',
+        highlighter=NullHighlighter(), keywords=[],
+        # Preserve full tracebacks without syntax colors or bold code tokens.
+        rich_tracebacks=False,
+        log_time_format='%Y-%m-%d %H:%M:%S',
         level=logging.INFO,
         console=console,
     )

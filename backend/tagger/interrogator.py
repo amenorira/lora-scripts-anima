@@ -1,4 +1,4 @@
-"""传统批量打标流水线（本地 ONNX 模型）。
+"""传统批量打标流水线（本地模型）。
 
 职责：任务进度快照、取消、GPU 推理互斥、批量循环与字幕写盘。
 打标模型实现见 interrogators/，文件名模板见 naming.py；
@@ -24,11 +24,13 @@ from backend.tagger.interrogators.base import Interrogator  # noqa: F401  （对
 from backend.tagger.interrogators.camie import CamieTaggerInterrogator
 from backend.tagger.interrogators.cl import CLTaggerInterrogator
 from backend.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
+from backend.tagger.interrogators.pixai import PixAITaggerInterrogator
 
 # 所有打标模型统一下载到项目 huggingface/ 目录
 _HF_CACHE = str(HF_CACHE_DIR)
 
 available_interrogators = {
+    'pixai-tagger-v1.0': PixAITaggerInterrogator('pixai-tagger-v1.0', cache_dir=_HF_CACHE),
     'wd-eva02-large-tagger-v3': WaifuDiffusionInterrogator(
         'wd-eva02-large-tagger-v3',
         repo_id='SmilingWolf/wd-eva02-large-tagger-v3',

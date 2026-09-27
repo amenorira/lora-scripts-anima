@@ -2,34 +2,64 @@
 # start.sh - One-stop: environment check -> install -> launch
 # Run: bash start.sh
 
+export ANIMA_STARTUP_STARTED_AT="$(date +%s.%N)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
 
-echo "[Launch] Starting lora-scripts-anima... / 正在启动 lora-scripts-anima……"
+# Match backend.log.COLORS without requiring Python during bootstrap.
+_C_TEXT='' _C_TIME='' _C_ACCENT='' _C_SUCCESS='' _C_WARNING='' _C_ERROR='' _C_RESET=''
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    _C_TEXT=$'\033[38;2;224;230;237m' _C_TIME=$'\033[2;36m'
+    _C_ACCENT=$'\033[38;2;77;224;206m' _C_SUCCESS=$'\033[38;2;114;219;131m'
+    _C_WARNING=$'\033[38;2;255;209;102m' _C_ERROR=$'\033[38;2;255;120;120m' _C_RESET=$'\033[0m'
+fi
+_console_message() {
+    local text="$*" color="$_C_TEXT" prefix=''
+    case "$text" in
+        '[ERROR]'*|'[FAIL]'*) color="$_C_ERROR" ;;
+        '[Notice]'*) color="$_C_WARNING" ;;
+        '[Done]'*) color="$_C_SUCCESS" ;;
+        '['*) color="$_C_ACCENT" ;;
+    esac
+    if [[ "$text" == '['*']'* ]]; then
+        prefix="${text%%]*}]"; text="${text#*]}"
+    fi
+    printf '%s%s%s%s%s\n' "$color" "$prefix" "$_C_TEXT" "$text" "$_C_RESET"
+}
+_startup_row() {
+    printf '\r\033[2K%s%s  %s%s %sPreparing startup environment / 正在准备启动环境%s%s' \
+        "$_C_TIME" "$STARTUP_SPINNER_TIMESTAMP" "$_C_RESET$_C_ACCENT" "$1" "$_C_TEXT" "${2:-}" "$_C_RESET"
+}
 
 STARTUP_SPINNER_PID=""
+STARTUP_SPINNER_STARTED=""
+STARTUP_SPINNER_TIMESTAMP=""
 _startup_spinner() {
-    local frames=('◐' '◓' '◑' '◒')
+    # Match Rich's default "dots" spinner before Python is available.
+    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local frame=0
-    local started=$SECONDS
     while true; do
         local spinner="${frames[frame % ${#frames[@]}]}"
-        local elapsed=$((SECONDS - started))
-        printf '\r\033[2K%s  Preparing startup environment... / 正在准备启动环境……  %02d:%02d' \
-            "$spinner" $((elapsed / 60)) $((elapsed % 60))
+        local elapsed=$(( ($(date +%s%N) - STARTUP_SPINNER_STARTED) / 100000000 ))
+        _startup_row "$spinner" "  $((elapsed / 10)).$((elapsed % 10))s"
         frame=$((frame + 1))
-        sleep 0.12
+        sleep 0.08
     done
 }
 
 _start_startup_spinner() {
+    STARTUP_SPINNER_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     if [ -t 1 ]; then
+        printf '%slora-scripts-anima%s\n' "$_C_ACCENT" "$_C_RESET"
+        STARTUP_SPINNER_STARTED=$(date +%s%N)
         _startup_spinner &
         STARTUP_SPINNER_PID=$!
         trap '_stop_startup_spinner' EXIT
         trap '_stop_startup_spinner; exit 130' INT TERM
+    else
+        printf 'lora-scripts-anima\n%s  > Preparing startup environment / 正在准备启动环境\n' "$STARTUP_SPINNER_TIMESTAMP"
     fi
 }
 
@@ -38,7 +68,8 @@ _stop_startup_spinner() {
         kill "$STARTUP_SPINNER_PID" >/dev/null 2>&1 || true
         wait "$STARTUP_SPINNER_PID" 2>/dev/null || true
         STARTUP_SPINNER_PID=""
-        printf '\r\033[2K'
+        _startup_row '>'
+        printf '\n'
     fi
     trap - EXIT INT TERM
 }
@@ -64,10 +95,10 @@ PYTHON_SOURCE=""
 
 if [ -f "$VENV_PYTHON" ]; then
     if ! _is_supported_python "$VENV_PYTHON"; then
-        echo "[FAIL] Existing venv uses an unsupported Python version or architecture. / 现有 venv 使用了不受支持的 Python 版本或架构。"
+        _console_message "[FAIL] Existing venv uses an unsupported Python version or architecture. / 现有 venv 使用了不受支持的 Python 版本或架构。"
         "$VENV_PYTHON" --version 2>/dev/null || true
-        echo "       Supported: 64-bit Python 3.12. / 支持 64 位 Python 3.12。"
-        echo "       Rename or remove only this project's 'venv' folder, then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
+        _console_message "       Supported: 64-bit Python 3.12. / 支持 64 位 Python 3.12。"
+        _console_message "       Rename or remove only this project's 'venv' folder, then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
         exit 1
     fi
     PYTHON_BIN="$VENV_PYTHON"
@@ -86,22 +117,22 @@ fi
 
 if [ -z "$PYTHON_BIN" ]; then
     _stop_startup_spinner
-    echo "[FAIL] No compatible 64-bit Python installation was found. / 未找到兼容的 64 位 Python。"
-    echo "       Required: 64-bit Python 3.12. / 需要 64 位 Python 3.12。"
-    echo "       Python 3.13/3.14 may remain installed side by side. / Python 3.13/3.14 可以并行保留。"
-    echo "       Install Python 3.12 and venv support, for example: / 请安装 Python 3.12 和 venv 支持，例如："
-    echo "       sudo apt install python3.12 python3.12-venv"
+    _console_message "[FAIL] No compatible 64-bit Python installation was found. / 未找到兼容的 64 位 Python。"
+    _console_message "       Required: 64-bit Python 3.12. / 需要 64 位 Python 3.12。"
+    _console_message "       Python 3.13/3.14 may remain installed side by side. / Python 3.13/3.14 可以并行保留。"
+    _console_message "       Install Python 3.12 and venv support, for example: / 请安装 Python 3.12 和 venv 支持，例如："
+    _console_message "       sudo apt install python3.12 python3.12-venv"
     exit 1
 fi
 
 _stop_startup_spinner
-echo "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
+_console_message "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
 "$PYTHON_BIN" --version
 
 if ! command -v git >/dev/null 2>&1; then
-    echo "[Notice] Git was not found. It is optional for launch but required for git pull updates; install it with your distribution package manager. / 未找到 Git；启动训练器不依赖 Git，但使用 git pull 更新时需要，请通过发行版包管理器安装。"
+    _console_message "[Notice] Git was not found. It is optional for launch but required for git pull updates; install it with your distribution package manager. / 未找到 Git；启动训练器不依赖 Git，但使用 git pull 更新时需要，请通过发行版包管理器安装。"
 elif [ ! -e "$SCRIPT_DIR/.git" ]; then
-    echo "[Notice] This appears to be a ZIP download. Automatic ZIP-to-Git repair is currently Windows-only; Linux users should use git clone for updateable installs. / 当前目录看起来是 ZIP 下载版；自动转换为 Git 仓库目前仅支持 Windows，Linux 如需更新请使用 git clone。"
+    _console_message "[Notice] This appears to be a ZIP download. Automatic ZIP-to-Git repair is currently Windows-only; Linux users should use git clone for updateable installs. / 当前目录看起来是 ZIP 下载版；自动转换为 Git 仓库目前仅支持 Windows，Linux 如需更新请使用 git clone。"
 fi
 
 # -- pip mirror HTTPS upgrade (non-invasive, self-contained) --
@@ -110,7 +141,7 @@ fi
 # 压过宿主 pip.conf，且被 PEP 517 构建子进程（vendor/sd-scripts sdist）与 backend.gui
 # 运行时 pip 继承，一次接管全程。脚本结束即失效，不留痕。
 #
-# 逻辑：用 pip config get 只读探测当前生效的 index-url / extra-index-url——
+# 逻辑：用 pip 自身的配置加载器一次读取 index-url / extra-index-url——
 #   http://  → export https:// 等价物 + 登记 PIP_TRUSTED_HOST（升级，避免被忽略）
 #   https:// → 不动（已安全）
 #   无/默认  → 不动（走官方 PyPI）
@@ -121,9 +152,8 @@ _fix_pip_mirror() {
     local py="$VENV_PYTHON"
     [ -f "$py" ] || py="$PYTHON_BIN"
     # 探测 pip 配置中的 index-url 与 extra-index-url（涵盖 pip.conf 与环境变量合并后的生效值）
-    for key in global.index-url global.extra-index-url; do
-        local val
-        val="$("$py" -m pip config get "$key" 2>/dev/null)" || continue
+    local key val
+    while IFS=$'\t' read -r key val; do
         [ -n "$val" ] || continue
         if [[ "$val" == http://* ]]; then
             local rest="${val#http://}"
@@ -133,7 +163,7 @@ _fix_pip_mirror() {
             export "$var=https://$rest"
             hosts="$hosts ${rest%%/*}"
         fi
-    done
+    done < <("$py" -m tools.pip_index_config 2>/dev/null)
     # 同时处理已有的 PIP_* 环境变量（兜底：源仅来自 env 而非 config 的情况）
     for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
         local val="${!var}"
@@ -150,14 +180,14 @@ _fix_pip_mirror() {
             case " $merged " in *" $h "*) ;; *) merged="$merged $h";; esac
         done
         export PIP_TRUSTED_HOST="${merged# }"
-        echo "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# } / 已将 HTTP pip 镜像临时升级为 HTTPS。"
+        _console_message "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# } / 已将 HTTP pip 镜像临时升级为 HTTPS。"
     fi
 }
 
 # -- Install function --
 ensure_musubi_shared_runtime() {
     if [ ! -f "$VENV_PYTHON" ]; then
-        echo "[ERROR] Main venv is required before Krea 2 runtime synchronization. / 同步 Krea 2 运行时前需要主 venv。"
+        _console_message "[ERROR] Main venv is required before Krea 2 runtime synchronization. / 同步 Krea 2 运行时前需要主 venv。"
         exit 1
     fi
 
@@ -168,40 +198,40 @@ ensure_musubi_shared_runtime() {
         return
     fi
 
-    echo "[Sync] Synchronizing shared training dependencies... / 正在同步共享训练依赖……"
-    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements.txt" || { echo "[ERROR] shared training dependencies install failed. / 共享训练依赖安装失败。"; exit 1; }
-    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { echo "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
+    _console_message "[Sync] Synchronizing shared training dependencies... / 正在同步共享训练依赖……"
+    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements.txt" || { _console_message "[ERROR] shared training dependencies install failed. / 共享训练依赖安装失败。"; exit 1; }
+    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { _console_message "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
 }
 
 do_install() {
-    echo ""
-    echo "[Install] Starting installation... / 开始安装……"
-    echo ""
+    _console_message ""
+    _console_message "[Install] Starting installation... / 开始安装……"
+    _console_message ""
 
     export PIP_DISABLE_PIP_VERSION_CHECK=1
     export PIP_PREFER_BINARY=1
 
     if [ ! -f "$VENV_PYTHON" ]; then
-        echo "Creating venv... / 正在创建 venv……"
-        $PYTHON_BIN -m venv venv || { echo "[ERROR] Failed to create venv. / 创建 venv 失败。"; exit 1; }
-        echo "Upgrading pip... / 正在升级 pip……"
+        _console_message "Creating venv... / 正在创建 venv……"
+        $PYTHON_BIN -m venv venv || { _console_message "[ERROR] Failed to create venv. / 创建 venv 失败。"; exit 1; }
+        _console_message "Upgrading pip... / 正在升级 pip……"
         "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
     fi
 
-    echo "[1/2] Installing PyTorch 2.12.1+cu130... / 正在安装 PyTorch 2.12.1+cu130……"
+    _console_message "[1/2] Installing PyTorch 2.12.1+cu130... / 正在安装 PyTorch 2.12.1+cu130……"
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [2/2] 降级
-    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { echo "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
+    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { _console_message "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
     "$VENV_PYTHON" -m pip install torch==2.12.1+cu130 torchvision==0.27.1+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
-    if [ $? -ne 0 ]; then echo "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
+    if [ $? -ne 0 ]; then _console_message "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
-    echo "[2/2] Installing project dependencies... / 正在安装项目依赖……"
+    _console_message "[2/2] Installing project dependencies... / 正在安装项目依赖……"
     "$VENV_PYTHON" -m pip install -r requirements.txt
-    if [ $? -ne 0 ]; then echo "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
+    if [ $? -ne 0 ]; then _console_message "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
 
     ensure_musubi_shared_runtime
 
-    echo ""
-    echo "[Done] Installation complete! / 安装完成！"
+    _console_message ""
+    _console_message "[Done] Installation complete! / 安装完成！"
 }
 
 # -- Venv check --
@@ -217,17 +247,17 @@ case ":${PYTHONPATH:-}:" in
 esac
 _fix_pip_mirror
 if [ ! -f "$VENV_PYTHON" ]; then
-    echo "[Notice] Virtual environment (venv) not found. / 未找到虚拟环境（venv）。"
+    _console_message "[Notice] Virtual environment (venv) not found. / 未找到虚拟环境（venv）。"
     if [ "$QUIET" = "1" ]; then
-        echo "  --quiet mode: auto-installing... / --quiet 模式：自动安装……"
+        _console_message "  --quiet mode: auto-installing... / --quiet 模式：自动安装……"
         do_install
     else
-        echo "   1. Install / 安装"
-        echo "   2. Exit / 退出"
-        echo ""
+        _console_message "   1. Install / 安装"
+        _console_message "   2. Exit / 退出"
+        _console_message ""
         read -r -p "Enter option (1/2) / 请输入选项 (1/2): " CHOICE
         if [ "$CHOICE" != "1" ]; then
-            echo "Cancelled. / 已取消。"
+            _console_message "Cancelled. / 已取消。"
             exit 0
         fi
         do_install
@@ -237,7 +267,7 @@ fi
 # -- Managed CUDA runtime migration --
 "$VENV_PYTHON" -X utf8 -m tools.ensure_runtime
 if [ $? -ne 0 ]; then
-    echo "[ERROR] CUDA 13.0 runtime synchronization failed. / CUDA 13.0 运行时同步失败。"
+    _console_message "[ERROR] CUDA 13.0 runtime synchronization failed. / CUDA 13.0 运行时同步失败。"
     exit 1
 fi
 

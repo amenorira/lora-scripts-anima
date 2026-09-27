@@ -1,15 +1,12 @@
 """GUI 入口：`python -m backend.gui`。
 
 启动顺序：解释器版本门禁 → 启动兼容性补丁 → 环境检查/依赖修复 →
-端口探测 → TensorBoard 拉起 → uvicorn 托管 FastAPI。
+端口探测 → uvicorn 托管 FastAPI（生命周期管理内部 TensorBoard）。
 """
 import argparse
 import asyncio
-import atexit
 import os
 import platform
-import signal
-import subprocess
 import sys
 
 # 项目启动兼容性补丁必须先于 ML 依赖导入
@@ -34,7 +31,7 @@ if not (sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32):
 
 # 控制台通道要先建好，重的 torch/fastapi 导入才有处说"正在加载"
 from backend.log import log
-from backend.startup_output import show_step
+from backend.startup_output import finish_step, show_step
 
 if __name__ == "__main__":
     show_step("Loading application / 正在加载应用")
@@ -63,69 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-prepare-onnxruntime", action="store_true",
                         help="Skip onnxruntime-gpu setup only")
     parser.add_argument("--disable-tensorboard", action="store_true",
-                        help="Do not launch the bundled TensorBoard (port 6006)")
-    parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
-    parser.add_argument("--tensorboard-port", type=int, default=6006)
+                        help="Do not launch the bundled TensorBoard")
+    parser.add_argument("--tensorboard-host", type=str, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--tensorboard-port", type=int, default=0,
+                        help="Internal TensorBoard port (default: auto); access via /tensorboard/")
     parser.add_argument("--localization", type=str, help=argparse.SUPPRESS)
     parser.add_argument("--dev", action="store_true", help="Enable CORS and uvicorn reload")
     return parser
-
-
-_tracked_children = []  # [(Popen, 显示名)]
-
-
-def _terminate_children() -> None:
-    """关停所有登记过的子进程（先 terminate 后 kill）。"""
-    for proc, display_name in _tracked_children:
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-            log.info("%s stopped / %s 已停止", display_name, display_name)
-    _tracked_children.clear()
-
-
-def _handle_shutdown(signum=None, frame=None) -> None:
-    log.info("Shutting down / 正在关闭...")
-    _terminate_children()
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, _handle_shutdown)
-if sys.platform == "win32":
-    signal.signal(signal.SIGBREAK, _handle_shutdown)
-atexit.register(_terminate_children)
-
-
-def start_tensorboard(host: str, port: int):
-    """拉起 TensorBoard 子进程；失败降级为 warning 不拖死主界面。成功返回访问 URL。"""
-    try:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "tensorboard.main", "--logdir", "output",
-             "--host", host, "--port", str(port)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        # 起完立刻看一眼，排除"装上即崩"（缺包/端口占用）
-        import time as _time
-        _time.sleep(0.5)
-        if proc.poll() is not None:
-            raise RuntimeError(
-                f"TensorBoard exited immediately with code {proc.returncode}. "
-                f"Check if tensorboard is installed or port {port} is available."
-            )
-        _tracked_children.append((proc, "TensorBoard"))
-        return f"http://{host}:{port}/"
-    except Exception as e:
-        # TensorBoard 是辅助服务：缺失/端口占用/无 GPU 都可能起不来，主服务照常
-        log.warning(
-            "TensorBoard unavailable; the GUI will continue. Reason: %s / "
-            "TensorBoard 不可用，主界面仍可正常使用。原因：%s",
-            e, e,
-        )
-        return None
 
 
 def _report_optional_accelerators() -> None:
@@ -176,11 +117,13 @@ def launch(args: argparse.Namespace) -> None:
 
     if args.listen:
         args.host = "0.0.0.0"
-        args.tensorboard_host = "0.0.0.0"
+    if args.tensorboard_host is not None:
+        log.warning("--tensorboard-host is deprecated and ignored / 此参数已弃用，"
+                    "TensorBoard 仅监听回环地址，请通过主端口 /tensorboard/ 访问")
 
     os.environ["ANIMA_HOST"] = args.host
     os.environ["ANIMA_PORT"] = str(args.port)
-    os.environ["ANIMA_TENSORBOARD_HOST"] = args.tensorboard_host
+    os.environ["ANIMA_DISABLE_TENSORBOARD"] = "1" if args.disable_tensorboard else "0"
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)
     os.environ["ANIMA_DEV"] = "1" if args.dev else "0"
     os.environ["ANIMA_VERSION"] = version
@@ -188,12 +131,11 @@ def launch(args: argparse.Namespace) -> None:
         os.environ["ANIMA_FREE_DISK_GB"] = str(free_disk_gb)
 
     show_step("Starting services / 正在启动服务")
-    tensorboard_url = None
-    if not args.disable_tensorboard:
-        tensorboard_url = start_tensorboard(args.tensorboard_host, args.tensorboard_port)
-    os.environ["ANIMA_TENSORBOARD_URL"] = tensorboard_url or ""
 
     import uvicorn
+    if args.dev:
+        # Reload mode owns a separate worker console lifecycle.
+        finish_step()
     uvicorn.run("backend.server:app", host=args.host, port=args.port,
                 log_level="error", reload=args.dev)
 

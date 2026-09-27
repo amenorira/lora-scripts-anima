@@ -57,6 +57,7 @@ CATEGORY_LABELS = {
     "rating": "分级 (Rating)",
     "quality": "质量 (Quality)",
     "model": "模型 (Model)",
+    "style": "风格 (Style)",
 }
 
 
@@ -172,6 +173,6 @@ class Interrogator:
         """
         对给定图片推理，返回 {分类: [(标签, 置信度), ...]}。
 
-        分类约定: "rating", "general", "character", "copyright", "artist", "meta", "year", "quality", "model"
+        分类约定: "rating", "general", "character", "copyright", "style", "artist", "meta", "year", "quality", "model"
         """
         raise NotImplementedError()
