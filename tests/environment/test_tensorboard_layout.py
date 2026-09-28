@@ -32,6 +32,7 @@ run = Path(sys.argv[1])
 managed = sys.argv[2] == 'True'
 accelerator = Accelerator(cpu=True, log_with='tensorboard', project_dir=str(run / 'log' / '20260913174335'))
 accelerator.init_trackers('network_train')
+assert accelerator.get_tracker('tensorboard').run_name == 'network_train'
 accelerator.log({'loss/current': 0.25}, step=1)
 accelerator.end_training()
 expected = run / 'log' if managed else run / 'log' / '20260913174335' / 'network_train'

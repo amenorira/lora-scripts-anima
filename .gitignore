@@ -36,8 +36,6 @@ wd14_tagger_model
 logs/*
 !logs/.keep
 
-vendor/sd-scripts/tests/
-
 .superpowers
 docs/*
 !docs/parameters/

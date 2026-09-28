@@ -125,7 +125,7 @@ lora-scripts-anima/
 
 无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
 
-> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和同一套 CUDA 版 PyTorch。根目录的 `requirements.txt` 是全项目唯一依赖清单，将共享依赖统一钉在 `transformers 4.57.6` / `tokenizers 0.22.2`；安装时不再读取 `vendor/` 内的依赖文件。
+> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和同一套 CUDA 版 PyTorch。根目录的 `requirements.txt` 是全项目唯一依赖清单，将共享依赖统一钉在 `transformers 5.17.0` / `tokenizers 0.23.1`；安装时不再读取 `vendor/` 内的依赖文件。
 >
 > 日常启动只进行快速元数据检查。版本匹配时，不会重复运行 pip、卸载或重装软件包，也不会导入完整的 Krea 2 运行栈。依赖同步完成后，以及执行 Krea 2 预检时，启动器会运行完整的导入验证。此过程不会修改 `vendor/` 中的上游依赖文件。
 

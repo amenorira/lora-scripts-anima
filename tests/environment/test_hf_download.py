@@ -22,6 +22,18 @@ def reply(data=b"abcdef", status=200, headers=None):
 
 
 class HFDownloadTests(unittest.TestCase):
+    def test_saved_hub_token_is_used_without_environment_token(self):
+        with patch.dict("os.environ", {}, clear=True), \
+                patch("huggingface_hub.get_token", return_value="saved-test-token"):
+            self.assertEqual(hf._auth_headers(), {
+                "Accept-Encoding": "identity", "Authorization": "Bearer saved-test-token",
+            })
+
+    def test_environment_token_survives_hub_token_lookup_failure(self):
+        with patch.dict("os.environ", {"HF_TOKEN": "env-test-token"}, clear=True), \
+                patch("huggingface_hub.get_token", side_effect=OSError("unreadable token file")):
+            self.assertEqual(hf._auth_headers()["Authorization"], "Bearer env-test-token")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

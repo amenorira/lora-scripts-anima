@@ -27,13 +27,27 @@ def install_import_hook() -> None:
         if tracker is None:
             return
         original_init = tracker.__init__
+        original_start = tracker.start
 
         @functools.wraps(original_init)
         def init_in_run_log(self, run_name, logging_dir, **kwargs):
             original_init(self, "", destination, **kwargs)
             self.run_name = run_name
 
+        @functools.wraps(original_start)
+        def start_in_run_log(self, *args, **kwargs):
+            # Accelerate 1.15 defers writer creation from __init__ to start.
+            # Hide the tracker suffix while it resolves the event directory,
+            # then keep the original name for get_tracker and other consumers.
+            run_name = self.run_name
+            self.run_name = ""
+            try:
+                return original_start(self, *args, **kwargs)
+            finally:
+                self.run_name = run_name
+
         tracker.__init__ = init_in_run_log
+        tracker.start = start_in_run_log
         patched = True
 
     @functools.wraps(original_import)

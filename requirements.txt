@@ -29,33 +29,37 @@ PyYAML>=6.0,<7
 setuptools>=68,<82
 
 # ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
-accelerate==1.6.0
+accelerate==1.15.0
 av==14.0.1
 bitsandbytes
-diffusers==0.32.1
+diffusers==0.40.0
 easydict==1.13
 einops==0.7.0
 ftfy==6.3.1
-huggingface-hub==0.34.3
+huggingface-hub==1.32.0
 numpy
 opencv-python==4.10.0.84
-safetensors==0.4.5
+safetensors==0.8.0
 sentencepiece==0.2.1
-tokenizers==0.22.2
+tokenizers==0.23.1
 toml==0.10.2
 tqdm==4.67.1
-transformers==4.57.6
+transformers==5.17.0
 voluptuous==0.15.2
 
 # ── 优化器后端（sd-scripts 优化器工厂按需导入）──
+# 保留项目已适配的 ProdigyPlus 2.0.1 / pytorch_optimizer 3.10.1，
+# 不随 sd-scripts 清单降回 1.9.2 / 3.10.0。
 lion-pytorch==0.2.3
 prodigy-plus-schedule-free==2.0.1
 prodigyopt==1.1.2
 pytorch_optimizer==3.10.1
-schedulefree==1.4
+schedulefree==1.4.1
 
 # ── 训练日志与数据集工具 ──
 imagesize==1.4.1
+# SDXL 已有的 LMS 预览采样器依赖 scipy；上游将其作为可选依赖。
+scipy>=1.11,<2
 rich==14.1.0
 tensorboard
 
