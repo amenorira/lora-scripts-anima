@@ -69,6 +69,18 @@ test('Tagger defaults to literal parentheses and preserves saved escape preferen
   assert.equal(app.taggerSettings.escapeTag, true);
 });
 
+test('PixAI precision defaults to auto and restores only supported settings', () => {
+  const mixin = context.window.taggerMixin;
+  assert.equal(mixin.taggerSettings.precision, 'auto');
+  for (const [saved, expected] of [[{}, 'auto'], [{ precision: 'fp32' }, 'fp32'],
+    [{ precision: 'bf16' }, 'bf16'], [{ precision: 'fp16' }, 'auto']]) {
+    const app = { ...mixin, taggerSettings: { ...mixin.taggerSettings } };
+    context.localStorage = { getItem: () => JSON.stringify(saved) };
+    app._loadTaggerSettings();
+    assert.equal(app.taggerSettings.precision, expected);
+  }
+});
+
 test('preview limit never truncates output, including after lowering the threshold', () => {
   const { app } = fixture();
   const tags = Array.from({ length: 250 }, (_, i) => [`tag_${i}`, i < 200 ? 0.9 : 0.4]);

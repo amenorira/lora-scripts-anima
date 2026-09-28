@@ -13,6 +13,49 @@ from backend.tagger.tagger_download import tagger_hub_download
 
 
 class PixAITests(unittest.TestCase):
+    def test_precision_switches_cached_model_and_falls_back(self):
+        import torch
+
+        tagger = PixAITaggerInterrogator("test")
+        tagger.model = SimpleNamespace(device=torch.device("cuda"))
+        with patch.object(torch.cuda, "is_bf16_supported", return_value=True):
+            for precision, expected in [("auto", torch.bfloat16), ("fp32", torch.float32),
+                                        ("bf16", torch.bfloat16), ("fp32", torch.float32),
+                                        ("auto", torch.bfloat16)]:
+                tagger._configure_precision(precision)
+                self.assertEqual(tagger.autocast_dtype, expected)
+        with patch.object(torch.cuda, "is_bf16_supported", return_value=False), patch(
+            "backend.tagger.interrogators.pixai.log.warning"
+        ) as warning:
+            tagger._configure_precision("bf16")
+            self.assertEqual(tagger.autocast_dtype, torch.float32)
+            warning.assert_called_once()
+        tagger.model.device = torch.device("cpu")
+        tagger._configure_precision("auto")
+        self.assertEqual(tagger.autocast_dtype, torch.float32)
+        with self.assertRaisesRegex(ValueError, "precision"):
+            tagger.interrogate(Image.new("RGB", (2, 2)), precision="fp16")
+
+    def test_load_keeps_fp32_weights_and_selects_pil_backend(self):
+        import torch
+
+        tagger = PixAITaggerInterrogator("test")
+        model = MagicMock()
+        model.device = torch.device("cpu")
+        model.eval.return_value = model
+        model.to.return_value = model
+        with patch("backend.tagger.interrogators.pixai.tagger_hub_download", return_value=Path("cache/config.json")), patch(
+            "transformers.AutoImageProcessor.from_pretrained"
+        ) as processor, patch("transformers.AutoModel.from_pretrained", return_value=model) as loader, patch.object(
+            torch.cuda, "is_available", return_value=False
+        ):
+            tagger.load("fp32")
+        self.assertEqual(processor.call_args.kwargs["backend"], "pil")
+        self.assertNotIn("use_fast", processor.call_args.kwargs)
+        self.assertEqual(loader.call_args.kwargs["dtype"], torch.float32)
+        self.assertEqual(tagger.autocast_dtype, torch.float32)
+        model.to.assert_called_once_with(torch.device("cpu"))
+
     def test_default_model_is_last_in_display_order(self):
         from backend.server.models import TaggerInterrogateRequest
 
@@ -55,7 +98,9 @@ class PixAITests(unittest.TestCase):
         with patch.dict(workspace.available_interrogators, {"pixai-tagger-v1.0": fake}):
             tags, categories = workspace._local_tags("pixai-tagger-v1.0", Image.new("RGB", (2, 2)), {
                 "category_thresholds": {"general": 0.25}, "category_enabled": {"rating": False},
+                "precision": "fp32",
             }, full_categories=True)
+        self.assertEqual(fake.interrogate.call_args.kwargs, {"precision": "fp32"})
         self.assertEqual(set(tags), {"alice", "watercolor"})
         self.assertIn("rating", categories)
         self.assertEqual(categories["general"]["tags"], [["solo", 0.2]])
@@ -63,6 +108,7 @@ class PixAITests(unittest.TestCase):
             tags, _ = workspace._local_tags("pixai-tagger-v1.0", Image.new("RGB", (2, 2)), {
                 "threshold": 0.9, "character_threshold": 0.9,
             })
+        self.assertEqual(fake.interrogate.call_args.kwargs, {"precision": "auto"})
         self.assertEqual(tags, [])
 
     def test_prefetch_preserves_transparency_for_model_processor(self):

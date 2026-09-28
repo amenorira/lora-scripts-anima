@@ -17,7 +17,29 @@ class PixAITaggerInterrogator(Interrogator):
         super().__init__(name)
         self.cache_dir = cache_dir
 
-    def load(self) -> None:
+    @staticmethod
+    def validate_precision(precision: str) -> None:
+        if precision not in ("auto", "bf16", "fp32"):
+            raise ValueError("Invalid PixAI precision / 无效的 PixAI 推理精度")
+
+    def _configure_precision(self, precision: str) -> None:
+        import torch
+
+        self.validate_precision(precision)
+        device = self.model.device
+        supported = device.type == "cuda" and torch.cuda.is_bf16_supported()
+        dtype = torch.bfloat16 if precision != "fp32" and supported else torch.float32
+        state = (precision, str(device), dtype)
+        if getattr(self, "_precision_state", None) != state:
+            if precision == "bf16" and not supported:
+                log.warning("BF16 unavailable; falling back to FP32 / 设备不支持 BF16，已回退 FP32")
+            self.precision_label = "BF16 mixed precision" if dtype == torch.bfloat16 else "FP32"
+            log.info(f"{self.name} on {device}: weights=FP32, inference={self.precision_label} "
+                     f"(requested={precision}) / 权重与推理精度")
+            self._precision_state = state
+        self.autocast_dtype = dtype
+
+    def load(self, precision: str = "auto") -> None:
         import torch
         from transformers import AutoImageProcessor, AutoModel
 
@@ -25,7 +47,7 @@ class PixAITaggerInterrogator(Interrogator):
                                      revision=REVISION) for filename in FILES]
         folder = paths[0].parent
         processor = AutoImageProcessor.from_pretrained(
-            folder, trust_remote_code=True, local_files_only=True, use_fast=False)
+            folder, trust_remote_code=True, local_files_only=True, backend="pil")
         model = AutoModel.from_pretrained(
             folder, trust_remote_code=True, local_files_only=True,
             dtype=torch.float32).eval()
@@ -33,19 +55,19 @@ class PixAITaggerInterrogator(Interrogator):
         # Keep complex RoPE buffers intact: casting the entire model to BF16
         # would discard their imaginary components. Autocast only the forward.
         model = model.to(device)
-        self.autocast_dtype = (
-            torch.bfloat16 if device.type == "cuda" and torch.cuda.is_bf16_supported()
-            else torch.float32
-        )
         self.processor = processor
         self.model = model
-        log.info(f"Loaded {self.name} on {device} ({self.autocast_dtype}) / 模型加载完成")
+        self._configure_precision(precision)
+        log.info(f"Loaded {self.name} on {device} / 模型加载完成")
 
-    def interrogate(self, image: Image.Image) -> dict[str, list[tuple[str, float]]]:
+    def interrogate(self, image: Image.Image, *, precision: str = "auto") -> dict[str, list[tuple[str, float]]]:
         import torch
 
+        self.validate_precision(precision)
         if getattr(self, "model", None) is None:
-            self.load()
+            self.load(precision)
+        else:
+            self._configure_precision(precision)
         model = self.model
         inputs = self.processor(image, return_tensors="pt")["pixel_values"].to(model.device)
         with torch.inference_mode(), torch.autocast(
@@ -76,6 +98,7 @@ class PixAITaggerInterrogator(Interrogator):
         del model
         unloaded = super().unload()
         self.__dict__.pop("processor", None)
+        self.__dict__.pop("_precision_state", None)
         if on_cuda:
             gc.collect()
             torch.cuda.empty_cache()

@@ -44,6 +44,7 @@ window.taggerMixin = {
     addRatingTag: false,
     addModelTag: false,
     unloadModel: false,
+    precision: 'auto',
     removeDuplicated: false,
     categoryThresholds: {},
     categoryEnabledByModel: {},
@@ -170,6 +171,7 @@ window.taggerMixin = {
       const saved = JSON.parse(localStorage.getItem('anima-tagger-settings') || '{}');
       delete saved.categoryEnabled;
       this.taggerSettings = Object.assign({}, this.taggerSettings, saved);
+      if (!['auto', 'bf16', 'fp32'].includes(this.taggerSettings.precision)) this.taggerSettings.precision = 'auto';
     } catch (_) {}
   },
 
@@ -508,6 +510,13 @@ window.taggerMixin = {
         }),
       })).filter(group => group.options.length),
     };
+  },
+
+  taggerPrecisionSelectConfig() {
+    return { options: ['auto', 'bf16', 'fp32'].map(value => ({
+      v: value, l: this.t(`tagger.precision_${value}`),
+      d: this.t(`tagger.precision_${value}Desc`),
+    })) };
   },
 
   taggerPresetSelectConfig() {
@@ -1290,6 +1299,7 @@ window.taggerMixin = {
         conflict: this.taggerSettings.conflict,
         write_captions: this.taggerSourceMode === 'folder',
         options: {
+          precision: this.taggerSettings.precision,
           threshold: Number(this.taggerSettings.threshold),
           character_threshold: Number(this.taggerSettings.characterThreshold),
           category_thresholds: this.taggerEffectiveCategoryThresholds(),
