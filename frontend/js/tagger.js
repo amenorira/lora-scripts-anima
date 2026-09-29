@@ -1238,6 +1238,23 @@ window.taggerMixin = {
     this.syncTaggerDictionary();
   },
 
+  setTaggerCategoriesCollapsed(collapsed, container) {
+    const changed = new Set();
+    Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
+      const next = collapsed || !category.visibleTags.length;
+      if (category.collapsed === next) return;
+      category.collapsed = next;
+      changed.add(key);
+    });
+    container?.querySelectorAll('.tagger-category-section').forEach(section => {
+      const key = section.dataset.category;
+      if (changed.has(key)) {
+        this._animateCollapse(section.querySelector('.tagger-category-body'), this.taggerCategoryState[key].collapsed);
+      }
+    });
+    this.syncTaggerDictionary();
+  },
+
   taggerCategoryPreview(category) {
     return category.visibleTags.slice(0, 200);
   },

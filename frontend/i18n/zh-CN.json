@@ -1410,7 +1410,7 @@
 		"showTranslation": "显示中文释义",
 		"dictionaryUnavailable": "词典尚未就绪，点击管理",
 		"totalTags": "总计标签",
-		"collapseAll": "折叠全部",
+		"collapseAll": "收起全部",
 		"expandAll": "展开全部",
 		"copyCategoryTags": "复制此分类标签",
 		"tagTruncated": "预览前 200 个，共 {total} 个；输出和复制包含全部符合条件的标签。",

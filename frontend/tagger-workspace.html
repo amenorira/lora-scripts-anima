@@ -7,6 +7,8 @@
   <symbol id="ti-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
   <symbol id="ti-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
   <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="ti-collapse-all" viewBox="0 0 24 24"><path d="M12 3v6m-4-4 4 4 4-4M12 21v-6m-4 4 4-4 4 4M4 12h16"/></symbol>
+  <symbol id="ti-expand-all" viewBox="0 0 24 24"><path d="M12 9V3m-4 4 4-4 4 4M12 15v6m-4-4 4 4 4-4M4 12h16"/></symbol>
   <symbol id="ti-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
   <symbol id="ti-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
   <symbol id="ti-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -228,11 +230,17 @@
           </div>
         </section>
         <section class="tagger-single-categories">
-          <header class="tagger-results-heading"><h2 x-text="t('tagger.resultHeading')"></h2><span x-show="Object.keys(taggerCategoryState).length" x-text="Object.values(taggerCategoryState).reduce((total, category) => total + category.visibleTags.length, 0)"></span></header>
+          <header class="tagger-results-heading">
+            <h2 x-text="t('tagger.resultHeading')"></h2><span x-show="Object.keys(taggerCategoryState).length" x-text="Object.values(taggerCategoryState).reduce((total, category) => total + category.visibleTags.length, 0)"></span>
+            <div class="tagger-results-actions">
+              <button type="button" @click="setTaggerCategoriesCollapsed(true, $el.closest('.tagger-single-categories'))" :disabled="!Object.keys(taggerCategoryState).length"><svg aria-hidden="true"><use href="#ti-collapse-all"></use></svg><span x-text="t('tagger.collapseAll')"></span></button>
+              <button type="button" @click="setTaggerCategoriesCollapsed(false, $el.closest('.tagger-single-categories'))" :disabled="!Object.keys(taggerCategoryState).length"><svg aria-hidden="true"><use href="#ti-expand-all"></use></svg><span x-text="t('tagger.expandAll')"></span></button>
+            </div>
+          </header>
           <div class="tagger-category-browser">
             <div class="tagger-category-columns"><span x-text="t('tagger.categoryColumn')"></span><span x-text="t('tagger.includeOutput')"></span><span :title="t('tagger.filterHelp')" x-text="t('tagger.threshold')"></span></div>
             <template x-for="row in taggerSingleCategories()" :key="row.key">
-              <section class="tagger-category-section" :class="{ collapsed: row.result?.collapsed, excluded: !taggerSingleCategoryEnabled(row.key) }">
+              <section class="tagger-category-section" :data-category="row.key" :class="{ collapsed: row.result?.collapsed, excluded: !taggerSingleCategoryEnabled(row.key) }">
                 <div class="tagger-category-heading" :class="{ 'is-collapsible': row.result }" @click="if (!$event.target.closest('button, input, label, .stepper')) $el.querySelector('.tagger-category-heading-toggle').click()">
                   <div class="tagger-category-name">
                   <button type="button" class="tagger-category-heading-toggle" @click="if (row.result) { row.result.collapsed = !row.result.collapsed; _animateCollapse($el.closest('.tagger-category-section').querySelector('.tagger-category-body'), row.result.collapsed); syncTaggerDictionary() }" :disabled="!row.result" :aria-expanded="String(!row.result?.collapsed)">

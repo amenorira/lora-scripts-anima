@@ -274,11 +274,16 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-output-heading h2 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
 .tagger-output-format { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-left: auto; }
 .tagger-output-format label { white-space: nowrap; }
-.tagger-output-heading > button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.tagger-output-heading > button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; line-height: 20px; cursor: pointer; }
 .tagger-single-categories { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.tagger-results-heading { display: flex; align-items: center; gap: 8px; min-height: 30px; }
-.tagger-results-heading h2 { margin: 0; font-size: 14px; }
-.tagger-results-heading > span { color: var(--text-tertiary); font-size: 12px; }
+.tagger-results-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; }
+.tagger-results-heading h2 { margin: 0; font-size: 14px; line-height: 20px; }
+.tagger-results-heading > span { color: var(--text-tertiary); font-size: 12px; line-height: 20px; }
+.tagger-results-actions { display: flex; align-items: center; gap: 4px; }
+.tagger-results-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 12px; line-height: 20px; white-space: nowrap; cursor: pointer; }
+.tagger-results-actions button, .tagger-output-heading > button { transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
+.tagger-results-actions button:is(:hover, :focus-visible):not(:disabled), .tagger-output-heading > button:is(:hover, :focus-visible):not(:disabled) { color: var(--text-primary); background: var(--hover-overlay); }
+.tagger-results-actions button:disabled { opacity: 0.4; cursor: default; }
 .tagger-single-categories .tagger-category-browser { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .tagger-category-stepper { width: 124px; }
 .tagger-category-stepper input { font-family: var(--font-sans); font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; }
