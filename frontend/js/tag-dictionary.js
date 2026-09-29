@@ -382,7 +382,7 @@ window.tagDictionaryMixin = {
     this.tagDictionaryCheckingUpdate = true;
     this._tdRefreshPanelRow();
     var self = this;
-    return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { signal: AbortSignal.timeout(45000) })
+    return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { cache: 'no-store', signal: AbortSignal.timeout(45000) })
       .then(function (response) { if (!response.ok) throw new Error('check failed'); return response.json(); })
       .then(function (payload) {
         if (generation === self._tagDictionaryCheckGeneration && self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;

@@ -111,20 +111,26 @@ class DictionaryInstallTests(unittest.TestCase):
 
 
     def test_invalid_csv_reports_failed_instead_of_staying_busy(self):
+        previous = self.build_legacy()
         (self.source / "meta.csv").write_text("bad,header\n1,2\n", encoding="utf-8")
-        dictionary.start_install()
-        state = wait_for_install()
+        with patch.object(dictionary, "_download_sources"):
+            dictionary.start_install(force=True)
+            state = wait_for_install()
         self.assertEqual(state["status"], "failed")
         self.assertEqual(state["error_kind"], "build")
+        self.assertEqual(dictionary.read_manifest(), previous)
+        self.assertTrue(dictionary.asset_path(previous["core"]).is_file())
 
     def test_update_downloads_all_files_at_one_revision_and_checks_hashes(self):
+        previous = self.build_legacy()
         hashes = builder.source_hashes(self.source)
         info = SimpleNamespace(sha="fixed-revision", siblings=[
             SimpleNamespace(rfilename=path, lfs=None, blob_id=hashes[path]["blob"])
             for path, _ in dictionary.HF_FILES])
         info.siblings[-1].lfs = SimpleNamespace(sha256=hashes[info.siblings[-1].rfilename]["sha256"])
-        with patch.object(dictionary, "_remote_info", return_value=info), \
+        with patch.object(dictionary, "HfApi") as api, \
                 patch.object(dictionary, "download_hf_file") as download:
+            api.return_value.dataset_info.return_value = info
             dictionary._download_sources(True)
             self.assertEqual(download.call_count, 5)
             self.assertTrue(all(call.kwargs["revision"] == info.sha for call in download.call_args_list))
@@ -132,6 +138,8 @@ class DictionaryInstallTests(unittest.TestCase):
             with self.assertRaises(dictionary.IntegrityError):
                 dictionary._download_sources(True)
             self.assertFalse((self.source / "general.csv").exists())
+        self.assertEqual(dictionary.read_manifest(), previous)
+        self.assertTrue(dictionary.asset_path(previous["detail"]).is_file())
 
     def test_interrupted_copy_leaves_no_partial_source(self):
         write_sources(self.legacy_source)
@@ -144,6 +152,84 @@ class DictionaryInstallTests(unittest.TestCase):
         self.assertEqual(len(list(self.source.iterdir())), len(CATEGORY_FILES) - 1)
         builder.reuse_legacy_sources(self.source)
         self.assertEqual(target.read_bytes(), (self.legacy_source / target.name).read_bytes())
+
+
+class DictionaryUpdateTests(unittest.TestCase):
+    def setUp(self):
+        self.manifest = {"core": "core.json", "tag_count": 6, "source_hashes": {
+            path: {"blob": "old", "sha256": "old-lfs"} for path, _ in dictionary.HF_FILES}}
+        for item in [patch.object(dictionary, "read_manifest", return_value=self.manifest),
+                     patch.object(dictionary, "_update_check", {})]:
+            item.start()
+            self.addCleanup(item.stop)
+
+    def info(self, changed=False):
+        info = SimpleNamespace(sha="revision", siblings=[
+            SimpleNamespace(rfilename=path, lfs=None, blob_id="old")
+            for path, _ in dictionary.HF_FILES])
+        info.siblings[0].lfs = SimpleNamespace(sha256="new-lfs" if changed else "old-lfs")
+        return info
+
+    def test_same_tag_count_with_changed_content_uses_official_not_stale_mirror(self):
+        with patch.object(dictionary, "HfApi") as api:
+            api.return_value.dataset_info.return_value = self.info(changed=True)
+            result = dictionary.check_update(True)
+        api.assert_called_once_with(endpoint="https://huggingface.co")
+        self.assertEqual(result["state"], "available")
+        self.assertEqual(result["changed_files"], [dictionary.HF_FILES[0][0]])
+
+    def test_official_failure_does_not_report_current_from_mirror(self):
+        with patch.object(dictionary, "HfApi") as api:
+            api.return_value.dataset_info.side_effect = OSError("official unavailable")
+            result = dictionary.check_update(True)
+        api.assert_called_once_with(endpoint="https://huggingface.co")
+        self.assertEqual(result["state"], "error")
+
+    def test_manual_check_bypasses_cached_current_result(self):
+        with patch.object(dictionary, "HfApi") as api:
+            remote = api.return_value.dataset_info
+            remote.side_effect = [self.info(), self.info(True)]
+            self.assertEqual(dictionary.check_update()["state"], "current")
+            self.assertEqual(dictionary.check_update()["state"], "current")
+            self.assertEqual(dictionary.check_update(True)["state"], "available")
+        self.assertEqual(remote.call_count, 2)
+
+    def test_repository_revision_change_without_csv_changes_is_current(self):
+        info = self.info()
+        info.sha = "readme-only-commit"
+        with patch.object(dictionary, "HfApi") as api:
+            api.return_value.dataset_info.return_value = info
+            self.assertEqual(dictionary.check_update(True)["state"], "current")
+
+    def test_incomplete_official_metadata_blocks_check_and_download(self):
+        for defect in ("revision", "file", "fingerprint"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(dictionary, "SOURCE_DIR", Path(directory)), \
+                    patch.object(dictionary, "HfApi") as api, \
+                    patch.object(dictionary, "download_hf_file") as download:
+                info = self.info()
+                if defect == "revision":
+                    info.sha = None
+                elif defect == "file":
+                    info.siblings.pop()
+                else:
+                    info.siblings[0].lfs.sha256 = None
+                api.return_value.dataset_info.return_value = info
+                self.assertEqual(dictionary.check_update(True)["state"], "error")
+                with self.assertRaises(RuntimeError):
+                    dictionary._download_sources(True)
+                download.assert_not_called()
+
+    def test_install_does_not_fall_back_to_stale_mirror_metadata(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(dictionary, "SOURCE_DIR", Path(directory)), \
+                patch.object(dictionary, "HfApi") as api, \
+                patch.object(dictionary, "download_hf_file") as download:
+            api.return_value.dataset_info.side_effect = OSError("offline")
+            with self.assertRaisesRegex(RuntimeError, "官方版本"):
+                dictionary._download_sources(True)
+        api.assert_called_once_with(endpoint="https://huggingface.co")
+        download.assert_not_called()
 
 
 class DictionaryRouteTests(unittest.TestCase):
@@ -166,6 +252,12 @@ class DictionaryRouteTests(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
         self.addCleanup(DictionaryInstallTests.join_install, self)
+
+    def test_update_endpoint_forwards_force(self):
+        with patch.object(dictionary, "check_update", return_value={"state": "available"}) as check:
+            response = self.client.get("/api/tageditor/dictionary/update?force=true")
+        check.assert_called_once_with(True)
+        self.assertEqual(response.json()["data"]["state"], "available")
 
     def test_asset_endpoint_serves_installed_files_and_blocks_others(self):
         self.client.post("/api/tageditor/dictionary/install", json={})

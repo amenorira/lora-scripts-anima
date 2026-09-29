@@ -523,6 +523,10 @@ window.environmentRenderMixin = {
         + `${this.esc(this.tagDictionaryDataActionLabel())}</button>`
       : '';
 
+    if (server?.installed && dataState !== 'installing') {
+      action += `<button class="btn btn-sm btn-ghost" data-env-action="dictionary-redownload"${this.tagDictionaryCheckingUpdate ? ' disabled' : ''}>${this.esc(T('dictRedownload'))}</button>`;
+    }
+
     const head = this._renderRowHead('dictionary', open, {
       name: T('dictRowName', 'Danbooru Chinese dictionary'),
       desc: T('dictRowDesc', 'Tag translations, colors and notes for the Tag Editor'),
@@ -584,9 +588,6 @@ window.environmentRenderMixin = {
       body += `<tr><th>${this.esc(T('dictTotal'))}</th><td>${number(server.tag_count)}</td></tr></tbody></table></div>`;
     }
     body += this._renderDetailGroup(T('dictSource'), '<a href="https://huggingface.co/datasets/ame-la/danbooru-tags-data-zh" target="_blank" rel="noopener" class="env-link">ame-la/danbooru-tags-data-zh ↗</a>');
-    if (server.installed && dataState !== 'installing') {
-      body += `<div class="env-actions"><button class="btn btn-sm btn-ghost" data-env-action="dictionary-redownload">${this.esc(T('dictRedownload'))}</button></div>`;
-    }
     const log = this.tagDictionaryLogText() || this.tagDictionaryInstallError || server.message;
     if (log && (dataState === 'failed' || dataState === 'error')) {
       body += `<details><summary class="env-text-dim">${this.esc(T('dictErrorDetails'))}</summary>${this._renderLog(log)}</details>`;

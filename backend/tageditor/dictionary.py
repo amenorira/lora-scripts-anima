@@ -27,7 +27,7 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-from backend.utils.hf_download import IntegrityError, download_hf_file, _endpoints_for_download
+from backend.utils.hf_download import IntegrityError, download_hf_file
 from tools.dev.build_tag_dictionary import (
     CATEGORY_FILES,
     LEGACY_ASSET_DIR,
@@ -150,14 +150,23 @@ def _legacy_categories(directory: str, core: str) -> list:
 
 
 def _remote_info():
-    error = None
-    for endpoint in _endpoints_for_download():
-        try:
-            return HfApi(endpoint=endpoint).dataset_info(
-                SOURCE_REPO, files_metadata=True, timeout=8)
-        except Exception as exc:
-            error = exc
-    raise RuntimeError(f"无法检查词典更新：{error}")
+    """统一获取官方提交和五份 CSV 的指纹；镜像只负责固定提交的文件传输。"""
+    try:
+        info = HfApi(endpoint="https://huggingface.co").dataset_info(
+            SOURCE_REPO, files_metadata=True, timeout=8)
+        if not info.sha:
+            raise ValueError("词典数据源缺少版本号")
+        files = {item.rfilename: item for item in info.siblings}
+        hashes = {}
+        for path, _ in HF_FILES:
+            item = files[path]
+            kind, digest = ("sha256", item.lfs.sha256) if item.lfs else ("blob", item.blob_id)
+            if not digest:
+                raise ValueError(f"缺少文件指纹：{path}")
+            hashes[path] = (kind, digest)
+        return info.sha, hashes
+    except Exception as error:
+        raise RuntimeError(f"无法获取词典官方版本：{error}") from error
 
 
 def check_update(force: bool = False) -> dict:
@@ -171,20 +180,12 @@ def check_update(force: bool = False) -> dict:
             return dict(_update_check)
         result = {"key": key, "time": time.monotonic(), "state": "unknown"}
         try:
-            info = _remote_info()
-            remote = {s.rfilename: s for s in info.siblings}
+            revision, remote = _remote_info()
             hashes = manifest.get("source_hashes", {})
-            changed = []
-            for path, _ in HF_FILES:
-                item = remote[path]
-                expected = item.lfs.sha256 if item.lfs else item.blob_id
-                if not expected:
-                    raise ValueError(f"缺少文件指纹：{path}")
-                local = hashes.get(path, {}).get("sha256" if item.lfs else "blob")
-                if local != expected:
-                    changed.append(path)
+            changed = [path for path, (kind, digest) in remote.items()
+                       if hashes.get(path, {}).get(kind) != digest]
             result.update(state=("unknown" if not hashes else "available" if changed else "current"),
-                          revision=info.sha, changed_files=changed,
+                          revision=revision, changed_files=changed,
                           checked_at=datetime.datetime.now().isoformat(timespec="seconds"))
         except Exception as error:
             result.update(state="error", message=str(error))
@@ -320,18 +321,16 @@ def _download_sources(force: bool) -> None:
     SOURCE_DIR.mkdir(parents=True, exist_ok=True)
     needs_download = force or any(not (SOURCE_DIR / name).is_file()
                                  or (SOURCE_DIR / name).stat().st_size == 0 for _, name in HF_FILES)
-    info = _remote_info() if needs_download else None
-    if info is not None and not info.sha:
-        raise ValueError("词典数据源缺少版本号")
-    remote = {item.rfilename: item for item in info.siblings} if info else {}
+    revision, remote = _remote_info() if needs_download else (None, {})
 
-    def matches(target: Path, item) -> bool:
+    def matches(target: Path, fingerprint: tuple[str, str]) -> bool:
         if not target.is_file():
             return False
         data = target.read_bytes()
-        digest = (hashlib.sha256(data).hexdigest() if item.lfs else
+        kind, expected = fingerprint
+        digest = (hashlib.sha256(data).hexdigest() if kind == "sha256" else
                   hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest())
-        return digest == (item.lfs.sha256 if item.lfs else item.blob_id)
+        return digest == expected
 
     total = len(HF_FILES)
     with _lock:
@@ -341,7 +340,7 @@ def _download_sources(force: bool) -> None:
         target = SOURCE_DIR / local_name
         progress = _progress["files"][local_name]
         if not force and target.is_file() and target.stat().st_size > 0 and (
-                info is None or matches(target, remote[hf_path])):
+                revision is None or matches(target, remote[hf_path])):
             _log(f"复用本地 {local_name}")
         else:
             _log(f"下载 {hf_path}")
@@ -355,7 +354,7 @@ def _download_sources(force: bool) -> None:
                 file_index=index, file_total=total,
                 on_log=_log,
                 repo_type="dataset",   # 数据源是数据集仓库，地址要带 /datasets/
-                revision=info.sha,
+                revision=revision,
             )
             if not matches(target, remote[hf_path]):
                 target.unlink(missing_ok=True)
