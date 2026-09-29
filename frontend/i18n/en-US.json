@@ -1792,6 +1792,7 @@
 		"dictUpdateFailed": "Update failed. Previous dictionary still available.",
 		"dictDownloadFailed": "Download failed",
 		"dictErrorIntegrity": "The download failed its integrity check.",
+		"dictErrorSource": "Could not retrieve the official dictionary version. Check your connection and retry. Any installed dictionary is unaffected.",
 		"dictErrorBuild": "The local data could not be built into a dictionary.",
 		"dictErrorDownload": "The download could not finish. Check your connection and retry.",
 		"dictOldAvailable": "Your installed dictionary is still available. Retry to update it.",

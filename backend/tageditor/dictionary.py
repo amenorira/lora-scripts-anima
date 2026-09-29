@@ -149,24 +149,30 @@ def _legacy_categories(directory: str, core: str) -> list:
     return category_stats(row[2] for row in json.loads((root / core).read_text(encoding="utf-8")))
 
 
+class DictionarySourceError(RuntimeError):
+    """官方版本元数据不可用；前端按 source 错误类型显示本地化提示。"""
+
+
 def _remote_info():
     """统一获取官方提交和五份 CSV 的指纹；镜像只负责固定提交的文件传输。"""
     try:
         info = HfApi(endpoint="https://huggingface.co").dataset_info(
             SOURCE_REPO, files_metadata=True, timeout=8)
         if not info.sha:
-            raise ValueError("词典数据源缺少版本号")
+            raise ValueError("Dictionary source revision is missing / 词典数据源缺少版本号")
         files = {item.rfilename: item for item in info.siblings}
         hashes = {}
         for path, _ in HF_FILES:
+            if path not in files:
+                raise ValueError(f"Source file is missing / 缺少数据源文件：{path}")
             item = files[path]
             kind, digest = ("sha256", item.lfs.sha256) if item.lfs else ("blob", item.blob_id)
             if not digest:
-                raise ValueError(f"缺少文件指纹：{path}")
+                raise ValueError(f"File fingerprint is missing / 缺少文件指纹：{path}")
             hashes[path] = (kind, digest)
         return info.sha, hashes
     except Exception as error:
-        raise RuntimeError(f"无法获取词典官方版本：{error}") from error
+        raise DictionarySourceError(f"Could not retrieve the official dictionary version / 无法获取官方词典版本：{error}") from error
 
 
 def check_update(force: bool = False) -> dict:
@@ -188,7 +194,8 @@ def check_update(force: bool = False) -> dict:
                           revision=revision, changed_files=changed,
                           checked_at=datetime.datetime.now().isoformat(timespec="seconds"))
         except Exception as error:
-            result.update(state="error", message=str(error))
+            result.update(state="error", message=str(error),
+                          error_kind="source" if isinstance(error, DictionarySourceError) else "unknown")
         _update_check = result
         return dict(result)
 
@@ -295,18 +302,19 @@ def _install(force: bool) -> None:
     try:
         _download_sources(force)
         _set_state(_BUILDING, "")
-        _log("构建词典资源")
+        _log("Building dictionary assets / 构建词典资源")
         manifest = build(SOURCE_DIR, ASSET_DIR, datetime.date.today().isoformat(),
                          SOURCE_URL, on_report=_report_sink)
-        _log(f"完成：{manifest['tag_count']} 个标签")
+        _log(f"Complete / 完成：{manifest['tag_count']} tags / 个标签")
         with _check_lock:
             _update_check.clear()
         _set_state(_READY, "")
     except (Exception, SystemExit) as error:  # 构建器的 CSV 校验通过 SystemExit 报错
         with _lock:
-            _state["error_kind"] = ("integrity" if isinstance(error, IntegrityError)
+            _state["error_kind"] = ("source" if isinstance(error, DictionarySourceError)
+                                    else "integrity" if isinstance(error, IntegrityError)
                                     else "build" if _state["status"] == _BUILDING else "download")
-        _log(f"失败：{error}")
+        _log(f"Failed / 失败：{error}")
         _set_state(_FAILED, str(error))
 
 
@@ -341,9 +349,9 @@ def _download_sources(force: bool) -> None:
         progress = _progress["files"][local_name]
         if not force and target.is_file() and target.stat().st_size > 0 and (
                 revision is None or matches(target, remote[hf_path])):
-            _log(f"复用本地 {local_name}")
+            _log(f"Reusing local file / 复用本地文件：{local_name}")
         else:
-            _log(f"下载 {hf_path}")
+            _log(f"Downloading / 下载：{hf_path}")
             with _lock:
                 progress.update({"filename": local_name, "file_index": index,
                                   "file_total": total, "downloaded": 0, "total": 0,
@@ -358,7 +366,7 @@ def _download_sources(force: bool) -> None:
             )
             if not matches(target, remote[hf_path]):
                 target.unlink(missing_ok=True)
-                raise IntegrityError(f"文件指纹不匹配：{local_name}")
+                raise IntegrityError(f"File fingerprint mismatch / 文件指纹不匹配：{local_name}")
         with _lock:
             progress.update(done=True, phase="file_done", speed=0.0)
     with ThreadPoolExecutor(max_workers=len(HF_FILES), thread_name_prefix="dictionary") as executor:

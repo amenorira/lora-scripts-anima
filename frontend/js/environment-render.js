@@ -572,7 +572,8 @@ window.environmentRenderMixin = {
       }
     }
     if (dataState === 'failed' || dataState === 'error') {
-      const reason = T(server.error_kind === 'integrity' ? 'dictErrorIntegrity'
+      const reason = T(server.error_kind === 'source' ? 'dictErrorSource'
+        : server.error_kind === 'integrity' ? 'dictErrorIntegrity'
         : server.error_kind === 'build' ? 'dictErrorBuild' : 'dictErrorDownload');
       body += `<div class="env-msg env-msg-err">${current ? this.esc(current) + '：' : ''}${this.esc(reason)}</div>`;
     }
@@ -588,6 +589,13 @@ window.environmentRenderMixin = {
       body += `<tr><th>${this.esc(T('dictTotal'))}</th><td>${number(server.tag_count)}</td></tr></tbody></table></div>`;
     }
     body += this._renderDetailGroup(T('dictSource'), '<a href="https://huggingface.co/datasets/ame-la/danbooru-tags-data-zh" target="_blank" rel="noopener" class="env-link">ame-la/danbooru-tags-data-zh ↗</a>');
+    if (dataState === 'installed' && server.update?.state === 'error') {
+      const reason = T(server.update.error_kind === 'source' ? 'dictErrorSource' : 'dictCheckFailed');
+      body += `<div class="env-msg env-msg-err">${this.esc(reason)}</div>`;
+      if (server.update.message) {
+        body += `<details><summary class="env-text-dim">${this.esc(T('dictErrorDetails'))}</summary>${this._renderLog(server.update.message)}</details>`;
+      }
+    }
     const log = this.tagDictionaryLogText() || this.tagDictionaryInstallError || server.message;
     if (log && (dataState === 'failed' || dataState === 'error')) {
       body += `<details><summary class="env-text-dim">${this.esc(T('dictErrorDetails'))}</summary>${this._renderLog(log)}</details>`;

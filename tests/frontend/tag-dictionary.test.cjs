@@ -9,6 +9,30 @@ const LIB = path.join(__dirname, '../../frontend/js/tag-dictionary-lib.js');
 const CLIENT = path.join(__dirname, '../../frontend/js/tag-dictionary.js');
 const WORKER = path.join(__dirname, '../../frontend/js/tag-dictionary.worker.js');
 
+test('dictionary source errors use the selected language for checks and installs', () => {
+  const context = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/environment-render.js'), 'utf8'), context);
+  const app = Object.assign({}, context.window.environmentRenderMixin, {
+    esc: value => String(value).replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+    tagDictionaryLogText: () => '',
+    _renderLog(value) { return this.esc(value); },
+  });
+  for (const language of ['zh-CN', 'en-US']) {
+    const texts = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${language}.json`), 'utf8')).environment;
+    assert.ok(texts.dictErrorSource);
+    for (const state of ['installed', 'failed']) {
+      app.tagDictionaryServer = state === 'installed'
+        ? { installed: true, update: { state: 'error', error_kind: 'source', message: '<network error>' } }
+        : { installed: true, status: 'failed', error_kind: 'source', message: '<network error>' };
+      const html = app._renderDictionaryBody(key => texts[key], state);
+      assert.ok(html.includes(texts.dictErrorSource));
+      assert.ok(html.includes(texts.dictErrorDetails));
+      assert.ok(html.includes('&lt;network error&gt;'));
+      assert.ok(!html.includes('<network error>'));
+    }
+  }
+});
+
 function loadLib() {
   const context = { window: {} };
   vm.runInNewContext(fs.readFileSync(LIB, 'utf8'), context);

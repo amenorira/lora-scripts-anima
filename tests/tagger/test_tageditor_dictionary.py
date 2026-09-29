@@ -184,6 +184,7 @@ class DictionaryUpdateTests(unittest.TestCase):
             result = dictionary.check_update(True)
         api.assert_called_once_with(endpoint="https://huggingface.co")
         self.assertEqual(result["state"], "error")
+        self.assertEqual(result["error_kind"], "source")
 
     def test_manual_check_bypasses_cached_current_result(self):
         with patch.object(dictionary, "HfApi") as api:
@@ -226,7 +227,7 @@ class DictionaryUpdateTests(unittest.TestCase):
                 patch.object(dictionary, "HfApi") as api, \
                 patch.object(dictionary, "download_hf_file") as download:
             api.return_value.dataset_info.side_effect = OSError("offline")
-            with self.assertRaisesRegex(RuntimeError, "官方版本"):
+            with self.assertRaises(dictionary.DictionarySourceError):
                 dictionary._download_sources(True)
         api.assert_called_once_with(endpoint="https://huggingface.co")
         download.assert_not_called()

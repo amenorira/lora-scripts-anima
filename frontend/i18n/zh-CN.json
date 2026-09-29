@@ -1792,6 +1792,7 @@
 		"dictUpdateFailed": "更新失败，旧词典仍可用",
 		"dictDownloadFailed": "下载失败",
 		"dictErrorIntegrity": "下载内容未通过完整性校验。",
+		"dictErrorSource": "无法获取官方词典版本，请检查网络后重试。已安装的词典不受影响。",
 		"dictErrorBuild": "本地数据未能生成词典。",
 		"dictErrorDownload": "未能完成下载，请检查网络后重试。",
 		"dictOldAvailable": "已安装的词典仍可使用，可重试更新。",
