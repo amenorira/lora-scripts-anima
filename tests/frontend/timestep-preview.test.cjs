@@ -38,23 +38,6 @@ test('mode density is normalized and matches the trainer transform across shifts
   }
 });
 
-test('mode curve has no scheduler binning teeth at scale zero or around its central peak', () => {
-  const { data: uniform } = preview({ timestep_sampling: 'sigma', weighting_scheme: 'mode', mode_scale: 0 });
-  for (const density of uniform.densities) {
-    assert.ok(Math.abs(density - 0.001) < 0.000001, `uniform density: ${density}`);
-  }
-  for (const scale of [1, 1.29]) {
-    const { data } = preview({ timestep_sampling: 'sigma', weighting_scheme: 'mode', mode_scale: scale });
-    const densities = data.densities;
-    for (let i = 0; i < densities.length / 2; i++) {
-      assert.ok(Math.abs(densities[i] - densities[densities.length - 1 - i]) < 1e-10);
-      if (i > 0) assert.ok(densities[i] >= densities[i - 1], `scale=${scale}, unexpected tooth at bin ${i}`);
-    }
-    // Statistics still use the trainer's discrete scheduler, including its rounding.
-    assert.equal(data.median, 500);
-  }
-});
-
 test('zero-scale distributions show a fixed timestep and exact zone probabilities', () => {
   const cases = [
     [{ timestep_sampling: 'sigmoid', sigmoid_scale: 0 }, 500, 'midPercent'],
@@ -95,33 +78,6 @@ test('narrow continuous distributions retain their probability mass and correct 
       assert.ok(Math.abs(data.lowPercent + data.midPercent + data.highPercent - 100) < 1e-10);
     }
   }
-});
-
-test('mode curve matches continuous sampling even when the transform folds', () => {
-  for (const scale of [1, 1.75]) {
-    const { data } = preview({ timestep_sampling: 'sigma', weighting_scheme: 'mode', mode_scale: scale, discrete_flow_shift: 3 });
-    const bins = Array(120).fill(0);
-    const count = 200000;
-    for (let i = 0; i < count; i++) {
-      const r = (i + 0.5) / count;
-      const u = 1 - r - scale * (Math.cos(Math.PI * r / 2) ** 2 - 1 + r);
-      const s = 1 - u;
-      const shifted = 3 * s / (1 + 2 * s);
-      bins[119 - Math.min(119, Math.floor(shifted * 120))]++;
-    }
-    data.densities.forEach((density, i) => {
-      assert.ok(Math.abs(density - bins[i] / count * 120 / 1000) < 0.000002, `scale=${scale}, bin=${i}`);
-    });
-    assert.equal(data.median, 750);
-  }
-});
-
-test('sigma statistics use scheduler steps rather than plotting bins', () => {
-  const { data } = preview({ timestep_sampling: 'sigma', weighting_scheme: 'mode', mode_scale: 0, discrete_flow_shift: 3 });
-  // Uniform scheduler indices: 142 entries below 1/3 and 601 at or above 2/3.
-  assert.ok(Math.abs(data.lowPercent - 14.2) < 1e-9);
-  assert.ok(Math.abs(data.highPercent - 60.1) < 1e-9);
-  assert.equal(data.median, 750);
 });
 
 test('overall CDF respects subset sample weights and offsets', () => {

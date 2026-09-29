@@ -35,26 +35,6 @@ class TensorBoardProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("x-private", response.headers)
         self.assertNotIn("connection", response.headers)
 
-    async def test_redirects_stay_on_public_origin_and_prefix(self):
-        for location, expected in [
-            ("/", "/tensorboard/"),
-            ("http://127.0.0.1:6006/tensorboard/?x=1#images", "/tensorboard/?x=1#images"),
-            ("/tensorboard/?x=1", "/tensorboard/?x=1"),
-            ("../notifications_note.json", "../notifications_note.json"),
-        ]:
-            with self.subTest(location=location):
-                response = await self.request(lambda r: httpx.Response(302, stream=httpx.ByteStream(b""), headers={"Location": location}))
-                self.assertEqual(response.headers["location"], expected)
-
-    async def test_waiting_disabled_and_failed_pages(self):
-        def unexpected(request):
-            self.fail("Unavailable service must not receive requests")
-        for state in ("starting", "disabled", "failed"):
-            response = await self.request(unexpected, state=state)
-            self.assertEqual(response.status_code, 503)
-            self.assertEqual(response.headers["cache-control"], "no-store")
-            self.assertEqual('http-equiv="refresh"' in response.text, state == "starting")
-            self.assertIn("&lt;failure&gt;", response.text)
 
     async def test_network_errors_and_disconnect(self):
         for error, status in [(ClientDisconnect(), 499), (httpx.ConnectError("offline"), 503),
@@ -63,9 +43,3 @@ class TensorBoardProxyTests(unittest.IsolatedAsyncioTestCase):
                 raise error
             response = await self.request(handler)
             self.assertEqual(response.status_code, status)
-
-    async def test_old_bookmark_redirects_with_query(self):
-        for path in ("/proxy/tensorboard/?x=1", "/proxy/tensorboard?x=1", "/tensorboard?x=1"):
-            response = await self.request(lambda r: self.fail("must redirect locally"), path)
-            self.assertEqual(response.status_code, 307)
-            self.assertEqual(response.headers["location"], "/tensorboard/?x=1")

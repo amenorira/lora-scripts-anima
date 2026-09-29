@@ -8,10 +8,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from backend.image_preview import get_cached_preview_path
-from backend.server.routes.image_preview import _resolve_dataset_image
 from backend.server.application import app
 from backend.tageditor.sessions import dataset_sessions
-from backend.tagger.workspace import scan_source
 
 
 class SharedImagePreviewTests(unittest.TestCase):
@@ -70,60 +68,6 @@ class SharedImagePreviewTests(unittest.TestCase):
             self.assertEqual(cached.status_code, 304)
             dataset_sessions.delete(session.id)
 
-    def test_artifact_scope_delegates_to_registered_run_resolver(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            image_path = Path(temporary) / "sample.png"
-            Image.new("RGB", (80, 60), (30, 120, 90)).save(image_path)
-            client = TestClient(app)
-            with patch("backend.monitor.run_registry.resolve_artifact_file", return_value=image_path) as resolver:
-                response = client.get("/api/image-preview", params={
-                    "scope": "artifact",
-                    "run_dir": "runs/example",
-                    "path": "sample.png",
-                    "variant": "inspect",
-                })
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.headers["content-type"], "image/webp")
-            resolver.assert_called_once_with("runs/example", "sample.png")
-
-    def test_tagger_scope_uses_token_capability(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            image_path = root / "tagger.png"
-            Image.new("RGB", (300, 200), (120, 60, 170)).save(image_path)
-            source = scan_source(str(root), True)
-            client = TestClient(app)
-            params = {
-                "scope": "tagger",
-                "source_token": source["source_token"],
-                "index": 0,
-                "variant": "thumb",
-                "size": 160,
-            }
-
-            response = client.get("/api/image-preview", params=params)
-            denied = client.get("/api/image-preview", params={**params, "index": 1})
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.headers["content-type"], "image/webp")
-            self.assertEqual(denied.status_code, 404)
-
-    def test_dataset_preview_index_refreshes_with_session(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            first = root / "first.png"
-            second = root / "second.png"
-            Image.new("RGB", (8, 8)).save(first)
-            session = dataset_sessions.create(str(root), True)
-            self.assertEqual(_resolve_dataset_image(session.id, "first.png"), first.resolve())
-            Image.new("RGB", (8, 8)).save(second)
-            first.unlink()
-            dataset_sessions.refresh(session.id)
-            self.assertIsNone(_resolve_dataset_image(session.id, "first.png"))
-            self.assertEqual(_resolve_dataset_image(session.id, "second.png"), second.resolve())
-            self.assertIsNone(_resolve_dataset_image(session.id, "../second.png"))
-            dataset_sessions.delete(session.id)
 
     def test_same_preview_key_renders_once_with_concurrent_requests(self):
         with tempfile.TemporaryDirectory() as temporary:

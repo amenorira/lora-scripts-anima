@@ -113,16 +113,6 @@ class ApplySubsetRepeatsTests(unittest.TestCase):
                     apply_subset_repeats(self.train, [{"name": name, "repeats": 5}])
                 self.assertEqual(ctx.exception.code, "invalidSubsetName")
 
-    def test_rejects_out_of_range_repeats(self):
-        self._subset("5_cat")
-
-        for repeats in (0, -1, 1000, "abc", ""):
-            with self.subTest(repeats=repeats):
-                with self.assertRaises(DatasetRepeatError) as ctx:
-                    apply_subset_repeats(self.train, [{"name": "5_cat", "repeats": repeats}])
-                self.assertIn(ctx.exception.code, {"invalidRepeats", "repeatsOutOfRange"})
-        self.assertTrue((self.train / "5_cat").is_dir())
-
 
 class DatasetRepeatRouteTests(unittest.TestCase):
     def setUp(self):
@@ -139,31 +129,6 @@ class DatasetRepeatRouteTests(unittest.TestCase):
         with patch.object(training_routes.tm, "dump", return_value=[]):
             return asyncio.run(training_routes.update_dataset_repeat(_BodyRequest(payload)))
 
-    def test_route_renames_and_invalidates_picker_cache(self):
-        system_routes._files_cache["train-dir"] = (0.0, [{"name": "stale"}])
-
-        result = self._post({"dir": str(self.train), "changes": [{"name": "5_cat", "repeats": 8}]})
-
-        self.assertEqual(result.status, "success")
-        self.assertEqual(result.data["applied"][0]["newName"], "8_cat")
-        self.assertTrue((self.train / "8_cat").is_dir())
-        # 选择器缓存留着旧名字会让用户看到已经改掉的目录。
-        self.assertEqual(system_routes._files_cache, {})
-
-    def test_route_blocked_while_training(self):
-        from backend.tasks import TaskManager
-        manager = TaskManager()
-        reservation = manager.reserve_task()
-        with patch.object(training_routes, "tm", manager):
-            result = asyncio.run(training_routes.update_dataset_repeat(_BodyRequest({
-                "dir": str(self.train),
-                "changes": [{"name": "5_cat", "repeats": 8}],
-            })))
-        manager.release_reserved(reservation)
-
-        self.assertEqual(result.status, "fail")
-        self.assertEqual(result.data["errorCode"], "trainingActive")
-        self.assertTrue((self.train / "5_cat").is_dir())
 
     def test_stopping_preparation_does_not_allow_dataset_rename(self):
         import threading

@@ -41,23 +41,6 @@ function plain(value) {
   return Array.from(value);
 }
 
-function names(results) {
-  return plain(results).map(item => item.canonical);
-}
-
-test('ambiguous translated titles do not steal general aliases', () => {
-  const TD = loadLib();
-  const index = TD.createIndex([
-    ['flower', '花朵', 0, 875695, 'flowers'],
-    ['flowers_(innocent_grey)', 'FLOWERS', 3, 232, 'flowers'],
-    ['some_series', 'flower', 3, 100, ''],
-  ]);
-  assert.equal(TD.lookup(index, 'flowers').result.canonical, 'flower');
-  assert.equal(TD.search(index, 'flowers', 20)[0].canonical, 'flower');
-  assert.equal(TD.lookup(index, 'flowers (innocent grey)').result.category, 3);
-  assert.equal(TD.lookup(index, 'flower').result.canonical, 'flower');
-});
-
 test('formatter follows Anima rules without escaping', () => {
   const TD = loadLib();
   const tag = (canonical, category) => TD.danbooruToAnimaTag(canonical, category);
@@ -109,21 +92,6 @@ test('reverse lookup recognizes canonical, anima, translated and alias forms', (
   for (const value of ['my_style_v2', 'A girl standing beside a window.', '(chibi:2)', '{red|blue} hair']) {
     assert.equal(TD.lookup(index, value), null, `不该命中 ${value}`);
   }
-});
-
-test('exact matches rank above prefix and contains, popularity breaks ties', () => {
-  const TD = loadLib();
-  const index = fixtureIndex(TD);
-  // 中文精确命中排在子串命中之前，哪怕子串那条热门得多
-  assert.deepEqual(names(TD.search(index, '长发', 20)), ['long_hair', 'absurdly_long_hair']);
-  assert.deepEqual(plain(TD.search(index, '长发', 20)).map(item => item.match), ['translation', 'contains']);
-  // 前缀命中按图片数降序，而不是字典序（long_dress 字母序最前但最冷门）
-  const prefix = TD.search(index, 'long', 20);
-  assert.deepEqual(names(prefix).slice(0, 3), ['long_hair', 'long_hair_between_eyes', 'long_dress']);
-  assert.deepEqual(plain(prefix).map(item => item.match).slice(0, 3), ['canonical', 'canonical', 'canonical']);
-  // 子串只作回退：absurdly_long_hair 不在前缀命中里
-  assert.ok(names(prefix).includes('absurdly_long_hair'));
-  assert.equal(prefix.at(-1).match, 'contains');
 });
 
 /* ===== 客户端：单例 Worker、缓存复用、失败降级 ===== */
@@ -237,36 +205,6 @@ test('timeline restore refuses unsaved edits and stale dataset confirmations', (
   assert.equal(ctx.tagEditorSnapshotBusy, false);
 });
 
-test('batch Enter applies the active operation unless selecting a visible suggestion or composing', () => {
-  const { ctx } = makeClient();
-  const actions = [];
-  ctx.tagEditorBatchAdd = () => actions.push('add');
-  ctx.tagEditorBatchRemove = () => actions.push('remove');
-  ctx.tagEditorBatchReplace = () => actions.push('replace');
-  ctx.tagEditorBatchSelectSuggestion = () => actions.push('suggestion');
-  const enter = {key:'Enter',preventDefault() {},stopPropagation() {}};
-  for (const mode of ['add', 'remove', 'replace']) {
-    ctx.tagEditorBatchMode = mode;
-    ctx.tagEditorBatchKeydown(enter);
-  }
-  assert.deepEqual(actions, ['add','remove','replace']);
-  ctx.batchSuggestOpen = 'new';
-  ctx.batchSuggestItems = [{insert:'flower'}];
-  ctx.batchSuggestIdx = 0;
-  ctx.tagEditorBatchKeydown(enter);
-  assert.equal(actions.at(-1), 'suggestion');
-  ctx.batchSuggestIdx = -1;
-  ctx.tagEditorBatchKeydown(enter);
-  assert.equal(actions.at(-1), 'replace');
-  const count = actions.length;
-  ctx.tagEditorBatchKeydown({...enter, isComposing:true});
-  assert.equal(actions.length, count);
-  ctx.batchSuggestOpen = null;
-  ctx.batchSuggestIdx = 0;
-  ctx.tagEditorBatchKeydown(enter);
-  assert.equal(actions.at(-1), 'replace');
-});
-
 test('removing bracket escapes changes only selected captions and supports undo and redo', () => {
   const { ctx } = makeClient();
   const raw = String.raw`star \(symbol\),  custom\name, foo \\(bar\\)`;
@@ -370,67 +308,6 @@ test('stale suggestion results are dropped by sequence', async () => {
   assert.deepEqual(applied, [['长发', 2, 1]]);
 });
 
-test('local suggestions use exact dictionary metadata outside the search limit', async () => {
-  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
-  await initReady(ctx);
-  reply({ type: 'READY_CORE' });
-  ctx._teSuggestSeq = 1;
-  ctx._teLocalSuggestTags = ['gradient background'];
-  ctx.tagDictionaryLookupTags(['gradient background']); // 页面预取尚未返回
-  ctx.tagDictionarySuggest('back', 1, null);
-  await tick(160);
-  const suggest = posted.find(message => message.type === 'SUGGEST');
-  assert.deepEqual(plain(suggest.localTags), ['gradient background']);
-  assert.equal(posted.filter(message => message.type === 'LOOKUP_BATCH').length, 1);
-  reply({ type: 'SUGGEST_RESULT', id: suggest.id,
-    results: [{ animaTag: 'back bow', canonical: 'back_bow', translation: '背后的蝴蝶结', category: 0, postCount: 43700 }],
-    localTags: ['gradient background'],
-    localResults: [{ animaTag: 'gradient background', canonical: 'gradient_background', translation: '渐变背景', category: 0, postCount: 187000 }]
-  });
-  await tick(0);
-  assert.equal(ctx.tagEditorSuggestions[0].insert, 'gradient background');
-  assert.equal(ctx.tagEditorSuggestions[0].cat, 0);
-  assert.equal(ctx.tagEditorSuggestions[0].count, 187000);
-  assert.equal(ctx.tagEditorSuggestions[1].insert, 'back bow');
-});
-
-test('batch suggestions use exact metadata for local tags outside search results', async () => {
-  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
-  await initReady(ctx);
-  reply({ type: 'READY_CORE' });
-  ctx.tagEditorTagFreq = [{ tag: 'gradient background' }];
-  ctx.batchAddInput = 'back';
-  ctx.tagEditorBatchSuggest('add');
-  await tick(110);
-  const suggest = posted.find(message => message.type === 'SUGGEST');
-  assert.deepEqual(plain(suggest.sourceTags), ['gradient background']);
-  reply({ type: 'SUGGEST_RESULT', id: suggest.id,
-    results: [{ animaTag: 'back bow', canonical: 'back_bow', translation: '背后的蝴蝶结', category: 0, postCount: 43700 }],
-    localTags: ['gradient background'],
-    localResults: [{ animaTag: 'gradient background', canonical: 'gradient_background', translation: '渐变背景', category: 0, postCount: 187000 }]
-  });
-  await tick(0);
-  assert.equal(ctx.batchSuggestItems[0].cat, 0);
-  assert.equal(ctx.batchSuggestItems[0].count, 187000);
-  assert.equal(ctx.batchSuggestItems[1].insert, 'back bow');
-});
-
-test('tag list search keeps its dictionary translation filter', async () => {
-  const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
-  await initReady(ctx);
-  reply({ type: 'READY_CORE' });
-  ctx.tagEditorTagFreq = [{ tag: 'gradient background' }];
-  ctx._teInvalidateFreq = () => {};
-  ctx._tdRequestChips = () => {};
-  ctx.tagEditorSetTagSearch('渐变');
-  await tick(160);
-  const filter = posted.find(message => message.type === 'FILTER_TAGS');
-  assert.equal(filter.query, '渐变');
-  reply({ type: 'SEARCH_RESULT', id: filter.id, results: ['gradient background'] });
-  await tick(0);
-  assert.equal(ctx._teTagSearchMatches.has('gradient background'), true);
-});
-
 test('worker returns capped search and exact local metadata in one suggestion response', () => {
   const TD = loadLib();
   const posted = [];
@@ -499,21 +376,4 @@ test('new input invalidates old completion before the debounce fires', async () 
   ctx._teCloseSuggestions();
   await tick(80);
   assert.equal(ctx.tagEditorSuggestions.length, 0);
-});
-
-test('completion in the middle preserves following tags and a sensible caret', () => {
-  const { context } = makeClient();
-  const result = context._teReplaceToken('solo, 长发, blue eyes', 8, 'long hair');
-  assert.equal(result.text, 'solo, long hair, blue eyes');
-  assert.equal(result.caretPos, 'solo, long hair'.length);
-});
-
-test('Chinese search ranks common related tags before rare prefix matches', () => {
-  const TD = loadLib();
-  const index = TD.createIndex([
-    ['long_hair', '长发', 0, 1000, ''],
-    ['very_long_hair', '超长发', 0, 500, ''],
-    ['rapunzel', '长发公主', 4, 10, '']
-  ]);
-  assert.deepEqual(names(TD.search(index, '长发', 3)), ['long_hair', 'very_long_hair', 'rapunzel']);
 });

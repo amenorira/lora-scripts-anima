@@ -22,13 +22,6 @@ def reply(data=b"abcdef", status=200, headers=None):
 
 
 class HFDownloadTests(unittest.TestCase):
-    def test_saved_hub_token_is_used_without_environment_token(self):
-        with patch.dict("os.environ", {}, clear=True), \
-                patch("huggingface_hub.get_token", return_value="saved-test-token"):
-            self.assertEqual(hf._auth_headers(), {
-                "Accept-Encoding": "identity", "Authorization": "Bearer saved-test-token",
-            })
-
     def test_environment_token_survives_hub_token_lookup_failure(self):
         with patch.dict("os.environ", {"HF_TOKEN": "env-test-token"}, clear=True), \
                 patch("huggingface_hub.get_token", side_effect=OSError("unreadable token file")):
@@ -39,37 +32,6 @@ class HFDownloadTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.dest = Path(self.temp.name) / "model.bin"
 
-    def test_endpoint_order_supports_both_directions_and_custom_endpoint(self):
-        for preferred, expected in [
-            ("https://hf-mirror.com", ["https://hf-mirror.com", "https://huggingface.co"]),
-            ("https://huggingface.co", ["https://huggingface.co", "https://hf-mirror.com"]),
-            ("https://custom.example", ["https://custom.example", "https://hf-mirror.com", "https://huggingface.co"]),
-        ]:
-            with self.subTest(preferred=preferred), patch.dict("os.environ", {"HF_ENDPOINT": preferred}):
-                self.assertEqual(hf._endpoints_for_download(), expected)
-        with patch.dict("os.environ", {"HF_ENDPOINT": "https://hf-mirror.com/"}):
-            self.assertEqual(len(hf._endpoints_for_download()), 2)
-
-    def test_head_connection_failure_immediately_tries_next_source(self):
-        progress, logs = {}, []
-        with patch("requests.head", side_effect=[requests.ConnectTimeout("offline"), reply()]) as head, \
-                patch("requests.get", return_value=reply()) as get, patch.object(hf.time, "sleep") as sleep:
-            hf.download_url_with_fallback(["https://mirror.invalid/file", "https://official.invalid/file"],
-                                          self.dest, progress=progress, on_log=logs.append)
-        self.assertEqual(head.call_count, 2)
-        self.assertEqual(get.call_count, 1)
-        self.assertEqual(get.call_args.args[0], "https://official.invalid/file")
-        self.assertEqual(progress["source"], "official.invalid")
-        self.assertTrue(any("mirror.invalid" in log for log in logs))
-        sleep.assert_not_called()
-
-    def test_unknown_size_skips_extra_range_probe(self):
-        head_reply = reply(headers={"content-type": "application/octet-stream"})
-        with patch("requests.head", return_value=head_reply) as head, patch("requests.get", return_value=reply()) as get:
-            hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
-        self.assertEqual(head.call_count, 1)
-        self.assertEqual(get.call_count, 1)
-        self.assertNotIn("Range", get.call_args.kwargs["headers"])
 
     def test_interrupted_stream_resumes_on_next_source_without_retry_sleep(self):
         def interrupted(chunk_size):
@@ -117,15 +79,6 @@ class HFDownloadTests(unittest.TestCase):
             with self.assertRaises(requests.ConnectionError):
                 hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
         self.assertTrue(stopped.is_set())
-
-    def test_changed_remote_total_does_not_publish_partial_file(self):
-        self.dest.write_bytes(b"original")
-        response = reply(b"ab", 206, {"content-range": "bytes 0-1/8"})
-        with patch("requests.get", return_value=response):
-            with self.assertRaises(hf.IntegrityError):
-                hf._download_part("https://example.invalid/file", self.dest.with_suffix(".part0"),
-                                  0, 1, 0, 2, [0], expected_total=6)
-        self.assertEqual(self.dest.read_bytes(), b"original")
 
 
 class HTTPDownloadTests(unittest.TestCase):

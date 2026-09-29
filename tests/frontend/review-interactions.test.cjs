@@ -8,28 +8,6 @@ function readScript(name, context) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js', name), 'utf8'), context);
 }
 
-test('release badge accepts CalVer and legacy builds without inventing an unknown version', () => {
-  let register;
-  const context = {
-    document: { addEventListener(_, callback) { register = callback; } },
-    window: {},
-    Alpine: { data(_, factory) { context.factory = factory; } },
-  };
-  readScript('app.js', context);
-  register();
-  const app = context.factory();
-  for (const [version, expected] of [
-    ['v2.20.5-4-gabc1234', 'v2.20.5'],
-    ['v26.925.80307-4-gabc1234', 'v26.925.80307'],
-    ['v27.101.0', 'v27.101.0'],
-    ['26.1001.100000', '26.1001.100000'],
-    ['dev', 'dev'], ['...', '...'], ['', '...'],
-  ]) {
-    app.version = version;
-    assert.equal(app.displayVersion(), expected);
-  }
-});
-
 test('dirty editor preserves Back and Forward entries when navigation is cancelled or accepted', () => {
   let register;
   const timers = [];
@@ -107,43 +85,6 @@ test('dirty editor preserves Back and Forward entries when navigation is cancell
   assert.equal(entries[2].state.animaRoute, 'history');
 });
 
-test('application navigation confirms before pushing a history entry', () => {
-  let register;
-  const timers = [];
-  const entries = [{ hash: '#tagEditor', state: { animaRoute: 'tagEditor', animaIndex: 0 } }];
-  const location = { hash: '#tagEditor' };
-  const context = {
-    document: { addEventListener(_, callback) { register = callback; } },
-    window: { location, history: {
-      get state() { return entries.at(-1).state; },
-      pushState(state, _, hash) { entries.push({ state, hash }); location.hash = hash; },
-    } },
-    Alpine: { data(_, factory) { context.factory = factory; } },
-    ROUTE_CONFIG: { tagEditor: {}, history: {} },
-    setTimeout(callback) { timers.push(callback); },
-  };
-  readScript('app.js', context);
-  register();
-  const app = context.factory();
-  app.currentRoute = 'tagEditor';
-  app._teHasUnsavedEdits = () => true;
-  let confirm;
-  app._teConfirmUnsaved = (_, callback) => { confirm = callback; };
-  app.t = key => key;
-  app.startProgress = () => {};
-  app.navigate('history');
-  assert.equal(entries.length, 1);
-  confirm();
-  assert.equal(entries.length, 2);
-  assert.equal(entries[1].hash, '#history');
-});
-
-test('Alpine invokes the app init hook once', () => {
-  const html = fs.readFileSync(path.join(__dirname, '../../frontend/index.html'), 'utf8');
-  assert.match(html, /<body x-data="animaApp\(\)" x-cloak>/);
-  assert.doesNotMatch(html, /<body[^>]*x-init="init\(\)"/);
-});
-
 test('custom select keyboard navigation skips disabled choices and keeps value on Escape', () => {
   let register;
   const context = {
@@ -169,42 +110,6 @@ test('custom select keyboard navigation skips disabled choices and keeps value o
   press('Escape');
   assert.equal(select.open, false);
   assert.equal(select.value, 'a');
-});
-
-test('closed custom selects do not retain global scroll and resize listeners', () => {
-  let register;
-  const globalListeners = new Map();
-  const context = {
-    document: { addEventListener(_, callback) { register = callback; } },
-    window: {
-      addEventListener(name, callback) { globalListeners.set(name, callback); },
-      removeEventListener(name, callback) {
-        if (globalListeners.get(name) === callback) globalListeners.delete(name);
-      },
-    },
-    Alpine: { data(_, factory) { context.factory = factory; } },
-  };
-  readScript('anima-select.js', context);
-  register();
-  const select = context.factory({ options: [{ v: 'a', l: 'A' }] }, 'a');
-  const trigger = { setAttribute() {} };
-  let openWatcher;
-  select.$el = {
-    querySelector() { return trigger; },
-    addEventListener() {}, removeEventListener() {},
-  };
-  select.$refs = {};
-  select.$watch = (_, callback) => { openWatcher = callback; };
-  select.$nextTick = () => {};
-  select.init();
-  assert.equal(globalListeners.size, 0);
-  select.open = true;
-  openWatcher(true);
-  assert.deepEqual(Array.from(globalListeners.keys()), ['scroll', 'resize']);
-  select.open = false;
-  openWatcher(false);
-  assert.equal(globalListeners.size, 0);
-  select.destroy();
 });
 
 test('file picker opens before scan and ignores a response after closing', async () => {

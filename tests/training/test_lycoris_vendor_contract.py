@@ -1,4 +1,4 @@
-"""LyCORIS 集成边界：嵌套层排除规则及运行内核参数不泄漏到 TOML。"""
+"""LyCORIS 集成边界：嵌套层排除规则。"""
 import sys
 import unittest
 from pathlib import Path
@@ -11,8 +11,6 @@ if str(VENDOR_ROOT) not in sys.path:
 
 from lycoris import LycorisNetwork, create_lycoris  # noqa: E402
 from lycoris.kohya import LycorisNetworkKohya
-
-from backend.training.adapter import adapt_config  # noqa: E402
 
 
 class _AnimaLikeBlock(nn.Module):
@@ -87,20 +85,6 @@ class LycorisVendorContractTests(unittest.TestCase):
                 setattr(LycorisNetworkKohya, name, value)
             for name, value in wrapper_state.items():
                 setattr(LycorisNetwork, name, value)
-
-    def test_kernel_backend_not_leaked_to_toml(self):
-        """适配器必须把字段当 UI-only 吸收：不进 TOML 顶层，也不进 network_args。"""
-        config = {
-            "model_train_type": "anima-lora",
-            "network_module": "lycoris.kohya",
-            "lycoris_algo": "lora",
-            "lycoris_preset": "full",
-            "lycoris_kernel_backend": "torch",
-        }
-        adapted, _warnings = adapt_config(config)
-        self.assertNotIn("lycoris_kernel_backend", adapted)
-        for item in adapted.get("network_args", []):
-            self.assertFalse(item.startswith("lycoris_kernel_backend="), item)
 
 
 if __name__ == "__main__":

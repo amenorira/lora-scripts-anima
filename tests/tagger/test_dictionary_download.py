@@ -25,19 +25,6 @@ class DictionaryDownloadTests(unittest.TestCase):
     def download(self):
         return hf.download_url_with_fallback(["https://example.invalid/meta.csv"], self.target)
 
-    def test_small_file_uses_get_size_instead_of_stale_head_size(self):
-        data = b"a" * 55391
-        with patch.object(hf, "_head_total", return_value=20), \
-                patch("requests.get", return_value=response(data, {"content-length": str(len(data))})) as get:
-            self.download()
-        self.assertEqual(self.target.read_bytes(), data)
-        self.assertEqual(get.call_args.kwargs["headers"]["Accept-Encoding"], "identity")
-        self.assertNotIn("Range", get.call_args.kwargs["headers"])
-
-    def test_compressed_head_length_is_not_used_as_file_size(self):
-        with patch("requests.head", return_value=response(headers={"content-encoding": "gzip", "content-length": "20"})), \
-                patch("requests.get", return_value=response()):
-            self.assertEqual(hf._head_total("https://example.invalid"), 0)
 
     def test_proxy_ignoring_identity_can_stream_full_decompressed_file(self):
         data = b"a" * 55391

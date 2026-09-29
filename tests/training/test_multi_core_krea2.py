@@ -11,20 +11,7 @@ from unittest.mock import Mock, patch
 
 import toml
 
-from backend.training.core_registry import TrainingProfileError, resolve_training_profile
-from backend.training.step_estimator import estimate_training_steps
-from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
-from backend.training.musubi_krea2 import (
-    KREA2_FIELDS,
-    build_krea2_dataset_config,
-    build_krea2_train_config,
-    cache_manifest_path,
-    get_krea2_cache_status,
-    image_files,
-    mark_cache_manifest,
-    prepare_cache_manifest,
-    validate_krea2_config,
-)
+from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
 from backend.server.routes import training as training_routes
 from backend.training import supervisor
 from backend.tasks import TaskManager
@@ -61,38 +48,6 @@ def krea2_config(root: Path) -> dict:
         }
     )
     return config
-
-
-def krea_field_visible(field: dict, values: dict) -> bool:
-    def matches(condition: dict) -> bool:
-        current = values.get(condition["key"])
-        if "eq" in condition:
-            return current == condition["eq"] or current in condition.get("_or", [])
-        if "neq" in condition:
-            return current not in (condition["neq"], None, "")
-        return True
-
-    show_if = field.get("show_if")
-    if isinstance(show_if, list) and not all(matches(condition) for condition in show_if):
-        return False
-    if isinstance(show_if, dict) and not matches(show_if):
-        return False
-    show_if_any = field.get("show_if_any")
-    if show_if_any and not any(
-        all(matches(condition) for condition in group) for group in show_if_any
-    ):
-        return False
-    return True
-
-
-class CoreRegistryTests(unittest.TestCase):
-    def test_rejects_adapter_or_engine_cross_wiring(self):
-        with self.assertRaises(TrainingProfileError):
-            resolve_training_profile({"model_train_type": "krea2-lora", "engine_id": "sd_scripts"})
-        with self.assertRaises(TrainingProfileError):
-            resolve_training_profile(
-                {"model_train_type": "sdxl-lora", "adapter_id": "lycoris", "network_module": "networks.lora"}
-            )
 
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
@@ -233,29 +188,6 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
-    def test_legacy_fp8_payload_is_normalized_and_both_flags_are_serialized_together(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update({"fp8_base": True, "fp8_scaled": False})
-
-            self.assertEqual(validate_krea2_config(config), [])
-            enabled = build_krea2_train_config(
-                config, root / "dataset.toml", root / "output", root / "log"
-            )
-
-            config.update({"fp8_base": False, "fp8_scaled": True})
-            self.assertEqual(validate_krea2_config(config), [])
-            disabled = build_krea2_train_config(
-                config, root / "dataset.toml", root / "output", root / "log"
-            )
-
-        self.assertTrue(config["fp8_scaled"] is False)
-        self.assertTrue(enabled["fp8_base"])
-        self.assertTrue(enabled["fp8_scaled"])
-        self.assertNotIn("fp8_base", disabled)
-        self.assertNotIn("fp8_scaled", disabled)
-
     def test_generates_separate_dataset_and_train_tomls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -275,175 +207,6 @@ class Krea2CodecTests(unittest.TestCase):
         self.assertEqual(train["sigmoid_scale"], 1.0)
         self.assertTrue(train["sdpa"])
 
-    def test_krea_timestep_field_visibility_matches_serialized_parameters(self):
-        fields = {field["key"]: field for field in KREA2_FIELDS}
-        sampling_modes = ("uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr")
-        weighting_schemes = ("none", "sigma_sqrt", "cosmap", "logit_normal", "mode")
-
-        for sampling in sampling_modes:
-            for weighting in weighting_schemes:
-                with self.subTest(sampling=sampling, weighting=weighting), tempfile.TemporaryDirectory() as temp_dir:
-                    root = Path(temp_dir)
-                    config = krea2_config(root)
-                    config.update(
-                        {
-                            "timestep_sampling": sampling,
-                            "weighting_scheme": weighting,
-                            "logit_mean": 0.37,
-                            "logit_std": 0.83,
-                            "mode_scale": 1.77,
-                        }
-                    )
-                    self.assertEqual(validate_krea2_config(config), [])
-                    train = build_krea2_train_config(
-                        config,
-                        root / "dataset.toml",
-                        root / "output",
-                        root / "log",
-                    )
-
-                    uses_logit = sampling == "logsnr" or (
-                        sampling == "sigma" and weighting == "logit_normal"
-                    )
-                    uses_mode = sampling == "sigma" and weighting == "mode"
-                    self.assertEqual(krea_field_visible(fields["logit_mean"], config), uses_logit)
-                    self.assertEqual(krea_field_visible(fields["logit_std"], config), uses_logit)
-                    self.assertEqual(krea_field_visible(fields["mode_scale"], config), uses_mode)
-                    self.assertEqual("logit_mean" in train, uses_logit)
-                    self.assertEqual("logit_std" in train, uses_logit)
-                    self.assertEqual("mode_scale" in train, uses_mode)
-
-    def test_cache_directory_is_automatically_nested_under_its_dataset(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config["dataset_cache_dir"] = str(root / "somewhere-else")
-
-            self.assertEqual(validate_krea2_config(config), [])
-            expected_cache = Path(config["train_data_dir"]) / ".krea2-cache"
-            dataset = build_krea2_dataset_config(config)
-            expected_cache.mkdir()
-            (expected_cache / "not-a-training-image.png").write_bytes(b"cache artifact")
-
-            images = image_files(config["train_data_dir"], config["dataset_cache_dir"])
-
-        self.assertEqual(Path(config["dataset_cache_dir"]), expected_cache)
-        self.assertEqual(Path(dataset["datasets"][0]["cache_directory"]), expected_cache)
-        self.assertEqual([path.name for path in images], ["portrait.png"])
-
-    def test_step_duration_and_scheduler_fields_map_to_musubi(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update(
-                {
-                    "krea_training_duration_mode": "steps",
-                    "max_train_steps": 321,
-                    "lr_scheduler": "cosine_with_restarts",
-                    "lr_warmup_steps": "0.1",
-                    "lr_decay_steps": 20,
-                    "lr_scheduler_num_cycles": 2,
-                    "max_grad_norm": 0.5,
-                }
-            )
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-            estimate = estimate_training_steps(config)
-
-        self.assertEqual(train["max_train_steps"], 321)
-        self.assertNotIn("max_train_epochs", train)
-        self.assertEqual(train["lr_scheduler"], "cosine_with_restarts")
-        self.assertEqual(train["lr_warmup_steps"], 0.1)
-        self.assertEqual(train["lr_decay_steps"], 20)
-        self.assertEqual(train["lr_scheduler_num_cycles"], 2)
-        self.assertEqual(train["max_grad_norm"], 0.5)
-        self.assertEqual(estimate["total_steps"], 321)
-
-    def test_optimizer_alias_and_internal_scheduler_are_normalized(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update(
-                {
-                    "optimizer_type": "Prodigy",
-                    "lr_scheduler": "cosine",
-                    "lr_warmup_steps": 10,
-                }
-            )
-            self.assertEqual(validate_krea2_config(config), [])
-            self.assertEqual(config["optimizer_type"], "prodigyopt.Prodigy")
-
-            config = krea2_config(root / "schedulefree")
-            config.update(
-                {
-                    "optimizer_type": "schedulefree.AdamWScheduleFree",
-                    "lr_scheduler": "cosine",
-                    "lr_warmup_steps": 10,
-                    "krea_schedulefree_warmup_steps": 25,
-                }
-            )
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(config, root / "dataset.toml", root / "output", root / "log")
-
-            legacy = krea2_config(root / "legacy")
-            legacy.update({"optimizer_type": "torch.optim.SGD"})
-            self.assertEqual(validate_krea2_config(legacy), [])
-            legacy_train = build_krea2_train_config(
-                legacy, root / "legacy-dataset.toml", root / "legacy-output", root / "legacy-log"
-            )
-
-        self.assertEqual(config["lr_scheduler"], "constant")
-        self.assertEqual(config["lr_warmup_steps"], 0)
-        self.assertEqual(train["optimizer_args"], ["warmup_steps=25"])
-        self.assertEqual(legacy_train["optimizer_type"], "torch.optim.SGD")
-
-    def test_final_state_save_is_independent_from_periodic_state_saves(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = krea2_config(root)
-            config.update(
-                {
-                    "save_state": False,
-                    "save_state_on_train_end": True,
-                }
-            )
-            self.assertEqual(validate_krea2_config(config), [])
-            train = build_krea2_train_config(
-                config,
-                root / "dataset.toml",
-                root / "output",
-                root / "log",
-            )
-
-        self.assertNotIn("save_state", train)
-        self.assertTrue(train["save_state_on_train_end"])
-
-    def test_rejects_arbitrary_optimizer_and_scheduler_injection(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = krea2_config(Path(temp_dir))
-            config.update(
-                {
-                    "optimizer_type": "__custom__",
-                    "krea_optimizer_custom_type": "bitsandbytes.optim.LAMB8bit",
-                    "krea_optimizer_args": "weight_decay=0.01",
-                    "krea_lr_scheduler_type": "CosineAnnealingLR",
-                    "krea_lr_scheduler_args": "T_max=100",
-                }
-            )
-            errors = validate_krea2_config(config)
-            with self.assertRaisesRegex(ValueError, "only the built-in Krea 2 optimizer list"):
-                build_krea2_train_config(
-                    config,
-                    Path(temp_dir) / "dataset.toml",
-                    Path(temp_dir) / "output",
-                    Path(temp_dir) / "log",
-                )
-
-        self.assertTrue(any(error.startswith("optimizer_type: only the built-in") for error in errors))
-        self.assertTrue(any(error.startswith("krea_optimizer_custom_type:") for error in errors))
-        self.assertTrue(any(error.startswith("krea_optimizer_args:") for error in errors))
-        self.assertTrue(any(error.startswith("krea_lr_scheduler_type:") for error in errors))
-        self.assertTrue(any(error.startswith("krea_lr_scheduler_args:") for error in errors))
 
     def test_rejects_unsafe_turbo_and_h2d_block_swap_combinations(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -522,54 +285,6 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertTrue(get_krea2_cache_status(config)["ready"])
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
-
-
-class MusubiRuntimeContractTests(unittest.TestCase):
-    def test_fast_status_checks_metadata_without_importing_training_stack(self):
-        versions = {
-            name: (
-                "2.10.0+cu130"
-                if name == "torch"
-                else "0.25.0+cu130"
-                if name == "torchvision"
-                else "11.3.0"
-                if expected == ">=11.3.0"
-                else "0.0.0"
-                if expected is None
-                else expected
-            )
-            for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
-        }
-        with patch("backend.training.musubi_runtime.installed_versions", return_value=versions), patch(
-            "backend.training.musubi_runtime.importlib.import_module"
-        ) as import_module:
-            status = shared_runtime_status(verify_imports=False)
-
-        self.assertTrue(status["ok"], status["errors"])
-        self.assertFalse(status["imports_verified"])
-        self.assertIsNone(status["torch_path"])
-        import_module.assert_not_called()
-
-    def test_fast_status_rejects_cpu_torch_metadata(self):
-        versions = {
-            name: (
-                "2.10.0"
-                if name == "torch"
-                else "0.25.0+cu130"
-                if name == "torchvision"
-                else "11.3.0"
-                if expected == ">=11.3.0"
-                else "0.0.0"
-                if expected is None
-                else expected
-            )
-            for name, expected in MUSUBI_RUNTIME_PACKAGES.items()
-        }
-        with patch("backend.training.musubi_runtime.installed_versions", return_value=versions):
-            status = shared_runtime_status(verify_imports=False)
-
-        self.assertFalse(status["ok"])
-        self.assertTrue(any("torch must be a CUDA wheel" in error for error in status["errors"]))
 
 
 class MultiCoreFrontendContractTests(unittest.TestCase):

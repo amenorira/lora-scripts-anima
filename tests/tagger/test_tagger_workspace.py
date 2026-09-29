@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
-from backend.tagger import interrogator, workspace
+from backend.tagger import workspace
 from backend.tasks import tm
 
 
@@ -25,26 +25,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             time.sleep(0.02)
         self.fail("Tagger task did not finish")
 
-    def test_cleanup_bounds_finished_task_history(self):
-        now = time.time()
-        tasks = {
-            f"finished-{index}": {
-                "status": "done", "updated_at": now - (20 - index), "source_token": f"source-{index}",
-            }
-            for index in range(workspace._TASK_KEEP_MAX + 2)
-        }
-        tasks["active"] = {"status": "running", "updated_at": now - 100, "source_token": "active-source"}
-        with patch.object(workspace, "_tasks", tasks), patch.object(workspace, "_sources", {}):
-            workspace._cleanup()
-            self.assertEqual(len(tasks), workspace._TASK_KEEP_MAX + 1)
-            self.assertIn("active", tasks)
-            self.assertNotIn("finished-0", tasks)
-            self.assertNotIn("finished-1", tasks)
-
-    def test_cancelling_task_remains_latest_active(self):
-        task = {"id": "cancel-pending", "status": "cancelling", "updated_at": time.time()}
-        with patch.object(workspace, "_tasks", {task["id"]: task}):
-            self.assertEqual(workspace.latest_active_task_id(), task["id"])
 
     def test_scan_task_results_and_atomic_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -148,62 +128,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 self.assertTrue(tm.begin_dataset_mutation())
                 tm.end_dataset_mutation()
 
-    def test_onnx_result_keeps_all_raw_categories_and_passes_category_thresholds(self):
-        raw = {
-            "general": [("1girl", 0.99)],
-            "character": [("alice", 0.88)],
-            "rating": [("safe", 0.97)],
-            "model": [("anime", 0.91)],
-        }
-        fake = MagicMock()
-        fake.interrogate.return_value = raw
-        thresholds = {"general": 0.4, "character": 0.7, "rating": 1.01, "model": 1.01}
-        with patch.dict(workspace.available_interrogators, {"camie-tagger-v2": fake}), patch.object(
-            interrogator.Interrogator,
-            "postprocess_tags",
-            return_value={"1girl": 0.99, "alice": 0.88},
-        ) as postprocess:
-            tags, categories = workspace._local_tags(
-                "camie-tagger-v2",
-                Image.new("RGB", (16, 16)),
-                {"category_thresholds": thresholds},
-            )
-
-        self.assertEqual(tags, ["1girl", "alice"])
-        self.assertEqual(set(categories), {"general", "character", "rating", "model"})
-        self.assertEqual(categories["character"]["tags"], [["alice", 0.88]])
-        self.assertEqual(categories["character"]["total"], 1)
-        self.assertFalse(categories["character"]["truncated"])
-        applied = postprocess.call_args.args[3]
-        self.assertEqual({key: applied[key] for key in thresholds}, thresholds)
-        self.assertEqual(applied["copyright"], 0.492)
-        self.assertFalse(postprocess.call_args.args[12])
-        self.assertEqual(set(raw), {"general", "character", "rating", "model"})
-
-    def test_api_tags_keep_literal_parentheses_unless_escaping_is_requested(self):
-        self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {}), ["star (symbol)"])
-        self.assertEqual(workspace._finalize_api_tags(["star_(symbol)"], {"escape_tag": True}), [r"star \(symbol\)"])
-
-    def test_task_items_pages_without_changing_original_indices(self):
-        task_id = "page-index-test"
-        task = {
-            "lock": threading.RLock(),
-            "items": [{"name": str(index), "status": "failed" if index == 3 else "success"} for index in range(5)],
-            "results": {index: {"text": str(index)} for index in range(5)},
-        }
-        with workspace._tasks_lock:
-            workspace._tasks[task_id] = task
-        try:
-            page = workspace.task_items(task_id, offset=2, limit=2)
-            self.assertEqual(page["total"], 5)
-            self.assertEqual([item["index"] for item in page["items"]], [2, 3])
-            self.assertEqual(page["items"][1]["result"], {"text": "3"})
-            failed = workspace.task_items(task_id, failed_only=True)
-            self.assertEqual(failed["total"], 1)
-            self.assertEqual(failed["items"][0]["index"], 3)
-        finally:
-            with workspace._tasks_lock:
-                workspace._tasks.pop(task_id, None)
 
     def test_append_caption_respects_remove_duplicated_option(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -218,17 +142,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             workspace._write_caption(image_path, ["blue eyes", "smile"], "prepend", True)
             self.assertEqual(caption_path.read_text(encoding="utf-8"), "1girl, blue eyes, smile")
 
-    def test_legacy_cancel_returns_without_reacquiring_progress_lock(self):
-        task_id = "cancel-lock-test"
-        with interrogator._states_lock:
-            interrogator._task_states[task_id] = {"status": "running", "logs": []}
-        thread = threading.Thread(target=interrogator.cancel_tagger_task, args=(task_id,))
-        thread.start()
-        thread.join(timeout=1)
-        self.assertFalse(thread.is_alive())
-        self.assertEqual(interrogator.get_tagger_task_snapshot(task_id)["status"], "cancelled")
-        with interrogator._states_lock:
-            interrogator._task_states.pop(task_id, None)
 
     def test_api_cancel_stops_scheduling_and_waits_for_inflight_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:

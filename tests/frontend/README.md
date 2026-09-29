@@ -4,7 +4,7 @@
 
 ```bash
 node --test tests/frontend/monitor-*.test.cjs
-venv/Scripts/python.exe -m pytest tests/monitor -q
+venv/Scripts/python.exe -m unittest discover -s tests/monitor -t .
 ```
 
 桌面交互验证使用 `monitor-fixture.html`：它复用正式页面模板、样式和监控模块，

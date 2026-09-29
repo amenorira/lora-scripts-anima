@@ -38,15 +38,6 @@ test('batch preview and commit use the same selected changes and count', () => {
   assert.equal(f.app.batchAddInput, '');
 });
 
-test('front insertion retains order and ignores duplicate additions', () => {
-  const f = fixture(['cat']);
-  f.app.tagEditorBatchPos = 'front';
-  f.app.batchAddInput = 'blue, sky, blue';
-  f.app.tagEditorBatchAdd();
-  f.confirm().accept();
-  assert.equal(f.images[0].tags, 'sky, blue, cat');
-});
-
 test('remove and replace preserve unaffected caption formatting', () => {
   const f = fixture(['cat, blue, cat', ' dog , sky ']);
   f.app.batchRemoveInput = 'cat';

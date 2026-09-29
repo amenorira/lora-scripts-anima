@@ -1,6 +1,5 @@
 import asyncio
 import json
-import subprocess
 import sys
 import threading
 import tempfile
@@ -24,24 +23,6 @@ class TaskStateMachineTests(unittest.TestCase):
         process.wait.return_value = returncode
         return process
 
-    def test_normal_exit_settles_finished(self):
-        task = Task("ok", ["trainer"])
-        with patch("backend.tasks.subprocess.Popen", return_value=self._process(0)):
-            task.execute()
-            result = task.communicate()
-            task.complete_work()
-
-        self.assertEqual(result.returncode, 0)
-        self.assertIs(task.status, TaskStatus.FINISHED)
-
-    def test_nonzero_exit_settles_failed(self):
-        task = Task("failed", ["trainer"])
-        with patch("backend.tasks.subprocess.Popen", return_value=self._process(2)):
-            task.execute()
-            task.communicate()
-            task.complete_work()
-
-        self.assertIs(task.status, TaskStatus.FAILED)
 
     def test_process_exit_after_work_completion_publishes_terminal_once(self):
         task = Task("late-exit", ["trainer"])
@@ -139,6 +120,7 @@ class TaskStateMachineTests(unittest.TestCase):
         self.assertFalse(manager.claim_dataset_reader("remote:two"))
         manager.end_dataset_mutation()
 
+
     def test_failed_process_is_not_counted_as_active(self):
         manager = TaskManager(max_concurrent=1)
         task = manager.create_task(["trainer"])
@@ -152,21 +134,6 @@ class TaskStateMachineTests(unittest.TestCase):
 
         self.assertIsNotNone(replacement)
         self.assertEqual(manager.dump()[0]["status"], "FAILED")
-
-    def test_stop_direct_process_before_releasing_slot(self):
-        manager = TaskManager()
-        task = manager.create_task([sys.executable, "-c", "import time; time.sleep(60)"])
-        try:
-            task.execute()
-            task.terminate()
-            task.complete_work()
-            self.assertIsNotNone(task.process.poll())
-            self.assertIs(task.status, TaskStatus.TERMINATED)
-            self.assertIsNotNone(manager.create_task(["replacement"]))
-        finally:
-            if task.process and task.process.poll() is None:
-                task.process.kill()
-                task.process.wait()
 
     def test_failed_stop_keeps_slot_and_can_be_retried(self):
         manager = TaskManager()

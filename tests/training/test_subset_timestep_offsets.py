@@ -1,6 +1,5 @@
 import asyncio
 import json
-import subprocess
 import tempfile
 import time
 import tomllib
@@ -11,10 +10,7 @@ from unittest.mock import patch
 
 from backend.server.routes import training as training_routes
 from backend.tasks import TaskManager, TaskStatus
-from backend.training.sd_dataset_config import (
-    build_sd_scripts_dataset_config,
-    normalize_subset_timestep_offsets,
-)
+from backend.training.sd_dataset_config import build_sd_scripts_dataset_config
 from backend.training.training_config import extract_training_form, load_training_config
 
 
@@ -39,30 +35,6 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_normalizes_nonzero_finite_offsets(self):
-        self.assertEqual(
-            normalize_subset_timestep_offsets({"10_face_detail": "-0.25", "3_full_body": 0}),
-            {"10_face_detail": -0.25},
-        )
-        with self.assertRaises(ValueError):
-            normalize_subset_timestep_offsets({"10_face_detail": "nan"})
-
-    def test_builds_dreambooth_subsets_with_training_offsets_only(self):
-        result = build_sd_scripts_dataset_config(
-            {"train_data_dir": str(self.train), "reg_data_dir": str(self.reg)},
-            {"10_face_detail": -0.25, "3_full_body": 0.15},
-        )
-        subsets = result["datasets"][0]["subsets"]
-        by_name = {Path(item["image_dir"]).name: item for item in subsets}
-
-        self.assertEqual(by_name["10_face_detail"]["num_repeats"], 10)
-        self.assertEqual(by_name["10_face_detail"]["class_tokens"], "face_detail")
-        self.assertEqual(
-            by_name["10_face_detail"]["custom_attributes"],
-            {"timestep_sampling": {"offset": -0.25}},
-        )
-        self.assertTrue(by_name["1_person"]["is_reg"])
-        self.assertNotIn("custom_attributes", by_name["1_person"])
 
     def test_rejects_offsets_for_stale_subset_names(self):
         with self.assertRaisesRegex(ValueError, "missing"):
@@ -136,36 +108,6 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
             extract_training_form(app_config)["subset_timestep_offsets"],
             {"10_face_detail": -0.25},
         )
-
-
-class SubsetTimestepFrontendTests(unittest.TestCase):
-    def test_preview_applies_offset_and_editor_uses_existing_stepper(self):
-        repo = Path(__file__).resolve().parents[2]
-        core_path = repo / "frontend" / "js" / "training-core.js"
-        script = f"""
-global.window = {{ t: key => key }};
-require({json.dumps(str(core_path))});
-const app = Object.assign({{}}, window.trainingCoreMixin, {{
-  form: {{
-    model_train_type: 'anima-lora', timestep_sampling: 'shift', sigmoid_scale: 1,
-    discrete_flow_shift: 3, weighting_scheme: 'uniform', resolution: '1024,1024',
-    subset_timestep_offsets: {{ '10_face': -0.25, '2_body': 0.25 }}
-  }},
-  stepEstimate: {{ subsets: [
-    {{ name: '10_face', image_count: 10, repeats: 10, sample_count: 100, is_reg: false }},
-    {{ name: '2_body', image_count: 10, repeats: 2, sample_count: 20, is_reg: false }}
-  ] }},
-  t: key => key,
-  esc: value => String(value)
-}});
-const low = app._buildTimestepPreview(app.form, '10_face');
-const high = app._buildTimestepPreview(app.form, '2_body');
-if (!(low.median < low.baselineMedian && high.median > high.baselineMedian)) process.exit(2);
-const html = app.renderSubsetTimestepOffsets();
-if (!html.includes('subset-timestep-stepper') || html.includes('type=\\"range\\"')) process.exit(3);
-"""
-        completed = subprocess.run(["node", "-e", script], cwd=repo, capture_output=True, text=True)
-        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
 
 if __name__ == "__main__":

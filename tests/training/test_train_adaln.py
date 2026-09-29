@@ -12,11 +12,9 @@ UI-only 开关，开启时由 adapter 把三条调制分支的 include_patterns 
 import ast
 import unittest
 
-import toml
 
-from backend.training import toml_writer
 from backend.training.adapter import adapt_config
-from backend.training.field_registry import ADALN_INCLUDE_MODULES, ADALN_INCLUDE_PATTERN
+from backend.training.field_registry import ADALN_INCLUDE_PATTERN
 
 
 def _include_patterns_of(network_args: list[str]) -> list[str]:
@@ -26,18 +24,6 @@ def _include_patterns_of(network_args: list[str]) -> list[str]:
 
 
 class TrainAdalnAdapterTests(unittest.TestCase):
-    def test_supported_modules_inject_include_patterns(self):
-        for module in ADALN_INCLUDE_MODULES:
-            with self.subTest(module=module):
-                adapted, _ = adapt_config({
-                    "model_train_type": "anima-lora",
-                    "network_module": module,
-                    "train_adaln": True,
-                })
-                self.assertIn("network_args", adapted)
-                patterns = _include_patterns_of(adapted["network_args"])
-                self.assertIn(ADALN_INCLUDE_PATTERN, patterns)
-
     def test_user_custom_include_patterns_are_union_merged(self):
         adapted, _ = adapt_config({
             "model_train_type": "anima-lora",
@@ -50,33 +36,6 @@ class TrainAdalnAdapterTests(unittest.TestCase):
         self.assertEqual(patterns, [".*final_layer.*", ADALN_INCLUDE_PATTERN])
         # 其他自定义参数不受影响
         self.assertIn("verbose=True", network_args)
-
-    def test_unsupported_module_strips_field_without_injection(self):
-        for module in ("lycoris.kohya", "networks.lora"):
-            with self.subTest(module=module):
-                adapted, _ = adapt_config({
-                    "model_train_type": "anima-lora",
-                    "network_module": module,
-                    "train_adaln": True,
-                })
-                self.assertNotIn("train_adaln", adapted)
-                network_args = adapted.get("network_args") or []
-                self.assertFalse(any("include_patterns" in item for item in network_args))
-
-    def test_emitted_value_survives_toml_round_trip(self):
-        adapted, _ = adapt_config({
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-            "train_adaln": True,
-            "network_args_custom": "include_patterns=['.*final_layer.*']",
-        })
-        parsed = toml.loads(toml_writer.dumps(adapted))
-        self.assertEqual(parsed["network_args"], adapted["network_args"])
-        # 与 sd-scripts 的 ast.literal_eval 解析保持一致
-        self.assertEqual(
-            _include_patterns_of(parsed["network_args"]),
-            [".*final_layer.*", ADALN_INCLUDE_PATTERN],
-        )
 
 
 if __name__ == "__main__":

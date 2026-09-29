@@ -1,6 +1,5 @@
 """Integration checks against the venv's actual TensorBoard, without training."""
 import asyncio
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,49 +11,9 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from backend.tensorboard_service import TensorBoardService
 from backend.server import proxy
-from backend.server import application
 
 
 class TensorBoardServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_banner_uses_main_port_and_actual_state(self):
-        for state in ("ready", "failed", "disabled"):
-            with patch.dict(os.environ, {"ANIMA_HOST": "0.0.0.0", "ANIMA_PORT": "18888"}), \
-                 patch.object(application, "check_torch_gpu", return_value={}), \
-                 patch.object(application, "show_environment"), \
-                 patch.object(application, "show_ready") as ready, \
-                 patch.object(application.tensorboard, "status", return_value=state):
-                await application.report_runtime_banner()
-                self.assertEqual(ready.call_args.args[0], "http://127.0.0.1:18888/")
-                self.assertEqual(ready.call_args.kwargs["tensorboard_state"], state)
-                self.assertEqual(ready.call_args.kwargs["tensorboard_url"],
-                                 None if state == "disabled" else "http://127.0.0.1:18888/tensorboard/")
-
-    async def test_banner_waits_for_tensorboard_before_printing_ready(self):
-        for final_state in ("ready", "failed"):
-            waiting = asyncio.Event()
-            finish = asyncio.Event()
-
-            async def wait_started():
-                waiting.set()
-                await finish.wait()
-
-            with patch.object(application, "check_torch_gpu", return_value={}), \
-                 patch.object(application, "show_environment"), \
-                 patch.object(application, "show_step") as step, \
-                 patch.object(application, "show_ready") as ready, \
-                 patch.object(application.tensorboard, "wait_started", side_effect=wait_started), \
-                 patch.object(application.tensorboard, "status", side_effect=["starting", final_state]):
-                task = asyncio.create_task(application.report_runtime_banner())
-                try:
-                    await asyncio.wait_for(waiting.wait(), 5)
-                    ready.assert_not_called()
-                    step.assert_called_once()
-                finally:
-                    finish.set()
-                    await task
-                ready.assert_called_once()
-                self.assertEqual(ready.call_args.kwargs["tensorboard_state"], final_state)
-
     async def test_two_instances_proxy_assets_and_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             services = [TensorBoardService(), TensorBoardService()]

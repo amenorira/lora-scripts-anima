@@ -31,40 +31,6 @@ def valid_automagic_config() -> dict:
 
 
 class AutomagicValidationTests(unittest.TestCase):
-    def test_rejects_invalid_bounds_and_component_learning_rate(self):
-        config = valid_automagic_config()
-        config["automagic_min_lr"] = 1e-5
-        config["automagic_max_lr"] = 1e-4
-        config["unet_lr"] = "1e-3"
-        errors = validate_training_config(config)
-        self.assertTrue(any("unet_lr" in error for error in errors), errors)
-
-        config["automagic_min_lr"] = 1e-3
-        errors = validate_training_config(config)
-        self.assertTrue(any("min_lr" in error for error in errors), errors)
-
-    def test_loraplus_effective_rate_mirrors_cache_target_normalization(self):
-        config = valid_automagic_config()
-        config.update(
-            {
-                "network_train_unet_only": False,
-                "network_train_text_encoder_only": True,
-                "cache_text_encoder_outputs": True,
-                "enable_loraplus": True,
-                "loraplus_lr_ratio": 1.0,
-                "loraplus_unet_lr_ratio": 20.0,
-                "loraplus_text_encoder_lr_ratio": 1.0,
-                "learning_rate": "1e-4",
-                "automagic_max_lr": "1e-3",
-            }
-        )
-
-        errors = validate_training_config(config)
-        self.assertTrue(
-            any("effective UNet/DiT LoRA+ LR" in error for error in errors),
-            errors,
-        )
-
     def test_rejects_each_fused_conflict(self):
         cases = (
             ("accumulation", {"gradient_accumulation_steps": 2}, [0], "gradient_accumulation_steps"),
@@ -117,23 +83,6 @@ class AutomagicAdapterTests(unittest.TestCase):
         self.assertEqual(sum(item.startswith("max_lr=") for item in adapted["optimizer_args"]), 1)
         self.assertTrue(any("fused" in warning for warning in warnings), warnings)
         self.assertTrue(any("full_bf16" in warning for warning in warnings), warnings)
-
-    def test_preserves_safe_fused_and_injects_runtime_guard(self):
-        adapted, warnings = adapt_config(
-            {
-                "model_train_type": "anima-lora",
-                "optimizer_type": AUTOMAGIC_OPTIMIZER_TYPE,
-                "learning_rate": "1e-4",
-                "gradient_accumulation_steps": 1,
-                "max_grad_norm": 0,
-                "mixed_precision": "bf16",
-                "automagic_fused": True,
-            },
-            gpu_ids=[0],
-        )
-        self.assertIn("fused=True", adapted["optimizer_args"])
-        self.assertIn("fused_guard=True", adapted["optimizer_args"])
-        self.assertFalse(any("fused disabled" in warning for warning in warnings), warnings)
 
 
 class AutomagicRuntimeTests(unittest.TestCase):

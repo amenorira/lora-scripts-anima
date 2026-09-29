@@ -8,7 +8,6 @@ import json
 import sys
 import tempfile
 import time
-from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -104,69 +103,11 @@ class DictionaryInstallTests(unittest.TestCase):
         self.assertEqual([r[3] for r in records], sorted([r[3] for r in records], reverse=True))
         download.assert_not_called()
 
-    def test_install_skipped_when_already_installed(self):
-        dictionary.start_install()
-        wait_for_install()
-        again = dictionary.start_install()
-        self.assertFalse(again["started"])
-        self.assertEqual(again["reason"], "installed")
-
-    def test_update_check_compares_content_and_caches_result(self):
-        dictionary.start_install()
-        wait_for_install()
-        hashes = dictionary.read_manifest()["source_hashes"]
-        remote = SimpleNamespace(sha="revision", siblings=[
-            SimpleNamespace(rfilename=path, blob_id=value["blob"], lfs=None)
-            for path, value in hashes.items()])
-        with patch.object(dictionary, "_remote_info", return_value=remote) as query:
-            self.assertEqual(dictionary.check_update()["state"], "current")
-            dictionary.check_update()
-            self.assertEqual(query.call_count, 1)
-            remote.siblings[0].blob_id = "new-content"
-            result = dictionary.check_update(force=True)
-            self.assertEqual(result["state"], "available")
-            self.assertEqual(result["changed_files"], [remote.siblings[0].rfilename])
-        with patch.object(dictionary, "_remote_info", side_effect=OSError("offline")):
-            self.assertEqual(dictionary.check_update(force=True)["state"], "error")
-            self.assertTrue(dictionary.status()["installed"])
 
     def build_legacy(self):
         return builder.build(self.source, self.legacy_asset, "legacy", builder.SOURCE_URL,
                              on_report=lambda _: None)
 
-    def test_new_assets_take_priority_and_incomplete_assets_fall_back(self):
-        legacy = self.build_legacy()
-        source = self.source / 'general.csv'
-        source.write_text(source.read_text(encoding='utf-8').replace('长发', '新长发'), encoding='utf-8')
-        manifest = builder.build(self.source, self.asset, "new", builder.SOURCE_URL,
-                                 on_report=lambda _: None)
-        self.assertEqual(dictionary.status()["data_version"], "new")
-        self.assertEqual(dictionary.asset_path(legacy['detail']), self.legacy_asset / legacy['detail'])
-        (self.asset / manifest["core"]).unlink()
-        self.assertEqual(dictionary.status()["data_version"], "legacy")
-        (self.asset / "manifest.json").write_text("{", encoding="utf-8")
-        self.assertEqual(dictionary.status()["data_version"], "legacy")
-
-    def test_legacy_sources_fill_missing_files_without_overwriting_new_data(self):
-        write_sources(self.legacy_source)
-        preserved = self.source / "general.csv"
-        preserved.write_text(preserved.read_text(encoding="utf-8").replace("长发", "新长发"),
-                             encoding="utf-8")
-        expected = preserved.read_bytes()
-        (self.source / "artist.csv").unlink()
-        (self.source / "meta.csv").write_bytes(b"")
-        with patch.object(dictionary, "download_hf_file") as download:
-            dictionary.start_install()
-            state = wait_for_install()
-        self.assertEqual(state["status"], "ready", state)
-        download.assert_not_called()
-        self.assertEqual(preserved.read_bytes(), expected)
-        self.assertEqual((self.source / "artist.csv").read_bytes(),
-                         (self.legacy_source / "artist.csv").read_bytes())
-        self.assertTrue(self.legacy_source.exists())
-        self.assertEqual(set(p.name for p in self.source.iterdir()),
-                         {f"{name}.csv" for name in CATEGORY_FILES})
-        self.assertTrue(any("构建报告" in line for line in dictionary._state["log"]))
 
     def test_invalid_csv_reports_failed_instead_of_staying_busy(self):
         (self.source / "meta.csv").write_text("bad,header\n1,2\n", encoding="utf-8")

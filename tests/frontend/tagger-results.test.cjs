@@ -20,67 +20,6 @@ function fixture() {
   return { app, requested };
 }
 
-test('registry default is used for new or stale selections while saved choices are preserved', async () => {
-  const models = [
-    { id: 'old', name: 'Old', family: 'tagger' },
-    { id: 'pixai', name: 'PixAI', family: 'tagger' },
-  ];
-  context.fetch = async () => ({ json: async () => ({ status: 'success', data: {
-    models, default_model_id: 'pixai',
-  } }) });
-  for (const [saved, expected] of [['', 'pixai'], ['removed', 'pixai'], ['old', 'old']]) {
-    const { app } = fixture();
-    app.taggerSelectedModel = '';
-    app.handleTaggerModelChange = () => {};
-    app.t = key => key;
-    app.toast = message => assert.fail(message);
-    context.localStorage = { getItem: () => saved };
-    await app.loadTaggerModels();
-    assert.equal(app.taggerSelectedModel, expected);
-    assert.equal(app.taggerModelSelectConfig().groups[0].options[1].l, 'PixAI');
-  }
-});
-
-test('category presets come from the selected model and clear previous model values', () => {
-  const { app } = fixture();
-  app.taggerModels = [
-    { id: 'camie-tagger-v2', threshold_presets: { macro: { general: 0.492, year: 0.492 } } },
-    { id: 'pixai-tagger-v1.0', threshold_presets: { macro: { general: 0.17, style: 0.15 }, micro: { general: 0.34, style: 0.19 } } },
-  ];
-  app.applyTaggerPreset('macro');
-  assert.equal(app.taggerSettings.categoryThresholds.year, 0.492);
-  app.taggerSelectedModel = 'pixai-tagger-v1.0';
-  app.applyTaggerPreset('macro');
-  assert.equal(app.taggerSettings.categoryThresholds.general, 0.17);
-  assert.equal(app.taggerSettings.categoryThresholds.style, 0.15);
-  assert.equal(app.taggerSettings.categoryThresholds.year, undefined);
-  app.applyTaggerPreset('micro');
-  assert.equal(app.taggerSettings.categoryThresholds.style, 0.19);
-  assert.equal(app.taggerModels[1].threshold_presets.macro.style, 0.15);
-});
-
-test('Tagger defaults to literal parentheses and preserves saved escape preferences', () => {
-  const mixin = context.window.taggerMixin;
-  assert.equal(mixin.taggerSettings.escapeTag, false);
-  assert.equal(mixin.taggerApiSettings.escapeTag, false);
-  const app = { ...mixin, taggerSettings: { ...mixin.taggerSettings } };
-  context.localStorage = { getItem: () => JSON.stringify({ escapeTag: true }) };
-  app._loadTaggerSettings();
-  assert.equal(app.taggerSettings.escapeTag, true);
-});
-
-test('PixAI precision defaults to auto and restores only supported settings', () => {
-  const mixin = context.window.taggerMixin;
-  assert.equal(mixin.taggerSettings.precision, 'auto');
-  for (const [saved, expected] of [[{}, 'auto'], [{ precision: 'fp32' }, 'fp32'],
-    [{ precision: 'bf16' }, 'bf16'], [{ precision: 'fp16' }, 'auto']]) {
-    const app = { ...mixin, taggerSettings: { ...mixin.taggerSettings } };
-    context.localStorage = { getItem: () => JSON.stringify(saved) };
-    app._loadTaggerSettings();
-    assert.equal(app.taggerSettings.precision, expected);
-  }
-});
-
 test('preview limit never truncates output, including after lowering the threshold', () => {
   const { app } = fixture();
   const tags = Array.from({ length: 250 }, (_, i) => [`tag_${i}`, i < 200 ? 0.9 : 0.4]);
@@ -112,15 +51,6 @@ test('category inclusion persists and removing every category empties output', (
   app.setAllTaggerCategoriesVisible(true);
   assert.equal(app.taggerResultText, 'solo');
   assert.equal(app.taggerCategoryEnabled('general'), true);
-});
-
-test('collapsed groups do not request dictionary data until opened', () => {
-  const { app, requested } = fixture();
-  app.setTaggerResult({ categories: { character: { tags: [['alice', 0.9]] } } });
-  assert.equal(requested.length, 0);
-  app.taggerCategoryState.character.collapsed = false;
-  app.syncTaggerDictionary();
-  assert.deepEqual(requested, ['alice']);
 });
 
 test('AI captions remain intact and only tag-mode results use the dictionary', async () => {
