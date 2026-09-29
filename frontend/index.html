@@ -23,14 +23,14 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260929-dictionary-update2">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20260929-tagger-review22">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260920-dictionary3">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20260929-tagger-review22">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
-  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260919-dict24">
-  <script src="/anima-ui/js/i18n.js?v=20260929-dictionary-copy" defer></script>
+  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260929-tagger-review22">
+  <script src="/anima-ui/js/i18n.js?v=20260929-tagger-review22" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -50,12 +50,12 @@
   <script src="/anima-ui/js/training-shape-preview.js?v=20260917-kronscale1" defer></script>
   <script src="/anima-ui/js/training-toml.js?v=20260924-review5" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20260928-select-lifecycle" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20260929-tagger-review22" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
-  <script src="/anima-ui/js/tag-dictionary.js?v=20260929-dictionary-update2" defer></script>
-  <script src="/anima-ui/js/tag-hover-card.js?v=20260920-dictionary3" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20260929-tagger-review22" defer></script>
+  <script src="/anima-ui/js/tag-hover-card.js?v=20260929-tagger-review22" defer></script>
   <script src="/anima-ui/js/app.js?v=20260926-version-fallback" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
@@ -562,7 +562,7 @@
         <div id="teDictHover" class="te-dict-hover"
           :style="tagDictionaryHover ? tagDictionaryHover.style : ''"
           :class="tagDictionaryCategoryClass(tagDictionaryHover && tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
-          role="dialog" :aria-label="t('tagEditor.dictTitle')"
+          role="tooltip" :aria-label="t('tagEditor.dictTitle')"
           @focusin="tagDictionaryHoverKeep()" @focusout="if (!$el.contains($event.relatedTarget)) tagDictionaryHoverLeave()"
           @mouseenter="tagDictionaryHoverKeep()" @mouseleave="if (!$el.contains(document.activeElement)) tagDictionaryHoverLeave()">
             <div class="te-dict-hover-body">
@@ -571,6 +571,7 @@
                 <span class="te-dict-hover-cat"
                   :class="tagDictionaryCategoryClass(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"
                   x-text="tagDictionaryCategoryLabel(tagDictionaryHover.meta ? tagDictionaryHover.meta.category : -1)"></span>
+                <span class="te-dict-hover-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
               </div>
               <div class="te-dict-hover-zh"
                 x-text="tagDictionaryTranslationVisible() && tagDictionaryHover.meta && tagDictionaryHover.meta.translation !== tagDictionaryHover.tag ? tagDictionaryHover.meta.translation : ''"></div>
@@ -580,21 +581,11 @@
               </div>
               <div class="te-dict-hover-row" x-show="tagDictionaryIsChinese() && tagDictionaryHover.description">
                 <span class="te-dict-hover-key" x-text="t('tagEditor.dictDescription')"></span>
-                <span class="te-dict-hover-val te-dict-hover-desc"
-                  :class="{ clamped: !tagDictionaryHover.expanded && tagDictionaryHoverExpandable() }"
-                  x-text="tagDictionaryHover.description"></span>
-                <button class="te-dict-hover-more" x-show="tagDictionaryHoverExpandable()"
-                  @click="tagDictionaryToggleHoverExpand()"
-                  x-text="tagDictionaryHover.expanded ? t('tagEditor.dictCollapse') : t('tagEditor.dictExpand')"></button>
+                <span class="te-dict-hover-val" x-text="tagDictionaryHover.description"></span>
               </div>
               <div class="te-dict-hover-row" x-show="tagDictionaryHoverAliases()">
                 <span class="te-dict-hover-key" x-text="t('tagEditor.dictAliases')"></span>
                 <span class="te-dict-hover-val" x-text="tagDictionaryHoverAliases()"></span>
-              </div>
-              <div class="te-dict-hover-actions">
-                <button x-show="currentRoute === 'tagEditor'" @click="tagDictionaryFindTag(tagDictionaryHover.tag)" x-text="t('tagEditor.dictFindTag')"></button>
-                <button @click="tagDictionaryCopy(tagDictionaryHover.tag)" x-text="t('common.copy')"></button>
-                <span class="te-dict-hover-count" :title="t('tagEditor.dictPostCount')" x-text="tagDictionaryFormatCount(tagDictionaryHover.meta ? tagDictionaryHover.meta.postCount : 0)"></span>
               </div>
             </div>
         </div>
@@ -1136,7 +1127,7 @@
                           @dragleave="tagEditorDetailDragLeave($event)"
                           @dragend="tagEditorDetailDragEnd($event)"
                           @keydown.enter.prevent.stop="tagEditorQuickRemove ? tagEditorToggleRemoval(tag) : tagEditorDetailEditTag(ti)"
-                          @keydown.space.prevent.stop="if (tagEditorQuickRemove) tagEditorToggleRemoval(tag); else { _tdShowHover(tag, $el); $nextTick(() => document.querySelector('#teDictHover .te-dict-hover-actions button')?.focus()); }"
+                          @keydown.space.prevent.stop="if (tagEditorQuickRemove) tagEditorToggleRemoval(tag); else _tdShowHover(tag, $el)"
                           @dblclick="if (!tagEditorQuickRemove) tagEditorDetailEditTag(ti)">
                           <span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(tag)"></span>
                           <span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span>

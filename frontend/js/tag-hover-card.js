@@ -6,7 +6,7 @@
    逐个绑监听会随渲染泄漏。
 
    鼠标移入立即显示，离开后短暂保留，允许鼠标从标签移进卡片
-   ——否则卡片里的"复制/查找"根本点不到。
+   ——长说明允许移入后滚动阅读。
    ================================================================ */
 (function (global) {
   'use strict';
@@ -63,12 +63,20 @@
       }
     });
 
-    // 卡片自身允许滚动；页面滚动或窗口改变后锚点才会失效。
+    // 同一帧的滚动、尺寸变化只触发一次定位；静止时不轮询。
     window.addEventListener('scroll', function (event) {
       if (event.target.closest && event.target.closest('#teDictHover')) return;
-      if (ctx.tagDictionaryHover) ctx.tagDictionaryCloseHover();
+      ctx._tdTrackHover();
     }, true);
-    window.addEventListener('resize', function () { ctx.tagDictionaryCloseHover(); });
+    window.addEventListener('resize', function () {
+      ctx._tdTrackHover();
+    });
+    document.addEventListener('transitionrun', function (event) {
+      if (event.target.closest?.('.tagger-single-layout, .te-main')) ctx._tdTrackHover();
+    }, true);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') ctx.tagDictionaryCloseHover();
+    });
     document.addEventListener('dragstart', function () { ctx.tagDictionaryCloseHover(); });
   }
 

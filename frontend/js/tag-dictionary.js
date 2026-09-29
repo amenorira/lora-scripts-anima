@@ -28,10 +28,8 @@ var TD_POLL_INTERVAL = 700;
 var TD_SUGGEST_LIMIT = 20;
 var TD_LOOKUP_CACHE_MAX = 2000;
 var TD_DETAIL_CACHE_MAX = 100;
-var TD_HOVER_HIDE_DELAY = 250;
+var TD_HOVER_HIDE_DELAY = 80;
 var TD_REQUEST_TIMEOUT = 6000;
-// 说明超过这个长度才给"展开"：卡片宽 320px，短说明本来就不会被截断
-var TD_HOVER_CLAMP_CHARS = 72;
 
 var TD_CATEGORY_KEYS = {
   0: 'tagEditor.dictCatGeneral',
@@ -117,6 +115,7 @@ function _td() {
       lookups: new Map(),        // 标签原文 → 词典条目 | null
       inflight: Object.create(null),
       details: new Map(),        // canonical → 条目 + description
+      detailInflight: new Map(),
       suggestTimer: null,
       hoverSeq: 0,
       hoverHideTimer: null
@@ -635,11 +634,6 @@ window.tagDictionaryMixin = {
     }, this).join(' · ') : '';
   },
 
-  tagDictionaryHoverExpandable() {
-    var hover = this.tagDictionaryHover;
-    return !!(hover && hover.description && hover.description.length > TD_HOVER_CLAMP_CHARS);
-  },
-
   tagDictionaryFormatCount(value) {
     return TagDictionary.formatCount(value);
   },
@@ -752,11 +746,17 @@ window.tagDictionaryMixin = {
     if (key && state.details.has(key)) return Promise.resolve(_tdLruGet(state.details, key));
     if (!this.tagDictionaryReady) return Promise.resolve(null);
     var generation = state.generation;
-    return _tdSend({ type: 'DETAIL', tag: tag }, 4000).then(function (result) {
+    var requestKey = generation + ':' + (key || tag);
+    if (state.detailInflight.has(requestKey)) return state.detailInflight.get(requestKey);
+    var request = _tdSend({ type: 'DETAIL', tag: tag }, 4000).then(function (result) {
       if (generation !== state.generation) return null;
-      if (result && result.canonical) _tdLruSet(state.details, result.canonical, result, TD_DETAIL_CACHE_MAX);
+      if (state.detailReady && result && result.canonical) _tdLruSet(state.details, result.canonical, result, TD_DETAIL_CACHE_MAX);
       return result;
+    }).finally(function () {
+      if (state.detailInflight.get(requestKey) === request) state.detailInflight.delete(requestKey);
     });
+    state.detailInflight.set(requestKey, request);
+    return request;
   },
 
   // ===== 悬停卡 =====
@@ -777,7 +777,7 @@ window.tagDictionaryMixin = {
     }, TD_HOVER_HIDE_DELAY);
   },
 
-  /* 鼠标进入卡片：取消关闭，否则卡里的"复制/查找"点不到。 */
+  /* 保留短暂缓冲，允许移入长说明滚动阅读。 */
   tagDictionaryHoverKeep() {
     var state = _td();
     if (state.hoverHideTimer) { clearTimeout(state.hoverHideTimer); state.hoverHideTimer = null; }
@@ -794,6 +794,8 @@ window.tagDictionaryMixin = {
     this.tagDictionaryCancelHoverTimers();
     var state = _td();
     if (!this.tagDictionaryReady) return;
+    if (this.tagDictionaryHover?.tag === tag && state.hoverAnchor === el) return;
+    this.tagDictionaryCloseHover();
     // 说明还没加载就现在拉一把，别让用户盯着没有说明的卡片等后台计时
     if (!state.detailReady && state.worker) state.worker.postMessage({ type: 'LOAD_DETAIL' });
     // 已知词典里没有这个标签（自定义 trigger / 自然语言）：不弹空卡片
@@ -807,9 +809,21 @@ window.tagDictionaryMixin = {
       tag: tag,
       meta: detail || meta || null,
       description: (detail && detail.description) || '',
-      expanded: false,
       style: this._tdHoverStyle(el)
     };
+    this._tdTrackHover();
+    this.$nextTick?.(() => {
+      if (seq !== state.hoverSeq || !this.tagDictionaryHover) return;
+      if (typeof ResizeObserver !== 'undefined') {
+        state.hoverObserver = new ResizeObserver(() => this._tdTrackHover());
+        var card = document.getElementById('teDictHover');
+        if (card) state.hoverObserver.observe(card);
+        var workspace = el.closest('.tagger-single-layout, .te-main');
+        if (workspace) state.hoverObserver.observe(workspace);
+      }
+      this._tdTrackHover();
+    });
+    if (detail && state.detailReady) return;
     this.tagDictionaryDetail(tag).then(function (result) {
       if (seq !== state.hoverSeq || !self.tagDictionaryHover) return;
       var current = self.tagDictionaryHover;
@@ -822,7 +836,7 @@ window.tagDictionaryMixin = {
     });
   },
 
-  /* detail 晚到时刷新已打开的卡片，不改变位置。 */
+  /* detail 晚到时补充内容，尺寸变化由 ResizeObserver 更新位置。 */
   _tdRefreshHover() {
     var hover = this.tagDictionaryHover;
     if (!hover || !hover.meta || hover.description) return;
@@ -841,65 +855,69 @@ window.tagDictionaryMixin = {
     });
   },
 
+  _tdTrackHover() {
+    var state = _td();
+    if (state.hoverFrame || !this.tagDictionaryHover) return;
+    var self = this;
+    function update() {
+      state.hoverFrame = null;
+      var anchor = state.hoverAnchor;
+      if (!self.tagDictionaryHover) return;
+      if (!anchor || !anchor.isConnected || anchor.closest('.tagger-category-section.collapsed')) {
+        self.tagDictionaryCloseHover();
+        return;
+      }
+      var browser = anchor.closest('.tagger-category-browser, .tagger-single-main, .te-editor-body, .te-tagcloud, .te-sidebar-body');
+      var rect = anchor.getBoundingClientRect();
+      var bounds = browser && browser.getBoundingClientRect();
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.bottom === rect.top ||
+        (bounds && (rect.bottom <= bounds.top || rect.top >= bounds.bottom))) {
+        self.tagDictionaryCloseHover();
+        return;
+      }
+      var style = self._tdHoverStyle(anchor, rect);
+      if (style !== self.tagDictionaryHover.style) self.tagDictionaryHover.style = style;
+      var workspace = anchor.closest('.tagger-single-layout, .te-main');
+      if (workspace?.getAnimations({ subtree: true }).some(animation => animation.playState === 'running' &&
+        ['max-height', 'width', 'grid-template-columns', 'transform'].includes(animation.transitionProperty))) {
+        state.hoverFrame = requestAnimationFrame(update);
+      }
+    }
+    state.hoverFrame = requestAnimationFrame(update);
+  },
+
   tagDictionaryCloseHover() {
     var state = _td();
-    var returnFocus = typeof document !== 'undefined' && document.activeElement &&
-      document.activeElement.closest('#teDictHover');
     state.hoverSeq++;
+    if (state.hoverFrame) cancelAnimationFrame(state.hoverFrame);
+    state.hoverFrame = null;
+    if (state.hoverObserver) state.hoverObserver.disconnect();
+    state.hoverObserver = null;
     this.tagDictionaryHover = null;
-    if (returnFocus && state.hoverAnchor && state.hoverAnchor.isConnected) state.hoverAnchor.focus();
+    state.hoverAnchor = null;
     this.tagDictionaryCancelHoverTimers();
   },
 
-  tagDictionaryToggleHoverExpand() {
-    var hover = this.tagDictionaryHover;
-    if (!hover) return;
-    hover.expanded = !hover.expanded;
-  },
-
   /* 统一锚定编辑区左外侧，避免遮住标签或搜索结果。 */
-  _tdHoverStyle(el) {
+  _tdHoverStyle(el, anchorRect) {
     var margin = 8;
     var gap = 10;
-    var maxHeight = Math.min(380, window.innerHeight - margin * 2);
-    var rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 80, bottom: 100, left: 0, right: 0 };
+    var maxHeight = Math.max(0, window.innerHeight - margin * 2);
+    var rect = anchorRect || (el && el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 80, bottom: 100, left: 0, right: 0 });
+    var card = document.getElementById('teDictHover');
+    var height = card && card.offsetHeight ? Math.min(card.offsetHeight, maxHeight) : maxHeight;
+    var top = Math.max(margin, Math.min((rect.top + rect.bottom - height) / 2, window.innerHeight - height - margin));
     var editor = el && el.closest && el.closest('.te-editor');
     var sidebar = el && el.closest && el.closest('.te-sidebar');
     var edge = editor ? editor.getBoundingClientRect().left : rect.left;
     if (sidebar) {
       var sideRight = sidebar.getBoundingClientRect().right + gap;
-      return 'left:' + sideRight + 'px;top:' + Math.max(margin, Math.min(rect.top, window.innerHeight - maxHeight - margin)) + 'px;width:320px;max-height:' + maxHeight + 'px';
+      return 'left:' + sideRight + 'px;top:' + top + 'px;width:320px;max-height:' + maxHeight + 'px';
     }
     var width = Math.min(320, Math.max(0, edge - gap - margin));
     var left = Math.max(margin, edge - width - gap);
-    var top = Math.max(margin, Math.min(rect.top, window.innerHeight - maxHeight - margin));
     return 'left:' + Math.round(left) + 'px;top:' + Math.round(top) + 'px;width:' + Math.round(width) +
       'px;max-height:' + Math.round(maxHeight) + 'px';
-  },
-
-  /* 悬停卡/卡片操作：复制的是当前 caption 里的真实值，不是 canonical。 */
-  async tagDictionaryCopy(tag) {
-    if (!tag) return;
-    try {
-      await navigator.clipboard.writeText(tag);
-      this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
-      this.tagDictionaryCloseHover();
-    } catch (error) {
-      this.toast(this.t('tagEditor.dictCopyFailed'), 'error');
-    }
-  },
-
-  /* 查找此标签：复用标签云的精确 token 过滤，不做字符串包含匹配。 */
-  tagDictionaryFindTag(tag) {
-    if (!tag) return;
-    this.tagDictionaryCloseHover();
-    this.tagEditorTagSelection = [tag];
-    this.tagEditorExcludedTags = [];
-    this.tagEditorQuickFilter = 'all';
-    this.tagEditorSidebarTab = 'tags';
-    this.tagEditorSearchQuery = '';
-    this._teInvalidateFilter();
-    this.tagEditorSchedulePageFetch(true);
   },
 
   tagDictionaryToggleTranslation() {

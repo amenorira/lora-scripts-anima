@@ -41,16 +41,73 @@ test('dictionary receives raw names and cannot alter comma-separated output', ()
   assert.equal(app.taggerResultText, 'long hair, name \\(series\\)');
 });
 
+test('single category controls work before inference without creating a fake result', () => {
+  const { app } = fixture();
+  app.taggerCategoryKeys = () => ['general', 'character'];
+  assert.deepEqual(Array.from(app.taggerSingleCategories(), row => row.key), ['general', 'character']);
+  app.setTaggerSingleCategoryThreshold('general', 0.2);
+  app.setTaggerSingleCategoryEnabled('character', false);
+  assert.equal(app.taggerSettings.categoryThresholds.general, 0.2);
+  assert.equal(app.taggerSingleCategoryEnabled('character'), false);
+  assert.equal(Object.keys(app.taggerCategoryState).length, 0);
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.3], ['sky', 0.1]] }, character: { tags: [['alice', 0.9]] } } });
+  assert.equal(app.taggerResultText, 'solo');
+  app.setTaggerSingleCategoryThreshold('general', 0.05);
+  assert.equal(app.taggerResultText, 'solo, sky');
+  app.setTaggerSingleCategoryEnabled('general', false);
+  assert.equal(app.taggerResultText, '');
+  assert.equal(app.taggerSingleCategories().length, 2);
+});
+
+test('inline threshold increments preserve precision and clamp to the valid range', () => {
+  const { app } = fixture();
+  app.setTaggerSingleCategoryThreshold('general', 0.17 + 0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.18);
+  app.setTaggerSingleCategoryThreshold('general', 0.18 - 0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.17);
+  app.setTaggerSingleCategoryThreshold('general', -0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0);
+  app.setTaggerSingleCategoryThreshold('general', 1.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 1);
+});
+
+test('WD inline thresholds update the proper category and keep complete output', () => {
+  const { app } = fixture();
+  app.taggerUsesCategoryThresholds = () => false;
+  app.taggerSettings.characterThreshold = 0.6;
+  app.taggerSettings.characterEnabledByModel = {};
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.4]] }, character: { tags: [['alice', 0.7]] } } });
+  app.setTaggerSingleCategoryThreshold('general', 0.3);
+  assert.equal(app.taggerResultText, 'solo, alice');
+  app.setTaggerSingleCategoryThreshold('character', 0.8);
+  assert.equal(app.taggerResultText, 'solo');
+  assert.equal(app.taggerSettings.threshold, 0.3);
+});
+
 test('category inclusion persists and removing every category empties output', () => {
   const { app } = fixture();
   app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9]] } } });
-  app.taggerCategoryState.general.visible = false;
-  app.toggleTaggerResultCategory('general');
+  app.setTaggerSingleCategoryEnabled('general', false);
   assert.equal(app.taggerResultText, '');
   assert.equal(app.taggerCategoryEnabled('general'), false);
-  app.setAllTaggerCategoriesVisible(true);
+  app.setTaggerSingleCategoryEnabled('general', true);
   assert.equal(app.taggerResultText, 'solo');
   assert.equal(app.taggerCategoryEnabled('general'), true);
+});
+
+test('excluded categories retain preview and translations while thresholds still filter them', () => {
+  const { app, requested } = fixture();
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9], ['long_hair', 0.4]] } } });
+  app.setTaggerSingleCategoryEnabled('general', false);
+  assert.equal(app.taggerResultText, '');
+  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 1);
+  requested.length = 0;
+  app.setTaggerSingleCategoryThreshold('general', 0.3);
+  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 2);
+  assert.deepEqual(requested, ['solo', 'long_hair']);
+  assert.equal(app.taggerResultText, '');
+  app.setTaggerSingleCategoryEnabled('general', true);
+  assert.equal(app.taggerResultText, 'solo, long hair');
 });
 
 test('AI captions remain intact and only tag-mode results use the dictionary', async () => {
