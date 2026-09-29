@@ -495,13 +495,19 @@ window.environmentRenderMixin = {
     const dataState = this.tagDictionaryDataState();
     const open = this._envCardOpen('dictionary');
 
+    const badgeState = dataState === 'installed' && this.tagDictionaryCheckingUpdate ? 'checking'
+      : dataState === 'installed' && server?.update?.state === 'available' ? 'checking'
+      : dataState === 'installed' && ['error', 'unknown'].includes(server?.update?.state) ? 'absent' : dataState;
     const badgeClass = {
       installing: 'env-badge-loading', installed: 'env-badge-ok', checking: 'env-badge-loading',
       failed: 'env-badge-err', error: 'env-badge-err', absent: '',
-    }[dataState] || '';
+    }[badgeState] || '';
+    const updateKey = { available: 'dictUpdateAvailable', current: 'dictUpToDate',
+      unknown: 'dictUpdateUnknown', error: 'dictCheckFailed' }[server?.update?.state];
     const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText()
       : server?.status === 'failed' ? T(server.installed ? 'dictUpdateFailed' : 'dictDownloadFailed')
-      : server?.update?.state === 'available' ? T('dictUpdateAvailable') : this.tagDictionaryDataLabel();
+      : this.tagDictionaryCheckingUpdate ? T('dictCheckingUpdate')
+      : dataState === 'installed' && updateKey ? T(updateKey) : this.tagDictionaryDataLabel();
     const badge = `<span class="env-badge ${badgeClass}">${this.esc(badgeText)}</span>`;
 
     const parts = [];
@@ -509,16 +515,13 @@ window.environmentRenderMixin = {
       parts.push(this.tagDictionaryVersionText(), this.tagDictionaryTagCountText(), this.tagDictionarySizeText());
     }
     const version = parts.filter(Boolean).length
-      ? `<span class="env-mgroup-count">${parts.filter(Boolean).map(item => this.esc(item)).join(' · ')}</span>`
+      ? `<span class="env-mgroup-count">${parts.filter(Boolean).map(item => this.esc(item)).join(this.tagDictionaryIsChinese() ? '，' : ', ')}</span>`
       : '';
 
     let action = this.tagDictionaryDataActionVisible()
-      ? `<button class="btn btn-sm btn-secondary" data-env-action="dictionary"${dataState === 'installing' ? ' disabled' : ''}>`
+      ? `<button class="btn btn-sm btn-secondary" data-env-action="dictionary"${dataState === 'installing' || this.tagDictionaryCheckingUpdate ? ' disabled' : ''}>`
         + `${this.esc(this.tagDictionaryDataActionLabel())}</button>`
       : '';
-    if (server?.installed && dataState !== 'installing') {
-      action += `<button class="btn btn-sm btn-secondary" data-env-action="dictionary-check"${this.tagDictionaryCheckingUpdate ? ' disabled' : ''}>${this.esc(T(this.tagDictionaryCheckingUpdate ? 'dictCheckingUpdate' : 'dictCheckUpdate'))}</button>`;
-    }
 
     const head = this._renderRowHead('dictionary', open, {
       name: T('dictRowName', 'Danbooru Chinese dictionary'),
@@ -527,7 +530,8 @@ window.environmentRenderMixin = {
       detailKey: 'dictionary', detailLabel: T('details', 'Details'),
     });
 
-    return this._renderRow('dictionary', dataState === 'installing' ? 'loading' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
+    return this._renderRow('dictionary', dataState === 'installing' ? 'loading'
+      : ['failed', 'error'].includes(dataState) ? 'err' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
       this._renderDictionaryBody(T, dataState));
   },
 
@@ -540,8 +544,8 @@ window.environmentRenderMixin = {
     const current = categoryNames[category] ? T(categoryNames[category]) : server.current_file || '';
     if (dataState === 'installing') {
       if (server.status !== 'building' && current && !server.files?.length) {
-        const source = server.download_source ? ` · ${this.esc(server.download_source)}` : '';
-        body += `<div class="env-text-dim">${this.esc(current)} · ${Number(server.file_index || 0) + 1}/${Number(server.file_total || 5)}${source}</div>`;
+        const source = server.download_source ? ` (${this.esc(server.download_source)})` : '';
+        body += `<div class="env-text-dim">${this.esc(current)} (${Number(server.file_index || 0) + 1}/${Number(server.file_total || 5)})${source}</div>`;
       }
       body += server.status === 'building'
         ? this._renderProgressPanel({ stage: 'installing', stageLabel: this.t('tagEditor.dictBuilding') })
@@ -566,14 +570,7 @@ window.environmentRenderMixin = {
     if (dataState === 'failed' || dataState === 'error') {
       const reason = T(server.error_kind === 'integrity' ? 'dictErrorIntegrity'
         : server.error_kind === 'build' ? 'dictErrorBuild' : 'dictErrorDownload');
-      body += `<div class="env-msg env-msg-err">${current ? this.esc(current) + '：' : ''}${this.esc(reason)} ${this.esc(T(server.installed ? 'dictOldAvailable'
-        : server.error_kind === 'build' ? 'dictRetryFresh' : 'dictRetryResume'))}</div>`;
-    }
-    body += this._renderDetailGroup(T('dictIncludes'), this.esc(T('dictCoverage')));
-    if (server.installed && dataState !== 'installing') {
-      const updateKey = { available: 'dictUpdateAvailable', current: 'dictUpToDate',
-        unknown: 'dictUpdateUnknown', error: 'dictCheckFailed' }[server.update?.state];
-      if (updateKey) body += `<div class="env-text-dim">${this.esc(T(updateKey))}</div>`;
+      body += `<div class="env-msg env-msg-err">${current ? this.esc(current) + '：' : ''}${this.esc(reason)}</div>`;
     }
     if (server.categories?.length) {
       const number = value => Number(value || 0).toLocaleString();
@@ -587,6 +584,9 @@ window.environmentRenderMixin = {
       body += `<tr><th>${this.esc(T('dictTotal'))}</th><td>${number(server.tag_count)}</td></tr></tbody></table></div>`;
     }
     body += this._renderDetailGroup(T('dictSource'), '<a href="https://huggingface.co/datasets/ame-la/danbooru-tags-data-zh" target="_blank" rel="noopener" class="env-link">ame-la/danbooru-tags-data-zh ↗</a>');
+    if (server.installed && dataState !== 'installing') {
+      body += `<div class="env-actions"><button class="btn btn-sm btn-ghost" data-env-action="dictionary-redownload">${this.esc(T('dictRedownload'))}</button></div>`;
+    }
     const log = this.tagDictionaryLogText() || this.tagDictionaryInstallError || server.message;
     if (log && (dataState === 'failed' || dataState === 'error')) {
       body += `<details><summary class="env-text-dim">${this.esc(T('dictErrorDetails'))}</summary>${this._renderLog(log)}</details>`;
@@ -914,6 +914,7 @@ window.environmentRenderMixin = {
         else if (act === 'triton') a.tritonInstall();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
         else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);
+        else if (act === 'dictionary-redownload') a.tagDictionaryInstall(true);
       });
     });
   },

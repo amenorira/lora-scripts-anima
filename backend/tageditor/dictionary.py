@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import re
 import threading
@@ -164,7 +165,7 @@ def check_update(force: bool = False) -> dict:
     global _update_check
     with _check_lock:
         manifest = read_manifest() or {}
-        key = manifest.get("core", "")
+        key = _update_key(manifest)
         if (not force and _update_check.get("key") == key
                 and time.monotonic() - _update_check.get("time", 0) < 3600):
             return dict(_update_check)
@@ -189,6 +190,10 @@ def check_update(force: bool = False) -> dict:
             result.update(state="error", message=str(error))
         _update_check = result
         return dict(result)
+
+
+def _update_key(manifest: dict) -> str:
+    return json.dumps([manifest.get("core", ""), manifest.get("source_hashes", {})], sort_keys=True)
 
 
 def status() -> dict:
@@ -217,7 +222,7 @@ def status() -> dict:
         "source": SOURCE_REPO,
         "categories": categories,
         "files": files,
-        "update": (dict(_update_check) if _update_check.get("key") == (manifest or {}).get("core", "") else {}),
+        "update": (dict(_update_check) if _update_check.get("key") == _update_key(manifest or {}) else {}),
         "finished_at": state["finished_at"],
         "error_kind": state.get("error_kind", ""),
         "current_file": str(progress.get("filename") or ""),
@@ -293,7 +298,8 @@ def _install(force: bool) -> None:
         manifest = build(SOURCE_DIR, ASSET_DIR, datetime.date.today().isoformat(),
                          SOURCE_URL, on_report=_report_sink)
         _log(f"完成：{manifest['tag_count']} 个标签")
-        _update_check.clear()
+        with _check_lock:
+            _update_check.clear()
         _set_state(_READY, "")
     except (Exception, SystemExit) as error:  # 构建器的 CSV 校验通过 SystemExit 报错
         with _lock:
@@ -312,6 +318,21 @@ def _download_sources(force: bool) -> None:
     if not force:
         reuse_legacy_sources(SOURCE_DIR)
     SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+    needs_download = force or any(not (SOURCE_DIR / name).is_file()
+                                 or (SOURCE_DIR / name).stat().st_size == 0 for _, name in HF_FILES)
+    info = _remote_info() if needs_download else None
+    if info is not None and not info.sha:
+        raise ValueError("词典数据源缺少版本号")
+    remote = {item.rfilename: item for item in info.siblings} if info else {}
+
+    def matches(target: Path, item) -> bool:
+        if not target.is_file():
+            return False
+        data = target.read_bytes()
+        digest = (hashlib.sha256(data).hexdigest() if item.lfs else
+                  hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest())
+        return digest == (item.lfs.sha256 if item.lfs else item.blob_id)
+
     total = len(HF_FILES)
     with _lock:
         _progress["files"] = {name: {"filename": name, "phase": "queued", "done": False}
@@ -319,7 +340,8 @@ def _download_sources(force: bool) -> None:
     def download(index: int, hf_path: str, local_name: str) -> None:
         target = SOURCE_DIR / local_name
         progress = _progress["files"][local_name]
-        if not force and target.is_file() and target.stat().st_size > 0:
+        if not force and target.is_file() and target.stat().st_size > 0 and (
+                info is None or matches(target, remote[hf_path])):
             _log(f"复用本地 {local_name}")
         else:
             _log(f"下载 {hf_path}")
@@ -333,7 +355,11 @@ def _download_sources(force: bool) -> None:
                 file_index=index, file_total=total,
                 on_log=_log,
                 repo_type="dataset",   # 数据源是数据集仓库，地址要带 /datasets/
+                revision=info.sha,
             )
+            if not matches(target, remote[hf_path]):
+                target.unlink(missing_ok=True)
+                raise IntegrityError(f"文件指纹不匹配：{local_name}")
         with _lock:
             progress.update(done=True, phase="file_done", speed=0.0)
     with ThreadPoolExecutor(max_workers=len(HF_FILES), thread_name_prefix="dictionary") as executor:

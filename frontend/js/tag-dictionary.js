@@ -196,6 +196,8 @@ window.tagDictionaryMixin = {
   tagDictionaryFailed: false,
   tagDictionaryInstalling: false,
   tagDictionaryCheckingUpdate: false,
+  tagDictionaryReconnecting: false,
+  _tagDictionaryCheckGeneration: 0,
   tagDictionaryInstallError: '',
   tagDictionaryServer: null,      // 后端返回的安装状态：数据版本、标签数、体积、进度
   tagDictionaryPanelOpen: false,
@@ -238,7 +240,8 @@ window.tagDictionaryMixin = {
   /* 环境管理页的主按钮：只管数据，下载/更新/重试 */
   tagDictionaryDataActionLabel() {
     var kind = this.tagDictionaryDataState();
-    if (kind === 'installed') return this.t('tagEditor.dictUpdate');
+    if (kind === 'installed') return this.t(this.tagDictionaryServer.update?.state === 'available'
+      || this.tagDictionaryServer.update?.state === 'unknown' ? 'tagEditor.dictUpdate' : 'environment.dictCheckUpdate');
     if (kind === 'failed' || kind === 'error') return this.t('tagEditor.dictRetry');
     return this.t('tagEditor.dictInstall');
   },
@@ -249,6 +252,10 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryDataAction() {
+    if (this.tagDictionaryDataState() === 'installed'
+      && !['available', 'unknown'].includes(this.tagDictionaryServer.update?.state)) {
+      return this.tagDictionaryCheckUpdate(true);
+    }
     this.tagDictionaryInstallError = '';
     // 更新才重新拉数据源；只是缺构建产物时先用本地 CSV 重建，省一次 8MB 下载
     this.tagDictionaryInstall(!!(this.tagDictionaryServer && this.tagDictionaryServer.installed)
@@ -269,6 +276,7 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryInstallText() {
+    if (this.tagDictionaryReconnecting) return this.t('environment.dictReconnecting');
     var server = this.tagDictionaryServer || {};
     if (server.status === 'building') return this.t('tagEditor.dictBuilding');
     return this.t('tagEditor.dictDownloading').replace('{percent}', server.percent || 0);
@@ -300,7 +308,7 @@ window.tagDictionaryMixin = {
 
   tagDictionaryActionLabel() {
     var kind = this.tagDictionaryStatus();
-    if (kind === 'ready') return this.t('tagEditor.dictUpdate');
+    if (kind === 'ready') return this.tagDictionaryDataActionLabel();
     if (kind === 'failed' || kind === 'error') return this.t('tagEditor.dictRetry');
     return this.t('tagEditor.dictInstall');
   },
@@ -370,19 +378,23 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryCheckUpdate(force) {
-    if (this.tagDictionaryCheckingUpdate) return;
+    if (this.tagDictionaryCheckingUpdate || this.tagDictionaryInstalling) return;
+    var generation = ++this._tagDictionaryCheckGeneration;
     this.tagDictionaryCheckingUpdate = true;
     this._tdRefreshPanelRow();
     var self = this;
     return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { signal: AbortSignal.timeout(45000) })
       .then(function (response) { if (!response.ok) throw new Error('check failed'); return response.json(); })
       .then(function (payload) {
-        if (self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;
+        if (generation === self._tagDictionaryCheckGeneration && self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;
       })
       .catch(function () {
-        if (self.tagDictionaryServer) self.tagDictionaryServer.update = { state: 'error' };
+        if (generation === self._tagDictionaryCheckGeneration && self.tagDictionaryServer) self.tagDictionaryServer.update = { state: 'error' };
       })
-      .finally(function () { self.tagDictionaryCheckingUpdate = false; self._tdRefreshPanelRow(); });
+      .finally(function () {
+        if (generation !== self._tagDictionaryCheckGeneration) return;
+        self.tagDictionaryCheckingUpdate = false; self._tdRefreshPanelRow();
+      });
   },
 
   // ===== 下载与更新 =====
@@ -391,6 +403,10 @@ window.tagDictionaryMixin = {
     var self = this;
     this.tagDictionaryInstallError = '';
     this.tagDictionaryInstalling = true;
+    this.tagDictionaryReconnecting = false;
+    this._tagDictionaryCheckGeneration++;
+    this.tagDictionaryCheckingUpdate = false;
+    if (typeof this._envSetCardOpen === 'function') this._envSetCardOpen('dictionary', true);
     this._tdRefreshPanelRow();
     fetch(TD_INSTALL_URL, {
       method: 'POST',
@@ -415,13 +431,20 @@ window.tagDictionaryMixin = {
 
   /* 安装进度靠轮询：后端在下载/构建期间只更新内存状态，
      完成后这里再重新拉起 Worker（顺带丢掉旧索引与旧缓存）。 */
-  _tdPollInstall() {
+  _tdPollInstall(delay) {
     var state = _td();
     if (state.pollTimer) return;
     var self = this;
     state.pollTimer = setTimeout(function () {
       self.tagDictionaryRefreshStatus().then(function (status) {
         state.pollTimer = null;
+        if (!status) {
+          self.tagDictionaryReconnecting = true;
+          self._tdRefreshPanelRow();
+          self._tdPollInstall(Math.min((delay || TD_POLL_INTERVAL) * 2, 10000));
+          return;
+        }
+        self.tagDictionaryReconnecting = false;
         if (status && (status.status === 'downloading' || status.status === 'building')) {
           self._tdPollInstall();
           return;
@@ -437,7 +460,7 @@ window.tagDictionaryMixin = {
         }
         self._tdRefreshPanelRow();
       });
-    }, TD_POLL_INTERVAL);
+    }, delay || TD_POLL_INTERVAL);
   },
 
   /* 环境管理页的行由 environment-render 渲染成字符串：状态一变就让它重画一次。

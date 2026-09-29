@@ -4412,6 +4412,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap;
 }
 .env-row-ops > .env-detail-link { margin-left: auto; }
+[data-env-row="dictionary"] .env-row-ops > .env-detail-link { margin-left: 4px; }
+[data-env-row="dictionary"] .env-mgroup-count { font-size: 12px; color: var(--text-secondary); }
 .env-head-btn { padding: 4px 12px; white-space: nowrap; }
 /* 详情文字链接：无边框无背景，悬停变强调色；caret 随展开状态旋转 */
 .env-text-link {

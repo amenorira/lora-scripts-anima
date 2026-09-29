@@ -110,6 +110,18 @@ class BuildTagDictionaryTests(unittest.TestCase):
                 self.assertNotIn("\n", canonical)
                 self.assertEqual(canonical, canonical.strip())
 
+    def test_empty_category_cannot_replace_installed_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _, _, _, output = read_build(root)
+            previous = (output / "manifest.json").read_bytes()
+            for invalid in ([], [["", 0, "", "", 1, ""]]):
+                with self.subTest(rows=invalid):
+                    source = write_source(root, {**ROWS, "general": invalid})
+                    with self.assertRaisesRegex(ValueError, "分类没有有效标签"):
+                        build(source, output, "new", "https://example.invalid/tags")
+                    self.assertEqual((output / "manifest.json").read_bytes(), previous)
+
 
 if __name__ == "__main__":
     unittest.main()

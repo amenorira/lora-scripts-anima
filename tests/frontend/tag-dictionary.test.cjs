@@ -344,6 +344,38 @@ test('failed update keeps the active dictionary and offers retry', async () => {
   assert.equal(ctx.tagDictionaryActionLabel(), 'tagEditor.dictRetry');
 });
 
+test('dictionary primary action checks current data and downloads available updates', () => {
+  const { ctx } = makeClient();
+  let checked = 0, downloaded = 0;
+  ctx.tagDictionaryCheckUpdate = force => { assert.equal(force, true); checked++; };
+  ctx.tagDictionaryInstall = force => { assert.equal(force, true); downloaded++; };
+  ctx.tagDictionaryServer = { ...INSTALLED, update: { state: 'current' } };
+  assert.equal(ctx.tagDictionaryDataActionLabel(), 'environment.dictCheckUpdate');
+  ctx.tagDictionaryDataAction();
+  assert.equal(checked, 1);
+  assert.equal(downloaded, 0);
+  ctx.tagDictionaryServer.update.state = 'available';
+  assert.equal(ctx.tagDictionaryDataActionLabel(), 'tagEditor.dictUpdate');
+  ctx.tagDictionaryDataAction();
+  assert.equal(downloaded, 1);
+});
+
+test('dictionary polling recovers after a temporary status failure', async () => {
+  const { ctx } = makeClient();
+  let calls = 0;
+  ctx.tagDictionaryInstalling = true;
+  ctx.tagDictionaryRefreshStatus = async () => ++calls === 1 ? null : { ...INSTALLED, status: 'ready' };
+  ctx.tagDictionaryCheckUpdate = () => {};
+  ctx._tdPollInstall();
+  await tick(18);
+  assert.equal(ctx.tagDictionaryInstalling, true);
+  assert.equal(ctx.tagDictionaryReconnecting, true);
+  await tick(60);
+  assert.equal(ctx.tagDictionaryInstalling, false);
+  assert.equal(ctx.tagDictionaryReconnecting, false);
+  assert.equal(ctx.tagDictionaryInstallError, '');
+});
+
 test('worker restart releases pending tags and ignores old replies', async () => {
   const { ctx, posted, reply } = makeClient({ status: [INSTALLED] });
   await initReady(ctx);

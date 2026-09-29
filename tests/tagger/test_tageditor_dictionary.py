@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -115,6 +116,22 @@ class DictionaryInstallTests(unittest.TestCase):
         state = wait_for_install()
         self.assertEqual(state["status"], "failed")
         self.assertEqual(state["error_kind"], "build")
+
+    def test_update_downloads_all_files_at_one_revision_and_checks_hashes(self):
+        hashes = builder.source_hashes(self.source)
+        info = SimpleNamespace(sha="fixed-revision", siblings=[
+            SimpleNamespace(rfilename=path, lfs=None, blob_id=hashes[path]["blob"])
+            for path, _ in dictionary.HF_FILES])
+        info.siblings[-1].lfs = SimpleNamespace(sha256=hashes[info.siblings[-1].rfilename]["sha256"])
+        with patch.object(dictionary, "_remote_info", return_value=info), \
+                patch.object(dictionary, "download_hf_file") as download:
+            dictionary._download_sources(True)
+            self.assertEqual(download.call_count, 5)
+            self.assertTrue(all(call.kwargs["revision"] == info.sha for call in download.call_args_list))
+            info.siblings[0].blob_id = "bad"
+            with self.assertRaises(dictionary.IntegrityError):
+                dictionary._download_sources(True)
+            self.assertFalse((self.source / "general.csv").exists())
 
     def test_interrupted_copy_leaves_no_partial_source(self):
         write_sources(self.legacy_source)

@@ -76,6 +76,7 @@ window.environmentCoreMixin = {
   // （行上仍有操作按钮，不影响发现性；顶部提供全部展开/收起）。
   _envDefaultCardOpen(slotId) {
     switch (slotId) {
+      case 'dictionary': return !!this.tagDictionaryInstalling;
       case 'xf': return !!this.xfBusy;
       case 'triton': return !!this.tritonBusy;
       case 'sd': return false;
@@ -483,6 +484,10 @@ window.environmentCoreMixin = {
   // Hero「全部刷新」：并行静默刷新各组件状态
   async _envRefreshAll() {
     const tasks = [
+      this.tagDictionaryRefreshStatus().then(status => {
+        if (status && ['downloading', 'building'].includes(status.status)) this._tdPollInstall();
+        else if (status?.installed) return this.tagDictionaryCheckUpdate(true);
+      }),
       this.xfRefresh(true).catch(() => {}),
       this.tritonRefresh(true).catch(() => {}),
       this.animaModelRefresh(true).catch(() => {}),

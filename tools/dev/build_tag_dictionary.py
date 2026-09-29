@@ -349,6 +349,10 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
     entries = build_entries(rows, report)
     if not entries:
         raise ValueError("词典没有有效标签，保留已安装版本")
+    counts = category_stats(entry["category"] for entry in entries)
+    empty = [item["name"] for item in counts if not item["tag_count"]]
+    if empty:
+        raise ValueError(f"词典分类没有有效标签：{', '.join(empty)}，保留已安装版本")
 
     core_text = pack_core(entries)
     detail_text = pack_detail(entries)
