@@ -1851,7 +1851,7 @@
 		"musubiDesc": "Krea 2 training core",
 		"tritonInstalled": "Installed",
 		"tritonNotInstalled": "Not installed",
-		"tritonDesc": "GPU compilation backend for torch.compile",
+		"tritonDesc": "Installed by default for LyCORIS fused kernels and torch.compile GPU compilation",
 		"tritonInstallInfo": "Matches the PyTorch version. Windows uses triton-windows and requires VC++ Redist.",
 		"tritonInstallBtn": "Install",
 		"tritonInstallingHint": "Downloading & installing...",

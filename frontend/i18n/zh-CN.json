@@ -1851,7 +1851,7 @@
 		"musubiDesc": "Krea 2 训练核心",
 		"tritonInstalled": "已安装",
 		"tritonNotInstalled": "未安装",
-		"tritonDesc": "torch.compile 的 GPU 编译后端",
+		"tritonDesc": "默认安装的训练依赖，支持 LyCORIS 融合内核与 torch.compile GPU 编译",
 		"tritonInstallInfo": "自动匹配 PyTorch 版本；Windows 安装 triton-windows，需 VC++ Redist。",
 		"tritonInstallBtn": "一键安装",
 		"tritonInstallingHint": "正在下载并安装...",

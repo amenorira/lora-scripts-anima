@@ -101,16 +101,24 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
             pip("uninstall", "-y", "xformers", check=False)
             warnings.append("xformers upgrade failed; removed the incompatible old wheel / xformers 升级失败，已移除不兼容的旧包")
 
+    return warnings
+
+
+def sync_triton() -> None:
+    """Keep the required Triton baseline installed, including in older venvs."""
+    if sys.platform not in ("win32", "linux"):
+        return
     expected_triton = "triton-windows" if sys.platform == "win32" else "triton"
     triton_version = package_version(expected_triton)
     triton_spec = ">=3.7.1,<3.8" if sys.platform == "win32" else "==3.7.1"
     from packaging.specifiers import SpecifierSet
 
-    if triton_version and (core_changed or triton_version not in SpecifierSet(triton_spec)):
-        if pip("install", "--upgrade", f"{expected_triton}{triton_spec}", check=False) != 0:
-            warnings.append(f"{expected_triton} upgrade failed; retry from the Environment page / {expected_triton} 升级失败，可到环境页重试")
-
-    return warnings
+    if not triton_version or triton_version not in SpecifierSet(triton_spec):
+        print(
+            f"[Runtime] Synchronizing {expected_triton}{triton_spec} / 正在补齐匹配的 Triton 运行时",
+            flush=True,
+        )
+        pip("install", "--upgrade", "--only-binary=:all:", "--no-deps", f"{expected_triton}{triton_spec}")
 
 
 def main() -> int:
@@ -136,6 +144,12 @@ def main() -> int:
         except RuntimeError as exc:
             print(f"[Runtime][ERROR] {exc}", file=sys.stderr)
             return 1
+
+    try:
+        sync_triton()
+    except RuntimeError as exc:
+        print(f"[Runtime][ERROR] Triton synchronization failed / Triton 运行时同步失败: {exc}", file=sys.stderr)
+        return 1
 
     warnings = sync_optional_packages(core_changed=core_changed)
     for warning in warnings:

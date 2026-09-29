@@ -197,10 +197,15 @@ def is_installed(requirement: str, friendly: str = None) -> bool:
     if _PKG_VERSION_CACHE is None:
         _PKG_VERSION_CACHE = _snapshot_pkg_versions()
 
-    specs = friendly.split() if friendly else [
-        token for token in requirement.split()
-        if not token.startswith("-") and not token.startswith("=")
-    ]
+    if friendly:
+        specs = friendly.split()
+    else:
+        try:
+            Requirement(requirement)
+            specs = [requirement]
+        except Exception:
+            specs = [token for token in requirement.split()
+                     if not token.startswith("-") and not token.startswith("=")]
     for spec in specs:
         # 从 URL 安装的包只取最后的包名部分
         candidate = spec.rsplit("/", 1)[-1]
@@ -209,6 +214,8 @@ def is_installed(requirement: str, friendly: str = None) -> bool:
         except Exception:
             # 非 PEP 508 写法（裸 URL 等）：退化为纯包名，不做版本判断
             req = Requirement(re.split(r"[<>=!~\[]", candidate)[0].strip())
+        if req.marker and not req.marker.evaluate():
+            continue
         version = _installed_version(req.name, _PKG_VERSION_CACHE)
         if version is None:
             log.warning(f"Package version not found: {req.name} / 未找到包版本")
@@ -352,7 +359,7 @@ def check_requirements() -> None:
     log.info(f"Installing {len(missing)} missing packages / 安装 {len(missing)} 个缺失的包")
     for package in missing:
         try:
-            run_pip(f"install {package}", desc=package, live=True)
+            run_pip(f"install {shlex.quote(package)}", desc=package, live=True)
         except Exception as e:
             log.warning(f"Failed to install {package} / 安装失败: {e}")
 
