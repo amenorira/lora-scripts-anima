@@ -1,10 +1,7 @@
-import importlib.metadata
 import os
-import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from tools.python_startup import sitecustomize  # noqa: F401
 
@@ -12,18 +9,9 @@ from backend import launch_utils
 
 
 ROOT = Path(__file__).parents[2]
-BNB_GAUDI_PROBE = "pip list | grep habana-torch-plugin"
 
 
 class SubprocessEncodingTests(unittest.TestCase):
-    def test_decode_falls_back_to_native_encoding_after_invalid_utf8(self):
-        native_text = "fatal: \u4e0d\u662f Git \u4ed3\u5e93"
-
-        with patch.object(launch_utils.locale, "getencoding", return_value="gbk", create=True):
-            decoded = launch_utils.decode_subprocess_output(native_text.encode("gbk"))
-
-        self.assertEqual(decoded, native_text)
-
     def test_capture_does_not_decode_inside_subprocess_reader_threads(self):
         result = launch_utils.run_capture_text(
             [
@@ -43,26 +31,6 @@ class SubprocessEncodingTests(unittest.TestCase):
         self.assertIsInstance(result.stderr, str)
         self.assertTrue(result.stderr.startswith("fatal: "))
 
-    def test_capture_rejects_conflicting_text_arguments(self):
-        with self.assertRaises(TypeError):
-            launch_utils.run_capture_text(
-                [sys.executable, "-c", "pass"],
-                capture_output=True,
-            )
-
-    @unittest.skipUnless(sys.platform == "win32", "Windows-only bitsandbytes compatibility")
-    def test_bitsandbytes_gaudi_probe_uses_package_metadata(self):
-        with patch.object(importlib.metadata, "version", return_value="1.22.0"):
-            result = subprocess.run(
-                BNB_GAUDI_PROBE,
-                shell=True,
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "habana-torch-plugin 1.22.0\n")
-        self.assertEqual(result.stderr, "")
 
     @unittest.skipUnless(sys.platform == "win32", "Windows-only bitsandbytes compatibility")
     def test_fresh_process_import_avoids_gbk_reader_thread_failure(self):

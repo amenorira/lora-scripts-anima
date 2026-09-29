@@ -74,8 +74,8 @@ def _auth_headers() -> dict[str, str]:
     headers: dict[str, str] = {"Accept-Encoding": "identity"}
     token = None
     try:
-        from huggingface_hub import HfFolder
-        token = HfFolder.get_token()
+        from huggingface_hub import get_token
+        token = get_token()
     except Exception:
         pass
     if not token:

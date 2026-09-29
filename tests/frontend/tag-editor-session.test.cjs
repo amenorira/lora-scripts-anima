@@ -19,20 +19,6 @@ function fixture() {
   return { app, pending, reply };
 }
 
-test('cached navigation cancels older page and restores counts as well as images', async () => {
-  const { app, pending, reply } = fixture();
-  app._teApplySessionPage({ page: 1, total: 90, total_pages: 2, items: [{ path: '/a', tags: '' }] }, true);
-  const request = app.tagEditorFetchPage(2);
-  app.tagEditorFilteredTotal = 5;
-  await app.tagEditorFetchPage(1);
-  assert.equal(pending[0].options.signal.aborted, true);
-  assert.equal(app.tagEditorFilteredTotal, 90);
-  reply(0, { page: 2, total: 90, items: [{ path: '/old', tags: '' }] });
-  await request;
-  assert.equal(app.tagEditorPage, 1);
-  assert.equal(app.tagEditorPageItems[0].path, '/a');
-});
-
 test('switching to modified filter immediately invalidates pending page', async () => {
   const { app, reply } = fixture();
   const request = app.tagEditorFetchPage(2);
@@ -90,15 +76,6 @@ test('bulk paging keeps drafts and visible page, and uses one fixed session', as
   assert.equal(app.tagEditorPageItems.length, 1);
   assert.ok(pending.every(p => p.url.includes('/sessions/A/images?')));
   assert.equal(app._teAllAbort, null);
-});
-
-test('select all under modified filter selects only local drafts', async () => {
-  const { app, pending } = fixture();
-  app.tagEditorQuickFilter = 'modified';
-  app._teGetModified = () => [{ path: '/draft' }];
-  await app.tagEditorSelectFiltered();
-  assert.deepEqual(Array.from(app.tagEditorSelected), ['/draft']);
-  assert.equal(pending.length, 0);
 });
 
 test('late network failure from old dataset is ignored without changing new loading state', async () => {

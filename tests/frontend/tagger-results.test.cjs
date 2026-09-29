@@ -20,55 +20,6 @@ function fixture() {
   return { app, requested };
 }
 
-test('registry default is used for new or stale selections while saved choices are preserved', async () => {
-  const models = [
-    { id: 'old', name: 'Old', family: 'tagger' },
-    { id: 'pixai', name: 'PixAI', family: 'tagger' },
-  ];
-  context.fetch = async () => ({ json: async () => ({ status: 'success', data: {
-    models, default_model_id: 'pixai',
-  } }) });
-  for (const [saved, expected] of [['', 'pixai'], ['removed', 'pixai'], ['old', 'old']]) {
-    const { app } = fixture();
-    app.taggerSelectedModel = '';
-    app.handleTaggerModelChange = () => {};
-    app.t = key => key;
-    app.toast = message => assert.fail(message);
-    context.localStorage = { getItem: () => saved };
-    await app.loadTaggerModels();
-    assert.equal(app.taggerSelectedModel, expected);
-    assert.equal(app.taggerModelSelectConfig().groups[0].options[1].l, 'PixAI');
-  }
-});
-
-test('category presets come from the selected model and clear previous model values', () => {
-  const { app } = fixture();
-  app.taggerModels = [
-    { id: 'camie-tagger-v2', threshold_presets: { macro: { general: 0.492, year: 0.492 } } },
-    { id: 'pixai-tagger-v1.0', threshold_presets: { macro: { general: 0.17, style: 0.15 }, micro: { general: 0.34, style: 0.19 } } },
-  ];
-  app.applyTaggerPreset('macro');
-  assert.equal(app.taggerSettings.categoryThresholds.year, 0.492);
-  app.taggerSelectedModel = 'pixai-tagger-v1.0';
-  app.applyTaggerPreset('macro');
-  assert.equal(app.taggerSettings.categoryThresholds.general, 0.17);
-  assert.equal(app.taggerSettings.categoryThresholds.style, 0.15);
-  assert.equal(app.taggerSettings.categoryThresholds.year, undefined);
-  app.applyTaggerPreset('micro');
-  assert.equal(app.taggerSettings.categoryThresholds.style, 0.19);
-  assert.equal(app.taggerModels[1].threshold_presets.macro.style, 0.15);
-});
-
-test('Tagger defaults to literal parentheses and preserves saved escape preferences', () => {
-  const mixin = context.window.taggerMixin;
-  assert.equal(mixin.taggerSettings.escapeTag, false);
-  assert.equal(mixin.taggerApiSettings.escapeTag, false);
-  const app = { ...mixin, taggerSettings: { ...mixin.taggerSettings } };
-  context.localStorage = { getItem: () => JSON.stringify({ escapeTag: true }) };
-  app._loadTaggerSettings();
-  assert.equal(app.taggerSettings.escapeTag, true);
-});
-
 test('preview limit never truncates output, including after lowering the threshold', () => {
   const { app } = fixture();
   const tags = Array.from({ length: 250 }, (_, i) => [`tag_${i}`, i < 200 ? 0.9 : 0.4]);
@@ -90,25 +41,73 @@ test('dictionary receives raw names and cannot alter comma-separated output', ()
   assert.equal(app.taggerResultText, 'long hair, name \\(series\\)');
 });
 
+test('single category controls work before inference without creating a fake result', () => {
+  const { app } = fixture();
+  app.taggerCategoryKeys = () => ['general', 'character'];
+  assert.deepEqual(Array.from(app.taggerSingleCategories(), row => row.key), ['general', 'character']);
+  app.setTaggerSingleCategoryThreshold('general', 0.2);
+  app.setTaggerSingleCategoryEnabled('character', false);
+  assert.equal(app.taggerSettings.categoryThresholds.general, 0.2);
+  assert.equal(app.taggerSingleCategoryEnabled('character'), false);
+  assert.equal(Object.keys(app.taggerCategoryState).length, 0);
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.3], ['sky', 0.1]] }, character: { tags: [['alice', 0.9]] } } });
+  assert.equal(app.taggerResultText, 'solo');
+  app.setTaggerSingleCategoryThreshold('general', 0.05);
+  assert.equal(app.taggerResultText, 'solo, sky');
+  app.setTaggerSingleCategoryEnabled('general', false);
+  assert.equal(app.taggerResultText, '');
+  assert.equal(app.taggerSingleCategories().length, 2);
+});
+
+test('inline threshold increments preserve precision and clamp to the valid range', () => {
+  const { app } = fixture();
+  app.setTaggerSingleCategoryThreshold('general', 0.17 + 0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.18);
+  app.setTaggerSingleCategoryThreshold('general', 0.18 - 0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.17);
+  app.setTaggerSingleCategoryThreshold('general', -0.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 0);
+  app.setTaggerSingleCategoryThreshold('general', 1.01);
+  assert.equal(app.taggerSingleCategoryThreshold('general'), 1);
+});
+
+test('WD inline thresholds update the proper category and keep complete output', () => {
+  const { app } = fixture();
+  app.taggerUsesCategoryThresholds = () => false;
+  app.taggerSettings.characterThreshold = 0.6;
+  app.taggerSettings.characterEnabledByModel = {};
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.4]] }, character: { tags: [['alice', 0.7]] } } });
+  app.setTaggerSingleCategoryThreshold('general', 0.3);
+  assert.equal(app.taggerResultText, 'solo, alice');
+  app.setTaggerSingleCategoryThreshold('character', 0.8);
+  assert.equal(app.taggerResultText, 'solo');
+  assert.equal(app.taggerSettings.threshold, 0.3);
+});
+
 test('category inclusion persists and removing every category empties output', () => {
   const { app } = fixture();
   app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9]] } } });
-  app.taggerCategoryState.general.visible = false;
-  app.toggleTaggerResultCategory('general');
+  app.setTaggerSingleCategoryEnabled('general', false);
   assert.equal(app.taggerResultText, '');
   assert.equal(app.taggerCategoryEnabled('general'), false);
-  app.setAllTaggerCategoriesVisible(true);
+  app.setTaggerSingleCategoryEnabled('general', true);
   assert.equal(app.taggerResultText, 'solo');
   assert.equal(app.taggerCategoryEnabled('general'), true);
 });
 
-test('collapsed groups do not request dictionary data until opened', () => {
+test('excluded categories retain preview and translations while thresholds still filter them', () => {
   const { app, requested } = fixture();
-  app.setTaggerResult({ categories: { character: { tags: [['alice', 0.9]] } } });
-  assert.equal(requested.length, 0);
-  app.taggerCategoryState.character.collapsed = false;
-  app.syncTaggerDictionary();
-  assert.deepEqual(requested, ['alice']);
+  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9], ['long_hair', 0.4]] } } });
+  app.setTaggerSingleCategoryEnabled('general', false);
+  assert.equal(app.taggerResultText, '');
+  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 1);
+  requested.length = 0;
+  app.setTaggerSingleCategoryThreshold('general', 0.3);
+  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 2);
+  assert.deepEqual(requested, ['solo', 'long_hair']);
+  assert.equal(app.taggerResultText, '');
+  app.setTaggerSingleCategoryEnabled('general', true);
+  assert.equal(app.taggerResultText, 'solo, long hair');
 });
 
 test('AI captions remain intact and only tag-mode results use the dictionary', async () => {

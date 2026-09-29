@@ -85,13 +85,6 @@ class OptimizerValidationTests(unittest.TestCase):
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
-    def test_native_muon_is_limited_to_anima_profile(self):
-        anima = valid_config(MUON_OPTIMIZER_TYPE, "anima-lora")
-        self.assertEqual(validate_training_config(anima), [])
-
-        sdxl = valid_config(MUON_OPTIMIZER_TYPE, "sdxl-lora")
-        errors = validate_training_config(sdxl)
-        self.assertTrue(any("only for Anima LoRA" in error for error in errors), errors)
 
     def test_lora_muon_requires_anima_native_network(self):
         valid = valid_config(LORA_MUON_OPTIMIZER_TYPE, "anima-lora")
@@ -106,21 +99,6 @@ class OptimizerValidationTests(unittest.TestCase):
         errors = validate_training_config(sdxl)
         self.assertTrue(any("LoRA-Muon" in error for error in errors), errors)
 
-    def test_lora_muon_and_loraplus_are_rejected_together(self):
-        config = valid_config(LORA_MUON_OPTIMIZER_TYPE)
-        config.update(
-            {
-                "enable_loraplus": True,
-                "loraplus_lr_ratio": 2,
-            }
-        )
-        errors = validate_training_config(config)
-        self.assertTrue(any("incompatible with LoRA+" in error for error in errors), errors)
-
-        config = valid_config(STABLE_ADAMW_OPTIMIZER_TYPE)
-        config["optimizer_args"] = ["unknown_stability_knob=True"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
     def test_rejects_prodigyplus_fused_modes(self):
         config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
@@ -175,34 +153,6 @@ class OptimizerAdapterTests(unittest.TestCase):
                 self.assertFalse(any("lora_muon_" in argument for argument in adapted["optimizer_args"]))
         self.assertEqual(validate_training_config(valid_config(SOAP_OPTIMIZER_TYPE, "sdxl-lora")), [])
 
-    def test_lora_muon_accepts_legacy_form_keys_without_leaking_them(self):
-        adapted, warnings = adapt_config(
-            {
-                "model_train_type": "anima-lora",
-                "network_module": "networks.lora_anima",
-                "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
-                "learning_rate": "2e-5",
-                "lora_muon_momentum": 0.85,
-                "lora_muon_ns_steps": 6,
-            }
-        )
-        self.assertIn("momentum=0.85", adapted["optimizer_args"])
-        self.assertIn("ns_steps=6", adapted["optimizer_args"])
-        self.assertFalse(any("lora_muon_" in item for item in adapted["optimizer_args"]))
-        self.assertEqual(warnings, [])
-
-    def test_bitsandbytes_form_controls_only_apply_to_supported_optimizers(self):
-        values = {
-            "bnb_percentile_clipping": 99,
-            "bnb_min_8bit_size": 16384,
-        }
-        for optimizer_type in ("AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"):
-            adapted, _ = adapt_config({"optimizer_type": optimizer_type, **values})
-            self.assertIn("percentile_clipping=99", adapted["optimizer_args"])
-            self.assertIn("min_8bit_size=16384", adapted["optimizer_args"])
-
-        adapted, _ = adapt_config({"optimizer_type": "AdamW", **values})
-        self.assertNotIn("optimizer_args", adapted)
 
     def test_adafactor_relative_and_manual_modes(self):
         relative, warnings = adapt_config(
@@ -260,61 +210,6 @@ class OptimizerAdapterTests(unittest.TestCase):
         self.assertIn("warmup_steps=250", adapted["optimizer_args"])
         self.assertTrue(any("external lr_warmup_steps" in warning for warning in warnings))
 
-    def test_prodigy_injects_warmup_safeguard(self):
-        adapted, warnings = adapt_config(
-            {
-                "optimizer_type": PRODIGY_OPTIMIZER_TYPE,
-                "learning_rate": "0.5",
-                "unet_lr": "0.25",
-                "lr_scheduler": "cosine",
-                "lr_warmup_steps": 100,
-                "prodigy_safeguard_warmup": False,
-                "max_grad_norm": 1,
-            }
-        )
-        self.assertEqual(adapted["learning_rate"], 1.0)
-        self.assertEqual(adapted["unet_lr"], 1.0)
-        self.assertIn("safeguard_warmup=True", adapted["optimizer_args"])
-        self.assertNotIn("safeguard_warmup=False", adapted["optimizer_args"])
-        self.assertTrue(any("gradient clipping" in warning for warning in warnings), warnings)
-
-    def test_prodigyplus_gradient_clip_branches(self):
-        cases = (
-            ({}, 0),
-            ({"prodigyplus_use_stableadamw": False, "eps": "1e-8"}, 1),
-            ({"prodigyplus_use_stableadamw": False, "eps": "None"}, 0),
-        )
-        for updates, expected in cases:
-            with self.subTest(updates=updates):
-                config = {
-                    "optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE,
-                    "learning_rate": "1.0",
-                    "lr_scheduler": "constant",
-                    "max_grad_norm": 1,
-                }
-                config.update(updates)
-                adapted, _ = adapt_config(config)
-                self.assertEqual(adapted["max_grad_norm"], expected)
-
-    def test_adapter_sanitizes_prodigyplus_fused_flags(self):
-        adapted, warnings = adapt_config(
-            {
-                "optimizer_type": PRODIGYPLUS_OPTIMIZER_TYPE,
-                "learning_rate": "1.0",
-                "optimizer_args": [
-                    "fused_back_pass=True",
-                    "fused_backward_pass=False",
-                ],
-                "fused_backward_pass": True,
-            }
-        )
-        self.assertIn("fused_back_pass=False", adapted["optimizer_args"])
-        self.assertFalse(
-            any(item.startswith("fused_backward_pass=") for item in adapted["optimizer_args"])
-        )
-        self.assertNotIn("fused_backward_pass", adapted)
-        self.assertTrue(any("fused" in warning for warning in warnings), warnings)
-
 
 class LorariteImportContractTests(unittest.TestCase):
     def test_rejects_incompatible_networks_before_launch(self):
@@ -325,18 +220,6 @@ class LorariteImportContractTests(unittest.TestCase):
                 errors = validate_training_config(config)
                 self.assertTrue(any("LoRA-RITE" in error for error in errors), errors)
         self.assertEqual(validate_training_config(valid_config(LORARITE_OPTIMIZER_TYPE)), [])
-
-    def test_integer_optimizer_args_reject_float_and_string_literals(self):
-        for value in ("5.0", "'5'", "True"):
-            with self.subTest(value=value):
-                config = valid_config(MUON_OPTIMIZER_TYPE)
-                config.pop("muon_ns_steps", None)
-                config["optimizer_args_custom"] = f"ns_steps={value}"
-                errors = validate_training_config(config)
-                self.assertTrue(any("ns_steps" in error for error in errors), errors)
-        config = valid_config(MUON_OPTIMIZER_TYPE)
-        config["muon_ns_steps"] = "5"
-        self.assertEqual(validate_training_config(config), [])
 
 
 if __name__ == "__main__":

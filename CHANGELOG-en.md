@@ -6,6 +6,46 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.929.202123 - 2026-09-29
+
+The training core is upgraded to **sd-scripts v0.12.0**, with shared dependency updates and compatibility adaptations. PixAI inference precision settings are added, tagging layouts and tag-description interactions are revised, and Chinese dictionary update detection and dropdown positioning issues are fixed.
+
+### Training Core and Runtime
+
+- Synced the unmodified upstream sd-scripts v0.12.0 source and tests.
+- Updated shared dependencies, including Accelerate, Diffusers, Transformers, and Hugging Face Hub, and aligned Krea 2 environment checks.
+- Adapted to the updated Hugging Face authentication-token API and Accelerate TensorBoard log-directory behavior, and added the dependency required for LMS preview sampling.
+- Retained the optimizer versions already supported by the project to avoid downgrades from the upstream dependency list.
+- Added Triton to the default training dependencies on Windows and Linux. Startup installs missing packages or corrects incompatible versions, with explicit errors on installation failure.
+
+Existing environments may need to download and install updated dependencies on their first startup after upgrading.
+
+### PixAI Inference Precision
+
+Single-image and batch tagging now provide **Auto, BF16 mixed precision, and FP32** inference options and save the selected setting.
+
+Auto mode selects inference precision based on device capabilities. Devices without BF16 support fall back to FP32. Model weights remain in FP32, and logs record the actual inference precision.
+
+### Tagging Interface and Tag Descriptions
+
+- Unified the single-image and batch layouts for local-model and AI tagging. Repositioned settings, output options, and copy buttons, and standardized fonts, switches, and threshold controls.
+- Single-image results support collapsing all categories or expanding categories that contain tags at the current thresholds.
+- Category switches control inclusion in the output while retaining candidate-tag previews for disabled categories.
+- The entire right panel in single-image tagging now scrolls together, including settings and results. Fixed sidebar overflow in narrow desktop windows.
+- Tag-description popovers adapt their height to the content, support scrolling long descriptions, and track positioning during scrolling, panel resizing, and category folding.
+
+### Chinese Dictionary Updates
+
+Fixed incorrect update detection caused by lagging mirror metadata and cached results. Update checks and downloads now use official metadata, download all five source files at a fixed revision, and verify their fingerprints. Invalid data or failed updates preserve the installed dictionary.
+
+Revised update-check, re-download, and progress controls. Downloads automatically expand the progress view, and interrupted status connections retry automatically. Added Chinese and English error messages, download logs, and verification diagnostics.
+
+### Dropdown Fixes
+
+Fixed positioning interference between dropdown instances and added scroll tracking for preview menus. Open menus retain their direction and height. Keyboard navigation scrolls only the menu contents without moving the page or parent panel.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.927.213042...v26.929.202123)
+
 ## v26.927.213042 - 2026-09-27
 
 This release adds PixAI Tagger v1.0, unifies TensorBoard access with the trainer, and improves startup and console output.

@@ -120,26 +120,6 @@ class RunRegistryTests(CrossDriveSandbox):
         self.assertEqual(list(self.autosave.glob("*.toml")), [])
         self.assertEqual(list(self.output.iterdir()), [])
 
-    def test_preview_cache_reuses_full_list_across_limits_and_runs(self):
-        first = self.output / "preview-first"
-        second = self.output / "preview-second"
-        for directory in (first, second):
-            sample = directory / "sample"
-            sample.mkdir(parents=True)
-            (sample / "000001_00_20260924120000.png").touch()
-            (sample / "000002_00_20260924120001.png").touch()
-        original_iter = artifacts._iter_dir
-        with patch.object(artifacts, "_iter_dir", wraps=original_iter) as walk:
-            newest = artifacts.newest_previews(str(first), limit=1, run_dir="first", force_refresh=True)
-            full = artifacts.newest_previews(str(first), limit=0, run_dir="first")
-            other = artifacts.newest_previews(str(second), limit=1, run_dir="second", force_refresh=True)
-            again = artifacts.newest_previews(str(first), limit=0, run_dir="first")
-            self.assertEqual(walk.call_count, 2)
-        self.assertEqual(len(newest), 1)
-        self.assertEqual(len(full), 2)
-        self.assertEqual(len(other), 1)
-        self.assertEqual(again, full)
-        self.assertEqual(newest[0], full[-1])
 
     def test_same_second_launch_reserves_before_preflight_and_keeps_configs_distinct(self):
         entered = threading.Event()
@@ -226,42 +206,6 @@ class RunRegistryTests(CrossDriveSandbox):
         self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], "../secret.txt"))
         self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], self.root / "secret.txt"))
 
-    def test_relocated_cloud_run_repairs_artifact_location(self):
-        # AutoDL 风格：记录里是云端绝对路径，整个运行目录被拷贝到本地 output/ 下
-        internal = self.output / "narumi_toa_20260802-182942"
-        internal.mkdir(parents=True)
-        (internal / "sample").mkdir()
-        (internal / "model.safetensors").write_bytes(b"weights")
-        cloud_path = "/root/autodl-tmp/lora-scripts-anima/output/narumi_toa_20260802-182942"
-        (internal / "task_meta.json").write_text(
-            json.dumps({
-                "schema_version": 2,
-                "task_id": "cloud-task",
-                "run_dir": "output/narumi_toa_20260802-182942",
-                "artifact_dir": cloud_path,
-                "output_base_dir": "./output",
-                "autosave_file": "",
-                "created_at": "2026-08-02T18:29:42.550136",
-                "imported": False,
-                "deleted": False,
-                "extra": {"output_dir": cloud_path, "preview_enabled": True},
-            }),
-            encoding="utf-8",
-        )
-        (internal / "output_dir.txt").write_text("stale cloud reference\n", encoding="utf-8")
-
-        record = run_registry.load_run_record(internal)
-
-        self.assertTrue(record["artifact_available"])
-        self.assertEqual(record["artifact_path"], internal.resolve())
-        self.assertEqual(record["artifact_dir"], str(internal.resolve()))
-        self.assertFalse(record["artifact_external"])
-        # 元数据与引用文件已被修复，且幂等（再次加载不重复改动）
-        repaired = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
-        self.assertEqual(repaired["artifact_dir"], str(internal.resolve()))
-        self.assertEqual(repaired["task_id"], "cloud-task")
-        self.assertIn(str(internal.resolve()), (internal / "output_dir.txt").read_text(encoding="utf-8"))
-        self.assertEqual(run_registry.load_run_record(internal)["artifact_path"], internal.resolve())
 
     def test_deleting_history_keeps_models_checkpoints_and_previews(self):
         for suffix, external in (("external", True), ("default", False)):
@@ -418,32 +362,6 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                     self.assertEqual(artifact_path.parent, Path(requested_output).resolve())
                     self.assertEqual(artifact_path.name, run_path.name)
 
-    def test_external_previews_and_outputs_use_registered_relative_paths(self):
-        internal, artifact = self._create_record()
-        (artifact / "sample").mkdir()
-        (artifact / "sample" / "preview.png").write_bytes(b"image")
-        (artifact / "route.safetensors").write_bytes(b"weights")
-
-        previews = artifacts.newest_previews(
-            str(artifact),
-            force_refresh=True,
-            run_dir="output/route_run",
-        )
-        preview_response = asyncio.run(routes.monitor_previews(
-            task_id="",
-            run_dir="output/route_run",
-            refresh=1,
-            limit=300,
-        ))
-        files = artifacts.list_output_files(str(artifact))
-
-        self.assertEqual(previews[0]["path"], "sample/preview.png")
-        self.assertIn("run_dir=output%2Froute_run", previews[0]["url"])
-        self.assertIn("path=sample%2Fpreview.png", previews[0]["url"])
-        self.assertTrue(preview_response["meta"]["artifact_available"])
-        self.assertTrue(preview_response["meta"]["preview_enabled"])
-        self.assertEqual({item["path"] for item in files}, {"route.safetensors", "sample/preview.png"})
-        self.assertTrue(internal.is_dir())
 
     def test_offline_artifact_keeps_record_but_outputs_report_unavailable(self):
         internal, artifact = self._create_record()

@@ -123,8 +123,8 @@ class BuildReport:
 
     def text(self) -> str:
         if not self.counts:
-            return "构建报告：无异常记录"
-        lines = ["构建报告："]
+            return "Build report: no issues / 构建报告：无异常记录"
+        lines = ["Build report / 构建报告："]
         for kind in sorted(self.counts):
             lines.append(f"  {kind}: {self.counts[kind]}")
             for sample in self.samples.get(kind, []):
@@ -157,7 +157,7 @@ def pack_aliases(raw: str, canonical_key: str, report: BuildReport, row_name: st
         if not alias:
             continue
         if "|" in alias:
-            report.add("别名含竖线（已丢弃）", f"{row_name} → {alias!r}")
+            report.add("Alias contains pipe (discarded) / 别名含竖线（已丢弃）", f"{row_name} → {alias!r}")
             continue
         key = normalize_key(alias)
         if not key or key in seen:
@@ -175,29 +175,29 @@ def sanitize_text(value: str) -> str:
 def entry_from_row(row: dict, report: BuildReport, origin: str) -> dict | None:
     tag = (row.get("tag") or "").strip()
     if not tag:
-        report.add("canonical 为空（已丢弃）", origin)
+        report.add("Empty canonical (discarded) / canonical 为空（已丢弃）", origin)
         return None
     for bad in _FORBIDDEN_IN_TAG:
         if bad in tag:
-            report.add("canonical 含逗号或换行（已丢弃）", f"{origin} → {tag!r}")
+            report.add("Canonical contains comma or newline (discarded) / canonical 含逗号或换行（已丢弃）", f"{origin} → {tag!r}")
             return None
     if tag != (row.get("tag") or ""):
-        report.add("canonical 首尾有空白（已清理）", f"{origin} → {tag!r}")
+        report.add("Canonical has surrounding whitespace (trimmed) / canonical 首尾有空白（已清理）", f"{origin} → {tag!r}")
     if tag != tag.lower():
-        report.add("canonical 含大写（保留原样）", f"{origin} → {tag!r}")
+        report.add("Canonical contains uppercase (preserved) / canonical 含大写（保留原样）", f"{origin} → {tag!r}")
 
     category = parse_int(row.get("category"), -1)
     if category not in CATEGORIES:
-        report.add("分类缺失或未知（已丢弃）", f"{origin} → {tag!r} category={row.get('category')!r}")
+        report.add("Missing or unknown category (discarded) / 分类缺失或未知（已丢弃）", f"{origin} → {tag!r} category={row.get('category')!r}")
         return None
 
     canonical_key = normalize_key(tag)
     translation = sanitize_text(row.get("zh") or "")
     if "," in translation:
-        report.add("中文含逗号（仅显示与搜索，保留）", f"{tag} → {translation}")
+        report.add("Translation contains comma (preserved for display and search) / 中文含逗号（仅显示与搜索，保留）", f"{tag} → {translation}")
     if translation and normalize_key(translation) == canonical_key:
         # 数据源在没有通用中文名时用原名回填，等同没有翻译
-        report.add("中文与标签同名（视为无翻译）", f"{tag}")
+        report.add("Translation equals tag (treated as untranslated) / 中文与标签同名（视为无翻译）", f"{tag}")
         translation = ""
 
     description = sanitize_text(row.get("notes") or "")
@@ -218,13 +218,13 @@ def load_rows(input_dir: Path, report: BuildReport) -> list[tuple[str, dict]]:
     for name in CATEGORY_FILES:
         path = input_dir / f"{name}.csv"
         if not path.exists():
-            raise SystemExit(f"缺少数据文件：{path}（可加 --download 拉取数据源）")
+            raise SystemExit(f"Missing data file / 缺少数据文件：{path} (use --download to fetch sources / 可加 --download 拉取数据源)")
         with path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             fields = set(reader.fieldnames or [])
             missing = REQUIRED_FIELDS - fields
             if missing:
-                raise SystemExit(f"{path} 缺少字段：{sorted(missing)}（实际字段 {sorted(fields)}）")
+                raise SystemExit(f"{path} Missing fields / 缺少字段：{sorted(missing)} (actual fields / 实际字段：{sorted(fields)})")
             for index, row in enumerate(reader, start=2):
                 rows.append((f"{name}.csv:{index}", row))
     return rows
@@ -235,10 +235,10 @@ def download_sources(input_dir: Path, source_url: str) -> None:
     for name in CATEGORY_FILES:
         url = f"{source_url}/{name}.csv"
         target = input_dir / f"{name}.csv"
-        print(f"下载 {url}")
+        print(f"Downloading / 下载：{url}")
         with urllib.request.urlopen(url) as response:  # noqa: S310 - 固定 HTTPS 数据源
             target.write_bytes(response.read())
-        print(f"  → {target} ({target.stat().st_size} 字节)")
+        print(f"  → {target} ({target.stat().st_size} bytes / 字节)")
 
 
 def build_entries(rows: list[tuple[str, dict]], report: BuildReport) -> list[dict]:
@@ -263,7 +263,7 @@ def build_entries(rows: list[tuple[str, dict]], report: BuildReport) -> list[dic
         keep["description"] = keep["description"] or drop["description"]
         keep["aliases"] = list(dict.fromkeys(keep["aliases"] + drop["aliases"]))
         by_key[key] = keep
-    report.merge("canonical 重复（保留图片数最高）", len(duplicates), duplicates)
+    report.merge("Duplicate canonical (highest post count kept) / canonical 重复（保留图片数最高）", len(duplicates), duplicates)
 
     entries = list(by_key.values())
     entries.sort(key=lambda item: (-item["post_count"], item["canonical"]))
@@ -348,7 +348,11 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
     rows = load_rows(input_dir, report)
     entries = build_entries(rows, report)
     if not entries:
-        raise ValueError("词典没有有效标签，保留已安装版本")
+        raise ValueError("Dictionary has no valid tags; keeping installed version / 词典没有有效标签，保留已安装版本")
+    counts = category_stats(entry["category"] for entry in entries)
+    empty = [item["name"] for item in counts if not item["tag_count"]]
+    if empty:
+        raise ValueError(f"Dictionary categories have no valid tags; keeping installed version / 词典分类没有有效标签，保留已安装版本：{', '.join(empty)}")
 
     core_text = pack_core(entries)
     detail_text = pack_detail(entries)
@@ -391,20 +395,20 @@ def build(input_dir: Path, output_dir: Path, data_version: str, source_url: str,
     bytes_detail = len(detail_text.encode("utf-8"))
 
     lines = [
-        f"源数据：{input_dir}",
-        f"输出目录：{output_dir}",
-        f"标签数：{len(entries)}（源行 {len(rows)}）",
-        f"  有中文：{with_translation}  无中文：{len(entries) - with_translation}",
-        f"  有说明：{with_description}  别名总数：{alias_total}",
+        f"Source data / 源数据：{input_dir}",
+        f"Output directory / 输出目录：{output_dir}",
+        f"Tags / 标签数：{len(entries)} (source rows / 源行：{len(rows)})",
+        f"  Translated / 有中文：{with_translation}  Untranslated / 无中文：{len(entries) - with_translation}",
+        f"  With notes / 有说明：{with_description}  Aliases / 别名总数：{alias_total}",
         f"  core   {core_name}  {bytes_core / 1048576:.2f} MB",
         f"  detail {detail_name}  {bytes_detail / 1048576:.2f} MB",
-        f"  无说明的 detail 槽位：{len(entries) - with_description}",
+        f"  Detail slots without notes / 无说明的 detail 槽位：{len(entries) - with_description}",
     ]
     for category, name in sorted(CATEGORIES.items()):
         count = sum(1 for entry in entries if entry["category"] == category)
         lines.append(f"  {name:10s} {count}")
     if removed:
-        lines.append("清理旧资源：" + ", ".join(removed))
+        lines.append("Removed old assets / 清理旧资源：" + ", ".join(removed))
     lines.append(report.text())
     text = "\n".join(lines)
     if on_report is not None:

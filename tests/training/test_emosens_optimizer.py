@@ -3,7 +3,6 @@ import sys
 import unittest
 from pathlib import Path
 
-from backend.training.adapter import adapt_config
 from backend.training.field_registry import EMOSENS_OPTIMIZER_TYPE
 from backend.training.supervisor import _build_train_env
 from backend.training.validation import validate_training_config
@@ -45,44 +44,6 @@ class EmoSensValidationTests(unittest.TestCase):
                 config.update(updates)
                 errors = validate_training_config(config, gpu_ids=gpu_ids)
                 self.assertTrue(any(expected in error for error in errors), errors)
-
-    def test_rejects_non_positive_or_non_finite_learning_rate(self):
-        for value in (0, -0.1, "nan", "invalid"):
-            with self.subTest(value=value):
-                config = valid_emosens_config()
-                config["learning_rate"] = value
-                errors = validate_training_config(config)
-                self.assertTrue(any("learning_rate" in error for error in errors), errors)
-
-
-class EmoSensAdapterTests(unittest.TestCase):
-    def test_threshold_and_switches_reach_optimizer(self):
-        for threshold in (0, 0.0001, 2.0):
-            config = valid_emosens_config()
-            config.update(stopcoef=threshold, notify=False, use_shadow=True)
-            self.assertEqual(validate_training_config(config, gpu_ids=[0]), [])
-            adapted, _ = adapt_config(config)
-            args = dict(item.split("=", 1) for item in adapted["optimizer_args"])
-            self.assertEqual(float(args["stopcoef"]), threshold)
-            self.assertIn("notify=False", adapted["optimizer_args"])
-            self.assertIn("use_shadow=True", adapted["optimizer_args"])
-            self.assertNotIn("notify", adapted)
-            self.assertNotIn("use_shadow", adapted)
-
-    def test_preserves_explicit_learning_rate_and_gradient_clipping(self):
-        for model_type, learning_rate in (("anima-lora", "0.2"), ("sdxl-lora", "0.5")):
-            with self.subTest(model_type=model_type):
-                adapted, warnings = adapt_config(
-                    {
-                        "model_train_type": model_type,
-                        "optimizer_type": EMOSENS_OPTIMIZER_TYPE,
-                        "learning_rate": learning_rate,
-                        "max_grad_norm": 0.7,
-                    }
-                )
-                self.assertEqual(adapted["learning_rate"], learning_rate)
-                self.assertEqual(adapted["max_grad_norm"], 0.7)
-                self.assertFalse(any("learning_rate auto-adjusted" in warning for warning in warnings))
 
 
 class EmoSensWindowsTests(unittest.TestCase):

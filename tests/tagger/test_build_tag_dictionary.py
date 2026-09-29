@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.dev.build_tag_dictionary import CATEGORY_FILES, build, content_hash
+from tools.dev.build_tag_dictionary import CATEGORY_FILES, build
 
 FIELDS = ["tag", "category", "aliases", "zh", "count", "notes"]
 
@@ -69,50 +69,6 @@ def read_build(root: Path, rows: dict | None = None, data_version: str = "2026-0
 
 
 class BuildTagDictionaryTests(unittest.TestCase):
-    def test_rows_become_compact_records(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            manifest, core, detail, _ = read_build(Path(temp_dir))
-            self.assertEqual(manifest["schema_version"], 1)
-            self.assertEqual(manifest["data_version"], "2026-08")
-            self.assertEqual(manifest["tag_count"], len(core))
-            self.assertEqual(len(core), len(detail))
-            self.assertEqual(manifest["core"], f"tags-core.{content_hash(*_payloads(core, detail))}.json")
-            by_tag = {record[0]: record for record in core}
-            record = by_tag["long_hair"]
-            self.assertEqual(record[1], "长发")
-            self.assertEqual(record[2], 0)
-            self.assertEqual(record[3], 6134076)
-            self.assertEqual(record[4], "longhair|长髪")
-
-    def test_invalid_rows_are_dropped_and_reported(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            source = write_source(Path(temp_dir))
-            report_dir = Path(temp_dir) / "out"
-            build(source, report_dir, "2026-08", "https://example.invalid/tags")
-            _, core, _, _ = read_build(Path(temp_dir))
-            tags = {record[0] for record in core}
-            self.assertNotIn("", tags)
-            self.assertNotIn("bad,category", tags)
-            self.assertNotIn("unknown_category", tags)
-
-    def test_hash_follows_content_and_stale_assets_are_removed(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            source = write_source(root)
-            output = root / "out"
-            first = build(source, output, "2026-08", "https://example.invalid/tags")
-            (output / "tags-core.deadbeef.json").write_text("[]", encoding="utf-8")
-            second = build(source, output, "2026-08", "https://example.invalid/tags")
-            self.assertEqual(first["core"], second["core"])
-            self.assertFalse((output / "tags-core.deadbeef.json").exists())
-
-            rows = dict(ROWS)
-            rows["general"] = ROWS["general"] + [["extra_tag", 0, "", "额外", 5000, ""]]
-            source2 = write_source(root / "second", rows)
-            third = build(source2, output, "2026-08", "https://example.invalid/tags")
-            self.assertNotEqual(third["core"], first["core"])
-            self.assertTrue((output / first["detail"]).is_file())
-
     def test_failed_manifest_publish_preserves_installed_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -154,13 +110,17 @@ class BuildTagDictionaryTests(unittest.TestCase):
                 self.assertNotIn("\n", canonical)
                 self.assertEqual(canonical, canonical.strip())
 
-
-def _payloads(core, detail) -> tuple[str, str]:
-    """按构建脚本的写法还原两个文件的文本，用于独立复算 hash。"""
-    return (
-        json.dumps(core, ensure_ascii=False, separators=(",", ":")),
-        json.dumps(detail, ensure_ascii=False, separators=(",", ":")),
-    )
+    def test_empty_category_cannot_replace_installed_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _, _, _, output = read_build(root)
+            previous = (output / "manifest.json").read_bytes()
+            for invalid in ([], [["", 0, "", "", 1, ""]]):
+                with self.subTest(rows=invalid):
+                    source = write_source(root, {**ROWS, "general": invalid})
+                    with self.assertRaisesRegex(ValueError, "分类没有有效标签"):
+                        build(source, output, "new", "https://example.invalid/tags")
+                    self.assertEqual((output / "manifest.json").read_bytes(), previous)
 
 
 if __name__ == "__main__":

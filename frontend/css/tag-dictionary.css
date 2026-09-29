@@ -114,44 +114,6 @@
 .te-dict-hover-val { flex: 1; min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
 .te-dict-mono { font-family: var(--font-mono); font-size: 10px; }
 
-/* 说明默认压到 3 行，Danbooru 注释不该占满整个面板 */
-.te-dict-hover-desc.clamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.te-dict-hover-more {
-  flex-basis: 100%;
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font-size: 10px;
-  cursor: pointer;
-}
-.te-dict-hover-more:hover { text-decoration: underline; }
-
-.te-dict-hover-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border-subtle);
-}
-.te-dict-hover-actions button {
-  padding: 3px 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.te-dict-hover-actions button:hover { border-color: var(--accent); color: var(--accent); }
 .te-dict-hover-count {
   margin-left: auto;
   font-size: 10px;

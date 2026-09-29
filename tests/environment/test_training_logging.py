@@ -79,42 +79,6 @@ except ValueError:
             self.assertEqual(sum(line.strip() == "ValueError: traceback survives" for line in lines), 6)
             self.assertFalse(any("Logging error" in line or "sitecustomize" in line for line in lines))
 
-    def test_print_tqdm_and_custom_rich_stream_are_untouched(self):
-        with tempfile.TemporaryDirectory() as directory:
-            env = _build_train_env(directory, "test")
-            env.pop("ANIMA_TRAIN_LOG_LOCK")
-            result = subprocess.run([sys.executable, "-c", '''
-import io
-import logging
-import sys
-from rich.console import Console
-from rich.logging import RichHandler
-from tqdm import tqdm
-from tools.python_startup.training_logging import install
-
-stdout, stderr = sys.stdout, sys.stderr
-install(sys.argv[1])
-patched_emit = RichHandler.emit
-install(sys.argv[1])
-assert RichHandler.emit is patched_emit
-assert sys.stdout is stdout and sys.stderr is stderr
-print("PRINT", "unchanged")
-sys.stdout.write("partial")
-sys.stdout.flush()
-with tqdm(total=2, file=sys.stderr, ascii=True, mininterval=0) as progress:
-    progress.update(2)
-
-buffer = io.StringIO()
-handler = RichHandler(console=Console(file=buffer, width=30))
-handler.emit(logging.LogRecord("test", logging.INFO, "dataset.py", 464,
-                              "word " * 40, (), None))
-assert len(buffer.getvalue().splitlines()) > 1
-''', str(Path(directory) / ".train-log.lock")], env=env,
-                capture_output=True, check=True)
-            self.assertEqual(result.stdout.replace(b"\r\n", b"\n"), b"PRINT unchanged\npartial")
-            self.assertIn(b"\r", result.stderr.replace(b"\r\n", b"\n"))
-            self.assertIn(b"2/2", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

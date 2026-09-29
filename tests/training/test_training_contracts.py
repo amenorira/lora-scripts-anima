@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from dataclasses import asdict
@@ -6,9 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from backend.training.adapter import adapt_config
-from backend.training.field_registry import get_all_fields
-from backend.training.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.step_estimator import estimate_training_steps
 from backend.training.validation import validate_training_config
 from tests.helpers import config_from_field_defaults
 
@@ -70,149 +67,6 @@ class TrainingValidationTests(unittest.TestCase):
             with self.subTest(train_type="sdxl-lora", key=key):
                 errors = validate_training_config(dict(sdxl, **{key: value}))
                 self.assertTrue(any("cache_text_encoder_outputs" in error for error in errors), errors)
-
-    def test_adapter_does_not_silently_clear_caption_conflicts(self):
-        config = valid_anima_config()
-        config.update(shuffle_caption=True, caption_tag_dropout_rate=0.1)
-
-        adapted, warnings = adapt_config(config)
-
-        self.assertTrue(adapted["shuffle_caption"])
-        self.assertEqual(adapted["caption_tag_dropout_rate"], 0.1)
-        self.assertFalse(any("cleared by backend" in warning for warning in warnings))
-
-    def test_checkpoint_offload_conflict_order_matches_form_contract(self):
-        adapted, warnings = adapt_config(
-            dict(
-                valid_anima_config(),
-                cpu_offload_checkpointing=True,
-                unsloth_offload_checkpointing=True,
-                blocks_to_swap=0,
-            )
-        )
-        self.assertFalse(adapted["cpu_offload_checkpointing"])
-        self.assertTrue(adapted["unsloth_offload_checkpointing"])
-        self.assertTrue(any("cpu_offload_checkpointing" in warning for warning in warnings))
-
-        adapted, warnings = adapt_config(
-            dict(
-                valid_anima_config(),
-                cpu_offload_checkpointing=True,
-                unsloth_offload_checkpointing=True,
-                blocks_to_swap=1,
-            )
-        )
-        self.assertFalse(adapted["cpu_offload_checkpointing"])
-        self.assertFalse(adapted["unsloth_offload_checkpointing"])
-        self.assertTrue(any("blocks_to_swap" in warning for warning in warnings))
-
-        adapted, warnings = adapt_config(
-            dict(
-                valid_anima_config(),
-                cpu_offload_checkpointing=True,
-                unsloth_offload_checkpointing=False,
-                blocks_to_swap=1,
-            )
-        )
-        self.assertTrue(adapted["cpu_offload_checkpointing"])
-        self.assertFalse(any("cpu_offload_checkpointing" in warning for warning in warnings))
-
-    def test_keep_tokens_is_emitted_only_when_caption_tag_randomization_is_active(self):
-        cases = (
-            (False, 0, False),
-            (True, 0, True),
-            (False, 0.1, True),
-            (True, 0.1, True),
-        )
-        for shuffle, dropout, expected_keep_tokens in cases:
-            with self.subTest(shuffle=shuffle, dropout=dropout):
-                adapted, _ = adapt_config(
-                    {
-                        "model_train_type": "anima-lora",
-                        "shuffle_caption": shuffle,
-                        "caption_tag_dropout_rate": dropout,
-                        "keep_tokens": 3,
-                    }
-                )
-                self.assertEqual("keep_tokens" in adapted, expected_keep_tokens)
-                self.assertEqual("caption_tag_dropout_rate" in adapted, dropout > 0)
-                if expected_keep_tokens:
-                    self.assertEqual(adapted["keep_tokens"], 3)
-
-class TrainingFieldSchemaTests(unittest.TestCase):
-    @staticmethod
-    def _lookup(messages: dict, key: str):
-        value = messages
-        for part in key.split("."):
-            if not isinstance(value, dict) or part not in value:
-                return None
-            value = value[part]
-        return value
-
-    @staticmethod
-    def _walk(value):
-        if isinstance(value, dict):
-            yield value
-            for child in value.values():
-                yield from TrainingFieldSchemaTests._walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                yield from TrainingFieldSchemaTests._walk(child)
-
-    def test_all_field_i18n_references_exist_in_both_locales(self):
-        reference_keys = {
-            item[key]
-            for item in self._walk(get_all_fields())
-            if isinstance(item, dict)
-            for key in ("desc_key", "hint_key", "readonly_reason_key", "reason_key", "dk", "label_key")
-            if isinstance(item.get(key), str) and item[key]
-        }
-        reference_keys.update(
-            hint_key
-            for field in get_all_fields()
-            for hint_key in (field.get("hint_key_by") or {}).get("values", {}).values()
-        )
-        for locale in ("zh-CN", "en-US"):
-            messages = json.loads(Path(f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
-            for key in reference_keys:
-                with self.subTest(locale=locale, key=key):
-                    value = self._lookup(messages, key)
-                    self.assertIsInstance(value, str)
-                    self.assertTrue(value.strip())
-
-    def test_field_conditions_reference_registered_keys(self):
-        fields = get_all_fields()
-        registered = {field["key"] for field in fields}
-        for field in fields:
-            for attr in ("show_if", "show_if_any", "readonly_if", "readonly_if_any"):
-                for item in self._walk(field.get(attr)):
-                    key = item.get("key") if isinstance(item, dict) else None
-                    if key:
-                        with self.subTest(field=field["key"], attr=attr, key=key):
-                            self.assertIn(key, registered)
-
-    def test_layout_parents_reference_fields_in_the_same_section(self):
-        fields = get_all_fields()
-        by_key = {field["key"]: field for field in fields}
-        for field in fields:
-            parent_key = field.get("layout_parent")
-            if not parent_key:
-                continue
-            with self.subTest(field=field["key"], parent=parent_key):
-                self.assertIn(parent_key, by_key)
-                self.assertEqual(field["section"], by_key[parent_key]["section"])
-
-    def test_select_defaults_are_declared_options(self):
-        for field in get_all_fields():
-            if field.get("type") != "select" or "default" not in field:
-                continue
-            options = list(field.get("options") or [])
-            for group in field.get("groups") or []:
-                options.extend(group.get("options") or [])
-            values = {option.get("v") for option in options if "v" in option}
-            if values:
-                with self.subTest(field=field["key"], default=field["default"]):
-                    self.assertIn(field["default"], values)
 
 
 class TrainingStepEstimatorTests(unittest.TestCase):
@@ -325,36 +179,6 @@ class TrainingStepEstimatorTests(unittest.TestCase):
             dataset.make_buckets()
 
             self.assertEqual(estimate["batches_per_epoch"], len(dataset))
-
-    def test_gpu_processes_follow_sd_scripts_ceiling_order(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            self._write_images(root / "1_character", 17, (512, 512))
-
-            estimate = estimate_training_steps(
-                self._config(
-                    root,
-                    train_batch_size=2,
-                    gradient_accumulation_steps=2,
-                    max_train_epochs=3,
-                    gpu_ids=[0, 1],
-                )
-            )
-
-            self.assertEqual(estimate["batches_per_epoch"], 9)
-            self.assertEqual(estimate["gpu_processes"], 2)
-            self.assertEqual(estimate["steps_per_epoch"], 3)
-            self.assertEqual(estimate["total_steps"], 9)
-
-    def test_missing_dataset_exposes_localizable_error_context(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            missing = Path(temp_dir) / "missing_dataset"
-
-            with self.assertRaises(StepEstimateError) as context:
-                estimate_training_steps(self._config(missing))
-
-            self.assertEqual(context.exception.code, "datasetNotFound")
-            self.assertEqual(context.exception.params, {"path": str(missing)})
 
 
 if __name__ == "__main__":

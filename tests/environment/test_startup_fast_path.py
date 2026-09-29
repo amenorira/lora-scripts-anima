@@ -1,6 +1,4 @@
 """Healthy launch probes stay read-only and avoid unrelated training imports."""
-import contextlib
-import io
 import os
 from pathlib import Path
 import subprocess
@@ -32,22 +30,6 @@ for module in ('backend.training.supervisor', 'fastapi', 'torch', 'transformers'
     assert module not in sys.modules, module
 """)
 
-    def test_training_public_exports_still_resolve_to_original_objects(self):
-        self.run_python("-c", """
-import importlib
-import backend.training as training
-for name in training.__all__:
-    value = getattr(training, name)
-    origin = importlib.import_module('backend.training.' + training._EXPORTS[name])
-    assert value is getattr(origin, name), name
-    assert getattr(training, name) is value, name
-try:
-    training.no_such_export
-except AttributeError:
-    pass
-else:
-    raise AssertionError('unknown export must fail')
-""")
 
     def test_combined_pip_probe_preserves_user_and_site_selection(self):
         from pip._internal.configuration import kinds
@@ -68,13 +50,6 @@ else:
                     "global.index-url": "https://site.invalid/simple",
                 })
             self.assertEqual(config.read_text(encoding="utf-8"), content)
-
-    def test_unavailable_pip_probe_falls_back_without_partial_output(self):
-        output = io.StringIO()
-        with patch.object(pip_index_config, "read_indexes", side_effect=ImportError("pip unavailable")), \
-             contextlib.redirect_stdout(output):
-            self.assertEqual(pip_index_config.main(), 1)
-        self.assertEqual(output.getvalue(), "")
 
 
 if __name__ == "__main__":

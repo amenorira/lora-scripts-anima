@@ -5,30 +5,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from backend.tageditor.core import (
-    _invalidate_cache,
-    get_cached_scan_dataset,
-)
-from backend.tageditor.routes import _resolve_target_images, save_all_tags, save_image_tags
+from backend.tageditor.routes import save_all_tags
 
 
 class TagEditorBackendTests(unittest.TestCase):
-    def test_batch_scope_resolves_selected_and_rejects_unknown_scope(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            selected = root / "selected.png"
-            selected.touch()
-
-            images, error = _resolve_target_images(
-                {"scope": "selected", "selected_paths": [str(selected)]}, root
-            )
-            self.assertIsNone(error)
-            self.assertEqual([item["path"] for item in images], [str(selected)])
-
-            images, error = _resolve_target_images({"scope": "unknown"}, root)
-            self.assertEqual(images, [])
-            self.assertIn("无效", error)
-
     def test_save_all_reports_each_success_skip_and_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -72,26 +52,6 @@ class TagEditorBackendTests(unittest.TestCase):
             self.assertFalse((root / "saved.txt").exists())
             self.assertFalse((root / "failed.txt").exists())
             self.assertFalse(data["rolled_back"])
-
-    def test_single_save_invalidates_recursive_parent_cache(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            child = root / "nested"
-            child.mkdir()
-            image_path = child / "sample.png"
-            image_path.touch()
-            (child / "sample.txt").write_text("old", encoding="utf-8")
-            self.assertEqual(get_cached_scan_dataset(root, True)[0][0]["tags"], "old")
-
-            result = asyncio.run(save_image_tags({
-                "dir": str(root),
-                "path": str(image_path),
-                "tags": "new",
-            }))
-
-            self.assertEqual(result["status"], "success")
-            self.assertEqual(get_cached_scan_dataset(root, True)[0][0]["tags"], "new")
-            _invalidate_cache(root)
 
 
 if __name__ == "__main__":

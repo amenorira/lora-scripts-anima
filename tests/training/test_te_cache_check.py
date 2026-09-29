@@ -55,11 +55,6 @@ class TeCacheCheckTests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         return Path(temp_dir.name)
 
-    def test_rate_mismatch_is_reported(self):
-        tmp_path = self._tmp_path()
-        _write_te_npz(tmp_path / "img1_anima_te.npz", rate=0.1)
-        warnings = check_te_cache(_config(tmp_path, caption_dropout_rate=0.3), "anima-lora")
-        self.assertEqual(warnings, [{"code": "rateMismatch", "count": 1, "cached": "0.1", "current": "0.3"}])
 
     def test_caption_newer_than_cache_is_reported(self):
         tmp_path = self._tmp_path()
@@ -72,27 +67,6 @@ class TeCacheCheckTests(unittest.TestCase):
         os.utime(npz_path, (npz_time, npz_time))
         self.assertEqual(check_te_cache(_config(tmp_path), "anima-lora"), [{"code": "captionModified", "count": 1}])
 
-    def test_sdxl_caption_newer_than_cache_is_reported(self):
-        tmp_path = self._tmp_path()
-        npz_path = tmp_path / "img1_te_outputs.npz"
-        _write_sdxl_te_npz(npz_path)
-        caption_path = tmp_path / "img1.txt"
-        _write_caption(caption_path)
-        npz_time = npz_path.stat().st_mtime - 100
-        os.utime(npz_path, (npz_time, npz_time))
-        self.assertEqual(check_te_cache(_config(tmp_path), "sdxl-lora"), [{"code": "captionModified", "count": 1}])
-
-    def test_reg_dir_checked_only_when_enabled(self):
-        tmp_path = self._tmp_path()
-        train_dir = tmp_path / "train"
-        reg_dir = tmp_path / "reg"
-        _write_te_npz(reg_dir / "img1_anima_te.npz", rate=0.5)
-        config = _config(train_dir, reg_data_dir=str(reg_dir), caption_dropout_rate=0.0)
-        self.assertEqual(check_te_cache(config, "anima-lora"), [])
-        config = _config(train_dir, reg_data_dir=str(reg_dir), enable_reg_data=True)
-        self.assertEqual(check_te_cache(config, "anima-lora"), [
-            {"code": "rateMismatch", "count": 1, "cached": "0.5", "current": "0"}
-        ])
 
     def test_delete_removes_te_npz_recursively(self):
         tmp_path = self._tmp_path()

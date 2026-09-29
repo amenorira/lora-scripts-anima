@@ -17,7 +17,6 @@ window.taggerMixin = {
   taggerResultText: '',
   taggerResultCategories: {},
   taggerCategoryState: {},
-  taggerCategoryGlobalThreshold: 0.5,
   taggerFilmstripCollapsed: false,
   taggerFailedOnly: false,
   taggerLogsOpen: false,
@@ -31,8 +30,6 @@ window.taggerMixin = {
   taggerDragOver: false,
   taggerSingleLeftWidth: 55,
   taggerSingleResizing: false,
-  taggerSingleOutputCollapsed: true,
-  taggerSingleModelCollapsed: false,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -44,6 +41,7 @@ window.taggerMixin = {
     addRatingTag: false,
     addModelTag: false,
     unloadModel: false,
+    precision: 'auto',
     removeDuplicated: false,
     categoryThresholds: {},
     categoryEnabledByModel: {},
@@ -141,7 +139,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260927-pixai-runtime');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260929-tagger-review22');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -170,6 +168,7 @@ window.taggerMixin = {
       const saved = JSON.parse(localStorage.getItem('anima-tagger-settings') || '{}');
       delete saved.categoryEnabled;
       this.taggerSettings = Object.assign({}, this.taggerSettings, saved);
+      if (!['auto', 'bf16', 'fp32'].includes(this.taggerSettings.precision)) this.taggerSettings.precision = 'auto';
     } catch (_) {}
   },
 
@@ -510,6 +509,13 @@ window.taggerMixin = {
     };
   },
 
+  taggerPrecisionSelectConfig() {
+    return { options: ['auto', 'bf16', 'fp32'].map(value => ({
+      v: value, l: this.t(`tagger.precision_${value}`),
+      d: this.t(`tagger.precision_${value}Desc`),
+    })) };
+  },
+
   taggerPresetSelectConfig() {
     return { options: this.taggerPresetOptions().map(option => ({
       v: option[0],
@@ -612,6 +618,46 @@ window.taggerMixin = {
   taggerCategoryLabel(key, fallback = key) {
     const suffix = key.charAt(0).toUpperCase() + key.slice(1);
     return this.t('tagger.cat' + suffix, fallback);
+  },
+
+  // Configuration and results share category rows, without fabricating inference data.
+  taggerSingleCategories() {
+    const keys = this.taggerUsesCategoryThresholds() ? [...this.taggerCategoryKeys()] : ['general', 'character'];
+    if (this.taggerSupportsModelTag() && !keys.includes('model')) keys.push('model');
+    return [...new Set([...keys, ...Object.keys(this.taggerCategoryState)])].map(key => ({
+      key, label: this.taggerCategoryLabel(key), result: this.taggerCategoryState[key],
+    }));
+  },
+
+  taggerSingleCategoryEnabled(key) {
+    if (this.taggerUsesCategoryThresholds()) return this.taggerCategoryEnabled(key);
+    if (key === 'character') return this.taggerCharacterEnabled();
+    return this.taggerCategoryState[key]?.visible !== false;
+  },
+
+  setTaggerSingleCategoryEnabled(key, enabled) {
+    if (this.taggerUsesCategoryThresholds()) this.setTaggerCategoryEnabled(key, enabled);
+    else if (key === 'character') this.setTaggerCharacterEnabled(enabled);
+    else if (this.taggerCategoryState[key]) {
+      this.taggerCategoryState[key].visible = enabled;
+      this.recalculateTaggerCategory(key);
+    }
+  },
+
+  taggerSingleCategoryThreshold(key) {
+    return this.taggerUsesCategoryThresholds() ? this.taggerSettings.categoryThresholds[key] ?? 0.35
+      : key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold;
+  },
+
+  setTaggerSingleCategoryThreshold(key, value) {
+    const threshold = Number(Math.max(0, Math.min(1, Number(value) || 0)).toFixed(3));
+    if (this.taggerUsesCategoryThresholds()) {
+      this.taggerSettings.categoryThresholds[key] = threshold;
+      this.updateTaggerCategorySetting(key);
+    } else {
+      this.taggerSettings[key === 'character' ? 'characterThreshold' : 'threshold'] = threshold;
+      this.setTaggerCustomPreset();
+    }
   },
 
   handleTaggerModelChange(resetPreset = true) {
@@ -728,7 +774,7 @@ window.taggerMixin = {
   },
 
   async selectTaggerSourceMode(mode) {
-    if (this.taggerRunning || this.taggerStarting || this.taggerScanning
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.taggerApiSingleRunning
       || !['folder', 'single', 'api-folder', 'api-single'].includes(mode) || mode === this.taggerSourceMode) return;
     this.stopTaggerSingleResize();
     this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
@@ -1108,12 +1154,11 @@ window.taggerMixin = {
     if (this.taggerSourceMode === 'single') {
       Object.entries(this.taggerResultCategories).forEach(([key, category]) => {
         const rawTags = Array.isArray(category) ? category : (category.tags || []);
-        if (!rawTags.length) return;
         const defaultThreshold = key === 'character' ? this.taggerSettings.characterThreshold : this.taggerSettings.threshold;
         state[key] = {
           label: this.taggerCategoryLabel(key, category.label || labels[key] || key),
           tags: rawTags,
-          threshold: Number(this.taggerSettings.categoryThresholds[key] ?? defaultThreshold ?? 0.5),
+          threshold: Number((this.taggerUsesCategoryThresholds() ? this.taggerSettings.categoryThresholds[key] : defaultThreshold) ?? 0.5),
           visible: this.taggerUsesCategoryThresholds()
             ? this.taggerCategoryEnabled(key)
             : key !== 'character' || !this.taggerSupportsCharacterToggle() || this.taggerCharacterEnabled(),
@@ -1134,7 +1179,6 @@ window.taggerMixin = {
     });
     this.taggerCategoryState = ordered;
     if (Object.keys(state).length) {
-      this.taggerCategoryGlobalThreshold = Number(state.general?.threshold ?? this.taggerSettings.threshold ?? 0.5);
       this.recalculateAllTaggerCategories(true);
     }
   },
@@ -1144,62 +1188,13 @@ window.taggerMixin = {
     if (!category) return;
     const threshold = Math.max(0, Math.min(1, Number(category.threshold) || 0));
     category.threshold = threshold;
-    category.visibleTags = category.visible
-      ? category.tags.filter(tag => Number(tag[1]) >= threshold)
-      : [];
+    category.visibleTags = category.tags.filter(tag => Number(tag[1]) >= threshold);
     if (updateResult) this.refreshTaggerResultFromCategories();
-  },
-
-  toggleTaggerResultCategory(key) {
-    const category = this.taggerCategoryState[key];
-    if (!category) return;
-    if (this.taggerUsesCategoryThresholds()) {
-      this.setTaggerCategoryEnabled(key, category.visible);
-      return;
-    }
-    if (key === 'character' && this.taggerSupportsCharacterToggle()) {
-      this.setTaggerCharacterEnabled(category.visible);
-      return;
-    }
-    this.recalculateTaggerCategory(key);
   },
 
   recalculateAllTaggerCategories(updateResult = true) {
     Object.keys(this.taggerCategoryState).forEach(key => this.recalculateTaggerCategory(key, false));
     if (updateResult) this.refreshTaggerResultFromCategories();
-  },
-
-  applyTaggerGlobalThreshold() {
-    const threshold = Math.max(0, Math.min(1, Number(this.taggerCategoryGlobalThreshold) || 0));
-    this.taggerCategoryGlobalThreshold = threshold;
-    Object.values(this.taggerCategoryState).forEach(category => { category.threshold = threshold; });
-    if (this.taggerUsesCategoryThresholds()) {
-      this.taggerSettings.preset = 'custom';
-      this.taggerSettings.categoryThresholds = Object.fromEntries(this.taggerCategoryKeys().map(key => [key, threshold]));
-    } else {
-      this.taggerSettings.threshold = threshold;
-      this.taggerSettings.characterThreshold = threshold;
-    }
-    this.saveTaggerSettings();
-    this.recalculateAllTaggerCategories(true);
-  },
-
-  setAllTaggerCategoriesVisible(visible) {
-    Object.values(this.taggerCategoryState).forEach(category => { category.visible = visible; });
-    if (this.taggerUsesCategoryThresholds()) {
-      this.taggerSettings.categoryEnabledByModel = {
-        ...this.taggerSettings.categoryEnabledByModel,
-        [this.taggerSelectedModel]: {
-          ...this.taggerSettings.categoryEnabledByModel[this.taggerSelectedModel],
-          ...Object.fromEntries(Object.keys(this.taggerCategoryState).map(key => [key, visible])),
-        },
-      };
-      this.saveTaggerSettings();
-    }
-    if (this.taggerSupportsCharacterToggle() && this.taggerCategoryState.character) {
-      this.setTaggerCharacterEnabled(visible);
-    }
-    this.recalculateAllTaggerCategories(true);
   },
 
   formatTaggerOutputName(name) {
@@ -1243,6 +1238,23 @@ window.taggerMixin = {
     this.syncTaggerDictionary();
   },
 
+  setTaggerCategoriesCollapsed(collapsed, container) {
+    const changed = new Set();
+    Object.entries(this.taggerCategoryState).forEach(([key, category]) => {
+      const next = collapsed || !category.visibleTags.length;
+      if (category.collapsed === next) return;
+      category.collapsed = next;
+      changed.add(key);
+    });
+    container?.querySelectorAll('.tagger-category-section').forEach(section => {
+      const key = section.dataset.category;
+      if (changed.has(key)) {
+        this._animateCollapse(section.querySelector('.tagger-category-body'), this.taggerCategoryState[key].collapsed);
+      }
+    });
+    this.syncTaggerDictionary();
+  },
+
   taggerCategoryPreview(category) {
     return category.visibleTags.slice(0, 200);
   },
@@ -1254,10 +1266,6 @@ window.taggerMixin = {
         .filter(category => !category.collapsed)
         .flatMap(category => this.taggerCategoryPreview(category).map(tag => tag[0]));
     this.tagDictionaryLookupTags(tags);
-  },
-
-  taggerVisibleCategoryCount() {
-    return this.taggerResultTags().length;
   },
 
   updateTaggerOutputSettings() {
@@ -1290,6 +1298,7 @@ window.taggerMixin = {
         conflict: this.taggerSettings.conflict,
         write_captions: this.taggerSourceMode === 'folder',
         options: {
+          precision: this.taggerSettings.precision,
           threshold: Number(this.taggerSettings.threshold),
           character_threshold: Number(this.taggerSettings.characterThreshold),
           category_thresholds: this.taggerEffectiveCategoryThresholds(),

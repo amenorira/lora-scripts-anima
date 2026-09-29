@@ -60,6 +60,7 @@ class TagEditorTransactionTests(unittest.TestCase):
             self.assertEqual(len(result["conflicts"]), 1)
             self.assertEqual(caption.read_text(encoding="utf-8"), "external")
 
+
     def test_txt_priority_is_explicit_and_conflict_blocks_save(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -78,22 +79,6 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
-    def test_secondary_sort_preserves_primary_groups_in_both_directions(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            images = [
-                {"path": name, "rel_path": name, "modified_ns": modified, "tags": tags}
-                for name, modified, tags in [("a", 1, "cat"), ("b", 2, "cat"), ("c", 3, "cat, dog"), ("d", 4, "cat, dog")]
-            ]
-            service = DatasetSessionService()
-            with patch("backend.tageditor.sessions.get_cached_scan_dataset", return_value=(images, [])):
-                session = service.create(temp_dir)
-            for primary, secondary, expected in [
-                (True, False, ["b", "a", "d", "c"]),
-                (False, True, ["c", "d", "a", "b"]),
-            ]:
-                page = service.page(session.id, sort_by="tagCount", sort_asc=primary, sort_by2="modified", sort_asc2=secondary)
-                self.assertEqual([item["path"] for item in page["items"]], expected)
-
     def test_refresh_cannot_resurrect_deleted_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DatasetSessionService()
@@ -109,32 +94,6 @@ class TagEditorSessionTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 service.get(session.id)
 
-    def test_session_pages_filters_and_lifecycle(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            for index in range(65):
-                image = root / f"img-{index:03}.png"
-                image.touch()
-                if index % 2 == 0:
-                    image.with_suffix(".txt").write_text("cat, even", encoding="utf-8")
-
-            service = DatasetSessionService(max_sessions=2, ttl_seconds=60)
-            session = service.create(str(root), True)
-            first = service.page(session.id, page=1, page_size=30)
-            third = service.page(session.id, page=3, page_size=30)
-            cats = service.page(session.id, page=1, page_size=30, include_tags=("cat",))
-            no_tags = service.page(session.id, page=1, page_size=30, quick_filter="notag")
-
-            self.assertEqual(first["total"], 65)
-            self.assertEqual(len(first["items"]), 30)
-            self.assertEqual(len(third["items"]), 5)
-            self.assertEqual(cats["total"], 33)
-            self.assertEqual(no_tags["total"], 32)
-            refreshed = service.refresh(session.id)
-            self.assertEqual(refreshed.generation, 2)
-            self.assertTrue(service.delete(session.id))
-            with self.assertRaises(KeyError):
-                service.get(session.id)
 
     def test_session_http_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:

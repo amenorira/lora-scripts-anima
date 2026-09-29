@@ -247,7 +247,10 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
 def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_categories: bool = False) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
-        raw = interrogator.interrogate(image)
+        if model_id == "pixai-tagger-v1.0":
+            raw = interrogator.interrogate(image, precision=options.get("precision", "auto"))
+        else:
+            raw = interrogator.interrogate(image)
     categories = {
         key: {
             "label": CATEGORY_LABELS.get(key, key),
@@ -613,6 +616,9 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 if not model_ready:
                     model_ready = True
                     _task_log(task, f"Model ready / 模型就绪: {spec.name}")
+                    if spec.id == "pixai-tagger-v1.0":
+                        label = available_interrogators[spec.id].precision_label
+                        _task_log(task, f"Inference precision / 推理精度: {label} (requested={options.get('precision', 'auto')})")
                 result = {
                     "index": index,
                     "name": path.name,
@@ -731,6 +737,10 @@ def create_task(payload: dict) -> str:
     if conflict not in {"ignore", "copy", "prepend"}:
         raise ValueError("Invalid caption conflict action / 无效的标签冲突策略")
     options = dict(payload.get("options") or {})
+    if model_id == "pixai-tagger-v1.0":
+        from backend.tagger.interrogators.pixai import PixAITaggerInterrogator
+
+        PixAITaggerInterrogator.validate_precision(options.get("precision", "auto"))
     write_captions = bool(payload.get("write_captions", source_kind == "folder"))
     task_id = uuid.uuid4().hex[:12]
     task = {

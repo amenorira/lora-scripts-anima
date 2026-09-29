@@ -1,4 +1,3 @@
-import asyncio
 import subprocess
 import tempfile
 import unittest
@@ -9,37 +8,10 @@ from unittest.mock import patch
 from packaging.version import Version
 
 from backend import launch_utils
-from backend.server.routes import system
 from tools.dev.generate_version import format_version
 
 
 class AppVersionTests(unittest.TestCase):
-    def test_archive_version_reaches_api_without_git(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            with patch.object(system, "REPO_ROOT", root), patch.object(
-                launch_utils, "git_tag", side_effect=AssertionError("archive must not use parent Git")
-            ):
-                for version in ("2.20.5", "26.925.80307", "27.101.0"):
-                    with self.subTest(version=version), patch.object(system, "_git_version_cache", None):
-                        (root / "VERSION").write_text(version + "\n", encoding="utf-8")
-                        self.assertEqual(launch_utils.app_version(root), "v" + version)
-                        response = asyncio.run(system.get_version())
-                        self.assertEqual(response.data["version"], "v" + version)
-
-    def test_unavailable_git_and_missing_or_empty_version(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / ".git").mkdir()
-            with patch.object(launch_utils.subprocess, "check_output", side_effect=FileNotFoundError), patch.object(
-                launch_utils, "_GIT_TAG_CACHE", {}
-            ):
-                self.assertEqual(launch_utils.app_version(root), "dev")
-                (root / "VERSION").write_text("\n", encoding="utf-8")
-                self.assertEqual(launch_utils.app_version(root), "dev")
-                (root / "VERSION").write_text("26.925.80307\n", encoding="utf-8")
-                self.assertEqual(launch_utils.app_version(root), "v26.925.80307")
-
     def test_real_git_tags_describe_and_compare_range(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

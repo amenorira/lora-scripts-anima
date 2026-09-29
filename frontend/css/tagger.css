@@ -1,5 +1,5 @@
 /* Tagger follows the training form language while keeping single-image review focused. */
-.tagger-route { position: relative; inset: auto; display: flex; flex: 1 0 auto; min-width: 960px; min-height: 100%; overflow: visible; }
+.tagger-route { position: relative; inset: auto; display: flex; flex: 1 0 auto; min-width: 0; min-height: 100%; overflow: visible; }
 #taggerWorkspaceHost { display: flex; flex: 1 0 auto; flex-direction: column; min-height: 100%; }
 .tagger-ui-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .tagger-page-shell { display: flex; flex: 1 0 auto; flex-direction: column; width: 100%; min-height: 100%; padding: 24px 28px 40px; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; }
@@ -16,14 +16,11 @@
 .tagger-training-notice { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-default)); background: var(--danger-soft); color: var(--danger); font-size: 12px; }
 .tagger-training-notice button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 650; cursor: pointer; }
 
-.tagger-batch-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(540px, 36vw, 680px); align-items: start; gap: 20px; width: 100%; }
-.tagger-form-column { display: block; min-width: 0; padding: 0 8px; }
+.tagger-batch-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 28%, 400px); align-items: start; gap: 24px; width: 100%; }
+.tagger-form-column { display: block; min-width: 0; padding: 0 8px; container-type: inline-size; }
 .tagger-form-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .tagger-form-card > h2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 0; margin: 0 0 4px; padding: 18px 0 7px; border-bottom: 1px solid var(--border-default); color: var(--text-primary); font-size: 14px; font-weight: 700; }
 .tagger-form-card:first-child > h2 { padding-top: 0; }
-.tagger-form-card > h2::before { width: 3px; height: 14px; flex: 0 0 auto; border-radius: 1px; background: var(--section-model); content: ""; }
-.tagger-form-card:nth-of-type(2) > h2::before { background: var(--section-performance); }
-.tagger-form-card:nth-of-type(3) > h2::before { background: var(--section-caption); }
 .tagger-form-card > h2 small { margin-left: auto; color: var(--text-tertiary); font-family: inherit; font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .tagger-form-card > h2 button { margin-left: auto; padding: 2px 5px; border: 0; background: transparent; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .tagger-section-note { padding: 5px 10px 7px; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.5; }
@@ -61,6 +58,7 @@
 .tagger-category-field:hover { background: var(--hover-overlay); }
 .tagger-category-toggle { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 550; cursor: pointer; }
 .tagger-category-toggle > span { overflow-wrap: anywhere; }
+.tagger-category-toggle > .toggle { order: 1; margin-left: auto; flex: 0 0 auto; }
 .tagger-category-controls { display: flex; flex: 0 0 140px; align-items: center; justify-content: flex-end; min-width: 0; }
 .tagger-category-controls .tagger-field-stepper { margin-left: 0; }
 .tagger-category-settings .tagger-field-stepper input[type="number"] { width: 0; height: auto; padding: 7px 4px; border: 0; border-radius: 0; background: var(--bg-input); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; box-shadow: none; }
@@ -68,7 +66,6 @@
 
 .tagger-action-panel { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; height: min(820px, calc(100vh - 142px)); min-height: 520px; padding: 0 0 0 16px; border: 0; border-left: 1px solid var(--border-default); background: transparent; }
 .tagger-action-panel > h2 { display: flex; align-items: center; gap: 8px; min-height: 0; margin: 0 0 2px; padding: 0 0 7px; border-bottom: 1px solid var(--border-default); color: var(--text-primary); font-size: 14px; }
-.tagger-action-panel > h2::before { width: 3px; height: 14px; border-radius: 1px; background: var(--section-training); content: ""; }
 .tagger-action-log { display: flex; flex: 1 1 260px; min-height: 220px; margin-top: 2px; overflow: hidden; border-top: 1px solid var(--border-default); flex-direction: column; }
 .tagger-action-log > header { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 0 12px; }
 .tagger-action-log > header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -123,19 +120,19 @@
 .tagger-task-status dd.success { color: var(--success); }.tagger-task-status dd.skipped { color: var(--warning); }.tagger-task-status dd.failed { color: var(--danger); }
 .tagger-error-summary { display: flex; gap: 8px; padding: 8px 14px; background: var(--danger-soft); color: var(--danger); font-size: 10px; }
 
-.tagger-single-layout { display: grid; grid-template-columns: minmax(320px, var(--tagger-single-left, 55%)) 8px minmax(420px, 1fr); align-items: stretch; gap: 0; width: 100%; }
+.tagger-single-layout { display: grid; grid-template-columns: minmax(0, var(--tagger-single-left, 55%)) 8px minmax(0, 1fr); align-items: stretch; gap: 0; width: 100%; }
 /* 模式切换：两种布局由 x-if 销毁/重建，挂载时的进入动画属于展示型动效，
    由各主题文件定义（默认见 themes/light.css，与监控台 tab 面板共用关键帧）。 */
 .tagger-single-main, .tagger-single-sidebar { display: grid; align-content: start; gap: 14px; min-width: 0; }
 .tagger-single-main { grid-template-rows: max-content max-content max-content; padding-right: 12px; }
-.tagger-single-sidebar { padding-left: 12px; container-type: inline-size; }
+.tagger-single-sidebar { display: flex; flex-direction: column; gap: 12px; padding-left: 12px; container-type: inline-size; }
 .tagger-single-divider { position: relative; min-height: 100%; cursor: col-resize; touch-action: none; }
 .tagger-single-divider::before { position: absolute; inset: 0 3px; background: var(--border-default); content: ""; transition: background-color var(--duration-fast) ease; }
 .tagger-single-divider:hover::before, .tagger-single-divider.dragging::before { background: var(--accent); }
 .tagger-single-divider:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize !important; user-select: none !important; }
 .tagger-single-preview { display: grid; grid-template-rows: 36px clamp(300px, 46vh, 520px); min-width: 0; overflow: hidden; border: 1px solid var(--border-default); background: var(--bg-surface); }
-.tagger-single-preview.empty { grid-template-rows: 36px clamp(220px, 30vh, 320px); }
+.tagger-single-preview.empty { grid-template-rows: clamp(336px, calc(46vh + 36px), 556px); }
 .tagger-single-preview.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tagger-preview-toolbar { display: flex; align-items: center; gap: 3px; padding: 3px 5px 3px 10px; border-bottom: 1px solid var(--border-default); }
 .tagger-preview-toolbar > span { flex: 1; min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -153,67 +150,58 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-preview-image:not(.panning) img { transition: transform 100ms ease-out; }
 .tagger-single-sidebar .tagger-form-card > h2, .tagger-single-main .tagger-form-card > h2 { padding-top: 0; }
 .tagger-single-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.tagger-single-actions .tagger-clear-button { width: auto; min-width: 84px; }
+.tagger-single-actions .tagger-clear-button { width: auto; min-width: 64px; background: transparent; border-color: transparent; color: var(--danger); }
+.tagger-single-actions .tagger-clear-button:disabled { color: var(--text-tertiary); cursor: default; }
+.tagger-single-actions .tagger-clear-button:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.tagger-single-actions .tagger-clear-button:active:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #fff; }
+.tagger-single-actions .tagger-clear-button:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
 .tagger-single-result { display: flex; min-height: 0; overflow: hidden; flex-direction: column; }
 .tagger-result-tags { width: 100%; min-height: 94px; margin: 10px 0 0; padding: 10px 11px; color: var(--text-primary); font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
 .tagger-result-empty { min-height: 94px; margin-top: 10px; border: 1px dashed var(--border-default); }
-.tagger-single-result .tagger-result-actions { padding: 0; flex: 0 0 auto; }
-.tagger-result-actions { display: flex; justify-content: flex-end; gap: 5px; padding: 7px 14px 10px; }
-.tagger-result-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-secondary); font-size: 11.5px; cursor: pointer; }
-.tagger-result-actions button:hover { border-color: var(--accent); color: var(--accent); }
 .tagger-single-empty { min-height: 82px; padding: 28px 10px; color: var(--text-tertiary); font-size: 12.5px; text-align: center; }
-.tagger-single-output-settings .tagger-form-field { grid-template-columns: minmax(180px, 1fr) minmax(160px, 44%); gap: 14px; }
-.tagger-single-output-settings .tagger-text-input { max-width: 100%; }
-.tagger-single-option-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
-.tagger-collapse { display: grid; grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.26s var(--ease-out), visibility 0s; }
-.tagger-collapse.closed { grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.26s var(--ease-out), visibility 0s 0.26s; }
-.tagger-collapse-inner { min-height: 0; overflow: hidden; transition: opacity 0.2s ease; }
-.tagger-collapse.closed .tagger-collapse-inner { opacity: 0; }
-.tagger-form-card > h2 .tagger-output-header { display: flex; align-items: center; gap: 8px; flex: 1; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.tagger-output-header svg { width: 12px; height: 12px; color: var(--text-tertiary); transform: rotate(-90deg); transition: transform var(--duration-fast) ease; }
-.tagger-output-header svg.open { transform: rotate(0); }
-.tagger-single-settings .tagger-category-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .tagger-category-browser { margin: 0; border-top: 0; }
-.tagger-single-categories .tagger-category-browser { overflow: visible; }
-.tagger-category-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 42px; margin-bottom: 8px; padding: 5px 0 8px; border-bottom: 1px solid var(--border-default); }
-.tagger-category-toolbar > label { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 12px; }
-.tagger-category-toolbar input { width: 64px; height: var(--control-height); padding: 0 var(--control-padding-y); border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
-.tagger-category-toolbar button, .tagger-category-copy { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-height); padding: 7px 11px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-surface-raised); color: var(--text-primary); font-size: 13px; font-weight: 550; cursor: pointer; }
-.tagger-category-toolbar button:hover, .tagger-category-copy:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.tagger-category-total { display: inline-flex; gap: 4px; margin-right: auto; color: var(--text-tertiary); font-size: 11.5px; }
-.tagger-category-total b { color: var(--text-primary); font-family: inherit; font-size: inherit; font-variant-numeric: tabular-nums; }
 .tagger-category-section + .tagger-category-section { border-top: 1px solid var(--border-subtle); }
-.tagger-category-heading { display: grid; grid-template-columns: minmax(0, 1fr) 18px 30px; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px 0 0; }
+.tagger-category-heading, .tagger-category-columns { display: grid; grid-template-columns: minmax(0, 1fr) 56px 124px; align-items: center; gap: 8px; }
+.tagger-category-heading { min-height: 40px; padding: 2px 0; }
+.tagger-category-heading.is-collapsible { cursor: pointer; }
+.tagger-category-columns { position: sticky; top: 0; z-index: 1; min-height: 32px; background: var(--bg-root); color: var(--text-secondary); font-size: 12px; border-bottom: 1px solid var(--border-default); }
+.tagger-category-columns > :first-child { padding-left: 24px; }
+.tagger-category-columns > :not(:first-child) { text-align: center; }
 .tagger-category-heading:hover { background: var(--hover-overlay); }
-.tagger-category-heading-toggle { display: grid; grid-template-columns: 28px minmax(100px, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 40px; padding: 5px 0 5px 8px; border: 0; background: transparent; color: var(--text-tertiary); text-align: left; cursor: pointer; }
+.tagger-category-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tagger-category-heading-toggle { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 34px; padding: 3px 4px; border: 0; background: transparent; color: var(--text-tertiary); text-align: left; cursor: pointer; }
 .tagger-category-heading-toggle:hover { background: var(--bg-hover); }
 .tagger-category-heading-toggle strong { overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.tagger-category-heading-toggle > span { color: var(--text-tertiary); font-family: inherit; font-size: 11px; font-variant-numeric: tabular-nums; }
+.tagger-category-heading-toggle > span { flex: 0 0 auto; color: var(--text-secondary); font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
 .tagger-category-visible { display: flex; align-items: center; justify-content: center; }
-.tagger-category-heading > .tagger-category-visible .tagger-checkbox { width: 14px; height: 14px; flex: 0 0 14px; padding: 0; border: 1px solid var(--border-input); border-radius: 2px; background: var(--bg-input); box-shadow: none; text-align: initial; }
-.tagger-category-heading > .tagger-category-visible .tagger-checkbox:checked { border-color: var(--accent-solid); background: var(--accent-solid); }
 .tagger-category-heading-toggle svg { width: 12px; height: 12px; justify-self: center; transform: rotate(-90deg); transition: transform var(--duration-fast) ease; }
 .tagger-category-heading-toggle svg.open { transform: rotate(0); }
-.tagger-category-copy { width: var(--control-height); padding: 0; }
+.tagger-category-copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border-default); background: var(--bg-surface-raised); color: var(--text-secondary); cursor: pointer; }
+.tagger-category-copy:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.tagger-category-copy:disabled { opacity: .4; cursor: default; }
 .tagger-category-copy svg { width: 13px; height: 13px; }
-.tagger-category-section:not(.collapsed) .tagger-category-body { border-top: 1px solid var(--border-subtle); }
-.tagger-category-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 9px 10px 10px; }
+.tagger-category-body { transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out); }
+.tagger-category-section.collapsed .tagger-category-body { max-height: 0; opacity: 0; overflow: hidden; pointer-events: none; }
+.tagger-category-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 9px 10px 10px; border-top: 1px solid var(--border-subtle); }
 .tagger-confidence-item { display: inline-flex; align-items: baseline; gap: 10px; max-width: 100%; min-height: 28px; padding: 4px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--tag-cat, var(--text-primary)); }
 .tagger-confidence-label { display: flex; flex-direction: column; min-width: 0; }
 .tagger-confidence-item code { color: inherit; font-family: inherit; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
-.tagger-confidence-item .tagger-tag-translation { color: var(--text-secondary); font-size: 11px; }
+.tagger-confidence-item .tagger-tag-translation { color: var(--text-secondary); font-size: 12px; }
 .tagger-tag-translation:empty { display: none; }
 .tagger-confidence-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tagger-dictionary-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 12px; color: var(--text-secondary); }
 .tagger-dictionary-tools label { display: inline-flex; align-items: center; gap: 6px; }
 .tagger-dictionary-tools button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
-@container (max-width: 560px) {
-  .tagger-single-settings .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .tagger-single-settings .tagger-field-control { align-items: stretch; }
-  .tagger-single-settings .tagger-field-control > .anima-select { width: 100%; }
-  .tagger-single-option-grid { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 540px) {
+  :is(.tagger-form-column, .tagger-api-sidebar) .tagger-form-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  :is(.tagger-form-column, .tagger-api-sidebar) .tagger-field-control { align-items: stretch; }
+  .tagger-form-column .tagger-field-control > .anima-select,
+  .tagger-form-column .tagger-text-input,
+  .tagger-api-sidebar .tagger-field-control > .anima-select,
+  .tagger-api-sidebar .tagger-text-input { width: 100%; max-width: 100%; }
+  .tagger-option-grid { grid-template-columns: minmax(0, 1fr); }
 }
-.tagger-confidence-item b { color: var(--text-secondary); font-family: inherit; font-size: 10.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tagger-confidence-item b { color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .tagger-category-tags > p, .tagger-category-tags > small { flex: 1 0 100%; color: var(--text-tertiary); font-size: 11.5px; }
 
 /* AI API tabs */
@@ -259,11 +247,8 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
   .tagger-page-resbar { width: 100%; }
   .tagger-route { min-width: 0; }
   .tagger-page-shell { min-width: 0; padding-inline: 16px; }
-  .tagger-batch-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
-  .tagger-form-field { grid-template-columns: minmax(220px, 1fr) minmax(200px, 44%); gap: 14px; }
+  .tagger-batch-layout { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
   .tagger-category-field { gap: 14px; }
-  .tagger-single-settings .tagger-category-settings { grid-template-columns: 1fr; }
-  .tagger-single-layout { grid-template-columns: minmax(320px, var(--tagger-single-left, 52%)) 8px minmax(400px, 1fr); }
 }
 
 .tagger-page-shell:has(.tagger-single-layout) { flex: 1 1 auto; height: 100%; min-height: 0; overflow: hidden; }
@@ -272,3 +257,41 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { min-height: 0; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-main { overflow-y: auto; scrollbar-gutter: stable; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { padding-right: 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.tagger-page-shell:has(.tagger-single-layout) .tagger-api-sidebar { overflow-y: auto; scrollbar-gutter: stable; }
+
+.tagger-single-config { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 8px 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-default); }
+.tagger-single-config.has-precision { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+.tagger-model-row, .tagger-compact-row { display: contents; }
+.tagger-compact-field { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 5px; min-width: 0; }
+.tagger-config-options { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 20px; }
+.tagger-compact-field > span { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.tagger-compact-field > .anima-select { width: 100%; min-width: 0; }
+.tagger-compact-field .anima-select-trigger { min-height: var(--control-height); }
+.tagger-compact-option, .tagger-output-format label { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
+.tagger-compact-option, .tagger-output-format label { justify-content: space-between; }
+.tagger-compact-option > .toggle, .tagger-output-format label > .toggle { order: 1; flex: 0 0 auto; }
+.tagger-output-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; padding-bottom: 7px; border-bottom: 1px solid var(--border-default); }
+.tagger-output-heading h2 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.tagger-output-format { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-left: auto; }
+.tagger-output-format label { white-space: nowrap; }
+.tagger-output-heading > button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; line-height: 20px; cursor: pointer; }
+.tagger-single-categories { display: flex; flex-direction: column; flex: 0 0 auto; }
+.tagger-results-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; }
+.tagger-results-heading h2 { margin: 0; font-size: 14px; line-height: 20px; }
+.tagger-results-heading > span { color: var(--text-tertiary); font-size: 12px; line-height: 20px; }
+.tagger-results-actions { display: flex; align-items: center; gap: 4px; }
+.tagger-results-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 12px; line-height: 20px; white-space: nowrap; cursor: pointer; }
+.tagger-results-actions button, .tagger-output-heading > button { transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
+.tagger-results-actions button:is(:hover, :focus-visible):not(:disabled), .tagger-output-heading > button:is(:hover, :focus-visible):not(:disabled) { color: var(--text-primary); background: var(--hover-overlay); }
+.tagger-results-actions button:disabled { opacity: 0.4; cursor: default; }
+.tagger-single-categories .tagger-category-browser { overflow: visible; }
+.tagger-single-categories .tagger-category-columns { position: static; }
+.tagger-category-stepper { width: 124px; }
+.tagger-category-stepper input { font-family: var(--font-sans); font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.tagger-category-stepper button { width: 28px; }
+.tagger-category-heading-toggle:disabled { cursor: default; opacity: 1; }
+.tagger-category-section.excluded .tagger-category-heading-toggle strong { color: var(--text-secondary); }
+@container (max-width: 460px) {
+  .tagger-single-config.has-precision { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tagger-single-config.has-precision .tagger-compact-model { grid-column: 1 / -1; }
+}
