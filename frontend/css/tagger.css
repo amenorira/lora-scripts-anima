@@ -256,7 +256,7 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-main,
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { min-height: 0; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-single-main { overflow-y: auto; scrollbar-gutter: stable; }
-.tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { padding-right: 8px; overflow: hidden; }
+.tagger-page-shell:has(.tagger-single-layout) .tagger-single-sidebar { padding-right: 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .tagger-page-shell:has(.tagger-single-layout) .tagger-api-sidebar { overflow-y: auto; scrollbar-gutter: stable; }
 
 .tagger-single-config { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 8px 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-default); }
@@ -275,7 +275,7 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-output-format { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-left: auto; }
 .tagger-output-format label { white-space: nowrap; }
 .tagger-output-heading > button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; line-height: 20px; cursor: pointer; }
-.tagger-single-categories { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.tagger-single-categories { display: flex; flex-direction: column; flex: 0 0 auto; }
 .tagger-results-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; }
 .tagger-results-heading h2 { margin: 0; font-size: 14px; line-height: 20px; }
 .tagger-results-heading > span { color: var(--text-tertiary); font-size: 12px; line-height: 20px; }
@@ -284,7 +284,8 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-results-actions button, .tagger-output-heading > button { transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
 .tagger-results-actions button:is(:hover, :focus-visible):not(:disabled), .tagger-output-heading > button:is(:hover, :focus-visible):not(:disabled) { color: var(--text-primary); background: var(--hover-overlay); }
 .tagger-results-actions button:disabled { opacity: 0.4; cursor: default; }
-.tagger-single-categories .tagger-category-browser { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.tagger-single-categories .tagger-category-browser { overflow: visible; }
+.tagger-single-categories .tagger-category-columns { position: static; }
 .tagger-category-stepper { width: 124px; }
 .tagger-category-stepper input { font-family: var(--font-sans); font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .tagger-category-stepper button { width: 28px; }
