@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Make Triton installation optional: a failed installation during initial setup or startup no longer blocks launch. Check its status and retry from Environment Management.
+
 ## v26.929.202123 - 2026-09-29
 
 The training core is upgraded to **sd-scripts v0.12.0**, with shared dependency updates and compatibility adaptations. PixAI inference precision settings are added, tagging layouts and tag-description interactions are revised, and Chinese dictionary update detection and dropdown positioning issues are fixed.

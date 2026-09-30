@@ -58,14 +58,19 @@ class TritonBootstrapTests(unittest.TestCase):
                     )
 
 
-    def test_install_failure_fails_startup(self):
+    def test_install_failure_continues_startup(self):
         versions = {"torch": ensure_runtime.TORCH, "torchvision": ensure_runtime.TORCHVISION}
-        with patch.object(sys, "platform", "win32"), \
-             patch.object(ensure_runtime, "package_version", side_effect=versions.get), \
-             patch.object(ensure_runtime, "pip", side_effect=RuntimeError("download failed")), \
-             patch.object(ensure_runtime, "sync_optional_packages") as optional:
-            self.assertEqual(ensure_runtime.main(), 1)
-            optional.assert_not_called()
+        for platform in ("win32", "linux"):
+            for core_changed in (False, True):
+                installed = {} if core_changed else versions
+                results = ([0] if core_changed else []) + [RuntimeError("download failed")]
+                with self.subTest(platform=platform, core_changed=core_changed), \
+                     patch.object(sys, "platform", platform), \
+                     patch.object(ensure_runtime, "package_version", side_effect=installed.get), \
+                     patch.object(ensure_runtime, "pip", side_effect=results), \
+                     patch.object(ensure_runtime, "sync_optional_packages", return_value=[]) as optional:
+                    self.assertEqual(ensure_runtime.main(), 0)
+                    optional.assert_called_once_with(core_changed=core_changed)
 
 
 class RuntimeRepairRegressionTests(unittest.TestCase):
