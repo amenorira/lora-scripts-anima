@@ -1512,6 +1512,21 @@
 		"apiParseCaptionDesc": "响应整体作为一条描述文本保留",
 		"apiRequestNote": "共 {count} 张图片，将发送 {count} 次请求；并发仅影响处理速度，不改变请求总数。",
 		"apiRawResponse": "原始响应",
+		"log": {
+			"start": "任务开始，共 {total} 张图片，模型：{model}",
+			"api_start": "API 任务开始，共 {total} 张图片，模型：{model}，并发数：{concurrency}，接口：{endpoint}",
+			"loading": "正在加载模型：{model}",
+			"ready": "模型就绪：{model}",
+			"precision": "推理精度：{precision}（设置：{requested}）",
+			"unloaded": "模型已卸载：{model}",
+			"success": "[{current}/{total}] {name}：已生成 {count} 个标签",
+			"written": "[{current}/{total}] {name}：已写入 {count} 个标签",
+			"skipped": "[{current}/{total}] {name}：已有标注，已跳过",
+			"failed": "[{current}/{total}] {name}：失败，{error}",
+			"done": "任务完成，耗时 {elapsed} 秒。成功 {success}，跳过 {skipped}，失败 {failed}。",
+			"cancelled": "任务已取消。成功 {success}，跳过 {skipped}，失败 {failed}。",
+			"error": "任务失败：{error}"
+		},
 		"phase": {
 			"ready": "就绪",
 			"created": "准备任务",

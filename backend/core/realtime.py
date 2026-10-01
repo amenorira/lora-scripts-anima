@@ -58,6 +58,9 @@ def _compact_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
             values = value[-_MAX_TASK_LOG_ITEMS:]
             compacted = []
             for item in values:
+                if isinstance(item, dict):
+                    compacted.append(item)
+                    continue
                 text = str(item)
                 if len(text) > 4096:
                     text = text[-4096:]

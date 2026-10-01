@@ -29,7 +29,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
     def test_scan_task_results_and_atomic_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            image_path = root / "sample.png"
+            image_path = root / "sample_failed_error.png"
             self._image(image_path)
             source = workspace.scan_source(str(root), True)
             self.assertEqual(source["total"], 1)
@@ -53,6 +53,9 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 result = self._wait(task_id)
 
             self.assertEqual(result["status"], "done")
+            self.assertEqual(result["logs"][-1]["level"], "success")
+            self.assertEqual(result["logs"][-1]["failed"], 0)
+            self.assertEqual([line["level"] for line in result["logs"] if line["event"] == "written"], ["info"])
             self.assertEqual(result["source_root"], str(root.resolve()))
             self.assertEqual(image_path.with_suffix(".txt").read_text(encoding="utf-8"), "1girl, blue eyes")
             items = workspace.task_items(task_id)["items"]
@@ -77,6 +80,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 })
                 result = self._wait(task_id)
             self.assertEqual(result["skipped"], 1)
+            self.assertEqual(result["logs"][-2]["level"], "warning")
             self.assertEqual(workspace.task_items(task_id)["items"][0]["result"]["text"], "existing tag")
 
     def test_prefetch_start_failure_releases_training_slot(self):
@@ -183,6 +187,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 result = self._wait(task_id)
 
             self.assertEqual(result["status"], "cancelled")
+            self.assertEqual(result["logs"][-1]["level"], "warning")
             self.assertEqual(result["success"], 2)
             self.assertEqual(len(started), 2)
             self.assertEqual(len(list(root.glob("*.txt"))), 2)

@@ -1512,6 +1512,21 @@
 		"apiParseCaptionDesc": "Keep the whole response as one caption text",
 		"apiRequestNote": "{count} images will send {count} requests; concurrency affects only speed, not the total.",
 		"apiRawResponse": "Raw response",
+		"log": {
+			"start": "Task started: {total} images, model: {model}",
+			"api_start": "API task started: {total} images, model: {model}, concurrency: {concurrency}, endpoint: {endpoint}",
+			"loading": "Loading model: {model}",
+			"ready": "Model ready: {model}",
+			"precision": "Inference precision: {precision} (requested: {requested})",
+			"unloaded": "Model unloaded: {model}",
+			"success": "[{current}/{total}] {name}: generated {count} tags",
+			"written": "[{current}/{total}] {name}: wrote {count} tags",
+			"skipped": "[{current}/{total}] {name}: existing caption, skipped",
+			"failed": "[{current}/{total}] {name}: failed: {error}",
+			"done": "Task completed in {elapsed}s: {success} succeeded, {skipped} skipped, {failed} failed.",
+			"cancelled": "Task cancelled: {success} succeeded, {skipped} skipped, {failed} failed.",
+			"error": "Task failed: {error}"
+		},
 		"phase": {
 			"ready": "Ready",
 			"created": "Preparing task",

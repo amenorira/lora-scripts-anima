@@ -20,6 +20,23 @@ function fixture() {
   return { app, requested };
 }
 
+test('logs follow the UI language, preserve filenames, and expand the full retained history', () => {
+  const { app } = fixture();
+  const entry = { event: 'written', name: 'error_failed_{count}.png', current: 14, total: 19, count: 52 };
+  app.taggerTask = { logs: Array(200).fill(entry) };
+  assert.equal(app.taggerVisibleLogs().length, 32);
+  app.taggerLogsOpen = true;
+  assert.equal(app.taggerVisibleLogs().length, 200);
+  for (const [locale, expected] of [['zh-CN', '：已写入 52 个标签'], ['en-US', ': wrote 52 tags']]) {
+    const messages = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${locale}.json`), 'utf8'));
+    app.t = key => key.split('.').reduce((value, part) => value[part], messages);
+    assert.equal(app.taggerLogMessage(entry), `[14/19] ${entry.name}${expected}`);
+  }
+  app.taggerTask.logs = ['[21:00:21] legacy {failed}'];
+  assert.equal(app.taggerVisibleLogs()[0].time, '21:00:21');
+  assert.equal(app.taggerLogMessage(app.taggerVisibleLogs()[0]), 'legacy {failed}');
+});
+
 test('preview limit never truncates output, including after lowering the threshold', () => {
   const { app } = fixture();
   const tags = Array.from({ length: 250 }, (_, i) => [`tag_${i}`, i < 200 ? 0.9 : 0.4]);
