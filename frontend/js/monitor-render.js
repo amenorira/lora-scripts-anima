@@ -71,7 +71,7 @@ window.monitorRenderMixin = {
     this._renderTab(tab, d, gpu, sys, t, isHistory);
 
     // ── 4. Tab 滑动指示条：按钮文本/计数徽标变化时重算位置 ──
-    const tabIndicatorSig = tab + '|' + locale + '|' + (this.logFullTotal || this.logTotal || this.logLines.length) + '|' + this.previews.length + '|' + this.outputTabCount;
+    const tabIndicatorSig = tab + '|' + locale + '|' + this.logTotal + '|' + this.previews.length + '|' + this.outputTabCount;
     if (this._tabIndicatorSig !== tabIndicatorSig) {
       this._tabIndicatorSig = tabIndicatorSig;
       requestAnimationFrame(() => this._syncMonitorTabIndicator());
@@ -284,7 +284,10 @@ window.monitorRenderMixin = {
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
         delete panel.dataset.diagnosticVersion;
-        delete panel.dataset.paramQuery;
+        delete panel.dataset.sparklineVersion;
+        delete panel.dataset.telemetryVersion;
+        delete panel.dataset.motionContext;
+        if (this.monitorParamQuery) this.filterMonitorParams();
       }
       this._patchOverviewStatus(panel, d, t, isHistory);
       return;
@@ -437,7 +440,8 @@ window.monitorRenderMixin = {
     const set = (key, value) => {
       const el = root.querySelector('[data-summary-field="' + key + '"]');
       if (el) {
-        if (['step', 'percent', 'epoch', 'progress-time', 'loss', 'loss-meta', 'lr', 'speed', 'time', 'time-meta'].includes(key)) this._patchMonitorNumber(el, value, animate);
+        // 仅指标读数滚动；进度与说明文字直接更新，避免整块摘要都在跳动。
+        if (['loss', 'lr', 'speed', 'time'].includes(key)) this._patchMonitorNumber(el, value, animate);
         else if (el.textContent !== String(value)) el.textContent = String(value);
       }
     };
@@ -463,15 +467,19 @@ window.monitorRenderMixin = {
     }
     set('step', step + ' / ' + (total || '—') + ' ' + t('stepsUnit'));
     set('percent', Number.isInteger(percent) ? percent + '%' : percent.toFixed(1) + '%');
-    set('epoch', t('epochProgress') + ' ' + (d.epoch != null ? d.epoch : '—'));
+    const epoch = String(d.epoch ?? '—').trim() || '—';
+    // 日志只给当前轮数时，从本次训练参数补齐总轮数；已有 x/y 时保留日志中的实际总数。
+    const totalEpochs = Number((this.trainParams || []).find(param => param.key === 'max_train_epochs')?.value);
+    const epochProgress = !epoch.includes('/') && Number.isInteger(totalEpochs) && totalEpochs > 0
+      ? epoch + '/' + totalEpochs : epoch;
+    set('epoch', t('epochProgress') + ' ' + epochProgress);
     const trainResult = terminal && d.train_result;
     const duration = this._formatMonitorDuration((trainResult && trainResult.duration_str) || d.elapsed || '—', trainResult ? trainResult.duration_sec : null);
     const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
-    set('progress-time', state === 'RUNNING' ? t('elapsed') + ' ' + duration + (eta ? ' · ' + t('estimatedRemaining') + ' ' + eta : '') : t('totalDuration') + ' ' + duration);
     const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
     const latestLoss = lossPoints[lossPoints.length - 1];
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
-    set('lr', lrRange ? this._formatLearningRate(lrLatest, '—') : (lrSeries ? this._seriesLatest('lr/unet', d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—') : (d.lr != null ? this._formatLearningRate(d.lr, String(d.lr)) : '—')));
+    set('lr', this._formatLearningRate(lrLatest ?? d.lr, '—'));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
     if (lrRangeEl) {
       lrRangeEl.hidden = !lrRange;
@@ -493,8 +501,9 @@ window.monitorRenderMixin = {
       root.dataset.sparklineVersion = String(this.lossDataVersion);
       const lossPath = root.querySelector('[data-summary-spark="loss"]');
       const lrPath = root.querySelector('[data-summary-spark="lr"]');
-      if (lossPath) lossPath.setAttribute('d', this._metricSparklinePath(lossSeries));
-      if (lrPath) lrPath.setAttribute('d', this._metricSparklinePath(lrSeries));
+      for (const [path, series] of [[lossPath, lossSeries], [lrPath, lrSeries]]) {
+        if (path) this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext);
+      }
       const lossTrend = this._summaryLossChange(lossSeries);
       const lossChange = root.querySelector('[data-summary-loss-change]');
       if (lossChange) {
@@ -505,13 +514,8 @@ window.monitorRenderMixin = {
       }
       set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
     }
-    this._patchSummaryTelemetry(root, t, isHistory);
+    this._patchSummaryTelemetry(root, t, isHistory, d);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
-    const paramQuery = String(this.monitorParamQuery || '').trim().toLowerCase();
-    if (paramQuery && root.dataset.paramQuery !== paramQuery) {
-      root.dataset.paramQuery = paramQuery;
-      this.filterMonitorParams();
-    }
   },
 
   _renderOverviewTab(d, t, isHistory) {
@@ -547,7 +551,7 @@ window.monitorRenderMixin = {
     }
     html += '<div class="m-summary-progress"><div class="m-summary-progress-top"><span>' + this.esc(t('overallProgress')) + '</span><div class="m-summary-progress-figures"><strong data-summary-field="step"></strong><b data-summary-field="percent"></b></div></div>';
     html += '<div class="m-overview-progress" role="progressbar" aria-label="' + this.esc(t('overallProgress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-overview-progress></i></div>';
-    html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span><span data-summary-field="progress-time"></span></div></div>';
+    html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span></div></div>';
     html += '<div class="m-live-metrics">';
     html += this._summaryTileHtml('loss', t('loss'), t('recentLoss'));
     html += this._summaryTileHtml('lr', t('lr'), '');
@@ -592,7 +596,7 @@ window.monitorRenderMixin = {
     const speedMatch = /(\d+(?:\.\d+)?)\s*(s\/it|it\/s)(?!\w)/i.exec(text.slice(match.index));
     const speedSec = speedMatch ? this._monitorSpeedSeconds(speedMatch[0]) : null;
     return step > 0 && (elapsedSec !== null || speedSec !== null)
-      ? { step, speedSec, estimatedTotalSec: elapsedSec !== null && etaSec !== null ? elapsedSec + etaSec : null }
+      ? { step, speedSec, elapsedSec, remainingSec: etaSec }
       : null;
   },
 
@@ -616,44 +620,51 @@ window.monitorRenderMixin = {
       byStep.set(step, {
         step,
         speedSec: this._monitorSpeedSeconds(sample.speed) ?? previous.speedSec ?? null,
-        estimatedTotalSec: elapsedSec !== null && etaSec !== null
-          ? elapsedSec + etaSec : previous.estimatedTotalSec ?? null,
+        elapsedSec: elapsedSec ?? previous.elapsedSec ?? null,
+        remainingSec: etaSec ?? previous.remainingSec ?? null,
       });
     }
-    const samples = [...byStep.values()].sort((left, right) => left.step - right.step).slice(-40);
+    const samples = [...byStep.values()].sort((left, right) => left.step - right.step).slice(-40)
+      .map(sample => ({
+        ...sample,
+        // 抵消正常倒计时，只展示预计完成时间的修正；固定训练起点避免滑动窗口重新归零。
+        estimatedFinishSec: Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec)
+          ? sample.elapsedSec + sample.remainingSec : null,
+      }));
     return (this._summaryTelemetryCache = { version, samples });
   },
 
-  // 进度趋势曲线：横轴按真实训练步数定位（与按下标等距的 Loss 曲线共用同一几何实现）。
-  _summaryTelemetryPath(samples, field) {
-    const points = samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0).slice(-40);
-    if (points.length < 2) return '';
-    const first = points[0].step, span = points[points.length - 1].step - first;
-    if (!span) return '';
-    return this._sparklineGeometry(
-      points.map(point => point[field]),
-      index => 4 + (points[index].step - first) / span * 112,
-    ).path;
-  },
-
-  _patchSummaryTelemetry(root, t, isHistory) {
+  _patchSummaryTelemetry(root, t, isHistory, d) {
     const telemetry = this._summaryTelemetrySamples(isHistory);
-    if (root.dataset.telemetryVersion === telemetry.version) return;
-    root.dataset.telemetryVersion = telemetry.version;
+    const showRemaining = !isHistory && d.state === 'RUNNING' && !!d.eta;
+    const timeField = showRemaining ? 'estimatedFinishSec' : 'elapsedSec';
+    const version = telemetry.version + '|' + timeField;
+    if (root.dataset.telemetryVersion === version) return;
+    root.dataset.telemetryVersion = version;
     for (const [key, field, label] of [
-      ['speed', 'speedSec', 'speedTrendLabel'], ['time', 'estimatedTotalSec', 'estimatedTotalTrendLabel'],
+      ['speed', 'speedSec', 'speedTrendLabel'], ['time', timeField, showRemaining ? 'remainingTrendLabel' : 'elapsedTrendLabel'],
     ]) {
       const path = root.querySelector('[data-summary-spark="' + key + '"]');
       if (!path) continue;
-      const curve = this._summaryTelemetryPath(telemetry.samples, field);
-      path.setAttribute('d', curve);
+      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0)
+        .map(sample => ({ step: sample.step, value: sample[field] }));
+      const forecast = field === 'estimatedFinishSec';
+      // 预估波动按修正幅度缩放，至少保留一分钟量程，避免秒级取整抖动被夸大。
+      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, null, forecast ? 60 : 0, forecast ? 0 : .2);
       const svg = path.parentElement;
       if (svg) {
-        if (curve) svg.removeAttribute('hidden');
+        const tile = svg.closest?.('.m-live-metric');
+        if (frame.path) svg.removeAttribute('hidden');
         else svg.setAttribute('hidden', '');
-        if (curve) {
+        if (frame.path) {
           svg.setAttribute('aria-label', t(label));
           svg.setAttribute('title', t(label));
+          // 小图不接收鼠标事件，说明由整个卡片提供，窄桌面隐藏小图时也可查看。
+          tile?.setAttribute('title', t(label));
+        } else {
+          svg.removeAttribute('aria-label');
+          svg.removeAttribute('title');
+          tile?.removeAttribute('title');
         }
       }
     }
@@ -712,9 +723,16 @@ window.monitorRenderMixin = {
   },
 
   // 最终文本始终立即生效；动画仅覆盖数字外观，不插值业务数据、不排队。
-  _patchMonitorNumber(element, value, animate) {
+  _patchMonitorNumber(element, value, animate, numericValue = null) {
     const text = String(value);
     const previous = element.dataset.metricValue;
+    const previousNumber = Number(element.dataset.metricNumber);
+    const hasNumericValue = Number.isFinite(numericValue);
+    const numericDirection = hasNumericValue && Number.isFinite(previousNumber)
+      ? (numericValue >= previousNumber ? -1 : 1) : null;
+    // 显示文本可能不含正负号；即使幅度不变，也要记录最新符号供下一次比较。
+    if (hasNumericValue) element.dataset.metricNumber = String(numericValue);
+    else delete element.dataset.metricNumber;
     const allowed = animate && this._monitorMotionAllowed();
     if (!allowed) {
       for (const animation of element.getAnimations?.({ subtree: true }) || []) animation.cancel();
@@ -734,10 +752,10 @@ window.monitorRenderMixin = {
     visual.className = 'm-number-visual';
     const tracks = [];
     // 按每个数字组的整体方向滚动，进位时保持一致。
-    let direction = -1;
+    let direction = numericDirection ?? -1;
     for (let index = 0; index < text.length; index++) {
       const char = text[index];
-      if (/\d/.test(char) && (index === 0 || !/[\d.]/.test(text[index - 1]))) {
+      if (numericDirection === null && /\d/.test(char) && (index === 0 || !/[\d.]/.test(text[index - 1]))) {
         const nextNumber = parseFloat(text.slice(index));
         const oldNumber = parseFloat(previous.slice(index));
         const sign = index > 0 && /[-−]/.test(text[index - 1]) ? -1 : 1;
@@ -786,72 +804,156 @@ window.monitorRenderMixin = {
       }
     }
     const number = element.querySelector('[data-loss-delta]');
-    this._patchMonitorNumber(number, Math.abs(rounded).toFixed(1) + '%', animate);
+    this._patchMonitorNumber(number, Math.abs(rounded).toFixed(1) + '%', animate, rounded);
     element.querySelector('.m-change-caption').textContent = t('lossVsPrevious');
     element.setAttribute('aria-label', t('lossVsPrevious') + ' ' + (rounded > 0 ? '+' : rounded < 0 ? '−' : '') + Math.abs(rounded).toFixed(1) + '%');
   },
 
-  _metricSparklinePath(series) {
-    const points = ((series && series.points) || []).slice(-40)
-      .filter(point => point && point.value != null && point.value !== '')
-      .map(point => Number(point.value)).filter(Number.isFinite);
-    return this._sparklineGeometry(points).path;
+  // 滚动图每个观测占一个固定槽位，新点只从右侧进入，不重新拉伸旧点的横坐标。
+  _rollingSparklineFrame(rawPoints, previous = null, minimumSpan = 0, relativeSpan = .2) {
+    const points = this._cleanLossPoints(rawPoints).slice(-40);
+    const signature = JSON.stringify(points);
+    if (previous?.signature === signature) return previous;
+    const lastStep = previous?.points.at(-1)?.step;
+    if (lastStep != null && points.at(-1)?.step < lastStep) previous = null;
+    const appended = previous ? points.filter(point => point.step > lastStep) : [];
+    const retained = previous ? previous.points.filter(point => point.step >= (points[0]?.step ?? Infinity)) : [];
+    // 数值修正不改变观测占据的槽位；是否推进只由保留下来的 step 和新增点决定。
+    const continuous = retained.length > 0 && retained.every((point, index) => point.step === points[index]?.step);
+    const shift = continuous ? appended.length : 0;
+    let bounds = previous?.bounds || null;
+    let shrinkSteps = 0;
+    if (points.length) {
+      const low = Math.min(...points.map(point => point.value));
+      const high = Math.max(...points.map(point => point.value));
+      const span = Math.max(high - low, Math.max(Math.abs(low), Math.abs(high)) * relativeSpan, minimumSpan, 1e-9);
+      const center = (low + high) / 2;
+      const target = { low: center - span * .6, high: center + span * .6 };
+      if (!bounds) bounds = target;
+      else if (low < bounds.low || high > bounds.high) {
+        bounds = { low: Math.min(bounds.low, target.low), high: Math.max(bounds.high, target.high) };
+      } else if (target.high - target.low < (bounds.high - bounds.low) * .5) {
+        // 连续一个完整窗口都处于小范围后才收窄纵轴，避免极值出窗时突然变形。
+        shrinkSteps = (previous.shrinkSteps || 0) + appended.length;
+        if (shrinkSteps >= 40) { bounds = target; shrinkSteps = 0; }
+      }
+    }
+    // 多保留两个左侧衔接点，线段真正移出 SVG 后才删除；连续动画还需承接未移出的旧点。
+    const prefix = previous && (continuous || points[0]?.step === previous.points[0]?.step)
+      ? (previous.renderPoints || previous.points).filter(point => point.step < points[0]?.step) : [];
+    const renderPoints = prefix.concat(points);
+    return { points, signature, bounds, shrinkSteps, shift,
+      path: this._rollingSparklineGeometry(renderPoints.slice(-42), bounds).path,
+      coords: this._rollingSparklineGeometry(points, bounds).coords,
+      renderPoints };
   },
 
-  // 迷你折线几何唯一实现。xAt 可选：按下标等距（默认）或按调用方给出的横轴映射。
+  _rollingSparklineGeometry(samples, bounds) {
+    const coords = samples.map((point, index) => ({
+      x: 116 - (samples.length - 1 - index) * 112 / 39,
+      y: 30 - (point.value - bounds.low) / (bounds.high - bounds.low) * 26,
+    }));
+    return { coords, path: coords.length < 2 ? '' : coords.map((point, index) => (index ? 'L' : 'M') + point.x.toFixed(2) + ' ' + point.y.toFixed(2)).join(' ') };
+  },
+
+  _patchRollingSparkline(path, points, animate, context, marker = null, minimumSpan = 0, relativeSpan = .2) {
+    const previous = path._sparklineState?.context === context ? path._sparklineState : null;
+    const frame = this._rollingSparklineFrame(points, previous, minimumSpan, relativeSpan);
+    const shift = frame.shift <= 8 ? frame.shift : 0;
+    return this._patchSparklineFrame(path, frame, animate, context, [{ element: marker, point: frame.path ? frame.coords.at(-1) : null }], shift);
+  },
+
+  // 纵轴量程变化独立于横向滚动；用统一缩放保持点之间的关系，标记与曲线同步。
+  _patchSparklineFrame(path, frame, animate, context, markers = [], shift = 0) {
+    const svg = path.parentElement;
+    const previous = path._sparklineState?.context === context ? path._sparklineState : null;
+    if (previous && previous.signature === frame.signature) frame = previous;
+    const allowed = animate && !!path.animate && svg.getClientRects().length > 0 && this._monitorMotionAllowed();
+    const cancel = () => {
+      for (const animation of svg.getAnimations?.({ subtree: true }) || []) {
+        animation.onfinish = null;
+        animation.cancel();
+      }
+    };
+    if (frame === previous) {
+      if (!allowed) {
+        cancel(); path.setAttribute('d', frame.path);
+        if (frame.renderPoints) frame.renderPoints = frame.renderPoints.slice(-42);
+      }
+      return frame;
+    }
+    const current = allowed && previous
+      ? new DOMMatrixReadOnly(getComputedStyle(path).transform) : { d: 1, e: 0, f: 0 };
+    cancel();
+    frame.context = context;
+    const renderPoints = frame.renderPoints;
+    if (renderPoints) frame.renderPoints = renderPoints.slice(-42);
+    path._sparklineState = frame;
+    path.setAttribute('d', frame.path);
+    for (const { element, point } of markers) {
+      if (!element) continue;
+      element.setAttribute('visibility', point ? 'visible' : 'hidden');
+      if (point) for (const key of ['x1', 'x2', 'y1', 'y2']) element.setAttribute(key, point[key[0]]);
+    }
+    if (!allowed || !previous?.path || !frame.path || frame.points?.at(-1)?.step < previous.points?.at(-1)?.step) return frame;
+    const ratio = (frame.bounds.high - frame.bounds.low) / (previous.bounds.high - previous.bounds.low);
+    const offset = 30 * (1 - ratio) + (previous.bounds.low - frame.bounds.low) * 26 / (previous.bounds.high - previous.bounds.low);
+    const scale = current.d * ratio, x = shift * 112 / 39 + current.e, y = current.d * offset + current.f;
+    if (!shift && Math.abs(scale - 1) < 1e-9 && Math.abs(x) < 1e-9 && Math.abs(y) < 1e-9) return frame;
+    const start = `matrix(1,0,0,${scale},${x},${y})`;
+    const keyframes = [{ transform: start }, { transform: 'matrix(1,0,0,1,0,0)' }];
+    const options = { duration: shift ? 360 : 420, easing: 'cubic-bezier(.2,.75,.25,1)' };
+    if (renderPoints && (shift || x > 1e-9)) {
+      // 只裁去已在可视区域之外的点，更新再快也不提前截断左边仍可见的曲线。
+      frame.renderPoints = renderPoints.slice(-(42 + Math.ceil(Math.max(0, x) / (112 / 39))));
+      path.setAttribute('d', this._rollingSparklineGeometry(frame.renderPoints, frame.bounds).path);
+    }
+    const motion = path.animate(keyframes, options);
+    motion.onfinish = () => {
+      if (path._sparklineState !== frame) return;
+      path.setAttribute('d', frame.path);
+      if (frame.renderPoints) frame.renderPoints = frame.renderPoints.slice(-42);
+    };
+    for (const { element, point } of markers) if (point) element?.animate?.(keyframes, options);
+    return frame;
+  },
+
+  // 参照图按当前真实窗口铺满，不做滚动；平稳数据留出纵轴余量，常量线居中。
   _sparklineGeometry(values, xAt) {
-    const points = values.slice(-40).filter(Number.isFinite);
-    if (points.length < 2) return { path: '', endY: null, coords: [] };
+    const points = values.filter(Number.isFinite);
+    if (points.length < 2) return { path: '', coords: [] };
     const low = Math.min(...points), high = Math.max(...points);
-    const range = high - low || Math.max(Math.abs(high) * 0.02, 1e-9);
+    const range = Math.max(high - low, Math.max(Math.abs(low), Math.abs(high)) * .2, 1e-9) * 1.2;
+    const bottom = (low + high - range) / 2;
     const x = typeof xAt === 'function' ? xAt : index => 4 + index * 112 / (points.length - 1);
-    const coords = points.map((value, index) => ({ x: x(index, points.length).toFixed(1), y: (30 - (value - low) / range * 26).toFixed(1) }));
+    const coords = points.map((value, index) => ({ x: x(index, points.length).toFixed(1), y: (30 - (value - bottom) / range * 26).toFixed(1) }));
     return {
       path: coords.map((point, index) => (index ? 'L' : 'M') + point.x + ' ' + point.y).join(' '),
-      endY: coords[coords.length - 1].y,
       coords,
+      bounds: { low: bottom, high: bottom + range },
     };
   },
 
   _diagnosticLossTrend(bestStep) {
     const points = this._trainingDiagnosticPoints();
-    if (points.length < 2) return { values: [], bestIndex: -1 };
-    const best = points.findIndex(point => point.step === bestStep);
-    const indices = new Set([0, points.length - 1]);
-    if (best >= 0) indices.add(best);
-    if (points.length <= 40) points.forEach((_, index) => indices.add(index));
-    else for (let index = 0; index < 37; index++) indices.add(Math.round(index * (points.length - 1) / 36));
-    const sampled = Array.from(indices).sort((left, right) => left - right);
-    return { values: sampled.map(index => points[index].value), bestIndex: sampled.indexOf(best) };
+    if (points.length < 2) return { path: '', coords: [], bestIndex: -1 };
+    const first = points[0].step, span = points.at(-1).step - first;
+    return { ...this._sparklineGeometry(points.map(point => point.value), index => 4 + (points[index].step - first) / span * 112), points, signature: JSON.stringify(points), bestIndex: points.findIndex(point => point.step === bestStep) };
   },
 
   _diagnosticMetricTrends() {
-    const points = this._trainingDiagnosticPoints();
+    // 160 个原始点覆盖 40 个统计观测各自的 120 点窗口，刷新与实时更新使用同一计算。
+    const points = this._trainingDiagnosticPoints(160);
     const trends = { change: [], volatility: [] };
-    if (points.length < 6) return trends;
-    const sampleCount = Math.min(24, points.length - 5);
-    const indices = new Set();
-    for (let index = 0; index < sampleCount; index++) {
-      indices.add(5 + Math.round(index * (points.length - 6) / Math.max(1, sampleCount - 1)));
-    }
-    indices.forEach(index => {
-      const diagnostic = this._trainingDiagnostics(points.slice(0, index + 1));
+    for (let index = Math.max(0, points.length - 40); index < points.length; index++) {
+      const diagnostic = this._trainingDiagnostics(points.slice(Math.max(0, index - 119), index + 1));
       for (const [key, value] of [
         ['change', diagnostic.changePct], ['volatility', diagnostic.volatilityPct],
       ]) {
-        if (Number.isFinite(value)) trends[key].push(value);
+        if (Number.isFinite(value)) trends[key].push({ step: points[index].step, value });
       }
-    });
+    }
     return trends;
-  },
-
-  _seriesLatest(tag, fallback = '—') {
-    const series = (this.lossSeries || []).find(item => item.tag === tag);
-    if (!series) return fallback;
-    const value = series.latest != null ? series.latest : (series.points && series.points.length ? series.points[series.points.length - 1].value : null);
-    if (value == null || !Number.isFinite(Number(value))) return fallback;
-    const number = Number(value);
-    return tag.startsWith('lr/') ? this._formatLearningRate(number, fallback) : number.toFixed(4);
   },
 
   _formatLearningRate(value, fallback) {
@@ -901,10 +1003,10 @@ window.monitorRenderMixin = {
       + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
   },
 
-  _trainingDiagnosticPoints() {
+  _trainingDiagnosticPoints(limit = 120) {
     const series = (this.lossSeries || []).find(item => item.tag === 'loss/average')
       || (this.lossSeries || []).find(item => item.tag === 'loss/current');
-    return this._cleanLossPoints(series && (series.diagnostic_points || series.points));
+    return this._cleanLossPoints(series && (series.diagnostic_points || series.points)).slice(-limit);
   },
 
   // Loss 点清洗唯一入口：按 step 去重（保留同 step 的最后一个值）后升序。
@@ -1136,7 +1238,7 @@ window.monitorRenderMixin = {
     const setText = (field, value) => {
       const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
       if (element) {
-        if (['change', 'volatility', 'best', 'best-meta', 'gap'].includes(field)) this._patchMonitorNumber(element, value, root._metricMotion);
+        if (['change', 'volatility', 'best', 'gap'].includes(field)) this._patchMonitorNumber(element, value, root._metricMotion);
         else if (element.textContent !== String(value)) element.textContent = value;
       }
     };
@@ -1173,30 +1275,20 @@ window.monitorRenderMixin = {
     const lossTrend = this._diagnosticLossTrend(diagnostic.bestStep);
     for (const key of ['change', 'volatility', 'best', 'gap']) {
       const isLossTrace = key === 'best' || key === 'gap';
-      const geometry = this._sparklineGeometry(isLossTrace ? lossTrend.values : trends[key]);
       const path = root.querySelector('[data-diagnostic-spark="' + key + '"]');
       const point = root.querySelector('[data-diagnostic-point="' + key + '"]');
       const low = root.querySelector('[data-diagnostic-low="' + key + '"]');
-      if (path) path.setAttribute('d', geometry.path);
-      if (point) {
-        point.setAttribute('visibility', geometry.endY == null || key === 'best' ? 'hidden' : 'visible');
-        if (geometry.endY != null) {
-          point.setAttribute('x1', geometry.coords[geometry.coords.length - 1].x);
-          point.setAttribute('x2', geometry.coords[geometry.coords.length - 1].x);
-          point.setAttribute('y1', geometry.endY);
-          point.setAttribute('y2', geometry.endY);
-        }
+      if (!isLossTrace) {
+        if (path) this._patchRollingSparkline(path, trends[key], root._metricMotion, root.dataset.motionContext, point, 1);
+        if (low) low.setAttribute('visibility', 'hidden');
+        continue;
       }
-      const bestPoint = isLossTrace ? geometry.coords[lossTrend.bestIndex] : null;
-      if (low) {
-        low.setAttribute('visibility', bestPoint ? 'visible' : 'hidden');
-        if (bestPoint) {
-          low.setAttribute('x1', bestPoint.x);
-          low.setAttribute('x2', bestPoint.x);
-          low.setAttribute('y1', bestPoint.y);
-          low.setAttribute('y2', bestPoint.y);
-        }
-      }
+      // 最低点/最新点保留真实步数位置；仅在纵轴量程变化时缩放，不做横向滚动。
+      const geometry = lossTrend;
+      if (path) this._patchSparklineFrame(path, geometry, root._metricMotion, root.dataset.motionContext + '|loss-reference', [
+        { element: point, point: key === 'gap' ? geometry.coords.at(-1) : null },
+        { element: low, point: geometry.coords[geometry.bestIndex] },
+      ]);
     }
   },
 

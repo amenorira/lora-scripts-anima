@@ -20,11 +20,10 @@ from backend.monitor.training import (
     latest_train_config, extract_train_params,
 )
 from backend.monitor.artifacts import (
-    newest_previews, scan_history, read_train_log, _parse_toml_config,
-    list_output_files, enrich_model_files_with_loss,
+    newest_previews, scan_history, _parse_toml_config,
+    list_output_files, read_output_summary, enrich_model_files_with_loss,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
-from backend.monitor.monitor import _PROGRESS_FIELDS
 from backend.monitor.run_registry import (
     find_run_record_by_task_id,
     load_run_record,
@@ -92,6 +91,13 @@ def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | No
     if task_id:
         return find_train_log_path(task_id, run_path)
     return find_run_log_path(run_path)
+
+
+def _read_run_log_progress(run_path: Path, limit: int) -> dict:
+    """实时详情与历史详情共用规范化计数、尾页及进度解析。"""
+    page = read_log_slice(find_run_log_path(run_path), limit=limit, tail=True)
+    return {"log_total": page["total"], "log_lines": page["lines"],
+            **parse_log_progress(page["lines"])}
 
 
 async def build_live_monitor_snapshot(
@@ -166,6 +172,8 @@ async def build_live_monitor_snapshot(
         "artifact_available": bool(record and record["artifact_available"]),
         "artifact_external": bool(record and record["artifact_external"]),
         "preview_enabled": record["preview_enabled"] if record else None,
+        "log_total": 0,
+        "output_count": 0,
     }
     if not active:
         return result
@@ -178,6 +186,9 @@ async def build_live_monitor_snapshot(
 
     if not detail:
         return result
+
+    if record and record["artifact_available"]:
+        result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_path)))["count"]
 
     train_config = await asyncio.to_thread(latest_train_config, active_task_id or None)
 
@@ -197,23 +208,8 @@ async def build_live_monitor_snapshot(
     result["train_params"] = await asyncio.to_thread(
         _extract_train_params_for_run, run_path, train_config
     )
-    # 从内部 run 目录读取日志 + 进度。
-    def _read_run_log_and_progress(run_dir_path: Path) -> tuple[list[str], dict]:
-        latest_log = find_run_log_path(run_dir_path)
-        if not latest_log:
-            return [], {}
-        lines = read_train_log(active_task_id, run_dir_path)
-        if not lines:
-            return [], {}
-        return lines[-log_tail_lines:], parse_log_progress(lines)
-
     if active_status == "RUNNING" and run_path:
-        log_lines, progress = await asyncio.to_thread(_read_run_log_and_progress, run_path)
-        if log_lines:
-            for key in _PROGRESS_FIELDS:
-                if key in progress and progress[key] is not None:
-                    result[key] = progress[key]
-            result["log_lines"] = log_lines
+        result.update(await asyncio.to_thread(_read_run_log_progress, run_path, log_tail_lines))
 
     return result
 
@@ -458,32 +454,9 @@ async def monitor_run_detail(run_dir: str = Query("")):
     # ── 输出文件计数（轻量目录扫描；让前端 tab 徽标与日志/样本计数一样
     #    首屏即有，避免懒加载完成后按钮宽度变化引起指示条错位）──
     if record["artifact_available"]:
-        result["output_count"] = len(await asyncio.to_thread(list_output_files, str(artifact_dir)))
+        result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_dir)))["count"]
 
-    # ── 训练日志 ──
-    # 历史记录：用全文解析进度（total_steps/percent 等常出现在早期行），
-    # 但只回传尾部 _LOG_DETAIL_TAIL_LINES 行；完整日志由前端「完整日志」模式
-    # 经 /monitor/log-slice 分页拉取，避免大日志全量回传。
-    def _read_log_and_progress(run_dir_path: Path) -> tuple[list[str] | None, dict]:
-        latest_log = find_run_log_path(run_dir_path)
-        if latest_log:
-            try:
-                page = read_log_slice(latest_log, limit=_LOG_DETAIL_TAIL_LINES, tail=True)
-                result["log_total"] = page["total"]
-                log_lines = page["lines"]
-                if log_lines:
-                    progress = parse_log_progress(log_lines)
-                    return log_lines, progress
-            except Exception:
-                pass
-        return None, {}
-
-    log_lines, progress = await asyncio.to_thread(_read_log_and_progress, abs_run_dir)
-    if log_lines:
-        result["log_lines"] = log_lines[-_LOG_DETAIL_TAIL_LINES:]
-        for key in _PROGRESS_FIELDS:
-            if key in progress and progress[key] is not None:
-                result[key] = progress[key]
+    result.update(await asyncio.to_thread(_read_run_log_progress, abs_run_dir, _LOG_DETAIL_TAIL_LINES))
 
     # ── result.json（训练结果）──
     def _read_meta_files(run_dir_path: Path) -> tuple[dict | None, str | None]:

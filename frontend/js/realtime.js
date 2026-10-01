@@ -302,6 +302,7 @@ window.realtimeMixin = {
         timeout = setTimeout(() => controller.abort(), 4000);
         const taskBoundaryAt = this.liveTaskBoundaryAt;
         const requestedTaskId = this.liveTaskId;
+        const monitorVersions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0 };
         const explicitDetail = options && Object.prototype.hasOwnProperty.call(options, 'monitorDetail')
           ? !!options.monitorDetail
           : this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir;
@@ -348,7 +349,7 @@ window.realtimeMixin = {
           && (monitorDetailGeneration == null
             || monitorDetailGeneration === this._monitorRealtimeDetailGeneration)
         ));
-        this._applyRealtimeSnapshot(snapshot, { applyMonitor });
+        this._applyRealtimeSnapshot(snapshot, { applyMonitor, monitorVersions });
         return true;
       } catch (_) {
         return false;
@@ -383,7 +384,7 @@ window.realtimeMixin = {
     // 训练生命周期状态不在这里拼装：轮询（_applyManagedTrainingState）是唯一
     // 写入方。这里只回填各领域快照（监控详情/打标/环境）。
     if ((!options || options.applyMonitor !== false) && typeof this.applyRealtimeMonitorSnapshot === 'function') {
-      this.applyRealtimeMonitorSnapshot(snapshot);
+      this.applyRealtimeMonitorSnapshot(snapshot, options && options.monitorVersions);
     }
     if (typeof this.applyRealtimeTaggerSnapshot === 'function') this.applyRealtimeTaggerSnapshot(snapshot);
     if (typeof this.applyRealtimeEnvironmentSnapshot === 'function') this.applyRealtimeEnvironmentSnapshot(snapshot);

@@ -19,7 +19,7 @@ from typing import Any
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
-from backend.monitor.artifacts import find_train_log_path, newest_previews, _clean_log_text
+from backend.monitor.artifacts import find_train_log_path, newest_previews, read_output_summary, read_log_slice
 from backend.monitor.run_registry import find_run_record_by_task_id
 from backend.tasks import tm
 
@@ -30,6 +30,7 @@ _PROGRESS_FIELDS = (
     "eta", "elapsed", "speed", "has_error", "error_msg",
 )
 _MAX_REALTIME_LOG_CHARS = 48 * 1024
+_MAX_REALTIME_LOG_LINES = 1000
 _MAX_REALTIME_METRIC_POINTS = 256
 
 
@@ -168,10 +169,10 @@ class TaskMonitor:
         self._task: asyncio.Task | None = None
         self._sample_interval = 1.0  # 真实采样间隔（秒）
         self._last_status: dict[str, str] = {}  # task_id -> last_status
-        self._last_log_pos: dict[str, int] = {}  # task_id -> file byte offset for delta tracking
+        self._last_log_cursor: dict[str, dict] = {}  # 与分页共用规范化行号，包含可被覆盖的末行。
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
-        self._last_preview_check: dict[str, float] = {}
-        self._last_preview_signature: dict[str, str] = {}
+        self._last_artifact_check: dict[str, float] = {}
+        self._last_artifact_signature: dict[str, str] = {}
         self._pending_artifact_signature: dict[str, str] = {}
         # 控制台进度条状态
         self._console_progress = None
@@ -328,12 +329,13 @@ class TaskMonitor:
             run_dir = str(record["run_path"]) if record else None
             run_dir_path = Path(run_dir) if run_dir else None
 
-            # ── 日志增量：按文件字节偏移读取（单次 I/O，同时用于进度解析）──
-            new_lines = await asyncio.to_thread(
+            # 增量索引只扫描追加内容，行号/进度条覆盖规则与 HTTP 分页一致。
+            log_delta = await asyncio.to_thread(
                 self._read_log_delta, task_id, run_dir_path
             )
 
-            if new_lines:
+            if log_delta is not None:
+                new_lines = log_delta["lines"]
                 # 从增量行中解析进度（无需额外 4MB tail 读取）
                 parsed_progress = await asyncio.to_thread(
                     parse_log_progress, new_lines
@@ -360,8 +362,10 @@ class TaskMonitor:
                     "status": "RUNNING",
                     "data": {
                         "lines": log_lines,
-                        "total": len(new_lines),
-                        "truncated": log_truncated,
+                        "log_total": log_delta["total"],
+                        "offset": log_delta["offset"] + len(new_lines) - len(log_lines),
+                        "reset": log_delta["reset"],
+                        "truncated": log_truncated or log_delta["truncated"],
                     }
                 })
 
@@ -371,12 +375,12 @@ class TaskMonitor:
                 run_dir=run_dir,
                 output_name=train_config.get("output_name", ""),
             )
-            await self._collect_preview_update(task_id, record)
+            await self._collect_artifact_update(task_id, record)
         except Exception as e:
             logger.debug(f"收集任务数据失败 (task_id={task_id}): {e}")
 
-    async def _collect_preview_update(self, task_id: str, record: dict | None) -> None:
-        """Emit a tiny notice when the newest generated preview changes.
+    async def _collect_artifact_update(self, task_id: str, record: dict | None) -> None:
+        """Emit counts and a tiny notice when previews or output files change.
 
         Preview paths are metadata and remain an HTTP read; putting the image
         itself (or a whole growing preview list) on the realtime socket would
@@ -385,9 +389,9 @@ class TaskMonitor:
         if not record or not record.get("artifact_available"):
             return
         now = time.monotonic()
-        if now - self._last_preview_check.get(task_id, 0.0) < 2.0:
+        if now - self._last_artifact_check.get(task_id, 0.0) < 2.0:
             return
-        self._last_preview_check[task_id] = now
+        self._last_artifact_check[task_id] = now
         previews = await asyncio.to_thread(
             newest_previews,
             str(record["artifact_path"]),
@@ -396,68 +400,50 @@ class TaskMonitor:
             record.get("run_dir", ""),
         )
         latest = previews[-1] if previews else None
-        def model_signature():
-            items = []
-            for path in Path(record["artifact_path"]).iterdir():
-                if path.suffix.lower() in {".safetensors", ".pt", ".pth"} and path.is_file():
-                    stat = path.stat()
-                    items.append((path.name, stat.st_size, stat.st_mtime_ns))
-            return repr(sorted(items))
-        models = await asyncio.to_thread(model_signature)
-        signature = (f"{latest.get('path', '')}:{latest.get('version', '')}" if latest else "") + models
+        outputs = await asyncio.to_thread(read_output_summary, str(record["artifact_path"]))
+        signature = repr((latest.get("path", "") if latest else "", latest.get("version", "") if latest else "", outputs["count"], outputs["models"]))
         previous = self._pending_artifact_signature.get(task_id)
         self._pending_artifact_signature[task_id] = signature
         if previous != signature:
             return
-        if signature == self._last_preview_signature.get(task_id):
+        if signature == self._last_artifact_signature.get(task_id):
             return
-        self._last_preview_signature[task_id] = signature
+        self._last_artifact_signature[task_id] = signature
         await realtime_hub.publish(task_topic(task_id), "task.artifacts", {
             "task_id": task_id,
             "kind": "training",
             "latest_preview": latest,
+            "output_count": outputs["count"],
         })
 
-    def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> list[str] | None:
-        """从上次读取位置读取日志文件增量内容，返回新增行列表。
-        使用字节偏移追踪，不受 _tail_file 大小限制影响。"""
+    def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> dict | None:
+        """从分页索引取得新增/被覆盖的行及文件总数，不靠推送批次长度累计计数。"""
         try:
             log_path = find_train_log_path(task_id, output_dir_path)
             if not log_path:
                 return None
 
-            last_pos = self._last_log_pos.get(task_id, 0)
-            file_size = log_path.stat().st_size
-
-            # 文件被截断/轮转：重置偏移
-            if file_size < last_pos:
-                last_pos = 0
-
-            if file_size <= last_pos:
-                return None  # 无新内容
-
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                f.seek(last_pos)
-                content = f.read()
-                new_pos = f.tell()
-                self._last_log_pos[task_id] = new_pos
-
-            if not content:
+            stat = log_path.stat()
+            stamp = (str(log_path.resolve()), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+            previous = self._last_log_cursor.get(task_id)
+            if previous and previous["stamp"] == stamp:
                 return None
-
-            # 清理 ANSI 转义序列 + tqdm 进度条 \r 覆盖
-            content = _clean_log_text(content)
-            lines = content.split("\n")
-            # 如果 last_pos=0（首次读取或截断后），可能是完整文件读取；
-            # 否则是增量读取，末尾空行往往是 write buffer 产生的半行
-            if last_pos > 0 and lines and lines[-1] == "":
-                lines.pop()
-
-            return lines if lines else None
+            page = read_log_slice(log_path, limit=_MAX_REALTIME_LOG_LINES, tail=True)
+            total, lines = page["total"], page["lines"]
+            reset = bool(previous and (stamp[:3] != previous["stamp"][:3]
+                         or page["generation"] != previous["generation"]))
+            start = max(0, previous["total"] - 1) if previous and not reset else 0
+            truncated = start < page["offset"]
+            offset = max(start, page["offset"])
+            delta = lines[offset - page["offset"]:]
+            if previous and not reset and offset == previous["total"] - 1 and delta and delta[0] == previous["last"]:
+                delta = delta[1:]
+                offset += 1
+            self._last_log_cursor[task_id] = {"stamp": stamp, "generation": page["generation"], "total": total, "last": lines[-1] if lines else ""}
+            if not delta and not reset and (not previous or total == previous["total"]):
+                return None
+            return {"lines": delta, "offset": offset, "total": total, "reset": reset, "truncated": truncated}
         except OSError:
-            return None
-        except Exception:
-            logger.debug(f"读取日志增量失败 (task_id={task_id})", exc_info=True)
             return None
 
     async def _collect_tb_incremental(
@@ -519,10 +505,10 @@ class TaskMonitor:
         """清理任务状态"""
         # 保留终态，避免任务仍在 TaskManager 中保留期间，每一轮轮询都
         # 被误判为一次新的状态变化并重复发送终态事件。
-        self._last_log_pos.pop(task_id, None)
+        self._last_log_cursor.pop(task_id, None)
         self._last_progress.pop(task_id, None)
-        self._last_preview_check.pop(task_id, None)
-        self._last_preview_signature.pop(task_id, None)
+        self._last_artifact_check.pop(task_id, None)
+        self._last_artifact_signature.pop(task_id, None)
         self._pending_artifact_signature.pop(task_id, None)
         logger.debug(f"清理任务状态: {task_id}")
 

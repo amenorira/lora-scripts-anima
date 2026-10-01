@@ -11,6 +11,7 @@ window.monitorLogCoreMixin = {
   },
   clearLogs() {
     this.logLines = []; this._logContentVersion = 0;
+    this._logTailOffset = this.logTotal;
     this._renderedLogCount = 0; this._renderedLogFilterKey = '';
     this._logDirty = true; this._logTrimK = 0; this._forceLogRebuild = true;
     this.renderDashboard();
@@ -20,39 +21,48 @@ window.monitorLogCoreMixin = {
   _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
-  _tqdmProgressSignature(line) {
-    const match = String(line || '').match(/^\s*steps:\s+\d+%\|.*\|\s*(\d+)\s*\/\s*(\d+)(?=\s*\[)/i);
-    return match ? match[1] + '/' + match[2] : '';
+  _applyMonitorLogSnapshot(lines = [], total = 0, preserveFull = false) {
+    const tail = lines.slice(-this._logCap());
+    preserveFull = preserveFull && total >= this.logTotal
+      && !((this.logAutoScroll || this._logAtBottom) && this.logFullOffset + this.logFullLines.length >= this.logTotal);
+    this.logTotal = total;
+    this._logObservationVersion = (this._logObservationVersion || 0) + 1;
+    this.logLines = tail;
+    this._logTailOffset = Math.max(0, total - tail.length);
+    this._logContentVersion++;
+    this._logDirty = true;
+    if (!preserveFull) {
+      this.logFullLines = tail.slice(-this._logPageSize());
+      this.logFullOffset = Math.max(0, total - this.logFullLines.length);
+      this._logFullLoaded = true;
+      this._logFullNeedsResync = false;
+      this._logFullSlide = false;
+      this._logFullEvictK = 0;
+      this._forceLogRebuild = true;
+    }
   },
 
-  _mergeRealtimeLogLines(target, incoming) {
-    const lines = Array.isArray(incoming) ? incoming : [];
-    let overlap = 0;
-    const maxOverlap = Math.min(target.length, lines.length);
-    for (let size = maxOverlap; size > 0; size--) {
-      let matches = true;
-      for (let index = 0; index < size; index++) {
-        if (target[target.length - size + index] !== lines[index]) { matches = false; break; }
-      }
-      if (matches) { overlap = size; break; }
-    }
+  // HTTP 尾页与 WS 重放可能交叠；按绝对行号替换/追加，文本相同的真实新行也保留。
+  _mergeRealtimeLogPage(target, offset, data, cap) {
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    const incomingOffset = data.offset;
+    const end = offset + target.length;
+    const gap = incomingOffset > end;
+    const reset = data.reset || gap || data.log_total < end;
+    const skip = reset ? 0 : Math.max(0, offset - incomingOffset);
+    const index = reset ? 0 : Math.max(0, incomingOffset - offset);
+    const incoming = lines.slice(skip);
+    if (!reset && incomingOffset + lines.length <= offset) return { offset, trimmed: 0, changed: false, replaced: false };
+    const replaced = reset || incoming.some((line, i) => index + i < target.length && target[index + i] !== line);
+    const changed = replaced || index + incoming.length !== target.length;
+    if (changed) target.splice(index, target.length - index, ...incoming);
+    const trimmed = Math.max(0, target.length - cap);
+    if (trimmed) target.splice(0, trimmed);
+    return { offset: (reset ? incomingOffset : offset) + trimmed, trimmed, changed, replaced, gap };
+  },
 
-    let appended = 0;
-    let replaced = 0;
-    for (const line of lines.slice(overlap)) {
-      const signature = this._tqdmProgressSignature(line);
-      const lastIndex = target.length - 1;
-      if (signature && lastIndex >= 0 && signature === this._tqdmProgressSignature(target[lastIndex])) {
-        if (target[lastIndex] !== line) {
-          target[lastIndex] = line;
-          replaced++;
-        }
-        continue;
-      }
-      target.push(line);
-      appended++;
-    }
-    return { appended, replaced, overlap, changed: appended > 0 || replaced > 0 };
+  _needsLogTailFetch() {
+    return !this.logFullLoading && (!this._logFullLoaded || (this._logFullNeedsResync && (this.logAutoScroll || this._logAtBottom)));
   },
 
   // ── 完整日志模式（后端分页）──────────────────────────────
@@ -135,7 +145,7 @@ window.monitorLogCoreMixin = {
       return;
     }
     const requestSeq = ++this._logSliceRequestSeq;
-    const eventVersion = this._logEventVersion || 0;
+    const eventVersion = this._logObservationVersion || 0;
     const sourceKey = runDir ? ('run:' + runDir) : ('task:' + taskId);
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
     let offset = this.logFullOffset;
@@ -187,14 +197,14 @@ window.monitorLogCoreMixin = {
           }
         }
         this.logFullOffset = d.offset;
-        this.logFullTotal = d.total;
+        // 请求期间可能收到更晚的推送；分页响应不能把徽标总数倒退。
+        const updatedDuringRequest = eventVersion !== (this._logObservationVersion || 0);
+        this.logTotal = updatedDuringRequest && !this.selectedRunDir ? Math.max(this.logTotal, d.total) : d.total;
         this.logFullLines = nextLines;
         this.logFullMatches = nextMatches;
         this.logFullMatchesTruncated = !!d.matches_truncated;
         this.logFullQuery = q;
         this._logFullSourceKey = sourceKey;
-        // 更新 logTotal（live 模式首次探得）
-        if (!this.selectedRunDir) this.logTotal = d.total;
         if (opts._matchIdx !== undefined) {
           this.logFullMatchIdx = opts._matchIdx;
         } else if (opts.matchIdx === undefined) {
@@ -207,7 +217,8 @@ window.monitorLogCoreMixin = {
         this._forceLogRebuild = true;
         this._logFullSlide = false;
         this._logFullEvictK = 0;
-        if (opts.tail && eventVersion !== (this._logEventVersion || 0)) this._logFullNeedsResync = true;
+        if (opts.tail && updatedDuringRequest) this._logFullNeedsResync = true;
+        this._logObservationVersion = (this._logObservationVersion || 0) + 1;
       } else {
         this.toast(j.message || this.t('monitor.logSliceError'), 'error');
       }
@@ -240,7 +251,7 @@ window.monitorLogCoreMixin = {
 
   /** 完整日志翻页 */
   async logFullFirstPage() {
-    if (this.logFullLoading || this.logFullTotal <= 0) return;
+    if (this.logFullLoading || this.logTotal <= 0) return;
     this.logAutoScroll = false;
     this._logAtBottom = false;
     if (this.logFullOffset > 0) await this.fetchLogSlice({ offset: 0 });
@@ -248,7 +259,7 @@ window.monitorLogCoreMixin = {
   },
   logFullLastPage() { this.followFullTail({ fetchNow: true }); },
   logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
-  logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
+  logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
   /** 上一/下一匹配行 */
   logFullPrevMatch() {
     if (!this.logFullMatches.length) return;
@@ -312,10 +323,10 @@ window.monitorLogRenderMixin = {
     let html = '';
     const tailLabel = this.selectedRunDir ? t('logBottom') : t('logLiveTail');
     // 顶部：在有日志且非加载中时始终可用——offset 已为 0 时它仍负责把当前页滚回开头。
-    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
+    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logTotal">' + this.esc(t('nextPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll ? \'btn-primary\' : \'btn-secondary\'" @click="logFullLastPage()" x-text="selectedRunDir ? t(\'monitor.logBottom\') : (logAutoScroll ? t(\'monitor.logLiveTail\') : t(\'monitor.followPaused\'))">' + this.esc(tailLabel) + '</button></div>';
     html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
@@ -325,7 +336,7 @@ window.monitorLogRenderMixin = {
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
     html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions">';
     // 当前页操作（复制、刷新）在前，整文件下载收尾：范围由小到大，下载保持最右的位置不变。
-    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullLoading" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
     return html;
@@ -360,7 +371,7 @@ window.monitorLogRenderMixin = {
       this._logChunking = false;
       this._populateLogs(contentEl, true);
       // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
-      if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
+      if (this.logMode === 'full' && this._needsLogTailFetch()) {
         // 无日志源（无训练且非历史模式）→ 不触发拉取，避免 toast 误报；保持空态文案。
         // 不标记 _logFullLoaded，以便后续训练启动/实时重连时自动重新拉取。
         if (!this._hasLogSource()) {
@@ -380,7 +391,7 @@ window.monitorLogRenderMixin = {
     // ── full 模式：末页 WebSocket 增量 + 翻页静态；首屏/重连自动拉取末页 ──
     if (this.logMode === 'full') {
       // 首屏未加载或实时重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
-      if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
+      if (this._needsLogTailFetch()) {
         if (!this._hasLogSource()) {
           this._logFullNeedsResync = false;  // 留待有源时再拉
         } else {
@@ -670,7 +681,7 @@ window.monitorLogRenderMixin = {
     if (countEl) countEl.textContent = this._logDisplayCount();
   },
   _logDisplayCount() {
-    return this.logMode === 'full' ? (this.logFullTotal || 0) : this.logLines.length;
+    return this.logMode === 'full' ? (this.logTotal || 0) : this.logLines.length;
   },
   /** 日志空态文案：按场景区分（实时无训练 / 实时训练中等待输出 / 历史无日志 / 加载中） */
   _logEmptyMessage(isLoading) {
@@ -686,7 +697,7 @@ window.monitorLogRenderMixin = {
   },
   // 完整日志工具栏文本（reactive：x-text 调用）
   logFullRangeText() {
-    const total = this.logFullTotal || 0;
+    const total = this.logTotal || 0;
     if (!total) return '0 / 0';
     const off = this.logFullOffset || 0;
     const end = Math.min(off + (this.logFullLines ? this.logFullLines.length : 0), total);

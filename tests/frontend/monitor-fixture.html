@@ -60,7 +60,7 @@
   window.fetch=(url,opts)=> {
     if (!String(url).startsWith('/api/')) return realFetch(url,opts);
     const query = new URL(String(url), location.href).searchParams.get('q') || '';
-    return Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs,match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]));
+    return Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('previews')?samples:String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs.slice(),match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]));
   };
   document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
@@ -78,23 +78,26 @@
         d.speed=(5.1+(d.step%7)*.07).toFixed(2)+' s/it';
         d.elapsed=this._formatMonitorDuration('',2601+(d.step-518)*5);
         d.eta=this._formatMonitorDuration('',1114-(d.step-518)*5);
+        this._recordMonitorPerfSample(d);
         const current=this.lossSeries.find(s=>s.tag==='loss/current');
         const previous=current.points.at(-1).value;
         current.points.push({step:d.step,value:previous*(d.step%2?1.038:.962)});
+        current.points=current.points.slice(-160);
         this.lossSeries[0].points.push({step:d.step,value:.035+(d.step%5)*.0002});
+        this.lossSeries[0].points=this.lossSeries[0].points.slice(-160);
         this.lossSeries[1].latest=Math.max(0,.0000426-(d.step-518)*.0000001);
         this.lossSeries[1].points.push({step:d.step,value:this.lossSeries[1].latest});
         this.lossDataVersion++;this.renderDashboard();
       },
-      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:'14/20',elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
+      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
       previews:samples,previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
       lossSeries:[
-        {tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:i<60?.027+Math.sin(i)*.0003:i<90?.039+Math.sin(i)*.001:.034-(i-90)*.00001+Math.sin(i)*.0002}))},
-        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:i+1,value:.00006-i*(.0000174/119)}))},
-        {tag:'loss/current',points:Array.from({length:120},(_,i)=>({step:399+i,value:.034+Math.sin(i*.7)*.004}))}
+        {tag:'loss/average',points:Array.from({length:160},(_,i)=>{const j=i-40;return {step:359+i,value:j<60?.027+Math.sin(j)*.0003:j<90?.039+Math.sin(j)*.001:.034-(j-90)*.00001+Math.sin(j)*.0002};})},
+        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:399+i,value:.00006-i*(.0000174/119)}))},
+        {tag:'loss/current',points:Array.from({length:160},(_,i)=>({step:359+i,value:.034+Math.sin((i-40)*.7)*.004}))}
       ],
       trainParams:[
         {key:'pretrained_model_name_or_path',value:'C:/models/anima-base-v1.0.safetensors',section:'model'},
@@ -110,7 +113,7 @@
         {key:'seed',value:1337,section:'training'},
         ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
       ],
-      init(){this.$nextTick(()=>this.renderDashboard());}
+      init(){this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this.$nextTick(()=>this.renderDashboard());}
     });
   }));
   const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);

@@ -594,15 +594,13 @@ META_FILES = {"config.toml", "training.yaml", "run_info.txt", "output_dir.txt", 
                "error.log", "task_meta.json"}
 
 
-def list_output_files(run_dir: str) -> list[dict]:
-    """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
+def _output_file_paths(run_dir: str):
+    """计数与文件列表共用目录范围及隐藏项规则。"""
     rd = Path(run_dir)
     if not rd.is_absolute():
         rd = (REPO_ROOT / run_dir).resolve()
     if not rd.exists() or not rd.is_dir():
-        return []
-
-    result = []
+        return
     for p in _iter_dir(rd):
         if not p.is_file():
             continue
@@ -610,6 +608,24 @@ def list_output_files(run_dir: str) -> list[dict]:
             rel = str(p.relative_to(rd)).replace("\\", "/")
         except ValueError:
             continue
+        yield p, rel
+
+
+def read_output_summary(run_dir: str) -> dict:
+    """轻量总数与模型变更签名；不读取样本/日志等文件的元数据或解析检查点。"""
+    count, models = 0, []
+    for path, rel in _output_file_paths(run_dir):
+        count += 1
+        if path.suffix.lower() in LORA_EXTENSIONS:
+            stat = path.stat()
+            models.append((rel, stat.st_size, stat.st_mtime_ns))
+    return {"count": count, "models": sorted(models)}
+
+
+def list_output_files(run_dir: str) -> list[dict]:
+    """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
+    result = []
+    for p, rel in _output_file_paths(run_dir):
         suffix = p.suffix.lower()
         is_lora = suffix in LORA_EXTENSIONS
         is_image = suffix in IMAGE_EXTENSIONS
@@ -623,11 +639,12 @@ def list_output_files(run_dir: str) -> list[dict]:
             category = "tensorboard"
         else:
             category = "other"
+        stat = p.stat()
         entry = {
             "name": p.name,
             "path": rel,
-            "size": p.stat().st_size,
-            "mtime": p.stat().st_mtime,
+            "size": stat.st_size,
+            "mtime": stat.st_mtime,
             "is_lora": is_lora,
             "category": category,
         }
@@ -696,34 +713,6 @@ def find_train_log_path(task_id: str, output_dir: Path | None = None) -> Path | 
     return None
 
 
-def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
-    """读取训练任务的实时日志（tail 方式，高性能）。
-    优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
-    now = time.time()
-    with _log_file_cache_lock:
-        if task_id in _log_file_cache:
-            cache_time, cached_path = _log_file_cache[task_id]
-            if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
-                cached_path_ref = cached_path
-            else:
-                cached_path_ref = None
-        else:
-            cached_path_ref = None
-    if cached_path_ref:
-        lines = _tail_file(cached_path_ref)
-        if lines:
-            return lines
-
-    # 使用 find_train_log_path 定位文件
-    log_path = find_train_log_path(task_id, output_dir)
-    if log_path:
-        lines = _tail_file(log_path)
-        if lines:
-            return lines
-
-    return []
-
-
 # 完整日志分页：单次搜索返回的匹配行号上限（避免超大文件撑爆响应）
 _LOG_SLICE_MAX_MATCHES = 5000
 
@@ -754,7 +743,7 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
       - tail: 为 True 时定位到文件末尾（offset = max(0, total-limit)）；用于实时任务
         首次进入完整日志模式（此时前端未知 total，无法自行计算尾部 offset）。
     """
-    empty = {"total": 0, "offset": offset, "limit": limit,
+    empty = {"total": 0, "offset": offset, "limit": limit, "generation": 0,
              "lines": [], "query": query, "match_indices": []}
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:

@@ -5,7 +5,6 @@ global.window = {};
 global.document = { getElementById: () => null, hidden: false };
 eval(fs.readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-core.js', 'utf8'));
-eval(fs.readFileSync('frontend/js/monitor-logs.js', 'utf8'));
 eval(fs.readFileSync('frontend/js/monitor-render.js', 'utf8'));
 // 监控页与训练页共用一个 Alpine 组件：参数摘要复用训练表单的选项标签解析。
 eval(fs.readFileSync('frontend/js/training-core.js', 'utf8'));
@@ -44,17 +43,19 @@ function summaryRoot() {
 }
 
 test('summary patches live state, actual terminal progress, degraded connection and errors', () => {
-  const a = app({ realtimeState: 'degraded', realtimeTaskStateUnknown: true });
+  const a = app({ realtimeState: 'degraded', realtimeTaskStateUnknown: true, trainParams: [{ key: 'max_train_epochs', value: 20 }] });
   const root = summaryRoot();
   const t = key => key;
-  a._patchOverviewStatus(root, { state: 'RUNNING', step: 518, total_steps: 740, percent: 70, elapsed: '43:21', eta: '18:34', has_error: true, error_msg: 'Disk error' }, t, false);
+  a._patchOverviewStatus(root, { state: 'RUNNING', step: 518, total_steps: 740, percent: 70, epoch: 5, elapsed: '43:21', eta: '18:34', has_error: true, error_msg: 'Disk error' }, t, false);
+  assert.equal(root.node('[data-summary-field="epoch"]').textContent, 'epochProgress 5/20');
   assert.equal(root.node('[data-summary-field="step"]').textContent, '518 / 740 stepsUnit');
   assert.equal(root.node('[data-summary-field="percent"]').textContent, '70%');
   assert.equal(root.node('[data-overview-progress]').style.width, '70%');
   assert.equal(root.node('[data-summary-stop]').hidden, false);
   assert.equal(root.node('[data-summary-connection]').textContent, 'realtimeDelayed');
   assert.match(root.node('[data-summary-notice]').textContent, /Disk error.*taskStateUnknown/);
-  a._patchOverviewStatus(root, { state: 'FAILED', step: 520, total_steps: 740, percent: 70.27, elapsed: '43:30' }, t, false);
+  a._patchOverviewStatus(root, { state: 'FAILED', step: 520, total_steps: 740, percent: 70.27, epoch: '6/30', elapsed: '43:30' }, t, false);
+  assert.equal(root.node('[data-summary-field="epoch"]').textContent, 'epochProgress 6/30');
   assert.equal(root.node('[data-summary-field="percent"]').textContent, '70.3%');
   assert.equal(root.node('[data-summary-stop]').hidden, true);
 });
@@ -77,6 +78,8 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   assert.match(root.node('[data-diagnostic-trend]').d, /^M/);
   assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.1200');
   assert.equal(root.dataset.sparklineVersion, String(a.lossDataVersion));
+  a.handleRealtimeTaskMetrics({ points: { 'lr/unet': [{ step: 1, value: .00006 }] } });
+  assert.equal(a.monitorData.lr, '4.0000e-5');
 });
 
 test('idle transport preserves the completed run; final detail remains readable', () => {
@@ -84,29 +87,47 @@ test('idle transport preserves the completed run; final detail remains readable'
   a.applyRealtimeMonitorSnapshot({ monitor: { detail: true, state: 'IDLE', step: 0 } });
   assert.equal(a.monitorData.step, 100);
   assert.equal(a._logSliceRunDir(), 'output/A');
-  a.applyRealtimeMonitorSnapshot({ monitor: { detail: true, run_dir: 'output/A', active_task: { id: 'A' }, step: 101 } });
+  a.applyRealtimeMonitorSnapshot({ monitor: { detail: true, run_dir: 'output/A', active_task: { id: 'A' }, step: 101, log_total: 12000, log_lines: ['tail'], output_count: 20 } });
   assert.equal(a.monitorData.state, 'FINISHED');
   assert.equal(a.monitorData.step, 101);
+  assert.equal(a.logTotal, 12000);
+  assert.equal(a.outputTabCount, 20);
 });
 
 test('batched logs retain the entire eviction range', () => {
-  const a = app({ logFullLines: ['1', '2', '3'], logFullTotal: 3, _logPageSize: () => 3 });
-  a.handleRealtimeTaskLog({ data: { lines: ['4'] } });
-  a.handleRealtimeTaskLog({ data: { lines: ['5'] } });
+  const a = app({ logFullLines: ['1', '2', '3'], logTotal: 3, _logPageSize: () => 3 });
+  a.handleRealtimeTaskLog({ data: { lines: ['4'], offset: 3, log_total: 4 } });
+  a.handleRealtimeTaskLog({ data: { lines: ['5'], offset: 4, log_total: 5 } });
   assert.deepEqual(a.logFullLines, ['3', '4', '5']);
   assert.equal(a._logFullEvictK, 2);
+  a.logAutoScroll = a._logAtBottom = false;
+  a.handleRealtimeTaskLog({ data: { lines: ['5', '5'], offset: 5, log_total: 7 } });
+  a.handleRealtimeTaskLog({ data: { lines: ['5', '5'], offset: 5, log_total: 7 } });
+  assert.equal(a.logTotal, 7);
+  assert.deepEqual(a.logFullLines, ['3', '4', '5']);
+  assert.deepEqual(a.logLines.slice(-3), ['5', '5', '5']);
+  a.handleRealtimeTaskLog({ data: { lines: ['new tail'], offset: 4999, log_total: 5000, reset: true, truncated: true } });
+  assert.deepEqual(a.logFullLines, ['new tail']);
+  a.handleRealtimeTaskLog({ data: { lines: [], offset: 0, log_total: 0, reset: true } });
+  assert.equal(a.logTotal, 0);
+  assert.deepEqual(a.logFullLines, []);
+  a.logAutoScroll = true;
+  a._applyMonitorLogSnapshot(['1', '2'], 2);
+  a._applyMonitorLogSnapshot(['2', '3'], 3, true);
+  assert.deepEqual(a.logFullLines, ['2', '3']);
 });
 
 test('artifact events during a request retain a trailing refresh', async () => {
   let resolve;
-  const a = app({ monitorData: { run_dir: 'output/A' }, _outputFilesRunDir: 'output/A' });
+  const a = app({ currentRoute: 'monitor-dashboard', monitorData: { run_dir: 'output/A' }, _outputFilesRunDir: 'output/A', _lastRealtimePreviewRefreshAt: Date.now() });
   global.fetch = () => new Promise(done => { resolve = done; });
   const pending = a.loadOutputFiles();
-  await a.loadOutputFiles();
+  a.handleRealtimeTaskArtifacts({ output_count: 21 });
   resolve({ json: async () => ({ status: 'success', data: [] }) });
   await pending;
   assert.equal(a.outputFilesLoading, false);
   assert.equal(a._outputFilesNeedsRefresh, true);
+  assert.equal(a.outputTabCount, 21);
 });
 
 test('failed automatic log loading gives feedback and releases loading state', async () => {

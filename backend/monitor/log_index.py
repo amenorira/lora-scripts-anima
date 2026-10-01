@@ -6,6 +6,7 @@ tqdm can replace it, and writers may finish a previously incomplete line.
 from array import array
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from itertools import count
 from pathlib import Path
 import os
 import threading
@@ -14,6 +15,7 @@ import threading
 @dataclass
 class LogIndex:
     stamp: tuple = ()
+    generation: int = 0
     offsets: array = field(default_factory=lambda: array("Q"))
     tail: bytes = b""
     search: tuple = ()
@@ -22,6 +24,7 @@ class LogIndex:
 
 _indexes: OrderedDict[str, LogIndex] = OrderedDict()
 _lock = threading.RLock()
+_generations = count(1)
 
 
 def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -> dict:
@@ -48,6 +51,7 @@ def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -
                 start = index.offsets.pop() if append and index.offsets else 0
                 if not append:
                     index.offsets = array("Q")
+                    index.generation = next(_generations)
                 handle.seek(start)
                 signature = None
                 while handle.tell() < stat.st_size:
@@ -98,5 +102,5 @@ def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -
                             break
                         matches.append(n)
                 index.search = (needle, matches, truncated)
-            return {"total": total, "offset": offset, "limit": limit, "lines": lines,
+            return {"total": total, "offset": offset, "limit": limit, "lines": lines, "generation": index.generation,
                     "query": query, "match_indices": matches, "matches_truncated": truncated}
