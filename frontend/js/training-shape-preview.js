@@ -51,9 +51,17 @@ window.trainingShapePreviewMixin = {
     if (this._shapeEstimateBusy || !this.shapePreviewSupported()) return;
     this._shapeEstimateBusy = true;
     const signature = this._shapeEstimateSignature;
+    const controller = new AbortController();
+    let timedOut = false;
+    // Includes cold worker imports and the response body over an SSH tunnel.
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 15000);
     try {
       const response = await fetch('/api/training/shape-preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: signature,
+        signal: controller.signal,
       });
       const result = await response.json();
       if (signature !== this._shapeEstimateSignature) return;
@@ -63,8 +71,11 @@ window.trainingShapePreviewMixin = {
       this.shapePreviewSelected = groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
         || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
     } catch (error) {
-      if (signature === this._shapeEstimateSignature) this.shapeEstimateError = error.message;
+      if (signature === this._shapeEstimateSignature) {
+        this.shapeEstimateError = timedOut ? this.t('shapePreview.estimateTimeout') : error.message;
+      }
     } finally {
+      clearTimeout(timeout);
       this._shapeEstimateBusy = false;
       if (signature !== this._shapeEstimateSignature) this.refreshShapeEstimate();
       else this.shapeEstimateLoading = false;

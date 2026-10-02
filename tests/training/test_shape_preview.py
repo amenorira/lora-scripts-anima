@@ -1,9 +1,10 @@
 """Exercise the vendored constructors used by the Anima shape inspector."""
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 
-from backend.training.shape_preview import inspect_network
+from backend.training.shape_preview import close_preview_pool, inspect_network, preview_pool, warm_up
 
 
 def estimate(**updates):
@@ -15,6 +16,26 @@ def estimate(**updates):
 
 
 class ShapePreviewTests(unittest.TestCase):
+    def test_preview_worker_after_parent_torch_initialization(self):
+        import torch
+
+        # Reproduce the server's already initialized CPU runtime before preview.
+        torch.ones(256, 256).sum().item()
+        self.addCleanup(close_preview_pool)
+        pool = preview_pool()
+        self.assertEqual(pool._mp_context.get_start_method(), "spawn")
+        asyncio.run(warm_up())
+        form = {
+            "model_train_type": "anima-lora", "network_module": "networks.lora_anima",
+            "network_dim": 32, "network_alpha": 16, "network_train_unet_only": True,
+            "save_precision": "bf16",
+            "network_args": ["exclude_patterns=['.*']", "include_patterns=['x_embedder.*']"],
+        }
+        for _ in range(2):
+            result = pool.submit(inspect_network, form).result(timeout=60)
+            self.assertEqual(result["moduleCount"], 1)
+            self.assertGreater(result["estimatedBytes"], 0)
+
     def test_estimated_bytes_match_saved_safetensors(self):
         import importlib
         import torch

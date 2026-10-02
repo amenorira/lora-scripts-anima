@@ -1157,6 +1157,7 @@
 		"timeProjection": "Time projection",
 		"estimating": "Estimating…",
 		"estimateFailed": "Estimate unavailable",
+		"estimateTimeout": "The estimate request timed out. Check the remote service or SSH connection, then click Structure preview to retry.",
 		"estimatedSize": "Estimated file",
 		"totalParams": "Total trainable parameters",
 		"layerCount": "Layers covered",

@@ -24,6 +24,7 @@ from backend.monitor.monitor import task_monitor
 from backend.monitor.artifacts import scan_history
 from backend.server.routes.realtime import router as realtime_router
 from backend.training.step_estimator import warm_up as warm_step_estimator
+from backend.training.shape_preview import warm_up as warm_shape_preview
 from backend.constants import REPO_ROOT
 from backend.startup_output import show_environment, show_ready, show_step
 
@@ -107,27 +108,35 @@ async def warm_startup_caches() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cache_task = None
+    shape_cache_task = None
     tensorboard.start(
         enabled=os.environ.get("ANIMA_DISABLE_TENSORBOARD") != "1",
         port=int(os.environ.get("ANIMA_TENSORBOARD_PORT", "0")),
     )
     try:
         await task_monitor.start()
+        shape_cache_task = asyncio.create_task(warm_shape_preview())
         await report_runtime_banner()
         cache_task = asyncio.create_task(warm_startup_caches())
         yield
     finally:
         try:
-            from backend.training.shape_preview import close_preview_pool
-            close_preview_pool()
             await task_monitor.stop()
         finally:
             try:
                 await tensorboard.stop()
             finally:
-                if cache_task is not None:
-                    # Do not leave disk writes running after the app has shut down.
-                    await cache_task
+                try:
+                    if cache_task is not None:
+                        # Do not leave disk writes running after the app has shut down.
+                        await cache_task
+                finally:
+                    try:
+                        if shape_cache_task is not None:
+                            await shape_cache_task
+                    finally:
+                        from backend.training.shape_preview import close_preview_pool
+                        close_preview_pool()
 
 
 app = FastAPI(lifespan=lifespan)

@@ -1157,6 +1157,7 @@
 		"timeProjection": "Time Projection（时间投影）",
 		"estimating": "正在估算…",
 		"estimateFailed": "暂无法估算",
+		"estimateTimeout": "估算请求超时，请检查远程服务或 SSH 连接，再点击结构预览重试。",
 		"estimatedSize": "预计文件",
 		"totalParams": "总训练参数",
 		"layerCount": "覆盖层数",
