@@ -430,7 +430,7 @@ window.monitorRenderMixin = {
     const rawPercent = d.percent != null ? Number(d.percent) : (total ? step / total * 100 : 0);
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0));
     const lossSeries = this._summaryLossSeries();
-    const lrSeries = (this.lossSeries || []).find(item => item.tag === 'lr/unet');
+    const lrSeries = this.monitorLossSeries.find(item => item.tag === 'lr/unet');
     const lrPoints = lrSeries && Array.isArray(lrSeries.points) ? lrSeries.points : [];
     const lrLatest = lrSeries && (lrSeries.latest != null ? Number(lrSeries.latest) : (lrPoints.length ? Number(lrPoints[lrPoints.length - 1].value) : null));
     const lrMax = lrSeries && (lrSeries.max != null ? Number(lrSeries.max) : (lrPoints.length ? Math.max(...lrPoints.map(point => Number(point.value)).filter(Number.isFinite)) : null));
@@ -598,55 +598,11 @@ window.monitorRenderMixin = {
     return html + '</div>';
   },
 
-  _parseMonitorPerfLogLine(line) {
-    const text = String(line || '');
-    const match = /steps:\s*\d{1,3}%\|[^\n]*?\|\s*(\d+)\s*\/\s*\d+\s*\[([^<,\]]+)(?:<([^,\]]+))?/i.exec(text);
-    if (!match) return null;
-    const step = Number(match[1]);
-    const elapsedSec = this._monitorDurationSeconds(match[2]);
-    const etaSec = this._monitorDurationSeconds(match[3]);
-    const speedMatch = /(\d+(?:\.\d+)?)\s*(s\/it|it\/s)(?!\w)/i.exec(text.slice(match.index));
-    const speedSec = speedMatch ? this._monitorSpeedSeconds(speedMatch[0]) : null;
-    return step > 0 && (elapsedSec !== null || speedSec !== null)
-      ? { step, speedSec, elapsedSec, remainingSec: etaSec }
-      : null;
-  },
-
   _summaryTelemetrySamples(isHistory) {
     const source = [isHistory, isHistory ? this.selectedRunDir : (this.liveTaskId || this.monitorData?.active_task?.id || 'live')].join('|');
-    const version = [source, this._logContentVersion, isHistory ? 0 : this._monitorPerfVersion].join('|');
-    const cache = this._summaryTelemetryCache;
-    if (cache?.version === version) return cache;
-    const candidates = [];
-    const lines = this.logLines || [];
-    let lastKey = '';
-    const keyOf = sample => JSON.stringify([sample.step, sample.elapsedSec, sample.speedSec, sample.remainingSec]);
-    for (let index = lines.length - 1; index >= 0 && candidates.length < 80; index--) {
-      if (!String(lines[index] || '').toLowerCase().includes('steps:')) continue;
-      const sample = this._parseMonitorPerfLogLine(lines[index]);
-      if (!sample) continue;
-      const key = keyOf(sample);
-      if (key !== lastKey) candidates.push(sample);
-      lastKey = key;
-    }
-    candidates.reverse();
-    if (!isHistory) candidates.push(...(this.monitorPerfSamples || []));
-    // 小图保留已观察到的变化，同一步的新读数也占新槽位；日志回填不重写已画出的历史。
-    const samples = cache?.source === source ? cache.samples.slice() : [];
-    const seen = new Set(samples.map(keyOf));
-    candidates.sort((left, right) => left.step - right.step || (left.elapsedSec ?? 0) - (right.elapsedSec ?? 0));
-    for (const sample of candidates) {
-      const last = samples.at(-1), key = keyOf(sample);
-      if (seen.has(key) || (last && (sample.step < last.step || (sample.step === last.step && sample.elapsedSec < last.elapsedSec)))) continue;
-      samples.push({ ...sample, observation: (last?.observation ?? 0) + 1,
-        // 按真实经过时间求变化率；同一秒内的刷新没有有效时间间隔，不制造尖峰。
-        remainingRate: last && Number.isFinite(last.elapsedSec) && Number.isFinite(last.remainingSec)
-          && Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec) && sample.elapsedSec > last.elapsedSec
-          ? (sample.remainingSec - last.remainingSec) / (sample.elapsedSec - last.elapsedSec) : null,
-      });
-      seen.add(key);
-    }
-    return (this._summaryTelemetryCache = { source, version, samples: samples.slice(-40) });
+    const version = [source, isHistory ? this._runDetailRequestSeq : this._monitorPerfVersion].join('|');
+    const samples = isHistory ? this.runDetailData?.perf_samples : this.monitorPerfSamples;
+    return { version, samples: (samples || []).slice(-40) };
   },
 
   _patchSummaryTelemetry(root, t, isHistory, d) {
@@ -713,7 +669,7 @@ window.monitorRenderMixin = {
 
   // 仅用于摘要：逐次 Loss 与诊断区的平均趋势各司其职。
   _summaryLossSeries() {
-    return (this.lossSeries || []).find(item => item.tag === 'loss/current');
+    return this.monitorLossSeries.find(item => item.tag === 'loss/current');
   },
 
   _summaryLossChange(series) {
@@ -840,8 +796,8 @@ window.monitorRenderMixin = {
     if (lastStep != null && points.at(-1)?.step < lastStep) previous = null;
     const appended = previous ? points.filter(point => point.step > lastStep) : [];
     const retained = previous ? previous.points.filter(point => point.step >= (points[0]?.step ?? Infinity)) : [];
-    // 数值修正不改变观测占据的槽位；是否推进只由保留下来的 step 和新增点决定。
-    const continuous = retained.length > 0 && retained.every((point, index) => point.step === points[index]?.step);
+    // 只有旧点位置和数值都连续时才平移；历史回填或数值修正直接重绘。
+    const continuous = retained.length > 0 && retained.every((point, index) => point.step === points[index]?.step && point.value === points[index]?.value);
     const shift = continuous ? appended.length : 0;
     let bounds = fixedBounds || previous?.bounds || null;
     if (points.length && !fixedBounds) {
@@ -1007,8 +963,8 @@ window.monitorRenderMixin = {
   },
 
   _trainingDiagnosticPoints(limit = 120) {
-    const series = (this.lossSeries || []).find(item => item.tag === 'loss/average')
-      || (this.lossSeries || []).find(item => item.tag === 'loss/current');
+    const series = this.monitorLossSeries.find(item => item.tag === 'loss/average')
+      || this.monitorLossSeries.find(item => item.tag === 'loss/current');
     return this._cleanLossPoints(series && (series.diagnostic_points || series.points)).slice(-limit);
   },
 

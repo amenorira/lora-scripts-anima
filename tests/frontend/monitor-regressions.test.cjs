@@ -16,6 +16,7 @@ function app(overrides = {}) {
   });
   return Object.assign(value, {
     renderDashboard() {}, scheduleRender() {}, finishProgress() {}, t: k => k,
+    realtimeSubscribe() {}, realtimeUnsubscribe() {},
     closePreviewLightbox() {}, esc: value => String(value),
     lossSeries: [], previews: [], logLines: [], logFullLines: [], outputFiles: [], outputFilesSelected: {},
   }, overrides);
@@ -153,19 +154,21 @@ test('speed and forecast retain same-step dips as new observations and ignore de
     'steps: 10%|#| 10/100 [09:40<1:02:40, 6.32s/it]',
   ] });
   const samples = () => a._summaryTelemetrySamples(false).samples;
+  a._ingestMonitorPerfSamples(a._parseMonitorPerfLogs(a.logLines));
   const initial = samples()[0];
   a._recordMonitorPerfSample({ step: 10, speed: '6.28 s/it', elapsed: '9:44', eta: '1:02:31' });
   const dip = samples().at(-1);
   a._recordMonitorPerfSample({ step: 10, speed: '6.32 s/it', elapsed: '9:53', eta: '1:02:44' });
   assert.deepEqual(samples().map(p => p.speedSec), [6.32, 6.28, 6.32]);
   assert.deepEqual(samples().map(p => p.remainingRate), [null, -9 / 4, 13 / 9]);
-  assert.strictEqual(samples()[0], initial);
-  assert.strictEqual(samples()[1], dip);
+  assert.deepEqual(samples()[0], initial);
+  assert.deepEqual(samples()[1], dip);
   const beforeReplay = samples();
   a.logLines.push('steps: 10%|#| 10/100 [09:44<1:02:31, 6.28s/it]', 'steps: 10%|#| 10/100 [09:53<1:02:44, 6.32s/it]');
   a._logContentVersion++;
+  a._ingestMonitorPerfSamples(a._parseMonitorPerfLogs(a.logLines));
   assert.deepEqual(samples(), beforeReplay);
-  const history = app({ selectedRunDir: 'output/A', logLines: a.logLines });
+  const history = app({ selectedRunDir: 'output/A', runDetailData: { perf_samples: a._mergeMonitorPerfSamples([], a._parseMonitorPerfLogs(a.logLines)) } });
   assert.deepEqual(history._summaryTelemetrySamples(true).samples.map(p => p.speedSec), [6.32, 6.28, 6.32]);
   for (let step = 11; step <= 60; step++) {
     a._recordMonitorPerfSample({ step, speed: '6.32 s/it', elapsed: '10:00', eta: '1:02:44' });
@@ -207,6 +210,30 @@ test('remaining-time derivative is flat for steady countdowns and rises when the
   assert.ok(frame.coords.every(p => Number.isFinite(p.y) && p.y >= 4 && p.y <= 30));
   a._patchSummaryTelemetry(root, key => key, true, { state: 'FINISHED' });
   assert.equal(root.node('[data-summary-time-baseline]').visibility, 'hidden');
+});
+
+test('late log backfill restores missing curve points and derivatives without replay drift', () => {
+  const a = app({ liveTaskId: 'A', monitorPerfSamples: [] });
+  const progress = step => ({ step, speed: '6 s/it', elapsed: a._formatMonitorDuration('', step * 6),
+    eta: a._formatMonitorDuration('', 1200 - step * 6 + (step === 45 ? 12 : 0)) });
+  const lines = count => Array.from({ length: count }, (_, i) => {
+    const p = progress(i + 1);
+    return `steps: 20%|#| ${p.step}/200 [${p.elapsed}<${p.eta}, ${p.speed}]`;
+  });
+  const fill = count => a._ingestMonitorPerfSamples(a._parseMonitorPerfLogs(lines(count)));
+  fill(40);
+  a._recordMonitorPerfSample(progress(51));
+  a._summaryTelemetrySamples(false);
+  fill(51);
+  const samples = a._summaryTelemetrySamples(false).samples;
+  assert.deepEqual(samples.slice(-11).map(p => p.step), Array.from({ length: 11 }, (_, i) => i + 41));
+  assert.equal(samples.find(p => p.step === 45).remainingRate, 1);
+  assert.equal(samples.find(p => p.step === 46).remainingRate, -3);
+  fill(120);
+  const retained = a.monitorPerfSamples;
+  fill(120);
+  assert.strictEqual(a.monitorPerfSamples, retained);
+  assert.equal(retained.length, 80);
 });
 
 test('idle transport preserves the completed run; final detail remains readable', () => {

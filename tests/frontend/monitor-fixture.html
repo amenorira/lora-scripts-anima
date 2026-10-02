@@ -18,7 +18,7 @@
     <button class="btn btn-sm" @click="monitorData.state='RUNNING';monitorData.train_result=null;renderDashboard()">训练中</button>
     <button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.step=740;monitorData.percent=100;monitorData.epoch='20/20';monitorData.elapsed='1:04:50';monitorData.lr=0;monitorData.train_result={status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'};lossSeries[1].points.push({step:740,value:0});lossSeries[1].latest=0;lossDataVersion++;renderDashboard()">训练完成</button>
     <button class="btn btn-sm" @click="monitorData.state='FAILED';monitorData.train_result={status:'failed',duration_str:'43:21'};monitorData.has_error=true;monitorData.error_msg='Sample failure';renderDashboard()">训练失败</button>
-    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
+    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,tensorboard_loss:lossSeries,perf_samples:monitorPerfSamples,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
     <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
     <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
     <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
@@ -123,7 +123,7 @@
         {key:'seed',value:1337,section:'training'},
         ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
       ],
-      init(){this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());}
+      init(){this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(logs));this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());}
     });
   }));
   const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);

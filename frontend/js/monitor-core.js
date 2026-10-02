@@ -89,6 +89,10 @@ window.monitorCoreMixin = {
   _monitorClockTimer: null,
   _monitorClockSample: null,
 
+  get monitorLossSeries() {
+    return this.selectedRunDir ? (this.runDetailData?.tensorboard_loss || []) : this.lossSeries;
+  },
+
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
   runDetailData: null,    // 历史训练详情缓存
@@ -303,11 +307,15 @@ window.monitorCoreMixin = {
       // 历史浏览也会切换任务所有权；仅清理实时采样，不触碰正在查看的历史内容。
       this.monitorPerfSamples = [];
       this._monitorPerfVersion++;
+      this.lossSeries = [];
+      this.lossDataVersion++;
+      this.monitorData = { active_task: { id }, detail: false, run_dir: '', output_dir: '' };
     }
     this.liveTaskId = id;
     this.taskId = id;
     this.activeTaskId = id;
     this.liveTaskBoundaryAt = Date.now();
+    this._setMonitorRealtimeTask(id);
   },
 
   releaseLiveTask() {
@@ -336,7 +344,7 @@ window.monitorCoreMixin = {
     this.monitorData.state = code;
     this.monitorData.state_label = this.statusText;
     this._prevState = code;
-    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   startTrainingStatePoll() {
@@ -417,7 +425,7 @@ window.monitorCoreMixin = {
     if (active) {
       // 同一任务：同步状态（如 CREATED → RUNNING），进度字段由 WS 流维护。
       this._applyTaskView(active.status);
-      if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this._setMonitorRealtimeTask(active.id);
+      this._setMonitorRealtimeTask(active.id);
       this.realtimeTaskStateUnknown = false;
       return;
     }
@@ -526,6 +534,7 @@ window.monitorCoreMixin = {
     }
     this.monitorData = next;
     this._observeMonitorClock(next);
+    this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(next.log_lines));
     this._recordMonitorPerfSample(next);
     if (next.gpu) this.gpuInfo = next.gpu;
     if (next.system) this.sysInfo = next.system;
@@ -601,6 +610,8 @@ window.monitorCoreMixin = {
     this.taskId = null;
     this.monitorPerfSamples = [];
     this._monitorPerfVersion++;
+    this.lossSeries = [];
+    this.lossDataVersion++;
     if (this.selectedRunDir) {
       // Historical data is disk-backed and must remain readable across a
       // backend restart. Only the hidden live state above belongs to the old
@@ -608,8 +619,6 @@ window.monitorCoreMixin = {
       if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       return wasRunning;
     }
-    this.lossSeries = [];
-    this.lossDataVersion++;
     this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
@@ -643,16 +652,8 @@ window.monitorCoreMixin = {
     this.claimLiveTask(id);
     this.realtimeTaskStateUnknown = false;
     this._applyTaskView(code);
-    this.monitorData = {
-      state: code,
-      state_label: this.statusText,
-      active_task: { id, status: code },
-      run_dir: '',
-      output_dir: '',
-      detail: false,
-    };
+    this.monitorData.active_task.status = code;
     this._logFullSourceKey = 'task:' + id;
-    this._setMonitorRealtimeTask(id);
     if (this.currentRoute === 'monitor-dashboard') {
       this.renderDashboard();
       if (!this.selectedRunDir) void this.refreshMonitorRealtimeDetail();
@@ -676,7 +677,7 @@ window.monitorCoreMixin = {
   },
 
   handleRealtimeTaskProgress(data) {
-    if (!data || !data.data || this.selectedRunDir) return;
+    if (!data || !data.data) return;
     const progress = data.data;
 
     // 只合并事件中实际存在的有效字段，避免增量日志用 null 清空旧状态。
@@ -693,7 +694,7 @@ window.monitorCoreMixin = {
       this._observeMonitorClock(this.monitorData);
       this._recordMonitorPerfSample(this.monitorData);
     }
-    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   _recordMonitorPerfSample(progress) {
@@ -702,19 +703,58 @@ window.monitorCoreMixin = {
     const sample = { step, speedSec: this._monitorSpeedSeconds(progress.speed),
       elapsedSec: this._monitorDurationSeconds(progress.elapsed), remainingSec: this._monitorDurationSeconds(progress.eta) };
     if (sample.speedSec === null && sample.elapsedSec === null) return;
-    const samples = this.monitorPerfSamples || (this.monitorPerfSamples = []);
-    const last = samples[samples.length - 1];
-    if (last && step < last.step) return;
-    if (last && step === last.step && last.speedSec === sample.speedSec && last.elapsedSec === sample.elapsedSec && last.remainingSec === sample.remainingSec) return;
-    samples.push(sample);
-    if (samples.length > 80) samples.splice(0, samples.length - 80);
+    this._ingestMonitorPerfSamples([sample]);
+  },
+
+  _ingestMonitorPerfSamples(incoming) {
+    const previous = this.monitorPerfSamples || [];
+    const merged = this._mergeMonitorPerfSamples(previous, incoming);
+    if (merged === previous) return;
+    this.monitorPerfSamples = merged;
     this._monitorPerfVersion++;
   },
 
+  _mergeMonitorPerfSamples(previous, incoming) {
+    if (!incoming.length) return previous;
+    const keyOf = sample => JSON.stringify([sample.step, sample.elapsedSec, sample.speedSec, sample.remainingSec]);
+    const byKey = new Map(previous.map(sample => [keyOf(sample), sample]));
+    const previousKeys = new Set(byKey.keys());
+    for (const sample of incoming) byKey.set(keyOf(sample), sample);
+    const samples = [...byKey.values()].sort((a, b) => a.step - b.step || (a.elapsedSec ?? 0) - (b.elapsedSec ?? 0));
+    const visible = samples.slice(-80);
+    const added = visible.filter(sample => !previousKeys.has(keyOf(sample))).length;
+    if (!added) return previous;
+    const end = (previous.at(-1)?.observation || 0) + added;
+    // 先补齐时间顺序，再计算导数；正常追加保留旧点编号，回填允许修复中间缺口。
+    return visible.map((sample, index) => {
+      const last = samples[samples.length - visible.length + index - 1];
+      return { ...sample, observation: end - visible.length + index + 1,
+        remainingRate: last && Number.isFinite(last.elapsedSec) && Number.isFinite(last.remainingSec)
+          && Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec) && sample.elapsedSec > last.elapsedSec
+          ? (sample.remainingSec - last.remainingSec) / (sample.elapsedSec - last.elapsedSec) : null,
+      };
+    });
+  },
+
+  _parseMonitorPerfLogs(lines = []) {
+    const samples = [];
+    for (const line of lines || []) {
+      const match = /steps:\s*\d{1,3}%\|[^\n]*?\|\s*(\d+)\s*\/\s*\d+\s*\[([^<,\]]+)(?:<([^,\]]+))?/i.exec(line);
+      if (!match || Number(match[1]) <= 0) continue;
+      const speed = /(\d+(?:\.\d+)?)\s*(s\/it|it\/s)(?!\w)/i.exec(line.slice(match.index));
+      const sample = { step: Number(match[1]), elapsedSec: this._monitorDurationSeconds(match[2]),
+        remainingSec: this._monitorDurationSeconds(match[3]), speedSec: this._monitorSpeedSeconds(speed?.[0]) };
+      if (sample.elapsedSec !== null || sample.speedSec !== null) samples.push(sample);
+    }
+    return samples;
+  },
+
   handleRealtimeTaskLog(data) {
-    if (!data || !data.data || this.selectedRunDir) return;
+    if (!data || !data.data) return;
     const logData = data.data;
     if (!Number.isInteger(logData.log_total) || logData.log_total < 0 || !Number.isInteger(logData.offset) || logData.offset < 0) return;
+    this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(logData.lines));
+    if (this.selectedRunDir) return;
     this._logObservationVersion = (this._logObservationVersion || 0) + 1;
     const eventSourceKey = this._monitorRealtimeTopic || '';
 
@@ -770,7 +810,7 @@ window.monitorCoreMixin = {
     this.gpuInfo = hw.gpu || null;
     this.sysInfo = hw.system || null;
 
-    if (this.currentRoute === 'monitor-dashboard') {
+    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
     } else if (this.currentRoute === 'tagger' && typeof this.renderTaggerResourceBar === 'function') {
       this.renderTaggerResourceBar();
@@ -778,7 +818,7 @@ window.monitorCoreMixin = {
   },
 
   handleRealtimeTaskMetrics(data) {
-    if (!data || !data.points || this.selectedRunDir) return;
+    if (!data || !data.points) return;
 
     if (data.truncated) {
       // The server intentionally bounded a delayed TensorBoard catch-up.
@@ -818,7 +858,7 @@ window.monitorCoreMixin = {
     }
 
     if (changed) this.lossDataVersion++;
-    if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   handleRealtimeTaskArtifacts(data) {
@@ -897,16 +937,14 @@ window.monitorCoreMixin = {
     this._startMonitorClock();
     this.realtimeSubscribe('hardware');
     if (!this.selectedRunDir) this._setMonitorRealtimeTask(this.liveTaskId);
+    if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle') };
+    this.renderDashboard();
     if (this.realtimeSnapshot) {
       if (!this.monitorData?.detail) this.applyRealtimeMonitorSnapshot(this.realtimeSnapshot);
       // Curves, progress and artifacts are refreshed from disk on entry. A
       // complete log page for the same task stays in memory so queued replay
       // can fill the page-switch gap without a later HTTP response replacing it.
       void this.refreshMonitorRealtimeDetail();
-    }
-    else {
-      if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle') };
-      this.renderDashboard();
     }
   },
   async refreshMonitorRealtimeDetail() {
@@ -961,7 +999,7 @@ window.monitorCoreMixin = {
     this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
     this.realtimeUnsubscribe('hardware');
-    this._setMonitorRealtimeTask(null);
+    // 任务订阅由训练生命周期管理；离开页面只暂停绘制，继续维护当前任务的曲线。
     if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
     this._dashboardRendered = false;
     this._shellBuilt = false;
@@ -1136,7 +1174,6 @@ window.monitorCoreMixin = {
     this._logContentVersion++;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
-    this.lossSeries = [];
     this.lossDataVersion++;
     this.trainParams = [];
     this.trainParamsVersion++;
@@ -1168,7 +1205,7 @@ window.monitorCoreMixin = {
         this.runDetailLoading = false;
         this.runDetailData = j.data;
         this._applyOutputCount(runDir, j.data.output_count);
-        this.lossSeries = j.data.tensorboard_loss || [];
+        this.runDetailData.perf_samples = this._mergeMonitorPerfSamples([], this._parseMonitorPerfLogs(j.data.log_lines));
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
         this.trainParamsVersion++;
@@ -1200,7 +1237,6 @@ window.monitorCoreMixin = {
     this._logSliceRequestSeq++;
     this.selectedRunDir = null;
     this.runDetailData = null;
-    this.lossSeries = [];
     this.lossDataVersion++;
     this.trainParams = [];
     this.trainParamsVersion++;
@@ -1229,8 +1265,7 @@ window.monitorCoreMixin = {
 
   clearRunDetail() {
     /** 返回实时监控模式 */
-    // Stop history-only subscriptions, then hydrate the live view from the
-    // already-coherent realtime snapshot.
+    // 重建页面并显示保留的实时曲线，再补拉详情；当前任务订阅持续保留。
     this.stopMonitorRealtime();
     this.resetRunDetailState();
     this.renderDashboard();

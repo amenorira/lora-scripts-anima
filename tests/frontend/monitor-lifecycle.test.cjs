@@ -42,10 +42,21 @@ test('detail hydration issues a valid HTTP request and applies metrics', async (
   assert.equal(a.monitorData.step, 15);
 });
 
-test('returning to dashboard restores task subscription and consumes progress', () => {
+test('page switches retain the task subscription and history does not overwrite live curves', () => {
   const a = app({ refreshMonitorRealtimeDetail() {} });
   a._setMonitorRealtimeTask('A');
   a.stopMonitorRealtime();
+  a.currentRoute = 'settings';
+  assert.equal(a._monitorRealtimeTopic, 'task:A');
+  a.handleRealtimeMonitorEvent({ topic: 'task:A', type: 'task.progress', payload: { data: { step: 98 } } });
+  a.selectedRunDir = 'output/history';
+  a.runDetailData = { tensorboard_loss: [{ tag: 'history' }] };
+  a.handleRealtimeTaskMetrics({ points: { 'loss/current': [{ step: 98, value: .2 }] } });
+  assert.equal(a.lossSeries[0].latest, .2);
+  assert.equal(a.monitorLossSeries[0].tag, 'history');
+  a.resetRunDetailState();
+  assert.equal(a.monitorLossSeries[0].latest, .2);
+  a.currentRoute = 'monitor-dashboard';
   a.startMonitorRealtime();
   assert.equal(a._monitorRealtimeTopic, 'task:A');
   assert.ok(a._realtimeTopics.has('task:A'));
@@ -118,11 +129,12 @@ test('detail response is discarded after leaving and reentering dashboard', asyn
 });
 
 test('history browsing still tracks training start and completion', () => {
-  const a = app({ selectedRunDir: 'output/history', monitorPerfSamples: [{ step: 500, speed: '8 s/it' }], lossSeries: [{ tag: 'history' }] });
+  const a = app({ selectedRunDir: 'output/history', monitorPerfSamples: [{ step: 500, speed: '8 s/it' }], runDetailData: { tensorboard_loss: [{ tag: 'history' }] } });
   a._applyManagedTrainingState(snapshot('B'));
   assert.equal(a.liveTaskId, 'B');
   assert.deepEqual(a.monitorPerfSamples, []);
-  assert.deepEqual(a.lossSeries, [{ tag: 'history' }]);
+  assert.deepEqual(a.lossSeries, []);
+  assert.deepEqual(a.monitorLossSeries, [{ tag: 'history' }]);
   assert.equal(a.isTraining, true);
   a.handleTaskCompletion = () => {};
   a._applyManagedTrainingState({ tasks: { managed: [{ id: 'B', status: 'FINISHED' }] } });
