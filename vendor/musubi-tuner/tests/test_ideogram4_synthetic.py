@@ -72,7 +72,7 @@ class Ideogram4LoraDiscoveryTests(unittest.TestCase):
 
         from safetensors.torch import save_file
 
-        from musubi_tuner import ideogram4_generate_image
+        from musubi_tuner.utils.lora_utils import attach_lora_weights
 
         class Attention(nn.Module):
             def __init__(self):
@@ -115,13 +115,8 @@ class Ideogram4LoraDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             lora_path = os.path.join(tmp, "lora.safetensors")
             save_file(weights_sd, lora_path)
-            args = SimpleNamespace(
-                lora_weight=[lora_path],
-                lora_multiplier=[1.0],
-                include_patterns=None,
-                exclude_patterns=None,
-            )
-            ideogram4_generate_image._apply_lora_weights(root_test, args, torch.device("cpu"))
+            networks = attach_lora_weights(lora_ideogram4, root_test, [lora_path], [1.0], None, None, torch.device("cpu"))
+        self.assertEqual(len(networks), 1)
 
         y_lora = root_test.layers[0].attention.qkv(x)
         self.assertFalse(torch.allclose(y_base, y_lora))
@@ -153,11 +148,18 @@ class Ideogram4InputAndCacheTests(unittest.TestCase):
             @staticmethod
             def from_dict(*args, **kwargs):
                 calls["config"] = (args, kwargs)
-                return object()
+                return SimpleNamespace(text_config=object())
+
+        class FakeRotary(nn.Module):
+            def __init__(self, config, device=None):
+                super().__init__()
+                self.inv_freq = torch.zeros(2, device=device)
 
         class FakeModel(nn.Module):
             def __init__(self):
                 super().__init__()
+                self.language_model = nn.Module()
+                self.language_model.rotary_emb = FakeRotary(None)
 
             def load_state_dict(self, state_dict, strict=False, assign=True):
                 calls["load_state_dict"] = (state_dict, strict, assign)
@@ -247,16 +249,27 @@ class Ideogram4InputAndCacheTests(unittest.TestCase):
         original_load_state_dict = ideogram4_utils._load_state_dict
         original_init_empty_weights = ideogram4_utils.init_empty_weights
 
+        text_config = object()
+
         class FakeConfig:
             @staticmethod
             def from_dict(*args, **kwargs):
-                return object()
+                return SimpleNamespace(text_config=text_config)
+
+        class FakeRotary(nn.Module):
+            # the real rotary embedding computes inv_freq from the config in __init__ and keeps it as a
+            # non-persistent buffer, which to_empty() would leave uninitialized
+            def __init__(self, config, device=None):
+                super().__init__()
+                self.config = config
+                self.inv_freq = nn.Buffer(torch.tensor([1.0, 0.5], device=device), persistent=False)
 
         class FakeModel(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.language_model = nn.Module()
                 self.language_model.loaded = nn.Linear(2, 2, device="meta")
+                self.language_model.rotary_emb = FakeRotary(text_config)
 
             def eval(self):
                 self.eval_called = True
@@ -299,6 +312,10 @@ class Ideogram4InputAndCacheTests(unittest.TestCase):
         self.assertFalse(any(param.is_meta for param in model.parameters()))
         self.assertTrue(model.eval_called)
         self.assertTrue(torch.equal(model.language_model.loaded.weight, torch.ones(2, 2)))
+        # to_empty() re-created inv_freq uninitialized; the loader rebuilt the rotary embedding from the text config
+        rotary = model.language_model.rotary_emb
+        self.assertIs(rotary.config, text_config)
+        self.assertTrue(torch.equal(rotary.inv_freq, torch.tensor([1.0, 0.5])))
 
     def test_build_inputs_and_patchify_roundtrip(self):
         features = [torch.ones(3, 8), torch.ones(5, 8)]
@@ -636,7 +653,7 @@ class Ideogram4InputAndCacheTests(unittest.TestCase):
         args = parser.parse_args(base + ["--attn_mode", "flash", "--split_attn"])
         self.assertEqual(args.attn_mode, "flash")
         self.assertTrue(args.split_attn)
-        # "sdpa" is accepted as a choice (normalized to "torch" inside main()).
+        # "sdpa" is accepted as a choice (the shared attention dispatcher treats it as "torch").
         args_sdpa = parser.parse_args(base + ["--attn_mode", "sdpa"])
         self.assertEqual(args_sdpa.attn_mode, "sdpa")
 

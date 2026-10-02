@@ -9,7 +9,6 @@ from transformers import (
     LlamaTokenizerFast,
     LlamaConfig,
     LlamaModel,
-    CLIPTokenizer,
     CLIPTextModel,
     CLIPConfig,
     SiglipImageProcessor,
@@ -17,6 +16,8 @@ from transformers import (
     SiglipVisionConfig,
 )
 
+from musubi_tuner.utils.clip_utils import CLIPTokenizer, load_clip_text_model_state_dict
+from musubi_tuner.utils.tokenizer_utils import load_llama3_tokenizer
 from musubi_tuner.utils.safetensors_utils import load_split_weights
 from musubi_tuner.hunyuan_model.vae import load_vae as hunyuan_load_vae
 
@@ -122,17 +123,17 @@ def load_text_encoder1(
 ) -> tuple[LlamaTokenizerFast, LlamaModel]:
     # single file, split file and directory (contains 'text_encoder') support
     logger.info("Loading text encoder 1 tokenizer")
-    tokenizer1 = LlamaTokenizerFast.from_pretrained("hunyuanvideo-community/HunyuanVideo", subfolder="tokenizer")
+    tokenizer1 = load_llama3_tokenizer("hunyuanvideo-community/HunyuanVideo", subfolder="tokenizer")
 
     logger.info(f"Loading text encoder 1 from {args.text_encoder1}")
     if os.path.isdir(args.text_encoder1):
         # load from directory, configs are in the directory
-        text_encoder1 = LlamaModel.from_pretrained(args.text_encoder1, subfolder="text_encoder", torch_dtype=torch.float16)
+        text_encoder1 = LlamaModel.from_pretrained(args.text_encoder1, subfolder="text_encoder", dtype=torch.float16)
     else:
         # load from file, we create the model with the appropriate config
         config = LlamaConfig(**LLAMA_CONFIG)
         with init_empty_weights():
-            text_encoder1 = LlamaModel._from_config(config, torch_dtype=torch.float16)
+            text_encoder1 = LlamaModel._from_config(config, dtype=torch.float16)
 
         state_dict = load_split_weights(args.text_encoder1)
 
@@ -195,16 +196,16 @@ def load_text_encoder2(args) -> tuple[CLIPTokenizer, CLIPTextModel]:
     logger.info(f"Loading text encoder 2 from {args.text_encoder2}")
     if os.path.isdir(args.text_encoder2):
         # load from directory, configs are in the directory
-        text_encoder2 = CLIPTextModel.from_pretrained(args.text_encoder2, subfolder="text_encoder_2", torch_dtype=torch.float16)
+        text_encoder2 = CLIPTextModel.from_pretrained(args.text_encoder2, subfolder="text_encoder_2", dtype=torch.float16)
     else:
         # we only have one file, so we can load it directly
         config = CLIPConfig(**CLIP_CONFIG)
         with init_empty_weights():
-            text_encoder2 = CLIPTextModel._from_config(config, torch_dtype=torch.float16)
+            text_encoder2 = CLIPTextModel._from_config(config, dtype=torch.float16)
 
         state_dict = load_file(args.text_encoder2)
 
-        text_encoder2.load_state_dict(state_dict, strict=True, assign=True)
+        load_clip_text_model_state_dict(text_encoder2, state_dict, strict=True, assign=True)
 
     text_encoder2.eval()
     return tokenizer2, text_encoder2
@@ -256,12 +257,12 @@ def load_image_encoders(args):
     logger.info(f"Loading image encoder from {args.image_encoder}")
     if os.path.isdir(args.image_encoder):
         # load from directory, configs are in the directory
-        image_encoder = SiglipVisionModel.from_pretrained(args.image_encoder, subfolder="image_encoder", torch_dtype=torch.float16)
+        image_encoder = SiglipVisionModel.from_pretrained(args.image_encoder, subfolder="image_encoder", dtype=torch.float16)
     else:
         # load from file, we create the model with the appropriate config
         config = SiglipVisionConfig(**IMAGE_ENCODER_CONFIG)
         with init_empty_weights():
-            image_encoder = SiglipVisionModel._from_config(config, torch_dtype=torch.float16)
+            image_encoder = SiglipVisionModel._from_config(config, dtype=torch.float16)
 
         state_dict = load_file(args.image_encoder)
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Mapping, Optional, TYPE_CHECKING
 
 from PIL import Image
 
+from musubi_tuner.dataset.audio_utils import AudioSource, AudioSpec, DecodedAudio, decode_audio, resolve_audio_source
 from musubi_tuner.dataset.media_utils import glob_images, glob_videos, load_video, VIDEO_EXTENSIONS
 
 if TYPE_CHECKING:
@@ -14,6 +16,33 @@ if TYPE_CHECKING:
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ItemExtras:
+    """Per-item fields beyond the shared dataset schema, for architecture-specific consumers.
+
+    ``fields`` holds the record's keys that the shared schema does not define (for example the
+    MiniMax-H3 ``references`` and ``teacher_caption``). Only record-based datasources (JSONL)
+    can carry such fields; directory datasources always report an empty mapping. Relative
+    paths inside ``fields`` resolve from ``base_directory`` (the JSONL's directory, or the
+    dataset directory), and ``label`` names the record's origin for error messages.
+    """
+
+    fields: Mapping[str, Any]
+    base_directory: str
+    label: str
+
+
+def _extra_fields(data: Mapping[str, Any], shared_keys: tuple[str, ...]) -> dict[str, Any]:
+    """The record's keys outside the shared schema; ``key_N`` counts as its ``key`` (control_path_0, image_path_1, ...)."""
+    extras = {}
+    for key, value in data.items():
+        stem, _, suffix = key.rpartition("_")
+        if key in shared_keys or (suffix.isdigit() and stem in shared_keys):
+            continue
+        extras[key] = value
+    return extras
 
 
 class ContentDatasource:
@@ -30,6 +59,13 @@ class ContentDatasource:
     def get_caption(self, idx: int) -> tuple[str, str]:
         """
         Returns caption. May not be called if is_indexable() returns False.
+        """
+        raise NotImplementedError
+
+    def get_item_extras(self, idx: int) -> ItemExtras:
+        """
+        Returns the item's fields beyond the shared schema (see ItemExtras). Indices align with
+        get_caption and with ItemInfo.datasource_index. May not be called if is_indexable() returns False.
         """
         raise NotImplementedError
 
@@ -54,6 +90,24 @@ class ImageDatasource(ContentDatasource):
         May not be called if is_indexable() returns False.
         """
         raise NotImplementedError
+
+    def get_control_paths(self) -> dict[str, list[str]]:
+        """
+        Returns {image_path: [control paths in index order]} for cache fingerprinting.
+        Control pixels travel through ItemInfo.control_content; this accessor exists only so
+        cache scripts can fingerprint the source files behind them.
+        """
+        return {}
+
+
+def _create_image_fetcher(datasource: ImageDatasource, index: int):
+    def fetch():
+        return datasource.get_image_data(index)
+
+    # the datasource record index travels as a fetcher attribute so that ItemInfo can
+    # reference the originating record without re-deriving it from item keys
+    fetch.datasource_index = index
+    return fetch
 
 
 class ImageDirectoryDatasource(ImageDatasource):
@@ -245,6 +299,15 @@ class ImageDirectoryDatasource(ImageDatasource):
             caption = f.read().strip()
         return image_path, caption
 
+    def get_control_paths(self) -> dict[str, list[str]]:
+        if not self.has_control:
+            return {}
+        return {image_path: list(paths) for image_path, paths in self.control_paths.items()}
+
+    def get_item_extras(self, idx: int) -> ItemExtras:
+        # a directory item has no place for fields beyond the shared schema
+        return ItemExtras(fields={}, base_directory=self.image_directory, label=self.image_paths[idx])
+
     def __iter__(self):
         self.current_idx = 0
         return self
@@ -263,17 +326,16 @@ class ImageDirectoryDatasource(ImageDatasource):
 
             fetcher = create_caption_fetcher(self.current_idx)
         else:
-
-            def create_image_fetcher(index):
-                return lambda: self.get_image_data(index)
-
-            fetcher = create_image_fetcher(self.current_idx)
+            fetcher = _create_image_fetcher(self, self.current_idx)
 
         self.current_idx += 1
         return fetcher
 
 
 class ImageJsonlDatasource(ImageDatasource):
+    # the shared image JSONL schema (numbered variants included); every other key is an item extra
+    SHARED_KEYS = ("image_path", "caption", "control_path")
+
     def __init__(self, image_jsonl_file: str, control_count_per_image: Optional[int] = None, multiple_target: bool = False):
         super().__init__()
         self.image_jsonl_file = image_jsonl_file
@@ -375,6 +437,27 @@ class ImageJsonlDatasource(ImageDatasource):
         caption = data["caption"]
         return image_path, caption
 
+    def get_control_paths(self) -> dict[str, list[str]]:
+        if not self.has_control:
+            return {}
+        control_paths: dict[str, list[str]] = {}
+        for data in self.data:
+            image_path = data.get("image_path", data.get("image_path_0"))
+            paths = []
+            for i in range(self.control_count_per_image or 1000):  # same bound rule as get_image_data
+                if f"control_path_{i}" not in data:
+                    break
+                paths.append(data[f"control_path_{i}"])
+            control_paths[image_path] = paths
+        return control_paths
+
+    def get_item_extras(self, idx: int) -> ItemExtras:
+        return ItemExtras(
+            fields=_extra_fields(self.data[idx], ImageJsonlDatasource.SHARED_KEYS),
+            base_directory=os.path.dirname(os.path.abspath(self.image_jsonl_file)),
+            label=f"{os.path.basename(self.image_jsonl_file)} line {idx + 1}",
+        )
+
     def __iter__(self):
         self.current_idx = 0
         return self
@@ -391,11 +474,7 @@ class ImageJsonlDatasource(ImageDatasource):
             fetcher = create_caption_fetcher(self.current_idx)
 
         else:
-
-            def create_fetcher(index):
-                return lambda: self.get_image_data(index)
-
-            fetcher = create_fetcher(self.current_idx)
+            fetcher = _create_image_fetcher(self, self.current_idx)
 
         self.current_idx += 1
         return fetcher
@@ -414,6 +493,13 @@ class VideoDatasource(ContentDatasource):
         self.source_fps = None
         self.target_fps = None
 
+        # timestamp-based fps normalization (audio-capable architectures need deterministic fps)
+        self.strict_target_fps: Optional[float] = None
+
+        # audio support: set via set_audio_spec by audio-capable architectures
+        self.audio_spec: Optional[AudioSpec] = None
+        self.audio_sources: Optional[list[Optional[AudioSource]]] = None
+
     def __len__(self):
         raise NotImplementedError
 
@@ -429,6 +515,16 @@ class VideoDatasource(ContentDatasource):
         start_frame = start_frame if start_frame is not None else self.start_frame
         end_frame = end_frame if end_frame is not None else self.end_frame
         bucket_selector = bucket_selector if bucket_selector is not None else self.bucket_selector
+
+        if self.strict_target_fps is not None:
+            return load_video(
+                video_path,
+                start_frame,
+                end_frame,
+                bucket_selector,
+                target_fps=self.strict_target_fps,
+                fps_resample_mode="timestamps",
+            )
 
         video = load_video(
             video_path, start_frame, end_frame, bucket_selector, source_fps=self.source_fps, target_fps=self.target_fps
@@ -446,6 +542,16 @@ class VideoDatasource(ContentDatasource):
         end_frame = end_frame if end_frame is not None else self.end_frame
         bucket_selector = bucket_selector if bucket_selector is not None else self.bucket_selector
 
+        if self.strict_target_fps is not None:
+            return load_video(
+                control_path,
+                start_frame,
+                end_frame,
+                bucket_selector,
+                target_fps=self.strict_target_fps,
+                fps_resample_mode="timestamps",
+            )
+
         control = load_video(
             control_path, start_frame, end_frame, bucket_selector, source_fps=self.source_fps, target_fps=self.target_fps
         )
@@ -461,6 +567,67 @@ class VideoDatasource(ContentDatasource):
     def set_source_and_target_fps(self, source_fps: Optional[float], target_fps: Optional[float]):
         self.source_fps = source_fps
         self.target_fps = target_fps
+
+    def set_strict_target_fps(self, target_fps: Optional[float]):
+        self.strict_target_fps = target_fps
+
+    def set_audio_spec(self, audio_spec: Optional[AudioSpec]):
+        """Enables audio for this datasource and eagerly resolves all audio sources (fail-fast)."""
+        self.audio_spec = audio_spec
+        self.audio_sources = None
+        if audio_spec is None:
+            return
+
+        audio_sources = []
+        missing = []
+        for index in range(len(self)):
+            video_path, explicit_path = self._audio_resolution_inputs(index)
+            source = resolve_audio_source(video_path, explicit_path)
+            audio_sources.append(source)
+            if source is None:
+                missing.append(video_path)
+        self.audio_sources = audio_sources
+
+        if missing:
+            for video_path in missing[:10]:
+                logger.warning(f"Video has no audio source; an unsupervised silence placeholder will be cached: {video_path}")
+            logger.info(f"audio sources resolved: {len(audio_sources) - len(missing)} with audio, {len(missing)} without")
+
+    def _audio_resolution_inputs(self, idx: int) -> tuple[str, Optional[str]]:
+        """Returns (video_path, explicit_audio_path) for audio source resolution."""
+        raise NotImplementedError
+
+    def get_audio_waveform(self, idx: int) -> Optional[DecodedAudio]:
+        """Decodes the item's full audio (waveform [C, L] plus timeline repairs), or None if it has no audio source."""
+        if self.audio_spec is None or self.audio_sources is None:
+            raise ValueError("Audio is not enabled for this datasource; call set_audio_spec first")
+        source = self.audio_sources[idx]
+        if source is None:
+            return None
+        return decode_audio(
+            source,
+            sample_rate=self.audio_spec.sample_rate,
+            channels=self.audio_spec.channels,
+            max_discontinuity_seconds=self.audio_spec.max_discontinuity_seconds,
+        )
+
+    def _create_video_fetcher(self, index: int):
+        if self.audio_spec is not None:
+
+            def fetch():
+                video_path, video, caption, control = self.get_video_data(index)
+                waveform = self.get_audio_waveform(index)
+                return video_path, video, caption, control, waveform
+
+        else:
+
+            def fetch():
+                return self.get_video_data(index)
+
+        # the datasource record index travels as a fetcher attribute so that ItemInfo can
+        # reference the originating record without re-deriving it from item keys
+        fetch.datasource_index = index
+        return fetch
 
     def __iter__(self):
         raise NotImplementedError
@@ -554,6 +721,13 @@ class VideoDirectoryDatasource(VideoDatasource):
             caption = f.read().strip()
         return video_path, caption
 
+    def _audio_resolution_inputs(self, idx: int) -> tuple[str, Optional[str]]:
+        return self.video_paths[idx], None
+
+    def get_item_extras(self, idx: int) -> ItemExtras:
+        # a directory item has no place for fields beyond the shared schema
+        return ItemExtras(fields={}, base_directory=self.video_directory, label=self.video_paths[idx])
+
     def __iter__(self):
         self.current_idx = 0
         return self
@@ -570,17 +744,17 @@ class VideoDirectoryDatasource(VideoDatasource):
             fetcher = create_caption_fetcher(self.current_idx)
 
         else:
-
-            def create_fetcher(index):
-                return lambda: self.get_video_data(index)
-
-            fetcher = create_fetcher(self.current_idx)
+            fetcher = self._create_video_fetcher(self.current_idx)
 
         self.current_idx += 1
         return fetcher
 
 
 class VideoJsonlDatasource(VideoDatasource):
+    PATH_KEYS = ("video_path", "control_path", "audio_path")
+    # the shared video JSONL schema; every other key is an item extra
+    SHARED_KEYS = ("video_path", "caption", "control_path", "audio_path")
+
     def __init__(self, video_jsonl_file: str):
         super().__init__()
         self.video_jsonl_file = video_jsonl_file
@@ -591,9 +765,32 @@ class VideoJsonlDatasource(VideoDatasource):
         self.data = []
         with open(self.video_jsonl_file, "r", encoding="utf-8") as f:
             for line in f:
+                if not line.strip():
+                    continue
                 data = json.loads(line)
                 self.data.append(data)
         logger.info(f"loaded {len(self.data)} videos")
+
+        # resolve relative paths against the working directory first (the historical behavior),
+        # then against the JSONL's own directory. Whichever location matches is rewritten to an
+        # absolute path so downstream consumers (e.g. MiniMax-H3 record building) never
+        # re-resolve the value against a different base.
+        base_directory = os.path.dirname(os.path.abspath(self.video_jsonl_file))
+        for data in self.data:
+            for key in VideoJsonlDatasource.PATH_KEYS:
+                value = data.get(key)
+                if not isinstance(value, str) or not value or os.path.isabs(value):
+                    continue
+                jsonl_candidate = os.path.join(base_directory, value)
+                if os.path.exists(value):
+                    data[key] = os.path.abspath(value)
+                    if os.path.exists(jsonl_candidate) and not os.path.samefile(value, jsonl_candidate):
+                        logger.warning(
+                            f"{key} {value!r} exists both relative to the working directory and to the JSONL directory; "
+                            f"using the working-directory match {data[key]}"
+                        )
+                elif os.path.exists(jsonl_candidate):
+                    data[key] = jsonl_candidate
 
         # Check if there are control paths in the JSONL
         self.has_control = any("control_path" in item for item in self.data)
@@ -637,6 +834,17 @@ class VideoJsonlDatasource(VideoDatasource):
         caption = data["caption"]
         return video_path, caption
 
+    def _audio_resolution_inputs(self, idx: int) -> tuple[str, Optional[str]]:
+        data = self.data[idx]
+        return data["video_path"], data.get("audio_path")
+
+    def get_item_extras(self, idx: int) -> ItemExtras:
+        return ItemExtras(
+            fields=_extra_fields(self.data[idx], VideoJsonlDatasource.SHARED_KEYS),
+            base_directory=os.path.dirname(os.path.abspath(self.video_jsonl_file)),
+            label=f"{os.path.basename(self.video_jsonl_file)} line {idx + 1}",
+        )
+
     def __iter__(self):
         self.current_idx = 0
         return self
@@ -653,11 +861,7 @@ class VideoJsonlDatasource(VideoDatasource):
             fetcher = create_caption_fetcher(self.current_idx)
 
         else:
-
-            def create_fetcher(index):
-                return lambda: self.get_video_data(index)
-
-            fetcher = create_fetcher(self.current_idx)
+            fetcher = self._create_video_fetcher(self.current_idx)
 
         self.current_idx += 1
         return fetcher

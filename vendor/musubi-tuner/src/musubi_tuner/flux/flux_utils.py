@@ -5,10 +5,11 @@ from typing import Optional, Union
 import einops
 import numpy as np
 import torch
-from transformers import CLIPConfig, CLIPTextModel, T5Config, T5EncoderModel, CLIPTokenizer, T5Tokenizer
+from transformers import CLIPConfig, CLIPTextModel, T5Config, T5EncoderModel, T5Tokenizer
 from accelerate import init_empty_weights
 
 from musubi_tuner.flux import flux_models
+from musubi_tuner.utils.clip_utils import CLIPTokenizer, clip_text_transformer, load_clip_text_model_state_dict
 from musubi_tuner.utils import image_utils
 from musubi_tuner.utils.safetensors_utils import load_safetensors
 from musubi_tuner.utils.train_utils import get_lin_function
@@ -296,15 +297,16 @@ def load_clip_l(
     else:
         logger.info(f"Loading state dict from {ckpt_path}")
         sd = load_safetensors(ckpt_path, device=str(device), disable_mmap=disable_mmap, dtype=dtype)
-    info = clip.load_state_dict(sd, strict=True, assign=True)
+    info = load_clip_text_model_state_dict(clip, sd, strict=True, assign=True)
     logger.info(f"Loaded CLIP-L: {info}")
+    clip.eval()  # _from_config leaves the model in training mode
     clip.to(device)
 
     if dtype is not None:
         if is_fp8(dtype):
             logger.info(f"prepare CLIP-L for fp8: set to {dtype}, set embeddings to {torch.bfloat16}")
             clip.to(dtype)  # fp8
-            clip.text_model.embeddings.to(dtype=torch.bfloat16)
+            clip_text_transformer(clip).embeddings.to(dtype=torch.bfloat16)
         else:
             logger.info(f"Setting CLIP-L to dtype: {dtype}")
             clip.to(dtype)
@@ -365,6 +367,7 @@ def load_t5xxl(
         sd = load_safetensors(ckpt_path, device=str(device), disable_mmap=disable_mmap, dtype=dtype)
     info = t5xxl.load_state_dict(sd, strict=True, assign=True)
     logger.info(f"Loaded T5xxl: {info}")
+    t5xxl.eval()  # _from_config leaves the model in training mode, and T5-XXL has dropout_rate 0.1
     t5xxl.to(device)
 
     if dtype is not None:

@@ -1,10 +1,12 @@
 import os
 import re
-from typing import Dict, List, Optional, Union
+from types import ModuleType
+from typing import Callable, Dict, List, Optional, Union
 import torch
 
 import logging
 
+from safetensors.torch import load_file
 from tqdm import tqdm
 
 from musubi_tuner.utils.device_utils import synchronize_device
@@ -62,6 +64,55 @@ def filter_lora_state_dict(
     return weights_sd
 
 
+def attach_lora_weights(
+    lora_module: ModuleType,
+    model: torch.nn.Module,
+    lora_weights: Optional[List[str]],
+    lora_multipliers: Optional[List[float]],
+    include_patterns: Optional[List[str]],
+    exclude_patterns: Optional[List[str]],
+    device: torch.device,
+    converter: Optional[Callable[[Dict[str, torch.Tensor]], Dict[str, torch.Tensor]]] = None,
+) -> List[torch.nn.Module]:
+    """Attach LoRAs to a model as runtime additive branches instead of merging them (inference).
+
+    The base weights are never modified: each LoRA keeps its own multiplier and precision for
+    the lifetime of the returned networks. This is the route for bases that cannot be merged
+    into (pre-quantized INT8/FP8 tensors) and for small-magnitude adapters whose per-element
+    deltas a merge would round away on the base storage grid. Multiple LoRAs stack, each
+    wrapping the previous forward. The caller keeps the returned networks alive while sampling.
+
+    Args:
+        lora_module: architecture LoRA module, e.g. lora_wan (provides create_arch_network_from_weights)
+        model: DiT model
+        lora_weights: paths to LoRA weights
+        lora_multipliers: multipliers for LoRA weights, aligned with lora_weights
+        include_patterns: regex patterns to include LoRA modules, aligned with lora_weights
+        exclude_patterns: regex patterns to exclude LoRA modules, aligned with lora_weights
+        device: device the attached networks run on
+        converter: optional state-dict key converter applied before filtering (same role as
+            the ``converter`` of ``wan_generate_video.merge_lora_weights``)
+    """
+    networks = []
+    for i, lora_weight in enumerate(lora_weights or []):
+        multiplier = lora_multipliers[i] if lora_multipliers is not None and len(lora_multipliers) > i else 1.0
+        include = include_patterns[i] if include_patterns is not None and len(include_patterns) > i else None
+        exclude = exclude_patterns[i] if exclude_patterns is not None and len(exclude_patterns) > i else None
+        logger.info(f"Attaching LoRA weights from {lora_weight} with multiplier {multiplier}")
+        weights_sd = load_file(lora_weight)
+        if converter is not None:
+            weights_sd = converter(weights_sd)
+        weights_sd = filter_lora_state_dict(weights_sd, include, exclude)
+        network = lora_module.create_arch_network_from_weights(multiplier, weights_sd, unet=model, for_inference=True)
+        if not network.unet_loras:
+            raise ValueError(f"LoRA {lora_weight} contains no modules that match the model")
+        network.apply_to(None, model, apply_text_encoder=False, apply_unet=True)
+        network.load_state_dict(weights_sd, strict=True)
+        network.eval().requires_grad_(False).to(device)
+        networks.append(network)
+    return networks
+
+
 def load_safetensors_with_lora_and_fp8(
     model_files: Union[str, List[str]],
     lora_weights_list: Optional[List[Dict[str, torch.Tensor]]],
@@ -75,6 +126,7 @@ def load_safetensors_with_lora_and_fp8(
     disable_numpy_memmap: bool = False,
     weight_transform_hooks: Optional[WeightTransformHooks] = None,
     allow_prequantized_fp8: bool = False,
+    quantizer=None,
 ) -> dict[str, torch.Tensor]:
     """
     Merge LoRA weights into the state dict of a model with fp8 optimization if needed.
@@ -90,6 +142,9 @@ def load_safetensors_with_lora_and_fp8(
         exclude_keys (Optional[List[str]]): Keys to exclude from optimization.
         disable_numpy_memmap (bool): Whether to disable numpy memmap when loading safetensors.
         weight_transform_hooks (Optional[WeightTransformHooks]): Hooks for transforming weights during loading.
+        quantizer: Optional quantization strategy object with its own streaming loader
+            (e.g. ConvRotInt8Quantizer). Mutually exclusive with fp8_optimization. The LoRA
+            merge weight_hook is passed through, so LoRA is merged before quantization.
     """
 
     # if the file name ends with 00001-of-00004 etc, we need to load the files with the same prefix
@@ -229,6 +284,7 @@ def load_safetensors_with_lora_and_fp8(
         disable_numpy_memmap=disable_numpy_memmap,
         weight_transform_hooks=weight_transform_hooks,
         allow_prequantized_fp8=allow_prequantized_fp8,
+        quantizer=quantizer,
     )
 
     for lora_weight_keys in list_of_lora_weight_keys:
@@ -253,10 +309,22 @@ def load_safetensors_with_fp8_optimization_and_hook(
     disable_numpy_memmap: bool = False,
     weight_transform_hooks: Optional[WeightTransformHooks] = None,
     allow_prequantized_fp8: bool = False,
+    quantizer=None,
 ) -> dict[str, torch.Tensor]:
     """
     Load state dict from safetensors files and merge LoRA weights into the state dict with fp8 optimization if needed.
     """
+    if quantizer is not None:
+        assert not fp8_optimization, "quantizer and fp8_optimization are mutually exclusive"
+        logger.info(f"Loading state dict with {type(quantizer).__name__}. Hook enabled: {weight_hook is not None}")
+        return quantizer.load_and_quantize(
+            model_files,
+            calc_device,
+            move_to_device=move_to_device,
+            weight_hook=weight_hook,
+            disable_numpy_memmap=disable_numpy_memmap,
+            weight_transform_hooks=weight_transform_hooks,
+        )
     if fp8_optimization:
         logger.info(
             f"Loading state dict with FP8 optimization. Dtype of weight: {dit_weight_dtype}, hook enabled: {weight_hook is not None}"

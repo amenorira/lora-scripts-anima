@@ -4,7 +4,9 @@
 # Licensed under the MIT License
 
 import torch
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, CLIPTextModel, CLIPTokenizer, BitsAndBytesConfig
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, CLIPTextModel, BitsAndBytesConfig
+
+from musubi_tuner.utils.clip_utils import CLIPTokenizer
 
 from .utils import freeze
 import torchvision.transforms.functional as F
@@ -83,7 +85,7 @@ class Qwen2_5_VLTextEmbedder:
             )
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            conf.checkpoint_path, torch_dtype=torch.bfloat16, device_map=device, quantization_config=quantization_config
+            conf.checkpoint_path, dtype=torch.bfloat16, device_map=device, quantization_config=quantization_config
         )
         self.model = freeze(self.model)
 

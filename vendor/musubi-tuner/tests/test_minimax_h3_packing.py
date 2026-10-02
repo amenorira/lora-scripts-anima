@@ -1,0 +1,562 @@
+import math
+from pathlib import Path
+import sys
+
+import pytest
+import torch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from musubi_tuner.minimax_h3.packing import (
+    FL_CONDITION_ROLES,
+    FRAME_RESCALE,
+    ONE_FRAME_AUDIO_LATENT_FRAMES,
+    ONE_FRAME_VIDEO_LATENT_FRAMES,
+    H3ConditionRole,
+    H3ReferenceGeometry,
+    H3TimeOverrides,
+    H3VideoGeometry,
+    build_h3_layout,
+    build_position_grid,
+    build_timestep_rows,
+    one_frame_condition_role,
+    pack_audio_rows,
+    pack_video_rows,
+    parse_condition_role,
+    reference_condition_role,
+    unpack_targets,
+)
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        ("first", H3ConditionRole("first", "fl")),
+        ("last", H3ConditionRole("last", "fl")),
+        ("cond_000", H3ConditionRole("cond_000", "one_frame", index=0)),
+        ("cond_012", H3ConditionRole("cond_012", "one_frame", index=12)),
+        ("ref_000_image", H3ConditionRole("ref_000_image", "reference", index=0, reference_kind="image")),
+        ("ref_003_video", H3ConditionRole("ref_003_video", "reference", index=3, reference_kind="video")),
+        ("ref_003_audio", H3ConditionRole("ref_003_audio", "reference", index=3, reference_kind="audio")),
+    ],
+)
+def test_condition_roles_parse_the_cache_vocabulary(role: str, expected: H3ConditionRole):
+    parsed = parse_condition_role(role)
+
+    assert parsed == expected
+    assert parsed.is_audio == (role == "ref_003_audio")
+
+
+@pytest.mark.parametrize("role", ["", "audio", "cond_0", "cond_0000", "ref_000", "ref_000_text", "ref_00_image", "First"])
+def test_condition_roles_reject_names_outside_the_vocabulary(role: str):
+    with pytest.raises(ValueError, match="Unsupported MiniMax-H3 condition role"):
+        parse_condition_role(role)
+
+
+def test_condition_role_builders_round_trip_through_the_parser():
+    assert FL_CONDITION_ROLES == ("first", "last")
+    assert one_frame_condition_role(7) == "cond_007"
+    assert reference_condition_role(2, "audio") == "ref_002_audio"
+    for role in (*FL_CONDITION_ROLES, one_frame_condition_role(7), reference_condition_role(2, "audio")):
+        assert parse_condition_role(role).name == role
+    with pytest.raises(ValueError, match="nonnegative"):
+        reference_condition_role(-1, "image")
+    with pytest.raises(ValueError, match="reference kind"):
+        reference_condition_role(0, "text")
+
+
+def test_layout_segments_use_the_reference_condition_roles():
+    layout = build_h3_layout(
+        task="ref2va",
+        text_length=3,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+        references=(
+            H3ReferenceGeometry("image", video=H3VideoGeometry(1, 2, 2)),
+            H3ReferenceGeometry("video", video=H3VideoGeometry(2, 2, 2), audio_frames=8),
+            H3ReferenceGeometry("audio", audio_frames=4),
+        ),
+    )
+
+    assert [segment.role for segment in layout.segments] == [
+        "text",
+        reference_condition_role(0, "image"),
+        reference_condition_role(1, "audio"),
+        reference_condition_role(1, "video"),
+        reference_condition_role(2, "audio"),
+        "target_audio",
+        "target_video",
+    ]
+
+
+TARGET_VIDEO = H3VideoGeometry(frames=2, height=4, width=4)
+
+
+def _axis(dimension: int, sqrt_area: float) -> torch.Tensor:
+    ratio = dimension / sqrt_area
+    count = dimension // 2
+    return (torch.arange(count, dtype=torch.float64) * (ratio / count) + (1.0 - ratio) / 2.0) * 32.0
+
+
+def _frame_grid(video: H3VideoGeometry) -> torch.Tensor:
+    sqrt_area = math.sqrt(video.height * video.width)
+    height, width = torch.meshgrid(
+        _axis(video.height, sqrt_area),
+        _axis(video.width, sqrt_area),
+        indexing="ij",
+    )
+    return torch.stack((height.reshape(-1), width.reshape(-1)), dim=-1)
+
+
+def _video_grid(video: H3VideoGeometry, cursor: float) -> torch.Tensor:
+    spans = torch.tensor(
+        [5.0 / 3.0 * (1, 4, 4, 4, 4)[index % 5] for index in range(video.frames)],
+        dtype=torch.float64,
+    )
+    times = cursor + torch.cat((torch.zeros(1, dtype=torch.float64), spans[:-1].cumsum(0)))
+    frame = _frame_grid(video)
+    grid = torch.empty(video.frames, frame.shape[0], 3, dtype=torch.float64)
+    grid[..., 0] = times[:, None]
+    grid[..., 1:] = frame[None]
+    return grid.reshape(-1, 3)
+
+
+def _audio_grid(cursor: float, frames: int, width_low: float, width_high: float) -> torch.Tensor:
+    grid = torch.zeros(frames * 2, 3, dtype=torch.float64)
+    grid[:, 0] = (cursor + torch.arange(frames, dtype=torch.float64)).repeat(2)
+    grid[:frames, 2] = width_low
+    grid[frames:, 2] = width_high
+    return grid
+
+
+def test_video_rows_preserve_batch_and_patch_order():
+    latents = torch.arange(2 * 24 * 2 * 4 * 4, dtype=torch.float32).reshape(2, 24, 2, 4, 4)
+
+    rows = pack_video_rows(latents)
+
+    expected_rows = []
+    for batch in range(2):
+        batch_rows = []
+        for frame in range(2):
+            for patch_y in range(2):
+                for patch_x in range(2):
+                    values = []
+                    for channel in range(24):
+                        for y in range(patch_y * 2, patch_y * 2 + 2):
+                            for x in range(patch_x * 2, patch_x * 2 + 2):
+                                values.append(latents[batch, channel, frame, y, x])
+                    batch_rows.append(torch.stack(values))
+        expected_rows.append(torch.stack(batch_rows))
+
+    torch.testing.assert_close(rows, torch.stack(expected_rows))
+    assert rows.shape == (2, 8, 96)
+
+
+def test_audio_rows_are_channel_major():
+    latents = torch.arange(2 * 32 * 2 * 3).reshape(2, 32, 2, 3)
+
+    rows = pack_audio_rows(latents)
+
+    expected = latents.permute(0, 2, 3, 1).reshape(2, 6, 32)
+    torch.testing.assert_close(rows, expected)
+
+
+@pytest.mark.parametrize(
+    ("task", "conditions", "references", "expected"),
+    [
+        (
+            "t2va",
+            (),
+            (),
+            [("text", "text", 3), ("target_audio", "target_audio", 16), ("target_video", "target_video", 8)],
+        ),
+        (
+            "fl2va",
+            (H3VideoGeometry(1, 4, 4), H3VideoGeometry(1, 4, 4)),
+            (),
+            [
+                ("text", "text", 3),
+                ("first", "visual_condition", 4),
+                ("last", "visual_condition", 4),
+                ("target_audio", "target_audio", 16),
+                ("target_video", "target_video", 8),
+            ],
+        ),
+        (
+            "ref2va",
+            (),
+            (
+                H3ReferenceGeometry("image", video=H3VideoGeometry(1, 2, 4)),
+                H3ReferenceGeometry("video", video=H3VideoGeometry(2, 4, 8), audio_frames=8),
+                H3ReferenceGeometry("audio", audio_frames=2),
+            ),
+            [
+                ("text", "text", 3),
+                ("ref_000_image", "visual_condition", 2),
+                ("ref_001_audio", "audio_condition", 16),
+                ("ref_001_video", "visual_condition", 16),
+                ("ref_002_audio", "audio_condition", 4),
+                ("target_audio", "target_audio", 16),
+                ("target_video", "target_video", 8),
+            ],
+        ),
+    ],
+)
+def test_layout_has_explicit_semantic_order_and_target_slices(task, conditions, references, expected):
+    layout = build_h3_layout(
+        task=task,
+        text_length=3,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+        visual_conditions=conditions,
+        references=references,
+    )
+
+    assert [(segment.role, segment.kind, segment.row_count) for segment in layout.segments] == expected
+    assert layout.row_count == sum(row_count for _, _, row_count in expected)
+    assert layout.target_audio_segment.stop == layout.target_video_segment.start
+    assert layout.target_video_segment.stop == layout.row_count
+
+
+def test_layout_rejects_target_audio_that_does_not_match_video_duration():
+    with pytest.raises(ValueError, match=r"target audio.*expected 8"):
+        build_h3_layout(
+            task="t2va",
+            text_length=1,
+            target_video=TARGET_VIDEO,
+            target_audio_frames=7,
+        )
+
+
+def test_timestep_plan_preserves_text_tags_and_uses_final_layer_time_indices_directly():
+    layout = build_h3_layout(
+        task="fl2va",
+        text_length=3,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+        visual_conditions=(H3VideoGeometry(1, 4, 4), H3VideoGeometry(1, 4, 4)),
+    )
+
+    plan = build_timestep_rows(
+        layout,
+        text_token_tags=torch.tensor([[1, 0, 1]]),
+        model_t_video=torch.tensor([0.25]),
+        model_t_audio=torch.tensor([0.75]),
+        visual_condition_clean=0.9,
+        audio_condition_clean=1.0,
+    )
+
+    torch.testing.assert_close(plan.unique_timesteps, torch.tensor([0.25, 0.75, 0.9]))
+    assert plan.unique_timesteps.ndim == 1
+    assert plan.unique_timesteps.dtype is torch.float32
+    assert plan.row_timesteps.shape == (1, layout.row_count)
+    assert plan.row_timestep_indices.shape == (1, layout.row_count)
+    assert plan.token_tags.shape == (1, layout.row_count)
+    assert plan.block_segments[0] == (0, 1, 1)
+    assert all(len(segment) == 3 and all(isinstance(value, int) for value in segment) for segment in plan.block_segments)
+    torch.testing.assert_close(plan.token_tags[0, :3], torch.tensor([1, 0, 1]))
+    torch.testing.assert_close(plan.block_adaln_indices[0, :3], torch.tensor([1, 0, 1]))
+    condition = layout.segment("first")
+    torch.testing.assert_close(
+        plan.block_adaln_indices[0, condition.start : condition.stop],
+        torch.full((condition.row_count,), 6),
+    )
+    torch.testing.assert_close(
+        plan.block_adaln_indices[0, layout.target_audio_segment.start : layout.target_audio_segment.stop],
+        torch.full((layout.target_audio_segment.row_count,), 5),
+    )
+    assert plan.video_timestep_index == 0
+    assert plan.audio_timestep_index == 1
+
+
+def test_position_grid_matches_full_fl2va_clock_and_does_not_advance_target_cursor():
+    layout = build_h3_layout(
+        task="fl2va",
+        text_length=2,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+        visual_conditions=(H3VideoGeometry(1, 4, 4), H3VideoGeometry(1, 4, 4)),
+    )
+
+    actual = build_position_grid(layout)
+
+    frame = _frame_grid(TARGET_VIDEO)
+    text = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=torch.float64)
+    first = torch.column_stack((torch.full((4,), 2.0), frame))
+    last_time = 2.0 + (5.0 / 3.0 + 20.0 / 3.0) - 5.0 / 3.0
+    last = torch.column_stack((torch.full((4,), last_time), frame))
+    target_width = _axis(4, 4.0)
+    audio = _audio_grid(2.0, 8, float(target_width[0]), float(target_width[-1]))
+    video = _video_grid(TARGET_VIDEO, 2.0)
+    expected = torch.cat((text, first, last, audio, video))
+
+    assert actual.dtype == torch.float64
+    assert actual.shape == (1, layout.row_count, 3)
+    torch.testing.assert_close(actual[0], expected)
+
+
+def test_full_fl2va_layout_accepts_a_single_roled_condition_and_keeps_its_anchor_time():
+    condition = H3VideoGeometry(1, 4, 4)
+    # the lone-last anchor must equal the last-frame time of the two-condition layout
+    last_time = 2.0 + (5.0 / 3.0 + 20.0 / 3.0) - 5.0 / 3.0
+    for role, expected_time in (("first", 2.0), ("last", last_time)):
+        layout = build_h3_layout(
+            task="fl2va",
+            text_length=2,
+            target_video=TARGET_VIDEO,
+            target_audio_frames=8,
+            visual_conditions=(condition,),
+            condition_roles=(role,),
+        )
+        assert [(segment.role, segment.kind) for segment in layout.segments][:2] == [("text", "text"), (role, "visual_condition")]
+        positions = build_position_grid(layout)
+        segment = layout.segment(role)
+        torch.testing.assert_close(
+            positions[0, segment.start : segment.stop, 0],
+            torch.full((segment.row_count,), expected_time, dtype=torch.float64),
+        )
+
+    with pytest.raises(ValueError, match="requires explicit condition roles"):
+        build_h3_layout(
+            task="fl2va",
+            text_length=2,
+            target_video=TARGET_VIDEO,
+            target_audio_frames=8,
+            visual_conditions=(condition,),
+        )
+    with pytest.raises(ValueError, match="one or two visual conditions"):
+        build_h3_layout(task="fl2va", text_length=2, target_video=TARGET_VIDEO, target_audio_frames=8)
+
+
+def test_position_grid_uses_the_full_five_frame_temporal_cycle():
+    target = H3VideoGeometry(7, 2, 2)
+    layout = build_h3_layout(
+        task="t2va",
+        text_length=1,
+        target_video=target,
+        target_audio_frames=37,
+    )
+
+    positions = build_position_grid(layout)
+    video_times = positions[0, layout.target_video_segment.row_slice, 0]
+    spans = torch.tensor([1, 4, 4, 4, 4, 1, 4], dtype=torch.float64) * (5.0 / 3.0)
+    expected = 1.0 + torch.cat((torch.zeros(1, dtype=torch.float64), spans[:-1].cumsum(0)))
+
+    torch.testing.assert_close(video_times, expected, rtol=0, atol=0)
+
+
+def test_position_grid_matches_mixed_reference_cursor_order():
+    image = H3VideoGeometry(1, 2, 4)
+    video_reference = H3VideoGeometry(2, 4, 8)
+    references = (
+        H3ReferenceGeometry("image", video=image),
+        H3ReferenceGeometry("video", video=video_reference, audio_frames=8),
+        H3ReferenceGeometry("audio", audio_frames=2),
+    )
+    layout = build_h3_layout(
+        task="ref2va",
+        text_length=2,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+        references=references,
+    )
+
+    actual = build_position_grid(layout)
+
+    text = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=torch.float64)
+    image_grid = torch.column_stack((torch.full((2,), 2.0), _frame_grid(image)))
+    video_cursor = 3.0
+    reference_width = _axis(video_reference.width, math.sqrt(video_reference.height * video_reference.width))
+    video_audio = _audio_grid(video_cursor, 8, float(reference_width[0]), float(reference_width[-1]))
+    video_grid = _video_grid(video_reference, video_cursor)
+    standalone_cursor = video_cursor + max(8.0, 5.0 / 3.0 + 20.0 / 3.0)
+    target_cursor = standalone_cursor + 2.0
+    target_width = _axis(TARGET_VIDEO.width, math.sqrt(TARGET_VIDEO.height * TARGET_VIDEO.width))
+    standalone_audio = _audio_grid(standalone_cursor, 2, float(target_width[0]), float(target_width[-1]))
+    target_audio = _audio_grid(target_cursor, 8, float(target_width[0]), float(target_width[-1]))
+    target_video = _video_grid(TARGET_VIDEO, target_cursor)
+    expected = torch.cat((text, image_grid, video_audio, video_grid, standalone_audio, target_audio, target_video))
+
+    torch.testing.assert_close(actual[0], expected)
+    assert torch.all(actual[0, layout.target_audio_segment.start : layout.target_audio_segment.stop, 0] >= target_cursor)
+
+
+ONE_FRAME_TARGET = H3VideoGeometry(frames=1, height=4, width=4)
+
+
+def _one_frame_layout(task="t2va", *, conditions=(), roles=None, references=(), overrides=None):
+    return build_h3_layout(
+        task=task,
+        text_length=2,
+        target_video=ONE_FRAME_TARGET,
+        target_audio_frames=ONE_FRAME_AUDIO_LATENT_FRAMES,
+        visual_conditions=conditions,
+        condition_roles=roles,
+        references=references,
+        one_frame=True,
+        time_overrides=overrides,
+    )
+
+
+def test_one_frame_layout_accepts_a_single_latent_frame_and_two_audio_frames():
+    layout = _one_frame_layout()
+
+    assert layout.target_video.frames == ONE_FRAME_VIDEO_LATENT_FRAMES
+    assert layout.target_audio_frames == ONE_FRAME_AUDIO_LATENT_FRAMES
+    assert layout.time_overrides is None
+    assert [(segment.role, segment.row_count) for segment in layout.segments] == [
+        ("text", 2),
+        ("target_audio", 4),
+        ("target_video", 4),
+    ]
+
+
+def test_one_frame_layout_validation_rules():
+    with pytest.raises(ValueError, match="single target latent frame"):
+        build_h3_layout(task="t2va", text_length=2, target_video=TARGET_VIDEO, target_audio_frames=8, one_frame=True)
+    with pytest.raises(ValueError, match="2 target audio frames"):
+        build_h3_layout(task="t2va", text_length=2, target_video=ONE_FRAME_TARGET, target_audio_frames=8, one_frame=True)
+    with pytest.raises(ValueError, match="time overrides require a one-frame layout"):
+        build_h3_layout(
+            task="t2va",
+            text_length=2,
+            target_video=TARGET_VIDEO,
+            target_audio_frames=8,
+            time_overrides=H3TimeOverrides(condition_times=(), target_time=0.0),
+        )
+    with pytest.raises(ValueError, match="5\\*n\\+2"):
+        build_h3_layout(task="t2va", text_length=2, target_video=ONE_FRAME_TARGET, target_audio_frames=2)
+    with pytest.raises(ValueError, match="cannot carry condition times"):
+        _one_frame_layout(overrides=H3TimeOverrides(condition_times=(1.0,), target_time=0.0))
+    with pytest.raises(ValueError, match="condition roles apply only to FL2VA"):
+        _one_frame_layout(roles=("first",))
+    with pytest.raises(ValueError, match="nonnegative"):
+        H3TimeOverrides(condition_times=(-1.0,), target_time=0.0)
+
+
+def test_one_frame_fl2va_layout_takes_any_number_of_ordered_cond_slots():
+    condition = H3VideoGeometry(1, 4, 4)
+    overrides = H3TimeOverrides(condition_times=(0.0,), target_time=FRAME_RESCALE * 24)
+
+    # one-frame conditions are ordered cond_{i} slots placed by their time overrides; the video
+    # first/last role names (which select anchor times) do not apply
+    for count in (1, 2, 3, 5):
+        times = H3TimeOverrides(condition_times=tuple(float(index) for index in range(count)), target_time=FRAME_RESCALE * 24)
+        layout = _one_frame_layout("fl2va", conditions=(condition,) * count, overrides=times)
+        expected_roles = [f"cond_{index:03d}" for index in range(count)]
+        assert [segment.role for segment in layout.segments] == ["text", *expected_roles, "target_audio", "target_video"]
+        # explicit roles are accepted when they are exactly the derived ones (the uncond rebuild passes them back)
+        assert _one_frame_layout("fl2va", conditions=(condition,) * count, roles=tuple(expected_roles), overrides=times) == layout
+
+    with pytest.raises(ValueError, match="one condition time override per condition"):
+        _one_frame_layout("fl2va", conditions=(condition,))
+    with pytest.raises(ValueError, match="one condition time override per condition"):
+        _one_frame_layout("fl2va", conditions=(condition, condition), overrides=overrides)
+    with pytest.raises(ValueError, match="ordered"):
+        _one_frame_layout("fl2va", conditions=(condition,), roles=("first",), overrides=overrides)
+    with pytest.raises(ValueError, match="at least one visual condition"):
+        _one_frame_layout("fl2va", overrides=H3TimeOverrides(condition_times=(), target_time=0.0))
+
+
+def test_one_frame_position_grid_places_conditions_and_target_at_override_times():
+    condition = H3VideoGeometry(1, 4, 4)
+    overrides = H3TimeOverrides(
+        condition_times=(0.0, FRAME_RESCALE * 240),
+        target_time=FRAME_RESCALE * 24,
+    )
+    layout = _one_frame_layout("fl2va", conditions=(condition, condition), overrides=overrides)
+
+    positions = build_position_grid(layout)[0]
+
+    cursor = 2.0
+    frame = _frame_grid(ONE_FRAME_TARGET)
+    first = torch.column_stack((torch.full((4,), cursor), frame))
+    last = torch.column_stack((torch.full((4,), cursor + FRAME_RESCALE * 240), frame))
+    target_time = cursor + FRAME_RESCALE * 24
+    target_width = _axis(4, 4.0)
+    audio = _audio_grid(target_time, ONE_FRAME_AUDIO_LATENT_FRAMES, float(target_width[0]), float(target_width[-1]))
+    video = _video_grid(ONE_FRAME_TARGET, target_time)
+    text = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=torch.float64)
+    torch.testing.assert_close(positions, torch.cat((text, first, last, audio, video)))
+
+
+def test_one_frame_position_grid_offsets_a_plain_target_and_defaults_to_the_cursor():
+    offset = _one_frame_layout(overrides=H3TimeOverrides(condition_times=(), target_time=FRAME_RESCALE * 240))
+    plain = _one_frame_layout()
+
+    offset_positions = build_position_grid(offset)[0]
+    plain_positions = build_position_grid(plain)[0]
+
+    target_rows = slice(offset.target_audio_segment.start, offset.row_count)
+    torch.testing.assert_close(
+        offset_positions[target_rows, 0],
+        plain_positions[target_rows, 0] + FRAME_RESCALE * 240,
+    )
+    torch.testing.assert_close(offset_positions[:2], plain_positions[:2])
+    assert float(plain_positions[plain.target_video_segment.start, 0]) == 2.0
+
+
+def test_one_frame_ref2va_layout_keeps_reference_blocks_before_the_offset_target():
+    references = (H3ReferenceGeometry("image", video=H3VideoGeometry(1, 2, 4)),)
+    layout = _one_frame_layout(
+        "ref2va",
+        references=references,
+        overrides=H3TimeOverrides(condition_times=(), target_time=FRAME_RESCALE * 24),
+    )
+
+    positions = build_position_grid(layout)[0]
+
+    image_rows = layout.segment("ref_000_image")
+    assert torch.all(positions[image_rows.row_slice, 0] == 2.0)
+    # image references advance the cursor by 1.0; the target offset applies after that
+    assert float(positions[layout.target_video_segment.start, 0]) == 3.0 + FRAME_RESCALE * 24
+
+
+def test_target_rows_round_trip_back_to_video_and_audio_latents():
+    layout = build_h3_layout(
+        task="t2va",
+        text_length=1,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+    )
+    video = torch.randn(2, 24, 2, 4, 4)
+    audio = torch.randn(2, 32, 2, 8)
+
+    unpacked_video, unpacked_audio = unpack_targets(layout, pack_video_rows(video), pack_audio_rows(audio))
+
+    torch.testing.assert_close(unpacked_video, video)
+    torch.testing.assert_close(unpacked_audio, audio)
+
+
+def test_timestep_plan_rejects_more_than_one_time_for_r1():
+    layout = build_h3_layout(
+        task="t2va",
+        text_length=1,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+    )
+
+    with pytest.raises(ValueError, match="exactly one value"):
+        build_timestep_rows(
+            layout,
+            text_token_tags=torch.tensor([[1]]),
+            model_t_video=torch.tensor([0.25, 0.5]),
+            model_t_audio=torch.tensor([0.75]),
+        )
+
+
+def test_unbatched_target_rows_round_trip_without_confusing_row_counts_for_batch_axes():
+    layout = build_h3_layout(
+        task="t2va",
+        text_length=1,
+        target_video=TARGET_VIDEO,
+        target_audio_frames=8,
+    )
+    video = torch.randn(24, 2, 4, 4)
+    audio = torch.randn(32, 2, 8)
+
+    unpacked_video, unpacked_audio = unpack_targets(layout, pack_video_rows(video), pack_audio_rows(audio))
+
+    torch.testing.assert_close(unpacked_video, video)
+    torch.testing.assert_close(unpacked_audio, audio)

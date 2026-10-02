@@ -17,7 +17,9 @@ def line_to_prompt_dict(line: str) -> dict:
     prompt_dict = {}
     prompt_dict["prompt"] = prompt_args[0]
 
-    for parg in prompt_args:
+    for parg in prompt_args[1:]:
+        if not parg.strip():
+            continue
         try:
             m = re.match(r"w (\d+)", parg, re.IGNORECASE)
             if m:
@@ -52,6 +54,21 @@ def line_to_prompt_dict(line: str) -> dict:
             m = re.match(r"fs ([\d\.]+)", parg, re.IGNORECASE)
             if m:  # scale
                 prompt_dict["discrete_flow_shift"] = float(m.group(1))
+                continue
+
+            m = re.match(r"fsa ([\d\.]+)", parg, re.IGNORECASE)
+            if m:  # audio target flow shift (MiniMax-H3 joint AV)
+                prompt_dict["discrete_flow_shift_audio"] = float(m.group(1))
+                continue
+
+            m = re.match(r"ofps (\d+)", parg, re.IGNORECASE)
+            if m:  # output fps (MiniMax-H3 temporal stretch)
+                prompt_dict["output_fps"] = int(m.group(1))
+                continue
+
+            m = re.match(r"skb (\d+)", parg, re.IGNORECASE)
+            if m:  # stretch keep bands (MiniMax-H3 temporal stretch)
+                prompt_dict["stretch_keep_bands"] = int(m.group(1))
                 continue
 
             m = re.match(r"l ([\d\.]+)", parg, re.IGNORECASE)
@@ -89,9 +106,29 @@ def line_to_prompt_dict(line: str) -> dict:
                 continue
 
             m = re.match(r"of (.+)", parg, re.IGNORECASE)
-            if m:  # output folder
+            if m:  # one frame inference options
                 prompt_dict["one_frame"] = m.group(1).strip()
                 continue
+
+            m = re.match(r"o (.+)", parg, re.IGNORECASE)
+            if m:  # output file name (generation scripts with a prompt file)
+                prompt_dict["output_name"] = m.group(1).strip()
+                continue
+
+            m = re.match(r"rj (.+)", parg, re.IGNORECASE)
+            if m:  # reference JSONL (MiniMax-H3 Ref2VA)
+                prompt_dict["reference_jsonl"] = m.group(1).strip()
+                continue
+
+            m = re.match(r"ref (.+)", parg, re.IGNORECASE)
+            if m:
+                # can be multiple inline references (MiniMax-H3 Ref2VA)
+                if "ref" not in prompt_dict:
+                    prompt_dict["ref"] = []
+                prompt_dict["ref"].append(m.group(1).strip())
+                continue
+
+            logger.warning(f"Unknown prompt option ignored / 不明なオプションを無視します: --{parg}")
 
         except ValueError as ex:
             logger.error(f"Exception in parsing / 解析エラー: {parg}")
@@ -141,3 +178,14 @@ def should_sample_images(args, steps, epoch=None):
         if not should_sample_by_steps and not should_sample_by_epochs:
             return False
     return True
+
+
+def should_sample_at_epoch_end(global_step, last_sampled_step):
+    """Whether the end-of-epoch sample call should proceed.
+
+    Guards against re-sampling at the same global_step already handled by the
+    in-loop step-based trigger, which otherwise fires a duplicate sample whenever
+    an epoch boundary coincides with a step interval -- most commonly on the final
+    training step (see kohya-ss/musubi-tuner#1048).
+    """
+    return global_step != last_sampled_step

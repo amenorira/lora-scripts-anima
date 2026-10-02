@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 import os
 from typing import Optional, TYPE_CHECKING, Union
 
@@ -15,10 +16,13 @@ from musubi_tuner.dataset.architectures import (
     ARCHITECTURE_IDEOGRAM4_FULL,
     ARCHITECTURE_KANDINSKY5_FULL,
     ARCHITECTURE_KREA2_FULL,
+    ARCHITECTURE_MINIMAX_H3_FULL,
     ARCHITECTURE_QWEN_IMAGE_FULL,
     ARCHITECTURE_WAN_FULL,
     ARCHITECTURE_Z_IMAGE_FULL,
 )
+from musubi_tuner.minimax_h3 import packing as h3_packing
+from musubi_tuner.minimax_h3 import text_encoder as h3_text_encoder
 from musubi_tuner.utils import safetensors_utils
 from musubi_tuner.utils.model_utils import dtype_to_str, remove_dtype_suffix
 
@@ -35,6 +39,54 @@ logger = logging.getLogger(__name__)
 
 # the keys of the dict are `<content_type>_FxHxW_<dtype>` for latents
 # and `<content_type>_<dtype|mask>` for other tensors
+
+
+# Common audio conventions (audio-capable architectures):
+# - the target audio latent is stored as `latents_audio_<shape>_<dtype>` (shape layout is
+#   architecture-specific) in the same latent cache file
+# - AUDIO_PRESENT_KEY holds a scalar 0/1 float32 tensor recording whether the item had real
+#   audio (0: silence placeholder was encoded). This is a fact about the data; supervision
+#   policy (loss weights, video-only training) is decided at training time.
+AUDIO_PRESENT_KEY = "audio_present_float32"
+
+# - ONE_FRAME_TARGET_INDEX_KEY holds a scalar int64 tensor with the one-frame target's 24 fps
+#   pixel-frame index. It travels as a tensor (not metadata) because the bucket collator only
+#   loads tensors; the trainer converts it to a RoPE time override at layout-build time.
+ONE_FRAME_TARGET_INDEX_KEY = "one_frame_target_index_int64"
+
+# - ONE_FRAME_CONTROL_INDICES_KEY holds an int64 [K] tensor (K >= 1) with the 24 fps
+#   pixel-frame indices of the one-frame visual conditions, in cond_{i} slot order.
+#   Present only when the cache carries condition latents; same tensor-not-metadata rationale.
+ONE_FRAME_CONTROL_INDICES_KEY = "one_frame_control_indices_int64"
+
+
+def append_audio_present_entry(sd: dict[str, torch.Tensor], audio_present: bool):
+    sd[AUDIO_PRESENT_KEY] = torch.tensor(1.0 if audio_present else 0.0, dtype=torch.float32)
+
+
+def append_one_frame_target_index_entry(sd: dict[str, torch.Tensor], target_index: int):
+    if target_index < 0:
+        raise ValueError(f"MiniMax-H3 one-frame target index must be nonnegative, got {target_index}")
+    sd[ONE_FRAME_TARGET_INDEX_KEY] = torch.tensor(target_index, dtype=torch.int64)
+
+
+def append_one_frame_control_indices_entry(sd: dict[str, torch.Tensor], control_indices: list[int]):
+    if len(control_indices) < 1:
+        raise ValueError("MiniMax-H3 one-frame control indices must have at least one entry")
+    if any(index < 0 for index in control_indices):
+        raise ValueError(f"MiniMax-H3 one-frame control indices must be nonnegative, got {control_indices}")
+    sd[ONE_FRAME_CONTROL_INDICES_KEY] = torch.tensor(list(control_indices), dtype=torch.int64)
+
+
+def validate_audio_present_entry(sd: dict[str, torch.Tensor]) -> float:
+    """Validates the audio_present entry of a latent cache dict and returns its value."""
+    tensor = sd.get(AUDIO_PRESENT_KEY)
+    if not isinstance(tensor, torch.Tensor) or tensor.shape != torch.Size([]) or tensor.dtype != torch.float32:
+        raise ValueError(f"Audio latent cache requires a scalar float32 {AUDIO_PRESENT_KEY} tensor")
+    value = tensor.item()
+    if value not in (0.0, 1.0):
+        raise ValueError(f"{AUDIO_PRESENT_KEY} must be exactly 0.0 or 1.0, got {value}")
+    return value
 
 
 def save_latent_cache(item_info: ItemInfo, latent: torch.Tensor):
@@ -302,13 +354,29 @@ def save_latent_cache_ideogram4(item_info: ItemInfo, latent: torch.Tensor):
     save_latent_cache_common(item_info, sd, ARCHITECTURE_IDEOGRAM4_FULL)
 
 
-def save_latent_cache_common(item_info: ItemInfo, sd: dict[str, torch.Tensor], arch_fullname: str):
-    metadata = {
-        "architecture": arch_fullname,
-        "width": f"{item_info.original_size[0]}",
-        "height": f"{item_info.original_size[1]}",
-        "format_version": "1.0.1",
-    }
+def _merge_cache_metadata(required: dict[str, str], additional: Optional[dict[str, str]]) -> dict[str, str]:
+    metadata = dict(additional or {})
+    if not all(isinstance(key, str) and isinstance(value, str) for key, value in metadata.items()):
+        raise ValueError("Safetensors metadata keys and values must be strings")
+    metadata.update(required)
+    return metadata
+
+
+def save_latent_cache_common(
+    item_info: ItemInfo,
+    sd: dict[str, torch.Tensor],
+    arch_fullname: str,
+    additional_metadata: Optional[dict[str, str]] = None,
+):
+    metadata = _merge_cache_metadata(
+        {
+            "architecture": arch_fullname,
+            "width": f"{item_info.original_size[0]}",
+            "height": f"{item_info.original_size[1]}",
+            "format_version": "1.0.1",
+        },
+        additional_metadata,
+    )
     if item_info.frame_count is not None:
         metadata["frame_count"] = f"{item_info.frame_count}"
 
@@ -484,11 +552,130 @@ def save_text_encoder_output_cache_hidream_o1(
     save_text_encoder_output_cache_common(item_info, sd, ARCHITECTURE_HIDREAM_O1_FULL, merge_existing=False)
 
 
+def _h3_video_latent_key(role: str, latent: torch.Tensor, label: str) -> str:
+    """`latents[_<role>]_FxHxW_<dtype>` of a [24,F,H,W] MiniMax-H3 video latent (role "" = the target)."""
+    channels = h3_packing.VIDEO_CHANNELS
+    if latent.ndim != 4 or latent.shape[0] != channels:
+        raise ValueError(f"MiniMax-H3 {label} latent must be [{channels},F,H,W], got {tuple(latent.shape)}")
+    _, F, H, W = latent.shape
+    return f"latents_{role + '_' if role else ''}{F}x{H}x{W}_{dtype_to_str(latent.dtype)}"
+
+
+def _h3_audio_latent_key(role: str, latent: torch.Tensor, label: str) -> str:
+    """`latents_<role>_32x2xA_<dtype>` of a [32,2,A] MiniMax-H3 audio latent (role "audio" = the target)."""
+    channels, stereo = h3_packing.AUDIO_CHANNELS, h3_packing.STEREO_CHANNELS
+    if latent.ndim != 3 or tuple(latent.shape[:2]) != (channels, stereo):
+        raise ValueError(f"MiniMax-H3 {label} latent [{channels},{stereo},A] required, got {tuple(latent.shape)}")
+    return f"latents_{role}_{channels}x{stereo}x{latent.shape[2]}_{dtype_to_str(latent.dtype)}"
+
+
+def save_latent_cache_minimax_h3(
+    item_info: ItemInfo,
+    *,
+    target_video: torch.Tensor,
+    target_audio: torch.Tensor,
+    audio_present: bool,
+    visual_conditions: Optional[Mapping[str, torch.Tensor]] = None,
+    audio_conditions: Optional[Mapping[str, torch.Tensor]] = None,
+    one_frame_target_index: Optional[int] = None,
+    one_frame_control_indices: Optional[Sequence[int]] = None,
+    metadata: Optional[dict[str, str]] = None,
+):
+    """MiniMax-H3 architecture: a joint audio-video target plus optional condition latents.
+
+    `target_video` is [24,F,H,W] and `target_audio` [32,2,A]; `audio_present` records whether the
+    audio is real (see AUDIO_PRESENT_KEY). The conditions are keyed by their role in the
+    packed layout (`first`/`last`, `cond_{i}`, `ref_{i}_{image|video|audio}`, see
+    minimax_h3/packing.py): video-shaped ones in `visual_conditions`, the reference audio rows
+    in `audio_conditions`. One-frame (image) caches also carry the target's pixel-frame index and,
+    for FL2VA controls, the condition indices (ONE_FRAME_*_KEY). Every tensor lands under
+    `latents[_<role>]_<shape>_<dtype>`, which the bucket collator folds back to `latents[_<role>]`.
+    """
+    sd = {
+        _h3_video_latent_key("", target_video, "target video"): target_video,
+        _h3_audio_latent_key("audio", target_audio, "target audio"): target_audio,
+    }
+    for role, latent in (visual_conditions or {}).items():
+        if h3_packing.parse_condition_role(role).is_audio:
+            raise ValueError(f"MiniMax-H3 condition role {role} carries audio rows, not a visual latent")
+        sd[_h3_video_latent_key(role, latent, f"visual condition {role}")] = latent
+    for role, latent in (audio_conditions or {}).items():
+        if not h3_packing.parse_condition_role(role).is_audio:
+            raise ValueError(f"MiniMax-H3 condition role {role} carries a visual latent, not audio rows")
+        sd[_h3_audio_latent_key(role, latent, f"audio condition {role}")] = latent
+    sd = {key: tensor.detach().cpu().contiguous() for key, tensor in sd.items()}
+
+    append_audio_present_entry(sd, audio_present)
+    if one_frame_control_indices is not None and one_frame_target_index is None:
+        raise ValueError("MiniMax-H3 one-frame control indices require the one-frame target index")
+    if one_frame_target_index is not None:
+        append_one_frame_target_index_entry(sd, one_frame_target_index)
+    if one_frame_control_indices is not None:
+        append_one_frame_control_indices_entry(sd, list(one_frame_control_indices))
+    save_latent_cache_common(item_info, sd, ARCHITECTURE_MINIMAX_H3_FULL, metadata)
+
+
+# key stem of the teacher text rows a MiniMax-H3 text cache may carry next to the student rows,
+# per teacher kind (the vocabulary lives with the teacher-kind seam in minimax_h3.text_encoder)
+MINIMAX_H3_TEACHER_TEXT_PREFIXES = h3_text_encoder.TEACHER_TEXT_CACHE_PREFIXES
+
+
+def _h3_text_rows(prefix: str, hidden_states: torch.Tensor, token_tags: torch.Tensor, label: str) -> dict[str, torch.Tensor]:
+    """`<prefix>_hidden_states_<dtype>` ([L,5120]) and `<prefix>_token_tags_int64` ([L], 0/1) of one presentation."""
+    width, max_rows = h3_text_encoder.TEXT_WIDTH, h3_text_encoder.MAX_TEXT_ROWS
+    if hidden_states.ndim != 2 or hidden_states.shape[1] != width:
+        raise ValueError(f"MiniMax-H3 {label} hidden states must be [L,{width}], got {tuple(hidden_states.shape)}")
+    if hidden_states.shape[0] > max_rows:
+        raise ValueError(f"MiniMax-H3 {label} exceeds {max_rows} rows: {hidden_states.shape[0]}")
+    if token_tags.dtype != torch.int64 or token_tags.shape != (hidden_states.shape[0],):
+        raise ValueError(f"MiniMax-H3 {label} token tags must be int64 [L]")
+    if not torch.all((token_tags == 0) | (token_tags == 1)):
+        raise ValueError(f"MiniMax-H3 {label} token tags may contain only 0 and 1")
+    return {
+        f"{prefix}_hidden_states_{dtype_to_str(hidden_states.dtype)}": hidden_states.detach().cpu().contiguous(),
+        f"{prefix}_token_tags_int64": token_tags.detach().cpu().contiguous(),
+    }
+
+
+def save_text_encoder_output_cache_minimax_h3(
+    item_info: ItemInfo,
+    *,
+    hidden_states: torch.Tensor,
+    token_tags: torch.Tensor,
+    teacher_kind: Optional[str] = None,
+    teacher_hidden_states: Optional[torch.Tensor] = None,
+    teacher_token_tags: Optional[torch.Tensor] = None,
+    metadata: Optional[dict[str, str]] = None,
+):
+    """MiniMax-H3 architecture: the student presentation's Qwen3-VL rows plus, for teacher matching,
+    the rows of one teacher presentation (`teacher_kind` in MINIMAX_H3_TEACHER_TEXT_PREFIXES).
+
+    Stored varlen (the collator returns lists): `hidden_states` [L,5120], `token_tags` int64 [L]
+    with 1 for text and 0 for vision rows."""
+    sd = _h3_text_rows("varlen_mmh3", hidden_states, token_tags, "text cache")
+    teacher_rows = (teacher_kind, teacher_hidden_states, teacher_token_tags)
+    if any(value is not None for value in teacher_rows):
+        if any(value is None for value in teacher_rows):
+            raise ValueError("MiniMax-H3 teacher text rows require the teacher kind, hidden states and token tags together")
+        prefix = MINIMAX_H3_TEACHER_TEXT_PREFIXES.get(teacher_kind)
+        if prefix is None:
+            raise ValueError(f"Unsupported MiniMax-H3 teacher kind: {teacher_kind}")
+        sd.update(_h3_text_rows(prefix, teacher_hidden_states, teacher_token_tags, "teacher text rows"))
+    save_text_encoder_output_cache_common(
+        item_info,
+        sd,
+        ARCHITECTURE_MINIMAX_H3_FULL,
+        merge_existing=False,
+        additional_metadata=metadata,
+    )
+
+
 def save_text_encoder_output_cache_common(
     item_info: ItemInfo,
     sd: dict[str, torch.Tensor],
     arch_fullname: str,
     merge_existing: bool = True,
+    additional_metadata: Optional[dict[str, str]] = None,
 ):
     # merge_existing keeps keys written by previous passes (e.g. HunyuanVideo caches LLM and CLIP separately).
     # Single-pass architectures that write their full key set at once should pass merge_existing=False so the
@@ -499,11 +686,14 @@ def save_text_encoder_output_cache_common(
             logger.warning(f"{key} tensor has NaN: {item_info.item_key}, replace NaN with 0")
             value[torch.isnan(value)] = 0
 
-    metadata = {
-        "architecture": arch_fullname,
-        "caption1": item_info.caption,
-        "format_version": "1.0.1",
-    }
+    metadata = _merge_cache_metadata(
+        {
+            "architecture": arch_fullname,
+            "caption1": item_info.caption,
+            "format_version": "1.0.1",
+        },
+        additional_metadata,
+    )
     if merge_existing and os.path.exists(item_info.text_encoder_output_cache_path):
         # load existing cache and update metadata
         new_key_bases = {remove_dtype_suffix(key) for key in sd}  # logical keys (dtype stripped) just written

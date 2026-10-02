@@ -353,6 +353,10 @@ def load_ideogram4_text_encoder(
     if hasattr(model, "visual"):
         del model.visual
     _materialize_meta_tensors(model)
+    # to_empty() re-creates every tensor uninitialized, including the non-persistent rotary inv_freq buffer that is
+    # not in the checkpoint, so rebuild the rotary embedding from the config.
+    rotary = model.language_model.rotary_emb
+    model.language_model.rotary_emb = type(rotary)(config.text_config, device=rotary.inv_freq.device)
     if is_fp8_state_dict(state_dict):
         # Pre-quantized FP8 Qwen3-VL (official or ComfyUI) -> Musubi's shared monkey-patch FP8 path,
         # the same mechanism the DiT uses. The dedicated Fp8Linear class is no longer needed here.

@@ -44,6 +44,7 @@ from musubi_tuner.dataset.image_video_dataset import ARCHITECTURE_HUNYUAN_VIDEO
 import logging
 
 from musubi_tuner.utils import huggingface_utils, model_utils, train_utils, sai_model_spec
+from musubi_tuner.training.accelerator_setup import warn_if_tensorboard_unavailable
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -120,6 +121,7 @@ def prepare_accelerator(args: argparse.Namespace) -> Accelerator:
                 os.environ["WANDB_DIR"] = logging_dir
             if args.wandb_api_key is not None:
                 wandb.login(key=args.wandb_api_key)
+    warn_if_tensorboard_unavailable(log_with)
 
     kwargs_handlers = [
         (
@@ -730,6 +732,12 @@ class FineTuningTrainer:
         return noisy_model_input, timesteps
 
     def train(self, args):
+        # check required arguments
+        if args.output_dir is None:
+            raise ValueError("output_dir is required / output_dirが必要です")
+        if args.output_name is None:
+            raise ValueError("output_name is required / output_nameが必要です")
+
         if args.seed is None:
             args.seed = random.randint(0, 2**32)
         set_seed(args.seed)
@@ -1136,6 +1144,8 @@ class FineTuningTrainer:
                     optimizer_train_fn()
 
                 current_loss = loss.detach().item()
+                if accelerator.sync_gradients and global_step == 1:
+                    train_utils.reset_progress_bar_timing(progress_bar)
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
                 avr_loss: float = loss_recorder.moving_average
                 logs = {"avr_loss": avr_loss}  # , "lr": lr_scheduler.get_last_lr()[0]}

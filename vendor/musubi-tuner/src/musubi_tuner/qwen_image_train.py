@@ -156,6 +156,10 @@ class QwenImageTrainer(QwenImageNetworkTrainer):
             raise ValueError("dataset_config is required / dataset_configが必要です")
         if args.dit is None:
             raise ValueError("path to DiT model is required / DiTモデルのパスが必要です")
+        if args.output_dir is None:
+            raise ValueError("output_dir is required / output_dirが必要です")
+        if args.output_name is None:
+            raise ValueError("output_name is required / output_nameが必要です")
         assert not args.fp8_scaled or args.fp8_base, "fp8_scaled requires fp8_base / fp8_scaledはfp8_baseが必要です"
 
         if args.sage_attn:
@@ -652,8 +656,6 @@ class QwenImageTrainer(QwenImageNetworkTrainer):
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
-                    if global_step == 0:
-                        progress_bar.reset()  # exclude first step from progress bar, because it may take long due to initializations
                     progress_bar.update(1)
                     global_step += 1
 
@@ -688,6 +690,8 @@ class QwenImageTrainer(QwenImageNetworkTrainer):
                         optimizer_train_fn()
 
                 current_loss = loss.detach().item()
+                if accelerator.sync_gradients and global_step == 1:
+                    train_utils.reset_progress_bar_timing(progress_bar)
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
                 avr_loss: float = loss_recorder.moving_average
                 logs = {"avr_loss": avr_loss}  # , "lr": lr_scheduler.get_last_lr()[0]}

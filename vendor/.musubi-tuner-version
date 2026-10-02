@@ -6,12 +6,12 @@
 [upstream]
 repo = "kohya-ss/musubi-tuner"
 branch = "main"
-commit = "8934cfbbb4b9bcfa8071ce209129f0c5eb5df2e6"
-sync_date = "2026-07-23T00:00:00+08:00"
-tag = "main@8934cfb"
-version = "0.3.4"
-describe = "v0.3.4-7-g8934cfb"
-last_check = "2026-07-23"
+commit = "f8a1b03794a49239a3539015075f5123d6c07d66"
+sync_date = "2026-10-02T19:17:06+08:00"
+tag = "v0.3.6"
+version = "0.3.6"
+describe = "v0.3.6"
+last_check = "2026-10-02"
 
 [local]
 source_subdirectory = "."
