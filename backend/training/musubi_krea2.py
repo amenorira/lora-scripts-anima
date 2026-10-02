@@ -642,7 +642,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "lr_scheduler_timescale",
         "type": "number",
-        "default": "",
+        "default": 10000,
         "section": "optimizer",
         "desc_key": "field.krea_lr_scheduler_timescale",
         "hint_key": "field.krea_lr_scheduler_timescaleHint",

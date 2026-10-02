@@ -47,7 +47,24 @@ test('inverse sqrt uses the actual step horizon, warmup and default timescale', 
   assert.equal(rate(0.1), 1e-4);
   assert.ok(Math.abs(rate(0.4) - 5e-5) < 1e-15);
   assert.equal(preview({ lr_scheduler: 'inverse_sqrt' }, 1000).data.params.timescale, 10000);
-  assert.ok(preview({ lr_scheduler: 'inverse_sqrt' }, 0).data.unavailable);
+  assert.equal(preview({ lr_scheduler: 'inverse_sqrt' }, 0).data.unavailable, '');
+});
+
+test('inverse sqrt without a dataset draws an explicitly estimated, finite curve', () => {
+  for (const settings of [{}, { lr_warmup_steps: 100 }, { lr_warmup_steps: 0.1 },
+    { lr_warmup_steps: 100, lr_scheduler_timescale: 500 }]) {
+    const { ui, data, rate } = preview({ lr_scheduler: 'inverse_sqrt', ...settings }, 0);
+    const actual = preview({ lr_scheduler: 'inverse_sqrt', ...settings }, 10000);
+    assert.equal(data.unavailable, '');
+    assert.equal(data.totalSteps, 0);
+    assert.equal(data.params.totalSteps, 10000);
+    assert.ok(data.notes.includes('lrPreview.estimatedStepsNote'));
+    assert.ok(ui._buildLrChartHtml(data).includes('lr-curve-current'));
+    for (const p of [0, 0.1, 0.5, 1]) {
+      assert.ok(Number.isFinite(rate(p)));
+      assert.equal(rate(p), actual.rate(p));
+    }
+  }
 });
 
 test('WSD warms up from its minimum, holds steady and decays over the final interval', () => {
@@ -77,4 +94,17 @@ test('new scheduler previews reject invalid settings and use sd-scripts process 
   assert.equal(data.params.totalSteps, 2000);
   assert.equal(data.params.warmupFraction, 0.05);
   assert.ok(Math.abs(ui._lrPreviewMultiplier(0.2, data.params) - 0.5) < 1e-15);
+});
+
+test('WSD omits terminal vertical lines while preserving exact completion values', () => {
+  for (const [decay, cycles] of [[0, 3], [0.2, 2], [0.2, 4]]) {
+    const { data, rate } = preview({ lr_scheduler: 'warmup_stable_decay',
+      lr_decay_steps: decay, lr_scheduler_num_cycles: cycles, lr_warmup_steps: 2 });
+    assert.ok(data.currentLinePath.endsWith('100.00000,7.40741'));
+    assert.ok(data.notes.includes('lrPreview.endpointJumpNote'));
+    assert.equal(rate(1), 0);
+  }
+  const { data } = preview({ lr_scheduler: 'warmup_stable_decay', lr_decay_steps: 0.2 });
+  assert.ok(data.currentLinePath.endsWith('100.00000,100.00000'));
+  assert.ok(!data.notes.includes('lrPreview.endpointJumpNote'));
 });

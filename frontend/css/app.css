@@ -709,7 +709,8 @@ input[type="checkbox"]:focus-visible {
    提示"这是默认值、尚未自定义"。改值后 class 移除、恢复正常字色。假留空——值仍保留，
    不触发必填校验失败、不影响训练流程。 */
 .field-control input[type="text"].is-default,
-.field-input-wrap input[type="text"].is-default {
+.field-input-wrap input[type="text"].is-default,
+.stepper input[type="number"].is-default {
   color: var(--text-tertiary);
 }
 /* Full-width input row for textarea/path fields */

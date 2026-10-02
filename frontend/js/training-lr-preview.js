@@ -140,7 +140,8 @@ window.trainingLrPreviewMixin = {
       ? Number(this.stepEstimate.total_steps || 0)
       : 0;
     // Accelerate advances the sd-scripts scheduler once per training process.
-    const schedulerSteps = totalSteps * Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
+    const estimatedSteps = !totalSteps && scheduler === 'inverse_sqrt' ? 10000 : 0;
+    const schedulerSteps = (totalSteps || estimatedSteps) * Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
     const warmup = this._lrPreviewWarmup(source, schedulerSteps);
     const cycles = String(source.lr_scheduler_num_cycles ?? '').trim();
     const power = String(source.lr_scheduler_power ?? '').trim();
@@ -183,18 +184,28 @@ window.trainingLrPreviewMixin = {
         || warmup.fraction + params.decayFraction > 1))) {
       unavailable = this.t('lrPreview.invalidNote');
     }
-    if (!unavailable && !totalSteps && (scheduler === 'inverse_sqrt'
-      || (scheduler === 'warmup_stable_decay' && decaySteps >= 1))) {
+    if (!unavailable && !totalSteps && scheduler === 'warmup_stable_decay' && decaySteps >= 1) {
       unavailable = this.t('lrPreview.stepCountRequiredNote');
     }
     const evaluateMultiplier = progress => this._lrPreviewMultiplier(progress, params);
+    // A terminal scheduler jump is not a decay interval. Draw up to its left
+    // limit; hover still reports the exact value at the completion boundary.
+    const endpointJump = !unavailable && scheduler === 'warmup_stable_decay'
+      && Math.abs(evaluateMultiplier(1 - 1e-10) - evaluateMultiplier(1)) > 1e-6;
     // Include exact warmup and restart boundaries; avoid diagonal restart ramps.
     const positions = new Set(Array.from({ length: pointCount }, (_, i) => i / (pointCount - 1)));
     if (warmup.fraction > 0 && warmup.fraction < 1) positions.add(warmup.fraction);
+    // Small automatic timescales can produce a sharp initial decay. Sample
+    // densely near warmup so the uniform grid does not flatten that bend.
+    if (scheduler === 'inverse_sqrt' && !unavailable && warmup.fraction < 1) {
+      const scale = params.timescale / schedulerSteps;
+      const extent = Math.log1p((1 - warmup.fraction) / scale);
+      for (let i = 1; i < pointCount; i++) {
+        positions.add(Math.min(1, warmup.fraction + scale * Math.expm1(extent * i / pointCount)));
+      }
+    }
     if (scheduler === 'warmup_stable_decay' && !unavailable) {
       if (params.decayFraction > 0) positions.add(1 - params.decayFraction);
-      // WSD returns the minimum at the final step, even with zero decay or extra cycles.
-      positions.add(1 - 1e-10);
     }
     if (scheduler === 'cosine_with_restarts' && !unavailable && warmup.fraction < 1) {
       for (let cycle = 1; cycle < Math.min(params.cycles, 1000); cycle++) {
@@ -204,7 +215,7 @@ window.trainingLrPreviewMixin = {
       }
     }
     const coords = [...positions].sort((a, b) => a - b).map(progress => {
-      const value = unavailable ? 0 : evaluateMultiplier(progress);
+      const value = unavailable ? 0 : evaluateMultiplier(endpointJump && progress === 1 ? 1 - 1e-10 : progress);
       return `${(progress * 100).toFixed(5)},${Math.max(0, 100 - value / yUpper * 100).toFixed(5)}`;
     });
     const curvePaths = {
@@ -224,11 +235,14 @@ window.trainingLrPreviewMixin = {
     const notes = [];
     if (unavailable) notes.push(unavailable);
     if (!unavailable) notes.push(this.t('lrPreview.baseGroupNote'));
+    if (endpointJump) notes.push(this.t('lrPreview.endpointJumpNote'));
     if (!internal && (optimizer.startsWith('prodigy') || optimizer === 'adafactor')) {
       notes.push(this.t('lrPreview.adaptiveNote'));
     }
     if (!totalSteps) {
       notes.push(this.t('lrPreview.noStepNote', 'Total steps are unavailable, so the x-axis shows 0–100% training progress.'));
+      if (estimatedSteps) notes.push(this.t('lrPreview.estimatedStepsNote')
+        .replace('{steps}', estimatedSteps.toLocaleString()));
       if (warmup.estimated) {
         notes.push(this.t('lrPreview.estimatedWarmupNote', 'Warmup is set to {steps}; the curve renders it as 10% of training progress for this preview.')
           .replace('{steps}', `${Math.round(warmup.raw).toLocaleString()} ${this.t('lrPreview.stepsUnit', 'steps')}`));
