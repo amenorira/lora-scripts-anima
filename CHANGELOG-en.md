@@ -6,7 +6,46 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-- Make Triton installation optional: a failed installation during initial setup or startup no longer blocks launch. Check its status and retry from Environment Management.
+## v26.1002.171046 - 2026-10-02
+
+This release adds three learning-rate scheduler options and a remaining-time rate-of-change chart, enables persistent data-loading workers by default, and improves training monitoring, log display, and runtime compatibility.
+
+### New Learning-Rate Scheduler Options
+
+- Added inverse-square-root decay (`inverse_sqrt`), cosine decay with a minimum learning rate (`cosine_with_min_lr`), and warmup–stable–decay (`warmup_stable_decay`) schedulers.
+- Added decay timescale, minimum learning-rate ratio, final decay length, and cosine-cycle settings. Applicable parameters are shown for the selected scheduler, with Chinese and English descriptions.
+- Learning-rate previews support the new schedulers and account for training process count. Before launch, warmup and final decay lengths are checked against the total training steps.
+- The inverse-square-root decay timescale follows warmup settings automatically and supports manual overrides and clearing to restore the default. When total steps are unavailable, the preview uses a clearly labeled estimate.
+
+### New Remaining-Time Rate-of-Change Chart
+
+- The remaining-time sparkline shows how estimated remaining time changes relative to elapsed time, with a normal-countdown reference line to help identify whether the estimate is falling faster, slowing down, or increasing.
+- Recent charts adjust their vertical range automatically to make small changes easier to see.
+
+### Data-Loading Defaults
+
+- Persistent DataLoader workers are enabled by default to reduce the wait for restarting workers between epochs.
+- Persistence is disabled automatically when the worker count is zero, while explicit user choices to disable it are retained. When enabled, workers and their data remain in system memory.
+
+### Training Monitoring and Log Fixes
+
+- Fixed real-time curves being lost or mixed with historical data after switching pages or viewing past runs, and improved continuity when delayed logs are backfilled.
+- Elapsed time updates continuously once per second, avoiding pauses or backward jumps caused by delayed logs. Improved metric and chart scrolling animations and added the total epoch count.
+- Retained every progress refresh within the same training step and fixed log counts and display issues involving repeated lines, backfills, and rewritten files.
+- Log downloads use a fixed snapshot to avoid inconsistent download lengths while training continues to write logs.
+- Improved log search positioning, pausing follow mode, repeated-log indicators, light-theme display, and incremental rendering.
+
+### Tagging Logs and Runtime
+
+- Tagging logs follow the interface language. Fixed incorrect coloring caused by “0 failures” or keywords in filenames, and improved scrolling and expansion of historical logs.
+- Fixed structure estimation potentially hanging on Linux, added background warmup at startup, and provided timeout messages and click-to-retry behavior.
+- Triton installation is optional. Failed installations during initial setup or startup no longer block launch; check its status and retry from Environment Management.
+
+### Validation
+
+- All 194 tests in the full project suite passed, including the frontend test entrypoint. The field-configuration synchronization check passed. No actual GPU training was run.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.929.202123...v26.1002.171046)
 
 ## v26.929.202123 - 2026-09-29
 
