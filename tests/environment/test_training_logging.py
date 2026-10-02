@@ -9,6 +9,51 @@ from backend.training.supervisor import _build_train_env
 
 
 class TrainingLoggingTests(unittest.TestCase):
+    def test_every_refresh_is_saved_and_terminal_still_refreshes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / 'steps.py'
+            script.write_text('''
+import io
+import sys
+from tqdm import tqdm
+
+# Preserve both loss updates and identical explicit refreshes of the same step.
+bar = tqdm(total=3, desc='steps', mininterval=999)
+for n in range(1, 4):
+    bar.update()
+    bar.set_postfix(avr_loss=n / 10)
+    bar.set_postfix(avr_loss=n / 20)
+    bar.refresh()
+bar.close()
+
+class Terminal(io.StringIO):
+    def isatty(self): return True
+terminal = Terminal()
+with tqdm(total=1, desc='steps', file=terminal, mininterval=0) as bar:
+    bar.update()
+    bar.set_postfix(avr_loss=.4)
+assert '\\r' in terminal.getvalue()
+with tqdm(total=1, desc='cache', file=terminal, mininterval=0) as bar:
+    bar.update()
+assert 'cache:' in terminal.getvalue()
+with tqdm(total=1, desc='steps', disable=True) as bar:
+    bar.update()
+    bar.set_postfix(avr_loss=.5)
+''', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(script)], env=_build_train_env(directory, 'test'),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout.decode('utf-8'))
+            self.assertNotIn(b'\r', result.stdout.replace(b'\r\n', b'\n'))
+            lines = [line for line in result.stdout.decode('utf-8').splitlines() if line.startswith('steps:')]
+            self.assertEqual(len(lines), 11, lines)  # initial + 3 * 3 + close
+            self.assertIn('0/3', lines[0])
+            for n in range(1, 4):
+                frames = [line for line in lines if f'{n}/3' in line]
+                self.assertEqual(len(frames), 4 if n == 3 else 3)
+                self.assertIn(f'avr_loss={n / 10}', frames[0])
+                for line in frames[1:]:
+                    self.assertIn(f'avr_loss={n / 20}', line)
+
     def test_workers_write_whole_records_without_terminal_wrapping(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

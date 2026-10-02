@@ -1,7 +1,7 @@
 """Bounded, incremental byte indexes for normalized training-log rows.
 
-Only offsets are retained. The last logical row is re-read on append because
-tqdm can replace it, and writers may finish a previously incomplete line.
+Only offsets are retained. The last two logical rows are re-read on append
+to handle incomplete records and terminal separators at the end of the file.
 """
 from array import array
 from collections import OrderedDict
@@ -10,6 +10,8 @@ from itertools import count
 from pathlib import Path
 import os
 import threading
+
+from backend.monitor.log_parser import clean_bytes, record_frames, MAX_SEARCH_MATCHES
 
 
 @dataclass
@@ -28,9 +30,6 @@ _generations = count(1)
 
 
 def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -> dict:
-    # Local import keeps normalization owned by artifacts, shared with realtime.
-    from backend.monitor.artifacts import _clean_log_text, _TQDM_STEP_RE, _LOG_SLICE_MAX_MATCHES
-
     key = str(path.resolve())
     with _lock:
         index = _indexes.setdefault(key, LogIndex())
@@ -48,27 +47,35 @@ def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -
                 if append:
                     handle.seek(max(0, previous[2] - len(index.tail)))
                     append = handle.read(len(index.tail)) == index.tail
-                start = index.offsets.pop() if append and index.offsets else 0
+                start = 0
+                changed_row = 0
+                if append and index.offsets:
+                    changed_row = max(0, len(index.offsets) - 2)
+                    start = index.offsets[changed_row]
+                    del index.offsets[changed_row:]
                 if not append:
                     index.offsets = array("Q")
                     index.generation = next(_generations)
                 handle.seek(start)
-                signature = None
                 while handle.tell() < stat.st_size:
                     position = handle.tell()
                     raw = handle.readline(stat.st_size - position)
                     if not raw:
                         break
-                    line = _clean_log_text(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                    match = _TQDM_STEP_RE.match(line)
-                    current = (match.group("current"), match.group("total")) if match else None
-                    if not current or current != signature:
-                        index.offsets.append(position)
-                    signature = current
+                    for relative, _ in record_frames(raw):
+                        index.offsets.append(position + relative)
                 index.stamp = stamp
                 handle.seek(max(0, stat.st_size - 128))
                 index.tail = handle.read(128)
-                index.search = ()
+                if append and index.search:
+                    needle, matches, truncated, scanned = index.search
+                    kept = [n for n in matches if n < changed_row]
+                    # A capped result is still complete up to its first omitted
+                    # match if the changed tail starts beyond that boundary.
+                    if not (truncated and scanned < changed_row):
+                        index.search = (needle, kept, False, min(scanned, changed_row))
+                else:
+                    index.search = ()
 
             total = len(index.offsets)
             limit = max(1, limit)
@@ -79,28 +86,25 @@ def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -
                 start = index.offsets[number]
                 stop = index.offsets[number + 1] if number + 1 < total else stat.st_size
                 handle.seek(start)
-                # A logical row may contain multiple updates of the same step.
-                last = ""
-                while handle.tell() < stop:
-                    raw = handle.readline(stop - handle.tell())
-                    if not raw:
-                        break
-                    last = _clean_log_text(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                return last
+                return clean_bytes(handle.read(stop - start).rstrip(b"\r\n"))
 
             lines = [row(n) for n in range(offset, end)]
             matches = []
             truncated = False
-            if query and index.search and index.search[0] == query.lower():
-                _, matches, truncated = index.search
-            elif query:
+            if query:
                 needle = query.lower()
-                for n in range(total):
+                scanned = 0
+                if index.search and index.search[0] == needle:
+                    _, cached, truncated, scanned = index.search
+                    matches = list(cached)
+                for n in range(scanned, total) if not truncated else ():
                     if needle in row(n).lower():
-                        if len(matches) == _LOG_SLICE_MAX_MATCHES:
+                        if len(matches) == MAX_SEARCH_MATCHES:
                             truncated = True
+                            scanned = n
                             break
                         matches.append(n)
-                index.search = (needle, matches, truncated)
+                    scanned = n + 1
+                index.search = (needle, matches, truncated, scanned)
             return {"total": total, "offset": offset, "limit": limit, "lines": lines, "generation": index.generation,
                     "query": query, "match_indices": matches, "matches_truncated": truncated}

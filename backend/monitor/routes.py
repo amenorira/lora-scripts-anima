@@ -509,7 +509,7 @@ async def monitor_log_slice(
 @router.get("/monitor/log-download")
 async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query("")):
     """下载完整训练日志（实时任务或历史 run 均可）。"""
-    from fastapi.responses import FileResponse
+    from backend.monitor.log_download import snapshot_response
 
     if not run_dir and not task_id:
         return {"status": "error", "message": "run_dir or task_id is required"}
@@ -518,11 +518,7 @@ async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query(""
     if not log_path or not log_path.is_file():
         return {"status": "error", "message": "Log file not found / 日志文件未找到"}
 
-    return FileResponse(
-        log_path,
-        media_type="text/plain",
-        filename=log_path.name,
-    )
+    return await asyncio.to_thread(snapshot_response, log_path)
 
 
 @router.get("/monitor/preview-metadata")
@@ -702,6 +698,9 @@ async def download_single_output(run_dir: str = Query(""), path: str = Query("")
     if not p.is_file():
         return {"status": "error", "message": "File not found / 文件不存在"}
 
+    if p.suffix.lower() == '.log':
+        from backend.monitor.log_download import snapshot_response
+        return await asyncio.to_thread(snapshot_response, p)
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=mt, filename=p.name)
 

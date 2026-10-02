@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="/frontend/css/app.css">
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
-<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:900px; } .route-monitor-dashboard { height:calc(100vh - 120px); } </style>
+<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/utils.js"></script>
 <script src="/frontend/js/config.js"></script>
 <script src="/frontend/js/monitor-logs.js"></script>
@@ -22,12 +22,14 @@
     <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
     <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
     <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
+    <button class="btn btn-sm" @click="appendFixtureLogs()">追加重复日志</button>
   </div>
-  <div id="fixtureRoute"></div>
+  <div id="fixtureRoute" class="main-fullscreen"></div>
 </main>
 <script>
 (async () => {
   const language = new URLSearchParams(location.search).get('lang') === 'en-US' ? 'en-US' : 'zh-CN';
+  document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark';
   document.documentElement.lang = language;
   const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/'+language+'.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
@@ -46,6 +48,7 @@
     '                               resolution: (1024, 1024)',
     '2026-09-20 12:47:25 INFO     Loading VAE from ./models/qwen_image_vae.safetensors'.padEnd(129) + 'qwen_image_autoencoder_kl.py:1631',
     '                    WARNING  <script>alert("plain text")<\/script>',
+    ...Array.from({length:8}, (_, i) => `2026-10-02 11:29:${22 + i} INFO     epoch is incremented. current_epoch: 0, epoch: 17  dataset.py:462`),
     ...Array.from({length:40},(_,i)=>{
       const step=479+i;
       const seconds=Math.round(2601-(39-i)*5.26+Math.sin(i*.7)-Math.sin(39*.7));
@@ -71,6 +74,13 @@
       _fieldOptionLabel: window.trainingCoreMixin._fieldOptionLabel,
       _fieldDefinition: window.trainingCoreMixin._fieldDefinition,
       form: { model_train_type: 'anima-lora' },
+      appendFixtureLogs(){
+        const offset=logs.length;
+        const batch=Array.from({length:8},()=> '2026-10-02 11:30:22 INFO     epoch is incremented. current_epoch: 0, epoch: 18  dataset.py:462');
+        logs.push(...batch);
+        this.handleRealtimeTaskLog({data:{lines:batch,offset,log_total:logs.length}});
+        this.renderDashboard();
+      },
       advanceMetrics(){
         if(this.selectedRunDir) { this.selectedRunDir=null; this.runDetailData=null; }
         const d=this.monitorData;

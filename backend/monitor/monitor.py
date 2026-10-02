@@ -432,14 +432,16 @@ class TaskMonitor:
             total, lines = page["total"], page["lines"]
             reset = bool(previous and (stamp[:3] != previous["stamp"][:3]
                          or page["generation"] != previous["generation"]))
-            start = max(0, previous["total"] - 1) if previous and not reset else 0
+            start = max(0, previous["total"] - 2) if previous and not reset else 0
             truncated = start < page["offset"]
             offset = max(start, page["offset"])
             delta = lines[offset - page["offset"]:]
-            if previous and not reset and offset == previous["total"] - 1 and delta and delta[0] == previous["last"]:
-                delta = delta[1:]
-                offset += 1
-            self._last_log_cursor[task_id] = {"stamp": stamp, "generation": page["generation"], "total": total, "last": lines[-1] if lines else ""}
+            if previous and not reset:
+                old_start = previous["total"] - len(previous["tail"])
+                while delta and old_start <= offset < previous["total"] and delta[0] == previous["tail"][offset - old_start]:
+                    delta = delta[1:]
+                    offset += 1
+            self._last_log_cursor[task_id] = {"stamp": stamp, "generation": page["generation"], "total": total, "tail": lines[-2:]}
             if not delta and not reset and (not previous or total == previous["total"]):
                 return None
             return {"lines": delta, "offset": offset, "total": total, "reset": reset, "truncated": truncated}

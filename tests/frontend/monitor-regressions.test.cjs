@@ -158,7 +158,7 @@ test('batched logs retain the entire eviction range', () => {
   a.handleRealtimeTaskLog({ data: { lines: ['4'], offset: 3, log_total: 4 } });
   a.handleRealtimeTaskLog({ data: { lines: ['5'], offset: 4, log_total: 5 } });
   assert.deepEqual(a.logFullLines, ['3', '4', '5']);
-  assert.equal(a._logFullEvictK, 2);
+  assert.equal(a.logFullOffset, 2);
   a.logAutoScroll = a._logAtBottom = false;
   a.handleRealtimeTaskLog({ data: { lines: ['5', '5'], offset: 5, log_total: 7 } });
   a.handleRealtimeTaskLog({ data: { lines: ['5', '5'], offset: 5, log_total: 7 } });

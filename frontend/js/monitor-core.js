@@ -18,7 +18,7 @@ window.monitorCoreMixin = {
   configSnapshotOpen: false,
   previewReference: null,
   logAutoScroll: true, logLines: [],
-  logSearch: '', logLevel: 'all', _logContentVersion: 0, monitorTab: 'overview',
+  _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
   outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {},
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
@@ -29,15 +29,9 @@ window.monitorCoreMixin = {
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
   // ── 日志增量渲染状态 ──
-  _renderedLogCount: 0,        // 已渲染到 DOM 的日志行数
-  _renderedLogFilterKey: '',   // 已渲染时使用的 filter key（搜索+级别）
   _logAtBottom: true,          // 用户当前是否在底部（决定追加后是否滚底）
-  _logDirty: false,            // 日志数据有变化（仅 log_update/clear/过滤/run-detail 置位；Fix3 用）
-  _logTrimK: 0,                // 上次环形缓冲裁剪的头部行数（供滑窗删顶；Fix2 用）
-  _logChunking: false,         // 分帧全量渲染进行中（防实时增量竞态；Fix1 用）
 
   // ── 完整日志模式（后端分页）状态 ──
-  logMode: 'full',             // 'full'（完整日志, 后端分页, 默认）| 'tail'（实时尾部, 内存缓冲）
   logFullLines: [],            // 当前页行
   logFullOffset: 0,            // 当前页起始行号
   logFullMatches: [],          // 全文件搜索匹配行号
@@ -49,7 +43,6 @@ window.monitorCoreMixin = {
   _logFullLoaded: false,       // full 模式末页是否已加载（首屏/重连自动拉取用）
   _logFullNeedsResync: false,  // 实时重连后需全量 resync（防丢事件）
   _logFullSlide: false,        // full 模式实时增量 slide 待执行
-  _logFullEvictK: 0,           // full 模式 slide 删顶行数
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
   _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
@@ -497,7 +490,6 @@ window.monitorCoreMixin = {
       this._logFullLoaded = false;
       this._logFullNeedsResync = false;
       this._logFullSlide = false;
-      this._logFullEvictK = 0;
     }
     if (nextLogSourceKey) this._logFullSourceKey = nextLogSourceKey;
 
@@ -759,18 +751,14 @@ window.monitorCoreMixin = {
     this.logTotal = logData.log_total;
     if (tail.changed) {
       this._logContentVersion++;
-      this._logDirty = true;
-      this._logTrimK += tail.trimmed;
-      if (this.logMode === 'tail' && tail.replaced) this._forceLogRebuild = true;
     }
     if (logData.truncated || tail.gap) this._logFullNeedsResync = true;
 
     // 总数始终更新；只有当前末页正在跟随时才移动分页内容。
-    if (this.logMode === 'full' && ((atLastPage && following && !logData.truncated) || logData.reset)) {
+    if ((atLastPage && following && !logData.truncated) || logData.reset) {
       const full = this._mergeRealtimeLogPage(this.logFullLines, this.logFullOffset, logData, this._logPageSize());
-      this._logFullEvictK += Math.max(0, full.offset - this.logFullOffset);
       this.logFullOffset = full.offset;
-      if (full.replaced) this._forceLogRebuild = true;
+      if (logData.reset || full.gap) this._forceLogRebuild = true;
       if (full.gap) this._logFullNeedsResync = true;
       if (full.changed) this._logFullSlide = !this._forceLogRebuild;
     }
@@ -938,7 +926,6 @@ window.monitorCoreMixin = {
   },
   stopMonitorRealtime() {
     // Invalidate a detail request that is still fetching disk-backed data.
-    const wasTailMode = this.logMode === 'tail';
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
@@ -947,20 +934,7 @@ window.monitorCoreMixin = {
     if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
     this._dashboardRendered = false;
     this._shellBuilt = false;
-    this._renderedLogCount = 0;
-    this._renderedLogFilterKey = '';
-    this._logDirty = false;
-    this._logTrimK = 0;
-    this._logChunking = false;
-    this.logMode = 'full';
-    if (wasTailMode) {
-      // Tail mode does not keep the paged full-log buffer current. Returning
-      // in full mode must therefore rebuild from disk instead of reusing it.
-      this._logFullLoaded = false;
-      this._logFullNeedsResync = true;
-    }
     this._logFullSlide = false;
-    this._logFullEvictK = 0;
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
     this._resetPreviewMetadata();
@@ -1129,7 +1103,6 @@ window.monitorCoreMixin = {
     this.logFullLoading = false;
     this._logFullSourceKey = 'run:' + runDir;
     this._logContentVersion++;
-    this._logDirty = true;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
     this.lossSeries = [];
@@ -1144,8 +1117,6 @@ window.monitorCoreMixin = {
     this.monitorTab = 'overview';
     this.monitorParamQuery = '';
     this._shellBuilt = false;
-    this._renderedLogCount = 0;
-    this._renderedLogFilterKey = '';
     this._forceLogRebuild = true;
     this.navigate('monitor-dashboard');
     // 等待 DOM 就绪后拉取数据
@@ -1175,12 +1146,8 @@ window.monitorCoreMixin = {
         // 历史记录进入时定位到最新样本（末尾）
         this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
         this._applyMonitorLogSnapshot(j.data.log_lines, j.data.log_total);
-        this._renderedLogCount = 0;
-        this._renderedLogFilterKey = '';
-        this._logTrimK = 0;
         this._forceLogRebuild = true;
         // 默认完整日志：末页 + 跟随（历史停在末尾；工具栏可翻页浏览全部）
-        this.logMode = 'full';
         this.logFullLoading = false;
         this.logAutoScroll = true;
         this._logAtBottom = true;
@@ -1219,16 +1186,10 @@ window.monitorCoreMixin = {
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._shellBuilt = false;
-    this._renderedLogCount = 0;
-    this._renderedLogFilterKey = '';
-    this._logTrimK = 0;
-    this._logDirty = true;
     this._forceLogRebuild = true;
-    this.logMode = 'full';
     this._logFullLoaded = false;
     this._logFullNeedsResync = false;
     this._logFullSlide = false;
-    this._logFullEvictK = 0;
     this._logFullSourceKey = '';
     this.logTotal = 0;
     this._logTailOffset = 0;
