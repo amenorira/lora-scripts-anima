@@ -698,18 +698,16 @@ window.monitorCoreMixin = {
 
   _recordMonitorPerfSample(progress) {
     const step = Number(progress && progress.step);
-    if (!Number.isFinite(step) || step <= 0 || (!progress.speed && !progress.elapsed)) return;
+    if (!Number.isFinite(step) || step <= 0) return;
+    const sample = { step, speedSec: this._monitorSpeedSeconds(progress.speed),
+      elapsedSec: this._monitorDurationSeconds(progress.elapsed), remainingSec: this._monitorDurationSeconds(progress.eta) };
+    if (sample.speedSec === null && sample.elapsedSec === null) return;
     const samples = this.monitorPerfSamples || (this.monitorPerfSamples = []);
-    const sample = { step, speed: progress.speed || '', elapsed: progress.elapsed || '', eta: progress.eta || '' };
     const last = samples[samples.length - 1];
     if (last && step < last.step) return;
-    if (last && step === last.step) {
-      if (last.speed === sample.speed && last.elapsed === sample.elapsed && last.eta === sample.eta) return;
-      samples[samples.length - 1] = sample;
-    } else {
-      samples.push(sample);
-      if (samples.length > 80) samples.splice(0, samples.length - 80);
-    }
+    if (last && step === last.step && last.speedSec === sample.speedSec && last.elapsedSec === sample.elapsedSec && last.remainingSec === sample.remainingSec) return;
+    samples.push(sample);
+    if (samples.length > 80) samples.splice(0, samples.length - 80);
     this._monitorPerfVersion++;
   },
 
@@ -841,12 +839,45 @@ window.monitorCoreMixin = {
   },
 
   // ── Dashboard bootstrap + realtime subscriptions ───────
-  _observeMonitorClock(progress, now = Date.now()) {
-    if (progress.state !== 'RUNNING' || !progress.elapsed) return;
-    const sample = this._monitorClockSample;
-    if (!sample || sample.taskId !== this.liveTaskId || sample.elapsed !== progress.elapsed) {
-      this._monitorClockSample = { taskId: this.liveTaskId, elapsed: progress.elapsed, observedAt: now };
+  _monitorSpeedSeconds(value) {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(s\/it|it\/s)\s*$/i.exec(String(value || ''));
+    if (!match) return null;
+    const amount = Number(match[1]);
+    return amount > 0 ? (match[2].toLowerCase() === 'it/s' ? 1 / amount : amount) : null;
+  },
+
+  _monitorDurationSeconds(value) {
+    const raw = String(value == null ? '' : value).trim();
+    let seconds = null;
+    if (/^\d+(?::\d+){1,2}$/.test(raw)) {
+      const parts = raw.split(':').map(Number);
+      seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
     }
+    if (seconds === null) {
+      const compact = raw.toLowerCase().replace(/\s+/g, '');
+      const units = [...compact.matchAll(/(\d+)([hms])/g)];
+      if (units.length && units.map(match => match[0]).join('') === compact) {
+        seconds = units.reduce((total, match) => total + Number(match[1]) * ({ h: 3600, m: 60, s: 1 })[match[2]], 0);
+      }
+    }
+    return seconds;
+  },
+
+  _observeMonitorClock(progress) {
+    if (progress.state !== 'RUNNING') return null;
+    const elapsed = this._monitorDurationSeconds(progress.elapsed);
+    if (elapsed === null) return null;
+    const now = performance.now();
+    const sample = this._monitorClockSample;
+    const projected = sample && sample.taskId === this.liveTaskId
+      ? sample.elapsedSeconds + (now - sample.observedAt) / 1000 : null;
+    // 日志时间只有整秒且可能延迟到达；不要重置小数秒或让本地时钟倒退。
+    // 单调时钟避免系统时间校准影响计时，仅在日志确实领先时向前校准。
+    if (projected === null || elapsed > projected) {
+      this._monitorClockSample = { taskId: this.liveTaskId, elapsedSeconds: elapsed, observedAt: now };
+      return elapsed;
+    }
+    return projected;
   },
 
   _startMonitorClock() {

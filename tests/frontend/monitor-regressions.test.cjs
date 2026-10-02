@@ -90,7 +90,7 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
 
 test('elapsed clock advances independently while remaining time follows logs and terminal/history values stay fixed', ctx => {
   let now = 1000;
-  ctx.mock.method(Date, 'now', () => now);
+  ctx.mock.method(performance, 'now', () => now);
   const progress = { state: 'RUNNING', elapsed: '4:11', eta: '37:47' };
   const a = app({ liveTaskId: 'A', monitorData: progress }), root = summaryRoot();
   const display = (data = progress, history = false) => {
@@ -106,10 +106,17 @@ test('elapsed clock advances independently while remaining time follows logs and
   a.handleRealtimeTaskProgress({ data: { elapsed: '4:17' } });
   now = 8000; // 从日志到达时计时，不能等到渲染才校准。
   assert.deepEqual(display(), ['37:40', 'elapsed 4:19']);
+  now = 8900;
+  a.handleRealtimeTaskProgress({ data: { elapsed: '4:18' } }); // 迟到日志不能回退或丢掉小数秒。
+  now = 9000;
+  assert.deepEqual(display(), ['37:40', 'elapsed 4:20']);
+  ctx.mock.method(Date, 'now', () => 0); // 系统校时不影响经过时间，长间隔后补齐计时。
+  now = 69000;
+  assert.deepEqual(display(), ['37:40', 'elapsed 5:20']);
   assert.deepEqual(display({ ...progress, state: 'FINISHED', train_result: { duration_sec: 300 } }), ['5:00', '']);
-  assert.deepEqual(display(progress, true), ['37:40', 'elapsed 4:17']);
+  assert.deepEqual(display(progress, true), ['37:40', 'elapsed 4:18']);
   a.claimLiveTask('B');
-  assert.deepEqual(display(), ['37:40', 'elapsed 4:17']);
+  assert.deepEqual(display(), ['37:40', 'elapsed 4:18']);
   assert.deepEqual(display({ state: 'RUNNING' }), ['—', '']);
 });
 
@@ -121,17 +128,17 @@ test('local trends reveal small real changes, keep constants flat and recover af
     [5.2, .01, .05, .005], [3600, 2, 10, 0], [-7.3, .05, .25, .02],
   ]) {
     const points = samples(0, step => baseline + amplitude * Math.sin(step));
-    const frame = a._rollingSparklineFrame(points, null, minimum, relative);
+    const frame = a._rollingSparklineFrame(points, null, { minimumSpan: minimum, relativeSpan: relative });
     assert.ok(height(frame) > 5);
     assert.deepEqual(frame.points, points);
-    const constant = a._rollingSparklineFrame(samples(0, () => baseline), null, minimum, relative);
+    const constant = a._rollingSparklineFrame(samples(0, () => baseline), null, { minimumSpan: minimum, relativeSpan: relative });
     assert.ok(constant.coords.every(p => p.y === 17));
   }
   const valueAt = step => step === 0 ? 8 : 5.2 + .01 * Math.sin(step);
-  let frame = a._rollingSparklineFrame(samples(0, valueAt), null, .05, .005);
+  let frame = a._rollingSparklineFrame(samples(0, valueAt), null, { minimumSpan: .05, relativeSpan: .005 });
   const initialSpan = frame.bounds.high - frame.bounds.low;
   for (let step = 1; step <= 20; step++) {
-    const next = a._rollingSparklineFrame(samples(step, valueAt), frame, .05, .005);
+    const next = a._rollingSparklineFrame(samples(step, valueAt), frame, { minimumSpan: .05, relativeSpan: .005 });
     assert.equal(next.shift, 1);
     assert.ok(next.bounds.high - next.bounds.low < frame.bounds.high - frame.bounds.low);
     assert.ok(next.coords.every(p => p.y >= 4 && p.y <= 30));
@@ -139,6 +146,67 @@ test('local trends reveal small real changes, keep constants flat and recover af
   }
   assert.ok(frame.bounds.high - frame.bounds.low < initialSpan / 10);
   assert.ok(height(frame) > 5);
+});
+
+test('speed and forecast retain same-step dips as new observations and ignore delayed log replay', () => {
+  const a = app({ liveTaskId: 'A', monitorPerfSamples: [], logLines: [
+    'steps: 10%|#| 10/100 [09:40<1:02:40, 6.32s/it]',
+  ] });
+  const samples = () => a._summaryTelemetrySamples(false).samples;
+  const initial = samples()[0];
+  a._recordMonitorPerfSample({ step: 10, speed: '6.28 s/it', elapsed: '9:44', eta: '1:02:31' });
+  const dip = samples().at(-1);
+  a._recordMonitorPerfSample({ step: 10, speed: '6.32 s/it', elapsed: '9:53', eta: '1:02:44' });
+  assert.deepEqual(samples().map(p => p.speedSec), [6.32, 6.28, 6.32]);
+  assert.deepEqual(samples().map(p => p.remainingRate), [null, -9 / 4, 13 / 9]);
+  assert.strictEqual(samples()[0], initial);
+  assert.strictEqual(samples()[1], dip);
+  const beforeReplay = samples();
+  a.logLines.push('steps: 10%|#| 10/100 [09:44<1:02:31, 6.28s/it]', 'steps: 10%|#| 10/100 [09:53<1:02:44, 6.32s/it]');
+  a._logContentVersion++;
+  assert.deepEqual(samples(), beforeReplay);
+  const history = app({ selectedRunDir: 'output/A', logLines: a.logLines });
+  assert.deepEqual(history._summaryTelemetrySamples(true).samples.map(p => p.speedSec), [6.32, 6.28, 6.32]);
+  for (let step = 11; step <= 60; step++) {
+    a._recordMonitorPerfSample({ step, speed: '6.32 s/it', elapsed: '10:00', eta: '1:02:44' });
+    samples();
+  }
+  assert.equal(samples().length, 40);
+  assert.equal(samples().at(-1).observation, 53);
+  a.claimLiveTask('B');
+  a.logLines = [];
+  a._recordMonitorPerfSample({ step: 1, speed: '1 s/it', elapsed: '0:01', eta: '0:09' });
+  assert.deepEqual(samples().map(p => [p.observation, p.speedSec]), [[1, 1]]);
+});
+
+test('remaining-time derivative is flat for steady countdowns and rises when the estimate grows', () => {
+  const a = app({ liveTaskId: 'rate', monitorPerfSamples: [] }), root = summaryRoot();
+  const report = (elapsed, eta) => {
+    a._recordMonitorPerfSample({ step: 10, speed: '6 s/it', elapsed, eta });
+    a._patchSummaryTelemetry(root, key => key, false, { state: 'RUNNING', eta });
+    return root.node('[data-summary-spark="time"]')._sparklineState;
+  };
+  report('1:40', '3:20');
+  report('1:44', '3:16');
+  let frame = report('1:54', '3:06');
+  assert.deepEqual(frame.points.map(p => p.value), [-1, -1]);
+  assert.ok(frame.coords.every(p => p.y === 17));
+  assert.equal(root.node('[data-summary-time-baseline]').visibility, 'visible');
+  frame = report('1:59', '3:16');
+  assert.equal(frame.points.at(-1).value, 2);
+  assert.ok(frame.coords.at(-1).y < 17);
+  assert.ok(frame.coords.slice(0, -1).every(p => p.y === 17));
+  frame = report('2:09', '2:56');
+  assert.equal(frame.points.at(-1).value, -2);
+  assert.ok(frame.coords.at(-1).y > 17);
+  const count = frame.points.length;
+  frame = report('2:09', '3:00');
+  assert.equal(frame.points.length, count); // 同秒刷新没有有效导数，不画伪尖峰。
+  frame = report('2:14', '2:55');
+  assert.equal(frame.points.at(-1).value, -1);
+  assert.ok(frame.coords.every(p => Number.isFinite(p.y) && p.y >= 4 && p.y <= 30));
+  a._patchSummaryTelemetry(root, key => key, true, { state: 'FINISHED' });
+  assert.equal(root.node('[data-summary-time-baseline]').visibility, 'hidden');
 });
 
 test('idle transport preserves the completed run; final detail remains readable', () => {

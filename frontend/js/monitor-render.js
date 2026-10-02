@@ -498,7 +498,7 @@ window.monitorRenderMixin = {
       for (const [path, series] of [[lossPath, lossSeries], [lrPath, lrSeries]]) {
         // 学习率展示近期斜率；20% 的绝对值下限会把缓慢衰减压成近乎水平的线。
         if (path) {
-          this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext, null, 0, path === lrPath ? .02 : .2);
+          this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext, { relativeSpan: path === lrPath ? .02 : .2 });
         }
       }
       const lossTrend = this._summaryLossChange(lossSeries);
@@ -518,12 +518,7 @@ window.monitorRenderMixin = {
   _patchSummaryTime(root, d, t, isHistory, animate) {
     const state = this._summaryState(d, isHistory);
     const result = ['FINISHED', 'FAILED', 'TERMINATED'].includes(state) && d.train_result;
-    let elapsed = this._monitorDurationSeconds(d.elapsed);
-    if (!isHistory && state === 'RUNNING' && elapsed !== null) {
-      const now = Date.now();
-      this._observeMonitorClock(d, now);
-      elapsed += Math.max(0, Math.floor((now - this._monitorClockSample.observedAt) / 1000));
-    }
+    const elapsed = !isHistory && state === 'RUNNING' ? this._observeMonitorClock(d) : this._monitorDurationSeconds(d.elapsed);
     const duration = this._formatMonitorDuration(result?.duration_str || d.elapsed || '—', result ? result.duration_sec : elapsed);
     const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
     const showRemaining = state === 'RUNNING' && !!eta;
@@ -597,15 +592,10 @@ window.monitorRenderMixin = {
     if (key === 'loss') html += '<span class="m-metric-change" data-summary-loss-change hidden></span>';
     if (key === 'lr') html += '<span class="m-metric-range" data-summary-field="lr-range" hidden></span>';
     html += '</div><small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
-    html += '<svg class="m-metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" ' + (key === 'speed' || key === 'time' ? 'role="img" hidden' : 'aria-hidden="true"') + '><path data-summary-spark="' + key + '"></path></svg>';
+    html += '<svg class="m-metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" ' + (key === 'speed' || key === 'time' ? 'role="img" hidden' : 'aria-hidden="true"') + '>';
+    if (key === 'time') html += '<line data-summary-time-baseline x1="4" x2="116" y1="17" y2="17" visibility="hidden"/>';
+    html += '<path data-summary-spark="' + key + '"></path></svg>';
     return html + '</div>';
-  },
-
-  _monitorSpeedSeconds(value) {
-    const match = /^\s*(\d+(?:\.\d+)?)\s*(s\/it|it\/s)\s*$/i.exec(String(value || ''));
-    if (!match) return null;
-    const amount = Number(match[1]);
-    return amount > 0 ? (match[2].toLowerCase() === 'it/s' ? 1 / amount : amount) : null;
   },
 
   _parseMonitorPerfLogLine(line) {
@@ -623,43 +613,46 @@ window.monitorRenderMixin = {
   },
 
   _summaryTelemetrySamples(isHistory) {
-    const source = isHistory ? this.selectedRunDir : (this.liveTaskId || this.monitorData?.active_task?.id || 'live');
-    const version = [source, isHistory, this._logContentVersion || 0, isHistory ? 0 : (this._monitorPerfVersion || 0)].join('|');
-    if (this._summaryTelemetryCache?.version === version) return this._summaryTelemetryCache;
-    const byStep = new Map();
+    const source = [isHistory, isHistory ? this.selectedRunDir : (this.liveTaskId || this.monitorData?.active_task?.id || 'live')].join('|');
+    const version = [source, this._logContentVersion, isHistory ? 0 : this._monitorPerfVersion].join('|');
+    const cache = this._summaryTelemetryCache;
+    if (cache?.version === version) return cache;
+    const candidates = [];
     const lines = this.logLines || [];
-    for (let index = lines.length - 1; index >= 0 && byStep.size < 80; index--) {
+    let lastKey = '';
+    const keyOf = sample => JSON.stringify([sample.step, sample.elapsedSec, sample.speedSec, sample.remainingSec]);
+    for (let index = lines.length - 1; index >= 0 && candidates.length < 80; index--) {
       if (!String(lines[index] || '').toLowerCase().includes('steps:')) continue;
       const sample = this._parseMonitorPerfLogLine(lines[index]);
-      if (sample && !byStep.has(sample.step)) byStep.set(sample.step, sample);
+      if (!sample) continue;
+      const key = keyOf(sample);
+      if (key !== lastKey) candidates.push(sample);
+      lastKey = key;
     }
-    if (!isHistory) for (const sample of this.monitorPerfSamples || []) {
-      const step = Number(sample.step);
-      if (!Number.isFinite(step) || step <= 0) continue;
-      const previous = byStep.get(step) || {};
-      const elapsedSec = this._monitorDurationSeconds(sample.elapsed);
-      const etaSec = this._monitorDurationSeconds(sample.eta);
-      byStep.set(step, {
-        step,
-        speedSec: this._monitorSpeedSeconds(sample.speed) ?? previous.speedSec ?? null,
-        elapsedSec: elapsedSec ?? previous.elapsedSec ?? null,
-        remainingSec: etaSec ?? previous.remainingSec ?? null,
+    candidates.reverse();
+    if (!isHistory) candidates.push(...(this.monitorPerfSamples || []));
+    // 小图保留已观察到的变化，同一步的新读数也占新槽位；日志回填不重写已画出的历史。
+    const samples = cache?.source === source ? cache.samples.slice() : [];
+    const seen = new Set(samples.map(keyOf));
+    candidates.sort((left, right) => left.step - right.step || (left.elapsedSec ?? 0) - (right.elapsedSec ?? 0));
+    for (const sample of candidates) {
+      const last = samples.at(-1), key = keyOf(sample);
+      if (seen.has(key) || (last && (sample.step < last.step || (sample.step === last.step && sample.elapsedSec < last.elapsedSec)))) continue;
+      samples.push({ ...sample, observation: (last?.observation ?? 0) + 1,
+        // 按真实经过时间求变化率；同一秒内的刷新没有有效时间间隔，不制造尖峰。
+        remainingRate: last && Number.isFinite(last.elapsedSec) && Number.isFinite(last.remainingSec)
+          && Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec) && sample.elapsedSec > last.elapsedSec
+          ? (sample.remainingSec - last.remainingSec) / (sample.elapsedSec - last.elapsedSec) : null,
       });
+      seen.add(key);
     }
-    const samples = [...byStep.values()].sort((left, right) => left.step - right.step).slice(-40)
-      .map(sample => ({
-        ...sample,
-        // 抵消正常倒计时，只展示预计完成时间的修正；固定训练起点避免滑动窗口重新归零。
-        estimatedFinishSec: Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec)
-          ? sample.elapsedSec + sample.remainingSec : null,
-      }));
-    return (this._summaryTelemetryCache = { version, samples });
+    return (this._summaryTelemetryCache = { source, version, samples: samples.slice(-40) });
   },
 
   _patchSummaryTelemetry(root, t, isHistory, d) {
     const telemetry = this._summaryTelemetrySamples(isHistory);
     const showRemaining = !isHistory && d.state === 'RUNNING' && !!d.eta;
-    const timeField = showRemaining ? 'estimatedFinishSec' : 'elapsedSec';
+    const timeField = showRemaining ? 'remainingRate' : 'elapsedSec';
     const version = telemetry.version + '|' + timeField;
     if (root.dataset.telemetryVersion === version) return;
     root.dataset.telemetryVersion = version;
@@ -668,20 +661,24 @@ window.monitorRenderMixin = {
     ]) {
       const path = root.querySelector('[data-summary-spark="' + key + '"]');
       if (!path) continue;
-      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0)
-        .map(sample => ({ step: sample.step, value: sample[field] }));
-      const forecast = field === 'estimatedFinishSec';
-      // 按近期变化缩放，同时保留精度余量：速度 50ms、预估修正 10s，避免放大取整噪声。
-      const minimumSpan = forecast ? 10 : field === 'speedSec' ? .05 : 0;
-      const relativeSpan = forecast ? 0 : field === 'speedSec' ? .005 : .02;
-      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, null, minimumSpan, relativeSpan);
+      const rate = field === 'remainingRate';
+      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && (rate || sample[field] >= 0))
+        .map(sample => ({ step: sample.observation, value: sample[field] }));
+      const minimumSpan = field === 'speedSec' ? .05 : 0;
+      const relativeSpan = field === 'speedSec' ? .005 : .02;
+      // 正常倒计时的导数为 -1，固定在中线；扩大两侧量程以容纳实际变化，不裁掉峰值。
+      const radius = rate ? Math.max(1, ...points.map(point => Math.abs(point.value + 1))) * 1.2 : 0;
+      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, {
+        minimumSpan, relativeSpan, fixedBounds: rate ? { low: -1 - radius, high: -1 + radius } : null,
+      });
+      if (key === 'time') root.querySelector('[data-summary-time-baseline]')?.setAttribute('visibility', rate && frame.path ? 'visible' : 'hidden');
       const svg = path.parentElement;
       if (svg) {
         const tile = svg.closest?.('.m-live-metric');
         if (frame.path) svg.removeAttribute('hidden');
         else svg.setAttribute('hidden', '');
         if (frame.path) {
-          const title = t(label) + ' · ' + t('localTrendScaleHint');
+          const title = t(label) + (rate ? '' : ' · ' + t('localTrendScaleHint'));
           svg.setAttribute('aria-label', title);
           svg.setAttribute('title', title);
           // 小图不接收鼠标事件，说明由整个卡片提供，窄桌面隐藏小图时也可查看。
@@ -835,7 +832,7 @@ window.monitorRenderMixin = {
   },
 
   // 滚动图每个观测占一个固定槽位，新点只从右侧进入，不重新拉伸旧点的横坐标。
-  _rollingSparklineFrame(rawPoints, previous = null, minimumSpan = 0, relativeSpan = .2) {
+  _rollingSparklineFrame(rawPoints, previous = null, { minimumSpan = 0, relativeSpan = .2, fixedBounds = null } = {}) {
     const points = this._cleanLossPoints(rawPoints).slice(-40);
     const signature = JSON.stringify(points);
     if (previous?.signature === signature) return previous;
@@ -846,8 +843,8 @@ window.monitorRenderMixin = {
     // 数值修正不改变观测占据的槽位；是否推进只由保留下来的 step 和新增点决定。
     const continuous = retained.length > 0 && retained.every((point, index) => point.step === points[index]?.step);
     const shift = continuous ? appended.length : 0;
-    let bounds = previous?.bounds || null;
-    if (points.length) {
+    let bounds = fixedBounds || previous?.bounds || null;
+    if (points.length && !fixedBounds) {
       const low = Math.min(...points.map(point => point.value));
       const high = Math.max(...points.map(point => point.value));
       const span = Math.max(high - low, Math.max(Math.abs(low), Math.abs(high)) * relativeSpan, minimumSpan, 1e-9);
@@ -883,9 +880,10 @@ window.monitorRenderMixin = {
     return { coords, path: coords.length < 2 ? '' : coords.map((point, index) => (index ? 'L' : 'M') + point.x.toFixed(2) + ' ' + point.y.toFixed(2)).join(' ') };
   },
 
-  _patchRollingSparkline(path, points, animate, context, marker = null, minimumSpan = 0, relativeSpan = .2) {
+  _patchRollingSparkline(path, points, animate, context, options = {}) {
+    const marker = options.marker;
     const previous = path._sparklineState?.context === context ? path._sparklineState : null;
-    const frame = this._rollingSparklineFrame(points, previous, minimumSpan, relativeSpan);
+    const frame = this._rollingSparklineFrame(points, previous, options);
     const shift = frame.shift <= 8 ? frame.shift : 0;
     return this._patchSparklineFrame(path, frame, animate, context, [{ element: marker, point: frame.path ? frame.coords.at(-1) : null }], shift);
   },
@@ -985,23 +983,6 @@ window.monitorRenderMixin = {
     if (number === 0) return '0';
     const [mantissa, exponent] = number.toExponential(3).split('e');
     return Number(mantissa) + 'e' + Number(exponent);
-  },
-
-  _monitorDurationSeconds(value) {
-    const raw = String(value == null ? '' : value).trim();
-    let seconds = null;
-    if (/^\d+(?::\d+){1,2}$/.test(raw)) {
-      const parts = raw.split(':').map(Number);
-      seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
-    }
-    if (seconds === null) {
-      const compact = raw.toLowerCase().replace(/\s+/g, '');
-      const units = [...compact.matchAll(/(\d+)([hms])/g)];
-      if (units.length && units.map(match => match[0]).join('') === compact) {
-        seconds = units.reduce((total, match) => total + Number(match[1]) * ({ h: 3600, m: 60, s: 1 })[match[2]], 0);
-      }
-    }
-    return seconds;
   },
 
   _formatMonitorDuration(value, durationSeconds = null) {
@@ -1298,7 +1279,7 @@ window.monitorRenderMixin = {
       const point = root.querySelector('[data-diagnostic-point="' + key + '"]');
       const low = root.querySelector('[data-diagnostic-low="' + key + '"]');
       if (!isLossTrace) {
-        if (path) this._patchRollingSparkline(path, trends[key], root._metricMotion, root.dataset.motionContext, point, .25, .02);
+        if (path) this._patchRollingSparkline(path, trends[key], root._metricMotion, root.dataset.motionContext, { marker: point, minimumSpan: .25, relativeSpan: .02 });
         if (low) low.setAttribute('visibility', 'hidden');
         continue;
       }
