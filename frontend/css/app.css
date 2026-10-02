@@ -3494,7 +3494,7 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-batch-row button { font-size: 10px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; white-space: nowrap; font-weight: 600; }
 .te-batch-row button:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
 .te-batch-row button:disabled { opacity: 0.35; pointer-events: none; }
-.te-batch-row .te-suggest { bottom: auto; top: calc(100% + 4px); }
+.te-batch-row .te-suggest { bottom: auto; top: calc(100% + 4px); max-height: min(360px, 50vh); }
 .te-batch-arrow { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; padding: 0 2px; }
 
 .te-batch-pos { display: flex; gap: 1px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); flex-shrink: 0; }
