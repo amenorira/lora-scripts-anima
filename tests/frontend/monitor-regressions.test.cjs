@@ -76,10 +76,69 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   assert.match(path.d, /^M/);
   assert.match(root.node('[data-summary-spark="lr"]').d, /^M/);
   assert.match(root.node('[data-diagnostic-trend]').d, /^M/);
+  const hero = root.node('[data-diagnostic-trend]');
+  a.handleRealtimeTaskMetrics({ points: { 'loss/average': [{ step: 3, value: .11 }] } });
+  a._patchOverviewStatus(root, a.monitorData, t, false);
+  assert.strictEqual(root.node('[data-diagnostic-trend]'), hero);
+  assert.equal(hero._sparklineState.shift, 1);
+  assert.equal(hero._sparklineState.points.at(-1).step, 3);
   assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.1200');
   assert.equal(root.dataset.sparklineVersion, String(a.lossDataVersion));
   a.handleRealtimeTaskMetrics({ points: { 'lr/unet': [{ step: 1, value: .00006 }] } });
   assert.equal(a.monitorData.lr, '4.0000e-5');
+});
+
+test('elapsed clock advances independently while remaining time follows logs and terminal/history values stay fixed', ctx => {
+  let now = 1000;
+  ctx.mock.method(Date, 'now', () => now);
+  const progress = { state: 'RUNNING', elapsed: '4:11', eta: '37:47' };
+  const a = app({ liveTaskId: 'A', monitorData: progress }), root = summaryRoot();
+  const display = (data = progress, history = false) => {
+    a._patchSummaryTime(root, data, key => key, history, false);
+    return ['time', 'time-meta'].map(key => root.node('[data-summary-field="' + key + '"]').textContent);
+  };
+  assert.deepEqual(display(), ['37:47', 'elapsed 4:11']);
+  now = 6000;
+  assert.deepEqual(display(), ['37:47', 'elapsed 4:16']);
+  assert.deepEqual(progress, { state: 'RUNNING', elapsed: '4:11', eta: '37:47' });
+  a.handleRealtimeTaskProgress({ data: { eta: '37:40' } });
+  assert.deepEqual(display(), ['37:40', 'elapsed 4:16']);
+  a.handleRealtimeTaskProgress({ data: { elapsed: '4:17' } });
+  now = 8000; // 从日志到达时计时，不能等到渲染才校准。
+  assert.deepEqual(display(), ['37:40', 'elapsed 4:19']);
+  assert.deepEqual(display({ ...progress, state: 'FINISHED', train_result: { duration_sec: 300 } }), ['5:00', '']);
+  assert.deepEqual(display(progress, true), ['37:40', 'elapsed 4:17']);
+  a.claimLiveTask('B');
+  assert.deepEqual(display(), ['37:40', 'elapsed 4:17']);
+  assert.deepEqual(display({ state: 'RUNNING' }), ['—', '']);
+});
+
+test('local trends reveal small real changes, keep constants flat and recover after an extreme leaves the window', () => {
+  const a = app();
+  const samples = (start, valueAt) => Array.from({ length: 40 }, (_, i) => ({ step: start + i, value: valueAt(start + i) }));
+  const height = frame => Math.max(...frame.coords.map(p => p.y)) - Math.min(...frame.coords.map(p => p.y));
+  for (const [baseline, amplitude, minimum, relative] of [
+    [5.2, .01, .05, .005], [3600, 2, 10, 0], [-7.3, .05, .25, .02],
+  ]) {
+    const points = samples(0, step => baseline + amplitude * Math.sin(step));
+    const frame = a._rollingSparklineFrame(points, null, minimum, relative);
+    assert.ok(height(frame) > 5);
+    assert.deepEqual(frame.points, points);
+    const constant = a._rollingSparklineFrame(samples(0, () => baseline), null, minimum, relative);
+    assert.ok(constant.coords.every(p => p.y === 17));
+  }
+  const valueAt = step => step === 0 ? 8 : 5.2 + .01 * Math.sin(step);
+  let frame = a._rollingSparklineFrame(samples(0, valueAt), null, .05, .005);
+  const initialSpan = frame.bounds.high - frame.bounds.low;
+  for (let step = 1; step <= 20; step++) {
+    const next = a._rollingSparklineFrame(samples(step, valueAt), frame, .05, .005);
+    assert.equal(next.shift, 1);
+    assert.ok(next.bounds.high - next.bounds.low < frame.bounds.high - frame.bounds.low);
+    assert.ok(next.coords.every(p => p.y >= 4 && p.y <= 30));
+    frame = next;
+  }
+  assert.ok(frame.bounds.high - frame.bounds.low < initialSpan / 10);
+  assert.ok(height(frame) > 5);
 });
 
 test('idle transport preserves the completed run; final detail remains readable', () => {

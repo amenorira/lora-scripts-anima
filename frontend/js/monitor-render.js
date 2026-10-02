@@ -441,7 +441,7 @@ window.monitorRenderMixin = {
       const el = root.querySelector('[data-summary-field="' + key + '"]');
       if (el) {
         // 仅指标读数滚动；进度与说明文字直接更新，避免整块摘要都在跳动。
-        if (['loss', 'lr', 'speed', 'time'].includes(key)) this._patchMonitorNumber(el, value, animate);
+        if (['loss', 'lr', 'speed'].includes(key)) this._patchMonitorNumber(el, value, animate);
         else if (el.textContent !== String(value)) el.textContent = String(value);
       }
     };
@@ -473,9 +473,6 @@ window.monitorRenderMixin = {
     const epochProgress = !epoch.includes('/') && Number.isInteger(totalEpochs) && totalEpochs > 0
       ? epoch + '/' + totalEpochs : epoch;
     set('epoch', t('epochProgress') + ' ' + epochProgress);
-    const trainResult = terminal && d.train_result;
-    const duration = this._formatMonitorDuration((trainResult && trainResult.duration_str) || d.elapsed || '—', trainResult ? trainResult.duration_sec : null);
-    const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
     const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
     const latestLoss = lossPoints[lossPoints.length - 1];
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
@@ -488,10 +485,7 @@ window.monitorRenderMixin = {
     set('lr-meta', this._summarySchedulerMeta(t, total) || (lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : ''));
     set('speed', d.speed || '—');
     set('speed-meta', t(isHistory ? 'lastSpeed' : 'currentSpeed'));
-    set('time-label', state === 'RUNNING' && eta ? t('estimatedRemaining') : (state === 'RUNNING' ? t('elapsed') : t('totalDuration')));
-    set('time', state === 'RUNNING' && eta ? eta : duration);
-    const endedAt = isHistory && d.train_result && d.train_result.ended_at ? this._formatRunEndTime(d.train_result.ended_at) : '';
-    set('time-meta', state === 'RUNNING' && eta ? t('elapsed') + ' ' + duration : (endedAt ? t('endedAt') + ' ' + endedAt : ''));
+    this._patchSummaryTime(root, d, t, isHistory, animate);
     const progress = root.querySelector('[data-overview-progress]');
     if (progress) {
       progress.style.width = percent + '%';
@@ -502,7 +496,10 @@ window.monitorRenderMixin = {
       const lossPath = root.querySelector('[data-summary-spark="loss"]');
       const lrPath = root.querySelector('[data-summary-spark="lr"]');
       for (const [path, series] of [[lossPath, lossSeries], [lrPath, lrSeries]]) {
-        if (path) this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext);
+        // 学习率展示近期斜率；20% 的绝对值下限会把缓慢衰减压成近乎水平的线。
+        if (path) {
+          this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext, null, 0, path === lrPath ? .02 : .2);
+        }
       }
       const lossTrend = this._summaryLossChange(lossSeries);
       const lossChange = root.querySelector('[data-summary-loss-change]');
@@ -516,6 +513,31 @@ window.monitorRenderMixin = {
     }
     this._patchSummaryTelemetry(root, t, isHistory, d);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
+  },
+
+  _patchSummaryTime(root, d, t, isHistory, animate) {
+    const state = this._summaryState(d, isHistory);
+    const result = ['FINISHED', 'FAILED', 'TERMINATED'].includes(state) && d.train_result;
+    let elapsed = this._monitorDurationSeconds(d.elapsed);
+    if (!isHistory && state === 'RUNNING' && elapsed !== null) {
+      const now = Date.now();
+      this._observeMonitorClock(d, now);
+      elapsed += Math.max(0, Math.floor((now - this._monitorClockSample.observedAt) / 1000));
+    }
+    const duration = this._formatMonitorDuration(result?.duration_str || d.elapsed || '—', result ? result.duration_sec : elapsed);
+    const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
+    const showRemaining = state === 'RUNNING' && !!eta;
+    const endedAt = isHistory && d.train_result?.ended_at ? this._formatRunEndTime(d.train_result.ended_at) : '';
+    for (const [key, value] of [
+      ['time-label', t(showRemaining ? 'estimatedRemaining' : state === 'RUNNING' ? 'elapsed' : 'totalDuration')],
+      ['time', showRemaining ? eta : duration],
+      ['time-meta', showRemaining ? t('elapsed') + ' ' + duration : endedAt ? t('endedAt') + ' ' + endedAt : ''],
+    ]) {
+      const element = root.querySelector('[data-summary-field="' + key + '"]');
+      if (!element) continue;
+      if (key === 'time') this._patchMonitorNumber(element, value, animate);
+      else if (element.textContent !== value) element.textContent = value;
+    }
   },
 
   _renderOverviewTab(d, t, isHistory) {
@@ -553,8 +575,8 @@ window.monitorRenderMixin = {
     html += '<div class="m-overview-progress" role="progressbar" aria-label="' + this.esc(t('overallProgress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-overview-progress></i></div>';
     html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span></div></div>';
     html += '<div class="m-live-metrics">';
-    html += this._summaryTileHtml('loss', t('loss'), t('recentLoss'));
-    html += this._summaryTileHtml('lr', t('lr'), '');
+    html += this._summaryTileHtml('loss', t('loss'), t('recentLoss'), t('localTrendScaleHint'));
+    html += this._summaryTileHtml('lr', t('lr'), '', t('localTrendScaleHint'));
     html += this._summaryTileHtml('speed', t('speed'), t('currentSpeed'));
     html += this._summaryTileHtml('time', t('elapsed'), '');
     html += '</div></section>';
@@ -569,8 +591,8 @@ window.monitorRenderMixin = {
     return d.state || 'IDLE';
   },
 
-  _summaryTileHtml(key, label, meta) {
-    let html = '<div class="m-live-metric m-live-metric-' + key + '"><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span>';
+  _summaryTileHtml(key, label, meta, scaleHint = '') {
+    let html = '<div class="m-live-metric m-live-metric-' + key + '"' + (scaleHint ? ' title="' + this.esc(label + ' · ' + scaleHint) + '"' : '') + '><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span>';
     html += '<div class="m-metric-reading"><strong data-summary-field="' + key + '">—</strong>';
     if (key === 'loss') html += '<span class="m-metric-change" data-summary-loss-change hidden></span>';
     if (key === 'lr') html += '<span class="m-metric-range" data-summary-field="lr-range" hidden></span>';
@@ -649,18 +671,21 @@ window.monitorRenderMixin = {
       const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && sample[field] >= 0)
         .map(sample => ({ step: sample.step, value: sample[field] }));
       const forecast = field === 'estimatedFinishSec';
-      // 预估波动按修正幅度缩放，至少保留一分钟量程，避免秒级取整抖动被夸大。
-      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, null, forecast ? 60 : 0, forecast ? 0 : .2);
+      // 按近期变化缩放，同时保留精度余量：速度 50ms、预估修正 10s，避免放大取整噪声。
+      const minimumSpan = forecast ? 10 : field === 'speedSec' ? .05 : 0;
+      const relativeSpan = forecast ? 0 : field === 'speedSec' ? .005 : .02;
+      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, null, minimumSpan, relativeSpan);
       const svg = path.parentElement;
       if (svg) {
         const tile = svg.closest?.('.m-live-metric');
         if (frame.path) svg.removeAttribute('hidden');
         else svg.setAttribute('hidden', '');
         if (frame.path) {
-          svg.setAttribute('aria-label', t(label));
-          svg.setAttribute('title', t(label));
+          const title = t(label) + ' · ' + t('localTrendScaleHint');
+          svg.setAttribute('aria-label', title);
+          svg.setAttribute('title', title);
           // 小图不接收鼠标事件，说明由整个卡片提供，窄桌面隐藏小图时也可查看。
-          tile?.setAttribute('title', t(label));
+          tile?.setAttribute('title', title);
         } else {
           svg.removeAttribute('aria-label');
           svg.removeAttribute('title');
@@ -822,7 +847,6 @@ window.monitorRenderMixin = {
     const continuous = retained.length > 0 && retained.every((point, index) => point.step === points[index]?.step);
     const shift = continuous ? appended.length : 0;
     let bounds = previous?.bounds || null;
-    let shrinkSteps = 0;
     if (points.length) {
       const low = Math.min(...points.map(point => point.value));
       const high = Math.max(...points.map(point => point.value));
@@ -832,17 +856,20 @@ window.monitorRenderMixin = {
       if (!bounds) bounds = target;
       else if (low < bounds.low || high > bounds.high) {
         bounds = { low: Math.min(bounds.low, target.low), high: Math.max(bounds.high, target.high) };
-      } else if (target.high - target.low < (bounds.high - bounds.low) * .5) {
-        // 连续一个完整窗口都处于小范围后才收窄纵轴，避免极值出窗时突然变形。
-        shrinkSteps = (previous.shrinkSteps || 0) + appended.length;
-        if (shrinkSteps >= 40) { bounds = target; shrinkSteps = 0; }
+      } else {
+        // 极值出窗后逐步贴近近期量程，纵轴动画承接缩放，不再额外等满 40 步。
+        const blend = 1 - Math.pow(.75, Math.max(1, Math.min(appended.length, 8)));
+        bounds = {
+          low: bounds.low + (target.low - bounds.low) * blend,
+          high: bounds.high + (target.high - bounds.high) * blend,
+        };
       }
     }
     // 多保留两个左侧衔接点，线段真正移出 SVG 后才删除；连续动画还需承接未移出的旧点。
     const prefix = previous && (continuous || points[0]?.step === previous.points[0]?.step)
       ? (previous.renderPoints || previous.points).filter(point => point.step < points[0]?.step) : [];
     const renderPoints = prefix.concat(points);
-    return { points, signature, bounds, shrinkSteps, shift,
+    return { points, signature, bounds, shift,
       path: this._rollingSparklineGeometry(renderPoints.slice(-42), bounds).path,
       coords: this._rollingSparklineGeometry(points, bounds).coords,
       renderPoints };
@@ -918,27 +945,22 @@ window.monitorRenderMixin = {
     return frame;
   },
 
-  // 参照图按当前真实窗口铺满，不做滚动；平稳数据留出纵轴余量，常量线居中。
-  _sparklineGeometry(values, xAt) {
-    const points = values.filter(Number.isFinite);
-    if (points.length < 2) return { path: '', coords: [] };
-    const low = Math.min(...points), high = Math.max(...points);
+  // 最低点/最新点参照图按真实步数铺满窗口，常量线居中。
+  _diagnosticLossTrend(bestStep) {
+    const points = this._trainingDiagnosticPoints();
+    if (points.length < 2) return { path: '', coords: [], bestIndex: -1 };
+    const values = points.map(point => point.value);
+    const low = Math.min(...values), high = Math.max(...values);
     const range = Math.max(high - low, Math.max(Math.abs(low), Math.abs(high)) * .2, 1e-9) * 1.2;
     const bottom = (low + high - range) / 2;
-    const x = typeof xAt === 'function' ? xAt : index => 4 + index * 112 / (points.length - 1);
-    const coords = points.map((value, index) => ({ x: x(index, points.length).toFixed(1), y: (30 - (value - bottom) / range * 26).toFixed(1) }));
+    const first = points[0].step, span = points.at(-1).step - first;
+    const coords = points.map(point => ({ x: (4 + (point.step - first) / span * 112).toFixed(1), y: (30 - (point.value - bottom) / range * 26).toFixed(1) }));
     return {
       path: coords.map((point, index) => (index ? 'L' : 'M') + point.x + ' ' + point.y).join(' '),
       coords,
       bounds: { low: bottom, high: bottom + range },
+      points, signature: JSON.stringify(points), bestIndex: points.findIndex(point => point.step === bestStep),
     };
-  },
-
-  _diagnosticLossTrend(bestStep) {
-    const points = this._trainingDiagnosticPoints();
-    if (points.length < 2) return { path: '', coords: [], bestIndex: -1 };
-    const first = points[0].step, span = points.at(-1).step - first;
-    return { ...this._sparklineGeometry(points.map(point => point.value), index => 4 + (points[index].step - first) / span * 112), points, signature: JSON.stringify(points), bestIndex: points.findIndex(point => point.step === bestStep) };
   },
 
   _diagnosticMetricTrends() {
@@ -1189,7 +1211,7 @@ window.monitorRenderMixin = {
     let html = '<section class="m-console-card m-training-diagnostics">';
     html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
-    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p><svg class="m-diagnostic-trend" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-trend></path></svg></div>';
+    html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><div class="m-diagnostic-copy"><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p></div><svg class="m-diagnostic-trend" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-trend></path></svg></div>';
     html += '</div><div class="m-diagnostic-metrics">';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
@@ -1198,7 +1220,8 @@ window.monitorRenderMixin = {
       ['gap', t('gapFromBest'), t('latestVsBest')],
     ];
     metrics.forEach(metric => {
-      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small><svg class="m-diagnostic-mini" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-spark="' + metric[0] + '"></path><line data-diagnostic-low="' + metric[0] + '" visibility="hidden"></line><line data-diagnostic-point="' + metric[0] + '" visibility="hidden"></line></svg></div>';
+      const title = ['change', 'volatility'].includes(metric[0]) ? ' title="' + this.esc(metric[1] + ' · ' + t('localTrendScaleHint')) + '"' : '';
+      html += '<div class="m-diagnostic-metric" data-diagnostic-metric="' + metric[0] + '"' + title + '><span>' + this.esc(metric[1]) + '</span><strong data-diagnostic-field="' + metric[0] + '">--</strong><small data-diagnostic-field="' + metric[0] + '-meta">' + this.esc(metric[2]) + '</small><svg class="m-diagnostic-mini" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-spark="' + metric[0] + '"></path><line data-diagnostic-low="' + metric[0] + '" visibility="hidden"></line><line data-diagnostic-point="' + metric[0] + '" visibility="hidden"></line></svg></div>';
     });
     html += '</div>';
     html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
@@ -1244,13 +1267,9 @@ window.monitorRenderMixin = {
     };
     setText('title', isPreviousRun ? t('previousTrainingDiagnostics') : t('trainingDiagnostics'));
     const verdict = root.querySelector('.m-diagnostic-verdict');
-    const trendPath = this._sparklineGeometry(this._trainingDiagnosticPoints().slice(-40).map(point => point.value)).path;
-    if (verdict) {
-      verdict.dataset.diagnosticTone = diagnostic.tone;
-      verdict.dataset.hasTrend = trendPath ? 'true' : 'false';
-    }
+    if (verdict) verdict.dataset.diagnosticTone = diagnostic.tone;
     const trend = root.querySelector('[data-diagnostic-trend]');
-    if (trend) trend.setAttribute('d', trendPath);
+    if (trend) this._patchRollingSparkline(trend, this._trainingDiagnosticPoints(), root._metricMotion, root.dataset.motionContext);
     setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
     setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
     setText('advice', this._diagnosticText(t, diagnostic.code, 'advice'));
@@ -1279,7 +1298,7 @@ window.monitorRenderMixin = {
       const point = root.querySelector('[data-diagnostic-point="' + key + '"]');
       const low = root.querySelector('[data-diagnostic-low="' + key + '"]');
       if (!isLossTrace) {
-        if (path) this._patchRollingSparkline(path, trends[key], root._metricMotion, root.dataset.motionContext, point, 1);
+        if (path) this._patchRollingSparkline(path, trends[key], root._metricMotion, root.dataset.motionContext, point, .25, .02);
         if (low) low.setAttribute('visibility', 'hidden');
         continue;
       }

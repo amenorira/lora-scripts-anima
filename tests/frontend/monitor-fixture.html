@@ -113,7 +113,7 @@
         {key:'seed',value:1337,section:'training'},
         ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
       ],
-      init(){this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this.$nextTick(()=>this.renderDashboard());}
+      init(){this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());}
     });
   }));
   const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);

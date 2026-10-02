@@ -93,6 +93,8 @@ window.monitorCoreMixin = {
   monitorPerfSamples: null,
   _monitorPerfVersion: 0,
   _monitorProgressVersion: 0,
+  _monitorClockTimer: null,
+  _monitorClockSample: null,
 
   // ── History run detail ─────────────────────────────────
   selectedRunDir: null,   // 当前查看的历史训练 run_dir（null = 查看实时）
@@ -531,6 +533,7 @@ window.monitorCoreMixin = {
       next.error_msg = current.error_msg || next.error_msg;
     }
     this.monitorData = next;
+    this._observeMonitorClock(next);
     this._recordMonitorPerfSample(next);
     if (next.gpu) this.gpuInfo = next.gpu;
     if (next.system) this.sysInfo = next.system;
@@ -599,6 +602,7 @@ window.monitorCoreMixin = {
     this._prevState = null;
     this.releaseLiveTask();
     this.monitorData = { state: 'UNKNOWN', state_label: this.t('monitor.taskStateUnknown') };
+    this._monitorClockSample = null;
     this.gpuInfo = null;
     this.sysInfo = null;
     this.runningTask = null;
@@ -694,6 +698,7 @@ window.monitorCoreMixin = {
         }
       });
       if (changed) this._monitorProgressVersion++;
+      this._observeMonitorClock(this.monitorData);
       this._recordMonitorPerfSample(this.monitorData);
     }
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
@@ -848,8 +853,29 @@ window.monitorCoreMixin = {
   },
 
   // ── Dashboard bootstrap + realtime subscriptions ───────
+  _observeMonitorClock(progress, now = Date.now()) {
+    if (progress.state !== 'RUNNING' || !progress.elapsed) return;
+    const sample = this._monitorClockSample;
+    if (!sample || sample.taskId !== this.liveTaskId || sample.elapsed !== progress.elapsed) {
+      this._monitorClockSample = { taskId: this.liveTaskId, elapsed: progress.elapsed, observedAt: now };
+    }
+  },
+
+  _startMonitorClock() {
+    if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
+    // 已运行时间独立以 1 Hz 前进；预计剩余只跟随日志，不做本地倒计时。
+    this._monitorClockTimer = setInterval(() => {
+      if (document.hidden || this.selectedRunDir || this.currentRoute !== 'monitor-dashboard' || this.monitorTab !== 'overview') return;
+      const root = document.querySelector('#monitorTabContent .m-tab-panel[data-tab="overview"]');
+      if (root && this.monitorData?.state === 'RUNNING') {
+        this._patchSummaryTime(root, this.monitorData, (key, fallback) => this.tMonitor(key, fallback), false, true);
+      }
+    }, 1000);
+  },
+
   startMonitorRealtime() {
     this.stopMonitorRealtime();
+    this._startMonitorClock();
     this.realtimeSubscribe('hardware');
     if (!this.selectedRunDir) this._setMonitorRealtimeTask(this.liveTaskId);
     if (this.realtimeSnapshot) {
@@ -913,6 +939,8 @@ window.monitorCoreMixin = {
   stopMonitorRealtime() {
     // Invalidate a detail request that is still fetching disk-backed data.
     const wasTailMode = this.logMode === 'tail';
+    if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
+    this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
     this.realtimeUnsubscribe('hardware');
     this._setMonitorRealtimeTask(null);

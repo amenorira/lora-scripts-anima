@@ -54,6 +54,7 @@ test('returning to dashboard restores task subscription and consumes progress', 
   a._setMonitorRealtimeTask(null);
   a._applyManagedTrainingState(snapshot());
   assert.equal(a._monitorRealtimeTopic, 'task:A');
+  a.stopMonitorRealtime();
 });
 
 test('late history response cannot overwrite live data or newer history', async () => {

@@ -123,6 +123,7 @@
 		"speedTrendLabel": "Time per iteration across training steps",
 		"remainingTrendLabel": "Remaining-time estimate fluctuations, excluding the normal countdown: rising means a later finish, falling means an earlier finish",
 		"elapsedTrendLabel": "Elapsed time across training steps",
+		"localTrendScaleHint": "The vertical axis scales to recent changes, magnifying small variations",
 		"peakToFinal": "Peak → final",
 		"logAutoScroll": "Auto-scroll",
 		"logCopy": "Copy",
