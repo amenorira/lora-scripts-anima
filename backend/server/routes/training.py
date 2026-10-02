@@ -928,6 +928,17 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         log.exception("Failed to estimate training steps before launch / 启动前训练步数计算失败")
         return _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
 
+    from backend.training.validation import validate_scheduler_step_budget
+
+    scheduler_errors = validate_scheduler_step_budget(
+        config, int((step_estimate or {}).get("total_steps") or 0),
+        int((step_estimate or {}).get("gpu_processes") or 1),
+    )
+    if scheduler_errors:
+        return _training_error(
+            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(scheduler_errors)
+        )
+
     # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
     try:
         from backend.training.optimizer_contracts import apply_ademamix_step_schedule

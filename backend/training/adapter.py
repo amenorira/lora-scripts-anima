@@ -292,6 +292,20 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     adapted: dict[str, Any] = {}
     warnings: list[str] = []
 
+    # Single-process loading has no workers to keep alive. Also covers imported presets.
+    workers = source.get("max_data_loader_n_workers")
+    try:
+        zero_workers = not _is_empty_value(workers) and float(workers) == 0
+    except (TypeError, ValueError):
+        zero_workers = False  # Numeric validation reports malformed values separately.
+    if zero_workers:
+        if source.get("persistent_data_loader_workers") is True:
+            warnings.append(
+                "[Adjusted] persistent_data_loader_workers disabled because max_data_loader_n_workers is 0 / "
+                "工作进程数为 0，已关闭持久化 DataLoader 工作进程"
+            )
+        source["persistent_data_loader_workers"] = False
+
     # ── 1. 合并自定义参数 ──────────────────────────────────
     _merge_custom_args(source, "network_args_custom", "network_args")
     _merge_custom_args(source, "optimizer_args_custom", "optimizer_args")
@@ -657,6 +671,18 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             groups = [field_group] if isinstance(field_group, str) else list(field_group)
             if train_group not in groups:
                 source.pop(key, None)
+
+    # Filter after optimizer normalization, which may force a constant scheduler.
+    scheduler = source.get("lr_scheduler", "constant")
+    for key, schedulers in {
+        "lr_scheduler_timescale": {"inverse_sqrt"},
+        "lr_scheduler_min_lr_ratio": {"cosine_with_min_lr", "warmup_stable_decay"},
+        "lr_decay_steps": {"warmup_stable_decay"},
+    }.items():
+        if scheduler not in schedulers:
+            source.pop(key, None)
+    if scheduler == "cosine_with_min_lr" and _is_empty_value(source.get("lr_scheduler_min_lr_ratio")):
+        source["lr_scheduler_min_lr_ratio"] = 0
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告

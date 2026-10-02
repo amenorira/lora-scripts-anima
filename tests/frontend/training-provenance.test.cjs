@@ -54,3 +54,34 @@ test('optimizer transitions preserve user values, including an unchanged input, 
   assert.equal(app._fieldSources.learning_rate, 'auto');
   assert.equal(app.persistCalls, before + 3);
 });
+
+test('zero workers disable persistence while explicit disabled presets stay disabled', () => {
+  const app = makeForm();
+  app.form.persistent_data_loader_workers = true;
+  app.setField('max_data_loader_n_workers', 0);
+  assert.equal(app.form.persistent_data_loader_workers, false);
+  app.setField('persistent_data_loader_workers', true);
+  assert.equal(app.form.persistent_data_loader_workers, false);
+  app.setField('max_data_loader_n_workers', 2);
+  assert.equal(app.form.persistent_data_loader_workers, false);
+  app.setField('persistent_data_loader_workers', true);
+  assert.equal(app.form.persistent_data_loader_workers, true);
+  app.form.max_data_loader_n_workers = '';
+  app.form.persistent_data_loader_workers = false;
+  app._applyInitialAutoValues();
+  assert.equal(app.form.persistent_data_loader_workers, false);
+  app.form.max_data_loader_n_workers = '0';
+  app.form.persistent_data_loader_workers = true;
+  app._applyInitialAutoValues();
+  assert.equal(app.form.persistent_data_loader_workers, false);
+});
+
+test('initial scheduler recommendations immediately hide unrelated child fields', () => {
+  const app = makeForm();
+  const updates = [];
+  app._allShowIfKeys = () => ['lr_scheduler'];
+  app.showConditionalFields = key => updates.push([key, app.form.lr_scheduler]);
+  app._applyInitialAutoValues();
+  assert.equal(app.form.lr_scheduler, 'constant');
+  assert.deepEqual(updates, [['lr_scheduler', 'constant']]);
+});

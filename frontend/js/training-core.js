@@ -3389,8 +3389,18 @@ window.trainingCoreMixin = {
     return !guarded || this._autoValueRuleCanSet(guarded);
   },
 
+  _enforceDataLoaderUiConstraints() {
+    const workers = this.form.max_data_loader_n_workers;
+    if (workers !== '' && workers !== null && workers !== undefined && Number(workers) === 0
+        && this.form.persistent_data_loader_workers === true) {
+      this.form.persistent_data_loader_workers = false;
+      this._setFieldSource('persistent_data_loader_workers', 'auto');
+    }
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
+    this._enforceDataLoaderUiConstraints();
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
@@ -3402,6 +3412,9 @@ window.trainingCoreMixin = {
           this.form[matched.target] = matched.set;
           this._setFieldSource(matched.target, 'auto');
           this.formDefaults[matched.target] = matched.set;
+          if (this._allShowIfKeys().includes(matched.target)) {
+            this.showConditionalFields(matched.target);
+          }
         }
       }
     });
@@ -3535,6 +3548,7 @@ window.trainingCoreMixin = {
   },
 
   updateReadonlyStates() {
+    this._enforceDataLoaderUiConstraints();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3788,6 +3802,9 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
+      this._enforceDataLoaderUiConstraints();
+    }
     if (key === 'timestep_sampling') {
       this._refreshSubsetTimestepEditor();
     }
@@ -3881,6 +3898,7 @@ window.trainingCoreMixin = {
     if (this.lrPreviewOpen && [
       'model_train_type', 'optimizer_type', 'learning_rate', 'unet_lr', 'text_encoder_lr',
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
+      'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
       'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
     ].includes(key)) {
       if (key === 'model_train_type' && value === 'krea2-lora') {

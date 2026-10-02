@@ -33,15 +33,28 @@ window.trainingLrPreviewMixin = {
   },
   // Shared by SVG sampling and the exact hover readout.
   _lrPreviewMultiplier(progress, params) {
-    const { scheduler, warmupFraction, cycles, power, endRatio } = params;
+    const { scheduler, warmupFraction, cycles, power, endRatio, minRatio, decayFraction, totalSteps, timescale } = params;
     const p = Math.max(0, Math.min(1, progress));
     if (scheduler === 'constant') return 1;
-    if (p < warmupFraction) return p / warmupFraction;
+    if (p < warmupFraction) {
+      const ramp = p / warmupFraction;
+      return scheduler === 'warmup_stable_decay' ? minRatio + ramp * (1 - minRatio) : ramp;
+    }
     if (scheduler === 'constant_with_warmup') return 1;
     const decay = (p - warmupFraction) / Math.max(1e-9, 1 - warmupFraction);
     switch (scheduler) {
       case 'linear': return Math.max(0, 1 - decay);
       case 'cosine': return Math.max(0, 0.5 * (1 + Math.cos(Math.PI * decay)));
+      case 'cosine_with_min_lr':
+        return minRatio + 0.5 * (1 + Math.cos(Math.PI * cycles * decay)) * (1 - minRatio);
+      case 'inverse_sqrt':
+        return 1 / Math.sqrt(1 + (p - warmupFraction) * totalSteps / timescale);
+      case 'warmup_stable_decay': {
+        if (p >= 1) return minRatio;
+        if (p < 1 - decayFraction || decayFraction === 0) return 1;
+        const progress = (p - (1 - decayFraction)) / decayFraction;
+        return minRatio + 0.5 * (1 + Math.cos(Math.PI * cycles * progress)) * (1 - minRatio);
+      }
       case 'cosine_with_restarts':
         return p >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * ((decay * cycles) % 1)));
       case 'polynomial': return (1 - decay) ** power * (1 - endRatio) + endRatio;
@@ -126,7 +139,9 @@ window.trainingLrPreviewMixin = {
     const totalSteps = this.stepEstimate && Number(this.stepEstimate.total_steps || 0) > 0
       ? Number(this.stepEstimate.total_steps || 0)
       : 0;
-    const warmup = this._lrPreviewWarmup(source, totalSteps);
+    // Accelerate advances the sd-scripts scheduler once per training process.
+    const schedulerSteps = totalSteps * Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
+    const warmup = this._lrPreviewWarmup(source, schedulerSteps);
     const cycles = String(source.lr_scheduler_num_cycles ?? '').trim();
     const power = String(source.lr_scheduler_power ?? '').trim();
     const pointCount = 160;
@@ -140,21 +155,47 @@ window.trainingLrPreviewMixin = {
       cycles: this._lrPreviewNumber(cycles || 1, 1),
       power: this._lrPreviewNumber(power || 1, 1),
       endRatio: 1e-7 / this._lrPreviewNumber(baseRateText, 0),
+      minRatio: this._lrPreviewNumber(source.lr_scheduler_min_lr_ratio ?? 0, NaN),
+      totalSteps: schedulerSteps,
+      timescale: String(source.lr_scheduler_timescale ?? '').trim() === ''
+        ? (Math.floor(warmup.fraction * schedulerSteps) || 10000)
+        : this._lrPreviewNumber(source.lr_scheduler_timescale, NaN),
     };
+    const decaySteps = this._lrPreviewNumber(source.lr_decay_steps ?? 0, NaN);
+    params.decayFraction = decaySteps < 1
+      ? (schedulerSteps > 0 ? Math.floor(decaySteps * schedulerSteps) / schedulerSteps : decaySteps)
+      : (schedulerSteps > 0 ? decaySteps / schedulerSteps : NaN);
     let unavailable = '';
     if (internal) unavailable = this.t('lrPreview.internalNote');
-    else if (!['constant', 'constant_with_warmup', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial'].includes(scheduler)) {
+    else if (!['constant', 'constant_with_warmup', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial',
+      'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)) {
       unavailable = this.t('lrPreview.unsupportedNote');
     } else if (!(chartRate > 0) || (scheduler === 'constant' && warmup.visible)
       || (scheduler === 'polynomial' && (!(params.endRatio > 0 && params.endRatio < 1)
         || !(params.power > 0) || warmup.fraction === 1))
-      || (scheduler === 'cosine_with_restarts' && !(params.cycles >= 1))) {
+      || (['cosine_with_restarts', 'cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)
+        && !(Number.isInteger(params.cycles) && params.cycles >= 1))
+      || (['cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)
+        && !(params.minRatio >= 0 && params.minRatio <= 1))
+      || (scheduler === 'inverse_sqrt' && !(Number.isInteger(params.timescale) && params.timescale > 0))
+      || (scheduler === 'warmup_stable_decay' && (!(decaySteps >= 0)
+        || (decaySteps >= 1 && !Number.isInteger(decaySteps))
+        || warmup.fraction + params.decayFraction > 1))) {
       unavailable = this.t('lrPreview.invalidNote');
+    }
+    if (!unavailable && !totalSteps && (scheduler === 'inverse_sqrt'
+      || (scheduler === 'warmup_stable_decay' && decaySteps >= 1))) {
+      unavailable = this.t('lrPreview.stepCountRequiredNote');
     }
     const evaluateMultiplier = progress => this._lrPreviewMultiplier(progress, params);
     // Include exact warmup and restart boundaries; avoid diagonal restart ramps.
     const positions = new Set(Array.from({ length: pointCount }, (_, i) => i / (pointCount - 1)));
     if (warmup.fraction > 0 && warmup.fraction < 1) positions.add(warmup.fraction);
+    if (scheduler === 'warmup_stable_decay' && !unavailable) {
+      if (params.decayFraction > 0) positions.add(1 - params.decayFraction);
+      // WSD returns the minimum at the final step, even with zero decay or extra cycles.
+      positions.add(1 - 1e-10);
+    }
     if (scheduler === 'cosine_with_restarts' && !unavailable && warmup.fraction < 1) {
       for (let cycle = 1; cycle < Math.min(params.cycles, 1000); cycle++) {
         const boundary = warmup.fraction + (1 - warmup.fraction) * cycle / params.cycles;
@@ -211,7 +252,7 @@ window.trainingLrPreviewMixin = {
       warmupX,
       warmupEstimated: !!warmup.estimated,
       warning: !!unavailable || warmup.estimated || !totalSteps,
-      cycles: scheduler === 'cosine_with_restarts' ? cycles : '',
+      cycles: ['cosine_with_restarts', 'cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler) ? cycles : '',
       power: scheduler === 'polynomial' ? power : '',
       notes,
       params,
